@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Search, Plus, Minus, Trash2, CreditCard, Banknote,
   Receipt, X, ChevronDown, User, Check, Loader2,
-  ShoppingBag, AlertCircle, Zap, Printer,
+  ShoppingBag, AlertCircle, Zap, Printer, PackageOpen,
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
@@ -408,6 +409,7 @@ function WhatsAppIcon({ size = 14 }: { size?: number }) {
 
 export default function POSPage() {
   const { profile, user } = useAuth()
+  const navigate  = useNavigate()
   const searchRef = useRef<HTMLInputElement>(null)
 
   const [branch,     setBranch]     = useState<Branch | null>(null)
@@ -820,15 +822,38 @@ export default function POSPage() {
         {/* Product grid */}
         <div className="flex-1 overflow-y-auto p-4">
           {filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-48 text-gray-400">
-              <AlertCircle size={28} className="mb-2 opacity-40" />
-              <p className="text-sm">{products.length === 0 ? 'No products set up yet' : 'No products found'}</p>
-              {search && (
-                <button onClick={() => setSearch('')} className="text-xs text-primary-500 mt-1 underline">
-                  Clear search
+            products.length === 0 ? (
+              /* No products exist at all — full empty state */
+              <div className="flex flex-col items-center justify-center h-full min-h-[320px] gap-5 text-center px-6">
+                <div className="w-20 h-20 rounded-2xl bg-gray-100 flex items-center justify-center">
+                  <PackageOpen size={36} className="text-gray-300" />
+                </div>
+                <div className="space-y-1">
+                  <p className="font-semibold text-gray-700 text-base">No products yet</p>
+                  <p className="text-sm text-gray-400 max-w-[220px]">
+                    Add your menu items to start selling
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigate('/products')}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-[#1B6B3A] text-white text-sm font-semibold rounded-xl hover:bg-[#155830] transition-colors shadow-sm"
+                >
+                  <Plus size={15} />
+                  Go to Products
                 </button>
-              )}
-            </div>
+              </div>
+            ) : (
+              /* Products exist but search has no matches */
+              <div className="flex flex-col items-center justify-center h-48 text-gray-400">
+                <AlertCircle size={28} className="mb-2 opacity-40" />
+                <p className="text-sm">No products found</p>
+                {search && (
+                  <button onClick={() => setSearch('')} className="text-xs text-primary-500 mt-1 underline">
+                    Clear search
+                  </button>
+                )}
+              </div>
+            )
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
               {filtered.map(p => (
