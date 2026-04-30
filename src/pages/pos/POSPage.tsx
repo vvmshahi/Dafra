@@ -7,6 +7,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { displayName as dn } from '@/lib/utils/display'
 import type { Branch, VatTreatment } from '@/types/database'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -262,10 +263,7 @@ function ProductCard({ product, cartQty, onAdd }: {
         style={{ backgroundColor: `${color}18` }}>
         <ShoppingBag size={22} style={{ color }} />
       </div>
-      <p className="text-xs font-semibold text-gray-800 leading-snug line-clamp-2">{product.name}</p>
-      {product.nameAr && (
-        <p className="text-[10px] text-gray-400 truncate" dir="rtl">{product.nameAr}</p>
-      )}
+      <p className="text-xs font-semibold text-gray-800 leading-snug line-clamp-2">{dn(product.name, product.nameAr)}</p>
       <p className="text-sm font-bold text-primary-600 mt-1"><Rial amount={product.price} /></p>
       {product.catName && (
         <span className="inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full mt-1"
@@ -782,7 +780,7 @@ export default function POSPage() {
                     <ShoppingBag size={12} style={{ color }} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-gray-800 truncate">{item.name}</p>
+                    <p className="text-xs font-semibold text-gray-800 truncate">{dn(item.name, item.nameAr)}</p>
                     <p className="text-[10px] text-gray-400 tabular-nums">
                       {fmt(item.price)} × {item.quantity} = <span className="text-gray-700 font-semibold"><Rial amount={line} /></span>
                     </p>

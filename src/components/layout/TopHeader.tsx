@@ -19,6 +19,7 @@ const titles: Record<string, string> = {
   '/employees':                 'Employees',
   '/profile':                   'My Profile',
   '/invoices':                  'Invoices',
+  '/day-closing':               'Day Closing',
 }
 
 export default function TopHeader() {

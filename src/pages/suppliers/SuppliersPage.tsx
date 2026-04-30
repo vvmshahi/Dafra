@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { displayName as dn } from '@/lib/utils/display'
 import type { Supplier } from '@/types'
 import SupplierDrawer from './SupplierDrawer'
 
@@ -189,10 +190,7 @@ export default function SuppliersPage() {
                   <Building2 size={15} className="text-emerald-600" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{supplier.name}</p>
-                  {supplier.name_ar && (
-                    <p className="text-xs text-gray-400 truncate" dir="rtl">{supplier.name_ar}</p>
-                  )}
+                  <p className="text-sm font-semibold text-gray-900 truncate">{dn(supplier.name, supplier.name_ar)}</p>
                   {supplier.vat_number && (
                     <p className="text-[10px] text-gray-400">VAT: {supplier.vat_number}</p>
                   )}

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { displayName as dn } from '@/lib/utils/display'
 import type { Category, VatTreatment } from '@/types'
 import ProductDrawer from './ProductDrawer'
 import CategoriesModal from './CategoriesModal'
@@ -139,17 +140,14 @@ function ProductCard({
 
       {/* Content */}
       <div className="p-3 flex flex-col flex-1 gap-1">
-        <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-1">{product.name}</p>
-        {product.name_ar && (
-          <p className="text-xs text-gray-400 line-clamp-1" dir="rtl">{product.name_ar}</p>
-        )}
+        <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-1">{dn(product.name, product.name_ar)}</p>
         <div className="flex items-center gap-1.5 flex-wrap mt-1">
           {product.categories && (
             <span
               className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
               style={{ backgroundColor: color + '22', color }}
             >
-              {product.categories.name}
+              {dn(product.categories.name, product.categories.name_ar)}
             </span>
           )}
           <Badge variant={VAT_BADGE[vat]}>{VAT_LABELS[vat]}</Badge>
@@ -192,7 +190,7 @@ function ProductListRow({
 
       {/* Name */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 truncate">{product.name}</p>
+        <p className="text-sm font-medium text-gray-900 truncate">{dn(product.name, product.name_ar)}</p>
         {product.sku && <p className="text-[11px] text-gray-400">SKU: {product.sku}</p>}
       </div>
 

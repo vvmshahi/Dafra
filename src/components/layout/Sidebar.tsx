@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Receipt, Package, Warehouse, Users,
   CreditCard, BarChart2, Truck, Settings, Building2,
-  LogOut, ChevronRight, FileText, UserSquare2,
+  LogOut, ChevronRight, FileText, UserSquare2, CalendarCheck2,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import type { LucideIcon } from 'lucide-react'
@@ -121,6 +121,23 @@ export default function Sidebar() {
             <p className="text-sidebar-text text-[10px] capitalize">{roleLabel}</p>
           </div>
         </div>
+        {!isSuperAdmin && (
+          <NavLink to="/day-closing">
+            {({ isActive }) => (
+              <div className={`
+                flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
+                transition-all duration-150 group
+                ${isActive
+                  ? 'bg-primary-500 text-white shadow-sm'
+                  : 'text-sidebar-text hover:bg-sidebar-hover hover:text-white'
+                }
+              `}>
+                <CalendarCheck2 size={16} className={isActive ? 'text-white' : 'group-hover:text-white'} />
+                Close Day
+              </div>
+            )}
+          </NavLink>
+        )}
         <button
           onClick={signOut}
           className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sidebar-text hover:bg-sidebar-hover hover:text-white text-sm font-medium transition-all duration-150 group"

@@ -26,6 +26,7 @@ import InvoicesPage        from '@/pages/invoices/InvoicesPage'
 import InvoiceDetailPage   from '@/pages/invoices/InvoiceDetailPage'
 import EmployeesPage       from '@/pages/employees/EmployeesPage'
 import ProfilePage         from '@/pages/profile/ProfilePage'
+import DayClosingPage      from '@/pages/day-closing/DayClosingPage'
 import NotFoundPage        from '@/pages/NotFoundPage'
 import LandingPage         from '@/pages/landing/LandingPage'
 
@@ -160,8 +161,9 @@ export default function App() {
               <Route path="/customers"     element={<CustomersPage />} />
               <Route path="/customers/:id" element={<CustomerDetailPage />} />
               <Route path="/expenses"   element={<ExpensesPage />} />
-              <Route path="/employees" element={<EmployeesPage />} />
-              <Route path="/profile"   element={<ProfilePage />} />
+              <Route path="/employees"   element={<EmployeesPage />} />
+              <Route path="/profile"    element={<ProfilePage />} />
+              <Route path="/day-closing" element={<DayClosingPage />} />
               <Route path="/reports"   element={<ReportsPage />} />
               <Route path="/suppliers" element={<SuppliersPage />} />
               <Route path="/settings"  element={<SettingsPage />} />

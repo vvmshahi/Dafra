@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { displayName as dn } from '@/lib/utils/display'
 import type { InventoryItem, Category, Supplier } from '@/types'
 import StockItemDrawer from './StockItemDrawer'
 
@@ -179,10 +180,7 @@ export default function StockOverviewTab() {
                     {catIcon}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{item.name}</p>
-                    {item.name_ar && (
-                      <p className="text-xs text-gray-400 truncate" dir="rtl">{item.name_ar}</p>
-                    )}
+                    <p className="text-sm font-semibold text-gray-900 truncate">{dn(item.name, item.name_ar)}</p>
                     {item.suppliers?.name && (
                       <p className="text-[10px] text-gray-400">{item.suppliers.name}</p>
                     )}
