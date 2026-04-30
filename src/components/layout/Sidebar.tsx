@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Receipt, Package, Warehouse, Users,
   CreditCard, BarChart2, Truck, Settings, Building2,
-  Server, LogOut, ChevronRight,
+  Server, LogOut, ChevronRight, FileText,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import type { LucideIcon } from 'lucide-react'
@@ -16,8 +16,9 @@ interface NavItem {
 
 const adminNav: NavItem[] = [
   { label: 'Dashboard',   labelAr: 'الرئيسية',    path: '/dashboard',  icon: LayoutDashboard },
-  { label: 'New Invoice', labelAr: 'فاتورة جديدة', path: '/pos',        icon: Receipt },
-  { label: 'Products',    labelAr: 'المنتجات',     path: '/products',   icon: Package },
+  { label: 'New Invoice', labelAr: 'فاتورة جديدة', path: '/pos',        icon: Receipt   },
+  { label: 'Invoices',   labelAr: 'الفواتير',      path: '/invoices',   icon: FileText  },
+  { label: 'Products',   labelAr: 'المنتجات',      path: '/products',   icon: Package   },
   { label: 'Inventory',   labelAr: 'المخزون',      path: '/inventory',  icon: Warehouse },
   { label: 'Customers',   labelAr: 'العملاء',      path: '/customers',  icon: Users },
   { label: 'Expenses',    labelAr: 'المصروفات',    path: '/expenses',   icon: CreditCard },

@@ -18,6 +18,8 @@ import ReportsPage         from '@/pages/reports/ReportsPage'
 import SuperAdminDashboard from '@/pages/super-admin/SuperAdminDashboard'
 import POSPage             from '@/pages/pos/POSPage'
 import SettingsPage        from '@/pages/settings/SettingsPage'
+import InvoicesPage        from '@/pages/invoices/InvoicesPage'
+import InvoiceDetailPage   from '@/pages/invoices/InvoiceDetailPage'
 import NotFoundPage        from '@/pages/NotFoundPage'
 
 // ── Shared spinner ────────────────────────────────────────────────────────
@@ -144,6 +146,8 @@ export default function App() {
 
               {/* Admin / owner / manager / accountant */}
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/invoices"       element={<InvoicesPage />} />
+              <Route path="/invoices/:id"   element={<InvoiceDetailPage />} />
               <Route path="/products"  element={<ProductsPage />} />
               <Route path="/inventory" element={<InventoryPage />} />
               <Route path="/customers"     element={<CustomersPage />} />
