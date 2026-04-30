@@ -80,6 +80,8 @@ function RequireNewUser() {
   if (!isAuthenticated) return <Navigate to="/login" replace />
   // Super admin has no tenant but is not a "new user"
   if (profile?.role === 'super_admin') return <Navigate to="/super-admin" replace />
+  // Branch accounts are created by owners — they never onboard independently
+  if (profile?.role === 'branch') return <Navigate to="/branch" replace />
   // Already onboarded → skip wizard
   if (profile?.tenant_id) return <Navigate to="/dashboard" replace />
   return <Outlet />

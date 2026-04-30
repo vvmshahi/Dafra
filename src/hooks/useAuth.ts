@@ -85,7 +85,7 @@ export function useAuth() {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName } },
+      options: { data: { full_name: fullName, role: 'owner' } },
     })
     if (error) console.error('[useAuth] signUp error:', error.message)
     return { error }
