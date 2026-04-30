@@ -1,0 +1,125 @@
+ZATCA Phase 1 QR Code — Test Vector
+Specification: Security Features Implementation Standards v1.2 (2023-05-19), Section 4.1
+Generated: 2026-05-01
+================================================================================
+
+PURPOSE
+-------
+This file demonstrates the expected TLV encoding and Base64 output for a ZATCA
+Phase 1 Simplified Tax Invoice QR code. Use it to validate the implementation
+in src/lib/zatca/qr.ts against a known-good vector.
+
+To verify independently:
+  1. Decode the Base64 string below with any Base64 decoder.
+  2. The resulting binary should match the hex dump byte-for-byte.
+  3. Each TLV field starts with: [tag byte][length byte][value bytes...].
+
+
+TEST INPUT
+----------
+  Seller Name  : شركة الاتحاد للتوريد  (Al Ittihad Supply Company — Arabic)
+  VAT Number   : 300000000000003       (15-digit KSA VAT registration number)
+  Raw Timestamp: 2024-01-15T10:30:45.123456+00:00  (as stored by Supabase)
+  Normalized TS: 2024-01-15T10:30:45Z             (ZATCA required format)
+  Total (SAR)  : 115.00                (invoice total WITH VAT, BT-112)
+  VAT (SAR)    : 15.00                 (VAT total, BT-110)
+
+
+TLV FIELD BREAKDOWN
+-------------------
+Tag 1 — Seller Name
+  tag byte = 0x01
+  length   = 38 bytes (0x26)   [Arabic: each char = 2 UTF-8 bytes; space = 1 byte]
+  value    = "شركة الاتحاد للتوريد"
+  UTF-8    = D8 B4 D8 B1 D9 83 D8 A9 20 D8 A7 D9 84 D8 A7 D8
+             AA D8 AD D8 A7 D8 AF 20 D9 84 D9 84 D8 AA D9 88
+             D8 B1 D9 8A D8 AF
+
+Tag 2 — VAT Registration Number
+  tag byte = 0x02
+  length   = 15 bytes (0x0F)
+  value    = "300000000000003"
+  UTF-8    = 33 30 30 30 30 30 30 30 30 30 30 30 30 30 33
+
+Tag 3 — Invoice Timestamp (UTC, ISO 8601, no milliseconds)
+  tag byte = 0x03
+  length   = 20 bytes (0x14)
+  value    = "2024-01-15T10:30:45Z"
+  UTF-8    = 32 30 32 34 2D 30 31 2D 31 35 54 31 30 3A 33 30
+             3A 34 35 5A
+  NOTE: Raw Supabase timestamp "2024-01-15T10:30:45.123456+00:00" is normalized
+        to "2024-01-15T10:30:45Z" before encoding. The spec example (p.26) is
+        "2022-02-21T12:13:57Z" — UTC timezone, no fractional seconds.
+
+Tag 4 — Invoice Total With VAT (BT-112)
+  tag byte = 0x04
+  length   = 6 bytes (0x06)
+  value    = "115.00"
+  UTF-8    = 31 31 35 2E 30 30
+
+Tag 5 — VAT Amount (BT-110)
+  tag byte = 0x05
+  length   = 5 bytes (0x05)
+  value    = "15.00"
+  UTF-8    = 31 35 2E 30 30
+
+
+COMBINED BYTE ARRAY (94 bytes total)
+-------------------------------------
+Offset 000:  01 26 D8 B4 D8 B1 D9 83 D8 A9 20 D8 A7 D9 84 D8
+Offset 016:  A7 D8 AA D8 AD D8 A7 D8 AF 20 D9 84 D9 84 D8 AA
+Offset 032:  D9 88 D8 B1 D9 8A D8 AF 02 0F 33 30 30 30 30 30
+Offset 048:  30 30 30 30 30 30 30 30 33 03 14 32 30 32 34 2D
+Offset 064:  30 31 2D 31 35 54 31 30 3A 33 30 3A 34 35 5A 04
+Offset 080:  06 31 31 35 2E 30 30 05 05 31 35 2E 30 30
+
+Field boundaries:
+  Bytes  0-39  : Tag 1 (0x01) — 2-byte header + 38-byte Arabic seller name
+  Bytes 40-56  : Tag 2 (0x02) — 2-byte header + 15-byte VAT number
+  Bytes 57-78  : Tag 3 (0x03) — 2-byte header + 20-byte timestamp
+  Bytes 79-86  : Tag 4 (0x04) — 2-byte header + 6-byte total
+  Bytes 87-93  : Tag 5 (0x05) — 2-byte header + 5-byte VAT amount
+
+
+BASE64 QR PAYLOAD
+-----------------
+(Pass this string directly to QRCode.toDataURL() or any QR generator)
+
+ASbYtNix2YPYqSDYp9mE2KfYqtit2KfYryDZhNmE2KrZiNix2YrYrwIPMzAwMDAwMDAwMDAwMDAz
+AxQyMDI0LTAxLTE1VDEwOjMwOjQ1WgQGMTE1LjAwBQUxNS4wMA==
+
+Round-trip verified: Base64 → decode → compare to hex dump ✓
+
+
+COMPLIANCE CHECKLIST
+--------------------
+[✓] Tags 1–5 in correct order (mandatory for Phase 1 from 4 Dec 2021)
+[✓] Each tag stored in exactly 1 byte (0x01–0x05)
+[✓] Length = UTF-8 byte count of value, stored in 1 unsigned byte
+[✓] Value encoded as UTF-8 bytes (Arabic handled correctly — 2 bytes per char)
+[✓] Amounts formatted to exactly 2 decimal places (spec Section 7.3, Amount type)
+[✓] Timestamp in YYYY-MM-DDTHH:MM:SSZ format (UTC, no fractional seconds)
+    — spec example: "2022-02-21T12:13:57Z" (Security Requirements v1.2, p.26)
+[✓] Base64 encoding applied to the full concatenated TLV byte array
+[✓] Tag 5 value = BT-110 (Invoice total VAT amount from the UBL XML invoice)
+[ ] Tags 6–9: NOT implemented (Phase 2 — requires server-side ECDSA signing)
+
+PHASE 2 TAGS (for reference, not yet implemented):
+  Tag 6: SHA256 hash of the UBL XML invoice (32 bytes — raw binary, not hex)
+  Tag 7: ECDSA signature of the XML hash (64 bytes, secp256k1)
+  Tag 8: ECDSA public key extracted from the signing private key
+  Tag 9: ECDSA signature of ZATCA's technical CA cryptographic stamp
+         (for Simplified Tax Invoices only)
+
+
+VALIDATION WITH ZATCA SDK
+--------------------------
+To validate this payload with the official ZATCA Java SDK (zatca-sdk-java.zip):
+  1. Extract the JAR from zatca-sdk-java.zip
+  2. Decode the Base64 string to binary
+  3. Parse TLV fields and verify each tag/length/value
+  4. The SDK's QrCodeChecker class accepts the Base64 string directly
+
+The ZATCA Sandbox API (zatca-api-sandbox-manual.pdf) does NOT validate
+Phase 1 QR codes directly — QR validation is done offline via the SDK or
+by a ZATCA-accredited verifier scanning the printed QR with their app.
