@@ -9,6 +9,7 @@ import SignupPage          from '@/pages/auth/SignupPage'
 import DashboardPage       from '@/pages/admin/DashboardPage'
 import SuperAdminDashboard from '@/pages/super-admin/SuperAdminDashboard'
 import POSPage             from '@/pages/pos/POSPage'
+import SettingsPage        from '@/pages/settings/SettingsPage'
 import NotFoundPage        from '@/pages/NotFoundPage'
 
 // ── Shared loading screen ──────────────────────────────────────────────────
@@ -95,7 +96,7 @@ export default function App() {
             <Route path="/expenses"  element={<div className="card p-8 text-gray-400 text-sm">Expenses — coming soon</div>} />
             <Route path="/reports"   element={<div className="card p-8 text-gray-400 text-sm">Reports — coming soon</div>} />
             <Route path="/suppliers" element={<div className="card p-8 text-gray-400 text-sm">Suppliers — coming soon</div>} />
-            <Route path="/settings"  element={<div className="card p-8 text-gray-400 text-sm">Settings — coming soon</div>} />
+            <Route path="/settings"  element={<SettingsPage />} />
           </Route>
         </Route>
 

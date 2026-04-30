@@ -31,13 +31,15 @@ export interface Database {
       }
       branches: {
         Row: Branch
-        Insert: Omit<Branch, 'id' | 'created_at' | 'updated_at' | 'invoice_counter'>
-        Update: Partial<Omit<Branch, 'id'>>
+        // Explicit insert/update types avoid TypeScript resolving union literals to
+        // `never` when supabase-js reconciles narrow types against its overloads.
+        Insert: BranchInsert
+        Update: BranchUpdate
       }
       user_profiles: {
         Row: UserProfile
         Insert: Omit<UserProfile, 'created_at' | 'updated_at'>
-        Update: Partial<Omit<UserProfile, 'id'>>
+        Update: UserProfileUpdate
       }
       zatca_certificates: {
         Row: ZatcaCertificate
@@ -195,6 +197,19 @@ export interface Branch {
   is_main_branch: boolean
   is_active: boolean
   invoice_counter: number
+  // Added by update-branches.sql
+  business_name: string | null
+  business_name_ar: string | null
+  vat_number: string | null
+  cr_number: string | null
+  logo_url: string | null
+  website: string | null
+  vat_mode: 'exclusive' | 'inclusive'
+  invoice_prefix: string | null
+  receipt_footer: string | null
+  show_logo: boolean
+  invoice_language: 'en' | 'ar' | 'both'
+  zatca_phase: 1 | 2
   created_at: string
   updated_at: string
 }
@@ -417,3 +432,46 @@ export interface SyncQueueItem {
   created_at: string
   updated_at: string
 }
+
+// ── Explicit Insert/Update helpers ─────────────────────────────────────────
+// Using string/number instead of narrow union literals avoids supabase-js
+// resolving overload parameter types to `never` when strict checks run.
+
+export interface BranchInsert {
+  tenant_id: string
+  name: string
+  name_ar?: string | null
+  branch_code?: string | null
+  phone?: string | null
+  email?: string | null
+  address?: string | null
+  address_ar?: string | null
+  building_number?: string | null
+  additional_number?: string | null
+  street?: string | null
+  street_ar?: string | null
+  district?: string | null
+  district_ar?: string | null
+  city?: string | null
+  city_ar?: string | null
+  country?: string | null
+  postal_code?: string | null
+  is_main_branch?: boolean
+  is_active?: boolean
+  business_name?: string | null
+  business_name_ar?: string | null
+  vat_number?: string | null
+  cr_number?: string | null
+  logo_url?: string | null
+  website?: string | null
+  vat_mode?: string | null
+  invoice_prefix?: string | null
+  receipt_footer?: string | null
+  show_logo?: boolean
+  invoice_language?: string | null
+  zatca_phase?: number | null
+}
+
+export type BranchUpdate = Partial<BranchInsert>
+
+export type UserProfileUpdate = Partial<Omit<UserProfile, 'id' | 'created_at' | 'updated_at'>>
