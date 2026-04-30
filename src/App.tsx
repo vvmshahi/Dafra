@@ -27,6 +27,7 @@ import InvoiceDetailPage   from '@/pages/invoices/InvoiceDetailPage'
 import EmployeesPage        from '@/pages/employees/EmployeesPage'
 import ProfilePage          from '@/pages/profile/ProfilePage'
 import DayClosingPage       from '@/pages/day-closing/DayClosingPage'
+import BranchDashboardPage  from '@/pages/branch/BranchDashboardPage'
 import ForgotPasswordPage   from '@/pages/auth/ForgotPasswordPage'
 import ResetPasswordPage    from '@/pages/auth/ResetPasswordPage'
 import TermsPage            from '@/pages/legal/TermsPage'
@@ -92,12 +93,19 @@ function RequireSuperAdmin() {
   return <Outlet />
 }
 
-/** POS-capable roles. */
+/** Branch role only — POS and branch dashboard. */
+function RequireBranch() {
+  const { hasRole, loading } = useAuth()
+  if (loading) return <FullscreenSpinner />
+  if (!hasRole('branch')) return <Navigate to="/dashboard" replace />
+  return <Outlet />
+}
+
+/** POS — branch role only. */
 function RequirePOS() {
   const { hasRole, loading } = useAuth()
   if (loading) return <FullscreenSpinner />
-  if (!hasRole('super_admin', 'owner', 'manager', 'cashier'))
-    return <Navigate to="/dashboard" replace />
+  if (!hasRole('branch')) return <Navigate to="/branch" replace />
   return <Outlet />
 }
 
@@ -111,7 +119,7 @@ function RootRoute() {
   if (!isAuthenticated) return <LandingPage />
   if (profile?.role === 'super_admin') return <Navigate to="/super-admin" replace />
   if (profile && !profile.tenant_id)   return <Navigate to="/onboarding"  replace />
-  if (profile?.role === 'cashier')     return <Navigate to="/pos"          replace />
+  if (profile?.role === 'branch')      return <Navigate to="/branch"       replace />
   return <Navigate to="/dashboard" replace />
 }
 
@@ -140,7 +148,14 @@ export default function App() {
             <Route path="/onboarding" element={<OnboardingPage />} />
           </Route>
 
-          {/* POS — full-screen, no sidebar, requires tenant */}
+          {/* Branch dashboard — full-screen, no sidebar, branch role only */}
+          <Route element={<RequireTenant />}>
+            <Route element={<RequireBranch />}>
+              <Route path="/branch" element={<BranchDashboardPage />} />
+            </Route>
+          </Route>
+
+          {/* POS — full-screen, no sidebar, branch role only */}
           <Route element={<RequireTenant />}>
             <Route element={<RequirePOS />}>
               <Route path="/pos" element={<POSPage />} />

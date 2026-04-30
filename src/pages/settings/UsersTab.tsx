@@ -15,20 +15,18 @@ import type { Branch, UserProfile, UserRole } from '@/types'
 const ROLE_LABELS: Record<UserRole, string> = {
   super_admin: 'Super Admin',
   owner:       'Owner',
-  manager:     'Manager',
-  cashier:     'Cashier',
+  branch:      'Branch',
   accountant:  'Accountant',
 }
 
 const ROLE_VARIANTS: Record<UserRole, 'danger' | 'warning' | 'info' | 'neutral' | 'success' | 'gold'> = {
   super_admin: 'danger',
   owner:       'gold',
-  manager:     'info',
-  cashier:     'neutral',
+  branch:      'info',
   accountant:  'success',
 }
 
-const ASSIGNABLE_ROLES: UserRole[] = ['owner', 'manager', 'cashier', 'accountant']
+const ASSIGNABLE_ROLES: UserRole[] = ['owner', 'branch', 'accountant']
 
 function initials(name: string | null) {
   if (!name) return 'U'
@@ -47,7 +45,7 @@ function InviteDrawer({
 }) {
   const [form, setForm] = useState({
     email: '', full_name: '',
-    role: 'cashier' as UserRole,
+    role: 'branch' as UserRole,
     branch_id: branches[0]?.id ?? '',
     phone: '',
   })

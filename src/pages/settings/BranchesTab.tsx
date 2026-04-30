@@ -3,7 +3,7 @@ import {
   Plus, Pencil, Trash2, Building2, CheckCircle2, X,
   Upload, Globe, Phone, Mail, MapPin, FileText,
   ReceiptText, ShieldCheck, ChevronDown, ChevronRight,
-  Star,
+  Star, KeyRound,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -42,6 +42,9 @@ type BranchForm = {
   zatca_phase: 1 | 2
   is_active: boolean
   is_main_branch: boolean
+  // branch login (new branches only)
+  login_email: string
+  login_password: string
 }
 
 const EMPTY_FORM: BranchForm = {
@@ -59,6 +62,8 @@ const EMPTY_FORM: BranchForm = {
   zatca_phase: 1,
   is_active: true,
   is_main_branch: false,
+  login_email: '',
+  login_password: '',
 }
 
 /* ── Helpers ─────────────────────────────────────────────────── */
@@ -167,6 +172,8 @@ function BranchDrawer({
           zatca_phase:      branch.zatca_phase ?? 1,
           is_active:        branch.is_active,
           is_main_branch:   branch.is_main_branch,
+          login_email:      '',
+          login_password:   '',
         }
       : { ...EMPTY_FORM },
   )
@@ -242,6 +249,24 @@ function BranchDrawer({
         if (error) throw error
         const logoUrl = await uploadLogo(data.id)
         if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', data.id)
+
+        // Create the branch login user if email provided
+        if (form.login_email.trim()) {
+          const password = form.login_password.trim() || `Dafra@${Math.random().toString(36).slice(2, 10)}`
+          const { error: authErr } = await supabase.auth.signUp({
+            email: form.login_email.trim(),
+            password,
+            options: {
+              data: {
+                full_name: form.name.trim(),
+                tenant_id: tenantId,
+                branch_id: data.id,
+                role:      'branch',
+              },
+            },
+          })
+          if (authErr) console.warn('Branch user creation failed:', authErr.message)
+        }
       } else {
         const { error } = await q.from('branches').update(payload).eq('id', branch!.id)
         if (error) throw error
@@ -477,6 +502,25 @@ function BranchDrawer({
               </div>
             )}
           </div>
+
+          {/* ── BRANCH LOGIN (new branches only) ──────── */}
+          {isNew && (
+            <div className={sectionClass(true)}>
+              <SectionHeader icon={KeyRound} title="Branch Login Credentials" open={true} toggle={() => {}}
+                color="text-indigo-600" bg="bg-indigo-50" />
+              <div className="px-5 py-4 space-y-3">
+                <p className="text-xs text-gray-400">
+                  Optional — create a login so this branch can access the POS and branch dashboard.
+                  The password can be changed later from the Users tab.
+                </p>
+                <Input label="Login Email" icon={Mail} type="email" value={form.login_email}
+                  onChange={e => set('login_email')(e.target.value)} placeholder="branch@company.com" />
+                <Input label="Initial Password" icon={KeyRound} type="password" value={form.login_password}
+                  onChange={e => set('login_password')(e.target.value)} placeholder="Min. 8 characters"
+                  helperText="Leave blank to auto-generate" />
+              </div>
+            </div>
+          )}
 
           {/* Error */}
           {error && (

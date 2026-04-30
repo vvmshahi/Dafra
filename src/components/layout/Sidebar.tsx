@@ -3,6 +3,7 @@ import {
   LayoutDashboard, Receipt, Package, Warehouse, Users,
   CreditCard, BarChart2, Truck, Settings, Building2,
   LogOut, ChevronRight, FileText, UserSquare2, CalendarCheck2,
+  Store,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import type { LucideIcon } from 'lucide-react'
@@ -14,11 +15,10 @@ interface NavItem {
   icon: LucideIcon
 }
 
-const adminNav: NavItem[] = [
+const ownerNav: NavItem[] = [
   { label: 'Dashboard',   labelAr: 'الرئيسية',    path: '/dashboard',  icon: LayoutDashboard },
-  { label: 'New Invoice', labelAr: 'فاتورة جديدة', path: '/pos',        icon: Receipt   },
-  { label: 'Invoices',   labelAr: 'الفواتير',      path: '/invoices',   icon: FileText  },
-  { label: 'Products',   labelAr: 'المنتجات',      path: '/products',   icon: Package   },
+  { label: 'Invoices',    labelAr: 'الفواتير',     path: '/invoices',   icon: FileText  },
+  { label: 'Products',    labelAr: 'المنتجات',     path: '/products',   icon: Package   },
   { label: 'Inventory',   labelAr: 'المخزون',      path: '/inventory',  icon: Warehouse },
   { label: 'Customers',   labelAr: 'العملاء',      path: '/customers',  icon: Users },
   { label: 'Expenses',    labelAr: 'المصروفات',    path: '/expenses',   icon: CreditCard },
@@ -26,6 +26,13 @@ const adminNav: NavItem[] = [
   { label: 'Employees',   labelAr: 'الموظفون',     path: '/employees',  icon: UserSquare2 },
   { label: 'Suppliers',   labelAr: 'الموردون',     path: '/suppliers',  icon: Truck },
   { label: 'Settings',    labelAr: 'الإعدادات',    path: '/settings',   icon: Settings },
+]
+
+const branchNav: NavItem[] = [
+  { label: 'My Branch',   labelAr: 'فرعي',         path: '/branch',     icon: Store },
+  { label: 'New Sale',    labelAr: 'بيع جديد',     path: '/pos',        icon: Receipt },
+  { label: 'Invoices',    labelAr: 'الفواتير',     path: '/invoices',   icon: FileText },
+  { label: 'Expenses',    labelAr: 'المصروفات',    path: '/expenses',   icon: CreditCard },
 ]
 
 const superAdminNav: NavItem[] = [
@@ -57,18 +64,17 @@ export default function Sidebar() {
   const location = useLocation()
 
   const isSuperAdmin = profile?.role === 'super_admin'
-  const navItems     = isSuperAdmin ? superAdminNav : adminNav
+  const isBranch     = profile?.role === 'branch'
 
-  // Subtitle: tenant business name for regular users, blank for super admin
+  const navItems = isSuperAdmin ? superAdminNav : isBranch ? branchNav : ownerNav
+
   const subtitle = isSuperAdmin ? 'Super Admin Console' : (tenant?.name ?? 'Dafra Platform')
 
-  // Display name: full_name → email prefix → 'User'
   const displayName = profile?.full_name
     ?? user?.email?.split('@')[0]
     ?? 'User'
 
-  // Role label
-  const roleLabel = profile?.role?.replace(/_/g, ' ') ?? ''
+  const roleLabel = profile?.role === 'branch' ? 'Branch' : (profile?.role?.replace(/_/g, ' ') ?? '')
 
   return (
     <aside className="w-[240px] flex-shrink-0 bg-sidebar flex flex-col h-full shadow-sidebar">
@@ -121,7 +127,7 @@ export default function Sidebar() {
             <p className="text-sidebar-text text-[10px] capitalize">{roleLabel}</p>
           </div>
         </div>
-        {!isSuperAdmin && (
+        {!isSuperAdmin && !isBranch && (
           <NavLink to="/day-closing">
             {({ isActive }) => (
               <div className={`
@@ -138,6 +144,21 @@ export default function Sidebar() {
             )}
           </NavLink>
         )}
+        <NavLink to="/profile">
+          {({ isActive }) => (
+            <div className={`
+              flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
+              transition-all duration-150 group
+              ${isActive
+                ? 'bg-primary-500 text-white shadow-sm'
+                : 'text-sidebar-text hover:bg-sidebar-hover hover:text-white'
+              }
+            `}>
+              <UserSquare2 size={16} className={isActive ? 'text-white' : 'group-hover:text-white'} />
+              Profile
+            </div>
+          )}
+        </NavLink>
         <button
           onClick={signOut}
           className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sidebar-text hover:bg-sidebar-hover hover:text-white text-sm font-medium transition-all duration-150 group"

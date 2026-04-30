@@ -1,7 +1,7 @@
 // Auto-generated types matching supabase/schema.sql
 // Run `supabase gen types typescript` to regenerate after schema changes.
 
-export type UserRole = 'super_admin' | 'owner' | 'manager' | 'cashier' | 'accountant'
+export type UserRole = 'super_admin' | 'owner' | 'branch' | 'accountant'
 export type VatExpenseTreatment = 'no_vat' | 'included' | 'on_top'
 export type ExpensePaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'other'
 export type InvoiceType = 'standard' | 'simplified' | 'credit_note' | 'debit_note'

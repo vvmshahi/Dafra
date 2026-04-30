@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import {
   TrendingUp, ShoppingBag, Users, FileText,
   Plus, ArrowRight, CheckCircle2, Clock, AlertCircle,
-  Receipt, Package, Loader2,
+  Receipt, Package, Loader2, Building2, Store,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
@@ -16,41 +15,25 @@ import { useAuth } from '@/hooks/useAuth'
 
 const db = () => supabase as any
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function todayRange() {
   const start = new Date(); start.setHours(0, 0, 0, 0)
   const end   = new Date(); end.setHours(23, 59, 59, 999)
   return { start: start.toISOString(), end: end.toISOString() }
 }
 
-function last7Days(): { day: string; sales: number }[] {
-  const result = []
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    result.push({
-      day:   d.toLocaleDateString('en-US', { weekday: 'short' }),
-      date:  d.toISOString().slice(0, 10),
-      sales: 0,
-    })
-  }
-  return result
-}
-
 const statusConfig = {
-  posted:   { variant: 'success' as const, label: 'Posted',   icon: CheckCircle2 },
-  draft:    { variant: 'neutral' as const, label: 'Draft',    icon: AlertCircle },
-  paid:     { variant: 'success' as const, label: 'Paid',     icon: CheckCircle2 },
-  pending:  { variant: 'warning' as const, label: 'Pending',  icon: Clock },
-  void:     { variant: 'danger'  as const, label: 'Void',     icon: AlertCircle },
+  posted:  { variant: 'success' as const, label: 'Posted',  icon: CheckCircle2 },
+  draft:   { variant: 'neutral' as const, label: 'Draft',   icon: AlertCircle },
+  paid:    { variant: 'success' as const, label: 'Paid',    icon: CheckCircle2 },
+  pending: { variant: 'warning' as const, label: 'Pending', icon: Clock },
+  void:    { variant: 'danger'  as const, label: 'Void',    icon: AlertCircle },
 }
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 
-function StatCard({ label, value, sub, icon: Icon, gradient, iconBg, loading }: {
+function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
   label: string; value: React.ReactNode; sub: string
-  icon: React.ElementType; gradient: string; iconBg: string; loading?: boolean
+  icon: React.ElementType; gradient: string; loading?: boolean
 }) {
   return (
     <div className={`relative overflow-hidden rounded-2xl p-6 ${gradient}`}>
@@ -63,7 +46,7 @@ function StatCard({ label, value, sub, icon: Icon, gradient, iconBg, loading }: 
           }
           <p className="mt-1 text-xs text-white/60">{sub}</p>
         </div>
-        <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+        <div className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0">
           <Icon size={20} className="text-white" />
         </div>
       </div>
@@ -82,6 +65,65 @@ function ChartTooltip({ active, payload, label }: any) {
   )
 }
 
+// ── Branch card ────────────────────────────────────────────────────────────────
+
+interface BranchStat {
+  id: string
+  name: string
+  logo_url: string | null
+  is_active: boolean
+  is_main_branch: boolean
+  todaySales: number
+  todayCount: number
+}
+
+function BranchStatCard({ branch, loading }: { branch: BranchStat; loading: boolean }) {
+  return (
+    <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm p-5 ${!branch.is_active ? 'opacity-60' : ''}`}>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+          {branch.logo_url
+            ? <img src={branch.logo_url} alt={branch.name} className="w-full h-full object-cover" />
+            : <Store size={18} className="text-gray-400" />
+          }
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-sm text-gray-900 truncate">{branch.name}</span>
+            {branch.is_main_branch && (
+              <span className="text-[9px] font-bold bg-gold-500/10 text-gold-700 px-1.5 py-0.5 rounded-full ring-1 ring-gold-500/20 flex-shrink-0">
+                MAIN
+              </span>
+            )}
+          </div>
+          <Badge variant={branch.is_active ? 'success' : 'neutral'} dot className="mt-0.5 text-[10px]">
+            {branch.is_active ? 'Active' : 'Inactive'}
+          </Badge>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-primary-50 rounded-xl p-3">
+          <p className="text-[10px] text-primary-600 font-medium">Today's Sales</p>
+          {loading
+            ? <div className="h-5 w-16 bg-primary-100 rounded animate-pulse mt-1" />
+            : <p className="text-base font-bold text-primary-700 mt-0.5 tabular-nums">
+                <Rial amount={branch.todaySales} />
+              </p>
+          }
+        </div>
+        <div className="bg-gray-50 rounded-xl p-3">
+          <p className="text-[10px] text-gray-500 font-medium">Invoices</p>
+          {loading
+            ? <div className="h-5 w-8 bg-gray-100 rounded animate-pulse mt-1" />
+            : <p className="text-base font-bold text-gray-800 mt-0.5">{branch.todayCount}</p>
+          }
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -92,36 +134,48 @@ export default function DashboardPage() {
   const [statsLoading, setStatsLoading] = useState(true)
   const [chartLoading, setChartLoading] = useState(true)
   const [invLoading,   setInvLoading]   = useState(true)
+  const [branchLoading, setBranchLoading] = useState(true)
 
   const [todaySales,    setTodaySales]    = useState(0)
   const [todayCount,    setTodayCount]    = useState(0)
   const [productCount,  setProductCount]  = useState(0)
   const [customerCount, setCustomerCount] = useState(0)
-  const [salesData,     setSalesData]     = useState(last7Days())
+  const [salesData,     setSalesData]     = useState<{ day: string; sales: number }[]>([])
   const [recentInvs,    setRecentInvs]    = useState<any[]>([])
+  const [branchStats,   setBranchStats]   = useState<BranchStat[]>([])
 
   const tid = profile?.tenant_id
 
-  // KPI stats
+  // KPI stats + branch breakdown
   const loadStats = useCallback(async () => {
-    if (!tid) { setStatsLoading(false); return }
+    if (!tid) { setStatsLoading(false); setBranchLoading(false); return }
     setStatsLoading(true)
+    setBranchLoading(true)
     const { start, end } = todayRange()
-    const [todayRes, prodRes, custRes] = await Promise.all([
-      db().from('invoices')
-        .select('total_amount, id')
-        .eq('tenant_id', tid)
-        .gte('created_at', start)
-        .lte('created_at', end),
+    const [todayRes, prodRes, custRes, branchRes] = await Promise.all([
+      db().from('invoices').select('total_amount, id, branch_id').eq('tenant_id', tid).gte('created_at', start).lte('created_at', end),
       db().from('products').select('id', { count: 'exact', head: true }).eq('tenant_id', tid).eq('is_active', true),
       db().from('customers').select('id', { count: 'exact', head: true }).eq('tenant_id', tid).eq('is_active', true),
+      db().from('branches').select('id, name, logo_url, is_active, is_main_branch').eq('tenant_id', tid).order('is_main_branch', { ascending: false }).order('created_at', { ascending: true }),
     ])
+
     const invs = todayRes.data ?? []
     setTodaySales(invs.reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0))
     setTodayCount(invs.length)
     setProductCount(prodRes.count ?? 0)
     setCustomerCount(custRes.count ?? 0)
     setStatsLoading(false)
+
+    const branches: BranchStat[] = (branchRes.data ?? []).map((b: any) => {
+      const bInvs = invs.filter((i: any) => i.branch_id === b.id)
+      return {
+        ...b,
+        todaySales: bInvs.reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0),
+        todayCount: bInvs.length,
+      }
+    })
+    setBranchStats(branches)
+    setBranchLoading(false)
   }, [tid])
 
   // Sales chart
@@ -129,7 +183,7 @@ export default function DashboardPage() {
     if (!tid) { setChartLoading(false); return }
     setChartLoading(true)
     const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
-    const from = new Date(); from.setDate(from.getDate() - (days - 1)); from.setHours(0,0,0,0)
+    const from = new Date(); from.setDate(from.getDate() - (days - 1)); from.setHours(0, 0, 0, 0)
 
     const { data } = await db()
       .from('invoices')
@@ -138,7 +192,6 @@ export default function DashboardPage() {
       .gte('invoice_date', from.toISOString().slice(0, 10))
       .order('invoice_date', { ascending: true })
 
-    // Build daily buckets
     const buckets: Record<string, number> = {}
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date(); d.setDate(d.getDate() - i)
@@ -149,16 +202,13 @@ export default function DashboardPage() {
       if (key && key in buckets) buckets[key] += Number(inv.total_amount ?? 0)
     }
 
-    const grouped = Object.entries(buckets).map(([date, sales]) => {
+    setSalesData(Object.entries(buckets).map(([date, sales]) => {
       const d = new Date(date + 'T00:00:00')
       const label = days <= 7
         ? d.toLocaleDateString('en-US', { weekday: 'short' })
-        : days <= 30
-          ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-          : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       return { day: label, sales }
-    })
-    setSalesData(grouped)
+    }))
     setChartLoading(false)
   }, [tid, period])
 
@@ -168,7 +218,7 @@ export default function DashboardPage() {
     setInvLoading(true)
     const { data } = await db()
       .from('invoices')
-      .select('id, invoice_number, total_amount, status, invoice_date, customers(name)')
+      .select('id, invoice_number, total_amount, status, invoice_date, customers(name), branches(name)')
       .eq('tenant_id', tid)
       .order('created_at', { ascending: false })
       .limit(6)
@@ -176,8 +226,8 @@ export default function DashboardPage() {
     setInvLoading(false)
   }, [tid])
 
-  useEffect(() => { loadStats() },   [loadStats])
-  useEffect(() => { loadChart() },   [loadChart])
+  useEffect(() => { loadStats() },    [loadStats])
+  useEffect(() => { loadChart() },    [loadChart])
   useEffect(() => { loadInvoices() }, [loadInvoices])
 
   return (
@@ -188,10 +238,9 @@ export default function DashboardPage() {
         <StatCard
           label="Today's Sales"
           value={<Rial amount={todaySales} />}
-          sub={`${todayCount} invoice${todayCount !== 1 ? 's' : ''} today`}
+          sub={`${todayCount} invoice${todayCount !== 1 ? 's' : ''} across all branches`}
           icon={TrendingUp}
           gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28]"
-          iconBg="bg-white/15"
           loading={statsLoading}
         />
         <StatCard
@@ -200,16 +249,14 @@ export default function DashboardPage() {
           sub="Active products"
           icon={Package}
           gradient="bg-gradient-to-br from-[#C8A96E] to-[#a8893e]"
-          iconBg="bg-white/15"
           loading={statsLoading}
         />
         <StatCard
           label="Invoices Today"
           value={String(todayCount)}
-          sub="Posted this session"
+          sub="All branches combined"
           icon={FileText}
           gradient="bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]"
-          iconBg="bg-white/15"
           loading={statsLoading}
         />
         <StatCard
@@ -218,10 +265,38 @@ export default function DashboardPage() {
           sub="Registered customers"
           icon={Users}
           gradient="bg-gradient-to-br from-[#7c3aed] to-[#5b21b6]"
-          iconBg="bg-white/15"
           loading={statsLoading}
         />
       </div>
+
+      {/* ── Branch cards ─────────────────────────────────────────── */}
+      {(branchLoading || branchStats.length > 0) && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+              <Building2 size={15} className="text-gray-400" />
+              Branches — Today
+            </h2>
+            <button onClick={() => navigate('/settings?tab=branches')}
+              className="text-xs text-primary-600 font-medium hover:text-primary-700 flex items-center gap-1">
+              Manage <ArrowRight size={12} />
+            </button>
+          </div>
+          {branchLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="bg-white rounded-2xl border border-gray-100 p-5 h-36 animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {branchStats.map(b => (
+                <BranchStatCard key={b.id} branch={b} loading={false} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Charts row ───────────────────────────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -231,7 +306,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-sm font-semibold text-gray-900">Sales Trend</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Daily revenue</p>
+              <p className="text-xs text-gray-400 mt-0.5">All branches combined</p>
             </div>
             <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
               {(['7d', '30d', '90d'] as const).map(p => (
@@ -281,10 +356,10 @@ export default function DashboardPage() {
         <div className="card p-6 flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-gray-900 mb-1">Quick Actions</h2>
           {[
-            { label: 'New Invoice',  desc: 'Open POS terminal',     icon: Receipt,    path: '/pos',       primary: true },
-            { label: 'Add Product',  desc: 'Add to catalog',         icon: Package,    path: '/products',  primary: false },
-            { label: 'Add Customer', desc: 'Register new customer',  icon: Users,      path: '/customers', primary: false },
-            { label: 'View Reports', desc: 'Sales & tax reports',    icon: TrendingUp, path: '/reports',   primary: false },
+            { label: 'Add Product',   desc: 'Add to catalog',        icon: Package,    path: '/products',  primary: false },
+            { label: 'Add Customer',  desc: 'Register new customer', icon: Users,      path: '/customers', primary: false },
+            { label: 'View Reports',  desc: 'Sales & tax reports',   icon: TrendingUp, path: '/reports',   primary: false },
+            { label: 'View Invoices', desc: 'All branches',          icon: Receipt,    path: '/invoices',  primary: false },
           ].map(action => (
             <button key={action.label} onClick={() => navigate(action.path)}
               className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left transition-all ${
@@ -324,7 +399,7 @@ export default function DashboardPage() {
 
         {invLoading ? (
           <div className="divide-y divide-gray-50">
-            {[1,2,3,4].map(i => (
+            {[1, 2, 3, 4].map(i => (
               <div key={i} className="px-6 py-4 flex items-center gap-4 animate-pulse">
                 <div className="h-3 bg-gray-100 rounded w-20" />
                 <div className="flex-1 h-3 bg-gray-100 rounded" />
@@ -336,20 +411,16 @@ export default function DashboardPage() {
           <div className="py-12 text-center">
             <ShoppingBag size={32} className="text-gray-200 mx-auto mb-3" />
             <p className="text-sm text-gray-500">No invoices yet</p>
-            <p className="text-xs text-gray-400 mt-1">Start your first sale from the POS</p>
-            <button onClick={() => navigate('/pos')}
-              className="btn-primary mt-4 flex items-center gap-2 mx-auto">
-              <Receipt size={14} /> Open POS
-            </button>
+            <p className="text-xs text-gray-400 mt-1">Branch users can start sales from the POS</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-50">
-                  {['Invoice', 'Customer', 'Amount', 'Status', 'Date'].map((h, i) => (
+                  {['Invoice', 'Customer', 'Branch', 'Amount', 'Status', 'Date'].map((h, i) => (
                     <th key={h} className={`px-6 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wide ${
-                      i === 2 ? 'text-right' : 'text-left'
+                      i === 3 ? 'text-right' : 'text-left'
                     }`}>{h}</th>
                   ))}
                 </tr>
@@ -366,6 +437,9 @@ export default function DashboardPage() {
                       </td>
                       <td className="px-6 py-3.5 text-sm text-gray-700">
                         {inv.customers?.name ?? 'Walk-in Customer'}
+                      </td>
+                      <td className="px-6 py-3.5 text-xs text-gray-400">
+                        {inv.branches?.name ?? '—'}
                       </td>
                       <td className="px-6 py-3.5 text-sm font-semibold text-gray-900 text-right tabular-nums">
                         <Rial amount={Number(inv.total_amount)} />
