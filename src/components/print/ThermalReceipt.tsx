@@ -1,0 +1,220 @@
+export interface ThermalItem {
+  name: string
+  qty: number
+  unitPrice: number
+  lineTotal: number
+}
+
+export interface ThermalReceiptProps {
+  id?: string
+  businessNameAr: string
+  businessNameEn: string
+  branchName?: string | null
+  address?: string | null
+  vatNumber?: string | null
+  phone?: string | null
+  invoiceNumber: string
+  date: string
+  time: string
+  cashierName?: string | null
+  items: ThermalItem[]
+  subtotal: number
+  taxAmount: number
+  total: number
+  paymentMethod: string
+  cashReceived?: number | null
+  change?: number | null
+  customerName?: string | null
+  qrDataUrl?: string | null
+  receiptFooter?: string | null
+}
+
+function sar(n: number): string {
+  return `SAR ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function TRow({ left, right, bold }: { left: string; right: string; bold?: boolean }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: bold ? 'bold' : 'normal', fontSize: bold ? '12px' : '11px', marginBottom: '1px' }}>
+      <span>{left}</span><span>{right}</span>
+    </div>
+  )
+}
+
+const Dash = () => (
+  <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />
+)
+
+export function printThermal(): void {
+  const existing = document.getElementById('thermal-print-style')
+  existing?.remove()
+  const s = document.createElement('style')
+  s.id = 'thermal-print-style'
+  s.textContent = `
+    @media print {
+      @page { size: 80mm auto; margin: 0 3mm; }
+      body { visibility: hidden !important; }
+      #invoice-printable { display: none !important; visibility: hidden !important; }
+      #thermal-receipt {
+        display: block !important;
+        visibility: visible !important;
+        position: fixed !important;
+        top: 0 !important; left: 0 !important;
+        width: 100% !important;
+        background: white !important;
+        z-index: 999999 !important;
+        padding: 4px !important;
+      }
+      #thermal-receipt * { visibility: visible !important; }
+    }
+  `
+  document.head.appendChild(s)
+  window.print()
+  s.remove()
+}
+
+export default function ThermalReceipt({
+  id = 'thermal-receipt',
+  businessNameAr, businessNameEn, branchName, address, vatNumber, phone,
+  invoiceNumber, date, time, cashierName,
+  items, subtotal, taxAmount, total,
+  paymentMethod, cashReceived, change,
+  customerName, qrDataUrl, receiptFooter,
+}: ThermalReceiptProps) {
+  return (
+    <div
+      id={id}
+      style={{
+        display: 'none',
+        fontFamily: 'monospace',
+        fontSize: '11px',
+        color: '#000',
+        width: '100%',
+        maxWidth: '300px',
+        margin: '0 auto',
+        padding: '6px',
+        boxSizing: 'border-box' as const,
+        lineHeight: '1.4',
+        background: 'white',
+      }}
+    >
+      {/* Business header */}
+      <div style={{ textAlign: 'center', marginBottom: '4px' }}>
+        {businessNameAr && (
+          <div style={{ fontFamily: 'Cairo, "Segoe UI", sans-serif', fontSize: '15px', fontWeight: 'bold', direction: 'rtl', marginBottom: '2px' }}>
+            {businessNameAr}
+          </div>
+        )}
+        {businessNameEn && (
+          <div style={{ fontSize: '12px', fontWeight: 600 }}>{businessNameEn}</div>
+        )}
+        {branchName && branchName !== businessNameEn && (
+          <div style={{ fontSize: '10px', color: '#444' }}>{branchName}</div>
+        )}
+        {address && (
+          <div style={{ fontSize: '10px', color: '#555', marginTop: '2px', lineHeight: '1.3' }}>{address}</div>
+        )}
+        {vatNumber && <div style={{ fontSize: '10px' }}>VAT: {vatNumber}</div>}
+        {phone && <div style={{ fontSize: '10px' }}>Tel: {phone}</div>}
+      </div>
+
+      <Dash />
+
+      {/* Invoice title */}
+      <div style={{ textAlign: 'center', margin: '4px 0' }}>
+        <div style={{ fontFamily: 'Cairo, "Segoe UI", sans-serif', fontSize: '13px', fontWeight: 'bold', direction: 'rtl' }}>
+          فاتورة ضريبية مبسطة
+        </div>
+        <div style={{ fontSize: '10px', color: '#555' }}>Simplified Tax Invoice</div>
+      </div>
+
+      <Dash />
+
+      {/* Invoice meta */}
+      <div style={{ fontSize: '11px', marginBottom: '4px' }}>
+        <div>Invoice: <strong>{invoiceNumber}</strong></div>
+        <div>Date: {date}</div>
+        <div>Time: {time}</div>
+        {cashierName && <div>Cashier: {cashierName}</div>}
+      </div>
+
+      <Dash />
+
+      {/* Line items */}
+      <div style={{ marginBottom: '4px' }}>
+        {items.map((item, i) => (
+          <div key={i} style={{ marginBottom: '3px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 600, wordBreak: 'break-word' }}>{item.name}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#333' }}>
+              <span>{item.qty} x {sar(item.unitPrice)}</span>
+              <span>{sar(item.lineTotal)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Dash />
+
+      {/* Totals */}
+      <div style={{ fontSize: '11px', marginBottom: '4px' }}>
+        <TRow left="Subtotal:" right={sar(subtotal)} />
+        <TRow left="VAT (15%):" right={sar(taxAmount)} />
+        <div style={{ borderTop: '1px solid #000', margin: '3px 0' }} />
+        <TRow left="TOTAL:" right={sar(total)} bold />
+      </div>
+
+      <Dash />
+
+      {/* Payment */}
+      <div style={{ fontSize: '11px', marginBottom: '4px' }}>
+        <div>Payment: <strong>{paymentMethod === 'cash' ? 'Cash' : 'Card'}</strong></div>
+        {paymentMethod === 'cash' && cashReceived != null && cashReceived > 0 && (
+          <TRow left="Received:" right={sar(cashReceived)} />
+        )}
+        {paymentMethod === 'cash' && (change ?? 0) > 0.005 && (
+          <TRow left="Change:" right={sar(change ?? 0)} />
+        )}
+      </div>
+
+      {/* Customer */}
+      {customerName && customerName !== 'Walk-in Customer' && (
+        <>
+          <Dash />
+          <div style={{ fontSize: '11px', marginBottom: '4px' }}>
+            Customer: <strong>{customerName}</strong>
+          </div>
+        </>
+      )}
+
+      <Dash />
+
+      {/* QR code */}
+      {qrDataUrl ? (
+        <div style={{ textAlign: 'center', margin: '6px 0' }}>
+          <img src={qrDataUrl} alt="ZATCA QR" style={{ width: '150px', height: '150px', display: 'block', margin: '0 auto' }} />
+          <div style={{ fontSize: '9px', color: '#888', marginTop: '2px' }}>Scan to verify invoice</div>
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center', fontSize: '10px', color: '#aaa', margin: '6px 0' }}>
+          [QR Code]
+        </div>
+      )}
+
+      <Dash />
+
+      {/* Footer */}
+      <div style={{ textAlign: 'center', fontSize: '11px', paddingBottom: '8px' }}>
+        <div style={{ fontFamily: 'Cairo, "Segoe UI", sans-serif', fontSize: '13px', direction: 'rtl', marginBottom: '2px' }}>
+          شكراً لزيارتكم
+        </div>
+        <div style={{ fontSize: '10px' }}>Thank you!</div>
+        {receiptFooter && (
+          <div style={{ fontSize: '10px', color: '#555', marginTop: '4px' }}>{receiptFooter}</div>
+        )}
+        <div style={{ fontSize: '9px', color: '#bbb', marginTop: '6px' }}>
+          Powered by دفرة (Dafra)
+        </div>
+      </div>
+    </div>
+  )
+}

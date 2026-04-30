@@ -2,12 +2,16 @@ import { useState, useEffect, useRef } from 'react'
 import {
   Search, Plus, Minus, Trash2, CreditCard, Banknote,
   Receipt, X, ChevronDown, User, Check, Loader2,
-  ShoppingBag, AlertCircle, Zap,
+  ShoppingBag, AlertCircle, Zap, Printer,
 } from 'lucide-react'
+import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { displayName as dn } from '@/lib/utils/display'
+import { buildZatcaQR } from '@/lib/zatca/qr'
+import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
+import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import type { Branch, VatTreatment } from '@/types/database'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -50,12 +54,25 @@ interface CartItem {
 
 interface ReceiptData {
   invoiceNumber: string
+  invoiceId: string
   total: number
   taxAmount: number
   subtotal: number
   paymentMethod: 'cash' | 'card'
   change: number
+  cashReceived: number
   customerName: string
+  customerPhone: string | null
+  cashierName: string
+  items: ThermalItem[]
+  createdAt: string
+  businessNameAr: string
+  businessNameEn: string
+  branchName: string
+  branchAddress: string | null
+  vatNumber: string
+  phone: string | null
+  receiptFooter: string | null
 }
 
 // ── VAT helpers ───────────────────────────────────────────────────────────────
@@ -188,60 +205,164 @@ function QuickExpenseModal({
 // ── Receipt overlay ───────────────────────────────────────────────────────────
 
 function ReceiptView({ receipt, onNewSale }: { receipt: ReceiptData; onNewSale: () => void }) {
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function genQR() {
+      try {
+        const payload = buildZatcaQR({
+          sellerName:  receipt.businessNameAr || receipt.businessNameEn,
+          vatNumber:   receipt.vatNumber,
+          timestamp:   receipt.createdAt,
+          totalAmount: receipt.total,
+          vatAmount:   receipt.taxAmount,
+        })
+        const url = await QRCode.toDataURL(payload, {
+          errorCorrectionLevel: 'M', width: 160, margin: 1,
+          color: { dark: '#0F2419', light: '#FFFFFF' },
+        })
+        setQrDataUrl(url)
+      } catch {}
+    }
+    genQR()
+  }, [receipt])
+
+  function shareWhatsApp() {
+    if (!receipt.customerPhone) return
+    const digits = receipt.customerPhone.replace(/\D/g, '')
+    const wa = digits.startsWith('966') ? digits : digits.startsWith('0') ? '966' + digits.slice(1) : digits
+    const date = new Date(receipt.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    const m = (n: number) => `SAR ${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+    const lines = receipt.items.map(i => `${i.name} × ${i.qty}  ${m(i.lineTotal)}`).join('\n')
+    const msg = `فاتورتك من ${receipt.businessNameAr || receipt.businessNameEn}
+━━━━━━━━━━━━━━━
+رقم الفاتورة: ${receipt.invoiceNumber}
+التاريخ: ${date}
+━━━━━━━━━━━━━━━
+${lines}
+━━━━━━━━━━━━━━━
+المجموع: ${m(receipt.subtotal)}
+الضريبة: ${m(receipt.taxAmount)}
+الإجمالي: ${m(receipt.total)}
+━━━━━━━━━━━━━━━
+شكراً لزيارتكم 🌿`
+    window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank')
+  }
+
+  const invDate = new Date(receipt.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const invTime = new Date(receipt.createdAt).toLocaleTimeString('en-SA', { hour: '2-digit', minute: '2-digit' })
+
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0F2419]/90">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
-        <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 px-6 py-8 text-center text-white">
-          <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
-            <Check size={32} strokeWidth={3} />
-          </div>
-          <p className="text-2xl font-bold">Payment Received!</p>
-          <p className="text-emerald-100 text-sm mt-1">{receipt.invoiceNumber}</p>
-        </div>
-        <div className="p-6 space-y-3">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Customer</span>
-            <span className="font-medium text-gray-800">{receipt.customerName}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Method</span>
-            <span className="font-medium text-gray-800 capitalize">{receipt.paymentMethod}</span>
-          </div>
-          <div className="border-t border-gray-100 pt-3 space-y-1.5">
-            <div className="flex justify-between text-sm text-gray-500">
-              <span>Net Amount</span>
-              <span className="tabular-nums"><Rial amount={receipt.subtotal} /></span>
+    <>
+      {/* Hidden thermal receipt — rendered for print only */}
+      <ThermalReceipt
+        businessNameAr={receipt.businessNameAr}
+        businessNameEn={receipt.businessNameEn}
+        branchName={receipt.branchName}
+        address={receipt.branchAddress}
+        vatNumber={receipt.vatNumber}
+        phone={receipt.phone}
+        invoiceNumber={receipt.invoiceNumber}
+        date={invDate}
+        time={invTime}
+        cashierName={receipt.cashierName}
+        items={receipt.items}
+        subtotal={receipt.subtotal}
+        taxAmount={receipt.taxAmount}
+        total={receipt.total}
+        paymentMethod={receipt.paymentMethod}
+        cashReceived={receipt.cashReceived}
+        change={receipt.change}
+        customerName={receipt.customerName}
+        qrDataUrl={qrDataUrl}
+        receiptFooter={receipt.receiptFooter}
+      />
+
+      {/* Success overlay */}
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0F2419]/90">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+
+          {/* Banner */}
+          <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 px-6 py-8 text-center text-white">
+            <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
+              <Check size={32} strokeWidth={3} />
             </div>
-            <div className="flex justify-between text-sm text-gray-500">
-              <span>VAT (15%)</span>
-              <span className="tabular-nums"><Rial amount={receipt.taxAmount} /></span>
-            </div>
-            <div className="flex justify-between font-bold text-gray-900 text-lg pt-1.5 border-t border-gray-100">
-              <span>Total</span>
-              <span className="tabular-nums text-emerald-600"><Rial amount={receipt.total} /></span>
-            </div>
+            <p className="text-2xl font-bold">Payment Received!</p>
+            <p className="text-emerald-100 text-sm mt-1">{receipt.invoiceNumber}</p>
           </div>
-          {receipt.paymentMethod === 'cash' && receipt.change > 0.005 && (
-            <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex justify-between">
-              <span className="text-sm font-semibold text-amber-700">Change Due</span>
-              <span className="text-lg font-bold text-amber-700 tabular-nums"><Rial amount={receipt.change} /></span>
+
+          {/* Summary */}
+          <div className="p-6 space-y-3">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Customer</span>
+              <span className="font-medium text-gray-800">{receipt.customerName}</span>
             </div>
-          )}
-          <div className="flex justify-center pt-1">
-            <div className="w-24 h-24 bg-gray-100 rounded-xl flex items-center justify-center">
-              <Receipt size={28} className="text-gray-300" />
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Method</span>
+              <span className="font-medium text-gray-800 capitalize">{receipt.paymentMethod}</span>
             </div>
+            <div className="border-t border-gray-100 pt-3 space-y-1.5">
+              <div className="flex justify-between text-sm text-gray-500">
+                <span>Net Amount</span>
+                <span className="tabular-nums"><Rial amount={receipt.subtotal} /></span>
+              </div>
+              <div className="flex justify-between text-sm text-gray-500">
+                <span>VAT (15%)</span>
+                <span className="tabular-nums"><Rial amount={receipt.taxAmount} /></span>
+              </div>
+              <div className="flex justify-between font-bold text-gray-900 text-lg pt-1.5 border-t border-gray-100">
+                <span>Total</span>
+                <span className="tabular-nums text-emerald-600"><Rial amount={receipt.total} /></span>
+              </div>
+            </div>
+            {receipt.paymentMethod === 'cash' && receipt.change > 0.005 && (
+              <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex justify-between">
+                <span className="text-sm font-semibold text-amber-700">Change Due</span>
+                <span className="text-lg font-bold text-amber-700 tabular-nums"><Rial amount={receipt.change} /></span>
+              </div>
+            )}
+
+            {/* QR code */}
+            <div className="flex justify-center pt-1">
+              {qrDataUrl ? (
+                <img src={qrDataUrl} alt="ZATCA QR" className="w-24 h-24 rounded-xl border border-gray-100 p-1" />
+              ) : (
+                <div className="w-24 h-24 bg-gray-100 rounded-xl flex items-center justify-center">
+                  <Loader2 size={20} className="animate-spin text-gray-300" />
+                </div>
+              )}
+            </div>
+            <p className="text-center text-[10px] text-gray-300">ZATCA QR Code</p>
           </div>
-          <p className="text-center text-[10px] text-gray-300">ZATCA QR — pending submission</p>
-        </div>
-        <div className="px-6 pb-6">
-          <button onClick={onNewSale}
-            className="w-full py-3 bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity">
-            New Sale
-          </button>
+
+          {/* Actions */}
+          <div className="px-6 pb-6 space-y-2">
+            <div className="flex gap-2">
+              <button
+                onClick={() => printThermal()}
+                className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
+              >
+                <Printer size={14} />
+                Print Receipt
+              </button>
+              {receipt.customerPhone && (
+                <button
+                  onClick={shareWhatsApp}
+                  className="flex-1 py-2.5 bg-[#25D366] text-white text-sm font-semibold rounded-xl hover:bg-[#22c55e] transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <WhatsAppIcon size={14} />
+                  WhatsApp
+                </button>
+              )}
+            </div>
+            <button onClick={onNewSale}
+              className="w-full py-3 bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity">
+              New Sale
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   )
 }
 
@@ -277,8 +398,16 @@ function ProductCard({ product, cartQty, onAdd }: {
 
 // ── POSPage ───────────────────────────────────────────────────────────────────
 
+function WhatsAppIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+    </svg>
+  )
+}
+
 export default function POSPage() {
-  const { profile } = useAuth()
+  const { profile, user } = useAuth()
   const searchRef = useRef<HTMLInputElement>(null)
 
   const [branch,     setBranch]     = useState<Branch | null>(null)
@@ -530,14 +659,38 @@ export default function POSPage() {
         paid_at:     new Date().toISOString(),
       })
 
+      const createdAt    = new Date().toISOString()
+      const branchAddr   = [
+        branch.building_number ? `Building ${branch.building_number}` : null,
+        branch.street, branch.district, branch.city,
+      ].filter(Boolean).join(', ')
+
       setReceipt({
         invoiceNumber,
-        total:         totals.total,
-        taxAmount:     totals.taxAmount,
-        subtotal:      totals.subtotal,
-        paymentMethod: payMethod,
+        invoiceId:      inv.id,
+        total:          totals.total,
+        taxAmount:      totals.taxAmount,
+        subtotal:       totals.subtotal,
+        paymentMethod:  payMethod,
         change,
-        customerName:  selectedCust?.name ?? 'Walk-in Customer',
+        cashReceived:   cashAmt,
+        customerName:   selectedCust?.name ?? 'Walk-in Customer',
+        customerPhone:  selectedCust?.phone ?? null,
+        cashierName:    profile?.full_name ?? user?.email?.split('@')[0] ?? 'Cashier',
+        items:          cart.map(i => ({
+          name:      i.nameAr?.trim() ? i.nameAr : i.name,
+          qty:       i.quantity,
+          unitPrice: i.price,
+          lineTotal: i.price * i.quantity,
+        })),
+        createdAt,
+        businessNameAr: branch.business_name_ar || branch.name_ar || branch.name,
+        businessNameEn: branch.business_name    || branch.name,
+        branchName:     branch.name,
+        branchAddress:  branchAddr || null,
+        vatNumber:      branch.vat_number ?? '',
+        phone:          branch.phone,
+        receiptFooter:  branch.receipt_footer,
       })
 
       setCart([])

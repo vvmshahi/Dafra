@@ -1,11 +1,20 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Printer, Download, RefreshCw, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { buildZatcaQR } from '@/lib/zatca/qr'
+import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
 import type { Invoice, InvoiceItem, Payment, Branch } from '@/types/database'
+
+function WhatsAppIcon({ size = 13 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+    </svg>
+  )
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -23,6 +32,7 @@ interface Customer {
   vat_number: string | null
   customer_type: string
   company_name: string | null
+  phone: string | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -124,7 +134,7 @@ export default function InvoiceDetailPage() {
         if (inv.customer_id) {
           fetches.push(
             supabase.from('customers')
-              .select('name, name_ar, vat_number, customer_type, company_name')
+              .select('name, name_ar, vat_number, customer_type, company_name, phone')
               .eq('id', inv.customer_id)
               .single()
           )
@@ -195,8 +205,35 @@ export default function InvoiceDetailPage() {
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
-  function handlePrint() {
+  function handlePrintA4() {
     window.print()
+  }
+
+  function handlePrintThermal() {
+    printThermal()
+  }
+
+  function handleWhatsApp() {
+    if (!customer?.phone) return
+    const digits = customer.phone.replace(/\D/g, '')
+    const wa = digits.startsWith('966') ? digits : digits.startsWith('0') ? '966' + digits.slice(1) : digits
+    const date = fmtDateTime(invoice!.created_at).date
+    const m = (n: number) => `SAR ${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+    const lines = items.map(i => `${i.name} × ${Number(i.quantity)}  ${m(Number(i.total))}`).join('\n')
+    const bizName = sellerNameAr || sellerNameEn
+    const msg = `فاتورتك من ${bizName}
+━━━━━━━━━━━━━━━
+رقم الفاتورة: ${invoice!.invoice_number}
+التاريخ: ${date}
+━━━━━━━━━━━━━━━
+${lines}
+━━━━━━━━━━━━━━━
+المجموع: ${m(Number(invoice!.subtotal))}
+الضريبة: ${m(Number(invoice!.tax_amount))}
+الإجمالي: ${m(Number(invoice!.total_amount))}
+━━━━━━━━━━━━━━━
+شكراً لزيارتكم 🌿`
+    window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank')
   }
 
   async function handleResend() {
@@ -256,8 +293,43 @@ export default function InvoiceDetailPage() {
     branch.postal_code,
   ].filter(Boolean).join(', ')
 
+  // ── Build thermal receipt data ────────────────────────────────────────────
+
+  const thermalItems = items.map(i => ({
+    name:      i.name_ar?.trim() ? i.name_ar : i.name,
+    qty:       Number(i.quantity),
+    unitPrice: Number(i.unit_price),
+    lineTotal: Number(i.total),
+  }))
+
+  const thermalAddress = [
+    branch.building_number ? `Building ${branch.building_number}` : null,
+    branch.street, branch.district, branch.city,
+  ].filter(Boolean).join(', ')
+
   return (
     <div className="max-w-4xl mx-auto space-y-4">
+
+      {/* ── Hidden thermal receipt (for print) ──────────── */}
+      <ThermalReceipt
+        businessNameAr={sellerNameAr}
+        businessNameEn={sellerNameEn}
+        branchName={branch.name}
+        address={thermalAddress || null}
+        vatNumber={vatNumber}
+        phone={branch.phone}
+        invoiceNumber={invoice.invoice_number}
+        date={invDate}
+        time={invTime}
+        items={thermalItems}
+        subtotal={Number(invoice.subtotal)}
+        taxAmount={Number(invoice.tax_amount)}
+        total={Number(invoice.total_amount)}
+        paymentMethod={payment?.method ?? 'card'}
+        customerName={customer?.name ?? null}
+        qrDataUrl={qrDataUrl}
+        receiptFooter={branch.receipt_footer}
+      />
 
       {/* ── Action bar (screen only) ─────────────────────── */}
       <div className="no-print flex items-center justify-between">
@@ -275,15 +347,22 @@ export default function InvoiceDetailPage() {
               Resend to ZATCA
             </button>
           )}
-          <button
+          {customer?.phone && (
+            <button onClick={handleWhatsApp}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-[#25D366] rounded-xl hover:bg-[#22c55e] transition-colors">
+              <WhatsAppIcon size={13} />
+              WhatsApp
+            </button>
+          )}
+          <button onClick={handlePrintThermal}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
-            <Download size={13} />
-            Download PDF
+            <Printer size={13} />
+            Print Receipt
           </button>
-          <button onClick={handlePrint}
+          <button onClick={handlePrintA4}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0F2419] rounded-xl hover:bg-[#1a3a28] transition-colors">
             <Printer size={13} />
-            Print Invoice
+            Print A4
           </button>
         </div>
       </div>
