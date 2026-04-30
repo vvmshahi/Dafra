@@ -100,6 +100,28 @@ export interface Database {
       get_my_branch_id: { Args: Record<never, never>; Returns: string }
       get_my_role: { Args: Record<never, never>; Returns: UserRole }
       is_super_admin: { Args: Record<never, never>; Returns: boolean }
+      complete_onboarding: {
+        Args: {
+          p_company_name:     string
+          p_company_name_ar?: string
+          p_vat_number?:      string
+          p_cr_number?:       string
+          p_city?:            string
+          p_country?:         string
+          p_phone?:           string
+          p_website?:         string
+          p_branch_name?:     string
+          p_branch_name_ar?:  string
+          p_vat_mode?:        string
+          p_invoice_prefix?:  string
+          p_building_number?: string
+          p_street?:          string
+          p_district?:        string
+          p_postal_code?:     string
+          p_plan_id?:         string
+        }
+        Returns: { tenant_id: string; branch_id: string }
+      }
     }
     Enums: {
       user_role: UserRole

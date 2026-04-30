@@ -52,11 +52,22 @@ function NavItemRow({ item, isActive }: { item: NavItem; isActive: boolean }) {
 }
 
 export default function Sidebar() {
-  const { profile, signOut } = useAuth()
+  const { profile, tenant, user, signOut } = useAuth()
   const location = useLocation()
 
   const isSuperAdmin = profile?.role === 'super_admin'
   const navItems     = isSuperAdmin ? superAdminNav : adminNav
+
+  // Subtitle: tenant business name for regular users, blank for super admin
+  const subtitle = isSuperAdmin ? 'Super Admin Console' : (tenant?.name ?? 'Dafra Platform')
+
+  // Display name: full_name → email prefix → 'User'
+  const displayName = profile?.full_name
+    ?? user?.email?.split('@')[0]
+    ?? 'User'
+
+  // Role label
+  const roleLabel = profile?.role?.replace(/_/g, ' ') ?? ''
 
   return (
     <aside className="w-[240px] flex-shrink-0 bg-sidebar flex flex-col h-full shadow-sidebar">
@@ -67,11 +78,11 @@ export default function Sidebar() {
           <div className="w-9 h-9 rounded-xl bg-gold-500 flex items-center justify-center flex-shrink-0 shadow-sm">
             <span className="text-sidebar font-black text-base leading-none">د</span>
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-white font-bold text-xl leading-none tracking-tight" style={{ fontFamily: 'Cairo, sans-serif' }}>
               دفرة
             </p>
-            <p className="text-sidebar-text text-xs mt-0.5">Dafra Platform</p>
+            <p className="text-sidebar-text text-xs mt-0.5 truncate" title={subtitle}>{subtitle}</p>
           </div>
         </div>
         {isSuperAdmin && (
@@ -101,14 +112,12 @@ export default function Sidebar() {
         <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl">
           <div className="w-8 h-8 rounded-xl bg-primary-500 flex items-center justify-center flex-shrink-0">
             <span className="text-white text-xs font-bold">
-              {(profile?.full_name ?? 'U').charAt(0).toUpperCase()}
+              {displayName.charAt(0).toUpperCase()}
             </span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-white text-xs font-semibold truncate">
-              {profile?.full_name ?? 'User'}
-            </p>
-            <p className="text-sidebar-text text-[10px] capitalize">{profile?.role?.replace('_', ' ')}</p>
+            <p className="text-white text-xs font-semibold truncate">{displayName}</p>
+            <p className="text-sidebar-text text-[10px] capitalize">{roleLabel}</p>
           </div>
         </div>
         <button
