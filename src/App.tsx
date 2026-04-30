@@ -11,6 +11,7 @@ import DashboardPage       from '@/pages/admin/DashboardPage'
 import ProductsPage         from '@/pages/products/ProductsPage'
 import CustomersPage        from '@/pages/customers/CustomersPage'
 import CustomerDetailPage   from '@/pages/customers/CustomerDetailPage'
+import ExpensesPage        from '@/pages/expenses/ExpensesPage'
 import SuperAdminDashboard from '@/pages/super-admin/SuperAdminDashboard'
 import POSPage             from '@/pages/pos/POSPage'
 import SettingsPage        from '@/pages/settings/SettingsPage'
@@ -144,7 +145,7 @@ export default function App() {
               <Route path="/inventory" element={<PlaceholderPage title="Inventory" />} />
               <Route path="/customers"     element={<CustomersPage />} />
               <Route path="/customers/:id" element={<CustomerDetailPage />} />
-              <Route path="/expenses"  element={<PlaceholderPage title="Expenses" />} />
+              <Route path="/expenses"  element={<ExpensesPage />} />
               <Route path="/reports"   element={<PlaceholderPage title="Reports" />} />
               <Route path="/suppliers" element={<PlaceholderPage title="Suppliers" />} />
               <Route path="/settings"  element={<SettingsPage />} />

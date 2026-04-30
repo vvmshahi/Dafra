@@ -2,6 +2,8 @@
 // Run `supabase gen types typescript` to regenerate after schema changes.
 
 export type UserRole = 'super_admin' | 'owner' | 'manager' | 'cashier' | 'accountant'
+export type VatExpenseTreatment = 'no_vat' | 'included' | 'on_top'
+export type ExpensePaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'other'
 export type InvoiceType = 'standard' | 'simplified' | 'credit_note' | 'debit_note'
 export type InvoiceStatus = 'draft' | 'posted' | 'cancelled'
 export type ZatcaStatus = 'not_submitted' | 'pending' | 'reported' | 'cleared' | 'failed'
@@ -85,6 +87,21 @@ export interface Database {
         Row: SyncQueueItem
         Insert: Omit<SyncQueueItem, 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Omit<SyncQueueItem, 'id'>>
+      }
+      expense_categories: {
+        Row: ExpenseCategory
+        Insert: ExpenseCategoryInsert
+        Update: ExpenseCategoryUpdate
+      }
+      expenses: {
+        Row: Expense
+        Insert: ExpenseInsert
+        Update: ExpenseUpdate
+      }
+      fixed_expenses: {
+        Row: FixedExpense
+        Insert: FixedExpenseInsert
+        Update: FixedExpenseUpdate
       }
     }
     Functions: {
@@ -577,3 +594,90 @@ export interface CustomerInsert {
 }
 
 export type CustomerUpdate = Partial<Omit<CustomerInsert, 'tenant_id'>>
+
+// ── Expense types (added by update-expenses.sql) ───────────────────────────
+
+export interface ExpenseCategory {
+  id: string
+  tenant_id: string | null    // NULL = system/global category
+  name: string
+  name_ar: string | null
+  color: string | null
+  icon: string | null
+  is_system: boolean
+  sort_order: number
+  created_at: string
+}
+
+export interface Expense {
+  id: string
+  tenant_id: string
+  branch_id: string
+  category_id: string | null
+  added_by: string | null
+  expense_date: string
+  description: string
+  vendor_name: string | null
+  amount: number
+  vat_treatment: VatExpenseTreatment
+  vat_amount: number
+  total_paid: number
+  payment_method: ExpensePaymentMethod
+  receipt_url: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface FixedExpense {
+  id: string
+  tenant_id: string
+  branch_id: string
+  category_id: string | null
+  name: string
+  monthly_amount: number
+  payment_method: ExpensePaymentMethod
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ExpenseCategoryInsert {
+  tenant_id?: string | null
+  name: string
+  name_ar?: string | null
+  color?: string | null
+  icon?: string | null
+  is_system?: boolean
+  sort_order?: number
+}
+export type ExpenseCategoryUpdate = Partial<ExpenseCategoryInsert>
+
+export interface ExpenseInsert {
+  tenant_id: string
+  branch_id: string
+  category_id?: string | null
+  added_by?: string | null
+  expense_date?: string
+  description: string
+  vendor_name?: string | null
+  amount: number
+  vat_treatment?: string
+  vat_amount?: number
+  total_paid?: number
+  payment_method?: string
+  receipt_url?: string | null
+  notes?: string | null
+}
+export type ExpenseUpdate = Partial<Omit<ExpenseInsert, 'tenant_id' | 'branch_id'>>
+
+export interface FixedExpenseInsert {
+  tenant_id: string
+  branch_id: string
+  category_id?: string | null
+  name: string
+  monthly_amount: number
+  payment_method?: string
+  is_active?: boolean
+}
+export type FixedExpenseUpdate = Partial<Omit<FixedExpenseInsert, 'tenant_id' | 'branch_id'>>
