@@ -24,9 +24,11 @@ import POSPage             from '@/pages/pos/POSPage'
 import SettingsPage        from '@/pages/settings/SettingsPage'
 import InvoicesPage        from '@/pages/invoices/InvoicesPage'
 import InvoiceDetailPage   from '@/pages/invoices/InvoiceDetailPage'
-import EmployeesPage       from '@/pages/employees/EmployeesPage'
-import ProfilePage         from '@/pages/profile/ProfilePage'
-import DayClosingPage      from '@/pages/day-closing/DayClosingPage'
+import EmployeesPage        from '@/pages/employees/EmployeesPage'
+import ProfilePage          from '@/pages/profile/ProfilePage'
+import DayClosingPage       from '@/pages/day-closing/DayClosingPage'
+import ForgotPasswordPage   from '@/pages/auth/ForgotPasswordPage'
+import ResetPasswordPage    from '@/pages/auth/ResetPasswordPage'
 import NotFoundPage        from '@/pages/NotFoundPage'
 import LandingPage         from '@/pages/landing/LandingPage'
 
@@ -118,8 +120,10 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         {/* ── Public ──────────────────────────────────────── */}
-        <Route path="/login"  element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/login"           element={<LoginPage />} />
+        <Route path="/signup"          element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password"  element={<ResetPasswordPage />} />
 
         {/* Root: landing page for guests, dashboard redirect for authenticated */}
         <Route path="/" element={<RootRoute />} />

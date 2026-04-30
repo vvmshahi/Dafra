@@ -1,6 +1,6 @@
-import { useState, FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Mail, Lock, ArrowRight } from 'lucide-react'
+import { Mail, Lock, ArrowRight, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -39,6 +39,7 @@ export default function LoginPage() {
   const navigate   = useNavigate()
   const location   = useLocation()
   const from       = (location.state as { from?: string })?.from ?? '/'
+  const successMsg = (location.state as { successMsg?: string })?.successMsg ?? null
 
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
@@ -141,6 +142,13 @@ export default function LoginPage() {
             <p className="text-gray-500 text-sm mt-1">Sign in to your Dafra account</p>
           </div>
 
+          {successMsg && (
+            <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 text-emerald-700 text-sm px-4 py-3 rounded-xl">
+              <CheckCircle2 size={16} className="mt-0.5 text-emerald-500 flex-shrink-0" />
+              {successMsg}
+            </div>
+          )}
+
           {error && (
             <div className="flex items-start gap-3 bg-red-50 border border-red-100 text-red-700 text-sm px-4 py-3 rounded-xl">
               <span className="mt-0.5 text-red-400">⚠</span>
@@ -175,9 +183,9 @@ export default function LoginPage() {
                 <input type="checkbox" className="rounded border-gray-300 text-primary-500 focus:ring-primary-500" />
                 Remember me
               </label>
-              <a href="#" className="text-primary-600 font-medium hover:text-primary-700">
+              <Link to="/forgot-password" className="text-primary-600 font-medium hover:text-primary-700">
                 Forgot password?
-              </a>
+              </Link>
             </div>
 
             <Button type="submit" loading={loading} className="w-full mt-2 gap-2">

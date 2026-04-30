@@ -92,6 +92,15 @@ export function useAuth() {
   }
 
   const signOut = async () => {
+    // Clear POS cart and any other app-level local storage keys
+    const toRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && (key.startsWith('pos_cart_') || key.startsWith('dafra_'))) {
+        toRemove.push(key)
+      }
+    }
+    toRemove.forEach(k => localStorage.removeItem(k))
     await supabase.auth.signOut()
   }
 
