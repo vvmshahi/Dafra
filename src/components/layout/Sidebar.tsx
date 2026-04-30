@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Receipt, Package, Warehouse, Users,
   CreditCard, BarChart2, Truck, Settings, Building2,
-  Server, LogOut, ChevronRight, FileText,
+  LogOut, ChevronRight, FileText,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import type { LucideIcon } from 'lucide-react'
@@ -28,11 +28,10 @@ const adminNav: NavItem[] = [
 ]
 
 const superAdminNav: NavItem[] = [
-  { label: 'Overview',       labelAr: 'نظرة عامة',   path: '/super-admin',               icon: LayoutDashboard },
-  { label: 'Tenants',        labelAr: 'العملاء',      path: '/super-admin/tenants',       icon: Building2 },
-  { label: 'Subscriptions',  labelAr: 'الاشتراكات',  path: '/super-admin/subscriptions', icon: CreditCard },
-  { label: 'System',         labelAr: 'النظام',       path: '/super-admin/system',        icon: Server },
-  { label: 'Settings',       labelAr: 'الإعدادات',    path: '/super-admin/settings',      icon: Settings },
+  { label: 'Overview',       labelAr: 'نظرة عامة',   path: '/super-admin',                icon: LayoutDashboard },
+  { label: 'Clients',        labelAr: 'العملاء',      path: '/super-admin/clients',        icon: Building2 },
+  { label: 'Subscriptions',  labelAr: 'الاشتراكات',  path: '/super-admin/subscriptions',  icon: CreditCard },
+  { label: 'Settings',       labelAr: 'الإعدادات',    path: '/super-admin/settings',       icon: Settings },
 ]
 
 function NavItemRow({ item, isActive }: { item: NavItem; isActive: boolean }) {

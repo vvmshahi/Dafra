@@ -15,12 +15,17 @@ import ExpensesPage        from '@/pages/expenses/ExpensesPage'
 import SuppliersPage       from '@/pages/suppliers/SuppliersPage'
 import InventoryPage       from '@/pages/inventory/InventoryPage'
 import ReportsPage         from '@/pages/reports/ReportsPage'
-import SuperAdminDashboard from '@/pages/super-admin/SuperAdminDashboard'
+import SuperAdminDashboard    from '@/pages/super-admin/SuperAdminDashboard'
+import ClientsPage             from '@/pages/super-admin/ClientsPage'
+import ClientDetailPage        from '@/pages/super-admin/ClientDetailPage'
+import SubscriptionsPage       from '@/pages/super-admin/SubscriptionsPage'
+import SuperAdminSettingsPage  from '@/pages/super-admin/SuperAdminSettingsPage'
 import POSPage             from '@/pages/pos/POSPage'
 import SettingsPage        from '@/pages/settings/SettingsPage'
 import InvoicesPage        from '@/pages/invoices/InvoicesPage'
 import InvoiceDetailPage   from '@/pages/invoices/InvoiceDetailPage'
 import NotFoundPage        from '@/pages/NotFoundPage'
+import LandingPage         from '@/pages/landing/LandingPage'
 
 // ── Shared spinner ────────────────────────────────────────────────────────
 
@@ -90,13 +95,13 @@ function RequirePOS() {
 }
 
 /**
- * Smart root redirect — sends each role to the right landing page.
- * New users without a tenant go to /onboarding.
+ * Root route: show the marketing landing page for guests,
+ * redirect authenticated users to their appropriate home.
  */
-function RootRedirect() {
+function RootRoute() {
   const { isAuthenticated, profile, loading } = useAuth()
-  if (loading)           return <FullscreenSpinner />
-  if (!isAuthenticated)  return <Navigate to="/login"       replace />
+  if (loading)          return <FullscreenSpinner />
+  if (!isAuthenticated) return <LandingPage />
   if (profile?.role === 'super_admin') return <Navigate to="/super-admin" replace />
   if (profile && !profile.tenant_id)   return <Navigate to="/onboarding"  replace />
   if (profile?.role === 'cashier')     return <Navigate to="/pos"          replace />
@@ -113,8 +118,8 @@ export default function App() {
         <Route path="/login"  element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
 
-        {/* Smart root redirect */}
-        <Route path="/" element={<RootRedirect />} />
+        {/* Root: landing page for guests, dashboard redirect for authenticated */}
+        <Route path="/" element={<RootRoute />} />
 
         {/* ── Authenticated ────────────────────────────────── */}
         <Route element={<RequireAuth />}>
@@ -137,11 +142,11 @@ export default function App() {
 
               {/* Super admin only */}
               <Route element={<RequireSuperAdmin />}>
-                <Route path="/super-admin"               element={<SuperAdminDashboard />} />
-                <Route path="/super-admin/tenants"       element={<PlaceholderPage title="Tenants" />} />
-                <Route path="/super-admin/subscriptions" element={<PlaceholderPage title="Subscriptions" />} />
-                <Route path="/super-admin/system"        element={<PlaceholderPage title="System" />} />
-                <Route path="/super-admin/settings"      element={<PlaceholderPage title="Settings" />} />
+                <Route path="/super-admin"                    element={<SuperAdminDashboard />} />
+                <Route path="/super-admin/clients"            element={<ClientsPage />} />
+                <Route path="/super-admin/clients/:id"        element={<ClientDetailPage />} />
+                <Route path="/super-admin/subscriptions"      element={<SubscriptionsPage />} />
+                <Route path="/super-admin/settings"           element={<SuperAdminSettingsPage />} />
               </Route>
 
               {/* Admin / owner / manager / accountant */}

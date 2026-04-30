@@ -187,9 +187,9 @@ export default function LoginPage() {
           </form>
 
           <p className="text-center text-sm text-gray-500">
-            Don&apos;t have an account?{' '}
+            New to Dafra?{' '}
             <Link to="/signup" className="font-semibold text-primary-600 hover:text-primary-700">
-              Create one
+              Start free trial
             </Link>
           </p>
 

@@ -215,6 +215,9 @@ export interface Tenant {
   postal_code: string | null
   logo_url: string | null
   is_active: boolean
+  suspended_at: string | null
+  suspended_reason: string | null
+  last_active_at: string | null
   created_at: string
   updated_at: string
 }

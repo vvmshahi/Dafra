@@ -1,52 +1,53 @@
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
-  Building2, Users, CreditCard, AlertTriangle,
-  CheckCircle2, XCircle, TrendingUp, ArrowRight,
+  Building2, Users, CreditCard, TrendingUp, ArrowRight,
+  CheckCircle2, AlertTriangle,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { supabase } from '@/lib/supabase'
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, PieChart, Pie, Cell, Legend,
+} from 'recharts'
 
-/* ── Mock data ──────────────────────────────────────────────── */
-const revenueData = [
-  { month: 'Nov', mrr: 8200 },
-  { month: 'Dec', mrr: 11400 },
-  { month: 'Jan', mrr: 9800 },
-  { month: 'Feb', mrr: 13200 },
-  { month: 'Mar', mrr: 15600 },
-  { month: 'Apr', mrr: 18900 },
-]
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-const tenants = [
-  { id: 'T-001', name: 'شركة النخيل التجارية',  plan: 'Business', status: 'active',   invoices: 284, joined: '2025-11-14' },
-  { id: 'T-002', name: 'مؤسسة الفجر',           plan: 'Starter',  status: 'active',   invoices: 91,  joined: '2025-12-02' },
-  { id: 'T-003', name: 'Al-Faris Trading Co.',  plan: 'Business', status: 'trial',    invoices: 12,  joined: '2026-04-15' },
-  { id: 'T-004', name: 'مجموعة الأندلس',        plan: 'Enterprise', status: 'active', invoices: 1240,joined: '2025-09-07' },
-  { id: 'T-005', name: 'Star Retail LLC',       plan: 'Starter',  status: 'inactive', invoices: 0,   joined: '2026-01-20' },
-]
-
-const statusConfig = {
-  active:   { variant: 'success' as const, label: 'Active' },
-  trial:    { variant: 'warning' as const, label: 'Trial' },
-  inactive: { variant: 'danger'  as const, label: 'Inactive' },
+interface DashboardStats {
+  totalTenants:   number
+  activeTenants:  number
+  trialTenants:   number
+  totalBranches:  number
+  totalUsers:     number
+  mrr:            number
+  newThisMonth:   number
 }
 
-const systemHealth = [
-  { service: 'Database',       ok: true },
-  { service: 'Auth (GoTrue)',  ok: true },
-  { service: 'Storage',        ok: true },
-  { service: 'ZATCA API',      ok: false },
-  { service: 'Edge Functions', ok: true },
-]
+interface RecentTenant {
+  id:        string
+  name:      string
+  is_active: boolean
+  suspended_at: string | null
+  created_at: string
+  plan:      string | null
+  subStatus: string | null
+}
 
-/* ── Stat card ──────────────────────────────────────────────── */
+interface MrrPoint { month: string; mrr: number }
+interface PlanSlice { name: string; value: number; color: string }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function monthLabel(iso: string) {
+  return new Date(iso).toLocaleString('en', { month: 'short', year: '2-digit' })
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
 interface StatCardProps {
-  label: string
-  value: string
-  sub: string
-  icon: React.ElementType
-  iconClass: string
-  bgClass: string
+  label: string; value: string; sub: string
+  icon: React.ElementType; iconClass: string; bgClass: string
 }
-
 function StatCard({ label, value, sub, icon: Icon, iconClass, bgClass }: StatCardProps) {
   return (
     <div className="card p-6 flex items-start gap-4">
@@ -62,71 +63,210 @@ function StatCard({ label, value, sub, icon: Icon, iconClass, bgClass }: StatCar
   )
 }
 
-/* ── Custom tooltip ─────────────────────────────────────────── */
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-3.5 py-2.5">
       <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-      <p className="text-sm font-bold text-gray-900">
-        SAR {Number(payload[0].value).toLocaleString()}
-      </p>
+      <p className="text-sm font-bold text-gray-900">SAR {Number(payload[0].value).toLocaleString()}</p>
     </div>
   )
 }
 
-/* ── Page ───────────────────────────────────────────────────── */
+const PLAN_COLORS: Record<string, string> = {
+  Starter:    '#6b7280',
+  Business:   '#0F2419',
+  Enterprise: '#7c3aed',
+}
+
+function tenantStatus(t: RecentTenant): { label: string; variant: 'success' | 'warning' | 'danger' | 'default' } {
+  if (t.suspended_at)                         return { label: 'Suspended', variant: 'danger' }
+  if (t.subStatus === 'trial')                return { label: 'Trial',     variant: 'warning' }
+  if (t.is_active && t.subStatus === 'active') return { label: 'Active',    variant: 'success' }
+  return { label: 'Inactive', variant: 'default' }
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function SuperAdminDashboard() {
+  const navigate = useNavigate()
+  const [stats,   setStats]   = useState<DashboardStats | null>(null)
+  const [recent,  setRecent]  = useState<RecentTenant[]>([])
+  const [mrrData, setMrrData] = useState<MrrPoint[]>([])
+  const [planData,setPlanData]= useState<PlanSlice[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      // Parallel queries
+      const [
+        { count: totalTenants },
+        { count: activeTenants },
+        { count: totalBranches },
+        { count: totalUsers },
+        { data: subs },
+        { data: recentRaw },
+      ] = await Promise.all([
+        supabase.from('tenants').select('id', { count: 'exact', head: true }),
+        supabase.from('tenants').select('id', { count: 'exact', head: true }).eq('is_active', true).is('suspended_at', null),
+        supabase.from('branches').select('id', { count: 'exact', head: true }),
+        supabase.from('user_profiles').select('id', { count: 'exact', head: true }).neq('role', 'super_admin'),
+        // Active/trial subscriptions joined with plan price
+        (supabase as any).from('tenant_subscriptions')
+          .select('status, subscription_plans(name, price_monthly)')
+          .in('status', ['active', 'trial']),
+        // Recent 6 tenants
+        (supabase as any).from('tenants')
+          .select('id, name, is_active, suspended_at, created_at, tenant_subscriptions(status, subscription_plans(name))')
+          .order('created_at', { ascending: false })
+          .limit(6),
+      ])
+
+      if (cancelled) return
+
+      // MRR = sum of price_monthly for active subs (trial = 0)
+      let mrr = 0
+      const planCounts: Record<string, number> = {}
+      let trialCount = 0
+      for (const s of (subs ?? [])) {
+        const price = s.subscription_plans?.price_monthly ?? 0
+        const name  = s.subscription_plans?.name ?? 'Starter'
+        if (s.status === 'active') { mrr += price; planCounts[name] = (planCounts[name] ?? 0) + 1 }
+        if (s.status === 'trial')  { trialCount++; planCounts[name] = (planCounts[name] ?? 0) + 1 }
+      }
+
+      // New this month
+      const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0)
+      const { count: newThisMonth } = await supabase
+        .from('tenants')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', monthStart.toISOString())
+      if (cancelled) return
+
+      setStats({
+        totalTenants:  totalTenants  ?? 0,
+        activeTenants: activeTenants ?? 0,
+        trialTenants:  trialCount,
+        totalBranches: totalBranches ?? 0,
+        totalUsers:    totalUsers    ?? 0,
+        mrr,
+        newThisMonth:  newThisMonth  ?? 0,
+      })
+
+      // Plan distribution pie
+      setPlanData(
+        Object.entries(planCounts).map(([name, value]) => ({
+          name, value, color: PLAN_COLORS[name] ?? '#6b7280',
+        }))
+      )
+
+      // Build recent tenants list
+      const rows: RecentTenant[] = (recentRaw ?? []).map((r: any) => {
+        const sub = r.tenant_subscriptions?.[0]
+        return {
+          id:          r.id,
+          name:        r.name,
+          is_active:   r.is_active,
+          suspended_at:r.suspended_at,
+          created_at:  r.created_at,
+          plan:        sub?.subscription_plans?.name ?? null,
+          subStatus:   sub?.status ?? null,
+        }
+      })
+      setRecent(rows)
+
+      // MRR trend: last 6 months from tenant_subscriptions created_at (approximation)
+      // Use actual invoice totals per month grouped
+      const sixMonthsAgo = new Date()
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5)
+      sixMonthsAgo.setDate(1); sixMonthsAgo.setHours(0,0,0,0)
+
+      const { data: invoiceMonths } = await (supabase as any)
+        .from('invoices')
+        .select('invoice_date, total_amount')
+        .gte('invoice_date', sixMonthsAgo.toISOString().slice(0, 10))
+        .eq('status', 'posted')
+
+      if (cancelled) return
+
+      const byMonth: Record<string, number> = {}
+      for (const inv of (invoiceMonths ?? [])) {
+        const key = inv.invoice_date.slice(0, 7) // YYYY-MM
+        byMonth[key] = (byMonth[key] ?? 0) + inv.total_amount
+      }
+
+      const points: MrrPoint[] = []
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i)
+        const key = d.toISOString().slice(0, 7)
+        points.push({ month: d.toLocaleString('en', { month: 'short' }), mrr: Math.round(byMonth[key] ?? 0) })
+      }
+      setMrrData(points)
+
+      setLoading(false)
+    }
+
+    load()
+    return () => { cancelled = true }
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="space-y-6 animate-pulse">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => <div key={i} className="card h-24" />)}
+        </div>
+        <div className="card h-64" />
+      </div>
+    )
+  }
+
+  const s = stats!
+
   return (
     <div className="space-y-6">
 
-      {/* ── KPI row ─────────────────────────────────────────── */}
+      {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard
-          label="Total Tenants"
-          value="5"
-          sub="4 active · 1 inactive"
-          icon={Building2}
-          iconClass="text-primary-600"
-          bgClass="bg-primary-50"
-        />
-        <StatCard
-          label="Active Subscriptions"
-          value="4"
-          sub="1 on trial"
-          icon={CreditCard}
-          iconClass="text-gold-600"
-          bgClass="bg-gold-50"
+          label="Total Clients"
+          value={s.totalTenants.toString()}
+          sub={`${s.activeTenants} active · ${s.trialTenants} on trial`}
+          icon={Building2} iconClass="text-primary-600" bgClass="bg-primary-50"
         />
         <StatCard
           label="MRR"
-          value="SAR 18,900"
-          sub="+21% vs last month"
-          icon={TrendingUp}
-          iconClass="text-emerald-600"
-          bgClass="bg-emerald-50"
+          value={`SAR ${s.mrr.toLocaleString()}`}
+          sub={`${s.newThisMonth} new this month`}
+          icon={TrendingUp} iconClass="text-emerald-600" bgClass="bg-emerald-50"
+        />
+        <StatCard
+          label="Total Branches"
+          value={s.totalBranches.toString()}
+          sub="across all clients"
+          icon={Building2} iconClass="text-gold-600" bgClass="bg-gold-50"
         />
         <StatCard
           label="Total Users"
-          value="38"
-          sub="across all tenants"
-          icon={Users}
-          iconClass="text-violet-600"
-          bgClass="bg-violet-50"
+          value={s.totalUsers.toString()}
+          sub="active accounts"
+          icon={Users} iconClass="text-violet-600" bgClass="bg-violet-50"
         />
       </div>
 
-      {/* ── MRR chart + System health ─────────────────────── */}
+      {/* Charts row */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-        {/* MRR chart */}
+        {/* Revenue trend */}
         <div className="xl:col-span-2 card p-6">
           <div className="mb-6">
-            <h2 className="text-sm font-semibold text-gray-900">Monthly Recurring Revenue</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Nov 2025 – Apr 2026</p>
+            <h2 className="text-sm font-semibold text-gray-900">Revenue Trend (last 6 months)</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Total invoice amounts from posted invoices</p>
           </div>
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={revenueData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
+            <AreaChart data={mrrData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="mrrGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%"  stopColor="#C8A96E" stopOpacity={0.2} />
@@ -138,91 +278,108 @@ export default function SuperAdminDashboard() {
               <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false}
                 tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
               <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#C8A96E', strokeWidth: 1, strokeDasharray: '4 4' }} />
-              <Area
-                type="monotone" dataKey="mrr"
-                stroke="#C8A96E" strokeWidth={2}
-                fill="url(#mrrGrad)"
-                dot={false} activeDot={{ r: 5, fill: '#C8A96E', strokeWidth: 2, stroke: '#fff' }}
+              <Area type="monotone" dataKey="mrr" stroke="#C8A96E" strokeWidth={2}
+                fill="url(#mrrGrad)" dot={false}
+                activeDot={{ r: 5, fill: '#C8A96E', strokeWidth: 2, stroke: '#fff' }}
               />
             </AreaChart>
           </ResponsiveContainer>
         </div>
 
-        {/* System health */}
-        <div className="card p-6 flex flex-col gap-4">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">System Health</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Live service status</p>
+        {/* Plan distribution */}
+        <div className="card p-6 flex flex-col">
+          <div className="mb-4">
+            <h2 className="text-sm font-semibold text-gray-900">Plan Distribution</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Active + trial subscriptions</p>
           </div>
-          <div className="space-y-2.5 flex-1">
-            {systemHealth.map(({ service, ok }) => (
-              <div key={service} className="flex items-center gap-3">
-                {ok
-                  ? <CheckCircle2 size={16} className="text-emerald-500 flex-shrink-0" />
-                  : <XCircle     size={16} className="text-red-400    flex-shrink-0" />
-                }
-                <span className="text-sm text-gray-700 flex-1">{service}</span>
-                <span className={`text-xs font-medium ${ok ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {ok ? 'Operational' : 'Degraded'}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* ZATCA alert */}
-          <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-100 rounded-xl p-3">
-            <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-xs font-semibold text-amber-700">ZATCA API unavailable</p>
-              <p className="text-[10px] text-amber-600 mt-0.5">Clearance submissions queued locally</p>
+          {planData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={190}>
+              <PieChart>
+                <Pie data={planData} cx="50%" cy="45%" innerRadius={50} outerRadius={75}
+                  dataKey="value" paddingAngle={3}>
+                  {planData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                </Pie>
+                <Legend
+                  formatter={(v, entry: any) => (
+                    <span className="text-xs text-gray-600">{v} ({entry.payload.value})</span>
+                  )}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-xs text-gray-400">No active subscriptions</p>
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* System notices */}
+      <div className="flex items-start gap-2.5 bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+        <CheckCircle2 size={15} className="text-emerald-500 flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="text-xs font-semibold text-emerald-700">All systems operational</p>
+          <p className="text-[11px] text-emerald-600 mt-0.5">
+            Supabase · Auth · Storage · ZATCA Phase 1 QR generation
+          </p>
+        </div>
+        <div className="ml-auto flex items-start gap-2">
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg p-2.5">
+            <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+            <p className="text-[11px] text-amber-700 font-medium">ZATCA Phase 2 signing not yet configured</p>
           </div>
         </div>
       </div>
 
-      {/* ── Tenants table ───────────────────────────────────── */}
+      {/* Recent clients table */}
       <div className="card">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">All Tenants</h2>
-          <button className="text-xs text-primary-600 font-medium hover:text-primary-700 flex items-center gap-1">
-            Manage <ArrowRight size={12} />
+          <h2 className="text-sm font-semibold text-gray-900">Recent Clients</h2>
+          <button
+            onClick={() => navigate('/super-admin/clients')}
+            className="text-xs text-primary-600 font-medium hover:text-primary-700 flex items-center gap-1"
+          >
+            View all <ArrowRight size={12} />
           </button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-50">
-                {['ID', 'Business Name', 'Plan', 'Invoices', 'Joined', 'Status'].map(h => (
-                  <th key={h} className="px-6 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-                    {h}
-                  </th>
+                {['Business Name', 'Plan', 'Joined', 'Status'].map(h => (
+                  <th key={h} className="px-6 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {tenants.map(t => {
-                const cfg = statusConfig[t.status as keyof typeof statusConfig]
+              {recent.map(t => {
+                const st = tenantStatus(t)
                 return (
-                  <tr key={t.id} className="hover:bg-gray-50/60 transition-colors cursor-pointer">
-                    <td className="px-6 py-3.5 text-xs font-mono text-gray-400">{t.id}</td>
+                  <tr
+                    key={t.id}
+                    className="hover:bg-gray-50/60 transition-colors cursor-pointer"
+                    onClick={() => navigate(`/super-admin/clients/${t.id}`)}
+                  >
                     <td className="px-6 py-3.5 text-sm font-medium text-gray-800">{t.name}</td>
                     <td className="px-6 py-3.5">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                        t.plan === 'Enterprise' ? 'bg-violet-50 text-violet-700'
-                        : t.plan === 'Business' ? 'bg-primary-50 text-primary-700'
-                        : 'bg-gray-100 text-gray-600'
-                      }`}>
-                        {t.plan}
-                      </span>
+                      {t.plan ? (
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                          t.plan === 'Enterprise' ? 'bg-violet-50 text-violet-700'
+                          : t.plan === 'Business' ? 'bg-primary-50 text-primary-700'
+                          : 'bg-gray-100 text-gray-600'
+                        }`}>{t.plan}</span>
+                      ) : <span className="text-xs text-gray-400">—</span>}
                     </td>
-                    <td className="px-6 py-3.5 text-sm text-gray-600 tabular-nums">{t.invoices.toLocaleString()}</td>
-                    <td className="px-6 py-3.5 text-xs text-gray-400">{t.joined}</td>
+                    <td className="px-6 py-3.5 text-xs text-gray-400">{t.created_at.slice(0, 10)}</td>
                     <td className="px-6 py-3.5">
-                      <Badge variant={cfg.variant} dot>{cfg.label}</Badge>
+                      <Badge variant={st.variant} dot>{st.label}</Badge>
                     </td>
                   </tr>
                 )
               })}
+              {recent.length === 0 && (
+                <tr><td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-400">No clients yet</td></tr>
+              )}
             </tbody>
           </table>
         </div>
