@@ -29,3 +29,7 @@ npm-debug.log*
 
 # TypeScript
 *.tsbuildinfo
+zatca-docs/*.pdf
+zatca-docs/*.zip
+zatca-docs/*.xlsx
+zatca-docs/*.jar
