@@ -1,89 +1,602 @@
-import { useState } from 'react'
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Receipt, X } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import {
+  Search, Plus, Minus, Trash2, CreditCard, Banknote,
+  Receipt, X, ChevronDown, User, Check, Loader2,
+  ShoppingBag, AlertCircle, Zap,
+} from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
-import { Button } from '@/components/ui/Button'
+import type { Branch, VatTreatment } from '@/types/database'
 
-/* ── Mock products ──────────────────────────────────────────── */
-const MOCK_PRODUCTS = [
-  { id: '1', name: 'Arabic Coffee',      nameAr: 'قهوة عربية',    price: 15.00,  category: 'Beverages' },
-  { id: '2', name: 'Dates Box 500g',     nameAr: 'تمر ٥٠٠ جرام', price: 45.00,  category: 'Food' },
-  { id: '3', name: 'Oud Perfume 50ml',   nameAr: 'عطر عود ٥٠مل', price: 320.00, category: 'Perfumes' },
-  { id: '4', name: 'Gahwa Mix',          nameAr: 'خلطة قهوة',     price: 28.50,  category: 'Beverages' },
-  { id: '5', name: 'Saudi Ghee 1kg',     nameAr: 'سمن بلدي كيلو', price: 95.00,  category: 'Food' },
-  { id: '6', name: 'Rose Water 500ml',   nameAr: 'ماء ورد ٥٠٠مل', price: 22.00, category: 'Pantry' },
-  { id: '7', name: 'Saffron 1g',         nameAr: 'زعفران ١ جرام', price: 55.00,  category: 'Spices' },
-  { id: '8', name: 'Camel Milk 1L',      nameAr: 'حليب إبل ١ لتر', price: 38.00, category: 'Beverages' },
-]
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-const VAT = 0.15
-const CATEGORIES = ['All', ...Array.from(new Set(MOCK_PRODUCTS.map(p => p.category)))]
-
-interface CartItem {
+interface PosProduct {
   id: string
   name: string
+  nameAr: string | null
   price: number
-  qty: number
+  unit: string
+  vatTreatment: VatTreatment
+  catId: string | null
+  catName: string | null
+  catColor: string | null
 }
 
-/* ── Product card ───────────────────────────────────────────── */
-function ProductCard({ product, onAdd }: { product: typeof MOCK_PRODUCTS[0]; onAdd: () => void }) {
+interface PosCategory {
+  id: string
+  name: string
+  color: string | null
+  icon: string | null
+}
+
+interface PosCustomer {
+  id: string
+  name: string
+  phone: string | null
+}
+
+interface CartItem {
+  productId: string
+  name: string
+  nameAr: string | null
+  price: number
+  vatTreatment: VatTreatment
+  unit: string
+  quantity: number
+  catColor: string | null
+}
+
+interface ReceiptData {
+  invoiceNumber: string
+  total: number
+  taxAmount: number
+  subtotal: number
+  paymentMethod: 'cash' | 'card'
+  change: number
+  customerName: string
+}
+
+// ── VAT helpers ───────────────────────────────────────────────────────────────
+
+function resolveMode(
+  treatment: VatTreatment,
+  branchMode: 'exclusive' | 'inclusive',
+): 'exclusive' | 'inclusive' | 'exempt' {
+  if (treatment === 'exempt') return 'exempt'
+  if (treatment === 'inherit') return branchMode
+  return treatment
+}
+
+function computeTotals(cart: CartItem[], vatMode: 'exclusive' | 'inclusive') {
+  let subtotal = 0
+  let taxAmount = 0
+  for (const item of cart) {
+    const line = item.price * item.quantity
+    const mode = resolveMode(item.vatTreatment, vatMode)
+    if (mode === 'exclusive') {
+      subtotal += line
+      taxAmount += line * 0.15
+    } else if (mode === 'inclusive') {
+      const net = line / 1.15
+      subtotal += net
+      taxAmount += line - net
+    } else {
+      subtotal += line
+    }
+  }
+  return { subtotal, taxAmount, total: subtotal + taxAmount }
+}
+
+function fmt(n: number) {
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+const cartKey = (bid: string) => `pos_cart_${bid}`
+
+// ── Quick Expense modal ───────────────────────────────────────────────────────
+
+function QuickExpenseModal({
+  branchId, tenantId, userId, onClose,
+}: { branchId: string; tenantId: string; userId: string | null; onClose: () => void }) {
+  const [amount, setAmount] = useState('')
+  const [desc,   setDesc]   = useState('')
+  const [vendor, setVendor] = useState('')
+  const [method, setMethod] = useState<'cash' | 'card'>('cash')
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    const amt = parseFloat(amount)
+    if (!amt || !desc.trim()) return
+    setSaving(true)
+    try {
+      const q = supabase as unknown as { from: (t: string) => any }
+      await q.from('expenses').insert({
+        tenant_id:      tenantId,
+        branch_id:      branchId,
+        added_by:       userId,
+        expense_date:   new Date().toISOString().slice(0, 10),
+        description:    desc.trim(),
+        vendor_name:    vendor.trim() || null,
+        amount:         amt,
+        vat_treatment:  'no_vat',
+        vat_amount:     0,
+        total_paid:     amt,
+        payment_method: method,
+      })
+      onClose()
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
-    <button
-      onClick={onAdd}
-      className="bg-white border border-gray-100 rounded-2xl p-4 text-left hover:border-primary-300 hover:shadow-md transition-all group"
-    >
-      <div className="w-full aspect-square bg-gray-50 rounded-xl mb-3 flex items-center justify-center group-hover:bg-primary-50 transition-colors">
-        <span className="text-3xl">🛒</span>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900 text-sm">Quick Expense</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          <div>
+            <label className="label">Amount (SAR)</label>
+            <input type="number" min="0" step="0.01" value={amount}
+              onChange={e => setAmount(e.target.value)} className="input" placeholder="0.00" autoFocus />
+          </div>
+          <div>
+            <label className="label">Description</label>
+            <input type="text" value={desc} onChange={e => setDesc(e.target.value)}
+              className="input" placeholder="What was this expense for?" />
+          </div>
+          <div>
+            <label className="label">Vendor (optional)</label>
+            <input type="text" value={vendor} onChange={e => setVendor(e.target.value)}
+              className="input" placeholder="Vendor name" />
+          </div>
+          <div>
+            <label className="label">Payment Method</label>
+            <div className="flex gap-2">
+              {(['cash', 'card'] as const).map(m => (
+                <button key={m} onClick={() => setMethod(m)}
+                  className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                    method === m
+                      ? 'bg-primary-500 text-white border-primary-500'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                  }`}>
+                  {m === 'cash' ? '💵 Cash' : '💳 Card'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="px-5 pb-5 flex gap-2">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+            Cancel
+          </button>
+          <button onClick={save} disabled={saving || !amount || !desc.trim()}
+            className="flex-1 py-2.5 rounded-xl bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : 'Save Expense'}
+          </button>
+        </div>
       </div>
-      <p className="text-xs font-semibold text-gray-800 leading-snug truncate">{product.name}</p>
-      <p className="text-[10px] text-gray-400 truncate" style={{ fontFamily: 'Cairo, sans-serif' }}>{product.nameAr}</p>
-      <p className="text-sm font-bold text-primary-600 mt-1.5">SAR {product.price.toFixed(2)}</p>
+    </div>
+  )
+}
+
+// ── Receipt overlay ───────────────────────────────────────────────────────────
+
+function ReceiptView({ receipt, onNewSale }: { receipt: ReceiptData; onNewSale: () => void }) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0F2419]/90">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+        <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 px-6 py-8 text-center text-white">
+          <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
+            <Check size={32} strokeWidth={3} />
+          </div>
+          <p className="text-2xl font-bold">Payment Received!</p>
+          <p className="text-emerald-100 text-sm mt-1">{receipt.invoiceNumber}</p>
+        </div>
+        <div className="p-6 space-y-3">
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Customer</span>
+            <span className="font-medium text-gray-800">{receipt.customerName}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Method</span>
+            <span className="font-medium text-gray-800 capitalize">{receipt.paymentMethod}</span>
+          </div>
+          <div className="border-t border-gray-100 pt-3 space-y-1.5">
+            <div className="flex justify-between text-sm text-gray-500">
+              <span>Net Amount</span>
+              <span className="tabular-nums">SAR {fmt(receipt.subtotal)}</span>
+            </div>
+            <div className="flex justify-between text-sm text-gray-500">
+              <span>VAT (15%)</span>
+              <span className="tabular-nums">SAR {fmt(receipt.taxAmount)}</span>
+            </div>
+            <div className="flex justify-between font-bold text-gray-900 text-lg pt-1.5 border-t border-gray-100">
+              <span>Total</span>
+              <span className="tabular-nums text-emerald-600">SAR {fmt(receipt.total)}</span>
+            </div>
+          </div>
+          {receipt.paymentMethod === 'cash' && receipt.change > 0.005 && (
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex justify-between">
+              <span className="text-sm font-semibold text-amber-700">Change Due</span>
+              <span className="text-lg font-bold text-amber-700 tabular-nums">SAR {fmt(receipt.change)}</span>
+            </div>
+          )}
+          <div className="flex justify-center pt-1">
+            <div className="w-24 h-24 bg-gray-100 rounded-xl flex items-center justify-center">
+              <Receipt size={28} className="text-gray-300" />
+            </div>
+          </div>
+          <p className="text-center text-[10px] text-gray-300">ZATCA QR — pending submission</p>
+        </div>
+        <div className="px-6 pb-6">
+          <button onClick={onNewSale}
+            className="w-full py-3 bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity">
+            New Sale
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Product card ──────────────────────────────────────────────────────────────
+
+function ProductCard({ product, cartQty, onAdd }: {
+  product: PosProduct; cartQty: number; onAdd: () => void
+}) {
+  const color = product.catColor ?? '#10b981'
+  return (
+    <button onClick={onAdd}
+      className="bg-white border border-gray-100 rounded-2xl p-3 text-left hover:border-primary-300 hover:shadow-md transition-all relative">
+      {cartQty > 0 && (
+        <span className="absolute top-2 right-2 w-5 h-5 bg-primary-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center z-10">
+          {cartQty}
+        </span>
+      )}
+      <div className="w-full aspect-square rounded-xl mb-2.5 flex items-center justify-center"
+        style={{ backgroundColor: `${color}18` }}>
+        <ShoppingBag size={22} style={{ color }} />
+      </div>
+      <p className="text-xs font-semibold text-gray-800 leading-snug line-clamp-2">{product.name}</p>
+      {product.nameAr && (
+        <p className="text-[10px] text-gray-400 truncate" dir="rtl">{product.nameAr}</p>
+      )}
+      <p className="text-sm font-bold text-primary-600 mt-1">SAR {fmt(product.price)}</p>
+      {product.catName && (
+        <span className="inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full mt-1"
+          style={{ backgroundColor: `${color}20`, color }}>
+          {product.catName}
+        </span>
+      )}
     </button>
   )
 }
 
-/* ── Page ───────────────────────────────────────────────────── */
+// ── POSPage ───────────────────────────────────────────────────────────────────
+
 export default function POSPage() {
   const { profile } = useAuth()
-  const [search, setSearch]       = useState('')
-  const [category, setCategory]   = useState('All')
-  const [cart, setCart]           = useState<CartItem[]>([])
-  const [note, setNote]           = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
 
-  const filtered = MOCK_PRODUCTS.filter(p => {
-    const matchCat    = category === 'All' || p.category === category
-    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase())
-                     || p.nameAr.includes(search)
-    return matchCat && matchSearch
+  const [branch,     setBranch]     = useState<Branch | null>(null)
+  const [products,   setProducts]   = useState<PosProduct[]>([])
+  const [categories, setCategories] = useState<PosCategory[]>([])
+  const [customers,  setCustomers]  = useState<PosCustomer[]>([])
+  const [loading,    setLoading]    = useState(true)
+
+  const [search,       setSearch]       = useState('')
+  const [activeCat,    setActiveCat]    = useState<string | null>(null)
+  const [cart,         setCart]         = useState<CartItem[]>([])
+  const [customerId,   setCustomerId]   = useState<string | null>(null)
+  const [custSearch,   setCustSearch]   = useState('')
+  const [custOpen,     setCustOpen]     = useState(false)
+  const [note,         setNote]         = useState('')
+  const [payMethod,    setPayMethod]    = useState<'cash' | 'card'>('cash')
+  const [cashReceived, setCashReceived] = useState('')
+  const [submitting,   setSubmitting]   = useState(false)
+  const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
+  const [showExpense,  setShowExpense]  = useState(false)
+
+  // ── Load data ────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      const tid = profile?.tenant_id
+      const bid = profile?.branch_id
+      if (!tid || !bid) { setLoading(false); return }
+      setLoading(true)
+      try {
+        const [{ data: branchData }, { data: prodData }, { data: custData }] = await Promise.all([
+          supabase.from('branches').select('*').eq('id', bid).single(),
+          supabase
+            .from('products')
+            .select('id, name, name_ar, price, unit, vat_treatment, category_id, categories(id, name, color, icon)')
+            .eq('tenant_id', tid)
+            .eq('is_active', true)
+            .eq('is_available', true)
+            .order('sort_order', { ascending: true })
+            .order('name', { ascending: true }),
+          supabase
+            .from('customers')
+            .select('id, name, phone')
+            .eq('tenant_id', tid)
+            .eq('is_active', true)
+            .order('name', { ascending: true })
+            .limit(200),
+        ])
+        if (cancelled) return
+
+        setBranch(branchData as Branch)
+
+        const prods: PosProduct[] = (prodData ?? []).map((p: any) => ({
+          id:           p.id,
+          name:         p.name,
+          nameAr:       p.name_ar,
+          price:        Number(p.price),
+          unit:         p.unit ?? 'pcs',
+          vatTreatment: (p.vat_treatment ?? 'inherit') as VatTreatment,
+          catId:        p.category_id,
+          catName:      (p.categories as any)?.name ?? null,
+          catColor:     (p.categories as any)?.color ?? null,
+        }))
+        setProducts(prods)
+
+        const catMap = new Map<string, PosCategory>()
+        for (const p of prodData ?? []) {
+          const c = (p as any).categories
+          if (c?.id) catMap.set(c.id, { id: c.id, name: c.name, color: c.color, icon: c.icon })
+        }
+        setCategories(Array.from(catMap.values()))
+
+        setCustomers((custData ?? []).map((c: any) => ({ id: c.id, name: c.name, phone: c.phone })))
+
+        try {
+          const saved = localStorage.getItem(cartKey(bid))
+          if (saved) setCart(JSON.parse(saved))
+        } catch {}
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [profile?.tenant_id, profile?.branch_id])
+
+  // ── Persist cart ─────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const bid = profile?.branch_id
+    if (!bid) return
+    localStorage.setItem(cartKey(bid), JSON.stringify(cart))
+  }, [cart, profile?.branch_id])
+
+  // ── Keyboard shortcuts ───────────────────────────────────────────────────
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName
+      const isInput = tag === 'INPUT' || tag === 'TEXTAREA'
+      if (e.key === '/' && !isInput) {
+        e.preventDefault()
+        searchRef.current?.focus()
+      }
+      if (e.key === 'Escape' && e.target === searchRef.current) {
+        setSearch('')
+        searchRef.current?.blur()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // Enter-to-add: separate effect so it sees latest products/search/cart
+  useEffect(() => {
+    function onEnter(e: KeyboardEvent) {
+      if (e.key !== 'Enter' || e.target !== searchRef.current) return
+      const q = search.trim().toLowerCase()
+      const visible = products.filter(p => {
+        const matchCat = !activeCat || p.catId === activeCat
+        if (!q) return matchCat
+        return matchCat && (p.name.toLowerCase().includes(q) || (p.nameAr ?? '').includes(search.trim()))
+      })
+      if (visible.length === 1) addToCart(visible[0])
+    }
+    window.addEventListener('keydown', onEnter)
+    return () => window.removeEventListener('keydown', onEnter)
   })
 
-  const addToCart = (product: typeof MOCK_PRODUCTS[0]) => {
+  // ── Derived ──────────────────────────────────────────────────────────────
+
+  const searchQ = search.trim().toLowerCase()
+  const filtered = products.filter(p => {
+    const matchCat = !activeCat || p.catId === activeCat
+    if (!searchQ) return matchCat
+    return matchCat && (p.name.toLowerCase().includes(searchQ) || (p.nameAr ?? '').includes(search.trim()))
+  })
+
+  const vatMode = branch?.vat_mode ?? 'exclusive'
+  const totals  = computeTotals(cart, vatMode)
+  const cashAmt = parseFloat(cashReceived) || 0
+  const change  = payMethod === 'cash' ? Math.max(0, cashAmt - totals.total) : 0
+
+  const filteredCusts = custSearch.trim()
+    ? customers.filter(c =>
+        c.name.toLowerCase().includes(custSearch.toLowerCase()) ||
+        (c.phone ?? '').includes(custSearch)
+      )
+    : customers
+  const selectedCust = customers.find(c => c.id === customerId)
+
+  // ── Cart ops ─────────────────────────────────────────────────────────────
+
+  function addToCart(product: PosProduct) {
     setCart(prev => {
-      const existing = prev.find(c => c.id === product.id)
-      if (existing) return prev.map(c => c.id === product.id ? { ...c, qty: c.qty + 1 } : c)
-      return [...prev, { id: product.id, name: product.name, price: product.price, qty: 1 }]
+      const existing = prev.find(c => c.productId === product.id)
+      if (existing) return prev.map(c => c.productId === product.id ? { ...c, quantity: c.quantity + 1 } : c)
+      return [...prev, {
+        productId:    product.id,
+        name:         product.name,
+        nameAr:       product.nameAr,
+        price:        product.price,
+        vatTreatment: product.vatTreatment,
+        unit:         product.unit,
+        quantity:     1,
+        catColor:     product.catColor,
+      }]
     })
   }
 
-  const adjustQty = (id: string, delta: number) => {
+  function adjustQty(productId: string, delta: number) {
     setCart(prev => prev
-      .map(c => c.id === id ? { ...c, qty: c.qty + delta } : c)
-      .filter(c => c.qty > 0)
+      .map(c => c.productId === productId ? { ...c, quantity: c.quantity + delta } : c)
+      .filter(c => c.quantity > 0)
     )
   }
 
-  const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0)
-  const vat      = subtotal * VAT
-  const total    = subtotal + vat
+  // ── Charge ───────────────────────────────────────────────────────────────
+
+  async function charge() {
+    const tid = profile?.tenant_id
+    if (!tid || !branch || cart.length === 0 || submitting) return
+    setSubmitting(true)
+    try {
+      const q = supabase as unknown as { from: (t: string) => any }
+
+      const { data: counter } = await supabase.rpc('get_next_invoice_counter', { p_branch_id: branch.id })
+      const prefix        = branch.invoice_prefix ?? 'INV'
+      const invoiceNumber = `${prefix}-${String(counter ?? 1).padStart(4, '0')}`
+      const today         = new Date().toISOString().slice(0, 10)
+
+      const { data: inv, error: invErr } = await q.from('invoices').insert({
+        tenant_id:          tid,
+        branch_id:          branch.id,
+        customer_id:        customerId ?? null,
+        created_by:         profile?.id ?? null,
+        invoice_number:     invoiceNumber,
+        zatca_invoice_type: 'simplified',
+        zatca_type_code:    '388',
+        zatca_status:       'pending',
+        subtotal:           totals.subtotal,
+        discount_amount:    0,
+        taxable_amount:     totals.subtotal,
+        tax_amount:         totals.taxAmount,
+        total_amount:       totals.total,
+        currency_code:      'SAR',
+        invoice_date:       today,
+        status:             'posted',
+        payment_status:     'paid',
+        notes:              note || null,
+      }).select('id').single()
+
+      if (invErr) throw invErr
+
+      const itemsPayload = cart.map((item, idx) => {
+        const line = item.price * item.quantity
+        const mode = resolveMode(item.vatTreatment, vatMode)
+        let net = line, tax = 0
+        if (mode === 'exclusive')  { net = line;       tax = line * 0.15 }
+        if (mode === 'inclusive')  { net = line / 1.15; tax = line - net  }
+        return {
+          invoice_id:       inv.id,
+          tenant_id:        tid,
+          product_id:       item.productId,
+          name:             item.name,
+          name_ar:          item.nameAr,
+          unit:             item.unit,
+          quantity:         item.quantity,
+          unit_price:       item.price,
+          discount_percent: 0,
+          discount_amount:  0,
+          subtotal:         net,
+          tax_rate:         mode === 'exempt' ? 0 : 0.15,
+          tax_category:     mode === 'exempt' ? 'O' : 'S',
+          tax_amount:       tax,
+          total:            net + tax,
+          sort_order:       idx,
+        }
+      })
+      await q.from('invoice_items').insert(itemsPayload)
+
+      await q.from('payments').insert({
+        tenant_id:   tid,
+        invoice_id:  inv.id,
+        recorded_by: profile?.id ?? null,
+        amount:      totals.total,
+        method:      payMethod,
+        paid_at:     new Date().toISOString(),
+      })
+
+      setReceipt({
+        invoiceNumber,
+        total:         totals.total,
+        taxAmount:     totals.taxAmount,
+        subtotal:      totals.subtotal,
+        paymentMethod: payMethod,
+        change,
+        customerName:  selectedCust?.name ?? 'Walk-in Customer',
+      })
+
+      setCart([])
+      setCustomerId(null)
+      setNote('')
+      setCashReceived('')
+    } catch (err) {
+      console.error(err)
+      alert('Payment failed. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3 text-gray-400">
+          <Loader2 size={32} className="animate-spin" />
+          <p className="text-sm">Loading POS…</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!profile?.branch_id) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <p className="text-gray-500 text-sm">No branch assigned. Contact your administrator.</p>
+      </div>
+    )
+  }
+
+  const canCharge = cart.length > 0 && !submitting &&
+    !(payMethod === 'cash' && cashReceived !== '' && cashAmt < totals.total - 0.001)
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
 
-      {/* ── Left: products ──────────────────────────────────── */}
+      {/* Modals */}
+      {receipt && <ReceiptView receipt={receipt} onNewSale={() => setReceipt(null)} />}
+      {showExpense && branch && (
+        <QuickExpenseModal
+          branchId={branch.id}
+          tenantId={profile.tenant_id ?? ''}
+          userId={profile.id ?? null}
+          onClose={() => setShowExpense(false)}
+        />
+      )}
+      {custOpen && <div className="fixed inset-0 z-10" onClick={() => setCustOpen(false)} />}
+
+      {/* ── Left: product panel ─────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0">
 
-        {/* POS header */}
-        <div className="bg-[#0F2419] text-white px-5 py-3.5 flex items-center gap-4 flex-shrink-0 shadow-lg">
+        {/* Header */}
+        <div className="bg-[#0F2419] text-white px-5 py-3.5 flex items-center gap-3 flex-shrink-0 shadow-lg">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-gold-500 flex items-center justify-center">
               <span className="text-[#0F2419] font-black text-sm" style={{ fontFamily: 'Cairo, sans-serif' }}>د</span>
@@ -92,152 +605,292 @@ export default function POSPage() {
           </div>
           <div className="h-4 w-px bg-white/20" />
           <span className="text-white/60 text-xs">{profile?.full_name ?? 'Cashier'}</span>
-          <div className="ml-auto">
-            <span className="text-xs bg-white/10 border border-white/10 text-white/70 px-3 py-1 rounded-full">
-              Branch: Main
+          <span className="text-white/30 text-xs">·</span>
+          <span className="text-white/50 text-xs">{branch?.name ?? ''}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-[10px] bg-white/10 border border-white/10 text-white/50 px-2 py-1 rounded-lg">
+              {vatMode === 'inclusive' ? 'VAT Incl.' : 'VAT Excl.'}
             </span>
+            <button
+              onClick={() => setShowExpense(true)}
+              className="text-xs bg-amber-500/20 border border-amber-400/20 text-amber-300 px-3 py-1.5 rounded-lg hover:bg-amber-500/30 transition-colors flex items-center gap-1.5"
+            >
+              <Zap size={12} />
+              Expense
+            </button>
           </div>
         </div>
 
-        {/* Search + categories */}
-        <div className="px-5 py-3 border-b border-gray-100 bg-white flex items-center gap-3 flex-shrink-0">
-          <div className="relative flex-1 max-w-xs">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        {/* Search + category tabs */}
+        <div className="px-4 py-2.5 border-b border-gray-100 bg-white flex items-center gap-3 flex-shrink-0">
+          <div className="relative w-52 flex-shrink-0">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
+              ref={searchRef}
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search products…"
-              className="input pl-8 py-2 text-sm"
+              placeholder="Search… (/)"
+              className="input pl-8 py-1.5 text-sm"
             />
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <X size={13} />
+              </button>
+            )}
           </div>
-          <div className="flex items-center gap-1.5 overflow-x-auto">
-            {CATEGORIES.map(cat => (
+          <div className="flex items-center gap-1.5 overflow-x-auto flex-1">
+            <button
+              onClick={() => setActiveCat(null)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                !activeCat ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              All
+            </button>
+            {categories.map(cat => (
               <button
-                key={cat}
-                onClick={() => setCategory(cat)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all ${
-                  category === cat
-                    ? 'bg-primary-500 text-white shadow-sm'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                key={cat.id}
+                onClick={() => setActiveCat(activeCat === cat.id ? null : cat.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                  activeCat === cat.id ? 'text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
+                style={activeCat === cat.id ? { backgroundColor: cat.color ?? '#10b981' } : {}}
               >
-                {cat}
+                {cat.icon && <span className="mr-1">{cat.icon}</span>}
+                {cat.name}
               </button>
             ))}
           </div>
         </div>
 
         {/* Product grid */}
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="flex-1 overflow-y-auto p-4">
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-gray-400">
-              <Search size={32} className="mb-2 opacity-40" />
-              <p className="text-sm">No products found</p>
+              <AlertCircle size={28} className="mb-2 opacity-40" />
+              <p className="text-sm">{products.length === 0 ? 'No products set up yet' : 'No products found'}</p>
+              {search && (
+                <button onClick={() => setSearch('')} className="text-xs text-primary-500 mt-1 underline">
+                  Clear search
+                </button>
+              )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
               {filtered.map(p => (
-                <ProductCard key={p.id} product={p} onAdd={() => addToCart(p)} />
+                <ProductCard
+                  key={p.id}
+                  product={p}
+                  cartQty={cart.find(c => c.productId === p.id)?.quantity ?? 0}
+                  onAdd={() => addToCart(p)}
+                />
               ))}
             </div>
           )}
         </div>
       </div>
 
-      {/* ── Right: cart ─────────────────────────────────────── */}
-      <div className="w-80 bg-white border-l border-gray-100 flex flex-col flex-shrink-0 shadow-lg">
+      {/* ── Right: cart panel ───────────────────────────────── */}
+      <div className="w-[340px] bg-white border-l border-gray-100 flex flex-col flex-shrink-0 shadow-xl">
 
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-900 text-sm">Current Order</h2>
+        {/* Cart header */}
+        <div className="px-4 py-3.5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <Receipt size={15} className="text-gray-400" />
+            <h2 className="font-semibold text-gray-900 text-sm">Current Order</h2>
+            {cart.length > 0 && (
+              <span className="w-5 h-5 bg-primary-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                {cart.reduce((s, c) => s + c.quantity, 0)}
+              </span>
+            )}
+          </div>
           {cart.length > 0 && (
-            <button
-              onClick={() => setCart([])}
-              className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1"
-            >
-              <X size={12} /> Clear
+            <button onClick={() => setCart([])}
+              className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 transition-colors">
+              <X size={11} /> Clear
             </button>
           )}
         </div>
 
+        {/* Customer selector */}
+        <div className="px-4 py-2.5 border-b border-gray-100 flex-shrink-0 relative z-20">
+          <button
+            onClick={() => { setCustOpen(o => !o); setCustSearch('') }}
+            className="w-full flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-left hover:border-primary-200 transition-colors"
+          >
+            <User size={13} className="text-gray-400 flex-shrink-0" />
+            <span className={`flex-1 text-xs ${customerId ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>
+              {selectedCust?.name ?? 'Walk-in Customer'}
+            </span>
+            <ChevronDown size={13} className="text-gray-400 flex-shrink-0" />
+          </button>
+          {custOpen && (
+            <div className="absolute left-4 right-4 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-20 overflow-hidden">
+              <div className="p-2 border-b border-gray-100">
+                <input type="text" value={custSearch} onChange={e => setCustSearch(e.target.value)}
+                  placeholder="Search customers…" className="input text-xs py-1.5" autoFocus />
+              </div>
+              <div className="max-h-52 overflow-y-auto">
+                <button
+                  onClick={() => { setCustomerId(null); setCustOpen(false) }}
+                  className={`w-full px-3 py-2.5 text-left text-xs flex items-center gap-2 hover:bg-gray-50 ${!customerId ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-gray-700'}`}
+                >
+                  <User size={12} />
+                  Walk-in Customer
+                  {!customerId && <Check size={12} className="ml-auto" />}
+                </button>
+                {filteredCusts.map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => { setCustomerId(c.id); setCustOpen(false) }}
+                    className={`w-full px-3 py-2.5 text-left text-xs flex items-center gap-2 hover:bg-gray-50 ${customerId === c.id ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-gray-700'}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate">{c.name}</p>
+                      {c.phone && <p className="text-gray-400 text-[10px]">{c.phone}</p>}
+                    </div>
+                    {customerId === c.id && <Check size={12} className="flex-shrink-0" />}
+                  </button>
+                ))}
+                {filteredCusts.length === 0 && custSearch && (
+                  <p className="px-3 py-4 text-center text-xs text-gray-400">No customers found</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Cart items */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
           {cart.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-32 text-gray-300">
-              <Receipt size={28} className="mb-2" />
-              <p className="text-xs">Cart is empty</p>
+            <div className="flex flex-col items-center justify-center h-full text-gray-300 py-10">
+              <ShoppingBag size={32} className="mb-3" />
+              <p className="text-xs">Tap a product to add</p>
+              <p className="text-[10px] mt-1 text-gray-200">Press / to search</p>
             </div>
           ) : (
-            cart.map(item => (
-              <div key={item.id} className="flex items-center gap-2.5 bg-gray-50 rounded-xl px-3 py-2.5">
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-gray-800 truncate">{item.name}</p>
-                  <p className="text-[11px] text-gray-400">SAR {item.price.toFixed(2)} each</p>
+            cart.map(item => {
+              const line  = item.price * item.quantity
+              const color = item.catColor ?? '#6b7280'
+              return (
+                <div key={item.productId} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2.5">
+                  <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center"
+                    style={{ backgroundColor: `${color}20` }}>
+                    <ShoppingBag size={12} style={{ color }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-gray-800 truncate">{item.name}</p>
+                    <p className="text-[10px] text-gray-400 tabular-nums">
+                      {fmt(item.price)} × {item.quantity} = <span className="text-gray-700 font-semibold">SAR {fmt(line)}</span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button onClick={() => adjustQty(item.productId, -1)}
+                      className="w-6 h-6 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-red-50 hover:border-red-200 transition-colors">
+                      {item.quantity === 1
+                        ? <Trash2 size={10} className="text-red-400" />
+                        : <Minus size={10} className="text-gray-500" />
+                      }
+                    </button>
+                    <span className="text-xs font-bold text-gray-900 w-5 text-center tabular-nums">{item.quantity}</span>
+                    <button onClick={() => adjustQty(item.productId, 1)}
+                      className="w-6 h-6 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-primary-50 hover:border-primary-200 transition-colors">
+                      <Plus size={10} className="text-gray-500" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <button
-                    onClick={() => adjustQty(item.id, -1)}
-                    className="w-6 h-6 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-red-50 hover:border-red-200 transition-colors"
-                  >
-                    {item.qty === 1 ? <Trash2 size={10} className="text-red-400" /> : <Minus size={10} className="text-gray-500" />}
-                  </button>
-                  <span className="text-xs font-bold text-gray-900 w-5 text-center">{item.qty}</span>
-                  <button
-                    onClick={() => adjustQty(item.id, 1)}
-                    className="w-6 h-6 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-primary-50 hover:border-primary-200 transition-colors"
-                  >
-                    <Plus size={10} className="text-gray-500" />
-                  </button>
-                </div>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
 
         {/* Note */}
-        <div className="px-4 pb-2">
-          <input
-            type="text"
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            placeholder="Order note (optional)"
-            className="input text-xs py-2"
-          />
+        <div className="px-4 pb-2 flex-shrink-0">
+          <input type="text" value={note} onChange={e => setNote(e.target.value)}
+            placeholder="Order note (optional)" className="input text-xs py-1.5" />
         </div>
 
         {/* Totals */}
-        <div className="px-5 py-4 border-t border-gray-100 space-y-2">
+        <div className="px-4 py-3 border-t border-gray-100 space-y-1.5 flex-shrink-0">
           <div className="flex justify-between text-xs text-gray-500">
-            <span>Subtotal</span>
-            <span className="tabular-nums">SAR {subtotal.toFixed(2)}</span>
+            <span>Net Amount</span>
+            <span className="tabular-nums">SAR {fmt(totals.subtotal)}</span>
           </div>
           <div className="flex justify-between text-xs text-gray-500">
-            <span>VAT (15%)</span>
-            <span className="tabular-nums">SAR {vat.toFixed(2)}</span>
+            <span>VAT 15% ({vatMode === 'inclusive' ? 'incl.' : 'excl.'})</span>
+            <span className="tabular-nums">SAR {fmt(totals.taxAmount)}</span>
           </div>
-          <div className="flex justify-between font-bold text-gray-900 text-base pt-2 border-t border-gray-100">
+          <div className="flex justify-between font-bold text-gray-900 text-base pt-1.5 border-t border-gray-100">
             <span>Total</span>
-            <span className="tabular-nums">SAR {total.toFixed(2)}</span>
+            <span className="tabular-nums text-primary-600">SAR {fmt(totals.total)}</span>
           </div>
         </div>
 
-        {/* Payment buttons */}
-        <div className="px-4 pb-5 space-y-2.5">
-          <Button
-            className="w-full gap-2"
-            disabled={cart.length === 0}
+        {/* Payment method */}
+        <div className="px-4 pb-2 flex-shrink-0 space-y-2">
+          <div className="flex gap-2">
+            {(['cash', 'card'] as const).map(m => (
+              <button key={m} onClick={() => setPayMethod(m)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                  payMethod === m
+                    ? m === 'cash'
+                      ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
+                      : 'bg-indigo-500 text-white border-indigo-500 shadow-sm'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                }`}>
+                {m === 'cash' ? <Banknote size={13} /> : <CreditCard size={13} />}
+                {m === 'cash' ? 'Cash' : 'Card'}
+              </button>
+            ))}
+          </div>
+
+          {payMethod === 'cash' && cart.length > 0 && (
+            <div className="space-y-1">
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
+                <input
+                  type="number" min="0" step="1"
+                  value={cashReceived}
+                  onChange={e => setCashReceived(e.target.value)}
+                  placeholder={fmt(Math.ceil(totals.total))}
+                  className="input pl-10 py-1.5 text-sm tabular-nums"
+                />
+              </div>
+              {cashAmt >= totals.total && cashAmt > 0 && (
+                <div className="flex justify-between px-1">
+                  <span className="text-xs text-gray-500">Change</span>
+                  <span className="text-sm font-bold text-emerald-600 tabular-nums">SAR {fmt(change)}</span>
+                </div>
+              )}
+              {cashAmt > 0 && cashAmt < totals.total && (
+                <p className="text-[10px] text-red-500 px-1">
+                  Short by SAR {fmt(totals.total - cashAmt)}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Charge button */}
+        <div className="px-4 pb-5 flex-shrink-0">
+          <button
+            onClick={charge}
+            disabled={!canCharge}
+            className="w-full py-3.5 rounded-2xl font-bold text-sm text-white transition-all flex items-center justify-center gap-2
+              bg-gradient-to-r from-[#1a3a28] to-primary-600
+              hover:opacity-90 active:scale-[0.98]
+              disabled:from-gray-200 disabled:to-gray-300 disabled:text-gray-400 disabled:cursor-not-allowed disabled:scale-100"
           >
-            <CreditCard size={15} />
-            Card — SAR {total.toFixed(2)}
-          </Button>
-          <Button
-            variant="secondary"
-            className="w-full gap-2"
-            disabled={cart.length === 0}
-          >
-            <Banknote size={15} />
-            Cash — SAR {total.toFixed(2)}
-          </Button>
+            {submitting
+              ? <><Loader2 size={16} className="animate-spin" /> Processing…</>
+              : <>
+                  {payMethod === 'cash' ? <Banknote size={16} /> : <CreditCard size={16} />}
+                  Charge — SAR {fmt(totals.total)}
+                </>
+            }
+          </button>
         </div>
       </div>
     </div>
