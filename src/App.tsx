@@ -8,6 +8,7 @@ import LoginPage           from '@/pages/auth/LoginPage'
 import SignupPage          from '@/pages/auth/SignupPage'
 import OnboardingPage      from '@/pages/onboarding/OnboardingPage'
 import DashboardPage       from '@/pages/admin/DashboardPage'
+import ProductsPage        from '@/pages/products/ProductsPage'
 import SuperAdminDashboard from '@/pages/super-admin/SuperAdminDashboard'
 import POSPage             from '@/pages/pos/POSPage'
 import SettingsPage        from '@/pages/settings/SettingsPage'
@@ -137,7 +138,7 @@ export default function App() {
 
               {/* Admin / owner / manager / accountant */}
               <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/products"  element={<PlaceholderPage title="Products" />} />
+              <Route path="/products"  element={<ProductsPage />} />
               <Route path="/inventory" element={<PlaceholderPage title="Inventory" />} />
               <Route path="/customers" element={<PlaceholderPage title="Customers" />} />
               <Route path="/expenses"  element={<PlaceholderPage title="Expenses" />} />

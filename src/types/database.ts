@@ -48,13 +48,13 @@ export interface Database {
       }
       categories: {
         Row: Category
-        Insert: Omit<Category, 'id' | 'created_at' | 'updated_at'>
-        Update: Partial<Omit<Category, 'id'>>
+        Insert: CategoryInsert
+        Update: CategoryUpdate
       }
       products: {
         Row: Product
-        Insert: Omit<Product, 'id' | 'created_at' | 'updated_at'>
-        Update: Partial<Omit<Product, 'id'>>
+        Insert: ProductInsert
+        Update: ProductUpdate
       }
       customers: {
         Row: Customer
@@ -280,11 +280,15 @@ export interface Category {
   name: string
   name_ar: string | null
   description: string | null
+  color: string | null
+  icon: string | null
   is_active: boolean
   sort_order: number
   created_at: string
   updated_at: string
 }
+
+export type VatTreatment = 'inherit' | 'exclusive' | 'inclusive' | 'exempt'
 
 export interface Product {
   id: string
@@ -308,6 +312,11 @@ export interface Product {
   image_url: string | null
   is_active: boolean
   is_service: boolean
+  // Added by update-products.sql
+  vat_treatment: VatTreatment
+  is_available: boolean
+  sort_order: number
+  notes: string | null
   created_at: string
   updated_at: string
 }
@@ -497,3 +506,46 @@ export interface BranchInsert {
 export type BranchUpdate = Partial<BranchInsert>
 
 export type UserProfileUpdate = Partial<Omit<UserProfile, 'id' | 'created_at' | 'updated_at'>>
+
+export interface CategoryInsert {
+  tenant_id: string
+  parent_id?: string | null
+  name: string
+  name_ar?: string | null
+  description?: string | null
+  color?: string | null
+  icon?: string | null
+  is_active?: boolean
+  sort_order?: number
+}
+
+export type CategoryUpdate = Partial<Omit<CategoryInsert, 'tenant_id'>>
+
+export interface ProductInsert {
+  tenant_id: string
+  category_id?: string | null
+  name: string
+  name_ar?: string | null
+  description?: string | null
+  description_ar?: string | null
+  sku?: string | null
+  barcode?: string | null
+  unit?: string
+  unit_ar?: string | null
+  price?: number
+  cost?: number
+  tax_rate?: number
+  tax_category?: string
+  is_taxable?: boolean
+  stock_quantity?: number
+  min_stock_alert?: number
+  image_url?: string | null
+  is_active?: boolean
+  is_service?: boolean
+  vat_treatment?: string
+  is_available?: boolean
+  sort_order?: number
+  notes?: string | null
+}
+
+export type ProductUpdate = Partial<ProductInsert>
