@@ -1,0 +1,419 @@
+// Auto-generated types matching supabase/schema.sql
+// Run `supabase gen types typescript` to regenerate after schema changes.
+
+export type UserRole = 'super_admin' | 'owner' | 'manager' | 'cashier' | 'accountant'
+export type InvoiceType = 'standard' | 'simplified' | 'credit_note' | 'debit_note'
+export type InvoiceStatus = 'draft' | 'posted' | 'cancelled'
+export type ZatcaStatus = 'not_submitted' | 'pending' | 'reported' | 'cleared' | 'failed'
+export type PaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'other'
+export type PaymentStatus = 'pending' | 'paid' | 'partial' | 'refunded'
+export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'cancelled'
+export type SyncStatus = 'pending' | 'processing' | 'success' | 'failed'
+export type CertificateStatus = 'pending' | 'active' | 'revoked' | 'expired'
+
+export interface Database {
+  public: {
+    Tables: {
+      subscription_plans: {
+        Row: SubscriptionPlan
+        Insert: Omit<SubscriptionPlan, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<SubscriptionPlan, 'id'>>
+      }
+      tenants: {
+        Row: Tenant
+        Insert: Omit<Tenant, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Tenant, 'id'>>
+      }
+      tenant_subscriptions: {
+        Row: TenantSubscription
+        Insert: Omit<TenantSubscription, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<TenantSubscription, 'id'>>
+      }
+      branches: {
+        Row: Branch
+        Insert: Omit<Branch, 'id' | 'created_at' | 'updated_at' | 'invoice_counter'>
+        Update: Partial<Omit<Branch, 'id'>>
+      }
+      user_profiles: {
+        Row: UserProfile
+        Insert: Omit<UserProfile, 'created_at' | 'updated_at'>
+        Update: Partial<Omit<UserProfile, 'id'>>
+      }
+      zatca_certificates: {
+        Row: ZatcaCertificate
+        Insert: Omit<ZatcaCertificate, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<ZatcaCertificate, 'id'>>
+      }
+      categories: {
+        Row: Category
+        Insert: Omit<Category, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Category, 'id'>>
+      }
+      products: {
+        Row: Product
+        Insert: Omit<Product, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Product, 'id'>>
+      }
+      customers: {
+        Row: Customer
+        Insert: Omit<Customer, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Customer, 'id'>>
+      }
+      employees: {
+        Row: Employee
+        Insert: Omit<Employee, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Employee, 'id'>>
+      }
+      invoices: {
+        Row: Invoice
+        Insert: Omit<Invoice, 'id' | 'created_at' | 'updated_at' | 'zatca_uuid'>
+        Update: Partial<Omit<Invoice, 'id'>>
+      }
+      invoice_items: {
+        Row: InvoiceItem
+        Insert: Omit<InvoiceItem, 'id' | 'created_at'>
+        Update: Partial<Omit<InvoiceItem, 'id'>>
+      }
+      payments: {
+        Row: Payment
+        Insert: Omit<Payment, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Payment, 'id'>>
+      }
+      sync_queue: {
+        Row: SyncQueueItem
+        Insert: Omit<SyncQueueItem, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<SyncQueueItem, 'id'>>
+      }
+    }
+    Functions: {
+      get_next_invoice_counter: {
+        Args: { p_branch_id: string }
+        Returns: number
+      }
+      get_next_zatca_counter: {
+        Args: { p_branch_id: string; p_env?: string }
+        Returns: number
+      }
+      get_my_tenant_id: { Args: Record<never, never>; Returns: string }
+      get_my_branch_id: { Args: Record<never, never>; Returns: string }
+      get_my_role: { Args: Record<never, never>; Returns: UserRole }
+      is_super_admin: { Args: Record<never, never>; Returns: boolean }
+    }
+    Enums: {
+      user_role: UserRole
+      invoice_type: InvoiceType
+      invoice_status: InvoiceStatus
+      zatca_status: ZatcaStatus
+      payment_method: PaymentMethod
+      payment_status: PaymentStatus
+      subscription_status: SubscriptionStatus
+      sync_status: SyncStatus
+      certificate_status: CertificateStatus
+    }
+  }
+}
+
+// ── Row types ──────────────────────────────────────────────────────────────
+
+export interface SubscriptionPlan {
+  id: string
+  name: string
+  name_ar: string | null
+  description: string | null
+  description_ar: string | null
+  price_monthly: number
+  price_yearly: number
+  max_branches: number
+  max_users: number
+  max_products: number
+  features: string[]
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface Tenant {
+  id: string
+  name: string
+  name_ar: string | null
+  vat_number: string
+  cr_number: string | null
+  email: string | null
+  phone: string | null
+  address: string | null
+  address_ar: string | null
+  building_number: string | null
+  additional_number: string | null
+  street: string | null
+  street_ar: string | null
+  district: string | null
+  district_ar: string | null
+  city: string | null
+  city_ar: string | null
+  country: string
+  postal_code: string | null
+  logo_url: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface TenantSubscription {
+  id: string
+  tenant_id: string
+  plan_id: string
+  status: SubscriptionStatus
+  starts_at: string
+  ends_at: string | null
+  trial_ends_at: string | null
+  cancelled_at: string | null
+  moyasar_subscription_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Branch {
+  id: string
+  tenant_id: string
+  name: string
+  name_ar: string | null
+  branch_code: string | null
+  phone: string | null
+  email: string | null
+  address: string | null
+  address_ar: string | null
+  building_number: string | null
+  additional_number: string | null
+  street: string | null
+  street_ar: string | null
+  district: string | null
+  district_ar: string | null
+  city: string | null
+  city_ar: string | null
+  country: string
+  postal_code: string | null
+  is_main_branch: boolean
+  is_active: boolean
+  invoice_counter: number
+  created_at: string
+  updated_at: string
+}
+
+export interface UserProfile {
+  id: string
+  tenant_id: string | null
+  branch_id: string | null
+  role: UserRole
+  full_name: string | null
+  full_name_ar: string | null
+  phone: string | null
+  avatar_url: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ZatcaCertificate {
+  id: string
+  tenant_id: string
+  branch_id: string
+  csr: string | null
+  certificate: string | null
+  private_key_encrypted: string | null
+  otp: string | null
+  compliance_request_id: string | null
+  compliance_csid: string | null
+  production_request_id: string | null
+  production_csid: string | null
+  status: CertificateStatus
+  environment: string
+  serial_number: string | null
+  valid_from: string | null
+  valid_to: string | null
+  last_invoice_hash: string | null
+  invoice_counter: number
+  created_at: string
+  updated_at: string
+}
+
+export interface Category {
+  id: string
+  tenant_id: string
+  parent_id: string | null
+  name: string
+  name_ar: string | null
+  description: string | null
+  is_active: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface Product {
+  id: string
+  tenant_id: string
+  category_id: string | null
+  name: string
+  name_ar: string | null
+  description: string | null
+  description_ar: string | null
+  sku: string | null
+  barcode: string | null
+  unit: string
+  unit_ar: string | null
+  price: number
+  cost: number
+  tax_rate: number
+  tax_category: string
+  is_taxable: boolean
+  stock_quantity: number
+  min_stock_alert: number
+  image_url: string | null
+  is_active: boolean
+  is_service: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface Customer {
+  id: string
+  tenant_id: string
+  name: string
+  name_ar: string | null
+  customer_type: 'individual' | 'business'
+  vat_number: string | null
+  cr_number: string | null
+  email: string | null
+  phone: string | null
+  address: string | null
+  address_ar: string | null
+  building_number: string | null
+  additional_number: string | null
+  district: string | null
+  city: string | null
+  country: string
+  postal_code: string | null
+  notes: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface Employee {
+  id: string
+  tenant_id: string
+  branch_id: string | null
+  user_id: string | null
+  full_name: string
+  full_name_ar: string | null
+  national_id: string | null
+  iqama_number: string | null
+  email: string | null
+  phone: string | null
+  position: string | null
+  position_ar: string | null
+  department: string | null
+  department_ar: string | null
+  salary: number | null
+  hire_date: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface Invoice {
+  id: string
+  tenant_id: string
+  branch_id: string
+  customer_id: string | null
+  created_by: string | null
+  invoice_number: string
+  invoice_reference: string | null
+  zatca_uuid: string
+  zatca_invoice_type: InvoiceType
+  zatca_type_code: string
+  zatca_counter_number: number | null
+  zatca_prev_invoice_hash: string | null
+  zatca_xml: string | null
+  zatca_xml_hash: string | null
+  zatca_signature: string | null
+  zatca_qr_code: string | null
+  zatca_status: ZatcaStatus
+  zatca_submission_id: string | null
+  zatca_submitted_at: string | null
+  zatca_clearance_status: string | null
+  zatca_clearance_response: Record<string, unknown> | null
+  zatca_reporting_response: Record<string, unknown> | null
+  zatca_warnings: Record<string, unknown> | null
+  subtotal: number
+  discount_amount: number
+  taxable_amount: number
+  tax_amount: number
+  total_amount: number
+  currency_code: string
+  invoice_date: string
+  supply_date: string | null
+  due_date: string | null
+  status: InvoiceStatus
+  payment_status: PaymentStatus
+  notes: string | null
+  notes_ar: string | null
+  cancelled_at: string | null
+  cancellation_reason: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface InvoiceItem {
+  id: string
+  invoice_id: string
+  tenant_id: string
+  product_id: string | null
+  name: string
+  name_ar: string | null
+  description: string | null
+  sku: string | null
+  unit: string | null
+  quantity: number
+  unit_price: number
+  discount_percent: number
+  discount_amount: number
+  subtotal: number
+  tax_rate: number
+  tax_category: string
+  tax_amount: number
+  total: number
+  sort_order: number
+  created_at: string
+}
+
+export interface Payment {
+  id: string
+  tenant_id: string
+  invoice_id: string
+  recorded_by: string | null
+  amount: number
+  method: PaymentMethod
+  reference: string | null
+  notes: string | null
+  paid_at: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SyncQueueItem {
+  id: string
+  tenant_id: string
+  branch_id: string
+  invoice_id: string | null
+  action: string
+  payload: Record<string, unknown> | null
+  status: SyncStatus
+  attempts: number
+  max_attempts: number
+  last_attempt_at: string | null
+  last_error: string | null
+  processed_at: string | null
+  created_at: string
+  updated_at: string
+}
