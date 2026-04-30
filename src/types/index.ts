@@ -9,6 +9,7 @@ export type {
   SyncStatus,
   CertificateStatus,
   VatTreatment,
+  CustomerType,
   Database,
   SubscriptionPlan,
   Tenant,
@@ -31,4 +32,6 @@ export type {
   CategoryUpdate,
   ProductInsert,
   ProductUpdate,
+  CustomerInsert,
+  CustomerUpdate,
 } from './database'

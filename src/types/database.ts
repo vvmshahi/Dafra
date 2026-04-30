@@ -58,8 +58,8 @@ export interface Database {
       }
       customers: {
         Row: Customer
-        Insert: Omit<Customer, 'id' | 'created_at' | 'updated_at'>
-        Update: Partial<Omit<Customer, 'id'>>
+        Insert: CustomerInsert
+        Update: CustomerUpdate
       }
       employees: {
         Row: Employee
@@ -321,12 +321,16 @@ export interface Product {
   updated_at: string
 }
 
+export type CustomerType = 'individual' | 'business'
+
 export interface Customer {
   id: string
   tenant_id: string
   name: string
   name_ar: string | null
-  customer_type: 'individual' | 'business'
+  customer_type: CustomerType
+  // Added by update-customers.sql (legal entity name for B2B)
+  company_name: string | null
   vat_number: string | null
   cr_number: string | null
   email: string | null
@@ -549,3 +553,27 @@ export interface ProductInsert {
 }
 
 export type ProductUpdate = Partial<ProductInsert>
+
+export interface CustomerInsert {
+  tenant_id: string
+  name: string
+  name_ar?: string | null
+  customer_type?: string
+  company_name?: string | null
+  vat_number?: string | null
+  cr_number?: string | null
+  email?: string | null
+  phone?: string | null
+  address?: string | null
+  address_ar?: string | null
+  building_number?: string | null
+  additional_number?: string | null
+  district?: string | null
+  city?: string | null
+  country?: string
+  postal_code?: string | null
+  notes?: string | null
+  is_active?: boolean
+}
+
+export type CustomerUpdate = Partial<Omit<CustomerInsert, 'tenant_id'>>
