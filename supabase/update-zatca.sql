@@ -78,14 +78,14 @@ ALTER TABLE sync_queue ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "sync_queue_super_admin" ON sync_queue
   FOR ALL TO authenticated
-  USING  (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'super_admin'))
-  WITH CHECK (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'super_admin'));
+  USING  (EXISTS (SELECT 1 FROM user_profiles WHERE id = auth.uid() AND role = 'super_admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM user_profiles WHERE id = auth.uid() AND role = 'super_admin'));
 
 CREATE POLICY "sync_queue_owner_all" ON sync_queue
   FOR ALL TO authenticated
-  USING  (tenant_id IN (SELECT tenant_id FROM users WHERE id = auth.uid() AND role = 'owner'))
-  WITH CHECK (tenant_id IN (SELECT tenant_id FROM users WHERE id = auth.uid() AND role = 'owner'));
+  USING  (tenant_id IN (SELECT tenant_id FROM user_profiles WHERE id = auth.uid() AND role = 'owner'))
+  WITH CHECK (tenant_id IN (SELECT tenant_id FROM user_profiles WHERE id = auth.uid() AND role = 'owner'));
 
 CREATE POLICY "sync_queue_manager_read" ON sync_queue
   FOR SELECT TO authenticated
-  USING (tenant_id IN (SELECT tenant_id FROM users WHERE id = auth.uid() AND role IN ('owner','manager')));
+  USING (tenant_id IN (SELECT tenant_id FROM user_profiles WHERE id = auth.uid() AND role IN ('owner','manager')));
