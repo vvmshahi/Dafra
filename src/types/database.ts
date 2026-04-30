@@ -11,7 +11,7 @@ export type PaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'other'
 export type PaymentStatus = 'pending' | 'paid' | 'partial' | 'refunded'
 export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'cancelled'
 export type SyncStatus = 'pending' | 'processing' | 'success' | 'failed'
-export type CertificateStatus = 'pending' | 'active' | 'revoked' | 'expired'
+export type CertificateStatus = 'pending' | 'compliance' | 'active' | 'revoked' | 'expired'
 
 export interface Database {
   public: {
@@ -302,6 +302,10 @@ export interface ZatcaCertificate {
   compliance_csid: string | null
   production_request_id: string | null
   production_csid: string | null
+  compliance_secret: string | null
+  production_secret: string | null
+  public_key_pem: string | null
+  activated_at: string | null
   status: CertificateStatus
   environment: string
   serial_number: string | null
