@@ -103,6 +103,26 @@ export interface Database {
         Insert: FixedExpenseInsert
         Update: FixedExpenseUpdate
       }
+      suppliers: {
+        Row: Supplier
+        Insert: SupplierInsert
+        Update: SupplierUpdate
+      }
+      inventory_items: {
+        Row: InventoryItem
+        Insert: InventoryItemInsert
+        Update: InventoryItemUpdate
+      }
+      purchases: {
+        Row: Purchase
+        Insert: PurchaseInsert
+        Update: PurchaseUpdate
+      }
+      purchase_items: {
+        Row: PurchaseItem
+        Insert: PurchaseItemInsert
+        Update: Partial<PurchaseItemInsert>
+      }
     }
     Functions: {
       get_next_invoice_counter: {
@@ -681,3 +701,129 @@ export interface FixedExpenseInsert {
   is_active?: boolean
 }
 export type FixedExpenseUpdate = Partial<Omit<FixedExpenseInsert, 'tenant_id' | 'branch_id'>>
+
+// ── Inventory & Supplier types (added by update-inventory.sql) ─────────────
+
+export type SupplierPaymentTerms = 'cash' | 'credit_30' | 'credit_60'
+export type InventoryUnitType = 'pieces' | 'kg' | 'grams' | 'liters' | 'ml' | 'boxes' | 'bags' | 'other'
+export type PurchasePaymentMethod = 'cash' | 'card' | 'bank_transfer'
+
+export interface Supplier {
+  id: string
+  tenant_id: string
+  name: string
+  name_ar: string | null
+  vat_number: string | null
+  cr_number: string | null
+  contact_person: string | null
+  phone: string | null
+  email: string | null
+  city: string | null
+  address: string | null
+  payment_terms: SupplierPaymentTerms
+  notes: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface InventoryItem {
+  id: string
+  tenant_id: string
+  branch_id: string
+  category_id: string | null
+  supplier_id: string | null
+  name: string
+  name_ar: string | null
+  unit_type: InventoryUnitType
+  current_quantity: number
+  minimum_quantity: number
+  unit_cost: number
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Purchase {
+  id: string
+  tenant_id: string
+  branch_id: string
+  supplier_id: string | null
+  added_by: string | null
+  purchase_date: string
+  subtotal: number
+  vat_amount: number
+  total_amount: number
+  payment_method: PurchasePaymentMethod
+  bill_url: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PurchaseItem {
+  id: string
+  purchase_id: string
+  inventory_item_id: string | null
+  name: string
+  quantity: number
+  unit_cost: number
+  total: number
+  created_at: string
+}
+
+export interface SupplierInsert {
+  tenant_id: string
+  name: string
+  name_ar?: string | null
+  vat_number?: string | null
+  cr_number?: string | null
+  contact_person?: string | null
+  phone?: string | null
+  email?: string | null
+  city?: string | null
+  address?: string | null
+  payment_terms?: string
+  notes?: string | null
+  is_active?: boolean
+}
+export type SupplierUpdate = Partial<Omit<SupplierInsert, 'tenant_id'>>
+
+export interface InventoryItemInsert {
+  tenant_id: string
+  branch_id: string
+  category_id?: string | null
+  supplier_id?: string | null
+  name: string
+  name_ar?: string | null
+  unit_type?: string
+  current_quantity?: number
+  minimum_quantity?: number
+  unit_cost?: number
+  notes?: string | null
+}
+export type InventoryItemUpdate = Partial<Omit<InventoryItemInsert, 'tenant_id' | 'branch_id'>>
+
+export interface PurchaseInsert {
+  tenant_id: string
+  branch_id: string
+  supplier_id?: string | null
+  added_by?: string | null
+  purchase_date?: string
+  subtotal?: number
+  vat_amount?: number
+  total_amount?: number
+  payment_method?: string
+  bill_url?: string | null
+  notes?: string | null
+}
+export type PurchaseUpdate = Partial<Omit<PurchaseInsert, 'tenant_id' | 'branch_id'>>
+
+export interface PurchaseItemInsert {
+  purchase_id: string
+  inventory_item_id?: string | null
+  name: string
+  quantity: number
+  unit_cost: number
+  total: number
+}

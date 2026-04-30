@@ -12,6 +12,8 @@ import ProductsPage         from '@/pages/products/ProductsPage'
 import CustomersPage        from '@/pages/customers/CustomersPage'
 import CustomerDetailPage   from '@/pages/customers/CustomerDetailPage'
 import ExpensesPage        from '@/pages/expenses/ExpensesPage'
+import SuppliersPage       from '@/pages/suppliers/SuppliersPage'
+import InventoryPage       from '@/pages/inventory/InventoryPage'
 import SuperAdminDashboard from '@/pages/super-admin/SuperAdminDashboard'
 import POSPage             from '@/pages/pos/POSPage'
 import SettingsPage        from '@/pages/settings/SettingsPage'
@@ -142,12 +144,12 @@ export default function App() {
               {/* Admin / owner / manager / accountant */}
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/products"  element={<ProductsPage />} />
-              <Route path="/inventory" element={<PlaceholderPage title="Inventory" />} />
+              <Route path="/inventory" element={<InventoryPage />} />
               <Route path="/customers"     element={<CustomersPage />} />
               <Route path="/customers/:id" element={<CustomerDetailPage />} />
               <Route path="/expenses"  element={<ExpensesPage />} />
               <Route path="/reports"   element={<PlaceholderPage title="Reports" />} />
-              <Route path="/suppliers" element={<PlaceholderPage title="Suppliers" />} />
+              <Route path="/suppliers" element={<SuppliersPage />} />
               <Route path="/settings"  element={<SettingsPage />} />
             </Route>
           </Route>
