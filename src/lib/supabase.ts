@@ -9,9 +9,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+  db: {
+    schema: 'public',       // explicit — avoids PostgREST schema resolution errors
+  },
   auth: {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
+    storageKey: 'dafra-auth',
   },
 })

@@ -18,25 +18,35 @@ export function useAuth() {
     loading: true,
   })
 
-  const fetchProfile = useCallback(async (userId: string) => {
-    const { data } = await supabase
+  const fetchProfile = useCallback(async (userId: string): Promise<UserProfile | null> => {
+    // maybeSingle() returns { data: null, error: null } for 0 rows.
+    // single() returns PGRST116 error for 0 rows, which PostgREST surfaces
+    // as "Database error querying schema" in the browser console.
+    const { data, error } = await supabase
       .from('user_profiles')
       .select('*')
       .eq('id', userId)
-      .single()
+      .maybeSingle()
+
+    if (error) {
+      // Log with full detail so the real PostgREST error is visible in devtools.
+      console.error('[useAuth] fetchProfile failed:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        userId,
+      })
+      return null
+    }
+
     return data
   }, [])
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const profile = await fetchProfile(session.user.id)
-        setState({ user: session.user, session, profile, loading: false })
-      } else {
-        setState({ user: null, session: null, profile: null, loading: false })
-      }
-    })
-
+    // onAuthStateChange fires INITIAL_SESSION on mount (covers the getSession()
+    // call that was here before). Keeping both caused a race: two simultaneous
+    // fetchProfile calls → two setState calls → profile could land as null.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         if (session?.user) {
@@ -53,6 +63,7 @@ export function useAuth() {
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) console.error('[useAuth] signIn error:', error.message, error.status)
     return { error }
   }
 
@@ -62,6 +73,7 @@ export function useAuth() {
       password,
       options: { data: { full_name: fullName } },
     })
+    if (error) console.error('[useAuth] signUp error:', error.message)
     return { error }
   }
 
