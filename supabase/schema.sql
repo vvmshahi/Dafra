@@ -937,26 +937,35 @@ CREATE POLICY "sync_queue_tenant"           ON sync_queue
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO user_profiles (id, full_name, role)
-    VALUES (
+    -- WHERE NOT EXISTS is the hard guard: no-op if the profile already exists.
+    -- The WHEN condition on the trigger below is the soft guard that stops
+    -- GoTrue login upserts (which carry NULL / '{}' metadata) from even
+    -- reaching this function.
+    INSERT INTO public.user_profiles (id, full_name, role)
+    SELECT
         NEW.id,
         COALESCE(NEW.raw_user_meta_data ->> 'full_name', ''),
         COALESCE(
             (NEW.raw_user_meta_data ->> 'role')::user_role,
             'cashier'
         )
-    )
-    -- Some GoTrue versions UPSERT auth.users during sign-in, which re-fires
-    -- this AFTER INSERT trigger. Without ON CONFLICT the duplicate key error
-    -- propagates to GoTrue and surfaces as "Database error querying schema".
-    ON CONFLICT (id) DO NOTHING;
+    WHERE NOT EXISTS (
+        SELECT 1 FROM public.user_profiles WHERE id = NEW.id
+    );
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+-- WHEN condition skips GoTrue login upserts: real signups always carry a
+-- non-empty raw_user_meta_data object; login upserts set it to NULL or '{}'.
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
-    FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+    FOR EACH ROW
+    WHEN (
+        NEW.raw_user_meta_data IS NOT NULL
+        AND NEW.raw_user_meta_data != '{}'::jsonb
+    )
+    EXECUTE FUNCTION handle_new_user();
 
 -- ============================================================
 -- FUNCTION: thread-safe invoice counter per branch
