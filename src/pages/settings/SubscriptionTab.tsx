@@ -143,7 +143,7 @@ export default function SubscriptionTab() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!profile?.tenant_id) return
+    if (!profile?.tenant_id) { setLoading(false); return }
     const tid = profile.tenant_id
     ;(async () => {
       setLoading(true)

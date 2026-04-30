@@ -104,7 +104,7 @@ export default function DashboardPage() {
 
   // KPI stats
   const loadStats = useCallback(async () => {
-    if (!tid) return
+    if (!tid) { setStatsLoading(false); return }
     setStatsLoading(true)
     const { start, end } = todayRange()
     const [todayRes, prodRes, custRes] = await Promise.all([
@@ -126,7 +126,7 @@ export default function DashboardPage() {
 
   // Sales chart
   const loadChart = useCallback(async () => {
-    if (!tid) return
+    if (!tid) { setChartLoading(false); return }
     setChartLoading(true)
     const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
     const from = new Date(); from.setDate(from.getDate() - (days - 1)); from.setHours(0,0,0,0)
@@ -164,7 +164,7 @@ export default function DashboardPage() {
 
   // Recent invoices
   const loadInvoices = useCallback(async () => {
-    if (!tid) return
+    if (!tid) { setInvLoading(false); return }
     setInvLoading(true)
     const { data } = await db()
       .from('invoices')

@@ -38,7 +38,7 @@ export default function SuppliersPage() {
 
   const load = useCallback(async () => {
     const tid = profile?.tenant_id
-    if (!tid) return
+    if (!tid) { setLoading(false); return }
 
     const [{ data: suppData }, { data: purData }] = await Promise.all([
       supabase

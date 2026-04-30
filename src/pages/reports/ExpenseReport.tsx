@@ -40,7 +40,7 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
     let cancelled = false
     async function load() {
       const tid = profile?.tenant_id
-      if (!tid || !startDate || !endDate) return
+      if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
       try {
         const [{ data: expData }, { data: fixData }] = await Promise.all([

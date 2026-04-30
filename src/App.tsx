@@ -29,6 +29,8 @@ import ProfilePage          from '@/pages/profile/ProfilePage'
 import DayClosingPage       from '@/pages/day-closing/DayClosingPage'
 import ForgotPasswordPage   from '@/pages/auth/ForgotPasswordPage'
 import ResetPasswordPage    from '@/pages/auth/ResetPasswordPage'
+import TermsPage            from '@/pages/legal/TermsPage'
+import PrivacyPage          from '@/pages/legal/PrivacyPage'
 import NotFoundPage        from '@/pages/NotFoundPage'
 import LandingPage         from '@/pages/landing/LandingPage'
 
@@ -124,6 +126,8 @@ export default function App() {
         <Route path="/signup"          element={<SignupPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password"  element={<ResetPasswordPage />} />
+        <Route path="/terms"           element={<TermsPage />} />
+        <Route path="/privacy"         element={<PrivacyPage />} />
 
         {/* Root: landing page for guests, dashboard redirect for authenticated */}
         <Route path="/" element={<RootRoute />} />

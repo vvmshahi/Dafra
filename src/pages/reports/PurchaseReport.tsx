@@ -37,7 +37,7 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
     let cancelled = false
     async function load() {
       const tid = profile?.tenant_id
-      if (!tid || !startDate || !endDate) return
+      if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
       try {
         // Purchases in range

@@ -48,7 +48,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
     async function load() {
       const tid = profile?.tenant_id
       const bid = branchId ?? profile?.branch_id
-      if (!tid || !startDate || !endDate) return
+      if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
       try {
         // Filter clause helpers

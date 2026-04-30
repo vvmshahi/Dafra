@@ -50,7 +50,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
     let cancelled = false
     async function load() {
       const tid = profile?.tenant_id
-      if (!tid || !startDate || !endDate) return
+      if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
       try {
         // 1. Invoices in range (non-cancelled)

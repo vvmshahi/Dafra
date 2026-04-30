@@ -38,7 +38,7 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
     let cancelled = false
     async function load() {
       const tid = profile?.tenant_id
-      if (!tid || !startDate || !endDate) return
+      if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
       try {
         // Customers are tenant-scoped, not branch-scoped

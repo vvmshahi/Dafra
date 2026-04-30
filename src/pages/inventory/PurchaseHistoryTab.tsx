@@ -179,7 +179,7 @@ export default function PurchaseHistoryTab() {
   const load = useCallback(async () => {
     const tid = profile?.tenant_id
     const bid = profile?.branch_id
-    if (!tid || !bid) return
+    if (!tid || !bid) { setLoading(false); return }
 
     const [{ data: purData }, { data: supData }, { data: invData }] = await Promise.all([
       supabase

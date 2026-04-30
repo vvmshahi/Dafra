@@ -86,7 +86,7 @@ export default function InvoicesPage() {
     let cancelled = false
     async function load() {
       const tid = profile?.tenant_id
-      if (!tid) return
+      if (!tid) { setLoading(false); return }
       setLoading(true)
       try {
         const { data } = await supabase

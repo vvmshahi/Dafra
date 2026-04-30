@@ -292,7 +292,7 @@ export default function ProductsPage() {
 
   const load = useCallback(async () => {
     const tid = profile?.tenant_id
-    if (!tid) return
+    if (!tid) { setLoading(false); return }
 
     const [{ data: prods }, { data: cats }] = await Promise.all([
       supabase

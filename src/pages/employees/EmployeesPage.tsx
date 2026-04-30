@@ -249,7 +249,7 @@ export default function EmployeesPage() {
 
   const load = useCallback(async () => {
     const tid = profile?.tenant_id
-    if (!tid) return
+    if (!tid) { setLoading(false); return }
     setLoading(true)
     const [empRes, brRes] = await Promise.all([
       db().from('employees').select('*').eq('tenant_id', tid).order('full_name'),
