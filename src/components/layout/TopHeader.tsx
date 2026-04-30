@@ -1,4 +1,4 @@
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Bell, Search } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -13,16 +13,19 @@ const titles: Record<string, string> = {
   '/suppliers':                 'Suppliers',
   '/settings':                  'Settings',
   '/super-admin':               'Platform Overview',
-  '/super-admin/tenants':       'Tenants',
+  '/super-admin/clients':       'Clients',
   '/super-admin/subscriptions': 'Subscriptions',
-  '/super-admin/system':        'System',
   '/super-admin/settings':      'Settings',
+  '/employees':                 'Employees',
+  '/profile':                   'My Profile',
+  '/invoices':                  'Invoices',
 }
 
 export default function TopHeader() {
   const location = useLocation()
   const { profile, tenant, user } = useAuth()
 
+  const navigate = useNavigate()
   const title   = titles[location.pathname] ?? 'Dafra'
 
   // Subtitle: tenant business name for regular users, empty for super admin
@@ -56,12 +59,16 @@ export default function TopHeader() {
         <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white" />
       </button>
 
-      {/* Avatar */}
-      <div className="w-8 h-8 rounded-xl bg-primary-500 flex items-center justify-center flex-shrink-0 cursor-pointer hover:bg-primary-600 transition-colors">
+      {/* Avatar — navigates to profile */}
+      <button
+        onClick={() => navigate('/profile')}
+        title="My Profile"
+        className="w-8 h-8 rounded-xl bg-primary-500 flex items-center justify-center flex-shrink-0 hover:bg-primary-600 transition-colors"
+      >
         <span className="text-white text-xs font-bold">
           {displayName.charAt(0).toUpperCase()}
         </span>
-      </div>
+      </button>
     </header>
   )
 }

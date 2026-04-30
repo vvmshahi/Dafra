@@ -317,6 +317,23 @@ export interface ZatcaCertificate {
   updated_at: string
 }
 
+export interface Employee {
+  id: string
+  tenant_id: string
+  branch_id: string | null
+  full_name: string
+  full_name_ar: string | null
+  role: string | null
+  phone: string | null
+  email: string | null
+  hire_date: string | null
+  salary: number | null
+  notes: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface Category {
   id: string
   tenant_id: string
