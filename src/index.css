@@ -4,46 +4,82 @@
 
 @layer base {
   :root {
-    --font-sans: 'Inter', system-ui, sans-serif;
+    --font-sans:   'Inter', system-ui, sans-serif;
     --font-arabic: 'Cairo', system-ui, sans-serif;
   }
 
+  html { @apply scroll-smooth; }
+
   body {
     @apply bg-gray-50 text-gray-900 antialiased;
+    font-family: var(--font-sans);
   }
 
-  /* RTL Arabic font */
-  [dir='rtl'] {
-    font-family: var(--font-arabic);
-  }
+  [dir='rtl'] { font-family: var(--font-arabic); }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar       { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-gray-300 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-gray-400; }
+
+  /* Sidebar scrollbar — barely visible */
+  .sidebar-scroll::-webkit-scrollbar-thumb { @apply bg-sidebar-border; }
 }
 
 @layer components {
+  /* ── Buttons ──────────────────────────────────────────────── */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5
+           text-sm font-semibold transition-all duration-150
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
+           disabled:pointer-events-none disabled:opacity-50 select-none;
   }
-
   .btn-primary {
-    @apply btn bg-primary-600 text-white hover:bg-primary-700 focus-visible:ring-primary-500;
+    @apply btn bg-primary-500 text-white shadow-sm
+           hover:bg-primary-600 active:bg-primary-700
+           focus-visible:ring-primary-500;
   }
-
   .btn-secondary {
-    @apply btn bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus-visible:ring-gray-400;
+    @apply btn bg-white text-gray-700 border border-gray-200 shadow-card
+           hover:bg-gray-50 active:bg-gray-100
+           focus-visible:ring-gray-400;
   }
-
+  .btn-ghost {
+    @apply btn text-gray-600 hover:bg-gray-100 active:bg-gray-200
+           focus-visible:ring-gray-400;
+  }
   .btn-danger {
-    @apply btn bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500;
+    @apply btn bg-red-600 text-white shadow-sm
+           hover:bg-red-700 active:bg-red-800
+           focus-visible:ring-red-500;
+  }
+  .btn-gold {
+    @apply btn bg-gold-500 text-white shadow-sm
+           hover:bg-gold-600 active:bg-gold-700
+           focus-visible:ring-gold-400;
   }
 
+  /* ── Inputs ───────────────────────────────────────────────── */
   .input {
-    @apply block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm placeholder-gray-400 transition focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:bg-gray-100 disabled:cursor-not-allowed;
+    @apply block w-full rounded-xl border border-gray-200 bg-white px-3.5 py-2.5
+           text-sm text-gray-900 placeholder-gray-400 shadow-card
+           transition-all duration-150
+           focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20
+           disabled:bg-gray-50 disabled:cursor-not-allowed;
   }
-
   .label {
-    @apply block text-sm font-medium text-gray-700 mb-1;
+    @apply block text-sm font-medium text-gray-700 mb-1.5;
   }
 
+  /* ── Cards ────────────────────────────────────────────────── */
   .card {
-    @apply bg-white rounded-xl border border-gray-200 shadow-sm;
+    @apply bg-white rounded-2xl border border-gray-100 shadow-card;
+  }
+
+  /* ── Badges ───────────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5
+           text-xs font-semibold ring-1 ring-inset;
   }
 }

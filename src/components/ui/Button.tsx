@@ -1,39 +1,42 @@
 import { forwardRef } from 'react'
-import { LoadingSpinner } from './LoadingSpinner'
+import { Loader2 } from 'lucide-react'
+
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'gold'
+type Size    = 'sm' | 'md' | 'lg' | 'icon'
 
 interface Props extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
-  size?: 'sm' | 'md' | 'lg'
+  variant?: Variant
+  size?: Size
   loading?: boolean
-  children: React.ReactNode
+  children?: React.ReactNode
 }
 
-const variants = {
-  primary: 'btn-primary',
+const variantClass: Record<Variant, string> = {
+  primary:   'btn-primary',
   secondary: 'btn-secondary',
-  danger: 'btn-danger',
-  ghost: 'btn text-gray-600 hover:bg-gray-100',
+  ghost:     'btn-ghost',
+  danger:    'btn-danger',
+  gold:      'btn-gold',
 }
 
-const sizes = {
-  sm: 'px-3 py-1.5 text-xs',
-  md: '',
-  lg: 'px-6 py-3 text-base',
+const sizeClass: Record<Size, string> = {
+  sm:   'px-3 py-1.5 text-xs rounded-lg',
+  md:   '',
+  lg:   'px-6 py-3 text-base',
+  icon: 'p-2 rounded-xl',
 }
 
 export const Button = forwardRef<HTMLButtonElement, Props>(
-  ({ variant = 'primary', size = 'md', loading, children, className = '', disabled, ...props }, ref) => {
-    return (
-      <button
-        ref={ref}
-        className={`${variants[variant]} ${sizes[size]} ${className}`}
-        disabled={disabled || loading}
-        {...props}
-      >
-        {loading && <LoadingSpinner size="sm" />}
-        {children}
-      </button>
-    )
-  },
+  ({ variant = 'primary', size = 'md', loading, children, className = '', disabled, ...props }, ref) => (
+    <button
+      ref={ref}
+      className={`${variantClass[variant]} ${sizeClass[size]} ${className}`}
+      disabled={disabled || loading}
+      {...props}
+    >
+      {loading && <Loader2 size={15} className="animate-spin" />}
+      {children}
+    </button>
+  ),
 )
 Button.displayName = 'Button'
