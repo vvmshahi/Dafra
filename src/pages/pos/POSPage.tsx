@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import type { Branch, VatTreatment } from '@/types/database'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -208,21 +209,21 @@ function ReceiptView({ receipt, onNewSale }: { receipt: ReceiptData; onNewSale: 
           <div className="border-t border-gray-100 pt-3 space-y-1.5">
             <div className="flex justify-between text-sm text-gray-500">
               <span>Net Amount</span>
-              <span className="tabular-nums">SAR {fmt(receipt.subtotal)}</span>
+              <span className="tabular-nums"><Rial amount={receipt.subtotal} /></span>
             </div>
             <div className="flex justify-between text-sm text-gray-500">
               <span>VAT (15%)</span>
-              <span className="tabular-nums">SAR {fmt(receipt.taxAmount)}</span>
+              <span className="tabular-nums"><Rial amount={receipt.taxAmount} /></span>
             </div>
             <div className="flex justify-between font-bold text-gray-900 text-lg pt-1.5 border-t border-gray-100">
               <span>Total</span>
-              <span className="tabular-nums text-emerald-600">SAR {fmt(receipt.total)}</span>
+              <span className="tabular-nums text-emerald-600"><Rial amount={receipt.total} /></span>
             </div>
           </div>
           {receipt.paymentMethod === 'cash' && receipt.change > 0.005 && (
             <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex justify-between">
               <span className="text-sm font-semibold text-amber-700">Change Due</span>
-              <span className="text-lg font-bold text-amber-700 tabular-nums">SAR {fmt(receipt.change)}</span>
+              <span className="text-lg font-bold text-amber-700 tabular-nums"><Rial amount={receipt.change} /></span>
             </div>
           )}
           <div className="flex justify-center pt-1">
@@ -265,7 +266,7 @@ function ProductCard({ product, cartQty, onAdd }: {
       {product.nameAr && (
         <p className="text-[10px] text-gray-400 truncate" dir="rtl">{product.nameAr}</p>
       )}
-      <p className="text-sm font-bold text-primary-600 mt-1">SAR {fmt(product.price)}</p>
+      <p className="text-sm font-bold text-primary-600 mt-1"><Rial amount={product.price} /></p>
       {product.catName && (
         <span className="inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full mt-1"
           style={{ backgroundColor: `${color}20`, color }}>
@@ -783,7 +784,7 @@ export default function POSPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-gray-800 truncate">{item.name}</p>
                     <p className="text-[10px] text-gray-400 tabular-nums">
-                      {fmt(item.price)} × {item.quantity} = <span className="text-gray-700 font-semibold">SAR {fmt(line)}</span>
+                      {fmt(item.price)} × {item.quantity} = <span className="text-gray-700 font-semibold"><Rial amount={line} /></span>
                     </p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
@@ -816,15 +817,15 @@ export default function POSPage() {
         <div className="px-4 py-3 border-t border-gray-100 space-y-1.5 flex-shrink-0">
           <div className="flex justify-between text-xs text-gray-500">
             <span>Net Amount</span>
-            <span className="tabular-nums">SAR {fmt(totals.subtotal)}</span>
+            <span className="tabular-nums"><Rial amount={totals.subtotal} /></span>
           </div>
           <div className="flex justify-between text-xs text-gray-500">
             <span>VAT 15% ({vatMode === 'inclusive' ? 'incl.' : 'excl.'})</span>
-            <span className="tabular-nums">SAR {fmt(totals.taxAmount)}</span>
+            <span className="tabular-nums"><Rial amount={totals.taxAmount} /></span>
           </div>
           <div className="flex justify-between font-bold text-gray-900 text-base pt-1.5 border-t border-gray-100">
             <span>Total</span>
-            <span className="tabular-nums text-primary-600">SAR {fmt(totals.total)}</span>
+            <span className="tabular-nums text-primary-600"><Rial amount={totals.total} /></span>
           </div>
         </div>
 
@@ -861,12 +862,12 @@ export default function POSPage() {
               {cashAmt >= totals.total && cashAmt > 0 && (
                 <div className="flex justify-between px-1">
                   <span className="text-xs text-gray-500">Change</span>
-                  <span className="text-sm font-bold text-emerald-600 tabular-nums">SAR {fmt(change)}</span>
+                  <span className="text-sm font-bold text-emerald-600 tabular-nums"><Rial amount={change} /></span>
                 </div>
               )}
               {cashAmt > 0 && cashAmt < totals.total && (
-                <p className="text-[10px] text-red-500 px-1">
-                  Short by SAR {fmt(totals.total - cashAmt)}
+                <p className="text-[10px] text-red-500 px-1 flex items-baseline gap-1">
+                  Short by <Rial amount={totals.total - cashAmt} />
                 </p>
               )}
             </div>
@@ -887,7 +888,7 @@ export default function POSPage() {
               ? <><Loader2 size={16} className="animate-spin" /> Processing…</>
               : <>
                   {payMethod === 'cash' ? <Banknote size={16} /> : <CreditCard size={16} />}
-                  Charge — SAR {fmt(totals.total)}
+                  Charge — <Rial amount={totals.total} />
                 </>
             }
           </button>

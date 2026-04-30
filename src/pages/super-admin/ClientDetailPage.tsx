@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import { supabase } from '@/lib/supabase'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -244,7 +245,7 @@ export default function ClientDetailPage() {
             { label: 'Branches', value: branches.length, icon: Building2 },
             { label: 'Users',    value: users.length,    icon: Users },
             { label: 'Invoices', value: stats?.total ?? 0, icon: FileText },
-            { label: 'Revenue',  value: `SAR ${(stats?.revenue ?? 0).toLocaleString()}`, icon: CreditCard },
+            { label: 'Revenue',  value: <Rial amount={stats?.revenue ?? 0} />, icon: CreditCard },
           ].map(({ label, value, icon: Icon }) => (
             <div key={label} className="text-center">
               <Icon size={18} className="text-gray-300 mx-auto mb-1" />
@@ -297,7 +298,7 @@ export default function ClientDetailPage() {
                   : 'danger'
                 } dot>{sub.status}</Badge>
               } />
-              <InfoRow label="Monthly"   value={sub.plan ? `SAR ${sub.plan.price_monthly.toLocaleString()}` : '—'} />
+              <InfoRow label="Monthly"   value={sub.plan ? <Rial amount={sub.plan.price_monthly} /> : '—'} />
               <InfoRow label="Started"   value={sub.starts_at.slice(0, 10)} />
               <InfoRow label="Expires"   value={sub.ends_at?.slice(0, 10) ?? 'No expiry'} />
               {sub.trial_ends_at && (

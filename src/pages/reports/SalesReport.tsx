@@ -10,6 +10,7 @@ import {
   StatCard, SkeletonCard, SkeletonTable, SkeletonChart,
   EmptyChart, SectionHeader, ChartTooltip, CHART_COLORS,
 } from './reportUtils'
+import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -189,10 +190,10 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
 
       {/* ── Summary cards ──────────────────────────────────── */}
       <div className="flex gap-3 flex-wrap">
-        <StatCard label="Total Revenue"    value={`SAR ${fmt(data.totalRevenue)}`}  primary />
-        <StatCard label="Total Invoices"   value={String(data.invoiceCount)}         sub="non-cancelled" />
-        <StatCard label="Average Order"    value={`SAR ${fmt(data.avgOrderValue)}`}  accent="emerald" />
-        <StatCard label="VAT Collected"    value={`SAR ${fmt(data.vatCollected)}`}   accent="amber" />
+        <StatCard label="Total Revenue"    value={<Rial amount={data.totalRevenue} />}  primary />
+        <StatCard label="Total Invoices"   value={String(data.invoiceCount)}            sub="non-cancelled" />
+        <StatCard label="Average Order"    value={<Rial amount={data.avgOrderValue} />} accent="emerald" />
+        <StatCard label="VAT Collected"    value={<Rial amount={data.vatCollected} />}  accent="amber" />
       </div>
 
       {/* ── Charts row ─────────────────────────────────────── */}
@@ -241,7 +242,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
                       } />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(v: any) => [`SAR ${fmt(Number(v))}`, '']} />
+                  <Tooltip formatter={(v: any) => [sarStr(Number(v)), '']} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="space-y-1.5">
@@ -255,7 +256,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
                     <div key={m.name} className="flex items-center gap-2 text-xs">
                       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
                       <span className="flex-1 text-gray-600">{m.name}</span>
-                      <span className="font-semibold text-gray-800 tabular-nums">SAR {fmt(m.value)}</span>
+                      <span className="font-semibold text-gray-800 tabular-nums"><Rial amount={m.value} /></span>
                       <span className="text-gray-400 w-8 text-right">{pct.toFixed(0)}%</span>
                     </div>
                   )
@@ -294,7 +295,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
                     {fmtQty(p.quantity)}
                   </div>
                   <div className="w-24 text-right text-sm font-semibold text-gray-900 tabular-nums">
-                    SAR {fmt(p.revenue)}
+                    <Rial amount={p.revenue} />
                   </div>
                   <div className="w-10 text-right text-xs text-emerald-600 font-medium tabular-nums">
                     {p.pct.toFixed(1)}%
@@ -331,7 +332,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
                     {fmtQty(c.items)}
                   </div>
                   <div className="w-24 text-right text-sm font-semibold text-gray-900 tabular-nums">
-                    SAR {fmt(c.revenue)}
+                    <Rial amount={c.revenue} />
                   </div>
                   <div className="w-10 text-right text-xs text-emerald-600 font-medium tabular-nums">
                     {c.pct.toFixed(1)}%

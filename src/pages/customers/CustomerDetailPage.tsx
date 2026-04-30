@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import type { Customer, InvoiceStatus, PaymentStatus } from '@/types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -58,7 +59,7 @@ function InfoRow({ icon: Icon, value }: { icon: React.ElementType; value: string
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 
-function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function StatCard({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
     <div className="flex-1 min-w-0 bg-white rounded-xl border border-gray-100 px-4 py-3 shadow-card">
       <p className="text-xs text-gray-400 font-medium">{label}</p>
@@ -211,12 +212,12 @@ export default function CustomerDetailPage() {
       <div className="flex gap-3 flex-wrap">
         <StatCard
           label="Total Spent"
-          value={`SAR ${totalSpent.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          value={<Rial amount={totalSpent} />}
           sub="from posted invoices"
         />
         <StatCard
           label="Total VAT Paid"
-          value={`SAR ${totalVat.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          value={<Rial amount={totalVat} />}
         />
         <StatCard
           label="Invoice Count"
@@ -346,9 +347,7 @@ export default function CustomerDetailPage() {
               <div className="w-16 flex-shrink-0 hidden sm:block" />
               <div className="flex-1 text-right">
                 <p className="text-sm font-bold text-primary-600 tabular-nums">
-                  SAR {totalSpent.toLocaleString('en-US', {
-                    minimumFractionDigits: 2, maximumFractionDigits: 2,
-                  })}
+                  <Rial amount={totalSpent} />
                 </p>
                 <p className="text-[10px] text-gray-400">posted invoices total</p>
               </div>

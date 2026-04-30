@@ -10,6 +10,7 @@ import {
   StatCard, SkeletonCard, SkeletonChart, SkeletonTable,
   EmptyChart, SectionHeader, ChartTooltip, CHART_COLORS,
 } from './reportUtils'
+import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -153,12 +154,12 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
 
       {/* ── Summary cards ──────────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
-        <StatCard label="Total Revenue"    value={`SAR ${fmt(data!.totalRevenue)}`}   primary />
-        <StatCard label="Total Purchases"  value={`SAR ${fmt(data!.totalCOGS)}`}       accent="amber" sub="cost of goods" />
-        <StatCard label="Gross Profit"     value={`SAR ${fmt(data!.grossProfit)}`}     accent={data!.grossProfit >= 0 ? 'emerald' : 'red'} />
-        <StatCard label="Total Expenses"   value={`SAR ${fmt(data!.totalExpenses)}`}   accent="red" />
-        <StatCard label="Net Profit"       value={`SAR ${fmt(data!.netProfit)}`}       accent={data!.netProfit >= 0 ? 'emerald' : 'red'} sub="revenue − COGS − expenses" />
-        <StatCard label="Net Margin"       value={`${data!.margin.toFixed(1)}%`}       accent={data!.margin >= 0 ? 'emerald' : 'red'} />
+        <StatCard label="Total Revenue"    value={<Rial amount={data!.totalRevenue} />}   primary />
+        <StatCard label="Total Purchases"  value={<Rial amount={data!.totalCOGS} />}      accent="amber" sub="cost of goods" />
+        <StatCard label="Gross Profit"     value={<Rial amount={data!.grossProfit} />}    accent={data!.grossProfit >= 0 ? 'emerald' : 'red'} />
+        <StatCard label="Total Expenses"   value={<Rial amount={data!.totalExpenses} />}  accent="red" />
+        <StatCard label="Net Profit"       value={<Rial amount={data!.netProfit} />}      accent={data!.netProfit >= 0 ? 'emerald' : 'red'} sub="revenue − COGS − expenses" />
+        <StatCard label="Net Margin"       value={`${data!.margin.toFixed(1)}%`}          accent={data!.margin >= 0 ? 'emerald' : 'red'} />
       </div>
 
       {/* ── Charts row ─────────────────────────────────────── */}
@@ -196,7 +197,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
                       <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(v: any) => [`SAR ${fmt(Number(v))}`, '']} />
+                  <Tooltip formatter={(v: any) => [sarStr(Number(v)), '']} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="space-y-1 max-h-32 overflow-y-auto">
@@ -205,7 +206,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
                     <span className="w-2 h-2 rounded-full flex-shrink-0"
                       style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
                     <span className="flex-1 text-gray-600 truncate">{c.name}</span>
-                    <span className="font-semibold text-gray-800 tabular-nums">SAR {fmt(c.value)}</span>
+                    <span className="font-semibold text-gray-800 tabular-nums"><Rial amount={c.value} /></span>
                   </div>
                 ))}
               </div>
@@ -234,28 +235,28 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
               {data!.monthlyRows.map(r => (
                 <tr key={r.month} className="border-b border-gray-50 hover:bg-gray-50/50">
                   <td className="px-4 py-3 font-medium text-gray-700">{fmtMonth(r.month)}</td>
-                  <td className="px-4 py-3 tabular-nums text-emerald-600 font-semibold">SAR {fmt(r.revenue)}</td>
-                  <td className="px-4 py-3 tabular-nums text-amber-600">SAR {fmt(r.cogs)}</td>
+                  <td className="px-4 py-3 tabular-nums text-emerald-600 font-semibold"><Rial amount={r.revenue} /></td>
+                  <td className="px-4 py-3 tabular-nums text-amber-600"><Rial amount={r.cogs} /></td>
                   <td className={`px-4 py-3 tabular-nums font-semibold ${r.grossProfit >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>
-                    SAR {fmt(r.grossProfit)}
+                    <Rial amount={r.grossProfit} />
                   </td>
-                  <td className="px-4 py-3 tabular-nums text-red-500">SAR {fmt(r.expenses)}</td>
+                  <td className="px-4 py-3 tabular-nums text-red-500"><Rial amount={r.expenses} /></td>
                   <td className={`px-4 py-3 tabular-nums font-bold ${r.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                    SAR {fmt(r.netProfit)}
+                    <Rial amount={r.netProfit} />
                   </td>
                 </tr>
               ))}
               {/* Totals row */}
               <tr className="bg-gray-50 font-bold border-t-2 border-gray-200">
                 <td className="px-4 py-3 text-gray-700">Total</td>
-                <td className="px-4 py-3 tabular-nums text-emerald-600">SAR {fmt(data!.totalRevenue)}</td>
-                <td className="px-4 py-3 tabular-nums text-amber-600">SAR {fmt(data!.totalCOGS)}</td>
+                <td className="px-4 py-3 tabular-nums text-emerald-600"><Rial amount={data!.totalRevenue} /></td>
+                <td className="px-4 py-3 tabular-nums text-amber-600"><Rial amount={data!.totalCOGS} /></td>
                 <td className={`px-4 py-3 tabular-nums ${data!.grossProfit >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>
-                  SAR {fmt(data!.grossProfit)}
+                  <Rial amount={data!.grossProfit} />
                 </td>
-                <td className="px-4 py-3 tabular-nums text-red-500">SAR {fmt(data!.totalExpenses)}</td>
+                <td className="px-4 py-3 tabular-nums text-red-500"><Rial amount={data!.totalExpenses} /></td>
                 <td className={`px-4 py-3 tabular-nums ${data!.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                  SAR {fmt(data!.netProfit)}
+                  <Rial amount={data!.netProfit} />
                 </td>
               </tr>
             </tbody>

@@ -9,6 +9,7 @@ import {
   StatCard, SkeletonCard, SkeletonChart, SkeletonTable,
   EmptyChart, SectionHeader, ChartTooltip,
 } from './reportUtils'
+import { Rial } from '@/components/ui/RiyalSymbol'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -144,9 +145,9 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
 
       {/* ── Summary cards ──────────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
-        <StatCard label="Total Purchased"  value={`SAR ${fmt(data!.totalPurchased)}`}  primary />
-        <StatCard label="VAT Paid"         value={`SAR ${fmt(data!.totalVat)}`}         accent="amber" sub="input VAT" />
-        <StatCard label="Suppliers Used"   value={String(data!.supplierCount)}          sub="unique vendors" />
+        <StatCard label="Total Purchased"  value={<Rial amount={data!.totalPurchased} />} primary />
+        <StatCard label="VAT Paid"         value={<Rial amount={data!.totalVat} />}      accent="amber" sub="input VAT" />
+        <StatCard label="Suppliers Used"   value={String(data!.supplierCount)}           sub="unique vendors" />
       </div>
 
       {/* ── Monthly trend chart ─────────────────────────────── */}
@@ -195,7 +196,7 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
                     {s.count}
                   </div>
                   <div className="w-24 text-right text-sm font-bold text-amber-600 tabular-nums">
-                    SAR {fmt(s.total)}
+                    <Rial amount={s.total} />
                   </div>
                 </div>
               ))}
@@ -204,7 +205,7 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
                   {data!.bySupplier.length} suppliers
                 </div>
                 <div className="w-24 text-right text-sm font-bold text-amber-600 tabular-nums">
-                  SAR {fmt(data!.totalPurchased)}
+                  <Rial amount={data!.totalPurchased} />
                 </div>
               </div>
             </>
@@ -234,7 +235,7 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
                     {it.quantity.toLocaleString('en-US', { maximumFractionDigits: 3 })}
                   </div>
                   <div className="w-24 text-right text-sm font-bold text-amber-600 tabular-nums">
-                    SAR {fmt(it.total)}
+                    <Rial amount={it.total} />
                   </div>
                 </div>
               ))}

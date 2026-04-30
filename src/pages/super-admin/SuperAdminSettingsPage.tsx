@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Save, Plus, Trash2, Edit2, Check, X, Package } from 'lucide-react'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import { supabase } from '@/lib/supabase'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -200,7 +201,7 @@ export default function SuperAdminSettingsPage() {
                       )}
                     </div>
                     <div className="flex flex-wrap gap-4 mt-2 text-xs text-gray-500">
-                      <span>SAR {plan.price_monthly}/mo · SAR {plan.price_yearly}/yr</span>
+                      <span><><Rial amount={plan.price_monthly} />/mo · <Rial amount={plan.price_yearly} />/yr</></span>
                       <span>{plan.max_branches} branch{plan.max_branches !== 1 ? 'es' : ''}</span>
                       <span>{plan.max_users} users</span>
                       <span>{plan.max_products} products</span>

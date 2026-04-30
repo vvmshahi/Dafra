@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import type { ExpenseCategory, ExpensePaymentMethod } from '@/types'
 import type { FixedExpenseRow } from './FixedExpensesTab'
+import { Rial } from '@/components/ui/RiyalSymbol'
 
 // ── Payment options ───────────────────────────────────────────────────────────
 
@@ -186,11 +187,11 @@ export default function FixedExpenseDrawer({ open, item, categories, onClose, on
                 <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
                   <div className="flex justify-between text-gray-500">
                     <span>Monthly</span>
-                    <span className="tabular-nums font-medium">SAR {fmt(amountNum)}</span>
+                    <span className="tabular-nums font-medium"><Rial amount={amountNum} /></span>
                   </div>
                   <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1.5">
                     <span>Annual Estimate</span>
-                    <span className="tabular-nums text-primary-600">SAR {fmt(amountNum * 12)}</span>
+                    <span className="tabular-nums text-primary-600"><Rial amount={amountNum * 12} /></span>
                   </div>
                 </div>
               )}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CreditCard, TrendingUp, Users, AlertCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { supabase } from '@/lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 
@@ -48,7 +49,7 @@ function ChartTooltip({ active, payload, label }: any) {
   return (
     <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-3 py-2">
       <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-      <p className="text-sm font-bold text-gray-900">SAR {Number(payload[0].value).toLocaleString()} MRR</p>
+      <p className="text-sm font-bold text-gray-900">{sarStr(Number(payload[0].value))} MRR</p>
     </div>
   )
 }
@@ -142,7 +143,7 @@ export default function SubscriptionsPage() {
           </div>
           <div>
             <p className="text-xs text-gray-400 font-medium">Monthly Recurring Revenue</p>
-            <p className="text-2xl font-bold text-gray-900 mt-0.5">SAR {totalMrr.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-gray-900 mt-0.5"><Rial amount={totalMrr} /></p>
             <p className="text-xs text-gray-400 mt-0.5">{totalActive} paying clients</p>
           </div>
         </div>
@@ -163,7 +164,7 @@ export default function SubscriptionsPage() {
           <div>
             <p className="text-xs text-gray-400 font-medium">Average Revenue / Client</p>
             <p className="text-2xl font-bold text-gray-900 mt-0.5">
-              SAR {totalActive > 0 ? Math.round(totalMrr / totalActive).toLocaleString() : '0'}
+              {totalActive > 0 ? <Rial amount={Math.round(totalMrr / totalActive)} /> : '0'}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">ARPU</p>
           </div>
@@ -193,9 +194,9 @@ export default function SubscriptionsPage() {
           <div key={p.id} className="card p-5">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">{p.name}</h3>
-              <span className="text-xs text-gray-400">SAR {p.price_monthly}/mo</span>
+              <span className="text-xs text-gray-400"><><Rial amount={p.price_monthly} />/mo</></span>
             </div>
-            <p className="text-2xl font-bold text-gray-900 mb-3">SAR {p.mrr.toLocaleString()} MRR</p>
+            <p className="text-2xl font-bold text-gray-900 mb-3"><><Rial amount={p.mrr} /> MRR</></p>
             <div className="grid grid-cols-2 gap-2 text-center">
               <div className="bg-emerald-50 rounded-lg py-1.5">
                 <p className="text-sm font-bold text-emerald-700">{p.active}</p>
@@ -246,7 +247,7 @@ export default function SubscriptionsPage() {
                     ) : <span className="text-xs text-gray-400">—</span>}
                   </td>
                   <td className="px-5 py-3.5 text-sm text-gray-700 tabular-nums">
-                    {r.mrr > 0 ? `SAR ${r.mrr.toLocaleString()}` : <span className="text-gray-400">—</span>}
+                    {r.mrr > 0 ? <Rial amount={r.mrr} /> : <span className="text-gray-400">—</span>}
                   </td>
                   <td className="px-5 py-3.5 text-xs text-gray-400">{r.starts_at.slice(0, 10)}</td>
                   <td className="px-5 py-3.5 text-xs text-gray-400">{r.ends_at?.slice(0, 10) ?? 'No expiry'}</td>

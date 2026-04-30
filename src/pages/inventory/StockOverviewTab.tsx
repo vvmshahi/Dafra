@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import type { InventoryItem, Category, Supplier } from '@/types'
 import StockItemDrawer from './StockItemDrawer'
 
@@ -36,7 +37,7 @@ function stockStatus(item: InventoryItem): 'ok' | 'low' | 'out' {
 // ── Summary card ──────────────────────────────────────────────────────────────
 
 function SumCard({ label, value, sub, accent }: {
-  label: string; value: string; sub?: string; accent?: 'green' | 'amber' | 'red'
+  label: string; value: React.ReactNode; sub?: string; accent?: 'green' | 'amber' | 'red'
 }) {
   const vClx =
     accent === 'green' ? 'text-emerald-600' :
@@ -115,7 +116,7 @@ export default function StockOverviewTab() {
       <div className="flex items-start gap-4 flex-wrap">
         <div className="flex gap-3 flex-1 flex-wrap min-w-0">
           <SumCard label="Total Items"      value={String(items.length)}            sub="in stock list"            />
-          <SumCard label="Total Stock Value" value={`SAR ${fmt(totalValue)}`}      sub="at current cost"         accent="green" />
+          <SumCard label="Total Stock Value" value={<Rial amount={totalValue} />}   sub="at current cost"         accent="green" />
           <SumCard label="Low / Out of Stock" value={String(lowStock)}             sub="need restocking"         accent={lowStock > 0 ? 'amber' : undefined} />
           <SumCard label="Added This Month"  value={String(addedThisMonth)}        sub="new items"                />
         </div>
@@ -233,14 +234,14 @@ export default function StockOverviewTab() {
 
                 {/* Unit cost */}
                 <div className="w-28 hidden sm:block text-right">
-                  <p className="text-sm tabular-nums text-gray-700">SAR {fmt(item.unit_cost)}</p>
+                  <p className="text-sm tabular-nums text-gray-700"><Rial amount={item.unit_cost} /></p>
                   <p className="text-[10px] text-gray-400">per {UNIT_LABEL[item.unit_type] || 'unit'}</p>
                 </div>
 
                 {/* Total value */}
                 <div className="w-28 text-right">
                   <p className="text-sm font-semibold text-emerald-600 tabular-nums">
-                    SAR {fmt(item.current_quantity * item.unit_cost)}
+                    <Rial amount={item.current_quantity * item.unit_cost} />
                   </p>
                 </div>
 
@@ -274,7 +275,7 @@ export default function StockOverviewTab() {
             <div className="w-28 hidden sm:block" />
             <div className="w-28 text-right">
               <p className="text-sm font-bold text-emerald-600 tabular-nums">
-                SAR {fmt(totalValue)}
+                <Rial amount={totalValue} />
               </p>
               <p className="text-[10px] text-gray-400">total value</p>
             </div>

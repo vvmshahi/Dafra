@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import type { Category, VatTreatment } from '@/types'
 import ProductDrawer from './ProductDrawer'
 import CategoriesModal from './CategoriesModal'
@@ -154,7 +155,7 @@ function ProductCard({
           <Badge variant={VAT_BADGE[vat]}>{VAT_LABELS[vat]}</Badge>
         </div>
         <p className="text-base font-bold text-primary-600 mt-auto pt-2">
-          SAR {Number(product.price).toFixed(2)}
+          <Rial amount={Number(product.price)} />
         </p>
       </div>
     </div>
@@ -216,7 +217,7 @@ function ProductListRow({
 
       {/* Price */}
       <div className="w-24 flex-shrink-0 text-right">
-        <p className="text-sm font-bold text-primary-600">SAR {Number(product.price).toFixed(2)}</p>
+        <p className="text-sm font-bold text-primary-600"><Rial amount={Number(product.price)} /></p>
       </div>
 
       {/* Availability */}

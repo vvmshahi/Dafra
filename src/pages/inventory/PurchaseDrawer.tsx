@@ -3,6 +3,7 @@ import { X, Plus, Trash2, ImagePlus, Banknote, CreditCard, Building } from 'luci
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import type { Supplier, InventoryItem } from '@/types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -321,7 +322,7 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
                       </div>
                       <div className="w-28 flex items-center justify-end">
                         <span className="text-sm font-semibold text-gray-700 tabular-nums">
-                          SAR {fmt(lineTotal(line))}
+                          <Rial amount={lineTotal(line)} />
                         </span>
                       </div>
                     </div>
@@ -363,17 +364,17 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
               <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2">
                 <div className="flex justify-between text-sm text-gray-600">
                   <span>Subtotal</span>
-                  <span className="tabular-nums font-medium">SAR {fmt(subtotal)}</span>
+                  <span className="tabular-nums font-medium"><Rial amount={subtotal} /></span>
                 </div>
                 {hasVat && (
                   <div className="flex justify-between text-sm text-gray-600">
                     <span>VAT (15%)</span>
-                    <span className="tabular-nums font-medium">SAR {fmt(vatAmt)}</span>
+                    <span className="tabular-nums font-medium"><Rial amount={vatAmt} /></span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-2">
                   <span>Total</span>
-                  <span className="tabular-nums text-emerald-600">SAR {fmt(totalAmt)}</span>
+                  <span className="tabular-nums text-emerald-600"><Rial amount={totalAmt} /></span>
                 </div>
               </div>
             )}

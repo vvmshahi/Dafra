@@ -5,6 +5,7 @@ import {
   CheckCircle2, AlertTriangle,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
+import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { supabase } from '@/lib/supabase'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -45,7 +46,7 @@ function monthLabel(iso: string) {
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 interface StatCardProps {
-  label: string; value: string; sub: string
+  label: string; value: React.ReactNode; sub: string
   icon: React.ElementType; iconClass: string; bgClass: string
 }
 function StatCard({ label, value, sub, icon: Icon, iconClass, bgClass }: StatCardProps) {
@@ -68,7 +69,7 @@ function ChartTooltip({ active, payload, label }: any) {
   return (
     <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-3.5 py-2.5">
       <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-      <p className="text-sm font-bold text-gray-900">SAR {Number(payload[0].value).toLocaleString()}</p>
+      <p className="text-sm font-bold text-gray-900">{sarStr(Number(payload[0].value))}</p>
     </div>
   )
 }
@@ -238,7 +239,7 @@ export default function SuperAdminDashboard() {
         />
         <StatCard
           label="MRR"
-          value={`SAR ${s.mrr.toLocaleString()}`}
+          value={<Rial amount={s.mrr} />}
           sub={`${s.newThisMonth} new this month`}
           icon={TrendingUp} iconClass="text-emerald-600" bgClass="bg-emerald-50"
         />

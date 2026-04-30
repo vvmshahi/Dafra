@@ -81,7 +81,7 @@ export interface ReportProps {
 
 interface StatCardProps {
   label:   string
-  value:   string
+  value:   React.ReactNode
   sub?:    string
   accent?: 'emerald' | 'amber' | 'red' | 'blue' | 'primary'
   primary?: boolean

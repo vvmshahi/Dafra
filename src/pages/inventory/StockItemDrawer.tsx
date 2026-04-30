@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import type { InventoryItem, Category, Supplier } from '@/types'
 
 // ── Unit options ──────────────────────────────────────────────────────────────
@@ -219,9 +220,7 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
                 <div className="bg-emerald-50 rounded-xl px-4 py-3 flex justify-between items-center">
                   <span className="text-sm text-emerald-700 font-medium">Total Stock Value</span>
                   <span className="text-sm font-bold text-emerald-700 tabular-nums">
-                    SAR {(parseFloat(currentQty) * parseFloat(unitCost)).toLocaleString('en-US', {
-                      minimumFractionDigits: 2, maximumFractionDigits: 2,
-                    })}
+                    <Rial amount={parseFloat(currentQty) * parseFloat(unitCost)} />
                   </span>
                 </div>
               )}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Plus, Search, Pencil, Trash2, X, Receipt, Filter } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import type { Expense, ExpenseCategory, VatExpenseTreatment, ExpensePaymentMethod } from '@/types'
 import ExpenseDrawer from './ExpenseDrawer'
+import { Rial } from '@/components/ui/RiyalSymbol'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ type Preset = 'today' | 'week' | 'month' | 'custom'
 // ── Summary card ──────────────────────────────────────────────────────────────
 
 function SumCard({ label, value, sub, accent }: {
-  label: string; value: string; sub?: string; accent?: boolean
+  label: string; value: React.ReactNode; sub?: string; accent?: boolean
 }) {
   return (
     <div className={`flex-1 min-w-0 rounded-xl px-4 py-3 border ${
@@ -305,11 +306,11 @@ export default function DailyExpensesTab() {
       <div className="flex items-start gap-4 flex-wrap">
         {/* Summary cards */}
         <div className="flex gap-3 flex-1 flex-wrap min-w-0">
-          <SumCard label="Total Spent"  value={`SAR ${fmt(totalPaid)}`}
+          <SumCard label="Total Spent"  value={<Rial amount={totalPaid} />}
             sub={`${filtered.length} expense${filtered.length !== 1 ? 's' : ''}`} accent />
-          <SumCard label="Cash"         value={`SAR ${fmt(cashTotal)}`} />
-          <SumCard label="Card"         value={`SAR ${fmt(cardTotal)}`} />
-          {vatTotal > 0 && <SumCard label="VAT Total" value={`SAR ${fmt(vatTotal)}`} />}
+          <SumCard label="Cash"         value={<Rial amount={cashTotal} />} />
+          <SumCard label="Card"         value={<Rial amount={cardTotal} />} />
+          {vatTotal > 0 && <SumCard label="VAT Total" value={<Rial amount={vatTotal} />} />}
         </div>
         <Button size="sm" onClick={openAdd} className="flex-shrink-0 self-start">
           <Plus size={14} />
@@ -451,7 +452,7 @@ export default function DailyExpensesTab() {
             <div className="w-20 hidden md:block" />
             <div className="w-28 text-right">
               <p className="text-sm font-bold text-primary-600 tabular-nums">
-                SAR {fmt(totalPaid)}
+                <Rial amount={totalPaid} />
               </p>
               {vatTotal > 0 && (
                 <p className="text-[10px] text-gray-400">incl. VAT {fmt(vatTotal)}</p>

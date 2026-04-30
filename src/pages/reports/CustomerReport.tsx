@@ -5,6 +5,7 @@ import {
   type ReportProps, fmt, fmtDate,
   StatCard, SkeletonCard, SkeletonTable, SectionHeader,
 } from './reportUtils'
+import { Rial } from '@/components/ui/RiyalSymbol'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -122,10 +123,10 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
       <div className="flex flex-wrap gap-3">
         <StatCard label="Total Customers"   value={String(data?.totalCount ?? 0)}          primary />
         <StatCard label="New This Period"   value={String(data?.newThisPeriod ?? 0)}       accent="emerald" sub="joined during range" />
-        <StatCard label="Total Revenue"     value={`SAR ${fmt(data?.totalRevenue ?? 0)}`}  accent="emerald" sub="from invoices" />
+        <StatCard label="Total Revenue"     value={<Rial amount={data?.totalRevenue ?? 0} />}  accent="emerald" sub="from invoices" />
         <StatCard label="Avg per Customer"  value={data?.topCustomers.length
-          ? `SAR ${fmt(data.totalRevenue / Math.max(data.topCustomers.length, 1))}`
-          : 'SAR 0.00'}
+          ? <Rial amount={data.totalRevenue / Math.max(data.topCustomers.length, 1)} />
+          : <Rial amount={0} />}
         />
       </div>
 
@@ -196,7 +197,7 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
                   {c.lastPurchase ? fmtDate(c.lastPurchase) : '—'}
                 </div>
                 <div className="w-28 text-right text-sm font-bold text-emerald-600 tabular-nums">
-                  SAR {fmt(c.totalSpent)}
+                  <Rial amount={c.totalSpent} />
                 </div>
               </div>
             ))}
@@ -205,7 +206,7 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
                 {data.topCustomers.length} customers shown
               </div>
               <div className="w-28 text-right text-sm font-bold text-emerald-600 tabular-nums">
-                SAR {fmt(data.totalRevenue)}
+                <Rial amount={data.totalRevenue} />
               </div>
             </div>
           </>

@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import type { ExpenseCategory, VatExpenseTreatment, ExpensePaymentMethod } from '@/types'
 import type { ExpenseRow } from './DailyExpensesTab'
+import { Rial } from '@/components/ui/RiyalSymbol'
 
 // ── VAT helpers ───────────────────────────────────────────────────────────────
 
@@ -291,12 +292,12 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
                   {vatTreat !== 'no_vat' && (
                     <div className="flex justify-between text-gray-500">
                       <span>VAT (15%)</span>
-                      <span className="tabular-nums font-medium">SAR {fmt(vatAmount)}</span>
+                      <span className="tabular-nums font-medium"><Rial amount={vatAmount} /></span>
                     </div>
                   )}
                   <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1.5">
                     <span>Total Paid</span>
-                    <span className="tabular-nums text-primary-600">SAR {fmt(totalPaid)}</span>
+                    <span className="tabular-nums text-primary-600"><Rial amount={totalPaid} /></span>
                   </div>
                 </div>
               )}

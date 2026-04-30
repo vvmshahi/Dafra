@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import type { Customer, CustomerType } from '@/types'
 import CustomerDrawer from './CustomerDrawer'
 
@@ -99,9 +100,7 @@ function CustomerRow({
       {/* Total purchases */}
       <div className="w-28 flex-shrink-0 text-right hidden sm:block">
         <p className="text-sm font-semibold text-primary-600">
-          SAR {customer.total_purchases.toLocaleString('en-US', {
-            minimumFractionDigits: 2, maximumFractionDigits: 2,
-          })}
+          <Rial amount={customer.total_purchases} />
         </p>
         {customer.purchase_count > 0 && (
           <p className="text-[10px] text-gray-400">
@@ -379,9 +378,7 @@ export default function CustomersPage() {
           <div className="ml-auto text-gray-500">
             Total revenue from listed customers:{' '}
             <strong className="text-primary-600">
-              SAR {customers.reduce((s, c) => s + c.total_purchases, 0).toLocaleString('en-US', {
-                minimumFractionDigits: 2, maximumFractionDigits: 2,
-              })}
+              <Rial amount={customers.reduce((s, c) => s + c.total_purchases, 0)} />
             </strong>
           </div>
         </div>

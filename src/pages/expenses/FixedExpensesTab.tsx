@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import type { FixedExpense, ExpenseCategory } from '@/types'
 import FixedExpenseDrawer from './FixedExpenseDrawer'
+import { Rial } from '@/components/ui/RiyalSymbol'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -81,9 +82,7 @@ function FixedRow({
       {/* Monthly amount */}
       <div className="w-32 flex-shrink-0 text-right">
         <p className="text-sm font-bold text-gray-900 tabular-nums">
-          SAR {item.monthly_amount.toLocaleString('en-US', {
-            minimumFractionDigits: 2, maximumFractionDigits: 2,
-          })}
+          <Rial amount={item.monthly_amount} />
           <span className="text-[10px] font-normal text-gray-400 ml-1">/mo</span>
         </p>
       </div>
@@ -188,14 +187,14 @@ export default function FixedExpensesTab() {
         <div className="flex gap-3 flex-1 flex-wrap min-w-0">
           <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-primary-500 border border-primary-600 text-white shadow-card">
             <p className="text-xs font-medium text-white/70">Monthly Fixed Cost</p>
-            <p className="text-lg font-bold mt-0.5">SAR {fmt(monthlyTotal)}</p>
+            <p className="text-lg font-bold mt-0.5"><Rial amount={monthlyTotal} /></p>
             <p className="text-[10px] text-white/60 mt-0.5">
               {activeItems.length} active expense{activeItems.length !== 1 ? 's' : ''}
             </p>
           </div>
           <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
             <p className="text-xs font-medium text-gray-400">Annual Estimate</p>
-            <p className="text-lg font-bold text-gray-900 mt-0.5">SAR {fmt(yearlyTotal)}</p>
+            <p className="text-lg font-bold text-gray-900 mt-0.5"><Rial amount={yearlyTotal} /></p>
             <p className="text-[10px] text-gray-400 mt-0.5">active items × 12 months</p>
           </div>
           <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
@@ -265,7 +264,7 @@ export default function FixedExpensesTab() {
               <div className="w-20 hidden sm:block" />
               <div className="w-32 text-right">
                 <p className="text-sm font-bold text-primary-600 tabular-nums">
-                  SAR {fmt(monthlyTotal)}
+                  <Rial amount={monthlyTotal} />
                 </p>
                 <p className="text-[10px] text-gray-400">per month</p>
               </div>

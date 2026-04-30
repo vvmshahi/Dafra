@@ -5,6 +5,7 @@ import {
   type ReportProps, fmt, fmtMonth, generateMonths,
   StatCard, SkeletonCard, SkeletonTable, SectionHeader,
 } from './reportUtils'
+import { Rial } from '@/components/ui/RiyalSymbol'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -132,19 +133,19 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
       <div className="flex flex-wrap gap-3">
         <StatCard
           label="Output VAT (Collected)"
-          value={`SAR ${fmt(data?.vatCollected ?? 0)}`}
+          value={<Rial amount={data?.vatCollected ?? 0} />}
           sub="VAT charged on sales"
           primary
         />
         <StatCard
           label="Input VAT (Paid)"
-          value={`SAR ${fmt(data?.vatPaidTotal ?? 0)}`}
+          value={<Rial amount={data?.vatPaidTotal ?? 0} />}
           sub="VAT paid on purchases + expenses"
           accent="amber"
         />
         <StatCard
           label="Net VAT Payable to ZATCA"
-          value={`SAR ${fmt(data?.netPayable ?? 0)}`}
+          value={<Rial amount={data?.netPayable ?? 0} />}
           sub="Output − Input VAT"
           accent={(data?.netPayable ?? 0) >= 0 ? 'red' : 'emerald'}
         />
@@ -157,7 +158,7 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
           <p className="text-sm font-semibold text-amber-800">ZATCA Quarterly Filing</p>
           <p className="text-xs text-amber-700 mt-0.5">
             VAT returns are typically filed quarterly. Net VAT payable of{' '}
-            <strong>SAR {fmt(data?.netPayable ?? 0)}</strong> is due to ZATCA for this period.
+            <strong><Rial amount={data?.netPayable ?? 0} /></strong> is due to ZATCA for this period.
             Consult your accountant before filing.
           </p>
         </div>
@@ -188,14 +189,14 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
               {(data?.monthlyRows ?? []).map(r => (
                 <tr key={r.month} className="border-b border-gray-50 hover:bg-gray-50/50">
                   <td className="px-4 py-3 font-medium text-gray-700 whitespace-nowrap">{fmtMonth(r.month)}</td>
-                  <td className="px-4 py-3 tabular-nums text-gray-700">SAR {fmt(r.salesAmount)}</td>
-                  <td className="px-4 py-3 tabular-nums text-emerald-600 font-semibold">SAR {fmt(r.vatCollected)}</td>
-                  <td className="px-4 py-3 tabular-nums text-gray-700">SAR {fmt(r.purchaseAmount)}</td>
-                  <td className="px-4 py-3 tabular-nums text-amber-600">SAR {fmt(r.vatPaidPur)}</td>
-                  <td className="px-4 py-3 tabular-nums text-gray-700">SAR {fmt(r.expenseAmount)}</td>
-                  <td className="px-4 py-3 tabular-nums text-amber-600">SAR {fmt(r.vatPaidExp)}</td>
+                  <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={r.salesAmount} /></td>
+                  <td className="px-4 py-3 tabular-nums text-emerald-600 font-semibold"><Rial amount={r.vatCollected} /></td>
+                  <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={r.purchaseAmount} /></td>
+                  <td className="px-4 py-3 tabular-nums text-amber-600"><Rial amount={r.vatPaidPur} /></td>
+                  <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={r.expenseAmount} /></td>
+                  <td className="px-4 py-3 tabular-nums text-amber-600"><Rial amount={r.vatPaidExp} /></td>
                   <td className={`px-4 py-3 tabular-nums font-bold ${r.netPayable >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                    SAR {fmt(r.netPayable)}
+                    <Rial amount={r.netPayable} />
                   </td>
                 </tr>
               ))}
@@ -203,14 +204,14 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
               {(data?.monthlyRows ?? []).length > 0 && (
                 <tr className="bg-gray-50 font-bold border-t-2 border-gray-200">
                   <td className="px-4 py-3 text-gray-700">Total</td>
-                  <td className="px-4 py-3 tabular-nums text-gray-700">SAR {fmt(data!.salesTotal)}</td>
-                  <td className="px-4 py-3 tabular-nums text-emerald-600">SAR {fmt(data!.vatCollected)}</td>
+                  <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={data!.salesTotal} /></td>
+                  <td className="px-4 py-3 tabular-nums text-emerald-600"><Rial amount={data!.vatCollected} /></td>
                   <td className="px-4 py-3 tabular-nums text-gray-700">—</td>
-                  <td className="px-4 py-3 tabular-nums text-amber-600">SAR {fmt(data!.vatPaidTotal)}</td>
+                  <td className="px-4 py-3 tabular-nums text-amber-600"><Rial amount={data!.vatPaidTotal} /></td>
                   <td className="px-4 py-3 tabular-nums text-gray-700">—</td>
                   <td className="px-4 py-3 tabular-nums text-amber-600">—</td>
                   <td className={`px-4 py-3 tabular-nums ${data!.netPayable >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                    SAR {fmt(data!.netPayable)}
+                    <Rial amount={data!.netPayable} />
                   </td>
                 </tr>
               )}

@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'SaudiRiyal';
+  src: url('/fonts/SaudiRiyal.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
 @layer base {
   :root {
     --font-sans:   'Inter', system-ui, sans-serif;

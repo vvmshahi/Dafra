@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import type { Supplier } from '@/types'
 import SupplierDrawer from './SupplierDrawer'
 
@@ -122,7 +123,7 @@ export default function SuppliersPage() {
         </div>
         <div className="rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
           <p className="text-xs font-medium text-gray-400">Total Purchased</p>
-          <p className="text-xl font-bold text-emerald-600 mt-0.5">SAR {fmt(totalPurchased)}</p>
+          <p className="text-xl font-bold text-emerald-600 mt-0.5"><Rial amount={totalPurchased} /></p>
           <p className="text-[10px] text-gray-400 mt-0.5">all time</p>
         </div>
         <div className="rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
@@ -238,7 +239,7 @@ export default function SuppliersPage() {
               {/* Total purchases */}
               <div className="w-40 text-right">
                 <p className="text-sm font-bold text-gray-900 tabular-nums">
-                  SAR {fmt(supplier.total_purchases)}
+                  <Rial amount={supplier.total_purchases} />
                 </p>
                 {supplier.last_purchase_date ? (
                   <p className="text-[10px] text-gray-400">

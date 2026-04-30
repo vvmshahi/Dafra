@@ -9,6 +9,7 @@ import {
   Receipt, Package, Loader2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
+import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -48,7 +49,7 @@ const statusConfig = {
 // ── Stat card ─────────────────────────────────────────────────────────────────
 
 function StatCard({ label, value, sub, icon: Icon, gradient, iconBg, loading }: {
-  label: string; value: string; sub: string
+  label: string; value: React.ReactNode; sub: string
   icon: React.ElementType; gradient: string; iconBg: string; loading?: boolean
 }) {
   return (
@@ -76,7 +77,7 @@ function ChartTooltip({ active, payload, label }: any) {
   return (
     <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-3.5 py-2.5">
       <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-      <p className="text-sm font-bold text-gray-900">SAR {Number(payload[0].value).toLocaleString()}</p>
+      <p className="text-sm font-bold text-gray-900">{sarStr(Number(payload[0].value))}</p>
     </div>
   )
 }
@@ -179,8 +180,6 @@ export default function DashboardPage() {
   useEffect(() => { loadChart() },   [loadChart])
   useEffect(() => { loadInvoices() }, [loadInvoices])
 
-  const fmtSAR = (n: number) => `SAR ${n.toLocaleString('en-SA', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-
   return (
     <div className="space-y-6">
 
@@ -188,7 +187,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard
           label="Today's Sales"
-          value={fmtSAR(todaySales)}
+          value={<Rial amount={todaySales} />}
           sub={`${todayCount} invoice${todayCount !== 1 ? 's' : ''} today`}
           icon={TrendingUp}
           gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28]"
@@ -369,7 +368,7 @@ export default function DashboardPage() {
                         {inv.customers?.name ?? 'Walk-in Customer'}
                       </td>
                       <td className="px-6 py-3.5 text-sm font-semibold text-gray-900 text-right tabular-nums">
-                        SAR {Number(inv.total_amount).toLocaleString('en-SA', { minimumFractionDigits: 2 })}
+                        <Rial amount={Number(inv.total_amount)} />
                       </td>
                       <td className="px-6 py-3.5">
                         <Badge variant={cfg.variant} dot>{cfg.label}</Badge>

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Printer, Download, RefreshCw, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import { buildZatcaQR } from '@/lib/zatca/qr'
 import type { Invoice, InvoiceItem, Payment, Branch } from '@/types/database'
 
@@ -413,12 +414,12 @@ export default function InvoiceDetailPage() {
                   </td>
                   <td className="py-3 text-right text-xs text-gray-500">{item.unit ?? '—'}</td>
                   <td className="py-3 text-right text-xs text-gray-800 tabular-nums font-medium">{Number(item.quantity)}</td>
-                  <td className="py-3 text-right text-xs text-gray-700 tabular-nums">SAR {fmt(Number(item.unit_price))}</td>
+                  <td className="py-3 text-right text-xs text-gray-700 tabular-nums"><Rial amount={Number(item.unit_price)} /></td>
                   <td className="py-3 text-right text-xs text-gray-500">
                     {item.tax_rate > 0 ? `${(Number(item.tax_rate) * 100).toFixed(0)}%` : 'Exempt'}
                   </td>
                   <td className="py-3 text-right text-sm font-semibold text-gray-900 tabular-nums">
-                    SAR {fmt(Number(item.total))}
+                    <Rial amount={Number(item.total)} />
                   </td>
                 </tr>
               ))}
@@ -432,25 +433,25 @@ export default function InvoiceDetailPage() {
             <div className="w-72 space-y-2 bg-gray-50 rounded-xl px-5 py-4">
               <div className="flex justify-between text-xs text-gray-600">
                 <span>Subtotal (net)</span>
-                <span className="tabular-nums font-medium">SAR {fmt(Number(invoice.subtotal))}</span>
+                <span className="tabular-nums font-medium"><Rial amount={Number(invoice.subtotal)} /></span>
               </div>
               {Number(invoice.discount_amount) > 0 && (
                 <div className="flex justify-between text-xs text-red-500">
                   <span>Discount</span>
-                  <span className="tabular-nums">− SAR {fmt(Number(invoice.discount_amount))}</span>
+                  <span className="tabular-nums">− <Rial amount={Number(invoice.discount_amount)} /></span>
                 </div>
               )}
               <div className="flex justify-between text-xs text-gray-600">
                 <span>Taxable Amount</span>
-                <span className="tabular-nums">SAR {fmt(Number(invoice.taxable_amount))}</span>
+                <span className="tabular-nums"><Rial amount={Number(invoice.taxable_amount)} /></span>
               </div>
               <div className="flex justify-between text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded-lg">
                 <span className="font-semibold">VAT (15%)</span>
-                <span className="tabular-nums font-semibold">SAR {fmt(Number(invoice.tax_amount))}</span>
+                <span className="tabular-nums font-semibold"><Rial amount={Number(invoice.tax_amount)} /></span>
               </div>
               <div className="flex justify-between font-bold text-gray-900 text-base pt-1.5 border-t border-gray-200">
                 <span>Total</span>
-                <span className="tabular-nums text-[#0F2419]">SAR {fmt(Number(invoice.total_amount))}</span>
+                <span className="tabular-nums text-[#0F2419]"><Rial amount={Number(invoice.total_amount)} /></span>
               </div>
             </div>
           </div>
@@ -462,7 +463,7 @@ export default function InvoiceDetailPage() {
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Payment</p>
             <div className="flex flex-wrap gap-6 text-xs text-gray-700">
               <span><span className="font-semibold">Method:</span> {payLabel}</span>
-              <span><span className="font-semibold">Amount:</span> SAR {fmt(Number(payment.amount))}</span>
+              <span><span className="font-semibold">Amount:</span> <Rial amount={Number(payment.amount)} /></span>
               <span><span className="font-semibold">Date:</span> {fmtDateTime(payment.paid_at).date}</span>
               {payment.reference && <span><span className="font-semibold">Ref:</span> {payment.reference}</span>}
             </div>
@@ -536,7 +537,7 @@ export default function InvoiceDetailPage() {
               <div className="text-xs text-gray-600 space-y-1">
                 <div className="flex gap-6 justify-end">
                   <span className="text-gray-400">Taxable</span>
-                  <span className="tabular-nums">SAR {fmt(Number(invoice.taxable_amount))}</span>
+                  <span className="tabular-nums"><Rial amount={Number(invoice.taxable_amount)} /></span>
                 </div>
                 <div className="flex gap-6 justify-end">
                   <span className="text-gray-400">Tax Rate</span>
@@ -544,7 +545,7 @@ export default function InvoiceDetailPage() {
                 </div>
                 <div className="flex gap-6 justify-end font-semibold text-amber-700">
                   <span>VAT</span>
-                  <span className="tabular-nums">SAR {fmt(Number(invoice.tax_amount))}</span>
+                  <span className="tabular-nums"><Rial amount={Number(invoice.tax_amount)} /></span>
                 </div>
               </div>
             </div>

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Search, Calendar, Filter, Eye, TrendingUp, FileText, Receipt } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import type { ZatcaStatus } from '@/types/database'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -163,8 +164,8 @@ export default function InvoicesPage() {
       <div className="grid grid-cols-3 gap-4">
         {[
           { label: 'Total Invoices', value: String(summary.count), icon: FileText, color: 'text-primary-600', bg: 'bg-primary-50' },
-          { label: 'Total Revenue',  value: `SAR ${fmt(summary.revenue)}`, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'VAT Collected',  value: `SAR ${fmt(summary.vat)}`,    icon: Receipt,    color: 'text-amber-600',   bg: 'bg-amber-50'   },
+          { label: 'Total Revenue',  value: <Rial amount={summary.revenue} />, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          { label: 'VAT Collected',  value: <Rial amount={summary.vat} />,    icon: Receipt,    color: 'text-amber-600',   bg: 'bg-amber-50'   },
         ].map(s => (
           <div key={s.label} className="card px-5 py-4 flex items-center gap-4">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.bg}`}>
@@ -283,7 +284,7 @@ export default function InvoicesPage() {
                     {fmt(r.taxAmount)}
                   </div>
                   <div className="w-24 text-right text-sm font-bold text-gray-900 tabular-nums">
-                    SAR {fmt(r.totalAmount)}
+                    <Rial amount={r.totalAmount} />
                   </div>
                   <div className="w-16 flex justify-center">
                     {pay ? <Badge {...pay} /> : <span className="text-gray-300 text-xs">—</span>}
@@ -312,13 +313,13 @@ export default function InvoicesPage() {
               <div className="flex-1" />
               <div className="w-10" />
               <div className="w-24 text-right text-xs font-bold text-gray-700 tabular-nums">
-                SAR {fmt(summary.revenue - summary.vat)}
+                <Rial amount={summary.revenue - summary.vat} />
               </div>
               <div className="w-20 text-right text-xs font-bold text-amber-700 tabular-nums">
-                SAR {fmt(summary.vat)}
+                <Rial amount={summary.vat} />
               </div>
               <div className="w-24 text-right text-sm font-bold text-primary-700 tabular-nums">
-                SAR {fmt(summary.revenue)}
+                <Rial amount={summary.revenue} />
               </div>
               <div className="w-16" />
               <div className="w-24" />

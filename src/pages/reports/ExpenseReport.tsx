@@ -9,6 +9,7 @@ import {
   StatCard, SkeletonCard, SkeletonChart,
   EmptyChart, SectionHeader, CHART_COLORS,
 } from './reportUtils'
+import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -116,9 +117,9 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
 
       {/* ── Summary cards ──────────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
-        <StatCard label="Total Expenses"    value={`SAR ${fmt(data?.grandTotal ?? 0)}`}    primary />
-        <StatCard label="Variable Expenses" value={`SAR ${fmt(data?.totalVariable ?? 0)}`} accent="red"   sub="daily/one-off" />
-        <StatCard label="Fixed Expenses"    value={`SAR ${fmt(data?.totalFixed ?? 0)}`}    accent="amber" sub="recurring monthly" />
+        <StatCard label="Total Expenses"    value={<Rial amount={data?.grandTotal ?? 0} />}    primary />
+        <StatCard label="Variable Expenses" value={<Rial amount={data?.totalVariable ?? 0} />} accent="red"   sub="daily/one-off" />
+        <StatCard label="Fixed Expenses"    value={<Rial amount={data?.totalFixed ?? 0} />}    accent="amber" sub="recurring monthly" />
       </div>
 
       {/* ── Category bar chart ──────────────────────────────── */}
@@ -133,7 +134,7 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
                 tickFormatter={v => `${(Number(v)/1000).toFixed(0)}k`} />
               <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: '#374151' }} width={95} />
               <Tooltip
-                formatter={(v: any) => [`SAR ${fmt(Number(v))}`, 'Amount']}
+                formatter={(v: any) => [sarStr(Number(v)), 'Amount']}
                 contentStyle={{ borderRadius: 12, border: '1px solid #f3f4f6', fontSize: 12 }}
               />
               <Bar dataKey="value" name="Amount" radius={[0, 3, 3, 0]}>
@@ -150,7 +151,7 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
       <div className="grid grid-cols-2 gap-4">
         <div className="card p-4">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Variable</p>
-          <p className="text-2xl font-bold text-red-500 mt-1">SAR {fmt(data?.totalVariable ?? 0)}</p>
+          <p className="text-2xl font-bold text-red-500 mt-1"><Rial amount={data?.totalVariable ?? 0} /></p>
           <p className="text-xs text-gray-400 mt-1">{data?.log.length ?? 0} expense entries</p>
           <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
             <div className="h-full bg-red-400 rounded-full transition-all"
@@ -159,8 +160,8 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
         </div>
         <div className="card p-4">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Fixed</p>
-          <p className="text-2xl font-bold text-amber-500 mt-1">SAR {fmt(data?.totalFixed ?? 0)}</p>
-          <p className="text-xs text-gray-400 mt-1">SAR {fmt(data?.monthlyFixed ?? 0)}/mo recurring</p>
+          <p className="text-2xl font-bold text-amber-500 mt-1"><Rial amount={data?.totalFixed ?? 0} /></p>
+          <p className="text-xs text-gray-400 mt-1"><Rial amount={data?.monthlyFixed ?? 0} />/mo recurring</p>
           <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
             <div className="h-full bg-amber-400 rounded-full transition-all"
               style={{ width: `${data?.grandTotal ? (data.totalFixed / data.grandTotal) * 100 : 0}%` }} />
@@ -192,7 +193,7 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
                   <div className="w-28 hidden sm:block text-xs text-gray-500 truncate pt-0.5">{e.category}</div>
                   <div className="w-16 hidden md:block text-xs text-gray-500 pt-0.5">{PAY_LABEL[e.method] ?? e.method}</div>
                   <div className="w-24 text-right text-sm font-semibold text-gray-900 tabular-nums">
-                    SAR {fmt(e.amount)}
+                    <Rial amount={e.amount} />
                   </div>
                 </div>
               ))}
@@ -200,7 +201,7 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
             <div className="flex gap-2 px-4 py-3 bg-gray-50 border-t border-gray-100">
               <div className="flex-1 text-xs font-semibold text-gray-500">{data.log.length} variable expenses</div>
               <div className="w-24 text-right text-sm font-bold text-red-600 tabular-nums">
-                SAR {fmt(data.totalVariable)}
+                <Rial amount={data.totalVariable} />
               </div>
             </div>
           </>

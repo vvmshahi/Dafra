@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import type { Purchase, PurchaseItem, Supplier, InventoryItem } from '@/types'
 import PurchaseDrawer from './PurchaseDrawer'
 
@@ -112,10 +113,10 @@ function PurchaseDetailModal({
                         {Number(item.quantity).toLocaleString('en-US', { maximumFractionDigits: 3 })}
                       </div>
                       <div className="w-24 text-right tabular-nums text-gray-600">
-                        SAR {fmt(item.unit_cost)}
+                        <Rial amount={item.unit_cost} />
                       </div>
                       <div className="w-24 text-right tabular-nums font-semibold text-gray-800">
-                        SAR {fmt(item.total)}
+                        <Rial amount={item.total} />
                       </div>
                     </div>
                   ))}
@@ -127,17 +128,17 @@ function PurchaseDetailModal({
             <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
               <div className="flex justify-between text-gray-600">
                 <span>Subtotal</span>
-                <span className="tabular-nums">SAR {fmt(purchase.subtotal)}</span>
+                <span className="tabular-nums"><Rial amount={purchase.subtotal} /></span>
               </div>
               {purchase.vat_amount > 0 && (
                 <div className="flex justify-between text-gray-600">
                   <span>VAT (15%)</span>
-                  <span className="tabular-nums">SAR {fmt(purchase.vat_amount)}</span>
+                  <span className="tabular-nums"><Rial amount={purchase.vat_amount} /></span>
                 </div>
               )}
               <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1.5">
                 <span>Total Paid</span>
-                <span className="tabular-nums text-emerald-600">SAR {fmt(purchase.total_amount)}</span>
+                <span className="tabular-nums text-emerald-600"><Rial amount={purchase.total_amount} /></span>
               </div>
             </div>
 
@@ -233,12 +234,12 @@ export default function PurchaseHistoryTab() {
         <div className="flex gap-3 flex-1 flex-wrap min-w-0">
           <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-primary-500 border border-primary-600 text-white shadow-card">
             <p className="text-xs font-medium text-white/70">Total Purchased</p>
-            <p className="text-lg font-bold mt-0.5">SAR {fmt(totalSpent)}</p>
+            <p className="text-lg font-bold mt-0.5"><Rial amount={totalSpent} /></p>
             <p className="text-[10px] text-white/60 mt-0.5">{purchases.length} purchase{purchases.length !== 1 ? 's' : ''}</p>
           </div>
           <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
             <p className="text-xs font-medium text-gray-400">VAT Paid</p>
-            <p className="text-lg font-bold text-amber-600 mt-0.5">SAR {fmt(totalVat)}</p>
+            <p className="text-lg font-bold text-amber-600 mt-0.5"><Rial amount={totalVat} /></p>
             <p className="text-[10px] text-gray-400 mt-0.5">on all purchases</p>
           </div>
           <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
@@ -329,14 +330,14 @@ export default function PurchaseHistoryTab() {
               {/* VAT */}
               <div className="w-24 hidden md:block text-right">
                 <p className="text-xs tabular-nums text-amber-600 font-medium">
-                  {p.vat_amount > 0 ? `SAR ${fmt(p.vat_amount)}` : '—'}
+                  {p.vat_amount > 0 ? <Rial amount={p.vat_amount} /> : '—'}
                 </p>
               </div>
 
               {/* Total */}
               <div className="w-32 text-right">
                 <p className="text-sm font-bold text-gray-900 tabular-nums">
-                  SAR {fmt(p.total_amount)}
+                  <Rial amount={p.total_amount} />
                 </p>
               </div>
 
@@ -376,10 +377,10 @@ export default function PurchaseHistoryTab() {
             <div className="w-16 hidden sm:block" />
             <div className="w-20 hidden lg:block" />
             <div className="w-24 hidden md:block text-right">
-              <p className="text-xs font-bold text-amber-600 tabular-nums">SAR {fmt(totalVat)}</p>
+              <p className="text-xs font-bold text-amber-600 tabular-nums"><Rial amount={totalVat} /></p>
             </div>
             <div className="w-32 text-right">
-              <p className="text-sm font-bold text-primary-600 tabular-nums">SAR {fmt(totalSpent)}</p>
+              <p className="text-sm font-bold text-primary-600 tabular-nums"><Rial amount={totalSpent} /></p>
               <p className="text-[10px] text-gray-400">total spent</p>
             </div>
             <div className="w-20" />

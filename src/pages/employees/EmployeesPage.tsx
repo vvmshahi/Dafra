@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
 import type { Employee, Branch } from '@/types/database'
+import { Rial } from '@/components/ui/RiyalSymbol'
 
 const db = () => supabase as any
 
@@ -212,7 +213,7 @@ function EmployeeRow({
         ) : '—'}
       </td>
       <td className="px-6 py-4 text-sm font-medium text-gray-900 tabular-nums">
-        {emp.salary != null ? `SAR ${Number(emp.salary).toLocaleString()}` : '—'}
+        {emp.salary != null ? <Rial amount={Number(emp.salary)} /> : '—'}
       </td>
       <td className="px-6 py-4">
         <Badge variant={emp.is_active ? 'success' : 'neutral'} dot>
