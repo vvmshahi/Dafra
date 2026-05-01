@@ -4,23 +4,32 @@ import { supabase } from '@/lib/supabase'
 import type { UserProfile, UserRole, Tenant } from '@/types'
 
 interface AuthState {
-  user:    User | null
-  session: Session | null
-  profile: UserProfile | null
-  tenant:  Tenant | null
-  loading: boolean
+  user:        User | null
+  session:     Session | null
+  profile:     UserProfile | null
+  tenant:      Tenant | null
+  loading:     boolean
+  // null = not yet determined (profile fetch in flight)
+  // false = owner with no tenant (must complete onboarding)
+  // true  = onboarding done (or not applicable for this role)
+  isOnboarded: boolean | null
+}
+
+function computeIsOnboarded(profile: UserProfile | null): boolean {
+  if (!profile) return true  // no profile row yet — don't block (edge case; profile will load on next event)
+  return !(profile.role === 'owner' && !profile.tenant_id)
 }
 
 export function useAuth() {
   const [state, setState] = useState<AuthState>({
-    user:    null,
-    session: null,
-    profile: null,
-    tenant:  null,
-    loading: true,
+    user:        null,
+    session:     null,
+    profile:     null,
+    tenant:      null,
+    loading:     true,
+    isOnboarded: null,
   })
 
-  // Fetches profile + tenant in parallel where possible.
   const fetchProfile = useCallback(async (userId: string) => {
     // Cast through unknown: supabase-js@2.45 (PostgrestVersion "12") resolves
     // the Row type to `never` when it contains string-union enum fields.
@@ -58,21 +67,28 @@ export function useAuth() {
       async (_event, session) => {
         if (session?.user) {
           const { profile, tenant } = await fetchProfile(session.user.id)
-          setState({ user: session.user, session, profile, tenant, loading: false })
+          const isOnboarded = computeIsOnboarded(profile)
+          console.log('[useAuth] Auth resolved:', {
+            userId: session.user.id,
+            role: profile?.role,
+            tenant_id: profile?.tenant_id,
+            isOnboarded,
+          })
+          setState({ user: session.user, session, profile, tenant, loading: false, isOnboarded })
         } else {
-          setState({ user: null, session: null, profile: null, tenant: null, loading: false })
+          setState({ user: null, session: null, profile: null, tenant: null, loading: false, isOnboarded: null })
         }
       },
     )
     return () => subscription.unsubscribe()
   }, [fetchProfile])
 
-  // Call after onboarding to pick up the new tenant_id + role.
   const refreshProfile = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session?.user) return
     const { profile, tenant } = await fetchProfile(session.user.id)
-    setState(prev => ({ ...prev, profile, tenant }))
+    const isOnboarded = computeIsOnboarded(profile)
+    setState(prev => ({ ...prev, profile, tenant, isOnboarded }))
   }, [fetchProfile])
 
   const signIn = async (email: string, password: string) => {
@@ -92,7 +108,6 @@ export function useAuth() {
   }
 
   const signOut = async () => {
-    // Clear POS cart and any other app-level local storage keys
     const toRemove: string[] = []
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
@@ -109,7 +124,6 @@ export function useAuth() {
 
   const isAuthenticated = !!state.user
 
-  // True when user is signed in but hasn't completed onboarding yet.
   const isNewUser = isAuthenticated && !state.loading
     && !!state.profile && !state.profile.tenant_id
     && state.profile.role !== 'super_admin'

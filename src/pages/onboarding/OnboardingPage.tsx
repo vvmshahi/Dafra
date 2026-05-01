@@ -208,6 +208,35 @@ function Step2({
 
 /* ── Step 3: Plan Selection ─────────────────────────────────── */
 
+const PLAN_DISPLAY = [
+  {
+    title:    'Phase 1',
+    subtitle: 'ZATCA QR Code Invoicing',
+    price:    99,
+    badge:    null as string | null,
+    features: [
+      'ZATCA Phase 1 QR code',
+      '1 branch included',
+      'Up to 3 users',
+      'Basic reports',
+      'POS billing',
+    ],
+  },
+  {
+    title:    'Phase 2',
+    subtitle: 'Full ZATCA Compliance',
+    price:    249,
+    badge:    'Most Popular',
+    features: [
+      'Everything in Phase 1',
+      'ZATCA Phase 2 XML + digital signing',
+      'API reporting and clearance',
+      'Advanced reports + P&L',
+      'Priority support',
+    ],
+  },
+]
+
 function Step3({
   data, onChange, plans, loadingPlans,
 }: {
@@ -216,42 +245,49 @@ function Step3({
   plans: SubscriptionPlan[]
   loadingPlans: boolean
 }) {
-  const selectable = plans.filter(p => p.price_monthly > 0).slice(0, 2)
+  // Map display position → real plan ID (DB plans ordered price ASC)
+  const planIds = [plans[0]?.id ?? '', plans[1]?.id ?? '']
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <p className="text-sm text-gray-500 leading-relaxed">
-        Choose the plan that best fits your business. You'll start with a <strong>14-day free trial</strong> — no payment required.
+        Choose the plan that fits your ZATCA compliance needs. You'll start with a{' '}
+        <strong className="text-gray-700">14-day free trial</strong> — no payment required.
       </p>
 
       {loadingPlans ? (
         <div className="grid grid-cols-2 gap-4">
-          {[1, 2].map(i => <div key={i} className="h-48 rounded-2xl bg-gray-100 animate-pulse" />)}
+          {[1, 2].map(i => <div key={i} className="h-80 rounded-2xl bg-gray-100 animate-pulse" />)}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4">
-          {selectable.map(plan => {
-            const selected = data.plan_id === plan.id
-            const isPhase2 = plan.price_monthly >= 200
-            return (
-              <button key={plan.id} type="button" onClick={() => onChange('plan_id', plan.id)}
-                className={`text-left rounded-2xl border-2 p-5 transition-all flex flex-col gap-3 ${
-                  selected
-                    ? 'border-primary-500 bg-primary-50 ring-2 ring-primary-500/30'
-                    : 'border-gray-200 hover:border-gray-300 bg-white'
-                }`}>
+          {PLAN_DISPLAY.map((plan, idx) => {
+            const planId   = planIds[idx]
+            const selected = planId ? data.plan_id === planId : idx === 0
 
-                <div className="flex items-start justify-between">
+            return (
+              <button
+                key={plan.title}
+                type="button"
+                onClick={() => planId && onChange('plan_id', planId)}
+                className={`relative text-left rounded-2xl border-2 p-5 transition-all flex flex-col gap-4 ${
+                  selected
+                    ? 'border-primary-500 bg-primary-50 ring-2 ring-primary-500/20 shadow-md'
+                    : 'border-gray-200 hover:border-gray-300 bg-white'
+                }`}
+              >
+                {/* Most Popular badge */}
+                {plan.badge && (
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gold-500 text-[#0F2419] text-[10px] font-black px-3 py-1 rounded-full whitespace-nowrap shadow-sm">
+                    {plan.badge}
+                  </span>
+                )}
+
+                {/* Header */}
+                <div className="flex items-start justify-between mt-1">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-gray-900">{plan.name}</p>
-                      {isPhase2 && (
-                        <span className="text-[9px] font-black bg-primary-500 text-white px-1.5 py-0.5 rounded-full">PHASE 2</span>
-                      )}
-                    </div>
-                    {plan.name_ar && (
-                      <p className="text-xs text-gray-400 mt-0.5" style={{ fontFamily: 'Cairo' }}>{plan.name_ar}</p>
-                    )}
+                    <p className="font-black text-gray-900 text-base">{plan.title}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{plan.subtitle}</p>
                   </div>
                   <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
                     selected ? 'bg-primary-500 border-primary-500' : 'border-gray-300'
@@ -260,42 +296,43 @@ function Step3({
                   </div>
                 </div>
 
+                {/* Price */}
                 <div>
-                  <span className="text-2xl font-black text-gray-900">SAR {plan.price_monthly}</span>
-                  <span className="text-xs text-gray-400">/month</span>
-                  {plan.price_yearly > 0 && (
-                    <p className="text-[11px] text-emerald-600 mt-0.5">
-                      SAR {plan.price_yearly}/year — save {Math.round((1 - plan.price_yearly / (plan.price_monthly * 12)) * 100)}%
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-1.5 text-[11px] text-gray-500 border-t border-gray-100 pt-3">
-                  <p className="flex justify-between"><span>Branches</span><strong className="text-gray-700">{plan.max_branches}</strong></p>
-                  <p className="flex justify-between"><span>Users</span><strong className="text-gray-700">{plan.max_users}</strong></p>
-                  <p className="flex justify-between"><span>Products</span><strong className="text-gray-700">{plan.max_products === -1 ? '∞' : plan.max_products}</strong></p>
-                </div>
-
-                {Array.isArray(plan.features) && plan.features.length > 0 && (
-                  <div className="space-y-1 pt-1">
-                    {(plan.features as string[]).map(f => (
-                      <div key={f} className="flex items-center gap-1.5 text-[11px] text-gray-600">
-                        <CheckCircle2 size={10} className="text-emerald-500 flex-shrink-0" />
-                        {f}
-                      </div>
-                    ))}
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-3xl font-black text-gray-900">SAR {plan.price}</span>
+                    <span className="text-xs text-gray-400">/month</span>
                   </div>
-                )}
+                  <p className="text-[11px] text-emerald-600 mt-0.5 font-medium">14-day free trial</p>
+                </div>
+
+                {/* Feature list */}
+                <ul className="space-y-2 border-t border-gray-100 pt-3 flex-1">
+                  {plan.features.map(f => (
+                    <li key={f} className="flex items-start gap-2 text-[12px] text-gray-600">
+                      <CheckCircle2 size={13} className="text-emerald-500 flex-shrink-0 mt-0.5" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+
+                {/* Select pill */}
+                <div className={`rounded-xl py-2 text-center text-sm font-semibold transition-all ${
+                  selected
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}>
+                  {selected ? 'Selected' : 'Select'}
+                </div>
               </button>
             )
           })}
         </div>
       )}
 
-      <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
-        <span className="text-amber-500 text-sm">🎁</span>
-        <p className="text-xs text-amber-700">
-          <strong>14-day free trial</strong> — no credit card needed. Upgrade, downgrade or cancel anytime.
+      <div className="flex items-center gap-2.5 bg-[#0F2419]/5 border border-[#0F2419]/10 rounded-xl px-4 py-3">
+        <span className="text-base">🎁</span>
+        <p className="text-xs text-gray-600">
+          <strong>14-day free trial on any plan.</strong> No credit card needed — upgrade or cancel anytime.
         </p>
       </div>
     </div>
@@ -303,6 +340,8 @@ function Step3({
 }
 
 /* ── Main page ──────────────────────────────────────────────── */
+
+const STORAGE_KEY = (userId: string) => `dafra_onboarding_${userId}`
 
 export default function OnboardingPage() {
   const navigate = useNavigate()
@@ -314,6 +353,26 @@ export default function OnboardingPage() {
   const [loadingPlans, setLoadingPlans] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError]       = useState('')
+
+  // Load persisted progress when user is available
+  useEffect(() => {
+    if (!user?.id) return
+    const saved = localStorage.getItem(STORAGE_KEY(user.id))
+    if (!saved) return
+    try {
+      const { step: savedStep, data: savedData } = JSON.parse(saved)
+      if (typeof savedStep === 'number') setStep(savedStep)
+      if (savedData && typeof savedData === 'object') setData(prev => ({ ...prev, ...savedData }))
+    } catch {
+      // ignore corrupt data
+    }
+  }, [user?.id])
+
+  // Persist progress on every step/data change
+  useEffect(() => {
+    if (!user?.id) return
+    localStorage.setItem(STORAGE_KEY(user.id), JSON.stringify({ step, data }))
+  }, [step, data, user?.id])
 
   // Pre-fill branch name from company name
   useEffect(() => {
@@ -332,9 +391,9 @@ export default function OnboardingPage() {
       .then(({ data: rows }) => {
         const list = (rows as SubscriptionPlan[]) ?? []
         setPlans(list)
-        // Auto-select first paid plan
-        const first = list.find(p => p.price_monthly > 0)
-        if (first) setData(prev => ({ ...prev, plan_id: prev.plan_id || first.id }))
+        // Auto-select Phase 2 (second plan, "Most Popular") by default
+        const defaultPlan = list[1] ?? list[0]
+        if (defaultPlan) setData(prev => ({ ...prev, plan_id: prev.plan_id || defaultPlan.id }))
         setLoadingPlans(false)
       })
   }, [])
@@ -345,7 +404,7 @@ export default function OnboardingPage() {
   const canContinue = () => {
     if (step === 1) return data.company_name.trim().length > 0
     if (step === 2) return true
-    if (step === 3) return data.plan_id.length > 0
+    if (step === 3) return data.plan_id.length > 0 || !loadingPlans
     return false
   }
 
@@ -375,6 +434,9 @@ export default function OnboardingPage() {
         p_plan_id:         data.plan_id || undefined,
       })
       if (error) throw error
+
+      // Clear persisted progress before redirecting
+      if (user?.id) localStorage.removeItem(STORAGE_KEY(user.id))
 
       // Refresh auth context so profile now has tenant_id + role = 'owner'
       await refreshProfile()

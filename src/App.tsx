@@ -47,43 +47,34 @@ function FullscreenSpinner() {
 
 // ── Guards ────────────────────────────────────────────────────────────────
 
-/** Must be authenticated. */
+/**
+ * Must be authenticated.
+ * Hard gate: waits for isOnboarded to resolve, then forces owners
+ * without a tenant to /onboarding before any other route is reachable.
+ */
 function RequireAuth() {
-  const { isAuthenticated, loading } = useAuth()
-  if (loading)          return <FullscreenSpinner />
-  if (!isAuthenticated) return <Navigate to="/login" replace />
+  const { isAuthenticated, loading, isOnboarded } = useAuth()
+  if (loading)               return <FullscreenSpinner />
+  if (!isAuthenticated)      return <Navigate to="/login" replace />
+  // Wait for profile fetch to complete before deciding
+  if (isOnboarded === null)  return <FullscreenSpinner />
+  if (isOnboarded === false) return <Navigate to="/onboarding" replace />
   return <Outlet />
 }
 
 /**
- * Must have a tenant record (onboarding complete).
- * Super admins always pass — they never have a tenant_id.
+ * Onboarding gate — the ONLY guard for /onboarding.
+ * Lets through: authenticated owner with no tenant (isOnboarded === false).
+ * Redirects everyone else to their appropriate home.
  */
-function RequireTenant() {
-  const { isAuthenticated, profile, loading } = useAuth()
-  if (loading)          return <FullscreenSpinner />
-  if (!isAuthenticated) return <Navigate to="/login" replace />
-  // Super admin bypasses tenant requirement
-  if (profile?.role === 'super_admin') return <Outlet />
-  // New user (no tenant yet) → complete onboarding first
-  if (profile && !profile.tenant_id) return <Navigate to="/onboarding" replace />
-  return <Outlet />
-}
-
-/**
- * Accessible only when onboarding is NOT yet done.
- * Redirects already-onboarded users to dashboard.
- */
-function RequireNewUser() {
-  const { isAuthenticated, profile, loading } = useAuth()
-  if (loading)          return <FullscreenSpinner />
-  if (!isAuthenticated) return <Navigate to="/login" replace />
-  // Super admin has no tenant but is not a "new user"
+function RequireOnboarding() {
+  const { isAuthenticated, profile, loading, isOnboarded } = useAuth()
+  if (loading)               return <FullscreenSpinner />
+  if (!isAuthenticated)      return <Navigate to="/login" replace />
+  if (isOnboarded === null)  return <FullscreenSpinner />
   if (profile?.role === 'super_admin') return <Navigate to="/super-admin" replace />
-  // Branch accounts are created by owners — they never onboard independently
-  if (profile?.role === 'branch') return <Navigate to="/branch" replace />
-  // Already onboarded → skip wizard
-  if (profile?.tenant_id) return <Navigate to="/dashboard" replace />
+  if (profile?.role === 'branch')      return <Navigate to="/branch"       replace />
+  if (isOnboarded === true)            return <Navigate to="/dashboard"     replace />
   return <Outlet />
 }
 
@@ -112,15 +103,17 @@ function RequirePOS() {
 }
 
 /**
- * Root route: show the marketing landing page for guests,
- * redirect authenticated users to their appropriate home.
+ * Root route: landing page for guests, smart redirect for authenticated users.
+ * Waits for isOnboarded before deciding — never redirects on stale state.
  */
-function RootRoute() {
-  const { isAuthenticated, profile, loading } = useAuth()
+function SmartRedirect() {
+  const { isAuthenticated, profile, loading, isOnboarded } = useAuth()
   if (loading)          return <FullscreenSpinner />
   if (!isAuthenticated) return <LandingPage />
+  // Authenticated — wait for profile fetch to complete
+  if (isOnboarded === null) return <FullscreenSpinner />
   if (profile?.role === 'super_admin') return <Navigate to="/super-admin" replace />
-  if (profile && !profile.tenant_id)   return <Navigate to="/onboarding"  replace />
+  if (isOnboarded === false)           return <Navigate to="/onboarding"  replace />
   if (profile?.role === 'branch')      return <Navigate to="/branch"       replace />
   return <Navigate to="/dashboard" replace />
 }
@@ -139,60 +132,55 @@ export default function App() {
         <Route path="/terms"           element={<TermsPage />} />
         <Route path="/privacy"         element={<PrivacyPage />} />
 
-        {/* Root: landing page for guests, dashboard redirect for authenticated */}
-        <Route path="/" element={<RootRoute />} />
+        {/* Root: landing page for guests, smart redirect for authenticated */}
+        <Route path="/" element={<SmartRedirect />} />
+
+        {/* Onboarding — outside RequireAuth so the hard gate doesn't loop */}
+        <Route element={<RequireOnboarding />}>
+          <Route path="/onboarding" element={<OnboardingPage />} />
+        </Route>
 
         {/* ── Authenticated ────────────────────────────────── */}
+        {/* RequireAuth hard-gates owners without tenant → /onboarding */}
         <Route element={<RequireAuth />}>
 
-          {/* Onboarding — only for new users with no tenant */}
-          <Route element={<RequireNewUser />}>
-            <Route path="/onboarding" element={<OnboardingPage />} />
-          </Route>
-
           {/* Branch dashboard — full-screen, no sidebar, branch role only */}
-          <Route element={<RequireTenant />}>
-            <Route element={<RequireBranch />}>
-              <Route path="/branch" element={<BranchDashboardPage />} />
-            </Route>
+          <Route element={<RequireBranch />}>
+            <Route path="/branch" element={<BranchDashboardPage />} />
           </Route>
 
           {/* POS — full-screen, no sidebar, branch role only */}
-          <Route element={<RequireTenant />}>
-            <Route element={<RequirePOS />}>
-              <Route path="/pos" element={<POSPage />} />
-            </Route>
+          <Route element={<RequirePOS />}>
+            <Route path="/pos" element={<POSPage />} />
           </Route>
 
           {/* App shell with Sidebar + TopHeader */}
-          <Route element={<RequireTenant />}>
-            <Route element={<AppLayout />}>
+          <Route element={<AppLayout />}>
 
-              {/* Super admin only */}
-              <Route element={<RequireSuperAdmin />}>
-                <Route path="/super-admin"                    element={<SuperAdminDashboard />} />
-                <Route path="/super-admin/clients"            element={<ClientsPage />} />
-                <Route path="/super-admin/clients/:id"        element={<ClientDetailPage />} />
-                <Route path="/super-admin/subscriptions"      element={<SubscriptionsPage />} />
-                <Route path="/super-admin/settings"           element={<SuperAdminSettingsPage />} />
-              </Route>
-
-              {/* Admin / owner / manager / accountant */}
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/invoices"       element={<InvoicesPage />} />
-              <Route path="/invoices/:id"   element={<InvoiceDetailPage />} />
-              <Route path="/products"  element={<ProductsPage />} />
-              <Route path="/inventory" element={<InventoryPage />} />
-              <Route path="/customers"     element={<CustomersPage />} />
-              <Route path="/customers/:id" element={<CustomerDetailPage />} />
-              <Route path="/expenses"   element={<ExpensesPage />} />
-              <Route path="/employees"   element={<EmployeesPage />} />
-              <Route path="/profile"    element={<ProfilePage />} />
-              <Route path="/day-closing" element={<DayClosingPage />} />
-              <Route path="/reports"   element={<ReportsPage />} />
-              <Route path="/suppliers" element={<SuppliersPage />} />
-              <Route path="/settings"  element={<SettingsPage />} />
+            {/* Super admin only */}
+            <Route element={<RequireSuperAdmin />}>
+              <Route path="/super-admin"                    element={<SuperAdminDashboard />} />
+              <Route path="/super-admin/clients"            element={<ClientsPage />} />
+              <Route path="/super-admin/clients/:id"        element={<ClientDetailPage />} />
+              <Route path="/super-admin/subscriptions"      element={<SubscriptionsPage />} />
+              <Route path="/super-admin/settings"           element={<SuperAdminSettingsPage />} />
             </Route>
+
+            {/* Admin / owner / accountant */}
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/invoices"       element={<InvoicesPage />} />
+            <Route path="/invoices/:id"   element={<InvoiceDetailPage />} />
+            <Route path="/products"  element={<ProductsPage />} />
+            <Route path="/inventory" element={<InventoryPage />} />
+            <Route path="/customers"     element={<CustomersPage />} />
+            <Route path="/customers/:id" element={<CustomerDetailPage />} />
+            <Route path="/expenses"   element={<ExpensesPage />} />
+            <Route path="/employees"   element={<EmployeesPage />} />
+            <Route path="/profile"    element={<ProfilePage />} />
+            <Route path="/day-closing" element={<DayClosingPage />} />
+            <Route path="/reports"   element={<ReportsPage />} />
+            <Route path="/suppliers" element={<SuppliersPage />} />
+            <Route path="/settings"  element={<SettingsPage />} />
           </Route>
         </Route>
 

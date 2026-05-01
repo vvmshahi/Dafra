@@ -60,7 +60,9 @@ export default function SignupPage() {
     if (error) {
       setError(error.message)
     } else {
-      navigate('/onboarding')
+      navigate('/login', {
+        state: { successMsg: 'Account created! Sign in to set up your business.' },
+      })
     }
   }
 
