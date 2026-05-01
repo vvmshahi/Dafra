@@ -17,6 +17,7 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     detectSessionInUrl: true,
     storageKey: 'dafra-auth',
+    storage: window.localStorage,
   },
   global: {
     fetch: (url, options) => fetch(url, { ...options, signal: AbortSignal.timeout(30000) }),

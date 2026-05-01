@@ -610,18 +610,25 @@ export default function BranchesTab() {
   const { profile } = useAuth()
   const [branches, setBranches]     = useState<Branch[]>([])
   const [loading, setLoading]       = useState(true)
+  const [loadError, setLoadError]   = useState('')
   const [drawerBranch, setDrawer]   = useState<Branch | 'new' | null>(null)
   const [deleting, setDeleting]     = useState<string | null>(null)
 
   const load = async () => {
     if (!profile?.tenant_id) return
     setLoading(true)
-    const { data } = await supabase
+    setLoadError('')
+    const { data, error } = await supabase
       .from('branches')
       .select('*')
       .eq('tenant_id', profile.tenant_id)
       .order('is_main_branch', { ascending: false })
       .order('created_at', { ascending: true })
+    if (error) {
+      setLoadError(error.message)
+      setLoading(false)
+      return
+    }
     setBranches((data as Branch[]) ?? [])
     setLoading(false)
   }
@@ -660,6 +667,12 @@ export default function BranchesTab() {
           {[1, 2].map(i => (
             <div key={i} className="card p-5 h-20 animate-pulse bg-gray-50" />
           ))}
+        </div>
+      ) : loadError ? (
+        <div className="card p-8 text-center">
+          <p className="text-sm text-red-600 mb-1">Failed to load branches</p>
+          <p className="text-xs text-gray-400 mb-4">{loadError}</p>
+          <Button size="sm" variant="secondary" onClick={load}>Retry</Button>
         </div>
       ) : branches.length === 0 ? (
         <div className="card p-12 text-center">

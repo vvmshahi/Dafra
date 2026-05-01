@@ -64,42 +64,60 @@ export function useAuth() {
   }, [])
 
   useEffect(() => {
+    let mounted = true
+
+    // ── Phase 1: restore existing session on mount ─────────────────────────
+    // Read the session from localStorage immediately (synchronous-ish) and
+    // set `user` BEFORE awaiting fetchProfile. This is the critical step that
+    // prevents the old bug where `user` stayed null during profile fetch and
+    // route guards incorrectly redirected to /login on page refresh.
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!mounted) return
+      if (session?.user) {
+        // User is authenticated — hold the spinner while we load the profile.
+        setState(prev => ({ ...prev, user: session.user, session }))
+        const { profile, tenant } = await fetchProfile(session.user.id)
+        if (!mounted) return
+        const isOnboarded = computeIsOnboarded(profile)
+        console.log('[useAuth] Session restored:', {
+          userId: session.user.id, role: profile?.role, isOnboarded,
+        })
+        setState(prev => ({ ...prev, profile, tenant, loading: false, isOnboarded }))
+      } else {
+        // No session — user is logged out.
+        if (mounted) setState({ user: null, session: null, profile: null, tenant: null, loading: false, isOnboarded: null })
+      }
+    })
+
+    // ── Phase 2: listen for subsequent auth events ─────────────────────────
+    // INITIAL_SESSION is skipped because Phase 1 already handles page-load
+    // session restoration. Handling it here too would cause a double profile
+    // fetch on every page load.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (!mounted) return
+        if (event === 'INITIAL_SESSION') return
+
         if (session?.user) {
+          setState(prev => ({ ...prev, user: session.user, session }))
           const { profile, tenant } = await fetchProfile(session.user.id)
+          if (!mounted) return
           const isOnboarded = computeIsOnboarded(profile)
-          console.log('[useAuth] Auth resolved:', {
-            event,
-            userId: session.user.id,
-            role: profile?.role,
-            tenant_id: profile?.tenant_id,
-            isOnboarded,
+          console.log('[useAuth] Auth event:', {
+            event, userId: session.user.id, role: profile?.role, isOnboarded,
           })
-          setState({ user: session.user, session, profile, tenant, loading: false, isOnboarded })
+          setState(prev => ({ ...prev, profile, tenant, loading: false, isOnboarded }))
         } else {
-          // INITIAL_SESSION with no session = not logged in; all other
-          // signed-out events (SIGNED_OUT etc.) also land here.
           setState({ user: null, session: null, profile: null, tenant: null, loading: false, isOnboarded: null })
         }
       },
     )
-    return () => subscription.unsubscribe()
-  }, [fetchProfile])
 
-  // Safety net: if the auth state never resolves (slow network, Supabase cold
-  // start, profile fetch hangs), force loading=false after 8 seconds so the
-  // UI never shows an infinite spinner.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setState(prev => {
-        if (!prev.loading) return prev
-        console.warn('[useAuth] Auth timeout — forcing loading=false')
-        return { ...prev, loading: false }
-      })
-    }, 8000)
-    return () => clearTimeout(timer)
-  }, [])
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [fetchProfile])
 
   const refreshProfile = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
