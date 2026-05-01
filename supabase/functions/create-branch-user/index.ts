@@ -39,9 +39,21 @@ Deno.serve(async (req: Request) => {
       })
     }
 
+    console.log('[create-branch-user] URL:', supabaseUrl)
+
     const adminClient = createClient(supabaseUrl, SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     })
+    console.log('[create-branch-user] adminClient created:', !!adminClient)
+    console.log('[create-branch-user] adminClient.auth present:', !!adminClient.auth)
+
+    // Test query to verify service role access before any caller checks
+    const { data: testData, error: testError } = await adminClient
+      .from('user_profiles')
+      .select('count')
+      .limit(1)
+    console.log('[create-branch-user] Test query result:', JSON.stringify(testData))
+    console.log('[create-branch-user] Test query error:', JSON.stringify(testError))
 
     // ── Step 2: Extract and decode the caller's JWT ───────────────────────
     const authHeader = req.headers.get('Authorization') ?? ''
@@ -84,9 +96,10 @@ Deno.serve(async (req: Request) => {
       .from('user_profiles')
       .select('role, tenant_id')
       .eq('id', callerId)
-      .single()
+      .maybeSingle()
 
-    console.log('[create-branch-user] Caller profile:', JSON.stringify(callerProfile), '| error:', profileErr?.message ?? 'none')
+    console.log('[create-branch-user] Caller profile:', JSON.stringify(callerProfile))
+    console.log('[create-branch-user] Profile error:', JSON.stringify(profileErr))
 
     if (profileErr || !callerProfile) {
       console.error('[create-branch-user] Could not read caller profile:', profileErr?.message)
