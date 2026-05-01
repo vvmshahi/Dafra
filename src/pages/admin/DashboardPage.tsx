@@ -288,6 +288,20 @@ export default function DashboardPage() {
   useEffect(() => { loadStats() }, [loadStats])
   useEffect(() => { loadChart() }, [loadChart])
 
+  // Realtime: re-fetch whenever any branch in this tenant changes so the
+  // dashboard updates immediately after returning from the Settings page.
+  useEffect(() => {
+    if (!tid) return
+    const channel = supabase
+      .channel(`dashboard-branches-${tid}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'branches',
+        filter: `tenant_id=eq.${tid}`,
+      }, () => loadStats())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [tid, loadStats])
+
   // Still loading branch check
   if (hasBranches === null) {
     return (

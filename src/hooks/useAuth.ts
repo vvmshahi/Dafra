@@ -87,6 +87,20 @@ export function useAuth() {
     return () => subscription.unsubscribe()
   }, [fetchProfile])
 
+  // Safety net: if the auth state never resolves (slow network, Supabase cold
+  // start, profile fetch hangs), force loading=false after 8 seconds so the
+  // UI never shows an infinite spinner.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setState(prev => {
+        if (!prev.loading) return prev
+        console.warn('[useAuth] Auth timeout — forcing loading=false')
+        return { ...prev, loading: false }
+      })
+    }, 8000)
+    return () => clearTimeout(timer)
+  }, [])
+
   const refreshProfile = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session?.user) return

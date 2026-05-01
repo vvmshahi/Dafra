@@ -94,18 +94,37 @@ Deno.serve(async (req: Request) => {
 
     const newUserId = created.user.id
 
-    // The handle_new_user trigger creates the user_profiles row.
-    // Update it immediately to set role / tenant / branch.
-    await admin
+    // The handle_new_user trigger should have created the user_profiles row.
+    // Try update first; fall back to upsert in case the trigger hasn't fired yet.
+    const { data: updatedRows } = await admin
       .from('user_profiles')
       .update({
-        role:      'branch',
+        role:       'branch',
         tenant_id,
         branch_id,
-        full_name: full_name?.trim() ?? '',
+        full_name:  full_name?.trim() ?? '',
         updated_at: new Date().toISOString(),
       })
       .eq('id', newUserId)
+      .select('id')
+
+    if (!updatedRows?.length) {
+      // Trigger hasn't created the row yet — upsert it directly.
+      const { error: upsertErr } = await admin
+        .from('user_profiles')
+        .upsert({
+          id:         newUserId,
+          role:       'branch',
+          tenant_id,
+          branch_id,
+          full_name:  full_name?.trim() ?? '',
+          email:      email.trim().toLowerCase(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' })
+      if (upsertErr) {
+        console.error('[create-branch-user] Profile upsert failed:', upsertErr.message)
+      }
+    }
 
     return new Response(JSON.stringify({ user_id: newUserId }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },

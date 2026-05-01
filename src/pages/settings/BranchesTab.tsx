@@ -138,12 +138,13 @@ function useSection(initial = true) {
 /* ── Drawer ──────────────────────────────────────────────────── */
 
 function BranchDrawer({
-  branch, tenantId, onClose, onSaved,
+  branch, tenantId, onClose, onSaved, onRefresh,
 }: {
   branch: Branch | null
   tenantId: string
   onClose: () => void
   onSaved: () => void
+  onRefresh?: () => void
 }) {
   const isNew = branch === null
   const [form, setForm] = useState<BranchForm>(
@@ -250,10 +251,13 @@ function BranchDrawer({
         const logoUrl = await uploadLogo(data.id)
         if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', data.id)
 
+        // Refresh the parent branch list now (branch is in DB regardless of login outcome)
+        onRefresh?.()
+
         // Create the branch login user via edge function (no email confirmation)
         if (form.login_email.trim()) {
           const password = form.login_password.trim() || `Dafra@${Math.random().toString(36).slice(2, 10)}`
-          const { error: fnErr } = await supabase.functions.invoke('create-branch-user', {
+          const { data: fnData, error: fnErr } = await supabase.functions.invoke('create-branch-user', {
             body: {
               email:     form.login_email.trim(),
               password,
@@ -262,7 +266,11 @@ function BranchDrawer({
               branch_id: data.id,
             },
           })
-          if (fnErr) console.warn('Branch user creation failed:', fnErr.message)
+          const fnErrMsg = fnErr?.message ?? (fnData as any)?.error ?? null
+          if (fnErrMsg) {
+            setError(`Branch created! But login setup failed: ${fnErrMsg}. Click Cancel to close.`)
+            return  // Keep drawer open so owner sees the error; list already refreshed above
+          }
         }
       } else {
         const { error } = await q.from('branches').update(payload).eq('id', branch!.id)
@@ -680,6 +688,7 @@ export default function BranchesTab() {
           tenantId={tenantId}
           onClose={() => setDrawer(null)}
           onSaved={() => { setDrawer(null); load() }}
+          onRefresh={load}
         />
       )}
 
