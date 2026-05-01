@@ -3,6 +3,7 @@ import { Bell, Search } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 
 const titles: Record<string, string> = {
+  '/branch':                    'My Branch',
   '/dashboard':                 'Dashboard',
   '/pos':                       'Point of Sale',
   '/products':                  'Products',

@@ -145,11 +145,6 @@ export default function App() {
         {/* RequireAuth hard-gates owners without tenant → /onboarding */}
         <Route element={<RequireAuth />}>
 
-          {/* Branch dashboard — full-screen, no sidebar, branch role only */}
-          <Route element={<RequireBranch />}>
-            <Route path="/branch" element={<BranchDashboardPage />} />
-          </Route>
-
           {/* POS — full-screen, no sidebar, branch role only */}
           <Route element={<RequirePOS />}>
             <Route path="/pos" element={<POSPage />} />
@@ -157,6 +152,11 @@ export default function App() {
 
           {/* App shell with Sidebar + TopHeader */}
           <Route element={<AppLayout />}>
+
+            {/* Branch dashboard — inside AppLayout so sidebar shows */}
+            <Route element={<RequireBranch />}>
+              <Route path="/branch" element={<BranchDashboardPage />} />
+            </Route>
 
             {/* Super admin only */}
             <Route element={<RequireSuperAdmin />}>
