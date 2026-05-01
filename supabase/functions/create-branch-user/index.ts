@@ -1,22 +1,3 @@
-/**
- * create-branch-user Edge Function
- *
- * Creates a branch login account without requiring email confirmation.
- * Only callable by authenticated owners within the same tenant.
- *
- * POST /functions/v1/create-branch-user
- * Body: { email, password, full_name, tenant_id, branch_id }
- * Returns: { user_id: string }
- *
- * Auth pattern:
- *   - The caller's JWT is decoded locally to get their user_id.
- *   - ALL Supabase API calls (auth + database) use a single adminClient
- *     built with SUPABASE_SERVICE_ROLE_KEY, which bypasses RLS entirely.
- *   - We never pass the caller's JWT to any Supabase client method that
- *     could contaminate the client's session and downgrade it to the
- *     caller's permissions.
- */
-
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
@@ -24,12 +5,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-/** Decode JWT payload without verifying signature (expiry checked separately). */
 function decodeJWTPayload(jwt: string): Record<string, unknown> | null {
   try {
     const parts = jwt.split('.')
     if (parts.length !== 3) return null
-    // Pad to a valid base64 length
     const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
     const padded  = base64 + '='.repeat((4 - base64.length % 4) % 4)
     return JSON.parse(atob(padded))
@@ -44,33 +23,23 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // ── Step 1: Build the admin client (service role — bypasses RLS) ──────
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-
-    // DAFRA_SERVICE_ROLE_KEY is a manually-set secret that avoids Supabase's
-    // built-in SUPABASE_SERVICE_ROLE_KEY injection (which uses a different
-    // sb_secret_* format that does not work as a JWT Bearer token).
-    const dafraKey    = Deno.env.get('DAFRA_SERVICE_ROLE_KEY')
-    const builtinKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    const serviceKey  = dafraKey || builtinKey
-
-    const keySource = dafraKey ? 'DAFRA_SERVICE_ROLE_KEY' : builtinKey ? 'SUPABASE_SERVICE_ROLE_KEY (builtin)' : 'MISSING'
+    // ── Step 1: Read DAFRA_SERVICE_ROLE_KEY (manually-set secret) ─────────
+    const supabaseUrl    = Deno.env.get('SUPABASE_URL')!
+    const SERVICE_ROLE_KEY = Deno.env.get('DAFRA_SERVICE_ROLE_KEY')
 
     console.log('[create-branch-user] SUPABASE_URL present:', !!supabaseUrl)
-    console.log('[create-branch-user] key source:', keySource)
-    console.log('[create-branch-user] key prefix:', serviceKey?.substring(0, 12) ?? 'MISSING')
-    console.log('[create-branch-user] key is JWT format (eyJ):', serviceKey?.startsWith('eyJ') ?? false)
+    console.log('[create-branch-user] DAFRA_SERVICE_ROLE_KEY present:', !!SERVICE_ROLE_KEY)
+    console.log('[create-branch-user] key prefix:', SERVICE_ROLE_KEY?.substring(0, 15) ?? 'MISSING')
+    console.log('[create-branch-user] key is JWT (eyJ):', SERVICE_ROLE_KEY?.startsWith('eyJ') ?? false)
 
-    if (!serviceKey) {
-      console.error('[create-branch-user] No service role key available')
-      return new Response(JSON.stringify({ error: 'Server misconfiguration: missing service key' }), {
+    if (!SERVICE_ROLE_KEY || !SERVICE_ROLE_KEY.startsWith('eyJ')) {
+      console.error('[create-branch-user] Invalid service role key:', SERVICE_ROLE_KEY?.substring(0, 20) ?? 'MISSING')
+      return new Response(JSON.stringify({ error: 'Server configuration error - invalid key' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    // This client uses the service role key for EVERY request.
-    // It is never given the caller's JWT, so its session is never contaminated.
-    const adminClient = createClient(supabaseUrl, serviceKey, {
+    const adminClient = createClient(supabaseUrl, SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
@@ -93,7 +62,6 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    // Check token expiry
     const now = Math.floor(Date.now() / 1000)
     if (typeof jwtPayload.exp === 'number' && jwtPayload.exp < now) {
       console.error('[create-branch-user] JWT expired')
@@ -109,10 +77,9 @@ Deno.serve(async (req: Request) => {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
-    console.log('[create-branch-user] Caller user_id from JWT:', callerId)
+    console.log('[create-branch-user] Caller user_id:', callerId)
 
-    // ── Step 3: Verify caller identity and role using adminClient ─────────
-    // adminClient uses service role key — no RLS, no permission denied.
+    // ── Step 3: Verify caller role via adminClient (bypasses RLS) ─────────
     const { data: callerProfile, error: profileErr } = await adminClient
       .from('user_profiles')
       .select('role, tenant_id')
@@ -140,18 +107,18 @@ Deno.serve(async (req: Request) => {
 
     console.log('[create-branch-user] Request: email=', email, '| tenant_id=', tenant_id, '| branch_id=', branch_id)
 
-    if (tenant_id !== callerProfile.tenant_id) {
-      console.error('[create-branch-user] Tenant mismatch — body:', tenant_id, 'caller:', callerProfile.tenant_id)
-      return new Response(JSON.stringify({ error: 'Forbidden: tenant mismatch' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
     if (!email || !password || !tenant_id || !branch_id) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields: email, password, tenant_id, branch_id' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
+    }
+
+    if (tenant_id !== callerProfile.tenant_id) {
+      console.error('[create-branch-user] Tenant mismatch — body:', tenant_id, 'caller:', callerProfile.tenant_id)
+      return new Response(JSON.stringify({ error: 'Forbidden: tenant mismatch' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     if (password.length < 8) {
@@ -187,8 +154,6 @@ Deno.serve(async (req: Request) => {
     console.log('[create-branch-user] Auth user created:', newUserId)
 
     // ── Step 6: Set the user_profiles row ────────────────────────────────
-    // The handle_new_user trigger may have created the row already.
-    // Try update first; fall back to upsert if the trigger hasn't fired.
     const { data: updatedRows, error: updateErr } = await adminClient
       .from('user_profiles')
       .update({
@@ -204,7 +169,7 @@ Deno.serve(async (req: Request) => {
     console.log('[create-branch-user] Profile update: rows=', updatedRows?.length ?? 0, '| error=', updateErr?.message ?? 'none')
 
     if (!updatedRows?.length) {
-      console.log('[create-branch-user] Trigger row not found yet — upserting profile')
+      console.log('[create-branch-user] No row updated — upserting profile')
       const { error: upsertErr } = await adminClient
         .from('user_profiles')
         .upsert({
