@@ -90,7 +90,7 @@ Deno.serve(async (req: Request) => {
         status:                  'compliance',
         environment:             env,
         created_at:              new Date().toISOString(),
-      }, { onConflict: 'branch_id' })
+      }, { onConflict: 'branch_id,environment' })
 
     if (upsertErr) {
       console.error('[zatca-compliance] DB upsert error:', upsertErr)

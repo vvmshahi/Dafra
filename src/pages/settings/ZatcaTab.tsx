@@ -156,7 +156,7 @@ function Step1GenerateKeys({
           public_key_pem:        keyPair.publicKeyPem,
           status:                'pending',
           environment:           'sandbox',
-        }, { onConflict: 'branch_id' })
+        }, { onConflict: 'branch_id,environment' })
         .select()
         .single()
 
