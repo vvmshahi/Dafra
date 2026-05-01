@@ -313,7 +313,7 @@ function Step2EnterOTP({
       {error && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl p-3">
           <AlertTriangle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
-          <p className="text-[11px] text-red-700">{error}</p>
+          <pre className="text-[11px] text-red-700 whitespace-pre-wrap break-all font-mono leading-relaxed">{error}</pre>
         </div>
       )}
 

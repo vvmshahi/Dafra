@@ -34,7 +34,9 @@ async function edgePost<T>(fnName: string, body: Record<string, unknown>): Promi
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(err.error ?? `Edge Function ${fnName} returned ${res.status}`)
+    // Include raw zatcaBody in the message when present so the UI can show it
+    const detail = err.zatcaBody ? `\n\nZATCA raw response:\n${JSON.stringify(err.zatcaBody, null, 2)}` : ''
+    throw new Error((err.error ?? `Edge Function ${fnName} returned ${res.status}`) + detail)
   }
   return res.json()
 }
