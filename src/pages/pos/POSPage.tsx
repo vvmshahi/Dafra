@@ -605,6 +605,15 @@ export default function POSPage() {
       const prefix        = branch.invoice_prefix ?? 'INV'
       const invoiceNumber = `${prefix}-${String(counter ?? 1).padStart(4, '0')}`
       const today         = new Date().toISOString().slice(0, 10)
+      const createdAt     = new Date().toISOString()
+
+      const zatcaQrCode = buildZatcaQR({
+        sellerName:  branch.business_name_ar || branch.name_ar || branch.name,
+        vatNumber:   branch.vat_number ?? '',
+        timestamp:   createdAt,
+        totalAmount: totals.total,
+        vatAmount:   totals.taxAmount,
+      })
 
       const { data: inv, error: invErr } = await q.from('invoices').insert({
         tenant_id:          tid,
@@ -615,6 +624,7 @@ export default function POSPage() {
         zatca_invoice_type: 'simplified',
         zatca_type_code:    '388',
         zatca_status:       'pending',
+        zatca_qr_code:      zatcaQrCode,
         subtotal:           totals.subtotal,
         discount_amount:    0,
         taxable_amount:     totals.subtotal,
@@ -665,7 +675,6 @@ export default function POSPage() {
         paid_at:     new Date().toISOString(),
       })
 
-      const createdAt    = new Date().toISOString()
       const branchAddr   = [
         branch.building_number ? `Building ${branch.building_number}` : null,
         branch.street, branch.district, branch.city,

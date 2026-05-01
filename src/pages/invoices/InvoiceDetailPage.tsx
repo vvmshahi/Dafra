@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Printer, Download, RefreshCw, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { ArrowLeft, Printer, Download, RefreshCw, Loader2, AlertCircle, CheckCircle2, Bug } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import { buildZatcaQR } from '@/lib/zatca/qr'
+import { buildZatcaQR, decodeTLV } from '@/lib/zatca/qr'
 import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
 import type { Invoice, InvoiceItem, Payment, Branch } from '@/types/database'
 
@@ -93,8 +93,10 @@ function usePrintStyle() {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function InvoiceDetailPage() {
-  const { id }   = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const { id }     = useParams<{ id: string }>()
+  const navigate   = useNavigate()
+  const location   = useLocation()
+  const debugMode  = new URLSearchParams(location.search).get('debug') === 'true'
   usePrintStyle()
 
   const [invoice,  setInvoice]  = useState<Invoice | null>(null)
@@ -105,7 +107,8 @@ export default function InvoiceDetailPage() {
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState<string | null>(null)
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [qrDataUrl,    setQrDataUrl]    = useState<string | null>(null)
+  const [qrPayload,    setQrPayload]    = useState<string | null>(null)
   const [resubmitting, setResubmitting] = useState(false)
 
   // Load data
@@ -169,17 +172,19 @@ export default function InvoiceDetailPage() {
     let cancelled = false
 
     async function generateQR() {
-      const sellerName = branch!.business_name_ar || branch!.business_name || branch!.name_ar || branch!.name
-      const vatNumber  = branch!.vat_number || tenant!.vat_number || ''
-      const timestamp  = invoice!.created_at
+      // Use the stored TLV from DB when available — guarantees debug panel shows
+      // the exact same payload that was encoded into the QR at creation time.
+      const storedPayload = invoice!.zatca_qr_code
 
-      const payload = buildZatcaQR({
-        sellerName,
-        vatNumber,
-        timestamp,
+      const payload = storedPayload ?? buildZatcaQR({
+        sellerName:  branch!.business_name_ar || branch!.business_name || branch!.name_ar || branch!.name,
+        vatNumber:   branch!.vat_number || tenant!.vat_number || '',
+        timestamp:   invoice!.created_at,
         totalAmount: Number(invoice!.total_amount),
         vatAmount:   Number(invoice!.tax_amount),
       })
+
+      if (!cancelled) setQrPayload(payload)
 
       try {
         const url = await QRCode.toDataURL(payload, {
@@ -191,8 +196,8 @@ export default function InvoiceDetailPage() {
         if (cancelled) return
         setQrDataUrl(url)
 
-        // Persist QR payload to DB if not yet stored
-        if (!invoice!.zatca_qr_code) {
+        // Persist QR payload to DB if not yet stored (e.g. invoices created before this fix)
+        if (!storedPayload) {
           const q = supabase as unknown as { from: (t: string) => any }
           q.from('invoices').update({ zatca_qr_code: payload }).eq('id', invoice!.id)
         }
@@ -638,6 +643,107 @@ ${lines}
           </p>
         </div>
       </div>
+
+      {/* ── ZATCA QR Debug Panel (?debug=true) ──────────── */}
+      {debugMode && (
+        <div className="no-print mt-4 rounded-2xl overflow-hidden border border-gray-800 bg-gray-950 text-xs font-mono">
+
+          {/* Header */}
+          <div className="flex items-center gap-2 px-5 py-3 bg-gray-900 border-b border-gray-800">
+            <Bug size={14} className="text-yellow-400" />
+            <span className="text-yellow-400 font-bold text-sm">ZATCA QR Debug Panel</span>
+            <span className="ml-auto text-gray-500 text-[10px]">?debug=true</span>
+          </div>
+
+          {!qrPayload ? (
+            <div className="px-5 py-6 text-gray-500">Generating QR payload…</div>
+          ) : (() => {
+            let fields: ReturnType<typeof decodeTLV> = []
+            let decodeError: string | null = null
+            try { fields = decodeTLV(qrPayload) }
+            catch (e) { decodeError = String(e) }
+
+            const tag2 = fields.find(f => f.tag === 2)?.value ?? ''
+            const tag3 = fields.find(f => f.tag === 3)?.value ?? ''
+            const tag4 = fields.find(f => f.tag === 4)?.value ?? ''
+            const tag5 = fields.find(f => f.tag === 5)?.value ?? ''
+
+            const checks = [
+              {
+                label: 'Tag 2 is 15 digits starting with 3',
+                ok:    /^3\d{14}$/.test(tag2),
+              },
+              {
+                label: 'Tag 3 matches YYYY-MM-DDTHH:MM:SSZ',
+                ok:    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(tag3),
+              },
+              {
+                label: 'Tag 4 is a valid decimal',
+                ok:    /^\d+\.\d+$/.test(tag4),
+              },
+              {
+                label: 'Tag 5 is a valid decimal',
+                ok:    /^\d+\.\d+$/.test(tag5),
+              },
+            ]
+
+            return (
+              <div className="divide-y divide-gray-800">
+
+                {/* Section 1: Raw Base64 */}
+                <div className="px-5 py-4 space-y-1.5">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
+                    1 · Raw Base64 TLV
+                  </p>
+                  <p className="text-green-400 break-all leading-relaxed">{qrPayload}</p>
+                  <p className="text-gray-600 text-[10px]">{qrPayload.length} chars · source: {invoice.zatca_qr_code ? 'database' : 'generated on-the-fly'}</p>
+                </div>
+
+                {/* Section 2: Decoded fields */}
+                <div className="px-5 py-4 space-y-1.5">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">
+                    2 · Decoded TLV Fields
+                  </p>
+                  {decodeError ? (
+                    <p className="text-red-400">Decode error: {decodeError}</p>
+                  ) : fields.length === 0 ? (
+                    <p className="text-gray-500">No fields decoded</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {fields.map(f => (
+                        <div key={f.tag} className="flex gap-3">
+                          <span className="text-gray-500 flex-shrink-0 w-40">
+                            Tag {f.tag} — {f.label}:
+                          </span>
+                          <span className="text-cyan-300 break-all">{f.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Section 3: Validation */}
+                <div className="px-5 py-4 space-y-1.5">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">
+                    3 · Validation Checks
+                  </p>
+                  <div className="space-y-1">
+                    {checks.map(c => (
+                      <div key={c.label} className="flex items-center gap-2">
+                        <span className={c.ok ? 'text-green-400' : 'text-red-400'}>
+                          {c.ok ? '✅' : '❌'}
+                        </span>
+                        <span className={c.ok ? 'text-gray-300' : 'text-red-300'}>{c.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+            )
+          })()}
+        </div>
+      )}
     </div>
   )
 }
