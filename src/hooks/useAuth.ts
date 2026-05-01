@@ -63,40 +63,27 @@ export function useAuth() {
   }, [])
 
   useEffect(() => {
-    // Safety valve: if auth state hasn't resolved within 5 s, stop
-    // showing the spinner and send the user to /login rather than
-    // leaving them on an infinite loading screen after a hard refresh.
-    const timeout = setTimeout(() => {
-      setState(prev => {
-        if (!prev.loading) return prev  // already resolved — do nothing
-        console.warn('[useAuth] Auth timed out after 5 s — forcing unauthenticated state')
-        return { user: null, session: null, profile: null, tenant: null, loading: false, isOnboarded: null }
-      })
-    }, 5000)
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
         if (session?.user) {
           const { profile, tenant } = await fetchProfile(session.user.id)
           const isOnboarded = computeIsOnboarded(profile)
           console.log('[useAuth] Auth resolved:', {
+            event,
             userId: session.user.id,
             role: profile?.role,
             tenant_id: profile?.tenant_id,
             isOnboarded,
           })
-          clearTimeout(timeout)
           setState({ user: session.user, session, profile, tenant, loading: false, isOnboarded })
         } else {
-          clearTimeout(timeout)
+          // INITIAL_SESSION with no session = not logged in; all other
+          // signed-out events (SIGNED_OUT etc.) also land here.
           setState({ user: null, session: null, profile: null, tenant: null, loading: false, isOnboarded: null })
         }
       },
     )
-    return () => {
-      clearTimeout(timeout)
-      subscription.unsubscribe()
-    }
+    return () => subscription.unsubscribe()
   }, [fetchProfile])
 
   const refreshProfile = useCallback(async () => {
