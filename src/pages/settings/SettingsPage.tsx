@@ -1,19 +1,19 @@
 import { useState } from 'react'
-import { Building2, Users, ShieldCheck, CreditCard } from 'lucide-react'
+import { Building2, ShieldCheck, CreditCard, UserCircle } from 'lucide-react'
 import BranchesTab     from './BranchesTab'
-import UsersTab        from './UsersTab'
 import ZatcaTab        from './ZatcaTab'
 import SubscriptionTab from './SubscriptionTab'
+import AccountTab      from './AccountTab'
 
 /* ── Tab config ─────────────────────────────────────────────── */
 
-type TabId = 'branches' | 'users' | 'zatca' | 'subscription'
+type TabId = 'branches' | 'zatca' | 'subscription' | 'account'
 
 const TABS: { id: TabId; label: string; icon: React.ElementType; desc: string }[] = [
   { id: 'branches',     label: 'Branches',     icon: Building2,   desc: 'Locations, invoice settings & ZATCA config' },
-  { id: 'users',        label: 'Users',        icon: Users,       desc: 'Team members, roles & permissions'         },
   { id: 'zatca',        label: 'ZATCA',        icon: ShieldCheck, desc: 'Certificates & e-invoicing compliance'     },
   { id: 'subscription', label: 'Subscription', icon: CreditCard,  desc: 'Plan, billing & usage limits'             },
+  { id: 'account',      label: 'Account',      icon: UserCircle,  desc: 'Profile, name, phone & password'          },
 ]
 
 /* ── Page ───────────────────────────────────────────────────── */
@@ -61,9 +61,9 @@ export default function SettingsPage() {
 
       {/* Tab content */}
       {active === 'branches'     && <BranchesTab />}
-      {active === 'users'        && <UsersTab />}
       {active === 'zatca'        && <ZatcaTab />}
       {active === 'subscription' && <SubscriptionTab />}
+      {active === 'account'      && <AccountTab />}
     </div>
   )
 }

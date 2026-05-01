@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CheckCircle2, ArrowRight, ArrowLeft, Building2, GitBranch, CreditCard } from 'lucide-react'
+import { CheckCircle2, ArrowRight, ArrowLeft, Building2, CreditCard } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
@@ -10,44 +10,28 @@ import type { SubscriptionPlan } from '@/types'
 /* ── Types ──────────────────────────────────────────────────── */
 
 interface OnboardingData {
-  // Step 1 — Company
-  company_name:     string
-  company_name_ar:  string
-  vat_number:       string
-  cr_number:        string
-  city:             string
-  country:          string
-  phone:            string
-  website:          string
-  // Step 2 — Branch
-  branch_name:      string
-  branch_name_ar:   string
-  vat_mode:         'exclusive' | 'inclusive'
-  invoice_prefix:   string
-  building_number:  string
-  street:           string
-  district:         string
-  postal_code:      string
-  // Step 3 — Plan
-  plan_id:          string
+  company_name:    string
+  company_name_ar: string
+  vat_number:      string
+  cr_number:       string
+  city:            string
+  phone:           string
+  website:         string
+  plan_id:         string
 }
 
 const INITIAL: OnboardingData = {
   company_name: '', company_name_ar: '',
   vat_number: '', cr_number: '',
-  city: '', country: 'SA', phone: '', website: '',
-  branch_name: '', branch_name_ar: '',
-  vat_mode: 'exclusive', invoice_prefix: 'INV',
-  building_number: '', street: '', district: '', postal_code: '',
+  city: '', phone: '', website: '',
   plan_id: '',
 }
 
 /* ── Step indicator ─────────────────────────────────────────── */
 
 const STEPS = [
-  { n: 1, label: 'Company',  icon: Building2  },
-  { n: 2, label: 'Branch',   icon: GitBranch  },
-  { n: 3, label: 'Plan',     icon: CreditCard },
+  { n: 1, label: 'Business', icon: Building2 },
+  { n: 2, label: 'Plan',     icon: CreditCard },
 ]
 
 function StepIndicator({ current }: { current: number }) {
@@ -59,7 +43,6 @@ function StepIndicator({ current }: { current: number }) {
         const Icon   = step.icon
         return (
           <div key={step.n} className="flex items-center">
-            {/* Node */}
             <div className="flex flex-col items-center gap-1.5">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all ${
                 done   ? 'bg-gold-500 border-gold-500'
@@ -77,9 +60,8 @@ function StepIndicator({ current }: { current: number }) {
                 {step.label}
               </span>
             </div>
-            {/* Connector */}
             {i < STEPS.length - 1 && (
-              <div className={`h-px w-16 mx-2 mb-5 transition-all ${
+              <div className={`h-px w-20 mx-2 mb-5 transition-all ${
                 step.n < current ? 'bg-gold-500' : 'bg-white/20'
               }`} />
             )}
@@ -90,8 +72,6 @@ function StepIndicator({ current }: { current: number }) {
   )
 }
 
-/* ── Section label ──────────────────────────────────────────── */
-
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 mt-5 first:mt-0">
@@ -100,55 +80,9 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-/* ── Step 1: Company Details ────────────────────────────────── */
+/* ── Step 1: Business Details ───────────────────────────────── */
 
 function Step1({
-  data, onChange,
-}: {
-  data: OnboardingData
-  onChange: (k: keyof OnboardingData, v: string) => void
-}) {
-  const set = (k: keyof OnboardingData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    onChange(k, e.target.value)
-
-  return (
-    <div>
-      <SectionLabel>Business identity</SectionLabel>
-      <div className="grid grid-cols-2 gap-3">
-        <Input label="Company Name (English)" value={data.company_name} onChange={set('company_name')} placeholder="Al-Faris Trading Co." required />
-        <Input label="Company Name (Arabic)" value={data.company_name_ar} onChange={set('company_name_ar')} placeholder="شركة الفارس التجارية" />
-      </div>
-      <div className="grid grid-cols-2 gap-3 mt-3">
-        <Input label="VAT Registration Number" value={data.vat_number} onChange={set('vat_number')} placeholder="301234567890123" maxLength={15} helperText="15-digit Saudi VAT number" />
-        <Input label="Commercial Registration (CR)" value={data.cr_number} onChange={set('cr_number')} placeholder="1234567890" />
-      </div>
-
-      <SectionLabel>Location &amp; contact</SectionLabel>
-      <div className="grid grid-cols-2 gap-3">
-        <Input label="City" value={data.city} onChange={set('city')} placeholder="Riyadh" />
-        <div>
-          <label className="label">Country</label>
-          <select value={data.country} onChange={set('country')} className="input">
-            <option value="SA">Saudi Arabia 🇸🇦</option>
-            <option value="AE">UAE 🇦🇪</option>
-            <option value="BH">Bahrain 🇧🇭</option>
-            <option value="KW">Kuwait 🇰🇼</option>
-            <option value="OM">Oman 🇴🇲</option>
-            <option value="QA">Qatar 🇶🇦</option>
-          </select>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3 mt-3">
-        <Input label="Phone" type="tel" value={data.phone} onChange={set('phone')} placeholder="+966 5x xxx xxxx" />
-        <Input label="Website (optional)" type="url" value={data.website} onChange={set('website')} placeholder="https://company.com" />
-      </div>
-    </div>
-  )
-}
-
-/* ── Step 2: Branch Setup ───────────────────────────────────── */
-
-function Step2({
   data, onChange,
 }: {
   data: OnboardingData
@@ -159,54 +93,35 @@ function Step2({
 
   return (
     <div>
-      <SectionLabel>Branch identity</SectionLabel>
+      <SectionLabel>Business identity</SectionLabel>
       <div className="grid grid-cols-2 gap-3">
-        <Input label="Branch Name (English)" value={data.branch_name} onChange={set('branch_name')} placeholder="Main Branch" />
-        <Input label="Branch Name (Arabic)" value={data.branch_name_ar} onChange={set('branch_name_ar')} placeholder="الفرع الرئيسي" />
-      </div>
-
-      <SectionLabel>Invoice settings</SectionLabel>
-      <div className="grid grid-cols-2 gap-3">
-        {/* VAT mode */}
-        <div>
-          <label className="label">VAT Mode</label>
-          <div className="grid grid-cols-2 gap-2">
-            {(['exclusive', 'inclusive'] as const).map(m => (
-              <button key={m} type="button" onClick={() => onChange('vat_mode', m)}
-                className={`border rounded-xl px-3 py-2.5 text-left transition-all ${
-                  data.vat_mode === m
-                    ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500'
-                    : 'border-gray-200 hover:border-gray-300 bg-white'
-                }`}>
-                <p className="text-xs font-semibold capitalize text-gray-800">{m}</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">
-                  {m === 'exclusive' ? 'VAT on top' : 'VAT included'}
-                </p>
-              </button>
-            ))}
-          </div>
-        </div>
-        <Input label="Invoice Prefix" value={data.invoice_prefix} onChange={e => onChange('invoice_prefix', e.target.value.toUpperCase())} placeholder="INV" maxLength={10} helperText="e.g. INV, FAT, ORD" />
-      </div>
-
-      <SectionLabel>Branch address (ZATCA mandatory)</SectionLabel>
-      <div className="grid grid-cols-2 gap-3">
-        <Input label="Building Number" value={data.building_number} onChange={set('building_number')} placeholder="1234" />
-        <Input label="Street" value={data.street} onChange={set('street')} placeholder="King Fahd Road" />
+        <Input label="Business Name (English)" value={data.company_name} onChange={set('company_name')}
+          placeholder="Al-Faris Trading Co." required />
+        <Input label="Business Name (Arabic)" value={data.company_name_ar} onChange={set('company_name_ar')}
+          placeholder="شركة الفارس التجارية" />
       </div>
       <div className="grid grid-cols-2 gap-3 mt-3">
-        <Input label="District" value={data.district} onChange={set('district')} placeholder="Al-Olaya" />
-        <Input label="Postal Code" value={data.postal_code} onChange={set('postal_code')} placeholder="12345" />
+        <Input label="VAT Registration Number" value={data.vat_number} onChange={set('vat_number')}
+          placeholder="301234567890123" maxLength={15} helperText="15-digit Saudi VAT number" required />
+        <Input label="CR Number (optional)" value={data.cr_number} onChange={set('cr_number')}
+          placeholder="1234567890" />
       </div>
 
-      <p className="text-[11px] text-gray-400 mt-4 leading-relaxed">
-        These details appear on every ZATCA-compliant invoice. You can edit them anytime in Settings → Branches.
-      </p>
+      <SectionLabel>Location &amp; contact</SectionLabel>
+      <div className="grid grid-cols-2 gap-3">
+        <Input label="City" value={data.city} onChange={set('city')} placeholder="Riyadh" required />
+        <Input label="Phone" type="tel" value={data.phone} onChange={set('phone')}
+          placeholder="+966 5x xxx xxxx" required />
+      </div>
+      <div className="mt-3">
+        <Input label="Website (optional)" type="url" value={data.website} onChange={set('website')}
+          placeholder="https://company.com" />
+      </div>
     </div>
   )
 }
 
-/* ── Step 3: Plan Selection ─────────────────────────────────── */
+/* ── Step 2: Plan Selection ─────────────────────────────────── */
 
 const PLAN_DISPLAY = [
   {
@@ -237,7 +152,7 @@ const PLAN_DISPLAY = [
   },
 ]
 
-function Step3({
+function Step2({
   data, onChange, plans, loadingPlans,
 }: {
   data: OnboardingData
@@ -245,7 +160,6 @@ function Step3({
   plans: SubscriptionPlan[]
   loadingPlans: boolean
 }) {
-  // Map display position → real plan ID (DB plans ordered price ASC)
   const planIds = [plans[0]?.id ?? '', plans[1]?.id ?? '']
 
   return (
@@ -276,14 +190,12 @@ function Step3({
                     : 'border-gray-200 hover:border-gray-300 bg-white'
                 }`}
               >
-                {/* Most Popular badge */}
                 {plan.badge && (
                   <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gold-500 text-[#0F2419] text-[10px] font-black px-3 py-1 rounded-full whitespace-nowrap shadow-sm">
                     {plan.badge}
                   </span>
                 )}
 
-                {/* Header */}
                 <div className="flex items-start justify-between mt-1">
                   <div>
                     <p className="font-black text-gray-900 text-base">{plan.title}</p>
@@ -296,7 +208,6 @@ function Step3({
                   </div>
                 </div>
 
-                {/* Price */}
                 <div>
                   <div className="flex items-baseline gap-1">
                     <span className="text-3xl font-black text-gray-900">SAR {plan.price}</span>
@@ -305,7 +216,6 @@ function Step3({
                   <p className="text-[11px] text-emerald-600 mt-0.5 font-medium">14-day free trial</p>
                 </div>
 
-                {/* Feature list */}
                 <ul className="space-y-2 border-t border-gray-100 pt-3 flex-1">
                   {plan.features.map(f => (
                     <li key={f} className="flex items-start gap-2 text-[12px] text-gray-600">
@@ -315,11 +225,8 @@ function Step3({
                   ))}
                 </ul>
 
-                {/* Select pill */}
                 <div className={`rounded-xl py-2 text-center text-sm font-semibold transition-all ${
-                  selected
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  selected ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}>
                   {selected ? 'Selected' : 'Select'}
                 </div>
@@ -374,14 +281,7 @@ export default function OnboardingPage() {
     localStorage.setItem(STORAGE_KEY(user.id), JSON.stringify({ step, data }))
   }, [step, data, user?.id])
 
-  // Pre-fill branch name from company name
-  useEffect(() => {
-    if (data.branch_name === '' && data.company_name) {
-      setData(prev => ({ ...prev, branch_name: prev.company_name }))
-    }
-  }, [data.company_name])
-
-  // Fetch plans on mount
+  // Fetch subscription plans
   useEffect(() => {
     supabase
       .from('subscription_plans')
@@ -391,7 +291,6 @@ export default function OnboardingPage() {
       .then(({ data: rows }) => {
         const list = (rows as SubscriptionPlan[]) ?? []
         setPlans(list)
-        // Auto-select Phase 2 (second plan, "Most Popular") by default
         const defaultPlan = list[1] ?? list[0]
         if (defaultPlan) setData(prev => ({ ...prev, plan_id: prev.plan_id || defaultPlan.id }))
         setLoadingPlans(false)
@@ -402,9 +301,13 @@ export default function OnboardingPage() {
     setData(prev => ({ ...prev, [k]: v }))
 
   const canContinue = () => {
-    if (step === 1) return data.company_name.trim().length > 0
-    if (step === 2) return true
-    if (step === 3) return data.plan_id.length > 0 || !loadingPlans
+    if (step === 1) return (
+      data.company_name.trim().length > 0 &&
+      data.vat_number.trim().length > 0 &&
+      data.city.trim().length > 0 &&
+      data.phone.trim().length > 0
+    )
+    if (step === 2) return data.plan_id.length > 0 || !loadingPlans
     return false
   }
 
@@ -412,33 +315,19 @@ export default function OnboardingPage() {
     setError('')
     setSubmitting(true)
     try {
-      // Cast args as any — the hand-written Functions type doesn't satisfy
-      // supabase-js@2.45's strict RPC overload for jsonb-returning functions.
       const { error } = await (supabase.rpc as any)('complete_onboarding', {
         p_company_name:    data.company_name.trim(),
         p_company_name_ar: data.company_name_ar.trim(),
         p_vat_number:      data.vat_number.trim(),
         p_cr_number:       data.cr_number.trim(),
         p_city:            data.city.trim(),
-        p_country:         data.country,
         p_phone:           data.phone.trim(),
         p_website:         data.website.trim(),
-        p_branch_name:     data.branch_name.trim(),
-        p_branch_name_ar:  data.branch_name_ar.trim(),
-        p_vat_mode:        data.vat_mode,
-        p_invoice_prefix:  data.invoice_prefix.trim(),
-        p_building_number: data.building_number.trim(),
-        p_street:          data.street.trim(),
-        p_district:        data.district.trim(),
-        p_postal_code:     data.postal_code.trim(),
         p_plan_id:         data.plan_id || undefined,
       })
       if (error) throw error
 
-      // Clear persisted progress before redirecting
       if (user?.id) localStorage.removeItem(STORAGE_KEY(user.id))
-
-      // Refresh auth context so profile now has tenant_id + role = 'owner'
       await refreshProfile()
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
@@ -450,9 +339,8 @@ export default function OnboardingPage() {
   }
 
   const stepTitles = [
-    { heading: 'Tell us about your business',       sub: 'This information appears on every invoice you generate.' },
-    { heading: 'Set up your first branch',          sub: 'Your main location for invoicing and ZATCA compliance.'  },
-    { heading: 'Choose your plan',                  sub: 'Start free for 14 days. No payment required now.'        },
+    { heading: 'Tell us about your business', sub: 'This information appears on every invoice you generate.' },
+    { heading: 'Choose your plan',            sub: 'Start free for 14 days. No payment required now.'       },
   ]
   const { heading, sub } = stepTitles[step - 1]
 
@@ -461,8 +349,6 @@ export default function OnboardingPage() {
 
       {/* Dark green header */}
       <div className="bg-[#0F2419] px-6 py-8">
-
-        {/* Logo */}
         <div className="flex items-center gap-3 mb-8 justify-center">
           <div className="w-10 h-10 rounded-xl bg-gold-500 flex items-center justify-center shadow-lg">
             <span className="text-[#0F2419] font-black text-xl" style={{ fontFamily: 'Cairo, sans-serif' }}>د</span>
@@ -490,8 +376,7 @@ export default function OnboardingPage() {
 
           <div className="p-8">
             {step === 1 && <Step1 data={data} onChange={onChange} />}
-            {step === 2 && <Step2 data={data} onChange={onChange} />}
-            {step === 3 && <Step3 data={data} onChange={onChange} plans={plans} loadingPlans={loadingPlans} />}
+            {step === 2 && <Step2 data={data} onChange={onChange} plans={plans} loadingPlans={loadingPlans} />}
 
             {error && (
               <div className="mt-4 flex items-center gap-2 bg-red-50 border border-red-100 text-red-700 text-sm px-4 py-3 rounded-xl">
@@ -500,7 +385,6 @@ export default function OnboardingPage() {
             )}
           </div>
 
-          {/* Footer navigation */}
           <div className="px-8 py-5 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
             <div>
               {step > 1 && (
@@ -512,7 +396,7 @@ export default function OnboardingPage() {
 
             <div className="flex items-center gap-3">
               <span className="text-xs text-gray-400">Step {step} of {STEPS.length}</span>
-              {step < 3 ? (
+              {step < 2 ? (
                 <Button onClick={() => setStep(s => s + 1)} disabled={!canContinue()}>
                   Continue <ArrowRight size={15} />
                 </Button>

@@ -10,36 +10,37 @@ import type { LucideIcon } from 'lucide-react'
 
 interface NavItem {
   label: string
-  labelAr: string
   path: string
   icon: LucideIcon
 }
 
+// Owner sees high-level management items only — branch operations are done by branch accounts
 const ownerNav: NavItem[] = [
-  { label: 'Dashboard',   labelAr: 'الرئيسية',    path: '/dashboard',  icon: LayoutDashboard },
-  { label: 'Invoices',    labelAr: 'الفواتير',     path: '/invoices',   icon: FileText  },
-  { label: 'Products',    labelAr: 'المنتجات',     path: '/products',   icon: Package   },
-  { label: 'Inventory',   labelAr: 'المخزون',      path: '/inventory',  icon: Warehouse },
-  { label: 'Customers',   labelAr: 'العملاء',      path: '/customers',  icon: Users },
-  { label: 'Expenses',    labelAr: 'المصروفات',    path: '/expenses',   icon: CreditCard },
-  { label: 'Reports',     labelAr: 'التقارير',     path: '/reports',    icon: BarChart2 },
-  { label: 'Employees',   labelAr: 'الموظفون',     path: '/employees',  icon: UserSquare2 },
-  { label: 'Suppliers',   labelAr: 'الموردون',     path: '/suppliers',  icon: Truck },
-  { label: 'Settings',    labelAr: 'الإعدادات',    path: '/settings',   icon: Settings },
+  { label: 'Dashboard',  path: '/dashboard',  icon: LayoutDashboard },
+  { label: 'Employees',  path: '/employees',  icon: UserSquare2     },
+  { label: 'Reports',    path: '/reports',    icon: BarChart2       },
+  { label: 'Settings',   path: '/settings',   icon: Settings        },
 ]
 
+// Branch role sees all transactional operations
 const branchNav: NavItem[] = [
-  { label: 'My Branch',   labelAr: 'فرعي',         path: '/branch',     icon: Store },
-  { label: 'New Sale',    labelAr: 'بيع جديد',     path: '/pos',        icon: Receipt },
-  { label: 'Invoices',    labelAr: 'الفواتير',     path: '/invoices',   icon: FileText },
-  { label: 'Expenses',    labelAr: 'المصروفات',    path: '/expenses',   icon: CreditCard },
+  { label: 'My Branch',  path: '/branch',     icon: Store           },
+  { label: 'New Sale',   path: '/pos',        icon: Receipt         },
+  { label: 'Invoices',   path: '/invoices',   icon: FileText        },
+  { label: 'Products',   path: '/products',   icon: Package         },
+  { label: 'Inventory',  path: '/inventory',  icon: Warehouse       },
+  { label: 'Customers',  path: '/customers',  icon: Users           },
+  { label: 'Expenses',   path: '/expenses',   icon: CreditCard      },
+  { label: 'Suppliers',  path: '/suppliers',  icon: Truck           },
+  { label: 'Reports',    path: '/reports',    icon: BarChart2       },
+  { label: 'Day Closing',path: '/day-closing',icon: CalendarCheck2  },
 ]
 
 const superAdminNav: NavItem[] = [
-  { label: 'Overview',       labelAr: 'نظرة عامة',   path: '/super-admin',                icon: LayoutDashboard },
-  { label: 'Clients',        labelAr: 'العملاء',      path: '/super-admin/clients',        icon: Building2 },
-  { label: 'Subscriptions',  labelAr: 'الاشتراكات',  path: '/super-admin/subscriptions',  icon: CreditCard },
-  { label: 'Settings',       labelAr: 'الإعدادات',    path: '/super-admin/settings',       icon: Settings },
+  { label: 'Overview',       path: '/super-admin',               icon: LayoutDashboard },
+  { label: 'Clients',        path: '/super-admin/clients',       icon: Building2       },
+  { label: 'Subscriptions',  path: '/super-admin/subscriptions', icon: CreditCard      },
+  { label: 'Settings',       path: '/super-admin/settings',      icon: Settings        },
 ]
 
 function NavItemRow({ item, isActive }: { item: NavItem; isActive: boolean }) {
@@ -65,6 +66,7 @@ export default function Sidebar() {
 
   const isSuperAdmin = profile?.role === 'super_admin'
   const isBranch     = profile?.role === 'branch'
+  const isOwner      = !isSuperAdmin && !isBranch
 
   const navItems = isSuperAdmin ? superAdminNav : isBranch ? branchNav : ownerNav
 
@@ -74,7 +76,7 @@ export default function Sidebar() {
     ?? user?.email?.split('@')[0]
     ?? 'User'
 
-  const roleLabel = profile?.role === 'branch' ? 'Branch' : (profile?.role?.replace(/_/g, ' ') ?? '')
+  const roleLabel = isBranch ? 'Branch' : (profile?.role?.replace(/_/g, ' ') ?? '')
 
   return (
     <aside className="w-[240px] flex-shrink-0 bg-sidebar flex flex-col h-full shadow-sidebar">
@@ -107,14 +109,14 @@ export default function Sidebar() {
             ? location.pathname === item.path
             : location.pathname.startsWith(item.path)
           return (
-            <NavLink key={item.path} to={item.path}>
+            <NavLink key={item.label} to={item.path}>
               <NavItemRow item={item} isActive={isActive} />
             </NavLink>
           )
         })}
       </nav>
 
-      {/* User profile */}
+      {/* Footer: user profile + owner-only Close Day + sign out */}
       <div className="px-3 pb-4 pt-3 border-t border-sidebar-border space-y-1">
         <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl">
           <div className="w-8 h-8 rounded-xl bg-primary-500 flex items-center justify-center flex-shrink-0">
@@ -127,7 +129,8 @@ export default function Sidebar() {
             <p className="text-sidebar-text text-[10px] capitalize">{roleLabel}</p>
           </div>
         </div>
-        {!isSuperAdmin && !isBranch && (
+
+        {isOwner && (
           <NavLink to="/day-closing">
             {({ isActive }) => (
               <div className={`
@@ -144,6 +147,7 @@ export default function Sidebar() {
             )}
           </NavLink>
         )}
+
         <NavLink to="/profile">
           {({ isActive }) => (
             <div className={`
@@ -159,6 +163,7 @@ export default function Sidebar() {
             </div>
           )}
         </NavLink>
+
         <button
           onClick={signOut}
           className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sidebar-text hover:bg-sidebar-hover hover:text-white text-sm font-medium transition-all duration-150 group"

@@ -8,6 +8,7 @@ import LoginPage           from '@/pages/auth/LoginPage'
 import SignupPage          from '@/pages/auth/SignupPage'
 import OnboardingPage      from '@/pages/onboarding/OnboardingPage'
 import DashboardPage       from '@/pages/admin/DashboardPage'
+import BranchDetailPage    from '@/pages/admin/BranchDetailPage'
 import ProductsPage         from '@/pages/products/ProductsPage'
 import CustomersPage        from '@/pages/customers/CustomersPage'
 import CustomerDetailPage   from '@/pages/customers/CustomerDetailPage'
@@ -168,6 +169,7 @@ export default function App() {
 
             {/* Admin / owner / accountant */}
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/dashboard/branches/:branchId" element={<BranchDetailPage />} />
             <Route path="/invoices"       element={<InvoicesPage />} />
             <Route path="/invoices/:id"   element={<InvoiceDetailPage />} />
             <Route path="/products"  element={<ProductsPage />} />
