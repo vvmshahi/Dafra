@@ -75,9 +75,11 @@ export interface ZatcaQRInput {
  * converts that (and any other ISO 8601 variant) to the required form.
  */
 function normalizeTimestamp(iso: string): string {
-  // Date constructor parses all ISO 8601 variants; toISOString() always returns UTC.
-  // toISOString() format: "YYYY-MM-DDTHH:MM:SS.mmmZ" — strip the milliseconds.
-  return new Date(iso).toISOString().replace(/\.\d{3}Z$/, 'Z')
+  // Slice the first 19 characters ("YYYY-MM-DDTHH:MM:SS") then append 'Z'.
+  // This guarantees the encoded string is always exactly 20 UTF-8 bytes so
+  // the TLV length byte is always 0x14 — the 'Z' is never accidentally dropped.
+  // (A regex replace on ".000Z" is fragile when the input lacks fractional seconds.)
+  return new Date(iso).toISOString().slice(0, 19) + 'Z'
 }
 
 /**

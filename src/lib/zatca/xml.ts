@@ -91,6 +91,10 @@ export interface InvoiceXMLData {
   // Lines & VAT
   lines:          InvoiceLine[]
   taxBreakdowns:  TaxBreakdown[]
+  // Seller CRN (10-digit commercial registration number — distinct from VAT number)
+  sellerCrn?:     string
+  // Payment means code per UN/CEFACT: 10=cash, 48=card, 42=bank transfer
+  paymentMeansCode?: string
   // Placeholders (filled by signing.ts)
   qrCode?:        string
 }
@@ -130,12 +134,70 @@ function buildInvoice(data: InvoiceXMLData, opts: BuildOptions): string {
     .att('xmlns:cac', NS.cac)
     .att('xmlns:cbc', NS.cbc)
     .att('xmlns:ext', NS.ext)
+    .att('xmlns:sig', NS.sig)
+    .att('xmlns:sac', NS.sac)
+    .att('xmlns:sbc', NS.sbc)
+    .att('xmlns:ds',  NS.ds)
+    .att('xmlns:xades', NS.xades)
 
-  // ── UBLExtensions (signature placeholder) ─────────────────────────────────
+  // ── UBLExtensions (signature placeholder — filled by signing.ts) ──────────
   const ublExt = root.ele(NS.ext, 'UBLExtensions')
   const ext    = ublExt.ele(NS.ext, 'UBLExtension')
   ext.ele(NS.ext, 'ExtensionURI').txt('urn:oasis:names:specification:ubl:dsig:enveloped:xades')
-  ext.ele(NS.ext, 'ExtensionContent').txt('')  // filled by signing.ts
+
+  // ExtensionContent must contain a full UBLDocumentSignatures skeleton so XSD validation passes.
+  // signing.ts replaces the empty leaf values with real hashes/signatures before submission.
+  const extContent = ext.ele(NS.ext, 'ExtensionContent')
+  const ublDocSig  = extContent.ele(NS.sig, 'UBLDocumentSignatures')
+  const sigInfo    = ublDocSig.ele(NS.sac, 'SignatureInformation')
+  sigInfo.ele(NS.cbc, 'ID').txt('urn:oasis:names:specification:ubl:signature:1')
+  sigInfo.ele(NS.sbc, 'ReferencedSignatureID')
+    .txt('urn:oasis:names:specification:ubl:signature:Invoice')
+
+  const dsSig      = sigInfo.ele(NS.ds, 'Signature').att('Id', 'signature')
+  const dsSigInfo  = dsSig.ele(NS.ds, 'SignedInfo')
+  dsSigInfo.ele(NS.ds, 'CanonicalizationMethod')
+    .att('Algorithm', 'http://www.w3.org/2006/12/xml-c14n11')
+  dsSigInfo.ele(NS.ds, 'SignatureMethod')
+    .att('Algorithm', 'http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256')
+
+  const dsRef1   = dsSigInfo.ele(NS.ds, 'Reference').att('Id', 'invoiceSignedData').att('URI', '')
+  const dsXforms = dsRef1.ele(NS.ds, 'Transforms')
+  dsXforms.ele(NS.ds, 'Transform')
+    .att('Algorithm', 'http://www.w3.org/TR/1999/REC-xpath-19991116')
+    .ele(NS.ds, 'XPath').txt('not(//ancestor-or-self::ext:UBLExtensions)')
+  dsXforms.ele(NS.ds, 'Transform')
+    .att('Algorithm', 'http://www.w3.org/TR/1999/REC-xpath-19991116')
+    .ele(NS.ds, 'XPath').txt('not(//ancestor-or-self::cac:Signature)')
+  dsXforms.ele(NS.ds, 'Transform')
+    .att('Algorithm', 'http://www.w3.org/TR/1999/REC-xpath-19991116')
+    .ele(NS.ds, 'XPath').txt("not(//ancestor-or-self::cac:AdditionalDocumentReference[cbc:ID='QR'])")
+  dsXforms.ele(NS.ds, 'Transform')
+    .att('Algorithm', 'http://www.w3.org/2006/12/xml-c14n11')
+  dsRef1.ele(NS.ds, 'DigestMethod').att('Algorithm', 'http://www.w3.org/2001/04/xmlenc#sha256')
+  dsRef1.ele(NS.ds, 'DigestValue').txt('')
+
+  const dsRef2 = dsSigInfo.ele(NS.ds, 'Reference')
+    .att('Type', 'http://www.w3.org/2000/09/xmldsig#SignatureProperties')
+    .att('URI', '#xadesSignedProperties')
+  dsRef2.ele(NS.ds, 'DigestMethod').att('Algorithm', 'http://www.w3.org/2001/04/xmlenc#sha256')
+  dsRef2.ele(NS.ds, 'DigestValue').txt('')
+
+  dsSig.ele(NS.ds, 'SignatureValue').txt('')
+  dsSig.ele(NS.ds, 'KeyInfo').ele(NS.ds, 'X509Data').ele(NS.ds, 'X509Certificate').txt('')
+
+  const qp          = dsSig.ele(NS.ds, 'Object')
+    .ele(NS.xades, 'QualifyingProperties').att('Target', 'signature')
+  const signedProps = qp.ele(NS.xades, 'SignedProperties').att('Id', 'xadesSignedProperties')
+  const ssp         = signedProps.ele(NS.xades, 'SignedSignatureProperties')
+  ssp.ele(NS.xades, 'SigningTime').txt(`${data.issueDate}T${data.issueTime}Z`)
+  const certNode = ssp.ele(NS.xades, 'SigningCertificate').ele(NS.xades, 'Cert')
+  const certDig  = certNode.ele(NS.xades, 'CertDigest')
+  certDig.ele(NS.ds, 'DigestMethod').att('Algorithm', 'http://www.w3.org/2001/04/xmlenc#sha256')
+  certDig.ele(NS.ds, 'DigestValue').txt('')
+  const issuer = certNode.ele(NS.xades, 'IssuerSerial')
+  issuer.ele(NS.ds, 'X509IssuerName').txt('')
+  issuer.ele(NS.ds, 'X509SerialNumber').txt('0')
 
   // ── Invoice metadata ──────────────────────────────────────────────────────
   root.ele(NS.cbc, 'ProfileID').txt(opts.profileId)
@@ -181,7 +243,7 @@ function buildInvoice(data: InvoiceXMLData, opts: BuildOptions): string {
     .ele(NS.cac, 'Party')
 
   const supplierIdent = supplier.ele(NS.cac, 'PartyIdentification')
-  supplierIdent.ele(NS.cbc, 'ID').att('schemeID', 'CRN').txt(data.sellerVat)
+  supplierIdent.ele(NS.cbc, 'ID').att('schemeID', 'CRN').txt(data.sellerCrn || '0000000000')
 
   const sellerAddr = supplier.ele(NS.cac, 'PostalAddress')
   sellerAddr.ele(NS.cbc, 'StreetName').txt(data.sellerAddress.street)
@@ -198,10 +260,10 @@ function buildInvoice(data: InvoiceXMLData, opts: BuildOptions): string {
   const sellerLegal = supplier.ele(NS.cac, 'PartyLegalEntity')
   sellerLegal.ele(NS.cbc, 'RegistrationName').txt(data.sellerName)
 
-  // ── Buyer party ───────────────────────────────────────────────────────────
+  // ── Buyer party (UBL requires AccountingCustomerParty even if empty for simplified invoices) ──
+  const customerParty = root.ele(NS.cac, 'AccountingCustomerParty')
   if (opts.requireBuyer && data.buyer) {
-    const customer = root.ele(NS.cac, 'AccountingCustomerParty')
-      .ele(NS.cac, 'Party')
+    const customer = customerParty.ele(NS.cac, 'Party')
     if (data.buyer.vatNumber) {
       const buyerTax = customer.ele(NS.cac, 'PartyTaxScheme')
       buyerTax.ele(NS.cbc, 'CompanyID').txt(data.buyer.vatNumber)
@@ -211,7 +273,26 @@ function buildInvoice(data: InvoiceXMLData, opts: BuildOptions): string {
       .ele(NS.cbc, 'RegistrationName').txt(data.buyer.name)
   }
 
+  // ── Payment means ─────────────────────────────────────────────────────────
+  root.ele(NS.cac, 'PaymentMeans')
+    .ele(NS.cbc, 'PaymentMeansCode').txt(data.paymentMeansCode ?? '10')
+
+  // ── Header-level allowance/charge (required even at 0.00) ─────────────────
+  const headerAllowance = root.ele(NS.cac, 'AllowanceCharge')
+  headerAllowance.ele(NS.cbc, 'ChargeIndicator').txt('false')
+  headerAllowance.ele(NS.cbc, 'AllowanceChargeReason').txt('discount')
+  headerAllowance.ele(NS.cbc, 'Amount').att('currencyID', 'SAR').txt(fmt(data.discountTotal))
+  const headerTaxCat = headerAllowance.ele(NS.cac, 'TaxCategory')
+  headerTaxCat.ele(NS.cbc, 'ID').txt('S')
+  headerTaxCat.ele(NS.cbc, 'Percent').txt('15')
+  headerTaxCat.ele(NS.cac, 'TaxScheme').ele(NS.cbc, 'ID').txt('VAT')
+
   // ── Tax total ─────────────────────────────────────────────────────────────
+  // BR-KSA-EN16931-09: two TaxTotal elements required when TaxCurrencyCode is present.
+  // First: summary total only (no subtotals). Second: subtotals per category.
+  root.ele(NS.cac, 'TaxTotal')
+    .ele(NS.cbc, 'TaxAmount').att('currencyID', 'SAR').txt(fmt(data.taxAmount))
+
   const taxTotal = root.ele(NS.cac, 'TaxTotal')
   taxTotal.ele(NS.cbc, 'TaxAmount').att('currencyID', 'SAR').txt(fmt(data.taxAmount))
 
@@ -284,7 +365,8 @@ export function buildInvoiceXMLData(params: {
                  zatca_prev_invoice_hash: string | null; subtotal: number; discount_amount: number;
                  taxable_amount: number; tax_amount: number; total_amount: number; }
   branch:      { business_name: string; business_name_ar: string | null;
-                 vat_number: string | null; street: string | null; building_number: string | null;
+                 vat_number: string | null; cr_number?: string | null;
+                 street: string | null; building_number: string | null;
                  city: string | null; postal_code: string | null; district: string | null; country: string }
   items:       { id: string; name: string; quantity: number; unit_price: number;
                  discount_amount: number; subtotal: number; tax_rate: number;
@@ -320,6 +402,7 @@ export function buildInvoiceXMLData(params: {
     sellerName:      branch.business_name,
     sellerNameAr:    branch.business_name_ar ?? branch.business_name,
     sellerVat:       branch.vat_number ?? '',
+    sellerCrn:       branch.cr_number ?? undefined,
     sellerAddress: {
       street:      branch.street ?? '',
       buildingNo:  branch.building_number ?? '0000',
