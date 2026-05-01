@@ -22,40 +22,59 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Service-role client — can bypass RLS and call admin API
-    const admin = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-      { auth: { autoRefreshToken: false, persistSession: false } },
-    )
+    // ── Step 1: Build service-role client ─────────────────────────────────
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    // Verify the calling user is an authenticated owner
+    console.log('[create-branch-user] SUPABASE_URL present:', !!supabaseUrl)
+    console.log('[create-branch-user] SERVICE_ROLE_KEY prefix:', serviceKey?.substring(0, 12) ?? 'MISSING')
+
+    const admin = createClient(supabaseUrl, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+
+    // ── Step 2: Verify the caller is an authenticated owner ───────────────
     const authHeader = req.headers.get('Authorization') ?? ''
     const jwt = authHeader.replace('Bearer ', '')
+    console.log('[create-branch-user] JWT present:', jwt.length > 0)
+
     const { data: { user: caller }, error: authErr } = await admin.auth.getUser(jwt)
     if (authErr || !caller) {
+      console.error('[create-branch-user] Auth failed:', authErr?.message)
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+    console.log('[create-branch-user] Caller user_id:', caller.id)
 
-    // Verify caller is an owner
-    const { data: callerProfile } = await admin
+    // ── Step 3: Verify caller is an owner ─────────────────────────────────
+    const { data: callerProfile, error: profileErr } = await admin
       .from('user_profiles')
       .select('role, tenant_id')
       .eq('id', caller.id)
       .single()
 
-    if (!callerProfile || callerProfile.role !== 'owner') {
+    if (profileErr || !callerProfile) {
+      console.error('[create-branch-user] Could not read caller profile:', profileErr?.message)
+      return new Response(JSON.stringify({ error: 'Could not verify caller role' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    console.log('[create-branch-user] Caller role:', callerProfile.role, '| tenant_id:', callerProfile.tenant_id)
+
+    if (callerProfile.role !== 'owner') {
       return new Response(JSON.stringify({ error: 'Forbidden: owner role required' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    const { email, password, full_name, tenant_id, branch_id } = await req.json()
+    // ── Step 4: Parse and validate body ───────────────────────────────────
+    const body = await req.json()
+    const { email, password, full_name, tenant_id, branch_id } = body
+    console.log('[create-branch-user] Request body: email=', email, '| tenant_id=', tenant_id, '| branch_id=', branch_id)
 
-    // Ensure the branch belongs to the caller's tenant
     if (tenant_id !== callerProfile.tenant_id) {
+      console.error('[create-branch-user] Tenant mismatch: body=', tenant_id, 'caller=', callerProfile.tenant_id)
       return new Response(JSON.stringify({ error: 'Forbidden: tenant mismatch' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -73,9 +92,12 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    // Create auth user — email_confirm: true skips the confirmation email
+    // ── Step 5: Create auth user ──────────────────────────────────────────
+    const normalizedEmail = email.trim().toLowerCase()
+    console.log('[create-branch-user] Creating auth user:', normalizedEmail)
+
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
-      email: email.trim().toLowerCase(),
+      email: normalizedEmail,
       password,
       email_confirm: true,
       user_metadata: {
@@ -87,16 +109,19 @@ Deno.serve(async (req: Request) => {
     })
 
     if (createErr) {
+      console.error('[create-branch-user] createUser failed:', createErr.message)
       return new Response(JSON.stringify({ error: createErr.message }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
     const newUserId = created.user.id
+    console.log('[create-branch-user] Auth user created:', newUserId)
 
-    // The handle_new_user trigger should have created the user_profiles row.
-    // Try update first; fall back to upsert in case the trigger hasn't fired yet.
-    const { data: updatedRows } = await admin
+    // ── Step 6: Set user_profiles row ────────────────────────────────────
+    // The handle_new_user trigger may have created a row already.
+    // Try update first; upsert if no row exists yet.
+    const { data: updatedRows, error: updateErr } = await admin
       .from('user_profiles')
       .update({
         role:       'branch',
@@ -108,8 +133,11 @@ Deno.serve(async (req: Request) => {
       .eq('id', newUserId)
       .select('id')
 
+    console.log('[create-branch-user] Profile update result: rows=', updatedRows?.length ?? 0, '| error=', updateErr?.message ?? 'none')
+
     if (!updatedRows?.length) {
-      // Trigger hasn't created the row yet — upsert it directly.
+      // Trigger hasn't run yet — upsert the row directly.
+      console.log('[create-branch-user] No row from trigger, upserting profile...')
       const { error: upsertErr } = await admin
         .from('user_profiles')
         .upsert({
@@ -118,20 +146,30 @@ Deno.serve(async (req: Request) => {
           tenant_id,
           branch_id,
           full_name:  full_name?.trim() ?? '',
-          email:      email.trim().toLowerCase(),
+          email:      normalizedEmail,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' })
+
       if (upsertErr) {
         console.error('[create-branch-user] Profile upsert failed:', upsertErr.message)
+        // Auth user exists but profile is incomplete — still return user_id
+        // so the caller knows the auth account was created.
+        return new Response(
+          JSON.stringify({ user_id: newUserId, warning: 'Profile update failed: ' + upsertErr.message }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
       }
+      console.log('[create-branch-user] Profile upserted successfully')
     }
 
+    console.log('[create-branch-user] Done. user_id:', newUserId)
     return new Response(JSON.stringify({ user_id: newUserId }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal error'
+    console.error('[create-branch-user] Unhandled error:', message)
     return new Response(JSON.stringify({ error: message }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

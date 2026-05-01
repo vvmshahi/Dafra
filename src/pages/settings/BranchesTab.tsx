@@ -3,7 +3,7 @@ import {
   Plus, Pencil, Trash2, Building2, CheckCircle2, X,
   Upload, Globe, Phone, Mail, MapPin, FileText,
   ReceiptText, ShieldCheck, ChevronDown, ChevronRight,
-  Star, KeyRound,
+  Star, KeyRound, LogIn,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -239,6 +239,10 @@ function BranchDrawer({
         zatca_phase:      form.zatca_phase,
         is_active:        form.is_active,
         is_main_branch:   form.is_main_branch,
+        // Store the login email on the branch record so the owner can see it
+        ...(isNew && form.login_email.trim()
+          ? { branch_email: form.login_email.trim().toLowerCase() }
+          : {}),
       }
 
       // supabase-js@2.45 PostgrestVersion "12" resolves hand-written Database
@@ -587,6 +591,10 @@ function BranchCard({
             <ShieldCheck size={10} />
             Phase {branch.zatca_phase ?? 1}
           </span>
+          {branch.branch_email
+            ? <span className="flex items-center gap-1 text-indigo-500"><LogIn size={10} /> {branch.branch_email}</span>
+            : <span className="flex items-center gap-1 text-gray-300 italic"><LogIn size={10} /> No login configured</span>
+          }
         </div>
       </div>
 

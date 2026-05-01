@@ -272,6 +272,7 @@ export interface Branch {
   show_logo: boolean
   invoice_language: 'en' | 'ar' | 'both'
   zatca_phase: 1 | 2
+  branch_email: string | null   // login email for the branch POS account
   created_at: string
   updated_at: string
 }

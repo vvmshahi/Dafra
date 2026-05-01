@@ -203,12 +203,13 @@ export default function DashboardPage() {
   const [totalCard,   setTotalCard]   = useState(0)
   const [branchStats, setBranchStats] = useState<BranchStat[]>([])
   const [salesData,   setSalesData]   = useState<{ day: string; sales: number }[]>([])
-  const [hasBranches, setHasBranches] = useState<boolean | null>(null)
 
   const tid = profile?.tenant_id
 
   const loadStats = useCallback(async () => {
-    if (!tid) { setStatsLoading(false); setBranchLoading(false); setHasBranches(false); return }
+    // Don't update state if profile hasn't loaded yet — keeps loading=true so
+    // we show skeletons instead of the "no branches" empty state.
+    if (!tid) return
     setStatsLoading(true)
     setBranchLoading(true)
 
@@ -228,8 +229,6 @@ export default function DashboardPage() {
 
     const invs: any[] = todayRes.data ?? []
     const branches: any[] = branchRes.data ?? []
-
-    setHasBranches(branches.length > 0)
 
     const cash = invs.filter(i => i.payment_method === 'cash').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0)
     const card = invs.filter(i => i.payment_method === 'card').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0)
@@ -302,17 +301,11 @@ export default function DashboardPage() {
     return () => { supabase.removeChannel(channel) }
   }, [tid, loadStats])
 
-  // Still loading branch check
-  if (hasBranches === null) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 size={24} className="animate-spin text-gray-300" />
-      </div>
-    )
-  }
-
-  // No branches yet → welcome screen
-  if (hasBranches === false) {
+  // Show WelcomeState ONLY after loading completes with zero branches.
+  // While branchLoading===true (profile not yet loaded, or fetch in flight)
+  // we fall through to the full layout with skeleton cards — never flash
+  // the empty state prematurely.
+  if (!branchLoading && branchStats.length === 0) {
     return <WelcomeState onAddBranch={() => navigate('/settings')} />
   }
 
