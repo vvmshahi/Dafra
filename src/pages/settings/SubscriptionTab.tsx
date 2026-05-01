@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
+import type { ReactNode } from 'react'
 import { CreditCard, Building2, Users, Package, CheckCircle2, ArrowRight, Zap } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import type { TenantSubscription, SubscriptionPlan } from '@/types'
 
 /* ── Types ──────────────────────────────────────────────────── */
@@ -91,7 +93,7 @@ function PlanCard({ sub, plan }: { sub: TenantSubscription; plan: SubscriptionPl
           </div>
           <div className="text-right flex-shrink-0">
             <p className="text-3xl font-black text-gold-400">
-              {plan.price_monthly === 0 ? 'Free' : `SAR ${plan.price_monthly.toLocaleString()}`}
+              {plan.price_monthly === 0 ? 'Free' : <Rial amount={plan.price_monthly} />}
             </p>
             {plan.price_monthly > 0 && <p className="text-white/40 text-xs">/ month</p>}
           </div>
@@ -216,12 +218,14 @@ export default function SubscriptionTab() {
       <div className="card p-6 space-y-3">
         <h3 className="text-sm font-semibold text-gray-900">Billing Details</h3>
         <div className="grid grid-cols-2 gap-3">
-          {[
-            { label: 'Monthly price',   value: plan.price_monthly === 0 ? 'Free' : `SAR ${plan.price_monthly}/mo` },
-            { label: 'Yearly price',    value: plan.price_yearly === 0 ? 'Free' : `SAR ${plan.price_yearly}/yr` },
-            { label: 'Subscription ID', value: sub.moyasar_subscription_id ?? '—' },
-            { label: 'Started',         value: new Date(sub.starts_at).toLocaleDateString('en-SA') },
-          ].map(({ label, value }) => (
+          {(
+            [
+              { label: 'Monthly price',   value: plan.price_monthly === 0 ? 'Free' : <><Rial amount={plan.price_monthly} /><span className="text-xs font-normal text-gray-400">/mo</span></> },
+              { label: 'Yearly price',    value: plan.price_yearly  === 0 ? 'Free' : <><Rial amount={plan.price_yearly}  /><span className="text-xs font-normal text-gray-400">/yr</span></> },
+              { label: 'Subscription ID', value: sub.moyasar_subscription_id ?? '—' },
+              { label: 'Started',         value: new Date(sub.starts_at).toLocaleDateString('en-SA') },
+            ] as { label: string; value: ReactNode }[]
+          ).map(({ label, value }) => (
             <div key={label} className="bg-gray-50 rounded-xl px-4 py-3">
               <p className="text-[10px] text-gray-400 font-medium">{label}</p>
               <p className="text-sm font-semibold text-gray-800 mt-0.5 truncate">{value}</p>
@@ -249,7 +253,7 @@ export default function SubscriptionTab() {
                     )}
                     <p className="font-bold text-gray-900">{p.name}</p>
                     <p className="text-xl font-black text-gray-900 mt-1">
-                      {p.price_monthly === 0 ? 'Free' : `SAR ${p.price_monthly}`}
+                      {p.price_monthly === 0 ? 'Free' : <Rial amount={p.price_monthly} />}
                       {p.price_monthly > 0 && <span className="text-xs font-normal text-gray-400">/mo</span>}
                     </p>
                   </div>
