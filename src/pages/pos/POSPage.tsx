@@ -515,14 +515,18 @@ export default function POSPage() {
         e.preventDefault()
         searchRef.current?.focus()
       }
-      if (e.key === 'Escape' && e.target === searchRef.current) {
-        setSearch('')
-        searchRef.current?.blur()
+      if (e.key === 'Escape') {
+        if (e.target === searchRef.current) {
+          setSearch('')
+          searchRef.current?.blur()
+        } else if (!isInput && cart.length === 0) {
+          navigate('/branch')
+        }
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [cart, navigate])
 
   // Enter-to-add: separate effect so it sees latest products/search/cart
   useEffect(() => {
@@ -751,6 +755,15 @@ export default function POSPage() {
 
         {/* Header */}
         <div className="bg-[#0F2419] text-white px-5 py-3.5 flex items-center gap-3 flex-shrink-0 shadow-lg">
+          <button
+            onClick={() => navigate('/branch')}
+            title="Back to Dashboard (Esc)"
+            className="flex items-center gap-1.5 text-white/50 hover:text-white border border-white/15 hover:border-white/30 px-2.5 py-1.5 rounded-lg text-xs transition-colors flex-shrink-0"
+          >
+            <ArrowLeft size={13} />
+            Dashboard
+          </button>
+          <div className="h-4 w-px bg-white/20 flex-shrink-0" />
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-gold-500 flex items-center justify-center">
               <span className="text-[#0F2419] font-black text-sm" style={{ fontFamily: 'Cairo, sans-serif' }}>د</span>

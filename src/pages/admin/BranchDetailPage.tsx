@@ -227,6 +227,23 @@ export default function BranchDetailPage() {
   useEffect(() => { loadLowStock() }, [loadLowStock])
   useEffect(() => { loadExpenses() }, [loadExpenses])
 
+  // Realtime: update stats + recent invoices when this branch creates a sale
+  useEffect(() => {
+    if (!tid || !branchId) return
+    const channel = supabase
+      .channel(`branch-detail-live-${branchId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'invoices',
+        filter: `branch_id=eq.${branchId}`,
+      }, () => { loadStats(); loadInvoices(); loadChart() })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'expenses',
+        filter: `branch_id=eq.${branchId}`,
+      }, () => { loadStats(); loadExpenses() })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [tid, branchId, loadStats, loadInvoices, loadChart, loadExpenses])
+
   return (
     <div className="space-y-6">
 
