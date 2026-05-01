@@ -50,29 +50,59 @@ Deno.serve(async (req: Request) => {
 
     const env     = environment === 'production' ? 'production' : 'sandbox'
     const baseUrl = ZATCA_URLS[env]
+    const url     = `${baseUrl}/compliance`
+
+    // Strip PEM headers and all whitespace — ZATCA expects raw base64 only
+    const csrBase64 = csr
+      .replace('-----BEGIN CERTIFICATE REQUEST-----', '')
+      .replace('-----END CERTIFICATE REQUEST-----', '')
+      .replace(/\s/g, '')
+
+    const requestBody = JSON.stringify({ csr: csrBase64 })
+    const requestHeaders = {
+      'accept':           'application/json',
+      'accept-version':   'V2',
+      'accept-language':  'en',
+      'Content-Type':     'application/json',
+      'OTP':              otp,
+    }
+
+    console.log('[zatca-compliance] env:', env)
+    console.log('[zatca-compliance] url:', url)
+    console.log('[zatca-compliance] otp:', otp)
+    console.log('[zatca-compliance] headers:', JSON.stringify(requestHeaders))
+    console.log('[zatca-compliance] csr length (raw):', csr.length)
+    console.log('[zatca-compliance] csr base64 length (stripped):', csrBase64.length)
+    console.log('[zatca-compliance] csr base64 preview:', csrBase64.substring(0, 80) + '…')
+    console.log('[zatca-compliance] request body length:', requestBody.length)
 
     // Call ZATCA Compliance API
-    const zatcaRes = await fetch(`${baseUrl}/compliance`, {
-      method: 'POST',
-      headers: {
-        'accept':           'application/json',
-        'accept-version':   'V2',
-        'Content-Type':     'application/json',
-        'OTP':              otp,
-      },
-      body: JSON.stringify({
-        csr: csr
-          .replace('-----BEGIN CERTIFICATE REQUEST-----', '')
-          .replace('-----END CERTIFICATE REQUEST-----', '')
-          .replace(/\s/g, ''),
-      }),
+    const zatcaRes = await fetch(url, {
+      method:  'POST',
+      headers: requestHeaders,
+      body:    requestBody,
     })
 
-    const zatcaBody = await zatcaRes.json()
+    const responseText = await zatcaRes.text()
+    console.log('[zatca-compliance] ZATCA response status:', zatcaRes.status)
+    console.log('[zatca-compliance] ZATCA response headers:', JSON.stringify(Object.fromEntries(zatcaRes.headers.entries())))
+    console.log('[zatca-compliance] ZATCA response body:', responseText)
+
+    let zatcaBody: any
+    try {
+      zatcaBody = JSON.parse(responseText)
+    } catch {
+      return new Response(JSON.stringify({ error: `ZATCA returned non-JSON (${zatcaRes.status}): ${responseText}` }), {
+        status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     if (!zatcaRes.ok) {
-      console.error('[zatca-compliance] ZATCA error:', zatcaBody)
-      return new Response(JSON.stringify({ error: zatcaBody?.errors?.[0]?.message ?? 'ZATCA compliance request failed' }), {
+      const msg = zatcaBody?.errors?.[0]?.message
+             ?? zatcaBody?.message
+             ?? zatcaBody?.error
+             ?? `ZATCA compliance request failed (${zatcaRes.status})`
+      return new Response(JSON.stringify({ error: msg, zatcaBody }), {
         status: zatcaRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
