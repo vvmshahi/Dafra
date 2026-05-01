@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js'
-import type { Database } from '@/types/database'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -8,18 +7,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in .env')
 }
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-  db: {
-    schema: 'public',       // explicit — avoids PostgREST schema resolution errors
-  },
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: true,
     storageKey: 'dafra-auth',
-    storage: window.localStorage,
-  },
-  global: {
-    fetch: (url, options) => fetch(url, { ...options, signal: AbortSignal.timeout(30000) }),
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
   },
 })

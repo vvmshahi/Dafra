@@ -3,18 +3,6 @@ import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import type { UserProfile, UserRole, Tenant } from '@/types'
 
-interface AuthState {
-  user:        User | null
-  session:     Session | null
-  profile:     UserProfile | null
-  tenant:      Tenant | null
-  loading:     boolean
-  // null = not yet determined (profile fetch in flight)
-  // false = owner with no tenant (must complete onboarding)
-  // true  = onboarding done (or not applicable for this role)
-  isOnboarded: boolean | null
-}
-
 function computeIsOnboarded(profile: UserProfile | null): boolean | null {
   if (profile === null) return null
   if (profile.role === 'owner' && !profile.tenant_id) return false
@@ -22,150 +10,103 @@ function computeIsOnboarded(profile: UserProfile | null): boolean | null {
 }
 
 export function useAuth() {
-  const [state, setState] = useState<AuthState>({
-    user:        null,
-    session:     null,
-    profile:     null,
-    tenant:      null,
-    loading:     true,
-    isOnboarded: null,
-  })
-
-  // fetchProfile is extracted as a stable standalone function (not a hook
-  // callback) so the main useEffect can safely have [] deps.
-  const fetchProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle()
-    const profile = data as unknown as UserProfile | null
-
-    if (error) {
-      console.error('[useAuth] fetchProfile error:', {
-        code: error.code, message: error.message, userId,
-      })
-      return { profile: null, tenant: null }
-    }
-
-    let tenant: Tenant | null = null
-    if (profile?.tenant_id) {
-      const { data: tData, error: tErr } = await supabase
-        .from('tenants')
-        .select('*')
-        .eq('id', profile.tenant_id)
-        .maybeSingle()
-      if (tErr) console.error('[useAuth] fetchTenant error:', tErr.message)
-      else tenant = tData as unknown as Tenant | null
-    }
-
-    return { profile, tenant }
-  }, [])
+  const [user, setUser] = useState<User | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
+  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [tenant, setTenant] = useState<Tenant | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let mounted = true
 
-    // ── initialize: restore session from localStorage on mount ────────────
-    // Uses an async function so we can try/catch and sequence the setState
-    // calls correctly. getSession() reads from localStorage (no network call
-    // if the JWT is still valid), so it resolves fast.
-    const initialize = async () => {
+    async function fetchProfile(userId: string) {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
-
+        const { data, error } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle()
         if (!mounted) return
-
-        if (!session) {
-          setState({ user: null, session: null, profile: null, tenant: null,
-                     loading: false, isOnboarded: null })
-          return
+        if (error) throw error
+        const p = data as unknown as UserProfile | null
+        setProfile(p)
+        if (p?.tenant_id) {
+          const { data: tData } = await supabase
+            .from('tenants')
+            .select('*')
+            .eq('id', p.tenant_id)
+            .maybeSingle()
+          if (!mounted) return
+          setTenant(tData as unknown as Tenant | null)
         }
-
-        // Set user immediately so route guards show a spinner (not /login)
-        // while the profile network request is in flight.
-        setState(prev => ({ ...prev, user: session.user, session }))
-
-        const { profile, tenant } = await fetchProfile(session.user.id)
-
-        if (!mounted) return
-
-        setState({
-          user: session.user,
-          session,
-          profile,
-          tenant,
-          loading: false,
-          isOnboarded: computeIsOnboarded(profile),
-        })
-
-        console.log('[useAuth] Session restored:', {
-          userId: session.user.id, role: profile?.role,
-          isOnboarded: computeIsOnboarded(profile),
-        })
-
       } catch (err) {
-        if (!mounted) return
-        console.error('[useAuth] initialize error:', err)
-        setState({ user: null, session: null, profile: null, tenant: null,
-                   loading: false, isOnboarded: null })
+        console.error('[useAuth] fetchProfile error:', err)
+      } finally {
+        if (mounted) setLoading(false)
       }
     }
 
-    initialize()
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return
+      if (session?.user) {
+        setUser(session.user)
+        setSession(session)
+        fetchProfile(session.user.id)
+      } else {
+        setLoading(false)
+      }
+    })
 
-    // ── Auth event listener: handles changes AFTER initial load ───────────
-    // INITIAL_SESSION is intentionally ignored — initialize() above already
-    // handles page-load session restoration to avoid a double profile fetch.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!mounted) return
-
-        if (event === 'INITIAL_SESSION') {
-          // Already handled by initialize() above.
-          return
-        }
-
-        if (event === 'SIGNED_OUT') {
-          setState({ user: null, session: null, profile: null, tenant: null,
-                     loading: false, isOnboarded: null })
-          return
-        }
-
-        if (event === 'TOKEN_REFRESHED' && session) {
-          // Just update the session object; no need to re-fetch the profile.
-          setState(prev => ({ ...prev, user: session.user, session }))
-          return
-        }
-
-        if (event === 'SIGNED_IN' && session) {
-          setState(prev => ({ ...prev, user: session.user, session }))
-          const { profile, tenant } = await fetchProfile(session.user.id)
-          if (!mounted) return
-          setState({
-            user: session.user,
-            session,
-            profile,
-            tenant,
-            loading: false,
-            isOnboarded: computeIsOnboarded(profile),
-          })
-        }
-      },
-    )
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return
+      if (event === 'SIGNED_IN' && session) {
+        setUser(session.user)
+        setSession(session)
+        setLoading(true)
+        fetchProfile(session.user.id)
+      }
+      if (event === 'SIGNED_OUT') {
+        setUser(null)
+        setSession(null)
+        setProfile(null)
+        setTenant(null)
+        setLoading(false)
+      }
+      if (event === 'TOKEN_REFRESHED' && session) {
+        setUser(session.user)
+        setSession(session)
+      }
+    })
 
     return () => {
       mounted = false
       subscription.unsubscribe()
     }
-  }, [fetchProfile]) // fetchProfile is stable (useCallback [])
+  }, [])
 
   const refreshProfile = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session?.user) return
-    const { profile, tenant } = await fetchProfile(session.user.id)
-    const isOnboarded = computeIsOnboarded(profile)
-    setState(prev => ({ ...prev, profile, tenant, isOnboarded }))
-  }, [fetchProfile])
+    try {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .maybeSingle()
+      const p = data as unknown as UserProfile | null
+      setProfile(p)
+      if (p?.tenant_id) {
+        const { data: tData } = await supabase
+          .from('tenants')
+          .select('*')
+          .eq('id', p.tenant_id)
+          .maybeSingle()
+        setTenant(tData as unknown as Tenant | null)
+      }
+    } catch (err) {
+      console.error('[useAuth] refreshProfile error:', err)
+    }
+  }, [])
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
@@ -196,16 +137,21 @@ export function useAuth() {
   }
 
   const hasRole = (...roles: UserRole[]) =>
-    state.profile ? roles.includes(state.profile.role) : false
+    profile ? roles.includes(profile.role) : false
 
-  const isAuthenticated = !!state.user
+  const isAuthenticated = !!user
 
-  const isNewUser = isAuthenticated && !state.loading
-    && !!state.profile && !state.profile.tenant_id
-    && state.profile.role !== 'super_admin'
+  const isNewUser = isAuthenticated && !loading
+    && !!profile && !profile.tenant_id
+    && profile.role !== 'super_admin'
 
   return {
-    ...state,
+    user,
+    session,
+    profile,
+    tenant,
+    loading,
+    isOnboarded: computeIsOnboarded(profile),
     isAuthenticated,
     isNewUser,
     hasRole,
