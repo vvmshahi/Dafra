@@ -46,10 +46,27 @@ Deno.serve(async (req: Request) => {
   try {
     // ── Step 1: Build the admin client (service role — bypasses RLS) ──────
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+    // DAFRA_SERVICE_ROLE_KEY is a manually-set secret that avoids Supabase's
+    // built-in SUPABASE_SERVICE_ROLE_KEY injection (which uses a different
+    // sb_secret_* format that does not work as a JWT Bearer token).
+    const dafraKey    = Deno.env.get('DAFRA_SERVICE_ROLE_KEY')
+    const builtinKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    const serviceKey  = dafraKey || builtinKey
+
+    const keySource = dafraKey ? 'DAFRA_SERVICE_ROLE_KEY' : builtinKey ? 'SUPABASE_SERVICE_ROLE_KEY (builtin)' : 'MISSING'
 
     console.log('[create-branch-user] SUPABASE_URL present:', !!supabaseUrl)
-    console.log('[create-branch-user] SERVICE_ROLE_KEY prefix:', serviceKey?.substring(0, 12) ?? 'MISSING')
+    console.log('[create-branch-user] key source:', keySource)
+    console.log('[create-branch-user] key prefix:', serviceKey?.substring(0, 12) ?? 'MISSING')
+    console.log('[create-branch-user] key is JWT format (eyJ):', serviceKey?.startsWith('eyJ') ?? false)
+
+    if (!serviceKey) {
+      console.error('[create-branch-user] No service role key available')
+      return new Response(JSON.stringify({ error: 'Server misconfiguration: missing service key' }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     // This client uses the service role key for EVERY request.
     // It is never given the caller's JWT, so its session is never contaminated.
