@@ -250,22 +250,19 @@ function BranchDrawer({
         const logoUrl = await uploadLogo(data.id)
         if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', data.id)
 
-        // Create the branch login user if email provided
+        // Create the branch login user via edge function (no email confirmation)
         if (form.login_email.trim()) {
           const password = form.login_password.trim() || `Dafra@${Math.random().toString(36).slice(2, 10)}`
-          const { error: authErr } = await supabase.auth.signUp({
-            email: form.login_email.trim(),
-            password,
-            options: {
-              data: {
-                full_name: form.name.trim(),
-                tenant_id: tenantId,
-                branch_id: data.id,
-                role:      'branch',
-              },
+          const { error: fnErr } = await supabase.functions.invoke('create-branch-user', {
+            body: {
+              email:     form.login_email.trim(),
+              password,
+              full_name: form.name.trim(),
+              tenant_id: tenantId,
+              branch_id: data.id,
             },
           })
-          if (authErr) console.warn('Branch user creation failed:', authErr.message)
+          if (fnErr) console.warn('Branch user creation failed:', fnErr.message)
         }
       } else {
         const { error } = await q.from('branches').update(payload).eq('id', branch!.id)

@@ -151,23 +151,35 @@ function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: 
 
 function WelcomeState({ onAddBranch }: { onAddBranch: () => void }) {
   return (
-    <div className="min-h-[60vh] flex items-center justify-center">
-      <div className="text-center max-w-md">
-        <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28] flex items-center justify-center mx-auto mb-6 shadow-lg">
-          <Building2 size={36} className="text-white" />
+    <div className="min-h-[70vh] flex items-center justify-center px-4">
+      <div className="text-center max-w-sm">
+        {/* Illustration */}
+        <div className="relative mx-auto mb-8 w-28 h-28">
+          <div className="w-28 h-28 rounded-3xl bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28] flex items-center justify-center shadow-xl">
+            <Building2 size={48} className="text-white/90" />
+          </div>
+          <div className="absolute -bottom-2 -right-2 w-10 h-10 rounded-2xl bg-gold-500 flex items-center justify-center shadow-md">
+            <Plus size={18} className="text-[#0F2419]" />
+          </div>
         </div>
-        <h2 className="text-xl font-bold text-gray-900">Welcome to Dafra!</h2>
-        <p className="text-gray-500 text-sm mt-2 mb-8 leading-relaxed">
-          Your account is set up. Add your first branch to start generating ZATCA-compliant invoices and using the POS.
+
+        <h2 className="text-2xl font-black text-gray-900">Welcome to Dafra!</h2>
+        <p className="text-base font-medium text-gray-500 mt-2">
+          You have not added any branches yet.
         </p>
+        <p className="text-sm text-gray-400 mt-1 mb-8 leading-relaxed">
+          Add your first branch to start selling, generate ZATCA-compliant invoices, and use the POS.
+        </p>
+
         <button
           onClick={onAddBranch}
-          className="inline-flex items-center gap-2 px-6 py-3 bg-[#1B6B3A] hover:bg-[#0F4A28] text-white font-semibold rounded-xl transition-colors shadow-sm"
+          className="inline-flex items-center gap-2 px-7 py-3.5 bg-[#1B6B3A] hover:bg-[#0F4A28] text-white font-bold rounded-2xl transition-colors shadow-lg text-sm"
         >
-          <Plus size={16} /> Add your first branch
+          <Plus size={16} /> Add Branch
         </button>
-        <p className="text-xs text-gray-400 mt-4">
-          Each branch gets its own invoices, POS, and ZATCA credentials.
+
+        <p className="text-xs text-gray-400 mt-5 leading-relaxed">
+          Each branch gets its own invoices, POS terminal, and ZATCA credentials.
         </p>
       </div>
     </div>
