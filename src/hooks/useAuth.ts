@@ -15,9 +15,10 @@ interface AuthState {
   isOnboarded: boolean | null
 }
 
-function computeIsOnboarded(profile: UserProfile | null): boolean {
-  if (!profile) return true  // no profile row yet — don't block (edge case; profile will load on next event)
-  return !(profile.role === 'owner' && !profile.tenant_id)
+function computeIsOnboarded(profile: UserProfile | null): boolean | null {
+  if (profile === null) return null
+  if (profile.role === 'owner' && !profile.tenant_id) return false
+  return true
 }
 
 export function useAuth() {

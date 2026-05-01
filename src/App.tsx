@@ -167,7 +167,7 @@ export default function App() {
               <Route path="/super-admin/settings"           element={<SuperAdminSettingsPage />} />
             </Route>
 
-            {/* Admin / owner / accountant */}
+            {/* Owner routes */}
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/dashboard/branches/:branchId" element={<BranchDetailPage />} />
             <Route path="/invoices"       element={<InvoicesPage />} />

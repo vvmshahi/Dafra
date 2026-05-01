@@ -379,7 +379,7 @@ const FEATURES = [
     icon: BarChart3,
     title: 'Smart Reports',
     titleAr: 'تقارير ذكية',
-    desc: 'Daily P&L, VAT summary, top products, and customer insights. Export for your accountant.',
+    desc: 'Daily P&L, VAT summary, top products, and customer insights. Export-ready for tax filing.',
     color: 'text-violet-600', bg: 'bg-violet-50',
   },
   {

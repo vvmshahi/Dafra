@@ -357,7 +357,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-700">Show in POS</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Product appears during cashier checkout</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Product appears during billing/checkout</p>
                 </div>
                 <button
                   type="button"
