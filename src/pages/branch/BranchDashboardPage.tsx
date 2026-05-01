@@ -5,7 +5,7 @@ import {
 import {
   TrendingUp, FileText, Receipt, CreditCard, AlertTriangle,
   ArrowRight, CheckCircle2, Clock, AlertCircle, Loader2,
-  LogOut, Package,
+  LogOut, Package, Banknote, BadgePercent,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
@@ -88,8 +88,11 @@ export default function BranchDashboardPage() {
   const [invLoading,   setInvLoading]   = useState(true)
   const [lowStockLoading, setLowStockLoading] = useState(true)
 
-  const [todaySales,   setTodaySales]   = useState(0)
-  const [todayCount,   setTodayCount]   = useState(0)
+  const [todaySales,    setTodaySales]    = useState(0)
+  const [todayCount,    setTodayCount]    = useState(0)
+  const [todayCash,     setTodayCash]     = useState(0)
+  const [todayCard,     setTodayCard]     = useState(0)
+  const [todayVat,      setTodayVat]      = useState(0)
   const [todayExpenses, setTodayExpenses] = useState(0)
   const [salesData,    setSalesData]    = useState(last7Days())
   const [recentInvs,   setRecentInvs]   = useState<any[]>([])
@@ -102,7 +105,7 @@ export default function BranchDashboardPage() {
     const { start, end } = todayRange()
     const [invRes, expRes, branchRes] = await Promise.all([
       db().from('invoices')
-        .select('total_amount, id')
+        .select('total_amount, id, payment_method, tax_amount')
         .eq('tenant_id', tid)
         .eq('branch_id', bid)
         .gte('created_at', start)
@@ -118,6 +121,9 @@ export default function BranchDashboardPage() {
     const invs = invRes.data ?? []
     setTodaySales(invs.reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0))
     setTodayCount(invs.length)
+    setTodayCash(invs.filter((i: any) => i.payment_method === 'cash').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0))
+    setTodayCard(invs.filter((i: any) => i.payment_method === 'card').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0))
+    setTodayVat(invs.reduce((s: number, i: any) => s + Number(i.tax_amount ?? 0), 0))
     setTodayExpenses((expRes.data ?? []).reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0))
     setBranchName(branchRes.data?.name ?? '')
     setStatsLoading(false)
@@ -232,7 +238,7 @@ export default function BranchDashboardPage() {
         </div>
 
         {/* KPI cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <StatCard
             label="Today's Sales"
             value={<Rial amount={todaySales} />}
@@ -255,6 +261,30 @@ export default function BranchDashboardPage() {
             sub="Recorded today"
             icon={CreditCard}
             gradient="bg-gradient-to-br from-[#7c3aed] to-[#5b21b6]"
+            loading={statsLoading}
+          />
+          <StatCard
+            label="Cash Today"
+            value={<Rial amount={todayCash} />}
+            sub="Cash payments"
+            icon={Banknote}
+            gradient="bg-gradient-to-br from-[#059669] to-[#047857]"
+            loading={statsLoading}
+          />
+          <StatCard
+            label="Card Today"
+            value={<Rial amount={todayCard} />}
+            sub="Card payments"
+            icon={CreditCard}
+            gradient="bg-gradient-to-br from-[#0891b2] to-[#0e7490]"
+            loading={statsLoading}
+          />
+          <StatCard
+            label="VAT Collected"
+            value={<Rial amount={todayVat} />}
+            sub="Tax on today's sales"
+            icon={BadgePercent}
+            gradient="bg-gradient-to-br from-[#b45309] to-[#92400e]"
             loading={statsLoading}
           />
         </div>

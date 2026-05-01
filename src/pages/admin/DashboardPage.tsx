@@ -5,7 +5,7 @@ import {
 import {
   TrendingUp, FileText, Loader2, Building2, Store,
   Plus, ArrowRight, ShoppingBag, CreditCard, Banknote,
-  ShieldCheck, Eye,
+  ShieldCheck, Eye, BadgePercent, Receipt,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
@@ -197,12 +197,14 @@ export default function DashboardPage() {
   const [branchLoading, setBranchLoading] = useState(true)
   const [chartLoading,  setChartLoading]  = useState(true)
 
-  const [totalSales,  setTotalSales]  = useState(0)
-  const [totalCount,  setTotalCount]  = useState(0)
-  const [totalCash,   setTotalCash]   = useState(0)
-  const [totalCard,   setTotalCard]   = useState(0)
-  const [branchStats, setBranchStats] = useState<BranchStat[]>([])
-  const [salesData,   setSalesData]   = useState<{ day: string; sales: number }[]>([])
+  const [totalSales,    setTotalSales]    = useState(0)
+  const [totalCount,    setTotalCount]    = useState(0)
+  const [totalCash,     setTotalCash]     = useState(0)
+  const [totalCard,     setTotalCard]     = useState(0)
+  const [totalVat,      setTotalVat]      = useState(0)
+  const [totalExpenses, setTotalExpenses] = useState(0)
+  const [branchStats,   setBranchStats]   = useState<BranchStat[]>([])
+  const [salesData,     setSalesData]     = useState<{ day: string; sales: number }[]>([])
 
   const tid = profile?.tenant_id
 
@@ -214,9 +216,9 @@ export default function DashboardPage() {
     setBranchLoading(true)
 
     const { start, end } = todayRange()
-    const [todayRes, branchRes] = await Promise.all([
+    const [todayRes, branchRes, expRes] = await Promise.all([
       db().from('invoices')
-        .select('total_amount, branch_id, payment_method')
+        .select('total_amount, branch_id, payment_method, tax_amount')
         .eq('tenant_id', tid)
         .gte('created_at', start)
         .lte('created_at', end),
@@ -225,6 +227,11 @@ export default function DashboardPage() {
         .eq('tenant_id', tid)
         .order('is_main_branch', { ascending: false })
         .order('created_at', { ascending: true }),
+      db().from('expenses')
+        .select('amount')
+        .eq('tenant_id', tid)
+        .gte('expense_date', start.slice(0, 10))
+        .lte('expense_date', end.slice(0, 10)),
     ])
 
     const invs: any[] = todayRes.data ?? []
@@ -232,10 +239,14 @@ export default function DashboardPage() {
 
     const cash = invs.filter(i => i.payment_method === 'cash').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0)
     const card = invs.filter(i => i.payment_method === 'card').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0)
+    const vat  = invs.reduce((s: number, i: any) => s + Number(i.tax_amount ?? 0), 0)
+    const exps = (expRes.data ?? []).reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0)
     setTotalSales(invs.reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0))
     setTotalCount(invs.length)
     setTotalCash(cash)
     setTotalCard(card)
+    setTotalVat(vat)
+    setTotalExpenses(exps)
     setStatsLoading(false)
 
     const stats: BranchStat[] = branches.map((b: any) => {
@@ -317,11 +328,11 @@ export default function DashboardPage() {
     <div className="space-y-6">
 
       {/* ── Summary KPIs ─────────────────────────────────────── */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard label="Total Sales Today" value={<Rial amount={totalSales} />}
           sub={`${totalCount} invoice${totalCount !== 1 ? 's' : ''} across all branches`}
           icon={TrendingUp} gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28]" loading={statsLoading} />
-        <StatCard label="Total Invoices Today" value={String(totalCount)}
+        <StatCard label="Total Invoices" value={String(totalCount)}
           sub="All branches combined"
           icon={FileText} gradient="bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]" loading={statsLoading} />
         <StatCard label="Cash Today" value={<Rial amount={totalCash} />}
@@ -329,7 +340,13 @@ export default function DashboardPage() {
           icon={Banknote} gradient="bg-gradient-to-br from-[#059669] to-[#047857]" loading={statsLoading} />
         <StatCard label="Card Today" value={<Rial amount={totalCard} />}
           sub="Card payments"
-          icon={CreditCard} gradient="bg-gradient-to-br from-[#7c3aed] to-[#5b21b6]" loading={statsLoading} />
+          icon={CreditCard} gradient="bg-gradient-to-br from-[#0891b2] to-[#0e7490]" loading={statsLoading} />
+        <StatCard label="VAT Collected" value={<Rial amount={totalVat} />}
+          sub="Tax on today's sales"
+          icon={BadgePercent} gradient="bg-gradient-to-br from-[#b45309] to-[#92400e]" loading={statsLoading} />
+        <StatCard label="Expenses Today" value={<Rial amount={totalExpenses} />}
+          sub="All branches combined"
+          icon={Receipt} gradient="bg-gradient-to-br from-[#7c3aed] to-[#5b21b6]" loading={statsLoading} />
       </div>
 
       {/* ── Branch grid ──────────────────────────────────────── */}
