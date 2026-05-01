@@ -2,7 +2,7 @@
  * zatca-production Edge Function
  *
  * Converts a Compliance CSID into a Production CSID.
- * Reads compliance credentials from DB so they never touch the browser.
+ * Reads compliance credentials and environment from DB so they never touch the browser.
  *
  * POST /functions/v1/zatca-production
  * Body: { branchId: string }
@@ -11,8 +11,10 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const ZATCA_BASE = Deno.env.get('ZATCA_API_BASE')
-  ?? 'https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal'
+const ZATCA_URLS: Record<string, string> = {
+  sandbox:    'https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal',
+  production: 'https://gw-fatoora.zatca.gov.sa/e-invoicing/core',
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -46,10 +48,10 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    // Load compliance credentials from DB
+    // Load compliance credentials and environment from DB
     const { data: cert, error: certErr } = await supabase
       .from('zatca_certificates')
-      .select('compliance_csid, compliance_secret, compliance_request_id')
+      .select('compliance_csid, compliance_secret, compliance_request_id, environment')
       .eq('branch_id', branchId)
       .single()
 
@@ -59,11 +61,14 @@ Deno.serve(async (req: Request) => {
       })
     }
 
+    const env     = cert.environment === 'production' ? 'production' : 'sandbox'
+    const baseUrl = ZATCA_URLS[env]
+
     // Basic Auth header = base64(compliance_csid:compliance_secret)
     const credentials = btoa(`${cert.compliance_csid}:${cert.compliance_secret}`)
 
     // Call ZATCA Production CSID API
-    const zatcaRes = await fetch(`${ZATCA_BASE}/production/csids`, {
+    const zatcaRes = await fetch(`${baseUrl}/production/csids`, {
       method: 'POST',
       headers: {
         'accept':           'application/json',

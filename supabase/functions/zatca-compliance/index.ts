@@ -5,14 +5,16 @@
  * Keeps ZATCA sandbox/production credentials server-side.
  *
  * POST /functions/v1/zatca-compliance
- * Body: { csr: string, otp: string, branchId: string }
+ * Body: { csr: string, otp: string, branchId: string, environment?: 'sandbox' | 'production' }
  * Returns: { binarySecurityToken, secret, requestID }
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const ZATCA_BASE = Deno.env.get('ZATCA_API_BASE')
-  ?? 'https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal'
+const ZATCA_URLS: Record<string, string> = {
+  sandbox:    'https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal',
+  production: 'https://gw-fatoora.zatca.gov.sa/e-invoicing/core',
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -39,15 +41,18 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const { csr, otp, branchId } = await req.json()
+    const { csr, otp, branchId, environment } = await req.json()
     if (!csr || !otp || !branchId) {
       return new Response(JSON.stringify({ error: 'Missing required fields: csr, otp, branchId' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
+    const env     = environment === 'production' ? 'production' : 'sandbox'
+    const baseUrl = ZATCA_URLS[env]
+
     // Call ZATCA Compliance API
-    const zatcaRes = await fetch(`${ZATCA_BASE}/compliance`, {
+    const zatcaRes = await fetch(`${baseUrl}/compliance`, {
       method: 'POST',
       headers: {
         'accept':           'application/json',
@@ -83,6 +88,7 @@ Deno.serve(async (req: Request) => {
         compliance_secret:       secret,
         compliance_request_id:   requestID,
         status:                  'compliance',
+        environment:             env,
         created_at:              new Date().toISOString(),
       }, { onConflict: 'branch_id' })
 

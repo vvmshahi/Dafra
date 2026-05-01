@@ -56,11 +56,12 @@ export interface ComplianceCsidResponse {
  * @param branchId - stored with the certificate record
  */
 export async function requestComplianceCsid(
-  csr:      string,
-  otp:      string,
-  branchId: string,
+  csr:         string,
+  otp:         string,
+  branchId:    string,
+  environment: 'sandbox' | 'production' = 'sandbox',
 ): Promise<ComplianceCsidResponse> {
-  return edgePost<ComplianceCsidResponse>('zatca-compliance', { csr, otp, branchId })
+  return edgePost<ComplianceCsidResponse>('zatca-compliance', { csr, otp, branchId, environment })
 }
 
 // ── Production CSID ───────────────────────────────────────────────────────────

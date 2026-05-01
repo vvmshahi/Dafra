@@ -13,7 +13,7 @@ import {
   ShieldCheck, ShieldX, ShieldAlert, Clock, Building2,
   CheckCircle2, AlertTriangle, ExternalLink, Lock,
   Key, Loader2, Copy, Eye, EyeOff, Info, ChevronRight,
-  Cpu, Wifi, BadgeCheck,
+  Cpu, Wifi, BadgeCheck, FlaskConical,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -215,10 +215,11 @@ function Step1GenerateKeys({
 /* ── Step 2: Enter OTP ───────────────────────────────────────────────────── */
 
 function Step2EnterOTP({
-  branch, cert, onDone,
+  branch, cert, environment, onDone,
 }: {
   branch: BranchWithCert
   cert: ZatcaCertificate
+  environment: 'sandbox' | 'production'
   onDone: (updated: ZatcaCertificate) => void
 }) {
   const [otp, setOtp]         = useState('')
@@ -231,7 +232,7 @@ function Step2EnterOTP({
     setLoading(true)
     setError(null)
     try {
-      await requestComplianceCsid(cert.csr!, otp, branch.id)
+      await requestComplianceCsid(cert.csr!, otp, branch.id, environment)
       // Edge Function updates the DB — re-fetch
       const { data, error: dbErr } = await (supabase as any)
         .from('zatca_certificates')
@@ -302,6 +303,11 @@ function Step2EnterOTP({
           onChange={e => setOtp(e.target.value.replace(/\D/g, '').substring(0, 6))}
           className="input text-center text-2xl tracking-[0.5em] font-mono"
         />
+        {environment === 'sandbox' && (
+          <p className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+            For sandbox testing, use OTP: <span className="font-mono font-bold tracking-widest">123456</span>
+          </p>
+        )}
       </div>
 
       {error && (
@@ -326,9 +332,10 @@ function Step2EnterOTP({
 /* ── Step 3: Activate Production ─────────────────────────────────────────── */
 
 function Step3Activate({
-  branch, onDone,
+  branch, environment, onDone,
 }: {
   branch: BranchWithCert
+  environment: 'sandbox' | 'production'
   onDone: (updated: ZatcaCertificate) => void
 }) {
   const [loading, setLoading] = useState(false)
@@ -469,7 +476,29 @@ function BranchOnboardingCard({
   const cfg     = CERT_CONFIG[status] ?? CERT_CONFIG.pending
   const step    = certStep(cert)
 
-  const handleDone = (updated: ZatcaCertificate) => onCertUpdate(bc.id, updated)
+  // Environment toggle — reads from DB cert, defaults to sandbox
+  const [environment, setEnvironment] = useState<'sandbox' | 'production'>(
+    (cert?.environment as 'sandbox' | 'production') ?? 'sandbox'
+  )
+  const [envSaving, setEnvSaving] = useState(false)
+
+  const switchEnvironment = async (env: 'sandbox' | 'production') => {
+    setEnvironment(env)
+    setEnvSaving(true)
+    // Persist to DB if cert row exists
+    if (cert?.id) {
+      await (supabase as any)
+        .from('zatca_certificates')
+        .update({ environment: env })
+        .eq('branch_id', bc.id)
+    }
+    setEnvSaving(false)
+  }
+
+  const handleDone = (updated: ZatcaCertificate) => {
+    setEnvironment((updated.environment as 'sandbox' | 'production') ?? 'sandbox')
+    onCertUpdate(bc.id, updated)
+  }
 
   return (
     <div className="card p-5 space-y-5">
@@ -487,6 +516,42 @@ function BranchOnboardingCard({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Environment toggle — only shown for Phase 2 */}
+          {phase >= 2 && status !== 'active' && (
+            <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
+              <button
+                onClick={() => switchEnvironment('sandbox')}
+                disabled={envSaving}
+                className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-all ${
+                  environment === 'sandbox'
+                    ? 'bg-amber-400 text-amber-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Sandbox
+              </button>
+              <button
+                onClick={() => switchEnvironment('production')}
+                disabled={envSaving}
+                className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-all ${
+                  environment === 'production'
+                    ? 'bg-emerald-500 text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Production
+              </button>
+            </div>
+          )}
+          {phase >= 2 && status === 'active' && (
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+              environment === 'production'
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-amber-100 text-amber-700'
+            }`}>
+              {environment === 'production' ? 'Production' : 'Sandbox'}
+            </span>
+          )}
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
             phase === 2
               ? 'bg-primary-50 text-primary-700 ring-1 ring-primary-200'
@@ -516,10 +581,10 @@ function BranchOnboardingCard({
               <Step1GenerateKeys branch={bc} onDone={handleDone} />
             )}
             {step === 2 && cert && (
-              <Step2EnterOTP branch={bc} cert={cert} onDone={handleDone} />
+              <Step2EnterOTP branch={bc} cert={cert} environment={environment} onDone={handleDone} />
             )}
             {step === 3 && (
-              <Step3Activate branch={bc} onDone={handleDone} />
+              <Step3Activate branch={bc} environment={environment} onDone={handleDone} />
             )}
             {step === 4 && cert && (
               <Step4Done cert={cert} />
@@ -625,8 +690,25 @@ export default function ZatcaTab() {
   const phase2Count  = data.filter(b => (b.zatca_phase ?? 1) === 2).length
   const activeCount  = data.filter(b => b.cert?.status === 'active').length
 
+  const allProduction = data.filter(b => (b.zatca_phase ?? 1) === 2).every(b => b.cert?.environment === 'production')
+  const showSandboxBanner = !allProduction || data.filter(b => (b.zatca_phase ?? 1) === 2).length === 0
+
   return (
     <div className="space-y-4">
+
+      {/* SANDBOX MODE banner */}
+      {showSandboxBanner && (
+        <div className="flex items-center gap-3 bg-amber-400 rounded-2xl px-4 py-3">
+          <FlaskConical size={16} className="text-amber-900 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-xs font-bold text-amber-900 uppercase tracking-wide">Sandbox Mode — Not Live</p>
+            <p className="text-[11px] text-amber-800 mt-0.5">
+              Calls go to the ZATCA developer portal (test environment). No real invoices are submitted.
+              Switch each branch to Production when ready to go live.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between">
