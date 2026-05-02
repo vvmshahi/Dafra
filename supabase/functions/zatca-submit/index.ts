@@ -38,6 +38,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    console.log('[zatca-submit] request received:', req.method, req.url)
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -45,21 +46,28 @@ Deno.serve(async (req: Request) => {
 
     const authHeader = req.headers.get('Authorization') ?? ''
     const jwt = authHeader.replace('Bearer ', '')
+    console.log('[zatca-submit] authenticating user...')
     const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
     if (authErr || !user) {
+      console.error('[zatca-submit] auth failed:', authErr?.message)
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+    console.log('[zatca-submit] authenticated user:', user.id)
 
     const { invoiceId, signedXml, invoiceHash, uuid, invoiceType, branchId } = await req.json()
+    console.log('[zatca-submit] payload:', { invoiceId, invoiceType, branchId, uuid, xmlLen: signedXml?.length, hashPrefix: invoiceHash?.substring(0, 20) })
+
     if (!invoiceId || !signedXml || !invoiceHash || !uuid || !invoiceType || !branchId) {
+      console.error('[zatca-submit] missing required fields')
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
     // Load production credentials from DB
+    console.log('[zatca-submit] fetching production cert for branch:', branchId)
     const { data: cert, error: certErr } = await supabase
       .from('zatca_certificates')
       .select('production_csid, production_secret')
@@ -67,7 +75,10 @@ Deno.serve(async (req: Request) => {
       .eq('status', 'active')
       .single()
 
+    console.log('[zatca-submit] cert lookup:', { found: !!cert, error: certErr?.message, hasCsid: !!cert?.production_csid, hasSecret: !!cert?.production_secret })
+
     if (certErr || !cert?.production_csid || !cert?.production_secret) {
+      console.error('[zatca-submit] no active production cert:', certErr?.message)
       return new Response(JSON.stringify({ error: 'No active production certificate found for this branch.' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -78,11 +89,15 @@ Deno.serve(async (req: Request) => {
 
     // Encode XML to base64 for ZATCA API
     const xmlB64 = btoa(unescape(encodeURIComponent(signedXml)))
+    console.log('[zatca-submit] xml base64 length:', xmlB64.length)
 
     // Choose endpoint: reporting (simplified) or clearance (standard)
     const endpoint = isSimplified
       ? `${ZATCA_BASE}/invoices/reporting/single`
       : `${ZATCA_BASE}/invoices/clearance/single`
+
+    console.log('[zatca-submit] submitting to ZATCA endpoint:', endpoint)
+    console.log('[zatca-submit] invoice type:', invoiceType, '| isSimplified:', isSimplified)
 
     const zatcaRes = await fetch(endpoint, {
       method: 'POST',
@@ -100,7 +115,11 @@ Deno.serve(async (req: Request) => {
       }),
     })
 
-    const zatcaBody = await zatcaRes.json().catch(() => ({}))
+    const responseText = await zatcaRes.text()
+    console.log('[zatca-submit] ZATCA response status:', zatcaRes.status)
+    console.log('[zatca-submit] ZATCA response body:', responseText.substring(0, 500))
+
+    const zatcaBody = (() => { try { return JSON.parse(responseText) } catch { return {} } })()
 
     if (!zatcaRes.ok && zatcaRes.status !== 400) {
       console.error('[zatca-submit] ZATCA HTTP error:', zatcaRes.status, zatcaBody)
@@ -139,6 +158,7 @@ Deno.serve(async (req: Request) => {
       zatcaResponse:   zatcaBody,
     }
 
+    console.log('[zatca-submit] final response status:', status, '| reportingStatus:', reportingStatus, '| clearanceStatus:', clearanceStatus)
     return new Response(JSON.stringify(response), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

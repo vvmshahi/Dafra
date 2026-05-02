@@ -110,6 +110,7 @@ export default function InvoiceDetailPage() {
   const [qrDataUrl,    setQrDataUrl]    = useState<string | null>(null)
   const [qrPayload,    setQrPayload]    = useState<string | null>(null)
   const [resubmitting, setResubmitting] = useState(false)
+  const [isPhase2,     setIsPhase2]     = useState(false)
 
   // Load data
   useEffect(() => {
@@ -156,6 +157,14 @@ export default function InvoiceDetailPage() {
         setBranch(branchData)
         setTenant(tenantData)
         setCustomer(custData)
+
+        const { data: certData } = await (supabase as any)
+          .from('zatca_certificates')
+          .select('id')
+          .eq('branch_id', inv.branch_id)
+          .eq('status', 'active')
+          .single()
+        setIsPhase2(!!certData)
       } catch (e) {
         if (!cancelled) setError('Failed to load invoice')
       } finally {
@@ -604,7 +613,7 @@ ${lines}
                 </div>
                 <div>
                   <p className="text-[9px] font-semibold text-gray-300 uppercase tracking-widest">Phase</p>
-                  <p>Phase 1 — QR Only</p>
+                  <p>{isPhase2 ? 'Phase 2 — Integrated' : 'Phase 1 — QR Only'}</p>
                 </div>
                 {invoice.zatca_submitted_at && (
                   <div>

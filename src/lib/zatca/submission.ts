@@ -2,9 +2,9 @@
  * ZATCA Phase 2 — Invoice Submission Orchestration
  *
  * submitInvoiceToZatca(invoiceId):
- *   1. Fetch invoice + branch from DB
- *   2. Check if branch has Phase 2 active certificate
- *   3. If Phase 1 only: mark as not_required, return
+ *   1. Fetch invoice from DB
+ *   2. Check for active Phase 2 certificate (by cert, not branch.zatca_phase)
+ *   3. If Phase 1 only (no active cert): mark as not_submitted, return
  *   4. Build UBL XML
  *   5. Decrypt private key, sign invoice (XAdES)
  *   6. Submit to ZATCA via Edge Function (report or clear)
@@ -21,9 +21,11 @@ import { submitInvoice, ZatcaSubmitResponse } from './api'
 // ── Main entry point ──────────────────────────────────────────────────────────
 
 export async function submitInvoiceToZatca(invoiceId: string): Promise<void> {
+  console.log('[ZATCA] submitInvoiceToZatca called for invoice:', invoiceId)
   const db = supabase as any
 
   // 1. Fetch invoice
+  console.log('[ZATCA] step 1: fetching invoice...')
   const { data: inv, error: invErr } = await db
     .from('invoices')
     .select(`
@@ -37,68 +39,102 @@ export async function submitInvoiceToZatca(invoiceId: string): Promise<void> {
     .eq('id', invoiceId)
     .single()
 
-  if (invErr || !inv) { console.error('[ZATCA] invoice fetch failed', invErr); return }
+  if (invErr || !inv) {
+    console.error('[ZATCA] invoice fetch failed:', invErr)
+    return
+  }
+  console.log('[ZATCA] invoice found:', inv.invoice_number, '| status:', inv.zatca_status)
 
   // 2. Skip if already submitted or cancelled
-  if (['reported', 'cleared'].includes(inv.zatca_status)) return
-
-  // 3. Fetch branch
-  const { data: branch } = await db
-    .from('branches')
-    .select('*, zatca_phase')
-    .eq('id', inv.branch_id)
-    .single()
-
-  if (!branch) { console.error('[ZATCA] branch not found'); return }
-
-  // 4. Phase 1 only → skip
-  if ((branch.zatca_phase ?? 1) < 2) {
-    await db.from('invoices').update({ zatca_status: 'not_submitted' }).eq('id', invoiceId)
+  if (['reported', 'cleared'].includes(inv.zatca_status)) {
+    console.log('[ZATCA] already submitted (', inv.zatca_status, ') — skipping')
     return
   }
 
-  // 5. Fetch active ZATCA certificate
-  const { data: cert } = await db
+  // 3. Fetch branch
+  console.log('[ZATCA] step 3: fetching branch...')
+  const { data: branch } = await db
+    .from('branches')
+    .select('*')
+    .eq('id', inv.branch_id)
+    .single()
+
+  if (!branch) {
+    console.error('[ZATCA] branch not found for id:', inv.branch_id)
+    return
+  }
+  console.log('[ZATCA] branch found:', branch.name, '| id:', branch.id)
+
+  // 4. Check for active Phase 2 certificate — do NOT rely on branch.zatca_phase
+  //    (zatca_phase column is never auto-updated; cert status is the source of truth)
+  console.log('[ZATCA] step 4: checking for active Phase 2 certificate...')
+  const { data: cert, error: certFetchErr } = await db
     .from('zatca_certificates')
     .select('*')
     .eq('branch_id', inv.branch_id)
     .eq('status', 'active')
     .single()
 
-  if (!cert || !cert.private_key_encrypted || !cert.production_csid) {
-    console.warn('[ZATCA] no active certificate — queuing')
-    await queueForRetry(invoiceId, inv.branch_id, inv.tenant_id, 'No active ZATCA certificate')
+  console.log('[ZATCA] cert query result:', {
+    found: !!cert,
+    error: certFetchErr?.message,
+    hasProdCsid: !!cert?.production_csid,
+    hasPrivateKey: !!cert?.private_key_encrypted,
+    certStatus: cert?.status,
+  })
+
+  // Phase 1 mode: no active production cert → not_submitted
+  if (!cert?.production_csid) {
+    console.log('[ZATCA] no active Phase 2 certificate found — Phase 1 mode, marking not_submitted')
+    await db.from('invoices').update({ zatca_status: 'not_submitted' }).eq('id', invoiceId)
     return
   }
 
+  // Active cert found but private key missing
+  if (!cert.private_key_encrypted) {
+    console.warn('[ZATCA] Phase 2 cert found but private_key_encrypted is null — queuing for retry')
+    await queueForRetry(invoiceId, inv.branch_id, inv.tenant_id, 'Phase 2 cert active but private key missing')
+    return
+  }
+
+  console.log('[ZATCA] Phase 2 active — proceeding with XML build + sign + submit')
+
   try {
-    // 6. Mark as pending
+    // 5. Mark as pending
+    console.log('[ZATCA] step 5: marking invoice as pending...')
     await db.from('invoices').update({ zatca_status: 'pending' }).eq('id', invoiceId)
 
-    // 7. Decrypt private key
+    // 6. Decrypt private key
+    console.log('[ZATCA] step 6: decrypting private key...')
     const privateKeyPem = await decryptPrivateKey(cert.private_key_encrypted)
+    console.log('[ZATCA] private key decrypted OK')
 
-    // 8. Build XML
+    // 7. Build XML
     const isSimplified = inv.zatca_invoice_type === 'simplified'
+    console.log('[ZATCA] step 7: building XML (isSimplified:', isSimplified, ')...')
     const xmlData = buildInvoiceXMLData({
-      invoice: inv,
+      invoice:     inv,
       branch,
-      items:   inv.invoice_items ?? [],
-      customer:inv.customers ?? null,
+      items:       inv.invoice_items ?? [],
+      customer:    inv.customers ?? null,
       isSimplified,
     })
     const unsignedXml = isSimplified
       ? buildSimplifiedInvoice(xmlData)
       : buildStandardInvoice(xmlData)
+    console.log('[ZATCA] XML built, length:', unsignedXml.length)
 
-    // 9. Sign
+    // 8. Sign
+    console.log('[ZATCA] step 8: signing invoice...')
     const { signedXml, invoiceHash } = await signInvoice(
       unsignedXml,
       privateKeyPem,
-      cert.production_csid,  // base64 DER certificate
+      cert.production_csid,
     )
+    console.log('[ZATCA] invoice signed OK, hash prefix:', invoiceHash.substring(0, 20) + '...')
 
-    // 10. Submit via Edge Function
+    // 9. Submit via Edge Function
+    console.log('[ZATCA] step 9: submitting to ZATCA via edge function...')
     const response: ZatcaSubmitResponse = await submitInvoice({
       invoiceId,
       signedXml,
@@ -107,8 +143,9 @@ export async function submitInvoiceToZatca(invoiceId: string): Promise<void> {
       invoiceType: isSimplified ? 'simplified' : 'standard',
       branchId:    inv.branch_id,
     })
+    console.log('[ZATCA] edge function response status:', response.status)
 
-    // 11. Update invoice
+    // 10. Update invoice
     const newStatus = response.status === 'REPORTED' ? 'reported'
                     : response.status === 'CLEARED'  ? 'cleared'
                     : 'failed'
@@ -122,10 +159,11 @@ export async function submitInvoiceToZatca(invoiceId: string): Promise<void> {
       zatca_clearance_status:   response.clearanceStatus  ?? null,
       zatca_reporting_response: response.zatcaResponse    ?? null,
       zatca_warnings:           response.warnings?.length ? { warnings: response.warnings } : null,
-      zatca_prev_invoice_hash:  invoiceHash,   // used as PIH for NEXT invoice in this branch
+      zatca_prev_invoice_hash:  invoiceHash,
     }).eq('id', invoiceId)
+    console.log('[ZATCA] invoice updated to status:', newStatus)
 
-    // 12. Update last_invoice_hash on certificate
+    // 11. Update certificate counter
     await db.from('zatca_certificates')
       .update({ last_invoice_hash: invoiceHash, invoice_counter: (cert.invoice_counter ?? 0) + 1 })
       .eq('id', cert.id)
@@ -135,7 +173,8 @@ export async function submitInvoiceToZatca(invoiceId: string): Promise<void> {
     }
 
   } catch (err: any) {
-    console.error('[ZATCA] submission error:', err)
+    console.error('[ZATCA] submission error:', err.message)
+    console.error('[ZATCA] stack:', err.stack)
     await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
     await queueForRetry(invoiceId, inv.branch_id, inv.tenant_id, err.message ?? 'unknown error')
   }

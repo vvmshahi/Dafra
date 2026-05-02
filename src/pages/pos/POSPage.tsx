@@ -677,6 +677,7 @@ export default function POSPage() {
       })
 
       // Submit to ZATCA (Phase 2 only — fire-and-forget, does not block checkout)
+      console.log('[POS] firing ZATCA submission for invoice:', inv.id)
       submitInvoiceToZatca(inv.id).catch(err =>
         console.error('[POS] ZATCA submission failed:', err)
       )
