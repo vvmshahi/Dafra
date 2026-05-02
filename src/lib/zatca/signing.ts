@@ -62,12 +62,18 @@ export async function signInvoice(
   // 1. Normalize certificate string: strip embedded whitespace/newlines from binarySecurityToken
   // binarySecurityToken from ZATCA is base64(DER) — some implementations add line breaks.
   // Auto-detect base64(PEM-with-headers) vs base64(DER) to handle both formats.
+  console.log('[ZATCA sign] signInvoice: certificate input length =', certificate.length,
+    '| first 40 chars =', certificate.substring(0, 40))
   const certB64Clean = certificate.replace(/[\r\n\s]+/g, '')
   let certDer: Uint8Array
   let certPemBody: string  // clean base64(DER) used in XAdES ds:X509Certificate element
 
   const certDecoded = atob(certB64Clean)
-  if (certDecoded.startsWith('-----BEGIN')) {
+  const isPemWrapped = certDecoded.startsWith('-----BEGIN')
+  console.log('[ZATCA sign] certB64Clean length =', certB64Clean.length,
+    '| decoded length =', certDecoded.length, '| isPemWrapped =', isPemWrapped)
+
+  if (isPemWrapped) {
     // binarySecurityToken was base64(PEM with headers)
     certPemBody = certDecoded.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
     certDer = Uint8Array.from(atob(certPemBody), c => c.charCodeAt(0))
@@ -76,6 +82,8 @@ export async function signInvoice(
     certDer = Uint8Array.from(certDecoded, c => c.charCodeAt(0))
     certPemBody = certB64Clean
   }
+  console.log('[ZATCA sign] certDer length =', certDer.length,
+    '| first bytes =', Array.from(certDer.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' '))
 
   // Parse certificate fields directly via ASN.1 — forge.pki.certificateFromPem throws
   // "Cannot read public key. Unknown OID." for secp256k1 EC certificates (only supports RSA).
@@ -352,9 +360,17 @@ function normalizeTimestamp(iso: string): string {
  * only supports RSA and throws "Unknown OID" for secp256k1 EC certificates.
  */
 function parseCertificateDer(certDer: Uint8Array): { serialNumber: string; spkiBytes: Uint8Array } {
+  console.log('[ZATCA sign] parseCertificateDer: derLen =', certDer.length,
+    '| first 4 bytes =', Array.from(certDer.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' '))
+
+  // strict: false — ignore trailing bytes (binarySecurityToken may be a cert chain)
   const certAsn1 = forge.asn1.fromDer(
-    forge.util.createBuffer(String.fromCharCode(...certDer))
+    forge.util.createBuffer(String.fromCharCode(...certDer)),
+    { strict: false } as any,
   )
+  console.log('[ZATCA sign] parseCertificateDer: ASN.1 parsed OK, tagClass =', certAsn1.tagClass,
+    '| type =', certAsn1.type, '| children =', (certAsn1.value as any[]).length)
+
   // Certificate = SEQUENCE { TBSCertificate, AlgorithmIdentifier, BIT STRING }
   const tbs    = (certAsn1.value as forge.asn1.Asn1[])[0]
   const fields = tbs.value as forge.asn1.Asn1[]
@@ -373,11 +389,13 @@ function parseCertificateDer(certDer: Uint8Array): { serialNumber: string; spkiB
   const serialBytes = fields[idx++].value as string
   let serialHex = Array.from(serialBytes, c => ('0' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
   serialHex = serialHex.replace(/^0+/, '') || '0'
+  console.log('[ZATCA sign] parseCertificateDer: serialNumber =', serialHex, '| TBS field count =', fields.length)
 
   idx += 4  // skip: signatureAlgorithm, issuer, validity, subject
 
   const spkiDerStr = forge.asn1.toDer(fields[idx]).getBytes()
   const spkiBytes  = new Uint8Array(Array.from(spkiDerStr, c => c.charCodeAt(0)))
+  console.log('[ZATCA sign] parseCertificateDer: spkiLen =', spkiBytes.length)
 
   return { serialNumber: serialHex, spkiBytes }
 }
@@ -386,7 +404,8 @@ function parseCertificateDer(certDer: Uint8Array): { serialNumber: string; spkiB
 function extractEcPublicKeyFromSpki(spkiBytes: Uint8Array): Uint8Array {
   try {
     const spkiAsn1 = forge.asn1.fromDer(
-      forge.util.createBuffer(String.fromCharCode(...spkiBytes))
+      forge.util.createBuffer(String.fromCharCode(...spkiBytes)),
+      { strict: false } as any,
     )
     // SPKI = SEQUENCE { AlgorithmIdentifier, BIT STRING }
     // BIT STRING raw content: 0x00 (unused-bits byte) || EC public key point
