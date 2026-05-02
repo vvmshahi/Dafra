@@ -52,11 +52,9 @@ Deno.serve(async (req: Request) => {
     const baseUrl = ZATCA_URLS[env]
     const url     = `${baseUrl}/compliance`
 
-    // Strip PEM headers and all whitespace — ZATCA expects raw base64 only
-    const csrBase64 = csr
-      .replace('-----BEGIN CERTIFICATE REQUEST-----', '')
-      .replace('-----END CERTIFICATE REQUEST-----', '')
-      .replace(/\s/g, '')
+    // ZATCA expects the full PEM (with headers) base64-encoded as the csr field value
+    // e.g. btoa("-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----")
+    const csrBase64 = btoa(csr)
 
     const requestBody = JSON.stringify({ csr: csrBase64 })
     const requestHeaders = {
@@ -72,7 +70,7 @@ Deno.serve(async (req: Request) => {
     console.log('[zatca-compliance] otp:', otp)
     console.log('[zatca-compliance] headers:', JSON.stringify(requestHeaders))
     console.log('[zatca-compliance] csr length (raw):', csr.length)
-    console.log('[zatca-compliance] csr base64 length (stripped):', csrBase64.length)
+    console.log('[zatca-compliance] csr base64 length (btoa):', csrBase64.length)
     console.log('[zatca-compliance] csr base64 preview:', csrBase64.substring(0, 80) + '…')
     console.log('[zatca-compliance] request body length:', requestBody.length)
 
