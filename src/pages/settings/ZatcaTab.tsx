@@ -2,7 +2,7 @@
  * ZATCA Phase 2 — Settings Tab
  *
  * Per-branch 4-step onboarding flow:
- *   Step 1: Generate Keys (ECDSA P-256, CSR, encrypt private key → DB)
+ *   Step 1: Generate Keys (secp256k1, CSR, encrypt private key → DB)
  *   Step 2: Enter OTP  (Fatoorah portal → OTP → compliance CSID via Edge Function)
  *   Step 3: Activate   (production CSID via Edge Function)
  *   Step 4: Done       (certificate details, invoice stats)
@@ -175,7 +175,7 @@ function Step1GenerateKeys({
       <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl p-3.5">
         <Info size={13} className="text-blue-600 mt-0.5 flex-shrink-0" />
         <p className="text-[11px] text-blue-700 leading-relaxed">
-          This will generate an ECDSA P-256 key pair in your browser and create a PKCS#10 CSR.
+          This will generate a secp256k1 key pair in your browser and create a PKCS#10 CSR.
           The private key is encrypted with AES-256-GCM before being stored securely in the database.
         </p>
       </div>
@@ -193,7 +193,7 @@ function Step1GenerateKeys({
         className="btn-primary w-full flex items-center justify-center gap-2 py-3"
       >
         {loading ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
-        {loading ? 'Generating keys…' : 'Generate ECDSA Key Pair & CSR'}
+        {loading ? 'Generating keys…' : 'Generate secp256k1 Key Pair & CSR'}
       </button>
 
       {csrPem && (
@@ -480,7 +480,29 @@ function BranchOnboardingCard({
   const [environment, setEnvironment] = useState<'sandbox' | 'production'>(
     (cert?.environment as 'sandbox' | 'production') ?? 'sandbox'
   )
-  const [envSaving, setEnvSaving] = useState(false)
+  const [envSaving, setEnvSaving]     = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
+
+  const handleRegenerate = async () => {
+    if (!window.confirm('This will discard the current CSR and generate fresh keys. Continue?')) return
+    setRegenerating(true)
+    try {
+      const { data, error: dbErr } = await (supabase as any)
+        .from('zatca_certificates')
+        .update({
+          csr:                   null,
+          private_key_encrypted: null,
+          public_key_pem:        null,
+          status:                'pending',
+        })
+        .eq('branch_id', bc.id)
+        .select()
+        .single()
+      if (!dbErr && data) onCertUpdate(bc.id, data)
+    } finally {
+      setRegenerating(false)
+    }
+  }
 
   const switchEnvironment = async (env: 'sandbox' | 'production') => {
     setEnvironment(env)
@@ -581,7 +603,19 @@ function BranchOnboardingCard({
               <Step1GenerateKeys branch={bc} onDone={handleDone} />
             )}
             {step === 2 && cert && (
-              <Step2EnterOTP branch={bc} cert={cert} environment={environment} onDone={handleDone} />
+              <>
+                <Step2EnterOTP branch={bc} cert={cert} environment={environment} onDone={handleDone} />
+                <div className="pt-3 border-t border-gray-100 mt-1">
+                  <button
+                    onClick={handleRegenerate}
+                    disabled={regenerating}
+                    className="flex items-center gap-1.5 text-[11px] text-gray-400 hover:text-red-500 transition-colors"
+                  >
+                    {regenerating ? <Loader2 size={11} className="animate-spin" /> : <Key size={11} />}
+                    Regenerate Keys (discard current CSR)
+                  </button>
+                </div>
+              </>
             )}
             {step === 3 && (
               <Step3Activate branch={bc} environment={environment} onDone={handleDone} />
@@ -626,7 +660,7 @@ function PhaseGuide() {
           <div>
             <p className="text-xs font-semibold text-gray-800">Phase 2 — Integration (ربط)</p>
             <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
-              Real-time clearance / reporting of UBL 2.1 XML invoices via ECDSA P-256 signed XAdES signatures.
+              Real-time clearance / reporting of UBL 2.1 XML invoices via ECDSA secp256k1 signed XAdES signatures.
               Standard invoices: clearance. Simplified: reporting within 24h.
             </p>
           </div>
@@ -635,7 +669,7 @@ function PhaseGuide() {
         <div className="border-t border-gray-100 pt-3 space-y-2">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Phase 2 Onboarding</p>
           {[
-            'Generate ECDSA P-256 key pair and CSR (Step 1)',
+            'Generate secp256k1 key pair and CSR (Step 1)',
             'Register EGS in Fatoorah portal → get OTP (Step 2)',
             'Compliance CSID is issued by ZATCA',
             'Convert to Production CSID (Step 3)',
@@ -726,7 +760,7 @@ export default function ZatcaTab() {
         <div>
           <p className="text-xs font-semibold text-amber-800">Private keys are encrypted at rest</p>
           <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
-            ECDSA P-256 private keys are AES-256-GCM encrypted before storage.
+            secp256k1 private keys are AES-256-GCM encrypted before storage.
             ZATCA API credentials are stored server-side and never exposed to the browser.
           </p>
         </div>
