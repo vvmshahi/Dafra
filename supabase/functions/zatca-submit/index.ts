@@ -114,6 +114,22 @@ function extractCertSerial(certDer: Uint8Array): string {
   } catch { return '0' }
 }
 
+// ── Certificate CA-signature extraction (outer BIT STRING of X.509 DER) ────────
+// Tag 9 of Phase 2 QR = "ECDSA signature of the cryptographic stamp by ZATCA's CA"
+// = the signatureValue BIT STRING at the end of the Certificate SEQUENCE (not the full cert).
+
+function extractCertSignatureValue(certDer: Uint8Array): Uint8Array {
+  try {
+    let off = 0
+    off++; const [, o1]       = derLen(certDer, off); off = o1           // skip Certificate SEQUENCE
+    off++; const [tbsLen, o2] = derLen(certDer, off); off = o2 + tbsLen // skip TBSCertificate
+    off++; const [algLen, o3] = derLen(certDer, off); off = o3 + algLen // skip AlgorithmIdentifier
+    if (certDer[off] !== 0x03) return new Uint8Array(0)                  // must be BIT STRING
+    off++; const [sigLen, o4] = derLen(certDer, off)
+    return certDer.slice(o4 + 1, o4 + sigLen)                            // skip 0x00 padding byte
+  } catch { return new Uint8Array(0) }
+}
+
 // ── XML builder (ported from xml.ts) ─────────────────────────────────────────
 
 const NS = {
@@ -359,31 +375,20 @@ function concatArrays(...arrs: Uint8Array[]): Uint8Array {
   return out
 }
 
-// Phase 1 QR (tags 1-5 only) — used for the XML-embedded QR field (1000 char limit)
-function buildPhase1QR(
+// Phase 2 QR — all 9 TLV tags as required from Jan 2023.
+// tag 8 = 64-byte raw X‖Y public key (no 04 prefix); tag 9 = cert signature value (~72 bytes).
+// Total ~330 bytes → ~440 base64 chars, well within the 1000-char XML field limit.
+function buildQR(
   sellerName: string, vatNumber: string, timestamp: string,
   totalAmount: number, vatAmount: number,
-): string {
-  const all = concatArrays(
-    tlvStr(0x01, sellerName), tlvStr(0x02, vatNumber),
-    tlvStr(0x03, normTs(timestamp)),
-    tlvStr(0x04, totalAmount.toFixed(2)), tlvStr(0x05, vatAmount.toFixed(2)),
-  )
-  return btoa(String.fromCharCode(...all))
-}
-
-// Phase 2 QR (tags 1-9) — used for the printed receipt display
-function buildPhase2QR(
-  sellerName: string, vatNumber: string, timestamp: string,
-  totalAmount: number, vatAmount: number,
-  hashBytes: Uint8Array, sigBytes: Uint8Array, pubKeyBytes: Uint8Array, certDer: Uint8Array,
+  hashBytes: Uint8Array, sigBytes: Uint8Array, pubKeyRaw: Uint8Array, certSigValue: Uint8Array,
 ): string {
   const all = concatArrays(
     tlvStr(0x01, sellerName), tlvStr(0x02, vatNumber),
     tlvStr(0x03, normTs(timestamp)),
     tlvStr(0x04, totalAmount.toFixed(2)), tlvStr(0x05, vatAmount.toFixed(2)),
     tlvBytes(0x06, hashBytes), tlvBytes(0x07, sigBytes),
-    tlvBytes(0x08, pubKeyBytes), tlvBytes(0x09, certDer),
+    tlvBytes(0x08, pubKeyRaw), tlvBytes(0x09, certSigValue),
   )
   return btoa(String.fromCharCode(...all))
 }
@@ -499,12 +504,17 @@ function buildXadesBlock(
 async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate: string): Promise<{
   signedXml: string; invoiceHash: string; qrCode: string
 }> {
-  // production_csid is always base64(DER) — decode directly, no PEM detection
-  const certPemBody = certificate.replace(/[\r\n\s]+/g, '')
-  const certDer     = Uint8Array.from(atob(certPemBody), c => c.charCodeAt(0))
+  // ZATCA's binarySecurityToken is base64(DER). The DB stores it verbatim as a TEXT column,
+  // so production_csid = base64(base64(DER)) — need two rounds of base64 decoding.
+  const certB64Outer = certificate.replace(/[\r\n\s]+/g, '')       // outer base64 as stored in DB
+  const certB64DER   = atob(certB64Outer).replace(/\s+/g, '')      // inner base64(DER)
+  const certPemBody  = certB64DER                                   // base64(DER) for ds:X509Certificate
+  const certDer      = Uint8Array.from(atob(certB64DER), c => c.charCodeAt(0))  // raw DER bytes
 
-  const serialNumber = extractCertSerial(certDer)
-  const pubKeyBytes  = secp256k1.getPublicKey(secretKey, false)  // uncompressed 65-byte EC point
+  const serialNumber  = extractCertSerial(certDer)
+  const certSigValue  = extractCertSignatureValue(certDer)          // CA signature for QR tag 9
+  const pubKeyFull    = secp256k1.getPublicKey(secretKey, false) as unknown as Uint8Array  // 65 bytes
+  const pubKeyRaw     = pubKeyFull.slice(1)                         // 64-byte raw X‖Y for QR tag 8
 
   const certDigestBuf = await sha256Bytes(certDer)
   const certDigestB64 = btoa(String.fromCharCode(...new Uint8Array(certDigestBuf)))
@@ -518,13 +528,23 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
 
   const signedPropsXml   = buildSignedProperties(signingTime, certDigestB64, '', serialNumber)
   const spDoc            = new DOMParser().parseFromString(signedPropsXml, 'application/xml')
-  const signedPropsCanon = c14n(spDoc.documentElement)
+  // In the document, xades:SignedProperties is inside xades:QualifyingProperties (declares xmlns:xades)
+  // and ds:Signature (declares xmlns:ds), so both are inherited — C14N omits them.
+  const spInherited      = new Map([
+    ['ds',    'http://www.w3.org/2000/09/xmldsig#'],
+    ['xades', 'http://uri.etsi.org/01903/v1.3.2#'],
+  ])
+  const signedPropsCanon = c14n(spDoc.documentElement, spInherited)
   const signedPropsBuf   = await sha256(signedPropsCanon)
   const signedPropsB64   = btoa(String.fromCharCode(...new Uint8Array(signedPropsBuf)))
 
-  const signedInfoXml  = buildSignedInfo(invoiceDigestB64, signedPropsB64)
-  const signedInfoHash = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedInfoXml)))
-  const sig            = secp256k1.sign(signedInfoHash, secretKey) as unknown as Uint8Array
+  const signedInfoXml    = buildSignedInfo(invoiceDigestB64, signedPropsB64)
+  const siDoc            = new DOMParser().parseFromString(signedInfoXml, 'application/xml')
+  // ds:SignedInfo is inside ds:Signature which declares xmlns:ds — inherited, so C14N omits it.
+  const siInherited      = new Map([['ds', 'http://www.w3.org/2000/09/xmldsig#']])
+  const signedInfoCanon  = c14n(siDoc.documentElement, siInherited)
+  const signedInfoHash   = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedInfoCanon)))
+  const sig              = secp256k1.sign(signedInfoHash, secretKey) as unknown as Uint8Array
   const sigDerBytes    = p1363ToDer(sig)
   const sigValueB64    = btoa(String.fromCharCode(...sigDerBytes))
 
@@ -547,16 +567,15 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const totalAmount = parseFloat((signedXml.match(/<cbc:TaxInclusiveAmount[^>]*>([\d.]+)<\/cbc:TaxInclusiveAmount>/) ?? [])[1] ?? '0')
   const vatAmount   = parseFloat((signedXml.match(/<cbc:TaxAmount[^>]*>([\d.]+)<\/cbc:TaxAmount>/) ?? [])[1] ?? '0')
 
-  const hashBytes  = new Uint8Array(await sha256(invoiceCanonical))
-  const xmlQR      = buildPhase1QR(sellerName, vatNumber, timestamp, totalAmount, vatAmount)
-  const qrCode     = buildPhase2QR(
+  const hashBytes = new Uint8Array(await sha256(invoiceCanonical))
+  const qrCode    = buildQR(
     sellerName, vatNumber, timestamp, totalAmount, vatAmount,
-    hashBytes, sigDerBytes, pubKeyBytes, certDer,
+    hashBytes, sigDerBytes, pubKeyRaw, certSigValue,
   )
 
   signedXml = signedXml.replace(
     /(<cbc:ID>QR<\/cbc:ID>[\s\S]*?<cbc:EmbeddedDocumentBinaryObject mimeCode="text\/plain">)([^<]*)(<\/cbc:EmbeddedDocumentBinaryObject>)/,
-    `$1${xmlQR}$3`,
+    `$1${qrCode}$3`,
   )
 
   return { signedXml, invoiceHash: invoiceHashB64, qrCode }
