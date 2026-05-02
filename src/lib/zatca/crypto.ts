@@ -1,51 +1,61 @@
 /**
  * ZATCA Phase 2 — Key Generation & Encryption
- * Uses Web Crypto API (ECDSA P-256 / secp256r1)
+ * Uses @noble/curves secp256k1 (required by ZATCA — Bitcoin curve, OID 1.3.132.0.10)
  *
  * Private keys are AES-256-GCM encrypted with a PBKDF2-derived key
  * before being stored in zatca_certificates.private_key_encrypted.
  * The encryption secret is the VITE_ZATCA_KEY_SECRET env var.
  */
 
-const ECDSA_ALG: EcKeyGenParams = { name: 'ECDSA', namedCurve: 'P-256' }
+import { secp256k1 } from '@noble/curves/secp256k1.js'
+
 const APP_SECRET = import.meta.env.VITE_ZATCA_KEY_SECRET ?? 'dafra-zatca-local-secret'
 
 export interface ZatcaKeyPair {
-  privateKey:    CryptoKey
-  publicKey:     CryptoKey
-  privateKeyPem: string
-  publicKeyPem:  string
-  publicKeyDer:  ArrayBuffer  // SPKI — passed to CSR builder
+  privateKey:    Uint8Array    // raw 32-byte secp256k1 secret key
+  publicKey:     Uint8Array    // uncompressed 65-byte EC point (0x04 prefix)
+  privateKeyPem: string        // raw secret-key bytes as PEM (label: EC PRIVATE KEY)
+  publicKeyPem:  string        // SPKI PEM (label: PUBLIC KEY)
+  publicKeyDer:  ArrayBuffer   // SPKI DER — passed to CSR builder
 }
 
 // ── Key generation ────────────────────────────────────────────────────────────
 
-/** Generate ECDSA P-256 key pair using Web Crypto API */
+/** Generate secp256k1 key pair using @noble/curves */
 export async function generateKeyPair(): Promise<ZatcaKeyPair> {
-  const kp = await crypto.subtle.generateKey(ECDSA_ALG, true, ['sign', 'verify'])
+  const secretKey  = secp256k1.utils.randomSecretKey()                  // 32 bytes
+  const pubKeyBytes = secp256k1.getPublicKey(secretKey, false)          // 65 bytes uncompressed
 
-  const [privDer, pubDer] = await Promise.all([
-    crypto.subtle.exportKey('pkcs8', kp.privateKey),
-    crypto.subtle.exportKey('spki',  kp.publicKey),
-  ])
+  const spkiDer = buildSecp256k1Spki(pubKeyBytes)
 
   return {
-    privateKey:    kp.privateKey,
-    publicKey:     kp.publicKey,
-    privateKeyPem: derToPem(privDer, 'PRIVATE KEY'),
-    publicKeyPem:  derToPem(pubDer,  'PUBLIC KEY'),
-    publicKeyDer:  pubDer,
+    privateKey:    secretKey,
+    publicKey:     pubKeyBytes,
+    privateKeyPem: derToPem(secretKey.buffer as ArrayBuffer, 'EC PRIVATE KEY'),
+    publicKeyPem:  derToPem(spkiDer, 'PUBLIC KEY'),
+    publicKeyDer:  spkiDer,
   }
 }
 
-/** Import a PKCS#8 PEM private key for signing operations */
-export async function importPrivateKeyPem(pem: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey('pkcs8', pemToDer(pem), ECDSA_ALG, false, ['sign'])
+/**
+ * Import a secp256k1 private key from PEM.
+ * The PEM wraps the raw 32-byte secret key (label: EC PRIVATE KEY).
+ */
+export async function importPrivateKeyPem(pem: string): Promise<Uint8Array> {
+  return new Uint8Array(pemToDer(pem))
 }
 
-/** Sign a byte buffer with the ECDSA private key. Returns IEEE P1363 format (r‖s). */
-export async function ecdsaSign(privateKey: CryptoKey, data: BufferSource): Promise<ArrayBuffer> {
-  return crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, privateKey, data)
+/**
+ * Sign data with secp256k1 / SHA-256. Returns 64-byte IEEE P1363 (r‖s) as ArrayBuffer.
+ * noble/curves hashes with SHA-256 internally (prehash: true is the default) —
+ * do NOT pre-hash here or the signature will be over SHA-256(SHA-256(data)).
+ */
+export async function ecdsaSign(secretKey: Uint8Array, data: BufferSource): Promise<ArrayBuffer> {
+  const bytes = ArrayBuffer.isView(data)
+    ? new Uint8Array((data as ArrayBufferView).buffer, (data as ArrayBufferView).byteOffset, (data as ArrayBufferView).byteLength)
+    : new Uint8Array(data as ArrayBuffer)
+  const sigP1363 = secp256k1.sign(bytes, secretKey)  // prehash: true (default) — SHA-256 applied internally
+  return sigP1363.slice().buffer as ArrayBuffer
 }
 
 /** SHA-256 hash of a UTF-8 string, returned as ArrayBuffer */
@@ -59,7 +69,7 @@ export async function sha256Bytes(input: BufferSource): Promise<ArrayBuffer> {
 }
 
 // ── P1363 → DER ECDSA signature conversion ───────────────────────────────────
-// Web Crypto produces IEEE P1363 format (r‖s, 32 bytes each).
+// secp256k1.sign produces IEEE P1363 format (r‖s, 32 bytes each).
 // PKCS#10 and XAdES require DER-encoded ECDSA-Sig-Value.
 
 export function p1363ToDer(sigBytes: Uint8Array): Uint8Array {
@@ -79,6 +89,32 @@ function encodeDerInt(n: Uint8Array): Uint8Array {
   const needsPad = (trimmed[0] & 0x80) !== 0
   const val      = needsPad ? new Uint8Array([0, ...trimmed]) : trimmed
   return new Uint8Array([0x02, val.length, ...val])
+}
+
+// ── SPKI builder for secp256k1 ────────────────────────────────────────────────
+
+/**
+ * Build a SubjectPublicKeyInfo DER blob for secp256k1.
+ * SEQUENCE {
+ *   SEQUENCE { OID ecPublicKey, OID secp256k1 }
+ *   BIT STRING { 0x00 || uncompressed-point (65 bytes) }
+ * }
+ */
+function buildSecp256k1Spki(pubKeyBytes: Uint8Array): ArrayBuffer {
+  const oidEcPub    = new Uint8Array([0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01]) // 1.2.840.10045.2.1
+  const oidSecp256k1 = new Uint8Array([0x2b, 0x81, 0x04, 0x00, 0x0a])             // 1.3.132.0.10
+
+  const algIdInner = new Uint8Array([
+    0x06, oidEcPub.length,     ...oidEcPub,
+    0x06, oidSecp256k1.length, ...oidSecp256k1,
+  ])
+  const algId = new Uint8Array([0x30, algIdInner.length, ...algIdInner])
+
+  const bsInner  = new Uint8Array([0x00, ...pubKeyBytes])  // unused-bits=0 + key
+  const bitStr   = new Uint8Array([0x03, bsInner.length, ...bsInner])
+
+  const spkiInner = new Uint8Array([...algId, ...bitStr])
+  return new Uint8Array([0x30, spkiInner.length, ...spkiInner]).buffer as ArrayBuffer
 }
 
 // ── Encryption for DB storage ─────────────────────────────────────────────────
