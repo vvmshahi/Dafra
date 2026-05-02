@@ -34,6 +34,7 @@ const OIDs = {
   zatcaCodeSigning:  '1.3.6.1.4.1.311.20.2',
   extensionRequest:  '1.2.840.113549.1.9.14',
   subjectAltName:    '2.5.29.17',
+  basicConstraints:  '2.5.29.19',
 } as const
 
 // ── Params ────────────────────────────────────────────────────────────────────
@@ -55,14 +56,14 @@ export async function generateCSR(
   params: ZatcaCSRParams,
   keyPair: ZatcaKeyPair,
 ): Promise<string> {
-  console.log('[ZATCA CSR] version: 3.0 — secp256k1 + manual BIT STRING assembly')
+  console.log('[ZATCA CSR] version: 4.0 — RDN order C,O,OU,CN + basicConstraints + extension order fixed')
   const egsSn = `1-Dafra|2-POS|3-${params.branchId}`
 
-  // ── Subject: C(PrintableString), OU, O, CN only ───────────────────────────
+  // ── Subject: C, O, OU, CN — matches SDK reference cert order ────────────
   const subject = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
     rdn(OIDs.countryName,        'SA', asn1.Type.PRINTABLESTRING),
-    rdn(OIDs.organizationalUnit, params.branchName),
     rdn(OIDs.organizationName,   params.businessName),
+    rdn(OIDs.organizationalUnit, params.branchName),
     rdn(OIDs.commonName,         params.commonName),
   ])
 
@@ -93,6 +94,18 @@ export async function generateCSR(
     asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OCTETSTRING, false, sanValue),
   ])
 
+  // ── basicConstraints: CA:FALSE (SEQUENCE{} encodes as 30 00) ─────────────
+  // Reference CSR has this as the FIRST extension. Value is DER of empty SEQUENCE.
+  const basicConstraintsValue = asn1.toDer(
+    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [])
+  ).getBytes()
+
+  const basicConstraintsExt = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
+    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false,
+      asn1.oidToDer(OIDs.basicConstraints).getBytes()),
+    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OCTETSTRING, false, basicConstraintsValue),
+  ])
+
   // ── ZATCA-Code-Signing extension ──────────────────────────────────────────
   const zatcaExtValue = asn1.toDer(
     asn1.create(asn1.Class.UNIVERSAL, asn1.Type.UTF8, false, 'ZATCA-Code-Signing')
@@ -105,11 +118,14 @@ export async function generateCSR(
   ])
 
   // ── extensionRequest attribute ────────────────────────────────────────────
+  // Order matches reference: basicConstraints → SAN → ZATCA-Code-Signing
   const extensions = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
     asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false,
       asn1.oidToDer(OIDs.extensionRequest).getBytes()),
     asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SET, true, [
-      asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [zatcaExt, sanExt]),
+      asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
+        basicConstraintsExt, sanExt, zatcaExt,
+      ]),
     ]),
   ])
 
