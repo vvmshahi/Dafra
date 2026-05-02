@@ -15,10 +15,9 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { create as xmlCreate } from 'npm:xmlbuilder2'
-import { secp256k1 } from 'npm:@noble/curves/secp256k1'
-import forge from 'npm:node-forge'
-import { DOMParser } from 'npm:@xmldom/xmldom'
+import { create as xmlCreate } from 'https://esm.sh/xmlbuilder2@4.0.3'
+import { secp256k1 } from 'https://esm.sh/@noble/curves@2.2.0/secp256k1.js'
+import { DOMParser } from 'https://esm.sh/@xmldom/xmldom@0.9.10'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -39,8 +38,6 @@ const APP_SECRET = Deno.env.get('ZATCA_KEY_SECRET') ?? 'dafra-zatca-local-secret
 const FIRST_INVOICE_HASH =
   'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ=='
 
-// Singleton DOMParser for C14N (xmldom)
-const DOM_PARSER = new DOMParser()
 
 // ── Crypto utilities ─────────────────────────────────────────────────────────
 
@@ -85,35 +82,60 @@ function derInt(n: Uint8Array): Uint8Array {
   return new Uint8Array([0x02, v.length, ...v])
 }
 
-// ── Certificate parsing (ASN.1, secp256k1-safe) ───────────────────────────────
+// ── Pure TypeScript DER parser (no node-forge) ───────────────────────────────
+
+function derLen(buf: Uint8Array, off: number): [number, number] {
+  const b = buf[off++]
+  if (b < 0x80) return [b, off]
+  const n = b & 0x7f; let len = 0
+  for (let i = 0; i < n; i++) len = (len << 8) | buf[off++]
+  return [len, off]
+}
+
+interface DerNode { cls: number; tag: number; start: number; vStart: number; vEnd: number }
+
+function derNode(buf: Uint8Array, off: number): [DerNode, number] {
+  const start = off, b0 = buf[off++]
+  const [len, vStart] = derLen(buf, off)
+  return [{ cls: (b0 >> 6) & 3, tag: b0 & 0x1f, start, vStart, vEnd: vStart + len }, vStart + len]
+}
+
+function derKids(buf: Uint8Array, n: DerNode): DerNode[] {
+  const kids: DerNode[] = []; let pos = n.vStart
+  while (pos < n.vEnd) { const [k, end] = derNode(buf, pos); kids.push(k); pos = end }
+  return kids
+}
+
+// ── Certificate parsing (secp256k1-safe, no external deps) ───────────────────
 
 function parseCertificateDer(certDer: Uint8Array): { serialNumber: string; spkiBytes: Uint8Array } {
-  const certAsn1 = forge.asn1.fromDer(
-    forge.util.createBuffer(String.fromCharCode(...certDer)), { strict: false } as any,
-  )
-  const tbs    = (certAsn1.value as forge.asn1.Asn1[])[0]
-  const fields = tbs.value as forge.asn1.Asn1[]
+  // Certificate SEQUENCE → TBSCertificate SEQUENCE → fields
+  const [cert]   = derNode(certDer, 0)
+  const tbs      = derKids(certDer, cert)[0]
+  const tbsKids  = derKids(certDer, tbs)
   let idx = 0
-  if (fields[0]?.tagClass === forge.asn1.Class.CONTEXT_SPECIFIC) idx++
-  const serialBytes = fields[idx++].value as string
-  let serialHex = Array.from(serialBytes, c => ('0' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+  // Optional [0] EXPLICIT version (CONTEXT_SPECIFIC class = 2, tag = 0)
+  if (tbsKids[0].cls === 2 && tbsKids[0].tag === 0) idx++
+  // serialNumber INTEGER
+  const sn      = tbsKids[idx++]
+  const snBytes = certDer.slice(sn.vStart, sn.vEnd)
+  let serialHex = Array.from(snBytes, b => ('0' + b.toString(16)).slice(-2)).join('')
   serialHex = serialHex.replace(/^0+/, '') || '0'
   idx += 4  // skip signatureAlgorithm, issuer, validity, subject
-  const spkiDerStr = forge.asn1.toDer(fields[idx]).getBytes()
-  const spkiBytes  = new Uint8Array(Array.from(spkiDerStr, c => c.charCodeAt(0)))
-  return { serialNumber: serialHex, spkiBytes }
+  // SubjectPublicKeyInfo — return full DER (tag + length + value)
+  const spkiNode = tbsKids[idx]
+  return { serialNumber: serialHex, spkiBytes: certDer.slice(spkiNode.start, spkiNode.vEnd) }
 }
 
 function extractEcPublicKeyFromSpki(spkiBytes: Uint8Array): Uint8Array {
   try {
-    const spkiAsn1 = forge.asn1.fromDer(
-      forge.util.createBuffer(String.fromCharCode(...spkiBytes)), { strict: false } as any,
-    )
-    const bitStr = (spkiAsn1.value as forge.asn1.Asn1[])[1]
-    const raw = ((bitStr as any).bitStringContents as string | undefined)
-             ?? (typeof bitStr.value === 'string' ? bitStr.value : '')
-    if (raw.length < 2) return new Uint8Array(65)
-    return new Uint8Array(Array.from(raw.slice(1), (c: string) => c.charCodeAt(0)))
+    const [spki]     = derNode(spkiBytes, 0)
+    const spkiKids   = derKids(spkiBytes, spki)
+    if (spkiKids.length < 2) return new Uint8Array(65)
+    const bitStr     = spkiKids[1]  // BIT STRING (tag 3)
+    const bitContent = spkiBytes.slice(bitStr.vStart, bitStr.vEnd)
+    if (bitContent.length < 2) return new Uint8Array(65)
+    return bitContent.slice(1)      // skip unused-bits byte (0x00), return raw EC point
   } catch { return new Uint8Array(65) }
 }
 
@@ -446,7 +468,7 @@ function c14n(node: any, inherited: Map<string, string> = new Map()): string {
 }
 
 function canonicalizeInvoiceContent(xmlString: string): string {
-  const doc: any = DOM_PARSER.parseFromString(xmlString, 'application/xml')
+  const doc: any = new DOMParser().parseFromString(xmlString, 'application/xml')
 
   const CAC = 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
   const CBC = 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'
@@ -519,8 +541,8 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
 
   const signedInfoXml  = buildSignedInfo(invoiceDigestB64, signedPropsB64)
   const signedInfoBuf  = new TextEncoder().encode(signedInfoXml)
-  const sigCompact     = secp256k1.sign(signedInfoBuf, secretKey) as unknown as Uint8Array
-  const sigDerBytes    = p1363ToDer(sigCompact)
+  const sig            = secp256k1.sign(signedInfoBuf, secretKey, { prehash: true })
+  const sigDerBytes    = p1363ToDer(sig.toCompactRawBytes())
   const sigValueB64    = btoa(String.fromCharCode(...sigDerBytes))
 
   const xadesBlock = buildXadesBlock(
@@ -700,7 +722,7 @@ async function processInvoice(db: any, invoiceId: string): Promise<{ invoiceStat
 // ── HTTP handler ──────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (req.method === 'OPTIONS') return new Response('ok', { status: 200, headers: corsHeaders })
 
   try {
     const supabase = createClient(
