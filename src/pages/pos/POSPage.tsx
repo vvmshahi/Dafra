@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Search, Plus, Minus, Trash2, CreditCard, Banknote,
   Receipt, X, ChevronDown, User, Check, Loader2,
-  ShoppingBag, AlertCircle, Zap, Printer, PackageOpen,
+  ShoppingBag, AlertCircle, Zap, Printer, PackageOpen, ArrowLeft,
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
