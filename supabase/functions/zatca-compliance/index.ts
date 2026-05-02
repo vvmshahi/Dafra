@@ -108,10 +108,18 @@ Deno.serve(async (req: Request) => {
     // Store compliance credentials in zatca_certificates
     const { binarySecurityToken, secret, requestID } = zatcaBody
 
+    // Fetch tenant_id from branches — required NOT NULL column on zatca_certificates
+    const { data: branch } = await supabase
+      .from('branches')
+      .select('tenant_id')
+      .eq('id', branchId)
+      .single()
+
     const { error: upsertErr } = await supabase
       .from('zatca_certificates')
       .upsert({
         branch_id:               branchId,
+        tenant_id:               branch?.tenant_id,
         compliance_csid:         binarySecurityToken,
         compliance_secret:       secret,
         compliance_request_id:   requestID,
