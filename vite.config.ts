@@ -1,16 +1,30 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // Polyfills Node.js built-ins (events, url, buffer, process, etc.) for browser bundles.
+    // Replaces the manual `events: 'events'` alias that was causing
+    // "Object.defineProperty called on non-object" at runtime.
+    nodePolyfills({
+      // Only polyfill what's actually needed by our deps:
+      //   events    — xmlbuilder2/XMLBuilderCBImpl extends EventEmitter
+      //   url       — @oozcitak/url (xmlbuilder2 dependency)
+      //   buffer    — node-forge
+      //   process   — node-forge prng / util
+      include: ['events', 'url', 'buffer', 'process'],
+      globals: {
+        Buffer:  true,
+        process: true,
+      },
+    }),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      // xmlbuilder2 imports Node's `events` (EventEmitter) via its createCB export.
-      // Vite externalizes it by default → undefined at runtime → "Class extends value undefined" crash.
-      // Map to the browser-compatible polyfill instead.
-      events: 'events',
     },
   },
   build: {
