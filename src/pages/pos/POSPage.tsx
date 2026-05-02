@@ -11,6 +11,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { displayName as dn } from '@/lib/utils/display'
 import { buildZatcaQR } from '@/lib/zatca/qr'
+import { submitInvoiceToZatca } from '@/lib/zatca/submission'
 import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import type { Branch, VatTreatment } from '@/types/database'
@@ -674,6 +675,11 @@ export default function POSPage() {
         method:      payMethod,
         paid_at:     new Date().toISOString(),
       })
+
+      // Submit to ZATCA (Phase 2 only — fire-and-forget, does not block checkout)
+      submitInvoiceToZatca(inv.id).catch(err =>
+        console.error('[POS] ZATCA submission failed:', err)
+      )
 
       const branchAddr   = [
         branch.building_number ? `Building ${branch.building_number}` : null,

@@ -305,7 +305,7 @@ function Step2EnterOTP({
         />
         {environment === 'sandbox' && (
           <p className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-            For sandbox testing, use OTP: <span className="font-mono font-bold tracking-widest">123456</span>
+            For sandbox testing, use OTP: <span className="font-mono font-bold tracking-widest">123345</span>
           </p>
         )}
       </div>
