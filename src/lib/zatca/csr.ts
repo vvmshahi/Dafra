@@ -55,6 +55,7 @@ export async function generateCSR(
   params: ZatcaCSRParams,
   keyPair: ZatcaKeyPair,
 ): Promise<string> {
+  console.log('[ZATCA CSR] version: 3.0 — secp256k1 + manual BIT STRING assembly')
   const egsSn = `1-Dafra|2-POS|3-${params.branchId}`
 
   // ── Subject: C(PrintableString), OU, O, CN only ───────────────────────────
