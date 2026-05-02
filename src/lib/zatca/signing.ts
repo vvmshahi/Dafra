@@ -59,19 +59,28 @@ export async function signInvoice(
 ): Promise<SignedInvoice> {
   const privateKey = await importPrivateKeyPem(privateKeyPem)
 
-  // 1. Parse the X.509 certificate for metadata
-  const certDer  = Uint8Array.from(atob(certificate), c => c.charCodeAt(0))
-  const certPem  = `-----BEGIN CERTIFICATE-----\n${certificate.match(/.{1,64}/g)!.join('\n')}\n-----END CERTIFICATE-----`
-  let certObj: forge.pki.Certificate
-  try {
-    certObj = forge.pki.certificateFromPem(certPem)
-  } catch {
-    throw new Error('ZATCA: unable to parse CSID certificate')
+  // 1. Normalize certificate string: strip embedded whitespace/newlines from binarySecurityToken
+  // binarySecurityToken from ZATCA is base64(DER) — some implementations add line breaks.
+  // Auto-detect base64(PEM-with-headers) vs base64(DER) to handle both formats.
+  const certB64Clean = certificate.replace(/[\r\n\s]+/g, '')
+  let certDer: Uint8Array
+  let certPemBody: string  // clean base64(DER) used in XAdES ds:X509Certificate element
+
+  const certDecoded = atob(certB64Clean)
+  if (certDecoded.startsWith('-----BEGIN')) {
+    // binarySecurityToken was base64(PEM with headers)
+    certPemBody = certDecoded.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
+    certDer = Uint8Array.from(atob(certPemBody), c => c.charCodeAt(0))
+  } else {
+    // Standard: binarySecurityToken is base64(DER)
+    certDer = Uint8Array.from(certDecoded, c => c.charCodeAt(0))
+    certPemBody = certB64Clean
   }
 
-  const issuerName   = forge.pki.distinguishedNameToAsn1(certObj.issuer)
-  const issuerDn     = asn1ToCanonical(forge.asn1.toDer(issuerName).getBytes())
-  const serialNumber = certObj.serialNumber
+  // Parse certificate fields directly via ASN.1 — forge.pki.certificateFromPem throws
+  // "Cannot read public key. Unknown OID." for secp256k1 EC certificates (only supports RSA).
+  const { serialNumber, spkiBytes } = parseCertificateDer(certDer)
+  const issuerDn = ''  // not used in XML output (X509IssuerName is set to serialNumber)
 
   // 2. Certificate digest (SHA-256 of DER bytes)
   const certDigestBuf = await sha256Bytes(certDer)
@@ -101,7 +110,7 @@ export async function signInvoice(
   // 7. Build complete UBLExtensions XAdES block
   const xadesBlock = buildXadesBlock(
     invoiceDigestB64, signedPropsB64, sigValueB64,
-    certificate, signedPropsXml, issuerDn, serialNumber,
+    certPemBody, signedPropsXml, issuerDn, serialNumber,
     signingTime, certDigestB64,
   )
 
@@ -121,7 +130,7 @@ export async function signInvoice(
   // Phase 2 QR tags 1–5 + 6 (hash bytes) + 7 (sig bytes) + 8 (pubkey bytes) + 9 (cert bytes)
   const hashBytes = new Uint8Array(await sha256(invoiceCanonical))  // raw 32 bytes for tag 6
   const sigBytes  = sigDerBytes                                      // raw sig bytes for tag 7
-  const pubKeyBytes = extractPublicKeyBytes(certObj)                 // raw EC pubkey for tag 8
+  const pubKeyBytes = extractEcPublicKeyFromSpki(spkiBytes)          // raw EC pubkey for tag 8
 
   const qrCode = buildPhase2QR({
     sellerName, vatNumber, timestamp,
@@ -337,14 +346,60 @@ function normalizeTimestamp(iso: string): string {
   return new Date(iso).toISOString().replace(/\.\d{3}Z$/, 'Z')
 }
 
-function extractPublicKeyBytes(cert: forge.pki.Certificate): Uint8Array {
+/**
+ * Extract serial number and SubjectPublicKeyInfo DER from a raw X.509 DER certificate.
+ * Uses forge's ASN.1 module directly to avoid forge.pki.certificateFromPem, which
+ * only supports RSA and throws "Unknown OID" for secp256k1 EC certificates.
+ */
+function parseCertificateDer(certDer: Uint8Array): { serialNumber: string; spkiBytes: Uint8Array } {
+  const certAsn1 = forge.asn1.fromDer(
+    forge.util.createBuffer(String.fromCharCode(...certDer))
+  )
+  // Certificate = SEQUENCE { TBSCertificate, AlgorithmIdentifier, BIT STRING }
+  const tbs    = (certAsn1.value as forge.asn1.Asn1[])[0]
+  const fields = tbs.value as forge.asn1.Asn1[]
+
+  // TBSCertificate fields (in order):
+  //   [0] version (CONTEXT_SPECIFIC, optional — present in v2/v3)
+  //   INTEGER  serialNumber
+  //   SEQUENCE signatureAlgorithm
+  //   SEQUENCE issuer
+  //   SEQUENCE validity
+  //   SEQUENCE subject
+  //   SEQUENCE subjectPublicKeyInfo
+  let idx = 0
+  if (fields[0]?.tagClass === forge.asn1.Class.CONTEXT_SPECIFIC) idx++
+
+  const serialBytes = fields[idx++].value as string
+  let serialHex = Array.from(serialBytes, c => ('0' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+  serialHex = serialHex.replace(/^0+/, '') || '0'
+
+  idx += 4  // skip: signatureAlgorithm, issuer, validity, subject
+
+  const spkiDerStr = forge.asn1.toDer(fields[idx]).getBytes()
+  const spkiBytes  = new Uint8Array(Array.from(spkiDerStr, c => c.charCodeAt(0)))
+
+  return { serialNumber: serialHex, spkiBytes }
+}
+
+/** Extract the raw EC public key point bytes from a SubjectPublicKeyInfo DER blob. */
+function extractEcPublicKeyFromSpki(spkiBytes: Uint8Array): Uint8Array {
   try {
-    // Extract the raw public key point from the certificate's subjectPublicKeyInfo
-    const spki  = forge.pki.publicKeyToAsn1(cert.publicKey as any)
-    const der   = forge.asn1.toDer(spki).getBytes()
-    return new Uint8Array(Array.from(der, c => c.charCodeAt(0)))
+    const spkiAsn1 = forge.asn1.fromDer(
+      forge.util.createBuffer(String.fromCharCode(...spkiBytes))
+    )
+    // SPKI = SEQUENCE { AlgorithmIdentifier, BIT STRING }
+    // BIT STRING raw content: 0x00 (unused-bits byte) || EC public key point
+    const bitStr = (spkiAsn1.value as forge.asn1.Asn1[])[1]
+    // bitStringContents is set before any attempt to decode as composed ASN.1,
+    // so it reliably contains the raw BIT STRING value bytes.
+    const raw = ((bitStr as any).bitStringContents as string | undefined)
+             ?? (typeof bitStr.value === 'string' ? bitStr.value : '')
+    if (raw.length < 2) return new Uint8Array(65)
+    // Skip the leading unused-bits byte (always 0x00 for EC keys)
+    return new Uint8Array(Array.from(raw.slice(1), (c: string) => c.charCodeAt(0)))
   } catch {
-    return new Uint8Array(65)  // empty fallback
+    return new Uint8Array(65)
   }
 }
 
