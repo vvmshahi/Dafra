@@ -92,51 +92,26 @@ function derLen(buf: Uint8Array, off: number): [number, number] {
   return [len, off]
 }
 
-interface DerNode { cls: number; tag: number; start: number; vStart: number; vEnd: number }
 
-function derNode(buf: Uint8Array, off: number): [DerNode, number] {
-  const start = off, b0 = buf[off++]
-  const [len, vStart] = derLen(buf, off)
-  return [{ cls: (b0 >> 6) & 3, tag: b0 & 0x1f, start, vStart, vEnd: vStart + len }, vStart + len]
-}
+// ── Certificate serial number extraction (minimal 3-level DER walk) ──────────
+// Avoids full TBSCertificate traversal that can fail on cert chains or unusual
+// length encodings. Walks only: Certificate SEQUENCE → TBSCertificate SEQUENCE
+// → optional [0] version → serialNumber INTEGER.
 
-function derKids(buf: Uint8Array, n: DerNode): DerNode[] {
-  const kids: DerNode[] = []; let pos = n.vStart
-  while (pos < n.vEnd) { const [k, end] = derNode(buf, pos); kids.push(k); pos = end }
-  return kids
-}
-
-// ── Certificate parsing (secp256k1-safe, no external deps) ───────────────────
-
-function parseCertificateDer(certDer: Uint8Array): { serialNumber: string; spkiBytes: Uint8Array } {
-  // Certificate SEQUENCE → TBSCertificate SEQUENCE → fields
-  const [cert]   = derNode(certDer, 0)
-  const tbs      = derKids(certDer, cert)[0]
-  const tbsKids  = derKids(certDer, tbs)
-  let idx = 0
-  // Optional [0] EXPLICIT version (CONTEXT_SPECIFIC class = 2, tag = 0)
-  if (tbsKids[0].cls === 2 && tbsKids[0].tag === 0) idx++
-  // serialNumber INTEGER
-  const sn      = tbsKids[idx++]
-  const snBytes = certDer.slice(sn.vStart, sn.vEnd)
-  let serialHex = Array.from(snBytes, b => ('0' + b.toString(16)).slice(-2)).join('')
-  serialHex = serialHex.replace(/^0+/, '') || '0'
-  idx += 4  // skip signatureAlgorithm, issuer, validity, subject
-  // SubjectPublicKeyInfo — return full DER (tag + length + value)
-  const spkiNode = tbsKids[idx]
-  return { serialNumber: serialHex, spkiBytes: certDer.slice(spkiNode.start, spkiNode.vEnd) }
-}
-
-function extractEcPublicKeyFromSpki(spkiBytes: Uint8Array): Uint8Array {
+function extractCertSerial(certDer: Uint8Array): string {
   try {
-    const [spki]     = derNode(spkiBytes, 0)
-    const spkiKids   = derKids(spkiBytes, spki)
-    if (spkiKids.length < 2) return new Uint8Array(65)
-    const bitStr     = spkiKids[1]  // BIT STRING (tag 3)
-    const bitContent = spkiBytes.slice(bitStr.vStart, bitStr.vEnd)
-    if (bitContent.length < 2) return new Uint8Array(65)
-    return bitContent.slice(1)      // skip unused-bits byte (0x00), return raw EC point
-  } catch { return new Uint8Array(65) }
+    let off = 0
+    off++; const [, o1] = derLen(certDer, off); off = o1  // past Certificate SEQUENCE
+    off++; const [, o2] = derLen(certDer, off); off = o2  // past TBSCertificate SEQUENCE
+    if (certDer[off] === 0xA0) {                          // skip optional [0] version
+      off++; const [vl, o3] = derLen(certDer, off); off = o3 + vl
+    }
+    if (certDer[off] !== 0x02) return '0'                 // must be INTEGER tag
+    off++; const [sl, o4] = derLen(certDer, off)
+    const sn = certDer.slice(o4, o4 + sl)
+    const hex = Array.from(sn, b => b.toString(16).padStart(2, '0')).join('').replace(/^0+/, '') || '0'
+    return BigInt('0x' + hex).toString()                  // decimal string for X509SerialNumber
+  } catch { return '0' }
 }
 
 // ── XML builder (ported from xml.ts) ─────────────────────────────────────────
@@ -490,7 +465,7 @@ function canonicalizeInvoiceContent(xmlString: string): string {
 }
 
 function buildSignedProperties(signingTime: string, certDigest: string, _issuerDn: string, serialNumber: string): string {
-  return `<xades:SignedProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="xadesSignedProperties"><xades:SignedSignatureProperties><xades:SigningTime>${signingTime}</xades:SigningTime><xades:SigningCertificate><xades:Cert><xades:CertDigest><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${certDigest}</ds:DigestValue></xades:CertDigest><xades:IssuerSerial><ds:X509IssuerName>${escText(serialNumber)}</ds:X509IssuerName><ds:X509SerialNumber>${serialNumber}</ds:X509SerialNumber></xades:IssuerSerial></xades:Cert></xades:SigningCertificate></xades:SignedSignatureProperties></xades:SignedProperties>`
+  return `<xades:SignedProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="xadesSignedProperties"><xades:SignedSignatureProperties><xades:SigningTime>${signingTime}</xades:SigningTime><xades:SigningCertificate><xades:Cert><xades:CertDigest><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${certDigest}</ds:DigestValue></xades:CertDigest><xades:IssuerSerial><ds:X509IssuerName></ds:X509IssuerName><ds:X509SerialNumber>${serialNumber}</ds:X509SerialNumber></xades:IssuerSerial></xades:Cert></xades:SigningCertificate></xades:SignedSignatureProperties></xades:SignedProperties>`
 }
 
 function buildSignedInfo(invoiceDigest: string, signedPropsDigest: string): string {
@@ -522,8 +497,8 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
     certPemBody = certB64Clean
   }
 
-  const { serialNumber, spkiBytes } = parseCertificateDer(certDer)
-  const pubKeyBytes = extractEcPublicKeyFromSpki(spkiBytes)
+  const serialNumber = extractCertSerial(certDer)
+  const pubKeyBytes  = secp256k1.getPublicKey(secretKey, false)  // uncompressed 65-byte EC point
 
   const certDigestBuf = await sha256Bytes(certDer)
   const certDigestB64 = btoa(String.fromCharCode(...new Uint8Array(certDigestBuf)))
