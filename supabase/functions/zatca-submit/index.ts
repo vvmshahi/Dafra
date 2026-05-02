@@ -30,6 +30,7 @@ const ZATCA_URLS: Record<string, string> = {
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 // Must match VITE_ZATCA_KEY_SECRET set when the private key was encrypted in the browser
