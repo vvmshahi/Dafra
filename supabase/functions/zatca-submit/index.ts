@@ -515,9 +515,9 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const signedPropsB64 = btoa(String.fromCharCode(...new Uint8Array(signedPropsBuf)))
 
   const signedInfoXml  = buildSignedInfo(invoiceDigestB64, signedPropsB64)
-  const signedInfoBuf  = new TextEncoder().encode(signedInfoXml)
-  const sig            = secp256k1.sign(signedInfoBuf, secretKey, { prehash: true })
-  const sigDerBytes    = p1363ToDer(sig.toCompactRawBytes())
+  const signedInfoHash = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedInfoXml)))
+  const sig            = secp256k1.sign(signedInfoHash, secretKey)
+  const sigDerBytes    = sig.toDERRawBytes()
   const sigValueB64    = btoa(String.fromCharCode(...sigDerBytes))
 
   const xadesBlock = buildXadesBlock(
