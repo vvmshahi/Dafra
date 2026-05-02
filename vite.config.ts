@@ -7,6 +7,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // xmlbuilder2 imports Node's `events` (EventEmitter) via its createCB export.
+      // Vite externalizes it by default → undefined at runtime → "Class extends value undefined" crash.
+      // Map to the browser-compatible polyfill instead.
+      events: 'events',
     },
   },
   build: {
