@@ -359,6 +359,20 @@ function concatArrays(...arrs: Uint8Array[]): Uint8Array {
   return out
 }
 
+// Phase 1 QR (tags 1-5 only) — used for the XML-embedded QR field (1000 char limit)
+function buildPhase1QR(
+  sellerName: string, vatNumber: string, timestamp: string,
+  totalAmount: number, vatAmount: number,
+): string {
+  const all = concatArrays(
+    tlvStr(0x01, sellerName), tlvStr(0x02, vatNumber),
+    tlvStr(0x03, normTs(timestamp)),
+    tlvStr(0x04, totalAmount.toFixed(2)), tlvStr(0x05, vatAmount.toFixed(2)),
+  )
+  return btoa(String.fromCharCode(...all))
+}
+
+// Phase 2 QR (tags 1-9) — used for the printed receipt display
 function buildPhase2QR(
   sellerName: string, vatNumber: string, timestamp: string,
   totalAmount: number, vatAmount: number,
@@ -485,17 +499,9 @@ function buildXadesBlock(
 async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate: string): Promise<{
   signedXml: string; invoiceHash: string; qrCode: string
 }> {
-  // Normalize & decode certificate
-  const certB64Clean = certificate.replace(/[\r\n\s]+/g, '')
-  let certDer: Uint8Array, certPemBody: string
-  const certDecoded = atob(certB64Clean)
-  if (certDecoded.startsWith('-----BEGIN')) {
-    certPemBody = certDecoded.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
-    certDer = Uint8Array.from(atob(certPemBody), c => c.charCodeAt(0))
-  } else {
-    certDer = Uint8Array.from(certDecoded, c => c.charCodeAt(0))
-    certPemBody = certB64Clean
-  }
+  // production_csid is always base64(DER) — decode directly, no PEM detection
+  const certPemBody = certificate.replace(/[\r\n\s]+/g, '')
+  const certDer     = Uint8Array.from(atob(certPemBody), c => c.charCodeAt(0))
 
   const serialNumber = extractCertSerial(certDer)
   const pubKeyBytes  = secp256k1.getPublicKey(secretKey, false)  // uncompressed 65-byte EC point
@@ -510,9 +516,11 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
 
   const signingTime = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
 
-  const signedPropsXml = buildSignedProperties(signingTime, certDigestB64, '', serialNumber)
-  const signedPropsBuf = await sha256(signedPropsXml)
-  const signedPropsB64 = btoa(String.fromCharCode(...new Uint8Array(signedPropsBuf)))
+  const signedPropsXml   = buildSignedProperties(signingTime, certDigestB64, '', serialNumber)
+  const spDoc            = new DOMParser().parseFromString(signedPropsXml, 'application/xml')
+  const signedPropsCanon = c14n(spDoc.documentElement)
+  const signedPropsBuf   = await sha256(signedPropsCanon)
+  const signedPropsB64   = btoa(String.fromCharCode(...new Uint8Array(signedPropsBuf)))
 
   const signedInfoXml  = buildSignedInfo(invoiceDigestB64, signedPropsB64)
   const signedInfoHash = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedInfoXml)))
@@ -539,15 +547,16 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const totalAmount = parseFloat((signedXml.match(/<cbc:TaxInclusiveAmount[^>]*>([\d.]+)<\/cbc:TaxInclusiveAmount>/) ?? [])[1] ?? '0')
   const vatAmount   = parseFloat((signedXml.match(/<cbc:TaxAmount[^>]*>([\d.]+)<\/cbc:TaxAmount>/) ?? [])[1] ?? '0')
 
-  const hashBytes = new Uint8Array(await sha256(invoiceCanonical))
-  const qrCode = buildPhase2QR(
+  const hashBytes  = new Uint8Array(await sha256(invoiceCanonical))
+  const xmlQR      = buildPhase1QR(sellerName, vatNumber, timestamp, totalAmount, vatAmount)
+  const qrCode     = buildPhase2QR(
     sellerName, vatNumber, timestamp, totalAmount, vatAmount,
     hashBytes, sigDerBytes, pubKeyBytes, certDer,
   )
 
   signedXml = signedXml.replace(
     /(<cbc:ID>QR<\/cbc:ID>[\s\S]*?<cbc:EmbeddedDocumentBinaryObject mimeCode="text\/plain">)([^<]*)(<\/cbc:EmbeddedDocumentBinaryObject>)/,
-    `$1${qrCode}$3`,
+    `$1${xmlQR}$3`,
   )
 
   return { signedXml, invoiceHash: invoiceHashB64, qrCode }
@@ -649,8 +658,9 @@ async function processInvoice(db: any, invoiceId: string): Promise<{ invoiceStat
     })
 
     const responseText = await zatcaRes.text()
-    console.log('[zatca-submit] ZATCA status:', zatcaRes.status, '| body:', responseText.substring(0, 300))
+    console.log('[zatca-submit] ZATCA status:', zatcaRes.status)
     const zatcaBody = (() => { try { return JSON.parse(responseText) } catch { return {} } })()
+    console.log('[zatca-submit] ZATCA full response:', JSON.stringify(zatcaBody, null, 2))
 
     const reportingStatus = zatcaBody?.reportingStatus as string | undefined
     const clearanceStatus = zatcaBody?.clearanceStatus as string | undefined
