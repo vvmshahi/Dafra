@@ -517,7 +517,25 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const signedInfoXml  = buildSignedInfo(invoiceDigestB64, signedPropsB64)
   const signedInfoHash = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedInfoXml)))
   const sig            = secp256k1.sign(signedInfoHash, secretKey)
-  const sigDerBytes    = sig.toDERRawBytes()
+  console.log('[zatca-submit] sig type:', typeof sig)
+  console.log('[zatca-submit] sig proto keys:', Object.getOwnPropertyNames(Object.getPrototypeOf(sig) ?? {}))
+  console.log('[zatca-submit] sig own keys:', Object.keys(sig as any))
+
+  let sigDerBytes: Uint8Array
+  if (typeof (sig as any).toDERRawBytes === 'function') {
+    sigDerBytes = (sig as any).toDERRawBytes()
+  } else if (typeof (sig as any).toCompactRawBytes === 'function') {
+    sigDerBytes = p1363ToDer((sig as any).toCompactRawBytes())
+  } else {
+    // Fallback: reconstruct compact bytes from r/s BigInts then DER-encode
+    const r = (sig as any).r as bigint
+    const s = (sig as any).s as bigint
+    const to32 = (n: bigint): Uint8Array => {
+      const hex = n.toString(16).padStart(64, '0')
+      return Uint8Array.from((hex.match(/.{2}/g) as string[]).map(x => parseInt(x, 16)))
+    }
+    sigDerBytes = p1363ToDer(new Uint8Array([...to32(r), ...to32(s)]))
+  }
   const sigValueB64    = btoa(String.fromCharCode(...sigDerBytes))
 
   const xadesBlock = buildXadesBlock(
