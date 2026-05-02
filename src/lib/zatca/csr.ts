@@ -1,40 +1,31 @@
 /**
  * ZATCA Phase 2 — PKCS#10 CSR Generation
+ * Pure TypeScript inline ASN.1 encoder — no external ASN.1 library required.
  *
- * Builds a PKCS#10 CertificationRequest using node-forge's ASN.1 module.
- *
- * Key corrections vs prior version:
- *  - Curve: secp256k1 (OID 1.3.132.0.10) — NOT P-256
- *  - Subject: C, OU, O, CN only — no OID 2.5.4.97 or businessCategory in Subject
- *  - SAN: ONE directoryName [4] containing a single Name with five RDNs
- *    (surName=EGS serial, userId=VAT, title=invoiceType, registeredAddress, businessCategory)
- *  - Extension: ZATCA-Code-Signing (OID 1.3.6.1.4.1.311.20.2) required
+ * Subject: C, O, OU, CN
+ * SAN: ONE directoryName [4] with five RDNs (surName, userId, title, registeredAddress, businessCategory)
+ * Extensions: basicConstraints (CA:FALSE), SAN, ZATCA-Code-Signing (OID 1.3.6.1.4.1.311.20.2)
+ * Signature: ecdsaWithSHA256 / secp256k1
  */
 
-import forge from 'node-forge'
 import type { ZatcaKeyPair } from './crypto'
 import { p1363ToDer, ecdsaSign } from './crypto'
 
-const { asn1 } = forge
-
 // ── OID registry ──────────────────────────────────────────────────────────────
 const OIDs = {
-  ecPublicKey:       '1.2.840.10045.2.1',
-  secp256k1:         '1.3.132.0.10',                    // Bitcoin curve — required by ZATCA
-  ecdsaWithSHA256:   '1.2.840.10045.4.3.2',
-  commonName:        '2.5.4.3',
-  surName:           '2.5.4.4',                         // SAN: EGS serial number
-  countryName:       '2.5.4.6',
-  organizationName:  '2.5.4.10',
-  organizationalUnit:'2.5.4.11',
-  title:             '2.5.4.12',                        // SAN: invoice type (e.g. "1100")
-  businessCategory:  '2.5.4.15',                        // SAN: industry sector
-  registeredAddress: '2.5.4.26',                        // SAN: branch address
-  userId:            '0.9.2342.19200300.100.1.1',       // SAN: VAT number
-  zatcaCodeSigning:  '1.3.6.1.4.1.311.20.2',
-  extensionRequest:  '1.2.840.113549.1.9.14',
-  subjectAltName:    '2.5.29.17',
-  basicConstraints:  '2.5.29.19',
+  commonName:         '2.5.4.3',
+  surName:            '2.5.4.4',
+  countryName:        '2.5.4.6',
+  organizationName:   '2.5.4.10',
+  organizationalUnit: '2.5.4.11',
+  title:              '2.5.4.12',
+  businessCategory:   '2.5.4.15',
+  registeredAddress:  '2.5.4.26',
+  userId:             '0.9.2342.19200300.100.1.1',
+  zatcaCodeSigning:   '1.3.6.1.4.1.311.20.2',
+  extensionRequest:   '1.2.840.113549.1.9.14',
+  subjectAltName:     '2.5.29.17',
+  basicConstraints:   '2.5.29.19',
 } as const
 
 // ── Params ────────────────────────────────────────────────────────────────────
@@ -42,12 +33,12 @@ const OIDs = {
 export interface ZatcaCSRParams {
   commonName:   string  // EGS unit name
   branchId:     string  // used to build EGS serial "1-Dafra|2-POS|3-{branchId}"
-  vatNumber:    string  // 15-digit SAT VAT number (goes in SAN userId)
+  vatNumber:    string  // 15-digit VAT number (SAN userId)
   branchName:   string  // OU
   businessName: string  // O (legal name)
-  invoiceType:  string  // "1100" = standard + simplified (goes in SAN title)
-  location:     string  // branch address (goes in SAN registeredAddress)
-  industry:     string  // business sector (goes in SAN businessCategory)
+  invoiceType:  string  // "1100" = standard + simplified (SAN title)
+  location:     string  // branch address (SAN registeredAddress)
+  industry:     string  // business sector (SAN businessCategory)
 }
 
 // ── CSR builder ───────────────────────────────────────────────────────────────
@@ -56,133 +47,174 @@ export async function generateCSR(
   params: ZatcaCSRParams,
   keyPair: ZatcaKeyPair,
 ): Promise<string> {
-  console.log('[ZATCA CSR] version: 4.0 — RDN order C,O,OU,CN + basicConstraints + extension order fixed')
+  console.log('[ZATCA CSR] version: 5.0 — pure TypeScript ASN.1')
   const egsSn = `1-Dafra|2-POS|3-${params.branchId}`
 
-  // ── Subject: C, O, OU, CN — matches SDK reference cert order ────────────
-  const subject = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-    rdn(OIDs.countryName,        'SA', asn1.Type.PRINTABLESTRING),
+  // Subject: C, O, OU, CN
+  const subject = seq([
+    rdn(OIDs.countryName,        'SA', TAG.PRINTABLESTRING),
     rdn(OIDs.organizationName,   params.businessName),
     rdn(OIDs.organizationalUnit, params.branchName),
     rdn(OIDs.commonName,         params.commonName),
   ])
 
-  // ── SubjectPublicKeyInfo (secp256k1 SPKI built in generateKeyPair) ────────
-  const spkiBytes = forge.util.createBuffer(
-    String.fromCharCode(...new Uint8Array(keyPair.publicKeyDer))
-  )
-  const spki = asn1.fromDer(spkiBytes)
+  // SPKI passthrough — raw DER from key generation
+  const spki = asn1FromDer(new Uint8Array(keyPair.publicKeyDer))
 
-  // ── SubjectAlternativeName: ONE directoryName with 5 RDNs ─────────────────
-  const sanDirName = asn1.create(asn1.Class.CONTEXT_SPECIFIC, 4, true, [
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-      rdn(OIDs.surName,          egsSn),
-      rdn(OIDs.userId,           params.vatNumber),
-      rdn(OIDs.title,            params.invoiceType),
+  // SubjectAlternativeName: ONE directoryName [4] with five RDNs
+  const sanDirName = asn1Node(CLS.CONTEXT_SPECIFIC, 4, true, [
+    seq([
+      rdn(OIDs.surName,           egsSn),
+      rdn(OIDs.userId,            params.vatNumber),
+      rdn(OIDs.title,             params.invoiceType),
       rdn(OIDs.registeredAddress, params.location),
-      rdn(OIDs.businessCategory, params.industry),
+      rdn(OIDs.businessCategory,  params.industry),
     ]),
   ])
-
-  const sanValue = asn1.toDer(
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [sanDirName])
-  ).getBytes()
-
-  const sanExt = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false,
-      asn1.oidToDer(OIDs.subjectAltName).getBytes()),
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OCTETSTRING, false, sanValue),
+  const sanValue = asn1ToDer(seq([sanDirName]))
+  const sanExt = seq([
+    oid(OIDs.subjectAltName),
+    asn1Node(CLS.UNIVERSAL, TAG.OCTETSTRING, false, sanValue),
   ])
 
-  // ── basicConstraints: CA:FALSE (SEQUENCE{} encodes as 30 00) ─────────────
-  // Reference CSR has this as the FIRST extension. Value is DER of empty SEQUENCE.
-  const basicConstraintsValue = asn1.toDer(
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [])
-  ).getBytes()
-
-  const basicConstraintsExt = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false,
-      asn1.oidToDer(OIDs.basicConstraints).getBytes()),
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OCTETSTRING, false, basicConstraintsValue),
+  // basicConstraints: CA:FALSE — DER of empty SEQUENCE
+  const bcValue = asn1ToDer(seq([]))
+  const basicConstraintsExt = seq([
+    oid(OIDs.basicConstraints),
+    asn1Node(CLS.UNIVERSAL, TAG.OCTETSTRING, false, bcValue),
   ])
 
-  // ── ZATCA-Code-Signing extension ──────────────────────────────────────────
-  const zatcaExtValue = asn1.toDer(
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.UTF8, false, 'ZATCA-Code-Signing')
-  ).getBytes()
-
-  const zatcaExt = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false,
-      asn1.oidToDer(OIDs.zatcaCodeSigning).getBytes()),
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OCTETSTRING, false, zatcaExtValue),
+  // ZATCA-Code-Signing extension
+  const zatcaValue = asn1ToDer(asn1Node(CLS.UNIVERSAL, TAG.UTF8, false, 'ZATCA-Code-Signing'))
+  const zatcaExt = seq([
+    oid(OIDs.zatcaCodeSigning),
+    asn1Node(CLS.UNIVERSAL, TAG.OCTETSTRING, false, zatcaValue),
   ])
 
-  // ── extensionRequest attribute ────────────────────────────────────────────
-  // Order matches reference: basicConstraints → SAN → ZATCA-Code-Signing
-  const extensions = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false,
-      asn1.oidToDer(OIDs.extensionRequest).getBytes()),
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SET, true, [
-      asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-        basicConstraintsExt, sanExt, zatcaExt,
-      ]),
+  // extensionRequest attribute (order: basicConstraints → SAN → ZATCA-Code-Signing)
+  const extensions = seq([
+    oid(OIDs.extensionRequest),
+    asn1Node(CLS.UNIVERSAL, TAG.SET, true, [
+      seq([basicConstraintsExt, sanExt, zatcaExt]),
     ]),
   ])
+  const attributes = asn1Node(CLS.CONTEXT_SPECIFIC, 0, true, [extensions])
 
-  const attributes = asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, [extensions])
-
-  // ── CertificationRequestInfo ───────────────────────────────────────────────
-  const cri = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.INTEGER, false, '\x00'), // version 0
+  // CertificationRequestInfo
+  const cri = seq([
+    asn1Node(CLS.UNIVERSAL, TAG.INTEGER, false, new Uint8Array([0])), // version 0
     subject,
     spki,
     attributes,
   ])
 
-  // ── Sign TBS with secp256k1 / SHA-256 ────────────────────────────────────
-  const criDerStr = asn1.toDer(cri).getBytes()
-  const criBytes  = new Uint8Array(Array.from(criDerStr, c => c.charCodeAt(0)))
-  const sigP1363  = await ecdsaSign(keyPair.privateKey, criBytes)
-  const sigDer    = p1363ToDer(new Uint8Array(sigP1363))
+  // Sign CRI DER with secp256k1 / SHA-256
+  const criDer   = asn1ToDer(cri)
+  const sigP1363 = await ecdsaSign(keyPair.privateKey, criDer)
+  const sigDer   = p1363ToDer(new Uint8Array(sigP1363))
 
-  // ── Assemble CertificationRequest manually ────────────────────────────────
-  // forge has a bug encoding BIT STRING tag (emits 0x87 instead of 0x03),
-  // so we build the outer SEQUENCE from raw bytes instead of using asn1.create.
-
-  // signatureAlgorithm SEQUENCE { OID ecdsaWithSHA256 }
+  // sigAlgorithm: SEQUENCE { OID ecdsaWithSHA256 }
   const sigAlgDer = new Uint8Array([
     0x30, 0x0a,
     0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02,
   ])
 
-  // BIT STRING: tag 0x03 + length(1 unused-bits byte + sigDer) + 0x00 + sigDer
-  const bsContentLen = sigDer.length + 1  // +1 for the unused-bits byte 0x00
+  // BIT STRING wrapper for DER signature
+  const bsContentLen = sigDer.length + 1  // +1 for unused-bits byte 0x00
   const bitStringDer = bsContentLen < 128
-    ? new Uint8Array([0x03, bsContentLen,         0x00, ...sigDer])
-    : new Uint8Array([0x03, 0x81, bsContentLen,   0x00, ...sigDer])
+    ? new Uint8Array([0x03, bsContentLen,       0x00, ...sigDer])
+    : new Uint8Array([0x03, 0x81, bsContentLen, 0x00, ...sigDer])
 
-  // outer SEQUENCE { CRI || sigAlg || bitString }
-  const content = new Uint8Array([...criBytes, ...sigAlgDer, ...bitStringDer])
+  // Outer SEQUENCE { CRI || sigAlg || BIT STRING }
+  const content = new Uint8Array([...criDer, ...sigAlgDer, ...bitStringDer])
   const seqLen  = content.length
   const seqHdr: number[] = seqLen < 128 ? [0x30, seqLen]
-                         : seqLen < 256 ? [0x30, 0x81, seqLen]
-                         :                [0x30, 0x82, (seqLen >> 8) & 0xff, seqLen & 0xff]
+                          : seqLen < 256 ? [0x30, 0x81, seqLen]
+                          :                [0x30, 0x82, (seqLen >> 8) & 0xff, seqLen & 0xff]
   const certReqDer = new Uint8Array([...seqHdr, ...content])
 
-  // ── PEM encode ────────────────────────────────────────────────────────────
-  const b64   = forge.util.encode64(String.fromCharCode(...certReqDer))
+  // PEM encode
+  const b64   = btoa(Array.from(certReqDer, c => String.fromCharCode(c)).join(''))
   const lines = b64.match(/.{1,64}/g)!.join('\n')
   return `-----BEGIN CERTIFICATE REQUEST-----\n${lines}\n-----END CERTIFICATE REQUEST-----`
 }
 
-// ── ASN.1 helpers ─────────────────────────────────────────────────────────────
+// ── Minimal inline ASN.1 encoder ─────────────────────────────────────────────
 
-function rdn(oid: string, value: string, tag = asn1.Type.UTF8): forge.asn1.Asn1 {
-  return asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SET, true, [
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-      asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false,
-        asn1.oidToDer(oid).getBytes()),
-      asn1.create(asn1.Class.UNIVERSAL, tag, false, value),
-    ]),
+const CLS = { UNIVERSAL: 0, CONTEXT_SPECIFIC: 2 } as const
+const TAG = {
+  INTEGER: 2, BITSTRING: 3, OCTETSTRING: 4, OID: 6,
+  UTF8: 12, SEQUENCE: 16, SET: 17, PRINTABLESTRING: 19,
+} as const
+
+interface Asn1 {
+  cls: number
+  tag: number
+  constructed: boolean
+  value: string | Uint8Array | Asn1[]
+  rawDer?: Uint8Array
+}
+
+function asn1Node(cls: number, tag: number, constructed: boolean, value: string | Uint8Array | Asn1[]): Asn1 {
+  return { cls, tag, constructed, value }
+}
+
+function asn1FromDer(der: Uint8Array): Asn1 {
+  return { cls: 0, tag: 0, constructed: false, value: der, rawDer: der }
+}
+
+function asn1ToDer(node: Asn1): Uint8Array {
+  if (node.rawDer) return node.rawDer
+  const tagByte = ((node.cls & 0x3) << 6) | (node.constructed ? 0x20 : 0) | (node.tag & 0x1f)
+  let content: Uint8Array
+  if (node.constructed) {
+    const parts = (node.value as Asn1[]).map(asn1ToDer)
+    const total = parts.reduce((s, p) => s + p.length, 0)
+    content = new Uint8Array(total)
+    let off = 0
+    for (const p of parts) { content.set(p, off); off += p.length }
+  } else if (node.value instanceof Uint8Array) {
+    content = node.value
+  } else {
+    content = new TextEncoder().encode(node.value as string)
+  }
+  const lenArr = derLen(content.length)
+  const out = new Uint8Array(1 + lenArr.length + content.length)
+  out[0] = tagByte
+  out.set(lenArr, 1)
+  out.set(content, 1 + lenArr.length)
+  return out
+}
+
+function derLen(len: number): Uint8Array {
+  if (len < 0x80) return new Uint8Array([len])
+  if (len < 0x100) return new Uint8Array([0x81, len])
+  return new Uint8Array([0x82, (len >> 8) & 0xff, len & 0xff])
+}
+
+function oidEncode(oidStr: string): Uint8Array {
+  const parts = oidStr.split('.').map(Number)
+  const bytes: number[] = [40 * parts[0] + parts[1]]
+  for (let i = 2; i < parts.length; i++) {
+    let n = parts[i]
+    const tmp: number[] = [n & 0x7f]
+    n >>= 7
+    while (n > 0) { tmp.unshift((n & 0x7f) | 0x80); n >>= 7 }
+    bytes.push(...tmp)
+  }
+  return new Uint8Array(bytes)
+}
+
+function seq(children: Asn1[]): Asn1 {
+  return asn1Node(CLS.UNIVERSAL, TAG.SEQUENCE, true, children)
+}
+
+function oid(oidStr: string): Asn1 {
+  return asn1Node(CLS.UNIVERSAL, TAG.OID, false, oidEncode(oidStr))
+}
+
+function rdn(oidStr: string, value: string, tag = TAG.UTF8): Asn1 {
+  return asn1Node(CLS.UNIVERSAL, TAG.SET, true, [
+    seq([oid(oidStr), asn1Node(CLS.UNIVERSAL, tag, false, value)]),
   ])
 }
