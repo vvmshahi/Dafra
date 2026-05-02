@@ -128,21 +128,33 @@ export async function generateCSR(
   const sigP1363  = await ecdsaSign(keyPair.privateKey, criBytes)
   const sigDer    = p1363ToDer(new Uint8Array(sigP1363))
 
-  // ── CertificationRequest ──────────────────────────────────────────────────
-  const certReq = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-    cri,
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-      asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false,
-        asn1.oidToDer(OIDs.ecdsaWithSHA256).getBytes()),
-    ]),
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.BITSTRING, false,
-      '\x00' + String.fromCharCode(...sigDer)),
+  // ── Assemble CertificationRequest manually ────────────────────────────────
+  // forge has a bug encoding BIT STRING tag (emits 0x87 instead of 0x03),
+  // so we build the outer SEQUENCE from raw bytes instead of using asn1.create.
+
+  // signatureAlgorithm SEQUENCE { OID ecdsaWithSHA256 }
+  const sigAlgDer = new Uint8Array([
+    0x30, 0x0a,
+    0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02,
   ])
 
+  // BIT STRING: tag 0x03 + length(1 unused-bits byte + sigDer) + 0x00 + sigDer
+  const bsContentLen = sigDer.length + 1  // +1 for the unused-bits byte 0x00
+  const bitStringDer = bsContentLen < 128
+    ? new Uint8Array([0x03, bsContentLen,         0x00, ...sigDer])
+    : new Uint8Array([0x03, 0x81, bsContentLen,   0x00, ...sigDer])
+
+  // outer SEQUENCE { CRI || sigAlg || bitString }
+  const content = new Uint8Array([...criBytes, ...sigAlgDer, ...bitStringDer])
+  const seqLen  = content.length
+  const seqHdr: number[] = seqLen < 128 ? [0x30, seqLen]
+                         : seqLen < 256 ? [0x30, 0x81, seqLen]
+                         :                [0x30, 0x82, (seqLen >> 8) & 0xff, seqLen & 0xff]
+  const certReqDer = new Uint8Array([...seqHdr, ...content])
+
   // ── PEM encode ────────────────────────────────────────────────────────────
-  const derStr = asn1.toDer(certReq).getBytes()
-  const b64    = forge.util.encode64(derStr)
-  const lines  = b64.match(/.{1,64}/g)!.join('\n')
+  const b64   = forge.util.encode64(String.fromCharCode(...certReqDer))
+  const lines = b64.match(/.{1,64}/g)!.join('\n')
   return `-----BEGIN CERTIFICATE REQUEST-----\n${lines}\n-----END CERTIFICATE REQUEST-----`
 }
 
