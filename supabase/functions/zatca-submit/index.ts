@@ -544,21 +544,45 @@ function canonicalizeInvoiceContent(xmlString: string): string {
   return c14n(doc.documentElement)
 }
 
-// Used for embedding in the final XML (xmlns declarations present for standalone validity).
+// Produces the exact SDK document format (no xmlns, whitespace-indented, self-closing DigestMethod).
+// This string is embedded in the signed XML as-is.
+// For hashing, toSignedPropsHashInput() adds the xmlns declarations that dom4j asXML() would add.
 function buildSignedProperties(signingTime: string, certDigest: string, issuerDn: string, serialNumber: string): string {
-  const dsNs = 'http://www.w3.org/2000/09/xmldsig#'
-  return `<xades:SignedProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Id="xadesSignedProperties">`
-    + `<xades:SignedSignatureProperties>`
-    + `<xades:SigningTime>${escText(signingTime)}</xades:SigningTime>`
-    + `<xades:SigningCertificate><xades:Cert><xades:CertDigest>`
-    + `<ds:DigestMethod xmlns:ds="${dsNs}" Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>`
-    + `<ds:DigestValue xmlns:ds="${dsNs}">${escText(certDigest)}</ds:DigestValue>`
-    + `</xades:CertDigest><xades:IssuerSerial>`
-    + `<ds:X509IssuerName xmlns:ds="${dsNs}">${escText(issuerDn)}</ds:X509IssuerName>`
-    + `<ds:X509SerialNumber xmlns:ds="${dsNs}">${escText(serialNumber)}</ds:X509SerialNumber>`
-    + `</xades:IssuerSerial></xades:Cert></xades:SigningCertificate>`
-    + `</xades:SignedSignatureProperties>`
-    + `</xades:SignedProperties>`
+  const I = (n: number) => '\n' + ' '.repeat(n)
+  return `<xades:SignedProperties Id="xadesSignedProperties">`
+    + I(36) + `<xades:SignedSignatureProperties>`
+    + I(40) + `<xades:SigningTime>${escText(signingTime)}</xades:SigningTime>`
+    + I(40) + `<xades:SigningCertificate>`
+    + I(44) + `<xades:Cert>`
+    + I(48) + `<xades:CertDigest>`
+    + I(52) + `<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>`
+    + I(52) + `<ds:DigestValue>${escText(certDigest)}</ds:DigestValue>`
+    + I(48) + `</xades:CertDigest>`
+    + I(48) + `<xades:IssuerSerial>`
+    + I(52) + `<ds:X509IssuerName>${escText(issuerDn)}</ds:X509IssuerName>`
+    + I(52) + `<ds:X509SerialNumber>${escText(serialNumber)}</ds:X509SerialNumber>`
+    + I(48) + `</xades:IssuerSerial>`
+    + I(44) + `</xades:Cert>`
+    + I(40) + `</xades:SigningCertificate>`
+    + I(36) + `</xades:SignedSignatureProperties>`
+    + I(32) + `</xades:SignedProperties>`
+}
+
+// Adds xmlns declarations that dom4j asXML() emits when serializing the xades:SignedProperties
+// subtree — xmlns:xades on root, xmlns:ds on each individual ds: child element.
+// The ZATCA validator hashes this form, not the raw embedded form.
+function toSignedPropsHashInput(sp: string): string {
+  return sp
+    .replace('<xades:SignedProperties Id="xadesSignedProperties">',
+             '<xades:SignedProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Id="xadesSignedProperties">')
+    .replace('<ds:DigestMethod Algorithm=',
+             '<ds:DigestMethod xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Algorithm=')
+    .replace('<ds:DigestValue>',
+             '<ds:DigestValue xmlns:ds="http://www.w3.org/2000/09/xmldsig#">')
+    .replace('<ds:X509IssuerName>',
+             '<ds:X509IssuerName xmlns:ds="http://www.w3.org/2000/09/xmldsig#">')
+    .replace('<ds:X509SerialNumber>',
+             '<ds:X509SerialNumber xmlns:ds="http://www.w3.org/2000/09/xmldsig#">')
 }
 
 
@@ -626,15 +650,17 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const invoiceDigestB64 = btoa(String.fromCharCode(...new Uint8Array(invoiceDigestBuf)))
   const invoiceHashB64   = invoiceDigestB64
 
-  const signingTime = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+  // SDK format: YYYY-MM-DDTHH:MM:SS — no Z suffix, no milliseconds
+  const signingTime = new Date().toISOString().replace(/\.\d{3}Z$/, '')
 
-  // SignedProperties: hash the dom4j asXML form (same string embedded in XML)
-  // Format: base64(hex(SHA256(UTF8(signedPropsXml)))) — 88-char, matches ZATCA SDK
-  const signedPropsXml   = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
-  console.log('[zatca-submit] signedPropsXml:', signedPropsXml)
-  const signedPropsBytes = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedPropsXml)))
-  const signedPropsHex   = Array.from(signedPropsBytes).map(b => b.toString(16).padStart(2, '0')).join('')
-  const signedPropsB64   = btoa(signedPropsHex)
+  // Build the embedded form (no xmlns, whitespace-indented — exact SDK document format)
+  // Hash the dom4j asXML form (xmlns added) — base64(hex(SHA256)) = 88-char
+  const signedPropsXml       = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
+  const signedPropsHashInput = toSignedPropsHashInput(signedPropsXml)
+  console.log('[zatca-submit] signedPropsHashInput:', signedPropsHashInput)
+  const signedPropsBytes     = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedPropsHashInput)))
+  const signedPropsHex       = Array.from(signedPropsBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+  const signedPropsB64       = btoa(signedPropsHex)
 
   const signedInfoCanon  = buildSignedInfoCanonical(invoiceDigestB64, signedPropsB64)
   const signedInfoHash   = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedInfoCanon)))
