@@ -130,6 +130,46 @@ function extractCertSignatureValue(certDer: Uint8Array): Uint8Array {
   } catch { return new Uint8Array(0) }
 }
 
+// ── Cert IssuerName extraction (for xades:IssuerSerial) ──────────────────────
+function parseDerOid(bytes: Uint8Array): string {
+  const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+  const known: Record<string, string> = {
+    '550403': 'CN', '550406': 'C', '550407': 'L', '550408': 'ST',
+    '55040a': 'O',  '55040b': 'OU',
+    '0992268993f22c640119': 'DC',
+  }
+  return known[hex] ?? `OID:${hex}`
+}
+
+function extractCertIssuerName(certDer: Uint8Array): string {
+  try {
+    let off = 0
+    off++; const [, o1] = derLen(certDer, off); off = o1            // enter Certificate
+    off++; const [, o2] = derLen(certDer, off); off = o2            // enter TBSCertificate
+    if (certDer[off] === 0xA0) { off++; const [vl, o3] = derLen(certDer, off); off = o3 + vl }
+    off++; const [sl, o4] = derLen(certDer, off); off = o4 + sl     // skip serialNumber
+    off++; const [al, o5] = derLen(certDer, off); off = o5 + al     // skip signatureAlgorithm
+    if (certDer[off] !== 0x30) return ''
+    off++; const [issLen, issOff] = derLen(certDer, off)
+    const issEnd = issOff + issLen
+    const rdns: string[] = []
+    let pos = issOff
+    while (pos < issEnd) {
+      if (certDer[pos] !== 0x31) break
+      pos++; const [setLen, setOff] = derLen(certDer, pos); pos = setOff + setLen
+      let p = setOff
+      if (certDer[p] !== 0x30) continue
+      p++; const [, seqOff] = derLen(certDer, p); p = seqOff
+      if (certDer[p] !== 0x06) continue
+      p++; const [oidLen, oidOff] = derLen(certDer, p)
+      const oid = parseDerOid(certDer.slice(oidOff, oidOff + oidLen)); p = oidOff + oidLen
+      p++; const [valLen, valOff] = derLen(certDer, p)
+      rdns.push(`${oid}=${new TextDecoder().decode(certDer.slice(valOff, valOff + valLen))}`)
+    }
+    return rdns.reverse().join(', ')  // RFC 2253: most-specific first (reverse of DER order)
+  } catch { return '' }
+}
+
 // ── XML builder (ported from xml.ts) ─────────────────────────────────────────
 
 const NS = {
@@ -376,19 +416,19 @@ function concatArrays(...arrs: Uint8Array[]): Uint8Array {
 }
 
 // Phase 2 QR — all 9 TLV tags as required from Jan 2023.
-// tag 8 = 64-byte raw X‖Y public key (no 04 prefix); tag 9 = cert signature value (~72 bytes).
-// Total ~330 bytes → ~440 base64 chars, well within the 1000-char XML field limit.
+// tag 06/07 = base64 strings (UTF-8 bytes); tag 08 = 88-byte SubjectPublicKeyInfo DER; tag 09 = cert CA sig value.
+// Total ~465 bytes → ~620 base64 chars, well within the 1000-char XML field limit.
 function buildQR(
   sellerName: string, vatNumber: string, timestamp: string,
   totalAmount: number, vatAmount: number,
-  hashBytes: Uint8Array, sigBytes: Uint8Array, pubKeyRaw: Uint8Array, certSigValue: Uint8Array,
+  hashB64: string, sigB64: string, pubKeySpki: Uint8Array, certSigValue: Uint8Array,
 ): string {
   const all = concatArrays(
     tlvStr(0x01, sellerName), tlvStr(0x02, vatNumber),
     tlvStr(0x03, normTs(timestamp)),
     tlvStr(0x04, totalAmount.toFixed(2)), tlvStr(0x05, vatAmount.toFixed(2)),
-    tlvBytes(0x06, hashBytes), tlvBytes(0x07, sigBytes),
-    tlvBytes(0x08, pubKeyRaw), tlvBytes(0x09, certSigValue),
+    tlvStr(0x06, hashB64), tlvStr(0x07, sigB64),
+    tlvBytes(0x08, pubKeySpki), tlvBytes(0x09, certSigValue),
   )
   return btoa(String.fromCharCode(...all))
 }
@@ -483,8 +523,8 @@ function canonicalizeInvoiceContent(xmlString: string): string {
   return c14n(doc.documentElement)
 }
 
-function buildSignedProperties(signingTime: string, certDigest: string, _issuerDn: string, serialNumber: string): string {
-  return `<xades:SignedProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="xadesSignedProperties"><xades:SignedSignatureProperties><xades:SigningTime>${signingTime}</xades:SigningTime><xades:SigningCertificate><xades:Cert><xades:CertDigest><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${certDigest}</ds:DigestValue></xades:CertDigest><xades:IssuerSerial><ds:X509IssuerName></ds:X509IssuerName><ds:X509SerialNumber>${serialNumber}</ds:X509SerialNumber></xades:IssuerSerial></xades:Cert></xades:SigningCertificate></xades:SignedSignatureProperties></xades:SignedProperties>`
+function buildSignedProperties(signingTime: string, certDigest: string, issuerDn: string, serialNumber: string): string {
+  return `<xades:SignedProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="xadesSignedProperties"><xades:SignedSignatureProperties><xades:SigningTime>${signingTime}</xades:SigningTime><xades:SigningCertificate><xades:Cert><xades:CertDigest><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${certDigest}</ds:DigestValue></xades:CertDigest><xades:IssuerSerial><ds:X509IssuerName>${issuerDn}</ds:X509IssuerName><ds:X509SerialNumber>${serialNumber}</ds:X509SerialNumber></xades:IssuerSerial></xades:Cert></xades:SigningCertificate></xades:SignedSignatureProperties></xades:SignedProperties>`
 }
 
 function buildSignedInfo(invoiceDigest: string, signedPropsDigest: string): string {
@@ -512,12 +552,20 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const certDer      = Uint8Array.from(atob(certB64DER), c => c.charCodeAt(0))  // raw DER bytes
 
   const serialNumber  = extractCertSerial(certDer)
+  const issuerName    = extractCertIssuerName(certDer)              // DN string for xades:IssuerSerial
   const certSigValue  = extractCertSignatureValue(certDer)          // CA signature for QR tag 9
   const pubKeyFull    = secp256k1.getPublicKey(secretKey, false) as unknown as Uint8Array  // 65 bytes
-  const pubKeyRaw     = pubKeyFull.slice(1)                         // 64-byte raw X‖Y for QR tag 8
+  // SubjectPublicKeyInfo DER (88 bytes): secp256k1 header + uncompressed point (ZATCA QR tag 8)
+  const spkiPrefix    = new Uint8Array([
+    0x30, 0x56, 0x30, 0x10, 0x06, 0x07, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01,
+    0x06, 0x05, 0x2B, 0x81, 0x04, 0x00, 0x0A, 0x03, 0x42, 0x00, 0x04,
+  ])
+  const pubKeySpki    = concatArrays(spkiPrefix, pubKeyFull.slice(1))
 
-  const certDigestBuf = await sha256Bytes(certDer)
-  const certDigestB64 = btoa(String.fromCharCode(...new Uint8Array(certDigestBuf)))
+  // ZATCA requires DigestValue = base64(hex_string(sha256(certDER))), not base64(raw_bytes)
+  const certDigestBytes = new Uint8Array(await sha256Bytes(certDer))
+  const certDigestHex   = Array.from(certDigestBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+  const certDigestB64   = btoa(certDigestHex)
 
   const invoiceCanonical = canonicalizeInvoiceContent(xmlString)
   const invoiceDigestBuf = await sha256(invoiceCanonical)
@@ -526,7 +574,7 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
 
   const signingTime = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
 
-  const signedPropsXml   = buildSignedProperties(signingTime, certDigestB64, '', serialNumber)
+  const signedPropsXml   = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
   const spDoc            = new DOMParser().parseFromString(signedPropsXml, 'application/xml')
   // In the document, xades:SignedProperties is inside xades:QualifyingProperties (declares xmlns:xades)
   // and ds:Signature (declares xmlns:ds), so both are inherited — C14N omits them.
@@ -550,7 +598,7 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
 
   const xadesBlock = buildXadesBlock(
     invoiceDigestB64, signedPropsB64, sigValueB64,
-    certPemBody, signedPropsXml, '', serialNumber, signingTime, certDigestB64,
+    certPemBody, signedPropsXml, issuerName, serialNumber, signingTime, certDigestB64,
   )
 
   let signedXml = xmlString.replace(
@@ -567,10 +615,12 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const totalAmount = parseFloat((signedXml.match(/<cbc:TaxInclusiveAmount[^>]*>([\d.]+)<\/cbc:TaxInclusiveAmount>/) ?? [])[1] ?? '0')
   const vatAmount   = parseFloat((signedXml.match(/<cbc:TaxAmount[^>]*>([\d.]+)<\/cbc:TaxAmount>/) ?? [])[1] ?? '0')
 
-  const hashBytes = new Uint8Array(await sha256(invoiceCanonical))
-  const qrCode    = buildQR(
+  const hashBytes  = new Uint8Array(invoiceDigestBuf)
+  const hashB64Str = btoa(String.fromCharCode(...hashBytes))
+  const sigB64Str  = btoa(String.fromCharCode(...sigDerBytes))
+  const qrCode     = buildQR(
     sellerName, vatNumber, timestamp, totalAmount, vatAmount,
-    hashBytes, sigDerBytes, pubKeyRaw, certSigValue,
+    hashB64Str, sigB64Str, pubKeySpki, certSigValue,
   )
 
   signedXml = signedXml.replace(
