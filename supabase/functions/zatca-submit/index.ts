@@ -561,24 +561,6 @@ function buildSignedProperties(signingTime: string, certDigest: string, issuerDn
     + `</xades:SignedProperties>`
 }
 
-// C14N11 canonical form as ZATCA computes it: xmlns:xades and xmlns:ds are both declared on
-// ancestor elements (xades:QualifyingProperties and ds:Signature), so C14N11 inherits them —
-// NO xmlns declarations emitted on xades:SignedProperties or its children.
-// Empty elements use open+close tags (C14N11 requirement).
-function buildSignedPropertiesCanonical(signingTime: string, certDigest: string, issuerDn: string, serialNumber: string): string {
-  return '<xades:SignedProperties Id="xadesSignedProperties">'
-    + '<xades:SignedSignatureProperties>'
-    + `<xades:SigningTime>${escText(signingTime)}</xades:SigningTime>`
-    + '<xades:SigningCertificate><xades:Cert><xades:CertDigest>'
-    + '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></ds:DigestMethod>'
-    + `<ds:DigestValue>${escText(certDigest)}</ds:DigestValue>`
-    + '</xades:CertDigest><xades:IssuerSerial>'
-    + `<ds:X509IssuerName>${escText(issuerDn)}</ds:X509IssuerName>`
-    + `<ds:X509SerialNumber>${escText(serialNumber)}</ds:X509SerialNumber>`
-    + '</xades:IssuerSerial></xades:Cert></xades:SigningCertificate>'
-    + '</xades:SignedSignatureProperties>'
-    + '</xades:SignedProperties>'
-}
 
 function buildSignedInfo(invoiceDigest: string, signedPropsDigest: string): string {
   return `<ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2006/12/xml-c14n11"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"/><ds:Reference Id="invoiceSignedData" URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::ext:UBLExtensions)</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:Signature)</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:AdditionalDocumentReference[cbc:ID='QR'])</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/2006/12/xml-c14n11"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${invoiceDigest}</ds:DigestValue></ds:Reference><ds:Reference Type="http://www.w3.org/2000/09/xmldsig#SignatureProperties" URI="#xadesSignedProperties"><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${signedPropsDigest}</ds:DigestValue></ds:Reference></ds:SignedInfo>`
@@ -634,8 +616,10 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   // Extract SPKI from cert DER — guarantees QR tag 8 matches ds:X509Certificate
   const pubKeySpki    = extractCertPublicKeySpki(certDer)
 
-  const certDigestBytes = new Uint8Array(await sha256Bytes(certDer))
-  const certDigestB64   = btoa(String.fromCharCode(...certDigestBytes))
+  // Cert digest: base64(hex(SHA256(UTF8(certPemBody)))) — 88-char, matches ZATCA SDK format
+  const certDigestBytes = new Uint8Array(await sha256Bytes(new TextEncoder().encode(certPemBody)))
+  const certDigestHex   = Array.from(certDigestBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+  const certDigestB64   = btoa(certDigestHex)
 
   const invoiceCanonical = canonicalizeInvoiceContent(xmlString)
   const invoiceDigestBuf = await sha256(invoiceCanonical)
@@ -644,11 +628,13 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
 
   const signingTime = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
 
-  const signedPropsXml    = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
-  const signedPropsCanon  = buildSignedPropertiesCanonical(signingTime, certDigestB64, issuerName, serialNumber)
-  console.log('[zatca-submit] signedPropsCanon:', signedPropsCanon)
-  const signedPropsBytes  = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedPropsCanon)))
-  const signedPropsB64    = btoa(String.fromCharCode(...signedPropsBytes))
+  // SignedProperties: hash the dom4j asXML form (same string embedded in XML)
+  // Format: base64(hex(SHA256(UTF8(signedPropsXml)))) — 88-char, matches ZATCA SDK
+  const signedPropsXml   = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
+  console.log('[zatca-submit] signedPropsXml:', signedPropsXml)
+  const signedPropsBytes = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedPropsXml)))
+  const signedPropsHex   = Array.from(signedPropsBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+  const signedPropsB64   = btoa(signedPropsHex)
 
   const signedInfoCanon  = buildSignedInfoCanonical(invoiceDigestB64, signedPropsB64)
   const signedInfoHash   = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedInfoCanon)))
@@ -841,6 +827,8 @@ async function processInvoice(db: any, invoiceId: string): Promise<{ invoiceStat
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { status: 200, headers: corsHeaders })
 
+  const url = new URL(req.url)
+
   try {
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -853,6 +841,49 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    // ── GET /debug?branchId=... — verify cert digest + signed-properties values ──
+    if (req.method === 'GET' && url.searchParams.has('branchId')) {
+      const branchId = url.searchParams.get('branchId')!
+      const { data: cert } = await supabase
+        .from('zatca_certificates').select('production_csid, environment')
+        .eq('branch_id', branchId).eq('status', 'active').single()
+
+      if (!cert?.production_csid) {
+        return new Response(JSON.stringify({ error: 'No active cert for branch' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const certB64Outer = cert.production_csid.replace(/[\r\n\s]+/g, '')
+      const certB64DER   = atob(certB64Outer).replace(/\s+/g, '')
+      const certPemBody  = certB64DER
+      const certDer      = Uint8Array.from(atob(certB64DER), c => c.charCodeAt(0))
+
+      const certDigestBytes = new Uint8Array(await sha256Bytes(new TextEncoder().encode(certPemBody)))
+      const certDigestHex   = Array.from(certDigestBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+      const certDigestB64   = btoa(certDigestHex)
+
+      const serialNumber = extractCertSerial(certDer)
+      const issuerName   = extractCertIssuerName(certDer)
+      const signingTime  = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+
+      const signedPropsXml = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
+      const spHashBytes    = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedPropsXml)))
+      const spHex          = Array.from(spHashBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+      const spDigestB64    = btoa(spHex)
+
+      return new Response(JSON.stringify({
+        certDerLength:     certDer.length,
+        certDerFirst10Hex: Array.from(certDer.slice(0, 10)).map(b => b.toString(16).padStart(2, '0')).join(' '),
+        certDigestLength:  certDigestB64.length,
+        certDigestB64,
+        signedPropsXml,
+        spDigestLength:    spDigestB64.length,
+        spDigestB64,
+        environment:       cert.environment,
+      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     const body = await req.json().catch(() => ({}))
