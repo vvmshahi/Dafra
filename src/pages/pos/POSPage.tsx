@@ -82,6 +82,8 @@ interface ReceiptData {
   receiptFooter: string | null
   showFooter: boolean
   showCashChange: boolean
+  logoUrl: string | null
+  showLogo: boolean
 }
 
 // ── VAT helpers ───────────────────────────────────────────────────────────────
@@ -272,6 +274,8 @@ ${lines}
       <ThermalReceipt
         businessNameAr={receipt.businessNameAr}
         businessNameEn={receipt.businessNameEn}
+        logoUrl={receipt.logoUrl}
+        showLogo={receipt.showLogo}
         branchName={receipt.branchName}
         address={receipt.branchAddress}
         vatNumber={receipt.vatNumber}
@@ -380,15 +384,13 @@ ${lines}
                 </button>
               )}
               {printMode === 'pdf' || printMode === 'both' ? (
-                <a
-                  href={`/invoices/${receipt.invoiceId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  onClick={() => window.open(`/invoices/${receipt.invoiceId}?print=1`, '_blank')}
                   className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
                 >
                   <Printer size={14} />
-                  View A4
-                </a>
+                  Print Invoice
+                </button>
               ) : null}
               {receipt.customerPhone && (
                 <button
@@ -764,6 +766,8 @@ export default function POSPage() {
         receiptFooter:   branch.receipt_footer,
         showFooter:      branch.show_footer ?? true,
         showCashChange:  branch.show_cash_change ?? true,
+        logoUrl:         branch.logo_url ?? null,
+        showLogo:        branch.show_logo ?? true,
       })
 
       setCart([])

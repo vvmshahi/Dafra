@@ -188,7 +188,7 @@ function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | 
 // ── InvoiceSettingsPage ───────────────────────────────────────────────────────
 
 export default function InvoiceSettingsPage() {
-  const { profile } = useAuth()
+  const { profile, loading: authLoading } = useAuth()
 
   const [branch,       setBranch]       = useState<Branch | null>(null)
   const [loading,      setLoading]      = useState(true)
@@ -214,9 +214,11 @@ export default function InvoiceSettingsPage() {
   })
 
   useEffect(() => {
+    if (authLoading) return  // wait for auth before deciding
     const bid = profile?.branch_id
     if (!bid) { setLoading(false); return }
-    supabase.from('branches').select('*').eq('id', bid).single().then(({ data }) => {
+    supabase.from('branches').select('*').eq('id', bid).single().then(({ data, error }) => {
+      if (error) { console.error('[InvoiceSettings] branch fetch:', error.message) }
       if (data) {
         const b = data as Branch
         setBranch(b)
@@ -237,7 +239,7 @@ export default function InvoiceSettingsPage() {
       }
       setLoading(false)
     })
-  }, [profile?.branch_id])
+  }, [profile?.branch_id, authLoading])
 
   function set<K extends keyof FormState>(key: K, val: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: val }))
@@ -340,29 +342,16 @@ export default function InvoiceSettingsPage() {
               <input type="text" value={form.display_name}
                 onChange={e => set('display_name', e.target.value)}
                 className="input" placeholder="e.g. Ameen Café (optional)" />
-              {form.display_name && (
-                <p className="text-[10px] text-amber-600 mt-1">
-                  ⚠ QR code always uses the legal business name above
-                </p>
-              )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">Phone Number</label>
-                <input type="tel" value={form.phone}
-                  onChange={e => set('phone', e.target.value)}
-                  className="input" placeholder="+966 5X XXX XXXX" />
-              </div>
-              <div>
-                <label className="label flex items-center">
-                  Email
-                  <InfoTip text="Shown on invoices when 'Show Email' is enabled" />
-                </label>
-                <input type="email" value={form.email}
-                  onChange={e => set('email', e.target.value)}
-                  className="input" placeholder="info@example.com" />
-              </div>
+            <div>
+              <label className="label flex items-center">
+                Email
+                <InfoTip text="Shown on invoices when 'Show Email' is enabled" />
+              </label>
+              <input type="email" value={form.email}
+                onChange={e => set('email', e.target.value)}
+                className="input" placeholder="info@example.com" />
             </div>
 
             <div>
@@ -373,6 +362,13 @@ export default function InvoiceSettingsPage() {
               <input type="url" value={form.website}
                 onChange={e => set('website', e.target.value)}
                 className="input" placeholder="https://example.com" />
+            </div>
+
+            <div>
+              <label className="label">Phone Number</label>
+              <input type="tel" value={form.phone}
+                onChange={e => set('phone', e.target.value)}
+                className="input" placeholder="+966 5X XXX XXXX" />
             </div>
 
             {/* Logo upload */}
@@ -565,6 +561,8 @@ export default function InvoiceSettingsPage() {
                   change={2.00}
                   showCashChange={form.show_cash_change}
                   customerName="Walk-in Customer"
+                  logoUrl={form.logo_url}
+                  showLogo={form.show_logo}
                   receiptFooter={form.receipt_footer || null}
                   showFooter={form.show_footer}
                 />

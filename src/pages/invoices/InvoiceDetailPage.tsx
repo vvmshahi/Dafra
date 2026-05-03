@@ -97,6 +97,7 @@ export default function InvoiceDetailPage() {
   const navigate   = useNavigate()
   const location   = useLocation()
   const debugMode  = new URLSearchParams(location.search).get('debug') === 'true'
+  const autoPrint  = new URLSearchParams(location.search).get('print') === '1'
   usePrintStyle()
 
   const [invoice,  setInvoice]  = useState<Invoice | null>(null)
@@ -217,6 +218,13 @@ export default function InvoiceDetailPage() {
     generateQR()
     return () => { cancelled = true }
   }, [invoice, branch, tenant])
+
+  // Auto-print when ?print=1 is in the URL
+  useEffect(() => {
+    if (!autoPrint || loading || !invoice || !branch) return
+    const t = setTimeout(() => window.print(), 500)
+    return () => clearTimeout(t)
+  }, [autoPrint, loading, invoice, branch])
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -346,6 +354,8 @@ ${lines}
         total={Number(invoice.total_amount)}
         paymentMethod={payment?.method ?? 'card'}
         customerName={customer?.name ?? null}
+        logoUrl={branch.logo_url}
+        showLogo={branch.show_logo ?? true}
         qrDataUrl={qrDataUrl}
         receiptFooter={branch.receipt_footer}
         showFooter={branch.show_footer ?? true}
@@ -375,20 +385,16 @@ ${lines}
               WhatsApp
             </button>
           )}
-          {(branch.print_mode ?? 'thermal') !== 'pdf' && (
-            <button onClick={handlePrintThermal}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
-              <Printer size={13} />
-              Print Receipt
-            </button>
-          )}
-          {(branch.print_mode ?? 'thermal') !== 'thermal' && (
-            <button onClick={handlePrintA4}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0F2419] rounded-xl hover:bg-[#1a3a28] transition-colors">
-              <Printer size={13} />
-              Print A4
-            </button>
-          )}
+          <button onClick={handlePrintThermal}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+            <Printer size={13} />
+            Print Receipt
+          </button>
+          <button onClick={handlePrintA4}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0F2419] rounded-xl hover:bg-[#1a3a28] transition-colors">
+            <Printer size={13} />
+            Print Invoice (PDF)
+          </button>
         </div>
       </div>
 
@@ -463,7 +469,7 @@ ${lines}
                 </div>
               </div>
 
-              <p className="text-[9px] text-gray-300 mt-2 font-mono break-all max-w-[200px] text-right">
+              <p className="text-[9px] text-gray-300 mt-2 font-mono break-all max-w-[200px] text-right no-print">
                 {invoice.zatca_uuid}
               </p>
             </div>
@@ -604,8 +610,8 @@ ${lines}
               <p className="text-[9px] text-gray-400 mt-1.5">ZATCA QR Code</p>
             </div>
 
-            {/* ZATCA info */}
-            <div className="flex-1 space-y-3">
+            {/* ZATCA info — screen only, not required on printed invoices */}
+            <div className="flex-1 space-y-3 no-print">
               <div>
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1.5">ZATCA e-Invoice</p>
                 <div className="flex items-center gap-2">

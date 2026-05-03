@@ -12,6 +12,8 @@ export interface ThermalReceiptProps {
   // Line 2 (small, grey): legal name — only printed if different from Line 1
   businessNameAr: string   // Line 1 — brand name (could be Arabic or English)
   businessNameEn: string   // Line 2 — legal company name (shown below only if different)
+  logoUrl?: string | null
+  showLogo?: boolean
   branchName?: string | null
   address?: string | null
   vatNumber?: string | null
@@ -85,7 +87,7 @@ export function printThermal(): void {
 export default function ThermalReceipt({
   id = 'thermal-receipt',
   preview = false,
-  businessNameAr, businessNameEn, branchName, address, vatNumber, phone,
+  businessNameAr, businessNameEn, logoUrl, showLogo = false, branchName, address, vatNumber, phone,
   website, showWebsite, email, showEmail,
   invoiceNumber, date, time,
   items, subtotal, taxAmount, total,
@@ -112,6 +114,13 @@ export default function ThermalReceipt({
         background: 'white',
       }}
     >
+      {/* Logo */}
+      {showLogo && logoUrl && (
+        <div style={{ textAlign: 'center', marginBottom: '6px' }}>
+          <img src={logoUrl} alt="logo" style={{ maxHeight: '60px', maxWidth: '200px', display: 'block', margin: '0 auto', objectFit: 'contain' }} />
+        </div>
+      )}
+
       {/* Business header */}
       <div style={{ textAlign: 'center', marginBottom: '4px' }}>
         {businessNameAr && (
@@ -219,15 +228,20 @@ export default function ThermalReceipt({
       <Dash />
 
       {/* Footer */}
-      <div style={{ textAlign: 'center', fontSize: '11px', paddingBottom: '8px' }}>
-        <div style={{ fontFamily: 'Cairo, "Segoe UI", sans-serif', fontSize: '13px', direction: 'rtl', marginBottom: '2px' }}>
-          شكراً لزيارتكم
+      {showFooter && (
+        <div style={{ textAlign: 'center', fontSize: '11px', paddingBottom: '8px' }}>
+          {receiptFooter ? (
+            <div style={{ fontSize: '10px', color: '#555' }}>{receiptFooter}</div>
+          ) : (
+            <>
+              <div style={{ fontFamily: 'Cairo, "Segoe UI", sans-serif', fontSize: '13px', direction: 'rtl', marginBottom: '2px' }}>
+                شكراً لزيارتكم
+              </div>
+              <div style={{ fontSize: '10px' }}>Thank you!</div>
+            </>
+          )}
         </div>
-        <div style={{ fontSize: '10px' }}>Thank you!</div>
-        {showFooter && receiptFooter && (
-          <div style={{ fontSize: '10px', color: '#555', marginTop: '4px' }}>{receiptFooter}</div>
-        )}
-      </div>
+      )}
     </div>
   )
 }
