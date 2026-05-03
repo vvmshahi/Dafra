@@ -435,9 +435,22 @@ function concatArrays(...arrs: Uint8Array[]): Uint8Array {
   return out
 }
 
+// Phase 1 QR — tags 1–5. Embedded in XML AdditionalDocumentReference for ZATCA submission.
+function buildPhase1QR(
+  sellerName: string, vatNumber: string, timestamp: string,
+  totalAmount: number, vatAmount: number,
+): string {
+  const all = concatArrays(
+    tlvStr(0x01, sellerName), tlvStr(0x02, vatNumber),
+    tlvStr(0x03, normTs(timestamp)),
+    tlvStr(0x04, totalAmount.toFixed(2)), tlvStr(0x05, vatAmount.toFixed(2)),
+  )
+  return btoa(String.fromCharCode(...all))
+}
+
 // Phase 2 QR — tags 1–8 (tag 9 cert CA sig omitted to stay under 1000-char limit).
-// tag 06/07 = base64 strings (UTF-8 bytes); tag 08 = SubjectPublicKeyInfo DER.
-function buildQR(
+// Stored in invoices.zatca_qr_code for printing on receipts.
+function buildPhase2QR(
   sellerName: string, vatNumber: string, timestamp: string,
   totalAmount: number, vatAmount: number,
   hashB64: string, sigB64: string, pubKeySpki: Uint8Array,
@@ -685,17 +698,21 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const hashBytes  = new Uint8Array(invoiceDigestBuf)
   const hashB64Str = btoa(String.fromCharCode(...hashBytes))
   const sigB64Str  = btoa(String.fromCharCode(...sigDerBytes))
-  const qrCode     = buildQR(
+
+  // Phase 1 QR (tags 1-5) goes into the XML — ZATCA submission rejects Phase 2 tags
+  const xmlQrCode  = buildPhase1QR(sellerName, vatNumber, timestamp, totalAmount, vatAmount)
+  // Phase 2 QR (tags 1-8) stored in DB for printing on receipts
+  const printQrCode = buildPhase2QR(
     sellerName, vatNumber, timestamp, totalAmount, vatAmount,
     hashB64Str, sigB64Str, pubKeySpki,
   )
 
   signedXml = signedXml.replace(
     /(<cbc:ID>QR<\/cbc:ID>[\s\S]*?<cbc:EmbeddedDocumentBinaryObject mimeCode="text\/plain">)([^<]*)(<\/cbc:EmbeddedDocumentBinaryObject>)/,
-    `$1${qrCode}$3`,
+    `$1${xmlQrCode}$3`,
   )
 
-  return { signedXml, invoiceHash: invoiceHashB64, qrCode }
+  return { signedXml, invoiceHash: invoiceHashB64, qrCode: printQrCode }
 }
 
 // ── Retry queue ───────────────────────────────────────────────────────────────
