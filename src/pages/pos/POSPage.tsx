@@ -500,16 +500,13 @@ ${lines}
                 </button>
               )}
               {printMode === 'pdf' || printMode === 'both' ? (
-                <div className="flex-1 flex flex-col gap-1">
-                  <button
-                    onClick={printPosA4}
-                    className="w-full py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <Printer size={14} />
-                    Print Invoice
-                  </button>
-                  <p className="text-[10px] text-gray-400 text-center">Tip: Set Headers and Footers to "None" for a clean invoice.</p>
-                </div>
+                <button
+                  onClick={printPosA4}
+                  className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Printer size={14} />
+                  Print Invoice
+                </button>
               ) : null}
               {receipt.customerPhone && (
                 <button
