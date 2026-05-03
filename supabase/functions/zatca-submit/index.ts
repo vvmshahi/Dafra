@@ -363,7 +363,7 @@ function buildInvoice(data: any, opts: any): string {
     itemTax.ele(NS.cbc, 'Percent').txt((line.taxRate * 100).toFixed(2))
     itemTax.ele(NS.cac, 'TaxScheme').ele(NS.cbc, 'ID').txt('VAT')
     const price = il.ele(NS.cac, 'Price')
-    price.ele(NS.cbc, 'PriceAmount').att('currencyID', 'SAR').txt(fmt(line.unitPrice))
+    price.ele(NS.cbc, 'PriceAmount').att('currencyID', 'SAR').txt(fmt(line.qty > 0 ? line.lineNetAmt / line.qty : 0))
     price.ele(NS.cbc, 'BaseQuantity').att('unitCode', 'PCE').txt('1')
   }
 
@@ -371,12 +371,11 @@ function buildInvoice(data: any, opts: any): string {
 }
 
 function buildInvoiceXMLData(inv: any, branch: any, items: any[], customer: any, isSimplified: boolean): any {
-  const dt = new Date(inv.created_at)
   return {
     invoiceNumber:   inv.invoice_number,
     uuid:            inv.zatca_uuid,
     issueDate:       inv.invoice_date,
-    issueTime:       dt.toISOString().slice(11, 19),
+    issueTime:       inv.issue_time ?? '00:00:00',
     counterValue:    inv.zatca_counter_number ?? 1,
     prevInvoiceHash: inv.zatca_prev_invoice_hash ?? FIRST_INVOICE_HASH,
     sellerName:      branch.business_name,
@@ -436,20 +435,19 @@ function concatArrays(...arrs: Uint8Array[]): Uint8Array {
   return out
 }
 
-// Phase 2 QR — all 9 TLV tags as required from Jan 2023.
-// tag 06/07 = base64 strings (UTF-8 bytes); tag 08 = 88-byte SubjectPublicKeyInfo DER; tag 09 = cert CA sig value.
-// Total ~465 bytes → ~620 base64 chars, well within the 1000-char XML field limit.
+// Phase 2 QR — tags 1–8 (tag 9 cert CA sig omitted to stay under 1000-char limit).
+// tag 06/07 = base64 strings (UTF-8 bytes); tag 08 = SubjectPublicKeyInfo DER.
 function buildQR(
   sellerName: string, vatNumber: string, timestamp: string,
   totalAmount: number, vatAmount: number,
-  hashB64: string, sigB64: string, pubKeySpki: Uint8Array, certSigValue: Uint8Array,
+  hashB64: string, sigB64: string, pubKeySpki: Uint8Array,
 ): string {
   const all = concatArrays(
     tlvStr(0x01, sellerName), tlvStr(0x02, vatNumber),
     tlvStr(0x03, normTs(timestamp)),
     tlvStr(0x04, totalAmount.toFixed(2)), tlvStr(0x05, vatAmount.toFixed(2)),
     tlvStr(0x06, hashB64), tlvStr(0x07, sigB64),
-    tlvBytes(0x08, pubKeySpki), tlvBytes(0x09, certSigValue),
+    tlvBytes(0x08, pubKeySpki),
   )
   return btoa(String.fromCharCode(...all))
 }
@@ -636,8 +634,6 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
 
   const serialNumber  = extractCertSerial(certDer)
   const issuerName    = extractCertIssuerName(certDer)              // DN string for xades:IssuerSerial
-  const certSigValue  = extractCertSignatureValue(certDer)          // CA signature for QR tag 9
-  // Extract SPKI from cert DER — guarantees QR tag 8 matches ds:X509Certificate
   const pubKeySpki    = extractCertPublicKeySpki(certDer)
 
   // Cert digest: base64(hex(SHA256(UTF8(certPemBody)))) — 88-char, matches ZATCA SDK format
@@ -657,7 +653,6 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   // Hash the dom4j asXML form (xmlns added) — base64(hex(SHA256)) = 88-char
   const signedPropsXml       = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
   const signedPropsHashInput = toSignedPropsHashInput(signedPropsXml)
-  console.log('[zatca-submit] signedPropsHashInput:', signedPropsHashInput)
   const signedPropsBytes     = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedPropsHashInput)))
   const signedPropsHex       = Array.from(signedPropsBytes).map(b => b.toString(16).padStart(2, '0')).join('')
   const signedPropsB64       = btoa(signedPropsHex)
@@ -692,7 +687,7 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const sigB64Str  = btoa(String.fromCharCode(...sigDerBytes))
   const qrCode     = buildQR(
     sellerName, vatNumber, timestamp, totalAmount, vatAmount,
-    hashB64Str, sigB64Str, pubKeySpki, certSigValue,
+    hashB64Str, sigB64Str, pubKeySpki,
   )
 
   signedXml = signedXml.replace(
@@ -700,7 +695,6 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
     `$1${qrCode}$3`,
   )
 
-  console.log('[zatca-submit] FULL SIGNED XML:', signedXml)
   return { signedXml, invoiceHash: invoiceHashB64, qrCode }
 }
 
@@ -720,7 +714,7 @@ async function processInvoice(db: any, invoiceId: string): Promise<{ invoiceStat
 
   const { data: inv, error: invErr } = await db
     .from('invoices')
-    .select(`id, invoice_number, zatca_uuid, zatca_invoice_type, invoice_date, created_at,
+    .select(`id, invoice_number, zatca_uuid, zatca_invoice_type, invoice_date, issue_time,
       zatca_counter_number, zatca_prev_invoice_hash, zatca_status,
       subtotal, discount_amount, taxable_amount, tax_amount, total_amount,
       branch_id, tenant_id, customer_id,
@@ -781,8 +775,6 @@ async function processInvoice(db: any, invoiceId: string): Promise<{ invoiceStat
     console.log('[zatca-submit] signing XML...')
     const { signedXml, invoiceHash, qrCode } = await signInvoice(unsignedXml, secretKey, cert.production_csid)
     console.log('[zatca-submit] signed OK, hash prefix:', invoiceHash.substring(0, 20))
-    console.log('[zatca-submit] prod_csid_raw length:', cert.production_csid.length)
-    console.log('[zatca-submit] prod_csid_raw first 50:', cert.production_csid.substring(0, 50))
 
     const env       = cert.environment === 'production' ? 'production' : 'sandbox'
     const baseUrl   = ZATCA_URLS[env]
