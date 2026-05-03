@@ -544,30 +544,26 @@ function canonicalizeInvoiceContent(xmlString: string): string {
   return c14n(doc.documentElement)
 }
 
+// dom4j asXML() format: xmlns:xades on root, xmlns:ds on each individual ds: element, self-closing DigestMethod.
+// This string is both embedded in the XML and hashed (base64(hex(SHA256(UTF8(this_string))))).
 function buildSignedProperties(signingTime: string, certDigest: string, issuerDn: string, serialNumber: string): string {
-  return `<xades:SignedProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="xadesSignedProperties"><xades:SignedSignatureProperties><xades:SigningTime>${signingTime}</xades:SigningTime><xades:SigningCertificate><xades:Cert><xades:CertDigest><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${certDigest}</ds:DigestValue></xades:CertDigest><xades:IssuerSerial><ds:X509IssuerName>${issuerDn}</ds:X509IssuerName><ds:X509SerialNumber>${serialNumber}</ds:X509SerialNumber></xades:IssuerSerial></xades:Cert></xades:SigningCertificate></xades:SignedSignatureProperties></xades:SignedProperties>`
-}
-
-// C14N11 canonical form of xades:SignedProperties as it appears in the signed document.
-// xades and ds are declared on the Invoice root element and therefore inherited — no xmlns decls emitted.
-// Empty elements expanded to open+close pairs (C14N11 requirement).
-function buildSignedPropertiesCanonical(signingTime: string, certDigest: string, issuerDn: string, serialNumber: string): string {
-  return '<xades:SignedProperties Id="xadesSignedProperties">'
-    + '<xades:SignedSignatureProperties>'
+  const dsNs = 'http://www.w3.org/2000/09/xmldsig#'
+  return `<xades:SignedProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Id="xadesSignedProperties">`
+    + `<xades:SignedSignatureProperties>`
     + `<xades:SigningTime>${escText(signingTime)}</xades:SigningTime>`
-    + '<xades:SigningCertificate><xades:Cert><xades:CertDigest>'
-    + '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></ds:DigestMethod>'
-    + `<ds:DigestValue>${escText(certDigest)}</ds:DigestValue>`
-    + '</xades:CertDigest><xades:IssuerSerial>'
-    + `<ds:X509IssuerName>${escText(issuerDn)}</ds:X509IssuerName>`
-    + `<ds:X509SerialNumber>${escText(serialNumber)}</ds:X509SerialNumber>`
-    + '</xades:IssuerSerial></xades:Cert></xades:SigningCertificate>'
-    + '</xades:SignedSignatureProperties>'
-    + '</xades:SignedProperties>'
+    + `<xades:SigningCertificate><xades:Cert><xades:CertDigest>`
+    + `<ds:DigestMethod xmlns:ds="${dsNs}" Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>`
+    + `<ds:DigestValue xmlns:ds="${dsNs}">${escText(certDigest)}</ds:DigestValue>`
+    + `</xades:CertDigest><xades:IssuerSerial>`
+    + `<ds:X509IssuerName xmlns:ds="${dsNs}">${escText(issuerDn)}</ds:X509IssuerName>`
+    + `<ds:X509SerialNumber xmlns:ds="${dsNs}">${escText(serialNumber)}</ds:X509SerialNumber>`
+    + `</xades:IssuerSerial></xades:Cert></xades:SigningCertificate>`
+    + `</xades:SignedSignatureProperties>`
+    + `</xades:SignedProperties>`
 }
 
 function buildSignedInfo(invoiceDigest: string, signedPropsDigest: string): string {
-  return `<ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2006/12/xml-c14n11"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"/><ds:Reference Id="invoiceSignedData" URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::ext:UBLExtensions)</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:Signature)</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:AdditionalDocumentReference[cbc:ID='QR'])</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/2006/12/xml-c14n11"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${invoiceDigest}</ds:DigestValue></ds:Reference><ds:Reference Type="http://uri.etsi.org/01903/v1.3.2#SignedProperties" URI="#xadesSignedProperties"><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${signedPropsDigest}</ds:DigestValue></ds:Reference></ds:SignedInfo>`
+  return `<ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2006/12/xml-c14n11"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"/><ds:Reference Id="invoiceSignedData" URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::ext:UBLExtensions)</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:Signature)</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:AdditionalDocumentReference[cbc:ID='QR'])</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/2006/12/xml-c14n11"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${invoiceDigest}</ds:DigestValue></ds:Reference><ds:Reference Type="http://www.w3.org/2000/09/xmldsig#SignatureProperties" URI="#xadesSignedProperties"><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${signedPropsDigest}</ds:DigestValue></ds:Reference></ds:SignedInfo>`
 }
 
 // C14N11 canonical form of ds:SignedInfo as it appears in the signed document.
@@ -587,7 +583,7 @@ function buildSignedInfoCanonical(invoiceDigest: string, signedPropsDigest: stri
     + '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></ds:DigestMethod>'
     + `<ds:DigestValue>${escText(invoiceDigest)}</ds:DigestValue>`
     + '</ds:Reference>'
-    + '<ds:Reference Type="http://uri.etsi.org/01903/v1.3.2#SignedProperties" URI="#xadesSignedProperties">'
+    + '<ds:Reference Type="http://www.w3.org/2000/09/xmldsig#SignatureProperties" URI="#xadesSignedProperties">'
     + '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></ds:DigestMethod>'
     + `<ds:DigestValue>${escText(signedPropsDigest)}</ds:DigestValue>`
     + '</ds:Reference>'
@@ -601,7 +597,7 @@ function buildXadesBlock(
 ): string {
   const signedInfo  = buildSignedInfo(invoiceDigest, signedPropsDigest)
   const signedProps = buildSignedProperties(signingTime, certDigest, _issuerDn, serialNumber)
-  return `<sig:UBLDocumentSignatures xmlns:sig="urn:oasis:names:specification:ubl:schema:xsd:CommonSignatureComponents-2" xmlns:sac="urn:oasis:names:specification:ubl:schema:xsd:SignatureAggregateComponents-2" xmlns:sbc="urn:oasis:names:specification:ubl:schema:xsd:SignatureBasicComponents-2"><sac:SignatureInformation><cbc:ID xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">urn:oasis:names:specification:ubl:signature:1</cbc:ID><sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:Invoice</sbc:ReferencedSignatureID><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="signature">${signedInfo}<ds:SignatureValue>${sigValue}</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>${certPemBody}</ds:X509Certificate></ds:X509Data></ds:KeyInfo><ds:Object><xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Target="#signature">${signedProps}</xades:QualifyingProperties></ds:Object></ds:Signature></sac:SignatureInformation></sig:UBLDocumentSignatures>`
+  return `<sig:UBLDocumentSignatures xmlns:sig="urn:oasis:names:specification:ubl:schema:xsd:CommonSignatureComponents-2" xmlns:sac="urn:oasis:names:specification:ubl:schema:xsd:SignatureAggregateComponents-2" xmlns:sbc="urn:oasis:names:specification:ubl:schema:xsd:SignatureBasicComponents-2"><sac:SignatureInformation><cbc:ID xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">urn:oasis:names:specification:ubl:signature:1</cbc:ID><sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:Invoice</sbc:ReferencedSignatureID><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="signature">${signedInfo}<ds:SignatureValue>${sigValue}</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>${certPemBody}</ds:X509Certificate></ds:X509Data></ds:KeyInfo><ds:Object><xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Target="signature">${signedProps}</xades:QualifyingProperties></ds:Object></ds:Signature></sac:SignatureInformation></sig:UBLDocumentSignatures>`
 }
 
 async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate: string): Promise<{
@@ -620,8 +616,9 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   // Extract SPKI from cert DER — guarantees QR tag 8 matches ds:X509Certificate
   const pubKeySpki    = extractCertPublicKeySpki(certDer)
 
-  const certDigestBytes = new Uint8Array(await sha256Bytes(certDer))
-  const certDigestB64   = btoa(String.fromCharCode(...certDigestBytes))
+  const certDigestBytes = new Uint8Array(await sha256Bytes(new TextEncoder().encode(certPemBody)))
+  const certDigestHex   = Array.from(certDigestBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+  const certDigestB64   = btoa(certDigestHex)
 
   const invoiceCanonical = canonicalizeInvoiceContent(xmlString)
   const invoiceDigestBuf = await sha256(invoiceCanonical)
@@ -630,11 +627,11 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
 
   const signingTime = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
 
-  const signedPropsXml   = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
-  const signedPropsCanon = buildSignedPropertiesCanonical(signingTime, certDigestB64, issuerName, serialNumber)
-  console.log('[zatca-submit] signedPropsCanon:', signedPropsCanon)
-  const signedPropsBuf   = await sha256Bytes(new TextEncoder().encode(signedPropsCanon))
-  const signedPropsB64   = btoa(String.fromCharCode(...new Uint8Array(signedPropsBuf)))
+  const signedPropsXml        = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
+  console.log('[zatca-submit] signedPropsXml:', signedPropsXml)
+  const signedPropsHashBytes  = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedPropsXml)))
+  const signedPropsHex        = Array.from(signedPropsHashBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+  const signedPropsB64        = btoa(signedPropsHex)
 
   const signedInfoCanon  = buildSignedInfoCanonical(invoiceDigestB64, signedPropsB64)
   const signedInfoHash   = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedInfoCanon)))
