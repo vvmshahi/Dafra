@@ -277,7 +277,7 @@ ${lines}
     s.id = 'pos-pdf-print-style'
     s.textContent = `
       @media print {
-        @page { size: A4; margin: 10mm; }
+        @page { size: A4; margin: 15mm; }
         html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         body { visibility: hidden !important; }
         #thermal-receipt { display: none !important; visibility: hidden !important; }
@@ -347,8 +347,8 @@ ${lines}
               <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
                 <td style={{ padding: '10px 4px', fontSize: '13px', color: '#111827' }}>{item.name}</td>
                 <td style={{ textAlign: 'right', padding: '10px 4px', fontSize: '12px', color: '#6b7280' }}>{item.qty}</td>
-                <td style={{ textAlign: 'right', padding: '10px 4px', fontSize: '12px', color: '#374151' }}>SAR {item.unitPrice.toFixed(2)}</td>
-                <td style={{ textAlign: 'right', padding: '10px 4px', fontSize: '13px', fontWeight: '600', color: '#111827' }}>SAR {item.lineTotal.toFixed(2)}</td>
+                <td style={{ textAlign: 'right', padding: '10px 4px', fontSize: '12px', color: '#374151' }}><Rial amount={item.unitPrice} /></td>
+                <td style={{ textAlign: 'right', padding: '10px 4px', fontSize: '13px', fontWeight: '600', color: '#111827' }}><Rial amount={item.lineTotal} /></td>
               </tr>
             ))}
           </tbody>
@@ -357,13 +357,13 @@ ${lines}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
           <div style={{ width: '240px', background: '#f9fafb', borderRadius: '8px', padding: '14px 16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>
-              <span>Subtotal</span><span>SAR {receipt.subtotal.toFixed(2)}</span>
+              <span>Subtotal</span><span><Rial amount={receipt.subtotal} /></span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '600', color: '#b45309', background: '#fffbeb', padding: '4px 6px', borderRadius: '4px', marginBottom: '6px' }}>
-              <span>VAT (15%)</span><span>SAR {receipt.taxAmount.toFixed(2)}</span>
+              <span>VAT (15%)</span><span><Rial amount={receipt.taxAmount} /></span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 'bold', color: '#111827', borderTop: '1px solid #e5e7eb', paddingTop: '8px', marginTop: '4px' }}>
-              <span>Total</span><span>SAR {receipt.total.toFixed(2)}</span>
+              <span>Total</span><span><Rial amount={receipt.total} /></span>
             </div>
           </div>
         </div>
@@ -371,7 +371,7 @@ ${lines}
         <div style={{ fontSize: '12px', color: '#374151', marginBottom: '20px', padding: '10px 14px', background: '#f9fafb', borderRadius: '8px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
           <span><strong>Payment:</strong> {receipt.paymentMethod === 'cash' ? 'Cash' : 'Card'}</span>
           {receipt.paymentMethod === 'cash' && receipt.cashReceived > 0 && (
-            <span><strong>Received:</strong> SAR {receipt.cashReceived.toFixed(2)}</span>
+            <span><strong>Received:</strong> <Rial amount={receipt.cashReceived} /></span>
           )}
         </div>
         {/* QR + footer */}
@@ -379,7 +379,7 @@ ${lines}
           {qrDataUrl && (
             <div style={{ textAlign: 'center', flexShrink: 0 }}>
               <img src={qrDataUrl} alt="ZATCA QR" style={{ width: '100px', height: '100px', display: 'block' }} />
-              <div style={{ fontSize: '9px', color: '#d1d5db', marginTop: '4px' }}>ZATCA QR Code</div>
+              <div style={{ fontSize: '9px', color: '#d1d5db', marginTop: '4px' }}>Scan to verify invoice</div>
             </div>
           )}
           <div style={{ fontSize: '9px', color: '#d1d5db' }}>This is a computer-generated invoice.</div>
@@ -500,13 +500,16 @@ ${lines}
                 </button>
               )}
               {printMode === 'pdf' || printMode === 'both' ? (
-                <button
-                  onClick={printPosA4}
-                  className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <Printer size={14} />
-                  Print Invoice
-                </button>
+                <div className="flex-1 flex flex-col gap-1">
+                  <button
+                    onClick={printPosA4}
+                    className="w-full py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Printer size={14} />
+                    Print Invoice
+                  </button>
+                  <p className="text-[10px] text-gray-400 text-center">Tip: Set Headers and Footers to "None" for a clean invoice.</p>
+                </div>
               ) : null}
               {receipt.customerPhone && (
                 <button

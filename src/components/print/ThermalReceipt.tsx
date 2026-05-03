@@ -1,3 +1,6 @@
+import type { ReactNode } from 'react'
+import { RiyalSymbol } from '@/components/ui/RiyalSymbol'
+
 export interface ThermalItem {
   name: string
   qty: number
@@ -40,11 +43,15 @@ export interface ThermalReceiptProps {
   showFooter?: boolean
 }
 
-function sar(n: number): string {
-  return `SAR ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+function Amt({ n }: { n: number }) {
+  return (
+    <span style={{ whiteSpace: 'nowrap' }}>
+      <RiyalSymbol />{' '}{n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+    </span>
+  )
 }
 
-function TRow({ left, right, bold }: { left: string; right: string; bold?: boolean }) {
+function TRow({ left, right, bold }: { left: string; right: ReactNode; bold?: boolean }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: bold ? 'bold' : 'normal', fontSize: bold ? '12px' : '11px', marginBottom: '1px' }}>
       <span>{left}</span><span>{right}</span>
@@ -171,8 +178,8 @@ export default function ThermalReceipt({
           <div key={i} style={{ marginBottom: '3px' }}>
             <div style={{ fontSize: '11px', fontWeight: 600, wordBreak: 'break-word' }}>{item.name}</div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#333' }}>
-              <span>{item.qty} x {sar(item.unitPrice)}</span>
-              <span>{sar(item.lineTotal)}</span>
+              <span>{item.qty} x <Amt n={item.unitPrice} /></span>
+              <span><Amt n={item.lineTotal} /></span>
             </div>
           </div>
         ))}
@@ -182,10 +189,10 @@ export default function ThermalReceipt({
 
       {/* Totals */}
       <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-        <TRow left="Subtotal:" right={sar(subtotal)} />
-        <TRow left="VAT (15%):" right={sar(taxAmount)} />
+        <TRow left="Subtotal:" right={<Amt n={subtotal} />} />
+        <TRow left="VAT (15%):" right={<Amt n={taxAmount} />} />
         <div style={{ borderTop: '1px solid #000', margin: '3px 0' }} />
-        <TRow left="TOTAL:" right={sar(total)} bold />
+        <TRow left="TOTAL:" right={<Amt n={total} />} bold />
       </div>
 
       <Dash />
@@ -194,10 +201,10 @@ export default function ThermalReceipt({
       <div style={{ fontSize: '11px', marginBottom: '4px' }}>
         <div>Payment: <strong>{paymentMethod === 'cash' ? 'Cash' : 'Card'}</strong></div>
         {paymentMethod === 'cash' && cashReceived != null && cashReceived > 0 && (
-          <TRow left="Received:" right={sar(cashReceived)} />
+          <TRow left="Received:" right={<Amt n={cashReceived} />} />
         )}
         {showCashChange && paymentMethod === 'cash' && (change ?? 0) > 0.005 && (
-          <TRow left="Change:" right={sar(change ?? 0)} />
+          <TRow left="Change:" right={<Amt n={change ?? 0} />} />
         )}
       </div>
 

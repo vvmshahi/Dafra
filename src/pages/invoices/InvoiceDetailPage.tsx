@@ -70,7 +70,7 @@ function usePrintStyle() {
     style.id = 'invoice-print-style'
     style.textContent = `
       @media print {
-        @page { size: A4; margin: 10mm; }
+        @page { size: A4; margin: 15mm; }
         html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         body { visibility: hidden !important; }
         #invoice-printable, #invoice-printable * { visibility: visible !important; }
@@ -114,6 +114,18 @@ export default function InvoiceDetailPage() {
   const [qrPayload,    setQrPayload]    = useState<string | null>(null)
   const [resubmitting, setResubmitting] = useState(false)
   const [isPhase2,     setIsPhase2]     = useState(false)
+  const [isPrinting,   setIsPrinting]   = useState(false)
+
+  useEffect(() => {
+    const before = () => setIsPrinting(true)
+    const after  = () => setIsPrinting(false)
+    window.addEventListener('beforeprint', before)
+    window.addEventListener('afterprint',  after)
+    return () => {
+      window.removeEventListener('beforeprint', before)
+      window.removeEventListener('afterprint',  after)
+    }
+  }, [])
 
   // Load data
   useEffect(() => {
@@ -395,11 +407,14 @@ ${lines}
             <Printer size={13} />
             Print Receipt
           </button>
-          <button onClick={handlePrintA4}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0F2419] rounded-xl hover:bg-[#1a3a28] transition-colors">
-            <Printer size={13} />
-            Print Invoice (PDF)
-          </button>
+          <div className="flex flex-col items-end gap-1">
+            <button onClick={handlePrintA4}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0F2419] rounded-xl hover:bg-[#1a3a28] transition-colors">
+              <Printer size={13} />
+              Print Invoice (PDF)
+            </button>
+            <p className="text-[10px] text-gray-400">Tip: In the print dialog, set Headers and Footers to "None" for a clean invoice.</p>
+          </div>
         </div>
       </div>
 
@@ -604,11 +619,11 @@ ${lines}
                   <Loader2 size={20} className="animate-spin text-gray-300" />
                 </div>
               )}
-              <p className="text-[9px] text-gray-400 mt-1.5">ZATCA QR Code</p>
+              <p className="text-[9px] text-gray-400 mt-1.5">Scan to verify invoice</p>
             </div>
 
             {/* ZATCA info — screen only, not required on printed invoices */}
-            <div className="flex-1 space-y-3 no-print">
+            {!isPrinting && <div className="flex-1 space-y-3">
               <div>
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1.5">ZATCA e-Invoice</p>
                 <div className="flex items-center gap-2">
@@ -642,7 +657,7 @@ ${lines}
                   </div>
                 )}
               </div>
-            </div>
+            </div>}
 
           </div>
         </div>
