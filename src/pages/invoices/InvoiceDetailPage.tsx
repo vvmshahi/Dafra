@@ -5,6 +5,7 @@ import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { buildZatcaQR, decodeTLV } from '@/lib/zatca/qr'
+import { toSaudiTime } from '@/lib/utils/date'
 import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
 import type { Invoice, InvoiceItem, Payment, Branch } from '@/types/database'
 
@@ -70,6 +71,7 @@ function usePrintStyle() {
     style.textContent = `
       @media print {
         @page { size: A4; margin: 10mm; }
+        html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         body { visibility: hidden !important; }
         #invoice-printable, #invoice-printable * { visibility: visible !important; }
         #invoice-printable {
@@ -296,7 +298,10 @@ ${lines}
 
   // ── Derived display values ─────────────────────────────────────────────────
 
-  const { date: invDate, time: invTime } = fmtDateTime(invoice.created_at)
+  const invDate = new Date(invoice.created_at).toLocaleDateString('en-GB', {
+    timeZone: 'Asia/Riyadh', day: '2-digit', month: 'long', year: 'numeric',
+  })
+  const invTime = toSaudiTime(invoice.created_at)
   const zatcaMeta = ZATCA_STATUS[invoice.zatca_status] ?? ZATCA_STATUS.pending
   const payment   = payments[0] ?? null
   const payLabel  = payment ? (PAY_LABEL[payment.method] ?? payment.method) : null
@@ -337,7 +342,7 @@ ${lines}
       <ThermalReceipt
         businessNameAr={brandName}
         businessNameEn={legalName}
-        branchName={branch.name}
+        branchName={null}
         address={thermalAddress || null}
         vatNumber={vatNumber}
         phone={branch.phone}
@@ -478,30 +483,22 @@ ${lines}
 
         {/* ── Customer section ────────────────────────────── */}
         <div className="px-8 py-5 border-b border-gray-100 bg-gray-50/50">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1">Bill To</p>
-              {customer ? (
-                <>
-                  <p className="text-sm font-semibold text-gray-900">{customer.name}</p>
-                  {customer.name_ar && (
-                    <p className="text-xs text-gray-400" dir="rtl">{customer.name_ar}</p>
-                  )}
-                  {customer.vat_number && (
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      <span className="font-semibold">VAT:</span> {customer.vat_number}
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="text-sm text-gray-600">Walk-in Customer</p>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1">Bill To</p>
+          {customer ? (
+            <>
+              <p className="text-sm font-semibold text-gray-900">{customer.name}</p>
+              {customer.name_ar && (
+                <p className="text-xs text-gray-400" dir="rtl">{customer.name_ar}</p>
               )}
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1">Supply Date</p>
-              <p className="text-xs text-gray-600">{invoice.supply_date ? fmtDateTime(invoice.supply_date).date : invDate}</p>
-            </div>
-          </div>
+              {customer.vat_number && (
+                <p className="text-xs text-gray-500 mt-0.5">
+                  <span className="font-semibold">VAT:</span> {customer.vat_number}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-gray-600">Walk-in Customer</p>
+          )}
         </div>
 
         {/* ── Line items table ─────────────────────────────── */}
@@ -647,24 +644,6 @@ ${lines}
               </div>
             </div>
 
-            {/* VAT breakdown (right) */}
-            <div className="flex-shrink-0 text-right">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">VAT Summary</p>
-              <div className="text-xs text-gray-600 space-y-1">
-                <div className="flex gap-6 justify-end">
-                  <span className="text-gray-400">Taxable</span>
-                  <span className="tabular-nums"><Rial amount={Number(invoice.taxable_amount)} /></span>
-                </div>
-                <div className="flex gap-6 justify-end">
-                  <span className="text-gray-400">Tax Rate</span>
-                  <span>15%</span>
-                </div>
-                <div className="flex gap-6 justify-end font-semibold text-amber-700">
-                  <span>VAT</span>
-                  <span className="tabular-nums"><Rial amount={Number(invoice.tax_amount)} /></span>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 

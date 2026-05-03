@@ -540,7 +540,7 @@ export default function InvoiceSettingsPage() {
                   preview
                   businessNameAr={previewBrandName}
                   businessNameEn={previewLegalName}
-                  branchName={branch?.name}
+                  branchName={null}
                   address={previewAddress || null}
                   vatNumber={branch?.vat_number ?? undefined}
                   phone={form.phone || undefined}
