@@ -544,8 +544,7 @@ function canonicalizeInvoiceContent(xmlString: string): string {
   return c14n(doc.documentElement)
 }
 
-// dom4j asXML() format: xmlns:xades on root, xmlns:ds on each individual ds: element, self-closing DigestMethod.
-// This string is both embedded in the XML and hashed (base64(hex(SHA256(UTF8(this_string))))).
+// Used for embedding in the final XML (xmlns declarations present for standalone validity).
 function buildSignedProperties(signingTime: string, certDigest: string, issuerDn: string, serialNumber: string): string {
   const dsNs = 'http://www.w3.org/2000/09/xmldsig#'
   return `<xades:SignedProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Id="xadesSignedProperties">`
@@ -560,6 +559,25 @@ function buildSignedProperties(signingTime: string, certDigest: string, issuerDn
     + `</xades:IssuerSerial></xades:Cert></xades:SigningCertificate>`
     + `</xades:SignedSignatureProperties>`
     + `</xades:SignedProperties>`
+}
+
+// C14N11 canonical form as ZATCA computes it: xmlns:xades and xmlns:ds are both declared on
+// ancestor elements (xades:QualifyingProperties and ds:Signature), so C14N11 inherits them —
+// NO xmlns declarations emitted on xades:SignedProperties or its children.
+// Empty elements use open+close tags (C14N11 requirement).
+function buildSignedPropertiesCanonical(signingTime: string, certDigest: string, issuerDn: string, serialNumber: string): string {
+  return '<xades:SignedProperties Id="xadesSignedProperties">'
+    + '<xades:SignedSignatureProperties>'
+    + `<xades:SigningTime>${escText(signingTime)}</xades:SigningTime>`
+    + '<xades:SigningCertificate><xades:Cert><xades:CertDigest>'
+    + '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></ds:DigestMethod>'
+    + `<ds:DigestValue>${escText(certDigest)}</ds:DigestValue>`
+    + '</xades:CertDigest><xades:IssuerSerial>'
+    + `<ds:X509IssuerName>${escText(issuerDn)}</ds:X509IssuerName>`
+    + `<ds:X509SerialNumber>${escText(serialNumber)}</ds:X509SerialNumber>`
+    + '</xades:IssuerSerial></xades:Cert></xades:SigningCertificate>'
+    + '</xades:SignedSignatureProperties>'
+    + '</xades:SignedProperties>'
 }
 
 function buildSignedInfo(invoiceDigest: string, signedPropsDigest: string): string {
@@ -616,9 +634,8 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   // Extract SPKI from cert DER — guarantees QR tag 8 matches ds:X509Certificate
   const pubKeySpki    = extractCertPublicKeySpki(certDer)
 
-  const certDigestBytes = new Uint8Array(await sha256Bytes(new TextEncoder().encode(certPemBody)))
-  const certDigestHex   = Array.from(certDigestBytes).map(b => b.toString(16).padStart(2, '0')).join('')
-  const certDigestB64   = btoa(certDigestHex)
+  const certDigestBytes = new Uint8Array(await sha256Bytes(certDer))
+  const certDigestB64   = btoa(String.fromCharCode(...certDigestBytes))
 
   const invoiceCanonical = canonicalizeInvoiceContent(xmlString)
   const invoiceDigestBuf = await sha256(invoiceCanonical)
@@ -627,11 +644,11 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
 
   const signingTime = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
 
-  const signedPropsXml        = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
-  console.log('[zatca-submit] signedPropsXml:', signedPropsXml)
-  const signedPropsHashBytes  = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedPropsXml)))
-  const signedPropsHex        = Array.from(signedPropsHashBytes).map(b => b.toString(16).padStart(2, '0')).join('')
-  const signedPropsB64        = btoa(signedPropsHex)
+  const signedPropsXml    = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
+  const signedPropsCanon  = buildSignedPropertiesCanonical(signingTime, certDigestB64, issuerName, serialNumber)
+  console.log('[zatca-submit] signedPropsCanon:', signedPropsCanon)
+  const signedPropsBytes  = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedPropsCanon)))
+  const signedPropsB64    = btoa(String.fromCharCode(...signedPropsBytes))
 
   const signedInfoCanon  = buildSignedInfoCanonical(invoiceDigestB64, signedPropsB64)
   const signedInfoHash   = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedInfoCanon)))
