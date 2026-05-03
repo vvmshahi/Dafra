@@ -186,7 +186,8 @@ export default function InvoiceDetailPage() {
       const storedPayload = invoice!.zatca_qr_code
 
       const payload = storedPayload ?? buildZatcaQR({
-        sellerName:  branch!.business_name_ar || branch!.business_name || branch!.name_ar || branch!.name,
+        // QR tag 1: always use legal business_name, never display_name (ZATCA requirement)
+        sellerName:  branch!.business_name || branch!.name,
         vatNumber:   branch!.vat_number || tenant!.vat_number || '',
         timestamp:   invoice!.created_at,
         totalAmount: Number(invoice!.total_amount),
@@ -234,7 +235,7 @@ export default function InvoiceDetailPage() {
     const date = fmtDateTime(invoice!.created_at).date
     const m = (n: number) => `SAR ${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
     const lines = items.map(i => `${i.name} × ${Number(i.quantity)}  ${m(Number(i.total))}`).join('\n')
-    const bizName = sellerNameAr || sellerNameEn
+    const bizName = brandName
     const msg = `فاتورتك من ${bizName}
 ━━━━━━━━━━━━━━━
 رقم الفاتورة: ${invoice!.invoice_number}
@@ -293,8 +294,8 @@ ${lines}
   const payLabel  = payment ? (PAY_LABEL[payment.method] ?? payment.method) : null
   const isCancelled = invoice.status === 'cancelled'
 
-  const sellerNameAr = branch.business_name_ar || branch.name_ar || branch.name
-  const sellerNameEn = branch.display_name || branch.business_name || branch.name
+  const brandName = branch.display_name || branch.business_name || branch.name
+  const legalName = branch.business_name || branch.name
   const vatNumber    = branch.vat_number || tenant?.vat_number || '—'
   const crNumber     = branch.cr_number  || tenant?.cr_number  || '—'
 
@@ -326,8 +327,8 @@ ${lines}
 
       {/* ── Hidden thermal receipt (for print) ──────────── */}
       <ThermalReceipt
-        businessNameAr={sellerNameAr}
-        businessNameEn={sellerNameEn}
+        businessNameAr={brandName}
+        businessNameEn={legalName}
         branchName={branch.name}
         address={thermalAddress || null}
         vatNumber={vatNumber}
@@ -418,10 +419,10 @@ ${lines}
                 </div>
               )}
               <div>
-                <p className="text-xl font-bold text-gray-900" dir="rtl" style={{ fontFamily: 'Cairo, sans-serif' }}>
-                  {sellerNameAr}
+                <p className="text-xl font-bold text-gray-900" dir="auto" style={{ fontFamily: 'Cairo, sans-serif' }}>
+                  {brandName}
                 </p>
-                <p className="text-sm text-gray-500 font-medium">{sellerNameEn}</p>
+                {legalName !== brandName && <p className="text-sm text-gray-400 font-medium">{legalName}</p>}
                 {addressParts && <p className="text-xs text-gray-400 mt-1 max-w-xs">{addressParts}</p>}
                 <div className="flex flex-wrap gap-3 mt-2">
                   <span className="text-[10px] text-gray-500">
@@ -664,7 +665,7 @@ ${lines}
         {/* Footer note */}
         <div className="px-8 pb-6 text-center">
           <p className="text-[9px] text-gray-300">
-            This is a computer-generated invoice. · Powered by دفرة (Dafra) ERP
+            This is a computer-generated invoice.
           </p>
         </div>
       </div>

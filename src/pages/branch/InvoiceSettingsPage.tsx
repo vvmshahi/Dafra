@@ -9,12 +9,6 @@ import type { Branch } from '@/types/database'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface FormState {
-  business_name: string
-  business_name_ar: string
-  vat_number: string
-  cr_number: string
-  building_number: string
-  postal_code: string
   display_name: string
   phone: string
   show_logo: boolean
@@ -70,14 +64,14 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 // ── A4 Invoice Preview ────────────────────────────────────────────────────────
 
 function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | null }) {
-  const nameEn  = form.display_name || form.business_name || branch?.name || 'Business Name'
-  const nameAr  = form.business_name_ar || branch?.name_ar || branch?.name || 'اسم الشركة'
+  const brandName = form.display_name || branch?.business_name || branch?.name || 'Business Name'
+  const legalName = branch?.business_name || branch?.name || ''
   const address = [
-    form.building_number ? `Building ${form.building_number}` : null,
+    branch?.building_number ? `Building ${branch.building_number}` : null,
     branch?.street,
     branch?.district,
     branch?.city,
-    form.postal_code || null,
+    branch?.postal_code || null,
   ].filter(Boolean).join(', ')
 
   return (
@@ -97,15 +91,15 @@ function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | 
               </div>
             )}
             <div>
-              <p className="font-bold text-gray-900 text-sm" dir="rtl" style={{ fontFamily: 'Cairo, sans-serif' }}>{nameAr}</p>
-              <p className="text-gray-500">{nameEn}</p>
+              <p className="font-bold text-gray-900 text-sm" dir="auto" style={{ fontFamily: 'Cairo, sans-serif' }}>{brandName}</p>
+              {legalName !== brandName && <p className="text-gray-400 text-[10px]">{legalName}</p>}
               {address && <p className="text-gray-400 text-[10px] mt-0.5 max-w-[180px]">{address}</p>}
               <div className="flex flex-wrap gap-2.5 mt-1.5">
-                {form.vat_number && (
-                  <span className="text-[10px] text-gray-500"><span className="font-semibold text-gray-600">VAT:</span> {form.vat_number}</span>
+                {branch?.vat_number && (
+                  <span className="text-[10px] text-gray-500"><span className="font-semibold text-gray-600">VAT:</span> {branch.vat_number}</span>
                 )}
-                {form.cr_number && (
-                  <span className="text-[10px] text-gray-500"><span className="font-semibold text-gray-600">CR:</span> {form.cr_number}</span>
+                {branch?.cr_number && (
+                  <span className="text-[10px] text-gray-500"><span className="font-semibold text-gray-600">CR:</span> {branch.cr_number}</span>
                 )}
               </div>
               {form.show_website && form.website && (
@@ -185,7 +179,6 @@ function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | 
           {form.show_footer && form.receipt_footer && (
             <p className="text-gray-500">{form.receipt_footer}</p>
           )}
-          <p>Powered by دفرة (Dafra) ERP</p>
         </div>
       </div>
     </div>
@@ -206,12 +199,6 @@ export default function InvoiceSettingsPage() {
   const [previewMode,  setPreviewMode]  = useState<'thermal' | 'a4'>('thermal')
 
   const [form, setForm] = useState<FormState>({
-    business_name:    '',
-    business_name_ar: '',
-    vat_number:       '',
-    cr_number:        '',
-    building_number:  '',
-    postal_code:      '',
     display_name:     '',
     phone:            '',
     show_logo:        true,
@@ -234,12 +221,6 @@ export default function InvoiceSettingsPage() {
         const b = data as Branch
         setBranch(b)
         setForm({
-          business_name:    b.business_name    ?? '',
-          business_name_ar: b.business_name_ar ?? '',
-          vat_number:       b.vat_number       ?? '',
-          cr_number:        b.cr_number        ?? '',
-          building_number:  b.building_number  ?? '',
-          postal_code:      b.postal_code      ?? '',
           display_name:     b.display_name     ?? '',
           phone:            b.phone            ?? '',
           show_logo:        b.show_logo        ?? true,
@@ -289,12 +270,6 @@ export default function InvoiceSettingsPage() {
     setSaveOk(false)
     try {
       const { error } = await (supabase as any).from('branches').update({
-        business_name:    form.business_name    || null,
-        business_name_ar: form.business_name_ar || null,
-        vat_number:       form.vat_number       || null,
-        cr_number:        form.cr_number        || null,
-        building_number:  form.building_number  || null,
-        postal_code:      form.postal_code      || null,
         display_name:     form.display_name     || null,
         phone:            form.phone            || null,
         show_logo:        form.show_logo,
@@ -326,10 +301,10 @@ export default function InvoiceSettingsPage() {
     )
   }
 
-  const previewDisplayName = form.display_name || form.business_name || branch?.name || ''
-  const previewNameAr      = form.business_name_ar || branch?.name_ar || branch?.name || ''
+  const previewBrandName = form.display_name || branch?.business_name || branch?.name || ''
+  const previewLegalName = branch?.business_name || branch?.name || ''
   const previewAddress = [
-    form.building_number ? `Building ${form.building_number}` : null,
+    branch?.building_number ? `Building ${branch.building_number}` : null,
     branch?.street, branch?.district, branch?.city,
   ].filter(Boolean).join(', ')
 
@@ -347,80 +322,7 @@ export default function InvoiceSettingsPage() {
         {/* ── LEFT: Form (fixed width) ──────────────────────── */}
         <div className="w-[420px] flex-shrink-0 space-y-4">
 
-          {/* ── Section 1: Business Information ─────────────── */}
-          <div className="card px-5 py-4 space-y-3.5">
-            <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
-              <div className="w-6 h-6 bg-emerald-50 rounded-lg flex items-center justify-center flex-shrink-0 text-emerald-600 text-xs font-bold">✓</div>
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900">Business Information</h2>
-                <p className="text-[10px] text-gray-400">Required by ZATCA</p>
-              </div>
-            </div>
-
-            <div>
-              <label className="label flex items-center">
-                Business Name (English)
-                <InfoTip text="Legal business name in English — used in QR code Tag 1 and invoice header" />
-              </label>
-              <input type="text" value={form.business_name}
-                onChange={e => set('business_name', e.target.value)}
-                className="input" placeholder="e.g. Al-Ameen Coffee & Bakery" />
-            </div>
-
-            <div>
-              <label className="label flex items-center">
-                اسم الشركة (عربي)
-                <InfoTip text="الاسم القانوني بالعربية — مطلوب لرمز QR الضريبي" />
-              </label>
-              <input type="text" dir="rtl" value={form.business_name_ar}
-                onChange={e => set('business_name_ar', e.target.value)}
-                className="input" placeholder="مثال: شركة الأمين للقهوة" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label flex items-center">
-                  VAT Number
-                  <InfoTip text="15-digit Saudi VAT number starting and ending with 3" />
-                </label>
-                <input type="text" value={form.vat_number}
-                  onChange={e => set('vat_number', e.target.value)}
-                  className="input font-mono text-xs" placeholder="3XXXXXXXXXXX3" />
-              </div>
-              <div>
-                <label className="label flex items-center">
-                  CR Number
-                  <InfoTip text="Commercial registration number from Ministry of Commerce" />
-                </label>
-                <input type="text" value={form.cr_number}
-                  onChange={e => set('cr_number', e.target.value)}
-                  className="input font-mono text-xs" placeholder="1010XXXXXX" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label flex items-center">
-                  Building Number
-                  <InfoTip text="4-digit building number from your official address (ZATCA required)" />
-                </label>
-                <input type="text" value={form.building_number}
-                  onChange={e => set('building_number', e.target.value)}
-                  className="input font-mono text-xs" placeholder="1234" maxLength={4} />
-              </div>
-              <div>
-                <label className="label flex items-center">
-                  Postal Code
-                  <InfoTip text="5-digit Saudi postal code (ZATCA required)" />
-                </label>
-                <input type="text" value={form.postal_code}
-                  onChange={e => set('postal_code', e.target.value)}
-                  className="input font-mono text-xs" placeholder="12345" maxLength={5} />
-              </div>
-            </div>
-          </div>
-
-          {/* ── Section 2: Display Settings ──────────────────── */}
+          {/* ── Section 1: Display Settings ──────────────────── */}
           <div className="card px-5 py-4 space-y-3.5">
             <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
               <div className="w-6 h-6 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0 text-blue-600 text-xs font-bold">✦</div>
@@ -566,17 +468,14 @@ export default function InvoiceSettingsPage() {
                 { value: 'pdf'     as const, label: 'A4 Invoice',        desc: 'Full A4 format for email / archive' },
                 { value: 'both'    as const, label: 'Both',              desc: 'Show thermal and A4 options'        },
               ]).map(opt => (
-                <label key={opt.value}
-                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                <button key={opt.value} type="button"
+                  onClick={() => set('print_mode', opt.value)}
+                  className={`flex items-start gap-3 p-3 rounded-xl border w-full text-left transition-all ${
                     form.print_mode === opt.value
                       ? 'border-primary-300 bg-primary-50/60'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
-                  <input type="radio" name="print_mode" value={opt.value}
-                    checked={form.print_mode === opt.value}
-                    onChange={() => set('print_mode', opt.value)}
-                    className="sr-only" />
                   <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 mt-0.5 flex items-center justify-center transition-colors ${
                     form.print_mode === opt.value ? 'border-primary-500' : 'border-gray-300'
                   }`}>
@@ -588,7 +487,7 @@ export default function InvoiceSettingsPage() {
                     <p className="text-xs font-semibold text-gray-800">{opt.label}</p>
                     <p className="text-[10px] text-gray-400">{opt.desc}</p>
                   </div>
-                </label>
+                </button>
               ))}
             </div>
           </div>
@@ -643,11 +542,11 @@ export default function InvoiceSettingsPage() {
               <div className="w-[280px]">
                 <ThermalReceipt
                   preview
-                  businessNameAr={previewNameAr}
-                  businessNameEn={previewDisplayName}
+                  businessNameAr={previewBrandName}
+                  businessNameEn={previewLegalName}
                   branchName={branch?.name}
                   address={previewAddress || null}
-                  vatNumber={form.vat_number || undefined}
+                  vatNumber={branch?.vat_number ?? undefined}
                   phone={form.phone || undefined}
                   website={form.website || undefined}
                   showWebsite={form.show_website}

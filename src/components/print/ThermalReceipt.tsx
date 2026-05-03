@@ -8,8 +8,10 @@ export interface ThermalItem {
 export interface ThermalReceiptProps {
   id?: string
   preview?: boolean
-  businessNameAr: string
-  businessNameEn: string
+  // Line 1 (large, bold): brand/display name
+  // Line 2 (small, grey): legal name — only printed if different from Line 1
+  businessNameAr: string   // Line 1 — brand name (could be Arabic or English)
+  businessNameEn: string   // Line 2 — legal company name (shown below only if different)
   branchName?: string | null
   address?: string | null
   vatNumber?: string | null
@@ -21,7 +23,7 @@ export interface ThermalReceiptProps {
   invoiceNumber: string
   date: string
   time: string
-  cashierName?: string | null
+  cashierName?: string | null  // kept for API compat but no longer rendered
   items: ThermalItem[]
   subtotal: number
   taxAmount: number
@@ -85,11 +87,14 @@ export default function ThermalReceipt({
   preview = false,
   businessNameAr, businessNameEn, branchName, address, vatNumber, phone,
   website, showWebsite, email, showEmail,
-  invoiceNumber, date, time, cashierName,
+  invoiceNumber, date, time,
   items, subtotal, taxAmount, total,
   paymentMethod, cashReceived, change, showCashChange = true,
   customerName, qrDataUrl, receiptFooter, showFooter = true,
 }: ThermalReceiptProps) {
+  // Line 2 (legal name) only shown if it differs from Line 1 (brand name)
+  const showLegalName = businessNameEn && businessNameEn !== businessNameAr
+
   return (
     <div
       id={id}
@@ -110,14 +115,15 @@ export default function ThermalReceipt({
       {/* Business header */}
       <div style={{ textAlign: 'center', marginBottom: '4px' }}>
         {businessNameAr && (
-          <div style={{ fontFamily: 'Cairo, "Segoe UI", sans-serif', fontSize: '15px', fontWeight: 'bold', direction: 'rtl', marginBottom: '2px' }}>
+          <div style={{ fontFamily: 'Cairo, "Segoe UI", sans-serif', fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>
             {businessNameAr}
           </div>
         )}
-        {businessNameEn && (
-          <div style={{ fontSize: '12px', fontWeight: 600 }}>{businessNameEn}</div>
+        {/* Legal company name — only shown when different from brand name */}
+        {showLegalName && (
+          <div style={{ fontSize: '10px', color: '#666', marginBottom: '2px' }}>{businessNameEn}</div>
         )}
-        {branchName && branchName !== businessNameEn && (
+        {branchName && branchName !== businessNameAr && branchName !== businessNameEn && (
           <div style={{ fontSize: '10px', color: '#444' }}>{branchName}</div>
         )}
         {address && (
@@ -146,7 +152,6 @@ export default function ThermalReceipt({
         <div>Invoice: <strong>{invoiceNumber}</strong></div>
         <div>Date: {date}</div>
         <div>Time: {time}</div>
-        {cashierName && <div>Cashier: {cashierName}</div>}
       </div>
 
       <Dash />
@@ -222,9 +227,6 @@ export default function ThermalReceipt({
         {showFooter && receiptFooter && (
           <div style={{ fontSize: '10px', color: '#555', marginTop: '4px' }}>{receiptFooter}</div>
         )}
-        <div style={{ fontSize: '9px', color: '#bbb', marginTop: '6px' }}>
-          Powered by دفرة (Dafra)
-        </div>
       </div>
     </div>
   )

@@ -653,8 +653,9 @@ export default function POSPage() {
       const today         = saudiDateStr()
       const createdAt     = new Date().toISOString()
 
+      // QR tag 1: always use legal business_name, never display_name (ZATCA requirement)
       const zatcaQrCode = buildZatcaQR({
-        sellerName:  branch.business_name_ar || branch.name_ar || branch.name,
+        sellerName:  branch.business_name || branch.name,
         vatNumber:   branch.vat_number ?? '',
         timestamp:   createdAt,
         totalAmount: totals.total,
@@ -750,8 +751,8 @@ export default function POSPage() {
           lineTotal: i.price * i.quantity,
         })),
         createdAt,
-        businessNameAr:  branch.business_name_ar || branch.name_ar || branch.name,
-        businessNameEn:  branch.display_name || branch.business_name || branch.name,
+        businessNameAr:  branch.display_name || branch.business_name || branch.name,
+        businessNameEn:  branch.business_name || branch.name,
         branchName:      branch.name,
         branchAddress:   branchAddr || null,
         vatNumber:       branch.vat_number ?? '',

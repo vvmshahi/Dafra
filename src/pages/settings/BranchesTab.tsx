@@ -359,10 +359,7 @@ function BranchDrawer({
                   <Input label="Branch Name (English)" value={form.name} onChange={e => set('name')(e.target.value)} placeholder="Main Branch" required />
                   <Input label="Branch Name (Arabic)" value={form.name_ar} onChange={e => set('name_ar')(e.target.value)} placeholder="الفرع الرئيسي" />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Input label="Business Name (English)" value={form.business_name} onChange={e => set('business_name')(e.target.value)} placeholder="Al-Faris Trading Co." />
-                  <Input label="Business Name (Arabic)" value={form.business_name_ar} onChange={e => set('business_name_ar')(e.target.value)} placeholder="شركة الفارس التجارية" />
-                </div>
+                <Input label="Company Name" value={form.business_name} onChange={e => set('business_name')(e.target.value)} placeholder="Al-Faris Trading Co." />
                 <div className="grid grid-cols-2 gap-3">
                   <div onBlur={() => touch('vat_number')}>
                     <Input label="VAT Registration Number" value={form.vat_number} onChange={e => set('vat_number')(e.target.value)} placeholder="301234567890123" maxLength={15} />
