@@ -375,7 +375,7 @@ function buildInvoiceXMLData(inv: any, branch: any, items: any[], customer: any,
     invoiceNumber:   inv.invoice_number,
     uuid:            inv.zatca_uuid,
     issueDate:       inv.invoice_date,
-    issueTime:       inv.issue_time ?? '00:00:00',
+    issueTime:       new Date(inv.created_at).toTimeString().split(' ')[0],
     counterValue:    inv.zatca_counter_number ?? 1,
     prevInvoiceHash: inv.zatca_prev_invoice_hash ?? FIRST_INVOICE_HASH,
     sellerName:      branch.business_name,
@@ -714,7 +714,7 @@ async function processInvoice(db: any, invoiceId: string): Promise<{ invoiceStat
 
   const { data: inv, error: invErr } = await db
     .from('invoices')
-    .select(`id, invoice_number, zatca_uuid, zatca_invoice_type, invoice_date, issue_time,
+    .select(`id, invoice_number, zatca_uuid, zatca_invoice_type, invoice_date, created_at,
       zatca_counter_number, zatca_prev_invoice_hash, zatca_status,
       subtotal, discount_amount, taxable_amount, tax_amount, total_amount,
       branch_id, tenant_id, customer_id,
