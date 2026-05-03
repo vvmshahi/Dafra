@@ -371,13 +371,11 @@ function buildInvoice(data: any, opts: any): string {
 }
 
 function buildInvoiceXMLData(inv: any, branch: any, items: any[], customer: any, isSimplified: boolean): any {
-  const createdUtc = new Date(inv.created_at).toISOString()  // e.g. "2026-05-03T17:44:48.000Z"
-  const issueDate  = createdUtc.split('T')[0]                // YYYY-MM-DD (UTC)
-  const issueTime  = createdUtc.split('T')[1].split('.')[0]  // HH:MM:SS  (UTC)
+  const issueTime = new Date(inv.created_at).toISOString().slice(11, 19)  // HH:MM:SS UTC
   return {
     invoiceNumber:   inv.invoice_number,
     uuid:            inv.zatca_uuid,
-    issueDate,
+    issueDate:       inv.invoice_date,
     issueTime,
     counterValue:    inv.zatca_counter_number ?? 1,
     prevInvoiceHash: inv.zatca_prev_invoice_hash ?? FIRST_INVOICE_HASH,
@@ -438,32 +436,19 @@ function concatArrays(...arrs: Uint8Array[]): Uint8Array {
   return out
 }
 
-// Phase 1 QR — tags 1–5. Embedded in XML AdditionalDocumentReference for ZATCA submission.
-function buildPhase1QR(
-  sellerName: string, vatNumber: string, timestamp: string,
-  totalAmount: number, vatAmount: number,
-): string {
-  const all = concatArrays(
-    tlvStr(0x01, sellerName), tlvStr(0x02, vatNumber),
-    tlvStr(0x03, normTs(timestamp)),
-    tlvStr(0x04, totalAmount.toFixed(2)), tlvStr(0x05, vatAmount.toFixed(2)),
-  )
-  return btoa(String.fromCharCode(...all))
-}
-
-// Phase 2 QR — tags 1–8 (tag 9 cert CA sig omitted to stay under 1000-char limit).
-// Stored in invoices.zatca_qr_code for printing on receipts.
+// Phase 2 QR — all 9 tags (tags 1–9). Embedded in XML and stored in DB for receipts.
+// 9 tags required by ZATCA; omitting tag 9 (cert CA sig) causes QRCODE_INVALID.
 function buildPhase2QR(
   sellerName: string, vatNumber: string, timestamp: string,
   totalAmount: number, vatAmount: number,
-  hashB64: string, sigB64: string, pubKeySpki: Uint8Array,
+  hashB64: string, sigB64: string, pubKeySpki: Uint8Array, certSigValue: Uint8Array,
 ): string {
   const all = concatArrays(
     tlvStr(0x01, sellerName), tlvStr(0x02, vatNumber),
     tlvStr(0x03, normTs(timestamp)),
     tlvStr(0x04, totalAmount.toFixed(2)), tlvStr(0x05, vatAmount.toFixed(2)),
     tlvStr(0x06, hashB64), tlvStr(0x07, sigB64),
-    tlvBytes(0x08, pubKeySpki),
+    tlvBytes(0x08, pubKeySpki), tlvBytes(0x09, certSigValue),
   )
   return btoa(String.fromCharCode(...all))
 }
@@ -650,6 +635,7 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
 
   const serialNumber  = extractCertSerial(certDer)
   const issuerName    = extractCertIssuerName(certDer)              // DN string for xades:IssuerSerial
+  const certSigValue  = extractCertSignatureValue(certDer)          // CA signature — QR tag 9
   const pubKeySpki    = extractCertPublicKeySpki(certDer)
 
   // Cert digest: base64(hex(SHA256(UTF8(certPemBody)))) — 88-char, matches ZATCA SDK format
@@ -702,26 +688,23 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const hashB64Str = btoa(String.fromCharCode(...hashBytes))
   const sigB64Str  = btoa(String.fromCharCode(...sigDerBytes))
 
-  // Phase 1 QR (tags 1-5) goes into the XML — ZATCA submission rejects Phase 2 tags
-  const xmlQrCode  = buildPhase1QR(sellerName, vatNumber, timestamp, totalAmount, vatAmount)
+  // Phase 2 QR (tags 1-9) — used in XML and stored in DB for receipts
+  const qrCode = buildPhase2QR(
+    sellerName, vatNumber, timestamp, totalAmount, vatAmount,
+    hashB64Str, sigB64Str, pubKeySpki, certSigValue,
+  )
   console.log('[zatca-submit] XML issueDate:', issueDate)
   console.log('[zatca-submit] XML issueTime:', issueTime)
   console.log('[zatca-submit] XML timestamp (QR tag3):', normTs(timestamp))
   console.log('[zatca-submit] XML total (QR tag4):', totalAmount.toFixed(2))
   console.log('[zatca-submit] XML vat (QR tag5):', vatAmount.toFixed(2))
-  console.log('[zatca-submit] XML QR value:', xmlQrCode)
-  // Phase 2 QR (tags 1-8) stored in DB for printing on receipts
-  const printQrCode = buildPhase2QR(
-    sellerName, vatNumber, timestamp, totalAmount, vatAmount,
-    hashB64Str, sigB64Str, pubKeySpki,
-  )
 
   signedXml = signedXml.replace(
     /(<cbc:ID>QR<\/cbc:ID>[\s\S]*?<cbc:EmbeddedDocumentBinaryObject mimeCode="text\/plain">)([^<]*)(<\/cbc:EmbeddedDocumentBinaryObject>)/,
-    `$1${xmlQrCode}$3`,
+    `$1${qrCode}$3`,
   )
 
-  return { signedXml, invoiceHash: invoiceHashB64, qrCode: printQrCode }
+  return { signedXml, invoiceHash: invoiceHashB64, qrCode }
 }
 
 // ── Retry queue ───────────────────────────────────────────────────────────────
