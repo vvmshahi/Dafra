@@ -602,7 +602,7 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   )
 
   let signedXml = xmlString.replace(
-    /<ext:ExtensionContent>\s*<\/ext:ExtensionContent>/,
+    /<ext:ExtensionContent>[\s\S]*?<\/ext:ExtensionContent>/,
     `<ext:ExtensionContent>${xadesBlock}</ext:ExtensionContent>`,
   )
 
@@ -628,6 +628,7 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
     `$1${qrCode}$3`,
   )
 
+  console.log('[zatca-submit] FULL SIGNED XML:', signedXml)
   return { signedXml, invoiceHash: invoiceHashB64, qrCode }
 }
 
@@ -708,6 +709,8 @@ async function processInvoice(db: any, invoiceId: string): Promise<{ invoiceStat
     console.log('[zatca-submit] signing XML...')
     const { signedXml, invoiceHash, qrCode } = await signInvoice(unsignedXml, secretKey, cert.production_csid)
     console.log('[zatca-submit] signed OK, hash prefix:', invoiceHash.substring(0, 20))
+    console.log('[zatca-submit] prod_csid_raw length:', cert.production_csid.length)
+    console.log('[zatca-submit] prod_csid_raw first 50:', cert.production_csid.substring(0, 50))
 
     const env       = cert.environment === 'production' ? 'production' : 'sandbox'
     const baseUrl   = ZATCA_URLS[env]
