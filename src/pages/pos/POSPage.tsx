@@ -75,7 +75,13 @@ interface ReceiptData {
   branchAddress: string | null
   vatNumber: string
   phone: string | null
+  website: string | null
+  email: string | null
+  showWebsite: boolean
+  showEmail: boolean
   receiptFooter: string | null
+  showFooter: boolean
+  showCashChange: boolean
 }
 
 // ── VAT helpers ───────────────────────────────────────────────────────────────
@@ -207,7 +213,12 @@ function QuickExpenseModal({
 
 // ── Receipt overlay ───────────────────────────────────────────────────────────
 
-function ReceiptView({ receipt, onNewSale }: { receipt: ReceiptData; onNewSale: () => void }) {
+function ReceiptView({ receipt, onNewSale, printMode, zatcaStatus }: {
+  receipt: ReceiptData
+  onNewSale: () => void
+  printMode: 'thermal' | 'pdf' | 'both'
+  zatcaStatus: 'submitted' | 'failed' | null
+}) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
 
   useEffect(() => {
@@ -265,6 +276,10 @@ ${lines}
         address={receipt.branchAddress}
         vatNumber={receipt.vatNumber}
         phone={receipt.phone}
+        website={receipt.website}
+        showWebsite={receipt.showWebsite}
+        email={receipt.email}
+        showEmail={receipt.showEmail}
         invoiceNumber={receipt.invoiceNumber}
         date={invDate}
         time={invTime}
@@ -276,9 +291,11 @@ ${lines}
         paymentMethod={receipt.paymentMethod}
         cashReceived={receipt.cashReceived}
         change={receipt.change}
+        showCashChange={receipt.showCashChange}
         customerName={receipt.customerName}
         qrDataUrl={qrDataUrl}
         receiptFooter={receipt.receiptFooter}
+        showFooter={receipt.showFooter}
       />
 
       {/* Success overlay */}
@@ -338,16 +355,41 @@ ${lines}
             <p className="text-center text-[10px] text-gray-300">ZATCA QR Code</p>
           </div>
 
+          {/* ZATCA status */}
+          {zatcaStatus === 'submitted' && (
+            <div className="mx-6 mb-2 flex items-center gap-1.5 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5">
+              <span className="text-emerald-500">✓</span> Submitted to ZATCA
+            </div>
+          )}
+          {zatcaStatus === 'failed' && (
+            <div className="mx-6 mb-2 flex items-center gap-1.5 text-[10px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-2.5 py-1.5">
+              <span>⚠</span> ZATCA submission failed — retry from Invoices
+            </div>
+          )}
+
           {/* Actions */}
           <div className="px-6 pb-6 space-y-2">
             <div className="flex gap-2">
-              <button
-                onClick={() => printThermal()}
-                className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
-              >
-                <Printer size={14} />
-                Print Receipt
-              </button>
+              {printMode !== 'pdf' && (
+                <button
+                  onClick={() => printThermal()}
+                  className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Printer size={14} />
+                  Print Receipt
+                </button>
+              )}
+              {printMode === 'pdf' || printMode === 'both' ? (
+                <a
+                  href={`/invoices/${receipt.invoiceId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Printer size={14} />
+                  View A4
+                </a>
+              ) : null}
               {receipt.customerPhone && (
                 <button
                   onClick={shareWhatsApp}
@@ -432,6 +474,7 @@ export default function POSPage() {
   const [submitting,   setSubmitting]   = useState(false)
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [showExpense,  setShowExpense]  = useState(false)
+  const [zatcaResult,  setZatcaResult]  = useState<'submitted' | 'failed' | null>(null)
 
   // ── Load data ────────────────────────────────────────────────────────────
 
@@ -600,6 +643,7 @@ export default function POSPage() {
     const tid = profile?.tenant_id
     if (!tid || !branch || cart.length === 0 || submitting) return
     setSubmitting(true)
+    setZatcaResult(null)
     try {
       const q = supabase as unknown as { from: (t: string) => any }
 
@@ -677,11 +721,10 @@ export default function POSPage() {
         paid_at:     new Date().toISOString(),
       })
 
-      // Submit to ZATCA (Phase 2 only — fire-and-forget, does not block checkout)
-      console.log('[POS] firing ZATCA submission for invoice:', inv.id)
-      submitInvoiceToZatca(inv.id).catch(err =>
-        console.error('[POS] ZATCA submission failed:', err)
-      )
+      // Submit to ZATCA — Phase 2 only, fire-and-forget
+      submitInvoiceToZatca(inv.id, branch.id)
+        .then(submitted => { if (submitted) setZatcaResult('submitted') })
+        .catch(() => setZatcaResult('failed'))
 
       const branchAddr   = [
         branch.building_number ? `Building ${branch.building_number}` : null,
@@ -707,13 +750,19 @@ export default function POSPage() {
           lineTotal: i.price * i.quantity,
         })),
         createdAt,
-        businessNameAr: branch.business_name_ar || branch.name_ar || branch.name,
-        businessNameEn: branch.business_name    || branch.name,
-        branchName:     branch.name,
-        branchAddress:  branchAddr || null,
-        vatNumber:      branch.vat_number ?? '',
-        phone:          branch.phone,
-        receiptFooter:  branch.receipt_footer,
+        businessNameAr:  branch.business_name_ar || branch.name_ar || branch.name,
+        businessNameEn:  branch.display_name || branch.business_name || branch.name,
+        branchName:      branch.name,
+        branchAddress:   branchAddr || null,
+        vatNumber:       branch.vat_number ?? '',
+        phone:           branch.phone,
+        website:         branch.website ?? null,
+        email:           branch.email ?? null,
+        showWebsite:     branch.show_website ?? false,
+        showEmail:       branch.show_email ?? false,
+        receiptFooter:   branch.receipt_footer,
+        showFooter:      branch.show_footer ?? true,
+        showCashChange:  branch.show_cash_change ?? true,
       })
 
       setCart([])
@@ -756,7 +805,14 @@ export default function POSPage() {
     <div className="flex h-screen bg-gray-50 overflow-hidden">
 
       {/* Modals */}
-      {receipt && <ReceiptView receipt={receipt} onNewSale={() => setReceipt(null)} />}
+      {receipt && (
+        <ReceiptView
+          receipt={receipt}
+          onNewSale={() => { setReceipt(null); setZatcaResult(null) }}
+          printMode={branch?.print_mode ?? 'thermal'}
+          zatcaStatus={zatcaResult}
+        />
+      )}
       {showExpense && branch && (
         <QuickExpenseModal
           branchId={branch.id}

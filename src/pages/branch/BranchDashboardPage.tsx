@@ -93,13 +93,15 @@ export default function BranchDashboardPage() {
   const [recentInvs,   setRecentInvs]   = useState<any[]>([])
   const [lowStock,     setLowStock]     = useState<any[]>([])
   const [branchName,   setBranchName]   = useState('')
+  const [zatcaPhase,   setZatcaPhase]   = useState<1 | 2>(1)
+  const [hasActiveCert, setHasActiveCert] = useState(false)
 
   const loadStats = useCallback(async () => {
     if (!tid || !bid) { setStatsLoading(false); return }
     setStatsLoading(true)
     const { start, end } = saudiTodayRange()
     const today = saudiDateStr()
-    const [invRes, expRes, branchRes] = await Promise.all([
+    const [invRes, expRes, branchRes, certRes] = await Promise.all([
       db().from('invoices')
         .select('total_amount, id, payment_method, tax_amount')
         .eq('tenant_id', tid)
@@ -111,7 +113,12 @@ export default function BranchDashboardPage() {
         .eq('tenant_id', tid)
         .eq('branch_id', bid)
         .eq('expense_date', today),
-      db().from('branches').select('name').eq('id', bid).maybeSingle(),
+      db().from('branches').select('name, zatca_phase').eq('id', bid).maybeSingle(),
+      db().from('zatca_certificates')
+        .select('id')
+        .eq('branch_id', bid)
+        .eq('status', 'active')
+        .maybeSingle(),
     ])
     const invs = invRes.data ?? []
     setTodaySales(invs.reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0))
@@ -121,6 +128,8 @@ export default function BranchDashboardPage() {
     setTodayVat(invs.reduce((s: number, i: any) => s + Number(i.tax_amount ?? 0), 0))
     setTodayExpenses((expRes.data ?? []).reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0))
     setBranchName(branchRes.data?.name ?? '')
+    setZatcaPhase(branchRes.data?.zatca_phase ?? 1)
+    setHasActiveCert(!!certRes.data)
     setStatsLoading(false)
   }, [tid, bid])
 
@@ -204,6 +213,19 @@ export default function BranchDashboardPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {zatcaPhase === 2 && hasActiveCert ? (
+            <span className="text-[10px] bg-emerald-500/20 border border-emerald-400/20 text-emerald-300 px-2.5 py-1 rounded-lg">
+              Phase 2 — ZATCA Integrated
+            </span>
+          ) : zatcaPhase === 2 ? (
+            <span className="text-[10px] bg-amber-500/20 border border-amber-400/20 text-amber-300 px-2.5 py-1 rounded-lg">
+              Phase 2 — Setup Required
+            </span>
+          ) : (
+            <span className="text-[10px] bg-blue-500/20 border border-blue-400/20 text-blue-300 px-2.5 py-1 rounded-lg">
+              Phase 1 — QR Compliant
+            </span>
+          )}
           <button
             onClick={() => navigate('/pos')}
             className="flex items-center gap-2 px-4 py-2 bg-gold-500 text-[#0F2419] text-sm font-bold rounded-xl hover:bg-gold-400 transition-colors"

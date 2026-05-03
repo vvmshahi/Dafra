@@ -273,6 +273,13 @@ export interface Branch {
   invoice_language: 'en' | 'ar' | 'both'
   zatca_phase: 1 | 2
   branch_email: string | null   // login email for the branch POS account
+  // Added by update-invoice-settings.sql
+  display_name: string | null
+  show_website: boolean
+  show_email: boolean
+  show_footer: boolean
+  show_cash_change: boolean
+  print_mode: 'thermal' | 'pdf' | 'both'
   created_at: string
   updated_at: string
 }
@@ -567,6 +574,12 @@ export interface BranchInsert {
   show_logo?: boolean
   invoice_language?: string | null
   zatca_phase?: number | null
+  display_name?: string | null
+  show_website?: boolean
+  show_email?: boolean
+  show_footer?: boolean
+  show_cash_change?: boolean
+  print_mode?: string | null
 }
 
 export type BranchUpdate = Partial<BranchInsert>

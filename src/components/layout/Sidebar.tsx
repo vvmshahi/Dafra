@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Receipt, Package, Warehouse, Users,
-  CreditCard, BarChart2, Truck, Settings, Building2,
+  CreditCard, BarChart2, Truck, Settings, Settings2, Building2,
   LogOut, ChevronRight, ChevronLeft, FileText, UserSquare2,
   CalendarCheck2, Store,
 } from 'lucide-react'
@@ -24,8 +24,9 @@ const ownerNav: NavItem[] = [
 const branchNav: NavItem[] = [
   { label: 'Dashboard',   path: '/branch',      icon: Store          },
   { label: 'New Sale',    path: '/pos',          icon: Receipt        },
-  { label: 'Invoices',    path: '/invoices',     icon: FileText       },
-  { label: 'Products',    path: '/products',     icon: Package        },
+  { label: 'Invoices',         path: '/invoices',          icon: FileText   },
+  { label: 'Invoice Settings', path: '/invoice-settings',  icon: Settings2  },
+  { label: 'Products',         path: '/products',          icon: Package    },
   { label: 'Inventory',   path: '/inventory',    icon: Warehouse      },
   { label: 'Customers',   path: '/customers',    icon: Users          },
   { label: 'Expenses',    path: '/expenses',     icon: CreditCard     },

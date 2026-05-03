@@ -7,12 +7,17 @@ export interface ThermalItem {
 
 export interface ThermalReceiptProps {
   id?: string
+  preview?: boolean
   businessNameAr: string
   businessNameEn: string
   branchName?: string | null
   address?: string | null
   vatNumber?: string | null
   phone?: string | null
+  website?: string | null
+  showWebsite?: boolean
+  email?: string | null
+  showEmail?: boolean
   invoiceNumber: string
   date: string
   time: string
@@ -24,9 +29,11 @@ export interface ThermalReceiptProps {
   paymentMethod: string
   cashReceived?: number | null
   change?: number | null
+  showCashChange?: boolean
   customerName?: string | null
   qrDataUrl?: string | null
   receiptFooter?: string | null
+  showFooter?: boolean
 }
 
 function sar(n: number): string {
@@ -75,17 +82,19 @@ export function printThermal(): void {
 
 export default function ThermalReceipt({
   id = 'thermal-receipt',
+  preview = false,
   businessNameAr, businessNameEn, branchName, address, vatNumber, phone,
+  website, showWebsite, email, showEmail,
   invoiceNumber, date, time, cashierName,
   items, subtotal, taxAmount, total,
-  paymentMethod, cashReceived, change,
-  customerName, qrDataUrl, receiptFooter,
+  paymentMethod, cashReceived, change, showCashChange = true,
+  customerName, qrDataUrl, receiptFooter, showFooter = true,
 }: ThermalReceiptProps) {
   return (
     <div
       id={id}
       style={{
-        display: 'none',
+        display: preview ? 'block' : 'none',
         fontFamily: 'monospace',
         fontSize: '11px',
         color: '#000',
@@ -116,6 +125,8 @@ export default function ThermalReceipt({
         )}
         {vatNumber && <div style={{ fontSize: '10px' }}>VAT: {vatNumber}</div>}
         {phone && <div style={{ fontSize: '10px' }}>Tel: {phone}</div>}
+        {showWebsite && website && <div style={{ fontSize: '10px', color: '#555' }}>{website}</div>}
+        {showEmail && email && <div style={{ fontSize: '10px', color: '#555' }}>{email}</div>}
       </div>
 
       <Dash />
@@ -171,7 +182,7 @@ export default function ThermalReceipt({
         {paymentMethod === 'cash' && cashReceived != null && cashReceived > 0 && (
           <TRow left="Received:" right={sar(cashReceived)} />
         )}
-        {paymentMethod === 'cash' && (change ?? 0) > 0.005 && (
+        {showCashChange && paymentMethod === 'cash' && (change ?? 0) > 0.005 && (
           <TRow left="Change:" right={sar(change ?? 0)} />
         )}
       </div>
@@ -208,7 +219,7 @@ export default function ThermalReceipt({
           شكراً لزيارتكم
         </div>
         <div style={{ fontSize: '10px' }}>Thank you!</div>
-        {receiptFooter && (
+        {showFooter && receiptFooter && (
           <div style={{ fontSize: '10px', color: '#555', marginTop: '4px' }}>{receiptFooter}</div>
         )}
         <div style={{ fontSize: '9px', color: '#bbb', marginTop: '6px' }}>

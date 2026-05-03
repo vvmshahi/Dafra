@@ -294,7 +294,7 @@ ${lines}
   const isCancelled = invoice.status === 'cancelled'
 
   const sellerNameAr = branch.business_name_ar || branch.name_ar || branch.name
-  const sellerNameEn = branch.business_name    || branch.name
+  const sellerNameEn = branch.display_name || branch.business_name || branch.name
   const vatNumber    = branch.vat_number || tenant?.vat_number || '—'
   const crNumber     = branch.cr_number  || tenant?.cr_number  || '—'
 
@@ -332,6 +332,10 @@ ${lines}
         address={thermalAddress || null}
         vatNumber={vatNumber}
         phone={branch.phone}
+        website={branch.website}
+        showWebsite={branch.show_website ?? false}
+        email={branch.email}
+        showEmail={branch.show_email ?? false}
         invoiceNumber={invoice.invoice_number}
         date={invDate}
         time={invTime}
@@ -343,6 +347,8 @@ ${lines}
         customerName={customer?.name ?? null}
         qrDataUrl={qrDataUrl}
         receiptFooter={branch.receipt_footer}
+        showFooter={branch.show_footer ?? true}
+        showCashChange={branch.show_cash_change ?? true}
       />
 
       {/* ── Action bar (screen only) ─────────────────────── */}
@@ -368,16 +374,20 @@ ${lines}
               WhatsApp
             </button>
           )}
-          <button onClick={handlePrintThermal}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
-            <Printer size={13} />
-            Print Receipt
-          </button>
-          <button onClick={handlePrintA4}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0F2419] rounded-xl hover:bg-[#1a3a28] transition-colors">
-            <Printer size={13} />
-            Print A4
-          </button>
+          {(branch.print_mode ?? 'thermal') !== 'pdf' && (
+            <button onClick={handlePrintThermal}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+              <Printer size={13} />
+              Print Receipt
+            </button>
+          )}
+          {(branch.print_mode ?? 'thermal') !== 'thermal' && (
+            <button onClick={handlePrintA4}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0F2419] rounded-xl hover:bg-[#1a3a28] transition-colors">
+              <Printer size={13} />
+              Print A4
+            </button>
+          )}
         </div>
       </div>
 
@@ -400,7 +410,7 @@ ${lines}
 
             {/* Seller info (left) */}
             <div className="flex items-start gap-4 flex-1">
-              {branch.logo_url ? (
+              {branch.logo_url && (branch.show_logo ?? true) ? (
                 <img src={branch.logo_url} alt="logo" className="w-14 h-14 object-contain rounded-xl flex-shrink-0" />
               ) : (
                 <div className="w-14 h-14 rounded-xl bg-[#0F2419] flex items-center justify-center flex-shrink-0">
@@ -421,6 +431,12 @@ ${lines}
                     <span className="font-semibold text-gray-700">CR:</span> {crNumber}
                   </span>
                 </div>
+                {(branch.show_website ?? false) && branch.website && (
+                  <p className="text-[10px] text-gray-400 mt-0.5">{branch.website}</p>
+                )}
+                {(branch.show_email ?? false) && branch.email && (
+                  <p className="text-[10px] text-gray-400">{branch.email}</p>
+                )}
               </div>
             </div>
 
