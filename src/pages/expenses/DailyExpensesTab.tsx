@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Plus, Search, Pencil, Trash2, X, Receipt, Filter } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { saudiNow } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -42,15 +43,14 @@ const PAY_BADGE: Record<string, 'success' | 'info' | 'neutral'> = {
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
 function isoToday() {
-  return new Date().toISOString().split('T')[0]
+  return saudiNow().toISOString().split('T')[0]
 }
 function isoFirstOfMonth() {
-  const d = new Date()
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]
+  const d = saudiNow(); d.setUTCDate(1)
+  return d.toISOString().split('T')[0]
 }
 function isoFirstOfWeek() {
-  const d = new Date()
-  d.setDate(d.getDate() - d.getDay())
+  const d = saudiNow(); d.setUTCDate(d.getUTCDate() - d.getUTCDay())
   return d.toISOString().split('T')[0]
 }
 

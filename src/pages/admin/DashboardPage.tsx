@@ -11,15 +11,11 @@ import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { saudiNow, saudiDateStr, saudiTodayRange } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
 
 const db = () => supabase as any
 
-function todayRange() {
-  const start = new Date(); start.setHours(0, 0, 0, 0)
-  const end   = new Date(); end.setHours(23, 59, 59, 999)
-  return { start: start.toISOString(), end: end.toISOString() }
-}
 
 // ── KPI stat card ─────────────────────────────────────────────────────────────
 
@@ -215,7 +211,8 @@ export default function DashboardPage() {
     setStatsLoading(true)
     setBranchLoading(true)
 
-    const { start, end } = todayRange()
+    const { start, end } = saudiTodayRange()
+    const today = saudiDateStr()
     const [todayRes, branchRes, expRes] = await Promise.all([
       db().from('invoices')
         .select('total_amount, branch_id, payment_method, tax_amount')
@@ -230,8 +227,7 @@ export default function DashboardPage() {
       db().from('expenses')
         .select('amount')
         .eq('tenant_id', tid)
-        .gte('expense_date', start.slice(0, 10))
-        .lte('expense_date', end.slice(0, 10)),
+        .eq('expense_date', today),
     ])
 
     const invs: any[] = todayRes.data ?? []
@@ -267,26 +263,26 @@ export default function DashboardPage() {
     if (!tid) { setChartLoading(false); return }
     setChartLoading(true)
     const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
-    const from = new Date(); from.setDate(from.getDate() - (days - 1)); from.setHours(0, 0, 0, 0)
+    const fromDay = saudiNow(); fromDay.setUTCDate(fromDay.getUTCDate() - (days - 1))
 
     const { data } = await db()
       .from('invoices')
       .select('invoice_date, total_amount')
       .eq('tenant_id', tid)
-      .gte('invoice_date', from.toISOString().slice(0, 10))
+      .gte('invoice_date', fromDay.toISOString().split('T')[0])
       .order('invoice_date', { ascending: true })
 
     const buckets: Record<string, number> = {}
     for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(); d.setDate(d.getDate() - i)
-      buckets[d.toISOString().slice(0, 10)] = 0
+      const d = saudiNow(); d.setUTCDate(d.getUTCDate() - i)
+      buckets[d.toISOString().split('T')[0]] = 0
     }
     for (const inv of data ?? []) {
       const key = inv.invoice_date?.slice(0, 10)
       if (key && key in buckets) buckets[key] += Number(inv.total_amount ?? 0)
     }
     setSalesData(Object.entries(buckets).map(([date, sales]) => {
-      const d = new Date(date + 'T00:00:00')
+      const d = new Date(date + 'T12:00:00Z')
       const label = days <= 7
         ? d.toLocaleDateString('en-US', { weekday: 'short' })
         : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })

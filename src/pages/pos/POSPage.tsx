@@ -11,6 +11,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { displayName as dn } from '@/lib/utils/display'
 import { buildZatcaQR } from '@/lib/zatca/qr'
+import { saudiDateStr } from '@/lib/utils/date'
 import { submitInvoiceToZatca } from '@/lib/zatca/submission'
 import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
@@ -135,7 +136,7 @@ function QuickExpenseModal({
         tenant_id:      tenantId,
         branch_id:      branchId,
         added_by:       userId,
-        expense_date:   new Date().toISOString().slice(0, 10),
+        expense_date:   saudiDateStr(),
         description:    desc.trim(),
         vendor_name:    vendor.trim() || null,
         amount:         amt,
@@ -605,7 +606,7 @@ export default function POSPage() {
       const { data: counter } = await supabase.rpc('get_next_invoice_counter', { p_branch_id: branch.id })
       const prefix        = branch.invoice_prefix ?? 'INV'
       const invoiceNumber = `${prefix}-${String(counter ?? 1).padStart(4, '0')}`
-      const today         = new Date().toISOString().slice(0, 10)
+      const today         = saudiDateStr()
       const createdAt     = new Date().toISOString()
 
       const zatcaQrCode = buildZatcaQR({

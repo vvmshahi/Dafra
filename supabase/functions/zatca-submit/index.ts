@@ -370,12 +370,18 @@ function buildInvoice(data: any, opts: any): string {
   return root.end({ prettyPrint: false }) as string
 }
 
+function toSaudiDate(utcDate: Date): Date {
+  return new Date(utcDate.getTime() + 3 * 60 * 60 * 1000)  // UTC+3, no DST
+}
+
 function buildInvoiceXMLData(inv: any, branch: any, items: any[], customer: any, isSimplified: boolean): any {
-  const issueTime = new Date(inv.created_at).toISOString().slice(11, 19)  // HH:MM:SS UTC
+  const saudiCreatedAt = toSaudiDate(new Date(inv.created_at))
+  const issueDate = saudiCreatedAt.toISOString().split('T')[0]        // YYYY-MM-DD Saudi
+  const issueTime = saudiCreatedAt.toISOString().split('T')[1].split('.')[0]  // HH:MM:SS Saudi
   return {
     invoiceNumber:   inv.invoice_number,
     uuid:            inv.zatca_uuid,
-    issueDate:       inv.invoice_date,
+    issueDate,
     issueTime,
     counterValue:    inv.zatca_counter_number ?? 1,
     prevInvoiceHash: inv.zatca_prev_invoice_hash ?? FIRST_INVOICE_HASH,

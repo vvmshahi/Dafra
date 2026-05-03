@@ -9,26 +9,21 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { saudiNow, saudiDateStr, saudiTodayRange } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 
 const db = () => supabase as any
 
-function todayRange() {
-  const start = new Date(); start.setHours(0, 0, 0, 0)
-  const end   = new Date(); end.setHours(23, 59, 59, 999)
-  return { start: start.toISOString(), end: end.toISOString() }
-}
-
 function last7Days() {
   const result = []
   for (let i = 6; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
+    const d = saudiNow(); d.setUTCDate(d.getUTCDate() - i)
+    const date = d.toISOString().split('T')[0]
     result.push({
-      day:   d.toLocaleDateString('en-US', { weekday: 'short' }),
-      date:  d.toISOString().slice(0, 10),
+      day:   new Date(date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short' }),
+      date,
       sales: 0,
     })
   }
@@ -102,7 +97,8 @@ export default function BranchDashboardPage() {
   const loadStats = useCallback(async () => {
     if (!tid || !bid) { setStatsLoading(false); return }
     setStatsLoading(true)
-    const { start, end } = todayRange()
+    const { start, end } = saudiTodayRange()
+    const today = saudiDateStr()
     const [invRes, expRes, branchRes] = await Promise.all([
       db().from('invoices')
         .select('total_amount, id, payment_method, tax_amount')
@@ -114,8 +110,7 @@ export default function BranchDashboardPage() {
         .select('amount')
         .eq('tenant_id', tid)
         .eq('branch_id', bid)
-        .gte('expense_date', start.slice(0, 10))
-        .lte('expense_date', end.slice(0, 10)),
+        .eq('expense_date', today),
       db().from('branches').select('name').eq('id', bid).maybeSingle(),
     ])
     const invs = invRes.data ?? []
@@ -132,26 +127,26 @@ export default function BranchDashboardPage() {
   const loadChart = useCallback(async () => {
     if (!tid || !bid) { setChartLoading(false); return }
     setChartLoading(true)
-    const from = new Date(); from.setDate(from.getDate() - 6); from.setHours(0, 0, 0, 0)
+    const fromDay = saudiNow(); fromDay.setUTCDate(fromDay.getUTCDate() - 6)
     const { data } = await db()
       .from('invoices')
       .select('invoice_date, total_amount')
       .eq('tenant_id', tid)
       .eq('branch_id', bid)
-      .gte('invoice_date', from.toISOString().slice(0, 10))
+      .gte('invoice_date', fromDay.toISOString().split('T')[0])
       .order('invoice_date', { ascending: true })
 
     const buckets: Record<string, number> = {}
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(); d.setDate(d.getDate() - i)
-      buckets[d.toISOString().slice(0, 10)] = 0
+      const d = saudiNow(); d.setUTCDate(d.getUTCDate() - i)
+      buckets[d.toISOString().split('T')[0]] = 0
     }
     for (const inv of data ?? []) {
       const key = inv.invoice_date?.slice(0, 10)
       if (key && key in buckets) buckets[key] += Number(inv.total_amount ?? 0)
     }
     setSalesData(Object.entries(buckets).map(([date, sales]) => ({
-      day: new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' }),
+      day: new Date(date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short' }),
       sales,
     })))
     setChartLoading(false)

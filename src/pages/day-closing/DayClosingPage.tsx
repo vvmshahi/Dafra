@@ -5,6 +5,7 @@ import {
   Loader2, Lock, ChevronRight, ShoppingBag,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { saudiDateStr } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { Badge } from '@/components/ui/Badge'
@@ -52,7 +53,7 @@ function fmt(n: number) {
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10)
+  return saudiDateStr()
 }
 
 // ── KPI Card ──────────────────────────────────────────────────────────────────

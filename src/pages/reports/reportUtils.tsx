@@ -1,4 +1,5 @@
 import type React from 'react'
+import { saudiNow } from '@/lib/utils/date'
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 
@@ -20,29 +21,30 @@ export const fmtMonth = (yyyymm: string) => {
 
 export type DatePreset = 'today' | 'yesterday' | 'this_week' | 'this_month' | 'last_month' | 'custom'
 
+// pad: extract YYYY-MM-DD from a saudiNow()-based Date (UTC parts = Saudi local time)
 const pad = (d: Date) => d.toISOString().split('T')[0]
 
 export function getDateRange(preset: DatePreset): { start: string; end: string } {
-  const now = new Date()
+  const now = saudiNow()  // UTC parts reflect Saudi local time
   switch (preset) {
     case 'today':     return { start: pad(now), end: pad(now) }
     case 'yesterday': {
-      const d = new Date(now); d.setDate(d.getDate() - 1)
+      const d = new Date(now); d.setUTCDate(d.getUTCDate() - 1)
       return { start: pad(d), end: pad(d) }
     }
     case 'this_week': {
       const d = new Date(now)
-      const day = d.getDay()
-      d.setDate(d.getDate() - (day === 0 ? 6 : day - 1))
+      const day = d.getUTCDay()
+      d.setUTCDate(d.getUTCDate() - (day === 0 ? 6 : day - 1))
       return { start: pad(d), end: pad(now) }
     }
     case 'this_month': {
-      const d = new Date(now.getFullYear(), now.getMonth(), 1)
+      const d = new Date(now); d.setUTCDate(1)
       return { start: pad(d), end: pad(now) }
     }
     case 'last_month': {
-      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-      const last  = new Date(now.getFullYear(), now.getMonth(), 0)
+      const first = new Date(now); first.setUTCDate(1); first.setUTCMonth(first.getUTCMonth() - 1)
+      const last  = new Date(now); last.setUTCDate(0)
       return { start: pad(first), end: pad(last) }
     }
     default: return { start: pad(now), end: pad(now) }

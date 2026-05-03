@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import type { ZatcaStatus } from '@/types/database'
+import { saudiNow } from '@/lib/utils/date'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -26,10 +27,11 @@ interface InvoiceRow {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function thisMonth() {
-  const now = new Date()
+  const now = saudiNow()
+  const first = new Date(now); first.setUTCDate(1)
   return {
-    start: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10),
-    end:   now.toISOString().slice(0, 10),
+    start: first.toISOString().split('T')[0],
+    end:   now.toISOString().split('T')[0],
   }
 }
 

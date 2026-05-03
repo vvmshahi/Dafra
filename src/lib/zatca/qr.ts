@@ -75,11 +75,10 @@ export interface ZatcaQRInput {
  * converts that (and any other ISO 8601 variant) to the required form.
  */
 function normalizeTimestamp(iso: string): string {
-  // Slice the first 19 characters ("YYYY-MM-DDTHH:MM:SS") then append 'Z'.
-  // This guarantees the encoded string is always exactly 20 UTF-8 bytes so
-  // the TLV length byte is always 0x14 — the 'Z' is never accidentally dropped.
-  // (A regex replace on ".000Z" is fragile when the input lacks fractional seconds.)
-  return new Date(iso).toISOString().slice(0, 19) + 'Z'
+  // Convert to Saudi time (UTC+3, no DST) then format as YYYY-MM-DDTHH:MM:SSZ.
+  // ZATCA expects invoice timestamps in Saudi local time with a Z suffix.
+  const saudiMs = new Date(iso).getTime() + 3 * 60 * 60 * 1000
+  return new Date(saudiMs).toISOString().slice(0, 19) + 'Z'
 }
 
 /**
