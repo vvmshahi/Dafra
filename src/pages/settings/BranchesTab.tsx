@@ -184,6 +184,32 @@ function BranchDrawer({
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
 
+  // ── Validation ──────────────────────────────────────────────
+  const VAT_RE    = /^3\d{13}3$/
+  const CR_RE     = /^[a-zA-Z0-9]+$/
+  const BLDG_RE   = /^\d{4}$/
+  const POSTAL_RE = /^\d{5}$/
+
+  // Pre-touch all fields when editing so errors show immediately
+  const [touched, setTouched] = useState<Set<string>>(
+    isNew
+      ? new Set<string>()
+      : new Set<string>(['vat_number', 'cr_number', 'building_number', 'postal_code', 'street', 'city', 'district'])
+  )
+  const touch = (k: string) => setTouched(prev => { const s = new Set(prev); s.add(k); return s })
+
+  const errs: Record<string, string | null> = {
+    vat_number:      !form.vat_number.trim() ? 'Required' : !VAT_RE.test(form.vat_number.trim()) ? 'Must be 15 digits, starting and ending with 3' : null,
+    cr_number:       !form.cr_number.trim() ? 'Required' : !CR_RE.test(form.cr_number.trim()) ? 'Alphanumeric characters only' : null,
+    building_number: !form.building_number.trim() ? 'Required' : !BLDG_RE.test(form.building_number.trim()) ? 'Exactly 4 digits (use leading zeros e.g. 0056)' : null,
+    postal_code:     !form.postal_code.trim() ? 'Required' : !POSTAL_RE.test(form.postal_code.trim()) ? 'Exactly 5 digits' : null,
+    street:          !form.street.trim() ? 'Required' : null,
+    city:            !form.city.trim() ? 'Required' : null,
+    district:        !form.district.trim() ? 'Required' : null,
+  }
+  const hasErrors = Object.values(errs).some(Boolean)
+  const fieldErr  = (k: string) => (touched.has(k) ? errs[k] : null)
+
   const identity  = useSection(true)
   const address   = useSection(true)
   const contact   = useSection(true)
@@ -338,8 +364,14 @@ function BranchDrawer({
                   <Input label="Business Name (Arabic)" value={form.business_name_ar} onChange={e => set('business_name_ar')(e.target.value)} placeholder="شركة الفارس التجارية" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <Input label="VAT Registration Number" value={form.vat_number} onChange={e => set('vat_number')(e.target.value)} placeholder="301234567890123" maxLength={15} />
-                  <Input label="CR Number" value={form.cr_number} onChange={e => set('cr_number')(e.target.value)} placeholder="1234567890" />
+                  <div onBlur={() => touch('vat_number')}>
+                    <Input label="VAT Registration Number" value={form.vat_number} onChange={e => set('vat_number')(e.target.value)} placeholder="301234567890123" maxLength={15} />
+                    {fieldErr('vat_number') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('vat_number')}</p>}
+                  </div>
+                  <div onBlur={() => touch('cr_number')}>
+                    <Input label="CR Number" value={form.cr_number} onChange={e => set('cr_number')(e.target.value)} placeholder="1234567890" />
+                    {fieldErr('cr_number') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('cr_number')}</p>}
+                  </div>
                 </div>
                 <LogoUploader currentUrl={branch?.logo_url ?? null} previewUrl={logoPreview} onFile={handleLogoFile} />
 
@@ -367,12 +399,24 @@ function BranchDrawer({
             {address.open && (
               <div className="px-5 py-4 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
-                  <Input label="Building Number" value={form.building_number} onChange={e => set('building_number')(e.target.value)} placeholder="1234" />
-                  <Input label="Street Name" value={form.street} onChange={e => set('street')(e.target.value)} placeholder="King Fahd Road" />
+                  <div onBlur={() => touch('building_number')}>
+                    <Input label="Building Number" value={form.building_number} onChange={e => set('building_number')(e.target.value)} placeholder="0056" helperText="Use leading zeros e.g. 0056" />
+                    {fieldErr('building_number') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('building_number')}</p>}
+                  </div>
+                  <div onBlur={() => touch('street')}>
+                    <Input label="Street Name" value={form.street} onChange={e => set('street')(e.target.value)} placeholder="King Fahd Road" />
+                    {fieldErr('street') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('street')}</p>}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <Input label="District" value={form.district} onChange={e => set('district')(e.target.value)} placeholder="Al-Olaya" />
-                  <Input label="City" value={form.city} onChange={e => set('city')(e.target.value)} placeholder="Riyadh" />
+                  <div onBlur={() => touch('district')}>
+                    <Input label="District" value={form.district} onChange={e => set('district')(e.target.value)} placeholder="Al-Olaya" />
+                    {fieldErr('district') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('district')}</p>}
+                  </div>
+                  <div onBlur={() => touch('city')}>
+                    <Input label="City" value={form.city} onChange={e => set('city')(e.target.value)} placeholder="Riyadh" />
+                    {fieldErr('city') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('city')}</p>}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="w-full">
@@ -387,7 +431,10 @@ function BranchDrawer({
                       <option value="QA">Qatar</option>
                     </select>
                   </div>
-                  <Input label="Postal Code" value={form.postal_code} onChange={e => set('postal_code')(e.target.value)} placeholder="12345" />
+                  <div onBlur={() => touch('postal_code')}>
+                    <Input label="Postal Code" value={form.postal_code} onChange={e => set('postal_code')(e.target.value)} placeholder="12345" />
+                    {fieldErr('postal_code') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('postal_code')}</p>}
+                  </div>
                 </div>
               </div>
             )}
@@ -542,7 +589,7 @@ function BranchDrawer({
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 flex-shrink-0 bg-gray-50">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button type="submit" loading={saving} onClick={handleSubmit as any}>
+          <Button type="submit" loading={saving} disabled={hasErrors || saving} onClick={handleSubmit as any}>
             {isNew ? 'Create Branch' : 'Save Changes'}
           </Button>
         </div>

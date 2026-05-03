@@ -128,6 +128,16 @@ function Step1GenerateKeys({
   const [error, setError]     = useState<string | null>(null)
   const [csrPem, setCsrPem]   = useState<string | null>(null)
 
+  // Check required ZATCA fields before allowing key generation
+  const missingData: string[] = []
+  if (!branch.vat_number || !/^3\d{13}3$/.test(branch.vat_number))
+    missingData.push('Valid VAT number (15 digits, starts & ends with 3)')
+  if (!branch.building_number || !/^\d{4}$/.test(branch.building_number))
+    missingData.push('Building number (exactly 4 digits)')
+  if (!branch.postal_code || !/^\d{5}$/.test(branch.postal_code))
+    missingData.push('Postal code (exactly 5 digits)')
+  const branchDataValid = missingData.length === 0
+
   const generate = async () => {
     setLoading(true)
     setError(null)
@@ -172,6 +182,23 @@ function Step1GenerateKeys({
 
   return (
     <div className="space-y-4">
+      {!branchDataValid && (
+        <div className="flex items-start gap-3 bg-amber-50 border border-amber-100 rounded-xl p-3.5">
+          <AlertTriangle size={13} className="text-amber-600 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-[11px] font-semibold text-amber-700">Branch data incomplete</p>
+            <p className="text-[11px] text-amber-600 mt-0.5 leading-relaxed">
+              Fix these in the <span className="font-semibold">Branches tab</span> before generating keys:
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {missingData.map(m => (
+                <li key={m} className="text-[11px] text-amber-600">· {m}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl p-3.5">
         <Info size={13} className="text-blue-600 mt-0.5 flex-shrink-0" />
         <p className="text-[11px] text-blue-700 leading-relaxed">
@@ -189,8 +216,8 @@ function Step1GenerateKeys({
 
       <button
         onClick={generate}
-        disabled={loading}
-        className="btn-primary w-full flex items-center justify-center gap-2 py-3"
+        disabled={loading || !branchDataValid}
+        className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50"
       >
         {loading ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
         {loading ? 'Generating keys…' : 'Generate secp256k1 Key Pair & CSR'}

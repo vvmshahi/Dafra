@@ -91,6 +91,10 @@ function Step1({
   const set = (k: keyof OnboardingData) => (e: React.ChangeEvent<HTMLInputElement>) =>
     onChange(k, e.target.value)
 
+  const vatError = data.vat_number.trim() && !/^3\d{13}3$/.test(data.vat_number.trim())
+    ? 'Must be 15 digits, starting and ending with 3'
+    : null
+
   return (
     <div>
       <SectionLabel>Business identity</SectionLabel>
@@ -101,8 +105,11 @@ function Step1({
           placeholder="شركة الفارس التجارية" />
       </div>
       <div className="grid grid-cols-2 gap-3 mt-3">
-        <Input label="VAT Registration Number" value={data.vat_number} onChange={set('vat_number')}
-          placeholder="301234567890123" maxLength={15} helperText="15-digit Saudi VAT number" required />
+        <div>
+          <Input label="VAT Registration Number" value={data.vat_number} onChange={set('vat_number')}
+            placeholder="301234567890123" maxLength={15} helperText="15-digit Saudi VAT number" required />
+          {vatError && <p className="text-[11px] text-red-500 mt-1">{vatError}</p>}
+        </div>
         <Input label="CR Number (optional)" value={data.cr_number} onChange={set('cr_number')}
           placeholder="1234567890" />
       </div>
@@ -303,7 +310,7 @@ export default function OnboardingPage() {
   const canContinue = () => {
     if (step === 1) return (
       data.company_name.trim().length > 0 &&
-      data.vat_number.trim().length > 0 &&
+      /^3\d{13}3$/.test(data.vat_number.trim()) &&
       data.city.trim().length > 0 &&
       data.phone.trim().length > 0
     )
