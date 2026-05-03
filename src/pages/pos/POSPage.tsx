@@ -892,7 +892,7 @@ export default function POSPage() {
       setNote('')
       setCashReceived('')
     } catch (err) {
-      console.error(err)
+      console.error('[POSPage charge] payment failed:', err)
       alert('Payment failed. Please try again.')
     } finally {
       setSubmitting(false)

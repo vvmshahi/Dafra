@@ -101,6 +101,7 @@ export default function InvoicesPage() {
             payments(method)
           `)
           .eq('tenant_id', tid)
+          .eq('branch_id', profile?.branch_id)
           .gte('invoice_date', startDate)
           .lte('invoice_date', endDate)
           .order('created_at', { ascending: false })

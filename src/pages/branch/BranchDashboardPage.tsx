@@ -182,6 +182,7 @@ export default function BranchDashboardPage() {
       .from('products')
       .select('id, name, stock_quantity, min_stock_level')
       .eq('tenant_id', tid)
+      .eq('branch_id', bid)
       .eq('is_active', true)
       .not('min_stock_level', 'is', null)
       .order('stock_quantity', { ascending: true })
@@ -197,6 +198,16 @@ export default function BranchDashboardPage() {
   useEffect(() => { loadChart() },    [loadChart])
   useEffect(() => { loadInvoices() }, [loadInvoices])
   useEffect(() => { loadLowStock() }, [loadLowStock])
+
+  useEffect(() => {
+    if (!bid) return
+    const channel = supabase
+      .channel('branch-dashboard-' + bid)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices',  filter: `branch_id=eq.${bid}` }, () => loadStats())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses',  filter: `branch_id=eq.${bid}` }, () => loadStats())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [bid, loadStats])
 
   return (
     <div className="min-h-screen bg-gray-50">
