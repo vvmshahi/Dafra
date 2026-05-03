@@ -170,6 +170,27 @@ function extractCertIssuerName(certDer: Uint8Array): string {
   } catch { return '' }
 }
 
+// ── SubjectPublicKeyInfo extraction from cert DER (for QR tag 8) ─────────────
+// Extracts the full SPKI SEQUENCE (88 bytes for secp256k1 uncompressed) from TBSCertificate.
+// Using the cert's own public key guarantees consistency with ds:X509Certificate.
+function extractCertPublicKeySpki(certDer: Uint8Array): Uint8Array {
+  try {
+    let off = 0
+    off++; const [, o1] = derLen(certDer, off); off = o1             // enter Certificate
+    off++; const [, o2] = derLen(certDer, off); off = o2             // enter TBSCertificate
+    if (certDer[off] === 0xA0) { off++; const [vl, o3] = derLen(certDer, off); off = o3 + vl }
+    off++; const [sl, o4] = derLen(certDer, off); off = o4 + sl      // skip serialNumber
+    off++; const [al, o5] = derLen(certDer, off); off = o5 + al      // skip signatureAlgorithm
+    off++; const [il, o6] = derLen(certDer, off); off = o6 + il      // skip issuer
+    off++; const [vld, o7] = derLen(certDer, off); off = o7 + vld    // skip validity
+    off++; const [subl, o8] = derLen(certDer, off); off = o8 + subl  // skip subject
+    // now at subjectPublicKeyInfo SEQUENCE
+    const spkiStart = off
+    off++; const [spkiLen, spkiOff] = derLen(certDer, off)
+    return certDer.slice(spkiStart, spkiOff + spkiLen)
+  } catch { return new Uint8Array(0) }
+}
+
 // ── XML builder (ported from xml.ts) ─────────────────────────────────────────
 
 const NS = {
@@ -528,7 +549,7 @@ function buildSignedProperties(signingTime: string, certDigest: string, issuerDn
 }
 
 function buildSignedInfo(invoiceDigest: string, signedPropsDigest: string): string {
-  return `<ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2006/12/xml-c14n11"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"/><ds:Reference Id="invoiceSignedData" URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::ext:UBLExtensions)</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:Signature)</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:AdditionalDocumentReference[cbc:ID='QR'])</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/2006/12/xml-c14n11"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${invoiceDigest}</ds:DigestValue></ds:Reference><ds:Reference Type="http://uri.etsi.org/01903#SignedProperties" URI="#xadesSignedProperties"><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${signedPropsDigest}</ds:DigestValue></ds:Reference></ds:SignedInfo>`
+  return `<ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2006/12/xml-c14n11"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"/><ds:Reference Id="invoiceSignedData" URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::ext:UBLExtensions)</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:Signature)</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:AdditionalDocumentReference[cbc:ID='QR'])</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/2006/12/xml-c14n11"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${invoiceDigest}</ds:DigestValue></ds:Reference><ds:Reference Type="http://uri.etsi.org/01903/v1.3.2#SignedProperties" URI="#xadesSignedProperties"><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${signedPropsDigest}</ds:DigestValue></ds:Reference></ds:SignedInfo>`
 }
 
 function buildXadesBlock(
@@ -538,7 +559,7 @@ function buildXadesBlock(
 ): string {
   const signedInfo  = buildSignedInfo(invoiceDigest, signedPropsDigest)
   const signedProps = buildSignedProperties(signingTime, certDigest, _issuerDn, serialNumber)
-  return `<sig:UBLDocumentSignatures xmlns:sig="urn:oasis:names:specification:ubl:schema:xsd:CommonSignatureComponents-2" xmlns:sac="urn:oasis:names:specification:ubl:schema:xsd:SignatureAggregateComponents-2" xmlns:sbc="urn:oasis:names:specification:ubl:schema:xsd:SignatureBasicComponents-2"><sac:SignatureInformation><cbc:ID xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">urn:oasis:names:specification:ubl:signature:1</cbc:ID><sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:Invoice</sbc:ReferencedSignatureID><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="urn:oasis:names:specification:ubl:signature:Invoice">${signedInfo}<ds:SignatureValue>${sigValue}</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>${certPemBody}</ds:X509Certificate></ds:X509Data></ds:KeyInfo><ds:Object><xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Target="#urn:oasis:names:specification:ubl:signature:Invoice">${signedProps}</xades:QualifyingProperties></ds:Object></ds:Signature></sac:SignatureInformation></sig:UBLDocumentSignatures>`
+  return `<sig:UBLDocumentSignatures xmlns:sig="urn:oasis:names:specification:ubl:schema:xsd:CommonSignatureComponents-2" xmlns:sac="urn:oasis:names:specification:ubl:schema:xsd:SignatureAggregateComponents-2" xmlns:sbc="urn:oasis:names:specification:ubl:schema:xsd:SignatureBasicComponents-2"><sac:SignatureInformation><cbc:ID xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">urn:oasis:names:specification:ubl:signature:1</cbc:ID><sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:Invoice</sbc:ReferencedSignatureID><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="signature">${signedInfo}<ds:SignatureValue>${sigValue}</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>${certPemBody}</ds:X509Certificate></ds:X509Data></ds:KeyInfo><ds:Object><xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Target="#signature">${signedProps}</xades:QualifyingProperties></ds:Object></ds:Signature></sac:SignatureInformation></sig:UBLDocumentSignatures>`
 }
 
 async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate: string): Promise<{
@@ -554,18 +575,11 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const serialNumber  = extractCertSerial(certDer)
   const issuerName    = extractCertIssuerName(certDer)              // DN string for xades:IssuerSerial
   const certSigValue  = extractCertSignatureValue(certDer)          // CA signature for QR tag 9
-  const pubKeyFull    = secp256k1.getPublicKey(secretKey, false) as unknown as Uint8Array  // 65 bytes
-  // SubjectPublicKeyInfo DER (88 bytes): secp256k1 header + uncompressed point (ZATCA QR tag 8)
-  const spkiPrefix    = new Uint8Array([
-    0x30, 0x56, 0x30, 0x10, 0x06, 0x07, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01,
-    0x06, 0x05, 0x2B, 0x81, 0x04, 0x00, 0x0A, 0x03, 0x42, 0x00, 0x04,
-  ])
-  const pubKeySpki    = concatArrays(spkiPrefix, pubKeyFull.slice(1))
+  // Extract SPKI from cert DER — guarantees QR tag 8 matches ds:X509Certificate
+  const pubKeySpki    = extractCertPublicKeySpki(certDer)
 
-  // ZATCA requires DigestValue = base64(hex_string(sha256(certDER))), not base64(raw_bytes)
   const certDigestBytes = new Uint8Array(await sha256Bytes(certDer))
-  const certDigestHex   = Array.from(certDigestBytes).map(b => b.toString(16).padStart(2, '0')).join('')
-  const certDigestB64   = btoa(certDigestHex)
+  const certDigestB64   = btoa(String.fromCharCode(...certDigestBytes))
 
   const invoiceCanonical = canonicalizeInvoiceContent(xmlString)
   const invoiceDigestBuf = await sha256(invoiceCanonical)
