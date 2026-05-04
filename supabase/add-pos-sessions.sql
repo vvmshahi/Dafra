@@ -5,10 +5,10 @@ CREATE TABLE IF NOT EXISTS pos_sessions (
   id                      UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
   branch_id               UUID          NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
   tenant_id               UUID          NOT NULL,
-  opened_by               UUID          REFERENCES profiles(id),
+  opened_by               UUID          REFERENCES user_profiles(id),
   opened_at               TIMESTAMPTZ   NOT NULL DEFAULT now(),
   opening_cash            NUMERIC(12,2) NOT NULL DEFAULT 0,
-  closed_by               UUID          REFERENCES profiles(id),
+  closed_by               UUID          REFERENCES user_profiles(id),
   closed_at               TIMESTAMPTZ,
   closing_cash_expected   NUMERIC(12,2),
   closing_cash_actual     NUMERIC(12,2),
@@ -44,7 +44,7 @@ DROP POLICY IF EXISTS "branch_pos_sessions_select" ON pos_sessions;
 CREATE POLICY "branch_pos_sessions_select" ON pos_sessions
   FOR SELECT USING (
     branch_id IN (
-      SELECT branch_id FROM profiles
+      SELECT branch_id FROM user_profiles
       WHERE id = auth.uid() AND branch_id IS NOT NULL
     )
   );
@@ -53,7 +53,7 @@ DROP POLICY IF EXISTS "branch_pos_sessions_insert" ON pos_sessions;
 CREATE POLICY "branch_pos_sessions_insert" ON pos_sessions
   FOR INSERT WITH CHECK (
     branch_id IN (
-      SELECT branch_id FROM profiles
+      SELECT branch_id FROM user_profiles
       WHERE id = auth.uid() AND branch_id IS NOT NULL
     )
   );
@@ -62,7 +62,7 @@ DROP POLICY IF EXISTS "branch_pos_sessions_update" ON pos_sessions;
 CREATE POLICY "branch_pos_sessions_update" ON pos_sessions
   FOR UPDATE USING (
     branch_id IN (
-      SELECT branch_id FROM profiles
+      SELECT branch_id FROM user_profiles
       WHERE id = auth.uid() AND branch_id IS NOT NULL
     )
   );
@@ -72,7 +72,7 @@ DROP POLICY IF EXISTS "owner_pos_sessions_select" ON pos_sessions;
 CREATE POLICY "owner_pos_sessions_select" ON pos_sessions
   FOR SELECT USING (
     tenant_id IN (
-      SELECT tenant_id FROM profiles
+      SELECT tenant_id FROM user_profiles
       WHERE id = auth.uid() AND role = 'owner'
     )
   );
