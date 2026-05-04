@@ -454,7 +454,8 @@ function buildPhase2QR(
     tlvStr(0x03, normTs(timestamp)),
     tlvStr(0x04, totalAmount.toFixed(2)), tlvStr(0x05, vatAmount.toFixed(2)),
     tlvStr(0x06, hashB64), tlvStr(0x07, sigB64),
-    tlvBytes(0x08, pubKeySpki), tlvBytes(0x09, certSigValue),
+    tlvStr(0x08, btoa(String.fromCharCode(...pubKeySpki))),
+    tlvStr(0x09, btoa(String.fromCharCode(...certSigValue))),
   )
   return btoa(String.fromCharCode(...all))
 }
@@ -822,7 +823,7 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
       zatca_status:             newStatus,
       zatca_xml:                signedXml,
       zatca_xml_hash:           invoiceHash,
-      zatca_qr_code:            qrCode,
+      ...(newStatus === 'reported' || newStatus === 'cleared' ? { zatca_qr_code: qrCode } : {}),
       zatca_submitted_at:       new Date().toISOString(),
       zatca_clearance_status:   clearanceStatus ?? null,
       zatca_reporting_response: zatcaBody ?? null,

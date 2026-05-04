@@ -38,6 +38,8 @@ export interface ThermalReceiptProps {
   change?: number | null
   showCashChange?: boolean
   customerName?: string | null
+  buyerVatNumber?: string | null
+  isStandardInvoice?: boolean
   qrDataUrl?: string | null
   receiptFooter?: string | null
   showFooter?: boolean
@@ -99,7 +101,7 @@ export default function ThermalReceipt({
   invoiceNumber, date, time,
   items, subtotal, taxAmount, total,
   paymentMethod, cashReceived, change, showCashChange = true,
-  customerName, qrDataUrl, receiptFooter, showFooter = true,
+  customerName, buyerVatNumber, isStandardInvoice = false, qrDataUrl, receiptFooter, showFooter = true,
 }: ThermalReceiptProps) {
   // Line 2 (legal name) only shown if it differs from Line 1 (brand name)
   const showLegalName = businessNameEn && businessNameEn !== businessNameAr
@@ -156,9 +158,11 @@ export default function ThermalReceipt({
       {/* Invoice title */}
       <div style={{ textAlign: 'center', margin: '4px 0' }}>
         <div style={{ fontFamily: 'Cairo, "Segoe UI", sans-serif', fontSize: '13px', fontWeight: 'bold', direction: 'rtl' }}>
-          فاتورة ضريبية مبسطة
+          {isStandardInvoice ? 'فاتورة ضريبية' : 'فاتورة ضريبية مبسطة'}
         </div>
-        <div style={{ fontSize: '10px', color: '#555' }}>Simplified Tax Invoice</div>
+        <div style={{ fontSize: '10px', color: '#555' }}>
+          {isStandardInvoice ? 'Standard Tax Invoice' : 'Simplified Tax Invoice'}
+        </div>
       </div>
 
       <Dash />
@@ -209,11 +213,16 @@ export default function ThermalReceipt({
       </div>
 
       {/* Customer */}
-      {customerName && customerName !== 'Walk-in Customer' && (
+      {(customerName && customerName !== 'Walk-in Customer' || buyerVatNumber) && (
         <>
           <Dash />
           <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-            Customer: <strong>{customerName}</strong>
+            {customerName && customerName !== 'Walk-in Customer' && (
+              <div>Customer: <strong>{customerName}</strong></div>
+            )}
+            {buyerVatNumber && (
+              <div>Buyer VAT: <strong>{buyerVatNumber}</strong></div>
+            )}
           </div>
         </>
       )}

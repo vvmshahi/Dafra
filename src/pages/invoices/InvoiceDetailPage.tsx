@@ -33,6 +33,8 @@ interface Customer {
   vat_number: string | null
   customer_type: string
   company_name: string | null
+  business_name: string | null
+  business_name_ar: string | null
   phone: string | null
 }
 
@@ -153,7 +155,7 @@ export default function InvoiceDetailPage() {
         if (inv.customer_id) {
           fetches.push(
             supabase.from('customers')
-              .select('name, name_ar, vat_number, customer_type, company_name, phone')
+              .select('name, name_ar, vat_number, customer_type, company_name, business_name, business_name_ar, phone')
               .eq('id', inv.customer_id)
               .single()
           )
@@ -370,7 +372,13 @@ ${lines}
         taxAmount={Number(invoice.tax_amount)}
         total={Number(invoice.total_amount)}
         paymentMethod={payment?.method ?? 'card'}
-        customerName={customer?.name ?? null}
+        customerName={
+          customer?.customer_type === 'business' && (customer.business_name ?? customer.company_name)
+            ? (customer.business_name ?? customer.company_name)
+            : (customer?.name ?? null)
+        }
+        buyerVatNumber={invoice.zatca_invoice_type === 'standard' ? (customer?.vat_number ?? null) : null}
+        isStandardInvoice={invoice.zatca_invoice_type === 'standard'}
         logoUrl={branch.logo_url}
         showLogo={branch.show_logo ?? true}
         qrDataUrl={qrDataUrl}
@@ -498,9 +506,23 @@ ${lines}
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1">Bill To</p>
           {customer ? (
             <>
-              <p className="text-sm font-semibold text-gray-900">{customer.name}</p>
-              {customer.name_ar && (
-                <p className="text-xs text-gray-400" dir="rtl">{customer.name_ar}</p>
+              {customer.customer_type === 'business' && (customer.business_name ?? customer.company_name) ? (
+                <>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {customer.business_name ?? customer.company_name}
+                  </p>
+                  {customer.business_name_ar && (
+                    <p className="text-xs text-gray-400" dir="rtl">{customer.business_name_ar}</p>
+                  )}
+                  <p className="text-xs text-gray-500 mt-0.5">Contact: {customer.name}</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-gray-900">{customer.name}</p>
+                  {customer.name_ar && (
+                    <p className="text-xs text-gray-400" dir="rtl">{customer.name_ar}</p>
+                  )}
+                </>
               )}
               {customer.vat_number && (
                 <p className="text-xs text-gray-500 mt-0.5">

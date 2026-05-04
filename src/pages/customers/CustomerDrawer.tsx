@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/Button'
 import type { CustomerType } from '@/types'
 import type { CustomerWithStats } from './CustomersPage'
 
-// ── Saudi mobile validation ───────────────────────────────────────────────────
+// ── Validation patterns ───────────────────────────────────────────────────────
 
 const SAUDI_MOBILE_RE = /^05[0-9]{8}$/
+const VAT_RE          = /^3\d{13}3$/
 
 function validatePhone(value: string): string | null {
   const clean = value.replace(/\s/g, '')
@@ -41,21 +42,23 @@ interface Props {
 export default function CustomerDrawer({ open, customer, onClose, onSaved }: Props) {
   const { profile } = useAuth()
 
-  const [saving,       setSaving]       = useState(false)
-  const [error,        setError]        = useState('')
-  const [phoneError,   setPhoneError]   = useState('')
+  const [saving,        setSaving]        = useState(false)
+  const [error,         setError]         = useState('')
+  const [phoneError,    setPhoneError]    = useState('')
+  const [vatError,      setVatError]      = useState('')
 
   // Form
-  const [custType,     setCustType]     = useState<CustomerType>('individual')
-  const [name,         setName]         = useState('')
-  const [nameAr,       setNameAr]       = useState('')
-  const [companyName,  setCompanyName]  = useState('')
-  const [phone,        setPhone]        = useState('')
-  const [email,        setEmail]        = useState('')
-  const [vatNumber,    setVatNumber]    = useState('')
-  const [crNumber,     setCrNumber]     = useState('')
-  const [city,         setCity]         = useState('')
-  const [notes,        setNotes]        = useState('')
+  const [custType,      setCustType]      = useState<CustomerType>('individual')
+  const [name,          setName]          = useState('')
+  const [nameAr,        setNameAr]        = useState('')
+  const [businessName,  setBusinessName]  = useState('')
+  const [businessNameAr, setBusinessNameAr] = useState('')
+  const [phone,         setPhone]         = useState('')
+  const [email,         setEmail]         = useState('')
+  const [vatNumber,     setVatNumber]     = useState('')
+  const [crNumber,      setCrNumber]      = useState('')
+  const [city,          setCity]          = useState('')
+  const [notes,         setNotes]         = useState('')
 
   // Populate on edit
   useEffect(() => {
@@ -63,7 +66,8 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
       setCustType((customer.customer_type as CustomerType) ?? 'individual')
       setName(customer.name)
       setNameAr(customer.name_ar ?? '')
-      setCompanyName(customer.company_name ?? '')
+      setBusinessName(customer.business_name ?? customer.company_name ?? '')
+      setBusinessNameAr(customer.business_name_ar ?? '')
       setPhone(customer.phone ?? '')
       setEmail(customer.email ?? '')
       setVatNumber(customer.vat_number ?? '')
@@ -74,7 +78,8 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
       setCustType('individual')
       setName('')
       setNameAr('')
-      setCompanyName('')
+      setBusinessName('')
+      setBusinessNameAr('')
       setPhone('')
       setEmail('')
       setVatNumber('')
@@ -84,18 +89,30 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
     }
     setError('')
     setPhoneError('')
+    setVatError('')
   }, [open, customer])
 
   const handlePhoneBlur = () => {
     setPhoneError(validatePhone(phone) ?? '')
   }
 
+  const handleVatBlur = () => {
+    const v = vatNumber.trim()
+    if (v && !VAT_RE.test(v)) setVatError('VAT must be 15 digits starting and ending with 3')
+    else setVatError('')
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!name.trim()) { setError('Full name is required'); return }
-    if (custType === 'business' && !companyName.trim()) {
-      setError('Company name is required for business customers'); return
+    if (custType === 'business') {
+      if (!businessName.trim()) { setError('Business name is required'); return }
+    } else {
+      if (!name.trim()) { setError('Full name is required'); return }
+    }
+    const vatTrimmed = vatNumber.trim()
+    if (vatTrimmed && !VAT_RE.test(vatTrimmed)) {
+      setVatError('VAT must be 15 digits starting and ending with 3'); return
     }
     const phoneErr = validatePhone(phone)
     if (phoneErr) { setPhoneError(phoneErr); return }
@@ -104,17 +121,19 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
     setError('')
 
     const payload: Record<string, unknown> = {
-      tenant_id:     profile?.tenant_id,
-      name:          name.trim(),
-      name_ar:       nameAr.trim()       || null,
-      customer_type: custType,
-      company_name:  companyName.trim()  || null,
-      phone:         phone.trim()        || null,
-      email:         email.trim()        || null,
-      vat_number:    vatNumber.trim()    || null,
-      cr_number:     crNumber.trim()     || null,
-      city:          city.trim()         || null,
-      notes:         notes.trim()        || null,
+      tenant_id:        profile?.tenant_id,
+      name:             name.trim() || businessName.trim(),
+      name_ar:          nameAr.trim()          || null,
+      customer_type:    custType,
+      business_name:    businessName.trim()    || null,
+      business_name_ar: businessNameAr.trim()  || null,
+      company_name:     businessName.trim()    || null,
+      phone:            phone.trim()           || null,
+      email:            email.trim()           || null,
+      vat_number:       vatTrimmed             || null,
+      cr_number:        crNumber.trim()        || null,
+      city:             city.trim()            || null,
+      notes:            notes.trim()           || null,
     }
 
     const q = supabase as unknown as { from: (t: string) => any }
@@ -239,13 +258,24 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
                 <>
                   <div>
                     <label className="label">
-                      Company Name <span className="text-red-500">*</span>
+                      Business Name (English) <span className="text-red-500">*</span>
                     </label>
                     <input
                       className="input"
-                      value={companyName}
-                      onChange={e => setCompanyName(e.target.value)}
+                      value={businessName}
+                      onChange={e => setBusinessName(e.target.value)}
                       placeholder="e.g. ABC Trading Company"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Business Name (Arabic)</label>
+                    <input
+                      className="input text-right"
+                      dir="rtl"
+                      value={businessNameAr}
+                      onChange={e => setBusinessNameAr(e.target.value)}
+                      placeholder="اسم الشركة بالعربية"
                     />
                   </div>
 
@@ -253,13 +283,18 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
                     <div>
                       <label className="label">VAT Number</label>
                       <input
-                        className="input font-mono"
+                        className={`input font-mono ${vatError ? 'border-red-300 focus:border-red-400 focus:ring-red-400/20' : ''}`}
                         value={vatNumber}
-                        onChange={e => setVatNumber(e.target.value)}
-                        placeholder="301234567890123"
+                        onChange={e => { setVatNumber(e.target.value); setVatError('') }}
+                        onBlur={handleVatBlur}
+                        placeholder="3XXXXXXXXXXXXX3"
                         maxLength={15}
                       />
-                      <p className="text-[10px] text-gray-400 mt-1">15-digit ZATCA VAT number</p>
+                      {vatError ? (
+                        <p className="text-xs text-red-500 mt-1">{vatError}</p>
+                      ) : (
+                        <p className="text-[10px] text-gray-400 mt-1">15-digit ZATCA VAT (3…3)</p>
+                      )}
                     </div>
                     <div>
                       <label className="label">CR Number</label>

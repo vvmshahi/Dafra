@@ -398,8 +398,11 @@ export interface Customer {
   name: string
   name_ar: string | null
   customer_type: CustomerType
-  // Added by update-customers.sql (legal entity name for B2B)
+  // Added by update-customers.sql (legacy legal entity name)
   company_name: string | null
+  // Added by add-customer-type.sql (B2B legal entity names)
+  business_name: string | null
+  business_name_ar: string | null
   vat_number: string | null
   cr_number: string | null
   email: string | null
@@ -635,6 +638,8 @@ export interface CustomerInsert {
   name_ar?: string | null
   customer_type?: string
   company_name?: string | null
+  business_name?: string | null
+  business_name_ar?: string | null
   vat_number?: string | null
   cr_number?: string | null
   email?: string | null

@@ -42,6 +42,9 @@ interface PosCustomer {
   id: string
   name: string
   phone: string | null
+  customer_type: string
+  vat_number: string | null
+  business_name: string | null
 }
 
 interface CartItem {
@@ -66,6 +69,8 @@ interface ReceiptData {
   cashReceived: number
   customerName: string
   customerPhone: string | null
+  isStandardInvoice: boolean
+  buyerVatNumber: string | null
   cashierName: string
   items: ThermalItem[]
   createdAt: string
@@ -413,6 +418,8 @@ ${lines}
         change={receipt.change}
         showCashChange={receipt.showCashChange}
         customerName={receipt.customerName}
+        buyerVatNumber={receipt.buyerVatNumber}
+        isStandardInvoice={receipt.isStandardInvoice}
         qrDataUrl={qrDataUrl}
         receiptFooter={receipt.receiptFooter}
         showFooter={receipt.showFooter}
@@ -616,7 +623,7 @@ export default function POSPage() {
             .order('name', { ascending: true }),
           supabase
             .from('customers')
-            .select('id, name, phone')
+            .select('id, name, phone, customer_type, vat_number, business_name')
             .eq('tenant_id', tid)
             .eq('is_active', true)
             .order('name', { ascending: true })
@@ -646,7 +653,14 @@ export default function POSPage() {
         }
         setCategories(Array.from(catMap.values()))
 
-        setCustomers((custData ?? []).map((c: any) => ({ id: c.id, name: c.name, phone: c.phone })))
+        setCustomers((custData ?? []).map((c: any) => ({
+          id:            c.id,
+          name:          c.name,
+          phone:         c.phone,
+          customer_type: c.customer_type ?? 'individual',
+          vat_number:    c.vat_number ?? null,
+          business_name: c.business_name ?? null,
+        })))
 
         try {
           const saved = localStorage.getItem(cartKey(bid))
@@ -771,6 +785,9 @@ export default function POSPage() {
       const today         = saudiDateStr()
       const createdAt     = new Date().toISOString()
 
+      const isB2BInvoice = selectedCust?.customer_type === 'business' &&
+        /^3\d{13}3$/.test(selectedCust?.vat_number ?? '')
+
       // QR tag 1: always use legal business_name, never display_name (ZATCA requirement)
       const zatcaQrCode = buildZatcaQR({
         sellerName:  branch.business_name || branch.name,
@@ -786,7 +803,7 @@ export default function POSPage() {
         customer_id:        customerId ?? null,
         created_by:         profile?.id ?? null,
         invoice_number:     invoiceNumber,
-        zatca_invoice_type: 'simplified',
+        zatca_invoice_type: isB2BInvoice ? 'standard' : 'simplified',
         zatca_type_code:    '388',
         zatca_status:       'pending',
         zatca_qr_code:      zatcaQrCode,
@@ -860,8 +877,12 @@ export default function POSPage() {
         paymentMethod:  payMethod,
         change,
         cashReceived:   cashAmt,
-        customerName:   selectedCust?.name ?? 'Walk-in Customer',
-        customerPhone:  selectedCust?.phone ?? null,
+        customerName:      selectedCust?.customer_type === 'business' && selectedCust?.business_name
+          ? selectedCust.business_name
+          : (selectedCust?.name ?? 'Walk-in Customer'),
+        customerPhone:     selectedCust?.phone ?? null,
+        isStandardInvoice: isB2BInvoice,
+        buyerVatNumber:    isB2BInvoice ? (selectedCust?.vat_number ?? null) : null,
         cashierName:    profile?.full_name ?? user?.email?.split('@')[0] ?? 'Cashier',
         items:          cart.map(i => ({
           name:      i.nameAr?.trim() ? i.nameAr : i.name,
@@ -1107,7 +1128,9 @@ export default function POSPage() {
           >
             <User size={13} className="text-gray-400 flex-shrink-0" />
             <span className={`flex-1 text-xs ${customerId ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>
-              {selectedCust?.name ?? 'Walk-in Customer'}
+              {selectedCust?.customer_type === 'business' && selectedCust?.business_name
+                ? selectedCust.business_name
+                : (selectedCust?.name ?? 'Walk-in Customer')}
             </span>
             <ChevronDown size={13} className="text-gray-400 flex-shrink-0" />
           </button>
@@ -1133,7 +1156,12 @@ export default function POSPage() {
                     className={`w-full px-3 py-2.5 text-left text-xs flex items-center gap-2 hover:bg-gray-50 ${customerId === c.id ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-gray-700'}`}
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="truncate">{c.name}</p>
+                      <p className="truncate">
+                        {c.customer_type === 'business' && c.business_name ? c.business_name : c.name}
+                      </p>
+                      {c.customer_type === 'business' && c.business_name && (
+                        <p className="text-gray-400 text-[10px] truncate">{c.name}</p>
+                      )}
                       {c.phone && <p className="text-gray-400 text-[10px]">{c.phone}</p>}
                     </div>
                     {customerId === c.id && <Check size={12} className="flex-shrink-0" />}

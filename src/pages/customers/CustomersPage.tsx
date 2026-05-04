@@ -23,9 +23,10 @@ type FilterType = 'all' | CustomerType
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function displayName(c: CustomerWithStats) {
-  return c.customer_type === 'business' && c.company_name
-    ? c.company_name
-    : c.name
+  if (c.customer_type === 'business') {
+    return c.business_name ?? c.company_name ?? c.name
+  }
+  return c.name
 }
 
 function formatDate(iso: string | null) {
@@ -47,7 +48,7 @@ function CustomerRow({
 }) {
   const isBusiness = customer.customer_type === 'business'
   const primary    = displayName(customer)
-  const secondary  = isBusiness && customer.company_name ? customer.name : customer.name_ar
+  const secondary  = isBusiness && (customer.business_name ?? customer.company_name) ? customer.name : customer.name_ar
 
   return (
     <div className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50/70 transition-colors border-b border-gray-100 last:border-0">
