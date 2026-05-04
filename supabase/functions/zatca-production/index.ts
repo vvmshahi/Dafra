@@ -49,6 +49,17 @@ Deno.serve(async (req: Request) => {
       })
     }
 
+    const [{ data: callerProfile }, { data: branch }] = await Promise.all([
+      supabase.from('user_profiles').select('tenant_id').eq('id', user.id).maybeSingle(),
+      supabase.from('branches').select('tenant_id').eq('id', branchId).maybeSingle(),
+    ])
+
+    if (!branch || !callerProfile || branch.tenant_id !== callerProfile.tenant_id) {
+      return new Response(JSON.stringify({ error: 'Branch not found or access denied' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     // Load compliance credentials and environment from DB
     const { data: cert, error: certErr } = await supabase
       .from('zatca_certificates')

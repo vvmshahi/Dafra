@@ -49,6 +49,17 @@ Deno.serve(async (req: Request) => {
       })
     }
 
+    const [{ data: callerProfile }, { data: branch }] = await Promise.all([
+      supabase.from('user_profiles').select('tenant_id').eq('id', user.id).maybeSingle(),
+      supabase.from('branches').select('tenant_id').eq('id', branchId).maybeSingle(),
+    ])
+
+    if (!branch || !callerProfile || branch.tenant_id !== callerProfile.tenant_id) {
+      return new Response(JSON.stringify({ error: 'Branch not found or access denied' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const env     = environment === 'production' ? 'production' : 'sandbox'
     const baseUrl = ZATCA_URLS[env]
     const url     = `${baseUrl}/compliance`
@@ -68,7 +79,7 @@ Deno.serve(async (req: Request) => {
 
     console.log('[zatca-compliance] env:', env)
     console.log('[zatca-compliance] url:', url)
-    console.log('[zatca-compliance] otp:', otp)
+    console.log('[zatca-compliance] otp: [REDACTED]')
     console.log('[zatca-compliance] headers:', JSON.stringify(requestHeaders))
     console.log('[zatca-compliance] csr length (raw):', csr.length)
     console.log('[zatca-compliance] csr base64 length (btoa):', csrBase64.length)
@@ -84,8 +95,6 @@ Deno.serve(async (req: Request) => {
 
     const responseText = await zatcaRes.text()
     console.log('[zatca-compliance] ZATCA response status:', zatcaRes.status)
-    console.log('[zatca-compliance] ZATCA response headers:', JSON.stringify(Object.fromEntries(zatcaRes.headers.entries())))
-    console.log('[zatca-compliance] ZATCA response body:', responseText)
 
     let zatcaBody: any
     try {

@@ -33,7 +33,7 @@ const corsHeaders = {
 }
 
 // Must match VITE_ZATCA_KEY_SECRET set when the private key was encrypted in the browser
-const APP_SECRET = Deno.env.get('ZATCA_KEY_SECRET') ?? 'dafra-zatca-local-secret'
+const APP_SECRET = Deno.env.get('ZATCA_KEY_SECRET')
 
 const FIRST_INVOICE_HASH =
   'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ=='
@@ -699,12 +699,6 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
     sellerName, vatNumber, timestamp, totalAmount, vatAmount,
     hashB64Str, sigB64Str, pubKeySpki, certSigValue,
   )
-  console.log('[zatca-submit] XML issueDate:', issueDate)
-  console.log('[zatca-submit] XML issueTime:', issueTime)
-  console.log('[zatca-submit] XML timestamp (QR tag3):', normTs(timestamp))
-  console.log('[zatca-submit] XML total (QR tag4):', totalAmount.toFixed(2))
-  console.log('[zatca-submit] XML vat (QR tag5):', vatAmount.toFixed(2))
-
   signedXml = signedXml.replace(
     /(<cbc:ID>QR<\/cbc:ID>[\s\S]*?<cbc:EmbeddedDocumentBinaryObject mimeCode="text\/plain">)([^<]*)(<\/cbc:EmbeddedDocumentBinaryObject>)/,
     `$1${qrCode}$3`,
@@ -724,7 +718,7 @@ async function queueForRetry(db: any, invoiceId: string, branchId: string, tenan
 
 // ── Main invoice processor ────────────────────────────────────────────────────
 
-async function processInvoice(db: any, invoiceId: string): Promise<{ invoiceStatus: string }> {
+async function processInvoice(db: any, invoiceId: string, callerTenantId: string): Promise<{ invoiceStatus: string }> {
   console.log('[zatca-submit] processInvoice:', invoiceId)
 
   const { data: inv, error: invErr } = await db
@@ -735,7 +729,7 @@ async function processInvoice(db: any, invoiceId: string): Promise<{ invoiceStat
       branch_id, tenant_id, customer_id,
       invoice_items(id, name, quantity, unit_price, discount_amount, subtotal, tax_rate, tax_amount, total),
       customers(name, vat_number)`)
-    .eq('id', invoiceId).single()
+    .eq('id', invoiceId).eq('tenant_id', callerTenantId).single()
 
   if (invErr || !inv) {
     console.error('[zatca-submit] invoice fetch failed:', invErr?.message)
@@ -811,7 +805,6 @@ async function processInvoice(db: any, invoiceId: string): Promise<{ invoiceStat
     const responseText = await zatcaRes.text()
     console.log('[zatca-submit] ZATCA status:', zatcaRes.status)
     const zatcaBody = (() => { try { return JSON.parse(responseText) } catch { return {} } })()
-    console.log('[zatca-submit] ZATCA full response:', JSON.stringify(zatcaBody, null, 2))
 
     const reportingStatus = zatcaBody?.reportingStatus as string | undefined
     const clearanceStatus = zatcaBody?.clearanceStatus as string | undefined
@@ -860,6 +853,13 @@ async function processInvoice(db: any, invoiceId: string): Promise<{ invoiceStat
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { status: 200, headers: corsHeaders })
 
+  if (!APP_SECRET) {
+    return new Response(
+      JSON.stringify({ error: 'ZATCA_KEY_SECRET not configured' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+  }
+
   const url = new URL(req.url)
 
   try {
@@ -873,6 +873,19 @@ Deno.serve(async (req: Request) => {
     if (authErr || !user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const { data: callerProfile } = await supabase
+      .from('user_profiles')
+      .select('tenant_id')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    const callerTenantId = callerProfile?.tenant_id as string | undefined
+    if (!callerTenantId) {
+      return new Response(JSON.stringify({ error: 'Tenant not found' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
@@ -927,7 +940,7 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const result = await processInvoice(supabase as any, invoiceId)
+    const result = await processInvoice(supabase as any, invoiceId, callerTenantId)
     return new Response(JSON.stringify(result), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

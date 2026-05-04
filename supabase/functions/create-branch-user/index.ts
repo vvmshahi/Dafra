@@ -6,18 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-function decodeJWTPayload(jwt: string): Record<string, unknown> | null {
-  try {
-    const parts = jwt.split('.')
-    if (parts.length !== 3) return null
-    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-    const padded  = base64 + '='.repeat((4 - base64.length % 4) % 4)
-    return JSON.parse(atob(padded))
-  } catch {
-    return null
-  }
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -28,69 +16,33 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl    = Deno.env.get('SUPABASE_URL')!
     const SERVICE_ROLE_KEY = Deno.env.get('DAFRA_SERVICE_ROLE_KEY')
 
-    console.log('[create-branch-user] SUPABASE_URL present:', !!supabaseUrl)
-    console.log('[create-branch-user] DAFRA_SERVICE_ROLE_KEY present:', !!SERVICE_ROLE_KEY)
-    console.log('[create-branch-user] key prefix:', SERVICE_ROLE_KEY?.substring(0, 15) ?? 'MISSING')
-    console.log('[create-branch-user] key is JWT (eyJ):', SERVICE_ROLE_KEY?.startsWith('eyJ') ?? false)
-
     if (!SERVICE_ROLE_KEY || !SERVICE_ROLE_KEY.startsWith('eyJ')) {
-      console.error('[create-branch-user] Invalid service role key:', SERVICE_ROLE_KEY?.substring(0, 20) ?? 'MISSING')
       return new Response(JSON.stringify({ error: 'Server configuration error - invalid key' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    console.log('[create-branch-user] URL:', supabaseUrl)
-
     const adminClient = createClient(supabaseUrl, SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     })
-    console.log('[create-branch-user] adminClient created:', !!adminClient)
-    console.log('[create-branch-user] adminClient.auth present:', !!adminClient.auth)
 
-    // Test query to verify service role access before any caller checks
-    const { data: testData, error: testError } = await adminClient
-      .from('user_profiles')
-      .select('count')
-      .limit(1)
-    console.log('[create-branch-user] Test query result:', JSON.stringify(testData))
-    console.log('[create-branch-user] Test query error:', JSON.stringify(testError))
-
-    // ── Step 2: Extract and decode the caller's JWT ───────────────────────
+    // ── Step 2: Verify caller's JWT ────────────────────────────────────────
     const authHeader = req.headers.get('Authorization') ?? ''
     const callerJWT  = authHeader.replace(/^Bearer\s+/i, '').trim()
 
     if (!callerJWT) {
-      console.error('[create-branch-user] Missing Authorization header')
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    const jwtPayload = decodeJWTPayload(callerJWT)
-    if (!jwtPayload) {
-      console.error('[create-branch-user] Could not decode JWT')
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+    const { data: { user: caller }, error: authError } = await adminClient.auth.getUser(callerJWT)
+    if (authError || !caller) {
+      return new Response(JSON.stringify({ error: 'Invalid token' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
-
-    const now = Math.floor(Date.now() / 1000)
-    if (typeof jwtPayload.exp === 'number' && jwtPayload.exp < now) {
-      console.error('[create-branch-user] JWT expired')
-      return new Response(JSON.stringify({ error: 'Unauthorized: token expired' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const callerId = jwtPayload.sub as string | undefined
-    if (!callerId) {
-      console.error('[create-branch-user] JWT has no sub claim')
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-    console.log('[create-branch-user] Caller user_id:', callerId)
+    const callerId = caller.id
 
     // ── Step 3: Verify caller role via adminClient (bypasses RLS) ─────────
     const { data: callerProfile, error: profileErr } = await adminClient
