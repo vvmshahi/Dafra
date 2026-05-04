@@ -66,6 +66,8 @@ interface BranchStat {
   todayCount: number
   todayCash:  number
   todayCard:  number
+  sessionOpen: boolean
+  sessionOpenedAt: string | null
 }
 
 function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: boolean; onView: () => void }) {
@@ -89,13 +91,24 @@ function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: 
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 mt-0.5">
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <Badge variant={branch.is_active ? 'success' : 'neutral'} dot className="text-[10px]">
               {branch.is_active ? 'Active' : 'Inactive'}
             </Badge>
             <span className="flex items-center gap-0.5 text-[10px] text-gray-400">
               <ShieldCheck size={10} className="text-violet-400" /> Phase {branch.zatca_phase ?? 1}
             </span>
+            {branch.sessionOpen ? (
+              <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+                Open
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-[10px] text-gray-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-300 flex-shrink-0" />
+                Closed
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -213,7 +226,7 @@ export default function DashboardPage() {
 
     const { start, end } = saudiTodayRange()
     const today = saudiDateStr()
-    const [todayRes, branchRes, expRes] = await Promise.all([
+    const [todayRes, branchRes, expRes, sessionRes] = await Promise.all([
       db().from('invoices')
         .select('total_amount, branch_id, payment_method, tax_amount')
         .eq('tenant_id', tid)
@@ -228,10 +241,15 @@ export default function DashboardPage() {
         .select('amount')
         .eq('tenant_id', tid)
         .eq('expense_date', today),
+      db().from('pos_sessions')
+        .select('branch_id, opened_at')
+        .eq('tenant_id', tid)
+        .eq('status', 'open'),
     ])
 
-    const invs: any[] = todayRes.data ?? []
-    const branches: any[] = branchRes.data ?? []
+    const invs: any[]         = todayRes.data ?? []
+    const branches: any[]     = branchRes.data ?? []
+    const openSessions: any[] = sessionRes?.data ?? []
 
     const cash = invs.filter(i => i.payment_method === 'cash').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0)
     const card = invs.filter(i => i.payment_method === 'card').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0)
@@ -246,13 +264,16 @@ export default function DashboardPage() {
     setStatsLoading(false)
 
     const stats: BranchStat[] = branches.map((b: any) => {
-      const bInvs = invs.filter((i: any) => i.branch_id === b.id)
+      const bInvs      = invs.filter((i: any) => i.branch_id === b.id)
+      const openSession = openSessions.find((s: any) => s.branch_id === b.id)
       return {
         ...b,
-        todaySales: bInvs.reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0),
-        todayCount: bInvs.length,
-        todayCash:  bInvs.filter((i: any) => i.payment_method === 'cash').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0),
-        todayCard:  bInvs.filter((i: any) => i.payment_method === 'card').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0),
+        todaySales:      bInvs.reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0),
+        todayCount:      bInvs.length,
+        todayCash:       bInvs.filter((i: any) => i.payment_method === 'cash').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0),
+        todayCard:       bInvs.filter((i: any) => i.payment_method === 'card').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0),
+        sessionOpen:     !!openSession,
+        sessionOpenedAt: openSession?.opened_at ?? null,
       }
     })
     setBranchStats(stats)

@@ -32,7 +32,6 @@ const branchNav: NavItem[] = [
   { label: 'Expenses',    path: '/expenses',     icon: CreditCard     },
   { label: 'Suppliers',   path: '/suppliers',    icon: Truck          },
   { label: 'Reports',     path: '/reports',      icon: BarChart2      },
-  { label: 'Day Closing', path: '/day-closing',  icon: CalendarCheck2 },
 ]
 
 const superAdminNav: NavItem[] = [

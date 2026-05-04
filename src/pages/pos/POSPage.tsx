@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Search, Plus, Minus, Trash2, CreditCard, Banknote,
   Receipt, X, ChevronDown, User, Check, Loader2,
-  ShoppingBag, AlertCircle, Zap, Printer, PackageOpen, ArrowLeft,
+  ShoppingBag, AlertCircle, Zap, Printer, PackageOpen, ArrowLeft, Lock,
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
@@ -17,6 +17,8 @@ import { toast } from 'sonner'
 import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import type { Branch, VatTreatment } from '@/types/database'
+import { usePosSession } from '@/hooks/usePosSession'
+import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -132,8 +134,8 @@ const cartKey = (bid: string) => `pos_cart_${bid}`
 // ── Quick Expense modal ───────────────────────────────────────────────────────
 
 function QuickExpenseModal({
-  branchId, tenantId, userId, onClose,
-}: { branchId: string; tenantId: string; userId: string | null; onClose: () => void }) {
+  branchId, tenantId, userId, sessionId, onClose,
+}: { branchId: string; tenantId: string; userId: string | null; sessionId?: string | null; onClose: () => void }) {
   const [amount, setAmount] = useState('')
   const [desc,   setDesc]   = useState('')
   const [vendor, setVendor] = useState('')
@@ -158,6 +160,7 @@ function QuickExpenseModal({
         vat_amount:     0,
         total_paid:     amt,
         payment_method: method,
+        session_id:     sessionId ?? null,
       })
       onClose()
     } finally {
@@ -567,7 +570,7 @@ function ProductCard({ product, cartQty, onAdd }: {
   )
 }
 
-// ── POSPage ───────────────────────────────────────────────────────────────────
+// ── WhatsApp icon ─────────────────────────────────────────────────────────────
 
 function WhatsAppIcon({ size = 14 }: { size?: number }) {
   return (
@@ -577,10 +580,220 @@ function WhatsAppIcon({ size = 14 }: { size?: number }) {
   )
 }
 
+// ── Open Session Modal ────────────────────────────────────────────────────────
+
+function OpenSessionModal({
+  onOpen, onSkip,
+}: { onOpen: (cash: number) => Promise<void>; onSkip: () => Promise<void> }) {
+  const [cash,   setCash]   = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function handleOpen() {
+    setSaving(true)
+    try { await onOpen(parseFloat(cash) || 0) } finally { setSaving(false) }
+  }
+
+  async function handleSkip() {
+    setSaving(true)
+    try { await onSkip() } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+        <div className="bg-gradient-to-br from-[#1a3a28] to-primary-600 px-6 py-6 text-white text-center">
+          <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
+            <ShoppingBag size={22} />
+          </div>
+          <h3 className="font-bold text-lg">Open Register</h3>
+          <p className="text-white/70 text-xs mt-1">Start a new POS session</p>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="label">Opening Cash (optional)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
+              <input
+                type="number" min="0" step="0.01" value={cash}
+                onChange={e => setCash(e.target.value)}
+                className="input pl-10" placeholder="0.00" autoFocus
+              />
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1">Enter the cash amount currently in the register</p>
+          </div>
+        </div>
+        <div className="px-5 pb-5 flex gap-2">
+          <button onClick={handleSkip} disabled={saving}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50">
+            Skip
+          </button>
+          <button onClick={handleOpen} disabled={saving}
+            className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : 'Open Register'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Close Session Modal ───────────────────────────────────────────────────────
+
+function CloseSessionModal({ session, onClose, onCancel }: {
+  session: PosSession
+  onClose: (params: { closingCashActual: number; notes: string }) => Promise<void>
+  onCancel: () => void
+}) {
+  const [cashActual, setCashActual] = useState('')
+  const [notes,      setNotes]      = useState('')
+  const [saving,     setSaving]     = useState(false)
+
+  const openedAt = new Date(session.opened_at).toLocaleTimeString('en-US', {
+    timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit',
+  })
+
+  async function handleClose() {
+    setSaving(true)
+    try {
+      await onClose({ closingCashActual: parseFloat(cashActual) || 0, notes })
+    } catch (err) {
+      console.error('[CloseSessionModal]', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="font-semibold text-gray-900 text-sm">Close Register</h3>
+            <p className="text-[10px] text-gray-400 mt-0.5">Session started at {openedAt}</p>
+          </div>
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="label">Actual Closing Cash (SAR)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
+              <input
+                type="number" min="0" step="0.01" value={cashActual}
+                onChange={e => setCashActual(e.target.value)}
+                className="input pl-10" placeholder="0.00" autoFocus
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label">Notes (optional)</label>
+            <textarea
+              value={notes} onChange={e => setNotes(e.target.value)}
+              className="input resize-none" rows={2}
+              placeholder="Any notes about this session..."
+            />
+          </div>
+        </div>
+        <div className="px-5 pb-5 flex gap-2">
+          <button onClick={onCancel} disabled={saving}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50">
+            Cancel
+          </button>
+          <button onClick={handleClose} disabled={saving}
+            className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : 'Close Register'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Session Summary Modal ─────────────────────────────────────────────────────
+
+function SessionSummaryModal({ summary, onDone, onNewSession }: {
+  summary: ClosedSessionSummary
+  onDone: () => void
+  onNewSession: () => void
+}) {
+  const openedAt = new Date(summary.opened_at).toLocaleTimeString('en-US', {
+    timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit',
+  })
+  const closedAt = new Date(summary.closed_at).toLocaleTimeString('en-US', {
+    timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit',
+  })
+  const diff      = Number(summary.closing_cash_difference ?? 0)
+  const diffColor = diff > 0.005 ? 'text-emerald-600' : diff < -0.005 ? 'text-red-600' : 'text-gray-700'
+
+  const rows: [string, React.ReactNode][] = [
+    ['Invoices',              summary.total_invoices],
+    ['Cash Sales',            <Rial amount={Number(summary.total_cash_sales)} />],
+    ['Card Sales',            <Rial amount={Number(summary.total_card_sales)} />],
+    ['Expenses',              <Rial amount={Number(summary.total_expenses)} />],
+    ['Opening Cash',          <Rial amount={Number(summary.opening_cash)} />],
+    ['Expected Closing Cash', <Rial amount={Number(summary.closing_cash_expected)} />],
+    ['Actual Closing Cash',   <Rial amount={Number(summary.closing_cash_actual)} />],
+  ]
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+        <div className="bg-gradient-to-br from-[#1a3a28] to-primary-600 px-6 py-5 text-white text-center">
+          <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
+            <Check size={22} strokeWidth={2.5} />
+          </div>
+          <h3 className="font-bold text-lg">Session Closed</h3>
+          <p className="text-white/70 text-xs mt-1">{openedAt} — {closedAt}</p>
+        </div>
+        <div className="p-5">
+          <div className="space-y-2">
+            {rows.map(([label, value]) => (
+              <div key={label} className="flex justify-between text-sm text-gray-600 border-b border-gray-50 pb-1.5">
+                <span>{label}</span>
+                <span className="tabular-nums font-medium">{value}</span>
+              </div>
+            ))}
+            <div className={`flex justify-between text-sm font-bold pt-1 ${diffColor}`}>
+              <span>Cash Difference</span>
+              <span className="tabular-nums">
+                {diff >= 0.005 ? '+' : diff < -0.005 ? '' : ''}
+                <Rial amount={Math.abs(diff)} />
+                {diff < -0.005 && <span className="ml-0.5 text-xs">(short)</span>}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="px-5 pb-5 flex gap-2">
+          <button onClick={onNewSession}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+            New Session
+          </button>
+          <button onClick={onDone}
+            className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white text-sm font-semibold hover:opacity-90 transition-opacity">
+            Dashboard
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── POSPage ───────────────────────────────────────────────────────────────────
+
 export default function POSPage() {
   const { profile, user } = useAuth()
   const navigate  = useNavigate()
   const searchRef = useRef<HTMLInputElement>(null)
+
+  // Session management
+  const { session, loading: sessionLoading, openSession, closeSession } = usePosSession(
+    profile?.branch_id,
+    profile?.tenant_id,
+    profile?.id,
+  )
+  const [showOpenSession,  setShowOpenSession]  = useState(false)
+  const [showCloseSession, setShowCloseSession] = useState(false)
+  const [sessionSummary,   setSessionSummary]   = useState<ClosedSessionSummary | null>(null)
 
   const [branch,     setBranch]     = useState<Branch | null>(null)
   const [products,   setProducts]   = useState<PosProduct[]>([])
@@ -789,7 +1002,6 @@ export default function POSPage() {
       const isB2BInvoice = selectedCust?.customer_type === 'business' &&
         /^3\d{13}3$/.test(selectedCust?.vat_number ?? '')
 
-      // QR tag 1: always use legal business_name, never display_name (ZATCA requirement)
       const zatcaQrCode = buildZatcaQR({
         sellerName:  branch.business_name || branch.name,
         vatNumber:   branch.vat_number ?? '',
@@ -803,6 +1015,7 @@ export default function POSPage() {
         branch_id:          branch.id,
         customer_id:        customerId ?? null,
         created_by:         profile?.id ?? null,
+        session_id:         session?.id ?? null,
         invoice_number:     invoiceNumber,
         zatca_invoice_type: isB2BInvoice ? 'standard' : 'simplified',
         zatca_type_code:    '388',
@@ -864,7 +1077,6 @@ export default function POSPage() {
         branch.street, branch.district, branch.city,
       ].filter(Boolean).join(', ')
 
-      // Show receipt and clear cart immediately
       setReceipt({
         invoiceNumber,
         invoiceId:      inv.id,
@@ -909,7 +1121,6 @@ export default function POSPage() {
       setNote('')
       setCashReceived('')
 
-      // Fire-and-forget ZATCA submission
       submitInvoiceToZatca(inv.id, branch.id)
         .then(() => { setZatcaResult('submitted'); toast.success('Submitted to ZATCA', { duration: 2000 }) })
         .catch(() => { setZatcaResult('failed'); toast.error('ZATCA submission failed') })
@@ -923,7 +1134,7 @@ export default function POSPage() {
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  if (loading) {
+  if (loading || sessionLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center gap-3 text-gray-400">
@@ -938,6 +1149,42 @@ export default function POSPage() {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50">
         <p className="text-gray-500 text-sm">No branch assigned. Contact your administrator.</p>
+      </div>
+    )
+  }
+
+  // Blocked state — no active session
+  if (!session) {
+    return (
+      <div className="flex h-screen bg-[#0F2419] items-center justify-center">
+        {showOpenSession && (
+          <OpenSessionModal
+            onOpen={async (cash) => { await openSession(cash); setShowOpenSession(false) }}
+            onSkip={async () => { await openSession(0); setShowOpenSession(false) }}
+          />
+        )}
+        {sessionSummary && (
+          <SessionSummaryModal
+            summary={sessionSummary}
+            onDone={() => navigate('/branch')}
+            onNewSession={() => { setSessionSummary(null); setShowOpenSession(true) }}
+          />
+        )}
+        {!showOpenSession && !sessionSummary && (
+          <div className="bg-white rounded-2xl shadow-2xl p-8 text-center max-w-sm mx-4 w-full">
+            <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Lock size={28} className="text-gray-400" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Register Closed</h2>
+            <p className="text-sm text-gray-500 mb-6">Open a new session to start accepting payments.</p>
+            <button
+              onClick={() => setShowOpenSession(true)}
+              className="w-full py-3 bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity"
+            >
+              Open New Session
+            </button>
+          </div>
+        )}
       </div>
     )
   }
@@ -962,7 +1209,19 @@ export default function POSPage() {
           branchId={branch.id}
           tenantId={profile.tenant_id ?? ''}
           userId={profile.id ?? null}
+          sessionId={session.id}
           onClose={() => setShowExpense(false)}
+        />
+      )}
+      {showCloseSession && (
+        <CloseSessionModal
+          session={session}
+          onClose={async (params) => {
+            const summary = await closeSession(params)
+            setShowCloseSession(false)
+            setSessionSummary(summary)
+          }}
+          onCancel={() => setShowCloseSession(false)}
         />
       )}
       {custOpen && <div className="fixed inset-0 z-10" onClick={() => setCustOpen(false)} />}
@@ -1002,7 +1261,24 @@ export default function POSPage() {
               <Zap size={12} />
               Expense
             </button>
+            <button
+              onClick={() => setShowCloseSession(true)}
+              className="text-xs bg-red-500/20 border border-red-400/20 text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-500/30 transition-colors"
+            >
+              Close Register
+            </button>
           </div>
+        </div>
+
+        {/* Session info bar */}
+        <div className="bg-emerald-50 border-b border-emerald-100 px-5 py-1.5 flex items-center gap-2 flex-shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+          <span className="text-xs text-emerald-700">
+            Session open since {toSaudiTime(session.opened_at)}
+            {Number(session.opening_cash) > 0 && (
+              <> · Opening: <Rial amount={Number(session.opening_cash)} /></>
+            )}
+          </span>
         </div>
 
         {/* Search + category tabs */}
@@ -1053,7 +1329,6 @@ export default function POSPage() {
         <div className="flex-1 overflow-y-auto p-4">
           {filtered.length === 0 ? (
             products.length === 0 ? (
-              /* No products exist at all — full empty state */
               <div className="flex flex-col items-center justify-center h-full min-h-[320px] gap-5 text-center px-6">
                 <div className="w-20 h-20 rounded-2xl bg-gray-100 flex items-center justify-center">
                   <PackageOpen size={36} className="text-gray-300" />
@@ -1073,7 +1348,6 @@ export default function POSPage() {
                 </button>
               </div>
             ) : (
-              /* Products exist but search has no matches */
               <div className="flex flex-col items-center justify-center h-48 text-gray-400">
                 <AlertCircle size={28} className="mb-2 opacity-40" />
                 <p className="text-sm">No products found</p>
