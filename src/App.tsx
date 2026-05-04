@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import AppLayout from '@/components/layout/AppLayout'
@@ -124,6 +125,8 @@ function SmartRedirect() {
 
 export default function App() {
   return (
+    <>
+    <Toaster position="top-center" richColors />
     <BrowserRouter>
       <Routes>
         {/* ── Public ──────────────────────────────────────── */}
@@ -192,6 +195,7 @@ export default function App() {
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </BrowserRouter>
+    </>
   )
 }
 

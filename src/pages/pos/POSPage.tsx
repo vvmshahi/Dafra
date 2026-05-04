@@ -13,6 +13,7 @@ import { displayName as dn } from '@/lib/utils/display'
 import { buildZatcaQR } from '@/lib/zatca/qr'
 import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
 import { submitInvoiceToZatca } from '@/lib/zatca/submission'
+import { toast } from 'sonner'
 import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import type { Branch, VatTreatment } from '@/types/database'
@@ -71,7 +72,6 @@ interface ReceiptData {
   customerPhone: string | null
   isStandardInvoice: boolean
   buyerVatNumber: string | null
-  zatcaQrCode?: string | null
   cashierName: string
   items: ThermalItem[]
   createdAt: string
@@ -221,20 +221,18 @@ function QuickExpenseModal({
 
 // ── Receipt overlay ───────────────────────────────────────────────────────────
 
-function ReceiptView({ receipt, onNewSale, printMode, zatcaStatus, zatcaVerifying }: {
+function ReceiptView({ receipt, onNewSale, printMode, zatcaStatus }: {
   receipt: ReceiptData
   onNewSale: () => void
   printMode: 'thermal' | 'pdf' | 'both'
   zatcaStatus: 'submitted' | 'failed' | null
-  zatcaVerifying?: boolean
 }) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
 
   useEffect(() => {
     async function genQR() {
       try {
-        // Use Phase 2 QR from DB if available, else fall back to Phase 1
-        const payload = receipt.zatcaQrCode ?? buildZatcaQR({
+        const payload = buildZatcaQR({
           sellerName:  receipt.businessNameAr || receipt.businessNameEn,
           vatNumber:   receipt.vatNumber,
           timestamp:   receipt.createdAt,
@@ -486,17 +484,12 @@ ${lines}
           </div>
 
           {/* ZATCA status */}
-          {zatcaVerifying && (
-            <div className="mx-6 mb-2 flex items-center gap-1.5 text-[10px] text-blue-600 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-1.5">
-              <Loader2 size={10} className="animate-spin" /> Verifying with ZATCA...
-            </div>
-          )}
-          {!zatcaVerifying && zatcaStatus === 'submitted' && (
+          {zatcaStatus === 'submitted' && (
             <div className="mx-6 mb-2 flex items-center gap-1.5 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5">
               <span className="text-emerald-500">✓</span> Submitted to ZATCA
             </div>
           )}
-          {!zatcaVerifying && zatcaStatus === 'failed' && (
+          {zatcaStatus === 'failed' && (
             <div className="mx-6 mb-2 flex items-center gap-1.5 text-[10px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-2.5 py-1.5">
               <span>⚠</span> ZATCA submission failed — retry from Invoices
             </div>
@@ -605,10 +598,9 @@ export default function POSPage() {
   const [payMethod,    setPayMethod]    = useState<'cash' | 'card'>('cash')
   const [cashReceived, setCashReceived] = useState('')
   const [submitting,   setSubmitting]   = useState(false)
-  const [receipt,        setReceipt]        = useState<ReceiptData | null>(null)
-  const [showExpense,    setShowExpense]    = useState(false)
-  const [zatcaResult,    setZatcaResult]    = useState<'submitted' | 'failed' | null>(null)
-  const [zatcaVerifying, setZatcaVerifying] = useState(false)
+  const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
+  const [showExpense,  setShowExpense]  = useState(false)
+  const [zatcaResult,  setZatcaResult]  = useState<'submitted' | 'failed' | null>(null)
 
   // ── Load data ────────────────────────────────────────────────────────────
 
@@ -785,7 +777,6 @@ export default function POSPage() {
     if (!tid || !branch || cart.length === 0 || submitting) return
     setSubmitting(true)
     setZatcaResult(null)
-    let chargedInvoiceId = ''
     try {
       const q = supabase as unknown as { from: (t: string) => any }
 
@@ -830,7 +821,6 @@ export default function POSPage() {
       }).select('id').single()
 
       if (invErr) throw invErr
-      chargedInvoiceId = inv.id
 
       const itemsPayload = cart.map((item, idx) => {
         const line = item.price * item.quantity
@@ -918,40 +908,17 @@ export default function POSPage() {
       setCustomerId(null)
       setNote('')
       setCashReceived('')
+
+      // Fire-and-forget ZATCA submission
+      submitInvoiceToZatca(inv.id, branch.id)
+        .then(() => { setZatcaResult('submitted'); toast.success('Submitted to ZATCA', { duration: 2000 }) })
+        .catch(() => { setZatcaResult('failed'); toast.error('ZATCA submission failed') })
     } catch (err) {
       console.error('[POSPage charge] payment failed:', err)
       alert('Payment failed. Please try again.')
+    } finally {
       setSubmitting(false)
-      return
     }
-
-    setSubmitting(false)
-
-    // Submit to ZATCA (max 5s wait), then patch receipt with Phase 2 QR
-    setZatcaVerifying(true)
-    try {
-      const submitted = await Promise.race([
-        submitInvoiceToZatca(chargedInvoiceId, branch.id),
-        new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000)),
-      ])
-      if (submitted) setZatcaResult('submitted')
-    } catch {
-      setZatcaResult('failed')
-    }
-
-    // Fetch updated invoice to get Phase 2 QR (set by edge function on success)
-    try {
-      const { data: updatedInv } = await (supabase as any)
-        .from('invoices')
-        .select('zatca_qr_code')
-        .eq('id', chargedInvoiceId)
-        .single()
-      if (updatedInv?.zatca_qr_code) {
-        setReceipt(prev => prev ? { ...prev, zatcaQrCode: updatedInv.zatca_qr_code } : prev)
-      }
-    } catch {}
-
-    setZatcaVerifying(false)
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -985,10 +952,9 @@ export default function POSPage() {
       {receipt && (
         <ReceiptView
           receipt={receipt}
-          onNewSale={() => { setReceipt(null); setZatcaResult(null); setZatcaVerifying(false) }}
+          onNewSale={() => { setReceipt(null); setZatcaResult(null) }}
           printMode={branch?.print_mode ?? 'thermal'}
           zatcaStatus={zatcaResult}
-          zatcaVerifying={zatcaVerifying}
         />
       )}
       {showExpense && branch && (
