@@ -5,7 +5,9 @@
  *   Step 1: Generate Keys (secp256k1, CSR, encrypt private key → DB)
  *   Step 2: Enter OTP  (Fatoorah portal → OTP → compliance CSID via Edge Function)
  *   Step 3: Activate   (production CSID via Edge Function)
- *   Step 4: Done       (certificate details, invoice stats)
+ *   Step 4: Done       (clean status display — no raw credentials shown)
+ *
+ * Each branch operates independently and maintains separate certs per environment.
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -25,7 +27,8 @@ import type { Branch, ZatcaCertificate, CertificateStatus } from '@/types'
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 
-type BranchWithCert = Branch & { cert: ZatcaCertificate | null }
+// Each branch carries ALL its certificate rows (one per environment)
+type BranchWithCert = Branch & { allCerts: ZatcaCertificate[] }
 
 type OnboardingStep = 1 | 2 | 3 | 4
 
@@ -35,7 +38,6 @@ function certStep(cert: ZatcaCertificate | null): OnboardingStep {
   if (!cert || !cert.csr)             return 1
   if (cert.status === 'compliance')   return 3
   if (cert.status === 'active')       return 4
-  // has csr but not yet compliance
   return 2
 }
 
@@ -78,7 +80,7 @@ function StepDot({ n, active, done }: { n: number; active: boolean; done: boolea
   )
 }
 
-/* ── Copyable code block ─────────────────────────────────────────────────── */
+/* ── Copyable code block (used for CSR display only) ─────────────────────── */
 
 function CodeBlock({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false)
@@ -118,9 +120,10 @@ function CodeBlock({ value, label }: { value: string; label: string }) {
 /* ── Step 1: Generate Keys ───────────────────────────────────────────────── */
 
 function Step1GenerateKeys({
-  branch, onDone,
+  branch, environment, onDone,
 }: {
   branch: BranchWithCert
+  environment: 'sandbox' | 'production'
   onDone: (cert: ZatcaCertificate) => void
 }) {
   const { profile } = useAuth()
@@ -128,7 +131,6 @@ function Step1GenerateKeys({
   const [error, setError]     = useState<string | null>(null)
   const [csrPem, setCsrPem]   = useState<string | null>(null)
 
-  // Check required ZATCA fields before allowing key generation
   const missingData: string[] = []
   if (!branch.vat_number || !/^3\d{13}3$/.test(branch.vat_number))
     missingData.push('Valid VAT number (15 digits, starts & ends with 3)')
@@ -149,8 +151,8 @@ function Step1GenerateKeys({
         vatNumber:    branch.vat_number ?? profile?.tenant_id ?? '',
         branchName:   branch.name,
         businessName: branch.name,
-        invoiceType:  '1100',         // supports both standard + simplified
-        location:     [branch.address, branch.city].filter(Boolean).join(', ') || 'Riyadh, SA',
+        invoiceType:  '1100',
+        location:     [(branch as any).address, branch.city].filter(Boolean).join(', ') || 'Riyadh, SA',
         industry:     'Technology',
       }, keyPair)
 
@@ -165,7 +167,7 @@ function Step1GenerateKeys({
           private_key_encrypted: encryptedKey,
           public_key_pem:        keyPair.publicKeyPem,
           status:                'pending',
-          environment:           'sandbox',
+          environment,
         }, { onConflict: 'branch_id,environment' })
         .select()
         .single()
@@ -202,7 +204,8 @@ function Step1GenerateKeys({
       <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl p-3.5">
         <Info size={13} className="text-blue-600 mt-0.5 flex-shrink-0" />
         <p className="text-[11px] text-blue-700 leading-relaxed">
-          This will generate a secp256k1 key pair in your browser and create a PKCS#10 CSR.
+          This will generate a secp256k1 key pair in your browser and create a PKCS#10 CSR for the{' '}
+          <strong>{environment === 'production' ? 'production' : 'sandbox'}</strong> environment.
           The private key is encrypted with AES-256-GCM before being stored securely in the database.
         </p>
       </div>
@@ -260,11 +263,11 @@ function Step2EnterOTP({
     setError(null)
     try {
       await requestComplianceCsid(cert.csr!, otp, branch.id, environment)
-      // Edge Function updates the DB — re-fetch
       const { data, error: dbErr } = await (supabase as any)
         .from('zatca_certificates')
         .select('*')
         .eq('branch_id', branch.id)
+        .eq('environment', environment)
         .single()
       if (dbErr) throw new Error(dbErr.message)
       onDone(data)
@@ -277,7 +280,6 @@ function Step2EnterOTP({
 
   return (
     <div className="space-y-4">
-      {/* Portal instructions */}
       <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 space-y-3">
         <p className="text-[11px] font-semibold text-gray-700">How to get your OTP:</p>
         {[
@@ -302,7 +304,6 @@ function Step2EnterOTP({
         </a>
       </div>
 
-      {/* CSR display */}
       {cert.csr && (
         <div className="space-y-1.5">
           <button
@@ -316,7 +317,6 @@ function Step2EnterOTP({
         </div>
       )}
 
-      {/* OTP input */}
       <div>
         <label className="block text-[11px] font-semibold text-gray-600 mb-1.5">
           6-digit OTP from ZATCA portal
@@ -333,6 +333,20 @@ function Step2EnterOTP({
         {environment === 'sandbox' && (
           <p className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
             For sandbox testing, use OTP: <span className="font-mono font-bold tracking-widest">123345</span>
+          </p>
+        )}
+        {environment === 'production' && (
+          <p className="mt-2 text-[11px] text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 leading-relaxed">
+            Get your OTP from{' '}
+            <a
+              href="https://fatoorah.zatca.gov.sa"
+              target="_blank" rel="noopener noreferrer"
+              className="font-semibold text-primary-600 underline"
+            >
+              fatoorah.zatca.gov.sa
+            </a>
+            {' → '}E-Invoicing → My Devices → Add New Device.
+            The OTP expires quickly — enter it immediately after receiving it.
           </p>
         )}
       </div>
@@ -377,6 +391,7 @@ function Step3Activate({
         .from('zatca_certificates')
         .select('*')
         .eq('branch_id', branch.id)
+        .eq('environment', environment)
         .single()
       if (dbErr) throw new Error(dbErr.message)
       onDone(data)
@@ -423,6 +438,10 @@ function Step3Activate({
 /* ── Step 4: Done ────────────────────────────────────────────────────────── */
 
 function Step4Done({ cert }: { cert: ZatcaCertificate }) {
+  const activatedDate = cert.activated_at
+    ? new Date(cert.activated_at).toLocaleDateString('en-SA', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '—'
+
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-xl p-4">
@@ -436,12 +455,31 @@ function Step4Done({ cert }: { cert: ZatcaCertificate }) {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <InfoRow label="Environment"     value={cert.environment ?? 'sandbox'} mono />
-        <InfoRow label="Serial Number"   value={cert.serial_number ?? '—'} mono />
-        <InfoRow label="Invoice Counter" value={String(cert.invoice_counter ?? 0)} />
-        <InfoRow label="Activated"       value={cert.activated_at ? new Date(cert.activated_at).toLocaleDateString('en-SA') : '—'} />
-        <InfoRow label="Compliance CSID" value={cert.compliance_csid ? 'Issued ✓' : '—'} />
-        <InfoRow label="Production CSID" value={cert.production_csid ? 'Active ✓' : '—'} />
+        <InfoRow
+          label="Compliance CSID"
+          value={cert.compliance_csid ? '✅ Issued' : '❌ Not registered'}
+        />
+        <InfoRow
+          label="Production CSID"
+          value={cert.production_csid ? '✅ Active' : '❌ Not activated'}
+        />
+        <InfoRow
+          label="Environment"
+          value={cert.environment === 'production' ? 'Production' : 'Sandbox'}
+        />
+        <InfoRow
+          label="Activated"
+          value={activatedDate}
+        />
+        <InfoRow
+          label="Invoice Counter"
+          value={String(cert.invoice_counter ?? 0)}
+        />
+        <InfoRow
+          label="Serial Number"
+          value={cert.serial_number ?? '—'}
+          mono
+        />
       </div>
 
       {cert.last_invoice_hash && (
@@ -497,55 +535,56 @@ function BranchOnboardingCard({
   bc: BranchWithCert
   onCertUpdate: (branchId: string, cert: ZatcaCertificate) => void
 }) {
-  const cert    = bc.cert
-  const phase   = bc.zatca_phase ?? 1
-  const status  = cert?.status ?? 'pending'
-  const cfg     = CERT_CONFIG[status] ?? CERT_CONFIG.pending
-  const step    = certStep(cert)
+  // Determine starting environment: prefer active cert, then compliance, then first, then sandbox
+  const initialEnv = (
+    bc.allCerts.find(c => c.status === 'active')?.environment ??
+    bc.allCerts.find(c => c.status === 'compliance')?.environment ??
+    bc.allCerts[0]?.environment ??
+    'sandbox'
+  ) as 'sandbox' | 'production'
 
-  // Environment toggle — reads from DB cert, defaults to sandbox
-  const [environment, setEnvironment] = useState<'sandbox' | 'production'>(
-    (cert?.environment as 'sandbox' | 'production') ?? 'sandbox'
-  )
-  const [envSaving, setEnvSaving]     = useState(false)
-  const [regenerating, setRegenerating] = useState(false)
+  const [environment,   setEnvironment]   = useState<'sandbox' | 'production'>(initialEnv)
+  const [regenerating,  setRegenerating]  = useState(false)
+
+  // Always derive the cert from the current environment selection
+  const cert     = bc.allCerts.find(c => c.environment === environment) ?? null
+  const phase    = bc.zatca_phase ?? 1
+  const status   = cert?.status ?? 'pending'
+  const cfg      = CERT_CONFIG[status] ?? CERT_CONFIG.pending
+  const step     = certStep(cert)
+  const isActive = status === 'active'
 
   const handleRegenerate = async () => {
-    if (!window.confirm('This will discard the current CSR and generate fresh keys. Continue?')) return
+    if (!window.confirm(
+      'This will discard the current CSR and all CSID credentials for this environment. Are you sure?'
+    )) return
     setRegenerating(true)
     try {
-      const { data, error: dbErr } = await (supabase as any)
-        .from('zatca_certificates')
-        .update({
-          csr:                   null,
-          private_key_encrypted: null,
-          public_key_pem:        null,
-          status:                'pending',
-        })
-        .eq('branch_id', bc.id)
-        .select()
-        .single()
-      if (!dbErr && data) onCertUpdate(bc.id, data)
+      if (cert?.id) {
+        const { data, error: dbErr } = await (supabase as any)
+          .from('zatca_certificates')
+          .update({
+            csr:                   null,
+            private_key_encrypted: null,
+            public_key_pem:        null,
+            compliance_csid:       null,
+            compliance_secret:     null,
+            compliance_request_id: null,
+            production_csid:       null,
+            production_secret:     null,
+            status:                'pending',
+          })
+          .eq('id', cert.id)
+          .select()
+          .single()
+        if (!dbErr && data) onCertUpdate(bc.id, data)
+      }
     } finally {
       setRegenerating(false)
     }
   }
 
-  const switchEnvironment = async (env: 'sandbox' | 'production') => {
-    setEnvironment(env)
-    setEnvSaving(true)
-    // Persist to DB if cert row exists
-    if (cert?.id) {
-      await (supabase as any)
-        .from('zatca_certificates')
-        .update({ environment: env })
-        .eq('branch_id', bc.id)
-    }
-    setEnvSaving(false)
-  }
-
   const handleDone = (updated: ZatcaCertificate) => {
-    setEnvironment((updated.environment as 'sandbox' | 'production') ?? 'sandbox')
     onCertUpdate(bc.id, updated)
   }
 
@@ -559,47 +598,45 @@ function BranchOnboardingCard({
           </div>
           <div>
             <p className="text-sm font-semibold text-gray-900">{bc.name}</p>
-            {bc.name_ar && (
-              <p className="text-xs text-gray-400" style={{ fontFamily: 'Cairo' }}>{bc.name_ar}</p>
+            {(bc as any).name_ar && (
+              <p className="text-xs text-gray-400" style={{ fontFamily: 'Cairo' }}>{(bc as any).name_ar}</p>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Environment toggle — only shown for Phase 2 */}
-          {phase >= 2 && status !== 'active' && (
-            <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
-              <button
-                onClick={() => switchEnvironment('sandbox')}
-                disabled={envSaving}
-                className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-all ${
-                  environment === 'sandbox'
-                    ? 'bg-amber-400 text-amber-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Sandbox
-              </button>
-              <button
-                onClick={() => switchEnvironment('production')}
-                disabled={envSaving}
-                className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-all ${
-                  environment === 'production'
-                    ? 'bg-emerald-500 text-white shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Production
-              </button>
-            </div>
-          )}
-          {phase >= 2 && status === 'active' && (
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-              environment === 'production'
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-amber-100 text-amber-700'
-            }`}>
-              {environment === 'production' ? 'Production' : 'Sandbox'}
-            </span>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {/* Environment toggle / locked indicator — Phase 2 only */}
+          {phase >= 2 && (
+            isActive ? (
+              // Locked — active cert locks the environment; must regenerate to change
+              <span className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-gray-200 bg-gray-50 text-gray-500">
+                <Lock size={9} />
+                {environment === 'production' ? 'Production' : 'Sandbox'} — Locked
+              </span>
+            ) : (
+              // Toggle unlocked — can switch environments freely
+              <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
+                <button
+                  onClick={() => setEnvironment('sandbox')}
+                  className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-all ${
+                    environment === 'sandbox'
+                      ? 'bg-amber-400 text-amber-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Sandbox
+                </button>
+                <button
+                  onClick={() => setEnvironment('production')}
+                  className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-all ${
+                    environment === 'production'
+                      ? 'bg-emerald-500 text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Production
+                </button>
+              </div>
+            )
           )}
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
             phase === 2
@@ -627,22 +664,10 @@ function BranchOnboardingCard({
 
           <div className="border-t border-gray-100 pt-4">
             {step === 1 && (
-              <Step1GenerateKeys branch={bc} onDone={handleDone} />
+              <Step1GenerateKeys branch={bc} environment={environment} onDone={handleDone} />
             )}
             {step === 2 && cert && (
-              <>
-                <Step2EnterOTP branch={bc} cert={cert} environment={environment} onDone={handleDone} />
-                <div className="pt-3 border-t border-gray-100 mt-1">
-                  <button
-                    onClick={handleRegenerate}
-                    disabled={regenerating}
-                    className="flex items-center gap-1.5 text-[11px] text-gray-400 hover:text-red-500 transition-colors"
-                  >
-                    {regenerating ? <Loader2 size={11} className="animate-spin" /> : <Key size={11} />}
-                    Regenerate Keys (discard current CSR)
-                  </button>
-                </div>
-              </>
+              <Step2EnterOTP branch={bc} cert={cert} environment={environment} onDone={handleDone} />
             )}
             {step === 3 && (
               <Step3Activate branch={bc} environment={environment} onDone={handleDone} />
@@ -651,6 +676,20 @@ function BranchOnboardingCard({
               <Step4Done cert={cert} />
             )}
           </div>
+
+          {/* Regenerate Keys — shown whenever cert exists; also unlocks environment toggle */}
+          {cert && (
+            <div className="pt-3 border-t border-gray-100">
+              <button
+                onClick={handleRegenerate}
+                disabled={regenerating}
+                className="flex items-center gap-1.5 text-[11px] text-gray-400 hover:text-red-500 transition-colors"
+              >
+                {regenerating ? <Loader2 size={11} className="animate-spin" /> : <Key size={11} />}
+                Regenerate Keys (discard current CSR{isActive ? ' — unlocks environment toggle' : ''})
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -733,26 +772,41 @@ export default function ZatcaTab() {
     setLoading(true)
     const tid = profile.tenant_id
     const [branchesRes, certsRes] = await Promise.all([
-      (supabase as any).from('branches').select('*').eq('tenant_id', tid).order('is_main_branch', { ascending: false }),
+      (supabase as any).from('branches').select('*').eq('tenant_id', tid)
+        .order('is_main_branch', { ascending: false })
+        .order('created_at', { ascending: true }),
       (supabase as any).from('zatca_certificates').select('*').eq('tenant_id', tid),
     ])
     const branches = (branchesRes.data as Branch[]) ?? []
     const certs    = (certsRes.data as ZatcaCertificate[]) ?? []
-    setData(branches.map(b => ({ ...b, cert: certs.find(c => c.branch_id === b.id) ?? null })))
+    // Each branch gets ALL its cert rows (one per environment)
+    setData(branches.map(b => ({
+      ...b,
+      allCerts: certs.filter(c => c.branch_id === b.id),
+    })))
     setLoading(false)
   }, [profile?.tenant_id])
 
   useEffect(() => { load() }, [load])
 
   const handleCertUpdate = (branchId: string, cert: ZatcaCertificate) => {
-    setData(prev => prev.map(b => b.id === branchId ? { ...b, cert } : b))
+    setData(prev => prev.map(b => {
+      if (b.id !== branchId) return b
+      const idx = b.allCerts.findIndex(c => c.environment === cert.environment)
+      const newCerts = idx >= 0
+        ? b.allCerts.map((c, i) => i === idx ? cert : c)
+        : [...b.allCerts, cert]
+      return { ...b, allCerts: newCerts }
+    }))
   }
 
-  const phase2Count  = data.filter(b => (b.zatca_phase ?? 1) === 2).length
-  const activeCount  = data.filter(b => b.cert?.status === 'active').length
+  const phase2Count = data.filter(b => (b.zatca_phase ?? 1) === 2).length
+  const activeCount = data.filter(b => b.allCerts.some(c => c.status === 'active')).length
 
-  const allProduction = data.filter(b => (b.zatca_phase ?? 1) === 2).every(b => b.cert?.environment === 'production')
-  const showSandboxBanner = !allProduction || data.filter(b => (b.zatca_phase ?? 1) === 2).length === 0
+  const phase2Branches   = data.filter(b => (b.zatca_phase ?? 1) === 2)
+  const allProduction    = phase2Branches.length > 0 &&
+    phase2Branches.every(b => b.allCerts.some(c => c.environment === 'production' && c.status === 'active'))
+  const showSandboxBanner = !allProduction
 
   return (
     <div className="space-y-4">
@@ -813,7 +867,6 @@ export default function ZatcaTab() {
 
       <PhaseGuide />
 
-      {/* Warning for incomplete branch data */}
       {data.some(b => !b.vat_number && (b.zatca_phase ?? 1) === 2) && (
         <div className="flex items-start gap-3 bg-red-50 border border-red-100 rounded-2xl p-4">
           <AlertTriangle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />

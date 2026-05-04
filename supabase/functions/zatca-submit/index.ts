@@ -454,8 +454,7 @@ function buildPhase2QR(
     tlvStr(0x03, normTs(timestamp)),
     tlvStr(0x04, totalAmount.toFixed(2)), tlvStr(0x05, vatAmount.toFixed(2)),
     tlvStr(0x06, hashB64), tlvStr(0x07, sigB64),
-    tlvStr(0x08, btoa(String.fromCharCode(...pubKeySpki))),
-    tlvStr(0x09, btoa(String.fromCharCode(...certSigValue))),
+    tlvBytes(0x08, pubKeySpki), tlvBytes(0x09, certSigValue),
   )
   return btoa(String.fromCharCode(...all))
 }
@@ -806,6 +805,7 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     const responseText = await zatcaRes.text()
     console.log('[zatca-submit] ZATCA status:', zatcaRes.status)
     const zatcaBody = (() => { try { return JSON.parse(responseText) } catch { return {} } })()
+    console.log('[zatca-submit] ZATCA response:', JSON.stringify(zatcaBody))
 
     const reportingStatus = zatcaBody?.reportingStatus as string | undefined
     const clearanceStatus = zatcaBody?.clearanceStatus as string | undefined
