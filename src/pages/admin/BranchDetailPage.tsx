@@ -10,16 +10,11 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import { saudiTodayRange } from '@/lib/utils/date'
 import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 
 const db = () => supabase as any
-
-function todayRange() {
-  const start = new Date(); start.setHours(0, 0, 0, 0)
-  const end   = new Date(); end.setHours(23, 59, 59, 999)
-  return { start: start.toISOString(), end: end.toISOString() }
-}
 
 // ── KPI card ──────────────────────────────────────────────────────────────────
 
@@ -110,6 +105,7 @@ export default function BranchDetailPage() {
       .from('branches')
       .select('id, name, name_ar, logo_url, is_active, is_main_branch, zatca_phase, phone, email, address, city')
       .eq('id', branchId)
+      .eq('tenant_id', tid)
       .maybeSingle()
     setBranch(data)
     setBranchLoading(false)
@@ -118,7 +114,7 @@ export default function BranchDetailPage() {
   const loadStats = useCallback(async () => {
     if (!tid || !branchId) { setStatsLoading(false); return }
     setStatsLoading(true)
-    const { start, end } = todayRange()
+    const { start, end } = saudiTodayRange()
     const [invRes, expRes] = await Promise.all([
       db().from('invoices')
         .select('total_amount, tax_amount, payment_method')
@@ -192,6 +188,7 @@ export default function BranchDetailPage() {
       .from('products')
       .select('id, name, stock_quantity, min_stock_level')
       .eq('tenant_id', tid)
+      .eq('branch_id', branchId)
       .eq('is_active', true)
       .not('min_stock_level', 'is', null)
       .order('stock_quantity', { ascending: true })
@@ -206,7 +203,7 @@ export default function BranchDetailPage() {
   const loadExpenses = useCallback(async () => {
     if (!tid || !branchId) { setExpLoading(false); return }
     setExpLoading(true)
-    const { start, end } = todayRange()
+    const { start, end } = saudiTodayRange()
     const { data } = await db()
       .from('expenses')
       .select('id, description, amount, payment_method, expense_date, expense_categories(name)')
