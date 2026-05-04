@@ -79,36 +79,56 @@ export function usePosSession(
   }): Promise<ClosedSessionSummary> => {
     if (!session) throw new Error('No active session')
 
-    const [{ data: invData }, { data: expData }] = await Promise.all([
-      q().from('invoices')
-        .select('total_amount, payment_method')
-        .eq('session_id', session.id),
-      q().from('expenses')
-        .select('amount')
-        .eq('session_id', session.id),
-    ])
+    // 1. Fetch invoices linked to this session (exclude cancelled)
+    const { data: invData } = await q().from('invoices')
+      .select('id, total_amount, tax_amount')
+      .eq('session_id', session.id)
+      .neq('status', 'cancelled')
 
-    const totalCashSales = (invData ?? [])
-      .filter((i: any) => i.payment_method === 'cash')
-      .reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0)
-    const totalCardSales = (invData ?? [])
-      .filter((i: any) => i.payment_method === 'card')
-      .reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0)
+    const invoiceIds = (invData ?? []).map((i: any) => i.id)
+
+    // 2. Fetch payments for those invoices
+    let paymentsData: any[] = []
+    if (invoiceIds.length > 0) {
+      const { data: pmtData } = await q().from('payments')
+        .select('method, amount')
+        .in('invoice_id', invoiceIds)
+      paymentsData = pmtData ?? []
+    }
+
+    // 3. Fetch expenses for this session
+    const { data: expData } = await q().from('expenses')
+      .select('amount, payment_method')
+      .eq('session_id', session.id)
+
+    // 4. Calculate totals
+    const cashSales = paymentsData
+      .filter((p: any) => p.method === 'cash')
+      .reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0)
+    const cardSales = paymentsData
+      .filter((p: any) => p.method === 'card')
+      .reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0)
     const totalExpenses = (expData ?? [])
       .reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0)
+    const cashExpenses = (expData ?? [])
+      .filter((e: any) => e.payment_method === 'cash')
+      .reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0)
     const totalInvoices = (invData ?? []).length
+
+    // 5. Expected cash = opening + cash sales - cash expenses
     const openingCash = Number(session.opening_cash)
-    const closingCashExpected = openingCash + totalCashSales - totalExpenses
+    const closingCashExpected = openingCash + cashSales - cashExpenses
     const closingCashDifference = closingCashActual - closingCashExpected
 
+    // 6. Update session
     const { data, error } = await q().from('pos_sessions').update({
       closed_by:               userId ?? null,
       closed_at:               new Date().toISOString(),
       closing_cash_expected:   closingCashExpected,
       closing_cash_actual:     closingCashActual,
       closing_cash_difference: closingCashDifference,
-      total_cash_sales:        totalCashSales,
-      total_card_sales:        totalCardSales,
+      total_cash_sales:        cashSales,
+      total_card_sales:        cardSales,
       total_expenses:          totalExpenses,
       total_invoices:          totalInvoices,
       notes:                   notes.trim() || null,

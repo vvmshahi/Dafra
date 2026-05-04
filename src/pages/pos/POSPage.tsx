@@ -583,8 +583,8 @@ function WhatsAppIcon({ size = 14 }: { size?: number }) {
 // ── Open Session Modal ────────────────────────────────────────────────────────
 
 function OpenSessionModal({
-  onOpen, onSkip,
-}: { onOpen: (cash: number) => Promise<void>; onSkip: () => Promise<void> }) {
+  onOpen, onSkip, onBack,
+}: { onOpen: (cash: number) => Promise<void>; onSkip: () => Promise<void>; onBack?: () => void }) {
   const [cash,   setCash]   = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -601,7 +601,16 @@ function OpenSessionModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
-        <div className="bg-gradient-to-br from-[#1a3a28] to-primary-600 px-6 py-6 text-white text-center">
+        <div className="relative bg-gradient-to-br from-[#1a3a28] to-primary-600 px-6 py-6 text-white text-center">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+              title="Back to Dashboard"
+            >
+              <X size={14} />
+            </button>
+          )}
           <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
             <ShoppingBag size={22} />
           </div>
@@ -622,15 +631,22 @@ function OpenSessionModal({
             <p className="text-[10px] text-gray-400 mt-1">Enter the cash amount currently in the register</p>
           </div>
         </div>
-        <div className="px-5 pb-5 flex gap-2">
-          <button onClick={handleSkip} disabled={saving}
-            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50">
-            Skip
-          </button>
-          <button onClick={handleOpen} disabled={saving}
-            className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2">
-            {saving ? <Loader2 size={14} className="animate-spin" /> : 'Open Register'}
-          </button>
+        <div className="px-5 pb-5 space-y-2">
+          <div className="flex gap-2">
+            <button onClick={handleSkip} disabled={saving}
+              className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50">
+              Skip
+            </button>
+            <button onClick={handleOpen} disabled={saving}
+              className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : 'Open Register'}
+            </button>
+          </div>
+          {onBack && (
+            <button onClick={onBack} className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-1 transition-colors">
+              ← Back to Dashboard
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -644,18 +660,57 @@ function CloseSessionModal({ session, onClose, onCancel }: {
   onClose: (params: { closingCashActual: number; notes: string }) => Promise<void>
   onCancel: () => void
 }) {
-  const [cashActual, setCashActual] = useState('')
-  const [notes,      setNotes]      = useState('')
-  const [saving,     setSaving]     = useState(false)
+  const [cashActual,    setCashActual]    = useState('')
+  const [notes,         setNotes]         = useState('')
+  const [saving,        setSaving]        = useState(false)
+  const [loadingData,   setLoadingData]   = useState(true)
+  const [invoiceCount,  setInvoiceCount]  = useState(0)
+  const [cashSales,     setCashSales]     = useState(0)
+  const [cardSales,     setCardSales]     = useState(0)
+  const [totalExpenses, setTotalExpenses] = useState(0)
+  const [cashExpenses,  setCashExpenses]  = useState(0)
 
   const openedAt = new Date(session.opened_at).toLocaleTimeString('en-US', {
     timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit',
   })
+  const durationMs = Date.now() - new Date(session.opened_at).getTime()
+  const durationH  = Math.floor(durationMs / 3_600_000)
+  const durationM  = Math.floor((durationMs % 3_600_000) / 60_000)
+  const duration   = durationH > 0 ? `${durationH}h ${durationM}m` : `${durationM}m`
+  const openingCash = Number(session.opening_cash)
+
+  useEffect(() => {
+    const db = () => supabase as unknown as { from: (t: string) => any }
+    async function fetchData() {
+      const [{ data: invData }, { data: expData }] = await Promise.all([
+        db().from('invoices').select('id, total_amount').eq('session_id', session.id).neq('status', 'cancelled'),
+        db().from('expenses').select('amount, payment_method').eq('session_id', session.id),
+      ])
+      const ids = (invData ?? []).map((i: any) => i.id)
+      let pmts: any[] = []
+      if (ids.length > 0) {
+        const { data } = await db().from('payments').select('method, amount').in('invoice_id', ids)
+        pmts = data ?? []
+      }
+      setInvoiceCount((invData ?? []).length)
+      setCashSales(pmts.filter((p: any) => p.method === 'cash').reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0))
+      setCardSales(pmts.filter((p: any) => p.method === 'card').reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0))
+      setTotalExpenses((expData ?? []).reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0))
+      setCashExpenses((expData ?? []).filter((e: any) => e.payment_method === 'cash').reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0))
+      setLoadingData(false)
+    }
+    fetchData()
+  }, [session.id])
+
+  const expectedCash  = openingCash + cashSales - cashExpenses
+  const actualCash    = parseFloat(cashActual) || 0
+  const difference    = cashActual !== '' ? actualCash - expectedCash : null
 
   async function handleClose() {
+    if (cashActual === '') return
     setSaving(true)
     try {
-      await onClose({ closingCashActual: parseFloat(cashActual) || 0, notes })
+      await onClose({ closingCashActual: actualCash, notes })
     } catch (err) {
       console.error('[CloseSessionModal]', err)
     } finally {
@@ -664,44 +719,134 @@ function CloseSessionModal({ session, onClose, onCancel }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 overflow-y-auto py-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+
+        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
-            <h3 className="font-semibold text-gray-900 text-sm">Close Register</h3>
-            <p className="text-[10px] text-gray-400 mt-0.5">Session started at {openedAt}</p>
+            <h3 className="font-bold text-gray-900">Close Cash Register</h3>
+            <p className="text-[10px] text-gray-400 mt-0.5">Opened at {openedAt} · {duration}</p>
           </div>
           <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
         </div>
-        <div className="p-5 space-y-4">
-          <div>
-            <label className="label">Actual Closing Cash (SAR)</label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
-              <input
-                type="number" min="0" step="0.01" value={cashActual}
-                onChange={e => setCashActual(e.target.value)}
-                className="input pl-10" placeholder="0.00" autoFocus
-              />
+
+        {loadingData ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 size={24} className="animate-spin text-gray-300" />
+          </div>
+        ) : (
+          <>
+            {/* Section 1: Session Summary */}
+            <div className="px-5 pt-4">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Session Summary</p>
+              <div className="bg-gray-50 rounded-xl p-3.5 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Session opened</span>
+                  <span className="font-medium text-gray-800">{openedAt} (Saudi time)</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Opening cash</span>
+                  <span className="font-medium text-gray-800"><Rial amount={openingCash} /></span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Duration</span>
+                  <span className="font-medium text-gray-800">{duration}</span>
+                </div>
+              </div>
             </div>
-          </div>
-          <div>
-            <label className="label">Notes (optional)</label>
-            <textarea
-              value={notes} onChange={e => setNotes(e.target.value)}
-              className="input resize-none" rows={2}
-              placeholder="Any notes about this session..."
-            />
-          </div>
-        </div>
-        <div className="px-5 pb-5 flex gap-2">
+
+            {/* Section 2: Transactions */}
+            <div className="px-5 pt-4">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Today's Transactions</p>
+              <div className="bg-gray-50 rounded-xl p-3.5 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Total invoices</span>
+                  <span className="font-medium text-gray-800">{invoiceCount}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Cash sales</span>
+                  <span className="font-medium text-gray-800"><Rial amount={cashSales} /></span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Card sales</span>
+                  <span className="font-medium text-gray-800"><Rial amount={cardSales} /></span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Total expenses</span>
+                  <span className="font-medium text-gray-800"><Rial amount={totalExpenses} /></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 3: Cash Reconciliation */}
+            <div className="px-5 pt-4">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Cash Reconciliation</p>
+              <div className="bg-gray-50 rounded-xl p-3.5 space-y-2 mb-3">
+                <div className="flex justify-between text-sm text-gray-500">
+                  <span>Opening cash</span>
+                  <span className="tabular-nums"><Rial amount={openingCash} /></span>
+                </div>
+                <div className="flex justify-between text-sm text-gray-500">
+                  <span>+ Cash sales</span>
+                  <span className="tabular-nums"><Rial amount={cashSales} /></span>
+                </div>
+                <div className="flex justify-between text-sm text-gray-500">
+                  <span>− Cash expenses</span>
+                  <span className="tabular-nums"><Rial amount={cashExpenses} /></span>
+                </div>
+                <div className="flex justify-between text-sm font-bold text-gray-900 pt-1.5 border-t border-gray-200">
+                  <span>Expected in drawer</span>
+                  <span className="tabular-nums"><Rial amount={expectedCash} /></span>
+                </div>
+              </div>
+
+              <div className="mb-3">
+                <label className="label">Actual cash in drawer (required)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
+                  <input
+                    type="number" min="0" step="0.01" value={cashActual}
+                    onChange={e => setCashActual(e.target.value)}
+                    className="input pl-10" placeholder="0.00" autoFocus
+                  />
+                </div>
+                {difference !== null && (
+                  <p className={`text-xs mt-1.5 font-semibold ${
+                    Math.abs(difference) < 0.005
+                      ? 'text-emerald-600'
+                      : difference > 0 ? 'text-emerald-600' : 'text-red-500'
+                  }`}>
+                    {Math.abs(difference) < 0.005
+                      ? '✓ Balanced'
+                      : difference > 0
+                        ? `+SAR ${fmt(difference)} surplus`
+                        : `-SAR ${fmt(Math.abs(difference))} shortage`
+                    }
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="label">Notes (optional)</label>
+                <textarea
+                  value={notes} onChange={e => setNotes(e.target.value)}
+                  className="input resize-none" rows={2}
+                  placeholder="Any notes about this session..."
+                />
+              </div>
+            </div>
+          </>
+        )}
+
+        <div className="px-5 py-4 flex gap-2">
           <button onClick={onCancel} disabled={saving}
             className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50">
             Cancel
           </button>
-          <button onClick={handleClose} disabled={saving}
+          <button onClick={handleClose} disabled={saving || cashActual === '' || loadingData}
             className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-            {saving ? <Loader2 size={14} className="animate-spin" /> : 'Close Register'}
+            {saving ? <Loader2 size={14} className="animate-spin" /> : 'Close Session'}
           </button>
         </div>
       </div>
@@ -1028,6 +1173,7 @@ export default function POSPage() {
         total_amount:       totals.total,
         currency_code:      'SAR',
         invoice_date:       today,
+        payment_method:     payMethod,
         status:             'posted',
         payment_status:     'paid',
         notes:              note || null,
@@ -1161,6 +1307,7 @@ export default function POSPage() {
           <OpenSessionModal
             onOpen={async (cash) => { await openSession(cash); setShowOpenSession(false) }}
             onSkip={async () => { await openSession(0); setShowOpenSession(false) }}
+            onBack={() => navigate('/branch')}
           />
         )}
         {sessionSummary && (
@@ -1182,6 +1329,12 @@ export default function POSPage() {
               className="w-full py-3 bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity"
             >
               Open New Session
+            </button>
+            <button
+              onClick={() => navigate('/branch')}
+              className="mt-3 w-full text-sm text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              ← Back to Dashboard
             </button>
           </div>
         )}
