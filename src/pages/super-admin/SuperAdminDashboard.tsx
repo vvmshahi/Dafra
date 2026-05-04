@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Building2, Users, CreditCard, TrendingUp, ArrowRight,
@@ -96,12 +96,12 @@ export default function SuperAdminDashboard() {
   const [mrrData, setMrrData] = useState<MrrPoint[]>([])
   const [planData,setPlanData]= useState<PlanSlice[]>([])
   const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function load() {
-      // Parallel queries
+  const loadStats = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
+    setError(null)
+    try {
       const [
         { count: totalTenants },
         { count: activeTenants },
@@ -114,18 +114,14 @@ export default function SuperAdminDashboard() {
         supabase.from('tenants').select('id', { count: 'exact', head: true }).eq('is_active', true).is('suspended_at', null),
         supabase.from('branches').select('id', { count: 'exact', head: true }),
         supabase.from('user_profiles').select('id', { count: 'exact', head: true }).neq('role', 'super_admin'),
-        // Active/trial subscriptions joined with plan price
         (supabase as any).from('tenant_subscriptions')
           .select('status, subscription_plans(name, price_monthly)')
           .in('status', ['active', 'trial']),
-        // Recent 6 tenants
         (supabase as any).from('tenants')
           .select('id, name, is_active, suspended_at, created_at, tenant_subscriptions(status, subscription_plans(name))')
           .order('created_at', { ascending: false })
           .limit(6),
       ])
-
-      if (cancelled) return
 
       // MRR = sum of price_monthly for active subs (trial = 0)
       let mrr = 0
@@ -144,7 +140,6 @@ export default function SuperAdminDashboard() {
         .from('tenants')
         .select('id', { count: 'exact', head: true })
         .gte('created_at', monthStart.toISOString())
-      if (cancelled) return
 
       setStats({
         totalTenants:  totalTenants  ?? 0,
@@ -156,15 +151,13 @@ export default function SuperAdminDashboard() {
         newThisMonth:  newThisMonth  ?? 0,
       })
 
-      // Plan distribution pie
       setPlanData(
         Object.entries(planCounts).map(([name, value]) => ({
           name, value, color: PLAN_COLORS[name] ?? '#6b7280',
         }))
       )
 
-      // Build recent tenants list
-      const rows: RecentTenant[] = (recentRaw ?? []).map((r: any) => {
+      setRecent((recentRaw ?? []).map((r: any) => {
         const sub = r.tenant_subscriptions?.[0]
         return {
           id:          r.id,
@@ -175,11 +168,9 @@ export default function SuperAdminDashboard() {
           plan:        sub?.subscription_plans?.name ?? null,
           subStatus:   sub?.status ?? null,
         }
-      })
-      setRecent(rows)
+      }))
 
-      // MRR trend: last 6 months from tenant_subscriptions created_at (approximation)
-      // Use actual invoice totals per month grouped
+      // Revenue trend — last 6 months of posted invoices
       const sixMonthsAgo = new Date()
       sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5)
       sixMonthsAgo.setDate(1); sixMonthsAgo.setHours(0,0,0,0)
@@ -190,11 +181,9 @@ export default function SuperAdminDashboard() {
         .gte('invoice_date', sixMonthsAgo.toISOString().slice(0, 10))
         .eq('status', 'posted')
 
-      if (cancelled) return
-
       const byMonth: Record<string, number> = {}
       for (const inv of (invoiceMonths ?? [])) {
-        const key = inv.invoice_date.slice(0, 7) // YYYY-MM
+        const key = inv.invoice_date.slice(0, 7)
         byMonth[key] = (byMonth[key] ?? 0) + inv.total_amount
       }
 
@@ -206,12 +195,25 @@ export default function SuperAdminDashboard() {
       }
       setMrrData(points)
 
-      setLoading(false)
+      if (!silent) setLoading(false)
+    } catch (err: any) {
+      console.error('[SuperAdmin] dashboard load failed:', err)
+      setError('Failed to load dashboard data. Please refresh.')
+      if (!silent) setLoading(false)
     }
-
-    load()
-    return () => { cancelled = true }
   }, [])
+
+  useEffect(() => { loadStats() }, [loadStats])
+
+  // Realtime: silently refresh when tenants or invoices change
+  useEffect(() => {
+    const channel = supabase
+      .channel('super-admin-dashboard')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' },  () => loadStats(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, () => loadStats(true))
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [loadStats])
 
   if (loading) {
     return (
@@ -228,6 +230,15 @@ export default function SuperAdminDashboard() {
 
   return (
     <div className="space-y-6">
+
+      {/* Error banner */}
+      {error && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-700">
+          <AlertTriangle size={15} className="flex-shrink-0 text-red-500" />
+          {error}
+          <button onClick={() => loadStats()} className="ml-auto text-xs font-medium underline hover:no-underline">Retry</button>
+        </div>
+      )}
 
       {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Save, Plus, Trash2, Edit2, Check, X, Package } from 'lucide-react'
+import { Plus, Trash2, Edit2, Check, X, Package } from 'lucide-react'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { supabase } from '@/lib/supabase'
@@ -235,31 +235,6 @@ export default function SuperAdminSettingsPage() {
         </div>
       </section>
 
-      {/* Platform config — static for now */}
-      <section>
-        <h2 className="text-sm font-semibold text-gray-900 mb-4">Platform Configuration</h2>
-        <div className="card p-6 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField label="Platform Name">
-              <input className="input text-sm h-9 w-full" defaultValue="Dafra" />
-            </FormField>
-            <FormField label="Support Email">
-              <input className="input text-sm h-9 w-full" defaultValue="support@dafra.sa" />
-            </FormField>
-            <FormField label="VAT Rate (%)">
-              <input className="input text-sm h-9 w-full" defaultValue="15" type="number" />
-            </FormField>
-            <FormField label="Default Country">
-              <input className="input text-sm h-9 w-full" defaultValue="SA" />
-            </FormField>
-          </div>
-          <div className="pt-2 border-t border-gray-100 flex justify-end">
-            <button className="flex items-center gap-2 text-sm font-medium px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
-              <Save size={14} /> Save Configuration
-            </button>
-          </div>
-        </div>
-      </section>
     </div>
   )
 }

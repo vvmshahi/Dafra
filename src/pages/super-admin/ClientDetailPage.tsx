@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Building2, Users, FileText, CreditCard,
-  UserX, UserCheck, Trash2, RefreshCw, MapPin, Phone, Mail, Globe,
+  UserX, UserCheck, Trash2, MapPin, Phone, Mail,
   AlertTriangle, CheckCircle2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
@@ -52,6 +52,115 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
+// ── Modals ────────────────────────────────────────────────────────────────────
+
+function SuspendModal({ name, reason, onReasonChange, onConfirm, onCancel, acting }: {
+  name: string; reason: string; onReasonChange: (v: string) => void
+  onConfirm: () => void; onCancel: () => void; acting: boolean
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+        <h2 className="text-base font-semibold text-gray-900 mb-1">Suspend Client</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Suspending <strong>{name}</strong> will block all their users from logging in.
+        </p>
+        <label className="block text-xs font-medium text-gray-700 mb-1.5">Reason (optional)</label>
+        <input
+          value={reason}
+          onChange={e => onReasonChange(e.target.value)}
+          className="input w-full text-sm h-9 mb-5"
+          placeholder="e.g. Payment overdue"
+          autoFocus
+        />
+        <div className="flex justify-end gap-2">
+          <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={acting}
+            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 disabled:opacity-50 transition-colors"
+          >
+            Suspend
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RestoreModal({ name, onConfirm, onCancel, acting }: {
+  name: string; onConfirm: () => void; onCancel: () => void; acting: boolean
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+        <h2 className="text-base font-semibold text-gray-900 mb-1">Restore Client Access</h2>
+        <p className="text-sm text-gray-500 mb-5">
+          Are you sure you want to restore access for <strong>{name}</strong>?
+          Their users will be able to log in again.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={acting}
+            className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+          >
+            Restore Access
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DeleteModal({ name, confirmName, onConfirmNameChange, onConfirm, onCancel, acting, error }: {
+  name: string; confirmName: string; onConfirmNameChange: (v: string) => void
+  onConfirm: () => void; onCancel: () => void; acting: boolean; error: string | null
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+        <h2 className="text-base font-semibold text-gray-900 mb-3">Delete Client</h2>
+        <div className="flex items-start gap-2 bg-red-50 rounded-xl p-3 mb-4">
+          <AlertTriangle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-red-700">
+            This action cannot be undone. All data for this client including branches,
+            users, invoices, and expenses will be permanently deleted.
+          </p>
+        </div>
+        <label className="block text-xs font-medium text-gray-700 mb-1.5">
+          Type <strong>{name}</strong> to confirm
+        </label>
+        <input
+          value={confirmName}
+          onChange={e => onConfirmNameChange(e.target.value)}
+          className="input w-full text-sm h-9 mb-2"
+          placeholder={name}
+          autoFocus
+        />
+        {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={acting || confirmName !== name}
+            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {acting ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ClientDetailPage() {
@@ -65,6 +174,14 @@ export default function ClientDetailPage() {
   const [stats,      setStats]      = useState<InvoiceStats | null>(null)
   const [loading,    setLoading]    = useState(true)
   const [acting,     setActing]     = useState(false)
+
+  // Modal state
+  const [showSuspend,     setShowSuspend]     = useState(false)
+  const [showRestore,     setShowRestore]     = useState(false)
+  const [showDelete,      setShowDelete]      = useState(false)
+  const [modalReason,     setModalReason]     = useState('')
+  const [deleteConfirm,   setDeleteConfirm]   = useState('')
+  const [deleteError,     setDeleteError]     = useState<string | null>(null)
 
   async function load() {
     if (!id) return
@@ -101,12 +218,12 @@ export default function ClientDetailPage() {
     const rawSub = subscriptions?.[0]
     if (rawSub) {
       setSub({
-        id:           rawSub.id,
-        status:       rawSub.status,
-        starts_at:    rawSub.starts_at,
-        ends_at:      rawSub.ends_at,
-        trial_ends_at:rawSub.trial_ends_at,
-        plan:         rawSub.subscription_plans ?? null,
+        id:            rawSub.id,
+        status:        rawSub.status,
+        starts_at:     rawSub.starts_at,
+        ends_at:       rawSub.ends_at,
+        trial_ends_at: rawSub.trial_ends_at,
+        plan:          rawSub.subscription_plans ?? null,
       })
     }
 
@@ -125,31 +242,39 @@ export default function ClientDetailPage() {
 
   useEffect(() => { load() }, [id])
 
-  async function toggleSuspend() {
+  async function confirmSuspend() {
     if (!tenant) return
     setActing(true)
-    if (tenant.suspended_at) {
-      await (supabase as any).from('tenants')
-        .update({ suspended_at: null, suspended_reason: null, is_active: true })
-        .eq('id', tenant.id)
-    } else {
-      const reason = window.prompt('Reason for suspension (optional):') ?? ''
-      await (supabase as any).from('tenants')
-        .update({ suspended_at: new Date().toISOString(), suspended_reason: reason || null, is_active: false })
-        .eq('id', tenant.id)
-    }
+    await (supabase as any).from('tenants')
+      .update({ suspended_at: new Date().toISOString(), suspended_reason: modalReason || null, is_active: false })
+      .eq('id', tenant.id)
     setActing(false)
+    setShowSuspend(false)
+    setModalReason('')
     load()
   }
 
-  async function deleteTenant() {
+  async function confirmRestore() {
     if (!tenant) return
-    const confirmed = window.confirm(
-      `Permanently delete "${tenant.name}" and ALL their data? This cannot be undone.`
-    )
-    if (!confirmed) return
     setActing(true)
-    await (supabase as any).from('tenants').delete().eq('id', tenant.id)
+    await (supabase as any).from('tenants')
+      .update({ suspended_at: null, suspended_reason: null, is_active: true })
+      .eq('id', tenant.id)
+    setActing(false)
+    setShowRestore(false)
+    load()
+  }
+
+  async function confirmDelete() {
+    if (!tenant || deleteConfirm !== tenant.name) return
+    setActing(true)
+    setDeleteError(null)
+    const { error } = await (supabase as any).from('tenants').delete().eq('id', tenant.id)
+    if (error) {
+      setDeleteError('Failed to delete client: ' + error.message)
+      setActing(false)
+      return
+    }
     navigate('/super-admin/clients')
   }
 
@@ -177,6 +302,37 @@ export default function ClientDetailPage() {
   return (
     <div className="space-y-6">
 
+      {/* Modals */}
+      {showSuspend && (
+        <SuspendModal
+          name={tenant.name}
+          reason={modalReason}
+          onReasonChange={setModalReason}
+          onConfirm={confirmSuspend}
+          onCancel={() => { setShowSuspend(false); setModalReason('') }}
+          acting={acting}
+        />
+      )}
+      {showRestore && (
+        <RestoreModal
+          name={tenant.name}
+          onConfirm={confirmRestore}
+          onCancel={() => setShowRestore(false)}
+          acting={acting}
+        />
+      )}
+      {showDelete && (
+        <DeleteModal
+          name={tenant.name}
+          confirmName={deleteConfirm}
+          onConfirmNameChange={setDeleteConfirm}
+          onConfirm={confirmDelete}
+          onCancel={() => { setShowDelete(false); setDeleteConfirm(''); setDeleteError(null) }}
+          acting={acting}
+          error={deleteError}
+        />
+      )}
+
       {/* Back + actions */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <button
@@ -188,7 +344,8 @@ export default function ClientDetailPage() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={toggleSuspend} disabled={acting}
+            onClick={() => isSuspended ? setShowRestore(true) : setShowSuspend(true)}
+            disabled={acting}
             className={`flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-xl transition-colors ${
               isSuspended
                 ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
@@ -199,7 +356,8 @@ export default function ClientDetailPage() {
             {isSuspended ? 'Restore Access' : 'Suspend Client'}
           </button>
           <button
-            onClick={deleteTenant} disabled={acting}
+            onClick={() => { setDeleteConfirm(''); setDeleteError(null); setShowDelete(true) }}
+            disabled={acting}
             className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-xl bg-red-600 text-white hover:bg-red-700 transition-colors"
           >
             <Trash2 size={14} /> Delete

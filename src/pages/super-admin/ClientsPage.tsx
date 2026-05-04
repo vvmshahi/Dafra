@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Building2, UserX, UserCheck, ChevronRight, Plus } from 'lucide-react'
+import { Search, Building2, UserX, UserCheck, ChevronRight } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { supabase } from '@/lib/supabase'
@@ -42,6 +42,72 @@ function matchesFilter(c: ClientRow, f: StatusFilter): boolean {
   return true
 }
 
+// ── Modals ────────────────────────────────────────────────────────────────────
+
+function SuspendModal({ client, reason, onReasonChange, onConfirm, onCancel, acting }: {
+  client: ClientRow; reason: string; onReasonChange: (v: string) => void
+  onConfirm: () => void; onCancel: () => void; acting: boolean
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+        <h2 className="text-base font-semibold text-gray-900 mb-1">Suspend Client</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Suspending <strong>{client.name}</strong> will block all their users from logging in.
+        </p>
+        <label className="block text-xs font-medium text-gray-700 mb-1.5">Reason (optional)</label>
+        <input
+          value={reason}
+          onChange={e => onReasonChange(e.target.value)}
+          className="input w-full text-sm h-9 mb-5"
+          placeholder="e.g. Payment overdue"
+          autoFocus
+        />
+        <div className="flex justify-end gap-2">
+          <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={acting}
+            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 disabled:opacity-50 transition-colors"
+          >
+            Suspend
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RestoreModal({ client, onConfirm, onCancel, acting }: {
+  client: ClientRow; onConfirm: () => void; onCancel: () => void; acting: boolean
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+        <h2 className="text-base font-semibold text-gray-900 mb-1">Restore Client Access</h2>
+        <p className="text-sm text-gray-500 mb-5">
+          Are you sure you want to restore access for <strong>{client.name}</strong>?
+          Their users will be able to log in again.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={acting}
+            className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+          >
+            Restore Access
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ClientsPage() {
@@ -50,7 +116,12 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true)
   const [search,  setSearch]  = useState('')
   const [filter,  setFilter]  = useState<StatusFilter>('all')
-  const [acting,  setActing]  = useState<string | null>(null)
+  const [acting,  setActing]  = useState(false)
+
+  // Modal state
+  const [suspendTarget, setSuspendTarget] = useState<ClientRow | null>(null)
+  const [restoreTarget, setRestoreTarget] = useState<ClientRow | null>(null)
+  const [suspendReason, setSuspendReason] = useState('')
 
   async function fetchClients() {
     const { data } = await (supabase as any)
@@ -62,6 +133,7 @@ export default function ClientsPage() {
         user_profiles(id)
       `)
       .order('created_at', { ascending: false })
+      .limit(100)
 
     const rows: ClientRow[] = (data ?? []).map((r: any) => {
       const sub = r.tenant_subscriptions?.[0]
@@ -86,23 +158,39 @@ export default function ClientsPage() {
 
   useEffect(() => { fetchClients() }, [])
 
-  async function toggleSuspend(c: ClientRow) {
-    setActing(c.id)
-    if (c.suspended_at) {
-      // Unsuspend
-      await (supabase as any)
-        .from('tenants')
-        .update({ suspended_at: null, suspended_reason: null, is_active: true })
-        .eq('id', c.id)
-    } else {
-      const reason = window.prompt('Reason for suspension (optional):') ?? ''
-      await (supabase as any)
-        .from('tenants')
-        .update({ suspended_at: new Date().toISOString(), suspended_reason: reason || null, is_active: false })
-        .eq('id', c.id)
-    }
-    setActing(null)
+  async function confirmSuspend() {
+    if (!suspendTarget) return
+    setActing(true)
+    await (supabase as any)
+      .from('tenants')
+      .update({ suspended_at: new Date().toISOString(), suspended_reason: suspendReason || null, is_active: false })
+      .eq('id', suspendTarget.id)
+    setActing(false)
+    setSuspendTarget(null)
+    setSuspendReason('')
     fetchClients()
+  }
+
+  async function confirmRestore() {
+    if (!restoreTarget) return
+    setActing(true)
+    await (supabase as any)
+      .from('tenants')
+      .update({ suspended_at: null, suspended_reason: null, is_active: true })
+      .eq('id', restoreTarget.id)
+    setActing(false)
+    setRestoreTarget(null)
+    fetchClients()
+  }
+
+  function handleToggle(e: React.MouseEvent, c: ClientRow) {
+    e.stopPropagation()
+    if (c.suspended_at) {
+      setRestoreTarget(c)
+    } else {
+      setSuspendReason('')
+      setSuspendTarget(c)
+    }
   }
 
   const filtered = useMemo(() => {
@@ -131,18 +219,34 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-6">
+
+      {/* Modals */}
+      {suspendTarget && (
+        <SuspendModal
+          client={suspendTarget}
+          reason={suspendReason}
+          onReasonChange={setSuspendReason}
+          onConfirm={confirmSuspend}
+          onCancel={() => { setSuspendTarget(null); setSuspendReason('') }}
+          acting={acting}
+        />
+      )}
+      {restoreTarget && (
+        <RestoreModal
+          client={restoreTarget}
+          onConfirm={confirmRestore}
+          onCancel={() => setRestoreTarget(null)}
+          acting={acting}
+        />
+      )}
+
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Clients</h1>
-          <p className="text-sm text-gray-400 mt-0.5">{clients.length} registered tenants</p>
-        </div>
-        <button
-          onClick={() => navigate('/super-admin/clients/new')}
-          className="btn-primary flex items-center gap-2 text-sm px-4 py-2"
-        >
-          <Plus size={15} /> Add Client
-        </button>
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">Clients</h1>
+        <p className="text-sm text-gray-400 mt-0.5">
+          {clients.length} registered tenants
+          {clients.length >= 100 && ' · showing first 100'}
+        </p>
       </div>
 
       {/* Filters */}
@@ -223,8 +327,7 @@ export default function ClientsPage() {
                       <td className="px-5 py-3.5" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => toggleSuspend(c)}
-                            disabled={acting === c.id}
+                            onClick={e => handleToggle(e, c)}
                             className={`flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors ${
                               c.suspended_at
                                 ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100'
