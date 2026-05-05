@@ -140,7 +140,7 @@ function RestoreModal({ client, onConfirm, onCancel, acting }: {
 
 // ── Create Account modal ──────────────────────────────────────────────────────
 
-interface PlanOption { id: string; name: string }
+interface PlanOption { id: string; name: string; price_monthly: number }
 
 const DURATIONS = [
   { label: '1 Month',        months: 1  },
@@ -165,22 +165,23 @@ function CreateAccountModal({ onCreated, onCancel }: {
   const [vatNumber,     setVatNumber]     = useState('')
   const [crNumber,      setCrNumber]      = useState('')
   const [email,         setEmail]         = useState('')
-  const [password,      setPassword]      = useState('')
   const [phone,         setPhone]         = useState('')
   const [city,          setCity]          = useState('')
   const [planId,        setPlanId]        = useState('')
+  const [branchCount,   setBranchCount]   = useState(1)
   const [duration,      setDuration]      = useState(1)
   const [payMethod,     setPayMethod]     = useState('Manual')
   const [payRef,        setPayRef]        = useState('')
   const [notes,         setNotes]         = useState('')
 
-  const [saving, setSaving] = useState(false)
-  const [error,  setError]  = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const [error,   setError]   = useState('')
+  const [warning, setWarning] = useState('')
 
   useEffect(() => {
     ;(supabase as any)
       .from('subscription_plans')
-      .select('id, name')
+      .select('id, name, price_monthly')
       .eq('is_active', true)
       .order('price_monthly')
       .then(({ data }: { data: PlanOption[] | null }) => {
@@ -191,7 +192,10 @@ function CreateAccountModal({ onCreated, onCancel }: {
       })
   }, [])
 
-  const isLifetime = duration === 0
+  const isLifetime    = duration === 0
+  const selectedPlan  = plans.find(p => p.id === planId)
+  const pricePerBranch = selectedPlan?.price_monthly ?? 0
+  const totalAmount   = isLifetime ? 0 : pricePerBranch * branchCount * duration
 
   function computeExpiry() {
     if (isLifetime) return null
@@ -202,10 +206,10 @@ function CreateAccountModal({ onCreated, onCancel }: {
 
   async function handleCreate() {
     setError('')
+    setWarning('')
     if (!companyName.trim()) { setError('Business name is required'); return }
     if (!vatNumber.trim())   { setError('VAT number is required');    return }
     if (!email.trim())       { setError('Owner email is required');   return }
-    if (password.length < 8) { setError('Password must be at least 8 characters'); return }
     if (!planId)             { setError('Select a plan');             return }
 
     setSaving(true)
@@ -217,10 +221,10 @@ function CreateAccountModal({ onCreated, onCancel }: {
           vat_number:      vatNumber.trim(),
           cr_number:       crNumber.trim() || null,
           email:           email.trim().toLowerCase(),
-          password,
           phone:           phone.trim() || null,
           city:            city.trim() || null,
           plan_id:         planId,
+          branch_count:    branchCount,
           duration_months: duration,
           ends_at:         computeExpiry(),
           pay_method:      payMethod,
@@ -231,6 +235,12 @@ function CreateAccountModal({ onCreated, onCancel }: {
 
       const errMsg = fnErr?.message ?? (fnData as any)?.error ?? null
       if (errMsg) throw new Error(errMsg)
+
+      const warn = (fnData as any)?.warning ?? null
+      if (warn) {
+        setWarning(warn)
+        return  // Stay open so super admin sees the warning before closing
+      }
 
       onCreated()
     } catch (err: any) {
@@ -295,17 +305,17 @@ function CreateAccountModal({ onCreated, onCancel }: {
             {/* Owner login */}
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Owner Login</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Email *</label>
-                  <input value={email} onChange={e => setEmail(e.target.value)} type="email"
-                    className="input w-full text-sm h-9" placeholder="owner@company.com" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Password * (min 8 chars)</label>
-                  <input value={password} onChange={e => setPassword(e.target.value)} type="text"
-                    className="input w-full text-sm h-9 font-mono" placeholder="share with client" />
-                </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">Email *</label>
+                <input value={email} onChange={e => setEmail(e.target.value)} type="email"
+                  className="input w-full text-sm h-9" placeholder="owner@company.com" />
+              </div>
+              <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 mt-3">
+                <span className="text-blue-500 text-sm flex-shrink-0">✉</span>
+                <p className="text-xs text-blue-700">
+                  A password setup email will be sent to the client automatically.
+                  They click the link to set their own password and log in.
+                </p>
               </div>
             </div>
 
@@ -316,8 +326,16 @@ function CreateAccountModal({ onCreated, onCancel }: {
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1.5">Plan *</label>
                   <select value={planId} onChange={e => setPlanId(e.target.value)} className="input w-full text-sm h-9">
-                    {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {plans.map(p => <option key={p.id} value={p.id}>{p.name} — SAR {p.price_monthly}/branch/mo</option>)}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Number of Branches</label>
+                  <input
+                    type="number" min={1} value={branchCount}
+                    onChange={e => setBranchCount(Math.max(1, Number(e.target.value)))}
+                    className="input w-full text-sm h-9"
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1.5">Duration *</label>
@@ -331,20 +349,34 @@ function CreateAccountModal({ onCreated, onCancel }: {
                     {['Manual', 'Bank Transfer', 'Cash'].map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Payment Reference</label>
-                  <input value={payRef} onChange={e => setPayRef(e.target.value)}
-                    className="input w-full text-sm h-9" placeholder="e.g. TXN123456" />
-                </div>
               </div>
-              {!isLifetime && (
-                <p className="text-xs text-gray-400 mt-2">
-                  Expires: {new Date(Date.now()).toLocaleDateString()} →{' '}
-                  {(() => { const d = new Date(); d.setMonth(d.getMonth() + duration); return d.toLocaleDateString('en-SA') })()}
-                </p>
-              )}
-              {isLifetime && (
-                <p className="text-xs text-emerald-600 font-medium mt-2">Lifetime Free — no expiry date</p>
+
+              <div className="mt-3">
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">Payment Reference</label>
+                <input value={payRef} onChange={e => setPayRef(e.target.value)}
+                  className="input w-full text-sm h-9" placeholder="e.g. TXN123456" />
+              </div>
+
+              {/* Dynamic pricing breakdown */}
+              {isLifetime ? (
+                <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 text-sm text-emerald-700 font-medium">
+                  Lifetime Free — no expiry, no charge
+                </div>
+              ) : (
+                <div className="mt-3 bg-gray-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
+                  <div className="flex justify-between items-center text-gray-500">
+                    <span>
+                      SAR {pricePerBranch} × {branchCount} branch{branchCount !== 1 ? 'es' : ''} × {duration} month{duration !== 1 ? 's' : ''}
+                    </span>
+                    <span className="font-bold text-gray-900">= SAR {totalAmount.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs text-gray-400 border-t border-gray-200 pt-1.5">
+                    <span>Expiry date</span>
+                    <span className="font-semibold text-gray-700">
+                      {(() => { const d = new Date(); d.setMonth(d.getMonth() + duration); return d.toLocaleDateString('en-SA') })()}
+                    </span>
+                  </div>
+                </div>
               )}
             </div>
 
@@ -357,6 +389,15 @@ function CreateAccountModal({ onCreated, onCancel }: {
 
             {error && (
               <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
+            )}
+            {warning && (
+              <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
+                <p className="text-xs font-semibold text-amber-800 mb-0.5">Account created — action needed</p>
+                <p className="text-xs text-amber-700">{warning}</p>
+                <button onClick={onCreated} className="text-xs font-medium text-amber-800 underline mt-2">
+                  Close and view client list
+                </button>
+              </div>
             )}
           </div>
         )}

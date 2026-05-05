@@ -138,8 +138,11 @@ function ManageSubscriptionModal({ tenantId, existingSub, plans, onSaved, onCanc
         if (e) throw e
       }
 
-      // Restore tenant if suspended
-      await (supabase as any).from('tenants').update({ is_active: true }).eq('id', tenantId)
+      // Update tenant: restore if suspended, store per-client branch limit
+      await (supabase as any)
+        .from('tenants')
+        .update({ is_active: true, max_branches: branches })
+        .eq('id', tenantId)
 
       onSaved()
     } catch (err: any) {

@@ -39,7 +39,7 @@ export function useSubscription(): SubscriptionState {
           .maybeSingle(),
         (supabase as any)
           .from('tenants')
-          .select('is_active')
+          .select('is_active, max_branches')
           .eq('id', tid)
           .maybeSingle(),
       ])
@@ -52,7 +52,8 @@ export function useSubscription(): SubscriptionState {
       const now         = Date.now()
       const endsAt      = sub.ends_at ? new Date(sub.ends_at).getTime() : null
       const planName    = sub.subscription_plans?.name ?? ''
-      const maxBranches = sub.subscription_plans?.max_branches ?? 1
+      // Per-client limit (set by super admin) takes priority over plan default
+      const maxBranches = tenant?.max_branches ?? sub.subscription_plans?.max_branches ?? 1
 
       const isLifetimeFree = sub.status === 'active' && endsAt === null
       const isSuspended    = tenant?.is_active === false || sub.status === 'cancelled'

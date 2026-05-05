@@ -64,29 +64,23 @@ Deno.serve(async (req: Request) => {
     const body = await req.json()
     const {
       company_name, company_name_ar, vat_number, cr_number,
-      email, password, phone, city,
-      plan_id, duration_months, ends_at,
+      email, phone, city,
+      plan_id, duration_months, ends_at, branch_count,
       pay_method, pay_ref, notes,
     } = body
 
-    if (!company_name || !vat_number || !email || !password || !plan_id) {
-      return new Response(JSON.stringify({ error: 'Missing required fields: company_name, vat_number, email, password, plan_id' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    if (password.length < 8) {
-      return new Response(JSON.stringify({ error: 'Password must be at least 8 characters' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    if (!company_name || !vat_number || !email || !plan_id) {
+      return new Response(
+        JSON.stringify({ error: 'Missing required fields: company_name, vat_number, email, plan_id' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
     }
 
     const normalizedEmail = email.trim().toLowerCase()
 
-    // ── Create auth user ─────────────────────────────────────────────────────
+    // ── Step 1: Create auth user (no password — email invite handles setup) ──
     const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
-      email: normalizedEmail,
-      password,
+      email:         normalizedEmail,
       email_confirm: true,
       user_metadata: { full_name: company_name.trim(), role: 'owner' },
     })
@@ -98,45 +92,48 @@ Deno.serve(async (req: Request) => {
     }
 
     const newUserId = created.user.id
+    console.log('[create-owner-account] Auth user created:', newUserId)
 
-    // ── Create tenant ────────────────────────────────────────────────────────
+    // ── Step 2: Create tenant ────────────────────────────────────────────────
     const { data: tenantRow, error: tenantErr } = await adminClient
       .from('tenants')
       .insert({
-        name:       company_name.trim(),
-        name_ar:    company_name_ar?.trim() || null,
-        vat_number: vat_number.trim(),
-        cr_number:  cr_number?.trim() || null,
-        email:      normalizedEmail,
-        phone:      phone?.trim() || null,
-        city:       city?.trim() || null,
-        country:    'SA',
-        is_active:  true,
-        address:    notes?.trim() || null,
+        name:         company_name.trim(),
+        name_ar:      company_name_ar?.trim() || null,
+        vat_number:   vat_number.trim(),
+        cr_number:    cr_number?.trim() || null,
+        email:        normalizedEmail,
+        phone:        phone?.trim() || null,
+        city:         city?.trim() || null,
+        country:      'SA',
+        is_active:    true,
+        address:      notes?.trim() || null,
+        max_branches: branch_count ?? 999,
       })
       .select('id')
       .single()
 
     if (tenantErr || !tenantRow) {
-      // Rollback auth user
       await adminClient.auth.admin.deleteUser(newUserId)
-      return new Response(JSON.stringify({ error: 'Failed to create tenant: ' + (tenantErr?.message ?? 'unknown') }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({ error: 'Failed to create tenant: ' + (tenantErr?.message ?? 'unknown') }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
     }
 
     const tenantId = tenantRow.id
+    console.log('[create-owner-account] Tenant created:', tenantId)
 
-    // ── Create main branch ───────────────────────────────────────────────────
+    // ── Step 3: Create main branch ───────────────────────────────────────────
     const { data: branchRow, error: branchErr } = await adminClient
       .from('branches')
       .insert({
-        tenant_id:      tenantId,
-        name:           company_name.trim(),
-        name_ar:        company_name_ar?.trim() || null,
-        city:           city?.trim() || null,
-        is_main_branch: true,
-        is_active:      true,
+        tenant_id:       tenantId,
+        name:            company_name.trim(),
+        name_ar:         company_name_ar?.trim() || null,
+        city:            city?.trim() || null,
+        is_main_branch:  true,
+        is_active:       true,
         invoice_counter: 0,
       })
       .select('id')
@@ -145,14 +142,16 @@ Deno.serve(async (req: Request) => {
     if (branchErr || !branchRow) {
       await adminClient.from('tenants').delete().eq('id', tenantId)
       await adminClient.auth.admin.deleteUser(newUserId)
-      return new Response(JSON.stringify({ error: 'Failed to create branch: ' + (branchErr?.message ?? 'unknown') }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({ error: 'Failed to create branch: ' + (branchErr?.message ?? 'unknown') }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
     }
 
     const branchId = branchRow.id
+    console.log('[create-owner-account] Branch created:', branchId)
 
-    // ── Upsert user profile ──────────────────────────────────────────────────
+    // ── Step 4: Upsert user profile ──────────────────────────────────────────
     const { error: profileUpsertErr } = await adminClient
       .from('user_profiles')
       .upsert({
@@ -168,12 +167,11 @@ Deno.serve(async (req: Request) => {
 
     if (profileUpsertErr) {
       console.error('[create-owner-account] Profile upsert failed:', profileUpsertErr.message)
-      // Non-fatal — account is created but login may fail
     }
 
-    // ── Create subscription ──────────────────────────────────────────────────
-    const isLifetime = duration_months === 0
-    const paymentNote = [pay_method, pay_ref].filter(Boolean).join(' · ') || null
+    // ── Step 5: Create subscription ──────────────────────────────────────────
+    const isLifetime    = duration_months === 0
+    const paymentNote   = [pay_method, pay_ref].filter(Boolean).join(' · ') || null
 
     const { error: subErr } = await adminClient
       .from('tenant_subscriptions')
@@ -190,15 +188,32 @@ Deno.serve(async (req: Request) => {
 
     if (subErr) {
       console.error('[create-owner-account] Subscription insert failed:', subErr.message)
-      // Non-fatal — account works but subscription may need to be set manually
     }
 
-    return new Response(JSON.stringify({
+    // ── Step 6: Send password setup email ────────────────────────────────────
+    let emailWarning: string | null = null
+
+    const { error: linkErr } = await adminClient.auth.admin.generateLink({
+      type:  'recovery',
+      email: normalizedEmail,
+    })
+
+    if (linkErr) {
+      console.error('[create-owner-account] Password setup email failed:', linkErr.message)
+      emailWarning = `Account created but password setup email failed: ${linkErr.message}. Send a manual password reset from the Supabase dashboard.`
+    } else {
+      console.log('[create-owner-account] Password setup email sent to:', normalizedEmail)
+    }
+
+    const response: Record<string, unknown> = {
       user_id:   newUserId,
       tenant_id: tenantId,
       branch_id: branchId,
       email:     normalizedEmail,
-    }), {
+    }
+    if (emailWarning) response.warning = emailWarning
+
+    return new Response(JSON.stringify(response), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
 
