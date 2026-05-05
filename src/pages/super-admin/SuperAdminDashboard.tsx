@@ -17,7 +17,6 @@ import {
 interface DashboardStats {
   totalTenants:   number
   activeTenants:  number
-  trialTenants:   number
   totalBranches:  number
   totalUsers:     number
   mrr:            number
@@ -75,14 +74,12 @@ function ChartTooltip({ active, payload, label }: any) {
 }
 
 const PLAN_COLORS: Record<string, string> = {
-  Starter:    '#6b7280',
-  Business:   '#0F2419',
-  Enterprise: '#7c3aed',
+  'Phase 1': '#C8A96E',
+  'Phase 2': '#0F2419',
 }
 
 function tenantStatus(t: RecentTenant): { label: string; variant: 'success' | 'warning' | 'danger' | 'default' } {
-  if (t.suspended_at)                         return { label: 'Suspended', variant: 'danger' }
-  if (t.subStatus === 'trial')                return { label: 'Trial',     variant: 'warning' }
+  if (t.suspended_at)                          return { label: 'Suspended', variant: 'danger'  }
   if (t.is_active && t.subStatus === 'active') return { label: 'Active',    variant: 'success' }
   return { label: 'Inactive', variant: 'default' }
 }
@@ -116,22 +113,20 @@ export default function SuperAdminDashboard() {
         supabase.from('user_profiles').select('id', { count: 'exact', head: true }).neq('role', 'super_admin'),
         (supabase as any).from('tenant_subscriptions')
           .select('status, subscription_plans(name, price_monthly)')
-          .in('status', ['active', 'trial']),
+          .eq('status', 'active'),
         (supabase as any).from('tenants')
           .select('id, name, is_active, suspended_at, created_at, tenant_subscriptions(status, subscription_plans(name))')
           .order('created_at', { ascending: false })
           .limit(6),
       ])
 
-      // MRR = sum of price_monthly for active subs (trial = 0)
+      // MRR = sum of price_monthly for active subs
       let mrr = 0
       const planCounts: Record<string, number> = {}
-      let trialCount = 0
       for (const s of (subs ?? [])) {
         const price = s.subscription_plans?.price_monthly ?? 0
-        const name  = s.subscription_plans?.name ?? 'Starter'
+        const name  = s.subscription_plans?.name ?? 'Phase 1'
         if (s.status === 'active') { mrr += price; planCounts[name] = (planCounts[name] ?? 0) + 1 }
-        if (s.status === 'trial')  { trialCount++; planCounts[name] = (planCounts[name] ?? 0) + 1 }
       }
 
       // New this month
@@ -144,7 +139,6 @@ export default function SuperAdminDashboard() {
       setStats({
         totalTenants:  totalTenants  ?? 0,
         activeTenants: activeTenants ?? 0,
-        trialTenants:  trialCount,
         totalBranches: totalBranches ?? 0,
         totalUsers:    totalUsers    ?? 0,
         mrr,
@@ -245,13 +239,13 @@ export default function SuperAdminDashboard() {
         <StatCard
           label="Total Clients"
           value={s.totalTenants.toString()}
-          sub={`${s.activeTenants} active · ${s.trialTenants} on trial`}
+          sub={`${s.activeTenants} active · ${s.newThisMonth} new this month`}
           icon={Building2} iconClass="text-primary-600" bgClass="bg-primary-50"
         />
         <StatCard
           label="MRR"
           value={<Rial amount={s.mrr} />}
-          sub={`${s.newThisMonth} new this month`}
+          sub={`${s.activeTenants} paying clients`}
           icon={TrendingUp} iconClass="text-emerald-600" bgClass="bg-emerald-50"
         />
         <StatCard
@@ -302,7 +296,7 @@ export default function SuperAdminDashboard() {
         <div className="card p-6 flex flex-col">
           <div className="mb-4">
             <h2 className="text-sm font-semibold text-gray-900">Plan Distribution</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Active + trial subscriptions</p>
+            <p className="text-xs text-gray-400 mt-0.5">Active subscriptions by plan</p>
           </div>
           {planData.length > 0 ? (
             <ResponsiveContainer width="100%" height={190}>
@@ -376,9 +370,7 @@ export default function SuperAdminDashboard() {
                     <td className="px-6 py-3.5">
                       {t.plan ? (
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                          t.plan === 'Enterprise' ? 'bg-violet-50 text-violet-700'
-                          : t.plan === 'Business' ? 'bg-primary-50 text-primary-700'
-                          : 'bg-gray-100 text-gray-600'
+                          t.plan === 'Phase 2' ? 'bg-primary-50 text-primary-700' : 'bg-amber-50 text-amber-700'
                         }`}>{t.plan}</span>
                       ) : <span className="text-xs text-gray-400">—</span>}
                     </td>

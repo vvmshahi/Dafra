@@ -23,7 +23,7 @@ interface TenantDetail {
 
 interface SubscriptionDetail {
   id: string; status: string; starts_at: string; ends_at: string | null
-  trial_ends_at: string | null
+  trial_ends_at: string | null; payment_info: string | null
   plan: { name: string; price_monthly: number; max_branches: number; max_users: number } | null
 }
 
@@ -403,6 +403,11 @@ export default function ClientDetailPage() {
   const [deleteConfirm,   setDeleteConfirm]   = useState('')
   const [deleteError,     setDeleteError]     = useState<string | null>(null)
 
+  // Notes (stored in tenants.address field)
+  const [notes,        setNotes]        = useState('')
+  const [savingNotes,  setSavingNotes]  = useState(false)
+  const [notesSaved,   setNotesSaved]   = useState(false)
+
   async function load() {
     if (!id) return
     setLoading(true)
@@ -426,7 +431,7 @@ export default function ClientDetailPage() {
     ] = await Promise.all([
       (supabase as any).from('tenants').select('*').eq('id', id).single(),
       (supabase as any).from('tenant_subscriptions')
-        .select('id, status, starts_at, ends_at, trial_ends_at, subscription_plans(name, price_monthly, max_branches, max_users)')
+        .select('id, status, starts_at, ends_at, trial_ends_at, moyasar_subscription_id, subscription_plans(name, price_monthly, max_branches, max_users)')
         .eq('tenant_id', id)
         .order('created_at', { ascending: false })
         .limit(1),
@@ -444,6 +449,7 @@ export default function ClientDetailPage() {
     ])
 
     setTenant(t)
+    setNotes(t?.address ?? '')
 
     const rawSub = subscriptions?.[0]
     if (rawSub) {
@@ -453,6 +459,7 @@ export default function ClientDetailPage() {
         starts_at:     rawSub.starts_at,
         ends_at:       rawSub.ends_at,
         trial_ends_at: rawSub.trial_ends_at,
+        payment_info:  rawSub.moyasar_subscription_id ?? null,
         plan:          rawSub.subscription_plans ?? null,
       })
     }
@@ -471,6 +478,15 @@ export default function ClientDetailPage() {
   }
 
   useEffect(() => { load() }, [id])
+
+  async function saveNotes() {
+    if (!id) return
+    setSavingNotes(true)
+    await (supabase as any).from('tenants').update({ address: notes.trim() || null }).eq('id', id)
+    setSavingNotes(false)
+    setNotesSaved(true)
+    setTimeout(() => setNotesSaved(false), 2000)
+  }
 
   async function confirmSuspend() {
     if (!tenant) return
@@ -744,6 +760,11 @@ export default function ClientDetailPage() {
                   : <span className="text-emerald-600 font-medium">Lifetime Free</span>
               } />
               <InfoRow label="Max branches" value={sub.plan?.max_branches} />
+              {sub.payment_info && (
+                <InfoRow label="Payment info" value={
+                  <span className="text-xs font-mono text-gray-600 break-all">{sub.payment_info}</span>
+                } />
+              )}
             </>
           ) : (
             <div className="py-4 text-center">
@@ -840,6 +861,28 @@ export default function ClientDetailPage() {
           </table>
         </div>
       </div>
+
+      {/* Account notes */}
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-gray-900">Account Notes</h2>
+          <button
+            onClick={saveNotes}
+            disabled={savingNotes}
+            className="text-xs font-medium px-3 py-1.5 rounded-xl bg-primary-50 text-primary-700 hover:bg-primary-100 transition-colors disabled:opacity-50"
+          >
+            {savingNotes ? 'Saving…' : notesSaved ? '✓ Saved' : 'Save'}
+          </button>
+        </div>
+        <textarea
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          rows={4}
+          className="input w-full text-sm resize-none"
+          placeholder="Internal notes about this client — payment history, special agreements, follow-up reminders…"
+        />
+      </div>
+
     </div>
   )
 }
