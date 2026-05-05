@@ -516,7 +516,7 @@ function Step3Activate({
     setLoading(true)
     setError(null)
     try {
-      await requestProductionCsid(branch.id)
+      await requestProductionCsid(branch.id, environment)
       const { data, error: dbErr } = await (supabase as any)
         .from('zatca_certificates')
         .select('*')

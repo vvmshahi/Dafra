@@ -5,7 +5,7 @@
  * Reads compliance credentials and environment from DB so they never touch the browser.
  *
  * POST /functions/v1/zatca-production
- * Body: { branchId: string }
+ * Body: { branchId: string, environment: 'sandbox' | 'production' }
  * Returns: { binarySecurityToken, secret }
  */
 
@@ -42,12 +42,15 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const { branchId } = await req.json()
+    const body = await req.json()
+    const { branchId, environment } = body
     if (!branchId) {
       return new Response(JSON.stringify({ error: 'Missing required field: branchId' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+
+    const env = environment === 'production' ? 'production' : 'sandbox'
 
     const [{ data: callerProfile }, { data: branch }] = await Promise.all([
       supabase.from('user_profiles').select('tenant_id').eq('id', user.id).maybeSingle(),
@@ -60,24 +63,38 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    // Load compliance credentials and environment from DB
+    // Load compliance credentials filtered by branch AND environment
     const { data: cert, error: certErr } = await supabase
       .from('zatca_certificates')
-      .select('compliance_csid, compliance_secret, compliance_request_id, environment')
+      .select('id, compliance_csid, compliance_secret, compliance_request_id, environment')
       .eq('branch_id', branchId)
-      .single()
+      .eq('environment', env)
+      .maybeSingle()
+
+    console.log('[zatca-production] branchId:', branchId, 'env:', env)
+    console.log('[zatca-production] cert query error:', certErr ? JSON.stringify(certErr) : 'none')
+    console.log('[zatca-production] cert found:', cert ? 'yes' : 'no')
+    console.log('[zatca-production] compliance_csid present:', !!cert?.compliance_csid)
+    console.log('[zatca-production] compliance_secret present:', !!cert?.compliance_secret)
+    console.log('[zatca-production] compliance_request_id present:', !!cert?.compliance_request_id)
 
     if (certErr || !cert?.compliance_csid || !cert?.compliance_secret || !cert?.compliance_request_id) {
-      return new Response(JSON.stringify({ error: 'No compliance CSID found for this branch. Complete Step 2 first.' }), {
+      const detail = certErr ? JSON.stringify(certErr) : 'compliance fields missing on cert row'
+      return new Response(JSON.stringify({
+        error: 'No compliance certificate found for this branch/environment. Complete Step 2 first.',
+        detail,
+      }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    const env     = cert.environment === 'production' ? 'production' : 'sandbox'
     const baseUrl = ZATCA_URLS[env]
 
     // Basic Auth header = base64(compliance_csid:compliance_secret)
     const credentials = btoa(`${cert.compliance_csid}:${cert.compliance_secret}`)
+
+    console.log('[zatca-production] calling ZATCA url:', `${baseUrl}/production/csids`)
+    console.log('[zatca-production] compliance_request_id:', cert.compliance_request_id)
 
     // Call ZATCA Production CSID API
     const zatcaRes = await fetch(`${baseUrl}/production/csids`, {
@@ -92,17 +109,22 @@ Deno.serve(async (req: Request) => {
     })
 
     const zatcaBody = await zatcaRes.json()
+    console.log('[zatca-production] ZATCA status:', zatcaRes.status)
+    console.log('[zatca-production] ZATCA response:', JSON.stringify(zatcaBody))
 
     if (!zatcaRes.ok) {
       console.error('[zatca-production] ZATCA error:', zatcaBody)
-      return new Response(JSON.stringify({ error: zatcaBody?.errors?.[0]?.message ?? 'ZATCA production CSID request failed' }), {
+      return new Response(JSON.stringify({
+        error: zatcaBody?.errors?.[0]?.message ?? 'ZATCA production certificate request failed',
+        zatcaBody,
+      }), {
         status: zatcaRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
     const { binarySecurityToken, secret } = zatcaBody
 
-    // Update certificate record to active production status
+    // Update only the matching branch+environment cert row
     const { error: updateErr } = await supabase
       .from('zatca_certificates')
       .update({
@@ -112,9 +134,10 @@ Deno.serve(async (req: Request) => {
         activated_at:      new Date().toISOString(),
       })
       .eq('branch_id', branchId)
+      .eq('environment', env)
 
     if (updateErr) {
-      console.error('[zatca-production] DB update error:', updateErr)
+      console.error('[zatca-production] DB update error:', JSON.stringify(updateErr))
     }
 
     return new Response(JSON.stringify({ binarySecurityToken, secret }), {

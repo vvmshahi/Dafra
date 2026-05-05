@@ -78,9 +78,10 @@ export interface ProductionCsidResponse {
  * Requires the compliance_request_id stored after step 2.
  */
 export async function requestProductionCsid(
-  branchId:  string,
+  branchId:    string,
+  environment: 'sandbox' | 'production' = 'sandbox',
 ): Promise<ProductionCsidResponse> {
-  return edgePost<ProductionCsidResponse>('zatca-production', { branchId })
+  return edgePost<ProductionCsidResponse>('zatca-production', { branchId, environment })
 }
 
 // ── Invoice submission ────────────────────────────────────────────────────────
