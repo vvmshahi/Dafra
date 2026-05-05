@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Receipt, Package, Warehouse, Users,
   CreditCard, BarChart2, Truck, Settings, Settings2, Building2,
   LogOut, ChevronRight, ChevronLeft, FileText, UserSquare2,
-  CalendarCheck2, Store,
+  Store,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import type { LucideIcon } from 'lucide-react'
@@ -175,26 +175,6 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <p className="text-sidebar-text text-[10px] capitalize">{roleLabel}</p>
             </div>
           </div>
-        )}
-
-        {/* Day closing — owner only */}
-        {isOwner && (
-          <NavLink to="/day-closing" title={collapsed ? 'Close Day' : undefined}>
-            {({ isActive }) => (
-              <div className={`
-                flex items-center rounded-xl text-sm font-medium
-                transition-all duration-150 group
-                ${collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'}
-                ${isActive
-                  ? 'bg-primary-500 text-white shadow-sm'
-                  : 'text-sidebar-text hover:bg-sidebar-hover hover:text-white'
-                }
-              `}>
-                <CalendarCheck2 size={16} className={isActive ? 'text-white' : 'group-hover:text-white'} />
-                {!collapsed && 'Close Day'}
-              </div>
-            )}
-          </NavLink>
         )}
 
         {/* Profile */}

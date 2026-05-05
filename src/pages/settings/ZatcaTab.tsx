@@ -2,9 +2,9 @@
  * ZATCA Phase 2 — Settings Tab
  *
  * Per-branch 4-step onboarding flow:
- *   Step 1: Generate Keys (secp256k1, CSR, encrypt private key → DB)
- *   Step 2: Enter OTP  (Fatoorah portal → OTP → compliance CSID via Edge Function)
- *   Step 3: Activate   (production CSID via Edge Function)
+ *   Step 1: Generate Security Certificate (key pair + CSR → DB)
+ *   Step 2: Enter OTP  (2a: copy CSR to Fatoorah portal, 2b: enter OTP → compliance cert)
+ *   Step 3: Activate   (production cert via Edge Function)
  *   Step 4: Done       (clean status display — no raw credentials shown)
  *
  * Each branch operates independently and maintains separate certs per environment.
@@ -14,8 +14,8 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   ShieldCheck, ShieldX, ShieldAlert, Clock, Building2,
   CheckCircle2, AlertTriangle, ExternalLink, Lock,
-  Key, Loader2, Copy, Eye, EyeOff, Info, ChevronRight,
-  Cpu, Wifi, BadgeCheck, FlaskConical,
+  Key, Loader2, Copy, Info, ChevronDown,
+  Cpu, Wifi, BadgeCheck, FlaskConical, X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -27,9 +27,7 @@ import type { Branch, ZatcaCertificate, CertificateStatus } from '@/types'
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 
-// Each branch carries ALL its certificate rows (one per environment)
 type BranchWithCert = Branch & { allCerts: ZatcaCertificate[] }
-
 type OnboardingStep = 1 | 2 | 3 | 4
 
 /* ── Step helpers ────────────────────────────────────────────────────────── */
@@ -47,14 +45,12 @@ const CERT_CONFIG: Record<CertificateStatus, {
   icon: React.ElementType
   variant: 'success' | 'warning' | 'danger' | 'neutral'
   label: string
-  iconClass: string
-  bgClass: string
 }> = {
-  pending:    { icon: Clock,       variant: 'warning', label: 'Pending',    iconClass: 'text-amber-500',   bgClass: 'bg-amber-50' },
-  compliance: { icon: ShieldCheck, variant: 'warning', label: 'Compliance', iconClass: 'text-blue-500',    bgClass: 'bg-blue-50' },
-  active:     { icon: ShieldCheck, variant: 'success', label: 'Active',     iconClass: 'text-emerald-500', bgClass: 'bg-emerald-50' },
-  revoked:    { icon: ShieldX,     variant: 'danger',  label: 'Revoked',    iconClass: 'text-red-500',     bgClass: 'bg-red-50' },
-  expired:    { icon: ShieldAlert, variant: 'danger',  label: 'Expired',    iconClass: 'text-red-500',     bgClass: 'bg-red-50' },
+  pending:    { icon: Clock,       variant: 'warning', label: 'Pending' },
+  compliance: { icon: ShieldCheck, variant: 'warning', label: 'Compliance' },
+  active:     { icon: ShieldCheck, variant: 'success', label: 'Active' },
+  revoked:    { icon: ShieldX,     variant: 'danger',  label: 'Revoked' },
+  expired:    { icon: ShieldAlert, variant: 'danger',  label: 'Expired' },
 }
 
 /* ── Tiny helpers ────────────────────────────────────────────────────────── */
@@ -80,44 +76,152 @@ function StepDot({ n, active, done }: { n: number; active: boolean; done: boolea
   )
 }
 
-/* ── Copyable code block (used for CSR display only) ─────────────────────── */
+/* ── Guide modal (FIX 5) ─────────────────────────────────────────────────── */
 
-function CodeBlock({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false)
-  const [show, setShow]     = useState(false)
-
-  const copy = async () => {
-    await navigator.clipboard.writeText(value)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  const preview = show ? value : value.substring(0, 80) + '…'
-
+function GuideModal({ onClose }: { onClose: () => void }) {
   return (
-    <div className="bg-gray-900 rounded-xl p-3 space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{label}</span>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setShow(s => !s)} className="text-gray-400 hover:text-gray-200 transition-colors">
-            {show ? <EyeOff size={12} /> : <Eye size={12} />}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Info size={14} className="text-primary-500" />
+            <h3 className="text-sm font-bold text-gray-900">ZATCA e-Invoicing Guide</h3>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <X size={16} />
           </button>
-          <button
-            onClick={copy}
-            className="flex items-center gap-1 text-[10px] font-medium text-gray-400 hover:text-white transition-colors"
+        </div>
+        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+          <div className="flex gap-3">
+            <div className="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center mt-0.5">
+              <CheckCircle2 size={13} className="text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-800">Phase 1 — QR Code (فاتورة)</p>
+              <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
+                Invoices include a TLV QR code with seller details.
+                No internet connection to ZATCA required.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary-100 flex items-center justify-center mt-0.5">
+              <ShieldCheck size={13} className="text-primary-600" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-800">Phase 2 — Integration (ربط)</p>
+              <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
+                Invoices are digitally signed and reported to ZATCA within 24 hours.
+                Requires certificate setup.
+              </p>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-100 pt-3 space-y-2">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Phase 2 Setup Steps</p>
+            {[
+              'Generate Security Certificate (this page)',
+              'Register device in Fatoorah portal → get OTP',
+              'Enter OTP → ZATCA issues compliance certificate',
+              'Activate → invoices now automatically reported',
+            ].map((s, i) => (
+              <div key={i} className="flex items-start gap-2.5">
+                <span className="flex-shrink-0 w-4 h-4 rounded-full bg-primary-100 text-[9px] font-bold text-primary-700 flex items-center justify-center mt-0.5">
+                  {i + 1}
+                </span>
+                <p className="text-[11px] text-gray-600">{s}</p>
+              </div>
+            ))}
+          </div>
+
+          <a
+            href="https://zatca.gov.sa/en/E-Invoicing/Pages/default.aspx"
+            target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-xs font-semibold text-primary-600 hover:text-primary-700 pt-1"
           >
-            <Copy size={11} /> {copied ? 'Copied!' : 'Copy'}
+            <ExternalLink size={12} /> ZATCA Official Documentation
+          </a>
+        </div>
+        <div className="px-5 py-4 border-t border-gray-100">
+          <button
+            onClick={onClose}
+            className="w-full py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            Close
           </button>
         </div>
       </div>
-      <pre className="text-[10px] text-green-400 font-mono break-all whitespace-pre-wrap leading-relaxed">
-        {preview}
-      </pre>
     </div>
   )
 }
 
-/* ── Step 1: Generate Keys ───────────────────────────────────────────────── */
+/* ── CSR display block (FIX 3) ───────────────────────────────────────────── */
+
+function CsrBlock({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    await navigator.clipboard.writeText(value)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2500)
+  }
+  return (
+    <div className="space-y-2">
+      <textarea
+        readOnly
+        value={value}
+        rows={6}
+        className="w-full text-[10px] font-mono text-gray-700 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 resize-none focus:outline-none leading-relaxed"
+      />
+      <button
+        onClick={copy}
+        className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-semibold transition-all ${
+          copied
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+            : 'bg-white border-gray-200 text-gray-700 hover:border-primary-300 hover:text-primary-700'
+        }`}
+      >
+        {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+        {copied ? 'Copied!' : 'Copy Certificate Request'}
+      </button>
+    </div>
+  )
+}
+
+/* ── Stepper ─────────────────────────────────────────────────────────────── */
+
+const STEPS = [
+  { n: 1, label: 'Generate' },
+  { n: 2, label: 'Enter OTP' },
+  { n: 3, label: 'Activate' },
+  { n: 4, label: 'Done' },
+] as const
+
+function Stepper({ current }: { current: OnboardingStep }) {
+  return (
+    <div className="flex items-center gap-0">
+      {STEPS.map(({ n, label }, i) => (
+        <div key={n} className="flex items-center flex-1 last:flex-none">
+          <div className="flex flex-col items-center gap-1">
+            <StepDot n={n} active={current === n} done={current > n} />
+            <span className={`text-[9px] font-semibold whitespace-nowrap ${
+              current === n ? 'text-primary-600' : current > n ? 'text-emerald-600' : 'text-gray-400'
+            }`}>
+              {label}
+            </span>
+          </div>
+          {i < STEPS.length - 1 && (
+            <div className={`flex-1 h-0.5 mx-2 mb-4 rounded-full transition-colors ${
+              current > n ? 'bg-emerald-400' : 'bg-gray-200'
+            }`} />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ── Step 1: Generate Security Certificate (FIX 1) ───────────────────────── */
 
 function Step1GenerateKeys({
   branch, environment, onDone,
@@ -190,7 +294,7 @@ function Step1GenerateKeys({
           <div>
             <p className="text-[11px] font-semibold text-amber-700">Branch data incomplete</p>
             <p className="text-[11px] text-amber-600 mt-0.5 leading-relaxed">
-              Fix these in the <span className="font-semibold">Branches tab</span> before generating keys:
+              Fix these in the <span className="font-semibold">Branches tab</span> before generating the certificate:
             </p>
             <ul className="mt-1 space-y-0.5">
               {missingData.map(m => (
@@ -204,9 +308,9 @@ function Step1GenerateKeys({
       <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl p-3.5">
         <Info size={13} className="text-blue-600 mt-0.5 flex-shrink-0" />
         <p className="text-[11px] text-blue-700 leading-relaxed">
-          This will generate a secp256k1 key pair in your browser and create a PKCS#10 CSR for the{' '}
+          This will generate a digital signature key in your browser and create a security certificate request for the{' '}
           <strong>{environment === 'production' ? 'production' : 'sandbox'}</strong> environment.
-          The private key is encrypted with AES-256-GCM before being stored securely in the database.
+          The private key is encrypted before being stored securely in the database.
         </p>
       </div>
 
@@ -223,18 +327,17 @@ function Step1GenerateKeys({
         className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50"
       >
         {loading ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
-        {loading ? 'Generating keys…' : 'Generate secp256k1 Key Pair & CSR'}
+        {loading ? 'Generating…' : 'Generate Security Certificate'}
       </button>
 
       {csrPem && (
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-emerald-600">
             <CheckCircle2 size={14} />
-            <span className="text-xs font-semibold">Keys generated and stored securely</span>
+            <span className="text-xs font-semibold">Security certificate generated and stored</span>
           </div>
-          <CodeBlock value={csrPem} label="Certificate Signing Request (CSR)" />
           <p className="text-[11px] text-gray-500 leading-relaxed">
-            The CSR has been saved. Proceed to Step 2 to register with ZATCA.
+            Proceed to Step 2 to register this certificate with ZATCA.
           </p>
         </div>
       )}
@@ -242,7 +345,7 @@ function Step1GenerateKeys({
   )
 }
 
-/* ── Step 2: Enter OTP ───────────────────────────────────────────────────── */
+/* ── Step 2: Enter OTP (FIX 3 — 2a/2b layout) ───────────────────────────── */
 
 function Step2EnterOTP({
   branch, cert, environment, onDone,
@@ -255,7 +358,6 @@ function Step2EnterOTP({
   const [otp, setOtp]         = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
-  const [csrVisible, setCsrVisible] = useState(false)
 
   const register = async () => {
     if (otp.length < 6) { setError('OTP must be 6 digits'); return }
@@ -272,55 +374,47 @@ function Step2EnterOTP({
       if (dbErr) throw new Error(dbErr.message)
       onDone(data)
     } catch (err: any) {
-      setError(err.message ?? 'Compliance registration failed')
+      setError(err.message ?? 'Registration failed')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="space-y-4">
-      <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 space-y-3">
-        <p className="text-[11px] font-semibold text-gray-700">How to get your OTP:</p>
-        {[
-          'Log in to the Fatoorah (فاتورة) portal at my.zatca.gov.sa',
-          `Register a new EGS device with serial: 1-Dafra|2-POS|3-${branch.id.substring(0, 8)}…`,
-          'Paste the CSR below into the portal',
-          'The portal will show you a 6-digit OTP — enter it here',
-        ].map((s, i) => (
-          <div key={i} className="flex items-start gap-2.5">
-            <span className="flex-shrink-0 w-4 h-4 rounded-full bg-primary-100 text-[9px] font-bold text-primary-700 flex items-center justify-center mt-0.5">
-              {i + 1}
-            </span>
-            <p className="text-[11px] text-gray-600">{s}</p>
-          </div>
-        ))}
-        <a
-          href="https://my.zatca.gov.sa"
-          target="_blank" rel="noopener noreferrer"
-          className="flex items-center gap-1.5 text-[11px] font-semibold text-primary-600 hover:text-primary-700"
-        >
-          <ExternalLink size={11} /> Open Fatoorah Portal
-        </a>
-      </div>
-
+    <div className="space-y-5">
+      {/* Step 2a — Copy CSR */}
       {cert.csr && (
-        <div className="space-y-1.5">
-          <button
-            onClick={() => setCsrVisible(v => !v)}
-            className="text-[11px] text-gray-500 hover:text-gray-700 flex items-center gap-1"
-          >
-            {csrVisible ? <EyeOff size={11} /> : <Eye size={11} />}
-            {csrVisible ? 'Hide' : 'Show'} CSR
-          </button>
-          {csrVisible && <CodeBlock value={cert.csr} label="Your CSR — paste into ZATCA portal" />}
+        <div className="space-y-2.5">
+          <div>
+            <p className="text-xs font-bold text-gray-800">Step 2a — Copy this into Fatoorah Portal</p>
+            <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
+              Go to{' '}
+              <a
+                href={environment === 'sandbox' ? 'https://fatoorah.zatca.gov.sa' : 'https://fatoorah.zatca.gov.sa'}
+                target="_blank" rel="noopener noreferrer"
+                className="font-semibold text-primary-600 underline"
+              >
+                {environment === 'sandbox' ? 'fatoorah.zatca.gov.sa' : 'fatoorah.zatca.gov.sa'}
+              </a>
+              {' → '}E-Invoicing → My Devices → Add New Device → paste this Security Certificate Request:
+            </p>
+          </div>
+          <CsrBlock value={cert.csr} />
+          <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 space-y-1.5">
+            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Device serial to use</p>
+            <p className="text-[11px] font-mono text-gray-700">1-Dafra|2-POS|3-{branch.id.substring(0, 8)}</p>
+          </div>
         </div>
       )}
 
-      <div>
-        <label className="block text-[11px] font-semibold text-gray-600 mb-1.5">
-          6-digit OTP from ZATCA portal
-        </label>
+      {/* Step 2b — Enter OTP */}
+      <div className="space-y-2.5 border-t border-gray-100 pt-4">
+        <div>
+          <p className="text-xs font-bold text-gray-800">Step 2b — Enter the OTP you received</p>
+          <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
+            After pasting above, the Fatoorah portal shows a 6-digit OTP. Enter it here:
+          </p>
+        </div>
         <input
           type="text"
           inputMode="numeric"
@@ -331,21 +425,12 @@ function Step2EnterOTP({
           className="input text-center text-2xl tracking-[0.5em] font-mono"
         />
         {environment === 'sandbox' && (
-          <p className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
             For sandbox testing, use OTP: <span className="font-mono font-bold tracking-widest">123345</span>
           </p>
         )}
         {environment === 'production' && (
-          <p className="mt-2 text-[11px] text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 leading-relaxed">
-            Get your OTP from{' '}
-            <a
-              href="https://fatoorah.zatca.gov.sa"
-              target="_blank" rel="noopener noreferrer"
-              className="font-semibold text-primary-600 underline"
-            >
-              fatoorah.zatca.gov.sa
-            </a>
-            {' → '}E-Invoicing → My Devices → Add New Device.
+          <p className="text-[11px] text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 leading-relaxed">
             The OTP expires quickly — enter it immediately after receiving it.
           </p>
         )}
@@ -370,7 +455,7 @@ function Step2EnterOTP({
   )
 }
 
-/* ── Step 3: Activate Production ─────────────────────────────────────────── */
+/* ── Step 3: Activate (FIX 1 — rename "Production CSID") ────────────────── */
 
 function Step3Activate({
   branch, environment, onDone,
@@ -396,7 +481,7 @@ function Step3Activate({
       if (dbErr) throw new Error(dbErr.message)
       onDone(data)
     } catch (err: any) {
-      setError(err.message ?? 'Production activation failed')
+      setError(err.message ?? 'Activation failed')
     } finally {
       setLoading(false)
     }
@@ -407,7 +492,7 @@ function Step3Activate({
       <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3.5">
         <CheckCircle2 size={13} className="text-emerald-600 mt-0.5 flex-shrink-0" />
         <p className="text-[11px] text-emerald-700 leading-relaxed">
-          Compliance CSID registered successfully. Click below to convert it to a Production CSID.
+          Compliance certificate registered successfully. Click below to activate it.
           This will make the branch live on the ZATCA system.
         </p>
       </div>
@@ -425,17 +510,17 @@ function Step3Activate({
         className="btn-primary w-full flex items-center justify-center gap-2 py-3"
       >
         {loading ? <Loader2 size={14} className="animate-spin" /> : <BadgeCheck size={14} />}
-        {loading ? 'Activating production certificate…' : 'Activate Production CSID'}
+        {loading ? 'Activating certificate…' : 'Activate Certificate'}
       </button>
 
       <p className="text-[11px] text-gray-400 text-center">
-        This action contacts ZATCA to issue your production certificate.
+        This contacts ZATCA to issue your active certificate.
       </p>
     </div>
   )
 }
 
-/* ── Step 4: Done ────────────────────────────────────────────────────────── */
+/* ── Step 4: Done (FIX 1 — rename "CSID" terms) ─────────────────────────── */
 
 function Step4Done({ cert }: { cert: ZatcaCertificate }) {
   const activatedDate = cert.activated_at
@@ -449,18 +534,18 @@ function Step4Done({ cert }: { cert: ZatcaCertificate }) {
         <div>
           <p className="text-xs font-semibold text-emerald-800">Branch is Phase 2 compliant</p>
           <p className="text-[11px] text-emerald-700 mt-0.5">
-            Production CSID is active. Invoices are automatically signed and submitted to ZATCA.
+            Active certificate is live. Invoices are automatically signed and submitted to ZATCA.
           </p>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <InfoRow
-          label="Compliance CSID"
+          label="Compliance Certificate"
           value={cert.compliance_csid ? '✅ Issued' : '❌ Not registered'}
         />
         <InfoRow
-          label="Production CSID"
+          label="Active Certificate"
           value={cert.production_csid ? '✅ Active' : '❌ Not activated'}
         />
         <InfoRow
@@ -485,7 +570,7 @@ function Step4Done({ cert }: { cert: ZatcaCertificate }) {
       {cert.last_invoice_hash && (
         <div className="bg-gray-900 rounded-xl p-3">
           <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-1.5">
-            Last Invoice Hash (PIH)
+            Last Invoice Hash
           </p>
           <p className="text-[10px] text-green-400 font-mono break-all">{cert.last_invoice_hash}</p>
         </div>
@@ -494,69 +579,60 @@ function Step4Done({ cert }: { cert: ZatcaCertificate }) {
   )
 }
 
-/* ── Stepper bar ─────────────────────────────────────────────────────────── */
+/* ── Branch accordion row (FIX 2) ────────────────────────────────────────── */
 
-const STEPS = [
-  { n: 1, label: 'Generate Keys' },
-  { n: 2, label: 'Enter OTP' },
-  { n: 3, label: 'Activate' },
-  { n: 4, label: 'Done' },
-] as const
-
-function Stepper({ current }: { current: OnboardingStep }) {
-  return (
-    <div className="flex items-center gap-0">
-      {STEPS.map(({ n, label }, i) => (
-        <div key={n} className="flex items-center flex-1 last:flex-none">
-          <div className="flex flex-col items-center gap-1">
-            <StepDot n={n} active={current === n} done={current > n} />
-            <span className={`text-[9px] font-semibold whitespace-nowrap ${
-              current === n ? 'text-primary-600' : current > n ? 'text-emerald-600' : 'text-gray-400'
-            }`}>
-              {label}
-            </span>
-          </div>
-          {i < STEPS.length - 1 && (
-            <div className={`flex-1 h-0.5 mx-2 mb-4 rounded-full transition-colors ${
-              current > n ? 'bg-emerald-400' : 'bg-gray-200'
-            }`} />
-          )}
-        </div>
-      ))}
-    </div>
+function branchSummaryText(bc: BranchWithCert): string {
+  const phase = bc.zatca_phase ?? 1
+  if (phase < 2) return 'Phase 1 — QR code only'
+  const bestCert = (
+    bc.allCerts.find(c => c.status === 'active') ??
+    bc.allCerts.find(c => c.status === 'compliance') ??
+    bc.allCerts[0] ??
+    null
   )
+  if (!bestCert || !bestCert.csr) return 'Certificate not configured'
+  if (bestCert.status === 'active')     return '✅ Certificate Active — Phase 2 Enabled'
+  if (bestCert.status === 'compliance') return '🔄 Activation Pending'
+  return '⏳ OTP Registration Pending'
 }
 
-/* ── Branch onboarding card ──────────────────────────────────────────────── */
-
-function BranchOnboardingCard({
-  bc, onCertUpdate,
+function BranchAccordionRow({
+  bc, isExpanded, onToggle, onCertUpdate,
 }: {
   bc: BranchWithCert
+  isExpanded: boolean
+  onToggle: () => void
   onCertUpdate: (branchId: string, cert: ZatcaCertificate) => void
 }) {
-  // Determine starting environment: prefer active cert, then compliance, then first, then sandbox
+  const phase = bc.zatca_phase ?? 1
+
+  // Best cert for the collapsed summary badges
+  const bestCert = (
+    bc.allCerts.find(c => c.status === 'active') ??
+    bc.allCerts.find(c => c.status === 'compliance') ??
+    bc.allCerts[0] ??
+    null
+  )
+  const status = bestCert?.status ?? 'pending'
+  const cfg    = CERT_CONFIG[status] ?? CERT_CONFIG.pending
+
+  // Full card state (only needed when expanded)
   const initialEnv = (
     bc.allCerts.find(c => c.status === 'active')?.environment ??
     bc.allCerts.find(c => c.status === 'compliance')?.environment ??
     bc.allCerts[0]?.environment ??
     'sandbox'
   ) as 'sandbox' | 'production'
+  const [environment,  setEnvironment]  = useState<'sandbox' | 'production'>(initialEnv)
+  const [regenerating, setRegenerating] = useState(false)
 
-  const [environment,   setEnvironment]   = useState<'sandbox' | 'production'>(initialEnv)
-  const [regenerating,  setRegenerating]  = useState(false)
-
-  // Always derive the cert from the current environment selection
   const cert     = bc.allCerts.find(c => c.environment === environment) ?? null
-  const phase    = bc.zatca_phase ?? 1
-  const status   = cert?.status ?? 'pending'
-  const cfg      = CERT_CONFIG[status] ?? CERT_CONFIG.pending
+  const isActive = cert?.status === 'active'
   const step     = certStep(cert)
-  const isActive = status === 'active'
 
   const handleRegenerate = async () => {
     if (!window.confirm(
-      'This will discard the current CSR and all CSID credentials for this environment. Are you sure?'
+      'This will discard the current certificate and all credentials for this environment. Are you sure?'
     )) return
     setRegenerating(true)
     try {
@@ -589,173 +665,140 @@ function BranchOnboardingCard({
   }
 
   return (
-    <div className="card p-5 space-y-5">
-      {/* Branch header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center">
-            <Building2 size={16} className="text-gray-500" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-gray-900">{bc.name}</p>
-            {(bc as any).name_ar && (
-              <p className="text-xs text-gray-400" style={{ fontFamily: 'Cairo' }}>{(bc as any).name_ar}</p>
-            )}
-          </div>
+    <div className="card overflow-hidden">
+      {/* Collapsed header row — always visible */}
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors text-left"
+      >
+        <div className="w-8 h-8 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+          <Building2 size={14} className="text-gray-500" />
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          {/* Environment toggle / locked indicator — Phase 2 only */}
-          {phase >= 2 && (
-            isActive ? (
-              // Locked — active cert locks the environment; must regenerate to change
-              <span className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-gray-200 bg-gray-50 text-gray-500">
-                <Lock size={9} />
-                {environment === 'production' ? 'Production' : 'Sandbox'} — Locked
-              </span>
-            ) : (
-              // Toggle unlocked — can switch environments freely
-              <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
-                <button
-                  onClick={() => setEnvironment('sandbox')}
-                  className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-all ${
-                    environment === 'sandbox'
-                      ? 'bg-amber-400 text-amber-900 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Sandbox
-                </button>
-                <button
-                  onClick={() => setEnvironment('production')}
-                  className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-all ${
-                    environment === 'production'
-                      ? 'bg-emerald-500 text-white shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Production
-                </button>
-              </div>
-            )
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-900 truncate">{bc.name}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5 truncate">{branchSummaryText(bc)}</p>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {phase >= 2 && bestCert && (
+            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+              bestCert.environment === 'production'
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-amber-100 text-amber-700'
+            }`}>
+              {bestCert.environment === 'production' ? 'Production' : 'Sandbox'}
+            </span>
           )}
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-            phase === 2
-              ? 'bg-primary-50 text-primary-700 ring-1 ring-primary-200'
-              : 'bg-gray-100 text-gray-600'
-          }`}>
-            Phase {phase}
-          </span>
-          <Badge variant={cfg.variant} dot>{cfg.label}</Badge>
+          {phase >= 2 && <Badge variant={cfg.variant} dot>{cfg.label}</Badge>}
+          {phase < 2 && (
+            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+              Phase 1
+            </span>
+          )}
+          <ChevronDown
+            size={15}
+            className={`text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+          />
         </div>
-      </div>
+      </button>
 
-      {/* Phase 1 — no setup needed */}
-      {phase < 2 ? (
-        <div className="flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-xl p-3.5">
-          <Info size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
-          <p className="text-[11px] text-gray-500 leading-relaxed">
-            This branch is on Phase 1. ZATCA integration is not required.
-            QR codes are generated locally. Upgrade to Phase 2 in the Branches tab when ready.
-          </p>
-        </div>
-      ) : (
-        <>
-          <Stepper current={step} />
-
-          <div className="border-t border-gray-100 pt-4">
-            {step === 1 && (
-              <Step1GenerateKeys branch={bc} environment={environment} onDone={handleDone} />
-            )}
-            {step === 2 && cert && (
-              <Step2EnterOTP branch={bc} cert={cert} environment={environment} onDone={handleDone} />
-            )}
-            {step === 3 && (
-              <Step3Activate branch={bc} environment={environment} onDone={handleDone} />
-            )}
-            {step === 4 && cert && (
-              <Step4Done cert={cert} />
-            )}
-          </div>
-
-          {/* Regenerate Keys — shown whenever cert exists; also unlocks environment toggle */}
-          {cert && (
-            <div className="pt-3 border-t border-gray-100">
+      {/* Expanded content */}
+      {isExpanded && (
+        <div className="border-t border-gray-100 p-5 space-y-5">
+          {/* Phase 1 — info card (FIX 4) */}
+          {phase < 2 ? (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl p-4">
+                <Info size={14} className="text-blue-500 mt-0.5 flex-shrink-0" />
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold text-blue-800">This branch is on Phase 1</p>
+                  <p className="text-[11px] text-blue-700 leading-relaxed">
+                    Phase 1 invoices include a ZATCA QR code with seller details.
+                    No certificate registration is required.
+                  </p>
+                  <p className="text-[11px] text-blue-700 leading-relaxed">
+                    Upgrade to Phase 2 to enable digital signing and automatic ZATCA reporting.
+                  </p>
+                </div>
+              </div>
               <button
-                onClick={handleRegenerate}
-                disabled={regenerating}
-                className="flex items-center gap-1.5 text-[11px] text-gray-400 hover:text-red-500 transition-colors"
+                onClick={() => {
+                  const el = document.querySelector('[data-tab="subscription"]') as HTMLElement | null
+                  el?.click()
+                }}
+                className="w-full py-2.5 rounded-xl border border-primary-200 text-primary-700 text-sm font-semibold hover:bg-primary-50 transition-colors"
               >
-                {regenerating ? <Loader2 size={11} className="animate-spin" /> : <Key size={11} />}
-                Regenerate Keys (discard current CSR{isActive ? ' — unlocks environment toggle' : ''})
+                Upgrade to Phase 2 →
               </button>
             </div>
+          ) : (
+            <>
+              {/* Environment toggle / locked */}
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] text-gray-500">Environment</p>
+                {isActive ? (
+                  <span className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-gray-200 bg-gray-50 text-gray-500">
+                    <Lock size={9} />
+                    {environment === 'production' ? 'Production' : 'Sandbox'} — Locked
+                  </span>
+                ) : (
+                  <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
+                    <button
+                      onClick={() => setEnvironment('sandbox')}
+                      className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-all ${
+                        environment === 'sandbox'
+                          ? 'bg-amber-400 text-amber-900 shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Sandbox
+                    </button>
+                    <button
+                      onClick={() => setEnvironment('production')}
+                      className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-all ${
+                        environment === 'production'
+                          ? 'bg-emerald-500 text-white shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Production
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <Stepper current={step} />
+
+              <div className="border-t border-gray-100 pt-4">
+                {step === 1 && (
+                  <Step1GenerateKeys branch={bc} environment={environment} onDone={handleDone} />
+                )}
+                {step === 2 && cert && (
+                  <Step2EnterOTP branch={bc} cert={cert} environment={environment} onDone={handleDone} />
+                )}
+                {step === 3 && (
+                  <Step3Activate branch={bc} environment={environment} onDone={handleDone} />
+                )}
+                {step === 4 && cert && (
+                  <Step4Done cert={cert} />
+                )}
+              </div>
+
+              {cert && (
+                <div className="pt-3 border-t border-gray-100">
+                  <button
+                    onClick={handleRegenerate}
+                    disabled={regenerating}
+                    className="flex items-center gap-1.5 text-[11px] text-gray-400 hover:text-red-500 transition-colors"
+                  >
+                    {regenerating ? <Loader2 size={11} className="animate-spin" /> : <Key size={11} />}
+                    Regenerate certificate (discard current{isActive ? ' — unlocks environment toggle' : ''})
+                  </button>
+                </div>
+              )}
+            </>
           )}
-        </>
+        </div>
       )}
-    </div>
-  )
-}
-
-/* ── Phase guide sidebar ─────────────────────────────────────────────────── */
-
-function PhaseGuide() {
-  return (
-    <div className="card p-5 space-y-4">
-      <div className="flex items-center gap-2">
-        <Info size={14} className="text-primary-500" />
-        <h3 className="text-sm font-semibold text-gray-900">ZATCA e-Invoicing Guide</h3>
-      </div>
-
-      <div className="space-y-3">
-        <div className="flex gap-3">
-          <div className="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center mt-0.5">
-            <CheckCircle2 size={13} className="text-emerald-600" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-800">Phase 1 — Generation (فاتورة)</p>
-            <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
-              Invoices carry a TLV QR code. No real-time connection to ZATCA required.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary-100 flex items-center justify-center mt-0.5">
-            <ShieldCheck size={13} className="text-primary-600" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-800">Phase 2 — Integration (ربط)</p>
-            <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
-              Real-time clearance / reporting of UBL 2.1 XML invoices via ECDSA secp256k1 signed XAdES signatures.
-              Standard invoices: clearance. Simplified: reporting within 24h.
-            </p>
-          </div>
-        </div>
-
-        <div className="border-t border-gray-100 pt-3 space-y-2">
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Phase 2 Onboarding</p>
-          {[
-            'Generate secp256k1 key pair and CSR (Step 1)',
-            'Register EGS in Fatoorah portal → get OTP (Step 2)',
-            'Compliance CSID is issued by ZATCA',
-            'Convert to Production CSID (Step 3)',
-            'Invoices are now signed and submitted automatically',
-          ].map((s, i) => (
-            <div key={i} className="flex items-start gap-2.5">
-              <ChevronRight size={11} className="text-gray-300 mt-0.5 flex-shrink-0" />
-              <p className="text-[11px] text-gray-600">{s}</p>
-            </div>
-          ))}
-        </div>
-
-        <a
-          href="https://zatca.gov.sa/en/E-Invoicing/Pages/default.aspx"
-          target="_blank" rel="noopener noreferrer"
-          className="flex items-center gap-1.5 text-xs font-semibold text-primary-600 hover:text-primary-700 pt-1"
-        >
-          <ExternalLink size={12} /> ZATCA Official Documentation
-        </a>
-      </div>
     </div>
   )
 }
@@ -764,8 +807,10 @@ function PhaseGuide() {
 
 export default function ZatcaTab() {
   const { profile } = useAuth()
-  const [data, setData]       = useState<BranchWithCert[]>([])
-  const [loading, setLoading] = useState(true)
+  const [data, setData]         = useState<BranchWithCert[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [showGuide, setShowGuide]   = useState(false)
 
   const load = useCallback(async () => {
     if (!profile?.tenant_id) return
@@ -779,11 +824,12 @@ export default function ZatcaTab() {
     ])
     const branches = (branchesRes.data as Branch[]) ?? []
     const certs    = (certsRes.data as ZatcaCertificate[]) ?? []
-    // Each branch gets ALL its cert rows (one per environment)
     setData(branches.map(b => ({
       ...b,
       allCerts: certs.filter(c => c.branch_id === b.id),
     })))
+    // Auto-expand first branch if only one
+    if (branches.length === 1 && !expandedId) setExpandedId(branches[0].id)
     setLoading(false)
   }, [profile?.tenant_id])
 
@@ -800,18 +846,23 @@ export default function ZatcaTab() {
     }))
   }
 
+  const handleToggle = (branchId: string) => {
+    setExpandedId(prev => prev === branchId ? null : branchId)
+  }
+
   const phase2Count = data.filter(b => (b.zatca_phase ?? 1) === 2).length
   const activeCount = data.filter(b => b.allCerts.some(c => c.status === 'active')).length
 
-  const phase2Branches   = data.filter(b => (b.zatca_phase ?? 1) === 2)
-  const allProduction    = phase2Branches.length > 0 &&
+  const phase2Branches  = data.filter(b => (b.zatca_phase ?? 1) === 2)
+  const allProduction   = phase2Branches.length > 0 &&
     phase2Branches.every(b => b.allCerts.some(c => c.environment === 'production' && c.status === 'active'))
   const showSandboxBanner = !allProduction
 
   return (
     <div className="space-y-4">
+      {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
 
-      {/* SANDBOX MODE banner */}
+      {/* Sandbox banner */}
       {showSandboxBanner && (
         <div className="flex items-center gap-3 bg-amber-400 rounded-2xl px-4 py-3">
           <FlaskConical size={16} className="text-amber-900 flex-shrink-0" />
@@ -833,6 +884,14 @@ export default function ZatcaTab() {
             {data.length} branch{data.length !== 1 ? 'es' : ''} · {phase2Count} on Phase 2 · {activeCount} active
           </p>
         </div>
+        <button
+          onClick={() => setShowGuide(true)}
+          className="flex items-center gap-1.5 text-[11px] font-medium text-gray-500 hover:text-primary-600 transition-colors border border-gray-200 hover:border-primary-200 px-2.5 py-1.5 rounded-lg"
+          title="ZATCA e-Invoicing Guide"
+        >
+          <Info size={13} />
+          Guide
+        </button>
       </div>
 
       {/* Security notice */}
@@ -841,15 +900,16 @@ export default function ZatcaTab() {
         <div>
           <p className="text-xs font-semibold text-amber-800">Private keys are encrypted at rest</p>
           <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
-            secp256k1 private keys are AES-256-GCM encrypted before storage.
+            Your private keys are encrypted with AES-256-GCM before storage.
             ZATCA API credentials are stored server-side and never exposed to the browser.
           </p>
         </div>
       </div>
 
+      {/* Branch list */}
       {loading ? (
-        <div className="space-y-3">
-          {[1, 2].map(i => <div key={i} className="card p-5 h-48 animate-pulse bg-gray-50" />)}
+        <div className="space-y-2">
+          {[1, 2].map(i => <div key={i} className="card h-14 animate-pulse bg-gray-50" />)}
         </div>
       ) : data.length === 0 ? (
         <div className="card p-12 text-center">
@@ -858,14 +918,18 @@ export default function ZatcaTab() {
           <p className="text-xs text-gray-400 mt-1">Add branches in the Branches tab first</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {data.map(bc => (
-            <BranchOnboardingCard key={bc.id} bc={bc} onCertUpdate={handleCertUpdate} />
+            <BranchAccordionRow
+              key={bc.id}
+              bc={bc}
+              isExpanded={expandedId === bc.id}
+              onToggle={() => handleToggle(bc.id)}
+              onCertUpdate={handleCertUpdate}
+            />
           ))}
         </div>
       )}
-
-      <PhaseGuide />
 
       {data.some(b => !b.vat_number && (b.zatca_phase ?? 1) === 2) && (
         <div className="flex items-start gap-3 bg-red-50 border border-red-100 rounded-2xl p-4">
