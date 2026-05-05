@@ -345,6 +345,54 @@ function Step1GenerateKeys({
   )
 }
 
+/* ── Device details block (shown in Step 2) ──────────────────────────────── */
+
+function DeviceDetailsBlock({ branch }: { branch: BranchWithCert }) {
+  const serial = `1-Dafra|2-POS|3-${branch.id.substring(0, 8)}`
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    await navigator.clipboard.writeText(serial)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2500)
+  }
+  return (
+    <div className="bg-gray-50 border border-gray-100 rounded-xl p-3.5 space-y-3">
+      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+        When registering in Fatoorah Portal, use these details:
+      </p>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-gray-500 flex-shrink-0">Device Name</span>
+          <span className="text-[11px] font-medium text-gray-800 text-right">Enter any name (e.g. {branch.name})</span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-gray-500 flex-shrink-0">Model</span>
+          <span className="text-[11px] font-medium text-gray-800">POS</span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-gray-500 flex-shrink-0">Serial Number</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-mono font-medium text-gray-800">{serial}</span>
+            <button
+              onClick={copy}
+              className={`flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded transition-colors ${
+                copied ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-700'
+              }`}
+            >
+              {copied ? <CheckCircle2 size={11} /> : <Copy size={11} />}
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      </div>
+      <p className="text-[11px] text-gray-500 leading-relaxed border-t border-gray-200 pt-2.5">
+        The serial number above is already embedded in your Certificate Request.
+        Make sure to use the exact same serial number when adding a new device in the Fatoorah portal.
+      </p>
+    </div>
+  )
+}
+
 /* ── Step 2: Enter OTP (FIX 3 — 2a/2b layout) ───────────────────────────── */
 
 function Step2EnterOTP({
@@ -400,10 +448,7 @@ function Step2EnterOTP({
             </p>
           </div>
           <CsrBlock value={cert.csr} />
-          <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 space-y-1.5">
-            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Device serial to use</p>
-            <p className="text-[11px] font-mono text-gray-700">1-Dafra|2-POS|3-{branch.id.substring(0, 8)}</p>
-          </div>
+          <DeviceDetailsBlock branch={branch} />
         </div>
       )}
 

@@ -24,7 +24,7 @@ const corsHeaders = {
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { status: 200, headers: corsHeaders })
   }
 
   try {
@@ -119,7 +119,7 @@ Deno.serve(async (req: Request) => {
     const { binarySecurityToken, secret, requestID } = zatcaBody
 
     // Fetch tenant_id from branches — required NOT NULL column on zatca_certificates
-    const { data: branch } = await supabase
+    const { data: branchRow } = await supabase
       .from('branches')
       .select('tenant_id')
       .eq('id', branchId)
@@ -129,7 +129,7 @@ Deno.serve(async (req: Request) => {
       .from('zatca_certificates')
       .upsert({
         branch_id:               branchId,
-        tenant_id:               branch?.tenant_id,
+        tenant_id:               branchRow?.tenant_id,
         compliance_csid:         binarySecurityToken,
         compliance_secret:       secret,
         compliance_request_id:   requestID,
