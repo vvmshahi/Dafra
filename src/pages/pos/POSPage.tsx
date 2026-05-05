@@ -19,6 +19,7 @@ import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import type { Branch, VatTreatment } from '@/types/database'
 import { usePosSession } from '@/hooks/usePosSession'
 import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
+import { useSubscription } from '@/hooks/useSubscription'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -925,10 +926,14 @@ function SessionSummaryModal({ summary, onDone, onNewSession }: {
 
 // ── POSPage ───────────────────────────────────────────────────────────────────
 
+const WA_LINK    = 'https://wa.me/919895953210'
+const EMAIL_LINK = 'mailto:vvmshahin@gmail.com'
+
 export default function POSPage() {
   const { profile, user } = useAuth()
   const navigate  = useNavigate()
   const searchRef = useRef<HTMLInputElement>(null)
+  const sub       = useSubscription()
 
   // Session management
   const { session, loading: sessionLoading, openSession, closeSession } = usePosSession(
@@ -1295,6 +1300,38 @@ export default function POSPage() {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50">
         <p className="text-gray-500 text-sm">No branch assigned. Contact your administrator.</p>
+      </div>
+    )
+  }
+
+  if (sub.isBlocked) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-[#0F2419] text-center px-6 gap-6">
+        <div className="w-16 h-16 rounded-2xl bg-red-500/20 flex items-center justify-center">
+          <AlertCircle size={32} className="text-red-400" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-black text-white">Subscription Paused</h2>
+          <p className="text-white/60 mt-2 max-w-sm">
+            Contact us to reactivate your account and continue making sales.
+          </p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <a
+            href={WA_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-6 py-3 rounded-xl transition-colors"
+          >
+            WhatsApp Us
+          </a>
+          <a
+            href={EMAIL_LINK}
+            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-semibold px-6 py-3 rounded-xl transition-colors"
+          >
+            Email Us
+          </a>
+        </div>
       </div>
     )
   }

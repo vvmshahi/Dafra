@@ -1,10 +1,17 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   CheckCircle2, Zap, GitBranch, BarChart3, Package, Globe,
   Star, ChevronDown, ChevronUp, Menu, X, ArrowRight,
-  Shield, Clock, MessageCircle, Phone,
+  Shield, MessageCircle, Mail,
 } from 'lucide-react'
+
+const WA_LINK    = 'https://wa.me/919895953210'
+const EMAIL_LINK = 'mailto:vvmshahin@gmail.com'
+
+function scrollToContact() {
+  document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })
+}
 
 // ── Islamic geometric SVG pattern ─────────────────────────────────────────────
 function GeometricPattern({ opacity = 0.04 }: { opacity?: number }) {
@@ -185,6 +192,7 @@ function Navbar() {
               { label: 'Features', id: 'features' },
               { label: 'Pricing',  id: 'pricing' },
               { label: 'FAQ',      id: 'faq' },
+              { label: 'Contact',  id: 'contact' },
             ].map(l => (
               <button
                 key={l.id}
@@ -202,10 +210,11 @@ function Navbar() {
               className="text-white/80 hover:text-white text-sm font-medium px-4 py-2 rounded-xl border border-white/20 hover:border-white/40 transition-colors">
               Login
             </Link>
-            <Link to="/signup"
+            <button
+              onClick={scrollToContact}
               className="flex items-center gap-1.5 bg-gold-500 hover:bg-gold-400 text-[#0F2419] text-sm font-bold px-4 py-2 rounded-xl transition-colors shadow-lg shadow-gold-500/20">
-              Start Free Trial <ArrowRight size={14} />
-            </Link>
+              Get Started <ArrowRight size={14} />
+            </button>
           </div>
 
           {/* Mobile hamburger */}
@@ -225,6 +234,7 @@ function Navbar() {
             { label: 'Features', id: 'features' },
             { label: 'Pricing',  id: 'pricing' },
             { label: 'FAQ',      id: 'faq' },
+            { label: 'Contact',  id: 'contact' },
           ].map(l => (
             <button
               key={l.id}
@@ -239,10 +249,10 @@ function Navbar() {
               className="block text-center text-white/80 text-sm font-medium px-4 py-2.5 rounded-xl border border-white/20">
               Login
             </Link>
-            <Link to="/signup" onClick={() => setOpen(false)}
-              className="block text-center bg-gold-500 text-[#0F2419] text-sm font-bold px-4 py-2.5 rounded-xl">
-              Start Free Trial
-            </Link>
+            <button onClick={() => { setOpen(false); scrollToContact() }}
+              className="block w-full text-center bg-gold-500 text-[#0F2419] text-sm font-bold px-4 py-2.5 rounded-xl">
+              Get Started — Contact Us
+            </button>
           </div>
         </div>
       )}
@@ -304,12 +314,12 @@ function HeroSection() {
 
             {/* CTAs */}
             <div className="flex flex-wrap gap-3">
-              <Link
-                to="/signup"
+              <button
+                onClick={scrollToContact}
                 className="flex items-center gap-2 bg-gold-500 hover:bg-gold-400 text-[#0F2419] font-bold px-6 py-3.5 rounded-xl transition-all shadow-xl shadow-gold-500/30 hover:shadow-gold-500/40 hover:-translate-y-0.5"
               >
-                Start Free Trial — مجاناً <ArrowRight size={16} />
-              </Link>
+                Get Started — Contact Us <ArrowRight size={16} />
+              </button>
               <button
                 onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
                 className="flex items-center gap-2 border border-white/20 text-white hover:bg-white/10 font-medium px-6 py-3.5 rounded-xl transition-all"
@@ -436,39 +446,56 @@ function FeaturesSection() {
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
 function PricingSection() {
+  const [annual, setAnnual] = useState(false)
+
   return (
     <section id="pricing" className="py-24 bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
+        <div className="text-center mb-12">
           <span className="inline-block text-xs font-semibold text-primary-600 bg-primary-50 px-3 py-1 rounded-full mb-4 uppercase tracking-wide">
             Pricing
           </span>
           <h2 className="text-3xl sm:text-4xl font-bold text-gray-900">
             Simple, transparent pricing
           </h2>
-          <p className="text-gray-500 mt-4">No hidden fees. Cancel anytime. Start free.</p>
+          <p className="text-gray-500 mt-4">Per branch · No hidden fees</p>
+
+          {/* Monthly / Annual toggle */}
+          <div className="flex items-center justify-center gap-3 mt-6">
+            <span className={`text-sm font-medium ${!annual ? 'text-gray-900' : 'text-gray-400'}`}>Monthly</span>
+            <button
+              onClick={() => setAnnual(v => !v)}
+              className={`relative w-12 h-6 rounded-full transition-colors ${annual ? 'bg-primary-500' : 'bg-gray-200'}`}
+            >
+              <span className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${annual ? 'translate-x-6' : ''}`} />
+            </button>
+            <span className={`text-sm font-medium ${annual ? 'text-gray-900' : 'text-gray-400'}`}>
+              Annual <span className="text-emerald-600 font-semibold text-xs ml-1">Save 2 months</span>
+            </span>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
           {/* Phase 1 */}
           <div className="bg-white rounded-2xl border border-gray-200 p-8 flex flex-col">
-            <div className="mb-6">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Phase 1</p>
+            <div className="mb-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Phase 1</p>
+              <p className="text-sm text-gray-500 mb-4">ZATCA QR Code Invoicing</p>
               <div className="flex items-end gap-1">
-                <span className="text-4xl font-black text-gray-900">99</span>
-                <span className="text-gray-500 mb-1.5">SAR/month</span>
+                <span className="text-4xl font-black text-gray-900">SAR {annual ? '500' : '50'}</span>
+                <span className="text-gray-500 mb-1.5 ml-1">/ branch / {annual ? 'year' : 'month'}</span>
               </div>
-              <p className="text-sm text-gray-400 mt-1">ZATCA Phase 1 — QR Code invoicing</p>
             </div>
 
-            <ul className="space-y-3 flex-1 mb-8">
+            <ul className="space-y-3 flex-1 my-8">
               {[
-                'ZATCA Phase 1 (QR Code)',
-                '1 branch included',
-                'Up to 3 users',
-                'Basic reports & P&L',
-                'Email support',
-                'Unlimited invoices',
+                'ZATCA Phase 1 QR Code',
+                'POS Billing Terminal',
+                'Invoice Management',
+                'Expense Tracking',
+                'Inventory Management',
+                'Sales Reports',
+                '1 Branch included',
               ].map(f => (
                 <li key={f} className="flex items-center gap-3 text-sm text-gray-700">
                   <CheckCircle2 size={15} className="text-emerald-500 flex-shrink-0" />
@@ -477,42 +504,42 @@ function PricingSection() {
               ))}
             </ul>
 
-            <Link
-              to="/signup"
-              className="block text-center bg-gray-900 hover:bg-gray-800 text-white font-semibold py-3.5 rounded-xl transition-colors"
+            <button
+              onClick={scrollToContact}
+              className="block w-full text-center bg-gray-900 hover:bg-gray-800 text-white font-semibold py-3.5 rounded-xl transition-colors"
             >
-              Start Free Trial
-            </Link>
+              Get Started
+            </button>
           </div>
 
           {/* Phase 2 — Popular */}
           <div className="relative bg-[#0F2419] rounded-2xl border-2 border-gold-400 p-8 flex flex-col shadow-xl shadow-primary-900/20">
-            {/* Popular badge */}
             <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
               <span className="bg-gold-500 text-[#0F2419] text-xs font-black px-4 py-1 rounded-full shadow-lg">
-                ★ POPULAR
+                ★ MOST POPULAR
               </span>
             </div>
 
             <GeometricPattern opacity={0.03} />
 
-            <div className="relative z-10 mb-6">
-              <p className="text-xs font-semibold text-gold-400/80 uppercase tracking-wider mb-2">Phase 2</p>
+            <div className="relative z-10 mb-2">
+              <p className="text-xs font-semibold text-gold-400/80 uppercase tracking-wider mb-1">Phase 2</p>
+              <p className="text-sm text-white/50 mb-4">Full ZATCA Compliance</p>
               <div className="flex items-end gap-1">
-                <span className="text-4xl font-black text-white">249</span>
-                <span className="text-white/60 mb-1.5">SAR/month</span>
+                <span className="text-4xl font-black text-white">SAR {annual ? '1,000' : '100'}</span>
+                <span className="text-white/60 mb-1.5 ml-1">/ branch / {annual ? 'year' : 'month'}</span>
               </div>
-              <p className="text-sm text-white/50 mt-1">Full ZATCA compliance with digital signing</p>
             </div>
 
-            <ul className="relative z-10 space-y-3 flex-1 mb-8">
+            <ul className="relative z-10 space-y-3 flex-1 my-8">
               {[
-                'ZATCA Phase 2 (Full compliance)',
-                '1 branch included',
-                'Up to 5 users',
-                'Advanced reports + P&L',
-                'Priority WhatsApp support',
-                'Unlimited invoices',
+                'Everything in Phase 1',
+                'ZATCA Phase 2 Digital Signing',
+                'Automatic ZATCA Reporting',
+                'XML Invoice Generation',
+                'Phase 2 QR Code',
+                '1 Branch included',
+                'Additional branches: +SAR 100/month',
               ].map(f => (
                 <li key={f} className="flex items-center gap-3 text-sm text-white/85">
                   <CheckCircle2 size={15} className="text-gold-400 flex-shrink-0" />
@@ -521,22 +548,43 @@ function PricingSection() {
               ))}
             </ul>
 
-            <Link
-              to="/signup"
-              className="relative z-10 block text-center bg-gold-500 hover:bg-gold-400 text-[#0F2419] font-bold py-3.5 rounded-xl transition-colors shadow-lg shadow-gold-500/20"
+            <button
+              onClick={scrollToContact}
+              className="relative z-10 block w-full text-center bg-gold-500 hover:bg-gold-400 text-[#0F2419] font-bold py-3.5 rounded-xl transition-colors shadow-lg shadow-gold-500/20"
             >
-              Start Free Trial
-            </Link>
+              Get Started
+            </button>
           </div>
         </div>
 
-        {/* Add-on note */}
-        <div className="text-center mt-8">
-          <div className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-5 py-2.5 shadow-sm">
-            <GitBranch size={14} className="text-primary-500" />
-            <span className="text-sm text-gray-600">
-              Extra branches from <strong>SAR 29/month</strong> · Annual plans save 2 months
-            </span>
+        {/* Branch note */}
+        <p className="text-center text-sm text-gray-400 mt-6">
+          Additional branches billed at the same rate per branch per month.
+        </p>
+
+        {/* Contact section */}
+        <div id="contact" className="mt-16 bg-white rounded-2xl border border-gray-200 p-8 md:p-12 text-center shadow-sm">
+          <h3 className="text-2xl font-bold text-gray-900">Ready to get started?</h3>
+          <p className="text-gray-500 mt-3 max-w-md mx-auto">
+            Contact us to set up your account. We'll have you running within 24 hours.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-8">
+            <a
+              href={WA_LINK}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-6 py-3.5 rounded-xl transition-colors shadow-md w-full sm:w-auto justify-center"
+            >
+              <MessageCircle size={18} />
+              WhatsApp Us
+            </a>
+            <a
+              href={EMAIL_LINK}
+              className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold px-6 py-3.5 rounded-xl transition-colors w-full sm:w-auto justify-center"
+            >
+              <Mail size={18} />
+              Email Us
+            </a>
           </div>
         </div>
       </div>
@@ -691,15 +739,25 @@ function CTABanner() {
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-gold-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="relative z-10 max-w-3xl mx-auto px-4 text-center space-y-6">
         <h2 className="text-3xl sm:text-4xl font-black text-white" style={{ fontFamily: 'Cairo, sans-serif' }}>
-          ابدأ تجربتك المجانية اليوم
+          ابدأ رحلتك مع دفرة اليوم
         </h2>
-        <p className="text-white/60">Start your free trial today — no credit card required.</p>
-        <Link
-          to="/signup"
-          className="inline-flex items-center gap-2 bg-gold-500 hover:bg-gold-400 text-[#0F2419] font-bold px-8 py-4 rounded-xl transition-all shadow-xl shadow-gold-500/20 hover:-translate-y-0.5"
-        >
-          Create Free Account <ArrowRight size={16} />
-        </Link>
+        <p className="text-white/60">Contact us and we'll have your account ready within 24 hours.</p>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <a
+            href={WA_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-8 py-4 rounded-xl transition-all shadow-xl hover:-translate-y-0.5"
+          >
+            <MessageCircle size={18} /> WhatsApp Us
+          </a>
+          <a
+            href={EMAIL_LINK}
+            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-semibold px-8 py-4 rounded-xl transition-all"
+          >
+            <Mail size={18} /> Email Us
+          </a>
+        </div>
       </div>
     </section>
   )
@@ -748,15 +806,15 @@ function Footer() {
           {/* Contact */}
           <div className="space-y-3">
             <p className="text-white text-xs font-semibold uppercase tracking-wider">Contact</p>
-            <a href="https://wa.me/966500000000" target="_blank" rel="noopener noreferrer"
+            <a href={WA_LINK} target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-2 text-sm hover:text-white transition-colors">
               <MessageCircle size={14} />
               WhatsApp Support
             </a>
-            <a href="mailto:support@dafra.sa"
+            <a href={EMAIL_LINK}
               className="flex items-center gap-2 text-sm hover:text-white transition-colors">
-              <Phone size={14} />
-              support@dafra.sa
+              <Mail size={14} />
+              vvmshahin@gmail.com
             </a>
           </div>
         </div>

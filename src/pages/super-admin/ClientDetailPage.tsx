@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Building2, Users, FileText, CreditCard,
   UserX, UserCheck, Trash2, MapPin, Phone, Mail,
-  AlertTriangle, CheckCircle2,
+  AlertTriangle, CheckCircle2, Settings, Star,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
@@ -41,6 +41,10 @@ interface InvoiceStats {
   total: number; posted: number; revenue: number
 }
 
+interface PlanRow {
+  id: string; name: string; price_monthly: number; max_branches: number
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -48,6 +52,220 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="flex items-start gap-3 py-2.5 border-b border-gray-50 last:border-0">
       <span className="text-xs text-gray-400 w-36 flex-shrink-0 pt-0.5">{label}</span>
       <span className="text-sm text-gray-800 flex-1">{value ?? <span className="text-gray-300">—</span>}</span>
+    </div>
+  )
+}
+
+// ── Subscription modal ────────────────────────────────────────────────────────
+
+const DURATIONS = [
+  { label: '1 Month',   months: 1  },
+  { label: '2 Months',  months: 2  },
+  { label: '3 Months',  months: 3  },
+  { label: '6 Months',  months: 6  },
+  { label: '1 Year',    months: 12 },
+  { label: '3 Years',   months: 36 },
+  { label: '5 Years',   months: 60 },
+  { label: 'Lifetime Free', months: 0 },
+]
+
+const PHASE_PRICES: Record<string, number> = {
+  'Phase 1': 50,
+  'Phase 2': 100,
+}
+
+function addMonths(date: Date, n: number): Date {
+  const d = new Date(date)
+  d.setMonth(d.getMonth() + n)
+  return d
+}
+
+function ManageSubscriptionModal({ tenantId, existingSub, plans, onSaved, onCancel }: {
+  tenantId:    string
+  existingSub: SubscriptionDetail | null
+  plans:       PlanRow[]
+  onSaved:     () => void
+  onCancel:    () => void
+}) {
+  const [planId,     setPlanId]     = useState(existingSub?.plan ? '' : plans[0]?.id ?? '')
+  const [branches,   setBranches]   = useState(1)
+  const [duration,   setDuration]   = useState(1)
+  const [payMethod,  setPayMethod]  = useState('Manual')
+  const [payRef,     setPayRef]     = useState('')
+  const [notes,      setNotes]      = useState('')
+  const [saving,     setSaving]     = useState(false)
+  const [error,      setError]      = useState('')
+
+  const selectedPlan = plans.find(p => p.id === planId)
+  const selectedDur  = DURATIONS.find(d => d.months === duration) ?? DURATIONS[0]
+  const isLifetime   = duration === 0
+
+  const expiryDate = isLifetime
+    ? null
+    : addMonths(new Date(), duration)
+
+  const pricePerBranch = selectedPlan
+    ? (PHASE_PRICES[selectedPlan.name] ?? selectedPlan.price_monthly)
+    : 0
+  const total = isLifetime ? 0 : pricePerBranch * branches * duration
+
+  async function handleSave() {
+    if (!planId) { setError('Select a plan'); return }
+    setSaving(true)
+    setError('')
+    try {
+      const payload = {
+        tenant_id:   tenantId,
+        plan_id:     planId,
+        status:      'active' as const,
+        starts_at:   new Date().toISOString(),
+        ends_at:     expiryDate ? expiryDate.toISOString() : null,
+        trial_ends_at: null,
+        cancelled_at:  null,
+        moyasar_subscription_id: payRef.trim() || `${payMethod} · ${notes.trim()}` || null,
+      }
+
+      if (existingSub) {
+        const { error: e } = await (supabase as any)
+          .from('tenant_subscriptions')
+          .update(payload)
+          .eq('id', existingSub.id)
+        if (e) throw e
+      } else {
+        const { error: e } = await (supabase as any)
+          .from('tenant_subscriptions')
+          .insert(payload)
+        if (e) throw e
+      }
+
+      // Restore tenant if suspended
+      await (supabase as any).from('tenants').update({ is_active: true }).eq('id', tenantId)
+
+      onSaved()
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to save subscription')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-5">
+        <h2 className="text-base font-semibold text-gray-900">Manage Subscription</h2>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">Plan</label>
+            <select
+              value={planId}
+              onChange={e => setPlanId(e.target.value)}
+              className="input w-full text-sm h-9"
+            >
+              {plans.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">Number of branches</label>
+            <input
+              type="number"
+              min={1}
+              value={branches}
+              onChange={e => setBranches(Math.max(1, Number(e.target.value)))}
+              className="input w-full text-sm h-9"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">Duration</label>
+          <select
+            value={duration}
+            onChange={e => setDuration(Number(e.target.value))}
+            className="input w-full text-sm h-9"
+          >
+            {DURATIONS.map(d => (
+              <option key={d.months} value={d.months}>{d.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {!isLifetime && expiryDate && (
+          <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm">
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500">Expiry date</span>
+              <span className="font-semibold text-gray-900">{expiryDate.toLocaleDateString('en-SA')}</span>
+            </div>
+            {total > 0 && (
+              <div className="flex justify-between items-center mt-1.5 pt-1.5 border-t border-gray-200">
+                <span className="text-gray-500">
+                  Total: SAR {pricePerBranch} × {branches} branch{branches !== 1 ? 'es' : ''} × {selectedDur.label}
+                </span>
+                <span className="font-bold text-gray-900">SAR {total.toLocaleString()}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {isLifetime && (
+          <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 text-sm text-emerald-700 font-medium">
+            This will set a Lifetime Free subscription (no expiry).
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">Payment method</label>
+            <select
+              value={payMethod}
+              onChange={e => setPayMethod(e.target.value)}
+              className="input w-full text-sm h-9"
+            >
+              {['Manual', 'Bank Transfer', 'Cash'].map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">Payment reference</label>
+            <input
+              type="text"
+              value={payRef}
+              onChange={e => setPayRef(e.target.value)}
+              className="input w-full text-sm h-9"
+              placeholder="e.g. TXN123"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">Notes (optional)</label>
+          <input
+            type="text"
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            className="input w-full text-sm h-9"
+            placeholder="Internal notes"
+          />
+        </div>
+
+        {error && <p className="text-xs text-red-600">{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-xl hover:bg-primary-700 disabled:opacity-50 transition-colors"
+          >
+            {saving ? 'Saving…' : 'Save Subscription'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -174,11 +392,13 @@ export default function ClientDetailPage() {
   const [stats,      setStats]      = useState<InvoiceStats | null>(null)
   const [loading,    setLoading]    = useState(true)
   const [acting,     setActing]     = useState(false)
+  const [plans,      setPlans]      = useState<PlanRow[]>([])
 
   // Modal state
   const [showSuspend,     setShowSuspend]     = useState(false)
   const [showRestore,     setShowRestore]     = useState(false)
   const [showDelete,      setShowDelete]      = useState(false)
+  const [showManageSub,   setShowManageSub]   = useState(false)
   const [modalReason,     setModalReason]     = useState('')
   const [deleteConfirm,   setDeleteConfirm]   = useState('')
   const [deleteError,     setDeleteError]     = useState<string | null>(null)
@@ -186,6 +406,16 @@ export default function ClientDetailPage() {
   async function load() {
     if (!id) return
     setLoading(true)
+
+    // Load available plans once
+    if (plans.length === 0) {
+      const { data: planRows } = await (supabase as any)
+        .from('subscription_plans')
+        .select('id, name, price_monthly, max_branches')
+        .eq('is_active', true)
+        .order('price_monthly')
+      setPlans((planRows as PlanRow[]) ?? [])
+    }
 
     const [
       { data: t },
@@ -265,6 +495,32 @@ export default function ClientDetailPage() {
     load()
   }
 
+  async function confirmLifetimeFree() {
+    if (!id || !confirm('Set this account as Lifetime Free? This gives permanent access with no expiry.')) return
+    setActing(true)
+    const planId = plans[plans.length - 1]?.id ?? plans[0]?.id
+    if (!planId) { setActing(false); return }
+
+    const payload = {
+      tenant_id:   id,
+      plan_id:     planId,
+      status:      'active',
+      starts_at:   new Date().toISOString(),
+      ends_at:     null,
+      trial_ends_at: null,
+      cancelled_at:  null,
+      moyasar_subscription_id: 'Lifetime Free',
+    }
+    if (sub) {
+      await (supabase as any).from('tenant_subscriptions').update(payload).eq('id', sub.id)
+    } else {
+      await (supabase as any).from('tenant_subscriptions').insert({ ...payload, tenant_id: id })
+    }
+    await (supabase as any).from('tenants').update({ is_active: true }).eq('id', id)
+    setActing(false)
+    load()
+  }
+
   async function confirmDelete() {
     if (!tenant || deleteConfirm !== tenant.name) return
     setActing(true)
@@ -330,6 +586,15 @@ export default function ClientDetailPage() {
           onCancel={() => { setShowDelete(false); setDeleteConfirm(''); setDeleteError(null) }}
           acting={acting}
           error={deleteError}
+        />
+      )}
+      {showManageSub && (
+        <ManageSubscriptionModal
+          tenantId={tenant.id}
+          existingSub={sub}
+          plans={plans}
+          onSaved={() => { setShowManageSub(false); load() }}
+          onCancel={() => setShowManageSub(false)}
         />
       )}
 
@@ -439,15 +704,31 @@ export default function ClientDetailPage() {
 
         {/* Subscription */}
         <div className="card p-6">
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Subscription</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-gray-900">Subscription</h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={confirmLifetimeFree}
+                disabled={acting}
+                title="Mark Lifetime Free"
+                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+              >
+                <Star size={12} /> Lifetime Free
+              </button>
+              <button
+                onClick={() => setShowManageSub(true)}
+                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-xl bg-primary-50 text-primary-700 hover:bg-primary-100 transition-colors"
+              >
+                <Settings size={12} /> Manage
+              </button>
+            </div>
+          </div>
           {sub ? (
             <>
               <InfoRow label="Plan"      value={
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                  sub.plan?.name === 'Enterprise' ? 'bg-violet-50 text-violet-700'
-                  : sub.plan?.name === 'Business' ? 'bg-primary-50 text-primary-700'
-                  : 'bg-gray-100 text-gray-600'
-                }`}>{sub.plan?.name ?? '—'}</span>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary-50 text-primary-700">
+                  {sub.plan?.name ?? '—'}
+                </span>
               } />
               <InfoRow label="Status"    value={
                 <Badge variant={
@@ -456,17 +737,24 @@ export default function ClientDetailPage() {
                   : 'danger'
                 } dot>{sub.status}</Badge>
               } />
-              <InfoRow label="Monthly"   value={sub.plan ? <Rial amount={sub.plan.price_monthly} /> : '—'} />
               <InfoRow label="Started"   value={sub.starts_at.slice(0, 10)} />
-              <InfoRow label="Expires"   value={sub.ends_at?.slice(0, 10) ?? 'No expiry'} />
-              {sub.trial_ends_at && (
-                <InfoRow label="Trial ends" value={sub.trial_ends_at.slice(0, 10)} />
-              )}
+              <InfoRow label="Expires"   value={
+                sub.ends_at
+                  ? sub.ends_at.slice(0, 10)
+                  : <span className="text-emerald-600 font-medium">Lifetime Free</span>
+              } />
               <InfoRow label="Max branches" value={sub.plan?.max_branches} />
-              <InfoRow label="Max users"    value={sub.plan?.max_users} />
             </>
           ) : (
-            <p className="text-sm text-gray-400 py-4 text-center">No active subscription</p>
+            <div className="py-4 text-center">
+              <p className="text-sm text-gray-400 mb-3">No subscription found</p>
+              <button
+                onClick={() => setShowManageSub(true)}
+                className="text-xs font-medium text-primary-600 hover:underline"
+              >
+                Add subscription
+              </button>
+            </div>
           )}
         </div>
       </div>

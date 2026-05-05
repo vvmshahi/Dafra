@@ -134,27 +134,29 @@ const PLAN_DISPLAY = [
   {
     title:    'Phase 1',
     subtitle: 'ZATCA QR Code Invoicing',
-    price:    99,
+    price:    50,
     badge:    null as string | null,
     features: [
-      'ZATCA Phase 1 QR code',
-      '1 branch included',
-      'Up to 3 users',
-      'Basic reports',
-      'POS billing',
+      'ZATCA Phase 1 QR Code',
+      'POS Billing Terminal',
+      'Invoice Management',
+      'Expense Tracking',
+      'Sales Reports',
+      '1 Branch included',
     ],
   },
   {
     title:    'Phase 2',
     subtitle: 'Full ZATCA Compliance',
-    price:    249,
+    price:    100,
     badge:    'Most Popular',
     features: [
       'Everything in Phase 1',
-      'ZATCA Phase 2 XML + digital signing',
-      'API reporting and clearance',
-      'Advanced reports + P&L',
-      'Priority support',
+      'ZATCA Phase 2 Digital Signing',
+      'Automatic ZATCA Reporting',
+      'XML Invoice Generation',
+      'Phase 2 QR Code',
+      '1 Branch included',
     ],
   },
 ]
@@ -172,8 +174,7 @@ function Step2({
   return (
     <div className="space-y-5">
       <p className="text-sm text-gray-500 leading-relaxed">
-        Choose the plan that fits your ZATCA compliance needs. You'll start with a{' '}
-        <strong className="text-gray-700">14-day free trial</strong> — no payment required.
+        Choose the plan that fits your ZATCA compliance needs.
       </p>
 
       {loadingPlans ? (
@@ -218,9 +219,8 @@ function Step2({
                 <div>
                   <div className="flex items-baseline gap-1">
                     <span className="text-3xl font-black text-gray-900">SAR {plan.price}</span>
-                    <span className="text-xs text-gray-400">/month</span>
+                    <span className="text-xs text-gray-400">/ branch / month</span>
                   </div>
-                  <p className="text-[11px] text-emerald-600 mt-0.5 font-medium">14-day free trial</p>
                 </div>
 
                 <ul className="space-y-2 border-t border-gray-100 pt-3 flex-1">
@@ -244,9 +244,9 @@ function Step2({
       )}
 
       <div className="flex items-center gap-2.5 bg-[#0F2419]/5 border border-[#0F2419]/10 rounded-xl px-4 py-3">
-        <span className="text-base">🎁</span>
+        <span className="text-base">ℹ️</span>
         <p className="text-xs text-gray-600">
-          <strong>14-day free trial on any plan.</strong> No credit card needed — upgrade or cancel anytime.
+          Your account will be activated once our team confirms your setup. Additional branches billed at the same rate per branch.
         </p>
       </div>
     </div>
@@ -347,7 +347,7 @@ export default function OnboardingPage() {
 
   const stepTitles = [
     { heading: 'Tell us about your business', sub: 'This information appears on every invoice you generate.' },
-    { heading: 'Choose your plan',            sub: 'Start free for 14 days. No payment required now.'       },
+    { heading: 'Choose your plan',            sub: 'Select the ZATCA compliance level for your business.'   },
   ]
   const { heading, sub } = stepTitles[step - 1]
 

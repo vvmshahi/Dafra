@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import { useSubscription } from '@/hooks/useSubscription'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
@@ -658,8 +659,11 @@ function BranchCard({
 
 /* ── Main tab ─────────────────────────────────────────────────── */
 
+const WA_LINK = 'https://wa.me/919895953210'
+
 export default function BranchesTab() {
   const { profile } = useAuth()
+  const sub = useSubscription()
   const [branches, setBranches]     = useState<Branch[]>([])
   const [loading, setLoading]       = useState(true)
   const [loadError, setLoadError]   = useState('')
@@ -705,12 +709,26 @@ export default function BranchesTab() {
         <div>
           <h3 className="text-sm font-semibold text-gray-900">Branches</h3>
           <p className="text-xs text-gray-400 mt-0.5">
-            {branches.length} branch{branches.length !== 1 ? 'es' : ''} configured
+            {branches.length} / {sub.maxBranches} branch{sub.maxBranches !== 1 ? 'es' : ''} used
           </p>
         </div>
-        <Button onClick={() => setDrawer('new')} size="sm">
-          <Plus size={14} /> Add Branch
-        </Button>
+        {branches.length >= sub.maxBranches ? (
+          <div className="text-right">
+            <p className="text-xs text-red-600 font-medium">Branch limit reached</p>
+            <a
+              href={WA_LINK}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary-600 hover:underline"
+            >
+              Contact us to add more
+            </a>
+          </div>
+        ) : (
+          <Button onClick={() => setDrawer('new')} size="sm">
+            <Plus size={14} /> Add Branch
+          </Button>
+        )}
       </div>
 
       {/* List */}
