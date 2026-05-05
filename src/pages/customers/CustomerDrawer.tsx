@@ -122,6 +122,7 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
 
     const payload: Record<string, unknown> = {
       tenant_id:        profile?.tenant_id,
+      branch_id:        profile?.branch_id,
       name:             name.trim() || businessName.trim(),
       name_ar:          nameAr.trim()          || null,
       customer_type:    custType,

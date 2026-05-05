@@ -37,20 +37,20 @@ export default function SuppliersPage() {
   const [editing,     setEditing]     = useState<Supplier | null>(null)
 
   const load = useCallback(async () => {
-    const tid = profile?.tenant_id
-    if (!tid) { setLoading(false); return }
+    const bid = profile?.branch_id
+    if (!bid) { setLoading(false); return }
 
     const [{ data: suppData }, { data: purData }] = await Promise.all([
       supabase
         .from('suppliers')
         .select('*')
-        .eq('tenant_id', tid)
+        .eq('branch_id', bid)
         .eq('is_active', true)
         .order('name'),
       supabase
         .from('purchases')
         .select('supplier_id, total_amount, purchase_date')
-        .eq('tenant_id', tid),
+        .eq('branch_id', bid),
     ])
 
     const aggMap = new Map<string, { total: number; lastDate: string }>()
@@ -70,7 +70,7 @@ export default function SuppliersPage() {
       }))
     )
     setLoading(false)
-  }, [profile?.tenant_id])
+  }, [profile?.branch_id])
 
   useEffect(() => { load() }, [load])
 

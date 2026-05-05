@@ -209,20 +209,20 @@ export default function CustomersPage() {
   const [editing,     setEditing]     = useState<CustomerWithStats | null>(null)
 
   const load = useCallback(async () => {
-    const tid = profile?.tenant_id
-    if (!tid) { setLoading(false); return }
+    const bid = profile?.branch_id
+    if (!bid) { setLoading(false); return }
 
     const [{ data: custs }, { data: invData }] = await Promise.all([
       supabase
         .from('customers')
         .select('*')
-        .eq('tenant_id', tid)
+        .eq('branch_id', bid)
         .eq('is_active', true)
         .order('name', { ascending: true }),
       supabase
         .from('invoices')
         .select('customer_id, total_amount, invoice_date')
-        .eq('tenant_id', tid)
+        .eq('branch_id', bid)
         .neq('status', 'cancelled')
         .not('customer_id', 'is', null),
     ])
@@ -253,7 +253,7 @@ export default function CustomersPage() {
 
     setCustomers(withStats)
     setLoading(false)
-  }, [profile?.tenant_id])
+  }, [profile?.branch_id])
 
   useEffect(() => { load() }, [load])
 

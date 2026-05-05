@@ -116,6 +116,7 @@ export default function CategoriesModal({ open, categories, onClose, onChanged }
       const { error: err } = await q.from('categories').insert({
         ...payload,
         tenant_id: profile?.tenant_id,
+        branch_id: profile?.branch_id,
       })
       if (err) { setError(err.message); setSaving(false); return }
     }

@@ -291,26 +291,26 @@ export default function ProductsPage() {
   const [catsOpen,   setCatsOpen]   = useState(false)
 
   const load = useCallback(async () => {
-    const tid = profile?.tenant_id
-    if (!tid) { setLoading(false); return }
+    const bid = profile?.branch_id
+    if (!bid) { setLoading(false); return }
 
     const [{ data: prods }, { data: cats }] = await Promise.all([
       supabase
         .from('products')
         .select([
-          'id', 'tenant_id', 'category_id', 'name', 'name_ar', 'description',
+          'id', 'tenant_id', 'branch_id', 'category_id', 'name', 'name_ar', 'description',
           'sku', 'price', 'image_url', 'is_active', 'is_available', 'sort_order',
           'vat_treatment', 'notes', 'is_service',
           'categories(name,name_ar,color,icon)',
         ].join(','))
-        .eq('tenant_id', tid)
+        .eq('branch_id', bid)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
         .order('name',       { ascending: true }),
       supabase
         .from('categories')
         .select('*')
-        .eq('tenant_id', tid)
+        .eq('branch_id', bid)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
         .order('name',       { ascending: true }),
@@ -319,7 +319,7 @@ export default function ProductsPage() {
     setProducts((prods  ?? []) as unknown as ProductRow[])
     setCategories((cats ?? []) as unknown as Category[])
     setLoading(false)
-  }, [profile?.tenant_id])
+  }, [profile?.branch_id])
 
   useEffect(() => { load() }, [load])
 

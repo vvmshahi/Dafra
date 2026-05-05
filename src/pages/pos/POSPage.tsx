@@ -975,7 +975,7 @@ export default function POSPage() {
           supabase
             .from('products')
             .select('id, name, name_ar, price, unit, vat_treatment, category_id, categories(id, name, color, icon)')
-            .eq('tenant_id', tid)
+            .eq('branch_id', bid)
             .eq('is_active', true)
             .eq('is_available', true)
             .order('sort_order', { ascending: true })
@@ -983,7 +983,7 @@ export default function POSPage() {
           supabase
             .from('customers')
             .select('id, name, phone, customer_type, vat_number, business_name')
-            .eq('tenant_id', tid)
+            .eq('branch_id', bid)
             .eq('is_active', true)
             .order('name', { ascending: true })
             .limit(200),

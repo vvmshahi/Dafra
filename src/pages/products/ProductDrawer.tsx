@@ -147,6 +147,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
 
       const payload: Record<string, unknown> = {
         tenant_id:     tid,
+        branch_id:     profile?.branch_id,
         name:          name.trim(),
         name_ar:       nameAr.trim()       || null,
         category_id:   categoryId          || null,

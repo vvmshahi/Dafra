@@ -75,6 +75,7 @@ export default function SupplierDrawer({ open, supplier, onClose, onSaved }: Pro
     try {
       const payload: Record<string, unknown> = {
         tenant_id:      profile?.tenant_id!,
+        branch_id:      profile?.branch_id,
         name:           name.trim(),
         name_ar:        nameAr.trim() || null,
         vat_number:     vatNumber.trim() || null,
