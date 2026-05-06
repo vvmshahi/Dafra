@@ -139,13 +139,14 @@ function useSection(initial = true) {
 /* ── Drawer ──────────────────────────────────────────────────── */
 
 function BranchDrawer({
-  branch, tenantId, onClose, onSaved, onRefresh,
+  branch, tenantId, onClose, onSaved, onRefresh, onResetPassword,
 }: {
   branch: Branch | null
   tenantId: string
   onClose: () => void
   onSaved: () => void
   onRefresh?: () => void
+  onResetPassword?: () => void
 }) {
   const isNew = branch === null
   const [form, setForm] = useState<BranchForm>(
@@ -557,19 +558,54 @@ function BranchDrawer({
             )}
           </div>
 
-          {/* ── BRANCH LOGIN (new branches only) ──────── */}
+          {/* ── BRANCH LOGIN (existing branch — read-only + reset) ─ */}
+          {!isNew && (
+            <div className={sectionClass(true)}>
+              <SectionHeader icon={KeyRound} title="Branch Login" open={true} toggle={() => {}}
+                color="text-indigo-600" bg="bg-indigo-50" />
+              <div className="px-5 py-4 space-y-3">
+                {branch?.branch_email ? (
+                  <>
+                    <div>
+                      <label className="label">Branch Email</label>
+                      <input
+                        readOnly
+                        value={branch.branch_email}
+                        className="input w-full bg-gray-50 text-gray-600 cursor-default mt-1.5"
+                      />
+                      <p className="text-[11px] text-gray-400 mt-1">Login email for POS and branch dashboard access</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { onClose(); onResetPassword?.() }}
+                      className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+                    >
+                      <KeyRound size={14} /> Reset Password
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex items-start gap-2 text-xs text-gray-400">
+                    <LogIn size={14} className="flex-shrink-0 mt-0.5" />
+                    <p>No login configured for this branch. Add a new branch with login credentials to enable POS access.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── BRANCH LOGIN (new branch — set credentials) ──────── */}
           {isNew && (
             <div className={sectionClass(true)}>
-              <SectionHeader icon={KeyRound} title="Branch Login Credentials" open={true} toggle={() => {}}
+              <SectionHeader icon={KeyRound} title="Branch Login" open={true} toggle={() => {}}
                 color="text-indigo-600" bg="bg-indigo-50" />
               <div className="px-5 py-4 space-y-3">
                 <p className="text-xs text-gray-400">
                   Optional — create a login so this branch can access the POS and branch dashboard.
-                  The password can be changed later from the Users tab.
+                  The owner sets the email and password directly. No email is sent to the branch.
                 </p>
-                <Input label="Login Email" icon={Mail} type="email" value={form.login_email}
+                <Input label="Branch Email" icon={Mail} type="email" value={form.login_email}
                   onChange={e => set('login_email')(e.target.value)} placeholder="branch@company.com" />
-                <Input label="Initial Password" icon={KeyRound} type="password" value={form.login_password}
+                <Input label="Password" icon={KeyRound} type="password" value={form.login_password}
                   onChange={e => set('login_password')(e.target.value)} placeholder="Min. 8 characters"
                   helperText="Leave blank to auto-generate" />
               </div>
@@ -596,12 +632,86 @@ function BranchDrawer({
   )
 }
 
+/* ── Reset password modal ────────────────────────────────────── */
+
+function ResetPasswordModal({ branch, onClose }: { branch: Branch; onClose: () => void }) {
+  const [newPwd,     setNewPwd]     = useState('')
+  const [confirmPwd, setConfirmPwd] = useState('')
+  const [saving,     setSaving]     = useState(false)
+  const [error,      setError]      = useState('')
+  const [done,       setDone]       = useState(false)
+
+  async function handleSave() {
+    setError('')
+    if (newPwd.length < 8)      { setError('Password must be at least 8 characters'); return }
+    if (newPwd !== confirmPwd)  { setError('Passwords do not match'); return }
+    setSaving(true)
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke('reset-branch-password', {
+        body: { branch_id: branch.id, new_password: newPwd },
+      })
+      const errMsg = fnErr?.message ?? (data as any)?.error ?? null
+      if (errMsg) throw new Error(errMsg)
+      setDone(true)
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to reset password')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Reset Branch Password</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{branch.name}</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        {done ? (
+          <div className="text-center py-4">
+            <CheckCircle2 size={36} className="text-emerald-500 mx-auto mb-3" />
+            <p className="text-sm font-semibold text-gray-900">Password reset successfully</p>
+            <p className="text-xs text-gray-400 mt-1">The branch can now log in with the new password.</p>
+            <Button className="w-full justify-center mt-4" onClick={onClose}>Close</Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {branch.branch_email && (
+              <div className="bg-gray-50 rounded-xl px-3 py-2.5">
+                <p className="text-[11px] text-gray-400 font-medium">Branch Email</p>
+                <p className="text-sm text-gray-700 mt-0.5">{branch.branch_email}</p>
+              </div>
+            )}
+            <Input label="New Password" type="password" value={newPwd}
+              onChange={e => setNewPwd(e.target.value)} placeholder="Min. 8 characters" />
+            <Input label="Confirm Password" type="password" value={confirmPwd}
+              onChange={e => setConfirmPwd(e.target.value)} placeholder="Repeat password" />
+            {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+              <Button type="button" loading={saving} disabled={saving} onClick={handleSave}>
+                Save Password
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /* ── Branch card ─────────────────────────────────────────────── */
 
 function BranchCard({
-  branch, onEdit, onDelete,
+  branch, onEdit, onDelete, onResetPassword,
 }: {
-  branch: Branch; onEdit: () => void; onDelete: () => void
+  branch: Branch; onEdit: () => void; onDelete: () => void; onResetPassword: () => void
 }) {
   return (
     <div className={`card p-5 flex items-start gap-4 ${!branch.is_active ? 'opacity-60' : ''}`}>
@@ -636,10 +746,20 @@ function BranchCard({
             <ShieldCheck size={10} />
             Phase {branch.zatca_phase ?? 1}
           </span>
-          {branch.branch_email
-            ? <span className="flex items-center gap-1 text-indigo-500"><LogIn size={10} /> {branch.branch_email}</span>
-            : <span className="flex items-center gap-1 text-gray-300 italic"><LogIn size={10} /> No login configured</span>
-          }
+          {branch.branch_email ? (
+            <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1 text-indigo-500"><LogIn size={10} /> {branch.branch_email}</span>
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); onResetPassword() }}
+                className="text-[10px] text-gray-400 hover:text-gray-700 underline transition-colors"
+              >
+                Reset password
+              </button>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-gray-300 italic"><LogIn size={10} /> No login configured</span>
+          )}
         </div>
       </div>
 
@@ -669,6 +789,7 @@ export default function BranchesTab() {
   const [loadError, setLoadError]   = useState('')
   const [drawerBranch, setDrawer]   = useState<Branch | 'new' | null>(null)
   const [deleting, setDeleting]     = useState<string | null>(null)
+  const [resetTarget, setResetTarget] = useState<Branch | null>(null)
 
   const load = async () => {
     if (!profile?.tenant_id) return
@@ -759,9 +880,18 @@ export default function BranchesTab() {
               branch={b}
               onEdit={() => setDrawer(b)}
               onDelete={() => !deleting && handleDelete(b.id)}
+              onResetPassword={() => setResetTarget(b)}
             />
           ))}
         </div>
+      )}
+
+      {/* Reset password modal */}
+      {resetTarget && (
+        <ResetPasswordModal
+          branch={resetTarget}
+          onClose={() => setResetTarget(null)}
+        />
       )}
 
       {/* Drawer */}
@@ -772,6 +902,11 @@ export default function BranchesTab() {
           onClose={() => setDrawer(null)}
           onSaved={() => { setDrawer(null); load() }}
           onRefresh={load}
+          onResetPassword={drawerBranch !== 'new' ? () => {
+            const b = drawerBranch as Branch
+            setDrawer(null)
+            setResetTarget(b)
+          } : undefined}
         />
       )}
 
