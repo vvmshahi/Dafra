@@ -12,10 +12,16 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    console.log('[create-owner-account] Request received:', req.method)
+
     const supabaseUrl      = Deno.env.get('SUPABASE_URL')!
     const SERVICE_ROLE_KEY = Deno.env.get('DAFRA_SERVICE_ROLE_KEY')
 
+    console.log('[create-owner-account] SUPABASE_URL present:', !!supabaseUrl)
+    console.log('[create-owner-account] DAFRA_SERVICE_ROLE_KEY present:', !!SERVICE_ROLE_KEY, 'starts with eyJ:', SERVICE_ROLE_KEY?.startsWith('eyJ'))
+
     if (!SERVICE_ROLE_KEY || !SERVICE_ROLE_KEY.startsWith('eyJ')) {
+      console.error('[create-owner-account] FATAL: DAFRA_SERVICE_ROLE_KEY missing or malformed')
       return new Response(JSON.stringify({ error: 'Server configuration error' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -29,14 +35,20 @@ Deno.serve(async (req: Request) => {
     const authHeader = req.headers.get('Authorization') ?? ''
     const callerJWT  = authHeader.replace(/^Bearer\s+/i, '').trim()
 
+    console.log('[create-owner-account] Auth header present:', !!callerJWT)
+
     if (!callerJWT) {
+      console.error('[create-owner-account] No Authorization header')
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
     const { data: { user: caller }, error: authError } = await adminClient.auth.getUser(callerJWT)
+    console.log('[create-owner-account] Caller lookup:', caller?.id ?? 'null', 'authError:', authError?.message ?? 'none')
+
     if (authError || !caller) {
+      console.error('[create-owner-account] Invalid token:', authError?.message)
       return new Response(JSON.stringify({ error: 'Invalid token' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -48,13 +60,17 @@ Deno.serve(async (req: Request) => {
       .eq('id', caller.id)
       .maybeSingle()
 
+    console.log('[create-owner-account] Caller role:', callerProfile?.role ?? 'null', 'profileErr:', profileErr?.message ?? 'none')
+
     if (profileErr || !callerProfile) {
+      console.error('[create-owner-account] Could not load caller profile:', profileErr?.message)
       return new Response(JSON.stringify({ error: 'Could not verify caller' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
     if (callerProfile.role !== 'super_admin') {
+      console.error('[create-owner-account] Caller is not super_admin, role:', callerProfile.role)
       return new Response(JSON.stringify({ error: 'Forbidden: super_admin role required' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -69,7 +85,10 @@ Deno.serve(async (req: Request) => {
       pay_method, pay_ref, notes,
     } = body
 
+    console.log('[create-owner-account] Body parsed — company_name:', company_name, 'email:', email, 'plan_id:', plan_id, 'payment_type:', payment_type)
+
     if (!company_name || !email || !plan_id) {
+      console.error('[create-owner-account] Missing required fields')
       return new Response(
         JSON.stringify({ error: 'Missing required fields: company_name, email, plan_id' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -78,7 +97,8 @@ Deno.serve(async (req: Request) => {
 
     const normalizedEmail = email.trim().toLowerCase()
 
-    // ── Step 1: Create auth user (no password — email invite handles setup) ──
+    // ── Step 1: Create auth user ─────────────────────────────────────────────
+    console.log('[create-owner-account] Step 1: Creating auth user for', normalizedEmail)
     const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
       email:         normalizedEmail,
       email_confirm: true,
@@ -86,15 +106,17 @@ Deno.serve(async (req: Request) => {
     })
 
     if (createErr) {
+      console.error('[create-owner-account] Step 1 FAILED — auth user creation:', createErr.message)
       return new Response(JSON.stringify({ error: createErr.message }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
     const newUserId = created.user.id
-    console.log('[create-owner-account] Auth user created:', newUserId)
+    console.log('[create-owner-account] Step 1 OK — auth user:', newUserId)
 
     // ── Step 2: Create tenant ────────────────────────────────────────────────
+    console.log('[create-owner-account] Step 2: Creating tenant')
     const { data: tenantRow, error: tenantErr } = await adminClient
       .from('tenants')
       .insert({
@@ -114,6 +136,7 @@ Deno.serve(async (req: Request) => {
       .single()
 
     if (tenantErr || !tenantRow) {
+      console.error('[create-owner-account] Step 2 FAILED — tenant insert:', tenantErr?.message, tenantErr?.code, tenantErr?.details)
       await adminClient.auth.admin.deleteUser(newUserId)
       return new Response(
         JSON.stringify({ error: 'Failed to create tenant: ' + (tenantErr?.message ?? 'unknown') }),
@@ -122,16 +145,23 @@ Deno.serve(async (req: Request) => {
     }
 
     const tenantId = tenantRow.id
-    console.log('[create-owner-account] Tenant created:', tenantId)
+    console.log('[create-owner-account] Step 2 OK — tenant:', tenantId)
 
-    // Link the auto-created user_profiles row to this tenant immediately
-    await adminClient
+    // ── Step 3: Link user profile to tenant immediately ──────────────────────
+    console.log('[create-owner-account] Step 3: Linking user_profile to tenant')
+    const { error: linkErr2 } = await adminClient
       .from('user_profiles')
       .update({ tenant_id: tenantId })
       .eq('id', newUserId)
 
-    // ── Step 3: Upsert user profile ──────────────────────────────────────────
-    // No default branch is created — owner will add branches from Settings
+    if (linkErr2) {
+      console.error('[create-owner-account] Step 3 WARNING — profile link failed:', linkErr2.message)
+    } else {
+      console.log('[create-owner-account] Step 3 OK — profile linked')
+    }
+
+    // ── Step 4: Upsert user profile ──────────────────────────────────────────
+    console.log('[create-owner-account] Step 4: Upserting user profile')
     const { error: profileUpsertErr } = await adminClient
       .from('user_profiles')
       .upsert({
@@ -145,19 +175,24 @@ Deno.serve(async (req: Request) => {
       }, { onConflict: 'id' })
 
     if (profileUpsertErr) {
-      console.error('[create-owner-account] Profile upsert failed:', profileUpsertErr.message)
+      console.error('[create-owner-account] Step 4 WARNING — profile upsert failed:', profileUpsertErr.message)
+    } else {
+      console.log('[create-owner-account] Step 4 OK — profile upserted')
     }
 
     // ── Step 5: Create subscription ──────────────────────────────────────────
-    const isLifetime    = payment_type === 'lifetime_free' || duration_months === 0
-    const paymentNote   = [pay_method, pay_ref].filter(Boolean).join(' · ') || null
+    // NOTE: DB enum subscription_status only allows: trial, active, expired, cancelled
+    // Lifetime free accounts use status='active' + ends_at=null (identified client-side)
+    const isLifetime  = payment_type === 'lifetime_free' || duration_months === 0
+    const paymentNote = [pay_method, pay_ref].filter(Boolean).join(' · ') || null
 
+    console.log('[create-owner-account] Step 5: Creating subscription — isLifetime:', isLifetime, 'plan_id:', plan_id)
     const { error: subErr } = await adminClient
       .from('tenant_subscriptions')
       .insert({
         tenant_id:               tenantId,
         plan_id,
-        status:                  isLifetime ? 'lifetime_free' : 'active',
+        status:                  'active',
         starts_at:               new Date().toISOString(),
         ends_at:                 isLifetime ? null : (ends_at ?? null),
         trial_ends_at:           null,
@@ -166,10 +201,13 @@ Deno.serve(async (req: Request) => {
       })
 
     if (subErr) {
-      console.error('[create-owner-account] Subscription insert failed:', subErr.message)
+      console.error('[create-owner-account] Step 5 WARNING — subscription insert failed:', subErr.message, subErr.code, subErr.details)
+    } else {
+      console.log('[create-owner-account] Step 5 OK — subscription created')
     }
 
     // ── Step 6: Send password setup email ────────────────────────────────────
+    console.log('[create-owner-account] Step 6: Sending password setup email to', normalizedEmail)
     let emailWarning: string | null = null
 
     const { error: linkErr } = await adminClient.auth.admin.generateLink({
@@ -181,10 +219,10 @@ Deno.serve(async (req: Request) => {
     })
 
     if (linkErr) {
-      console.error('[create-owner-account] Password setup email failed:', linkErr.message)
+      console.error('[create-owner-account] Step 6 WARNING — generateLink failed:', linkErr.message)
       emailWarning = `Account created but password setup email failed: ${linkErr.message}. Send a manual password reset from the Supabase dashboard.`
     } else {
-      console.log('[create-owner-account] Password setup email sent to:', normalizedEmail)
+      console.log('[create-owner-account] Step 6 OK — password setup email sent')
     }
 
     const response: Record<string, unknown> = {
@@ -194,13 +232,16 @@ Deno.serve(async (req: Request) => {
     }
     if (emailWarning) response.warning = emailWarning
 
+    console.log('[create-owner-account] SUCCESS — returning 200')
     return new Response(JSON.stringify(response), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal error'
-    console.error('[create-owner-account] Unhandled error:', message)
+    const stack   = err instanceof Error ? err.stack   : undefined
+    console.error('[create-owner-account] UNHANDLED ERROR:', message)
+    console.error('[create-owner-account] Stack:', stack)
     return new Response(JSON.stringify({ error: message }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
