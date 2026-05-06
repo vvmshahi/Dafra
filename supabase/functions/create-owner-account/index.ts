@@ -124,6 +124,12 @@ Deno.serve(async (req: Request) => {
     const tenantId = tenantRow.id
     console.log('[create-owner-account] Tenant created:', tenantId)
 
+    // Link the auto-created user_profiles row to this tenant immediately
+    await adminClient
+      .from('user_profiles')
+      .update({ tenant_id: tenantId })
+      .eq('id', newUserId)
+
     // ── Step 3: Create main branch ───────────────────────────────────────────
     const { data: branchRow, error: branchErr } = await adminClient
       .from('branches')
