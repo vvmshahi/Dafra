@@ -544,13 +544,30 @@ export default function ClientDetailPage() {
     if (!tenant || deleteConfirm !== tenant.name) return
     setActing(true)
     setDeleteError(null)
-    const { error } = await (supabase as any).from('tenants').delete().eq('id', tenant.id)
-    if (error) {
-      setDeleteError('Failed to delete client: ' + error.message)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-tenant`,
+        {
+          method:  'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${session?.access_token ?? ''}`,
+          },
+          body: JSON.stringify({ tenantId: tenant.id }),
+        },
+      )
+      const json = await res.json()
+      if (!res.ok) {
+        setDeleteError(json.error ?? 'Failed to delete client')
+        setActing(false)
+        return
+      }
+      navigate('/super-admin/clients')
+    } catch (err: any) {
+      setDeleteError(err.message ?? 'Failed to delete client')
       setActing(false)
-      return
     }
-    navigate('/super-admin/clients')
   }
 
   if (loading) {
