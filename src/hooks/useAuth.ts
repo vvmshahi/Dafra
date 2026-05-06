@@ -15,9 +15,20 @@ export function useAuth() {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [loading, setLoading] = useState(true)
+  // null = not yet checked, true = has ≥1 branch, false = no branches
+  const [hasBranch, setHasBranch] = useState<boolean | null>(null)
 
   useEffect(() => {
     let mounted = true
+
+    async function fetchBranchCount(tenantId: string) {
+      const { count } = await supabase
+        .from('branches')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+      if (!mounted) return
+      setHasBranch((count ?? 0) > 0)
+    }
 
     async function fetchProfile(userId: string) {
       try {
@@ -38,9 +49,19 @@ export function useAuth() {
             .maybeSingle()
           if (!mounted) return
           setTenant(tData as unknown as Tenant | null)
+          if (p.role === 'owner') {
+            await fetchBranchCount(p.tenant_id)
+          } else {
+            // Branch users and super admins don't need the branch gate
+            if (mounted) setHasBranch(true)
+          }
+        } else {
+          // No tenant yet (mid-onboarding) — branch gate doesn't apply
+          if (mounted) setHasBranch(true)
         }
       } catch (err) {
         console.error('[useAuth] fetchProfile error:', err)
+        if (mounted) setHasBranch(true) // fail open
       } finally {
         if (mounted) setLoading(false)
       }
@@ -54,6 +75,7 @@ export function useAuth() {
         fetchProfile(session.user.id)
       } else {
         setLoading(false)
+        setHasBranch(true)
       }
     })
 
@@ -63,6 +85,7 @@ export function useAuth() {
         setUser(session.user)
         setSession(session)
         setLoading(true)
+        setHasBranch(null)
         fetchProfile(session.user.id)
       }
       if (event === 'SIGNED_OUT') {
@@ -70,6 +93,7 @@ export function useAuth() {
         setSession(null)
         setProfile(null)
         setTenant(null)
+        setHasBranch(null)
         setLoading(false)
       }
       if (event === 'TOKEN_REFRESHED' && session) {
@@ -81,6 +105,24 @@ export function useAuth() {
     return () => {
       mounted = false
       subscription.unsubscribe()
+    }
+  }, [])
+
+  const refreshBranchCount = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.user) return
+    const { data: p } = await supabase
+      .from('user_profiles')
+      .select('role, tenant_id')
+      .eq('id', session.user.id)
+      .maybeSingle()
+    const prof = p as { role: string; tenant_id: string | null } | null
+    if (prof?.role === 'owner' && prof?.tenant_id) {
+      const { count } = await supabase
+        .from('branches')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', prof.tenant_id)
+      setHasBranch((count ?? 0) > 0)
     }
   }, [])
 
@@ -154,10 +196,12 @@ export function useAuth() {
     isOnboarded: computeIsOnboarded(profile),
     isAuthenticated,
     isNewUser,
+    hasBranch,
     hasRole,
     signIn,
     signUp,
     signOut,
     refreshProfile,
+    refreshBranchCount,
   }
 }

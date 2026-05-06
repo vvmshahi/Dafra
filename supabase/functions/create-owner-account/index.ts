@@ -65,7 +65,7 @@ Deno.serve(async (req: Request) => {
     const {
       company_name, company_name_ar, vat_number, cr_number,
       email, phone, city,
-      plan_id, duration_months, ends_at, branch_count,
+      plan_id, payment_type, duration_months, ends_at, branch_count,
       pay_method, pay_ref, notes,
     } = body
 
@@ -149,7 +149,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Step 5: Create subscription ──────────────────────────────────────────
-    const isLifetime    = duration_months === 0
+    const isLifetime    = payment_type === 'lifetime_free' || duration_months === 0
     const paymentNote   = [pay_method, pay_ref].filter(Boolean).join(' · ') || null
 
     const { error: subErr } = await adminClient
@@ -157,7 +157,7 @@ Deno.serve(async (req: Request) => {
       .insert({
         tenant_id:               tenantId,
         plan_id,
-        status:                  'active',
+        status:                  isLifetime ? 'lifetime_free' : 'active',
         starts_at:               new Date().toISOString(),
         ends_at:                 isLifetime ? null : (ends_at ?? null),
         trial_ends_at:           null,

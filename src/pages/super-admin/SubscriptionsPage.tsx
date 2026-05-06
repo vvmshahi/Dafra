@@ -28,6 +28,7 @@ const GRACE_MS = 7 * 86_400_000
 
 function computeStatus(rawStatus: string, ends_at: string | null, suspended: boolean): ComputedStatus {
   if (suspended) return 'suspended'
+  if (rawStatus === 'lifetime_free') return 'lifetime_free'
   if (rawStatus === 'cancelled') return 'cancelled'
   if (rawStatus === 'active' && ends_at === null) return 'lifetime_free'
   if (rawStatus === 'active' && ends_at !== null) {

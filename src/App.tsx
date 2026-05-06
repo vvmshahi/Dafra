@@ -8,6 +8,7 @@ import AppLayout from '@/components/layout/AppLayout'
 import LoginPage           from '@/pages/auth/LoginPage'
 import SignupPage          from '@/pages/auth/SignupPage'
 import OnboardingPage      from '@/pages/onboarding/OnboardingPage'
+import SetupBranchPage     from '@/pages/onboarding/SetupBranchPage'
 import DashboardPage       from '@/pages/admin/DashboardPage'
 import BranchDetailPage    from '@/pages/admin/BranchDetailPage'
 import ProductsPage         from '@/pages/products/ProductsPage'
@@ -52,16 +53,37 @@ function FullscreenSpinner() {
 
 /**
  * Must be authenticated.
- * Hard gate: waits for isOnboarded to resolve, then forces owners
- * without a tenant to /onboarding before any other route is reachable.
+ * Hard gate: forces owners without a tenant to /onboarding,
+ * and owners with no branches to /setup-branch.
  */
 function RequireAuth() {
-  const { isAuthenticated, loading, isOnboarded } = useAuth()
+  const { isAuthenticated, loading, isOnboarded, profile, hasBranch } = useAuth()
   if (loading)               return <FullscreenSpinner />
   if (!isAuthenticated)      return <Navigate to="/login" replace />
-  // Wait for profile fetch to complete before deciding
   if (isOnboarded === null)  return <FullscreenSpinner />
   if (isOnboarded === false) return <Navigate to="/onboarding" replace />
+  // Owners must have at least one branch before accessing the app
+  if (profile?.role === 'owner') {
+    if (hasBranch === null)  return <FullscreenSpinner />
+    if (hasBranch === false) return <Navigate to="/setup-branch" replace />
+  }
+  return <Outlet />
+}
+
+/**
+ * Setup-branch gate — lets through owners with 0 branches only.
+ * Redirects everyone else to their appropriate home.
+ */
+function RequireSetupBranch() {
+  const { isAuthenticated, loading, isOnboarded, profile, hasBranch } = useAuth()
+  if (loading)               return <FullscreenSpinner />
+  if (!isAuthenticated)      return <Navigate to="/login" replace />
+  if (isOnboarded === null)  return <FullscreenSpinner />
+  if (isOnboarded === false) return <Navigate to="/onboarding" replace />
+  if (profile?.role === 'super_admin') return <Navigate to="/super-admin" replace />
+  if (profile?.role === 'branch')      return <Navigate to="/branch"       replace />
+  if (hasBranch === null)    return <FullscreenSpinner />
+  if (hasBranch === true)    return <Navigate to="/dashboard"  replace />
   return <Outlet />
 }
 
@@ -143,6 +165,11 @@ export default function App() {
         {/* Onboarding — outside RequireAuth so the hard gate doesn't loop */}
         <Route element={<RequireOnboarding />}>
           <Route path="/onboarding" element={<OnboardingPage />} />
+        </Route>
+
+        {/* Branch setup — outside RequireAuth so the hard gate doesn't loop */}
+        <Route element={<RequireSetupBranch />}>
+          <Route path="/setup-branch" element={<SetupBranchPage />} />
         </Route>
 
         {/* ── Authenticated ────────────────────────────────── */}

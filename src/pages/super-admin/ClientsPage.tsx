@@ -44,7 +44,7 @@ const GRACE_MS = 7 * 86_400_000
 function getStatus(c: ClientRow): ComputedStatus {
   if (c.suspended_at) return 'suspended'
   if (!c.is_active)   return 'inactive'
-  if (c.subStatus === 'active' && c.endsAt === null) return 'lifetime_free'
+  if (c.subStatus === 'lifetime_free' || (c.subStatus === 'active' && c.endsAt === null)) return 'lifetime_free'
   if (c.subStatus === 'active' && c.endsAt !== null) {
     const exp = new Date(c.endsAt).getTime()
     const now = Date.now()
@@ -153,6 +153,31 @@ const DURATIONS = [
   { label: 'Lifetime Free',  months: 0  },
 ]
 
+type PaymentType = 'lifetime_free' | 'one_time' | 'recurring'
+
+const PAYMENT_TYPE_OPTIONS: { type: PaymentType; label: string; sub: string; color: string }[] = [
+  {
+    type:  'lifetime_free',
+    label: 'No Payment — Lifetime Free',
+    sub:   'Full access, no fees, not counted in MRR',
+    color: 'border-emerald-500 bg-emerald-50 ring-emerald-500/20',
+  },
+  {
+    type:  'one_time',
+    label: 'One-time Payment',
+    sub:   'Client pays once for a fixed period',
+    color: 'border-primary-500 bg-primary-50 ring-primary-500/20',
+  },
+  {
+    type:  'recurring',
+    label: 'Recurring (Manual)',
+    sub:   'Monthly/yearly, renewed manually each period',
+    color: 'border-primary-500 bg-primary-50 ring-primary-500/20',
+  },
+]
+
+const PAID_DURATIONS = DURATIONS.filter(d => d.months > 0)
+
 function CreateAccountModal({ onCreated, onCancel }: {
   onCreated: () => void
   onCancel:  () => void
@@ -167,6 +192,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
   const [city,          setCity]          = useState('')
   const [planId,        setPlanId]        = useState('')
   const [branchCount,   setBranchCount]   = useState(1)
+  const [paymentType,   setPaymentType]   = useState<PaymentType>('one_time')
   const [duration,      setDuration]      = useState(1)
   const [payMethod,     setPayMethod]     = useState('Manual')
   const [payRef,        setPayRef]        = useState('')
@@ -190,10 +216,10 @@ function CreateAccountModal({ onCreated, onCancel }: {
       })
   }, [])
 
-  const isLifetime    = duration === 0
-  const selectedPlan  = plans.find(p => p.id === planId)
+  const isLifetime     = paymentType === 'lifetime_free'
+  const selectedPlan   = plans.find(p => p.id === planId)
   const pricePerBranch = selectedPlan?.price_monthly ?? 0
-  const totalAmount   = isLifetime ? 0 : pricePerBranch * branchCount * duration
+  const totalAmount    = isLifetime ? 0 : pricePerBranch * branchCount * duration
 
   function computeExpiry() {
     if (isLifetime) return null
@@ -220,10 +246,11 @@ function CreateAccountModal({ onCreated, onCancel }: {
           city:            city.trim() || null,
           plan_id:         planId,
           branch_count:    branchCount,
-          duration_months: duration,
+          payment_type:    paymentType,
+          duration_months: isLifetime ? 0 : duration,
           ends_at:         computeExpiry(),
-          pay_method:      payMethod,
-          pay_ref:         payRef.trim() || null,
+          pay_method:      isLifetime ? null : payMethod,
+          pay_ref:         isLifetime ? null : (payRef.trim() || null),
           notes:           notes.trim() || null,
         },
       })
@@ -234,7 +261,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
       const warn = (fnData as any)?.warning ?? null
       if (warn) {
         setWarning(warn)
-        return  // Stay open so super admin sees the warning before closing
+        return
       }
 
       onCreated()
@@ -304,7 +331,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
               </div>
             </div>
 
-            {/* Subscription */}
+            {/* Plan + branches */}
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Subscription</p>
               <div className="grid grid-cols-2 gap-3">
@@ -315,40 +342,63 @@ function CreateAccountModal({ onCreated, onCancel }: {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Number of Branches</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Number of Branches Allowed</label>
                   <input
                     type="number" min={1} value={branchCount}
                     onChange={e => setBranchCount(Math.max(1, Number(e.target.value)))}
                     className="input w-full text-sm h-9"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Duration *</label>
-                  <select value={duration} onChange={e => setDuration(Number(e.target.value))} className="input w-full text-sm h-9">
-                    {DURATIONS.map(d => <option key={d.months} value={d.months}>{d.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Payment Method</label>
-                  <select value={payMethod} onChange={e => setPayMethod(e.target.value)} className="input w-full text-sm h-9">
-                    {['Manual', 'Bank Transfer', 'Cash'].map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </div>
               </div>
+            </div>
 
-              <div className="mt-3">
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">Payment Reference</label>
-                <input value={payRef} onChange={e => setPayRef(e.target.value)}
-                  className="input w-full text-sm h-9" placeholder="e.g. TXN123456" />
+            {/* Payment type */}
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Payment Type</p>
+              <div className="grid grid-cols-3 gap-2">
+                {PAYMENT_TYPE_OPTIONS.map(opt => (
+                  <button
+                    key={opt.type}
+                    type="button"
+                    onClick={() => setPaymentType(opt.type)}
+                    className={`text-left rounded-xl border-2 p-3 transition-all ${
+                      paymentType === opt.type
+                        ? `${opt.color} ring-2 shadow-sm`
+                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                    }`}
+                  >
+                    <p className="text-xs font-semibold text-gray-900 leading-tight">{opt.label}</p>
+                    <p className="text-[10px] text-gray-500 mt-1 leading-tight">{opt.sub}</p>
+                  </button>
+                ))}
               </div>
+            </div>
 
-              {/* Dynamic pricing breakdown */}
-              {isLifetime ? (
-                <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 text-sm text-emerald-700 font-medium">
-                  Lifetime Free — no expiry, no charge
+            {/* Paid-only fields */}
+            {!isLifetime && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Duration *</label>
+                    <select value={duration} onChange={e => setDuration(Number(e.target.value))} className="input w-full text-sm h-9">
+                      {PAID_DURATIONS.map(d => <option key={d.months} value={d.months}>{d.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Payment Method</label>
+                    <select value={payMethod} onChange={e => setPayMethod(e.target.value)} className="input w-full text-sm h-9">
+                      {['Manual', 'Bank Transfer', 'Cash'].map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
                 </div>
-              ) : (
-                <div className="mt-3 bg-gray-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Payment Reference</label>
+                  <input value={payRef} onChange={e => setPayRef(e.target.value)}
+                    className="input w-full text-sm h-9" placeholder="e.g. TXN123456" />
+                </div>
+
+                <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
                   <div className="flex justify-between items-center text-gray-500">
                     <span>
                       SAR {pricePerBranch} × {branchCount} branch{branchCount !== 1 ? 'es' : ''} × {duration} month{duration !== 1 ? 's' : ''}
@@ -362,8 +412,14 @@ function CreateAccountModal({ onCreated, onCancel }: {
                     </span>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+
+            {isLifetime && (
+              <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 text-sm text-emerald-700 font-medium">
+                Lifetime Free — no expiry, no charge, not counted in MRR
+              </div>
+            )}
 
             {/* Notes */}
             <div>

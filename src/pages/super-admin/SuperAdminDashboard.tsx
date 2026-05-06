@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Building2, Users, CreditCard, TrendingUp, ArrowRight,
-  CheckCircle2, AlertTriangle,
+  CheckCircle2, AlertTriangle, Star,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
@@ -21,6 +21,7 @@ interface DashboardStats {
   totalUsers:     number
   mrr:            number
   newThisMonth:   number
+  lifetimeFree:   number
 }
 
 interface RecentTenant {
@@ -112,21 +113,28 @@ export default function SuperAdminDashboard() {
         supabase.from('branches').select('id', { count: 'exact', head: true }),
         supabase.from('user_profiles').select('id', { count: 'exact', head: true }).neq('role', 'super_admin'),
         (supabase as any).from('tenant_subscriptions')
-          .select('status, subscription_plans(name, price_monthly)')
-          .eq('status', 'active'),
+          .select('status, ends_at, subscription_plans(name, price_monthly)')
+          .in('status', ['active', 'lifetime_free']),
         (supabase as any).from('tenants')
           .select('id, name, is_active, suspended_at, created_at, tenant_subscriptions(status, subscription_plans(name))')
           .order('created_at', { ascending: false })
           .limit(6),
       ])
 
-      // MRR = sum of price_monthly for active subs
+      // MRR = sum of price_monthly for paid active subs (excludes lifetime_free)
       let mrr = 0
+      let lifetimeFreeCount = 0
       const planCounts: Record<string, number> = {}
       for (const s of (subs ?? [])) {
         const price = s.subscription_plans?.price_monthly ?? 0
         const name  = s.subscription_plans?.name ?? 'Phase 1'
-        if (s.status === 'active') { mrr += price; planCounts[name] = (planCounts[name] ?? 0) + 1 }
+        const isLifetimeFree = s.status === 'lifetime_free' || (s.status === 'active' && s.ends_at === null)
+        if (isLifetimeFree) {
+          lifetimeFreeCount++
+        } else if (s.status === 'active') {
+          mrr += price
+          planCounts[name] = (planCounts[name] ?? 0) + 1
+        }
       }
 
       // New this month
@@ -143,6 +151,7 @@ export default function SuperAdminDashboard() {
         totalUsers:    totalUsers    ?? 0,
         mrr,
         newThisMonth:  newThisMonth  ?? 0,
+        lifetimeFree:  lifetimeFreeCount,
       })
 
       setPlanData(
@@ -235,7 +244,7 @@ export default function SuperAdminDashboard() {
       )}
 
       {/* KPI row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
         <StatCard
           label="Total Clients"
           value={s.totalTenants.toString()}
@@ -245,7 +254,7 @@ export default function SuperAdminDashboard() {
         <StatCard
           label="MRR"
           value={<Rial amount={s.mrr} />}
-          sub={`${s.activeTenants} paying clients`}
+          sub={`${s.activeTenants - s.lifetimeFree} paying clients`}
           icon={TrendingUp} iconClass="text-emerald-600" bgClass="bg-emerald-50"
         />
         <StatCard
@@ -259,6 +268,12 @@ export default function SuperAdminDashboard() {
           value={s.totalUsers.toString()}
           sub="active accounts"
           icon={Users} iconClass="text-violet-600" bgClass="bg-violet-50"
+        />
+        <StatCard
+          label="Lifetime Free"
+          value={s.lifetimeFree.toString()}
+          sub="not counted in MRR"
+          icon={Star} iconClass="text-purple-600" bgClass="bg-purple-50"
         />
       </div>
 
