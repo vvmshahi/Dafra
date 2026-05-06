@@ -69,9 +69,9 @@ Deno.serve(async (req: Request) => {
       pay_method, pay_ref, notes,
     } = body
 
-    if (!company_name || !vat_number || !email || !plan_id) {
+    if (!company_name || !email || !plan_id) {
       return new Response(
-        JSON.stringify({ error: 'Missing required fields: company_name, vat_number, email, plan_id' }),
+        JSON.stringify({ error: 'Missing required fields: company_name, email, plan_id' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
@@ -100,7 +100,7 @@ Deno.serve(async (req: Request) => {
       .insert({
         name:         company_name.trim(),
         name_ar:      company_name_ar?.trim() || null,
-        vat_number:   vat_number.trim(),
+        vat_number:   vat_number?.trim() || null,
         cr_number:    cr_number?.trim() || null,
         email:        normalizedEmail,
         phone:        phone?.trim() || null,
@@ -130,41 +130,14 @@ Deno.serve(async (req: Request) => {
       .update({ tenant_id: tenantId })
       .eq('id', newUserId)
 
-    // ── Step 3: Create main branch ───────────────────────────────────────────
-    const { data: branchRow, error: branchErr } = await adminClient
-      .from('branches')
-      .insert({
-        tenant_id:       tenantId,
-        name:            company_name.trim(),
-        name_ar:         company_name_ar?.trim() || null,
-        city:            city?.trim() || null,
-        is_main_branch:  true,
-        is_active:       true,
-        invoice_counter: 0,
-      })
-      .select('id')
-      .single()
-
-    if (branchErr || !branchRow) {
-      await adminClient.from('tenants').delete().eq('id', tenantId)
-      await adminClient.auth.admin.deleteUser(newUserId)
-      return new Response(
-        JSON.stringify({ error: 'Failed to create branch: ' + (branchErr?.message ?? 'unknown') }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
-    }
-
-    const branchId = branchRow.id
-    console.log('[create-owner-account] Branch created:', branchId)
-
-    // ── Step 4: Upsert user profile ──────────────────────────────────────────
+    // ── Step 3: Upsert user profile ──────────────────────────────────────────
+    // No default branch is created — owner will add branches from Settings
     const { error: profileUpsertErr } = await adminClient
       .from('user_profiles')
       .upsert({
         id:         newUserId,
         role:       'owner',
         tenant_id:  tenantId,
-        branch_id:  branchId,
         full_name:  company_name.trim(),
         email:      normalizedEmail,
         is_active:  true,
@@ -202,6 +175,9 @@ Deno.serve(async (req: Request) => {
     const { error: linkErr } = await adminClient.auth.admin.generateLink({
       type:  'recovery',
       email: normalizedEmail,
+      options: {
+        redirectTo: 'https://dafra.vercel.app/reset-password',
+      },
     })
 
     if (linkErr) {
@@ -214,7 +190,6 @@ Deno.serve(async (req: Request) => {
     const response: Record<string, unknown> = {
       user_id:   newUserId,
       tenant_id: tenantId,
-      branch_id: branchId,
       email:     normalizedEmail,
     }
     if (emailWarning) response.warning = emailWarning

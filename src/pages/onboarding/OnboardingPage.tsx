@@ -10,19 +10,15 @@ import type { SubscriptionPlan } from '@/types'
 /* ── Types ──────────────────────────────────────────────────── */
 
 interface OnboardingData {
-  company_name:    string
-  company_name_ar: string
-  vat_number:      string
-  cr_number:       string
-  city:            string
-  phone:           string
-  website:         string
-  plan_id:         string
+  company_name: string
+  city:         string
+  phone:        string
+  website:      string
+  plan_id:      string
 }
 
 const INITIAL: OnboardingData = {
-  company_name: '', company_name_ar: '',
-  vat_number: '', cr_number: '',
+  company_name: '',
   city: '', phone: '', website: '',
   plan_id: '',
 }
@@ -91,28 +87,11 @@ function Step1({
   const set = (k: keyof OnboardingData) => (e: React.ChangeEvent<HTMLInputElement>) =>
     onChange(k, e.target.value)
 
-  const vatError = data.vat_number.trim() && !/^3\d{13}3$/.test(data.vat_number.trim())
-    ? 'Must be 15 digits, starting and ending with 3'
-    : null
-
   return (
     <div>
       <SectionLabel>Business identity</SectionLabel>
-      <div className="grid grid-cols-2 gap-3">
-        <Input label="Business Name (English)" value={data.company_name} onChange={set('company_name')}
-          placeholder="Al-Faris Trading Co." required />
-        <Input label="Business Name (Arabic)" value={data.company_name_ar} onChange={set('company_name_ar')}
-          placeholder="شركة الفارس التجارية" />
-      </div>
-      <div className="grid grid-cols-2 gap-3 mt-3">
-        <div>
-          <Input label="VAT Registration Number" value={data.vat_number} onChange={set('vat_number')}
-            placeholder="301234567890123" maxLength={15} helperText="15-digit Saudi VAT number" required />
-          {vatError && <p className="text-[11px] text-red-500 mt-1">{vatError}</p>}
-        </div>
-        <Input label="CR Number (optional)" value={data.cr_number} onChange={set('cr_number')}
-          placeholder="1234567890" />
-      </div>
+      <Input label="Business / Company Name" value={data.company_name} onChange={set('company_name')}
+        placeholder="Al-Faris Trading Co." required />
 
       <SectionLabel>Location &amp; contact</SectionLabel>
       <div className="grid grid-cols-2 gap-3">
@@ -310,7 +289,6 @@ export default function OnboardingPage() {
   const canContinue = () => {
     if (step === 1) return (
       data.company_name.trim().length > 0 &&
-      /^3\d{13}3$/.test(data.vat_number.trim()) &&
       data.city.trim().length > 0 &&
       data.phone.trim().length > 0
     )
@@ -324,9 +302,9 @@ export default function OnboardingPage() {
     try {
       const { error } = await (supabase.rpc as any)('complete_onboarding', {
         p_company_name:    data.company_name.trim(),
-        p_company_name_ar: data.company_name_ar.trim(),
-        p_vat_number:      data.vat_number.trim(),
-        p_cr_number:       data.cr_number.trim(),
+        p_company_name_ar: '',
+        p_vat_number:      '',
+        p_cr_number:       '',
         p_city:            data.city.trim(),
         p_phone:           data.phone.trim(),
         p_website:         data.website.trim(),

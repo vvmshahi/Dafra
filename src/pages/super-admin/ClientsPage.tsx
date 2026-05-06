@@ -162,8 +162,6 @@ function CreateAccountModal({ onCreated, onCancel }: {
 
   const [companyName,   setCompanyName]   = useState('')
   const [companyNameAr, setCompanyNameAr] = useState('')
-  const [vatNumber,     setVatNumber]     = useState('')
-  const [crNumber,      setCrNumber]      = useState('')
   const [email,         setEmail]         = useState('')
   const [phone,         setPhone]         = useState('')
   const [city,          setCity]          = useState('')
@@ -208,7 +206,6 @@ function CreateAccountModal({ onCreated, onCancel }: {
     setError('')
     setWarning('')
     if (!companyName.trim()) { setError('Business name is required'); return }
-    if (!vatNumber.trim())   { setError('VAT number is required');    return }
     if (!email.trim())       { setError('Owner email is required');   return }
     if (!planId)             { setError('Select a plan');             return }
 
@@ -218,8 +215,6 @@ function CreateAccountModal({ onCreated, onCancel }: {
         body: {
           company_name:    companyName.trim(),
           company_name_ar: companyNameAr.trim() || null,
-          vat_number:      vatNumber.trim(),
-          cr_number:       crNumber.trim() || null,
           email:           email.trim().toLowerCase(),
           phone:           phone.trim() || null,
           city:            city.trim() || null,
@@ -278,16 +273,6 @@ function CreateAccountModal({ onCreated, onCancel }: {
                   <label className="block text-xs font-medium text-gray-700 mb-1.5">Business Name (Arabic)</label>
                   <input value={companyNameAr} onChange={e => setCompanyNameAr(e.target.value)}
                     className="input w-full text-sm h-9" dir="rtl" placeholder="شركة الفارس" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">VAT Number *</label>
-                  <input value={vatNumber} onChange={e => setVatNumber(e.target.value)}
-                    className="input w-full text-sm h-9 font-mono" placeholder="301234567890123" maxLength={15} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">CR Number</label>
-                  <input value={crNumber} onChange={e => setCrNumber(e.target.value)}
-                    className="input w-full text-sm h-9" placeholder="1234567890" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1.5">City</label>
