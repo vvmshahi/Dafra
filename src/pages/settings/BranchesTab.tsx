@@ -141,10 +141,11 @@ function useSection(initial = true) {
 /* ── Drawer ──────────────────────────────────────────────────── */
 
 function BranchDrawer({
-  branch, tenantId, onClose, onSaved, onRefresh, onResetPassword,
+  branch, tenantId, isPhase2, onClose, onSaved, onRefresh, onResetPassword,
 }: {
   branch: Branch | null
   tenantId: string
+  isPhase2: boolean
   onClose: () => void
   onSaved: () => void
   onRefresh?: () => void
@@ -275,7 +276,7 @@ function BranchDrawer({
         receipt_footer:   form.receipt_footer.trim() || null,
         show_logo:        form.show_logo,
         invoice_language: form.invoice_language,
-        zatca_phase:      form.zatca_phase,
+        zatca_phase:      isNew ? (isPhase2 ? 2 : 1) : form.zatca_phase,
         is_active:        form.is_active,
         is_main_branch:   form.is_main_branch,
         // Store the login email on the branch record so the owner can see it
@@ -532,23 +533,28 @@ function BranchDrawer({
               color="text-violet-600" bg="bg-violet-50" />
             {zatca.open && (
               <div className="px-5 py-4 space-y-4">
-                <div>
-                  <label className="label">ZATCA Phase</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {([1, 2] as const).map(phase => (
-                      <button key={phase} type="button" onClick={() => set('zatca_phase')(phase)}
-                        className={`border rounded-xl px-4 py-3 text-left transition-all ${
-                          form.zatca_phase === phase
-                            ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}>
-                        <p className="text-sm font-semibold text-gray-800">Phase {phase}</p>
-                        <p className="text-[11px] text-gray-400 mt-0.5">
-                          {phase === 1 ? 'QR Code (TLV) generation' : 'UBL 2.1 e-invoice + clearance'}
-                        </p>
-                      </button>
-                    ))}
+                {/* Phase indicator — read-only, derived from subscription plan */}
+                <div className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-xl px-4 py-3">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-700">
+                      {isNew
+                        ? `New branch will be ${isPhase2 ? 'Phase 2' : 'Phase 1'}`
+                        : `Phase ${form.zatca_phase}`
+                      }
+                    </p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      {(isNew ? isPhase2 : form.zatca_phase === 2)
+                        ? 'UBL 2.1 e-invoice + ZATCA clearance — set by your plan'
+                        : 'QR Code (TLV) generation — set by your plan'}
+                    </p>
                   </div>
+                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                    (isNew ? isPhase2 : form.zatca_phase === 2)
+                      ? 'bg-violet-100 text-violet-700'
+                      : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    Phase {isNew ? (isPhase2 ? 2 : 1) : form.zatca_phase}
+                  </span>
                 </div>
 
                 {!isNew && (
@@ -936,11 +942,26 @@ export default function BranchesTab() {
       setLoading(false)
       return
     }
-    setBranches((data as Branch[]) ?? [])
+    const loaded = (data as Branch[]) ?? []
+    setBranches(loaded)
     setLoading(false)
+    return loaded
   }
 
   useEffect(() => { load() }, [profile?.tenant_id])
+
+  // FIX 4: auto-upgrade existing Phase 1 branches when owner is on Phase 2 plan
+  useEffect(() => {
+    if (!sub.isPhase2 || !profile?.tenant_id || sub.status === 'loading') return
+    ;(supabase as any)
+      .from('branches')
+      .update({ zatca_phase: 2 })
+      .eq('tenant_id', profile.tenant_id)
+      .eq('zatca_phase', 1)
+      .then(({ error }: { error: any }) => {
+        if (!error) load()
+      })
+  }, [sub.isPhase2, sub.status, profile?.tenant_id])
 
   const tenantId = profile?.tenant_id ?? ''
 
@@ -1030,6 +1051,7 @@ export default function BranchesTab() {
         <BranchDrawer
           branch={drawerBranch === 'new' ? null : drawerBranch}
           tenantId={tenantId}
+          isPhase2={sub.isPhase2}
           onClose={() => setDrawer(null)}
           onSaved={() => { setDrawer(null); load() }}
           onRefresh={load}

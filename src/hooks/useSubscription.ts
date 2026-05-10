@@ -8,13 +8,14 @@ export interface SubscriptionState {
   showWarning:     boolean
   daysUntilExpiry: number
   isLifetimeFree:  boolean
+  isPhase2:        boolean
   plan:            string
   maxBranches:     number
 }
 
 const DEFAULT: SubscriptionState = {
   status: 'loading', isBlocked: false, showWarning: false,
-  daysUntilExpiry: 999, isLifetimeFree: false, plan: '', maxBranches: 1,
+  daysUntilExpiry: 999, isLifetimeFree: false, isPhase2: false, plan: '', maxBranches: 1,
 }
 
 export function useSubscription(): SubscriptionState {
@@ -32,7 +33,7 @@ export function useSubscription(): SubscriptionState {
       const [{ data: sub }, { data: tenant }] = await Promise.all([
         (supabase as any)
           .from('tenant_subscriptions')
-          .select('status, ends_at, trial_ends_at, cancelled_at, subscription_plans(name, max_branches)')
+          .select('status, ends_at, trial_ends_at, cancelled_at, subscription_plans(name, max_branches, features)')
           .eq('tenant_id', tid)
           .order('created_at', { ascending: false })
           .limit(1)
@@ -45,7 +46,7 @@ export function useSubscription(): SubscriptionState {
       ])
 
       if (!sub) {
-        setState({ ...DEFAULT, status: 'active' })
+        setState({ ...DEFAULT, status: 'active', isPhase2: false })
         return
       }
 
@@ -54,6 +55,8 @@ export function useSubscription(): SubscriptionState {
       const planName    = sub.subscription_plans?.name ?? ''
       // Per-client limit (set by super admin) takes priority over plan default
       const maxBranches = tenant?.max_branches ?? sub.subscription_plans?.max_branches ?? 1
+      const features    = sub.subscription_plans?.features ?? []
+      const isPhase2    = Array.isArray(features) ? features.includes('zatca_phase2') : false
 
       const isLifetimeFree = sub.status === 'active' && endsAt === null
       const isSuspended    = tenant?.is_active === false || sub.status === 'cancelled'
@@ -87,6 +90,7 @@ export function useSubscription(): SubscriptionState {
         showWarning,
         daysUntilExpiry: isInGrace ? daysInGrace : Math.max(0, daysUntilExpiry),
         isLifetimeFree,
+        isPhase2,
         plan: planName,
         maxBranches,
       })

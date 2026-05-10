@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import { useSubscription } from '@/hooks/useSubscription'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 
@@ -14,6 +15,7 @@ const EMAIL_RE  = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export default function SetupBranchPage() {
   const navigate = useNavigate()
   const { profile, refreshBranchCount } = useAuth()
+  const { isPhase2 } = useSubscription()
 
   const [name,     setName]     = useState('')
   const [vat,      setVat]      = useState('')
@@ -86,7 +88,7 @@ export default function SetupBranchPage() {
           invoice_prefix:   'INV',
           invoice_language: 'both',
           show_logo:        true,
-          zatca_phase:      1,
+          zatca_phase:      isPhase2 ? 2 : 1,
           branch_email:     loginEmail.trim().toLowerCase(),
         })
         .select('id')
