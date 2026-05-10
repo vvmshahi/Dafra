@@ -3,7 +3,7 @@ import {
   Plus, Pencil, Trash2, Building2, CheckCircle2, X,
   Upload, Globe, Phone, Mail, MapPin, FileText,
   ReceiptText, ShieldCheck, ChevronDown, ChevronRight,
-  Star, KeyRound, LogIn,
+  Star, KeyRound, LogIn, Loader2, AlertTriangle,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -46,6 +46,7 @@ type BranchForm = {
   // branch login (new branches only)
   login_email: string
   login_password: string
+  login_confirm_password: string
 }
 
 const EMPTY_FORM: BranchForm = {
@@ -65,6 +66,7 @@ const EMPTY_FORM: BranchForm = {
   is_main_branch: false,
   login_email: '',
   login_password: '',
+  login_confirm_password: '',
 }
 
 /* ── Helpers ─────────────────────────────────────────────────── */
@@ -191,6 +193,7 @@ function BranchDrawer({
   const CR_RE     = /^[a-zA-Z0-9]+$/
   const BLDG_RE   = /^\d{4}$/
   const POSTAL_RE = /^\d{5}$/
+  const EMAIL_RE  = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
   // Pre-touch all fields when editing so errors show immediately
   const [touched, setTouched] = useState<Set<string>>(
@@ -208,6 +211,14 @@ function BranchDrawer({
     street:          !form.street.trim() ? 'Required' : null,
     city:            !form.city.trim() ? 'Required' : null,
     district:        !form.district.trim() ? 'Required' : null,
+    ...(isNew ? {
+      login_email:            !form.login_email.trim() ? 'Branch email is required'
+                              : !EMAIL_RE.test(form.login_email.trim()) ? 'Enter a valid email address' : null,
+      login_password:         !form.login_password ? 'Password is required'
+                              : form.login_password.length < 8 ? 'Must be at least 8 characters' : null,
+      login_confirm_password: !form.login_confirm_password ? 'Please confirm the password'
+                              : form.login_confirm_password !== form.login_password ? 'Passwords do not match' : null,
+    } : {}),
   }
   const hasErrors = Object.values(errs).some(Boolean)
   const fieldErr  = (k: string) => (touched.has(k) ? errs[k] : null)
@@ -287,22 +298,19 @@ function BranchDrawer({
         onRefresh?.()
 
         // Create the branch login user via edge function (no email confirmation)
-        if (form.login_email.trim()) {
-          const password = form.login_password.trim() || `Dafra@${Math.random().toString(36).slice(2, 10)}`
-          const { data: fnData, error: fnErr } = await supabase.functions.invoke('create-branch-user', {
-            body: {
-              email:     form.login_email.trim(),
-              password,
-              full_name: form.name.trim(),
-              tenant_id: tenantId,
-              branch_id: data.id,
-            },
-          })
-          const fnErrMsg = fnErr?.message ?? (fnData as any)?.error ?? null
-          if (fnErrMsg) {
-            setError(`Branch created! But login setup failed: ${fnErrMsg}. Click Cancel to close.`)
-            return  // Keep drawer open so owner sees the error; list already refreshed above
-          }
+        const { data: fnData, error: fnErr } = await supabase.functions.invoke('create-branch-user', {
+          body: {
+            email:     form.login_email.trim().toLowerCase(),
+            password:  form.login_password,
+            full_name: form.name.trim(),
+            tenant_id: tenantId,
+            branch_id: data.id,
+          },
+        })
+        const fnErrMsg = fnErr?.message ?? (fnData as any)?.error ?? null
+        if (fnErrMsg) {
+          setError(`Branch created! But login setup failed: ${fnErrMsg}. Click Cancel to close.`)
+          return  // Keep drawer open so owner sees the error; list already refreshed above
         }
       } else {
         const { error } = await q.from('branches').update(payload).eq('id', branch!.id)
@@ -600,14 +608,25 @@ function BranchDrawer({
                 color="text-indigo-600" bg="bg-indigo-50" />
               <div className="px-5 py-4 space-y-3">
                 <p className="text-xs text-gray-400">
-                  Optional — create a login so this branch can access the POS and branch dashboard.
-                  The owner sets the email and password directly. No email is sent to the branch.
+                  Set login credentials for this branch's POS terminal. No email is sent — share these directly with your staff.
                 </p>
-                <Input label="Branch Email" icon={Mail} type="email" value={form.login_email}
-                  onChange={e => set('login_email')(e.target.value)} placeholder="branch@company.com" />
-                <Input label="Password" icon={KeyRound} type="password" value={form.login_password}
-                  onChange={e => set('login_password')(e.target.value)} placeholder="Min. 8 characters"
-                  helperText="Leave blank to auto-generate" />
+                <div onBlur={() => touch('login_email')}>
+                  <Input label="Branch Email" icon={Mail} type="email" value={form.login_email}
+                    onChange={e => set('login_email')(e.target.value)} placeholder="branch@company.com" required />
+                  {fieldErr('login_email') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('login_email')}</p>}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div onBlur={() => touch('login_password')}>
+                    <Input label="Password" icon={KeyRound} type="password" value={form.login_password}
+                      onChange={e => set('login_password')(e.target.value)} placeholder="Min. 8 characters" required />
+                    {fieldErr('login_password') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('login_password')}</p>}
+                  </div>
+                  <div onBlur={() => touch('login_confirm_password')}>
+                    <Input label="Confirm Password" icon={KeyRound} type="password" value={form.login_confirm_password}
+                      onChange={e => set('login_confirm_password')(e.target.value)} placeholder="Repeat password" required />
+                    {fieldErr('login_confirm_password') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('login_confirm_password')}</p>}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -706,6 +725,117 @@ function ResetPasswordModal({ branch, onClose }: { branch: Branch; onClose: () =
   )
 }
 
+/* ── Delete confirm modal ────────────────────────────────────── */
+
+function DeleteConfirmModal({
+  branch,
+  onClose,
+  onDeleted,
+}: {
+  branch: Branch
+  onClose: () => void
+  onDeleted: () => void
+}) {
+  const [invoiceCount, setInvoiceCount] = useState<number | null>(null)
+  const [confirmName, setConfirmName]   = useState('')
+  const [deleting, setDeleting]         = useState(false)
+  const [error, setError]               = useState('')
+
+  useEffect(() => {
+    supabase
+      .from('invoices')
+      .select('id', { count: 'exact', head: true })
+      .eq('branch_id', branch.id)
+      .then(({ count }) => setInvoiceCount(count ?? 0))
+  }, [branch.id])
+
+  const hasInvoices = (invoiceCount ?? 0) > 0
+  const canDelete   = !hasInvoices || confirmName.trim() === branch.name.trim()
+
+  async function handleDelete() {
+    if (!canDelete) return
+    setDeleting(true)
+    setError('')
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke('delete-branch', {
+        body: { branchId: branch.id },
+      })
+      const errMsg = fnErr?.message ?? (data as any)?.error ?? null
+      if (errMsg) throw new Error(errMsg)
+      onDeleted()
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to delete branch')
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle size={15} className="text-red-500" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">Delete Branch</h2>
+              <p className="text-xs text-gray-400 mt-0.5">{branch.name}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        {invoiceCount === null ? (
+          <div className="flex justify-center py-6">
+            <Loader2 size={20} className="animate-spin text-gray-300" />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {hasInvoices ? (
+              <>
+                <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-xs text-red-700 space-y-1">
+                  <p className="font-semibold">This branch has {invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''}.</p>
+                  <p>All invoices, expenses, POS sessions, and the branch login will be permanently deleted. This cannot be undone.</p>
+                </div>
+                <div>
+                  <label className="label">Type <span className="font-mono font-bold text-gray-800">{branch.name}</span> to confirm</label>
+                  <input
+                    className="input mt-1.5"
+                    value={confirmName}
+                    onChange={e => setConfirmName(e.target.value)}
+                    placeholder={branch.name}
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-gray-600">
+                This will permanently delete <strong>{branch.name}</strong> and its login account. This cannot be undone.
+              </p>
+            )}
+
+            {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="ghost" onClick={onClose} disabled={deleting}>Cancel</Button>
+              <Button
+                type="button"
+                disabled={!canDelete || deleting}
+                loading={deleting}
+                onClick={handleDelete}
+                className="bg-red-600 hover:bg-red-700 text-white border-red-600"
+              >
+                Delete Branch
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /* ── Branch card ─────────────────────────────────────────────── */
 
 function BranchCard({
@@ -787,9 +917,9 @@ export default function BranchesTab() {
   const [branches, setBranches]     = useState<Branch[]>([])
   const [loading, setLoading]       = useState(true)
   const [loadError, setLoadError]   = useState('')
-  const [drawerBranch, setDrawer]   = useState<Branch | 'new' | null>(null)
-  const [deleting, setDeleting]     = useState<string | null>(null)
-  const [resetTarget, setResetTarget] = useState<Branch | null>(null)
+  const [drawerBranch, setDrawer]     = useState<Branch | 'new' | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Branch | null>(null)
+  const [resetTarget, setResetTarget]  = useState<Branch | null>(null)
 
   const load = async () => {
     if (!profile?.tenant_id) return
@@ -811,14 +941,6 @@ export default function BranchesTab() {
   }
 
   useEffect(() => { load() }, [profile?.tenant_id])
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this branch? This cannot be undone.')) return
-    setDeleting(id)
-    await supabase.from('branches').delete().eq('id', id)
-    await load()
-    setDeleting(null)
-  }
 
   const tenantId = profile?.tenant_id ?? ''
 
@@ -879,11 +1001,20 @@ export default function BranchesTab() {
               key={b.id}
               branch={b}
               onEdit={() => setDrawer(b)}
-              onDelete={() => !deleting && handleDelete(b.id)}
+              onDelete={() => setDeleteTarget(b)}
               onResetPassword={() => setResetTarget(b)}
             />
           ))}
         </div>
+      )}
+
+      {/* Delete confirm modal */}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          branch={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={() => { setDeleteTarget(null); load() }}
+        />
       )}
 
       {/* Reset password modal */}

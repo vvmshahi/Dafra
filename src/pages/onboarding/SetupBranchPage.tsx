@@ -9,6 +9,7 @@ const VAT_RE    = /^3\d{13}3$/
 const CR_RE     = /^[a-zA-Z0-9]+$/
 const BLDG_RE   = /^\d{4}$/
 const POSTAL_RE = /^\d{5}$/
+const EMAIL_RE  = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function SetupBranchPage() {
   const navigate = useNavigate()
@@ -23,6 +24,10 @@ export default function SetupBranchPage() {
   const [district, setDistrict] = useState('')
   const [city,     setCity]     = useState('')
   const [phone,    setPhone]    = useState('')
+
+  const [loginEmail,   setLoginEmail]   = useState('')
+  const [loginPwd,     setLoginPwd]     = useState('')
+  const [loginConfirm, setLoginConfirm] = useState('')
 
   const [touched, setTouched] = useState(false)
   const [saving,  setSaving]  = useState(false)
@@ -41,6 +46,12 @@ export default function SetupBranchPage() {
     street:   !street.trim()   ? 'Street name is required' : null,
     district: !district.trim() ? 'District is required' : null,
     city:     !city.trim()     ? 'City is required' : null,
+    loginEmail:   !loginEmail.trim()   ? 'Branch email is required'
+                  : !EMAIL_RE.test(loginEmail.trim()) ? 'Enter a valid email address' : null,
+    loginPwd:     !loginPwd             ? 'Password is required'
+                  : loginPwd.length < 8 ? 'Must be at least 8 characters' : null,
+    loginConfirm: !loginConfirm         ? 'Confirm your password'
+                  : loginConfirm !== loginPwd ? 'Passwords do not match' : null,
   }
   const hasErrors = Object.values(errs).some(Boolean)
   const fieldErr = (k: keyof typeof errs) => (touched ? errs[k] : null)
@@ -53,28 +64,49 @@ export default function SetupBranchPage() {
     setSaving(true)
     setError('')
     try {
-      const { error: insertErr } = await (supabase as any).from('branches').insert({
-        tenant_id:        profile!.tenant_id,
-        name:             name.trim(),
-        vat_number:       vat.trim(),
-        cr_number:        cr.trim(),
-        building_number:  bldg.trim(),
-        postal_code:      postal.trim(),
-        street:           street.trim(),
-        district:         district.trim(),
-        city:             city.trim(),
-        phone:            phone.trim() || null,
-        country:          'SA',
-        is_main_branch:   true,
-        is_active:        true,
-        invoice_counter:  0,
-        vat_mode:         'exclusive',
-        invoice_prefix:   'INV',
-        invoice_language: 'both',
-        show_logo:        true,
-        zatca_phase:      1,
-      })
+      // Create branch and get its ID
+      const { data: branchData, error: insertErr } = await (supabase as any)
+        .from('branches')
+        .insert({
+          tenant_id:        profile!.tenant_id,
+          name:             name.trim(),
+          vat_number:       vat.trim(),
+          cr_number:        cr.trim(),
+          building_number:  bldg.trim(),
+          postal_code:      postal.trim(),
+          street:           street.trim(),
+          district:         district.trim(),
+          city:             city.trim(),
+          phone:            phone.trim() || null,
+          country:          'SA',
+          is_main_branch:   true,
+          is_active:        true,
+          invoice_counter:  0,
+          vat_mode:         'exclusive',
+          invoice_prefix:   'INV',
+          invoice_language: 'both',
+          show_logo:        true,
+          zatca_phase:      1,
+          branch_email:     loginEmail.trim().toLowerCase(),
+        })
+        .select('id')
+        .single()
+
       if (insertErr) throw insertErr
+
+      // Create the branch user (no email sent — owner sets credentials directly)
+      const { data: fnData, error: fnErr } = await supabase.functions.invoke('create-branch-user', {
+        body: {
+          email:     loginEmail.trim().toLowerCase(),
+          password:  loginPwd,
+          full_name: name.trim(),
+          tenant_id: profile!.tenant_id,
+          branch_id: branchData.id,
+        },
+      })
+
+      const fnErrMsg = fnErr?.message ?? (fnData as any)?.error ?? null
+      if (fnErrMsg) throw new Error(`Branch created but login setup failed: ${fnErrMsg}`)
 
       await refreshBranchCount()
       navigate('/dashboard', { replace: true })
@@ -223,6 +255,51 @@ export default function SetupBranchPage() {
                   onChange={e => setPhone(e.target.value)}
                   placeholder="+966 5x xxx xxxx"
                 />
+              </div>
+
+              {/* Branch Login */}
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Branch Login</p>
+                <p className="text-xs text-gray-400 mb-3">
+                  Create the login for this branch's POS terminal. No email is sent — share these credentials directly with your staff.
+                </p>
+                <div className="space-y-3">
+                  <div>
+                    <Input
+                      label="Branch Email"
+                      type="email"
+                      value={loginEmail}
+                      onChange={e => setLoginEmail(e.target.value)}
+                      placeholder="branch@company.com"
+                      required
+                    />
+                    {fieldErr('loginEmail') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('loginEmail')}</p>}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Input
+                        label="Password"
+                        type="password"
+                        value={loginPwd}
+                        onChange={e => setLoginPwd(e.target.value)}
+                        placeholder="Min. 8 characters"
+                        required
+                      />
+                      {fieldErr('loginPwd') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('loginPwd')}</p>}
+                    </div>
+                    <div>
+                      <Input
+                        label="Confirm Password"
+                        type="password"
+                        value={loginConfirm}
+                        onChange={e => setLoginConfirm(e.target.value)}
+                        placeholder="Repeat password"
+                        required
+                      />
+                      {fieldErr('loginConfirm') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('loginConfirm')}</p>}
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {error && (
