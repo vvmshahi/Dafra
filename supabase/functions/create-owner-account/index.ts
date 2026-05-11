@@ -214,7 +214,7 @@ Deno.serve(async (req: Request) => {
       type:  'recovery',
       email: normalizedEmail,
       options: {
-        redirectTo: 'https://meem.vercel.app/reset-password',
+        redirectTo: 'https://dafra.vercel.app/reset-password',
       },
     })
 
