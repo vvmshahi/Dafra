@@ -8,6 +8,7 @@ import { buildZatcaQR, decodeTLV } from '@/lib/zatca/qr'
 import { toSaudiTime } from '@/lib/utils/date'
 import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
 import type { Invoice, InvoiceItem, Payment, Branch } from '@/types/database'
+import { printSilent } from '@/lib/electron'
 
 function WhatsAppIcon({ size = 13 }: { size?: number }) {
   return (
@@ -238,14 +239,14 @@ export default function InvoiceDetailPage() {
   // Auto-print when ?print=1 is in the URL
   useEffect(() => {
     if (!autoPrint || loading || !invoice || !branch) return
-    const t = setTimeout(() => window.print(), 500)
+    const t = setTimeout(() => printSilent(), 500)
     return () => clearTimeout(t)
   }, [autoPrint, loading, invoice, branch])
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
   function handlePrintA4() {
-    window.print()
+    printSilent()
   }
 
   function handlePrintThermal() {

@@ -1,20 +1,28 @@
 import { useState } from 'react'
-import { Building2, ShieldCheck, CreditCard, UserCircle } from 'lucide-react'
+import { Building2, ShieldCheck, CreditCard, UserCircle, Printer } from 'lucide-react'
 import BranchesTab     from './BranchesTab'
 import ZatcaTab        from './ZatcaTab'
 import SubscriptionTab from './SubscriptionTab'
 import AccountTab      from './AccountTab'
+import PrinterTab      from './PrinterTab'
+import { isElectron }  from '@/lib/electron'
 
 /* ── Tab config ─────────────────────────────────────────────── */
 
-type TabId = 'branches' | 'zatca' | 'subscription' | 'account'
+type TabId = 'branches' | 'zatca' | 'subscription' | 'account' | 'printer'
 
-const TABS: { id: TabId; label: string; icon: React.ElementType; desc: string }[] = [
+const BASE_TABS: { id: TabId; label: string; icon: React.ElementType; desc: string }[] = [
   { id: 'branches',     label: 'Branches',     icon: Building2,   desc: 'Locations, invoice settings & ZATCA config' },
   { id: 'zatca',        label: 'ZATCA',        icon: ShieldCheck, desc: 'Certificates & e-invoicing compliance'     },
   { id: 'subscription', label: 'Subscription', icon: CreditCard,  desc: 'Plan, billing & usage limits'             },
   { id: 'account',      label: 'Account',      icon: UserCircle,  desc: 'Profile, name, phone & password'          },
 ]
+
+const ELECTRON_TABS: { id: TabId; label: string; icon: React.ElementType; desc: string }[] = [
+  { id: 'printer', label: 'Printer', icon: Printer, desc: 'Default receipt printer for silent printing' },
+]
+
+const TABS = isElectron() ? [...BASE_TABS, ...ELECTRON_TABS] : BASE_TABS
 
 /* ── Page ───────────────────────────────────────────────────── */
 
@@ -65,6 +73,7 @@ export default function SettingsPage() {
       {active === 'zatca'        && <ZatcaTab />}
       {active === 'subscription' && <SubscriptionTab />}
       {active === 'account'      && <AccountTab />}
+      {active === 'printer'      && <PrinterTab />}
     </div>
   )
 }

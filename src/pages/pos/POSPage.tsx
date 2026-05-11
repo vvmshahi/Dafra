@@ -21,6 +21,7 @@ import { usePosSession } from '@/hooks/usePosSession'
 import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
 import { MeemLogo } from '@/components/MeemLogo'
+import { printSilent } from '@/lib/electron'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -281,7 +282,7 @@ ${lines}
   })
   const invTime = toSaudiTime(receipt.createdAt)
 
-  function printPosA4() {
+  async function printPosA4() {
     const existing = document.getElementById('pos-pdf-print-style')
     existing?.remove()
     const s = document.createElement('style')
@@ -307,7 +308,7 @@ ${lines}
       }
     `
     document.head.appendChild(s)
-    window.print()
+    await printSilent()
     s.remove()
   }
 
