@@ -32,7 +32,7 @@ const OIDs = {
 
 export interface ZatcaCSRParams {
   commonName:   string  // EGS unit name
-  branchId:     string  // used to build EGS serial "1-Dafra|2-POS|3-{branchId}"
+  branchId:     string  // used to build EGS serial "1-Meem|2-POS|3-{branchId}"
   vatNumber:    string  // 15-digit VAT number (SAN userId)
   branchName:   string  // OU
   businessName: string  // O (legal name)
@@ -48,7 +48,7 @@ export async function generateCSR(
   keyPair: ZatcaKeyPair,
 ): Promise<string> {
   console.log('[ZATCA CSR] version: 5.0 — pure TypeScript ASN.1')
-  const egsSn = `1-Dafra|2-POS|3-${params.branchId}`
+  const egsSn = `1-Meem|2-POS|3-${params.branchId}`
 
   // Subject: C, O, OU, CN
   const subject = seq([

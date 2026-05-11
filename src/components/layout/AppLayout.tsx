@@ -58,7 +58,7 @@ function SubscriptionBanner() {
 
 function getInitialCollapsed(): boolean {
   try {
-    const saved = localStorage.getItem('dafra-sidebar-collapsed')
+    const saved = localStorage.getItem('meem-sidebar-collapsed')
     if (saved !== null) return saved === 'true'
   } catch {}
   return window.matchMedia('(max-width: 767px)').matches
@@ -70,7 +70,7 @@ export default function AppLayout() {
   function toggle() {
     setCollapsed(prev => {
       const next = !prev
-      try { localStorage.setItem('dafra-sidebar-collapsed', String(next)) } catch {}
+      try { localStorage.setItem('meem-sidebar-collapsed', String(next)) } catch {}
       return next
     })
   }

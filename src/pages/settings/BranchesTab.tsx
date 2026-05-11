@@ -361,6 +361,14 @@ function BranchDrawer({
         {/* Form */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-0">
 
+          {/* Info note */}
+          <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 mb-3">
+            <span className="text-blue-500 flex-shrink-0 mt-0.5 text-sm">ℹ️</span>
+            <p className="text-[11px] text-blue-700 leading-relaxed">
+              Each branch requires its own CR number and address. The Company Name and VAT number are shared across all your branches.
+            </p>
+          </div>
+
           {/* ── BRANCH IDENTITY ───────────────────────── */}
           <div className={sectionClass(identity.open)}>
             <SectionHeader icon={Building2} title="Branch Identity" open={identity.open} toggle={identity.toggle} />
@@ -370,14 +378,30 @@ function BranchDrawer({
                   <Input label="Branch Name (English)" value={form.name} onChange={e => set('name')(e.target.value)} placeholder="Main Branch" required />
                   <Input label="Branch Name (Arabic)" value={form.name_ar} onChange={e => set('name_ar')(e.target.value)} placeholder="الفرع الرئيسي" />
                 </div>
-                <Input label="Company Name" value={form.business_name} onChange={e => set('business_name')(e.target.value)} placeholder="Al-Faris Trading Co." />
+                <Input
+                  label="Company Name (Seller Name)"
+                  value={form.business_name}
+                  onChange={e => set('business_name')(e.target.value)}
+                  helperText="Your registered business name. This appears on ZATCA invoices and certificates."
+                />
                 <div className="grid grid-cols-2 gap-3">
                   <div onBlur={() => touch('vat_number')}>
-                    <Input label="VAT Registration Number" value={form.vat_number} onChange={e => set('vat_number')(e.target.value)} placeholder="301234567890123" maxLength={15} />
+                    <Input
+                      label="VAT Registration Number"
+                      value={form.vat_number}
+                      onChange={e => set('vat_number')(e.target.value)}
+                      maxLength={15}
+                      helperText="From your VAT Registration Certificate. Must be 15 digits starting and ending with 3."
+                    />
                     {fieldErr('vat_number') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('vat_number')}</p>}
                   </div>
                   <div onBlur={() => touch('cr_number')}>
-                    <Input label="CR Number" value={form.cr_number} onChange={e => set('cr_number')(e.target.value)} placeholder="1234567890" />
+                    <Input
+                      label="CR / License Number"
+                      value={form.cr_number}
+                      onChange={e => set('cr_number')(e.target.value)}
+                      helperText="Commercial Registration number for this specific branch. Each branch has its own CR."
+                    />
                     {fieldErr('cr_number') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('cr_number')}</p>}
                   </div>
                 </div>
@@ -408,7 +432,12 @@ function BranchDrawer({
               <div className="px-5 py-4 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div onBlur={() => touch('building_number')}>
-                    <Input label="Building Number" value={form.building_number} onChange={e => set('building_number')(e.target.value)} placeholder="0056" helperText="Use leading zeros e.g. 0056" />
+                    <Input
+                      label="Building Number"
+                      value={form.building_number}
+                      onChange={e => set('building_number')(e.target.value)}
+                      helperText="4-digit building number from your Saudi National Address (العنوان الوطني). Use leading zeros e.g. 0056"
+                    />
                     {fieldErr('building_number') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('building_number')}</p>}
                   </div>
                   <div onBlur={() => touch('street')}>
@@ -418,7 +447,12 @@ function BranchDrawer({
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div onBlur={() => touch('district')}>
-                    <Input label="District" value={form.district} onChange={e => set('district')(e.target.value)} placeholder="Al-Olaya" />
+                    <Input
+                      label="District"
+                      value={form.district}
+                      onChange={e => set('district')(e.target.value)}
+                      helperText="Neighbourhood or district name as in your registered address."
+                    />
                     {fieldErr('district') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('district')}</p>}
                   </div>
                   <div onBlur={() => touch('city')}>
@@ -440,7 +474,12 @@ function BranchDrawer({
                     </select>
                   </div>
                   <div onBlur={() => touch('postal_code')}>
-                    <Input label="Postal Code" value={form.postal_code} onChange={e => set('postal_code')(e.target.value)} placeholder="12345" />
+                    <Input
+                      label="Postal Code"
+                      value={form.postal_code}
+                      onChange={e => set('postal_code')(e.target.value)}
+                      helperText="5-digit postal code from your Saudi National Address document."
+                    />
                     {fieldErr('postal_code') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('postal_code')}</p>}
                   </div>
                 </div>

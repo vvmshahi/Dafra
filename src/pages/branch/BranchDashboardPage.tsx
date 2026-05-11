@@ -13,6 +13,7 @@ import { saudiNow, saudiDateStr, saudiTodayRange } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
+import { MeemLogo } from '@/components/MeemLogo'
 
 const db = () => supabase as any
 
@@ -176,7 +177,7 @@ export default function BranchDashboardPage() {
   }, [tid, bid])
 
   const loadLowStock = useCallback(async () => {
-    if (!tid) { setLowStockLoading(false); return }
+    if (!tid || !bid) { setLowStockLoading(false); return }
     setLowStockLoading(true)
     const { data } = await db()
       .from('products')
@@ -214,14 +215,11 @@ export default function BranchDashboardPage() {
 
       {/* Header */}
       <header className="bg-[#0F2419] px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gold-500 flex items-center justify-center flex-shrink-0">
-            <span className="text-[#0F2419] font-black text-base leading-none" style={{ fontFamily: 'Cairo, sans-serif' }}>د</span>
-          </div>
-          <div>
-            <p className="text-white font-bold text-lg leading-none" style={{ fontFamily: 'Cairo, sans-serif' }}>دفرة</p>
-            <p className="text-white/50 text-xs mt-0.5">{branchName || tenant?.name}</p>
-          </div>
+        <div className="flex items-center gap-4">
+          <MeemLogo size="md" />
+          {(branchName || tenant?.name) && (
+            <span className="text-white/50 text-xs">{branchName || tenant?.name}</span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {zatcaPhase === 2 && hasActiveCert ? (

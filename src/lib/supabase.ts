@@ -10,7 +10,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
-    storageKey: 'dafra-auth',
+    storageKey: 'meem-auth',
     autoRefreshToken: true,
     detectSessionInUrl: true,
   },

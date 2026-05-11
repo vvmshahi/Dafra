@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { MeemLogo } from '@/components/MeemLogo'
 import type { SubscriptionPlan } from '@/types'
 
 /* ── Types ──────────────────────────────────────────────────── */
@@ -234,7 +235,7 @@ function Step2({
 
 /* ── Main page ──────────────────────────────────────────────── */
 
-const STORAGE_KEY = (userId: string) => `dafra_onboarding_${userId}`
+const STORAGE_KEY = (userId: string) => `meem_onboarding_${userId}`
 
 export default function OnboardingPage() {
   const navigate = useNavigate()
@@ -334,14 +335,8 @@ export default function OnboardingPage() {
 
       {/* Dark green header */}
       <div className="bg-[#0F2419] px-6 py-8">
-        <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="w-10 h-10 rounded-xl bg-gold-500 flex items-center justify-center shadow-lg">
-            <span className="text-[#0F2419] font-black text-xl" style={{ fontFamily: 'Cairo, sans-serif' }}>د</span>
-          </div>
-          <div>
-            <p className="text-white font-bold text-2xl leading-none" style={{ fontFamily: 'Cairo, sans-serif' }}>دفرة</p>
-            <p className="text-gold-400 text-xs tracking-widest uppercase">Dafra</p>
-          </div>
+        <div className="flex justify-center mb-8">
+          <MeemLogo size="lg" />
         </div>
 
         <StepIndicator current={step} />

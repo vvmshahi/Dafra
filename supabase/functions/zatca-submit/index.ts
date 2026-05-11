@@ -385,8 +385,8 @@ function buildInvoiceXMLData(inv: any, branch: any, items: any[], customer: any,
     issueTime,
     counterValue:    inv.zatca_counter_number ?? 1,
     prevInvoiceHash: inv.zatca_prev_invoice_hash ?? FIRST_INVOICE_HASH,
-    sellerName:      branch.business_name,
-    sellerNameAr:    branch.business_name_ar ?? branch.business_name,
+    sellerName:      branch.business_name || branch.name || '',
+    sellerNameAr:    branch.business_name_ar ?? branch.business_name ?? branch.name ?? '',
     sellerVat:       branch.vat_number ?? '',
     sellerCrn:       branch.cr_number ?? undefined,
     sellerAddress: {
@@ -741,10 +741,31 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     return { invoiceStatus: inv.zatca_status }
   }
 
-  const { data: branch } = await db.from('branches').select('*').eq('id', inv.branch_id).single()
+  const { data: branch } = await db
+    .from('branches')
+    .select(`
+      id, name, business_name, display_name,
+      vat_number, cr_number, building_number,
+      street, district, city, postal_code, country,
+      phone, zatca_phase, show_logo, logo_url,
+      receipt_footer, show_footer, show_cash_change,
+      print_mode, show_website, website,
+      show_email, email
+    `)
+    .eq('id', inv.branch_id)
+    .single()
+
   if (!branch) {
     console.error('[zatca-submit] branch not found:', inv.branch_id)
     return { invoiceStatus: 'error' }
+  }
+
+  const sellerName = branch.business_name || branch.name || ''
+  if (!sellerName) {
+    console.error('[zatca-submit] no seller name for branch:', inv.branch_id)
+    await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+    await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, 'missing seller name')
+    return { invoiceStatus: 'failed' }
   }
 
   const { data: cert, error: certErr } = await db

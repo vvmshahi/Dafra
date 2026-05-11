@@ -221,7 +221,9 @@ function Stepper({ current }: { current: OnboardingStep }) {
   )
 }
 
-/* ── Step 1: Generate Security Certificate (FIX 1) ───────────────────────── */
+/* ── Step 1: Generate Security Certificate (FIX 1 + FIX 2) ──────────────── */
+
+type FieldCheck = { label: string; valid: boolean; hint: string }
 
 function Step1GenerateKeys({
   branch, environment, onDone,
@@ -235,29 +237,73 @@ function Step1GenerateKeys({
   const [error, setError]     = useState<string | null>(null)
   const [csrPem, setCsrPem]   = useState<string | null>(null)
 
-  const missingData: string[] = []
-  if (!branch.vat_number || !/^3\d{13}3$/.test(branch.vat_number))
-    missingData.push('Valid VAT number (15 digits, starts & ends with 3)')
-  if (!branch.building_number || !/^\d{4}$/.test(branch.building_number))
-    missingData.push('Building number (exactly 4 digits)')
-  if (!branch.postal_code || !/^\d{5}$/.test(branch.postal_code))
-    missingData.push('Postal code (exactly 5 digits)')
-  const branchDataValid = missingData.length === 0
+  const fieldChecks: FieldCheck[] = [
+    {
+      label: 'Company Name',
+      valid: !!((branch.business_name || branch.name) ?? '').trim(),
+      hint:  'missing',
+    },
+    {
+      label: 'VAT Number',
+      valid: !!(branch.vat_number && /^3\d{13}3$/.test(branch.vat_number)),
+      hint:  'must be 15 digits, starting and ending with 3',
+    },
+    {
+      label: 'CR / License Number',
+      valid: !!(branch.cr_number && /^[a-zA-Z0-9]+$/.test(branch.cr_number)),
+      hint:  'alphanumeric characters only',
+    },
+    {
+      label: 'Building Number',
+      valid: !!(branch.building_number && /^\d{4}$/.test(branch.building_number)),
+      hint:  'must be exactly 4 digits',
+    },
+    {
+      label: 'Postal Code',
+      valid: !!(branch.postal_code && /^\d{5}$/.test(branch.postal_code)),
+      hint:  'must be exactly 5 digits',
+    },
+    {
+      label: 'Street Name',
+      valid: !!branch.street?.trim(),
+      hint:  'missing',
+    },
+    {
+      label: 'City',
+      valid: !!branch.city?.trim(),
+      hint:  'missing',
+    },
+    {
+      label: 'District',
+      valid: !!branch.district?.trim(),
+      hint:  'missing',
+    },
+  ]
+  const invalidFields   = fieldChecks.filter(f => !f.valid)
+  const branchDataValid = invalidFields.length === 0
+
+  const navigateToBranches = () => {
+    const el = document.querySelector('[data-tab="branches"]') as HTMLElement | null
+    el?.click()
+  }
 
   const generate = async () => {
     setLoading(true)
     setError(null)
     try {
-      const keyPair = await generateKeyPair()
+      const keyPair      = await generateKeyPair()
+      const businessName = branch.business_name || branch.name
+      const location     = [branch.building_number, branch.street, branch.district, branch.city, branch.postal_code]
+        .filter(Boolean).join(', ') || branch.city || 'Riyadh, SA'
       const csr = await generateCSR({
-        commonName:   branch.name,
+        commonName:   businessName,
         branchId:     branch.id,
-        vatNumber:    branch.vat_number ?? profile?.tenant_id ?? '',
+        vatNumber:    branch.vat_number ?? '',
         branchName:   branch.name,
-        businessName: branch.name,
+        businessName: businessName,
         invoiceType:  '1100',
-        location:     [(branch as any).address, branch.city].filter(Boolean).join(', ') || 'Riyadh, SA',
-        industry:     'Technology',
+        location,
+        industry:     'Supply activities',
       }, keyPair)
 
       const encryptedKey = await encryptPrivateKey(keyPair.privateKeyPem)
@@ -288,20 +334,34 @@ function Step1GenerateKeys({
 
   return (
     <div className="space-y-4">
-      {!branchDataValid && (
-        <div className="flex items-start gap-3 bg-amber-50 border border-amber-100 rounded-xl p-3.5">
-          <AlertTriangle size={13} className="text-amber-600 mt-0.5 flex-shrink-0" />
-          <div>
-            <p className="text-[11px] font-semibold text-amber-700">Branch data incomplete</p>
-            <p className="text-[11px] text-amber-600 mt-0.5 leading-relaxed">
-              Fix these in the <span className="font-semibold">Branches tab</span> before generating the certificate:
+      {branchDataValid ? (
+        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-3.5 py-2.5">
+          <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0" />
+          <p className="text-[11px] font-semibold text-emerald-700">✓ Branch details complete</p>
+        </div>
+      ) : (
+        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3.5 space-y-2.5">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle size={13} className="text-amber-600 mt-0.5 flex-shrink-0" />
+            <p className="text-[11px] font-semibold text-amber-800">
+              Complete branch details before generating certificate. The following fields need attention:
             </p>
-            <ul className="mt-1 space-y-0.5">
-              {missingData.map(m => (
-                <li key={m} className="text-[11px] text-amber-600">· {m}</li>
-              ))}
-            </ul>
           </div>
+          <ul className="space-y-1 pl-5">
+            {invalidFields.map(f => (
+              <li key={f.label} className="text-[11px] text-amber-700">
+                ❌ <span className="font-semibold">{f.label}</span>
+                {f.hint === 'missing' ? ' — missing' : ` — ${f.hint}`}
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={navigateToBranches}
+            className="text-[11px] font-semibold text-amber-900 underline underline-offset-2 hover:text-amber-800 transition-colors"
+          >
+            Update Branch Settings →
+          </button>
         </div>
       )}
 
@@ -348,7 +408,7 @@ function Step1GenerateKeys({
 /* ── Device details block (shown in Step 2) ──────────────────────────────── */
 
 function DeviceDetailsBlock({ branch }: { branch: BranchWithCert }) {
-  const serial = `1-Dafra|2-POS|3-${branch.id.substring(0, 8)}`
+  const serial = `1-Meem|2-POS|3-${branch.id.substring(0, 8)}`
   const [copied, setCopied] = useState(false)
   const copy = async () => {
     await navigator.clipboard.writeText(serial)

@@ -172,7 +172,7 @@ function WelcomeState({ onAddBranch }: { onAddBranch: () => void }) {
           </div>
         </div>
 
-        <h2 className="text-2xl font-black text-gray-900">Welcome to Dafra!</h2>
+        <h2 className="text-2xl font-black text-gray-900">Welcome to Meem!</h2>
         <p className="text-base font-medium text-gray-500 mt-2">
           You have not added any branches yet.
         </p>

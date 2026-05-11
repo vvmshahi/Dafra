@@ -1,4 +1,4 @@
-// Saudi Arabia is UTC+3, no DST — all date/time operations for Dafra use this offset.
+// Saudi Arabia is UTC+3, no DST — all date/time operations for Meem use this offset.
 
 const SAUDI_OFFSET_MS = 3 * 60 * 60 * 1000
 

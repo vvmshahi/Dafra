@@ -296,7 +296,7 @@ export default function DayClosingPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? 'Unknown'
-  const tenantName  = tenant?.name ?? 'Dafra'
+  const tenantName  = tenant?.name ?? 'Meem'
 
   if (!branchId) {
     return (

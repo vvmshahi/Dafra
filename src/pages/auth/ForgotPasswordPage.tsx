@@ -4,6 +4,7 @@ import { Mail, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { MeemLogo } from '@/components/MeemLogo'
 
 function GeometricPattern() {
   return (
@@ -53,14 +54,8 @@ export default function ForgotPasswordPage() {
         <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gold-500/10 rounded-full blur-3xl pointer-events-none" />
 
         {/* Logo */}
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gold-500 flex items-center justify-center shadow-lg">
-            <span className="text-[#0F2419] font-black text-xl" style={{ fontFamily: 'Cairo, sans-serif' }}>د</span>
-          </div>
-          <div>
-            <p className="text-white font-bold text-2xl leading-none" style={{ fontFamily: 'Cairo, sans-serif' }}>دفرة</p>
-            <p className="text-gold-400 text-xs tracking-widest uppercase">Dafra</p>
-          </div>
+        <div className="relative z-10">
+          <MeemLogo size="lg" />
         </div>
 
         {/* Center */}
@@ -94,11 +89,8 @@ export default function ForgotPasswordPage() {
         <div className="w-full max-w-[380px] space-y-8">
 
           {/* Mobile logo */}
-          <div className="flex lg:hidden items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gold-500 flex items-center justify-center">
-              <span className="text-[#0F2419] font-black text-lg" style={{ fontFamily: 'Cairo, sans-serif' }}>د</span>
-            </div>
-            <span className="font-bold text-xl text-gray-900" style={{ fontFamily: 'Cairo, sans-serif' }}>دفرة</span>
+          <div className="flex lg:hidden">
+            <MeemLogo size="sm" />
           </div>
 
           {sent ? (

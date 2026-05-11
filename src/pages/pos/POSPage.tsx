@@ -20,6 +20,7 @@ import type { Branch, VatTreatment } from '@/types/database'
 import { usePosSession } from '@/hooks/usePosSession'
 import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
+import { MeemLogo } from '@/components/MeemLogo'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1431,10 +1432,8 @@ export default function POSPage() {
           </button>
           <div className="h-4 w-px bg-white/20 flex-shrink-0" />
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gold-500 flex items-center justify-center">
-              <span className="text-[#0F2419] font-black text-sm" style={{ fontFamily: 'Cairo, sans-serif' }}>د</span>
-            </div>
-            <span className="font-bold text-sm">دفرة POS</span>
+            <MeemLogo size="sm" />
+            <span className="font-bold text-sm text-white">POS</span>
           </div>
           <div className="h-4 w-px bg-white/20" />
           <span className="text-white/60 text-xs">{profile?.full_name ?? 'Cashier'}</span>

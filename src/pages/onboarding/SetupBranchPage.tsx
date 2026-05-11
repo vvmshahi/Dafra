@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useSubscription } from '@/hooks/useSubscription'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { MeemLogo } from '@/components/MeemLogo'
 
 const VAT_RE    = /^3\d{13}3$/
 const CR_RE     = /^[a-zA-Z0-9]+$/
@@ -124,20 +125,14 @@ export default function SetupBranchPage() {
 
       {/* Dark header */}
       <div className="bg-[#0F2419] px-6 py-8">
-        <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="w-10 h-10 rounded-xl bg-gold-500 flex items-center justify-center shadow-lg">
-            <span className="text-[#0F2419] font-black text-xl" style={{ fontFamily: 'Cairo, sans-serif' }}>د</span>
-          </div>
-          <div>
-            <p className="text-white font-bold text-2xl leading-none" style={{ fontFamily: 'Cairo, sans-serif' }}>دفرة</p>
-            <p className="text-gold-400 text-xs tracking-widest uppercase">Dafra</p>
-          </div>
+        <div className="flex justify-center mb-8">
+          <MeemLogo size="lg" />
         </div>
 
         <div className="text-center">
           <h1 className="text-2xl font-black text-white">Set Up Your First Branch</h1>
           <p className="text-white/50 text-sm mt-1.5">
-            Create your first branch to start using Dafra. This takes less than 2 minutes.
+            Create your first branch to start using Meem. This takes less than 2 minutes.
           </p>
           {profile?.full_name && (
             <p className="text-white/30 text-xs mt-2">Welcome, {profile.full_name}</p>
@@ -151,6 +146,14 @@ export default function SetupBranchPage() {
           <form onSubmit={handleSubmit}>
             <div className="p-8 space-y-6">
 
+              {/* Info note */}
+              <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+                <span className="text-blue-500 flex-shrink-0 mt-0.5 text-sm">ℹ️</span>
+                <p className="text-[11px] text-blue-700 leading-relaxed">
+                  Each branch requires its own CR number and address. The Company Name and VAT number are shared across all your branches.
+                </p>
+              </div>
+
               {/* Branch identity */}
               <div>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Branch Identity</p>
@@ -158,7 +161,6 @@ export default function SetupBranchPage() {
                   label="Branch Name"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder="Main Branch"
                   required
                 />
                 {fieldErr('name') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('name')}</p>}
@@ -169,20 +171,18 @@ export default function SetupBranchPage() {
                       label="VAT Registration Number"
                       value={vat}
                       onChange={e => setVat(e.target.value)}
-                      placeholder="301234567890123"
                       maxLength={15}
-                      helperText="15-digit number from your VAT certificate"
+                      helperText="From your VAT Registration Certificate. Must be 15 digits starting and ending with 3."
                       required
                     />
                     {fieldErr('vat') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('vat')}</p>}
                   </div>
                   <div>
                     <Input
-                      label="CR Number"
+                      label="CR / License Number"
                       value={cr}
                       onChange={e => setCr(e.target.value)}
-                      placeholder="1234567890"
-                      helperText="Commercial Registration number"
+                      helperText="Commercial Registration number for this specific branch. Each branch has its own CR."
                       required
                     />
                     {fieldErr('cr') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('cr')}</p>}
@@ -201,8 +201,7 @@ export default function SetupBranchPage() {
                       label="Building Number"
                       value={bldg}
                       onChange={e => setBldg(e.target.value)}
-                      placeholder="0056"
-                      helperText="Use leading zeros e.g. 0056"
+                      helperText="4-digit building number from your Saudi National Address (العنوان الوطني). Use leading zeros e.g. 0056"
                     />
                     {fieldErr('bldg') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('bldg')}</p>}
                   </div>
@@ -211,7 +210,6 @@ export default function SetupBranchPage() {
                       label="Street Name"
                       value={street}
                       onChange={e => setStreet(e.target.value)}
-                      placeholder="King Fahd Road"
                     />
                     {fieldErr('street') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('street')}</p>}
                   </div>
@@ -222,7 +220,7 @@ export default function SetupBranchPage() {
                       label="District"
                       value={district}
                       onChange={e => setDistrict(e.target.value)}
-                      placeholder="Al-Olaya"
+                      helperText="Neighbourhood or district name as in your registered address."
                     />
                     {fieldErr('district') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('district')}</p>}
                   </div>
@@ -231,7 +229,6 @@ export default function SetupBranchPage() {
                       label="City"
                       value={city}
                       onChange={e => setCity(e.target.value)}
-                      placeholder="Riyadh"
                     />
                     {fieldErr('city') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('city')}</p>}
                   </div>
@@ -241,7 +238,7 @@ export default function SetupBranchPage() {
                     label="Postal Code"
                     value={postal}
                     onChange={e => setPostal(e.target.value)}
-                    placeholder="12345"
+                    helperText="5-digit postal code from your Saudi National Address document."
                   />
                   {fieldErr('postal') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('postal')}</p>}
                 </div>

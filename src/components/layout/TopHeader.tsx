@@ -28,7 +28,7 @@ export default function TopHeader() {
   const { profile, tenant, user } = useAuth()
 
   const navigate = useNavigate()
-  const title   = titles[location.pathname] ?? 'Dafra'
+  const title   = titles[location.pathname] ?? 'Meem'
 
   // Subtitle: tenant business name for regular users, empty for super admin
   const isSuperAdmin = profile?.role === 'super_admin'

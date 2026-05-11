@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { MeemLogo } from '@/components/MeemLogo'
 import {
   CheckCircle2, Zap, GitBranch, BarChart3, Package, Globe,
   Star, ChevronDown, ChevronUp, Menu, X, ArrowRight,
@@ -60,7 +61,7 @@ function POSMockup() {
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-400/80" />
           </div>
           <div className="flex-1 bg-gray-800 rounded text-[10px] text-gray-400 px-3 py-0.5 mx-3 text-center">
-            app.dafra.sa/pos
+            app.meem.sa/pos
           </div>
         </div>
         {/* POS body */}
@@ -179,11 +180,8 @@ function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center h-16 gap-8">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2.5 flex-shrink-0">
-            <div className="w-9 h-9 rounded-xl bg-gold-500 flex items-center justify-center shadow-sm">
-              <span className="text-[#0F2419] font-black text-lg" style={{ fontFamily: 'Cairo, sans-serif' }}>د</span>
-            </div>
-            <span className="text-white font-bold text-xl" style={{ fontFamily: 'Cairo, sans-serif' }}>دفرة</span>
+          <Link to="/" className="flex-shrink-0">
+            <MeemLogo size="sm" />
           </Link>
 
           {/* Desktop links */}
@@ -599,7 +597,7 @@ const TESTIMONIALS = [
     nameEn:  'Mohammed Al-Rashid',
     role:    'مالك مقهى — الرياض',
     rating:  5,
-    text:    'دفرة غيّرت طريقة إدارتي للمقهى. الآن أصدر فواتير ZATCA في ثوانٍ والتقارير تصلني يومياً.',
+    text:    'ميم غيّرت طريقة إدارتي للمقهى. الآن أصدر فواتير ZATCA في ثوانٍ والتقارير تصلني يومياً.',
   },
   {
     name:    'فاطمة القحطاني',
@@ -668,8 +666,8 @@ const FAQS = [
     a: 'ZATCA (زكاة وضريبة وجمارك) mandates that all VAT-registered businesses in Saudi Arabia issue electronic invoices. Phase 1 (from Dec 2021) requires QR codes on simplified invoices. Phase 2 (from 2023 onward) requires cryptographic digital signing and integration with the ZATCA portal.',
   },
   {
-    q: 'Is Dafra certified by ZATCA?',
-    a: 'Yes. Dafra generates fully compliant ZATCA Phase 1 QR codes using the TLV (Tag-Length-Value) encoding standard. Phase 2 compliance with digital signing is available on our Phase 2 plan and is currently in the ZATCA certification process.',
+    q: 'Is Meem certified by ZATCA?',
+    a: 'Yes. Meem generates fully compliant ZATCA Phase 1 QR codes using the TLV (Tag-Length-Value) encoding standard. Phase 2 compliance with digital signing is available on our Phase 2 plan and is currently in the ZATCA certification process.',
   },
   {
     q: 'Can I use it offline?',
@@ -739,7 +737,7 @@ function CTABanner() {
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-gold-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="relative z-10 max-w-3xl mx-auto px-4 text-center space-y-6">
         <h2 className="text-3xl sm:text-4xl font-black text-white" style={{ fontFamily: 'Cairo, sans-serif' }}>
-          ابدأ رحلتك مع دفرة اليوم
+          ابدأ رحلتك مع ميم اليوم
         </h2>
         <p className="text-white/60">Contact us and we'll have your account ready within 24 hours.</p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -774,12 +772,7 @@ function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
           {/* Brand */}
           <div className="md:col-span-2 space-y-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-gold-500 flex items-center justify-center">
-                <span className="text-[#0F2419] font-black text-lg" style={{ fontFamily: 'Cairo, sans-serif' }}>د</span>
-              </div>
-              <span className="text-white font-bold text-xl" style={{ fontFamily: 'Cairo, sans-serif' }}>دفرة</span>
-            </div>
+            <MeemLogo size="sm" />
             <p className="text-sm leading-relaxed max-w-xs">
               Smart POS & ZATCA-compliant invoicing for Saudi restaurants, cafés and retail — نظام فوترة متوافق مع الزكاة
             </p>
@@ -820,7 +813,7 @@ function Footer() {
         </div>
 
         <div className="border-t border-white/10 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
-          <p>© 2025 Dafra Platform. All rights reserved.</p>
+          <p>© 2026 Meem Platform. All rights reserved.</p>
           <p className="flex items-center gap-1.5">
             Made with pride in Saudi Arabia 🇸🇦
           </p>

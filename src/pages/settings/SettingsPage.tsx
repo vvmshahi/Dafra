@@ -34,6 +34,7 @@ export default function SettingsPage() {
           return (
             <button
               key={tab.id}
+              data-tab={tab.id}
               onClick={() => setActive(tab.id)}
               className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap flex-1 justify-center transition-all ${
                 isActive

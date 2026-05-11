@@ -82,7 +82,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const isOwner      = !isSuperAdmin && !isBranch
 
   const navItems = isSuperAdmin ? superAdminNav : isBranch ? branchNav : ownerNav
-  const subtitle = isSuperAdmin ? 'Super Admin Console' : (tenant?.name ?? 'Dafra Platform')
+  const subtitle = isSuperAdmin ? 'Super Admin Console' : (tenant?.name ?? 'Meem Platform')
   const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? 'User'
   const roleLabel = isBranch ? 'Branch' : (profile?.role?.replace(/_/g, ' ') ?? '')
 
@@ -98,7 +98,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         {collapsed ? (
           <div className="flex flex-col items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gold-500 flex items-center justify-center shadow-sm">
-              <span className="text-sidebar font-black text-base leading-none">د</span>
+              <span className="text-sidebar font-black text-base leading-none">م</span>
             </div>
             <button
               onClick={onToggle}
@@ -112,11 +112,11 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <div>
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-gold-500 flex items-center justify-center flex-shrink-0 shadow-sm">
-                <span className="text-sidebar font-black text-base leading-none">د</span>
+                <span className="text-sidebar font-black text-base leading-none">م</span>
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-white font-bold text-xl leading-none tracking-tight" style={{ fontFamily: 'Cairo, sans-serif' }}>
-                  دفرة
+                  ميم
                 </p>
                 <p className="text-sidebar-text text-xs mt-0.5 truncate" title={subtitle}>{subtitle}</p>
               </div>

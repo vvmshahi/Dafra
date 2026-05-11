@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { MessageCircle, Mail, Lock } from 'lucide-react'
+import { MeemLogo } from '@/components/MeemLogo'
 
 const WA_LINK    = 'https://wa.me/919895953210'
 const EMAIL_LINK = 'mailto:vvmshahin@gmail.com'
@@ -30,14 +31,8 @@ export default function SignupPage() {
         <div className="absolute inset-0 bg-gradient-to-br from-[#1B6B3A]/50 via-transparent to-[#0F2419]/80 pointer-events-none" />
         <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-gold-500/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gold-500 flex items-center justify-center shadow-lg">
-            <span className="text-[#0F2419] font-black text-xl" style={{ fontFamily: 'Cairo, sans-serif' }}>د</span>
-          </div>
-          <div>
-            <p className="text-white font-bold text-2xl leading-none" style={{ fontFamily: 'Cairo, sans-serif' }}>دفرة</p>
-            <p className="text-gold-400 text-xs tracking-widest uppercase">Dafra</p>
-          </div>
+        <div className="relative z-10">
+          <MeemLogo size="lg" />
         </div>
 
         <div className="relative z-10 space-y-4">
@@ -59,11 +54,8 @@ export default function SignupPage() {
         <div className="w-full max-w-[420px] space-y-6">
 
           {/* Mobile logo */}
-          <div className="flex lg:hidden items-center gap-3 mb-2">
-            <div className="w-9 h-9 rounded-xl bg-gold-500 flex items-center justify-center">
-              <span className="text-[#0F2419] font-black text-lg" style={{ fontFamily: 'Cairo, sans-serif' }}>د</span>
-            </div>
-            <span className="font-bold text-xl text-gray-900" style={{ fontFamily: 'Cairo, sans-serif' }}>دفرة</span>
+          <div className="flex lg:hidden mb-2">
+            <MeemLogo size="sm" />
           </div>
 
           <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-gray-100 mx-auto">
@@ -73,7 +65,7 @@ export default function SignupPage() {
           <div className="text-center">
             <h1 className="text-2xl font-bold text-gray-900">Account creation is by invitation only</h1>
             <p className="text-gray-500 text-sm mt-3 leading-relaxed">
-              Contact us to get started with Dafra. We'll set up your account and have you running within 24 hours.
+              Contact us to get started with Meem. We'll set up your account and have you running within 24 hours.
             </p>
           </div>
 
