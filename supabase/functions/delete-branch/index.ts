@@ -89,7 +89,7 @@ Deno.serve(async (req: Request) => {
     const branchUserId = branchUser?.id ?? null
     console.log('[delete-branch] Branch auth user ID:', branchUserId)
 
-    // ── Step 2: Collect invoice IDs for cascading deletes ────────────────────
+    // ── Step 2: Collect IDs needed for child-table deletes ───────────────────
     const { data: invoiceRows } = await adminClient
       .from('invoices')
       .select('id')
@@ -97,6 +97,14 @@ Deno.serve(async (req: Request) => {
 
     const invoiceIds = (invoiceRows ?? []).map((r: { id: string }) => r.id)
     console.log('[delete-branch] Invoice count:', invoiceIds.length)
+
+    const { data: purchaseRows } = await adminClient
+      .from('purchases')
+      .select('id')
+      .eq('branch_id', branchId)
+
+    const purchaseIds = (purchaseRows ?? []).map((r: { id: string }) => r.id)
+    console.log('[delete-branch] Purchase count:', purchaseIds.length)
 
     // ── Step 3: Delete in dependency order ───────────────────────────────────
 
@@ -107,6 +115,10 @@ Deno.serve(async (req: Request) => {
 
     // b. Nullify session_id FK on expenses
     await adminClient.from('expenses').update({ session_id: null }).eq('branch_id', branchId)
+
+    // b2. Delete sync_queue
+    await adminClient.from('sync_queue').delete().eq('branch_id', branchId)
+    console.log('[delete-branch] Deleted sync_queue')
 
     // c. Delete POS sessions
     await adminClient.from('pos_sessions').delete().eq('branch_id', branchId)
@@ -138,6 +150,20 @@ Deno.serve(async (req: Request) => {
     await adminClient.from('expenses').delete().eq('branch_id', branchId)
     console.log('[delete-branch] Deleted expenses')
 
+    // i2. Delete fixed expenses
+    await adminClient.from('fixed_expenses').delete().eq('branch_id', branchId)
+    console.log('[delete-branch] Deleted fixed_expenses')
+
+    // i3. Delete purchase items (must precede purchases)
+    if (purchaseIds.length > 0) {
+      await adminClient.from('purchase_items').delete().in('purchase_id', purchaseIds)
+    }
+    console.log('[delete-branch] Deleted purchase_items')
+
+    // i4. Delete purchases
+    await adminClient.from('purchases').delete().eq('branch_id', branchId)
+    console.log('[delete-branch] Deleted purchases')
+
     // j. Delete inventory items
     await adminClient.from('inventory_items').delete().eq('branch_id', branchId)
     console.log('[delete-branch] Deleted inventory_items')
@@ -145,6 +171,10 @@ Deno.serve(async (req: Request) => {
     // k. Delete employees linked to this branch
     await adminClient.from('employees').delete().eq('branch_id', branchId)
     console.log('[delete-branch] Deleted employees')
+
+    // k2. Delete suppliers linked to this branch
+    await adminClient.from('suppliers').delete().eq('branch_id', branchId)
+    console.log('[delete-branch] Deleted suppliers')
 
     // l. Delete user profiles for this branch
     await adminClient.from('user_profiles').delete().eq('branch_id', branchId)

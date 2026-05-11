@@ -71,149 +71,177 @@ Deno.serve(async (req: Request) => {
 
     console.log('[delete-tenant] Starting deletion for tenant:', tenantId)
 
-    // ── Step 1: Find owner auth user ID ──────────────────────────────────────
-    const { data: ownerProfile } = await adminClient
-      .from('user_profiles')
+    // ── Step 1: Collect ALL auth user IDs before any deletes ────────────────
+    const [{ data: ownerProfile }, { data: branchProfiles }] = await Promise.all([
+      adminClient
+        .from('user_profiles')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('role', 'owner')
+        .maybeSingle(),
+      adminClient
+        .from('user_profiles')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('role', 'branch'),
+    ])
+
+    const allAuthIds: string[] = [
+      ownerProfile?.id,
+      ...((branchProfiles ?? []).map((p: { id: string }) => p.id)),
+    ].filter((id): id is string => !!id)
+
+    console.log('[delete-tenant] Auth user IDs to delete:', allAuthIds.length, allAuthIds)
+
+    // ── Step 2: Collect IDs needed for child-table deletes ───────────────────
+
+    // Branch IDs (for tables with only branch_id, not tenant_id)
+    const { data: branchRows } = await adminClient
+      .from('branches')
       .select('id')
       .eq('tenant_id', tenantId)
-      .eq('role', 'owner')
-      .maybeSingle()
+    const branchIds = (branchRows ?? []).map((r: { id: string }) => r.id)
+    console.log('[delete-tenant] Branch count:', branchIds.length)
 
-    const authUserId = ownerProfile?.id ?? null
-    console.log('[delete-tenant] Owner auth user ID:', authUserId)
-
-    // ── Step 2: Collect invoice IDs for cascading deletes ────────────────────
+    // Invoice IDs (for invoice_items and payments)
     const { data: invoiceRows } = await adminClient
       .from('invoices')
       .select('id')
       .eq('tenant_id', tenantId)
-
     const invoiceIds = (invoiceRows ?? []).map((r: { id: string }) => r.id)
+    console.log('[delete-tenant] Invoice count:', invoiceIds.length)
+
+    // Purchase IDs (for purchase_items)
+    const { data: purchaseRows } = await adminClient
+      .from('purchases')
+      .select('id')
+      .eq('tenant_id', tenantId)
+    const purchaseIds = (purchaseRows ?? []).map((r: { id: string }) => r.id)
+    console.log('[delete-tenant] Purchase count:', purchaseIds.length)
 
     // ── Step 3: Delete in dependency order ───────────────────────────────────
 
-    // a. Nullify session_id FK on invoices
+    // 1. Nullify session_id FK on invoices (breaks pos_session FK before deleting sessions)
     if (invoiceIds.length > 0) {
-      await adminClient
-        .from('invoices')
-        .update({ session_id: null })
-        .in('id', invoiceIds)
-      console.log('[delete-tenant] Cleared session_id on invoices')
+      await adminClient.from('invoices').update({ session_id: null }).in('id', invoiceIds)
     }
+    console.log('[delete-tenant] Cleared session_id on invoices')
 
-    // b. Nullify session_id FK on expenses
-    await adminClient
-      .from('expenses')
-      .update({ session_id: null })
-      .eq('tenant_id', tenantId)
+    // 2. Nullify session_id FK on expenses
+    await adminClient.from('expenses').update({ session_id: null }).eq('tenant_id', tenantId)
     console.log('[delete-tenant] Cleared session_id on expenses')
 
-    // c. Delete POS sessions
-    await adminClient
-      .from('pos_sessions')
-      .delete()
-      .eq('tenant_id', tenantId)
+    // 3. Delete sync_queue
+    await adminClient.from('sync_queue').delete().eq('tenant_id', tenantId)
+    console.log('[delete-tenant] Deleted sync_queue')
+
+    // 4. Delete POS sessions
+    await adminClient.from('pos_sessions').delete().eq('tenant_id', tenantId)
     console.log('[delete-tenant] Deleted pos_sessions')
 
-    // d. Delete day closings
-    await adminClient
-      .from('day_closings')
-      .delete()
-      .eq('tenant_id', tenantId)
+    // 5. Delete day closings
+    await adminClient.from('day_closings').delete().eq('tenant_id', tenantId)
     console.log('[delete-tenant] Deleted day_closings')
 
-    // e. Delete invoice items
-    if (invoiceIds.length > 0) {
-      await adminClient
-        .from('invoice_items')
-        .delete()
-        .in('invoice_id', invoiceIds)
-      console.log('[delete-tenant] Deleted invoice_items')
+    // 6. Delete ZATCA certificates (branch_id scoped — no tenant_id column)
+    if (branchIds.length > 0) {
+      await adminClient.from('zatca_certificates').delete().in('branch_id', branchIds)
     }
+    console.log('[delete-tenant] Deleted zatca_certificates')
 
-    // f. Delete payments
-    if (invoiceIds.length > 0) {
-      await adminClient
-        .from('payments')
-        .delete()
-        .in('invoice_id', invoiceIds)
-      console.log('[delete-tenant] Deleted payments')
+    // 7. Delete purchase_items (must precede purchases)
+    if (purchaseIds.length > 0) {
+      await adminClient.from('purchase_items').delete().in('purchase_id', purchaseIds)
     }
+    console.log('[delete-tenant] Deleted purchase_items')
 
-    // g. Delete invoices
-    await adminClient
-      .from('invoices')
-      .delete()
-      .eq('tenant_id', tenantId)
+    // 8. Delete purchases
+    await adminClient.from('purchases').delete().eq('tenant_id', tenantId)
+    console.log('[delete-tenant] Deleted purchases')
+
+    // 9. Delete inventory items (branch_id scoped)
+    if (branchIds.length > 0) {
+      await adminClient.from('inventory_items').delete().in('branch_id', branchIds)
+    }
+    console.log('[delete-tenant] Deleted inventory_items')
+
+    // 10. Delete invoice items
+    if (invoiceIds.length > 0) {
+      await adminClient.from('invoice_items').delete().in('invoice_id', invoiceIds)
+    }
+    console.log('[delete-tenant] Deleted invoice_items')
+
+    // 11. Delete payments
+    if (invoiceIds.length > 0) {
+      await adminClient.from('payments').delete().in('invoice_id', invoiceIds)
+    }
+    console.log('[delete-tenant] Deleted payments')
+
+    // 12. Delete invoices
+    await adminClient.from('invoices').delete().eq('tenant_id', tenantId)
     console.log('[delete-tenant] Deleted invoices')
 
-    // h. Delete expenses
-    await adminClient
-      .from('expenses')
-      .delete()
-      .eq('tenant_id', tenantId)
+    // 13. Delete expenses
+    await adminClient.from('expenses').delete().eq('tenant_id', tenantId)
     console.log('[delete-tenant] Deleted expenses')
 
-    // i. Delete products
-    await adminClient
-      .from('products')
-      .delete()
-      .eq('tenant_id', tenantId)
+    // 14. Delete fixed expenses
+    await adminClient.from('fixed_expenses').delete().eq('tenant_id', tenantId)
+    console.log('[delete-tenant] Deleted fixed_expenses')
+
+    // 15. Delete employees
+    await adminClient.from('employees').delete().eq('tenant_id', tenantId)
+    console.log('[delete-tenant] Deleted employees')
+
+    // 16. Delete products
+    await adminClient.from('products').delete().eq('tenant_id', tenantId)
     console.log('[delete-tenant] Deleted products')
 
-    // j. Delete categories
-    await adminClient
-      .from('categories')
-      .delete()
-      .eq('tenant_id', tenantId)
+    // 17. Delete categories
+    await adminClient.from('categories').delete().eq('tenant_id', tenantId)
     console.log('[delete-tenant] Deleted categories')
 
-    // k. Delete customers
-    await adminClient
-      .from('customers')
-      .delete()
-      .eq('tenant_id', tenantId)
+    // 18. Delete customers
+    await adminClient.from('customers').delete().eq('tenant_id', tenantId)
     console.log('[delete-tenant] Deleted customers')
 
-    // l. Delete branches
-    await adminClient
-      .from('branches')
-      .delete()
-      .eq('tenant_id', tenantId)
+    // 19. Delete suppliers
+    await adminClient.from('suppliers').delete().eq('tenant_id', tenantId)
+    console.log('[delete-tenant] Deleted suppliers')
+
+    // 20. Delete branches
+    await adminClient.from('branches').delete().eq('tenant_id', tenantId)
     console.log('[delete-tenant] Deleted branches')
 
-    // m. Delete tenant subscriptions
-    await adminClient
-      .from('tenant_subscriptions')
-      .delete()
-      .eq('tenant_id', tenantId)
+    // 21. Delete tenant subscriptions
+    await adminClient.from('tenant_subscriptions').delete().eq('tenant_id', tenantId)
     console.log('[delete-tenant] Deleted tenant_subscriptions')
 
-    // n. Delete tenant
-    await adminClient
-      .from('tenants')
-      .delete()
-      .eq('id', tenantId)
-    console.log('[delete-tenant] Deleted tenant')
-
-    // o. Delete user profiles
-    await adminClient
-      .from('user_profiles')
-      .delete()
-      .eq('tenant_id', tenantId)
+    // 22. Delete user profiles (BEFORE tenants to avoid FK violation)
+    await adminClient.from('user_profiles').delete().eq('tenant_id', tenantId)
     console.log('[delete-tenant] Deleted user_profiles')
 
-    // p. Delete auth user
-    if (authUserId) {
-      const { error: deleteAuthErr } = await adminClient.auth.admin.deleteUser(authUserId)
+    // 23. Delete tenant record
+    await adminClient.from('tenants').delete().eq('id', tenantId)
+    console.log('[delete-tenant] Deleted tenant')
+
+    // 24. Delete ALL auth users (owner + all branch users)
+    const authErrors: string[] = []
+    for (const authId of allAuthIds) {
+      const { error: deleteAuthErr } = await adminClient.auth.admin.deleteUser(authId)
       if (deleteAuthErr) {
-        console.error('[delete-tenant] Auth user deletion failed:', deleteAuthErr.message)
-        return new Response(
-          JSON.stringify({ error: 'Tenant data deleted but auth user removal failed: ' + deleteAuthErr.message }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        )
+        console.error('[delete-tenant] Auth user deletion failed:', authId, deleteAuthErr.message)
+        authErrors.push(`${authId}: ${deleteAuthErr.message}`)
+      } else {
+        console.log('[delete-tenant] Deleted auth user:', authId)
       }
-      console.log('[delete-tenant] Deleted auth user:', authUserId)
+    }
+
+    if (authErrors.length > 0) {
+      return new Response(
+        JSON.stringify({ error: 'Tenant data deleted but some auth users could not be removed: ' + authErrors.join('; ') }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
     }
 
     console.log('[delete-tenant] Deletion complete for tenant:', tenantId)
