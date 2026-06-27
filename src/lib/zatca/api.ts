@@ -10,6 +10,7 @@
  *   POST /functions/v1/zatca-compliance   — Compliance CSID registration
  *   POST /functions/v1/zatca-production   — Production CSID activation
  *   POST /functions/v1/zatca-submit       — Invoice reporting / clearance
+ *   POST /functions/v1/zatca-onboard-production — Owner-only production onboarding
  */
 
 import { supabase } from '@/lib/supabase'
@@ -39,6 +40,90 @@ async function edgePost<T>(fnName: string, body: Record<string, unknown>): Promi
     throw new Error((err.error ?? `Edge Function ${fnName} returned ${res.status}`) + detail)
   }
   return res.json()
+}
+
+async function edgePostSafe<T>(fnName: string, body: Record<string, unknown>): Promise<T> {
+  const { data: { session } } = await supabase.auth.getSession()
+  const jwt = session?.access_token
+
+  const res = await fetch(EDGE(fnName), {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${jwt}`,
+    },
+    body: JSON.stringify(body),
+  })
+
+  const payload = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(safeBrowserMessage(payload?.error, `Edge Function ${fnName} returned ${res.status}`))
+  }
+  return payload as T
+}
+
+function safeBrowserMessage(message: unknown, fallback: string): string {
+  if (typeof message !== 'string' || message.length > 240) return fallback
+  if (/private[_ -]?key|secret|token|csid|certificate|authorization|csr|xml body|raw zatca/i.test(message)) {
+    return 'ZATCA production onboarding failed. Sensitive details were redacted.'
+  }
+  return message
+}
+
+// ── Production onboarding orchestrator ───────────────────────────────────────
+
+export type ZatcaFunctionalityMap = '0100' | '1000' | '1100'
+
+export type ProductionOnboardingStatus =
+  | 'not_started'
+  | 'generating_csr'
+  | 'compliance_csid_requested'
+  | 'compliance_samples_passed'
+  | 'production_csid_requested'
+  | 'production_connected'
+  | 'failed'
+
+export interface ProductionComplianceSampleResult {
+  type: string
+  status: 'accepted' | 'pending' | 'blocked'
+  dryRun?: boolean
+  message?: string
+}
+
+export interface ProductionOnboardingResponse {
+  ok: boolean
+  dryRun?: boolean
+  branchId: string
+  environment: 'production'
+  onboardingStatus: ProductionOnboardingStatus
+  steps?: ProductionOnboardingStatus[]
+  functionalityMap?: ZatcaFunctionalityMap
+  complianceSampleResults?: ProductionComplianceSampleResult[]
+  connectedAt?: string | null
+  updatedAt?: string | null
+  message?: string
+}
+
+export async function onboardProductionZatca(params: {
+  branchId: string
+  otp: string
+  functionalityMap: ZatcaFunctionalityMap
+  dryRun?: boolean
+}): Promise<ProductionOnboardingResponse> {
+  return edgePostSafe<ProductionOnboardingResponse>('zatca-onboard-production', {
+    action: 'onboard',
+    branchId: params.branchId,
+    otp: params.otp,
+    functionalityMap: params.functionalityMap,
+    dryRun: params.dryRun ?? true,
+  })
+}
+
+export async function getProductionOnboardingStatus(branchId: string): Promise<ProductionOnboardingResponse> {
+  return edgePostSafe<ProductionOnboardingResponse>('zatca-onboard-production', {
+    action: 'status',
+    branchId,
+  })
 }
 
 // ── Compliance CSID ───────────────────────────────────────────────────────────

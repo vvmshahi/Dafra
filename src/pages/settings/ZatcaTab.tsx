@@ -22,7 +22,15 @@ import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
 import { generateKeyPair, encryptPrivateKey } from '@/lib/zatca/crypto'
 import { generateCSR } from '@/lib/zatca/csr'
-import { requestComplianceCsid, requestProductionCsid } from '@/lib/zatca/api'
+import {
+  getProductionOnboardingStatus,
+  onboardProductionZatca,
+  requestComplianceCsid,
+  requestProductionCsid,
+  type ProductionOnboardingResponse,
+  type ProductionOnboardingStatus,
+  type ZatcaFunctionalityMap,
+} from '@/lib/zatca/api'
 import type { Branch, ZatcaCertificate, CertificateStatus } from '@/types'
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
@@ -684,6 +692,225 @@ function Step4Done({ cert }: { cert: ZatcaCertificate }) {
   )
 }
 
+/* ── Production onboarding orchestrator ─────────────────────────────────── */
+
+const PRODUCTION_STEPS: Array<{ key: ProductionOnboardingStatus; label: string }> = [
+  { key: 'generating_csr', label: 'Generate CSR' },
+  { key: 'compliance_csid_requested', label: 'Compliance request' },
+  { key: 'compliance_samples_passed', label: 'Sample invoices' },
+  { key: 'production_csid_requested', label: 'Production request' },
+  { key: 'production_connected', label: 'Connected' },
+]
+
+const FUNCTIONALITY_OPTIONS: Array<{
+  value: ZatcaFunctionalityMap
+  label: string
+  hint: string
+}> = [
+  { value: '0100', label: 'Simplified/B2C only', hint: 'POS and retail invoices' },
+  { value: '1000', label: 'Standard/B2B only', hint: 'Tax invoices for business buyers' },
+  { value: '1100', label: 'Both', hint: 'Standard and simplified invoices' },
+]
+
+function stepComplete(status: ProductionOnboardingStatus | undefined, step: ProductionOnboardingStatus): boolean {
+  if (!status || status === 'failed' || status === 'not_started') return false
+  return PRODUCTION_STEPS.findIndex(item => item.key === status) >=
+    PRODUCTION_STEPS.findIndex(item => item.key === step)
+}
+
+function formatSampleType(type: string): string {
+  return type.replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
+  const { profile } = useAuth()
+  const [otp, setOtp] = useState('')
+  const [functionalityMap, setFunctionalityMap] = useState<ZatcaFunctionalityMap>('0100')
+  const [dryRun, setDryRun] = useState(true)
+  const [status, setStatus] = useState<ProductionOnboardingResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [statusLoading, setStatusLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const isOwner = profile?.role === 'owner'
+  const currentStatus = status?.onboardingStatus ?? 'not_started'
+
+  useEffect(() => {
+    let mounted = true
+    async function loadStatus() {
+      if (!isOwner) return
+      setStatusLoading(true)
+      setError(null)
+      try {
+        const res = await getProductionOnboardingStatus(branch.id)
+        if (mounted) {
+          setStatus(res)
+          if (res.functionalityMap) setFunctionalityMap(res.functionalityMap)
+        }
+      } catch (err: any) {
+        if (mounted) setError(err.message ?? 'Unable to load production onboarding status')
+      } finally {
+        if (mounted) setStatusLoading(false)
+      }
+    }
+    loadStatus()
+    return () => { mounted = false }
+  }, [branch.id, isOwner])
+
+  const connect = async () => {
+    if (!isOwner) {
+      setError('Only the tenant owner can connect ZATCA production.')
+      return
+    }
+    if (!/^[0-9]{6}$/.test(otp)) {
+      setError('Enter the 6-digit OTP from the FATOORA portal.')
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await onboardProductionZatca({
+        branchId: branch.id,
+        otp,
+        functionalityMap,
+        dryRun,
+      })
+      setStatus(res)
+      setOtp('')
+    } catch (err: any) {
+      setError(err.message ?? 'ZATCA production onboarding failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3.5">
+        <ShieldCheck size={14} className="text-emerald-600 mt-0.5 flex-shrink-0" />
+        <div>
+          <p className="text-xs font-semibold text-emerald-800">Production setup</p>
+          <p className="text-[11px] text-emerald-700 mt-0.5 leading-relaxed">
+            Log in to FATOORA portal, generate OTP from Onboard New Solution Unit/Device,
+            paste OTP here within 1 hour.
+          </p>
+        </div>
+      </div>
+
+      {!isOwner && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl p-3">
+          <Lock size={13} className="text-amber-600 mt-0.5 flex-shrink-0" />
+          <p className="text-[11px] text-amber-800">
+            Production onboarding is restricted to the tenant owner.
+          </p>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Invoice capability</p>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {FUNCTIONALITY_OPTIONS.map(option => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setFunctionalityMap(option.value)}
+              className={`text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                functionalityMap === option.value
+                  ? 'border-primary-300 bg-primary-50'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
+              }`}
+            >
+              <span className="block text-xs font-semibold text-gray-800">{option.label}</span>
+              <span className="block text-[10px] text-gray-500 mt-0.5">{option.hint}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2.5">
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">FATOORA OTP</p>
+        <input
+          type="text"
+          inputMode="numeric"
+          maxLength={6}
+          placeholder="000000"
+          value={otp}
+          onChange={event => setOtp(event.target.value.replace(/\D/g, '').substring(0, 6))}
+          disabled={!isOwner || loading}
+          className="input text-center text-2xl font-mono disabled:opacity-50"
+        />
+        <label className="flex items-center gap-2 text-[11px] text-gray-600">
+          <input
+            type="checkbox"
+            checked={dryRun}
+            onChange={event => setDryRun(event.target.checked)}
+            disabled={!isOwner || loading}
+            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+          Dry run only. Do not call ZATCA production.
+        </label>
+      </div>
+
+      {error && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl p-3">
+          <AlertTriangle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
+          <p className="text-[11px] text-red-700 leading-relaxed">{error}</p>
+        </div>
+      )}
+
+      <button
+        onClick={connect}
+        disabled={!isOwner || loading || otp.length !== 6}
+        className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50"
+      >
+        {loading ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}
+        {loading ? 'Connecting to ZATCA…' : 'Connect to ZATCA Production'}
+      </button>
+
+      <div className="border-t border-gray-100 pt-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Safe status</p>
+          {statusLoading && <Loader2 size={12} className="animate-spin text-gray-400" />}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-5">
+          {PRODUCTION_STEPS.map(step => {
+            const done = stepComplete(currentStatus, step.key) ||
+              (status?.steps?.includes(step.key) ?? false)
+            return (
+              <div
+                key={step.key}
+                className={`rounded-xl border px-2.5 py-2 text-center ${
+                  done
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-gray-200 bg-gray-50 text-gray-400'
+                }`}
+              >
+                <CheckCircle2 size={13} className="mx-auto mb-1" />
+                <p className="text-[10px] font-semibold">{step.label}</p>
+              </div>
+            )
+          })}
+        </div>
+        {status?.complianceSampleResults?.length ? (
+          <div className="space-y-1.5">
+            {status.complianceSampleResults.map(result => (
+              <div key={result.type} className="flex items-center justify-between text-[11px] bg-gray-50 rounded-lg px-3 py-2">
+                <span className="text-gray-600">{formatSampleType(result.type)}</span>
+                <span className={`font-semibold ${result.status === 'accepted' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                  {result.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {status?.message && (
+          <p className="text-[11px] text-gray-500 leading-relaxed">{status.message}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /* ── Branch accordion row (FIX 2) ────────────────────────────────────────── */
 
 function branchSummaryText(bc: BranchWithCert): string {
@@ -871,34 +1098,42 @@ function BranchAccordionRow({
                 )}
               </div>
 
-              <Stepper current={step} />
-
-              <div className="border-t border-gray-100 pt-4">
-                {step === 1 && (
-                  <Step1GenerateKeys branch={bc} environment={environment} onDone={handleDone} />
-                )}
-                {step === 2 && cert && (
-                  <Step2EnterOTP branch={bc} cert={cert} environment={environment} onDone={handleDone} />
-                )}
-                {step === 3 && (
-                  <Step3Activate branch={bc} environment={environment} onDone={handleDone} />
-                )}
-                {step === 4 && cert && (
-                  <Step4Done cert={cert} />
-                )}
-              </div>
-
-              {cert && (
-                <div className="pt-3 border-t border-gray-100">
-                  <button
-                    onClick={handleRegenerate}
-                    disabled={regenerating}
-                    className="flex items-center gap-1.5 text-[11px] text-gray-400 hover:text-red-500 transition-colors"
-                  >
-                    {regenerating ? <Loader2 size={11} className="animate-spin" /> : <Key size={11} />}
-                    Regenerate certificate (discard current{isActive ? ' — unlocks environment toggle' : ''})
-                  </button>
+              {environment === 'production' ? (
+                <div className="border-t border-gray-100 pt-4">
+                  <ProductionOnboardingPanel branch={bc} />
                 </div>
+              ) : (
+                <>
+                  <Stepper current={step} />
+
+                  <div className="border-t border-gray-100 pt-4">
+                    {step === 1 && (
+                      <Step1GenerateKeys branch={bc} environment={environment} onDone={handleDone} />
+                    )}
+                    {step === 2 && cert && (
+                      <Step2EnterOTP branch={bc} cert={cert} environment={environment} onDone={handleDone} />
+                    )}
+                    {step === 3 && (
+                      <Step3Activate branch={bc} environment={environment} onDone={handleDone} />
+                    )}
+                    {step === 4 && cert && (
+                      <Step4Done cert={cert} />
+                    )}
+                  </div>
+
+                  {cert && (
+                    <div className="pt-3 border-t border-gray-100">
+                      <button
+                        onClick={handleRegenerate}
+                        disabled={regenerating}
+                        className="flex items-center gap-1.5 text-[11px] text-gray-400 hover:text-red-500 transition-colors"
+                      >
+                        {regenerating ? <Loader2 size={11} className="animate-spin" /> : <Key size={11} />}
+                        Regenerate certificate (discard current{isActive ? ' — unlocks environment toggle' : ''})
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
