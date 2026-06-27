@@ -713,7 +713,7 @@ const FUNCTIONALITY_OPTIONS: Array<{
 ]
 
 function stepComplete(status: ProductionOnboardingStatus | undefined, step: ProductionOnboardingStatus): boolean {
-  if (!status || status === 'failed' || status === 'not_started') return false
+  if (!status || status === 'failed' || status === 'compliance_failed' || status === 'not_started') return false
   return PRODUCTION_STEPS.findIndex(item => item.key === status) >=
     PRODUCTION_STEPS.findIndex(item => item.key === step)
 }

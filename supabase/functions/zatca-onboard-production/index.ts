@@ -35,6 +35,7 @@ import {
   simulatedComplianceResults,
   submitComplianceSamples,
   type ComplianceSampleResult,
+  type SampleSeller,
 } from '../_shared/zatca/samples.ts'
 import { loadSafeOnboardingStatus, saveOnboardingState } from '../_shared/zatca/storage.ts'
 
@@ -155,11 +156,19 @@ Deno.serve(async (req: Request) => {
 
     let complianceSampleResults: ComplianceSampleResult[]
     try {
-      complianceSampleResults = await submitComplianceSamples()
+      complianceSampleResults = await submitComplianceSamples({
+        baseUrl: PRODUCTION_CORE_BASE_URL,
+        functionalityMap: body.functionalityMap,
+        complianceCsid: compliance.binarySecurityToken,
+        complianceSecret: compliance.secret,
+        complianceCertificate: compliance.binarySecurityToken,
+        privateKeyPem: generated.privateKeyPem,
+        seller: buildSampleSeller(branch, tenant, csrParams),
+      })
     } catch (err) {
       const message = safeErrorMessage(err)
       await saveState(db, owner, csrParams, generated, {
-        status: 'failed',
+        status: 'compliance_failed',
         encryptedPrivateKey,
         complianceRequestId: compliance.requestID,
         encryptedComplianceCsid,
@@ -173,7 +182,7 @@ Deno.serve(async (req: Request) => {
     const samplesPassed = complianceSampleResults.every(result => result.status === 'accepted')
     if (!samplesPassed) {
       await saveState(db, owner, csrParams, generated, {
-        status: 'failed',
+        status: 'compliance_failed',
         encryptedPrivateKey,
         complianceRequestId: compliance.requestID,
         encryptedComplianceCsid,
@@ -272,6 +281,20 @@ function buildCsrParams(branch: any, tenant: any, functionalityMap: Functionalit
     functionalityMap,
     location,
     industry: 'Supply activities',
+  }
+}
+
+function buildSampleSeller(branch: any, tenant: any, csrParams: CsrParams): SampleSeller {
+  return {
+    name: csrParams.businessName,
+    vatNumber: csrParams.vatNumber,
+    crNumber: branch.cr_number || tenant.cr_number || undefined,
+    street: branch.street || tenant.street || 'King Fahd Road',
+    buildingNumber: branch.building_number || tenant.building_number || '1234',
+    district: branch.district || tenant.district || 'Al Olaya',
+    city: branch.city || tenant.city || 'Riyadh',
+    postalCode: branch.postal_code || tenant.postal_code || '12345',
+    countryCode: branch.country || tenant.country || 'SA',
   }
 }
 

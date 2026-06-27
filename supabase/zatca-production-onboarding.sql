@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS public.zatca_production_credentials (
                                         'compliance_samples_passed',
                                         'production_csid_requested',
                                         'production_connected',
+                                        'compliance_failed',
                                         'failed'
                                       )),
   functionality_map               TEXT NOT NULL

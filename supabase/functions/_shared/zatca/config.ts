@@ -11,6 +11,7 @@ export type OnboardingStatus =
   | 'compliance_samples_passed'
   | 'production_csid_requested'
   | 'production_connected'
+  | 'compliance_failed'
   | 'failed'
 
 export type FunctionalityMap = '0100' | '1000' | '1100'

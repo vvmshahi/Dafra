@@ -81,12 +81,19 @@ export type ProductionOnboardingStatus =
   | 'compliance_samples_passed'
   | 'production_csid_requested'
   | 'production_connected'
+  | 'compliance_failed'
   | 'failed'
 
 export interface ProductionComplianceSampleResult {
   type: string
   status: 'accepted' | 'pending' | 'blocked'
   dryRun?: boolean
+  httpStatus?: number
+  validationStatus?: string
+  reportingStatus?: string
+  clearanceStatus?: string
+  warningsCount?: number
+  errorsCount?: number
   message?: string
 }
 
