@@ -86,14 +86,19 @@ export type ProductionOnboardingStatus =
 
 export interface ProductionComplianceSampleResult {
   type: string
-  status: 'accepted' | 'pending' | 'blocked'
+  invoiceKind?: 'simplified' | 'standard'
+  documentKind?: 'invoice' | 'credit_note' | 'debit_note'
+  accepted?: boolean
+  status: 'accepted' | 'blocked' | 'ambiguous_failed'
   dryRun?: boolean
   httpStatus?: number
+  statusString?: string
   validationStatus?: string
   reportingStatus?: string
   clearanceStatus?: string
   warningsCount?: number
   errorsCount?: number
+  redactedErrors?: Array<{ code?: string; message?: string }>
   message?: string
 }
 

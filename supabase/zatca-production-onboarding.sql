@@ -63,6 +63,30 @@ CREATE TRIGGER trg_zatca_prod_credentials_updated_at
 
 ALTER TABLE public.zatca_production_credentials ENABLE ROW LEVEL SECURITY;
 
+-- If an earlier copy of this migration was already applied, CREATE TABLE IF NOT
+-- EXISTS will not update the original CHECK constraint. Refresh the generated
+-- constraint name safely so compliance_failed is accepted.
+DO $$
+BEGIN
+  IF to_regclass('public.zatca_production_credentials') IS NOT NULL THEN
+    ALTER TABLE public.zatca_production_credentials
+      DROP CONSTRAINT IF EXISTS zatca_production_credentials_onboarding_status_check;
+
+    ALTER TABLE public.zatca_production_credentials
+      ADD CONSTRAINT zatca_production_credentials_onboarding_status_check
+      CHECK (onboarding_status IN (
+        'not_started',
+        'generating_csr',
+        'compliance_csid_requested',
+        'compliance_samples_passed',
+        'production_csid_requested',
+        'production_connected',
+        'compliance_failed',
+        'failed'
+      ));
+  END IF;
+END $$;
+
 -- No authenticated SELECT/INSERT/UPDATE/DELETE policies are created on purpose.
 -- Production private keys, CSIDs, secrets, and certificates are readable/writable
 -- only through service-role Edge Functions. The frontend gets safe status from

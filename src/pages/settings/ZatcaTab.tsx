@@ -725,7 +725,7 @@ function formatSampleType(type: string): string {
 function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
   const { profile } = useAuth()
   const [otp, setOtp] = useState('')
-  const [functionalityMap, setFunctionalityMap] = useState<ZatcaFunctionalityMap>('0100')
+  const [functionalityMap, setFunctionalityMap] = useState<ZatcaFunctionalityMap | ''>('')
   const [dryRun, setDryRun] = useState(true)
   const [status, setStatus] = useState<ProductionOnboardingResponse | null>(null)
   const [loading, setLoading] = useState(false)
@@ -764,6 +764,10 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
     }
     if (!/^[0-9]{6}$/.test(otp)) {
       setError('Enter the 6-digit OTP from the FATOORA portal.')
+      return
+    }
+    if (!functionalityMap) {
+      setError('Choose what this billing system will issue before connecting to ZATCA production.')
       return
     }
     setLoading(true)
@@ -808,6 +812,10 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
 
       <div className="space-y-2">
         <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Invoice capability</p>
+        <p className="text-[11px] text-gray-500 leading-relaxed">
+          Choose what this billing system will issue. For normal retail/POS invoices, usually choose Simplified/B2C only.
+          If you issue tax invoices to VAT-registered businesses, choose Standard/B2B or Both.
+        </p>
         <div className="grid gap-2 sm:grid-cols-3">
           {FUNCTIONALITY_OPTIONS.map(option => (
             <button
@@ -860,7 +868,7 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
 
       <button
         onClick={connect}
-        disabled={!isOwner || loading || otp.length !== 6}
+        disabled={!isOwner || loading || otp.length !== 6 || !functionalityMap}
         className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50"
       >
         {loading ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}

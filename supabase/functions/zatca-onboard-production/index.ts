@@ -123,6 +123,13 @@ Deno.serve(async (req: Request) => {
       })
     }
 
+    const missingSellerSettings = validateSellerLegalData(branch, tenant, csrParams)
+    if (missingSellerSettings.length > 0) {
+      return jsonResponse({
+        error: `Missing seller legal information required for ZATCA onboarding. Complete: ${missingSellerSettings.join(', ')}.`,
+      }, 400)
+    }
+
     if (!productionCallsAllowed()) {
       return jsonResponse({
         error: 'Production onboarding is disabled. Set ALLOW_ZATCA_PRODUCTION_ONBOARDING=true in Supabase Edge Function secrets before using a live OTP.',
@@ -288,14 +295,41 @@ function buildSampleSeller(branch: any, tenant: any, csrParams: CsrParams): Samp
   return {
     name: csrParams.businessName,
     vatNumber: csrParams.vatNumber,
-    crNumber: branch.cr_number || tenant.cr_number || undefined,
-    street: branch.street || tenant.street || 'King Fahd Road',
-    buildingNumber: branch.building_number || tenant.building_number || '1234',
-    district: branch.district || tenant.district || 'Al Olaya',
-    city: branch.city || tenant.city || 'Riyadh',
-    postalCode: branch.postal_code || tenant.postal_code || '12345',
-    countryCode: branch.country || tenant.country || 'SA',
+    crNumber: branch.cr_number || tenant.cr_number,
+    street: branch.street || tenant.street,
+    buildingNumber: branch.building_number || tenant.building_number,
+    district: branch.district || tenant.district,
+    city: branch.city || tenant.city,
+    postalCode: branch.postal_code || tenant.postal_code,
+    countryCode: branch.country || tenant.country,
   }
+}
+
+function validateSellerLegalData(branch: any, tenant: any, csrParams: CsrParams): string[] {
+  const missing: string[] = []
+  const crNumber = branch.cr_number || tenant.cr_number
+  const buildingNumber = branch.building_number || tenant.building_number
+  const street = branch.street || tenant.street
+  const district = branch.district || tenant.district
+  const city = branch.city || tenant.city
+  const postalCode = branch.postal_code || tenant.postal_code
+  const country = branch.country || tenant.country
+
+  if (!csrParams.businessName.trim()) missing.push('legal/business name')
+  if (!/^3\d{13}3$/.test(csrParams.vatNumber)) missing.push('valid VAT number')
+  if (!valuePresent(crNumber)) missing.push('CR number or official seller identifier')
+  if (!/^\d{4}$/.test(String(buildingNumber ?? ''))) missing.push('4-digit building number')
+  if (!valuePresent(street)) missing.push('street name')
+  if (!valuePresent(district)) missing.push('district')
+  if (!valuePresent(city)) missing.push('city')
+  if (!/^\d{5}$/.test(String(postalCode ?? ''))) missing.push('5-digit postal code')
+  if (!valuePresent(country)) missing.push('country code')
+
+  return missing
+}
+
+function valuePresent(value: unknown): boolean {
+  return typeof value === 'string' ? value.trim().length > 0 : value !== null && value !== undefined
 }
 
 async function saveState(

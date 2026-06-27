@@ -13,21 +13,26 @@ export type ComplianceSampleType =
 
 export interface ComplianceSampleResult {
   type: ComplianceSampleType
-  status: 'accepted' | 'pending' | 'blocked'
+  invoiceKind?: 'simplified' | 'standard'
+  documentKind?: 'invoice' | 'credit_note' | 'debit_note'
+  accepted?: boolean
+  status: 'accepted' | 'blocked' | 'ambiguous_failed'
   dryRun?: boolean
   httpStatus?: number
+  statusString?: string
   validationStatus?: string
   reportingStatus?: string
   clearanceStatus?: string
   warningsCount?: number
   errorsCount?: number
+  redactedErrors?: Array<{ code?: string; message?: string }>
   message?: string
 }
 
 export interface SampleSeller {
   name: string
   vatNumber: string
-  crNumber?: string
+  crNumber: string
   street: string
   buildingNumber: string
   district: string
@@ -109,6 +114,9 @@ export async function submitComplianceSamples(params: SubmitComplianceSamplesPar
       for (const remainingType of sampleTypes.slice(i + 1)) {
         results.push({
           type: remainingType,
+          invoiceKind: invoiceKindFor(remainingType),
+          documentKind: documentKindFor(remainingType),
+          accepted: false,
           status: 'blocked',
           message: 'Not submitted because a previous compliance sample failed.',
         })
@@ -175,31 +183,115 @@ function summarizeComplianceResponse(
   httpStatus: number,
   body: any,
 ): ComplianceSampleResult {
-  const validationStatus = stringValue(body?.validationResults?.status)
-  const reportingStatus = stringValue(body?.reportingStatus)
-  const clearanceStatus = stringValue(body?.clearanceStatus)
-  const errorsCount = countMessages(body?.errors) + countMessages(body?.validationResults?.errorMessages)
+  const invoiceKind = invoiceKindFor(type)
+  const documentKind = documentKindFor(type)
+  const validationStatus = upperString(body?.validationResults?.status)
+  const reportingStatus = upperString(body?.reportingStatus)
+  const clearanceStatus = upperString(body?.clearanceStatus)
+  const redactedErrors = redactedZatcaErrors(body)
+  const errorsCount = redactedErrors.length
   const warningsCount = countMessages(body?.warnings) + countMessages(body?.validationResults?.warningMessages)
-  const accepted = httpStatus >= 200 &&
-    httpStatus < 300 &&
-    body?._parseFailed !== true &&
-    errorsCount === 0 &&
-    validationStatus !== 'ERROR' &&
-    reportingStatus !== 'NOT_REPORTED' &&
-    clearanceStatus !== 'NOT_CLEARED'
+  const acceptance = isExplicitComplianceSampleAccepted({
+    httpStatus,
+    parseFailed: body?._parseFailed === true,
+    invoiceKind,
+    validationStatus,
+    reportingStatus,
+    clearanceStatus,
+    errorsCount,
+  })
 
   return {
     type,
-    status: accepted ? 'accepted' : 'blocked',
+    invoiceKind,
+    documentKind,
+    accepted: acceptance.accepted,
+    status: acceptance.status,
     httpStatus,
+    statusString: acceptance.statusString,
     validationStatus,
     reportingStatus,
     clearanceStatus,
     warningsCount,
     errorsCount,
-    message: accepted ? 'Accepted by ZATCA compliance check.' :
-      body?._parseFailed === true ? 'ZATCA returned a non-JSON compliance response.' :
-        'ZATCA compliance check failed for this sample.',
+    redactedErrors,
+    message: acceptance.message,
+  }
+}
+
+function isExplicitComplianceSampleAccepted(params: {
+  httpStatus: number
+  parseFailed: boolean
+  invoiceKind: 'simplified' | 'standard'
+  validationStatus?: string
+  reportingStatus?: string
+  clearanceStatus?: string
+  errorsCount: number
+}): {
+  accepted: boolean
+  status: ComplianceSampleResult['status']
+  statusString: string
+  message: string
+} {
+  const httpOk = params.httpStatus >= 200 && params.httpStatus < 300
+  if (!httpOk) {
+    return {
+      accepted: false,
+      status: 'blocked',
+      statusString: `HTTP_${params.httpStatus}`,
+      message: 'ZATCA compliance check failed for this sample.',
+    }
+  }
+  if (params.parseFailed) {
+    return {
+      accepted: false,
+      status: 'ambiguous_failed',
+      statusString: 'NON_JSON_RESPONSE',
+      message: 'ZATCA returned a non-JSON compliance response.',
+    }
+  }
+  if (params.errorsCount > 0) {
+    return {
+      accepted: false,
+      status: 'blocked',
+      statusString: 'ERRORS_PRESENT',
+      message: 'ZATCA compliance check returned errors for this sample.',
+    }
+  }
+  if (params.validationStatus !== 'PASS') {
+    return {
+      accepted: false,
+      status: params.validationStatus ? 'blocked' : 'ambiguous_failed',
+      statusString: params.validationStatus ? `VALIDATION_${params.validationStatus}` : 'VALIDATION_STATUS_MISSING',
+      message: params.validationStatus
+        ? 'ZATCA validation did not explicitly pass for this sample.'
+        : 'ZATCA response did not include an explicit validation pass status.',
+    }
+  }
+  if (params.invoiceKind === 'simplified' && params.reportingStatus && params.reportingStatus !== 'REPORTED') {
+    return {
+      accepted: false,
+      status: 'blocked',
+      statusString: `REPORTING_${params.reportingStatus}`,
+      message: 'ZATCA reporting status did not explicitly report this sample.',
+    }
+  }
+  if (params.invoiceKind === 'standard' && params.clearanceStatus && params.clearanceStatus !== 'CLEARED') {
+    return {
+      accepted: false,
+      status: 'blocked',
+      statusString: `CLEARANCE_${params.clearanceStatus}`,
+      message: 'ZATCA clearance status did not explicitly clear this sample.',
+    }
+  }
+
+  return {
+    accepted: true,
+    status: 'accepted',
+    statusString: params.invoiceKind === 'simplified'
+      ? (params.reportingStatus ? `VALIDATION_PASS_REPORTING_${params.reportingStatus}` : 'VALIDATION_PASS')
+      : (params.clearanceStatus ? `VALIDATION_PASS_CLEARANCE_${params.clearanceStatus}` : 'VALIDATION_PASS'),
+    message: 'Accepted by ZATCA compliance check.',
   }
 }
 
@@ -217,8 +309,42 @@ function countMessages(value: unknown): number {
   return Array.isArray(value) ? value.length : 0
 }
 
-function stringValue(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined
+function upperString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value.trim().toUpperCase() : undefined
+}
+
+function redactedZatcaErrors(body: any): Array<{ code?: string; message?: string }> {
+  const values = [
+    ...arrayValue(body?.errors),
+    ...arrayValue(body?.validationResults?.errorMessages),
+  ]
+  return values.slice(0, 5).map(item => ({
+    code: safeText(item?.code ?? item?.type ?? item?.category),
+    message: safeText(item?.message ?? item?.error ?? item?.description),
+  })).filter(item => item.code || item.message)
+}
+
+function arrayValue(value: unknown): any[] {
+  return Array.isArray(value) ? value : []
+}
+
+function safeText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const cleaned = value.replace(/[\r\n\t]+/g, ' ').slice(0, 180)
+  if (/otp|secret|csid|token|certificate|private[_ -]?key|authorization|csr|xml/i.test(cleaned)) {
+    return 'Sensitive detail redacted.'
+  }
+  return cleaned
+}
+
+function invoiceKindFor(type: ComplianceSampleType): 'simplified' | 'standard' {
+  return type.startsWith('simplified') ? 'simplified' : 'standard'
+}
+
+function documentKindFor(type: ComplianceSampleType): 'invoice' | 'credit_note' | 'debit_note' {
+  if (type.includes('credit')) return 'credit_note'
+  if (type.includes('debit')) return 'debit_note'
+  return 'invoice'
 }
 
 function buildSampleData(type: ComplianceSampleType, seller: SampleSeller, sequence: number): any {
@@ -242,7 +368,7 @@ function buildSampleData(type: ComplianceSampleType, seller: SampleSeller, seque
       noteKind === 'debit' ? 'Compliance debit note sample' : undefined,
     sellerName: seller.name,
     sellerVat: seller.vatNumber,
-    sellerCrn: seller.crNumber || '1010010000',
+    sellerCrn: seller.crNumber,
     sellerAddress: {
       street: seller.street,
       buildingNo: seller.buildingNumber,
