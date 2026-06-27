@@ -8,7 +8,24 @@ dist-ssr/
 # Environment — never commit real keys
 .env
 .env.local
+.env.production
 .env.*.local
+
+# Certificates, keys, CSRs, and signed invoice artifacts
+*.key
+*.pem
+*.p12
+*.pfx
+*.csr
+*.crt
+*.cer
+*_signed.xml
+generated-private-key*
+*Invoice_signed.xml
+*invoice_signed.xml
+
+# Supabase local CLI state
+supabase/.temp/
 
 # Editor
 .vscode/
