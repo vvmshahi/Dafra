@@ -22,6 +22,15 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
+function legacyProductionDisabledResponse(): Response {
+  return new Response(JSON.stringify({
+    error: 'Production onboarding has moved to zatca-onboard-production. Use the production onboarding flow instead of the legacy compliance endpoint.',
+  }), {
+    status: 410,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { status: 200, headers: corsHeaders })
@@ -43,6 +52,8 @@ Deno.serve(async (req: Request) => {
     }
 
     const { csr, otp, branchId, environment } = await req.json()
+    if (environment === 'production') return legacyProductionDisabledResponse()
+
     if (!csr || !otp || !branchId) {
       return new Response(JSON.stringify({ error: 'Missing required fields: csr, otp, branchId' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },

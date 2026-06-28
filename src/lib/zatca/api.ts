@@ -160,6 +160,9 @@ export async function requestComplianceCsid(
   branchId:    string,
   environment: 'sandbox' | 'production' = 'sandbox',
 ): Promise<ComplianceCsidResponse> {
+  if (environment === 'production') {
+    throw new Error('Production onboarding has moved to the dedicated production onboarding flow.')
+  }
   return edgePost<ComplianceCsidResponse>('zatca-compliance', { csr, otp, branchId, environment })
 }
 
@@ -178,6 +181,9 @@ export async function requestProductionCsid(
   branchId:    string,
   environment: 'sandbox' | 'production' = 'sandbox',
 ): Promise<ProductionCsidResponse> {
+  if (environment === 'production') {
+    throw new Error('Production onboarding has moved to the dedicated production onboarding flow.')
+  }
   return edgePost<ProductionCsidResponse>('zatca-production', { branchId, environment })
 }
 
