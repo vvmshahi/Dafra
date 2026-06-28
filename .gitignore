@@ -12,6 +12,7 @@ dist-ssr/
 .env.*.local
 
 # Certificates, keys, CSRs, and signed invoice artifacts
+.zatca-debug/
 *.key
 *.pem
 *.p12
