@@ -65,7 +65,7 @@ export async function saveOnboardingState(db: any, update: OnboardingUpdate): Pr
 }
 
 export async function loadSafeOnboardingStatus(db: any, branchId: string, tenantId: string): Promise<Record<string, unknown>> {
-  const { data, error } = await db
+  const { data, error, status, statusText } = await db
     .from('zatca_production_credentials')
     .select(`
       branch_id,
@@ -83,7 +83,26 @@ export async function loadSafeOnboardingStatus(db: any, branchId: string, tenant
     .eq('environment', 'production')
     .maybeSingle()
 
-  if (error) throw new Error('Unable to load ZATCA production onboarding status')
+  if (error) {
+    console.error('[zatca-storage] loadSafeOnboardingStatus failed', {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+      stack: error instanceof Error ? error.stack : undefined,
+      status,
+      statusText,
+      query: {
+        table: 'zatca_production_credentials',
+        operation: 'select status fields',
+        branchId,
+        tenantId,
+        environment: 'production',
+        dataReturned: data !== null,
+      },
+    })
+    throw new Error('Unable to load ZATCA production onboarding status')
+  }
   if (!data) {
     return {
       branchId,
