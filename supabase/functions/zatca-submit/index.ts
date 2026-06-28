@@ -38,6 +38,15 @@ const APP_SECRET = Deno.env.get('ZATCA_KEY_SECRET')
 const FIRST_INVOICE_HASH =
   'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ=='
 
+interface SubmissionCredentials {
+  environment: 'sandbox' | 'production'
+  privateKey: Uint8Array
+  productionCsid: string
+  productionSecret: string
+  legacyCertId?: string
+  legacyInvoiceCounter?: number
+}
+
 
 // ── Crypto utilities ─────────────────────────────────────────────────────────
 
@@ -59,6 +68,25 @@ async function decryptPrivateKey(stored: string): Promise<Uint8Array> {
   const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, enc)
   const pem = new TextDecoder().decode(dec)
   // PEM label "EC PRIVATE KEY" wraps raw 32-byte secp256k1 secret key
+  const b64 = pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
+  return Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+}
+
+async function decryptProductionText(stored: string, secret: string): Promise<string> {
+  const [version, ivB64, encB64] = stored.split(':')
+  if (version !== 'v1' || !ivB64 || !encB64) {
+    throw new Error('Invalid encrypted production credential format')
+  }
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret))
+  const key = await crypto.subtle.importKey('raw', digest, 'AES-GCM', false, ['decrypt'])
+  const iv = Uint8Array.from(atob(ivB64), c => c.charCodeAt(0))
+  const enc = Uint8Array.from(atob(encB64), c => c.charCodeAt(0))
+  const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, enc)
+  return new TextDecoder().decode(dec)
+}
+
+async function decryptProductionPrivateKey(stored: string, secret: string): Promise<Uint8Array> {
+  const pem = await decryptProductionText(stored, secret)
   const b64 = pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
   return Uint8Array.from(atob(b64), c => c.charCodeAt(0))
 }
@@ -716,6 +744,71 @@ async function queueForRetry(db: any, invoiceId: string, branchId: string, tenan
   }])
 }
 
+async function loadSubmissionCredentials(db: any, branchId: string, tenantId: string): Promise<SubmissionCredentials | null> {
+  const { data: productionCredentials, error: productionErr } = await db
+    .from('zatca_production_credentials')
+    .select('encrypted_private_key, encrypted_production_csid, encrypted_production_secret')
+    .eq('branch_id', branchId)
+    .eq('tenant_id', tenantId)
+    .eq('environment', 'production')
+    .maybeSingle()
+
+  if (productionErr) {
+    console.error('[zatca-submit] production credentials lookup failed:', productionErr.message)
+    throw new Error('Unable to load production ZATCA credentials')
+  }
+
+  if (productionCredentials) {
+    const {
+      encrypted_private_key,
+      encrypted_production_csid,
+      encrypted_production_secret,
+    } = productionCredentials
+
+    if (!encrypted_private_key || !encrypted_production_csid || !encrypted_production_secret) {
+      throw new Error('Production ZATCA credentials are incomplete')
+    }
+
+    const encryptionSecret = Deno.env.get('ZATCA_SERVER_ENCRYPTION_KEY')
+    if (!encryptionSecret) throw new Error('ZATCA_SERVER_ENCRYPTION_KEY is not configured')
+
+    return {
+      environment: 'production',
+      privateKey: await decryptProductionPrivateKey(encrypted_private_key, encryptionSecret),
+      productionCsid: await decryptProductionText(encrypted_production_csid, encryptionSecret),
+      productionSecret: await decryptProductionText(encrypted_production_secret, encryptionSecret),
+    }
+  }
+
+  const { data: cert, error: certErr } = await db
+    .from('zatca_certificates')
+    .select('id, private_key_encrypted, production_csid, production_secret, invoice_counter')
+    .eq('branch_id', branchId)
+    .eq('tenant_id', tenantId)
+    .eq('environment', 'sandbox')
+    .eq('status', 'active')
+    .maybeSingle()
+
+  console.log('[zatca-submit] sandbox cert lookup:', {
+    found: !!cert,
+    error: certErr?.message,
+    hasCsid: !!cert?.production_csid,
+  })
+
+  if (certErr) throw new Error('Unable to load sandbox ZATCA certificate')
+  if (!cert?.production_csid) return null
+  if (!cert.private_key_encrypted) throw new Error('Sandbox private key is missing')
+
+  return {
+    environment: 'sandbox',
+    privateKey: await decryptPrivateKey(cert.private_key_encrypted),
+    productionCsid: cert.production_csid,
+    productionSecret: cert.production_secret,
+    legacyCertId: cert.id,
+    legacyInvoiceCounter: cert.invoice_counter ?? 0,
+  }
+}
+
 // ── Main invoice processor ────────────────────────────────────────────────────
 
 async function processInvoice(db: any, invoiceId: string, callerTenantId: string): Promise<{ invoiceStatus: string }> {
@@ -768,29 +861,25 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     return { invoiceStatus: 'failed' }
   }
 
-  const { data: cert, error: certErr } = await db
-    .from('zatca_certificates').select('*')
-    .eq('branch_id', inv.branch_id).eq('status', 'active').single()
-
-  console.log('[zatca-submit] cert lookup:', { found: !!cert, error: certErr?.message, hasCsid: !!cert?.production_csid })
-
-  if (!cert?.production_csid) {
-    console.log('[zatca-submit] no active Phase 2 cert — marking not_submitted')
-    await db.from('invoices').update({ zatca_status: 'not_submitted' }).eq('id', invoiceId)
-    return { invoiceStatus: 'not_submitted' }
+  let credentials: SubmissionCredentials | null
+  try {
+    credentials = await loadSubmissionCredentials(db, inv.branch_id, inv.tenant_id)
+  } catch (err: any) {
+    console.warn('[zatca-submit] credentials unavailable:', err.message)
+    await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, err.message)
+    return { invoiceStatus: 'pending' }
   }
 
-  if (!cert.private_key_encrypted) {
-    console.warn('[zatca-submit] active cert but missing private key — queuing retry')
-    await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, 'private key missing')
-    return { invoiceStatus: 'pending' }
+  if (!credentials) {
+    console.log('[zatca-submit] no active Phase 2 credentials — marking not_submitted')
+    await db.from('invoices').update({ zatca_status: 'not_submitted' }).eq('id', invoiceId)
+    return { invoiceStatus: 'not_submitted' }
   }
 
   try {
     await db.from('invoices').update({ zatca_status: 'pending' }).eq('id', invoiceId)
 
-    console.log('[zatca-submit] decrypting private key...')
-    const secretKey = await decryptPrivateKey(cert.private_key_encrypted)
+    const secretKey = credentials.privateKey
 
     const isSimplified = inv.zatca_invoice_type === 'simplified'
     console.log('[zatca-submit] building XML, isSimplified:', isSimplified)
@@ -803,13 +892,13 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     })
 
     console.log('[zatca-submit] signing XML...')
-    const { signedXml, invoiceHash, qrCode } = await signInvoice(unsignedXml, secretKey, cert.production_csid)
+    const { signedXml, invoiceHash, qrCode } = await signInvoice(unsignedXml, secretKey, credentials.productionCsid)
     console.log('[zatca-submit] signed OK, hash prefix:', invoiceHash.substring(0, 20))
 
-    const env       = cert.environment === 'production' ? 'production' : 'sandbox'
+    const env       = credentials.environment
     const baseUrl   = ZATCA_URLS[env]
     const endpoint  = isSimplified ? `${baseUrl}/invoices/reporting/single` : `${baseUrl}/invoices/clearance/single`
-    const creds     = btoa(`${cert.production_csid}:${cert.production_secret}`)
+    const creds     = btoa(`${credentials.productionCsid}:${credentials.productionSecret}`)
     const xmlB64    = btoa(unescape(encodeURIComponent(signedXml)))
 
     console.log('[zatca-submit] submitting to ZATCA:', endpoint)
@@ -852,9 +941,11 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
       zatca_prev_invoice_hash:  invoiceHash,
     }).eq('id', invoiceId)
 
-    await db.from('zatca_certificates')
-      .update({ last_invoice_hash: invoiceHash, invoice_counter: (cert.invoice_counter ?? 0) + 1 })
-      .eq('id', cert.id)
+    if (credentials.environment === 'sandbox' && credentials.legacyCertId) {
+      await db.from('zatca_certificates')
+        .update({ last_invoice_hash: invoiceHash, invoice_counter: (credentials.legacyInvoiceCounter ?? 0) + 1 })
+        .eq('id', credentials.legacyCertId)
+    }
 
     if (newStatus === 'failed') {
       await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, JSON.stringify(zatcaBody?.errors))
@@ -914,17 +1005,51 @@ Deno.serve(async (req: Request) => {
     // ── GET /debug?branchId=... — verify cert digest + signed-properties values ──
     if (req.method === 'GET' && url.searchParams.has('branchId')) {
       const branchId = url.searchParams.get('branchId')!
-      const { data: cert } = await supabase
-        .from('zatca_certificates').select('production_csid, environment')
-        .eq('branch_id', branchId).eq('status', 'active').single()
+      let certificate: string | null = null
+      let environment: 'production' | 'sandbox' | null = null
 
-      if (!cert?.production_csid) {
+      const { data: productionCredentials, error: productionErr } = await supabase
+        .from('zatca_production_credentials')
+        .select('encrypted_private_key, encrypted_production_csid, encrypted_production_secret')
+        .eq('branch_id', branchId)
+        .eq('tenant_id', callerTenantId)
+        .eq('environment', 'production')
+        .maybeSingle()
+
+      if (productionErr) {
+        return new Response(JSON.stringify({ error: 'Unable to load production credentials' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (productionCredentials?.encrypted_production_csid) {
+        const encryptionSecret = Deno.env.get('ZATCA_SERVER_ENCRYPTION_KEY')
+        if (!encryptionSecret) {
+          return new Response(JSON.stringify({ error: 'ZATCA_SERVER_ENCRYPTION_KEY is not configured' }), {
+            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+        certificate = await decryptProductionText(productionCredentials.encrypted_production_csid, encryptionSecret)
+        environment = 'production'
+      } else {
+        const { data: cert } = await supabase
+          .from('zatca_certificates').select('production_csid, environment')
+          .eq('branch_id', branchId)
+          .eq('tenant_id', callerTenantId)
+          .eq('environment', 'sandbox')
+          .eq('status', 'active')
+          .maybeSingle()
+        certificate = cert?.production_csid ?? null
+        environment = cert?.environment === 'sandbox' ? 'sandbox' : null
+      }
+
+      if (!certificate || !environment) {
         return new Response(JSON.stringify({ error: 'No active cert for branch' }), {
           status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
 
-      const certB64Outer = cert.production_csid.replace(/[\r\n\s]+/g, '')
+      const certB64Outer = certificate.replace(/[\r\n\s]+/g, '')
       const certB64DER   = atob(certB64Outer).replace(/\s+/g, '')
       const certPemBody  = certB64DER
       const certDer      = Uint8Array.from(atob(certB64DER), c => c.charCodeAt(0))
@@ -950,7 +1075,7 @@ Deno.serve(async (req: Request) => {
         signedPropsXml,
         spDigestLength:    spDigestB64.length,
         spDigestB64,
-        environment:       cert.environment,
+        environment,
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
