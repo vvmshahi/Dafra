@@ -32,9 +32,6 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-// Must match VITE_ZATCA_KEY_SECRET set when the private key was encrypted in the browser
-const APP_SECRET = Deno.env.get('ZATCA_KEY_SECRET')
-
 const FIRST_INVOICE_HASH =
   'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ=='
 
@@ -51,8 +48,13 @@ interface SubmissionCredentials {
 // ── Crypto utilities ─────────────────────────────────────────────────────────
 
 async function deriveAesKey(): Promise<CryptoKey> {
+  const appSecret = Deno.env.get('ZATCA_KEY_SECRET')
+  if (!appSecret) {
+    throw new Error('ZATCA_KEY_SECRET is not configured for sandbox ZATCA credentials')
+  }
+
   const raw = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(APP_SECRET), 'PBKDF2', false, ['deriveKey'],
+    'raw', new TextEncoder().encode(appSecret), 'PBKDF2', false, ['deriveKey'],
   )
   return crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt: new TextEncoder().encode('dafra-zatca-v1'), iterations: 100_000, hash: 'SHA-256' },
@@ -96,6 +98,35 @@ async function sha256(input: string): Promise<ArrayBuffer> {
 }
 async function sha256Bytes(input: BufferSource): Promise<ArrayBuffer> {
   return crypto.subtle.digest('SHA-256', input)
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  return Uint8Array.from(atob(value), c => c.charCodeAt(0))
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+function decodeCertificateToken(token: string): { certPemBody: string; certDer: Uint8Array } {
+  const trimmed = token.trim()
+  if (trimmed.includes('BEGIN CERTIFICATE')) {
+    const certPemBody = trimmed.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
+    return { certPemBody, certDer: base64ToBytes(certPemBody) }
+  }
+
+  const compact = token.replace(/[\r\n\s]+/g, '')
+  const onceBytes = base64ToBytes(compact)
+  if (onceBytes[0] === 0x30) return { certPemBody: compact, certDer: onceBytes }
+
+  const onceText = new TextDecoder().decode(onceBytes).trim()
+  if (onceText.includes('BEGIN CERTIFICATE')) {
+    const certPemBody = onceText.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
+    return { certPemBody, certDer: base64ToBytes(certPemBody) }
+  }
+
+  const certPemBody = onceText.replace(/\s+/g, '')
+  return { certPemBody, certDer: base64ToBytes(certPemBody) }
 }
 
 function p1363ToDer(sig: Uint8Array): Uint8Array {
@@ -660,12 +691,7 @@ function buildXadesBlock(
 async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate: string): Promise<{
   signedXml: string; invoiceHash: string; qrCode: string
 }> {
-  // ZATCA's binarySecurityToken is base64(DER). The DB stores it verbatim as a TEXT column,
-  // so production_csid = base64(base64(DER)) — need two rounds of base64 decoding.
-  const certB64Outer = certificate.replace(/[\r\n\s]+/g, '')       // outer base64 as stored in DB
-  const certB64DER   = atob(certB64Outer).replace(/\s+/g, '')      // inner base64(DER)
-  const certPemBody  = certB64DER                                   // base64(DER) for ds:X509Certificate
-  const certDer      = Uint8Array.from(atob(certB64DER), c => c.charCodeAt(0))  // raw DER bytes
+  const { certPemBody, certDer } = decodeCertificateToken(certificate)
 
   const serialNumber  = extractCertSerial(certDer)
   const issuerName    = extractCertIssuerName(certDer)              // DN string for xades:IssuerSerial
@@ -674,7 +700,7 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
 
   // Cert digest: base64(hex(SHA256(UTF8(certPemBody)))) — 88-char, matches ZATCA SDK format
   const certDigestBytes = new Uint8Array(await sha256Bytes(new TextEncoder().encode(certPemBody)))
-  const certDigestHex   = Array.from(certDigestBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+  const certDigestHex   = bytesToHex(certDigestBytes)
   const certDigestB64   = btoa(certDigestHex)
 
   const invoiceCanonical = canonicalizeInvoiceContent(xmlString)
@@ -690,7 +716,7 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const signedPropsXml       = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
   const signedPropsHashInput = toSignedPropsHashInput(signedPropsXml)
   const signedPropsBytes     = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedPropsHashInput)))
-  const signedPropsHex       = Array.from(signedPropsBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+  const signedPropsHex       = bytesToHex(signedPropsBytes)
   const signedPropsB64       = btoa(signedPropsHex)
 
   const signedInfoCanon  = buildSignedInfoCanonical(invoiceDigestB64, signedPropsB64)
@@ -809,6 +835,38 @@ async function loadSubmissionCredentials(db: any, branchId: string, tenantId: st
   }
 }
 
+function summarizeZatcaMessages(messages: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(messages)) return []
+  return messages.slice(0, 5).map((message: any) => ({
+    code: typeof message?.code === 'string' ? message.code : undefined,
+    category: typeof message?.category === 'string' ? message.category : undefined,
+    status: typeof message?.status === 'string' ? message.status : undefined,
+    type: typeof message?.type === 'string' ? message.type : undefined,
+  })).filter(message => Object.values(message).some(Boolean))
+}
+
+function summarizeZatcaResponse(body: any): Record<string, unknown> {
+  const validationResults = body?.validationResults ?? {}
+  const errors = Array.isArray(body?.errors) ? body.errors : []
+  const warnings = Array.isArray(body?.warnings) ? body.warnings : []
+  const validationErrors = Array.isArray(validationResults?.errorMessages)
+    ? validationResults.errorMessages
+    : []
+  const validationWarnings = Array.isArray(validationResults?.warningMessages)
+    ? validationResults.warningMessages
+    : []
+
+  return {
+    reportingStatus: typeof body?.reportingStatus === 'string' ? body.reportingStatus : undefined,
+    clearanceStatus: typeof body?.clearanceStatus === 'string' ? body.clearanceStatus : undefined,
+    validationStatus: typeof validationResults?.status === 'string' ? validationResults.status : undefined,
+    errorCount: errors.length + validationErrors.length,
+    warningCount: warnings.length + validationWarnings.length,
+    errors: summarizeZatcaMessages([...errors, ...validationErrors]),
+    warnings: summarizeZatcaMessages([...warnings, ...validationWarnings]),
+  }
+}
+
 // ── Main invoice processor ────────────────────────────────────────────────────
 
 async function processInvoice(db: any, invoiceId: string, callerTenantId: string): Promise<{ invoiceStatus: string }> {
@@ -846,6 +904,7 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
       show_email, email
     `)
     .eq('id', inv.branch_id)
+    .eq('tenant_id', callerTenantId)
     .single()
 
   if (!branch) {
@@ -915,7 +974,7 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     const responseText = await zatcaRes.text()
     console.log('[zatca-submit] ZATCA status:', zatcaRes.status)
     const zatcaBody = (() => { try { return JSON.parse(responseText) } catch { return {} } })()
-    console.log('[zatca-submit] ZATCA response:', JSON.stringify(zatcaBody))
+    console.log('[zatca-submit] ZATCA response summary:', JSON.stringify(summarizeZatcaResponse(zatcaBody)))
 
     const reportingStatus = zatcaBody?.reportingStatus as string | undefined
     const clearanceStatus = zatcaBody?.clearanceStatus as string | undefined
@@ -966,13 +1025,6 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { status: 200, headers: corsHeaders })
 
-  if (!APP_SECRET) {
-    return new Response(
-      JSON.stringify({ error: 'ZATCA_KEY_SECRET not configured' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-  }
-
   const url = new URL(req.url)
 
   try {
@@ -1002,60 +1054,28 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    // ── GET /debug?branchId=... — verify cert digest + signed-properties values ──
+    // ── GET /debug?branchId=... — sandbox-only cert digest diagnostics ──
     if (req.method === 'GET' && url.searchParams.has('branchId')) {
       const branchId = url.searchParams.get('branchId')!
-      let certificate: string | null = null
-      let environment: 'production' | 'sandbox' | null = null
 
-      const { data: productionCredentials, error: productionErr } = await supabase
-        .from('zatca_production_credentials')
-        .select('encrypted_private_key, encrypted_production_csid, encrypted_production_secret')
+      const { data: cert } = await supabase
+        .from('zatca_certificates').select('production_csid, environment')
         .eq('branch_id', branchId)
         .eq('tenant_id', callerTenantId)
-        .eq('environment', 'production')
+        .eq('environment', 'sandbox')
+        .eq('status', 'active')
         .maybeSingle()
 
-      if (productionErr) {
-        return new Response(JSON.stringify({ error: 'Unable to load production credentials' }), {
-          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
-
-      if (productionCredentials?.encrypted_production_csid) {
-        const encryptionSecret = Deno.env.get('ZATCA_SERVER_ENCRYPTION_KEY')
-        if (!encryptionSecret) {
-          return new Response(JSON.stringify({ error: 'ZATCA_SERVER_ENCRYPTION_KEY is not configured' }), {
-            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          })
-        }
-        certificate = await decryptProductionText(productionCredentials.encrypted_production_csid, encryptionSecret)
-        environment = 'production'
-      } else {
-        const { data: cert } = await supabase
-          .from('zatca_certificates').select('production_csid, environment')
-          .eq('branch_id', branchId)
-          .eq('tenant_id', callerTenantId)
-          .eq('environment', 'sandbox')
-          .eq('status', 'active')
-          .maybeSingle()
-        certificate = cert?.production_csid ?? null
-        environment = cert?.environment === 'sandbox' ? 'sandbox' : null
-      }
-
-      if (!certificate || !environment) {
-        return new Response(JSON.stringify({ error: 'No active cert for branch' }), {
+      if (!cert?.production_csid || cert.environment !== 'sandbox') {
+        return new Response(JSON.stringify({ error: 'No active sandbox cert for branch' }), {
           status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
 
-      const certB64Outer = certificate.replace(/[\r\n\s]+/g, '')
-      const certB64DER   = atob(certB64Outer).replace(/\s+/g, '')
-      const certPemBody  = certB64DER
-      const certDer      = Uint8Array.from(atob(certB64DER), c => c.charCodeAt(0))
+      const { certPemBody, certDer } = decodeCertificateToken(cert.production_csid)
 
       const certDigestBytes = new Uint8Array(await sha256Bytes(new TextEncoder().encode(certPemBody)))
-      const certDigestHex   = Array.from(certDigestBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+      const certDigestHex   = bytesToHex(certDigestBytes)
       const certDigestB64   = btoa(certDigestHex)
 
       const serialNumber = extractCertSerial(certDer)
@@ -1064,7 +1084,7 @@ Deno.serve(async (req: Request) => {
 
       const signedPropsXml = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
       const spHashBytes    = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedPropsXml)))
-      const spHex          = Array.from(spHashBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+      const spHex          = bytesToHex(spHashBytes)
       const spDigestB64    = btoa(spHex)
 
       return new Response(JSON.stringify({
@@ -1075,7 +1095,7 @@ Deno.serve(async (req: Request) => {
         signedPropsXml,
         spDigestLength:    spDigestB64.length,
         spDigestB64,
-        environment,
+        environment: 'sandbox',
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 

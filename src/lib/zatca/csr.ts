@@ -1,6 +1,9 @@
 /**
- * ZATCA Phase 2 — PKCS#10 CSR Generation
+ * ZATCA Phase 2 — Sandbox PKCS#10 CSR Generation
  * Pure TypeScript inline ASN.1 encoder — no external ASN.1 library required.
+ *
+ * Production CSR generation lives in Supabase Edge Functions. This browser
+ * helper is retained only for the legacy sandbox certificate flow.
  *
  * Subject: C, O, OU, CN
  * SAN: ONE directoryName [4] with five RDNs (surName, userId, title, registeredAddress, businessCategory)

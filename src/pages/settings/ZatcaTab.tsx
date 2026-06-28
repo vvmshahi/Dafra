@@ -1,11 +1,9 @@
 /**
  * ZATCA Phase 2 — Settings Tab
  *
- * Per-branch 4-step onboarding flow:
- *   Step 1: Generate Security Certificate (key pair + CSR → DB)
- *   Step 2: Enter OTP  (2a: copy CSR to Fatoorah portal, 2b: enter OTP → compliance cert)
- *   Step 3: Activate   (production cert via Edge Function)
- *   Step 4: Done       (clean status display — no raw credentials shown)
+ * Per-branch certificate management:
+ *   - Sandbox uses the legacy 4-step browser CSR flow.
+ *   - Production uses backend-only onboarding through zatca-onboard-production.
  *
  * Each branch operates independently and maintains separate certs per environment.
  */
@@ -237,7 +235,7 @@ function Step1GenerateKeys({
   branch, environment, onDone,
 }: {
   branch: BranchWithCert
-  environment: 'sandbox' | 'production'
+  environment: 'sandbox'
   onDone: (cert: ZatcaCertificate) => void
 }) {
   const { profile } = useAuth()
@@ -376,8 +374,7 @@ function Step1GenerateKeys({
       <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl p-3.5">
         <Info size={13} className="text-blue-600 mt-0.5 flex-shrink-0" />
         <p className="text-[11px] text-blue-700 leading-relaxed">
-          This will generate a digital signature key in your browser and create a security certificate request for the{' '}
-          <strong>{environment === 'production' ? 'production' : 'sandbox'}</strong> environment.
+          This will generate a sandbox digital signature key in your browser and create a sandbox security certificate request.
           The private key is encrypted before being stored securely in the database.
         </p>
       </div>
@@ -468,7 +465,7 @@ function Step2EnterOTP({
 }: {
   branch: BranchWithCert
   cert: ZatcaCertificate
-  environment: 'sandbox' | 'production'
+  environment: 'sandbox'
   onDone: (updated: ZatcaCertificate) => void
 }) {
   const [otp, setOtp]         = useState('')
@@ -506,11 +503,11 @@ function Step2EnterOTP({
             <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
               Go to{' '}
               <a
-                href={environment === 'sandbox' ? 'https://fatoorah.zatca.gov.sa' : 'https://fatoorah.zatca.gov.sa'}
+                href="https://fatoorah.zatca.gov.sa"
                 target="_blank" rel="noopener noreferrer"
                 className="font-semibold text-primary-600 underline"
               >
-                {environment === 'sandbox' ? 'fatoorah.zatca.gov.sa' : 'fatoorah.zatca.gov.sa'}
+                fatoorah.zatca.gov.sa
               </a>
               {' → '}E-Invoicing → My Devices → Add New Device → paste this Security Certificate Request:
             </p>
@@ -537,16 +534,9 @@ function Step2EnterOTP({
           onChange={e => setOtp(e.target.value.replace(/\D/g, '').substring(0, 6))}
           className="input text-center text-2xl tracking-[0.5em] font-mono"
         />
-        {environment === 'sandbox' && (
-          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-            For sandbox testing, use OTP: <span className="font-mono font-bold tracking-widest">123345</span>
-          </p>
-        )}
-        {environment === 'production' && (
-          <p className="text-[11px] text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 leading-relaxed">
-            The OTP expires quickly — enter it immediately after receiving it.
-          </p>
-        )}
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          For sandbox testing, use OTP: <span className="font-mono font-bold tracking-widest">123345</span>
+        </p>
       </div>
 
       {error && (
@@ -568,13 +558,13 @@ function Step2EnterOTP({
   )
 }
 
-/* ── Step 3: Activate (FIX 1 — rename "Production CSID") ────────────────── */
+/* ── Step 3: Activate sandbox certificate ───────────────────────────────── */
 
 function Step3Activate({
   branch, environment, onDone,
 }: {
   branch: BranchWithCert
-  environment: 'sandbox' | 'production'
+  environment: 'sandbox'
   onDone: (updated: ZatcaCertificate) => void
 }) {
   const [loading, setLoading] = useState(false)
@@ -606,7 +596,7 @@ function Step3Activate({
         <CheckCircle2 size={13} className="text-emerald-600 mt-0.5 flex-shrink-0" />
         <p className="text-[11px] text-emerald-700 leading-relaxed">
           Compliance certificate registered successfully. Click below to activate it.
-          This will make the branch live on the ZATCA system.
+          This will activate the branch in the ZATCA sandbox.
         </p>
       </div>
 
@@ -627,7 +617,7 @@ function Step3Activate({
       </button>
 
       <p className="text-[11px] text-gray-400 text-center">
-        This contacts ZATCA to issue your active certificate.
+        This contacts the ZATCA sandbox to issue your active sandbox certificate.
       </p>
     </div>
   )
@@ -647,7 +637,7 @@ function Step4Done({ cert }: { cert: ZatcaCertificate }) {
         <div>
           <p className="text-xs font-semibold text-emerald-800">Branch is Phase 2 compliant</p>
           <p className="text-[11px] text-emerald-700 mt-0.5">
-            Active certificate is live. Invoices are automatically signed and submitted to ZATCA.
+            Active sandbox certificate is configured for test submissions.
           </p>
         </div>
       </div>

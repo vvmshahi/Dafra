@@ -1,15 +1,14 @@
 /**
- * ZATCA Phase 2 — Key Generation & Encryption
+ * ZATCA Phase 2 — Sandbox Key Generation & Encryption
  * Uses @noble/curves secp256k1 (required by ZATCA — Bitcoin curve, OID 1.3.132.0.10)
  *
- * Private keys are AES-256-GCM encrypted with a PBKDF2-derived key
- * before being stored in zatca_certificates.private_key_encrypted.
- * The encryption secret is the VITE_ZATCA_KEY_SECRET env var.
+ * Production keys are generated and stored only in Supabase Edge Functions.
+ * This browser helper is retained for the legacy sandbox certificate flow.
  */
 
 import { secp256k1 } from '@noble/curves/secp256k1.js'
 
-const APP_SECRET = import.meta.env.VITE_ZATCA_KEY_SECRET ?? 'dafra-zatca-local-secret'
+const SANDBOX_KEY_SECRET = 'dafra-zatca-sandbox-only-secret'
 
 export interface ZatcaKeyPair {
   privateKey:    Uint8Array    // raw 32-byte secp256k1 secret key
@@ -19,9 +18,9 @@ export interface ZatcaKeyPair {
   publicKeyDer:  ArrayBuffer   // SPKI DER — passed to CSR builder
 }
 
-// ── Key generation ────────────────────────────────────────────────────────────
+// ── Sandbox key generation ────────────────────────────────────────────────────
 
-/** Generate secp256k1 key pair using @noble/curves */
+/** Generate a sandbox secp256k1 key pair using @noble/curves */
 export async function generateKeyPair(): Promise<ZatcaKeyPair> {
   const secretKey  = secp256k1.utils.randomSecretKey()                  // 32 bytes
   const pubKeyBytes = secp256k1.getPublicKey(secretKey, false)          // 65 bytes uncompressed
@@ -38,14 +37,6 @@ export async function generateKeyPair(): Promise<ZatcaKeyPair> {
 }
 
 /**
- * Import a secp256k1 private key from PEM.
- * The PEM wraps the raw 32-byte secret key (label: EC PRIVATE KEY).
- */
-export async function importPrivateKeyPem(pem: string): Promise<Uint8Array> {
-  return new Uint8Array(pemToDer(pem))
-}
-
-/**
  * Sign data with secp256k1 / SHA-256. Returns 64-byte IEEE P1363 (r‖s) as ArrayBuffer.
  * noble/curves hashes with SHA-256 internally (prehash: true is the default) —
  * do NOT pre-hash here or the signature will be over SHA-256(SHA-256(data)).
@@ -56,16 +47,6 @@ export async function ecdsaSign(secretKey: Uint8Array, data: BufferSource): Prom
     : new Uint8Array(data as ArrayBuffer)
   const sigP1363 = secp256k1.sign(bytes, secretKey)  // prehash: true (default) — SHA-256 applied internally
   return sigP1363.slice().buffer as ArrayBuffer
-}
-
-/** SHA-256 hash of a UTF-8 string, returned as ArrayBuffer */
-export async function sha256(input: string): Promise<ArrayBuffer> {
-  return crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
-}
-
-/** SHA-256 hash of raw bytes */
-export async function sha256Bytes(input: BufferSource): Promise<ArrayBuffer> {
-  return crypto.subtle.digest('SHA-256', input)
 }
 
 // ── P1363 → DER ECDSA signature conversion ───────────────────────────────────
@@ -117,10 +98,10 @@ function buildSecp256k1Spki(pubKeyBytes: Uint8Array): ArrayBuffer {
   return new Uint8Array([0x30, spkiInner.length, ...spkiInner]).buffer as ArrayBuffer
 }
 
-// ── Encryption for DB storage ─────────────────────────────────────────────────
+// ── Sandbox encryption for DB storage ─────────────────────────────────────────
 
 /**
- * AES-256-GCM encrypt a private key PEM.
+ * AES-256-GCM encrypt a sandbox private key PEM.
  * Returns "{base64iv}:{base64ciphertext}" — safe to store in varchar column.
  */
 export async function encryptPrivateKey(pem: string): Promise<string> {
@@ -136,19 +117,9 @@ export async function encryptPrivateKey(pem: string): Promise<string> {
   return `${ivB64}:${encB64}`
 }
 
-/** Decrypt a stored encrypted private key */
-export async function decryptPrivateKey(stored: string): Promise<string> {
-  const [ivB64, encB64] = stored.split(':')
-  const iv  = b64ToBuf(ivB64)
-  const enc = b64ToBuf(encB64)
-  const key = await deriveAesKey()
-  const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, enc)
-  return new TextDecoder().decode(dec)
-}
-
 async function deriveAesKey(): Promise<CryptoKey> {
   const raw = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(APP_SECRET), 'PBKDF2', false, ['deriveKey'],
+    'raw', new TextEncoder().encode(SANDBOX_KEY_SECRET), 'PBKDF2', false, ['deriveKey'],
   )
   return crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt: new TextEncoder().encode('dafra-zatca-v1'), iterations: 100_000, hash: 'SHA-256' },
@@ -167,16 +138,6 @@ export function derToPem(der: ArrayBuffer, label: string): string {
   return `-----BEGIN ${label}-----\n${lines}\n-----END ${label}-----`
 }
 
-export function pemToDer(pem: string): ArrayBuffer {
-  const b64   = pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
-  const bytes = atob(b64)
-  return new Uint8Array(Array.from(bytes, c => c.charCodeAt(0))).buffer
-}
-
 function bufToB64(buf: Uint8Array): string {
   return btoa(String.fromCharCode(...buf))
-}
-
-function b64ToBuf(b64: string): Uint8Array {
-  return Uint8Array.from(atob(b64), c => c.charCodeAt(0))
 }

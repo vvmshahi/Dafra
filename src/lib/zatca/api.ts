@@ -7,8 +7,8 @@
  *  - CORS is handled by the Edge Function
  *
  * Edge Function endpoints:
- *   POST /functions/v1/zatca-compliance   — Compliance CSID registration
- *   POST /functions/v1/zatca-production   — Production CSID activation
+ *   POST /functions/v1/zatca-compliance   — Sandbox Compliance CSID registration
+ *   POST /functions/v1/zatca-production   — Sandbox CSID activation
  *   POST /functions/v1/zatca-submit       — Invoice reporting / clearance
  *   POST /functions/v1/zatca-onboard-production — Owner-only production onboarding
  */
@@ -147,7 +147,7 @@ export interface ComplianceCsidResponse {
 }
 
 /**
- * Register a new EGS device with ZATCA.
+ * Register a new sandbox EGS device with ZATCA.
  * Calls POST /compliance on the ZATCA sandbox API.
  *
  * @param csr - PEM CSR string
@@ -158,15 +158,12 @@ export async function requestComplianceCsid(
   csr:         string,
   otp:         string,
   branchId:    string,
-  environment: 'sandbox' | 'production' = 'sandbox',
+  environment: 'sandbox' = 'sandbox',
 ): Promise<ComplianceCsidResponse> {
-  if (environment === 'production') {
-    throw new Error('Production onboarding has moved to the dedicated production onboarding flow.')
-  }
   return edgePost<ComplianceCsidResponse>('zatca-compliance', { csr, otp, branchId, environment })
 }
 
-// ── Production CSID ───────────────────────────────────────────────────────────
+// ── Sandbox CSID activation ───────────────────────────────────────────────────
 
 export interface ProductionCsidResponse {
   binarySecurityToken: string
@@ -174,16 +171,13 @@ export interface ProductionCsidResponse {
 }
 
 /**
- * Convert a compliance CSID into a production CSID.
+ * Convert a sandbox compliance CSID into an active sandbox CSID.
  * Requires the compliance_request_id stored after step 2.
  */
 export async function requestProductionCsid(
   branchId:    string,
-  environment: 'sandbox' | 'production' = 'sandbox',
+  environment: 'sandbox' = 'sandbox',
 ): Promise<ProductionCsidResponse> {
-  if (environment === 'production') {
-    throw new Error('Production onboarding has moved to the dedicated production onboarding flow.')
-  }
   return edgePost<ProductionCsidResponse>('zatca-production', { branchId, environment })
 }
 
