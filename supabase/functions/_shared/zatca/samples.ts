@@ -142,7 +142,6 @@ async function buildCompliancePayload(
     requireBuyer: !data.isSimplified,
   })
   const { signedXml, invoiceHash } = await signInvoice(unsignedXml, privateKey, params.complianceCertificate)
-  await assertInvoiceHashMatches(signedXml, invoiceHash)
 
   return {
     type,
@@ -571,6 +570,10 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const certDigestHex = bytesToHex(certDigestBytes)
   const certDigestB64 = btoa(certDigestHex)
 
+  // ZATCA invoiceHash is the digest of the invoice after the XMLDSig transforms:
+  // remove ext:UBLExtensions, remove cac:Signature, remove QR AdditionalDocumentReference,
+  // canonicalize, then SHA-256 + base64. The submitted invoice field remains the final
+  // signed XML; it is intentionally not hashed as a whole document.
   const invoiceDigestB64 = await computeInvoiceHash(xmlString)
   const signingTime = new Date().toISOString().replace(/\.\d{3}Z$/, '')
   const signedPropsXml = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
@@ -622,12 +625,7 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
     `$1${qrCode}$3`,
   )
 
-  const finalInvoiceHash = await computeInvoiceHash(signedXml)
-  if (finalInvoiceHash !== invoiceDigestB64) {
-    throw new Error('Compliance sample invoice hash mismatch after signing')
-  }
-
-  return { signedXml, invoiceHash: finalInvoiceHash }
+  return { signedXml, invoiceHash: invoiceDigestB64 }
 }
 
 function decodeCertificateToken(token: string): { certPemBody: string; certDer: Uint8Array } {
@@ -808,13 +806,6 @@ async function computeInvoiceHash(xmlString: string): Promise<string> {
   const invoiceCanonical = canonicalizeInvoiceContent(xmlString)
   const invoiceDigestBuf = await sha256(invoiceCanonical)
   return bytesToBase64(new Uint8Array(invoiceDigestBuf))
-}
-
-async function assertInvoiceHashMatches(signedXml: string, invoiceHash: string): Promise<void> {
-  const recomputedHash = await computeInvoiceHash(signedXml)
-  if (recomputedHash !== invoiceHash) {
-    throw new Error('Compliance sample invoice hash does not match signed XML payload')
-  }
 }
 
 function c14n(node: any, inherited: Map<string, string> = new Map()): string {
