@@ -4,10 +4,12 @@
 -- ============================================================
 --
 -- This patch re-applies the backend checkout schema/function idempotently and
--- fixes two live issues:
+-- fixes live issues:
 --   1. Avoid unqualified uuid_generate_v4() by using pg_catalog.gen_random_uuid().
 --   2. Treat missing amount_paid as full payment for cash/card/bank checkout,
 --      while still rejecting explicit short cash tender.
+--   3. Store invoice_items.tax_rate as a decimal fraction for ZATCA compatibility
+--      (0.15 for 15% VAT), matching the existing invoice convention.
 --
 -- The migration moves POS checkout writes behind a SECURITY DEFINER RPC:
 --   public.pos_checkout(p_payload jsonb)
@@ -377,7 +379,9 @@ BEGIN
       'quantity', v_qty,
       'unit_price', v_product.price,
       'line_amount', round(v_line_amount, 2),
-      'tax_rate', v_rate_percent,
+      -- products.tax_rate is stored as a percentage, while invoice_items.tax_rate
+      -- follows the existing ZATCA-facing convention of a decimal fraction.
+      'tax_rate', v_rate,
       'tax_category', v_tax_category,
       'subtotal', v_line_subtotal,
       'tax_amount', v_line_tax,

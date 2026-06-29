@@ -371,7 +371,9 @@ BEGIN
       'quantity', v_qty,
       'unit_price', v_product.price,
       'line_amount', round(v_line_amount, 2),
-      'tax_rate', v_rate_percent,
+      -- products.tax_rate is stored as a percentage, while invoice_items.tax_rate
+      -- follows the existing ZATCA-facing convention of a decimal fraction.
+      'tax_rate', v_rate,
       'tax_category', v_tax_category,
       'subtotal', v_line_subtotal,
       'tax_amount', v_line_tax,
