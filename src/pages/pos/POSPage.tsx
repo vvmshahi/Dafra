@@ -16,7 +16,7 @@ import { submitInvoiceToZatca } from '@/lib/zatca/submission'
 import { toast } from 'sonner'
 import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
-import type { Branch, VatTreatment } from '@/types/database'
+import type { Branch, PaymentMethod, VatTreatment } from '@/types/database'
 import { usePosSession } from '@/hooks/usePosSession'
 import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
@@ -70,7 +70,7 @@ interface ReceiptData {
   total: number
   taxAmount: number
   subtotal: number
-  paymentMethod: 'cash' | 'card'
+  paymentMethod: PaymentMethod
   change: number
   cashReceived: number
   customerName: string
@@ -117,8 +117,10 @@ interface PosCheckoutResult {
   subtotal: number | string
   tax_amount: number | string
   total: number | string
-  payment_method: 'cash' | 'card' | 'bank_transfer'
+  payment_method: PaymentMethod
   payment_status: string
+  amount_received?: number | string | null
+  change_amount?: number | string | null
   zatca_invoice_type: 'simplified' | 'standard'
   items: PosCheckoutItemResult[]
   idempotent_replay?: boolean
@@ -186,6 +188,13 @@ function safeCheckoutErrorMessage(err: unknown): string {
     return 'Checkout is not allowed for this branch.'
   }
   return 'Checkout failed. Please review the cart and try again.'
+}
+
+function paymentMethodLabel(method: string | null | undefined): string {
+  if (method === 'cash') return 'Cash'
+  if (method === 'card') return 'Card / POS'
+  if (method === 'bank_transfer') return 'Bank Transfer'
+  return 'Other'
 }
 
 const cartKey = (bid: string) => `pos_cart_${bid}`
@@ -437,9 +446,12 @@ ${lines}
         </div>
         {/* Payment */}
         <div style={{ fontSize: '12px', color: '#374151', marginBottom: '20px', padding: '10px 14px', background: '#f9fafb', borderRadius: '8px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-          <span><strong>Payment:</strong> {receipt.paymentMethod === 'cash' ? 'Cash' : 'Card'}</span>
+          <span><strong>Payment:</strong> {paymentMethodLabel(receipt.paymentMethod)}</span>
           {receipt.paymentMethod === 'cash' && receipt.cashReceived > 0 && (
             <span><strong>Received:</strong> <Rial amount={receipt.cashReceived} /></span>
+          )}
+          {receipt.showCashChange && receipt.paymentMethod === 'cash' && receipt.change > 0.005 && (
+            <span><strong>Change:</strong> <Rial amount={receipt.change} /></span>
           )}
         </div>
         {/* QR + footer */}
@@ -509,7 +521,7 @@ ${lines}
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Method</span>
-              <span className="font-medium text-gray-800 capitalize">{receipt.paymentMethod}</span>
+              <span className="font-medium text-gray-800">{paymentMethodLabel(receipt.paymentMethod)}</span>
             </div>
             <div className="border-t border-gray-100 pt-3 space-y-1.5">
               <div className="flex justify-between text-sm text-gray-500">
@@ -1226,11 +1238,13 @@ export default function POSPage() {
       const serverTax = num(checkout.tax_amount)
       const serverSubtotal = num(checkout.subtotal)
       const createdAt = checkout.created_at
-      const receiptPaymentMethod: 'cash' | 'card' = checkout.payment_method === 'card' ? 'card' : 'cash'
-      const receiptCashReceived = receiptPaymentMethod === 'cash' && cashTenderProvided
-        ? Math.max(cashAmt, serverTotal)
+      const receiptPaymentMethod = checkout.payment_method ?? payMethod
+      const serverAmountReceived = num(checkout.amount_received ?? serverTotal)
+      const serverChangeAmount = num(checkout.change_amount ?? Math.max(0, serverAmountReceived - serverTotal))
+      const receiptCashReceived = receiptPaymentMethod === 'cash'
+        ? serverAmountReceived
         : serverTotal
-      const receiptChange = receiptPaymentMethod === 'cash' ? Math.max(0, receiptCashReceived - serverTotal) : 0
+      const receiptChange = receiptPaymentMethod === 'cash' ? serverChangeAmount : 0
       const isB2BInvoice = checkout.zatca_invoice_type === 'standard'
 
       const branchAddr = [

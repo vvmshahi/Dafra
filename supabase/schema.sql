@@ -460,6 +460,8 @@ CREATE TABLE payments (
     invoice_id  UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
     recorded_by UUID REFERENCES user_profiles(id) ON DELETE SET NULL,
     amount      NUMERIC(12, 2) NOT NULL,
+    amount_received NUMERIC(12, 2),
+    change_amount   NUMERIC(12, 2),
     method      payment_method NOT NULL DEFAULT 'cash',
     reference   VARCHAR(255),   -- transaction ID / cheque number / transfer ref
     notes       TEXT,

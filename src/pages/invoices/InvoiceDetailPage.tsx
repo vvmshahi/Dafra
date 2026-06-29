@@ -66,6 +66,10 @@ const PAY_LABEL: Record<string, string> = {
   cash: 'Cash', card: 'Card / POS', bank_transfer: 'Bank Transfer', other: 'Other',
 }
 
+function paymentLabel(method: string | null | undefined): string {
+  return method ? (PAY_LABEL[method] ?? method) : '—'
+}
+
 const INVOICE_DETAIL_SELECT = `
   id, tenant_id, branch_id, customer_id, created_by,
   invoice_number, invoice_reference, zatca_uuid, zatca_invoice_type, zatca_type_code,
@@ -384,7 +388,13 @@ ${lines}
   const zatcaMeta = ZATCA_STATUS[invoice.zatca_status] ?? ZATCA_STATUS.pending
   const zatcaFailureSummary = invoice.zatca_status === 'failed' ? getZatcaFailureSummary(invoice) : null
   const payment   = payments[0] ?? null
-  const payLabel  = payment ? (PAY_LABEL[payment.method] ?? payment.method) : null
+  const payLabel  = payment ? paymentLabel(payment.method) : null
+  const cashReceived = payment?.method === 'cash'
+    ? Number(payment.amount_received ?? payment.amount ?? invoice.total_amount)
+    : null
+  const changeAmount = payment?.method === 'cash'
+    ? Number(payment.change_amount ?? 0)
+    : null
   const isCancelled = invoice.status === 'cancelled'
 
   const brandName = branch.display_name || branch.business_name || branch.name
@@ -438,6 +448,8 @@ ${lines}
         taxAmount={Number(invoice.tax_amount)}
         total={Number(invoice.total_amount)}
         paymentMethod={payment?.method ?? 'card'}
+        cashReceived={cashReceived}
+        change={changeAmount}
         customerName={
           customer?.customer_type === 'business' && (customer.business_name ?? customer.company_name)
             ? (customer.business_name ?? customer.company_name)
@@ -677,6 +689,12 @@ ${lines}
             <div className="flex flex-wrap gap-6 text-xs text-gray-700">
               <span><span className="font-semibold">Method:</span> {payLabel}</span>
               <span><span className="font-semibold">Amount:</span> <Rial amount={Number(payment.amount)} /></span>
+              {payment.method === 'cash' && cashReceived !== null && (
+                <span><span className="font-semibold">Received:</span> <Rial amount={cashReceived} /></span>
+              )}
+              {(branch.show_cash_change ?? true) && payment.method === 'cash' && (changeAmount ?? 0) > 0.005 && (
+                <span><span className="font-semibold">Change:</span> <Rial amount={changeAmount ?? 0} /></span>
+              )}
               <span><span className="font-semibold">Date:</span> {fmtDateTime(payment.paid_at).date}</span>
               {payment.reference && <span><span className="font-semibold">Ref:</span> {payment.reference}</span>}
             </div>

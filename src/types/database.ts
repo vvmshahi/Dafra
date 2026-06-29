@@ -80,7 +80,10 @@ export interface Database {
       }
       payments: {
         Row: Payment
-        Insert: Omit<Payment, 'id' | 'created_at' | 'updated_at'>
+        Insert: Omit<Payment, 'id' | 'created_at' | 'updated_at' | 'amount_received' | 'change_amount'> & {
+          amount_received?: number | null
+          change_amount?: number | null
+        }
         Update: Partial<Omit<Payment, 'id'>>
       }
       sync_queue: {
@@ -524,6 +527,8 @@ export interface Payment {
   invoice_id: string
   recorded_by: string | null
   amount: number
+  amount_received: number | null
+  change_amount: number | null
   method: PaymentMethod
   reference: string | null
   notes: string | null

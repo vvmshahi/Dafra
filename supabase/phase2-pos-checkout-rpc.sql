@@ -30,6 +30,18 @@ ALTER TABLE public.invoices
 ALTER TABLE public.products
   ADD COLUMN IF NOT EXISTS track_stock BOOLEAN NOT NULL DEFAULT FALSE;
 
+ALTER TABLE public.payments
+  ADD COLUMN IF NOT EXISTS amount_received NUMERIC(12, 2);
+
+ALTER TABLE public.payments
+  ADD COLUMN IF NOT EXISTS change_amount NUMERIC(12, 2);
+
+COMMENT ON COLUMN public.payments.amount_received IS
+  'Customer tendered amount captured at POS checkout. For card/bank payments this normally equals the invoice total.';
+
+COMMENT ON COLUMN public.payments.change_amount IS
+  'Cash change returned to the customer at POS checkout. For non-cash payments this is normally zero.';
+
 CREATE UNIQUE INDEX IF NOT EXISTS invoices_branch_checkout_idempotency_key_idx
   ON public.invoices (branch_id, checkout_idempotency_key)
   WHERE checkout_idempotency_key IS NOT NULL;
@@ -74,6 +86,26 @@ BEGIN
     ALTER TABLE public.payments
       ADD CONSTRAINT payments_amount_positive
       CHECK (amount > 0) NOT VALID;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'payments_amount_received_nonnegative'
+      AND conrelid = 'public.payments'::regclass
+  ) THEN
+    ALTER TABLE public.payments
+      ADD CONSTRAINT payments_amount_received_nonnegative
+      CHECK (amount_received IS NULL OR amount_received >= 0) NOT VALID;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'payments_change_amount_nonnegative'
+      AND conrelid = 'public.payments'::regclass
+  ) THEN
+    ALTER TABLE public.payments
+      ADD CONSTRAINT payments_change_amount_nonnegative
+      CHECK (change_amount IS NULL OR change_amount >= 0) NOT VALID;
   END IF;
 
   IF NOT EXISTS (
@@ -125,6 +157,9 @@ DECLARE
   v_tax_category TEXT;
   v_rate_percent NUMERIC(5, 2);
   v_rate NUMERIC(8, 6);
+  v_change_amount NUMERIC(12, 2) := 0;
+  v_existing_amount_received NUMERIC(12, 2);
+  v_existing_change_amount NUMERIC(12, 2);
   v_line_amount NUMERIC(12, 4);
   v_line_subtotal NUMERIC(12, 2);
   v_line_tax NUMERIC(12, 2);
@@ -235,6 +270,19 @@ BEGIN
     FROM public.invoice_items
     WHERE invoice_id = v_existing.id;
 
+    SELECT COALESCE(amount_received, amount, v_existing.total_amount),
+           COALESCE(change_amount, 0)
+      INTO v_existing_amount_received, v_existing_change_amount
+    FROM public.payments
+    WHERE invoice_id = v_existing.id
+    ORDER BY paid_at ASC NULLS LAST, created_at ASC NULLS LAST
+    LIMIT 1;
+
+    IF NOT FOUND THEN
+      v_existing_amount_received := v_existing.total_amount;
+      v_existing_change_amount := 0;
+    END IF;
+
     RETURN jsonb_build_object(
       'invoice_id', v_existing.id,
       'invoice_number', v_existing.invoice_number,
@@ -244,6 +292,8 @@ BEGIN
       'total', v_existing.total_amount,
       'payment_method', v_existing.payment_method,
       'payment_status', v_existing.payment_status,
+      'amount_received', v_existing_amount_received,
+      'change_amount', v_existing_change_amount,
       'zatca_invoice_type', v_existing.zatca_invoice_type,
       'items', v_existing_items,
       'idempotent_replay', true
@@ -395,6 +445,12 @@ BEGIN
     RAISE EXCEPTION 'Amount paid is less than invoice total' USING ERRCODE = '23514';
   END IF;
 
+  v_amount_paid := round(v_amount_paid, 2);
+  v_change_amount := CASE
+    WHEN v_payment_method = 'cash' THEN GREATEST(round(v_amount_paid - v_total, 2), 0)
+    ELSE 0
+  END;
+
   v_counter := public.get_next_invoice_counter(v_branch.id);
   v_invoice_prefix := COALESCE(NULLIF(TRIM(v_branch.invoice_prefix), ''), 'INV');
   v_invoice_number := v_invoice_prefix || '-' || lpad(COALESCE(v_counter, 1)::text, 4, '0');
@@ -516,6 +572,8 @@ BEGIN
     invoice_id,
     recorded_by,
     amount,
+    amount_received,
+    change_amount,
     method,
     paid_at
   ) VALUES (
@@ -523,6 +581,8 @@ BEGIN
     v_invoice_id,
     v_user_id,
     v_total,
+    v_amount_paid,
+    v_change_amount,
     v_payment_method::public.payment_method,
     v_created_at
   );
@@ -536,6 +596,8 @@ BEGIN
     'total', v_total,
     'payment_method', v_payment_method,
     'payment_status', 'paid',
+    'amount_received', v_amount_paid,
+    'change_amount', v_change_amount,
     'zatca_invoice_type', v_zatca_invoice_type,
     'items', v_item_rows,
     'idempotent_replay', false

@@ -1,10 +1,10 @@
 -- ============================================================
--- Phase 2 POS checkout RPC live fix
--- Apply manually in Supabase SQL editor after phase2-pos-checkout-rpc.sql.
+-- Phase 2B POS payment tender/change persistence
+-- Apply manually in Supabase SQL editor after the Phase 2 checkout RPC fixes.
 -- ============================================================
 --
 -- This patch re-applies the backend checkout schema/function idempotently and
--- fixes live issues:
+-- keeps all Phase 2 checkout fixes while adding Phase 2B receipt persistence:
 --   1. Avoid unqualified uuid_generate_v4() by using pg_catalog.gen_random_uuid().
 --   2. Treat missing amount_paid as full payment for cash/card/bank checkout,
 --      while still rejecting explicit short cash tender.
@@ -12,6 +12,10 @@
 --      (0.15 for 15% VAT), matching the existing invoice convention.
 --   4. Preserve cash amount received and change returned on payments so POS
 --      receipts can be reprinted accurately.
+--
+-- New payment columns:
+--   payments.amount_received stores the customer tendered amount.
+--   payments.change_amount stores change returned for cash payments.
 --
 -- The migration moves POS checkout writes behind a SECURITY DEFINER RPC:
 --   public.pos_checkout(p_payload jsonb)
@@ -627,7 +631,16 @@ COMMIT;
 -- Verification queries
 -- ============================================================
 --
--- 1) Confirm checkout hardening columns/index exist:
+-- 1) Confirm payment tender/change columns exist:
+--
+-- SELECT column_name
+-- FROM information_schema.columns
+-- WHERE table_schema = 'public'
+--   AND table_name = 'payments'
+--   AND column_name IN ('amount_received', 'change_amount')
+-- ORDER BY column_name;
+--
+-- 2) Confirm checkout hardening columns/index exist:
 --
 -- SELECT column_name
 -- FROM information_schema.columns
@@ -640,7 +653,7 @@ COMMIT;
 -- WHERE schemaname = 'public'
 --   AND indexname = 'invoices_branch_checkout_idempotency_key_idx';
 --
--- 2) Confirm stock opt-in exists:
+-- 3) Confirm stock opt-in exists:
 --
 -- SELECT column_name
 -- FROM information_schema.columns
@@ -648,11 +661,11 @@ COMMIT;
 --   AND table_name = 'products'
 --   AND column_name = 'track_stock';
 --
--- 3) Confirm RPC is executable by authenticated users:
+-- 4) Confirm RPC is executable by authenticated users:
 --
 -- SELECT has_function_privilege('authenticated', 'public.pos_checkout(jsonb)', 'EXECUTE') AS authenticated_can_execute;
 --
--- 4) Dry auth probe from an authenticated SQL session should fail cleanly if
+-- 5) Dry auth probe from an authenticated SQL session should fail cleanly if
 --    branch/items are not supplied. Replace the JWT/user context in Supabase SQL
 --    tooling as needed:
 --

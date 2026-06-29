@@ -65,6 +65,13 @@ const Dash = () => (
   <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />
 )
 
+function paymentLabel(method: string): string {
+  if (method === 'cash') return 'Cash'
+  if (method === 'card') return 'Card / POS'
+  if (method === 'bank_transfer') return 'Bank Transfer'
+  return 'Other'
+}
+
 export function printThermal(): void {
   const existing = document.getElementById('thermal-print-style')
   existing?.remove()
@@ -203,7 +210,7 @@ export default function ThermalReceipt({
 
       {/* Payment */}
       <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-        <div>Payment: <strong>{paymentMethod === 'cash' ? 'Cash' : 'Card'}</strong></div>
+        <div>Payment: <strong>{paymentLabel(paymentMethod)}</strong></div>
         {paymentMethod === 'cash' && cashReceived != null && cashReceived > 0 && (
           <TRow left="Received:" right={<Amt n={cashReceived} />} />
         )}
