@@ -1275,7 +1275,15 @@ export default function POSPage() {
       setCashReceived('')
 
       submitInvoiceToZatca(inv.id, branch.id)
-        .then(() => { setZatcaResult('submitted'); toast.success('Submitted to ZATCA', { duration: 2000 }) })
+        .then((submitted) => {
+          if (submitted) {
+            setZatcaResult('submitted')
+            toast.success('Submitted to ZATCA', { duration: 2000 })
+          } else {
+            setZatcaResult('failed')
+            toast.error('ZATCA submission failed')
+          }
+        })
         .catch(() => { setZatcaResult('failed'); toast.error('ZATCA submission failed') })
     } catch (err) {
       console.error('[POSPage charge] payment failed:', err)

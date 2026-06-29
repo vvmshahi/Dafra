@@ -10,7 +10,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "zatca:validate-sample": "node scripts/validate-zatca-compliance-sample.mjs"
+    "zatca:validate-sample": "node scripts/validate-zatca-compliance-sample.mjs",
+    "zatca:export-real-invoice": "node scripts/export-zatca-real-invoice-xml.mjs",
+    "zatca:validate-real-invoice": "node scripts/export-zatca-real-invoice-xml.mjs --validate"
   },
   "dependencies": {
     "@noble/curves": "^2.2.0",

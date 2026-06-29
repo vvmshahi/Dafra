@@ -17,7 +17,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { create as xmlCreate } from 'https://esm.sh/xmlbuilder2@4.0.3'
 import { secp256k1 } from 'https://esm.sh/@noble/curves@2.2.0/secp256k1.js'
-import { DOMParser } from 'https://esm.sh/@xmldom/xmldom@0.9.10'
 import { extractEcPrivateKeyScalar, signZatcaInvoiceHash } from '../_shared/zatca/signing_core.mjs'
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -43,6 +42,52 @@ interface SubmissionCredentials {
   productionSecret: string
   legacyCertId?: string
   legacyInvoiceCounter?: number
+}
+
+interface SubmitDiagnostics {
+  environment?: 'sandbox' | 'production'
+  invoiceId?: string
+  branchId?: string
+  invoiceType?: string
+  endpointKind?: 'reporting' | 'clearance'
+  httpStatus?: number
+  validationStatus?: string
+  reportingStatus?: string
+  clearanceStatus?: string
+  errorCodes?: string[]
+  warningCodes?: string[]
+  invoiceHash?: string
+  finalXmlHash?: string
+  qrHash?: string
+  dsDigestValue?: string
+  storedPreviousHash?: string | null
+  resolvedPreviousHash?: string
+  previousHashSource?: string
+  zatcaCounterNumber?: number
+  issueDate?: string
+  issueTime?: string
+  qrTimestamp?: string
+  signingTime?: string
+  hashMatches?: boolean
+  qrHashMatches?: boolean
+  digestMatches?: boolean
+  storedHashMatches?: boolean
+  timestampMatches?: boolean
+  certificateIssuerMatches?: boolean
+  certificateSerialMatches?: boolean
+  privateKeyMatchesCertificate?: boolean
+}
+
+class ZatcaSubmitAssertionError extends Error {
+  statusString: string
+  diagnostics: SubmitDiagnostics
+
+  constructor(statusString: string, message: string, diagnostics: SubmitDiagnostics) {
+    super(message)
+    this.name = 'ZatcaSubmitAssertionError'
+    this.statusString = statusString
+    this.diagnostics = diagnostics
+  }
 }
 
 
@@ -308,7 +353,7 @@ function buildInvoice(data: any, opts: any): string {
   root.ele(NS.cbc, 'UUID').txt(data.uuid)
   root.ele(NS.cbc, 'IssueDate').txt(data.issueDate)
   root.ele(NS.cbc, 'IssueTime').txt(data.issueTime)
-  root.ele(NS.cbc, 'InvoiceTypeCode').att('name', opts.typeCodeName).txt('388')
+  root.ele(NS.cbc, 'InvoiceTypeCode').att('name', opts.typeCodeName).txt(opts.invoiceTypeCode ?? data.invoiceTypeCode ?? '388')
   root.ele(NS.cbc, 'DocumentCurrencyCode').txt('SAR')
   root.ele(NS.cbc, 'TaxCurrencyCode').txt('SAR')
 
@@ -429,6 +474,7 @@ function buildInvoiceXMLData(inv: any, branch: any, items: any[], customer: any,
   return {
     invoiceNumber:   inv.invoice_number,
     uuid:            inv.zatca_uuid,
+    invoiceTypeCode: inv.zatca_type_code ?? '388',
     issueDate,
     issueTime,
     counterValue:    inv.zatca_counter_number ?? 1,
@@ -480,9 +526,6 @@ function tlvBytes(tag: number, bytes: Uint8Array): Uint8Array {
   buf[0] = tag; buf[1] = bytes.length; buf.set(bytes, 2)
   return buf
 }
-function normTs(iso: string): string {
-  return new Date(iso).toISOString().replace(/\.\d{3}Z$/, 'Z')
-}
 function concatArrays(...arrs: Uint8Array[]): Uint8Array {
   const len = arrs.reduce((s, a) => s + a.length, 0)
   const out = new Uint8Array(len); let off = 0
@@ -499,7 +542,7 @@ function buildPhase2QR(
 ): string {
   const all = concatArrays(
     tlvStr(0x01, sellerName), tlvStr(0x02, vatNumber),
-    tlvStr(0x03, normTs(timestamp)),
+    tlvStr(0x03, timestamp),
     tlvStr(0x04, totalAmount.toFixed(2)), tlvStr(0x05, vatAmount.toFixed(2)),
     tlvStr(0x06, hashB64), tlvStr(0x07, sigB64),
     tlvBytes(0x08, pubKeySpki), tlvBytes(0x09, certSigValue),
@@ -512,89 +555,30 @@ function buildPhase2QR(
 function escText(s: string): string {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\r/g,'&#xD;')
 }
-function escAttr(s: string): string {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')
-          .replace(/\t/g,'&#x9;').replace(/\n/g,'&#xA;').replace(/\r/g,'&#xD;')
-}
-
-function c14n(node: any, inherited: Map<string, string> = new Map()): string {
-  const localNs = new Map<string, string>()
-  const attrs: any[] = []
-  for (let i = 0; i < node.attributes.length; i++) attrs.push(node.attributes[i])
-
-  for (const a of attrs) {
-    if (a.name === 'xmlns') localNs.set('', a.value)
-    else if (a.name.startsWith('xmlns:')) localNs.set(a.name.slice(6), a.value)
-  }
-
-  const nsDecls: [string, string][] = []
-  const emitNs = (prefix: string, uri: string) => {
-    if (inherited.get(prefix) !== uri) nsDecls.push([prefix, uri])
-  }
-
-  const elNs = node.namespaceURI ?? ''
-  const elPrefix = node.prefix ?? ''
-  if (elPrefix === '' && elNs !== (inherited.get('') ?? '')) emitNs('', elNs)
-  else if (elPrefix && elNs !== (inherited.get(elPrefix) ?? '')) emitNs(elPrefix, elNs)
-
-  for (const [p, u] of localNs) {
-    if (!nsDecls.find(d => d[0] === p)) emitNs(p, u)
-  }
-
-  for (const a of attrs) {
-    if (a.namespaceURI && a.prefix && !nsDecls.find(d => d[0] === a.prefix)) {
-      emitNs(a.prefix, a.namespaceURI)
-    }
-  }
-
-  nsDecls.sort(([a], [b]) => a === '' ? -1 : b === '' ? 1 : a.localeCompare(b))
-
-  const regAttrs = attrs
-    .filter(a => a.name !== 'xmlns' && !a.name.startsWith('xmlns:'))
-    .sort((a, b) => {
-      const aNs = a.namespaceURI ?? '', bNs = b.namespaceURI ?? ''
-      return aNs !== bNs ? aNs.localeCompare(bNs) : a.localName.localeCompare(b.localName)
-    })
-
-  let out = `<${node.tagName}`
-  for (const [p, u] of nsDecls) out += ` ${p === '' ? 'xmlns' : `xmlns:${p}`}="${escAttr(u)}"`
-  for (const a of regAttrs) out += ` ${a.name}="${escAttr(a.value)}"`
-  out += '>'
-
-  const newInherited = new Map(inherited)
-  for (const [p, u] of localNs) newInherited.set(p, u)
-  for (const [p, u] of nsDecls) newInherited.set(p, u)
-
-  const children: any[] = []
-  for (let i = 0; i < node.childNodes.length; i++) children.push(node.childNodes[i])
-  for (const child of children) {
-    if (child.nodeType === 1) out += c14n(child, newInherited)  // ELEMENT_NODE
-    else if (child.nodeType === 3) out += escText(child.textContent ?? '')  // TEXT_NODE
-  }
-
-  return out + `</${node.tagName}>`
-}
 
 function canonicalizeInvoiceContent(xmlString: string): string {
-  const doc: any = new DOMParser().parseFromString(xmlString, 'application/xml')
+  return expandSelfClosingElements(rootWithC14nNamespaces(xmlString)
+    .replace(/<\?xml[^>]*>/, '')
+    .replace(/<ext:UBLExtensions>[\s\S]*?<\/ext:UBLExtensions>/, '')
+    .replace(/<cac:Signature>[\s\S]*?<\/cac:Signature>/, '')
+    .replace(/<cac:AdditionalDocumentReference><cbc:ID>QR<\/cbc:ID>[\s\S]*?<\/cac:AdditionalDocumentReference>/, ''))
+}
 
-  const CAC = 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
-  const CBC = 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'
-  const EXT = 'urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2'
+async function computeInvoiceHash(xmlString: string): Promise<string> {
+  const invoiceCanonical = canonicalizeInvoiceContent(xmlString)
+  const invoiceDigestBuf = await sha256(invoiceCanonical)
+  return btoa(String.fromCharCode(...new Uint8Array(invoiceDigestBuf)))
+}
 
-  const ublExts = Array.from(doc.getElementsByTagNameNS(EXT, 'UBLExtensions') as any) as any[]
-  for (const el of ublExts) el.parentNode?.removeChild(el)
+function rootWithC14nNamespaces(xmlString: string): string {
+  return xmlString.replace(
+    /<Invoice xmlns="[^"]+" xmlns:cac="[^"]+" xmlns:cbc="[^"]+" xmlns:ext="[^"]+" xmlns:sig="[^"]+" xmlns:sac="[^"]+" xmlns:sbc="[^"]+" xmlns:ds="[^"]+" xmlns:xades="[^"]+">/,
+    `<Invoice xmlns="${NS.invoice}" xmlns:cac="${NS.cac}" xmlns:cbc="${NS.cbc}" xmlns:ds="${NS.ds}" xmlns:ext="${NS.ext}" xmlns:sac="${NS.sac}" xmlns:sbc="${NS.sbc}" xmlns:sig="${NS.sig}" xmlns:xades="${NS.xades}">`,
+  )
+}
 
-  const sigs = Array.from(doc.getElementsByTagNameNS(CAC, 'Signature') as any) as any[]
-  for (const el of sigs) el.parentNode?.removeChild(el)
-
-  const adrList = Array.from(doc.getElementsByTagNameNS(CAC, 'AdditionalDocumentReference') as any) as any[]
-  for (const adr of adrList) {
-    const idEl = (adr.getElementsByTagNameNS(CBC, 'ID') as any)[0]
-    if (idEl?.textContent === 'QR') { adr.parentNode?.removeChild(adr); break }
-  }
-
-  return c14n(doc.documentElement)
+function expandSelfClosingElements(xmlString: string): string {
+  return xmlString.replace(/<([A-Za-z_][\w:.-]*)([^<>]*)\/>/g, '<$1$2></$1>')
 }
 
 // Produces the exact SDK document format (no xmlns, whitespace-indented, self-closing DigestMethod).
@@ -643,30 +627,6 @@ function buildSignedInfo(invoiceDigest: string, signedPropsDigest: string): stri
   return `<ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2006/12/xml-c14n11"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"/><ds:Reference Id="invoiceSignedData" URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::ext:UBLExtensions)</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:Signature)</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:AdditionalDocumentReference[cbc:ID='QR'])</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/2006/12/xml-c14n11"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${invoiceDigest}</ds:DigestValue></ds:Reference><ds:Reference Type="http://www.w3.org/2000/09/xmldsig#SignatureProperties" URI="#xadesSignedProperties"><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${signedPropsDigest}</ds:DigestValue></ds:Reference></ds:SignedInfo>`
 }
 
-// C14N11 canonical form of ds:SignedInfo as it appears in the signed document.
-// ds is declared on the Invoice root element — inherited, no xmlns decls emitted.
-// Empty elements expanded to open+close pairs (C14N11 requirement).
-function buildSignedInfoCanonical(invoiceDigest: string, signedPropsDigest: string): string {
-  return '<ds:SignedInfo>'
-    + '<ds:CanonicalizationMethod Algorithm="http://www.w3.org/2006/12/xml-c14n11"></ds:CanonicalizationMethod>'
-    + '<ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"></ds:SignatureMethod>'
-    + '<ds:Reference Id="invoiceSignedData" URI="">'
-    + '<ds:Transforms>'
-    + '<ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::ext:UBLExtensions)</ds:XPath></ds:Transform>'
-    + '<ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:Signature)</ds:XPath></ds:Transform>'
-    + `<ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:AdditionalDocumentReference[cbc:ID='QR'])</ds:XPath></ds:Transform>`
-    + '<ds:Transform Algorithm="http://www.w3.org/2006/12/xml-c14n11"></ds:Transform>'
-    + '</ds:Transforms>'
-    + '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></ds:DigestMethod>'
-    + `<ds:DigestValue>${escText(invoiceDigest)}</ds:DigestValue>`
-    + '</ds:Reference>'
-    + '<ds:Reference Type="http://www.w3.org/2000/09/xmldsig#SignatureProperties" URI="#xadesSignedProperties">'
-    + '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></ds:DigestMethod>'
-    + `<ds:DigestValue>${escText(signedPropsDigest)}</ds:DigestValue>`
-    + '</ds:Reference>'
-    + '</ds:SignedInfo>'
-}
-
 function buildXadesBlock(
   invoiceDigest: string, signedPropsDigest: string, sigValue: string,
   certPemBody: string, _sp: string, _issuerDn: string, serialNumber: string,
@@ -678,7 +638,11 @@ function buildXadesBlock(
 }
 
 async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate: string): Promise<{
-  signedXml: string; invoiceHash: string; qrCode: string
+  signedXml: string
+  invoiceHash: string
+  qrCode: string
+  signatureValue: string
+  diagnostics: SubmitDiagnostics
 }> {
   const { certPemBody, certDer } = decodeCertificateToken(certificate)
 
@@ -686,19 +650,17 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const issuerName    = extractCertIssuerName(certDer)              // DN string for xades:IssuerSerial
   const certSigValue  = extractCertSignatureValue(certDer)          // CA signature — QR tag 9
   const pubKeySpki    = extractCertPublicKeySpki(certDer)
+  assertPrivateKeyMatchesCertificatePublicKey(secretKey, pubKeySpki)
 
   // Cert digest: base64(hex(SHA256(UTF8(certPemBody)))) — 88-char, matches ZATCA SDK format
   const certDigestBytes = new Uint8Array(await sha256Bytes(new TextEncoder().encode(certPemBody)))
   const certDigestHex   = bytesToHex(certDigestBytes)
   const certDigestB64   = btoa(certDigestHex)
 
-  const invoiceCanonical = canonicalizeInvoiceContent(xmlString)
-  const invoiceDigestBuf = await sha256(invoiceCanonical)
-  const invoiceDigestB64 = btoa(String.fromCharCode(...new Uint8Array(invoiceDigestBuf)))
-  const invoiceHashB64   = invoiceDigestB64
+  const invoiceHashB64 = await computeInvoiceHash(xmlString)
 
-  // SDK format: YYYY-MM-DDTHH:MM:SS — no Z suffix, no milliseconds
-  const signingTime = new Date().toISOString().replace(/\.\d{3}Z$/, '')
+  const { issueDate, issueTime } = extractInvoiceTimestamp(xmlString)
+  const signingTime = safeZatcaTimestamp(issueDate, issueTime)
 
   // Build the embedded form (no xmlns, whitespace-indented — exact SDK document format)
   // Hash the dom4j asXML form (xmlns added) — base64(hex(SHA256)) = 88-char
@@ -711,12 +673,11 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   // ZATCA SDK signs/verifies SHA256withECDSA over the decoded invoice hash
   // bytes, while ds:SignedInfo carries that same hash as DigestValue.
   const {
-    signatureDerBytes: sigDerBytes,
     signatureValueBase64: sigValueB64,
-  } = signZatcaInvoiceHash(invoiceDigestB64, secretKey, secp256k1)
+  } = signZatcaInvoiceHash(invoiceHashB64, secretKey, secp256k1)
 
   const xadesBlock = buildXadesBlock(
-    invoiceDigestB64, signedPropsB64, sigValueB64,
+    invoiceHashB64, signedPropsB64, sigValueB64,
     certPemBody, signedPropsXml, issuerName, serialNumber, signingTime, certDigestB64,
   )
 
@@ -728,27 +689,223 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   // Extract invoice metadata for QR
   const sellerName  = (signedXml.match(/<cbc:RegistrationName[^>]*>([^<]+)<\/cbc:RegistrationName>/) ?? [])[1] ?? ''
   const vatNumber   = (signedXml.match(/<cac:PartyTaxScheme>[\s\S]*?<cbc:CompanyID>([^<]+)<\/cbc:CompanyID>/) ?? [])[1] ?? ''
-  const issueDate   = (signedXml.match(/<cbc:IssueDate[^>]*>([^<]+)<\/cbc:IssueDate>/) ?? [])[1] ?? ''
-  const issueTime   = (signedXml.match(/<cbc:IssueTime[^>]*>([^<]+)<\/cbc:IssueTime>/) ?? [])[1] ?? '00:00:00'
-  const timestamp   = `${issueDate}T${issueTime}Z`
+  const timestamp   = signingTime
   const totalAmount = parseFloat((signedXml.match(/<cbc:TaxInclusiveAmount[^>]*>([\d.]+)<\/cbc:TaxInclusiveAmount>/) ?? [])[1] ?? '0')
   const vatAmount   = parseFloat((signedXml.match(/<cbc:TaxAmount[^>]*>([\d.]+)<\/cbc:TaxAmount>/) ?? [])[1] ?? '0')
-
-  const hashBytes  = new Uint8Array(invoiceDigestBuf)
-  const hashB64Str = btoa(String.fromCharCode(...hashBytes))
-  const sigB64Str  = btoa(String.fromCharCode(...sigDerBytes))
 
   // Phase 2 QR (tags 1-9) — used in XML and stored in DB for receipts
   const qrCode = buildPhase2QR(
     sellerName, vatNumber, timestamp, totalAmount, vatAmount,
-    hashB64Str, sigB64Str, pubKeySpki, certSigValue,
+    invoiceHashB64, sigValueB64, pubKeySpki, certSigValue,
   )
   signedXml = signedXml.replace(
     /(<cbc:ID>QR<\/cbc:ID>[\s\S]*?<cbc:EmbeddedDocumentBinaryObject mimeCode="text\/plain">)([^<]*)(<\/cbc:EmbeddedDocumentBinaryObject>)/,
     `$1${qrCode}$3`,
   )
 
-  return { signedXml, invoiceHash: invoiceHashB64, qrCode }
+  const finalXmlHash = await computeInvoiceHash(signedXml)
+  const diagnostics = buildSigningDiagnostics(signedXml, {
+    invoiceHash: invoiceHashB64,
+    finalXmlHash,
+    issueDate,
+    issueTime,
+    qrTimestamp: timestamp,
+    signingTime,
+    issuerName,
+    serialNumber,
+    privateKeyMatchesCertificate: true,
+  })
+  assertSigningDiagnostics(diagnostics)
+
+  return {
+    signedXml,
+    invoiceHash: invoiceHashB64,
+    qrCode,
+    signatureValue: sigValueB64,
+    diagnostics,
+  }
+}
+
+function assertPrivateKeyMatchesCertificatePublicKey(secretKey: Uint8Array, pubKeySpki: Uint8Array): void {
+  const certPublicKey = extractEcPointFromSpki(pubKeySpki)
+  if (certPublicKey.length !== 65) {
+    throw new ZatcaSubmitAssertionError(
+      'CERT_PUBLIC_KEY_EXTRACTION_FAILED',
+      'Unable to extract ZATCA public key for local signing assertion.',
+      { privateKeyMatchesCertificate: false },
+    )
+  }
+
+  const derivedPublicKey = secp256k1.getPublicKey(secretKey, false)
+  if (!bytesEqual(derivedPublicKey, certPublicKey)) {
+    throw new ZatcaSubmitAssertionError(
+      'SIGNING_KEY_PUBLIC_KEY_MISMATCH',
+      'Signing key does not match ZATCA public key.',
+      { privateKeyMatchesCertificate: false },
+    )
+  }
+}
+
+function buildSigningDiagnostics(
+  signedXml: string,
+  expected: {
+    invoiceHash: string
+    finalXmlHash: string
+    issueDate?: string
+    issueTime?: string
+    qrTimestamp: string
+    signingTime: string
+    issuerName: string
+    serialNumber: string
+    privateKeyMatchesCertificate: boolean
+  },
+): SubmitDiagnostics {
+  const qrHash = extractQrHashFromXml(signedXml)
+  const dsDigestValue = extractFirstDigestValue(signedXml)
+  const xmlIssuerName = extractXmlText(signedXml, /<ds:X509IssuerName\b[^>]*>([^<]*)<\/ds:X509IssuerName>/)
+  const xmlSerialNumber = extractXmlText(signedXml, /<ds:X509SerialNumber\b[^>]*>([^<]*)<\/ds:X509SerialNumber>/)
+
+  return {
+    invoiceHash: expected.invoiceHash,
+    finalXmlHash: expected.finalXmlHash,
+    qrHash,
+    dsDigestValue,
+    issueDate: expected.issueDate,
+    issueTime: expected.issueTime,
+    qrTimestamp: expected.qrTimestamp,
+    signingTime: expected.signingTime,
+    hashMatches: expected.finalXmlHash === expected.invoiceHash,
+    qrHashMatches: qrHash === expected.invoiceHash,
+    digestMatches: dsDigestValue === expected.invoiceHash,
+    timestampMatches: expected.qrTimestamp === expected.signingTime &&
+      `${expected.issueDate ?? ''}T${expected.issueTime ?? ''}` === expected.signingTime,
+    certificateIssuerMatches: xmlIssuerName === expected.issuerName,
+    certificateSerialMatches: xmlSerialNumber === expected.serialNumber,
+    privateKeyMatchesCertificate: expected.privateKeyMatchesCertificate,
+  }
+}
+
+function assertSigningDiagnostics(diagnostics: SubmitDiagnostics): void {
+  if (!diagnostics.hashMatches) {
+    throw new ZatcaSubmitAssertionError(
+      'FINAL_TRANSFORMED_HASH_MISMATCH',
+      'Final transformed hash did not match the invoice hash.',
+      diagnostics,
+    )
+  }
+  if (!diagnostics.qrHashMatches) {
+    throw new ZatcaSubmitAssertionError(
+      'QR_HASH_MISMATCH',
+      'QR tag 6 hash did not match the invoice hash.',
+      diagnostics,
+    )
+  }
+  if (!diagnostics.digestMatches) {
+    throw new ZatcaSubmitAssertionError(
+      'SIGNED_INFO_DIGEST_MISMATCH',
+      'XML invoice digest did not match the invoice hash.',
+      diagnostics,
+    )
+  }
+  if (!diagnostics.timestampMatches) {
+    throw new ZatcaSubmitAssertionError(
+      'TIMESTAMP_MISMATCH',
+      'IssueDate, IssueTime, QR timestamp, and XAdES SigningTime were not aligned.',
+      diagnostics,
+    )
+  }
+  if (!diagnostics.certificateIssuerMatches) {
+    throw new ZatcaSubmitAssertionError(
+      'ISSUER_METADATA_MISMATCH',
+      'XML issuer metadata did not match decoded credential issuer.',
+      diagnostics,
+    )
+  }
+  if (!diagnostics.certificateSerialMatches) {
+    throw new ZatcaSubmitAssertionError(
+      'SERIAL_METADATA_MISMATCH',
+      'XML serial metadata did not match decoded credential serial.',
+      diagnostics,
+    )
+  }
+  if (!diagnostics.privateKeyMatchesCertificate) {
+    throw new ZatcaSubmitAssertionError(
+      'SIGNING_KEY_PUBLIC_KEY_MISMATCH',
+      'Signing key does not match ZATCA public key.',
+      diagnostics,
+    )
+  }
+}
+
+function extractEcPointFromSpki(spki: Uint8Array): Uint8Array {
+  return spki[spki.length - 65] === 0x04 ? spki.slice(-65) : new Uint8Array(0)
+}
+
+function extractFirstDigestValue(xmlString: string): string | undefined {
+  return extractXmlText(xmlString, /<ds:DigestValue\b[^>]*>([^<]*)<\/ds:DigestValue>/)
+}
+
+function extractQrHashFromXml(xmlString: string): string | undefined {
+  try {
+    const qrCode = extractXmlText(
+      xmlString,
+      /<cbc:ID>QR<\/cbc:ID>[\s\S]*?<cbc:EmbeddedDocumentBinaryObject\b[^>]*>([^<]*)<\/cbc:EmbeddedDocumentBinaryObject>/,
+    )
+    if (!qrCode) return undefined
+    const bytes = base64ToBytes(qrCode)
+    let offset = 0
+    while (offset + 2 <= bytes.length) {
+      const tag = bytes[offset++]
+      const length = bytes[offset++]
+      const value = bytes.slice(offset, offset + length)
+      if (tag === 0x06) return new TextDecoder().decode(value)
+      offset += length
+    }
+  } catch {
+    return undefined
+  }
+  return undefined
+}
+
+function extractXmlText(xmlString: string, pattern: RegExp): string | undefined {
+  return (xmlString.match(pattern) ?? [])[1]
+}
+
+function extractInvoiceTimestamp(xmlString: string): { issueDate?: string; issueTime?: string } {
+  return {
+    issueDate: extractXmlText(xmlString, /<cbc:IssueDate\b[^>]*>([^<]+)<\/cbc:IssueDate>/),
+    issueTime: extractXmlText(xmlString, /<cbc:IssueTime\b[^>]*>([^<]+)<\/cbc:IssueTime>/),
+  }
+}
+
+function safeZatcaTimestamp(issueDate?: string, issueTime?: string): string {
+  const date = typeof issueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(issueDate)
+    ? issueDate
+    : undefined
+  const time = typeof issueTime === 'string' && /^\d{2}:\d{2}:\d{2}$/.test(issueTime)
+    ? issueTime
+    : undefined
+  if (date && time) return `${date}T${time}`
+
+  const saudi = toSaudiDate(new Date())
+  const [fallbackDate, rawTime] = saudi.toISOString().split('T')
+  return `${fallbackDate}T${rawTime.split('.')[0]}`
+}
+
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
+function isZatcaSubmitAssertionError(err: unknown): err is ZatcaSubmitAssertionError {
+  return err instanceof ZatcaSubmitAssertionError ||
+    (err instanceof Error &&
+      err.name === 'ZatcaSubmitAssertionError' &&
+      typeof (err as any).statusString === 'string' &&
+      typeof (err as any).diagnostics === 'object')
 }
 
 // ── Retry queue ───────────────────────────────────────────────────────────────
@@ -763,7 +920,7 @@ async function queueForRetry(db: any, invoiceId: string, branchId: string, tenan
 async function loadSubmissionCredentials(db: any, branchId: string, tenantId: string): Promise<SubmissionCredentials | null> {
   const { data: productionCredentials, error: productionErr } = await db
     .from('zatca_production_credentials')
-    .select('encrypted_private_key, encrypted_production_csid, encrypted_production_secret')
+    .select('encrypted_private_key, encrypted_production_csid, encrypted_production_secret, onboarding_status')
     .eq('branch_id', branchId)
     .eq('tenant_id', tenantId)
     .eq('environment', 'production')
@@ -779,7 +936,12 @@ async function loadSubmissionCredentials(db: any, branchId: string, tenantId: st
       encrypted_private_key,
       encrypted_production_csid,
       encrypted_production_secret,
+      onboarding_status,
     } = productionCredentials
+
+    if (onboarding_status !== 'production_connected') {
+      throw new Error('Production ZATCA credentials are not connected')
+    }
 
     if (!encrypted_private_key || !encrypted_production_csid || !encrypted_production_secret) {
       throw new Error('Production ZATCA credentials are incomplete')
@@ -857,15 +1019,107 @@ function summarizeZatcaResponse(body: any): Record<string, unknown> {
   }
 }
 
+function zatcaMessageCodes(body: any, kind: 'error' | 'warning'): string[] {
+  const validationResults = body?.validationResults ?? {}
+  const direct = kind === 'error' ? body?.errors : body?.warnings
+  const validation = kind === 'error'
+    ? validationResults?.errorMessages
+    : validationResults?.warningMessages
+  return [...arrayValue(direct), ...arrayValue(validation)]
+    .map((message: any) => typeof message?.code === 'string' ? message.code : undefined)
+    .filter((code: string | undefined): code is string => !!code)
+    .slice(0, 10)
+}
+
+function arrayValue(value: unknown): any[] {
+  return Array.isArray(value) ? value : []
+}
+
+async function resolvePreviousInvoiceHash(db: any, inv: any): Promise<{
+  previousHash: string
+  source: string
+}> {
+  const { data, error } = await db
+    .from('invoices')
+    .select('id, zatca_xml_hash, zatca_status, created_at, invoice_number')
+    .eq('tenant_id', inv.tenant_id)
+    .eq('branch_id', inv.branch_id)
+    .in('zatca_status', ['reported', 'cleared'])
+    .not('zatca_xml_hash', 'is', null)
+    .lt('created_at', inv.created_at)
+    .neq('id', inv.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    console.error('[zatca-submit] previous invoice hash lookup failed:', error.message)
+    throw new Error('Unable to resolve previous ZATCA invoice hash')
+  }
+
+  if (typeof data?.zatca_xml_hash === 'string' && data.zatca_xml_hash.length > 0) {
+    return {
+      previousHash: data.zatca_xml_hash,
+      source: `previous_${data.zatca_status}_invoice:${data.id}`,
+    }
+  }
+
+  return {
+    previousHash: FIRST_INVOICE_HASH,
+    source: 'initial_pih',
+  }
+}
+
+async function resolveZatcaCounterNumber(db: any, inv: any): Promise<number> {
+  const existing = Number(inv.zatca_counter_number ?? 0)
+  if (Number.isInteger(existing) && existing > 0) return existing
+
+  const { data, error } = await db
+    .from('invoices')
+    .select('zatca_counter_number')
+    .eq('tenant_id', inv.tenant_id)
+    .eq('branch_id', inv.branch_id)
+    .neq('id', inv.id)
+    .not('zatca_counter_number', 'is', null)
+    .order('zatca_counter_number', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    console.error('[zatca-submit] ZATCA counter lookup failed:', error.message)
+    throw new Error('Unable to resolve ZATCA invoice counter')
+  }
+
+  const previous = Number(data?.zatca_counter_number ?? 0)
+  return Number.isInteger(previous) && previous > 0 ? previous + 1 : 1
+}
+
+function buildSafeFailureResponse(
+  statusString: string,
+  message: string,
+  diagnostics: SubmitDiagnostics,
+): Record<string, unknown> {
+  return {
+    localValidation: {
+      statusString,
+      message,
+      diagnostics,
+    },
+  }
+}
+
 // ── Main invoice processor ────────────────────────────────────────────────────
 
-async function processInvoice(db: any, invoiceId: string, callerTenantId: string): Promise<{ invoiceStatus: string }> {
+async function processInvoice(db: any, invoiceId: string, callerTenantId: string): Promise<{
+  invoiceStatus: string
+  diagnostics?: SubmitDiagnostics
+}> {
   console.log('[zatca-submit] processInvoice:', invoiceId)
 
   const { data: inv, error: invErr } = await db
     .from('invoices')
-    .select(`id, invoice_number, zatca_uuid, zatca_invoice_type, invoice_date, created_at,
-      zatca_counter_number, zatca_prev_invoice_hash, zatca_status,
+    .select(`id, invoice_number, zatca_uuid, zatca_invoice_type, zatca_type_code, invoice_date, created_at,
+      zatca_counter_number, zatca_prev_invoice_hash, zatca_xml_hash, zatca_status,
       subtotal, discount_amount, taxable_amount, tax_amount, total_amount,
       branch_id, tenant_id, customer_id,
       invoice_items(id, name, quantity, unit_price, discount_amount, subtotal, tax_rate, tax_amount, total),
@@ -925,6 +1179,13 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     return { invoiceStatus: 'not_submitted' }
   }
 
+  let diagnostics: SubmitDiagnostics = {
+    invoiceId,
+    branchId: inv.branch_id,
+    environment: credentials.environment,
+    invoiceType: inv.zatca_invoice_type,
+  }
+
   try {
     await db.from('invoices').update({ zatca_status: 'pending' }).eq('id', invoiceId)
 
@@ -932,21 +1193,48 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
 
     const isSimplified = inv.zatca_invoice_type === 'simplified'
     console.log('[zatca-submit] building XML, isSimplified:', isSimplified)
-    const xmlData = buildInvoiceXMLData(inv, branch, inv.invoice_items ?? [], inv.customers ?? null, isSimplified)
+    const previous = await resolvePreviousInvoiceHash(db, inv)
+    const zatcaCounterNumber = await resolveZatcaCounterNumber(db, inv)
+    diagnostics = {
+      ...diagnostics,
+      resolvedPreviousHash: previous.previousHash,
+      previousHashSource: previous.source,
+      storedPreviousHash: inv.zatca_prev_invoice_hash ?? null,
+      zatcaCounterNumber,
+    }
+    const invoiceForXml = {
+      ...inv,
+      zatca_prev_invoice_hash: previous.previousHash,
+      zatca_counter_number: zatcaCounterNumber,
+    }
+    const xmlData = buildInvoiceXMLData(invoiceForXml, branch, inv.invoice_items ?? [], inv.customers ?? null, isSimplified)
     const unsignedXml = buildInvoice(xmlData, {
       profileId:        isSimplified ? 'reporting:1.0' : 'clearance:1.0',
       typeCodeName:     isSimplified ? '0200000' : '0100000',
+      invoiceTypeCode:   inv.zatca_type_code ?? '388',
       includeSignature: true,
       requireBuyer:     !isSimplified,
     })
 
     console.log('[zatca-submit] signing XML...')
-    const { signedXml, invoiceHash, qrCode } = await signInvoice(unsignedXml, secretKey, credentials.productionCsid)
+    const {
+      signedXml,
+      invoiceHash,
+      qrCode,
+      signatureValue,
+      diagnostics: signingDiagnostics,
+    } = await signInvoice(unsignedXml, secretKey, credentials.productionCsid)
+    diagnostics = {
+      ...diagnostics,
+      ...signingDiagnostics,
+      storedHashMatches: !inv.zatca_xml_hash || inv.zatca_xml_hash === invoiceHash,
+    }
     console.log('[zatca-submit] signed OK, hash prefix:', invoiceHash.substring(0, 20))
 
     const env       = credentials.environment
     const baseUrl   = ZATCA_URLS[env]
     const endpoint  = isSimplified ? `${baseUrl}/invoices/reporting/single` : `${baseUrl}/invoices/clearance/single`
+    diagnostics.endpointKind = isSimplified ? 'reporting' : 'clearance'
     const creds     = btoa(`${credentials.productionCsid}:${credentials.productionSecret}`)
     const xmlB64    = btoa(unescape(encodeURIComponent(signedXml)))
 
@@ -968,26 +1256,39 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
 
     const reportingStatus = zatcaBody?.reportingStatus as string | undefined
     const clearanceStatus = zatcaBody?.clearanceStatus as string | undefined
+    diagnostics = {
+      ...diagnostics,
+      httpStatus: zatcaRes.status,
+      validationStatus: typeof zatcaBody?.validationResults?.status === 'string'
+        ? zatcaBody.validationResults.status
+        : undefined,
+      reportingStatus,
+      clearanceStatus,
+      errorCodes: zatcaMessageCodes(zatcaBody, 'error'),
+      warningCodes: zatcaMessageCodes(zatcaBody, 'warning'),
+    }
     let newStatus: string
     if (isSimplified) {
       newStatus = reportingStatus === 'REPORTED' ? 'reported' : 'failed'
     } else {
       newStatus = clearanceStatus === 'CLEARED' ? 'cleared' : 'failed'
     }
-    const errors = (zatcaBody?.errors ?? []) as string[]
-    if (errors.length > 0) newStatus = 'failed'
+    if ((diagnostics.errorCodes ?? []).length > 0) newStatus = 'failed'
     console.log('[zatca-submit] final status:', newStatus)
 
     await db.from('invoices').update({
       zatca_status:             newStatus,
       zatca_xml:                signedXml,
       zatca_xml_hash:           invoiceHash,
+      zatca_signature:           signatureValue,
       ...(newStatus === 'reported' || newStatus === 'cleared' ? { zatca_qr_code: qrCode } : {}),
       zatca_submitted_at:       new Date().toISOString(),
       zatca_clearance_status:   clearanceStatus ?? null,
-      zatca_reporting_response: zatcaBody ?? null,
+      zatca_clearance_response: isSimplified ? null : (zatcaBody ?? null),
+      zatca_reporting_response: isSimplified ? (zatcaBody ?? null) : null,
       zatca_warnings:           zatcaBody?.warnings?.length ? { warnings: zatcaBody.warnings } : null,
-      zatca_prev_invoice_hash:  invoiceHash,
+      zatca_prev_invoice_hash:  previous.previousHash,
+      zatca_counter_number:     zatcaCounterNumber,
     }).eq('id', invoiceId)
 
     if (credentials.environment === 'sandbox' && credentials.legacyCertId) {
@@ -1000,13 +1301,27 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
       await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, JSON.stringify(zatcaBody?.errors))
     }
 
-    return { invoiceStatus: newStatus }
+    return { invoiceStatus: newStatus, diagnostics }
 
   } catch (err: any) {
+    if (isZatcaSubmitAssertionError(err)) {
+      diagnostics = { ...diagnostics, ...err.diagnostics }
+      console.error('[zatca-submit] local validation failed:', err.statusString, JSON.stringify(diagnostics))
+      await db.from('invoices').update({
+        zatca_status: 'failed',
+        zatca_reporting_response: buildSafeFailureResponse(err.statusString, err.message, diagnostics),
+        zatca_warnings: null,
+      }).eq('id', invoiceId)
+      return { invoiceStatus: 'failed', diagnostics }
+    }
+
     console.error('[zatca-submit] error:', err.message, '\n', err.stack)
-    await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+    await db.from('invoices').update({
+      zatca_status: 'failed',
+      zatca_reporting_response: buildSafeFailureResponse('SUBMISSION_EXCEPTION', err.message ?? 'unknown', diagnostics),
+    }).eq('id', invoiceId)
     await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, err.message ?? 'unknown')
-    return { invoiceStatus: 'failed' }
+    return { invoiceStatus: 'failed', diagnostics }
   }
 }
 

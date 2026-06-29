@@ -9,6 +9,7 @@ import { toSaudiTime } from '@/lib/utils/date'
 import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
 import type { Invoice, InvoiceItem, Payment, Branch } from '@/types/database'
 import { printSilent } from '@/lib/electron'
+import { submitInvoiceToZatca } from '@/lib/zatca/submission'
 
 function WhatsAppIcon({ size = 13 }: { size?: number }) {
   return (
@@ -176,13 +177,23 @@ export default function InvoiceDetailPage() {
         setTenant(tenantData)
         setCustomer(custData)
 
-        const { data: certData } = await (supabase as any)
-          .from('zatca_certificates')
-          .select('id')
-          .eq('branch_id', inv.branch_id)
-          .eq('status', 'active')
-          .single()
-        setIsPhase2(!!certData)
+        const [{ data: productionCredentials }, { data: sandboxCert }] = await Promise.all([
+          (supabase as any)
+            .from('zatca_production_credentials')
+            .select('id')
+            .eq('branch_id', inv.branch_id)
+            .eq('tenant_id', inv.tenant_id)
+            .eq('environment', 'production')
+            .eq('onboarding_status', 'production_connected')
+            .maybeSingle(),
+          (supabase as any)
+            .from('zatca_certificates')
+            .select('id')
+            .eq('branch_id', inv.branch_id)
+            .eq('status', 'active')
+            .maybeSingle(),
+        ])
+        setIsPhase2(!!productionCredentials || !!sandboxCert)
       } catch (e) {
         if (!cancelled) setError('Failed to load invoice')
       } finally {
@@ -280,11 +291,16 @@ ${lines}
     if (!invoice) return
     setResubmitting(true)
     try {
-      // Placeholder: update status to pending for retry
       await supabase.from('invoices')
         .update({ zatca_status: 'pending' })
         .eq('id', invoice.id)
       setInvoice(prev => prev ? { ...prev, zatca_status: 'pending' } : prev)
+      await submitInvoiceToZatca(invoice.id, invoice.branch_id)
+      const { data: refreshed } = await supabase.from('invoices').select('*').eq('id', invoice.id).single()
+      if (refreshed) setInvoice(refreshed as Invoice)
+    } catch {
+      const { data: refreshed } = await supabase.from('invoices').select('*').eq('id', invoice.id).single()
+      if (refreshed) setInvoice(refreshed as Invoice)
     } finally {
       setResubmitting(false)
     }
