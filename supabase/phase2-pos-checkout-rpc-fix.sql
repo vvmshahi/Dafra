@@ -1,9 +1,15 @@
 -- ============================================================
--- Phase 2 Security Hardening: backend-controlled POS checkout
--- Apply manually in Supabase SQL editor or via your migration flow.
+-- Phase 2 POS checkout RPC live fix
+-- Apply manually in Supabase SQL editor after phase2-pos-checkout-rpc.sql.
 -- ============================================================
 --
--- This migration moves POS checkout writes behind a SECURITY DEFINER RPC:
+-- This patch re-applies the backend checkout schema/function idempotently and
+-- fixes two live issues:
+--   1. Avoid unqualified uuid_generate_v4() by using pg_catalog.gen_random_uuid().
+--   2. Treat missing amount_paid as full payment for cash/card/bank checkout,
+--      while still rejecting explicit short cash tender.
+--
+-- The migration moves POS checkout writes behind a SECURITY DEFINER RPC:
 --   public.pos_checkout(p_payload jsonb)
 --
 -- The RPC validates the authenticated caller, recalculates totals from DB

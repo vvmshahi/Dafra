@@ -168,6 +168,26 @@ function createCheckoutIdempotencyKey() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+function safeCheckoutErrorMessage(err: unknown): string {
+  const message = err && typeof err === 'object' && 'message' in err
+    ? String((err as { message?: unknown }).message ?? '')
+    : ''
+
+  if (/amount paid is less|underpaid/i.test(message)) {
+    return 'Amount received is less than invoice total.'
+  }
+  if (/insufficient stock/i.test(message)) {
+    return 'Insufficient stock for one or more items.'
+  }
+  if (/not available/i.test(message)) {
+    return 'One or more items are no longer available.'
+  }
+  if (/forbidden|unauthorized|not found|inactive/i.test(message)) {
+    return 'Checkout is not allowed for this branch.'
+  }
+  return 'Checkout failed. Please review the cart and try again.'
+}
+
 const cartKey = (bid: string) => `pos_cart_${bid}`
 
 // ── Quick Expense modal ───────────────────────────────────────────────────────
@@ -1183,12 +1203,13 @@ export default function POSPage() {
     checkoutKeyRef.current = idempotencyKey
 
     try {
+      const cashTenderProvided = payMethod === 'cash' && cashReceived.trim() !== ''
       const payload = {
         branch_id: branch.id,
         customer_id: customerId,
         session_id: session?.id ?? null,
         payment_method: payMethod,
-        amount_paid: payMethod === 'cash' ? cashAmt : totals.total,
+        amount_paid: cashTenderProvided ? cashAmt : null,
         note: note || null,
         idempotency_key: idempotencyKey,
         items: cart.map(item => ({
@@ -1206,7 +1227,9 @@ export default function POSPage() {
       const serverSubtotal = num(checkout.subtotal)
       const createdAt = checkout.created_at
       const receiptPaymentMethod: 'cash' | 'card' = checkout.payment_method === 'card' ? 'card' : 'cash'
-      const receiptCashReceived = receiptPaymentMethod === 'cash' ? Math.max(cashAmt, serverTotal) : serverTotal
+      const receiptCashReceived = receiptPaymentMethod === 'cash' && cashTenderProvided
+        ? Math.max(cashAmt, serverTotal)
+        : serverTotal
       const receiptChange = receiptPaymentMethod === 'cash' ? Math.max(0, receiptCashReceived - serverTotal) : 0
       const isB2BInvoice = checkout.zatca_invoice_type === 'standard'
 
@@ -1272,8 +1295,9 @@ export default function POSPage() {
         })
         .catch(() => { setZatcaResult('failed'); toast.error('ZATCA submission failed') })
     } catch (err) {
-      console.error('[POSPage charge] payment failed:', err)
-      toast.error(err instanceof Error ? err.message : 'Payment failed. Please try again.')
+      const safeMessage = safeCheckoutErrorMessage(err)
+      console.warn('[POSPage charge] checkout failed:', safeMessage)
+      toast.error(safeMessage)
     } finally {
       setSubmitting(false)
     }
