@@ -159,6 +159,10 @@ export interface Database {
         }
         Returns: { tenant_id: string; branch_id: string }
       }
+      pos_checkout: {
+        Args: { p_payload: Record<string, unknown> }
+        Returns: Record<string, unknown>
+      }
     }
     Enums: {
       user_role: UserRole
@@ -362,6 +366,7 @@ export type VatTreatment = 'inherit' | 'exclusive' | 'inclusive' | 'exempt'
 export interface Product {
   id: string
   tenant_id: string
+  branch_id: string
   category_id: string | null
   name: string
   name_ar: string | null
@@ -381,6 +386,7 @@ export interface Product {
   image_url: string | null
   is_active: boolean
   is_service: boolean
+  track_stock: boolean
   // Added by update-products.sql
   vat_treatment: VatTreatment
   is_available: boolean
@@ -478,6 +484,9 @@ export interface Invoice {
   due_date: string | null
   status: InvoiceStatus
   payment_status: PaymentStatus
+  payment_method: PaymentMethod | null
+  session_id: string | null
+  checkout_idempotency_key: string | null
   notes: string | null
   notes_ar: string | null
   cancelled_at: string | null
@@ -605,6 +614,7 @@ export type CategoryUpdate = Partial<Omit<CategoryInsert, 'tenant_id'>>
 
 export interface ProductInsert {
   tenant_id: string
+  branch_id?: string | null
   category_id?: string | null
   name: string
   name_ar?: string | null
@@ -624,6 +634,7 @@ export interface ProductInsert {
   image_url?: string | null
   is_active?: boolean
   is_service?: boolean
+  track_stock?: boolean
   vat_treatment?: string
   is_available?: boolean
   sort_order?: number

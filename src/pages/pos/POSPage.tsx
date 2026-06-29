@@ -97,6 +97,33 @@ interface ReceiptData {
   showLogo: boolean
 }
 
+interface PosCheckoutItemResult {
+  product_id: string | null
+  name: string
+  name_ar: string | null
+  unit: string | null
+  quantity: number | string
+  unit_price: number | string
+  line_amount: number | string
+  subtotal: number | string
+  tax_amount: number | string
+  total: number | string
+}
+
+interface PosCheckoutResult {
+  invoice_id: string
+  invoice_number: string
+  created_at: string
+  subtotal: number | string
+  tax_amount: number | string
+  total: number | string
+  payment_method: 'cash' | 'card' | 'bank_transfer'
+  payment_status: string
+  zatca_invoice_type: 'simplified' | 'standard'
+  items: PosCheckoutItemResult[]
+  idempotent_replay?: boolean
+}
+
 // ── VAT helpers ───────────────────────────────────────────────────────────────
 
 function resolveMode(
@@ -130,6 +157,15 @@ function computeTotals(cart: CartItem[], vatMode: 'exclusive' | 'inclusive') {
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function num(value: number | string | null | undefined): number {
+  return Number(value ?? 0)
+}
+
+function createCheckoutIdempotencyKey() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 const cartKey = (bid: string) => `pos_cart_${bid}`
@@ -966,6 +1002,7 @@ export default function POSPage() {
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [showExpense,  setShowExpense]  = useState(false)
   const [zatcaResult,  setZatcaResult]  = useState<'submitted' | 'failed' | null>(null)
+  const checkoutKeyRef = useRef<string | null>(null)
 
   // ── Load data ────────────────────────────────────────────────────────────
 
@@ -1142,88 +1179,36 @@ export default function POSPage() {
     if (!tid || !branch || cart.length === 0 || submitting) return
     setSubmitting(true)
     setZatcaResult(null)
+    const idempotencyKey = checkoutKeyRef.current ?? createCheckoutIdempotencyKey()
+    checkoutKeyRef.current = idempotencyKey
+
     try {
-      const q = supabase as unknown as { from: (t: string) => any }
+      const payload = {
+        branch_id: branch.id,
+        customer_id: customerId,
+        session_id: session?.id ?? null,
+        payment_method: payMethod,
+        amount_paid: payMethod === 'cash' ? cashAmt : totals.total,
+        note: note || null,
+        idempotency_key: idempotencyKey,
+        items: cart.map(item => ({
+          product_id: item.productId,
+          quantity: item.quantity,
+        })),
+      }
 
-      const { data: counter } = await supabase.rpc('get_next_invoice_counter', { p_branch_id: branch.id })
-      const prefix        = branch.invoice_prefix ?? 'INV'
-      const invoiceNumber = `${prefix}-${String(counter ?? 1).padStart(4, '0')}`
-      const today         = saudiDateStr()
-      const createdAt     = new Date().toISOString()
+      const { data, error } = await (supabase as any).rpc('pos_checkout', { p_payload: payload })
+      if (error) throw error
 
-      const isB2BInvoice = selectedCust?.customer_type === 'business' &&
-        /^3\d{13}3$/.test(selectedCust?.vat_number ?? '')
-
-      const zatcaQrCode = buildZatcaQR({
-        sellerName:  branch.business_name || branch.name,
-        vatNumber:   branch.vat_number ?? '',
-        timestamp:   createdAt,
-        totalAmount: totals.total,
-        vatAmount:   totals.taxAmount,
-      })
-
-      const { data: inv, error: invErr } = await q.from('invoices').insert({
-        tenant_id:          tid,
-        branch_id:          branch.id,
-        customer_id:        customerId ?? null,
-        created_by:         profile?.id ?? null,
-        session_id:         session?.id ?? null,
-        invoice_number:     invoiceNumber,
-        zatca_invoice_type: isB2BInvoice ? 'standard' : 'simplified',
-        zatca_type_code:    '388',
-        zatca_status:       'pending',
-        zatca_qr_code:      zatcaQrCode,
-        subtotal:           totals.subtotal,
-        discount_amount:    0,
-        taxable_amount:     totals.subtotal,
-        tax_amount:         totals.taxAmount,
-        total_amount:       totals.total,
-        currency_code:      'SAR',
-        invoice_date:       today,
-        payment_method:     payMethod,
-        status:             'posted',
-        payment_status:     'paid',
-        notes:              note || null,
-      }).select('id').single()
-
-      if (invErr) throw invErr
-
-      const itemsPayload = cart.map((item, idx) => {
-        const line = item.price * item.quantity
-        const mode = resolveMode(item.vatTreatment, vatMode)
-        let net = line, tax = 0
-        if (mode === 'exclusive')  { net = line;       tax = line * 0.15 }
-        if (mode === 'inclusive')  { net = line / 1.15; tax = line - net  }
-        return {
-          invoice_id:       inv.id,
-          tenant_id:        tid,
-          product_id:       item.productId,
-          name:             item.name,
-          name_ar:          item.nameAr,
-          unit:             item.unit,
-          quantity:         item.quantity,
-          unit_price:       item.price,
-          discount_percent: 0,
-          discount_amount:  0,
-          subtotal:         net,
-          tax_rate:         mode === 'exempt' ? 0 : 0.15,
-          tax_category:     mode === 'exempt' ? 'O' : 'S',
-          tax_amount:       tax,
-          total:            net + tax,
-          sort_order:       idx,
-        }
-      })
-      await Promise.all([
-        q.from('invoice_items').insert(itemsPayload),
-        q.from('payments').insert({
-          tenant_id:   tid,
-          invoice_id:  inv.id,
-          recorded_by: profile?.id ?? null,
-          amount:      totals.total,
-          method:      payMethod,
-          paid_at:     new Date().toISOString(),
-        }),
-      ])
+      const checkout = data as PosCheckoutResult
+      const serverTotal = num(checkout.total)
+      const serverTax = num(checkout.tax_amount)
+      const serverSubtotal = num(checkout.subtotal)
+      const createdAt = checkout.created_at
+      const receiptPaymentMethod: 'cash' | 'card' = checkout.payment_method === 'card' ? 'card' : 'cash'
+      const receiptCashReceived = receiptPaymentMethod === 'cash' ? Math.max(cashAmt, serverTotal) : serverTotal
+      const receiptChange = receiptPaymentMethod === 'cash' ? Math.max(0, receiptCashReceived - serverTotal) : 0
+      const isB2BInvoice = checkout.zatca_invoice_type === 'standard'
 
       const branchAddr = [
         branch.building_number ? `Building ${branch.building_number}` : null,
@@ -1231,14 +1216,14 @@ export default function POSPage() {
       ].filter(Boolean).join(', ')
 
       setReceipt({
-        invoiceNumber,
-        invoiceId:      inv.id,
-        total:          totals.total,
-        taxAmount:      totals.taxAmount,
-        subtotal:       totals.subtotal,
-        paymentMethod:  payMethod,
-        change,
-        cashReceived:   cashAmt,
+        invoiceNumber:  checkout.invoice_number,
+        invoiceId:      checkout.invoice_id,
+        total:          serverTotal,
+        taxAmount:      serverTax,
+        subtotal:       serverSubtotal,
+        paymentMethod:  receiptPaymentMethod,
+        change:         receiptChange,
+        cashReceived:   receiptCashReceived,
         customerName:      selectedCust?.customer_type === 'business' && selectedCust?.business_name
           ? selectedCust.business_name
           : (selectedCust?.name ?? 'Walk-in Customer'),
@@ -1246,11 +1231,11 @@ export default function POSPage() {
         isStandardInvoice: isB2BInvoice,
         buyerVatNumber:    isB2BInvoice ? (selectedCust?.vat_number ?? null) : null,
         cashierName:    profile?.full_name ?? user?.email?.split('@')[0] ?? 'Cashier',
-        items:          cart.map(i => ({
-          name:      i.nameAr?.trim() ? i.nameAr : i.name,
-          qty:       i.quantity,
-          unitPrice: i.price,
-          lineTotal: i.price * i.quantity,
+        items:          (checkout.items ?? []).map(i => ({
+          name:      i.name_ar?.trim() ? i.name_ar : i.name,
+          qty:       num(i.quantity),
+          unitPrice: num(i.unit_price),
+          lineTotal: num(i.line_amount),
         })),
         createdAt,
         businessNameAr:  branch.display_name || branch.business_name || branch.name,
@@ -1273,8 +1258,9 @@ export default function POSPage() {
       setCustomerId(null)
       setNote('')
       setCashReceived('')
+      checkoutKeyRef.current = null
 
-      submitInvoiceToZatca(inv.id, branch.id)
+      submitInvoiceToZatca(checkout.invoice_id, branch.id)
         .then((submitted) => {
           if (submitted) {
             setZatcaResult('submitted')
@@ -1287,7 +1273,7 @@ export default function POSPage() {
         .catch(() => { setZatcaResult('failed'); toast.error('ZATCA submission failed') })
     } catch (err) {
       console.error('[POSPage charge] payment failed:', err)
-      alert('Payment failed. Please try again.')
+      toast.error(err instanceof Error ? err.message : 'Payment failed. Please try again.')
     } finally {
       setSubmitting(false)
     }
