@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "zatca:validate-sample": "node scripts/validate-zatca-compliance-sample.mjs"
   },
   "dependencies": {
     "@noble/curves": "^2.2.0",

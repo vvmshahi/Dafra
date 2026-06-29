@@ -852,7 +852,7 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
       {error && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl p-3">
           <AlertTriangle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
-          <p className="text-[11px] text-red-700 leading-relaxed">{error}</p>
+          <p className="text-[11px] text-red-700 leading-relaxed whitespace-pre-wrap">{error}</p>
         </div>
       )}
 

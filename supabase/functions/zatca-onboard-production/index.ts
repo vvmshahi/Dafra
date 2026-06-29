@@ -33,6 +33,7 @@ import { encryptText } from '../_shared/zatca/crypto.ts'
 import { requestComplianceCsid, requestProductionCsid } from '../_shared/zatca/client.ts'
 import {
   simulatedComplianceResults,
+  stripComplianceSampleDebug,
   submitComplianceSamples,
   type ComplianceSampleResult,
   type SampleSeller,
@@ -71,6 +72,7 @@ Deno.serve(async (req: Request) => {
     )
     const body = await readBody(req)
     const owner = await requireTenantOwner(db, req)
+    logOnboardingStage('auth loaded')
     const branchId = body.branchId
 
     if (!isUuid(branchId)) {
@@ -98,6 +100,7 @@ Deno.serve(async (req: Request) => {
 
     const dryRun = body.dryRun !== false
     const tenant = await loadTenant(db, owner.tenantId)
+    logOnboardingStage('seller data loaded', { branchId: branch.id, tenantId: owner.tenantId })
     const csrParams = buildCsrParams(branch, tenant, body.functionalityMap)
     const missing = validateCsrInputs(csrParams)
     if (missing.length > 0) {
@@ -107,6 +110,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const generated = await generateProductionCsr(csrParams)
+    logOnboardingStage('CSR generated', { branchId: branch.id })
 
     if (dryRun) {
       const complianceSampleResults = simulatedComplianceResults(body.functionalityMap)
@@ -149,6 +153,10 @@ Deno.serve(async (req: Request) => {
       csrPem: generated.csrPem,
       otp: body.otp,
     })
+    logOnboardingStage('compliance CSID requested', {
+      branchId: branch.id,
+      requestId: compliance.requestID,
+    })
 
     const encryptedComplianceCsid = await encryptText(compliance.binarySecurityToken, encryptionSecret)
     const encryptedComplianceSecret = await encryptText(compliance.secret, encryptionSecret)
@@ -160,9 +168,17 @@ Deno.serve(async (req: Request) => {
       encryptedComplianceCsid,
       encryptedComplianceSecret,
     })
+    logOnboardingStage('compliance credentials stored', {
+      branchId: branch.id,
+      requestId: compliance.requestID,
+    })
 
     let complianceSampleResults: ComplianceSampleResult[]
     try {
+      logOnboardingStage('sample generation started', {
+        branchId: branch.id,
+        functionalityMap: body.functionalityMap,
+      })
       complianceSampleResults = await submitComplianceSamples({
         baseUrl: PRODUCTION_CORE_BASE_URL,
         functionalityMap: body.functionalityMap,
@@ -173,31 +189,87 @@ Deno.serve(async (req: Request) => {
         seller: buildSampleSeller(branch, tenant, csrParams),
       })
     } catch (err) {
+      logComplianceGenerationException(err)
       const message = safeErrorMessage(err)
-      await saveState(db, owner, csrParams, generated, {
-        status: 'compliance_failed',
-        encryptedPrivateKey,
-        complianceRequestId: compliance.requestID,
-        encryptedComplianceCsid,
-        encryptedComplianceSecret,
-        complianceSampleResults: [],
-        lastError: message,
-      })
+      try {
+        await saveState(db, owner, csrParams, generated, {
+          status: 'compliance_failed',
+          encryptedPrivateKey,
+          complianceRequestId: compliance.requestID,
+          encryptedComplianceCsid,
+          encryptedComplianceSecret,
+          complianceSampleResults: [],
+          lastError: message,
+        })
+      } catch (saveErr) {
+        console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance generation failure save failed:', safeDiagnosticField(safeErrorMessage(saveErr), 300))
+      }
       return jsonResponse({ error: message }, 501)
     }
 
     const samplesPassed = complianceSampleResults.every(result => result.status === 'accepted')
     if (!samplesPassed) {
-      await saveState(db, owner, csrParams, generated, {
-        status: 'compliance_failed',
-        encryptedPrivateKey,
-        complianceRequestId: compliance.requestID,
-        encryptedComplianceCsid,
-        encryptedComplianceSecret,
-        complianceSampleResults,
-        lastError: 'Compliance sample invoices were not accepted.',
-      })
-      return jsonResponse({ error: 'Compliance sample invoices were not accepted.' }, 422)
+      const persistentComplianceSampleResults = stripComplianceSampleDebug(complianceSampleResults)
+      try {
+        await saveFailedSampleDebugXml(db, owner, branch.id, complianceSampleResults)
+      } catch (err) {
+        // TEMPORARY DEBUG: failed XML persistence is diagnostic only and must
+        // never turn a controlled sample rejection into EDGE_FUNCTION_ERROR.
+        console.error('[zatca-onboard-production] TEMPORARY DEBUG failed sample XML persistence threw:', safeErrorMessage(err))
+      }
+
+      // TEMPORARY DEBUG: return and log redacted ZATCA compliance diagnostics so
+      // the next live OTP attempt shows the real sample rejection reason.
+      try {
+        console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance sample rejection:', JSON.stringify({
+          branchId: branch?.id,
+          functionalityMap: body?.functionalityMap,
+          complianceSampleResults: persistentComplianceSampleResults,
+        }))
+      } catch {
+        console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance sample rejection: diagnostics stringify failed')
+      }
+
+      try {
+        await saveState(db, owner, csrParams, generated, {
+          status: 'compliance_failed',
+          encryptedPrivateKey,
+          complianceRequestId: compliance.requestID,
+          encryptedComplianceCsid,
+          encryptedComplianceSecret,
+          complianceSampleResults: persistentComplianceSampleResults,
+          lastError: 'Compliance sample invoices were not accepted.',
+        })
+      } catch (err) {
+        // TEMPORARY DEBUG: diagnostic persistence must not turn the original
+        // ZATCA sample rejection into EDGE_FUNCTION_ERROR.
+        console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance diagnostics save failed:', safeErrorMessage(err))
+        try {
+          await saveState(db, owner, csrParams, generated, {
+            status: 'compliance_failed',
+            encryptedPrivateKey,
+            complianceRequestId: compliance.requestID,
+            encryptedComplianceCsid,
+            encryptedComplianceSecret,
+            complianceSampleResults: [],
+            lastError: 'Compliance sample invoices were not accepted.',
+          })
+        } catch (fallbackErr) {
+          console.error('[zatca-onboard-production] TEMPORARY DEBUG fallback compliance save failed:', safeErrorMessage(fallbackErr))
+        }
+      }
+
+      const failedHttpStatus = complianceSampleResults
+        ?.find(result => result?.status !== 'accepted' && typeof result?.httpStatus === 'number')
+        ?.httpStatus
+      const responseStatus = failedHttpStatus && failedHttpStatus >= 400 && failedHttpStatus <= 599
+        ? failedHttpStatus
+        : 422
+
+      return jsonResponse({
+        error: 'Compliance sample invoices were not accepted.',
+        complianceSampleResults: persistentComplianceSampleResults,
+      }, responseStatus)
     }
 
     await saveState(db, owner, csrParams, generated, {
@@ -254,9 +326,14 @@ Deno.serve(async (req: Request) => {
     })
   } catch (err) {
     const message = safeErrorMessage(err)
-    console.error('[zatca-onboard-production] failed:', message)
+    const debug = buildSafeDebugError(err, 'top-level')
+    console.error('[zatca-onboard-production] TEMPORARY DEBUG top-level failure:', JSON.stringify(debug))
     const status = message === 'Unauthorized' ? 401 : message.startsWith('Forbidden') ? 403 : 500
-    return jsonResponse({ error: message }, status)
+    return jsonResponse({
+      error: message,
+      // TEMPORARY DEBUG: remove after live ZATCA onboarding crash is isolated.
+      debug,
+    }, status)
   }
 })
 
@@ -378,4 +455,116 @@ async function saveState(
     lastError: update.lastError,
     connectedAt: update.connectedAt,
   })
+}
+
+async function saveFailedSampleDebugXml(
+  db: any,
+  owner: { userId: string; tenantId: string },
+  branchId: string,
+  results: ComplianceSampleResult[] | undefined,
+): Promise<void> {
+  try {
+    const failed = (Array.isArray(results) ? results : []).find(result =>
+      result?.status !== 'accepted' && typeof result?.debugSignedInvoiceXmlBase64 === 'string'
+    )
+    if (!failed?.debugSignedInvoiceXmlBase64) return
+
+    // TEMPORARY DEBUG: persist exact failed sample XML for local SDK validation.
+    // This stores signed invoice XML only; never OTP, private key, CSID secret,
+    // production secret, or encryption key.
+    const signedInvoiceXmlBase64 = safeDebugString(failed.debugSignedInvoiceXmlBase64, 120_000)
+    if (!signedInvoiceXmlBase64) return
+
+    const { error } = await db
+      .from('zatca_production_debug_samples')
+      .insert({
+        tenant_id: owner.tenantId,
+        branch_id: branchId,
+        sample_type: safeDebugString(failed.type, 80) ?? 'unknown',
+        invoice_hash: safeDebugString(failed.debugInvoiceHash, 500),
+        signed_invoice_xml_base64: signedInvoiceXmlBase64,
+        issue_date: safeDebugString(failed.debugIssueDate, 40),
+        issue_time: safeDebugString(failed.debugIssueTime, 40),
+        qr_timestamp: safeDebugString(failed.debugQrTimestamp, 80),
+        transformed_canonical_hash: safeDebugString(failed.debugTransformedCanonicalHash, 500),
+      })
+
+    if (error) {
+      console.error('[zatca-onboard-production] TEMPORARY DEBUG failed sample XML save failed:', {
+        message: error.message,
+        code: error.code,
+      })
+    }
+  } catch (err) {
+    console.error('[zatca-onboard-production] TEMPORARY DEBUG failed sample XML save crashed:', safeErrorMessage(err))
+  }
+}
+
+function safeDebugString(value: unknown, maxLength: number): string | null {
+  if (typeof value !== 'string') return null
+  const cleaned = value.replace(/[\u0000-\u001f\u007f-\u009f]+/g, '').slice(0, maxLength)
+  return cleaned.length > 0 ? cleaned : null
+}
+
+function logComplianceGenerationException(err: unknown): void {
+  try {
+    // TEMPORARY DEBUG: top-level generation guard. Do not log XML, OTP, keys,
+    // CSID secrets, production secrets, encryption keys, or Authorization data.
+    console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance sample generation exception:', JSON.stringify({
+      sampleType: 'unknown',
+      errorName: safeDiagnosticField(err instanceof Error ? err.name : typeof err, 120),
+      message: safeDiagnosticField(err instanceof Error ? err.message : String(err ?? 'unknown'), 300),
+      stack: safeDiagnosticField(err instanceof Error ? err.stack : undefined, 1600),
+    }))
+  } catch {
+    console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance sample generation exception: diagnostics stringify failed')
+  }
+}
+
+function logOnboardingStage(stage: string, context?: Record<string, unknown>): void {
+  try {
+    const safeContext: Record<string, string | undefined> = {}
+    for (const [key, value] of Object.entries(context ?? {})) {
+      safeContext[key] = safeDiagnosticField(String(value ?? ''), 160)
+    }
+    console.error('[zatca-onboard-production] TEMPORARY DEBUG stage:', JSON.stringify({
+      stage: safeStageField(stage, 120),
+      ...safeContext,
+    }))
+  } catch {
+    console.error('[zatca-onboard-production] TEMPORARY DEBUG stage: diagnostics stringify failed')
+  }
+}
+
+function buildSafeDebugError(err: unknown, stage: string): Record<string, string | undefined> {
+  return {
+    stage: safeStageField(stage, 120),
+    errorName: safeDiagnosticField(err instanceof Error ? err.name : typeof err, 120),
+    message: safeDiagnosticField(err instanceof Error ? err.message : String(err ?? 'unknown'), 500),
+    stack: safeDiagnosticField(err instanceof Error ? err.stack : undefined, 2400),
+  }
+}
+
+function safeStageField(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const cleaned = value
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength)
+  return cleaned || undefined
+}
+
+function safeDiagnosticField(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const cleaned = value
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength)
+  if (!cleaned) return undefined
+  if (/otp|secret|csid|token|certificate|private[_ -]?key|authorization|csr|<\?xml|<Invoice|signedInvoiceXmlBase64|signed_invoice_xml_base64/i.test(cleaned)) {
+    return 'Sensitive detail redacted.'
+  }
+  return cleaned
 }

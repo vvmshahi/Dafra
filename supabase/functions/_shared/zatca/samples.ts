@@ -1,6 +1,7 @@
 import { create as xmlCreate } from 'https://esm.sh/xmlbuilder2@4.0.3'
 import { secp256k1 } from 'https://esm.sh/@noble/curves@2.2.0/secp256k1.js'
 import { DOMParser } from 'https://esm.sh/@xmldom/xmldom@0.9.10'
+import { extractEcPrivateKeyScalar, signZatcaInvoiceHash } from './signing_core.mjs'
 import type { FunctionalityMap } from './config.ts'
 
 export type ComplianceSampleType =
@@ -25,7 +26,16 @@ export interface ComplianceSampleResult {
   clearanceStatus?: string
   warningsCount?: number
   errorsCount?: number
+  redactedWarnings?: Array<{ code?: string; message?: string }>
   redactedErrors?: Array<{ code?: string; message?: string }>
+  responseBodySafeSummary?: string
+  zatcaHeaders?: Record<string, string>
+  debugInvoiceHash?: string
+  debugSignedInvoiceXmlBase64?: string
+  debugIssueDate?: string
+  debugIssueTime?: string
+  debugQrTimestamp?: string
+  debugTransformedCanonicalHash?: string
   message?: string
 }
 
@@ -56,7 +66,12 @@ interface SignedCompliancePayload {
   uuid: string
   invoiceHash: string
   invoice: string
+  signedXml: string
   isStandard: boolean
+  issueDate: string
+  issueTime: string
+  qrTimestamp: string
+  transformedCanonicalHash: string
 }
 
 const SIMPLIFIED: ComplianceSampleType[] = [
@@ -106,7 +121,27 @@ export async function submitComplianceSamples(params: SubmitComplianceSamplesPar
 
   for (let i = 0; i < sampleTypes.length; i++) {
     const type = sampleTypes[i]
-    const payload = await buildCompliancePayload(params, type, i + 1)
+    let payload: SignedCompliancePayload
+    try {
+      logComplianceSampleStage('sample payload build started', type)
+      payload = await buildCompliancePayload(params, type, i + 1)
+      logComplianceSampleStage('sample payload build completed', type)
+    } catch (err) {
+      logComplianceSampleException(type, 'payload build', err)
+      results.push(buildLocalComplianceFailure(type, 'PAYLOAD_BUILD_FAILED', err))
+      for (const remainingType of sampleTypes.slice(i + 1)) {
+        results.push({
+          type: remainingType,
+          invoiceKind: invoiceKindFor(remainingType),
+          documentKind: documentKindFor(remainingType),
+          accepted: false,
+          status: 'blocked',
+          message: 'Not submitted because a previous compliance sample failed.',
+        })
+      }
+      break
+    }
+
     const result = await submitComplianceSample(params, payload)
     results.push(result)
 
@@ -141,14 +176,24 @@ async function buildCompliancePayload(
     invoiceTypeCode: data.invoiceTypeCode,
     requireBuyer: !data.isSimplified,
   })
-  const { signedXml, invoiceHash } = await signInvoice(unsignedXml, privateKey, params.complianceCertificate)
+  const { signedXml, invoiceHash, qrTimestamp, transformedCanonicalHash } = await signInvoice(
+    unsignedXml,
+    privateKey,
+    params.complianceCertificate,
+    safeSampleTimestamp(data.issueDateTime, data.issueDate, data.issueTime),
+  )
 
   return {
     type,
     uuid: data.uuid,
     invoiceHash,
     invoice: utf8ToBase64(signedXml),
+    signedXml,
     isStandard: !data.isSimplified,
+    issueDate: data.issueDate,
+    issueTime: data.issueTime,
+    qrTimestamp,
+    transformedCanonicalHash,
   }
 }
 
@@ -156,41 +201,223 @@ async function submitComplianceSample(
   params: SubmitComplianceSamplesParams,
   payload: SignedCompliancePayload,
 ): Promise<ComplianceSampleResult> {
-  const credentials = btoa(`${params.complianceCsid}:${params.complianceSecret}`)
-  const res = await fetch(`${params.baseUrl}/compliance/invoices`, {
-    method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'accept-version': 'V2',
-      'accept-language': 'en',
-      'Content-Type': 'application/json',
-      Authorization: `Basic ${credentials}`,
-      ...(payload.isStandard ? { 'Clearance-Status': '1' } : {}),
-    },
-    body: JSON.stringify({
-      invoiceHash: payload.invoiceHash,
-      uuid: payload.uuid,
-      invoice: payload.invoice,
-    }),
-  })
+  try {
+    const credentials = btoa(`${params.complianceCsid}:${params.complianceSecret}`)
+    const requestBody = await buildFinalComplianceRequestBody(payload)
 
-  const body = await safeJson(res)
-  return summarizeComplianceResponse(payload.type, res.status, body)
+    logComplianceSampleStage('ZATCA sample submit started', payload.type)
+    const res = await fetch(`${params.baseUrl}/compliance/invoices`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'accept-version': 'V2',
+        'accept-language': 'en',
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${credentials}`,
+        ...(payload.isStandard ? { 'Clearance-Status': '1' } : {}),
+      },
+      body: JSON.stringify(requestBody),
+    })
+    logComplianceSampleStage('sample submit completed', payload.type, { httpStatus: res.status })
+
+    const body = await safeJson(res)
+    const result = safeSummarizeComplianceResponse(payload.type, res.status, body, res.headers)
+
+    // TEMPORARY DEBUG: expose only redacted compliance diagnostics while production
+    // onboarding rejection cause is being isolated. Do not add XML or credentials here.
+    if (result.status !== 'accepted') {
+      attachFailedSampleXmlDebug(result, payload)
+      try {
+        console.error('[zatca-compliance-samples] TEMPORARY DEBUG rejection:', JSON.stringify(stripComplianceSampleDebug([result])[0] ?? {}))
+      } catch {
+        console.error('[zatca-compliance-samples] TEMPORARY DEBUG rejection: diagnostics stringify failed')
+      }
+    }
+
+    return result
+  } catch (err) {
+    const statusString = isFinalHashAssertionError(err)
+      ? 'FINAL_HASH_ASSERTION_FAILED'
+      : 'COMPLIANCE_SAMPLE_SUBMISSION_FAILED'
+    logComplianceSampleException(payload.type, statusString, err)
+    const result = buildLocalComplianceFailure(payload.type, statusString, err)
+    attachFailedSampleXmlDebug(result, payload)
+    return result
+  }
+}
+
+async function buildFinalComplianceRequestBody(payload: SignedCompliancePayload): Promise<{
+  invoiceHash: string
+  uuid: string
+  invoice: string
+}> {
+  const finalSignedXml = payload.signedXml
+  const finalInvoiceHash = await computeInvoiceHash(finalSignedXml)
+
+  if (
+    finalInvoiceHash !== payload.invoiceHash ||
+    finalInvoiceHash !== payload.transformedCanonicalHash
+  ) {
+    throw new Error('Final ZATCA compliance sample hash assertion failed before submission.')
+  }
+
+  const finalInvoice = utf8ToBase64(finalSignedXml)
+  if (finalInvoice !== payload.invoice) {
+    throw new Error('Final ZATCA compliance sample invoice payload assertion failed before submission.')
+  }
+
+  return {
+    invoiceHash: finalInvoiceHash,
+    uuid: payload.uuid,
+    invoice: finalInvoice,
+  }
+}
+
+function safeSummarizeComplianceResponse(
+  type: ComplianceSampleType,
+  httpStatus: number,
+  body: any,
+  headers?: Headers,
+): ComplianceSampleResult {
+  try {
+    return summarizeComplianceResponse(type, httpStatus, body ?? {}, safeZatcaHeaders(headers))
+  } catch (err) {
+    // TEMPORARY DEBUG: diagnostics must never turn a ZATCA rejection into an
+    // Edge 500. Fall back to the original generic onboarding failure shape.
+    console.error('[zatca-compliance-samples] TEMPORARY DEBUG extraction failed:', safeText(err instanceof Error ? err.message : String(err ?? 'unknown')) ?? 'diagnostic error')
+    return fallbackComplianceResult(type, httpStatus)
+  }
+}
+
+function attachFailedSampleXmlDebug(result: ComplianceSampleResult, payload: SignedCompliancePayload): void {
+  try {
+    // TEMPORARY DEBUG: include the exact signed sample payload sent to ZATCA so
+    // it can be decoded and validated locally with the SDK. This intentionally
+    // excludes OTP, private key, CSID secret, production secret, and encryption key.
+    result.debugInvoiceHash = safeDebugText(payload?.invoiceHash, 500)
+    result.debugSignedInvoiceXmlBase64 = safeDebugText(payload?.invoice, 80_000)
+    result.debugIssueDate = safeDebugText(payload?.issueDate, 40)
+    result.debugIssueTime = safeDebugText(payload?.issueTime, 40)
+    result.debugQrTimestamp = safeDebugText(payload?.qrTimestamp, 80)
+    result.debugTransformedCanonicalHash = safeDebugText(payload?.transformedCanonicalHash, 500)
+  } catch {
+    // Diagnostic capture must never change onboarding behavior.
+  }
+}
+
+function buildLocalComplianceFailure(
+  type: ComplianceSampleType,
+  statusString: string,
+  err?: unknown,
+): ComplianceSampleResult {
+  const message = safeLocalDiagnosticMessage(err)
+  return {
+    type,
+    invoiceKind: invoiceKindFor(type),
+    documentKind: documentKindFor(type),
+    accepted: false,
+    status: 'blocked',
+    statusString,
+    warningsCount: 0,
+    errorsCount: 1,
+    redactedWarnings: [],
+    redactedErrors: [{
+      code: statusString,
+      message,
+    }],
+    responseBodySafeSummary: message,
+    message,
+  }
+}
+
+function isFinalHashAssertionError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err ?? '')
+  return message.includes('Final ZATCA compliance sample')
+}
+
+function logComplianceSampleStage(
+  stage: string,
+  type: ComplianceSampleType,
+  context?: Record<string, unknown>,
+): void {
+  try {
+    const safeContext: Record<string, string | undefined> = {}
+    for (const [key, value] of Object.entries(context ?? {})) {
+      safeContext[key] = safeExceptionField(String(value ?? ''), 160)
+    }
+    console.error('[zatca-compliance-samples] TEMPORARY DEBUG stage:', JSON.stringify({
+      stage: safeStageField(stage, 120),
+      sampleType: type,
+      ...safeContext,
+    }))
+  } catch {
+    console.error('[zatca-compliance-samples] TEMPORARY DEBUG stage: diagnostics stringify failed')
+  }
+}
+
+function logComplianceSampleException(
+  type: ComplianceSampleType,
+  stage: string,
+  err: unknown,
+): void {
+  try {
+    // TEMPORARY DEBUG: capture local generation/assertion failures without
+    // logging XML, OTP, keys, CSID secrets, or Authorization values.
+    console.error('[zatca-compliance-samples] TEMPORARY DEBUG local exception:', JSON.stringify({
+      sampleType: type,
+      stage: safeExceptionField(stage, 120),
+      errorName: safeExceptionField(err instanceof Error ? err.name : typeof err, 120),
+      message: safeExceptionField(err instanceof Error ? err.message : String(err ?? 'unknown'), 300),
+      stack: safeExceptionField(err instanceof Error ? err.stack : undefined, 1600),
+    }))
+  } catch {
+    console.error('[zatca-compliance-samples] TEMPORARY DEBUG local exception: diagnostics stringify failed')
+  }
+}
+
+export function stripComplianceSampleDebug(results: ComplianceSampleResult[] | undefined): ComplianceSampleResult[] {
+  try {
+    return (Array.isArray(results) ? results : []).map(result => {
+      const source = (result ?? {}) as ComplianceSampleResult
+      const {
+        debugInvoiceHash,
+        debugSignedInvoiceXmlBase64,
+        debugIssueDate,
+        debugIssueTime,
+        debugQrTimestamp,
+        debugTransformedCanonicalHash,
+        ...safeResult
+      } = source
+
+      return {
+        ...safeResult,
+        ...(debugInvoiceHash ? { debugInvoiceHash } : {}),
+        ...(debugIssueDate ? { debugIssueDate } : {}),
+        ...(debugIssueTime ? { debugIssueTime } : {}),
+        ...(debugQrTimestamp ? { debugQrTimestamp } : {}),
+        ...(debugTransformedCanonicalHash ? { debugTransformedCanonicalHash } : {}),
+      } as ComplianceSampleResult
+    })
+  } catch {
+    return []
+  }
 }
 
 function summarizeComplianceResponse(
   type: ComplianceSampleType,
   httpStatus: number,
   body: any,
+  zatcaHeaders?: Record<string, string>,
 ): ComplianceSampleResult {
   const invoiceKind = invoiceKindFor(type)
   const documentKind = documentKindFor(type)
   const validationStatus = upperString(body?.validationResults?.status)
   const reportingStatus = upperString(body?.reportingStatus)
   const clearanceStatus = upperString(body?.clearanceStatus)
+  const redactedWarnings = redactedZatcaWarnings(body)
   const redactedErrors = redactedZatcaErrors(body)
   const errorsCount = redactedErrors.length
-  const warningsCount = countMessages(body?.warnings) + countMessages(body?.validationResults?.warningMessages)
+  const warningsCount = redactedWarnings.length
   const acceptance = isExplicitComplianceSampleAccepted({
     httpStatus,
     parseFailed: body?._parseFailed === true,
@@ -214,7 +441,10 @@ function summarizeComplianceResponse(
     clearanceStatus,
     warningsCount,
     errorsCount,
+    redactedWarnings,
     redactedErrors,
+    responseBodySafeSummary: safeBodySummary(body),
+    zatcaHeaders,
     message: acceptance.message,
   }
 }
@@ -296,32 +526,56 @@ function isExplicitComplianceSampleAccepted(params: {
 }
 
 async function safeJson(res: Response): Promise<any> {
-  const text = await res.text()
-  if (!text) return {}
   try {
-    return JSON.parse(text)
+    const text = await res?.text?.()
+    if (!text) return {}
+    try {
+      return JSON.parse(text)
+    } catch {
+      return { _parseFailed: true, _textSummary: safeText(text.slice(0, 600)) }
+    }
   } catch {
     return { _parseFailed: true }
   }
-}
-
-function countMessages(value: unknown): number {
-  return Array.isArray(value) ? value.length : 0
 }
 
 function upperString(value: unknown): string | undefined {
   return typeof value === 'string' ? value.trim().toUpperCase() : undefined
 }
 
+function redactedZatcaWarnings(body: any): Array<{ code?: string; message?: string }> {
+  try {
+    const values = [
+      ...arrayValue(body?.warnings),
+      ...arrayValue(body?.validationResults?.warningMessages),
+    ]
+    return redactZatcaMessages(values)
+  } catch {
+    return []
+  }
+}
+
 function redactedZatcaErrors(body: any): Array<{ code?: string; message?: string }> {
-  const values = [
-    ...arrayValue(body?.errors),
-    ...arrayValue(body?.validationResults?.errorMessages),
-  ]
-  return values.slice(0, 5).map(item => ({
-    code: safeText(item?.code ?? item?.type ?? item?.category),
-    message: safeText(item?.message ?? item?.error ?? item?.description),
-  })).filter(item => item.code || item.message)
+  try {
+    const values = [
+      ...arrayValue(body?.errors),
+      ...arrayValue(body?.validationResults?.errorMessages),
+    ]
+    return redactZatcaMessages(values)
+  } catch {
+    return []
+  }
+}
+
+function redactZatcaMessages(values: any[]): Array<{ code?: string; message?: string }> {
+  try {
+    return arrayValue(values).slice(0, 5).map(item => ({
+      code: safeText(item?.code ?? item?.type ?? item?.category),
+      message: safeText(item?.message ?? item?.error ?? item?.description ?? (typeof item === 'string' ? item : undefined)),
+    })).filter(item => item.code || item.message)
+  } catch {
+    return []
+  }
 }
 
 function arrayValue(value: unknown): any[] {
@@ -330,11 +584,171 @@ function arrayValue(value: unknown): any[] {
 
 function safeText(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
-  const cleaned = value.replace(/[\r\n\t]+/g, ' ').slice(0, 180)
+  const cleaned = value
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180)
+  if (!cleaned) return undefined
   if (/otp|secret|csid|token|certificate|private[_ -]?key|authorization|csr|xml/i.test(cleaned)) {
     return 'Sensitive detail redacted.'
   }
   return cleaned
+}
+
+function safeDebugText(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const cleaned = value.replace(/[\u0000-\u001f\u007f-\u009f]+/g, '').slice(0, maxLength)
+  if (!cleaned) return undefined
+  return cleaned
+}
+
+function safeLocalDiagnosticMessage(err: unknown): string {
+  const fallback = 'ZATCA compliance sample failed before submission. Sensitive details were redacted.'
+  try {
+    const raw = err instanceof Error ? err.message : String(err ?? fallback)
+    const cleaned = raw
+      .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 220)
+    if (!cleaned) return fallback
+    if (/otp|secret|csid|token|certificate|private[_ -]?key|authorization|csr|xml|invoice/i.test(cleaned)) {
+      return fallback
+    }
+    return cleaned
+  } catch {
+    return fallback
+  }
+}
+
+function safeExceptionField(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const cleaned = value
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength)
+  if (!cleaned) return undefined
+  if (/otp|secret|csid|token|certificate|private[_ -]?key|authorization|csr|<\?xml|<Invoice|signedInvoiceXmlBase64|signed_invoice_xml_base64/i.test(cleaned)) {
+    return 'Sensitive detail redacted.'
+  }
+  return cleaned
+}
+
+function safeStageField(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const cleaned = value
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength)
+  return cleaned || undefined
+}
+
+function safeSampleTimestamp(value: unknown, issueDate?: unknown, issueTime?: unknown): string {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(value)) {
+    return value
+  }
+
+  const date = typeof issueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(issueDate)
+    ? issueDate
+    : undefined
+  const time = typeof issueTime === 'string' && /^\d{2}:\d{2}:\d{2}$/.test(issueTime)
+    ? issueTime
+    : undefined
+
+  if (date && time) return `${date}T${time}`
+
+  const fallback = saudiIssueDate(new Date())
+  return fallback.dateTime
+}
+
+function extractInvoiceTimestamp(xmlString: string): { issueDate?: string; issueTime?: string } {
+  try {
+    return {
+      issueDate: (xmlString.match(/<cbc:IssueDate[^>]*>([^<]+)<\/cbc:IssueDate>/) ?? [])[1],
+      issueTime: (xmlString.match(/<cbc:IssueTime[^>]*>([^<]+)<\/cbc:IssueTime>/) ?? [])[1],
+    }
+  } catch {
+    return {}
+  }
+}
+
+function safeBodySummary(body: any): string | undefined {
+  if (!body || typeof body !== 'object') return undefined
+  try {
+    return safeText(JSON.stringify(redactBodyValue(body)).slice(0, 1200))
+  } catch {
+    return undefined
+  }
+}
+
+function redactBodyValue(value: any): any {
+  try {
+    if (Array.isArray(value)) return value.slice(0, 5).map(redactBodyValue)
+    if (!value || typeof value !== 'object') return safePrimitive(value)
+
+    const out: Record<string, unknown> = {}
+    for (const [key, nested] of Object.entries(value ?? {}).slice(0, 30)) {
+      if (/otp|secret|csid|token|certificate|private[_ -]?key|authorization|csr|xml|invoice/i.test(key ?? '')) {
+        out[key] = 'Sensitive detail redacted.'
+      } else {
+        out[key] = redactBodyValue(nested)
+      }
+    }
+    return out
+  } catch {
+    return undefined
+  }
+}
+
+function safePrimitive(value: any): any {
+  if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
+  if (typeof value !== 'string') return undefined
+  return safeText(value) ?? undefined
+}
+
+function safeZatcaHeaders(headers?: Headers): Record<string, string> | undefined {
+  if (!headers?.get) return undefined
+  const interesting = [
+    'request-id',
+    'x-request-id',
+    'correlation-id',
+    'x-correlation-id',
+    'zatca-correlation-id',
+    'x-zatca-correlation-id',
+    'trace-id',
+    'x-trace-id',
+  ]
+  const values: Record<string, string> = {}
+  try {
+    for (const name of interesting) {
+      const value = safeText(headers.get(name) ?? undefined)
+      if (value) values[name] = value.slice(0, 120)
+    }
+  } catch {
+    return undefined
+  }
+  return Object.keys(values).length > 0 ? values : undefined
+}
+
+function fallbackComplianceResult(type: ComplianceSampleType, httpStatus: number): ComplianceSampleResult {
+  const invoiceKind = invoiceKindFor(type)
+  return {
+    type,
+    invoiceKind,
+    documentKind: documentKindFor(type),
+    accepted: false,
+    status: 'blocked',
+    httpStatus,
+    statusString: `HTTP_${httpStatus}`,
+    warningsCount: 0,
+    errorsCount: 0,
+    redactedWarnings: [],
+    redactedErrors: [],
+    message: 'ZATCA compliance check failed for this sample.',
+  }
 }
 
 function invoiceKindFor(type: ComplianceSampleType): 'simplified' | 'standard' {
@@ -360,6 +774,7 @@ function buildSampleData(type: ComplianceSampleType, seller: SampleSeller, seque
     uuid: crypto.randomUUID(),
     issueDate: issue.date,
     issueTime: issue.time,
+    issueDateTime: issue.dateTime,
     invoiceTypeCode,
     counterValue: sequence,
     prevInvoiceHash: FIRST_INVOICE_HASH,
@@ -556,9 +971,11 @@ function appendAddress(parent: any, address: any): void {
   postal.ele(NS.cac, 'Country').ele(NS.cbc, 'IdentificationCode').txt(address.countryCode)
 }
 
-async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate: string): Promise<{
+async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate: string, sampleTimestamp: string): Promise<{
   signedXml: string
   invoiceHash: string
+  qrTimestamp: string
+  transformedCanonicalHash: string
 }> {
   const { certPemBody, certDer } = decodeCertificateToken(certificate)
   const serialNumber = extractCertSerial(certDer)
@@ -574,57 +991,77 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   // remove ext:UBLExtensions, remove cac:Signature, remove QR AdditionalDocumentReference,
   // canonicalize, then SHA-256 + base64. The submitted invoice field remains the final
   // signed XML; it is intentionally not hashed as a whole document.
-  const invoiceDigestB64 = await computeInvoiceHash(xmlString)
-  const signingTime = new Date().toISOString().replace(/\.\d{3}Z$/, '')
+  const xmlTimestamp = extractInvoiceTimestamp(xmlString)
+  const signingTime = safeSampleTimestamp(sampleTimestamp, xmlTimestamp.issueDate, xmlTimestamp.issueTime)
   const signedPropsXml = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
   const signedPropsHashInput = toSignedPropsHashInput(signedPropsXml)
   const signedPropsBytes = new Uint8Array(await sha256Bytes(new TextEncoder().encode(signedPropsHashInput)))
   const signedPropsB64 = btoa(bytesToHex(signedPropsBytes))
-  const signatureInput = base64ToBytes(invoiceDigestB64)
-  const sig = secp256k1.sign(signatureInput, secretKey) as unknown as Uint8Array
-  const sigDerBytes = p1363ToDer(sig)
-  const sigValueB64 = bytesToBase64(sigDerBytes)
 
-  const xadesBlock = buildXadesBlock(
-    invoiceDigestB64,
-    signedPropsB64,
-    sigValueB64,
-    certPemBody,
-    issuerName,
-    serialNumber,
-    signingTime,
-    certDigestB64,
-  )
+  const stampInvoice = (invoiceDigestB64: string): { signedXml: string; qrTimestamp: string } => {
+    // ZATCA SDK signs/verifies SHA256withECDSA over the decoded invoice hash
+    // bytes, while ds:SignedInfo carries that same hash as DigestValue.
+    const { signatureValueBase64: sigValueB64 } = signZatcaInvoiceHash(invoiceDigestB64, secretKey, secp256k1)
 
-  let signedXml = xmlString.replace(
-    /<ext:ExtensionContent>[\s\S]*?<\/ext:ExtensionContent>/,
-    `<ext:ExtensionContent>${xadesBlock}</ext:ExtensionContent>`,
-  )
+    const xadesBlock = buildXadesBlock(
+      invoiceDigestB64,
+      signedPropsB64,
+      sigValueB64,
+      certPemBody,
+      issuerName,
+      serialNumber,
+      signingTime,
+      certDigestB64,
+    )
 
-  const sellerName = (signedXml.match(/<cbc:RegistrationName[^>]*>([^<]+)<\/cbc:RegistrationName>/) ?? [])[1] ?? ''
-  const vatNumber = (signedXml.match(/<cac:PartyTaxScheme>[\s\S]*?<cbc:CompanyID>([^<]+)<\/cbc:CompanyID>/) ?? [])[1] ?? ''
-  const issueDate = (signedXml.match(/<cbc:IssueDate[^>]*>([^<]+)<\/cbc:IssueDate>/) ?? [])[1] ?? ''
-  const issueTime = (signedXml.match(/<cbc:IssueTime[^>]*>([^<]+)<\/cbc:IssueTime>/) ?? [])[1] ?? '00:00:00'
-  const totalAmount = parseFloat((signedXml.match(/<cbc:TaxInclusiveAmount[^>]*>([\d.]+)<\/cbc:TaxInclusiveAmount>/) ?? [])[1] ?? '0')
-  const vatAmount = parseFloat((signedXml.match(/<cbc:TaxAmount[^>]*>([\d.]+)<\/cbc:TaxAmount>/) ?? [])[1] ?? '0')
-  const qrCode = buildPhase2QR(
-    sellerName,
-    vatNumber,
-    `${issueDate}T${issueTime}Z`,
-    totalAmount,
-    vatAmount,
-    invoiceDigestB64,
-    sigValueB64,
-    pubKeySpki,
-    certSigValue,
-  )
+    let signedXml = xmlString.replace(
+      /<ext:ExtensionContent>[\s\S]*?<\/ext:ExtensionContent>/,
+      `<ext:ExtensionContent>${xadesBlock}</ext:ExtensionContent>`,
+    )
 
-  signedXml = signedXml.replace(
-    /(<cbc:ID>QR<\/cbc:ID>[\s\S]*?<cbc:EmbeddedDocumentBinaryObject mimeCode="text\/plain">)([^<]*)(<\/cbc:EmbeddedDocumentBinaryObject>)/,
-    `$1${qrCode}$3`,
-  )
+    const sellerName = (signedXml.match(/<cbc:RegistrationName[^>]*>([^<]+)<\/cbc:RegistrationName>/) ?? [])[1] ?? ''
+    const vatNumber = (signedXml.match(/<cac:PartyTaxScheme>[\s\S]*?<cbc:CompanyID>([^<]+)<\/cbc:CompanyID>/) ?? [])[1] ?? ''
+    const issueDate = (signedXml.match(/<cbc:IssueDate[^>]*>([^<]+)<\/cbc:IssueDate>/) ?? [])[1] ?? ''
+    const issueTime = (signedXml.match(/<cbc:IssueTime[^>]*>([^<]+)<\/cbc:IssueTime>/) ?? [])[1] ?? '00:00:00'
+    const totalAmount = parseFloat((signedXml.match(/<cbc:TaxInclusiveAmount[^>]*>([\d.]+)<\/cbc:TaxInclusiveAmount>/) ?? [])[1] ?? '0')
+    const vatAmount = parseFloat((signedXml.match(/<cbc:TaxAmount[^>]*>([\d.]+)<\/cbc:TaxAmount>/) ?? [])[1] ?? '0')
+    const qrTimestamp = safeSampleTimestamp(undefined, issueDate, issueTime)
+    const qrCode = buildPhase2QR(
+      sellerName,
+      vatNumber,
+      qrTimestamp,
+      totalAmount,
+      vatAmount,
+      invoiceDigestB64,
+      sigValueB64,
+      pubKeySpki,
+      certSigValue,
+    )
 
-  return { signedXml, invoiceHash: invoiceDigestB64 }
+    signedXml = signedXml.replace(
+      /(<cbc:ID>QR<\/cbc:ID>[\s\S]*?<cbc:EmbeddedDocumentBinaryObject mimeCode="text\/plain">)([^<]*)(<\/cbc:EmbeddedDocumentBinaryObject>)/,
+      `$1${qrCode}$3`,
+    )
+
+    return { signedXml, qrTimestamp }
+  }
+
+  const invoiceHash = await computeInvoiceHash(xmlString)
+  const stamped = stampInvoice(invoiceHash)
+  let transformedCanonicalHash = invoiceHash
+  try {
+    transformedCanonicalHash = await computeInvoiceHash(stamped.signedXml)
+  } catch {
+    // TEMPORARY DEBUG: keep compliance sample generation on the known-good
+    // one-pass signing pipeline even if local debug recompute fails.
+  }
+
+  return {
+    signedXml: stamped.signedXml,
+    invoiceHash,
+    qrTimestamp: stamped.qrTimestamp,
+    transformedCanonicalHash,
+  }
 }
 
 function decodeCertificateToken(token: string): { certPemBody: string; certDer: Uint8Array } {
@@ -644,7 +1081,7 @@ function decodeCertificateToken(token: string): { certPemBody: string; certDer: 
 
 function privateKeyFromPem(pem: string): Uint8Array {
   const b64 = pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
-  return base64ToBytes(b64)
+  return extractEcPrivateKeyScalar(base64ToBytes(b64))
 }
 
 async function sha256(input: string): Promise<ArrayBuffer> {
@@ -653,22 +1090,6 @@ async function sha256(input: string): Promise<ArrayBuffer> {
 
 async function sha256Bytes(input: BufferSource): Promise<ArrayBuffer> {
   return crypto.subtle.digest('SHA-256', input)
-}
-
-function p1363ToDer(sig: Uint8Array): Uint8Array {
-  const r = sig.slice(0, 32)
-  const s = sig.slice(32, 64)
-  const rDer = derInt(r)
-  const sDer = derInt(s)
-  return new Uint8Array([0x30, rDer.length + sDer.length, ...rDer, ...sDer])
-}
-
-function derInt(n: Uint8Array): Uint8Array {
-  let i = 0
-  while (i < n.length - 1 && n[i] === 0) i++
-  const trimmed = n.slice(i)
-  const value = (trimmed[0] & 0x80) ? new Uint8Array([0, ...trimmed]) : trimmed
-  return new Uint8Array([0x02, value.length, ...value])
 }
 
 function derLen(buf: Uint8Array, off: number): [number, number] {
@@ -783,6 +1204,10 @@ function extractCertPublicKeySpki(certDer: Uint8Array): Uint8Array {
 
 function canonicalizeInvoiceContent(xmlString: string): string {
   const doc: any = new DOMParser().parseFromString(xmlString, 'application/xml')
+  if (!doc?.documentElement || doc.documentElement.tagName === 'parsererror') {
+    throw new Error('Unable to parse ZATCA compliance sample XML for hashing.')
+  }
+
   const ublExts = Array.from(doc.getElementsByTagNameNS(NS.ext, 'UBLExtensions') as any) as any[]
   for (const el of ublExts) el.parentNode?.removeChild(el)
 
@@ -808,6 +1233,10 @@ async function computeInvoiceHash(xmlString: string): Promise<string> {
 }
 
 function c14n(node: any, inherited: Map<string, string> = new Map()): string {
+  if (!node?.attributes || !node?.tagName) {
+    throw new Error('Unable to canonicalize ZATCA compliance sample XML node.')
+  }
+
   const localNs = new Map<string, string>()
   const attrs: any[] = []
   for (let i = 0; i < node.attributes.length; i++) attrs.push(node.attributes[i])
@@ -953,7 +1382,9 @@ function buildPhase2QR(
   const all = concatArrays(
     tlvStr(0x01, sellerName),
     tlvStr(0x02, vatNumber),
-    tlvStr(0x03, new Date(timestamp).toISOString().replace(/\.\d{3}Z$/, 'Z')),
+    // TEMPORARY DEBUG / KSA-25: keep QR timestamp exactly aligned with the
+    // invoice IssueDate + IssueTime value used to build the compliance sample.
+    tlvStr(0x03, timestamp),
     tlvStr(0x04, totalAmount.toFixed(2)),
     tlvStr(0x05, vatAmount.toFixed(2)),
     tlvStr(0x06, hashB64),
@@ -988,22 +1419,23 @@ function concatArrays(...arrs: Uint8Array[]): Uint8Array {
   return out
 }
 
-function saudiIssueDate(date: Date): { date: string; time: string } {
+function saudiIssueDate(date: Date): { date: string; time: string; dateTime: string } {
   const saudi = new Date(date.getTime() + 3 * 60 * 60 * 1000)
   const [day, time] = saudi.toISOString().split('T')
-  return { date: day, time: time.split('.')[0] }
+  const clock = time.split('.')[0]
+  return { date: day, time: clock, dateTime: `${day}T${clock}` }
 }
 
 function fmt(n: number): string {
   return n.toFixed(2)
 }
 
-function escText(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r/g, '&#xD;')
+function escText(s: unknown): string {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r/g, '&#xD;')
 }
 
-function escAttr(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+function escAttr(s: unknown): string {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
     .replace(/\t/g, '&#x9;').replace(/\n/g, '&#xA;').replace(/\r/g, '&#xD;')
 }
 

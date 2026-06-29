@@ -18,6 +18,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { create as xmlCreate } from 'https://esm.sh/xmlbuilder2@4.0.3'
 import { secp256k1 } from 'https://esm.sh/@noble/curves@2.2.0/secp256k1.js'
 import { DOMParser } from 'https://esm.sh/@xmldom/xmldom@0.9.10'
+import { extractEcPrivateKeyScalar, signZatcaInvoiceHash } from '../_shared/zatca/signing_core.mjs'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -71,7 +72,7 @@ async function decryptPrivateKey(stored: string): Promise<Uint8Array> {
   const pem = new TextDecoder().decode(dec)
   // PEM label "EC PRIVATE KEY" wraps raw 32-byte secp256k1 secret key
   const b64 = pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
-  return Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+  return extractEcPrivateKeyScalar(Uint8Array.from(atob(b64), c => c.charCodeAt(0)))
 }
 
 async function decryptProductionText(stored: string, secret: string): Promise<string> {
@@ -90,7 +91,7 @@ async function decryptProductionText(stored: string, secret: string): Promise<st
 async function decryptProductionPrivateKey(stored: string, secret: string): Promise<Uint8Array> {
   const pem = await decryptProductionText(stored, secret)
   const b64 = pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
-  return Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+  return extractEcPrivateKeyScalar(Uint8Array.from(atob(b64), c => c.charCodeAt(0)))
 }
 
 async function sha256(input: string): Promise<ArrayBuffer> {
@@ -127,18 +128,6 @@ function decodeCertificateToken(token: string): { certPemBody: string; certDer: 
 
   const certPemBody = onceText.replace(/\s+/g, '')
   return { certPemBody, certDer: base64ToBytes(certPemBody) }
-}
-
-function p1363ToDer(sig: Uint8Array): Uint8Array {
-  const r = sig.slice(0, 32), s = sig.slice(32, 64)
-  const rDer = derInt(r), sDer = derInt(s)
-  return new Uint8Array([0x30, rDer.length + sDer.length, ...rDer, ...sDer])
-}
-function derInt(n: Uint8Array): Uint8Array {
-  let i = 0; while (i < n.length - 1 && n[i] === 0) i++
-  const t = n.slice(i)
-  const v = (t[0] & 0x80) ? new Uint8Array([0, ...t]) : t
-  return new Uint8Array([0x02, v.length, ...v])
 }
 
 // ── Pure TypeScript DER parser (no node-forge) ───────────────────────────────
@@ -719,10 +708,12 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const signedPropsHex       = bytesToHex(signedPropsBytes)
   const signedPropsB64       = btoa(signedPropsHex)
 
-  const signatureInput   = base64ToBytes(invoiceDigestB64)
-  const sig              = secp256k1.sign(signatureInput, secretKey) as unknown as Uint8Array
-  const sigDerBytes    = p1363ToDer(sig)
-  const sigValueB64    = btoa(String.fromCharCode(...sigDerBytes))
+  // ZATCA SDK signs/verifies SHA256withECDSA over the decoded invoice hash
+  // bytes, while ds:SignedInfo carries that same hash as DigestValue.
+  const {
+    signatureDerBytes: sigDerBytes,
+    signatureValueBase64: sigValueB64,
+  } = signZatcaInvoiceHash(invoiceDigestB64, secretKey, secp256k1)
 
   const xadesBlock = buildXadesBlock(
     invoiceDigestB64, signedPropsB64, sigValueB64,

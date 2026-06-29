@@ -57,7 +57,11 @@ async function edgePostSafe<T>(fnName: string, body: Record<string, unknown>): P
 
   const payload = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error(safeBrowserMessage(payload?.error, `Edge Function ${fnName} returned ${res.status}`))
+    const message = safeBrowserMessage(payload?.error, `Edge Function ${fnName} returned ${res.status}`)
+    const diagnostics = fnName === 'zatca-onboard-production'
+      ? formatProductionDebugDiagnostics(payload?.complianceSampleResults)
+      : ''
+    throw new Error(diagnostics ? `${message}\n\n${diagnostics}` : message)
   }
   return payload as T
 }
@@ -68,6 +72,68 @@ function safeBrowserMessage(message: unknown, fallback: string): string {
     return 'ZATCA production onboarding failed. Sensitive details were redacted.'
   }
   return message
+}
+
+function formatProductionDebugDiagnostics(samples: unknown): string {
+  if (!Array.isArray(samples) || samples.length === 0) return ''
+
+  // TEMPORARY DEBUG: browser-safe compliance diagnostics for the existing error
+  // area. Failed samples may include signed XML as base64 for local SDK checks.
+  return samples.map((sample: any) => {
+    const lines = [
+      `Sample: ${safeUiText(sample?.type) ?? 'unknown'}`,
+      sample?.httpStatus ? `HTTP: ${sample.httpStatus}` : undefined,
+      sample?.validationStatus ? `Validation: ${safeUiText(sample.validationStatus)}` : undefined,
+      sample?.reportingStatus ? `Reporting: ${safeUiText(sample.reportingStatus)}` : undefined,
+      sample?.clearanceStatus ? `Clearance: ${safeUiText(sample.clearanceStatus)}` : undefined,
+      sample?.statusString ? `Status: ${safeUiText(sample.statusString)}` : undefined,
+      sample?.message ? `Message: ${safeUiText(sample.message)}` : undefined,
+      formatMessages('Warnings', sample?.redactedWarnings),
+      formatMessages('Errors', sample?.redactedErrors),
+      formatHeaders(sample?.zatcaHeaders),
+      sample?.responseBodySafeSummary ? `Body: ${safeUiText(sample.responseBodySafeSummary, 900)}` : undefined,
+      sample?.debugInvoiceHash ? `Sent invoiceHash: ${safeUiText(sample.debugInvoiceHash, 500)}` : undefined,
+      sample?.debugTransformedCanonicalHash ? `Canonical transformed hash: ${safeUiText(sample.debugTransformedCanonicalHash, 500)}` : undefined,
+      sample?.debugIssueDate ? `IssueDate: ${safeUiText(sample.debugIssueDate, 40)}` : undefined,
+      sample?.debugIssueTime ? `IssueTime: ${safeUiText(sample.debugIssueTime, 40)}` : undefined,
+      sample?.debugQrTimestamp ? `QR timestamp: ${safeUiText(sample.debugQrTimestamp, 80)}` : undefined,
+      sample?.debugSignedInvoiceXmlBase64 ? `Signed sample XML base64:\n${safeUiDebugBlob(sample.debugSignedInvoiceXmlBase64)}` : undefined,
+    ].filter(Boolean)
+    return lines.join('\n')
+  }).join('\n\n')
+}
+
+function formatMessages(label: string, value: unknown): string | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined
+  const text = value.map((item: any) => {
+    const code = safeUiText(item?.code)
+    const message = safeUiText(item?.message)
+    return [code, message].filter(Boolean).join(': ')
+  }).filter(Boolean).join('; ')
+  return text ? `${label}: ${text}` : undefined
+}
+
+function formatHeaders(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const text = Object.entries(value as Record<string, unknown>)
+    .map(([key, val]) => `${key}=${safeUiText(val)}`)
+    .join(', ')
+  return text ? `Headers: ${text}` : undefined
+}
+
+function safeUiText(value: unknown, maxLength = 240): string | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined
+  const text = String(value).replace(/[\r\t]+/g, ' ').slice(0, maxLength)
+  if (/otp|secret|csid|token|certificate|private[_ -]?key|encryption key|authorization|csr|xml/i.test(text)) {
+    return 'Sensitive detail redacted.'
+  }
+  return text
+}
+
+function safeUiDebugBlob(value: unknown, maxLength = 100_000): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const text = value.replace(/[\u0000-\u001f\u007f-\u009f]+/g, '').slice(0, maxLength)
+  return text || undefined
 }
 
 // ── Production onboarding orchestrator ───────────────────────────────────────
@@ -98,7 +164,16 @@ export interface ProductionComplianceSampleResult {
   clearanceStatus?: string
   warningsCount?: number
   errorsCount?: number
+  redactedWarnings?: Array<{ code?: string; message?: string }>
   redactedErrors?: Array<{ code?: string; message?: string }>
+  responseBodySafeSummary?: string
+  zatcaHeaders?: Record<string, string>
+  debugInvoiceHash?: string
+  debugSignedInvoiceXmlBase64?: string
+  debugIssueDate?: string
+  debugIssueTime?: string
+  debugQrTimestamp?: string
+  debugTransformedCanonicalHash?: string
   message?: string
 }
 

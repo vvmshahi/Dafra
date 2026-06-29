@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createHash, createPublicKey, verify as verifySignature } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
+import { extractEcPrivateKeyScalar, signZatcaInvoiceHash } from '../supabase/functions/_shared/zatca/signing_core.mjs'
 
 const OUT_DIR = '.zatca-debug'
 const NS = {
@@ -29,6 +30,7 @@ function bytesToBase64(bytes) {
 }
 
 function certificatePemFromBody(certPemBody) {
+  if (!certPemBody) return ''
   return `-----BEGIN CERTIFICATE-----\n${certPemBody.match(/.{1,64}/g).join('\n')}\n-----END CERTIFICATE-----\n`
 }
 
@@ -52,22 +54,6 @@ function escText(value) {
     .replace(/\r/g, '&#xD;')
 }
 
-function p1363ToDer(sig) {
-  const r = sig.slice(0, 32)
-  const s = sig.slice(32, 64)
-  const rDer = derInt(r)
-  const sDer = derInt(s)
-  return new Uint8Array([0x30, rDer.length + sDer.length, ...rDer, ...sDer])
-}
-
-function derInt(n) {
-  let i = 0
-  while (i < n.length - 1 && n[i] === 0) i++
-  const trimmed = n.slice(i)
-  const value = (trimmed[0] & 0x80) ? new Uint8Array([0, ...trimmed]) : trimmed
-  return new Uint8Array([0x02, value.length, ...value])
-}
-
 function derLen(buf, off) {
   const b = buf[off++]
   if (b < 0x80) return [b, off]
@@ -84,15 +70,7 @@ function bytesToHex(bytes) {
 function privateKeyFromPem(pem) {
   const b64 = pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
   const bytes = base64ToBytes(b64)
-  if (bytes.length === 32) return bytes
-
-  for (let i = 0; i < bytes.length - 34; i++) {
-    if (bytes[i] === 0x04 && bytes[i + 1] === 0x20) {
-      return bytes.slice(i + 2, i + 34)
-    }
-  }
-
-  throw new Error(`Unsupported EC private key format: decoded length ${bytes.length}`)
+  return extractEcPrivateKeyScalar(bytes)
 }
 
 function decodeCertificateToken(token) {
@@ -218,6 +196,26 @@ function extractCertPublicKeySpki(certDer) {
   }
 }
 
+function certificatePublicKeyPoint(certPemBody) {
+  if (!certPemBody) return new Uint8Array(0)
+  const spki = new Uint8Array(createPublicKey(certificatePemFromBody(certPemBody)).export({
+    type: 'spki',
+    format: 'der',
+  }))
+  return spki[spki.length - 65] === 0x04 ? spki.slice(-65) : new Uint8Array(0)
+}
+
+function privateKeyMatchesCertificate(privateKey, certPemBody) {
+  try {
+    const derivedPublicKey = secp256k1.getPublicKey(privateKey, false)
+    const certPublicKey = certificatePublicKeyPoint(certPemBody)
+    return certPublicKey.length === derivedPublicKey.length
+      && bytesToHex(certPublicKey) === bytesToHex(derivedPublicKey)
+  } catch {
+    return false
+  }
+}
+
 function tlvBytes(tag, value) {
   if (value.length > 255) throw new Error(`TLV value too long for tag ${tag}`)
   return new Uint8Array([tag, value.length, ...value])
@@ -263,11 +261,14 @@ function extractQrTag(qrB64, tag) {
 }
 
 function buildSampleData() {
+  const issueDate = '2026-06-28'
+  const issueTime = '12:00:00'
   return {
     invoiceNumber: 'COMP-SIMPLIFIED-INVOICE-01',
     uuid: '11111111-1111-4111-8111-111111111111',
-    issueDate: '2026-06-28',
-    issueTime: '12:00:00',
+    issueDate,
+    issueTime,
+    issueDateTime: `${issueDate}T${issueTime}`,
     invoiceTypeCode: '388',
     counterValue: 1,
     prevInvoiceHash: FIRST_INVOICE_HASH,
@@ -383,7 +384,7 @@ function buildXadesBlock(invoiceDigest, signedPropsDigest, sigValue, certPemBody
   return `<sig:UBLDocumentSignatures xmlns:sig="${NS.sig}" xmlns:sac="${NS.sac}" xmlns:sbc="${NS.sbc}"><sac:SignatureInformation><cbc:ID xmlns:cbc="${NS.cbc}">urn:oasis:names:specification:ubl:signature:1</cbc:ID><sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:Invoice</sbc:ReferencedSignatureID><ds:Signature xmlns:ds="${NS.ds}" Id="signature">${signedInfo}<ds:SignatureValue>${sigValue}</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>${certPemBody}</ds:X509Certificate></ds:X509Data></ds:KeyInfo><ds:Object><xades:QualifyingProperties xmlns:xades="${NS.xades}" Target="signature">${signedProps}</xades:QualifyingProperties></ds:Object></ds:Signature></sac:SignatureInformation></sig:UBLDocumentSignatures>`
 }
 
-function signInvoice(xml, privateKey, certificate) {
+function signInvoice(xml, privateKey, certificate, sampleTimestamp) {
   const { certPemBody, certDer } = decodeCertificateToken(certificate)
   const serialNumber = extractCertSerial(certDer)
   const issuerName = extractCertIssuerName(certDer)
@@ -391,20 +392,22 @@ function signInvoice(xml, privateKey, certificate) {
   const pubKeySpki = extractCertPublicKeySpki(certDer)
   const certDigestB64 = bytesToBase64(Buffer.from(bytesToHex(sha256Bytes(Buffer.from(certPemBody, 'utf8'))), 'utf8'))
   const invoiceHash = computeInvoiceHash(xml)
-  const signingTime = '2026-06-28T12:00:00'
+  const signingTime = sampleTimestamp
   const signedPropsXml = buildSignedProperties(signingTime, certDigestB64, issuerName, serialNumber)
   const signedPropsB64 = bytesToBase64(Buffer.from(bytesToHex(sha256Bytes(Buffer.from(toSignedPropsHashInput(signedPropsXml), 'utf8'))), 'utf8'))
   const signedInfoCanon = buildSignedInfoCanonical(invoiceHash, signedPropsB64)
-  const signatureInput = base64ToBytes(invoiceHash)
-  const sig = secp256k1.sign(signatureInput, privateKey)
-  const sigDerBytes = p1363ToDer(sig)
-  const sigValueB64 = bytesToBase64(sigDerBytes)
-  const signatureVerifiesInvoiceHash = verifySignature(
+  const {
+    signatureInput,
+    signatureInputKind,
+    signatureDerBytes: sigDerBytes,
+    signatureValueBase64: sigValueB64,
+  } = signZatcaInvoiceHash(invoiceHash, privateKey, secp256k1)
+  const signatureVerifiesInvoiceHash = certPemBody ? verifySignature(
     'sha256',
     Buffer.from(signatureInput),
     createPublicKey(certificatePemFromBody(certPemBody)),
     Buffer.from(sigValueB64, 'base64'),
-  )
+  ) : false
   const xadesBlock = buildXadesBlock(invoiceHash, signedPropsB64, sigValueB64, certPemBody, issuerName, serialNumber, signingTime, certDigestB64)
   let signedXml = xml.replace(
     /<ext:ExtensionContent>[\s\S]*?<\/ext:ExtensionContent>/,
@@ -413,7 +416,7 @@ function signInvoice(xml, privateKey, certificate) {
   const qrCode = buildPhase2QR(
     'ZATCA Debug Seller',
     '300000000000003',
-    '2026-06-28T12:00:00Z',
+    sampleTimestamp,
     115,
     15,
     invoiceHash,
@@ -430,7 +433,11 @@ function signInvoice(xml, privateKey, certificate) {
     invoiceHash,
     qrCode,
     signedInfoCanon,
+    sigValueB64,
+    signatureInputKind,
+    signatureInputSha256Base64: bytesToBase64(sha256Bytes(Buffer.from(signatureInput))),
     signatureDerLength: sigDerBytes.length,
+    privateKeyMatchesCertificatePublicKey: privateKeyMatchesCertificate(privateKey, certPemBody),
     signatureVerifiesInvoiceHash,
   }
 }
@@ -482,9 +489,21 @@ async function loadInputs() {
 async function main() {
   await mkdir(OUT_DIR, { recursive: true })
   const inputs = await loadInputs()
-  const unsignedXml = buildInvoice(buildSampleData())
-  const { signedXml, invoiceHash, qrCode, signedInfoCanon, signatureDerLength, signatureVerifiesInvoiceHash } =
-    signInvoice(unsignedXml, inputs.privateKey, inputs.certificate)
+  const sampleData = buildSampleData()
+  const unsignedXml = buildInvoice(sampleData)
+  const {
+    signedXml,
+    invoiceHash,
+    qrCode,
+    signedInfoCanon,
+    sigValueB64,
+    signatureInputKind,
+    signatureInputSha256Base64,
+    signatureDerLength,
+    privateKeyMatchesCertificatePublicKey,
+    signatureVerifiesInvoiceHash,
+  } =
+    signInvoice(unsignedXml, inputs.privateKey, inputs.certificate, sampleData.issueDateTime)
   const transformedUnsigned = canonicalizeInvoiceContent(unsignedXml)
   const transformedSigned = canonicalizeInvoiceContent(signedXml)
   const finalSignedXmlHash = sha256Base64(signedXml)
@@ -497,6 +516,7 @@ async function main() {
   await writeFile(`${OUT_DIR}/simplified_invoice.signed.xml`, signedXml)
   await writeFile(`${OUT_DIR}/simplified_invoice.transformed.c14n.xml`, transformedSigned)
   const signedInfoFromCode = signedInfoCanon
+  const signedInfoRawFromXml = (signedXml.match(/<ds:SignedInfo[\s\S]*?<\/ds:SignedInfo>/) ?? [])[0] ?? ''
   const signedInfoExtractedFromXml = (execFileSync('xmllint', ['--c14n11', `${OUT_DIR}/simplified_invoice.signed.xml`], {
     encoding: 'utf8',
     maxBuffer: 20 * 1024 * 1024,
@@ -504,6 +524,26 @@ async function main() {
   const signedInfoFromCodeHash = sha256Base64(signedInfoFromCode)
   const signedInfoExtractedFromXmlHash = sha256Base64(signedInfoExtractedFromXml)
   const signatureVerifiesExtractedSignedInfo = verifyExtractedSignedInfo(signedXml, signedInfoExtractedFromXml)
+  const signatureVerifySummary = {
+    signatureInputKind,
+    canonicalizationMethod: 'http://www.w3.org/2006/12/xml-c14n11',
+    signatureMethod: 'http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256',
+    signatureFormat: 'DER',
+    signatureDerLength,
+    signatureDerBase64: sigValueB64,
+    invoiceHash,
+    signatureInputSha256Base64,
+    privateKeyMatchesCertificatePublicKey,
+    verifiesOverDecodedInvoiceHashBytes: signatureVerifiesInvoiceHash,
+    verifiesOverCanonicalSignedInfo: signatureVerifiesExtractedSignedInfo,
+    signedInfoFromCodeHash,
+    signedInfoExtractedFromXmlHash,
+    signedInfoHashesEqual: signedInfoFromCodeHash === signedInfoExtractedFromXmlHash,
+  }
+  await writeFile(`${OUT_DIR}/signed-info.xml`, signedInfoRawFromXml || signedInfoFromCode)
+  await writeFile(`${OUT_DIR}/signed-info.c14n.txt`, signedInfoExtractedFromXml || signedInfoFromCode)
+  await writeFile(`${OUT_DIR}/signature.der.base64.txt`, `${sigValueB64}\n`)
+  await writeFile(`${OUT_DIR}/signature.verify.summary.json`, JSON.stringify(signatureVerifySummary, null, 2))
   await writeFile(`${OUT_DIR}/simplified_invoice.summary.json`, JSON.stringify({
     mode: inputs.mode,
     apiInvoiceHash: invoiceHash,
@@ -517,8 +557,10 @@ async function main() {
     signedInfoFromCodeHash,
     signedInfoExtractedFromXmlHash,
     signedInfoHashesEqual: signedInfoFromCodeHash === signedInfoExtractedFromXmlHash,
+    signatureInputKind,
     signatureFormat: 'DER',
     signatureDerLength,
+    privateKeyMatchesCertificatePublicKey,
     signatureVerifiesInvoiceHash,
     signatureVerifiesExtractedSignedInfo,
     matches: {
@@ -544,8 +586,10 @@ async function main() {
     signedInfoFromCodeHash,
     signedInfoExtractedFromXmlHash,
     signedInfoHashesEqual: signedInfoFromCodeHash === signedInfoExtractedFromXmlHash,
+    signatureInputKind,
     signatureFormat: 'DER',
     signatureDerLength,
+    privateKeyMatchesCertificatePublicKey,
     signatureVerifiesInvoiceHash,
     signatureVerifiesExtractedSignedInfo,
     matches: {
