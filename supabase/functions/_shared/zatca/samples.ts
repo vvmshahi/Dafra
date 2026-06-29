@@ -271,14 +271,12 @@ async function submitComplianceSample(
       redactedErrors: result.redactedErrors,
     })
 
-    // TEMPORARY DEBUG: expose only redacted compliance diagnostics while production
-    // onboarding rejection cause is being isolated. Do not add XML or credentials here.
     if (result.status !== 'accepted') {
       attachFailedSampleXmlDebug(result, payload)
       try {
-        console.error('[zatca-compliance-samples] TEMPORARY DEBUG rejection:', JSON.stringify(stripComplianceSampleDebug([result])[0] ?? {}))
+        console.warn('[zatca-compliance-samples] rejection:', JSON.stringify(stripComplianceSampleDebug([result])[0] ?? {}))
       } catch {
-        console.error('[zatca-compliance-samples] TEMPORARY DEBUG rejection: diagnostics stringify failed')
+        console.warn('[zatca-compliance-samples] rejection: diagnostics stringify failed')
       }
     }
 
@@ -336,18 +334,15 @@ function safeSummarizeComplianceResponse(
   try {
     return summarizeComplianceResponse(type, httpStatus, body ?? {}, safeZatcaHeaders(headers))
   } catch (err) {
-    // TEMPORARY DEBUG: diagnostics must never turn a ZATCA rejection into an
-    // Edge 500. Fall back to the original generic onboarding failure shape.
-    console.error('[zatca-compliance-samples] TEMPORARY DEBUG extraction failed:', safeText(err instanceof Error ? err.message : String(err ?? 'unknown')) ?? 'diagnostic error')
+    console.error('[zatca-compliance-samples] extraction failed:', safeText(err instanceof Error ? err.message : String(err ?? 'unknown')) ?? 'diagnostic error')
     return fallbackComplianceResult(type, httpStatus)
   }
 }
 
 function attachFailedSampleXmlDebug(result: ComplianceSampleResult, payload: SignedCompliancePayload): void {
   try {
-    // TEMPORARY DEBUG: include the exact signed sample payload sent to ZATCA so
-    // it can be decoded and validated locally with the SDK. This intentionally
-    // excludes OTP, private key, CSID secret, production secret, and encryption key.
+    if (Deno.env.get('ZATCA_CAPTURE_DEBUG_XML') !== 'true') return
+
     result.debugInvoiceHash = safeDebugText(payload?.invoiceHash, 500)
     result.debugSignedInvoiceXmlBase64 = safeDebugText(payload?.invoice, 80_000)
     result.debugIssueDate = safeDebugText(payload?.issueDate, 40)
@@ -411,13 +406,13 @@ function logComplianceSampleStage(
     for (const [key, value] of Object.entries(context ?? {})) {
       safeContext[key] = safeExceptionField(String(value ?? ''), 160)
     }
-    console.error('[zatca-compliance-samples] TEMPORARY DEBUG stage:', JSON.stringify({
+    console.info('[zatca-compliance-samples] stage:', JSON.stringify({
       stage: safeStageField(stage, 120),
       sampleType: type,
       ...safeContext,
     }))
   } catch {
-    console.error('[zatca-compliance-samples] TEMPORARY DEBUG stage: diagnostics stringify failed')
+    console.info('[zatca-compliance-samples] stage: diagnostics stringify failed')
   }
 }
 
@@ -427,42 +422,28 @@ function logComplianceSampleException(
   err: unknown,
 ): void {
   try {
-    // TEMPORARY DEBUG: capture local generation/assertion failures without
-    // logging XML, OTP, keys, CSID secrets, or Authorization values.
-    console.error('[zatca-compliance-samples] TEMPORARY DEBUG local exception:', JSON.stringify({
+    console.error('[zatca-compliance-samples] local exception:', JSON.stringify({
       sampleType: type,
       stage: safeExceptionField(stage, 120),
       errorName: safeExceptionField(err instanceof Error ? err.name : typeof err, 120),
       message: safeExceptionField(err instanceof Error ? err.message : String(err ?? 'unknown'), 300),
-      stack: safeExceptionField(err instanceof Error ? err.stack : undefined, 1600),
     }))
   } catch {
-    console.error('[zatca-compliance-samples] TEMPORARY DEBUG local exception: diagnostics stringify failed')
+    console.error('[zatca-compliance-samples] local exception: diagnostics stringify failed')
   }
 }
 
 export function stripComplianceSampleDebug(results: ComplianceSampleResult[] | undefined): ComplianceSampleResult[] {
   try {
     return (Array.isArray(results) ? results : []).map(result => {
-      const source = (result ?? {}) as ComplianceSampleResult
-      const {
-        debugInvoiceHash,
-        debugSignedInvoiceXmlBase64,
-        debugIssueDate,
-        debugIssueTime,
-        debugQrTimestamp,
-        debugTransformedCanonicalHash,
-        ...safeResult
-      } = source
-
-      return {
-        ...safeResult,
-        ...(debugInvoiceHash ? { debugInvoiceHash } : {}),
-        ...(debugIssueDate ? { debugIssueDate } : {}),
-        ...(debugIssueTime ? { debugIssueTime } : {}),
-        ...(debugQrTimestamp ? { debugQrTimestamp } : {}),
-        ...(debugTransformedCanonicalHash ? { debugTransformedCanonicalHash } : {}),
-      } as ComplianceSampleResult
+      const safeResult = { ...((result ?? {}) as ComplianceSampleResult) }
+      delete safeResult.debugInvoiceHash
+      delete safeResult.debugSignedInvoiceXmlBase64
+      delete safeResult.debugIssueDate
+      delete safeResult.debugIssueTime
+      delete safeResult.debugQrTimestamp
+      delete safeResult.debugTransformedCanonicalHash
+      return safeResult as ComplianceSampleResult
     })
   } catch {
     return []
@@ -1468,8 +1449,7 @@ function buildPhase2QR(
   const all = concatArrays(
     tlvStr(0x01, sellerName),
     tlvStr(0x02, vatNumber),
-    // TEMPORARY DEBUG / KSA-25: keep QR timestamp exactly aligned with the
-    // invoice IssueDate + IssueTime value used to build the compliance sample.
+    // KSA-25 requires the QR timestamp to align with invoice IssueDate + IssueTime.
     tlvStr(0x03, timestamp),
     tlvStr(0x04, totalAmount.toFixed(2)),
     tlvStr(0x05, vatAmount.toFixed(2)),

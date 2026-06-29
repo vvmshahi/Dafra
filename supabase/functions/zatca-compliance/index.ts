@@ -88,14 +88,11 @@ Deno.serve(async (req: Request) => {
       'OTP':              otp,
     }
 
-    console.log('[zatca-compliance] env:', env)
-    console.log('[zatca-compliance] url:', url)
-    console.log('[zatca-compliance] otp: [REDACTED]')
-    console.log('[zatca-compliance] headers:', JSON.stringify(requestHeaders))
-    console.log('[zatca-compliance] csr length (raw):', csr.length)
-    console.log('[zatca-compliance] csr base64 length (btoa):', csrBase64.length)
-    console.log('[zatca-compliance] csr base64 preview:', csrBase64.substring(0, 80) + '…')
-    console.log('[zatca-compliance] request body length:', requestBody.length)
+    console.info('[zatca-compliance] sandbox compliance request:', {
+      branchId,
+      environment: env,
+      csrLength: csr.length,
+    })
 
     // Call ZATCA Compliance API
     const zatcaRes = await fetch(url, {
@@ -105,13 +102,13 @@ Deno.serve(async (req: Request) => {
     })
 
     const responseText = await zatcaRes.text()
-    console.log('[zatca-compliance] ZATCA response status:', zatcaRes.status)
+    console.info('[zatca-compliance] ZATCA response:', { branchId, environment: env, httpStatus: zatcaRes.status })
 
     let zatcaBody: any
     try {
       zatcaBody = JSON.parse(responseText)
     } catch {
-      return new Response(JSON.stringify({ error: `ZATCA returned non-JSON (${zatcaRes.status}): ${responseText}` }), {
+      return new Response(JSON.stringify({ error: `ZATCA returned non-JSON (${zatcaRes.status})` }), {
         status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -121,7 +118,7 @@ Deno.serve(async (req: Request) => {
              ?? zatcaBody?.message
              ?? zatcaBody?.error
              ?? `ZATCA compliance request failed (${zatcaRes.status})`
-      return new Response(JSON.stringify({ error: msg, zatcaBody }), {
+      return new Response(JSON.stringify({ error: msg, httpStatus: zatcaRes.status }), {
         status: zatcaRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -150,7 +147,7 @@ Deno.serve(async (req: Request) => {
       }, { onConflict: 'branch_id,environment' })
 
     if (upsertErr) {
-      console.error('[zatca-compliance] DB upsert error:', upsertErr)
+      console.error('[zatca-compliance] DB upsert error:', upsertErr.message)
     }
 
     return new Response(JSON.stringify({ binarySecurityToken, secret, requestID }), {
@@ -158,7 +155,7 @@ Deno.serve(async (req: Request) => {
     })
 
   } catch (err: any) {
-    console.error('[zatca-compliance] unexpected error:', err)
+    console.error('[zatca-compliance] unexpected error:', err.message ?? 'unknown')
     return new Response(JSON.stringify({ error: err.message ?? 'Internal server error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

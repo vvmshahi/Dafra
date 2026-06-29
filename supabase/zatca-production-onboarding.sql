@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS public.zatca_production_credentials (
                                         'compliance_samples_passed',
                                         'production_csid_requested',
                                         'production_connected',
+                                        'disconnected',
                                         'compliance_failed',
                                         'failed'
                                       )),
@@ -41,6 +42,7 @@ CREATE TABLE IF NOT EXISTS public.zatca_production_credentials (
   compliance_sample_results       JSONB NOT NULL DEFAULT '[]'::jsonb,
   last_error                      TEXT,
   connected_at                    TIMESTAMPTZ,
+  disconnected_at                 TIMESTAMPTZ,
   created_by                      UUID REFERENCES public.user_profiles(id) ON DELETE SET NULL,
   updated_by                      UUID REFERENCES public.user_profiles(id) ON DELETE SET NULL,
   created_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -81,9 +83,13 @@ BEGIN
         'compliance_samples_passed',
         'production_csid_requested',
         'production_connected',
+        'disconnected',
         'compliance_failed',
         'failed'
       ));
+
+    ALTER TABLE public.zatca_production_credentials
+      ADD COLUMN IF NOT EXISTS disconnected_at TIMESTAMPTZ;
   END IF;
 END $$;
 

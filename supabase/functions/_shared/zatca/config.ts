@@ -11,6 +11,7 @@ export type OnboardingStatus =
   | 'compliance_samples_passed'
   | 'production_csid_requested'
   | 'production_connected'
+  | 'disconnected'
   | 'compliance_failed'
   | 'failed'
 

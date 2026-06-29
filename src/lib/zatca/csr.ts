@@ -50,7 +50,6 @@ export async function generateCSR(
   params: ZatcaCSRParams,
   keyPair: ZatcaKeyPair,
 ): Promise<string> {
-  console.log('[ZATCA CSR] version: 5.0 — pure TypeScript ASN.1')
   const egsSn = `1-Meem|2-POS|3-${params.branchId}`
 
   // Subject: C, O, OU, CN

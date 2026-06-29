@@ -13,7 +13,7 @@ import {
   ShieldCheck, ShieldX, ShieldAlert, Clock, Building2,
   CheckCircle2, AlertTriangle, ExternalLink, Lock,
   Key, Loader2, Copy, Info, ChevronDown,
-  Cpu, Wifi, BadgeCheck, FlaskConical, X,
+  Cpu, Wifi, BadgeCheck, FlaskConical, X, Trash2, RefreshCw,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -22,6 +22,7 @@ import { generateKeyPair, encryptPrivateKey } from '@/lib/zatca/crypto'
 import { generateCSR } from '@/lib/zatca/csr'
 import {
   getProductionOnboardingStatus,
+  disconnectProductionZatca,
   onboardProductionZatca,
   preflightProductionZatca,
   requestComplianceCsid,
@@ -35,7 +36,10 @@ import type { Branch, ZatcaCertificate, CertificateStatus } from '@/types'
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 
-type BranchWithCert = Branch & { allCerts: ZatcaCertificate[] }
+type BranchWithCert = Branch & {
+  allCerts: ZatcaCertificate[]
+  productionStatus?: ProductionOnboardingResponse | null
+}
 type OnboardingStep = 1 | 2 | 3 | 4
 
 /* ── Step helpers ────────────────────────────────────────────────────────── */
@@ -704,8 +708,31 @@ const FUNCTIONALITY_OPTIONS: Array<{
   { value: '1100', label: 'Both', hint: 'Standard and simplified invoices' },
 ]
 
+const DISCONNECT_CONFIRMATION = 'DELETE ZATCA CONNECTION'
+const SHOW_ZATCA_TRACE = import.meta.env.DEV && import.meta.env.VITE_SHOW_ZATCA_DEBUG_TRACE === 'true'
+
+function functionalityLabel(value?: ZatcaFunctionalityMap | string): string {
+  return FUNCTIONALITY_OPTIONS.find(option => option.value === value)?.label ?? 'Not selected'
+}
+
+function formatDateTime(value?: string | null): string {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('en-SA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function safeStatusText(value?: string | null): string {
+  if (!value) return '—'
+  return value.replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase())
+}
+
 function stepComplete(status: ProductionOnboardingStatus | undefined, step: ProductionOnboardingStatus): boolean {
-  if (!status || status === 'failed' || status === 'compliance_failed' || status === 'not_started') return false
+  if (!status || status === 'failed' || status === 'compliance_failed' || status === 'not_started' || status === 'disconnected') return false
   return PRODUCTION_STEPS.findIndex(item => item.key === status) >=
     PRODUCTION_STEPS.findIndex(item => item.key === step)
 }
@@ -728,7 +755,7 @@ function formatTraceMessages(values: ProductionOnboardingTraceEntry['errors']): 
 
 function ZatcaDebugTrace({ trace }: { trace?: ProductionOnboardingTraceEntry[] }) {
   const [open, setOpen] = useState(true)
-  if (!trace?.length) return null
+  if (!SHOW_ZATCA_TRACE || !trace?.length) return null
 
   return (
     <div className="border border-amber-200 bg-amber-50 rounded-xl overflow-hidden">
@@ -738,8 +765,8 @@ function ZatcaDebugTrace({ trace }: { trace?: ProductionOnboardingTraceEntry[] }
         className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left"
       >
         <div>
-          <p className="text-[10px] font-bold text-amber-900 uppercase tracking-wide">TEMPORARY DEBUG</p>
-          <p className="text-xs font-semibold text-amber-900">ZATCA Debug Trace</p>
+          <p className="text-[10px] font-bold text-amber-900 uppercase tracking-wide">Development</p>
+          <p className="text-xs font-semibold text-amber-900">ZATCA Trace</p>
         </div>
         <ChevronDown size={14} className={`text-amber-800 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -778,19 +805,213 @@ function ZatcaDebugTrace({ trace }: { trace?: ProductionOnboardingTraceEntry[] }
   )
 }
 
-function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
+function ProductionConnectionStatus({
+  branch,
+  status,
+  onReconnect,
+  onRemove,
+}: {
+  branch: BranchWithCert
+  status: ProductionOnboardingResponse
+  onReconnect: () => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+        <ShieldCheck size={16} className="text-emerald-600 mt-0.5 flex-shrink-0" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-emerald-800">Connected to ZATCA Production / FATOORA</p>
+          <p className="text-[11px] text-emerald-700 mt-0.5 leading-relaxed">
+            This branch can submit Phase 2 invoices through its stored production connection.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <InfoRow label="Branch" value={branch.name} />
+        <InfoRow label="VAT Number" value={branch.vat_number || '—'} mono />
+        <InfoRow label="CR Number" value={branch.cr_number || '—'} mono />
+        <InfoRow label="Environment" value="Production" />
+        <InfoRow label="Functionality" value={functionalityLabel(status.functionalityMap)} />
+        <InfoRow label="Connected At" value={formatDateTime(status.connectedAt)} />
+        <InfoRow label="Production CSID" value={status.productionCsidExists ? 'Stored' : 'Missing'} />
+        <InfoRow label="Status" value={safeStatusText(status.onboardingStatus)} />
+        <InfoRow label="Last Updated" value={formatDateTime(status.updatedAt)} />
+      </div>
+
+      <div className="rounded-xl border border-amber-100 bg-amber-50 px-3.5 py-3">
+        <p className="text-[11px] text-amber-800 leading-relaxed">
+          Production onboarding can stay disabled for normal live use. Existing connected branches continue to submit invoices;
+          only onboarding or re-onboarding requires the production onboarding feature flag.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-4">
+        <button
+          type="button"
+          onClick={onReconnect}
+          className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-50 transition-colors"
+        >
+          <RefreshCw size={13} />
+          Reconnect / Re-onboard
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors"
+        >
+          <Trash2 size={13} />
+          Remove local connection
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function DisconnectedStatus({
+  branch,
+  status,
+}: {
+  branch: BranchWithCert
+  status: ProductionOnboardingResponse
+}) {
+  return (
+    <div className="flex items-start gap-3 bg-gray-50 border border-gray-200 rounded-xl p-4">
+      <ShieldX size={15} className="text-gray-500 mt-0.5 flex-shrink-0" />
+      <div>
+        <p className="text-xs font-semibold text-gray-800">Local ZATCA production connection removed</p>
+        <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
+          {branch.name} will not submit invoices through this local connection. The FATOORA device may still exist in the portal.
+        </p>
+        <p className="text-[11px] text-gray-400 mt-1">
+          Removed: {formatDateTime(status.disconnectedAt)}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function DisconnectConnectionModal({
+  branch,
+  loading,
+  error,
+  phrase,
+  onPhraseChange,
+  onCancel,
+  onConfirm,
+}: {
+  branch: BranchWithCert
+  loading: boolean
+  error: string | null
+  phrase: string
+  onPhraseChange: (value: string) => void
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const canConfirm = phrase === DISCONNECT_CONFIRMATION && !loading
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+          <div className="flex items-center gap-2">
+            <Trash2 size={15} className="text-red-500" />
+            <h3 className="text-sm font-bold text-gray-900">Remove local ZATCA connection</h3>
+          </div>
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="space-y-4 p-5">
+          <div className="rounded-xl border border-red-100 bg-red-50 p-3.5">
+            <p className="text-xs font-semibold text-red-800">This affects only {branch.name}.</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-red-700">
+              This removes the production credentials from Dafra and stops this branch from submitting invoices through this connection.
+              It may not remove or revoke the device from the FATOORA portal. Manage the device in FATOORA separately if required.
+            </p>
+          </div>
+
+          <div>
+            <p className="text-[11px] font-semibold text-gray-700">
+              Type <span className="font-mono text-red-600">{DISCONNECT_CONFIRMATION}</span> to confirm.
+            </p>
+            <input
+              value={phrase}
+              onChange={event => onPhraseChange(event.target.value)}
+              className="input mt-2 font-mono text-sm"
+              placeholder={DISCONNECT_CONFIRMATION}
+              autoFocus
+            />
+          </div>
+
+          {error && (
+            <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3">
+              <AlertTriangle size={13} className="mt-0.5 flex-shrink-0 text-red-500" />
+              <p className="text-[11px] leading-relaxed text-red-700">{error}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={!canConfirm}
+            className="flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            Remove connection
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProductionOnboardingPanel({
+  branch,
+  initialStatus,
+  onStatusChange,
+}: {
+  branch: BranchWithCert
+  initialStatus?: ProductionOnboardingResponse | null
+  onStatusChange: (status: ProductionOnboardingResponse) => void
+}) {
   const { profile } = useAuth()
   const [otp, setOtp] = useState('')
   const [functionalityMap, setFunctionalityMap] = useState<ZatcaFunctionalityMap | ''>('')
   const [dryRun, setDryRun] = useState(true)
-  const [status, setStatus] = useState<ProductionOnboardingResponse | null>(null)
+  const [status, setStatus] = useState<ProductionOnboardingResponse | null>(initialStatus ?? null)
   const [loading, setLoading] = useState(false)
   const [preflightLoading, setPreflightLoading] = useState(false)
   const [statusLoading, setStatusLoading] = useState(false)
+  const [showReconnect, setShowReconnect] = useState(false)
+  const [showDisconnect, setShowDisconnect] = useState(false)
+  const [disconnectPhrase, setDisconnectPhrase] = useState('')
+  const [disconnecting, setDisconnecting] = useState(false)
+  const [disconnectError, setDisconnectError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const isOwner = profile?.role === 'owner'
   const currentStatus = status?.onboardingStatus ?? 'not_started'
+  const isConnected = currentStatus === 'production_connected'
+  const isDisconnected = currentStatus === 'disconnected'
+  const showOnboardingForm = !isConnected || showReconnect
+
+  useEffect(() => {
+    setStatus(initialStatus ?? null)
+    if (initialStatus?.functionalityMap) setFunctionalityMap(initialStatus.functionalityMap)
+  }, [initialStatus])
 
   useEffect(() => {
     let mounted = true
@@ -803,6 +1024,7 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
         if (mounted) {
           setStatus(res)
           if (res.functionalityMap) setFunctionalityMap(res.functionalityMap)
+          onStatusChange(res)
         }
       } catch (err: any) {
         if (mounted) setError(err.message ?? 'Unable to load production onboarding status')
@@ -812,11 +1034,20 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
     }
     loadStatus()
     return () => { mounted = false }
-  }, [branch.id, isOwner])
+  }, [branch.id, isOwner, onStatusChange])
 
   const connect = async () => {
     if (!isOwner) {
       setError('Only the tenant owner can connect ZATCA production.')
+      return
+    }
+    if (isConnected && !showReconnect) {
+      setError('This branch is already connected. Open the advanced reconnect action before replacing production credentials.')
+      return
+    }
+    if (isConnected && showReconnect && !window.confirm(
+      'Reconnect / Re-onboard may replace the production credentials used for invoice submission. Continue?'
+    )) {
       return
     }
     if (!/^[0-9]{6}$/.test(otp)) {
@@ -835,13 +1066,16 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
         otp,
         functionalityMap,
         dryRun,
+        forceReconnect: isConnected && showReconnect,
       })
       setStatus(res)
+      onStatusChange(res)
       setOtp('')
+      if (res.onboardingStatus === 'production_connected') setShowReconnect(false)
     } catch (err: any) {
       const payload = err?.payload as ProductionOnboardingResponse | undefined
       if (payload?.trace) {
-        setStatus({
+        const nextStatus = {
           ok: false,
           branchId: branch.id,
           environment: 'production',
@@ -849,7 +1083,9 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
           functionalityMap: payload.functionalityMap ?? (functionalityMap || undefined),
           complianceSampleResults: payload.complianceSampleResults,
           trace: payload.trace,
-        })
+        }
+        setStatus(nextStatus)
+        onStatusChange(nextStatus)
       }
       setError(err.message ?? 'ZATCA production onboarding failed')
     } finally {
@@ -874,10 +1110,11 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
         functionalityMap,
       })
       setStatus(res)
+      onStatusChange(res)
     } catch (err: any) {
       const payload = err?.payload as ProductionOnboardingResponse | undefined
       if (payload?.trace) {
-        setStatus({
+        const nextStatus = {
           ok: false,
           preflight: true,
           branchId: branch.id,
@@ -885,7 +1122,9 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
           onboardingStatus: payload.onboardingStatus ?? 'failed',
           functionalityMap: payload.functionalityMap ?? functionalityMap,
           trace: payload.trace,
-        })
+        }
+        setStatus(nextStatus)
+        onStatusChange(nextStatus)
       }
       setError(err.message ?? 'ZATCA production preflight failed')
     } finally {
@@ -893,18 +1132,44 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
     }
   }
 
+  const removeLocalConnection = async () => {
+    setDisconnecting(true)
+    setDisconnectError(null)
+    try {
+      const res = await disconnectProductionZatca({
+        branchId: branch.id,
+        confirmation: disconnectPhrase,
+      })
+      setStatus(res)
+      onStatusChange(res)
+      setShowDisconnect(false)
+      setDisconnectPhrase('')
+      setShowReconnect(false)
+    } catch (err: any) {
+      setDisconnectError(err.message ?? 'Unable to remove local ZATCA connection')
+    } finally {
+      setDisconnecting(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3.5">
-        <ShieldCheck size={14} className="text-emerald-600 mt-0.5 flex-shrink-0" />
-        <div>
-          <p className="text-xs font-semibold text-emerald-800">Production setup</p>
-          <p className="text-[11px] text-emerald-700 mt-0.5 leading-relaxed">
-            Log in to FATOORA portal, generate OTP from Onboard New Solution Unit/Device,
-            paste OTP here within 1 hour.
-          </p>
-        </div>
-      </div>
+      {showDisconnect && (
+        <DisconnectConnectionModal
+          branch={branch}
+          loading={disconnecting}
+          error={disconnectError}
+          phrase={disconnectPhrase}
+          onPhraseChange={setDisconnectPhrase}
+          onCancel={() => {
+            if (disconnecting) return
+            setShowDisconnect(false)
+            setDisconnectPhrase('')
+            setDisconnectError(null)
+          }}
+          onConfirm={removeLocalConnection}
+        />
+      )}
 
       {!isOwner && (
         <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl p-3">
@@ -915,54 +1180,101 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
         </div>
       )}
 
-      <div className="space-y-2">
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Invoice capability</p>
-        <p className="text-[11px] text-gray-500 leading-relaxed">
-          Choose what this billing system will issue. For normal retail/POS invoices, usually choose Simplified/B2C only.
-          If you issue tax invoices to VAT-registered businesses, choose Standard/B2B or Both.
-        </p>
-        <div className="grid gap-2 sm:grid-cols-3">
-          {FUNCTIONALITY_OPTIONS.map(option => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => setFunctionalityMap(option.value)}
-              className={`text-left rounded-xl border px-3 py-2.5 transition-colors ${
-                functionalityMap === option.value
-                  ? 'border-primary-300 bg-primary-50'
-                  : 'border-gray-200 bg-white hover:border-gray-300'
-              }`}
-            >
-              <span className="block text-xs font-semibold text-gray-800">{option.label}</span>
-              <span className="block text-[10px] text-gray-500 mt-0.5">{option.hint}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-2.5">
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">FATOORA OTP</p>
-        <input
-          type="text"
-          inputMode="numeric"
-          maxLength={6}
-          placeholder="000000"
-          value={otp}
-          onChange={event => setOtp(event.target.value.replace(/\D/g, '').substring(0, 6))}
-          disabled={!isOwner || loading}
-          className="input text-center text-2xl font-mono disabled:opacity-50"
+      {isConnected && status && !showReconnect && (
+        <ProductionConnectionStatus
+          branch={branch}
+          status={status}
+          onReconnect={() => {
+            setShowReconnect(true)
+            setError(null)
+          }}
+          onRemove={() => {
+            setShowDisconnect(true)
+            setDisconnectError(null)
+            setDisconnectPhrase('')
+          }}
         />
-        <label className="flex items-center gap-2 text-[11px] text-gray-600">
-          <input
-            type="checkbox"
-            checked={dryRun}
-            onChange={event => setDryRun(event.target.checked)}
-            disabled={!isOwner || loading}
-            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-          />
-          Dry run only. Do not call ZATCA production.
-        </label>
-      </div>
+      )}
+
+      {isDisconnected && status && !showReconnect && (
+        <DisconnectedStatus branch={branch} status={status} />
+      )}
+
+      {showOnboardingForm && (
+        <>
+          <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3.5">
+            <ShieldCheck size={14} className="text-emerald-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-xs font-semibold text-emerald-800">
+                {isConnected ? 'Advanced reconnect / re-onboard' : 'Production setup'}
+              </p>
+              <p className="text-[11px] text-emerald-700 mt-0.5 leading-relaxed">
+                Log in to FATOORA portal, generate OTP from Onboard New Solution Unit/Device,
+                paste OTP here within 1 hour.
+              </p>
+            </div>
+          </div>
+
+          {isConnected && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5">
+              <p className="text-xs font-semibold text-amber-900">Reconnect warning</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-amber-800">
+                Re-onboarding may replace this branch&apos;s production credentials and can affect invoice submission.
+                Continue only when you intentionally created a new OTP in FATOORA.
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Invoice capability</p>
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              Choose what this billing system will issue. For normal retail/POS invoices, usually choose Simplified/B2C only.
+              If you issue tax invoices to VAT-registered businesses, choose Standard/B2B or Both.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {FUNCTIONALITY_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setFunctionalityMap(option.value)}
+                  className={`text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                    functionalityMap === option.value
+                      ? 'border-primary-300 bg-primary-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  }`}
+                >
+                  <span className="block text-xs font-semibold text-gray-800">{option.label}</span>
+                  <span className="block text-[10px] text-gray-500 mt-0.5">{option.hint}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2.5">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">FATOORA OTP</p>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="000000"
+              value={otp}
+              onChange={event => setOtp(event.target.value.replace(/\D/g, '').substring(0, 6))}
+              disabled={!isOwner || loading}
+              className="input text-center text-2xl font-mono disabled:opacity-50"
+            />
+            <label className="flex items-center gap-2 text-[11px] text-gray-600">
+              <input
+                type="checkbox"
+                checked={dryRun}
+                onChange={event => setDryRun(event.target.checked)}
+                disabled={!isOwner || loading}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              Dry run only. Do not call ZATCA production.
+            </label>
+          </div>
+        </>
+      )}
 
       {error && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl p-3">
@@ -971,25 +1283,27 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
         </div>
       )}
 
-      <div className="grid gap-2 sm:grid-cols-2">
-        <button
-          onClick={runPreflight}
-          disabled={!isOwner || preflightLoading || loading || !functionalityMap}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-amber-200 text-amber-800 text-sm font-semibold hover:bg-amber-50 disabled:opacity-50 transition-colors"
-        >
-          {preflightLoading ? <Loader2 size={14} className="animate-spin" /> : <FlaskConical size={14} />}
-          {preflightLoading ? 'Running preflight…' : 'Preflight only'}
-        </button>
+      {showOnboardingForm && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            onClick={runPreflight}
+            disabled={!isOwner || preflightLoading || loading || !functionalityMap}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-amber-200 text-amber-800 text-sm font-semibold hover:bg-amber-50 disabled:opacity-50 transition-colors"
+          >
+            {preflightLoading ? <Loader2 size={14} className="animate-spin" /> : <FlaskConical size={14} />}
+            {preflightLoading ? 'Running preflight…' : 'Preflight only'}
+          </button>
 
-        <button
-          onClick={connect}
-          disabled={!isOwner || loading || preflightLoading || otp.length !== 6 || !functionalityMap}
-          className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50"
-        >
-          {loading ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}
-          {loading ? 'Connecting to ZATCA…' : 'Connect to ZATCA Production'}
-        </button>
-      </div>
+          <button
+            onClick={connect}
+            disabled={!isOwner || loading || preflightLoading || otp.length !== 6 || !functionalityMap}
+            className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}
+            {loading ? 'Connecting to ZATCA…' : isConnected ? 'Reconnect Production' : 'Connect to ZATCA Production'}
+          </button>
+        </div>
+      )}
 
       <div className="border-t border-gray-100 pt-4 space-y-3">
         <div className="flex items-center justify-between">
@@ -1041,6 +1355,12 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
 function branchSummaryText(bc: BranchWithCert): string {
   const phase = bc.zatca_phase ?? 1
   if (phase < 2) return 'Phase 1 — QR code only'
+  if (bc.productionStatus?.onboardingStatus === 'production_connected') {
+    return 'Connected to ZATCA Production / FATOORA'
+  }
+  if (bc.productionStatus?.onboardingStatus === 'disconnected') {
+    return 'Local production connection removed'
+  }
   const bestCert = (
     bc.allCerts.find(c => c.status === 'active') ??
     bc.allCerts.find(c => c.status === 'compliance') ??
@@ -1054,14 +1374,17 @@ function branchSummaryText(bc: BranchWithCert): string {
 }
 
 function BranchAccordionRow({
-  bc, isExpanded, onToggle, onCertUpdate,
+  bc, isExpanded, onToggle, onCertUpdate, onProductionStatusUpdate,
 }: {
   bc: BranchWithCert
   isExpanded: boolean
   onToggle: () => void
   onCertUpdate: (branchId: string, cert: ZatcaCertificate) => void
+  onProductionStatusUpdate: (branchId: string, status: ProductionOnboardingResponse) => void
 }) {
   const phase = bc.zatca_phase ?? 1
+  const productionConnected = bc.productionStatus?.onboardingStatus === 'production_connected'
+  const productionDisconnected = bc.productionStatus?.onboardingStatus === 'disconnected'
 
   // Best cert for the collapsed summary badges
   const bestCert = (
@@ -1072,9 +1395,15 @@ function BranchAccordionRow({
   )
   const status = bestCert?.status ?? 'pending'
   const cfg    = CERT_CONFIG[status] ?? CERT_CONFIG.pending
+  const summaryCfg = productionConnected
+    ? { variant: 'success' as const, label: 'Connected' }
+    : productionDisconnected
+    ? { variant: 'neutral' as const, label: 'Disconnected' }
+    : cfg
 
   // Full card state (only needed when expanded)
   const initialEnv = (
+    productionConnected || productionDisconnected ? 'production' :
     bc.allCerts.find(c => c.status === 'active')?.environment ??
     bc.allCerts.find(c => c.status === 'compliance')?.environment ??
     bc.allCerts[0]?.environment ??
@@ -1085,7 +1414,11 @@ function BranchAccordionRow({
 
   const cert     = bc.allCerts.find(c => c.environment === environment) ?? null
   const isActive = cert?.status === 'active'
+  const isEnvironmentLocked = isActive || productionConnected
   const step     = certStep(cert)
+  const handleProductionStatusChange = useCallback((nextStatus: ProductionOnboardingResponse) => {
+    onProductionStatusUpdate(bc.id, nextStatus)
+  }, [bc.id, onProductionStatusUpdate])
 
   const handleRegenerate = async () => {
     if (!window.confirm(
@@ -1136,16 +1469,16 @@ function BranchAccordionRow({
           <p className="text-[11px] text-gray-400 mt-0.5 truncate">{branchSummaryText(bc)}</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {phase >= 2 && bestCert && (
+          {phase >= 2 && (productionConnected || bestCert) && (
             <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-              bestCert.environment === 'production'
+              productionConnected
                 ? 'bg-emerald-100 text-emerald-700'
                 : 'bg-amber-100 text-amber-700'
             }`}>
-              {bestCert.environment === 'production' ? 'Production' : 'Sandbox'}
+              {productionConnected ? 'Production' : 'Sandbox'}
             </span>
           )}
-          {phase >= 2 && <Badge variant={cfg.variant} dot>{cfg.label}</Badge>}
+          {phase >= 2 && <Badge variant={summaryCfg.variant} dot>{summaryCfg.label}</Badge>}
           {phase < 2 && (
             <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
               Phase 1
@@ -1192,7 +1525,7 @@ function BranchAccordionRow({
               {/* Environment toggle / locked */}
               <div className="flex items-center justify-between">
                 <p className="text-[11px] text-gray-500">Environment</p>
-                {isActive ? (
+                {isEnvironmentLocked ? (
                   <span className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-gray-200 bg-gray-50 text-gray-500">
                     <Lock size={9} />
                     {environment === 'production' ? 'Production' : 'Sandbox'} — Locked
@@ -1225,7 +1558,11 @@ function BranchAccordionRow({
 
               {environment === 'production' ? (
                 <div className="border-t border-gray-100 pt-4">
-                  <ProductionOnboardingPanel branch={bc} />
+                  <ProductionOnboardingPanel
+                    branch={bc}
+                    initialStatus={bc.productionStatus}
+                    onStatusChange={handleProductionStatusChange}
+                  />
                 </div>
               ) : (
                 <>
@@ -1289,14 +1626,27 @@ export default function ZatcaTab() {
     ])
     const branches = (branchesRes.data as Branch[]) ?? []
     const certs    = (certsRes.data as ZatcaCertificate[]) ?? []
+    const productionStatuses = new Map<string, ProductionOnboardingResponse | null>()
+    if (profile.role === 'owner') {
+      await Promise.all(branches
+        .filter(branch => (branch.zatca_phase ?? 1) === 2)
+        .map(async branch => {
+          try {
+            productionStatuses.set(branch.id, await getProductionOnboardingStatus(branch.id))
+          } catch {
+            productionStatuses.set(branch.id, null)
+          }
+        }))
+    }
     setData(branches.map(b => ({
       ...b,
       allCerts: certs.filter(c => c.branch_id === b.id),
+      productionStatus: productionStatuses.get(b.id) ?? null,
     })))
     // Auto-expand first branch if only one
-    if (branches.length === 1 && !expandedId) setExpandedId(branches[0].id)
+    setExpandedId(prev => branches.length === 1 && !prev ? branches[0].id : prev)
     setLoading(false)
-  }, [profile?.tenant_id])
+  }, [profile?.tenant_id, profile?.role])
 
   useEffect(() => { load() }, [load])
 
@@ -1311,16 +1661,27 @@ export default function ZatcaTab() {
     }))
   }
 
+  const handleProductionStatusUpdate = useCallback((branchId: string, status: ProductionOnboardingResponse) => {
+    setData(prev => prev.map(branch => (
+      branch.id === branchId
+        ? { ...branch, productionStatus: status }
+        : branch
+    )))
+  }, [])
+
   const handleToggle = (branchId: string) => {
     setExpandedId(prev => prev === branchId ? null : branchId)
   }
 
   const phase2Count = data.filter(b => (b.zatca_phase ?? 1) === 2).length
-  const activeCount = data.filter(b => b.allCerts.some(c => c.status === 'active')).length
+  const activeCount = data.filter(b =>
+    b.productionStatus?.onboardingStatus === 'production_connected' ||
+    b.allCerts.some(c => c.status === 'active')
+  ).length
 
   const phase2Branches  = data.filter(b => (b.zatca_phase ?? 1) === 2)
   const allProduction   = phase2Branches.length > 0 &&
-    phase2Branches.every(b => b.allCerts.some(c => c.environment === 'production' && c.status === 'active'))
+    phase2Branches.every(b => b.productionStatus?.onboardingStatus === 'production_connected')
   const showSandboxBanner = !allProduction
 
   return (
@@ -1391,6 +1752,7 @@ export default function ZatcaTab() {
               isExpanded={expandedId === bc.id}
               onToggle={() => handleToggle(bc.id)}
               onCertUpdate={handleCertUpdate}
+              onProductionStatusUpdate={handleProductionStatusUpdate}
             />
           ))}
         </div>

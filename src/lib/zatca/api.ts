@@ -11,6 +11,7 @@
  *   POST /functions/v1/zatca-production   — Sandbox CSID activation
  *   POST /functions/v1/zatca-submit       — Invoice reporting / clearance
  *   POST /functions/v1/zatca-onboard-production — Owner-only production onboarding
+ *   POST /functions/v1/zatca-disconnect-production — Owner-only local production disconnect
  */
 
 import { supabase } from '@/lib/supabase'
@@ -35,9 +36,7 @@ async function edgePost<T>(fnName: string, body: Record<string, unknown>): Promi
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
-    // Include raw zatcaBody in the message when present so the UI can show it
-    const detail = err.zatcaBody ? `\n\nZATCA raw response:\n${JSON.stringify(err.zatcaBody, null, 2)}` : ''
-    throw new Error((err.error ?? `Edge Function ${fnName} returned ${res.status}`) + detail)
+    throw new Error(safeBrowserMessage(err.error, `Edge Function ${fnName} returned ${res.status}`))
   }
   return res.json()
 }
@@ -80,8 +79,6 @@ function safeBrowserMessage(message: unknown, fallback: string): string {
 function formatProductionDebugDiagnostics(samples: unknown): string {
   if (!Array.isArray(samples) || samples.length === 0) return ''
 
-  // TEMPORARY DEBUG: browser-safe compliance diagnostics for the existing error
-  // area. Failed samples may include signed XML as base64 for local SDK checks.
   return samples.map((sample: any) => {
     const lines = [
       `Sample: ${safeUiText(sample?.type) ?? 'unknown'}`,
@@ -93,14 +90,7 @@ function formatProductionDebugDiagnostics(samples: unknown): string {
       sample?.message ? `Message: ${safeUiText(sample.message)}` : undefined,
       formatMessages('Warnings', sample?.redactedWarnings),
       formatMessages('Errors', sample?.redactedErrors),
-      formatHeaders(sample?.zatcaHeaders),
       sample?.responseBodySafeSummary ? `Body: ${safeUiText(sample.responseBodySafeSummary, 900)}` : undefined,
-      sample?.debugInvoiceHash ? `Sent invoiceHash: ${safeUiText(sample.debugInvoiceHash, 500)}` : undefined,
-      sample?.debugTransformedCanonicalHash ? `Canonical transformed hash: ${safeUiText(sample.debugTransformedCanonicalHash, 500)}` : undefined,
-      sample?.debugIssueDate ? `IssueDate: ${safeUiText(sample.debugIssueDate, 40)}` : undefined,
-      sample?.debugIssueTime ? `IssueTime: ${safeUiText(sample.debugIssueTime, 40)}` : undefined,
-      sample?.debugQrTimestamp ? `QR timestamp: ${safeUiText(sample.debugQrTimestamp, 80)}` : undefined,
-      sample?.debugSignedInvoiceXmlBase64 ? `Signed sample XML base64:\n${safeUiDebugBlob(sample.debugSignedInvoiceXmlBase64)}` : undefined,
     ].filter(Boolean)
     return lines.join('\n')
   }).join('\n\n')
@@ -116,14 +106,6 @@ function formatMessages(label: string, value: unknown): string | undefined {
   return text ? `${label}: ${text}` : undefined
 }
 
-function formatHeaders(value: unknown): string | undefined {
-  if (!value || typeof value !== 'object') return undefined
-  const text = Object.entries(value as Record<string, unknown>)
-    .map(([key, val]) => `${key}=${safeUiText(val)}`)
-    .join(', ')
-  return text ? `Headers: ${text}` : undefined
-}
-
 function safeUiText(value: unknown, maxLength = 240): string | undefined {
   if (typeof value !== 'string' && typeof value !== 'number') return undefined
   const text = String(value).replace(/[\r\t]+/g, ' ').slice(0, maxLength)
@@ -131,12 +113,6 @@ function safeUiText(value: unknown, maxLength = 240): string | undefined {
     return 'Sensitive detail redacted.'
   }
   return text
-}
-
-function safeUiDebugBlob(value: unknown, maxLength = 100_000): string | undefined {
-  if (typeof value !== 'string') return undefined
-  const text = value.replace(/[\u0000-\u001f\u007f-\u009f]+/g, '').slice(0, maxLength)
-  return text || undefined
 }
 
 // ── Production onboarding orchestrator ───────────────────────────────────────
@@ -150,6 +126,7 @@ export type ProductionOnboardingStatus =
   | 'compliance_samples_passed'
   | 'production_csid_requested'
   | 'production_connected'
+  | 'disconnected'
   | 'compliance_failed'
   | 'failed'
 
@@ -201,7 +178,10 @@ export interface ProductionOnboardingResponse {
   functionalityMap?: ZatcaFunctionalityMap
   complianceSampleResults?: ProductionComplianceSampleResult[]
   connectedAt?: string | null
+  disconnectedAt?: string | null
   updatedAt?: string | null
+  productionCsidExists?: boolean
+  productionSecretExists?: boolean
   message?: string
   trace?: ProductionOnboardingTraceEntry[]
 }
@@ -211,6 +191,7 @@ export async function onboardProductionZatca(params: {
   otp: string
   functionalityMap: ZatcaFunctionalityMap
   dryRun?: boolean
+  forceReconnect?: boolean
 }): Promise<ProductionOnboardingResponse> {
   return edgePostSafe<ProductionOnboardingResponse>('zatca-onboard-production', {
     action: 'onboard',
@@ -218,6 +199,7 @@ export async function onboardProductionZatca(params: {
     otp: params.otp,
     functionalityMap: params.functionalityMap,
     dryRun: params.dryRun ?? true,
+    forceReconnect: params.forceReconnect ?? false,
   })
 }
 
@@ -236,6 +218,16 @@ export async function getProductionOnboardingStatus(branchId: string): Promise<P
   return edgePostSafe<ProductionOnboardingResponse>('zatca-onboard-production', {
     action: 'status',
     branchId,
+  })
+}
+
+export async function disconnectProductionZatca(params: {
+  branchId: string
+  confirmation: string
+}): Promise<ProductionOnboardingResponse> {
+  return edgePostSafe<ProductionOnboardingResponse>('zatca-disconnect-production', {
+    branchId: params.branchId,
+    confirmation: params.confirmation,
   })
 }
 

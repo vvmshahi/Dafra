@@ -82,12 +82,12 @@ Deno.serve(async (req: Request) => {
       .eq('environment', env)
       .maybeSingle()
 
-    console.log('[zatca-production] branchId:', branchId, 'env:', env)
-    console.log('[zatca-production] cert query error:', certErr ? JSON.stringify(certErr) : 'none')
-    console.log('[zatca-production] cert found:', cert ? 'yes' : 'no')
-    console.log('[zatca-production] compliance_csid present:', !!cert?.compliance_csid)
-    console.log('[zatca-production] compliance_secret present:', !!cert?.compliance_secret)
-    console.log('[zatca-production] compliance_request_id present:', !!cert?.compliance_request_id)
+    console.info('[zatca-production] sandbox production request:', {
+      branchId,
+      environment: env,
+      certFound: !!cert,
+      certError: certErr?.message,
+    })
 
     if (certErr || !cert?.compliance_csid || !cert?.compliance_secret || !cert?.compliance_request_id) {
       const detail = certErr ? JSON.stringify(certErr) : 'compliance fields missing on cert row'
@@ -104,8 +104,7 @@ Deno.serve(async (req: Request) => {
     // Basic Auth header = base64(compliance_csid:compliance_secret)
     const credentials = btoa(`${cert.compliance_csid}:${cert.compliance_secret}`)
 
-    console.log('[zatca-production] calling ZATCA url:', `${baseUrl}/production/csids`)
-    console.log('[zatca-production] compliance_request_id:', cert.compliance_request_id)
+    console.info('[zatca-production] calling ZATCA:', { branchId, environment: env, endpoint: 'production/csids' })
 
     // Call ZATCA Production CSID API
     const zatcaRes = await fetch(`${baseUrl}/production/csids`, {
@@ -120,14 +119,12 @@ Deno.serve(async (req: Request) => {
     })
 
     const zatcaBody = await zatcaRes.json()
-    console.log('[zatca-production] ZATCA status:', zatcaRes.status)
-    console.log('[zatca-production] ZATCA response:', JSON.stringify(zatcaBody))
+    console.info('[zatca-production] ZATCA status:', { branchId, environment: env, httpStatus: zatcaRes.status })
 
     if (!zatcaRes.ok) {
-      console.error('[zatca-production] ZATCA error:', zatcaBody)
       return new Response(JSON.stringify({
         error: zatcaBody?.errors?.[0]?.message ?? 'ZATCA production certificate request failed',
-        zatcaBody,
+        httpStatus: zatcaRes.status,
       }), {
         status: zatcaRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -148,7 +145,7 @@ Deno.serve(async (req: Request) => {
       .eq('environment', env)
 
     if (updateErr) {
-      console.error('[zatca-production] DB update error:', JSON.stringify(updateErr))
+      console.error('[zatca-production] DB update error:', updateErr.message)
     }
 
     return new Response(JSON.stringify({ binarySecurityToken, secret }), {
@@ -156,7 +153,7 @@ Deno.serve(async (req: Request) => {
     })
 
   } catch (err: any) {
-    console.error('[zatca-production] unexpected error:', err)
+    console.error('[zatca-production] unexpected error:', err.message ?? 'unknown')
     return new Response(JSON.stringify({ error: err.message ?? 'Internal server error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

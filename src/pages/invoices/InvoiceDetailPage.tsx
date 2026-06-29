@@ -66,6 +66,65 @@ const PAY_LABEL: Record<string, string> = {
   cash: 'Cash', card: 'Card / POS', bank_transfer: 'Bank Transfer', other: 'Other',
 }
 
+const INVOICE_DETAIL_SELECT = `
+  id, tenant_id, branch_id, customer_id, created_by,
+  invoice_number, invoice_reference, zatca_uuid, zatca_invoice_type, zatca_type_code,
+  zatca_counter_number, zatca_prev_invoice_hash, zatca_xml_hash, zatca_qr_code,
+  zatca_status, zatca_submission_id, zatca_submitted_at, zatca_clearance_status,
+  zatca_warnings,
+  subtotal, discount_amount, taxable_amount, tax_amount, total_amount, currency_code,
+  invoice_date, supply_date, due_date, status, payment_status,
+  notes, notes_ar, cancelled_at, cancellation_reason, created_at, updated_at
+`
+
+interface SafeZatcaFailureSummary {
+  statusString?: string
+  message?: string
+  httpStatus?: number
+  validationStatus?: string
+  reportingStatus?: string
+  clearanceStatus?: string
+  errorCodes?: string[]
+  errors?: Array<{ code?: string; message?: string }>
+}
+
+function safeFailureText(value: unknown, maxLength = 180): string | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined
+  const text = String(value).replace(/\s+/g, ' ').trim().slice(0, maxLength)
+  if (!text) return undefined
+  if (/private[_ -]?key|secret|token|authorization|certificate|csid|xml|signedInvoice/i.test(text)) {
+    return 'Sensitive detail redacted.'
+  }
+  return text
+}
+
+function getZatcaFailureSummary(invoice: Invoice): SafeZatcaFailureSummary | null {
+  const summary = (invoice.zatca_warnings as any)?.failureSummary
+  if (!summary || typeof summary !== 'object') return null
+
+  const errors = Array.isArray(summary.errors)
+    ? summary.errors.slice(0, 3).map((item: any) => ({
+      code: safeFailureText(item?.code, 80),
+      message: safeFailureText(item?.message, 220),
+    })).filter((item: any) => item.code || item.message)
+    : undefined
+
+  const errorCodes = Array.isArray(summary.errorCodes)
+    ? summary.errorCodes.map((code: unknown) => safeFailureText(code, 80)).filter(Boolean) as string[]
+    : undefined
+
+  return {
+    statusString: safeFailureText(summary.statusString, 120),
+    message: safeFailureText(summary.message, 220),
+    httpStatus: typeof summary.httpStatus === 'number' ? summary.httpStatus : undefined,
+    validationStatus: safeFailureText(summary.validationStatus, 80),
+    reportingStatus: safeFailureText(summary.reportingStatus, 80),
+    clearanceStatus: safeFailureText(summary.clearanceStatus, 80),
+    errorCodes,
+    errors,
+  }
+}
+
 // ── Print style injector ──────────────────────────────────────────────────────
 
 function usePrintStyle() {
@@ -141,7 +200,7 @@ export default function InvoiceDetailPage() {
       try {
         // Round 1: invoice + items + payments in parallel
         const [{ data: inv, error: invErr }, { data: itemData }, { data: pmtData }] = await Promise.all([
-          supabase.from('invoices').select('*').eq('id', id).single(),
+          supabase.from('invoices').select(INVOICE_DETAIL_SELECT).eq('id', id).single(),
           supabase.from('invoice_items').select('*').eq('invoice_id', id).order('sort_order'),
           supabase.from('payments').select('*').eq('invoice_id', id),
         ])
@@ -177,15 +236,7 @@ export default function InvoiceDetailPage() {
         setTenant(tenantData)
         setCustomer(custData)
 
-        const [{ data: productionCredentials }, { data: sandboxCert }] = await Promise.all([
-          (supabase as any)
-            .from('zatca_production_credentials')
-            .select('id')
-            .eq('branch_id', inv.branch_id)
-            .eq('tenant_id', inv.tenant_id)
-            .eq('environment', 'production')
-            .eq('onboarding_status', 'production_connected')
-            .maybeSingle(),
+        const [{ data: sandboxCert }] = await Promise.all([
           (supabase as any)
             .from('zatca_certificates')
             .select('id')
@@ -193,7 +244,7 @@ export default function InvoiceDetailPage() {
             .eq('status', 'active')
             .maybeSingle(),
         ])
-        setIsPhase2(!!productionCredentials || !!sandboxCert)
+        setIsPhase2((branchData.zatca_phase ?? 1) === 2 || !!sandboxCert || inv.zatca_status !== 'not_submitted')
       } catch (e) {
         if (!cancelled) setError('Failed to load invoice')
       } finally {
@@ -291,15 +342,12 @@ ${lines}
     if (!invoice) return
     setResubmitting(true)
     try {
-      await supabase.from('invoices')
-        .update({ zatca_status: 'pending' })
-        .eq('id', invoice.id)
       setInvoice(prev => prev ? { ...prev, zatca_status: 'pending' } : prev)
       await submitInvoiceToZatca(invoice.id, invoice.branch_id)
-      const { data: refreshed } = await supabase.from('invoices').select('*').eq('id', invoice.id).single()
+      const { data: refreshed } = await supabase.from('invoices').select(INVOICE_DETAIL_SELECT).eq('id', invoice.id).single()
       if (refreshed) setInvoice(refreshed as Invoice)
     } catch {
-      const { data: refreshed } = await supabase.from('invoices').select('*').eq('id', invoice.id).single()
+      const { data: refreshed } = await supabase.from('invoices').select(INVOICE_DETAIL_SELECT).eq('id', invoice.id).single()
       if (refreshed) setInvoice(refreshed as Invoice)
     } finally {
       setResubmitting(false)
@@ -334,6 +382,7 @@ ${lines}
   })
   const invTime = toSaudiTime(invoice.created_at)
   const zatcaMeta = ZATCA_STATUS[invoice.zatca_status] ?? ZATCA_STATUS.pending
+  const zatcaFailureSummary = invoice.zatca_status === 'failed' ? getZatcaFailureSummary(invoice) : null
   const payment   = payments[0] ?? null
   const payLabel  = payment ? (PAY_LABEL[payment.method] ?? payment.method) : null
   const isCancelled = invoice.status === 'cancelled'
@@ -671,6 +720,27 @@ ${lines}
                   }
                   <span className={`text-sm font-semibold ${zatcaMeta.color}`}>{zatcaMeta.label}</span>
                 </div>
+                {zatcaFailureSummary && (
+                  <div className="mt-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-red-400">Safe failure summary</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-red-700">
+                      {[
+                        zatcaFailureSummary.statusString,
+                        zatcaFailureSummary.validationStatus,
+                        zatcaFailureSummary.reportingStatus,
+                        zatcaFailureSummary.clearanceStatus,
+                        zatcaFailureSummary.httpStatus ? `HTTP ${zatcaFailureSummary.httpStatus}` : undefined,
+                      ].filter(Boolean).join(' · ') || 'ZATCA rejected the submission.'}
+                    </p>
+                    {(zatcaFailureSummary.message || zatcaFailureSummary.errors?.length || zatcaFailureSummary.errorCodes?.length) && (
+                      <p className="mt-1 text-[11px] leading-relaxed text-red-600">
+                        {zatcaFailureSummary.message ??
+                          zatcaFailureSummary.errors?.map(item => [item.code, item.message].filter(Boolean).join(': ')).join('; ') ??
+                          zatcaFailureSummary.errorCodes?.join(', ')}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-xs text-gray-500">

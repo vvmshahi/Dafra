@@ -46,6 +46,7 @@ interface RequestBody {
   otp?: unknown
   functionalityMap?: unknown
   dryRun?: unknown
+  forceReconnect?: unknown
 }
 
 const STEP_ORDER: OnboardingStatus[] = [
@@ -125,7 +126,6 @@ Deno.serve(async (req: Request) => {
     const body = await readBody(req)
     const owner = await requireTenantOwner(db, req)
     setTrace(trace, 'auth_checked', 'success', 'Authenticated tenant owner confirmed.')
-    logOnboardingStage('auth loaded')
     const branchId = body.branchId
 
     if (!isUuid(branchId)) {
@@ -236,6 +236,27 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'This branch must be upgraded to ZATCA Phase 2 first.', trace }, 400)
     }
 
+    const existingStatus = await loadSafeOnboardingStatus(db, branch.id, owner.tenantId)
+    if (
+      existingStatus.onboardingStatus === 'production_connected' &&
+      body.forceReconnect !== true
+    ) {
+      setTrace(trace, 'seller_data_validated', 'failed', 'Branch is already connected to ZATCA production.')
+      skipPendingTrace(trace)
+      return jsonResponse({
+        ok: false,
+        branchId: branch.id,
+        environment: 'production',
+        onboardingStatus: 'production_connected',
+        functionalityMap: existingStatus.functionalityMap,
+        connectedAt: existingStatus.connectedAt,
+        productionCsidExists: existingStatus.productionCsidExists,
+        productionSecretExists: existingStatus.productionSecretExists,
+        error: 'This branch is already connected. Use the advanced reconnect action to replace production credentials.',
+        trace,
+      }, 409)
+    }
+
     const dryRun = body.dryRun !== false
     const tenant = await loadTenant(db, owner.tenantId)
     logOnboardingStage('seller data loaded', { branchId: branch.id, tenantId: owner.tenantId })
@@ -265,8 +286,10 @@ Deno.serve(async (req: Request) => {
         dryRun: true,
         branchId: branch.id,
         environment: 'production',
-        onboardingStatus: 'production_connected',
-        steps: STEP_ORDER,
+        onboardingStatus: existingStatus.onboardingStatus === 'production_connected'
+          ? 'production_connected'
+          : 'not_started',
+        steps: [],
         functionalityMap: body.functionalityMap,
         complianceSampleResults,
         message: 'Dry run completed. No ZATCA production APIs were called and no secrets were stored.',
@@ -326,7 +349,7 @@ Deno.serve(async (req: Request) => {
             lastError: message,
           })
         } catch (saveErr) {
-          console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance CSID failure save failed:', safeDiagnosticField(safeErrorMessage(saveErr), 300))
+          console.error('[zatca-onboard-production] compliance CSID failure save failed:', safeDiagnosticField(safeErrorMessage(saveErr), 300))
         }
         skipPendingTrace(trace)
         return jsonResponse({
@@ -341,7 +364,6 @@ Deno.serve(async (req: Request) => {
     })
     logOnboardingStage('compliance CSID requested', {
       branchId: branch.id,
-      requestId: compliance.requestID,
     })
 
     const encryptedComplianceCsid = await encryptText(compliance.binarySecurityToken, encryptionSecret)
@@ -357,7 +379,6 @@ Deno.serve(async (req: Request) => {
     setTrace(trace, 'compliance_credentials_saved', 'success', 'Encrypted compliance credentials were saved.')
     logOnboardingStage('compliance credentials stored', {
       branchId: branch.id,
-      requestId: compliance.requestID,
     })
 
     let complianceSampleResults: ComplianceSampleResult[]
@@ -398,7 +419,7 @@ Deno.serve(async (req: Request) => {
           lastError: message,
         })
       } catch (saveErr) {
-        console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance generation failure save failed:', safeDiagnosticField(safeErrorMessage(saveErr), 300))
+        console.error('[zatca-onboard-production] compliance generation failure save failed:', safeDiagnosticField(safeErrorMessage(saveErr), 300))
       }
       skipPendingTrace(trace)
       return jsonResponse({ error: message, trace }, 501)
@@ -410,21 +431,17 @@ Deno.serve(async (req: Request) => {
       try {
         await saveFailedSampleDebugXml(db, owner, branch.id, complianceSampleResults)
       } catch (err) {
-        // TEMPORARY DEBUG: failed XML persistence is diagnostic only and must
-        // never turn a controlled sample rejection into EDGE_FUNCTION_ERROR.
-        console.error('[zatca-onboard-production] TEMPORARY DEBUG failed sample XML persistence threw:', safeErrorMessage(err))
+        console.error('[zatca-onboard-production] failed sample XML persistence skipped:', safeErrorMessage(err))
       }
 
-      // TEMPORARY DEBUG: return and log redacted ZATCA compliance diagnostics so
-      // the next live OTP attempt shows the real sample rejection reason.
       try {
-        console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance sample rejection:', JSON.stringify({
+        console.warn('[zatca-onboard-production] compliance sample rejection:', JSON.stringify({
           branchId: branch?.id,
           functionalityMap: body?.functionalityMap,
           complianceSampleResults: persistentComplianceSampleResults,
         }))
       } catch {
-        console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance sample rejection: diagnostics stringify failed')
+        console.warn('[zatca-onboard-production] compliance sample rejection: diagnostics stringify failed')
       }
 
       try {
@@ -438,9 +455,7 @@ Deno.serve(async (req: Request) => {
           lastError: 'Compliance sample invoices were not accepted.',
         })
       } catch (err) {
-        // TEMPORARY DEBUG: diagnostic persistence must not turn the original
-        // ZATCA sample rejection into EDGE_FUNCTION_ERROR.
-        console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance diagnostics save failed:', safeErrorMessage(err))
+        console.error('[zatca-onboard-production] compliance diagnostics save failed:', safeErrorMessage(err))
         try {
           await saveState(db, owner, csrParams, generated, {
             status: 'compliance_failed',
@@ -452,7 +467,7 @@ Deno.serve(async (req: Request) => {
             lastError: 'Compliance sample invoices were not accepted.',
           })
         } catch (fallbackErr) {
-          console.error('[zatca-onboard-production] TEMPORARY DEBUG fallback compliance save failed:', safeErrorMessage(fallbackErr))
+          console.error('[zatca-onboard-production] fallback compliance save failed:', safeErrorMessage(fallbackErr))
         }
       }
 
@@ -517,7 +532,7 @@ Deno.serve(async (req: Request) => {
             lastError: message,
           })
         } catch (saveErr) {
-          console.error('[zatca-onboard-production] TEMPORARY DEBUG production CSID failure save failed:', safeDiagnosticField(safeErrorMessage(saveErr), 300))
+          console.error('[zatca-onboard-production] production CSID failure save failed:', safeDiagnosticField(safeErrorMessage(saveErr), 300))
         }
         skipPendingTrace(trace)
         return jsonResponse({
@@ -562,15 +577,13 @@ Deno.serve(async (req: Request) => {
     })
   } catch (err) {
     const message = safeErrorMessage(err)
-    const debug = buildSafeDebugError(err, 'top-level')
+    const debug = buildSafeFailureLog(err, 'top-level')
     markFirstPendingFailed(trace, message)
     skipPendingTrace(trace)
-    console.error('[zatca-onboard-production] TEMPORARY DEBUG top-level failure:', JSON.stringify(debug))
+    console.error('[zatca-onboard-production] top-level failure:', JSON.stringify(debug))
     const status = message === 'Unauthorized' ? 401 : message.startsWith('Forbidden') ? 403 : 500
     return jsonResponse({
       error: message,
-      // TEMPORARY DEBUG: remove after live ZATCA onboarding crash is isolated.
-      debug,
       trace,
     }, status)
   }
@@ -776,14 +789,13 @@ async function saveFailedSampleDebugXml(
   results: ComplianceSampleResult[] | undefined,
 ): Promise<void> {
   try {
+    if (Deno.env.get('ZATCA_CAPTURE_DEBUG_XML') !== 'true') return
+
     const failed = (Array.isArray(results) ? results : []).find(result =>
       result?.status !== 'accepted' && typeof result?.debugSignedInvoiceXmlBase64 === 'string'
     )
     if (!failed?.debugSignedInvoiceXmlBase64) return
 
-    // TEMPORARY DEBUG: persist exact failed sample XML for local SDK validation.
-    // This stores signed invoice XML only; never OTP, private key, CSID secret,
-    // production secret, or encryption key.
     const signedInvoiceXmlBase64 = safeDebugString(failed.debugSignedInvoiceXmlBase64, 120_000)
     if (!signedInvoiceXmlBase64) return
 
@@ -802,13 +814,13 @@ async function saveFailedSampleDebugXml(
       })
 
     if (error) {
-      console.error('[zatca-onboard-production] TEMPORARY DEBUG failed sample XML save failed:', {
+      console.error('[zatca-onboard-production] failed sample XML save failed:', {
         message: error.message,
         code: error.code,
       })
     }
   } catch (err) {
-    console.error('[zatca-onboard-production] TEMPORARY DEBUG failed sample XML save crashed:', safeErrorMessage(err))
+    console.error('[zatca-onboard-production] failed sample XML save crashed:', safeErrorMessage(err))
   }
 }
 
@@ -820,16 +832,13 @@ function safeDebugString(value: unknown, maxLength: number): string | null {
 
 function logComplianceGenerationException(err: unknown): void {
   try {
-    // TEMPORARY DEBUG: top-level generation guard. Do not log XML, OTP, keys,
-    // CSID secrets, production secrets, encryption keys, or Authorization data.
-    console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance sample generation exception:', JSON.stringify({
+    console.error('[zatca-onboard-production] compliance sample generation exception:', JSON.stringify({
       sampleType: 'unknown',
       errorName: safeDiagnosticField(err instanceof Error ? err.name : typeof err, 120),
       message: safeDiagnosticField(err instanceof Error ? err.message : String(err ?? 'unknown'), 300),
-      stack: safeDiagnosticField(err instanceof Error ? err.stack : undefined, 1600),
     }))
   } catch {
-    console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance sample generation exception: diagnostics stringify failed')
+    console.error('[zatca-onboard-production] compliance sample generation exception: diagnostics stringify failed')
   }
 }
 
@@ -839,21 +848,20 @@ function logOnboardingStage(stage: string, context?: Record<string, unknown>): v
     for (const [key, value] of Object.entries(context ?? {})) {
       safeContext[key] = safeDiagnosticField(String(value ?? ''), 160)
     }
-    console.error('[zatca-onboard-production] TEMPORARY DEBUG stage:', JSON.stringify({
+    console.info('[zatca-onboard-production] stage:', JSON.stringify({
       stage: safeStageField(stage, 120),
       ...safeContext,
     }))
   } catch {
-    console.error('[zatca-onboard-production] TEMPORARY DEBUG stage: diagnostics stringify failed')
+    console.info('[zatca-onboard-production] stage: diagnostics stringify failed')
   }
 }
 
-function buildSafeDebugError(err: unknown, stage: string): Record<string, string | undefined> {
+function buildSafeFailureLog(err: unknown, stage: string): Record<string, string | undefined> {
   return {
     stage: safeStageField(stage, 120),
     errorName: safeDiagnosticField(err instanceof Error ? err.name : typeof err, 120),
     message: safeDiagnosticField(err instanceof Error ? err.message : String(err ?? 'unknown'), 500),
-    stack: safeDiagnosticField(err instanceof Error ? err.stack : undefined, 2400),
   }
 }
 

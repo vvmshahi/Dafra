@@ -24,6 +24,7 @@ interface OnboardingUpdate {
   complianceSampleResults?: ComplianceSampleResult[]
   lastError?: string | null
   connectedAt?: string | null
+  disconnectedAt?: string | null
 }
 
 export async function saveOnboardingState(db: any, update: OnboardingUpdate): Promise<void> {
@@ -53,6 +54,7 @@ export async function saveOnboardingState(db: any, update: OnboardingUpdate): Pr
   if (update.encryptedProductionSecret !== undefined) row.encrypted_production_secret = update.encryptedProductionSecret
   if (update.complianceSampleResults !== undefined) row.compliance_sample_results = update.complianceSampleResults
   if (update.connectedAt !== undefined) row.connected_at = update.connectedAt
+  if (update.disconnectedAt !== undefined) row.disconnected_at = update.disconnectedAt
 
   const { error } = await db
     .from('zatca_production_credentials')
@@ -76,6 +78,9 @@ export async function loadSafeOnboardingStatus(db: any, branchId: string, tenant
       certificate_valid_from,
       certificate_valid_to,
       connected_at,
+      disconnected_at,
+      encrypted_production_csid,
+      encrypted_production_secret,
       updated_at
     `)
     .eq('branch_id', branchId)
@@ -86,20 +91,11 @@ export async function loadSafeOnboardingStatus(db: any, branchId: string, tenant
   if (error) {
     console.error('[zatca-storage] loadSafeOnboardingStatus failed', {
       message: error.message,
-      details: error.details,
-      hint: error.hint,
       code: error.code,
-      stack: error instanceof Error ? error.stack : undefined,
       status,
       statusText,
-      query: {
-        table: 'zatca_production_credentials',
-        operation: 'select status fields',
-        branchId,
-        tenantId,
-        environment: 'production',
-        dataReturned: data !== null,
-      },
+      branchId,
+      tenantId,
     })
     throw new Error('Unable to load ZATCA production onboarding status')
   }
@@ -121,6 +117,9 @@ export async function loadSafeOnboardingStatus(db: any, branchId: string, tenant
     certificateValidFrom: data.certificate_valid_from,
     certificateValidTo: data.certificate_valid_to,
     connectedAt: data.connected_at,
+    disconnectedAt: data.disconnected_at,
+    productionCsidExists: !!data.encrypted_production_csid,
+    productionSecretExists: !!data.encrypted_production_secret,
     updatedAt: data.updated_at,
   }
 }

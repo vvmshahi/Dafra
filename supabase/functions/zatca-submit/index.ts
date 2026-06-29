@@ -939,6 +939,10 @@ async function loadSubmissionCredentials(db: any, branchId: string, tenantId: st
       onboarding_status,
     } = productionCredentials
 
+    if (onboarding_status === 'disconnected') {
+      return null
+    }
+
     if (onboarding_status !== 'production_connected') {
       throw new Error('Production ZATCA credentials are not connected')
     }
@@ -966,12 +970,6 @@ async function loadSubmissionCredentials(db: any, branchId: string, tenantId: st
     .eq('environment', 'sandbox')
     .eq('status', 'active')
     .maybeSingle()
-
-  console.log('[zatca-submit] sandbox cert lookup:', {
-    found: !!cert,
-    error: certErr?.message,
-    hasCsid: !!cert?.production_csid,
-  })
 
   if (certErr) throw new Error('Unable to load sandbox ZATCA certificate')
   if (!cert?.production_csid) return null
@@ -1017,6 +1015,88 @@ function summarizeZatcaResponse(body: any): Record<string, unknown> {
     errors: summarizeZatcaMessages([...errors, ...validationErrors]),
     warnings: summarizeZatcaMessages([...warnings, ...validationWarnings]),
   }
+}
+
+function safeSubmitDiagnosticSummary(diagnostics: SubmitDiagnostics): Record<string, unknown> {
+  const summary: Record<string, unknown> = {
+    invoiceId: diagnostics.invoiceId,
+    branchId: diagnostics.branchId,
+    environment: diagnostics.environment,
+    invoiceType: diagnostics.invoiceType,
+    endpointKind: diagnostics.endpointKind,
+    httpStatus: diagnostics.httpStatus,
+    validationStatus: diagnostics.validationStatus,
+    reportingStatus: diagnostics.reportingStatus,
+    clearanceStatus: diagnostics.clearanceStatus,
+    errorCodes: diagnostics.errorCodes,
+    warningCodes: diagnostics.warningCodes,
+    zatcaCounterNumber: diagnostics.zatcaCounterNumber,
+  }
+
+  const assertions: Record<string, boolean | undefined> = {
+    hashMatches: diagnostics.hashMatches,
+    qrHashMatches: diagnostics.qrHashMatches,
+    digestMatches: diagnostics.digestMatches,
+    storedHashMatches: diagnostics.storedHashMatches,
+    timestampMatches: diagnostics.timestampMatches,
+    certificateIssuerMatches: diagnostics.certificateIssuerMatches,
+    certificateSerialMatches: diagnostics.certificateSerialMatches,
+    privateKeyMatchesCertificate: diagnostics.privateKeyMatchesCertificate,
+  }
+  const safeAssertions = Object.fromEntries(
+    Object.entries(assertions).filter(([, value]) => typeof value === 'boolean'),
+  )
+  if (Object.keys(safeAssertions).length > 0) summary.assertions = safeAssertions
+  return summary
+}
+
+function safeZatcaText(value: unknown, maxLength = 220): string | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined
+  const cleaned = String(value)
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength)
+  if (!cleaned) return undefined
+  if (/otp|secret|token|certificate|private[_ -]?key|authorization|csr|<\?xml|<Invoice|signedInvoiceXmlBase64|signed_invoice_xml_base64|encryption key/i.test(cleaned)) {
+    return 'Sensitive detail redacted.'
+  }
+  return cleaned
+}
+
+function safeZatcaMessages(body: any, kind: 'error' | 'warning'): Array<{ code?: string; message?: string }> {
+  const validationResults = body?.validationResults ?? {}
+  const direct = kind === 'error' ? body?.errors : body?.warnings
+  const validation = kind === 'error'
+    ? validationResults?.errorMessages
+    : validationResults?.warningMessages
+  return [...arrayValue(direct), ...arrayValue(validation)]
+    .slice(0, 5)
+    .map((message: any) => ({
+      code: safeZatcaText(message?.code, 80),
+      message: safeZatcaText(message?.message, 240),
+    }))
+    .filter(message => message.code || message.message)
+}
+
+function buildSafeZatcaRecord(body: any, diagnostics: SubmitDiagnostics, invoiceStatus: string): Record<string, unknown> | null {
+  const warnings = safeZatcaMessages(body, 'warning')
+  const errors = safeZatcaMessages(body, 'error')
+  const record: Record<string, unknown> = {}
+
+  if (warnings.length > 0) record.warnings = warnings
+  if (invoiceStatus === 'failed') {
+    record.failureSummary = {
+      httpStatus: diagnostics.httpStatus,
+      validationStatus: diagnostics.validationStatus,
+      reportingStatus: diagnostics.reportingStatus,
+      clearanceStatus: diagnostics.clearanceStatus,
+      errorCodes: diagnostics.errorCodes ?? errors.map(error => error.code).filter(Boolean),
+      errors,
+    }
+  }
+
+  return Object.keys(record).length > 0 ? record : null
 }
 
 function zatcaMessageCodes(body: any, kind: 'error' | 'warning'): string[] {
@@ -1102,8 +1182,8 @@ function buildSafeFailureResponse(
   return {
     localValidation: {
       statusString,
-      message,
-      diagnostics,
+      message: safeZatcaText(message, 240),
+      diagnostics: safeSubmitDiagnosticSummary(diagnostics),
     },
   }
 }
@@ -1114,7 +1194,7 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
   invoiceStatus: string
   diagnostics?: SubmitDiagnostics
 }> {
-  console.log('[zatca-submit] processInvoice:', invoiceId)
+  console.info('[zatca-submit] processInvoice:', { invoiceId })
 
   const { data: inv, error: invErr } = await db
     .from('invoices')
@@ -1132,7 +1212,7 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
   }
 
   if (['reported', 'cleared'].includes(inv.zatca_status)) {
-    console.log('[zatca-submit] already submitted:', inv.zatca_status)
+    console.info('[zatca-submit] already submitted:', { invoiceId, invoiceStatus: inv.zatca_status })
     return { invoiceStatus: inv.zatca_status }
   }
 
@@ -1168,13 +1248,13 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
   try {
     credentials = await loadSubmissionCredentials(db, inv.branch_id, inv.tenant_id)
   } catch (err: any) {
-    console.warn('[zatca-submit] credentials unavailable:', err.message)
-    await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, err.message)
+    console.warn('[zatca-submit] credentials unavailable:', safeZatcaText(err.message, 180))
+    await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, safeZatcaText(err.message, 180) ?? 'credentials unavailable')
     return { invoiceStatus: 'pending' }
   }
 
   if (!credentials) {
-    console.log('[zatca-submit] no active Phase 2 credentials — marking not_submitted')
+    console.info('[zatca-submit] no active Phase 2 credentials:', { invoiceId, branchId: inv.branch_id })
     await db.from('invoices').update({ zatca_status: 'not_submitted' }).eq('id', invoiceId)
     return { invoiceStatus: 'not_submitted' }
   }
@@ -1192,7 +1272,7 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     const secretKey = credentials.privateKey
 
     const isSimplified = inv.zatca_invoice_type === 'simplified'
-    console.log('[zatca-submit] building XML, isSimplified:', isSimplified)
+    console.info('[zatca-submit] building XML:', { invoiceId, branchId: inv.branch_id, isSimplified })
     const previous = await resolvePreviousInvoiceHash(db, inv)
     const zatcaCounterNumber = await resolveZatcaCounterNumber(db, inv)
     diagnostics = {
@@ -1216,7 +1296,7 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
       requireBuyer:     !isSimplified,
     })
 
-    console.log('[zatca-submit] signing XML...')
+    console.info('[zatca-submit] signing XML:', { invoiceId, environment: credentials.environment })
     const {
       signedXml,
       invoiceHash,
@@ -1229,7 +1309,7 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
       ...signingDiagnostics,
       storedHashMatches: !inv.zatca_xml_hash || inv.zatca_xml_hash === invoiceHash,
     }
-    console.log('[zatca-submit] signed OK, hash prefix:', invoiceHash.substring(0, 20))
+    console.info('[zatca-submit] signed invoice:', { invoiceId, environment: credentials.environment })
 
     const env       = credentials.environment
     const baseUrl   = ZATCA_URLS[env]
@@ -1238,7 +1318,12 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     const creds     = btoa(`${credentials.productionCsid}:${credentials.productionSecret}`)
     const xmlB64    = btoa(unescape(encodeURIComponent(signedXml)))
 
-    console.log('[zatca-submit] submitting to ZATCA:', endpoint)
+    console.info('[zatca-submit] submitting to ZATCA:', {
+      invoiceId,
+      branchId: inv.branch_id,
+      environment: env,
+      endpointKind: diagnostics.endpointKind,
+    })
     const zatcaRes  = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -1250,9 +1335,12 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     })
 
     const responseText = await zatcaRes.text()
-    console.log('[zatca-submit] ZATCA status:', zatcaRes.status)
+    console.info('[zatca-submit] ZATCA status:', { invoiceId, httpStatus: zatcaRes.status })
     const zatcaBody = (() => { try { return JSON.parse(responseText) } catch { return {} } })()
-    console.log('[zatca-submit] ZATCA response summary:', JSON.stringify(summarizeZatcaResponse(zatcaBody)))
+    console.info('[zatca-submit] ZATCA response summary:', JSON.stringify({
+      invoiceId,
+      ...summarizeZatcaResponse(zatcaBody),
+    }))
 
     const reportingStatus = zatcaBody?.reportingStatus as string | undefined
     const clearanceStatus = zatcaBody?.clearanceStatus as string | undefined
@@ -1274,7 +1362,7 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
       newStatus = clearanceStatus === 'CLEARED' ? 'cleared' : 'failed'
     }
     if ((diagnostics.errorCodes ?? []).length > 0) newStatus = 'failed'
-    console.log('[zatca-submit] final status:', newStatus)
+    console.info('[zatca-submit] final status:', { invoiceId, invoiceStatus: newStatus })
 
     await db.from('invoices').update({
       zatca_status:             newStatus,
@@ -1286,7 +1374,7 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
       zatca_clearance_status:   clearanceStatus ?? null,
       zatca_clearance_response: isSimplified ? null : (zatcaBody ?? null),
       zatca_reporting_response: isSimplified ? (zatcaBody ?? null) : null,
-      zatca_warnings:           zatcaBody?.warnings?.length ? { warnings: zatcaBody.warnings } : null,
+      zatca_warnings:           buildSafeZatcaRecord(zatcaBody, diagnostics, newStatus),
       zatca_prev_invoice_hash:  previous.previousHash,
       zatca_counter_number:     zatcaCounterNumber,
     }).eq('id', invoiceId)
@@ -1298,30 +1386,46 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     }
 
     if (newStatus === 'failed') {
-      await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, JSON.stringify(zatcaBody?.errors))
+      await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, (diagnostics.errorCodes ?? []).join(',') || 'zatca rejected invoice')
     }
 
-    return { invoiceStatus: newStatus, diagnostics }
+    return { invoiceStatus: newStatus }
 
   } catch (err: any) {
     if (isZatcaSubmitAssertionError(err)) {
       diagnostics = { ...diagnostics, ...err.diagnostics }
-      console.error('[zatca-submit] local validation failed:', err.statusString, JSON.stringify(diagnostics))
+      console.error('[zatca-submit] local validation failed:', JSON.stringify({
+        statusString: err.statusString,
+        ...safeSubmitDiagnosticSummary(diagnostics),
+      }))
       await db.from('invoices').update({
         zatca_status: 'failed',
         zatca_reporting_response: buildSafeFailureResponse(err.statusString, err.message, diagnostics),
-        zatca_warnings: null,
+        zatca_warnings: {
+          failureSummary: {
+            statusString: err.statusString,
+            message: safeZatcaText(err.message, 240),
+            diagnostics: safeSubmitDiagnosticSummary(diagnostics),
+          },
+        },
       }).eq('id', invoiceId)
-      return { invoiceStatus: 'failed', diagnostics }
+      return { invoiceStatus: 'failed' }
     }
 
-    console.error('[zatca-submit] error:', err.message, '\n', err.stack)
+    console.error('[zatca-submit] error:', safeZatcaText(err.message ?? 'unknown', 240))
     await db.from('invoices').update({
       zatca_status: 'failed',
       zatca_reporting_response: buildSafeFailureResponse('SUBMISSION_EXCEPTION', err.message ?? 'unknown', diagnostics),
+      zatca_warnings: {
+        failureSummary: {
+          statusString: 'SUBMISSION_EXCEPTION',
+          message: safeZatcaText(err.message ?? 'unknown', 240),
+          diagnostics: safeSubmitDiagnosticSummary(diagnostics),
+        },
+      },
     }).eq('id', invoiceId)
-    await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, err.message ?? 'unknown')
-    return { invoiceStatus: 'failed', diagnostics }
+    await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, safeZatcaText(err.message, 180) ?? 'submission exception')
+    return { invoiceStatus: 'failed' }
   }
 }
 
@@ -1361,6 +1465,12 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /debug?branchId=... — sandbox-only cert digest diagnostics ──
     if (req.method === 'GET' && url.searchParams.has('branchId')) {
+      if (Deno.env.get('ZATCA_ENABLE_SUBMIT_DEBUG') !== 'true') {
+        return new Response(JSON.stringify({ error: 'Debug diagnostics are disabled' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
       const branchId = url.searchParams.get('branchId')!
 
       const { data: cert } = await supabase
@@ -1418,8 +1528,9 @@ Deno.serve(async (req: Request) => {
     })
 
   } catch (err: any) {
-    console.error('[zatca-submit] unexpected error:', err)
-    return new Response(JSON.stringify({ error: err.message ?? 'Internal server error' }), {
+    const message = safeZatcaText(err.message ?? 'unknown', 240) ?? 'Internal server error'
+    console.error('[zatca-submit] unexpected error:', message)
+    return new Response(JSON.stringify({ error: message }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
