@@ -23,9 +23,11 @@ import { generateCSR } from '@/lib/zatca/csr'
 import {
   getProductionOnboardingStatus,
   onboardProductionZatca,
+  preflightProductionZatca,
   requestComplianceCsid,
   requestProductionCsid,
   type ProductionOnboardingResponse,
+  type ProductionOnboardingTraceEntry,
   type ProductionOnboardingStatus,
   type ZatcaFunctionalityMap,
 } from '@/lib/zatca/api'
@@ -712,6 +714,70 @@ function formatSampleType(type: string): string {
   return type.replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase())
 }
 
+function formatTraceStage(stage: string): string {
+  return stage.replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function formatTraceMessages(values: ProductionOnboardingTraceEntry['errors']): string | null {
+  if (!values?.length) return null
+  return values
+    .map(item => [item.code, item.message].filter(Boolean).join(': '))
+    .filter(Boolean)
+    .join('; ') || null
+}
+
+function ZatcaDebugTrace({ trace }: { trace?: ProductionOnboardingTraceEntry[] }) {
+  const [open, setOpen] = useState(true)
+  if (!trace?.length) return null
+
+  return (
+    <div className="border border-amber-200 bg-amber-50 rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(prev => !prev)}
+        className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left"
+      >
+        <div>
+          <p className="text-[10px] font-bold text-amber-900 uppercase tracking-wide">TEMPORARY DEBUG</p>
+          <p className="text-xs font-semibold text-amber-900">ZATCA Debug Trace</p>
+        </div>
+        <ChevronDown size={14} className={`text-amber-800 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="border-t border-amber-200 bg-white/60 p-3 space-y-2">
+          {trace.map((entry, index) => {
+            const errors = formatTraceMessages(entry.errors)
+            const warnings = formatTraceMessages(entry.warnings)
+            const color =
+              entry.status === 'success' ? 'text-emerald-700' :
+              entry.status === 'failed' ? 'text-red-700' :
+              entry.status === 'skipped' ? 'text-gray-500' :
+              'text-amber-700'
+            return (
+              <div key={`${entry.stage}-${index}`} className="rounded-lg border border-amber-100 bg-white px-3 py-2">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-[11px] font-semibold text-gray-800">{formatTraceStage(entry.stage)}</p>
+                  <span className={`text-[10px] font-bold uppercase ${color}`}>{entry.status}</span>
+                </div>
+                <pre className="mt-1 text-[10px] leading-relaxed text-gray-600 whitespace-pre-wrap font-mono">
+{[
+  entry.timestamp,
+  entry.message,
+  entry.httpStatus ? `HTTP ${entry.httpStatus}` : undefined,
+  warnings ? `Warnings: ${warnings}` : undefined,
+  errors ? `Errors: ${errors}` : undefined,
+].filter(Boolean).join('\n')}
+                </pre>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
   const { profile } = useAuth()
   const [otp, setOtp] = useState('')
@@ -719,6 +785,7 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
   const [dryRun, setDryRun] = useState(true)
   const [status, setStatus] = useState<ProductionOnboardingResponse | null>(null)
   const [loading, setLoading] = useState(false)
+  const [preflightLoading, setPreflightLoading] = useState(false)
   const [statusLoading, setStatusLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -772,9 +839,57 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
       setStatus(res)
       setOtp('')
     } catch (err: any) {
+      const payload = err?.payload as ProductionOnboardingResponse | undefined
+      if (payload?.trace) {
+        setStatus({
+          ok: false,
+          branchId: branch.id,
+          environment: 'production',
+          onboardingStatus: payload.onboardingStatus ?? 'failed',
+          functionalityMap: payload.functionalityMap ?? (functionalityMap || undefined),
+          complianceSampleResults: payload.complianceSampleResults,
+          trace: payload.trace,
+        })
+      }
       setError(err.message ?? 'ZATCA production onboarding failed')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const runPreflight = async () => {
+    if (!isOwner) {
+      setError('Only the tenant owner can run ZATCA production preflight.')
+      return
+    }
+    if (!functionalityMap) {
+      setError('Choose what this billing system will issue before running preflight.')
+      return
+    }
+    setPreflightLoading(true)
+    setError(null)
+    try {
+      const res = await preflightProductionZatca({
+        branchId: branch.id,
+        functionalityMap,
+      })
+      setStatus(res)
+    } catch (err: any) {
+      const payload = err?.payload as ProductionOnboardingResponse | undefined
+      if (payload?.trace) {
+        setStatus({
+          ok: false,
+          preflight: true,
+          branchId: branch.id,
+          environment: 'production',
+          onboardingStatus: payload.onboardingStatus ?? 'failed',
+          functionalityMap: payload.functionalityMap ?? functionalityMap,
+          trace: payload.trace,
+        })
+      }
+      setError(err.message ?? 'ZATCA production preflight failed')
+    } finally {
+      setPreflightLoading(false)
     }
   }
 
@@ -856,14 +971,25 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
         </div>
       )}
 
-      <button
-        onClick={connect}
-        disabled={!isOwner || loading || otp.length !== 6 || !functionalityMap}
-        className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50"
-      >
-        {loading ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}
-        {loading ? 'Connecting to ZATCA…' : 'Connect to ZATCA Production'}
-      </button>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <button
+          onClick={runPreflight}
+          disabled={!isOwner || preflightLoading || loading || !functionalityMap}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-amber-200 text-amber-800 text-sm font-semibold hover:bg-amber-50 disabled:opacity-50 transition-colors"
+        >
+          {preflightLoading ? <Loader2 size={14} className="animate-spin" /> : <FlaskConical size={14} />}
+          {preflightLoading ? 'Running preflight…' : 'Preflight only'}
+        </button>
+
+        <button
+          onClick={connect}
+          disabled={!isOwner || loading || preflightLoading || otp.length !== 6 || !functionalityMap}
+          className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50"
+        >
+          {loading ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}
+          {loading ? 'Connecting to ZATCA…' : 'Connect to ZATCA Production'}
+        </button>
+      </div>
 
       <div className="border-t border-gray-100 pt-4 space-y-3">
         <div className="flex items-center justify-between">
@@ -904,6 +1030,7 @@ function ProductionOnboardingPanel({ branch }: { branch: BranchWithCert }) {
         {status?.message && (
           <p className="text-[11px] text-gray-500 leading-relaxed">{status.message}</p>
         )}
+        <ZatcaDebugTrace trace={status?.trace} />
       </div>
     </div>
   )

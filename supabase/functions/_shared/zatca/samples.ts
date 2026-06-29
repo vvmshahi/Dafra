@@ -59,6 +59,17 @@ export interface SubmitComplianceSamplesParams {
   complianceCertificate: string
   privateKeyPem: string
   seller: SampleSeller
+  onTrace?: (event: ComplianceSampleTraceEvent) => void
+}
+
+export interface ComplianceSampleTraceEvent {
+  stage: 'sample_payload_built' | 'zatca_sample_request_started' | 'zatca_sample_response_received'
+  type: ComplianceSampleType
+  status: 'success' | 'failed'
+  httpStatus?: number
+  message?: string
+  redactedWarnings?: Array<{ code?: string; message?: string }>
+  redactedErrors?: Array<{ code?: string; message?: string }>
 }
 
 interface SignedCompliancePayload {
@@ -126,8 +137,20 @@ export async function submitComplianceSamples(params: SubmitComplianceSamplesPar
       logComplianceSampleStage('sample payload build started', type)
       payload = await buildCompliancePayload(params, type, i + 1)
       logComplianceSampleStage('sample payload build completed', type)
+      params.onTrace?.({
+        stage: 'sample_payload_built',
+        type,
+        status: 'success',
+        message: 'Compliance sample payload built locally.',
+      })
     } catch (err) {
       logComplianceSampleException(type, 'payload build', err)
+      params.onTrace?.({
+        stage: 'sample_payload_built',
+        type,
+        status: 'failed',
+        message: safeLocalDiagnosticMessage(err),
+      })
       results.push(buildLocalComplianceFailure(type, 'PAYLOAD_BUILD_FAILED', err))
       for (const remainingType of sampleTypes.slice(i + 1)) {
         results.push({
@@ -206,6 +229,12 @@ async function submitComplianceSample(
     const requestBody = await buildFinalComplianceRequestBody(payload)
 
     logComplianceSampleStage('ZATCA sample submit started', payload.type)
+    params.onTrace?.({
+      stage: 'zatca_sample_request_started',
+      type: payload.type,
+      status: 'success',
+      message: 'Compliance sample request started.',
+    })
     const res = await fetch(`${params.baseUrl}/compliance/invoices`, {
       method: 'POST',
       headers: {
@@ -222,6 +251,15 @@ async function submitComplianceSample(
 
     const body = await safeJson(res)
     const result = safeSummarizeComplianceResponse(payload.type, res.status, body, res.headers)
+    params.onTrace?.({
+      stage: 'zatca_sample_response_received',
+      type: payload.type,
+      status: result.status === 'accepted' ? 'success' : 'failed',
+      httpStatus: res.status,
+      message: result.message,
+      redactedWarnings: result.redactedWarnings,
+      redactedErrors: result.redactedErrors,
+    })
 
     // TEMPORARY DEBUG: expose only redacted compliance diagnostics while production
     // onboarding rejection cause is being isolated. Do not add XML or credentials here.
@@ -242,6 +280,14 @@ async function submitComplianceSample(
     logComplianceSampleException(payload.type, statusString, err)
     const result = buildLocalComplianceFailure(payload.type, statusString, err)
     attachFailedSampleXmlDebug(result, payload)
+    params.onTrace?.({
+      stage: 'zatca_sample_response_received',
+      type: payload.type,
+      status: 'failed',
+      message: result.message,
+      redactedWarnings: result.redactedWarnings,
+      redactedErrors: result.redactedErrors,
+    })
     return result
   }
 }

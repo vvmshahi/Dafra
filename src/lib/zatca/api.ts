@@ -61,7 +61,10 @@ async function edgePostSafe<T>(fnName: string, body: Record<string, unknown>): P
     const diagnostics = fnName === 'zatca-onboard-production'
       ? formatProductionDebugDiagnostics(payload?.complianceSampleResults)
       : ''
-    throw new Error(diagnostics ? `${message}\n\n${diagnostics}` : message)
+    const error = new Error(diagnostics ? `${message}\n\n${diagnostics}` : message)
+    ;(error as any).payload = payload
+    ;(error as any).trace = payload?.trace
+    throw error
   }
   return payload as T
 }
@@ -177,8 +180,19 @@ export interface ProductionComplianceSampleResult {
   message?: string
 }
 
+export interface ProductionOnboardingTraceEntry {
+  stage: string
+  status: 'pending' | 'success' | 'failed' | 'skipped'
+  timestamp?: string
+  message?: string
+  httpStatus?: number
+  warnings?: Array<{ code?: string; message?: string }>
+  errors?: Array<{ code?: string; message?: string }>
+}
+
 export interface ProductionOnboardingResponse {
   ok: boolean
+  preflight?: boolean
   dryRun?: boolean
   branchId: string
   environment: 'production'
@@ -189,6 +203,7 @@ export interface ProductionOnboardingResponse {
   connectedAt?: string | null
   updatedAt?: string | null
   message?: string
+  trace?: ProductionOnboardingTraceEntry[]
 }
 
 export async function onboardProductionZatca(params: {
@@ -203,6 +218,17 @@ export async function onboardProductionZatca(params: {
     otp: params.otp,
     functionalityMap: params.functionalityMap,
     dryRun: params.dryRun ?? true,
+  })
+}
+
+export async function preflightProductionZatca(params: {
+  branchId: string
+  functionalityMap: ZatcaFunctionalityMap
+}): Promise<ProductionOnboardingResponse> {
+  return edgePostSafe<ProductionOnboardingResponse>('zatca-onboard-production', {
+    action: 'preflight',
+    branchId: params.branchId,
+    functionalityMap: params.functionalityMap,
   })
 }
 

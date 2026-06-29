@@ -41,7 +41,7 @@ import {
 import { loadSafeOnboardingStatus, saveOnboardingState } from '../_shared/zatca/storage.ts'
 
 interface RequestBody {
-  action?: 'onboard' | 'status'
+  action?: 'onboard' | 'status' | 'preflight'
   branchId?: unknown
   otp?: unknown
   functionalityMap?: unknown
@@ -56,13 +56,65 @@ const STEP_ORDER: OnboardingStatus[] = [
   'production_connected',
 ]
 
+type TraceStatus = 'pending' | 'success' | 'failed' | 'skipped'
+
+type TraceStage =
+  | 'request_received'
+  | 'auth_checked'
+  | 'owner_branch_loaded'
+  | 'seller_data_validated'
+  | 'feature_flag_checked'
+  | 'csr_generated'
+  | 'compliance_csid_request_started'
+  | 'compliance_csid_request_completed'
+  | 'compliance_credentials_saved'
+  | 'compliance_samples_started'
+  | 'sample_payload_built'
+  | 'zatca_sample_request_started'
+  | 'zatca_sample_response_received'
+  | 'production_csid_request_started'
+  | 'production_csid_request_completed'
+  | 'production_credentials_saved'
+
+interface TraceEntry {
+  stage: TraceStage
+  status: TraceStatus
+  timestamp?: string
+  message?: string
+  httpStatus?: number
+  warnings?: Array<{ code?: string; message?: string }>
+  errors?: Array<{ code?: string; message?: string }>
+}
+
+const TRACE_STAGES: TraceStage[] = [
+  'request_received',
+  'auth_checked',
+  'owner_branch_loaded',
+  'seller_data_validated',
+  'feature_flag_checked',
+  'csr_generated',
+  'compliance_csid_request_started',
+  'compliance_csid_request_completed',
+  'compliance_credentials_saved',
+  'compliance_samples_started',
+  'sample_payload_built',
+  'zatca_sample_request_started',
+  'zatca_sample_response_received',
+  'production_csid_request_started',
+  'production_csid_request_completed',
+  'production_credentials_saved',
+]
+
 Deno.serve(async (req: Request) => {
+  const trace = createTrace()
+  setTrace(trace, 'request_received', 'success', 'Production onboarding request reached the Edge Function.')
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { status: 200, headers: corsHeaders })
   }
 
   if (req.method !== 'POST') {
-    return jsonResponse({ error: 'Method not allowed' }, 405)
+    return jsonResponse({ error: 'Method not allowed', trace }, 405)
   }
 
   try {
@@ -72,30 +124,116 @@ Deno.serve(async (req: Request) => {
     )
     const body = await readBody(req)
     const owner = await requireTenantOwner(db, req)
+    setTrace(trace, 'auth_checked', 'success', 'Authenticated tenant owner confirmed.')
     logOnboardingStage('auth loaded')
     const branchId = body.branchId
 
     if (!isUuid(branchId)) {
-      return jsonResponse({ error: 'Invalid branch' }, 400)
+      setTrace(trace, 'owner_branch_loaded', 'failed', 'Branch ID was invalid.')
+      skipPendingTrace(trace)
+      return jsonResponse({ error: 'Invalid branch', trace }, 400)
     }
 
     const branch = await loadOwnedBranch(db, branchId, owner.tenantId)
+    setTrace(trace, 'owner_branch_loaded', 'success', 'Owner branch loaded for this tenant.')
 
     if (body.action === 'status') {
       const status = await loadSafeOnboardingStatus(db, branch.id, owner.tenantId)
-      return jsonResponse({ ok: true, ...status })
+      skipPendingTrace(trace, 'Status check only.')
+      return jsonResponse({ ok: true, ...status, trace })
+    }
+
+    if (body.action === 'preflight') {
+      if (!isFunctionalityMap(body.functionalityMap)) {
+        setTrace(trace, 'seller_data_validated', 'failed', 'Select a ZATCA invoice capability before preflight.')
+        skipPendingTrace(trace)
+        return jsonResponse({
+          ok: false,
+          preflight: true,
+          branchId: branch.id,
+          environment: 'production',
+          onboardingStatus: 'failed',
+          error: 'Select a ZATCA invoice capability before production onboarding.',
+          trace,
+        }, 400)
+      }
+
+      if ((branch.zatca_phase ?? 1) < 2) {
+        setTrace(trace, 'seller_data_validated', 'failed', 'Branch is not upgraded to ZATCA Phase 2.')
+        skipPendingTrace(trace)
+        return jsonResponse({
+          ok: false,
+          preflight: true,
+          branchId: branch.id,
+          environment: 'production',
+          onboardingStatus: 'failed',
+          error: 'This branch must be upgraded to ZATCA Phase 2 first.',
+          trace,
+        }, 400)
+      }
+
+      const tenant = await loadTenant(db, owner.tenantId)
+      const csrParams = buildCsrParams(branch, tenant, body.functionalityMap)
+      const missing = [
+        ...validateCsrInputs(csrParams),
+        ...validateSellerLegalData(branch, tenant, csrParams),
+      ]
+      if (missing.length > 0) {
+        setTrace(trace, 'seller_data_validated', 'failed', `Missing seller data: ${missing.join(', ')}.`)
+        skipPendingTrace(trace)
+        return jsonResponse({
+          ok: false,
+          preflight: true,
+          branchId: branch.id,
+          environment: 'production',
+          onboardingStatus: 'failed',
+          functionalityMap: body.functionalityMap,
+          error: `Complete the branch/taxpayer ZATCA data first: ${missing.join(', ')}.`,
+          trace,
+        }, 200)
+      }
+
+      setTrace(trace, 'seller_data_validated', 'success', 'Seller legal data is sufficient for production onboarding.')
+      const allowed = productionCallsAllowed()
+      setTrace(
+        trace,
+        'feature_flag_checked',
+        allowed ? 'success' : 'failed',
+        allowed
+          ? 'Production ZATCA calls are currently enabled.'
+          : 'Production ZATCA calls are currently disabled.',
+      )
+      skipPendingTrace(trace, 'Preflight only. No credential generation or ZATCA calls were used.')
+      return jsonResponse({
+        ok: allowed,
+        preflight: true,
+        branchId: branch.id,
+        environment: 'production',
+        onboardingStatus: allowed ? 'not_started' : 'failed',
+        functionalityMap: body.functionalityMap,
+        message: allowed
+          ? 'Preflight passed. Production calls are enabled.'
+          : 'Preflight completed. Production calls are still disabled.',
+        trace,
+      })
     }
 
     if (!validateOtp(body.otp)) {
-      return jsonResponse({ error: 'Enter the 6-digit OTP from the FATOORA portal.' }, 400)
+      setTrace(trace, 'seller_data_validated', 'failed', 'Required 6-digit code was missing or invalid before seller validation.')
+      skipPendingTrace(trace)
+      return jsonResponse({ error: 'Enter the 6-digit OTP from the FATOORA portal.', trace }, 400)
     }
 
     if (!isFunctionalityMap(body.functionalityMap)) {
-      return jsonResponse({ error: 'Select a ZATCA invoice capability before production onboarding.' }, 400)
+      setTrace(trace, 'seller_data_validated', 'failed', 'Invoice capability was not selected.')
+      skipPendingTrace(trace)
+      return jsonResponse({ error: 'Select a ZATCA invoice capability before production onboarding.', trace }, 400)
     }
 
     if ((branch.zatca_phase ?? 1) < 2) {
-      return jsonResponse({ error: 'This branch must be upgraded to ZATCA Phase 2 first.' }, 400)
+      setTrace(trace, 'seller_data_validated', 'failed', 'Branch is not upgraded to ZATCA Phase 2.')
+      skipPendingTrace(trace)
+      return jsonResponse({ error: 'This branch must be upgraded to ZATCA Phase 2 first.', trace }, 400)
     }
 
     const dryRun = body.dryRun !== false
@@ -104,16 +242,24 @@ Deno.serve(async (req: Request) => {
     const csrParams = buildCsrParams(branch, tenant, body.functionalityMap)
     const missing = validateCsrInputs(csrParams)
     if (missing.length > 0) {
+      setTrace(trace, 'seller_data_validated', 'failed', `Missing CSR data: ${missing.join(', ')}.`)
+      skipPendingTrace(trace)
       return jsonResponse({
         error: `Complete the branch/taxpayer ZATCA data first: ${missing.join(', ')}.`,
+        trace,
       }, 400)
     }
 
     const generated = await generateProductionCsr(csrParams)
+    setTrace(trace, 'csr_generated', 'success', 'Generation completed inside the Edge Function.')
     logOnboardingStage('CSR generated', { branchId: branch.id })
 
     if (dryRun) {
       const complianceSampleResults = simulatedComplianceResults(body.functionalityMap)
+      setTrace(trace, 'seller_data_validated', 'skipped', 'Dry run skips full live seller legal validation.')
+      setTrace(trace, 'feature_flag_checked', 'skipped', 'Dry run does not require the production-call feature flag.')
+      setTrace(trace, 'compliance_samples_started', 'skipped', 'Dry run uses simulated compliance sample results.')
+      skipPendingTrace(trace, 'Dry run completed without ZATCA calls or credential storage.')
       return jsonResponse({
         ok: true,
         dryRun: true,
@@ -124,21 +270,30 @@ Deno.serve(async (req: Request) => {
         functionalityMap: body.functionalityMap,
         complianceSampleResults,
         message: 'Dry run completed. No ZATCA production APIs were called and no secrets were stored.',
+        trace,
       })
     }
 
     const missingSellerSettings = validateSellerLegalData(branch, tenant, csrParams)
     if (missingSellerSettings.length > 0) {
+      setTrace(trace, 'seller_data_validated', 'failed', `Missing seller legal data: ${missingSellerSettings.join(', ')}.`)
+      skipPendingTrace(trace)
       return jsonResponse({
         error: `Missing seller legal information required for ZATCA onboarding. Complete: ${missingSellerSettings.join(', ')}.`,
+        trace,
       }, 400)
     }
+    setTrace(trace, 'seller_data_validated', 'success', 'Seller legal data was validated for real production onboarding.')
 
     if (!productionCallsAllowed()) {
+      setTrace(trace, 'feature_flag_checked', 'failed', 'Production onboarding feature flag is disabled.')
+      skipPendingTrace(trace)
       return jsonResponse({
         error: 'Production onboarding is disabled. Set ALLOW_ZATCA_PRODUCTION_ONBOARDING=true in Supabase Edge Function secrets before using a live OTP.',
+        trace,
       }, 403)
     }
+    setTrace(trace, 'feature_flag_checked', 'success', 'Production onboarding feature flag is enabled.')
 
     const encryptionSecret = requireEnv('ZATCA_SERVER_ENCRYPTION_KEY')
     const encryptedPrivateKey = await encryptText(generated.privateKeyPem, encryptionSecret)
@@ -148,10 +303,24 @@ Deno.serve(async (req: Request) => {
       encryptedPrivateKey,
     })
 
-    const compliance = await requestComplianceCsid({
-      baseUrl: PRODUCTION_CORE_BASE_URL,
-      csrPem: generated.csrPem,
-      otp: body.otp,
+    let complianceHttpStatus: number | undefined
+    setTrace(trace, 'compliance_csid_request_started', 'success', 'Production compliance CSID request started.')
+    let compliance
+    try {
+      compliance = await requestComplianceCsid({
+        baseUrl: PRODUCTION_CORE_BASE_URL,
+        csrPem: generated.csrPem,
+        otp: body.otp,
+        onResponse: response => { complianceHttpStatus = response.httpStatus },
+      })
+    } catch (err) {
+      setTrace(trace, 'compliance_csid_request_completed', 'failed', safeErrorMessage(err), {
+        httpStatus: complianceHttpStatus,
+      })
+      throw err
+    }
+    setTrace(trace, 'compliance_csid_request_completed', 'success', 'Production compliance CSID request completed.', {
+      httpStatus: complianceHttpStatus,
     })
     logOnboardingStage('compliance CSID requested', {
       branchId: branch.id,
@@ -168,6 +337,7 @@ Deno.serve(async (req: Request) => {
       encryptedComplianceCsid,
       encryptedComplianceSecret,
     })
+    setTrace(trace, 'compliance_credentials_saved', 'success', 'Encrypted compliance credentials were saved.')
     logOnboardingStage('compliance credentials stored', {
       branchId: branch.id,
       requestId: compliance.requestID,
@@ -179,6 +349,7 @@ Deno.serve(async (req: Request) => {
         branchId: branch.id,
         functionalityMap: body.functionalityMap,
       })
+      setTrace(trace, 'compliance_samples_started', 'success', 'Compliance sample submission sequence started.')
       complianceSampleResults = await submitComplianceSamples({
         baseUrl: PRODUCTION_CORE_BASE_URL,
         functionalityMap: body.functionalityMap,
@@ -187,8 +358,16 @@ Deno.serve(async (req: Request) => {
         complianceCertificate: compliance.binarySecurityToken,
         privateKeyPem: generated.privateKeyPem,
         seller: buildSampleSeller(branch, tenant, csrParams),
+        onTrace: event => {
+          setTrace(trace, event.stage, event.status, `${event.type}: ${event.message ?? event.stage}`, {
+            httpStatus: event.httpStatus,
+            warnings: event.redactedWarnings,
+            errors: event.redactedErrors,
+          })
+        },
       })
     } catch (err) {
+      setTrace(trace, 'compliance_samples_started', 'failed', safeErrorMessage(err))
       logComplianceGenerationException(err)
       const message = safeErrorMessage(err)
       try {
@@ -204,7 +383,8 @@ Deno.serve(async (req: Request) => {
       } catch (saveErr) {
         console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance generation failure save failed:', safeDiagnosticField(safeErrorMessage(saveErr), 300))
       }
-      return jsonResponse({ error: message }, 501)
+      skipPendingTrace(trace)
+      return jsonResponse({ error: message, trace }, 501)
     }
 
     const samplesPassed = complianceSampleResults.every(result => result.status === 'accepted')
@@ -266,9 +446,11 @@ Deno.serve(async (req: Request) => {
         ? failedHttpStatus
         : 422
 
+      skipPendingTrace(trace)
       return jsonResponse({
         error: 'Compliance sample invoices were not accepted.',
         complianceSampleResults: persistentComplianceSampleResults,
+        trace,
       }, responseStatus)
     }
 
@@ -281,6 +463,7 @@ Deno.serve(async (req: Request) => {
       complianceSampleResults,
     })
 
+    setTrace(trace, 'production_csid_request_started', 'success', 'Production CSID request started.')
     await saveState(db, owner, csrParams, generated, {
       status: 'production_csid_requested',
       encryptedPrivateKey,
@@ -290,11 +473,24 @@ Deno.serve(async (req: Request) => {
       complianceSampleResults,
     })
 
-    const production = await requestProductionCsid({
-      baseUrl: PRODUCTION_CORE_BASE_URL,
-      complianceCsid: compliance.binarySecurityToken,
-      complianceSecret: compliance.secret,
-      complianceRequestId: compliance.requestID,
+    let productionHttpStatus: number | undefined
+    let production
+    try {
+      production = await requestProductionCsid({
+        baseUrl: PRODUCTION_CORE_BASE_URL,
+        complianceCsid: compliance.binarySecurityToken,
+        complianceSecret: compliance.secret,
+        complianceRequestId: compliance.requestID,
+        onResponse: response => { productionHttpStatus = response.httpStatus },
+      })
+    } catch (err) {
+      setTrace(trace, 'production_csid_request_completed', 'failed', safeErrorMessage(err), {
+        httpStatus: productionHttpStatus,
+      })
+      throw err
+    }
+    setTrace(trace, 'production_csid_request_completed', 'success', 'Production CSID request completed.', {
+      httpStatus: productionHttpStatus,
     })
 
     const encryptedProductionCsid = await encryptText(production.binarySecurityToken, encryptionSecret)
@@ -312,6 +508,7 @@ Deno.serve(async (req: Request) => {
       complianceSampleResults,
       connectedAt,
     })
+    setTrace(trace, 'production_credentials_saved', 'success', 'Encrypted production credentials were saved.')
 
     return jsonResponse({
       ok: true,
@@ -323,19 +520,92 @@ Deno.serve(async (req: Request) => {
       functionalityMap: body.functionalityMap,
       complianceSampleResults,
       connectedAt,
+      trace,
     })
   } catch (err) {
     const message = safeErrorMessage(err)
     const debug = buildSafeDebugError(err, 'top-level')
+    markFirstPendingFailed(trace, message)
+    skipPendingTrace(trace)
     console.error('[zatca-onboard-production] TEMPORARY DEBUG top-level failure:', JSON.stringify(debug))
     const status = message === 'Unauthorized' ? 401 : message.startsWith('Forbidden') ? 403 : 500
     return jsonResponse({
       error: message,
       // TEMPORARY DEBUG: remove after live ZATCA onboarding crash is isolated.
       debug,
+      trace,
     }, status)
   }
 })
+
+function createTrace(): TraceEntry[] {
+  return TRACE_STAGES.map(stage => ({
+    stage,
+    status: 'pending',
+  }))
+}
+
+function setTrace(
+  trace: TraceEntry[],
+  stage: TraceStage,
+  status: TraceStatus,
+  message?: unknown,
+  extra?: {
+    httpStatus?: number
+    warnings?: Array<{ code?: string; message?: string }>
+    errors?: Array<{ code?: string; message?: string }>
+  },
+): void {
+  const item = trace.find(entry => entry.stage === stage)
+  if (!item) return
+  item.status = status
+  item.timestamp = new Date().toISOString()
+  item.message = safeTraceMessage(message)
+  if (typeof extra?.httpStatus === 'number') item.httpStatus = extra.httpStatus
+  item.warnings = safeTraceMessages(extra?.warnings)
+  item.errors = safeTraceMessages(extra?.errors)
+}
+
+function skipPendingTrace(trace: TraceEntry[], message = 'Skipped because the flow stopped before this stage.'): void {
+  for (const item of trace) {
+    if (item.status !== 'pending') continue
+    item.status = 'skipped'
+    item.timestamp = new Date().toISOString()
+    item.message = safeTraceMessage(message)
+  }
+}
+
+function markFirstPendingFailed(trace: TraceEntry[], message: unknown): void {
+  if (trace.some(entry => entry.status === 'failed')) return
+  const item = trace.find(entry => entry.status === 'pending')
+  if (!item) return
+  item.status = 'failed'
+  item.timestamp = new Date().toISOString()
+  item.message = safeTraceMessage(message) ?? 'Flow failed before this stage completed.'
+}
+
+function safeTraceMessages(values: unknown): Array<{ code?: string; message?: string }> | undefined {
+  if (!Array.isArray(values) || values.length === 0) return undefined
+  const sanitized = values.slice(0, 5).map((item: any) => ({
+    code: safeTraceMessage(item?.code),
+    message: safeTraceMessage(item?.message),
+  })).filter(item => item.code || item.message)
+  return sanitized.length > 0 ? sanitized : undefined
+}
+
+function safeTraceMessage(value: unknown): string | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined
+  const cleaned = String(value)
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 320)
+  if (!cleaned) return undefined
+  if (/otp|secret|token|certificate|private[_ -]?key|authorization|csr|<\?xml|<Invoice|signedInvoiceXmlBase64|signed_invoice_xml_base64|encryption key/i.test(cleaned)) {
+    return 'Sensitive detail redacted.'
+  }
+  return cleaned
+}
 
 async function readBody(req: Request): Promise<RequestBody> {
   try {

@@ -9,6 +9,10 @@ interface ProductionResponse {
   secret: string
 }
 
+interface ZatcaResponseTrace {
+  httpStatus: number
+}
+
 function safeZatcaMessage(body: any, fallback: string): string {
   const msg = body?.errors?.[0]?.message ?? body?.message ?? body?.error
   return typeof msg === 'string' && msg.length <= 240 ? msg : fallback
@@ -30,6 +34,7 @@ export async function requestComplianceCsid(params: {
   baseUrl: string
   csrPem: string
   otp: string
+  onResponse?: (trace: ZatcaResponseTrace) => void
 }): Promise<ComplianceResponse> {
   const res = await fetch(`${params.baseUrl}/compliance`, {
     method: 'POST',
@@ -43,6 +48,7 @@ export async function requestComplianceCsid(params: {
     body: JSON.stringify({ csr: btoa(params.csrPem) }),
   })
 
+  params.onResponse?.({ httpStatus: res.status })
   const body = await parseZatcaResponse(res, 'ZATCA compliance request failed')
   if (!body?.binarySecurityToken || !body?.secret || !body?.requestID) {
     throw new Error('ZATCA compliance response was missing required fields')
@@ -55,6 +61,7 @@ export async function requestProductionCsid(params: {
   complianceCsid: string
   complianceSecret: string
   complianceRequestId: string
+  onResponse?: (trace: ZatcaResponseTrace) => void
 }): Promise<ProductionResponse> {
   const credentials = btoa(`${params.complianceCsid}:${params.complianceSecret}`)
   const res = await fetch(`${params.baseUrl}/production/csids`, {
@@ -68,6 +75,7 @@ export async function requestProductionCsid(params: {
     body: JSON.stringify({ compliance_request_id: params.complianceRequestId }),
   })
 
+  params.onResponse?.({ httpStatus: res.status })
   const body = await parseZatcaResponse(res, 'ZATCA production CSID request failed')
   if (!body?.binarySecurityToken || !body?.secret) {
     throw new Error('ZATCA production response was missing required fields')
