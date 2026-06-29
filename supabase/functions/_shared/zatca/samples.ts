@@ -1,6 +1,5 @@
 import { create as xmlCreate } from 'https://esm.sh/xmlbuilder2@4.0.3'
 import { secp256k1 } from 'https://esm.sh/@noble/curves@2.2.0/secp256k1.js'
-import { DOMParser } from 'https://esm.sh/@xmldom/xmldom@0.9.10'
 import { extractEcPrivateKeyScalar, signZatcaInvoiceHash } from './signing_core.mjs'
 import type { FunctionalityMap } from './config.ts'
 
@@ -85,6 +84,16 @@ interface SignedCompliancePayload {
   transformedCanonicalHash: string
 }
 
+class ComplianceSampleAssertionError extends Error {
+  statusString: string
+
+  constructor(statusString: string, message: string) {
+    super(message)
+    this.name = 'ComplianceSampleAssertionError'
+    this.statusString = statusString
+  }
+}
+
 const SIMPLIFIED: ComplianceSampleType[] = [
   'simplified_invoice',
   'simplified_credit_note',
@@ -144,14 +153,15 @@ export async function submitComplianceSamples(params: SubmitComplianceSamplesPar
         message: 'Compliance sample payload built locally.',
       })
     } catch (err) {
-      logComplianceSampleException(type, 'payload build', err)
+      const statusString = localFailureStatusString(err, 'PAYLOAD_BUILD_FAILED')
+      logComplianceSampleException(type, statusString, err)
       params.onTrace?.({
         stage: 'sample_payload_built',
         type,
         status: 'failed',
         message: safeLocalDiagnosticMessage(err),
       })
-      results.push(buildLocalComplianceFailure(type, 'PAYLOAD_BUILD_FAILED', err))
+      results.push(buildLocalComplianceFailure(type, statusString, err))
       for (const remainingType of sampleTypes.slice(i + 1)) {
         results.push({
           type: remainingType,
@@ -274,9 +284,7 @@ async function submitComplianceSample(
 
     return result
   } catch (err) {
-    const statusString = isFinalHashAssertionError(err)
-      ? 'FINAL_HASH_ASSERTION_FAILED'
-      : 'COMPLIANCE_SAMPLE_SUBMISSION_FAILED'
+    const statusString = localFailureStatusString(err, 'COMPLIANCE_SAMPLE_SUBMISSION_FAILED')
     logComplianceSampleException(payload.type, statusString, err)
     const result = buildLocalComplianceFailure(payload.type, statusString, err)
     attachFailedSampleXmlDebug(result, payload)
@@ -379,6 +387,18 @@ function buildLocalComplianceFailure(
 function isFinalHashAssertionError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err ?? '')
   return message.includes('Final ZATCA compliance sample')
+}
+
+function localFailureStatusString(err: unknown, fallback: string): string {
+  if (isComplianceSampleAssertionError(err)) return err.statusString
+  return isFinalHashAssertionError(err) ? 'FINAL_HASH_ASSERTION_FAILED' : fallback
+}
+
+function isComplianceSampleAssertionError(err: unknown): err is ComplianceSampleAssertionError {
+  return err instanceof ComplianceSampleAssertionError ||
+    (err instanceof Error &&
+      err.name === 'ComplianceSampleAssertionError' &&
+      typeof (err as any).statusString === 'string')
 }
 
 function logComplianceSampleStage(
@@ -1028,6 +1048,7 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const issuerName = extractCertIssuerName(certDer)
   const certSigValue = extractCertSignatureValue(certDer)
   const pubKeySpki = extractCertPublicKeySpki(certDer)
+  assertPrivateKeyMatchesCertificatePublicKey(secretKey, pubKeySpki)
 
   const certDigestBytes = new Uint8Array(await sha256Bytes(new TextEncoder().encode(certPemBody)))
   const certDigestHex = bytesToHex(certDigestBytes)
@@ -1094,19 +1115,83 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
 
   const invoiceHash = await computeInvoiceHash(xmlString)
   const stamped = stampInvoice(invoiceHash)
-  let transformedCanonicalHash = invoiceHash
-  try {
-    transformedCanonicalHash = await computeInvoiceHash(stamped.signedXml)
-  } catch {
-    // TEMPORARY DEBUG: keep compliance sample generation on the known-good
-    // one-pass signing pipeline even if local debug recompute fails.
-  }
+  const transformedCanonicalHash = await computeInvoiceHash(stamped.signedXml)
+  assertFinalSignedXmlConsistency(stamped.signedXml, {
+    invoiceHash,
+    transformedCanonicalHash,
+    issuerName,
+    serialNumber,
+  })
 
   return {
     signedXml: stamped.signedXml,
     invoiceHash,
     qrTimestamp: stamped.qrTimestamp,
     transformedCanonicalHash,
+  }
+}
+
+function assertPrivateKeyMatchesCertificatePublicKey(secretKey: Uint8Array, pubKeySpki: Uint8Array): void {
+  const certPublicKey = extractEcPointFromSpki(pubKeySpki)
+  if (certPublicKey.length !== 65) {
+    throw new ComplianceSampleAssertionError(
+      'CERT_PUBLIC_KEY_EXTRACTION_FAILED',
+      'Unable to extract ZATCA public key for local signing assertion.',
+    )
+  }
+
+  const derivedPublicKey = secp256k1.getPublicKey(secretKey, false)
+  if (!bytesEqual(derivedPublicKey, certPublicKey)) {
+    throw new ComplianceSampleAssertionError(
+      'SIGNING_KEY_PUBLIC_KEY_MISMATCH',
+      'Signing key does not match ZATCA public key.',
+    )
+  }
+}
+
+function assertFinalSignedXmlConsistency(
+  signedXml: string,
+  expected: {
+    invoiceHash: string
+    transformedCanonicalHash: string
+    issuerName: string
+    serialNumber: string
+  },
+): void {
+  const qrHash = extractQrHashFromXml(signedXml)
+  const invoiceDigest = extractFirstDigestValue(signedXml)
+  const xmlIssuerName = extractXmlText(signedXml, /<ds:X509IssuerName\b[^>]*>([^<]*)<\/ds:X509IssuerName>/)
+  const xmlSerialNumber = extractXmlText(signedXml, /<ds:X509SerialNumber\b[^>]*>([^<]*)<\/ds:X509SerialNumber>/)
+
+  if (expected.transformedCanonicalHash !== expected.invoiceHash) {
+    throw new ComplianceSampleAssertionError(
+      'FINAL_TRANSFORMED_HASH_MISMATCH',
+      'Final transformed hash did not match signed payload hash.',
+    )
+  }
+  if (qrHash !== expected.invoiceHash) {
+    throw new ComplianceSampleAssertionError(
+      'QR_HASH_MISMATCH',
+      'QR tag 6 hash did not match signed payload hash.',
+    )
+  }
+  if (invoiceDigest !== expected.invoiceHash) {
+    throw new ComplianceSampleAssertionError(
+      'SIGNED_INFO_DIGEST_MISMATCH',
+      'XML invoice digest did not match signed payload hash.',
+    )
+  }
+  if (xmlIssuerName !== expected.issuerName) {
+    throw new ComplianceSampleAssertionError(
+      'ISSUER_METADATA_MISMATCH',
+      'XML issuer metadata did not match decoded credential issuer.',
+    )
+  }
+  if (xmlSerialNumber !== expected.serialNumber) {
+    throw new ComplianceSampleAssertionError(
+      'SERIAL_METADATA_MISMATCH',
+      'XML serial metadata did not match decoded credential serial.',
+    )
   }
 }
 
@@ -1248,28 +1333,54 @@ function extractCertPublicKeySpki(certDer: Uint8Array): Uint8Array {
   }
 }
 
-function canonicalizeInvoiceContent(xmlString: string): string {
-  const doc: any = new DOMParser().parseFromString(xmlString, 'application/xml')
-  if (!doc?.documentElement || doc.documentElement.tagName === 'parsererror') {
-    throw new Error('Unable to parse ZATCA compliance sample XML for hashing.')
-  }
+function extractEcPointFromSpki(spki: Uint8Array): Uint8Array {
+  return spki[spki.length - 65] === 0x04 ? spki.slice(-65) : new Uint8Array(0)
+}
 
-  const ublExts = Array.from(doc.getElementsByTagNameNS(NS.ext, 'UBLExtensions') as any) as any[]
-  for (const el of ublExts) el.parentNode?.removeChild(el)
+function extractFirstDigestValue(xmlString: string): string | undefined {
+  return extractXmlText(xmlString, /<ds:DigestValue\b[^>]*>([^<]*)<\/ds:DigestValue>/)
+}
 
-  const sigs = Array.from(doc.getElementsByTagNameNS(NS.cac, 'Signature') as any) as any[]
-  for (const el of sigs) el.parentNode?.removeChild(el)
-
-  const adrList = Array.from(doc.getElementsByTagNameNS(NS.cac, 'AdditionalDocumentReference') as any) as any[]
-  for (const adr of adrList) {
-    const idEl = (adr.getElementsByTagNameNS(NS.cbc, 'ID') as any)[0]
-    if (idEl?.textContent === 'QR') {
-      adr.parentNode?.removeChild(adr)
-      break
+function extractQrHashFromXml(xmlString: string): string | undefined {
+  try {
+    const qrCode = extractXmlText(
+      xmlString,
+      /<cbc:ID>QR<\/cbc:ID>[\s\S]*?<cbc:EmbeddedDocumentBinaryObject\b[^>]*>([^<]*)<\/cbc:EmbeddedDocumentBinaryObject>/,
+    )
+    if (!qrCode) return undefined
+    const bytes = base64ToBytes(qrCode)
+    let offset = 0
+    while (offset + 2 <= bytes.length) {
+      const tag = bytes[offset++]
+      const length = bytes[offset++]
+      const value = bytes.slice(offset, offset + length)
+      if (tag === 0x06) return new TextDecoder().decode(value)
+      offset += length
     }
+  } catch {
+    return undefined
   }
+  return undefined
+}
 
-  return c14n(doc.documentElement)
+function extractXmlText(xmlString: string, pattern: RegExp): string | undefined {
+  return (xmlString.match(pattern) ?? [])[1]
+}
+
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
+function canonicalizeInvoiceContent(xmlString: string): string {
+  return expandSelfClosingElements(rootWithC14nNamespaces(xmlString)
+    .replace(/<\?xml[^>]*>/, '')
+    .replace(/<ext:UBLExtensions>[\s\S]*?<\/ext:UBLExtensions>/, '')
+    .replace(/<cac:Signature>[\s\S]*?<\/cac:Signature>/, '')
+    .replace(/<cac:AdditionalDocumentReference><cbc:ID>QR<\/cbc:ID>[\s\S]*?<\/cac:AdditionalDocumentReference>/, ''))
 }
 
 async function computeInvoiceHash(xmlString: string): Promise<string> {
@@ -1278,65 +1389,15 @@ async function computeInvoiceHash(xmlString: string): Promise<string> {
   return bytesToBase64(new Uint8Array(invoiceDigestBuf))
 }
 
-function c14n(node: any, inherited: Map<string, string> = new Map()): string {
-  if (!node?.attributes || !node?.tagName) {
-    throw new Error('Unable to canonicalize ZATCA compliance sample XML node.')
-  }
+function rootWithC14nNamespaces(xmlString: string): string {
+  return xmlString.replace(
+    /<Invoice xmlns="[^"]+" xmlns:cac="[^"]+" xmlns:cbc="[^"]+" xmlns:ext="[^"]+" xmlns:sig="[^"]+" xmlns:sac="[^"]+" xmlns:sbc="[^"]+" xmlns:ds="[^"]+" xmlns:xades="[^"]+">/,
+    `<Invoice xmlns="${NS.invoice}" xmlns:cac="${NS.cac}" xmlns:cbc="${NS.cbc}" xmlns:ds="${NS.ds}" xmlns:ext="${NS.ext}" xmlns:sac="${NS.sac}" xmlns:sbc="${NS.sbc}" xmlns:sig="${NS.sig}" xmlns:xades="${NS.xades}">`,
+  )
+}
 
-  const localNs = new Map<string, string>()
-  const attrs: any[] = []
-  for (let i = 0; i < node.attributes.length; i++) attrs.push(node.attributes[i])
-
-  for (const attr of attrs) {
-    if (attr.name === 'xmlns') localNs.set('', attr.value)
-    else if (attr.name.startsWith('xmlns:')) localNs.set(attr.name.slice(6), attr.value)
-  }
-
-  const nsDecls: [string, string][] = []
-  const emitNs = (prefix: string, uri: string) => {
-    if (inherited.get(prefix) !== uri) nsDecls.push([prefix, uri])
-  }
-
-  const elNs = node.namespaceURI ?? ''
-  const elPrefix = node.prefix ?? ''
-  if (elPrefix === '' && elNs !== (inherited.get('') ?? '')) emitNs('', elNs)
-  else if (elPrefix && elNs !== (inherited.get(elPrefix) ?? '')) emitNs(elPrefix, elNs)
-
-  for (const [prefix, uri] of localNs) {
-    if (!nsDecls.find(decl => decl[0] === prefix)) emitNs(prefix, uri)
-  }
-  for (const attr of attrs) {
-    if (attr.namespaceURI && attr.prefix && !nsDecls.find(decl => decl[0] === attr.prefix)) {
-      emitNs(attr.prefix, attr.namespaceURI)
-    }
-  }
-
-  nsDecls.sort(([a], [b]) => a === '' ? -1 : b === '' ? 1 : a.localeCompare(b))
-
-  const regAttrs = attrs
-    .filter(attr => attr.name !== 'xmlns' && !attr.name.startsWith('xmlns:'))
-    .sort((a, b) => {
-      const aNs = a.namespaceURI ?? ''
-      const bNs = b.namespaceURI ?? ''
-      return aNs !== bNs ? aNs.localeCompare(bNs) : a.localName.localeCompare(b.localName)
-    })
-
-  let out = `<${node.tagName}`
-  for (const [prefix, uri] of nsDecls) out += ` ${prefix === '' ? 'xmlns' : `xmlns:${prefix}`}="${escAttr(uri)}"`
-  for (const attr of regAttrs) out += ` ${attr.name}="${escAttr(attr.value)}"`
-  out += '>'
-
-  const newInherited = new Map(inherited)
-  for (const [prefix, uri] of localNs) newInherited.set(prefix, uri)
-  for (const [prefix, uri] of nsDecls) newInherited.set(prefix, uri)
-
-  for (let i = 0; i < node.childNodes.length; i++) {
-    const child = node.childNodes[i]
-    if (child.nodeType === 1) out += c14n(child, newInherited)
-    else if (child.nodeType === 3) out += escText(child.textContent ?? '')
-  }
-
-  return out + `</${node.tagName}>`
+function expandSelfClosingElements(xmlString: string): string {
+  return xmlString.replace(/<([A-Za-z_][\w:.-]*)([^<>]*)\/>/g, '<$1$2></$1>')
 }
 
 function buildSignedProperties(signingTime: string, certDigest: string, issuerDn: string, serialNumber: string): string {
@@ -1376,27 +1437,6 @@ function toSignedPropsHashInput(sp: string): string {
 
 function buildSignedInfo(invoiceDigest: string, signedPropsDigest: string): string {
   return `<ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2006/12/xml-c14n11"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"/><ds:Reference Id="invoiceSignedData" URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::ext:UBLExtensions)</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:Signature)</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:AdditionalDocumentReference[cbc:ID='QR'])</ds:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/2006/12/xml-c14n11"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${invoiceDigest}</ds:DigestValue></ds:Reference><ds:Reference Type="http://www.w3.org/2000/09/xmldsig#SignatureProperties" URI="#xadesSignedProperties"><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>${signedPropsDigest}</ds:DigestValue></ds:Reference></ds:SignedInfo>`
-}
-
-function buildSignedInfoCanonical(invoiceDigest: string, signedPropsDigest: string): string {
-  return '<ds:SignedInfo>'
-    + '<ds:CanonicalizationMethod Algorithm="http://www.w3.org/2006/12/xml-c14n11"></ds:CanonicalizationMethod>'
-    + '<ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"></ds:SignatureMethod>'
-    + '<ds:Reference Id="invoiceSignedData" URI="">'
-    + '<ds:Transforms>'
-    + '<ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::ext:UBLExtensions)</ds:XPath></ds:Transform>'
-    + '<ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:Signature)</ds:XPath></ds:Transform>'
-    + `<ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116"><ds:XPath>not(//ancestor-or-self::cac:AdditionalDocumentReference[cbc:ID='QR'])</ds:XPath></ds:Transform>`
-    + '<ds:Transform Algorithm="http://www.w3.org/2006/12/xml-c14n11"></ds:Transform>'
-    + '</ds:Transforms>'
-    + '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></ds:DigestMethod>'
-    + `<ds:DigestValue>${escText(invoiceDigest)}</ds:DigestValue>`
-    + '</ds:Reference>'
-    + '<ds:Reference Type="http://www.w3.org/2000/09/xmldsig#SignatureProperties" URI="#xadesSignedProperties">'
-    + '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></ds:DigestMethod>'
-    + `<ds:DigestValue>${escText(signedPropsDigest)}</ds:DigestValue>`
-    + '</ds:Reference>'
-    + '</ds:SignedInfo>'
 }
 
 function buildXadesBlock(
@@ -1478,11 +1518,6 @@ function fmt(n: number): string {
 
 function escText(s: unknown): string {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r/g, '&#xD;')
-}
-
-function escAttr(s: unknown): string {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
-    .replace(/\t/g, '&#x9;').replace(/\n/g, '&#xA;').replace(/\r/g, '&#xD;')
 }
 
 function utf8ToBase64(value: string): string {

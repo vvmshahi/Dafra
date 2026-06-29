@@ -13,6 +13,23 @@ interface ZatcaResponseTrace {
   httpStatus: number
 }
 
+export class ZatcaHttpError extends Error {
+  httpStatus: number
+
+  constructor(message: string, httpStatus: number) {
+    super(message)
+    this.name = 'ZatcaHttpError'
+    this.httpStatus = httpStatus
+  }
+}
+
+export function isZatcaHttpError(err: unknown): err is ZatcaHttpError {
+  return err instanceof ZatcaHttpError ||
+    (err instanceof Error &&
+      err.name === 'ZatcaHttpError' &&
+      typeof (err as any).httpStatus === 'number')
+}
+
 function safeZatcaMessage(body: any, fallback: string): string {
   const msg = body?.errors?.[0]?.message ?? body?.message ?? body?.error
   return typeof msg === 'string' && msg.length <= 240 ? msg : fallback
@@ -24,9 +41,9 @@ async function parseZatcaResponse(res: Response, fallback: string): Promise<any>
   try {
     body = JSON.parse(text)
   } catch {
-    throw new Error(`${fallback} (${res.status})`)
+    throw new ZatcaHttpError(`${fallback} (${res.status})`, res.status)
   }
-  if (!res.ok) throw new Error(safeZatcaMessage(body, `${fallback} (${res.status})`))
+  if (!res.ok) throw new ZatcaHttpError(safeZatcaMessage(body, `${fallback} (${res.status})`), res.status)
   return body
 }
 

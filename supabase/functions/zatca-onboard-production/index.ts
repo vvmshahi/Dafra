@@ -30,7 +30,7 @@ import {
 import { requireTenantOwner, loadOwnedBranch, loadTenant } from '../_shared/zatca/auth.ts'
 import { generateProductionCsr, validateCsrInputs, type CsrParams } from '../_shared/zatca/csr.ts'
 import { encryptText } from '../_shared/zatca/crypto.ts'
-import { requestComplianceCsid, requestProductionCsid } from '../_shared/zatca/client.ts'
+import { isZatcaHttpError, requestComplianceCsid, requestProductionCsid } from '../_shared/zatca/client.ts'
 import {
   simulatedComplianceResults,
   stripComplianceSampleDebug,
@@ -314,9 +314,26 @@ Deno.serve(async (req: Request) => {
         onResponse: response => { complianceHttpStatus = response.httpStatus },
       })
     } catch (err) {
-      setTrace(trace, 'compliance_csid_request_completed', 'failed', safeErrorMessage(err), {
+      const message = safeErrorMessage(err)
+      setTrace(trace, 'compliance_csid_request_completed', 'failed', message, {
         httpStatus: complianceHttpStatus,
       })
+      if (isZatcaHttpError(err)) {
+        try {
+          await saveState(db, owner, csrParams, generated, {
+            status: 'compliance_failed',
+            encryptedPrivateKey,
+            lastError: message,
+          })
+        } catch (saveErr) {
+          console.error('[zatca-onboard-production] TEMPORARY DEBUG compliance CSID failure save failed:', safeDiagnosticField(safeErrorMessage(saveErr), 300))
+        }
+        skipPendingTrace(trace)
+        return jsonResponse({
+          error: message,
+          trace,
+        }, controlledZatcaResponseStatus(err.httpStatus))
+      }
       throw err
     }
     setTrace(trace, 'compliance_csid_request_completed', 'success', 'Production compliance CSID request completed.', {
@@ -484,9 +501,30 @@ Deno.serve(async (req: Request) => {
         onResponse: response => { productionHttpStatus = response.httpStatus },
       })
     } catch (err) {
-      setTrace(trace, 'production_csid_request_completed', 'failed', safeErrorMessage(err), {
+      const message = safeErrorMessage(err)
+      setTrace(trace, 'production_csid_request_completed', 'failed', message, {
         httpStatus: productionHttpStatus,
       })
+      if (isZatcaHttpError(err)) {
+        try {
+          await saveState(db, owner, csrParams, generated, {
+            status: 'compliance_failed',
+            encryptedPrivateKey,
+            complianceRequestId: compliance.requestID,
+            encryptedComplianceCsid,
+            encryptedComplianceSecret,
+            complianceSampleResults,
+            lastError: message,
+          })
+        } catch (saveErr) {
+          console.error('[zatca-onboard-production] TEMPORARY DEBUG production CSID failure save failed:', safeDiagnosticField(safeErrorMessage(saveErr), 300))
+        }
+        skipPendingTrace(trace)
+        return jsonResponse({
+          error: message,
+          trace,
+        }, controlledZatcaResponseStatus(err.httpStatus))
+      }
       throw err
     }
     setTrace(trace, 'production_csid_request_completed', 'success', 'Production CSID request completed.', {
@@ -582,6 +620,10 @@ function markFirstPendingFailed(trace: TraceEntry[], message: unknown): void {
   item.status = 'failed'
   item.timestamp = new Date().toISOString()
   item.message = safeTraceMessage(message) ?? 'Flow failed before this stage completed.'
+}
+
+function controlledZatcaResponseStatus(httpStatus: number): number {
+  return httpStatus >= 400 && httpStatus <= 599 ? httpStatus : 502
 }
 
 function safeTraceMessages(values: unknown): Array<{ code?: string; message?: string }> | undefined {
