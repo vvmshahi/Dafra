@@ -6,40 +6,160 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
+interface CallerProfile {
+  role: string
+  tenant_id: string | null
+}
+
+interface BranchRow {
+  id: string
+  tenant_id: string
+  name: string
+}
+
+interface BranchDeletionPlan {
+  branchUserIds: string[]
+  invoiceIds: string[]
+  purchaseIds: string[]
+  productionConnectedCredentialCount: number
+  counts: Record<string, number>
+}
+
+function jsonResponse(body: Record<string, unknown>, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
+function serviceRoleKey(): string | null {
+  return Deno.env.get('DAFRA_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+}
+
+function bearerToken(req: Request): string {
+  return (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim()
+}
+
+function isAuthorizedForBranchDelete(caller: CallerProfile, branch: BranchRow): boolean {
+  if (caller.role === 'super_admin') return true
+  return caller.role === 'owner' && caller.tenant_id === branch.tenant_id
+}
+
+async function countQuery(query: any, label: string): Promise<number> {
+  const { count, error } = await query
+  if (error) throw new Error(`Unable to count ${label}`)
+  return count ?? 0
+}
+
+function countRows(adminClient: any, table: string, label: string, applyFilters: (query: any) => any): Promise<number> {
+  return countQuery(applyFilters(adminClient.from(table).select('id', { count: 'exact', head: true })), label)
+}
+
+async function collectBranchDeletionPlan(adminClient: any, branch: BranchRow): Promise<BranchDeletionPlan> {
+  const { data: branchUsers, error: branchUsersErr } = await adminClient
+    .from('user_profiles')
+    .select('id')
+    .eq('tenant_id', branch.tenant_id)
+    .eq('branch_id', branch.id)
+    .eq('role', 'branch')
+
+  if (branchUsersErr) throw new Error('Unable to inspect branch users')
+  const branchUserIds = (branchUsers ?? []).map((row: { id: string }) => row.id)
+
+  const { data: invoiceRows, error: invoicesErr } = await adminClient
+    .from('invoices')
+    .select('id')
+    .eq('tenant_id', branch.tenant_id)
+    .eq('branch_id', branch.id)
+
+  if (invoicesErr) throw new Error('Unable to inspect invoices')
+  const invoiceIds = (invoiceRows ?? []).map((row: { id: string }) => row.id)
+
+  const { data: purchaseRows, error: purchasesErr } = await adminClient
+    .from('purchases')
+    .select('id')
+    .eq('tenant_id', branch.tenant_id)
+    .eq('branch_id', branch.id)
+
+  if (purchasesErr) throw new Error('Unable to inspect purchases')
+  const purchaseIds = (purchaseRows ?? []).map((row: { id: string }) => row.id)
+
+  const productionConnectedCredentialCount = await countRows(
+    adminClient,
+    'zatca_production_credentials',
+    'production ZATCA credentials',
+    query => query
+      .eq('tenant_id', branch.tenant_id)
+      .eq('branch_id', branch.id)
+      .eq('environment', 'production')
+      .eq('onboarding_status', 'production_connected'),
+  )
+
+  const counts: Record<string, number> = {
+    branches: 1,
+    branch_auth_users: branchUserIds.length,
+    zatca_production_credentials_connected: productionConnectedCredentialCount,
+    sync_queue: await countRows(adminClient, 'sync_queue', 'sync queue rows', query => query.eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)),
+    pos_sessions: await countRows(adminClient, 'pos_sessions', 'POS sessions', query => query.eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)),
+    day_closings: await countRows(adminClient, 'day_closings', 'day closings', query => query.eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)),
+    zatca_certificates: await countRows(adminClient, 'zatca_certificates', 'ZATCA certificates', query => query.eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)),
+    invoices: await countRows(adminClient, 'invoices', 'invoices', query => query.eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)),
+    invoice_items: invoiceIds.length > 0
+      ? await countRows(adminClient, 'invoice_items', 'invoice items', query => query.in('invoice_id', invoiceIds))
+      : 0,
+    payments: invoiceIds.length > 0
+      ? await countRows(adminClient, 'payments', 'payments', query => query.in('invoice_id', invoiceIds))
+      : 0,
+    expenses: await countRows(adminClient, 'expenses', 'expenses', query => query.eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)),
+    fixed_expenses: await countRows(adminClient, 'fixed_expenses', 'fixed expenses', query => query.eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)),
+    purchases: await countRows(adminClient, 'purchases', 'purchases', query => query.eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)),
+    purchase_items: purchaseIds.length > 0
+      ? await countRows(adminClient, 'purchase_items', 'purchase items', query => query.in('purchase_id', purchaseIds))
+      : 0,
+    inventory_items: await countRows(adminClient, 'inventory_items', 'inventory items', query => query.eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)),
+    employees: await countRows(adminClient, 'employees', 'employees', query => query.eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)),
+    suppliers: await countRows(adminClient, 'suppliers', 'suppliers', query => query.eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)),
+    user_profiles: await countRows(adminClient, 'user_profiles', 'user profiles', query => query.eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)),
+  }
+
+  return {
+    branchUserIds,
+    invoiceIds,
+    purchaseIds,
+    productionConnectedCredentialCount,
+    counts,
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { status: 200, headers: corsHeaders })
   }
 
+  if (req.method !== 'POST') {
+    return jsonResponse({ error: 'Method not allowed' }, 405)
+  }
+
   try {
-    const supabaseUrl      = Deno.env.get('SUPABASE_URL')!
-    const SERVICE_ROLE_KEY = Deno.env.get('DAFRA_SERVICE_ROLE_KEY')
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const SERVICE_ROLE_KEY = serviceRoleKey()
 
     if (!SERVICE_ROLE_KEY || !SERVICE_ROLE_KEY.startsWith('eyJ')) {
-      return new Response(JSON.stringify({ error: 'Server configuration error' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ error: 'Server configuration error' }, 500)
     }
 
     const adminClient = createClient(supabaseUrl, SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    // ── Verify caller is owner ────────────────────────────────────────────────
-    const authHeader = req.headers.get('Authorization') ?? ''
-    const callerJWT  = authHeader.replace(/^Bearer\s+/i, '').trim()
-
+    const callerJWT = bearerToken(req)
     if (!callerJWT) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ error: 'Unauthorized' }, 401)
     }
 
     const { data: { user: caller }, error: authError } = await adminClient.auth.getUser(callerJWT)
     if (authError || !caller) {
-      return new Response(JSON.stringify({ error: 'Invalid token' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ error: 'Invalid token' }, 401)
     }
 
     const { data: callerProfile, error: profileErr } = await adminClient
@@ -48,165 +168,148 @@ Deno.serve(async (req: Request) => {
       .eq('id', caller.id)
       .maybeSingle()
 
-    if (profileErr || !callerProfile || callerProfile.role !== 'owner') {
-      return new Response(JSON.stringify({ error: 'Forbidden: owner role required' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    if (profileErr || !callerProfile) {
+      return jsonResponse({ error: 'Could not verify caller' }, 403)
     }
 
-    // ── Parse body ────────────────────────────────────────────────────────────
-    const { branchId } = await req.json()
+    const body = await req.json().catch(() => ({}))
+    const branchId = typeof body?.branchId === 'string' ? body.branchId.trim() : ''
+    const confirmation = typeof body?.confirmation === 'string' ? body.confirmation.trim() : ''
+    const dryRun = body?.dryRun === true
 
     if (!branchId) {
-      return new Response(JSON.stringify({ error: 'Missing required field: branchId' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ error: 'Missing required field: branchId' }, 400)
     }
 
-    // ── Verify branch belongs to caller's tenant ──────────────────────────────
-    const { data: branchRow } = await adminClient
+    const { data: branchRow, error: branchErr } = await adminClient
       .from('branches')
       .select('id, tenant_id, name')
       .eq('id', branchId)
       .maybeSingle()
 
-    if (!branchRow || branchRow.tenant_id !== callerProfile.tenant_id) {
-      return new Response(JSON.stringify({ error: 'Branch not found or access denied' }), {
-        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    if (branchErr) {
+      return jsonResponse({ error: 'Unable to verify branch access' }, 500)
+    }
+
+    if (!branchRow) {
+      return jsonResponse({ error: 'Branch not found or access denied' }, 404)
+    }
+
+    const branch = branchRow as BranchRow
+    const allowed = isAuthorizedForBranchDelete(callerProfile as CallerProfile, branch)
+    console.info('[delete-branch] audit:', {
+      action: 'delete_branch_authorize',
+      targetTenantId: branch.tenant_id,
+      targetBranchId: branch.id,
+      callerRole: callerProfile.role,
+      dryRun,
+      allowed,
+    })
+
+    if (!allowed) {
+      return jsonResponse({ error: 'Forbidden' }, 403)
+    }
+
+    const plan = await collectBranchDeletionPlan(adminClient, branch)
+
+    if (dryRun) {
+      console.info('[delete-branch] audit:', {
+        action: 'delete_branch_dry_run',
+        targetTenantId: branch.tenant_id,
+        targetBranchId: branch.id,
+        callerRole: callerProfile.role,
+        productionProtected: plan.productionConnectedCredentialCount > 0,
+      })
+      return jsonResponse({
+        success: true,
+        dryRun: true,
+        deletionBlocked: plan.productionConnectedCredentialCount > 0,
+        reason: plan.productionConnectedCredentialCount > 0
+          ? 'Branch has production-connected ZATCA credentials'
+          : null,
+        counts: plan.counts,
+        requiredConfirmation: 'branch_name',
       })
     }
 
-    console.log('[delete-branch] Starting deletion for branch:', branchId, branchRow.name)
-
-    // ── Step 1: Find branch user profile ID (for auth deletion) ──────────────
-    const { data: branchUser } = await adminClient
-      .from('user_profiles')
-      .select('id')
-      .eq('branch_id', branchId)
-      .eq('role', 'branch')
-      .maybeSingle()
-
-    const branchUserId = branchUser?.id ?? null
-    console.log('[delete-branch] Branch auth user ID:', branchUserId)
-
-    // ── Step 2: Collect IDs needed for child-table deletes ───────────────────
-    const { data: invoiceRows } = await adminClient
-      .from('invoices')
-      .select('id')
-      .eq('branch_id', branchId)
-
-    const invoiceIds = (invoiceRows ?? []).map((r: { id: string }) => r.id)
-    console.log('[delete-branch] Invoice count:', invoiceIds.length)
-
-    const { data: purchaseRows } = await adminClient
-      .from('purchases')
-      .select('id')
-      .eq('branch_id', branchId)
-
-    const purchaseIds = (purchaseRows ?? []).map((r: { id: string }) => r.id)
-    console.log('[delete-branch] Purchase count:', purchaseIds.length)
-
-    // ── Step 3: Delete in dependency order ───────────────────────────────────
-
-    // a. Nullify session_id FK on invoices (breaks pos_session FK)
-    if (invoiceIds.length > 0) {
-      await adminClient.from('invoices').update({ session_id: null }).in('id', invoiceIds)
+    if (confirmation !== branch.name.trim()) {
+      return jsonResponse({ error: 'Confirmation phrase does not match branch name' }, 400)
     }
 
-    // b. Nullify session_id FK on expenses
-    await adminClient.from('expenses').update({ session_id: null }).eq('branch_id', branchId)
-
-    // b2. Delete sync_queue
-    await adminClient.from('sync_queue').delete().eq('branch_id', branchId)
-    console.log('[delete-branch] Deleted sync_queue')
-
-    // c. Delete POS sessions
-    await adminClient.from('pos_sessions').delete().eq('branch_id', branchId)
-    console.log('[delete-branch] Deleted pos_sessions')
-
-    // d. Delete day closings
-    await adminClient.from('day_closings').delete().eq('branch_id', branchId)
-    console.log('[delete-branch] Deleted day_closings')
-
-    // e. Delete ZATCA certificates
-    await adminClient.from('zatca_certificates').delete().eq('branch_id', branchId)
-    console.log('[delete-branch] Deleted zatca_certificates')
-
-    // f. Delete invoice items
-    if (invoiceIds.length > 0) {
-      await adminClient.from('invoice_items').delete().in('invoice_id', invoiceIds)
+    if (plan.productionConnectedCredentialCount > 0) {
+      console.info('[delete-branch] audit:', {
+        action: 'delete_branch_blocked',
+        targetTenantId: branch.tenant_id,
+        targetBranchId: branch.id,
+        callerRole: callerProfile.role,
+        reason: 'production_connected_zatca_credentials',
+      })
+      return jsonResponse({ error: 'Branch has production-connected ZATCA credentials. Disconnect production submission before deletion.' }, 409)
     }
 
-    // g. Delete payments
-    if (invoiceIds.length > 0) {
-      await adminClient.from('payments').delete().in('invoice_id', invoiceIds)
+    console.info('[delete-branch] audit:', {
+      action: 'delete_branch_start',
+      targetTenantId: branch.tenant_id,
+      targetBranchId: branch.id,
+      callerRole: callerProfile.role,
+      counts: plan.counts,
+    })
+
+    if (plan.invoiceIds.length > 0) {
+      await adminClient.from('invoices').update({ session_id: null }).in('id', plan.invoiceIds)
     }
 
-    // h. Delete invoices
-    await adminClient.from('invoices').delete().eq('branch_id', branchId)
-    console.log('[delete-branch] Deleted invoices')
+    await adminClient.from('expenses').update({ session_id: null }).eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)
+    await adminClient.from('sync_queue').delete().eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)
+    await adminClient.from('pos_sessions').delete().eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)
+    await adminClient.from('day_closings').delete().eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)
+    await adminClient.from('zatca_certificates').delete().eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)
 
-    // i. Delete expenses
-    await adminClient.from('expenses').delete().eq('branch_id', branchId)
-    console.log('[delete-branch] Deleted expenses')
-
-    // i2. Delete fixed expenses
-    await adminClient.from('fixed_expenses').delete().eq('branch_id', branchId)
-    console.log('[delete-branch] Deleted fixed_expenses')
-
-    // i3. Delete purchase items (must precede purchases)
-    if (purchaseIds.length > 0) {
-      await adminClient.from('purchase_items').delete().in('purchase_id', purchaseIds)
+    if (plan.invoiceIds.length > 0) {
+      await adminClient.from('invoice_items').delete().in('invoice_id', plan.invoiceIds)
+      await adminClient.from('payments').delete().in('invoice_id', plan.invoiceIds)
     }
-    console.log('[delete-branch] Deleted purchase_items')
 
-    // i4. Delete purchases
-    await adminClient.from('purchases').delete().eq('branch_id', branchId)
-    console.log('[delete-branch] Deleted purchases')
+    await adminClient.from('invoices').delete().eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)
+    await adminClient.from('expenses').delete().eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)
+    await adminClient.from('fixed_expenses').delete().eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)
 
-    // j. Delete inventory items
-    await adminClient.from('inventory_items').delete().eq('branch_id', branchId)
-    console.log('[delete-branch] Deleted inventory_items')
+    if (plan.purchaseIds.length > 0) {
+      await adminClient.from('purchase_items').delete().in('purchase_id', plan.purchaseIds)
+    }
 
-    // k. Delete employees linked to this branch
-    await adminClient.from('employees').delete().eq('branch_id', branchId)
-    console.log('[delete-branch] Deleted employees')
+    await adminClient.from('purchases').delete().eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)
+    await adminClient.from('inventory_items').delete().eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)
+    await adminClient.from('employees').delete().eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)
+    await adminClient.from('suppliers').delete().eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)
+    await adminClient.from('user_profiles').delete().eq('tenant_id', branch.tenant_id).eq('branch_id', branch.id)
+    await adminClient.from('branches').delete().eq('tenant_id', branch.tenant_id).eq('id', branch.id)
 
-    // k2. Delete suppliers linked to this branch
-    await adminClient.from('suppliers').delete().eq('branch_id', branchId)
-    console.log('[delete-branch] Deleted suppliers')
-
-    // l. Delete user profiles for this branch
-    await adminClient.from('user_profiles').delete().eq('branch_id', branchId)
-    console.log('[delete-branch] Deleted user_profiles')
-
-    // m. Delete the branch itself
-    await adminClient.from('branches').delete().eq('id', branchId)
-    console.log('[delete-branch] Deleted branch')
-
-    // n. Delete auth user for the branch
-    if (branchUserId) {
+    let authDeleteFailures = 0
+    for (const branchUserId of plan.branchUserIds) {
       const { error: deleteAuthErr } = await adminClient.auth.admin.deleteUser(branchUserId)
       if (deleteAuthErr) {
-        console.error('[delete-branch] Auth user deletion failed:', deleteAuthErr.message)
-        return new Response(
-          JSON.stringify({ error: 'Branch data deleted but auth user removal failed: ' + deleteAuthErr.message }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        )
+        authDeleteFailures += 1
+        console.error('[delete-branch] auth user deletion failed:', deleteAuthErr.message)
       }
-      console.log('[delete-branch] Deleted auth user:', branchUserId)
     }
 
-    console.log('[delete-branch] Deletion complete for branch:', branchId)
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    if (authDeleteFailures > 0) {
+      return jsonResponse({ error: 'Branch data deleted but one or more auth users could not be removed' }, 500)
+    }
+
+    console.info('[delete-branch] audit:', {
+      action: 'delete_branch_complete',
+      targetTenantId: branch.tenant_id,
+      targetBranchId: branch.id,
+      callerRole: callerProfile.role,
     })
+
+    return jsonResponse({ success: true })
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal error'
-    console.error('[delete-branch] Unhandled error:', message)
-    return new Response(JSON.stringify({ error: message }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    console.error('[delete-branch] unhandled error:', message)
+    return jsonResponse({ error: message }, 500)
   }
 })

@@ -554,7 +554,10 @@ export default function ClientDetailPage() {
             'Content-Type':  'application/json',
             'Authorization': `Bearer ${session?.access_token ?? ''}`,
           },
-          body: JSON.stringify({ tenantId: tenant.id }),
+          body: JSON.stringify({
+            tenantId: tenant.id,
+            confirmation: deleteConfirm.trim(),
+          }),
         },
       )
       const json = await res.json()

@@ -795,7 +795,7 @@ function DeleteConfirmModal({
   }, [branch.id])
 
   const hasInvoices = (invoiceCount ?? 0) > 0
-  const canDelete   = !hasInvoices || confirmName.trim() === branch.name.trim()
+  const canDelete   = confirmName.trim() === branch.name.trim()
 
   async function handleDelete() {
     if (!canDelete) return
@@ -803,7 +803,10 @@ function DeleteConfirmModal({
     setError('')
     try {
       const { data, error: fnErr } = await supabase.functions.invoke('delete-branch', {
-        body: { branchId: branch.id },
+        body: {
+          branchId: branch.id,
+          confirmation: confirmName.trim(),
+        },
       })
       const errMsg = fnErr?.message ?? (data as any)?.error ?? null
       if (errMsg) throw new Error(errMsg)
@@ -838,27 +841,19 @@ function DeleteConfirmModal({
           </div>
         ) : (
           <div className="space-y-4">
-            {hasInvoices ? (
-              <>
-                <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-xs text-red-700 space-y-1">
-                  <p className="font-semibold">This branch has {invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''}.</p>
-                  <p>All invoices, expenses, POS sessions, and the branch login will be permanently deleted. This cannot be undone.</p>
-                </div>
-                <div>
-                  <label className="label">Type <span className="font-mono font-bold text-gray-800">{branch.name}</span> to confirm</label>
-                  <input
-                    className="input mt-1.5"
-                    value={confirmName}
-                    onChange={e => setConfirmName(e.target.value)}
-                    placeholder={branch.name}
-                  />
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-gray-600">
-                This will permanently delete <strong>{branch.name}</strong> and its login account. This cannot be undone.
-              </p>
-            )}
+            <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-xs text-red-700 space-y-1">
+              {hasInvoices && <p className="font-semibold">This branch has {invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''}.</p>}
+              <p>All invoices, expenses, POS sessions, and the branch login will be permanently deleted. This cannot be undone.</p>
+            </div>
+            <div>
+              <label className="label">Type <span className="font-mono font-bold text-gray-800">{branch.name}</span> to confirm</label>
+              <input
+                className="input mt-1.5"
+                value={confirmName}
+                onChange={e => setConfirmName(e.target.value)}
+                placeholder={branch.name}
+              />
+            </div>
 
             {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
 

@@ -90,6 +90,179 @@ class ZatcaSubmitAssertionError extends Error {
   }
 }
 
+interface CallerProfile {
+  id: string
+  role: string
+  tenant_id: string | null
+  branch_id: string | null
+}
+
+interface AuthorizedTarget {
+  tenantId: string
+  branchId: string
+}
+
+const TENANT_SUBMIT_ROLES = new Set(['owner', 'admin'])
+
+function jsonResponse(body: Record<string, unknown>, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
+function bearerToken(req: Request): string {
+  return (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim()
+}
+
+function canSubmitForTarget(caller: CallerProfile, target: AuthorizedTarget): boolean {
+  const role = caller.role
+  if (!caller.tenant_id) return false
+
+  if (TENANT_SUBMIT_ROLES.has(role)) {
+    return target.tenantId === caller.tenant_id
+  }
+
+  if (role === 'branch') {
+    return (
+      target.tenantId === caller.tenant_id &&
+      !!caller.branch_id &&
+      target.branchId === caller.branch_id
+    )
+  }
+
+  return false
+}
+
+function logSubmitAuthorization(params: {
+  invoiceId?: string | null
+  tenantId?: string | null
+  branchId?: string | null
+  callerRole?: string | null
+  allowed: boolean
+}) {
+  console.info('[zatca-submit] authorization decision:', {
+    invoiceId: params.invoiceId ?? null,
+    tenantId: params.tenantId ?? null,
+    branchId: params.branchId ?? null,
+    callerRole: params.callerRole ?? null,
+    allowed: params.allowed,
+  })
+}
+
+async function loadCallerProfile(db: any, userId: string): Promise<CallerProfile | null> {
+  const { data, error } = await db
+    .from('user_profiles')
+    .select('id, role, tenant_id, branch_id')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (error) {
+    console.warn('[zatca-submit] caller profile lookup failed:', safeZatcaText(error.message, 160))
+    return null
+  }
+
+  if (!data?.id || !data?.role) return null
+
+  return {
+    id: data.id,
+    role: String(data.role),
+    tenant_id: data.tenant_id ?? null,
+    branch_id: data.branch_id ?? null,
+  }
+}
+
+async function authorizeInvoiceSubmission(
+  db: any,
+  invoiceId: string,
+  caller: CallerProfile,
+): Promise<{ ok: true; target: AuthorizedTarget } | { ok: false; response: Response }> {
+  const { data: invoice, error } = await db
+    .from('invoices')
+    .select('id, tenant_id, branch_id')
+    .eq('id', invoiceId)
+    .maybeSingle()
+
+  if (error) {
+    console.warn('[zatca-submit] invoice authorization lookup failed:', safeZatcaText(error.message, 160))
+    return { ok: false, response: jsonResponse({ error: 'Unable to verify invoice access' }, 500) }
+  }
+
+  if (!invoice?.id || !invoice?.tenant_id || !invoice?.branch_id) {
+    logSubmitAuthorization({
+      invoiceId,
+      callerRole: caller.role,
+      allowed: false,
+    })
+    return { ok: false, response: jsonResponse({ error: 'Invoice not found or access denied' }, 404) }
+  }
+
+  const target = {
+    tenantId: invoice.tenant_id as string,
+    branchId: invoice.branch_id as string,
+  }
+  const allowed = canSubmitForTarget(caller, target)
+
+  logSubmitAuthorization({
+    invoiceId,
+    tenantId: target.tenantId,
+    branchId: target.branchId,
+    callerRole: caller.role,
+    allowed,
+  })
+
+  if (!allowed) {
+    return { ok: false, response: jsonResponse({ error: 'Forbidden' }, 403) }
+  }
+
+  return { ok: true, target }
+}
+
+async function authorizeBranchAccess(
+  db: any,
+  branchId: string,
+  caller: CallerProfile,
+): Promise<{ ok: true; target: AuthorizedTarget } | { ok: false; response: Response }> {
+  const { data: branch, error } = await db
+    .from('branches')
+    .select('id, tenant_id')
+    .eq('id', branchId)
+    .maybeSingle()
+
+  if (error) {
+    console.warn('[zatca-submit] branch authorization lookup failed:', safeZatcaText(error.message, 160))
+    return { ok: false, response: jsonResponse({ error: 'Unable to verify branch access' }, 500) }
+  }
+
+  if (!branch?.id || !branch?.tenant_id) {
+    logSubmitAuthorization({
+      branchId,
+      callerRole: caller.role,
+      allowed: false,
+    })
+    return { ok: false, response: jsonResponse({ error: 'Branch not found or access denied' }, 404) }
+  }
+
+  const target = {
+    tenantId: branch.tenant_id as string,
+    branchId: branch.id as string,
+  }
+  const allowed = canSubmitForTarget(caller, target)
+
+  logSubmitAuthorization({
+    tenantId: target.tenantId,
+    branchId: target.branchId,
+    callerRole: caller.role,
+    allowed,
+  })
+
+  if (!allowed) {
+    return { ok: false, response: jsonResponse({ error: 'Forbidden' }, 403) }
+  }
+
+  return { ok: true, target }
+}
+
 
 // ── Crypto utilities ─────────────────────────────────────────────────────────
 
@@ -1437,54 +1610,58 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url)
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    )
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-    const authHeader = req.headers.get('Authorization') ?? ''
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''))
+    if (!anonKey || !serviceRoleKey) {
+      return jsonResponse({ error: 'Server configuration error' }, 500)
+    }
+
+    const callerJWT = bearerToken(req)
+    if (!callerJWT) {
+      return jsonResponse({ error: 'Unauthorized' }, 401)
+    }
+
+    const authClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: `Bearer ${callerJWT}` } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+
+    const { data: { user }, error: authErr } = await authClient.auth.getUser(callerJWT)
     if (authErr || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ error: 'Unauthorized' }, 401)
     }
 
-    const { data: callerProfile } = await supabase
-      .from('user_profiles')
-      .select('tenant_id')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    const callerTenantId = callerProfile?.tenant_id as string | undefined
-    if (!callerTenantId) {
-      return new Response(JSON.stringify({ error: 'Tenant not found' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    const callerProfile = await loadCallerProfile(authClient as any, user.id)
+    if (!callerProfile) {
+      return jsonResponse({ error: 'Caller profile not found' }, 403)
     }
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
 
     // ── GET /debug?branchId=... — sandbox-only cert digest diagnostics ──
     if (req.method === 'GET' && url.searchParams.has('branchId')) {
       if (Deno.env.get('ZATCA_ENABLE_SUBMIT_DEBUG') !== 'true') {
-        return new Response(JSON.stringify({ error: 'Debug diagnostics are disabled' }), {
-          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
+        return jsonResponse({ error: 'Debug diagnostics are disabled' }, 404)
       }
 
       const branchId = url.searchParams.get('branchId')!
+      const branchAuth = await authorizeBranchAccess(supabase as any, branchId, callerProfile)
+      if (!branchAuth.ok) return branchAuth.response
 
       const { data: cert } = await supabase
         .from('zatca_certificates').select('production_csid, environment')
         .eq('branch_id', branchId)
-        .eq('tenant_id', callerTenantId)
+        .eq('tenant_id', branchAuth.target.tenantId)
         .eq('environment', 'sandbox')
         .eq('status', 'active')
         .maybeSingle()
 
       if (!cert?.production_csid || cert.environment !== 'sandbox') {
-        return new Response(JSON.stringify({ error: 'No active sandbox cert for branch' }), {
-          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
+        return jsonResponse({ error: 'No active sandbox cert for branch' }, 404)
       }
 
       const { certPemBody, certDer } = decodeCertificateToken(cert.production_csid)
@@ -1502,7 +1679,7 @@ Deno.serve(async (req: Request) => {
       const spHex          = bytesToHex(spHashBytes)
       const spDigestB64    = btoa(spHex)
 
-      return new Response(JSON.stringify({
+      return jsonResponse({
         certDerLength:     certDer.length,
         certDerFirst10Hex: Array.from(certDer.slice(0, 10)).map(b => b.toString(16).padStart(2, '0')).join(' '),
         certDigestLength:  certDigestB64.length,
@@ -1511,27 +1688,24 @@ Deno.serve(async (req: Request) => {
         spDigestLength:    spDigestB64.length,
         spDigestB64,
         environment: 'sandbox',
-      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      })
     }
 
     const body = await req.json().catch(() => ({}))
     const invoiceId = body?.invoiceId as string | undefined
     if (!invoiceId) {
-      return new Response(JSON.stringify({ error: 'Missing required field: invoiceId' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ error: 'Missing required field: invoiceId' }, 400)
     }
 
-    const result = await processInvoice(supabase as any, invoiceId, callerTenantId)
-    return new Response(JSON.stringify(result), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    const invoiceAuth = await authorizeInvoiceSubmission(supabase as any, invoiceId, callerProfile)
+    if (!invoiceAuth.ok) return invoiceAuth.response
+
+    const result = await processInvoice(supabase as any, invoiceId, invoiceAuth.target.tenantId)
+    return jsonResponse(result)
 
   } catch (err: any) {
     const message = safeZatcaText(err.message ?? 'unknown', 240) ?? 'Internal server error'
     console.error('[zatca-submit] unexpected error:', message)
-    return new Response(JSON.stringify({ error: message }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return jsonResponse({ error: message }, 500)
   }
 })
