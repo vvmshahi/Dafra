@@ -14,6 +14,8 @@ import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { MeemLogo } from '@/components/MeemLogo'
+import { getCachedProductionStatus, productionStatusLabel, readCachedProductionStatus } from '@/lib/zatca/status'
+import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
 
 const db = () => supabase as any
 
@@ -37,6 +39,14 @@ const statusConfig = {
   paid:    { variant: 'success' as const, label: 'Paid',    icon: CheckCircle2 },
   pending: { variant: 'warning' as const, label: 'Pending', icon: Clock },
 }
+
+const zatcaToneClass = {
+  success: 'bg-emerald-500/20 border-emerald-400/20 text-emerald-300',
+  warning: 'bg-amber-500/20 border-amber-400/20 text-amber-300',
+  danger: 'bg-red-500/20 border-red-400/20 text-red-300',
+  neutral: 'bg-gray-500/20 border-gray-400/20 text-gray-300',
+  info: 'bg-blue-500/20 border-blue-400/20 text-blue-300',
+} as const
 
 function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
   label: string; value: React.ReactNode; sub: string
@@ -96,6 +106,7 @@ export default function BranchDashboardPage() {
   const [branchName,   setBranchName]   = useState('')
   const [zatcaPhase,   setZatcaPhase]   = useState<1 | 2>(1)
   const [hasActiveCert, setHasActiveCert] = useState(false)
+  const [productionStatus, setProductionStatus] = useState<ProductionOnboardingResponse | null>(null)
 
   const loadStats = useCallback(async () => {
     if (!tid || !bid) { setStatsLoading(false); return }
@@ -131,6 +142,7 @@ export default function BranchDashboardPage() {
     setBranchName(branchRes.data?.name ?? '')
     setZatcaPhase(branchRes.data?.zatca_phase ?? 1)
     setHasActiveCert(!!certRes.data)
+    setProductionStatus(readCachedProductionStatus(bid))
     setStatsLoading(false)
   }, [tid, bid])
 
@@ -201,6 +213,17 @@ export default function BranchDashboardPage() {
   useEffect(() => { loadLowStock() }, [loadLowStock])
 
   useEffect(() => {
+    if (!bid || zatcaPhase !== 2) return
+    let cancelled = false
+    getCachedProductionStatus(bid)
+      .then(status => { if (!cancelled) setProductionStatus(status) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [bid, zatcaPhase])
+
+  const zatcaStatus = productionStatusLabel(productionStatus, hasActiveCert)
+
+  useEffect(() => {
     if (!bid) return
     const channel = supabase
       .channel('branch-dashboard-' + bid)
@@ -222,13 +245,9 @@ export default function BranchDashboardPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {zatcaPhase === 2 && hasActiveCert ? (
-            <span className="text-[10px] bg-emerald-500/20 border border-emerald-400/20 text-emerald-300 px-2.5 py-1 rounded-lg">
-              Phase 2 — ZATCA Integrated
-            </span>
-          ) : zatcaPhase === 2 ? (
-            <span className="text-[10px] bg-amber-500/20 border border-amber-400/20 text-amber-300 px-2.5 py-1 rounded-lg">
-              Phase 2 — Setup Required
+          {zatcaPhase === 2 ? (
+            <span className={`text-[10px] border px-2.5 py-1 rounded-lg ${zatcaToneClass[zatcaStatus.tone]}`}>
+              {zatcaStatus.label}
             </span>
           ) : (
             <span className="text-[10px] bg-blue-500/20 border border-blue-400/20 text-blue-300 px-2.5 py-1 rounded-lg">

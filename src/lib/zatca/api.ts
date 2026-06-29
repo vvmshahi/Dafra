@@ -182,6 +182,9 @@ export interface ProductionOnboardingResponse {
   updatedAt?: string | null
   productionCsidExists?: boolean
   productionSecretExists?: boolean
+  branchName?: string | null
+  vatNumber?: string | null
+  crNumber?: string | null
   message?: string
   trace?: ProductionOnboardingTraceEntry[]
 }

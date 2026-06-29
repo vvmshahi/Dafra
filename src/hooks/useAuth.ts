@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { createContext, createElement, useContext, useEffect, useState, useCallback, type ReactNode } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import type { UserProfile, UserRole, Tenant } from '@/types'
@@ -9,7 +9,11 @@ function computeIsOnboarded(profile: UserProfile | null): boolean | null {
   return true
 }
 
-export function useAuth() {
+type AuthContextValue = ReturnType<typeof useProvideAuth>
+
+const AuthContext = createContext<AuthContextValue | null>(null)
+
+function useProvideAuth() {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
@@ -204,4 +208,17 @@ export function useAuth() {
     refreshProfile,
     refreshBranchCount,
   }
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const value = useProvideAuth()
+  return createElement(AuthContext.Provider, { value }, children)
+}
+
+export function useAuth() {
+  const value = useContext(AuthContext)
+  if (!value) {
+    throw new Error('useAuth must be used inside AuthProvider')
+  }
+  return value
 }

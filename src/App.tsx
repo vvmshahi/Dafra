@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
@@ -200,7 +200,7 @@ export default function App() {
             </Route>
 
             {/* Owner routes */}
-            <Route path="/dashboard" element={<DashboardRoute />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/dashboard/branches/:branchId" element={<BranchDetailPage />} />
             <Route path="/invoices"       element={<InvoicesPage />} />
             <Route path="/invoices/:id"   element={<InvoiceDetailPage />} />
@@ -224,13 +224,6 @@ export default function App() {
     </BrowserRouter>
     </>
   )
-}
-
-// Forces DashboardPage to fully remount on every navigation so branch data
-// is always fetched fresh. location.key changes on each navigation entry.
-function DashboardRoute() {
-  const { key } = useLocation()
-  return <DashboardPage key={key} />
 }
 
 // Inline placeholder for routes not yet built.

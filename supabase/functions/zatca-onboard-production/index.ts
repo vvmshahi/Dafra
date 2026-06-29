@@ -27,7 +27,7 @@ import {
   type FunctionalityMap,
   type OnboardingStatus,
 } from '../_shared/zatca/config.ts'
-import { requireTenantOwner, loadOwnedBranch, loadTenant } from '../_shared/zatca/auth.ts'
+import { requireTenantOwner, requireTenantUser, loadOwnedBranch, loadTenant } from '../_shared/zatca/auth.ts'
 import { generateProductionCsr, validateCsrInputs, type CsrParams } from '../_shared/zatca/csr.ts'
 import { encryptText } from '../_shared/zatca/crypto.ts'
 import { isZatcaHttpError, requestComplianceCsid, requestProductionCsid } from '../_shared/zatca/client.ts'
@@ -124,8 +124,6 @@ Deno.serve(async (req: Request) => {
       requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
     )
     const body = await readBody(req)
-    const owner = await requireTenantOwner(db, req)
-    setTrace(trace, 'auth_checked', 'success', 'Authenticated tenant owner confirmed.')
     const branchId = body.branchId
 
     if (!isUuid(branchId)) {
@@ -134,14 +132,32 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'Invalid branch', trace }, 400)
     }
 
+    if (body.action === 'status') {
+      const userContext = await requireTenantUser(db, req)
+      setTrace(trace, 'auth_checked', 'success', 'Authenticated tenant user confirmed.')
+      const branch = await loadOwnedBranch(
+        db,
+        branchId,
+        userContext.tenantId,
+        userContext.role === 'branch' ? userContext.branchId : null,
+      )
+      setTrace(trace, 'owner_branch_loaded', 'success', 'Branch loaded for this tenant.')
+      const status = await loadSafeOnboardingStatus(db, branch.id, userContext.tenantId)
+      skipPendingTrace(trace, 'Status check only.')
+      return jsonResponse({
+        ok: true,
+        ...status,
+        branchName: branch.name,
+        vatNumber: branch.vat_number ?? null,
+        crNumber: branch.cr_number ?? null,
+        trace,
+      })
+    }
+
+    const owner = await requireTenantOwner(db, req)
+    setTrace(trace, 'auth_checked', 'success', 'Authenticated tenant owner confirmed.')
     const branch = await loadOwnedBranch(db, branchId, owner.tenantId)
     setTrace(trace, 'owner_branch_loaded', 'success', 'Owner branch loaded for this tenant.')
-
-    if (body.action === 'status') {
-      const status = await loadSafeOnboardingStatus(db, branch.id, owner.tenantId)
-      skipPendingTrace(trace, 'Status check only.')
-      return jsonResponse({ ok: true, ...status, trace })
-    }
 
     if (body.action === 'preflight') {
       if (!isFunctionalityMap(body.functionalityMap)) {

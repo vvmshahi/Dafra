@@ -5,6 +5,37 @@ export interface OwnerContext {
   tenantId: string
 }
 
+export interface TenantUserContext extends OwnerContext {
+  role: string
+  branchId: string | null
+}
+
+export async function requireTenantUser(db: any, req: Request): Promise<TenantUserContext> {
+  const authHeader = req.headers.get('Authorization') ?? ''
+  const jwt = authHeader.replace('Bearer ', '').trim()
+  if (!jwt) throw new Error('Unauthorized')
+
+  const { data: { user }, error: authErr } = await db.auth.getUser(jwt)
+  if (authErr || !user) throw new Error('Unauthorized')
+
+  const { data: profile, error: profileErr } = await db
+    .from('user_profiles')
+    .select('id, tenant_id, branch_id, role, is_active')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (profileErr || !profile?.tenant_id || profile.is_active === false) {
+    throw new Error('Forbidden: active tenant user required')
+  }
+
+  return {
+    userId: user.id,
+    tenantId: profile.tenant_id,
+    branchId: profile.branch_id ?? null,
+    role: profile.role,
+  }
+}
+
 export async function requireTenantOwner(db: any, req: Request): Promise<OwnerContext> {
   const authHeader = req.headers.get('Authorization') ?? ''
   const jwt = authHeader.replace('Bearer ', '').trim()
@@ -26,8 +57,9 @@ export async function requireTenantOwner(db: any, req: Request): Promise<OwnerCo
   return { userId: user.id, tenantId: profile.tenant_id }
 }
 
-export async function loadOwnedBranch(db: any, branchId: string, tenantId: string): Promise<any> {
+export async function loadOwnedBranch(db: any, branchId: string, tenantId: string, userBranchId?: string | null): Promise<any> {
   if (!isUuid(branchId)) throw new Error('Invalid branch')
+  if (userBranchId && branchId !== userBranchId) throw new Error('Branch not found or access denied')
 
   const { data: branch, error } = await db
     .from('branches')

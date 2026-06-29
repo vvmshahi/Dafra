@@ -13,6 +13,8 @@ import { useAuth } from '@/hooks/useAuth'
 import { saudiTodayRange } from '@/lib/utils/date'
 import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
+import { getCachedProductionStatus, productionStatusLabel, readCachedProductionStatus } from '@/lib/zatca/status'
+import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
 
 const db = () => supabase as any
 
@@ -72,6 +74,7 @@ export default function BranchDetailPage() {
   // Branch info
   const [branch, setBranch]   = useState<any>(null)
   const [branchLoading, setBranchLoading] = useState(true)
+  const [productionStatus, setProductionStatus] = useState<ProductionOnboardingResponse | null>(null)
 
   // KPIs
   const [statsLoading, setStatsLoading] = useState(true)
@@ -108,8 +111,13 @@ export default function BranchDetailPage() {
       .eq('tenant_id', tid)
       .maybeSingle()
     setBranch(data)
+    if ((data?.zatca_phase ?? 1) === 2) {
+      setProductionStatus(readCachedProductionStatus(branchId))
+    } else {
+      setProductionStatus(null)
+    }
     setBranchLoading(false)
-  }, [branchId])
+  }, [branchId, tid])
 
   const loadStats = useCallback(async () => {
     if (!tid || !branchId) { setStatsLoading(false); return }
@@ -224,6 +232,17 @@ export default function BranchDetailPage() {
   useEffect(() => { loadLowStock() }, [loadLowStock])
   useEffect(() => { loadExpenses() }, [loadExpenses])
 
+  useEffect(() => {
+    if (!branchId || (branch?.zatca_phase ?? 1) !== 2) return
+    let cancelled = false
+    getCachedProductionStatus(branchId)
+      .then(status => { if (!cancelled) setProductionStatus(status) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [branchId, branch?.zatca_phase])
+
+  const zatcaStatus = productionStatusLabel(productionStatus)
+
   // Realtime: update stats + recent invoices when this branch creates a sale
   useEffect(() => {
     if (!tid || !branchId) return
@@ -283,8 +302,8 @@ export default function BranchDetailPage() {
                   {branch.is_active ? 'Active' : 'Inactive'}
                 </Badge>
                 <span className="flex items-center gap-1 text-[11px] text-gray-400">
-                  <ShieldCheck size={11} className="text-violet-400" />
-                  ZATCA Phase {branch.zatca_phase ?? 1}
+                  <ShieldCheck size={11} className={(branch.zatca_phase ?? 1) === 2 && zatcaStatus.tone === 'success' ? 'text-emerald-500' : 'text-violet-400'} />
+                  {(branch.zatca_phase ?? 1) === 2 ? zatcaStatus.label : 'ZATCA Phase 1'}
                 </span>
                 {branch.city && (
                   <span className="text-[11px] text-gray-400">{branch.city}</span>

@@ -13,6 +13,8 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { saudiNow, saudiDateStr, saudiTodayRange } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
+import { getCachedProductionStatus, productionStatusLabel, readCachedProductionStatus } from '@/lib/zatca/status'
+import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
 
 const db = () => supabase as any
 
@@ -68,9 +70,12 @@ interface BranchStat {
   todayCard:  number
   sessionOpen: boolean
   sessionOpenedAt: string | null
+  productionStatus?: ProductionOnboardingResponse | null
 }
 
 function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: boolean; onView: () => void }) {
+  const zatca = productionStatusLabel(branch.productionStatus)
+
   return (
     <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col gap-4 ${!branch.is_active ? 'opacity-60' : ''}`}>
 
@@ -95,8 +100,15 @@ function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: 
             <Badge variant={branch.is_active ? 'success' : 'neutral'} dot className="text-[10px]">
               {branch.is_active ? 'Active' : 'Inactive'}
             </Badge>
-            <span className="flex items-center gap-0.5 text-[10px] text-gray-400">
-              <ShieldCheck size={10} className="text-violet-400" /> Phase {branch.zatca_phase ?? 1}
+            <span className={`flex items-center gap-0.5 text-[10px] ${
+              branch.zatca_phase === 2 && zatca.tone === 'success'
+                ? 'text-emerald-600'
+                : branch.zatca_phase === 2
+                ? 'text-amber-600'
+                : 'text-gray-400'
+            }`}>
+              <ShieldCheck size={10} className={branch.zatca_phase === 2 && zatca.tone === 'success' ? 'text-emerald-500' : 'text-violet-400'} />
+              {branch.zatca_phase === 2 ? zatca.label : 'Phase 1'}
             </span>
             {branch.sessionOpen ? (
               <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium">
@@ -263,6 +275,13 @@ export default function DashboardPage() {
     setTotalExpenses(exps)
     setStatsLoading(false)
 
+    const productionStatuses = new Map<string, ProductionOnboardingResponse | null>()
+    for (const branch of branches) {
+      if ((branch.zatca_phase ?? 1) === 2) {
+        productionStatuses.set(branch.id, readCachedProductionStatus(branch.id))
+      }
+    }
+
     const stats: BranchStat[] = branches.map((b: any) => {
       const bInvs      = invs.filter((i: any) => i.branch_id === b.id)
       const openSession = openSessions.find((s: any) => s.branch_id === b.id)
@@ -274,10 +293,23 @@ export default function DashboardPage() {
         todayCard:       bInvs.filter((i: any) => i.payment_method === 'card').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0),
         sessionOpen:     !!openSession,
         sessionOpenedAt: openSession?.opened_at ?? null,
+        productionStatus: productionStatuses.get(b.id) ?? null,
       }
     })
     setBranchStats(stats)
     setBranchLoading(false)
+
+    branches
+      .filter((branch: any) => (branch.zatca_phase ?? 1) === 2)
+      .forEach((branch: any) => {
+        getCachedProductionStatus(branch.id)
+          .then(status => {
+            setBranchStats(prev => prev.map(item => (
+              item.id === branch.id ? { ...item, productionStatus: status } : item
+            )))
+          })
+          .catch(() => {})
+      })
   }, [tid])
 
   const loadChart = useCallback(async () => {

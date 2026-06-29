@@ -32,6 +32,7 @@ import {
   type ProductionOnboardingStatus,
   type ZatcaFunctionalityMap,
 } from '@/lib/zatca/api'
+import { getCachedProductionStatus, readCachedProductionStatus, writeCachedProductionStatus } from '@/lib/zatca/status'
 import type { Branch, ZatcaCertificate, CertificateStatus } from '@/types'
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
@@ -1180,6 +1181,13 @@ function ProductionOnboardingPanel({
         </div>
       )}
 
+      {statusLoading && !status && (
+        <div className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 p-4">
+          <Loader2 size={14} className="animate-spin text-gray-400" />
+          <p className="text-[11px] font-medium text-gray-500">Checking ZATCA production connection...</p>
+        </div>
+      )}
+
       {isConnected && status && !showReconnect && (
         <ProductionConnectionStatus
           branch={branch}
@@ -1200,7 +1208,7 @@ function ProductionOnboardingPanel({
         <DisconnectedStatus branch={branch} status={status} />
       )}
 
-      {showOnboardingForm && (
+      {showOnboardingForm && !(statusLoading && !status) && (
         <>
           <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3.5">
             <ShieldCheck size={14} className="text-emerald-600 mt-0.5 flex-shrink-0" />
@@ -1283,7 +1291,7 @@ function ProductionOnboardingPanel({
         </div>
       )}
 
-      {showOnboardingForm && (
+      {showOnboardingForm && !(statusLoading && !status) && (
         <div className="grid gap-2 sm:grid-cols-2">
           <button
             onClick={runPreflight}
@@ -1355,6 +1363,7 @@ function ProductionOnboardingPanel({
 function branchSummaryText(bc: BranchWithCert): string {
   const phase = bc.zatca_phase ?? 1
   if (phase < 2) return 'Phase 1 — QR code only'
+  if (bc.productionStatus === undefined) return 'Checking ZATCA production status'
   if (bc.productionStatus?.onboardingStatus === 'production_connected') {
     return 'Connected to ZATCA Production / FATOORA'
   }
@@ -1631,17 +1640,19 @@ export default function ZatcaTab() {
       await Promise.all(branches
         .filter(branch => (branch.zatca_phase ?? 1) === 2)
         .map(async branch => {
+          const cached = readCachedProductionStatus(branch.id)
+          if (cached) productionStatuses.set(branch.id, cached)
           try {
-            productionStatuses.set(branch.id, await getProductionOnboardingStatus(branch.id))
+            productionStatuses.set(branch.id, await getCachedProductionStatus(branch.id))
           } catch {
-            productionStatuses.set(branch.id, null)
+            if (!cached) productionStatuses.delete(branch.id)
           }
         }))
     }
     setData(branches.map(b => ({
       ...b,
       allCerts: certs.filter(c => c.branch_id === b.id),
-      productionStatus: productionStatuses.get(b.id) ?? null,
+      productionStatus: productionStatuses.has(b.id) ? productionStatuses.get(b.id) ?? null : undefined,
     })))
     // Auto-expand first branch if only one
     setExpandedId(prev => branches.length === 1 && !prev ? branches[0].id : prev)
@@ -1662,6 +1673,7 @@ export default function ZatcaTab() {
   }
 
   const handleProductionStatusUpdate = useCallback((branchId: string, status: ProductionOnboardingResponse) => {
+    writeCachedProductionStatus(branchId, status)
     setData(prev => prev.map(branch => (
       branch.id === branchId
         ? { ...branch, productionStatus: status }
@@ -1680,9 +1692,10 @@ export default function ZatcaTab() {
   ).length
 
   const phase2Branches  = data.filter(b => (b.zatca_phase ?? 1) === 2)
+  const unknownProductionCount = phase2Branches.filter(b => b.productionStatus === undefined).length
   const allProduction   = phase2Branches.length > 0 &&
     phase2Branches.every(b => b.productionStatus?.onboardingStatus === 'production_connected')
-  const showSandboxBanner = !allProduction
+  const showSandboxBanner = phase2Branches.length > 0 && unknownProductionCount === 0 && !allProduction
 
   return (
     <div className="space-y-4">
