@@ -175,6 +175,14 @@ export interface Database {
         Args: { p_payload: Record<string, unknown> }
         Returns: Record<string, unknown>
       }
+      confirm_purchase_receiving: {
+        Args: { p_purchase_id: string; p_confirm?: boolean }
+        Returns: Record<string, unknown>
+      }
+      cancel_purchase_receiving: {
+        Args: { p_purchase_id: string; p_reason: string; p_confirm?: boolean }
+        Returns: Record<string, unknown>
+      }
     }
     Enums: {
       user_role: UserRole
@@ -796,8 +804,12 @@ export type InventoryUnitType = 'pieces' | 'kg' | 'grams' | 'liters' | 'ml' | 'b
 export type PurchasePaymentMethod = 'cash' | 'card' | 'bank_transfer'
 export type PurchaseMode = 'simple_bill' | 'detailed_receiving'
 export type PurchaseStatus = 'draft' | 'posted' | 'cancelled'
+export type PurchaseReceivingStatus = 'not_applicable' | 'draft' | 'pending_confirmation' | 'confirmed' | 'cancelled' | 'reversed' | 'confirmed_legacy'
 export type PurchaseTaxInputMode = 'none' | 'included' | 'excluded' | 'manual'
 export type PurchasePaymentStatus = 'paid' | 'unpaid' | 'partial'
+export type PurchaseItemLineType = 'stock' | 'non_stock' | 'unmatched' | 'ignored'
+export type PurchaseItemReceivingStatus = 'pending' | 'confirmed' | 'skipped' | 'cancelled' | 'reversed'
+export type PurchaseItemMatchSource = 'manual' | 'ai' | 'mapping' | 'none'
 
 export interface Supplier {
   id: string
@@ -844,6 +856,15 @@ export interface Purchase {
   purchase_date: string
   purchase_mode: PurchaseMode
   status: PurchaseStatus
+  receiving_status: PurchaseReceivingStatus
+  received_at: string | null
+  received_by: string | null
+  cancelled_at: string | null
+  cancelled_by: string | null
+  cancellation_reason: string | null
+  reversed_at: string | null
+  reversed_by: string | null
+  reversal_reason: string | null
   bill_number: string | null
   tax_input_mode: PurchaseTaxInputMode
   payment_status: PurchasePaymentStatus
@@ -862,6 +883,17 @@ export interface PurchaseItem {
   purchase_id: string
   inventory_item_id: string | null
   name: string
+  supplier_item_name: string | null
+  line_type: PurchaseItemLineType
+  receiving_status: PurchaseItemReceivingStatus
+  received_quantity: number
+  tax_rate: number | null
+  vat_amount: number
+  discount_amount: number
+  match_confidence: number | null
+  match_source: PurchaseItemMatchSource
+  ignored_at: string | null
+  confirmed_at: string | null
   quantity: number
   unit_cost: number
   total: number
@@ -908,6 +940,15 @@ export interface PurchaseInsert {
   purchase_date?: string
   purchase_mode?: PurchaseMode
   status?: PurchaseStatus
+  receiving_status?: PurchaseReceivingStatus
+  received_at?: string | null
+  received_by?: string | null
+  cancelled_at?: string | null
+  cancelled_by?: string | null
+  cancellation_reason?: string | null
+  reversed_at?: string | null
+  reversed_by?: string | null
+  reversal_reason?: string | null
   bill_number?: string | null
   tax_input_mode?: PurchaseTaxInputMode
   payment_status?: PurchasePaymentStatus
@@ -924,6 +965,17 @@ export interface PurchaseItemInsert {
   purchase_id: string
   inventory_item_id?: string | null
   name: string
+  supplier_item_name?: string | null
+  line_type?: PurchaseItemLineType
+  receiving_status?: PurchaseItemReceivingStatus
+  received_quantity?: number
+  tax_rate?: number | null
+  vat_amount?: number
+  discount_amount?: number
+  match_confidence?: number | null
+  match_source?: PurchaseItemMatchSource
+  ignored_at?: string | null
+  confirmed_at?: string | null
   quantity: number
   unit_cost: number
   total: number

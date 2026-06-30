@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Eye, ShoppingCart, Paperclip, X, Trash2, AlertTriangle } from 'lucide-react'
+import { Plus, Eye, ShoppingCart, Paperclip, X, Trash2, AlertTriangle, CheckCircle2, RotateCcw, Ban } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
@@ -18,6 +18,8 @@ interface PurchaseRow extends Purchase {
   purchase_items: { id: string }[]
 }
 
+type ReceivingAction = 'confirm' | 'cancel' | 'reverse'
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const PAY_BADGE: Record<string, 'success' | 'info' | 'neutral'> = {
@@ -34,6 +36,24 @@ const PAYMENT_STATUS_LABEL: Record<string, string> = {
   paid: 'Paid',
   unpaid: 'Unpaid',
   partial: 'Partial',
+}
+const RECEIVING_LABEL: Record<string, string> = {
+  not_applicable: 'No receiving',
+  draft: 'Draft',
+  pending_confirmation: 'Pending',
+  confirmed: 'Received',
+  cancelled: 'Cancelled',
+  reversed: 'Reversed',
+  confirmed_legacy: 'Legacy received',
+}
+const RECEIVING_BADGE: Record<string, 'success' | 'warning' | 'danger' | 'info' | 'neutral'> = {
+  not_applicable: 'neutral',
+  draft: 'info',
+  pending_confirmation: 'warning',
+  confirmed: 'success',
+  cancelled: 'danger',
+  reversed: 'danger',
+  confirmed_legacy: 'neutral',
 }
 
 const fmt = (n: number) =>
@@ -52,6 +72,7 @@ function PurchaseDetailModal({
   const supplierName = purchase.suppliers?.name ?? '—'
   const pay          = purchase.payment_method
   const mode         = purchase.purchase_mode ?? 'detailed_receiving'
+  const receiving    = purchase.receiving_status ?? 'not_applicable'
 
   return (
     <>
@@ -88,6 +109,12 @@ function PurchaseDetailModal({
                 <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Type</p>
                 <p className="font-medium text-gray-800 mt-0.5">{MODE_LABEL[mode] ?? mode}</p>
               </div>
+              {mode === 'detailed_receiving' && (
+                <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2">
+                  <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Receiving</p>
+                  <p className="font-medium text-gray-800 mt-0.5">{RECEIVING_LABEL[receiving] ?? receiving}</p>
+                </div>
+              )}
               <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2">
                 <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Payment</p>
                 <p className="font-medium text-gray-800 mt-0.5">
@@ -268,6 +295,134 @@ function DeletePurchaseBillModal({
   )
 }
 
+function ReceivingActionModal({
+  purchase,
+  action,
+  processing,
+  error,
+  confirmed,
+  reason,
+  onConfirmed,
+  onReason,
+  onClose,
+  onSubmit,
+}: {
+  purchase: PurchaseRow
+  action: ReceivingAction
+  processing: boolean
+  error: string
+  confirmed: boolean
+  reason: string
+  onConfirmed: (value: boolean) => void
+  onReason: (value: string) => void
+  onClose: () => void
+  onSubmit: () => void
+}) {
+  const supplierName = purchase.suppliers?.name ?? 'No supplier'
+  const receiving = purchase.receiving_status ?? 'pending_confirmation'
+  const isConfirm = action === 'confirm'
+  const isReverse = action === 'reverse'
+  const title = isConfirm ? 'Confirm Receiving' : isReverse ? 'Reverse Receiving' : 'Cancel Receiving'
+  const buttonLabel = isConfirm ? 'Confirm' : isReverse ? 'Reverse' : 'Cancel Receiving'
+  const reasonRequired = !isConfirm
+  const disabled = !confirmed || (reasonRequired && reason.trim().length < 3)
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-50" onClick={onClose} />
+      <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+          <div className="px-6 py-5 border-b border-gray-100 flex items-start gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+              isConfirm ? 'bg-emerald-50 text-emerald-500' : 'bg-amber-50 text-amber-600'
+            }`}>
+              {isConfirm ? <CheckCircle2 size={18} /> : isReverse ? <RotateCcw size={18} /> : <Ban size={18} />}
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-gray-900">{title}</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                {isConfirm
+                  ? 'This increases stock for linked item lines only. Unlinked lines stay as bill details.'
+                  : isReverse
+                  ? 'This subtracts stock received by this purchase when enough stock is available.'
+                  : 'This cancels a pending receiving purchase. No stock will change.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="px-6 py-5 space-y-4">
+            <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm space-y-1">
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Supplier</span>
+                <span className="font-medium text-gray-700 truncate">{supplierName}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Total</span>
+                <span className="font-semibold text-gray-900"><Rial amount={purchase.total_amount} /></span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Date</span>
+                <span className="font-medium text-gray-700">{new Date(purchase.purchase_date).toLocaleDateString('en-GB')}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Receiving</span>
+                <span className="font-medium text-gray-700">{RECEIVING_LABEL[receiving] ?? receiving}</span>
+              </div>
+            </div>
+
+            {reasonRequired && (
+              <div>
+                <label className="label">{isReverse ? 'Reversal Reason' : 'Cancellation Reason'}</label>
+                <textarea
+                  className="input resize-none"
+                  rows={2}
+                  value={reason}
+                  onChange={e => onReason(e.target.value)}
+                  placeholder="Required reason"
+                />
+              </div>
+            )}
+
+            <label className="flex items-start gap-3 rounded-xl border border-gray-200 px-4 py-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={confirmed}
+                onChange={e => onConfirmed(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-sm text-gray-600">
+                {isConfirm
+                  ? 'I confirm these received stock quantities are correct.'
+                  : 'I understand this receiving action cannot be undone automatically.'}
+              </span>
+            </label>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600">
+                {error}
+              </div>
+            )}
+          </div>
+
+          <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
+            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Close</Button>
+            <Button
+              type="button"
+              variant={isConfirm ? 'primary' : 'danger'}
+              className="flex-1"
+              loading={processing}
+              disabled={disabled}
+              onClick={onSubmit}
+            >
+              {buttonLabel}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── Main tab ──────────────────────────────────────────────────────────────────
 
 export default function PurchaseHistoryTab() {
@@ -287,6 +442,12 @@ export default function PurchaseHistoryTab() {
   const [deleteConfirmed, setDeleteConfirmed] = useState(false)
   const [deleteError,     setDeleteError]     = useState('')
   const [deleting,        setDeleting]        = useState(false)
+  const [receivingTarget, setReceivingTarget] = useState<PurchaseRow | null>(null)
+  const [receivingAction, setReceivingAction] = useState<ReceivingAction>('confirm')
+  const [receivingConfirm, setReceivingConfirm] = useState(false)
+  const [receivingReason, setReceivingReason] = useState('')
+  const [receivingError,  setReceivingError]  = useState('')
+  const [receivingBusy,   setReceivingBusy]   = useState(false)
 
   const load = useCallback(async () => {
     const tid = profile?.tenant_id
@@ -338,6 +499,24 @@ export default function PurchaseHistoryTab() {
     (purchase.purchase_mode ?? 'detailed_receiving') === 'simple_bill' &&
     purchase.purchase_items.length === 0
 
+  const receivingStatus = (purchase: PurchaseRow) =>
+    purchase.receiving_status ?? 'not_applicable'
+
+  const isDetailedReceiving = (purchase: PurchaseRow) =>
+    (purchase.purchase_mode ?? 'detailed_receiving') === 'detailed_receiving'
+
+  const canConfirmReceiving = (purchase: PurchaseRow) =>
+    isDetailedReceiving(purchase) &&
+    ['draft', 'pending_confirmation'].includes(receivingStatus(purchase))
+
+  const canCancelReceiving = (purchase: PurchaseRow) =>
+    isDetailedReceiving(purchase) &&
+    ['draft', 'pending_confirmation'].includes(receivingStatus(purchase))
+
+  const canReverseReceiving = (purchase: PurchaseRow) =>
+    isDetailedReceiving(purchase) &&
+    receivingStatus(purchase) === 'confirmed'
+
   const openDelete = (purchase: PurchaseRow) => {
     setDeleteTarget(purchase)
     setDeleteConfirmed(false)
@@ -349,6 +528,22 @@ export default function PurchaseHistoryTab() {
     setDeleteTarget(null)
     setDeleteConfirmed(false)
     setDeleteError('')
+  }
+
+  const openReceivingAction = (purchase: PurchaseRow, action: ReceivingAction) => {
+    setReceivingTarget(purchase)
+    setReceivingAction(action)
+    setReceivingConfirm(false)
+    setReceivingReason('')
+    setReceivingError('')
+  }
+
+  const closeReceivingAction = () => {
+    if (receivingBusy) return
+    setReceivingTarget(null)
+    setReceivingConfirm(false)
+    setReceivingReason('')
+    setReceivingError('')
   }
 
   const deletePurchaseBill = async () => {
@@ -366,7 +561,7 @@ export default function PurchaseHistoryTab() {
       const message = /permission|forbidden|unauthorized/i.test(rawMessage)
         ? 'You do not have permission to delete this purchase bill.'
         : /item|stock|receiving|detailed/i.test(rawMessage)
-        ? 'This purchase cannot be deleted because it contains item/stock receiving details. Use reversal/cancel flow after Phase 4C.'
+        ? 'This purchase cannot be deleted because it contains receiving/stock details. Use the cancel or reverse receiving flow.'
         : rawMessage || 'Delete failed'
       setDeleteError(message)
       setDeleting(false)
@@ -376,6 +571,62 @@ export default function PurchaseHistoryTab() {
     setDeleting(false)
     setDeleteTarget(null)
     setDeleteConfirmed(false)
+    await load()
+  }
+
+  const friendlyReceivingError = (rawMessage: string) => {
+    if (/permission|forbidden|unauthorized/i.test(rawMessage)) {
+      return 'You do not have permission to update this purchase receiving.'
+    }
+    if (/already.*confirmed/i.test(rawMessage)) {
+      return 'This purchase receiving has already been confirmed.'
+    }
+    if (/already.*reversed|already.*cancelled/i.test(rawMessage)) {
+      return 'This purchase receiving is already cancelled or reversed.'
+    }
+    if (/lower than the received quantity|current stock/i.test(rawMessage)) {
+      return 'This receiving cannot be reversed because current stock is lower than the received quantity.'
+    }
+    if (/linked stock|At least one|item lines/i.test(rawMessage)) {
+      return 'Link at least one stock item line before confirming receiving.'
+    }
+    if (/pending receiving|not pending/i.test(rawMessage)) {
+      return 'This purchase is not pending receiving confirmation.'
+    }
+    return rawMessage || 'Receiving update failed'
+  }
+
+  const submitReceivingAction = async () => {
+    if (!receivingTarget) return
+    setReceivingBusy(true)
+    setReceivingError('')
+
+    const payload = receivingAction === 'confirm'
+      ? {
+          fn: 'confirm_purchase_receiving',
+          args: { p_purchase_id: receivingTarget.id, p_confirm: receivingConfirm },
+        }
+      : {
+          fn: 'cancel_purchase_receiving',
+          args: {
+            p_purchase_id: receivingTarget.id,
+            p_reason: receivingReason.trim(),
+            p_confirm: receivingConfirm,
+          },
+        }
+
+    const { error } = await (supabase as any).rpc(payload.fn, payload.args)
+
+    if (error) {
+      setReceivingError(friendlyReceivingError(error.message ?? ''))
+      setReceivingBusy(false)
+      return
+    }
+
+    setReceivingBusy(false)
+    setReceivingTarget(null)
+    setReceivingConfirm(false)
+    setReceivingReason('')
     await load()
   }
 
@@ -441,7 +692,7 @@ export default function PurchaseHistoryTab() {
             <div className="w-24 hidden md:block text-right">VAT</div>
             <div className="w-32 text-right">Total</div>
             <div className="w-20 flex-shrink-0 text-center">Bill</div>
-            <div className="w-20 flex-shrink-0 text-center" />
+            <div className="w-28 flex-shrink-0 text-center" />
           </div>
 
           {purchases.map(p => (
@@ -470,6 +721,13 @@ export default function PurchaseHistoryTab() {
                   {p.bill_number ? ` · Bill ${p.bill_number}` : ''}
                   {p.notes ? ` · ${p.notes}` : ''}
                 </p>
+                {isDetailedReceiving(p) && (
+                  <div className="mt-1">
+                    <Badge variant={RECEIVING_BADGE[receivingStatus(p)] ?? 'neutral'} dot>
+                      {RECEIVING_LABEL[receivingStatus(p)] ?? receivingStatus(p)}
+                    </Badge>
+                  </div>
+                )}
               </div>
 
               {/* Item count */}
@@ -517,7 +775,7 @@ export default function PurchaseHistoryTab() {
               </div>
 
               {/* Actions */}
-              <div className="w-20 flex-shrink-0 flex justify-center gap-1">
+              <div className="w-28 flex-shrink-0 flex justify-center gap-1">
                 <button
                   onClick={() => viewDetails(p)}
                   className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
@@ -525,6 +783,33 @@ export default function PurchaseHistoryTab() {
                 >
                   <Eye size={14} />
                 </button>
+                {canConfirmReceiving(p) && (
+                  <button
+                    onClick={() => openReceivingAction(p, 'confirm')}
+                    className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
+                    title="Confirm receiving"
+                  >
+                    <CheckCircle2 size={14} />
+                  </button>
+                )}
+                {canCancelReceiving(p) && (
+                  <button
+                    onClick={() => openReceivingAction(p, 'cancel')}
+                    className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                    title="Cancel pending receiving"
+                  >
+                    <Ban size={14} />
+                  </button>
+                )}
+                {canReverseReceiving(p) && (
+                  <button
+                    onClick={() => openReceivingAction(p, 'reverse')}
+                    className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                    title="Reverse receiving"
+                  >
+                    <RotateCcw size={14} />
+                  </button>
+                )}
                 {canDeleteBillOnly(p) && (
                   <button
                     onClick={() => openDelete(p)}
@@ -554,7 +839,7 @@ export default function PurchaseHistoryTab() {
               <p className="text-[10px] text-gray-400">total spent</p>
             </div>
             <div className="w-20" />
-            <div className="w-20" />
+            <div className="w-28" />
           </div>
         </div>
       )}
@@ -585,6 +870,21 @@ export default function PurchaseHistoryTab() {
           onConfirmed={setDeleteConfirmed}
           onClose={closeDelete}
           onDelete={deletePurchaseBill}
+        />
+      )}
+
+      {receivingTarget && (
+        <ReceivingActionModal
+          purchase={receivingTarget}
+          action={receivingAction}
+          processing={receivingBusy}
+          error={receivingError}
+          confirmed={receivingConfirm}
+          reason={receivingReason}
+          onConfirmed={setReceivingConfirm}
+          onReason={setReceivingReason}
+          onClose={closeReceivingAction}
+          onSubmit={submitReceivingAction}
         />
       )}
     </div>

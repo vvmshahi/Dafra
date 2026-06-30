@@ -217,7 +217,8 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
 
       const q = supabase as unknown as { from: (t: string) => any }
 
-      // Insert purchase header
+      // Insert purchase header. Receive Stock is saved pending confirmation;
+      // Phase 4C stock changes happen only through confirm_purchase_receiving.
       const { data: purData, error: purErr } = await q.from('purchases')
         .insert({
           tenant_id:      tid,
@@ -226,7 +227,8 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
           added_by:       profile?.id ?? null,
           purchase_date:  date,
           purchase_mode:  mode,
-          status:         'posted',
+          status:         mode === 'detailed_receiving' ? 'draft' : 'posted',
+          receiving_status: mode === 'detailed_receiving' ? 'pending_confirmation' : 'not_applicable',
           bill_number:    billNumber.trim() || null,
           tax_input_mode: purchaseTaxMode,
           payment_status: paymentStatus,
@@ -250,12 +252,18 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
         return
       }
 
-      // Insert line items (trigger updates inventory_items.current_quantity)
+      // Insert line items as receiving detail only. Linked stock is increased
+      // later by confirm_purchase_receiving after human confirmation.
       const { error: itemsErr } = await q.from('purchase_items').insert(
         validLines.map(l => ({
           purchase_id:       purchaseId,
           inventory_item_id: l.inventory_item_id || null,
           name:              l.name.trim(),
+          supplier_item_name: l.name.trim(),
+          line_type:         l.inventory_item_id ? 'stock' : 'non_stock',
+          receiving_status:  'pending',
+          received_quantity: 0,
+          match_source:      l.inventory_item_id ? 'manual' : 'none',
           quantity:          parseFloat(l.quantity),
           unit_cost:         parseFloat(l.unit_cost) || 0,
           total:             lineTotal(l),
@@ -301,7 +309,7 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
             <div className="grid grid-cols-2 gap-2">
               {([
                 { value: 'simple_bill', label: 'Simple Bill', desc: 'No stock update' },
-                { value: 'detailed_receiving', label: 'Receive Stock', desc: 'Linked lines update stock' },
+                { value: 'detailed_receiving', label: 'Receive Stock', desc: 'Confirm before stock updates' },
               ] as { value: PurchaseMode; label: string; desc: string }[]).map(opt => (
                 <button
                   key={opt.value}
@@ -467,7 +475,7 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
                 <div className="space-y-3">
                   <SectionLabel>Items Purchased</SectionLabel>
                   <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                    Linked stock items increase stock immediately in the current system.
+                    Lines are saved for review. Linked stock increases only after Confirm Receiving.
                   </div>
 
                   <div className="space-y-2">
@@ -645,7 +653,7 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
             <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
             <Button type="submit" className="flex-1" loading={saving}>
-              {mode === 'simple_bill' ? 'Record Bill' : 'Record Purchase'}
+              {mode === 'simple_bill' ? 'Record Bill' : 'Save for Confirmation'}
             </Button>
           </div>
         </form>
