@@ -271,7 +271,8 @@ export default function InvoiceSettingsPage() {
     setSaveError(null)
     setSaveOk(false)
     try {
-      const { error } = await (supabase as any).from('branches').update({
+      const payload = {
+        branch_id:         bid,
         display_name:     form.display_name     || null,
         phone:            form.phone            || null,
         show_logo:        form.show_logo,
@@ -284,8 +285,12 @@ export default function InvoiceSettingsPage() {
         show_footer:      form.show_footer,
         show_cash_change: form.show_cash_change,
         print_mode:       form.print_mode,
-      }).eq('id', bid)
+      }
+      const { error } = await (supabase as any).rpc('update_branch_invoice_settings', {
+        p_payload: payload,
+      })
       if (error) throw error
+      setBranch(prev => prev ? { ...prev, ...payload } : prev)
       setSaveOk(true)
       setTimeout(() => setSaveOk(false), 3000)
     } catch (err: any) {
