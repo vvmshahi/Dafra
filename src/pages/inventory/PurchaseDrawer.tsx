@@ -9,11 +9,17 @@ import type { Supplier, InventoryItem, Purchase, PurchaseItem } from '@/types'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface LineItem {
-  key:               string
-  inventory_item_id: string
-  name:              string
-  quantity:          string
-  unit_cost:         string
+  key:                         string
+  inventory_item_id:           string
+  name:                        string
+  supplier_item_name:          string
+  quantity:                    string
+  unit_cost:                   string
+  remember_match:              boolean
+  match_source:                'manual' | 'mapping' | 'none'
+  suggestion_lookup_key?:      string
+  suggested_inventory_item_id?: string | null
+  suggestion_label?:           string | null
 }
 
 type PurchaseMode = 'simple_bill' | 'detailed_receiving'
@@ -23,7 +29,16 @@ type PaymentStatus = 'paid' | 'unpaid' | 'partial'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function newLine(): LineItem {
-  return { key: Math.random().toString(36).slice(2), inventory_item_id: '', name: '', quantity: '', unit_cost: '' }
+  return {
+    key:                Math.random().toString(36).slice(2),
+    inventory_item_id:  '',
+    name:               '',
+    supplier_item_name: '',
+    quantity:           '',
+    unit_cost:          '',
+    remember_match:     false,
+    match_source:       'none',
+  }
 }
 
 function lineTotal(l: LineItem): number {
@@ -32,6 +47,15 @@ function lineTotal(l: LineItem): number {
 
 function roundMoney(n: number): number {
   return Math.max(0, Math.round(n * 100) / 100)
+}
+
+function normalizeSupplierNameKey(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function safeFileName(name: string): string {
+  const cleaned = name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/-+/g, '-')
+  return cleaned || 'bill'
 }
 
 function calculatePurchaseTotals(amountRaw: string, taxMode: TaxInputMode) {
@@ -101,6 +125,7 @@ export default function PurchaseDrawer({
   const [error,       setError]       = useState('')
   const [billFile,    setBillFile]    = useState<File | null>(null)
   const [billPreview, setBillPreview] = useState<string | null>(null)
+  const [billChanged, setBillChanged] = useState(false)
 
   const [mode,          setMode]          = useState<PurchaseMode>('simple_bill')
   const [date,          setDate]          = useState('')
@@ -135,14 +160,20 @@ export default function PurchaseDrawer({
           ? (editingItems.length > 0 ? editingItems.map(item => ({
               key: item.id,
               inventory_item_id: item.inventory_item_id ?? '',
-              name: item.supplier_item_name ?? item.name,
+              name: item.name,
+              supplier_item_name: item.supplier_item_name ?? item.name,
               quantity: String(item.quantity),
               unit_cost: String(item.unit_cost),
+              remember_match: false,
+              match_source: item.inventory_item_id
+                ? (item.match_source === 'mapping' ? 'mapping' : 'manual')
+                : 'none',
             })) : [newLine()])
           : [newLine()]
       )
       setBillFile(null)
-      setBillPreview(editingPurchase?.bill_url ?? null)
+      setBillChanged(false)
+      setBillPreview(editingPurchase?.bill_path ? 'attached' : editingPurchase?.bill_url ?? null)
       setNotes(editingPurchase?.notes ?? '')
       setError('')
     }
@@ -152,13 +183,36 @@ export default function PurchaseDrawer({
     setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l))
 
   const selectItem = (key: string, itemId: string) => {
-    if (!itemId) { updateLine(key, { inventory_item_id: '', name: '', unit_cost: '' }); return }
+    if (!itemId) {
+      setLines(prev => prev.map(l => l.key === key ? {
+        ...l,
+        inventory_item_id: '',
+        name: l.supplier_item_name,
+        remember_match: false,
+        match_source: 'none',
+      } : l))
+      return
+    }
     const item = inventoryItems.find(i => i.id === itemId)
-    updateLine(key, {
+    setLines(prev => prev.map(l => l.key === key ? {
+      ...l,
       inventory_item_id: itemId,
-      name:              item?.name ?? '',
-      unit_cost:         item ? String(item.unit_cost) : '',
-    })
+      name:              item?.name ?? l.name,
+      unit_cost:         l.unit_cost || (item ? String(item.unit_cost) : ''),
+      match_source:      'manual',
+    } : l))
+  }
+
+  const updateSupplierItemName = (key: string, value: string) => {
+    setLines(prev => prev.map(l => l.key === key ? {
+      ...l,
+      supplier_item_name: value,
+      name: l.inventory_item_id ? l.name : value,
+      match_source: l.inventory_item_id ? 'manual' : 'none',
+      suggestion_lookup_key: undefined,
+      suggested_inventory_item_id: null,
+      suggestion_label: null,
+    } : l))
   }
 
   const removeLine = (key: string) => {
@@ -171,18 +225,143 @@ export default function PurchaseDrawer({
     if (!file) return
     setBillFile(file)
     setBillPreview(URL.createObjectURL(file))
+    setBillChanged(true)
   }
+
+  useEffect(() => {
+    if (!open || mode !== 'detailed_receiving' || !supplierId) return
+
+    const pending = lines.filter(line => {
+      const normalized = normalizeSupplierNameKey(line.supplier_item_name)
+      const lookupKey = `${supplierId}:${normalized}`
+      return normalized.length >= 2 &&
+        !line.inventory_item_id &&
+        line.suggestion_lookup_key !== lookupKey
+    })
+
+    if (pending.length === 0) return
+
+    const timer = window.setTimeout(() => {
+      pending.forEach(async line => {
+        const normalized = normalizeSupplierNameKey(line.supplier_item_name)
+        const lookupKey = `${supplierId}:${normalized}`
+
+        const { data, error: suggestionErr } = await (supabase as any).rpc('suggest_supplier_item_mapping', {
+          p_supplier_id: supplierId,
+          p_supplier_item_name: line.supplier_item_name,
+          p_branch_id: profile?.branch_id ?? null,
+        })
+
+        if (suggestionErr) {
+          setLines(prev => prev.map(current => current.key === line.key ? {
+            ...current,
+            suggestion_lookup_key: lookupKey,
+          } : current))
+          return
+        }
+
+        const matchedId = data?.matched_inventory_item_id as string | undefined
+        const matchedItem = matchedId ? inventoryItems.find(item => item.id === matchedId) : null
+
+        setLines(prev => prev.map(current => {
+          if (current.key !== line.key) return current
+          if (current.inventory_item_id || normalizeSupplierNameKey(current.supplier_item_name) !== normalized) {
+            return current
+          }
+
+          if (!matchedId || !matchedItem) {
+            return {
+              ...current,
+              suggestion_lookup_key: lookupKey,
+              suggested_inventory_item_id: null,
+              suggestion_label: null,
+            }
+          }
+
+          return {
+            ...current,
+            inventory_item_id: matchedId,
+            name: matchedItem.name,
+            unit_cost: current.unit_cost || String(matchedItem.unit_cost),
+            remember_match: false,
+            match_source: 'mapping',
+            suggestion_lookup_key: lookupKey,
+            suggested_inventory_item_id: matchedId,
+            suggestion_label: matchedItem.name,
+          }
+        }))
+      })
+    }, 350)
+
+    return () => window.clearTimeout(timer)
+  }, [open, mode, supplierId, lines, inventoryItems, profile?.branch_id])
 
   // Totals
   const rawLineAmount = roundMoney(lines.reduce((s, l) => s + lineTotal(l), 0))
   const simpleTotals = calculatePurchaseTotals(simpleAmount, taxMode)
   const detailedTotals = calculatePurchaseTotals(String(rawLineAmount), taxMode)
 
+  const lineSupplierName = (line: LineItem) =>
+    (line.supplier_item_name || line.name).trim()
+
+  const uploadBill = async (tenantId: string, branchId: string, purchaseKey: string) => {
+    if (!billFile) return null
+
+    const originalName = safeFileName(billFile.name)
+    const fallbackExt = billFile.type === 'application/pdf' ? 'pdf' : 'jpg'
+    const ext = originalName.includes('.') ? originalName.split('.').pop()! : fallbackExt
+    const baseName = originalName.replace(/\.[^.]+$/, '') || 'bill'
+    const path = `${tenantId}/${branchId}/purchases/${purchaseKey}/${Date.now()}-${baseName}.${ext}`
+
+    const { error: upErr } = await supabase.storage
+      .from('purchases-bills')
+      .upload(path, billFile, { upsert: false })
+
+    if (upErr) throw new Error('Bill upload failed: ' + upErr.message)
+    return path
+  }
+
+  const setPurchaseAttachment = async (purchaseId: string, billPath: string | null) => {
+    if (!billChanged) return
+
+    const { error: attachmentErr } = await (supabase as any).rpc('set_purchase_bill_attachment', {
+      p_purchase_id: purchaseId,
+      p_bill_path: billPath,
+      p_clear: billPath === null,
+    })
+
+    if (attachmentErr) throw new Error(attachmentErr.message)
+  }
+
+  const rememberSelectedMatches = async (sourceLines: LineItem[]) => {
+    if (!supplierId) return
+
+    const matches = sourceLines.filter(line =>
+      line.remember_match &&
+      line.inventory_item_id &&
+      lineSupplierName(line)
+    )
+
+    const results = await Promise.all(matches.map(line =>
+      (supabase as any).rpc('upsert_supplier_item_mapping', {
+        p_payload: {
+          supplier_id: supplierId,
+          supplier_item_name: lineSupplierName(line),
+          matched_inventory_item_id: line.inventory_item_id,
+          branch_id: profile?.branch_id ?? null,
+        },
+      })
+    ))
+
+    const failed = results.find(result => result.error)
+    if (failed?.error) throw new Error(failed.error.message)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     const validLines = lines.filter(
-      l => l.name.trim() && (parseFloat(l.quantity) || 0) > 0
+      l => lineSupplierName(l) && (parseFloat(l.quantity) || 0) > 0
     )
     if (!date) {
       setError('Purchase date is required')
@@ -205,24 +384,16 @@ export default function PurchaseDrawer({
     setError('')
 
     try {
-      const tid = profile?.tenant_id!
-      const bid = profile?.branch_id!
+      const tid = profile?.tenant_id
+      const bid = profile?.branch_id
+      if (!tid || !bid) {
+        setError('Branch profile is required before saving purchases')
+        return
+      }
+
       const purchaseTotals = mode === 'simple_bill' ? simpleTotals : detailedTotals
 
-      // Upload bill
-      let billUrl: string | null = null
-      if (billFile) {
-        const ext  = billFile.name.split('.').pop() ?? 'jpg'
-        const path = `${tid}/${Date.now()}.${ext}`
-        const { error: upErr } = await supabase.storage
-          .from('purchases-bills')
-          .upload(path, billFile, { upsert: true })
-        if (upErr) { setError('Bill upload failed: ' + upErr.message); return }
-        const { data: { signedUrl } } = await supabase.storage
-          .from('purchases-bills')
-          .createSignedUrl(path, 60 * 60 * 24 * 365)
-        billUrl = signedUrl
-      }
+      const billPath = await uploadBill(tid, bid, editingPurchase?.id ?? crypto.randomUUID())
 
       const q = supabase as unknown as { from: (t: string) => any }
 
@@ -243,16 +414,12 @@ export default function PurchaseDrawer({
         } else {
           payload.items = validLines.map(l => ({
             inventory_item_id: l.inventory_item_id || null,
-            name:              l.name.trim(),
+            name:              lineSupplierName(l),
+            supplier_item_name: lineSupplierName(l),
+            match_source:      l.inventory_item_id ? l.match_source : 'none',
             quantity:          parseFloat(l.quantity),
             unit_cost:         parseFloat(l.unit_cost) || 0,
           }))
-        }
-
-        if (billUrl !== null) {
-          payload.bill_url = billUrl
-        } else if (editingPurchase.bill_url && billPreview === null) {
-          payload.bill_url = null
         }
 
         const { error: editErr } = await (supabase as any).rpc('update_purchase_entry', {
@@ -260,6 +427,9 @@ export default function PurchaseDrawer({
         })
 
         if (editErr) { setError(editErr.message); return }
+
+        await setPurchaseAttachment(editingPurchase.id, billPath)
+        await rememberSelectedMatches(validLines).catch(err => console.warn('Remembering supplier item mapping failed', err))
 
         onSaved()
         onClose()
@@ -285,7 +455,8 @@ export default function PurchaseDrawer({
           vat_amount:     purchaseTotals.vat,
           total_amount:   purchaseTotals.total,
           payment_method: payMethod,
-          bill_url:       billUrl,
+          bill_url:       null,
+          bill_path:      billPath,
           notes:          notes.trim() || null,
         })
         .select('id')
@@ -296,6 +467,7 @@ export default function PurchaseDrawer({
       const purchaseId = purData.id
 
       if (mode === 'simple_bill') {
+        if (billPath) await setPurchaseAttachment(purchaseId, billPath)
         onSaved()
         onClose()
         return
@@ -307,12 +479,12 @@ export default function PurchaseDrawer({
         validLines.map(l => ({
           purchase_id:       purchaseId,
           inventory_item_id: l.inventory_item_id || null,
-          name:              l.name.trim(),
-          supplier_item_name: l.name.trim(),
+          name:              lineSupplierName(l),
+          supplier_item_name: lineSupplierName(l),
           line_type:         l.inventory_item_id ? 'stock' : 'non_stock',
           receiving_status:  'pending',
           received_quantity: 0,
-          match_source:      l.inventory_item_id ? 'manual' : 'none',
+          match_source:      l.inventory_item_id ? l.match_source : 'none',
           quantity:          parseFloat(l.quantity),
           unit_cost:         parseFloat(l.unit_cost) || 0,
           total:             lineTotal(l),
@@ -321,8 +493,13 @@ export default function PurchaseDrawer({
 
       if (itemsErr) { setError(itemsErr.message); return }
 
+      if (billPath) await setPurchaseAttachment(purchaseId, billPath)
+      await rememberSelectedMatches(validLines).catch(err => console.warn('Remembering supplier item mapping failed', err))
+
       onSaved()
       onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Purchase save failed')
     } finally {
       setSaving(false)
     }
@@ -537,13 +714,21 @@ export default function PurchaseDrawer({
                           </button>
                         </div>
 
+                        {line.match_source === 'mapping' && line.suggestion_label && (
+                          <div className="pl-7">
+                            <span className="inline-flex items-center rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700">
+                              Suggested: {line.suggestion_label}
+                            </span>
+                          </div>
+                        )}
+
                         <div className="flex gap-2 pl-7">
                           <div className="flex-1">
                             <input
                               className="input text-sm"
-                              value={line.name}
-                              onChange={e => updateLine(line.key, { name: e.target.value })}
-                              placeholder="Item name *"
+                              value={line.supplier_item_name}
+                              onChange={e => updateSupplierItemName(line.key, e.target.value)}
+                              placeholder="Supplier item name *"
                             />
                           </div>
                           <div className="w-24">
@@ -574,6 +759,18 @@ export default function PurchaseDrawer({
                             </span>
                           </div>
                         </div>
+
+                        {supplierId && line.inventory_item_id && lineSupplierName(line) && (
+                          <label className="ml-7 flex items-center gap-2 text-xs text-gray-500">
+                            <input
+                              type="checkbox"
+                              checked={line.remember_match}
+                              onChange={e => updateLine(line.key, { remember_match: e.target.checked })}
+                              className="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                            />
+                            Remember this match for this supplier
+                          </label>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -644,12 +841,12 @@ export default function PurchaseDrawer({
               />
               {billPreview ? (
                 <div className="relative group/img">
-                  {billPreview.startsWith('blob:') || billPreview.match(/\.(jpg|jpeg|png|webp)/i) ? (
+                  {(billFile?.type.startsWith('image/') || billPreview.match(/\.(jpg|jpeg|png|webp)(\?|$)/i)) ? (
                     <img src={billPreview} alt="Bill"
                       className="w-full h-36 object-cover rounded-xl border border-gray-200" />
                   ) : (
                     <div className="w-full h-16 flex items-center justify-center bg-gray-50 rounded-xl border border-gray-200">
-                      <p className="text-sm text-gray-500">📄 Bill attached</p>
+                      <p className="text-sm text-gray-500">Bill attached</p>
                     </div>
                   )}
                   <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 group-hover/img:opacity-100 transition-opacity bg-black/20 rounded-xl">
@@ -657,7 +854,7 @@ export default function PurchaseDrawer({
                       className="bg-white text-gray-700 text-xs font-medium px-3 py-1.5 rounded-lg shadow">
                       Change
                     </button>
-                    <button type="button" onClick={() => { setBillFile(null); setBillPreview(null) }}
+                    <button type="button" onClick={() => { setBillFile(null); setBillPreview(null); setBillChanged(true) }}
                       className="bg-white text-red-500 text-xs font-medium px-3 py-1.5 rounded-lg shadow">
                       Remove
                     </button>

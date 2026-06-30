@@ -131,6 +131,11 @@ export interface Database {
         Insert: PurchaseItemInsert
         Update: Partial<PurchaseItemInsert>
       }
+      supplier_item_mappings: {
+        Row: SupplierItemMapping
+        Insert: SupplierItemMappingInsert
+        Update: Partial<SupplierItemMappingInsert>
+      }
     }
     Functions: {
       get_next_invoice_counter: {
@@ -189,6 +194,22 @@ export interface Database {
       }
       update_purchase_entry: {
         Args: { p_payload: Record<string, unknown> }
+        Returns: Record<string, unknown>
+      }
+      suggest_supplier_item_mapping: {
+        Args: { p_supplier_id: string; p_supplier_item_name: string; p_branch_id?: string | null }
+        Returns: Record<string, unknown>
+      }
+      upsert_supplier_item_mapping: {
+        Args: { p_payload: Record<string, unknown> }
+        Returns: Record<string, unknown>
+      }
+      set_purchase_bill_attachment: {
+        Args: { p_purchase_id: string; p_bill_path?: string | null; p_clear?: boolean }
+        Returns: Record<string, unknown>
+      }
+      record_purchase_attachment_viewed: {
+        Args: { p_purchase_id: string }
         Returns: Record<string, unknown>
       }
     }
@@ -881,6 +902,7 @@ export interface Purchase {
   total_amount: number
   payment_method: PurchasePaymentMethod
   bill_url: string | null
+  bill_path: string | null
   notes: string | null
   created_at: string
   updated_at: string
@@ -906,6 +928,31 @@ export interface PurchaseItem {
   unit_cost: number
   total: number
   created_at: string
+}
+
+export type SupplierItemMappingSource = 'manual' | 'ai' | 'imported'
+export type SupplierItemMappingStatus = 'ai_suggested' | 'manual_confirmed' | 'rejected'
+
+export interface SupplierItemMapping {
+  id: string
+  tenant_id: string
+  branch_id: string | null
+  supplier_id: string
+  supplier_item_name: string
+  normalized_supplier_item_name: string
+  normalized_name: string
+  matched_inventory_item_id: string | null
+  matched_product_id: string | null
+  confidence: number | null
+  match_confidence: number | null
+  match_source: SupplierItemMappingSource
+  confirmation_status: SupplierItemMappingStatus
+  is_active: boolean
+  confirmed_by: string | null
+  confirmed_at: string | null
+  last_used_at: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface SupplierInsert {
@@ -965,6 +1012,7 @@ export interface PurchaseInsert {
   total_amount?: number
   payment_method?: string
   bill_url?: string | null
+  bill_path?: string | null
   notes?: string | null
 }
 export type PurchaseUpdate = Partial<Omit<PurchaseInsert, 'tenant_id' | 'branch_id'>>
@@ -987,4 +1035,23 @@ export interface PurchaseItemInsert {
   quantity: number
   unit_cost: number
   total: number
+}
+
+export interface SupplierItemMappingInsert {
+  tenant_id: string
+  branch_id?: string | null
+  supplier_id: string
+  supplier_item_name: string
+  normalized_supplier_item_name: string
+  normalized_name?: string
+  matched_inventory_item_id?: string | null
+  matched_product_id?: string | null
+  confidence?: number | null
+  match_confidence?: number | null
+  match_source?: SupplierItemMappingSource
+  confirmation_status?: SupplierItemMappingStatus
+  is_active?: boolean
+  confirmed_by?: string | null
+  confirmed_at?: string | null
+  last_used_at?: string | null
 }

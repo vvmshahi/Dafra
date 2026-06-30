@@ -52,12 +52,13 @@ const fmt = (n: number) =>
 // ── Purchase detail modal ─────────────────────────────────────────────────────
 
 function PurchaseDetailModal({
-  purchase, items, loading, onClose,
+  purchase, items, loading, onClose, onOpenBill,
 }: {
-  purchase: PurchaseRow
-  items:    PurchaseItem[]
-  loading:  boolean
-  onClose:  () => void
+  purchase:   PurchaseRow
+  items:      PurchaseItem[]
+  loading:    boolean
+  onClose:    () => void
+  onOpenBill: (purchase: PurchaseRow) => void
 }) {
   const supplierName = purchase.suppliers?.name ?? '—'
   const pay          = purchase.payment_method
@@ -122,12 +123,12 @@ function PurchaseDetailModal({
             )}
 
             {/* Bill image */}
-            {purchase.bill_url && (
-              <a href={purchase.bill_url} target="_blank" rel="noopener noreferrer"
+            {(purchase.bill_path || purchase.bill_url) && (
+              <button type="button" onClick={() => onOpenBill(purchase)}
                 className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 text-sm text-amber-700 hover:bg-amber-100 transition-colors">
                 <Paperclip size={14} />
                 <span className="font-medium">View attached bill / invoice</span>
-              </a>
+              </button>
             )}
 
             {/* Line items */}
@@ -619,6 +620,38 @@ export default function PurchaseHistoryTab() {
     await load()
   }
 
+  const openBillAttachment = async (purchase: PurchaseRow) => {
+    const opened = window.open('', '_blank', 'noopener,noreferrer')
+
+    try {
+      let url = purchase.bill_url
+
+      if (purchase.bill_path) {
+        const { data, error } = await supabase.storage
+          .from('purchases-bills')
+          .createSignedUrl(purchase.bill_path, 60 * 5)
+
+        if (error) throw error
+        url = data.signedUrl
+      }
+
+      if (!url) throw new Error('No bill attachment found')
+
+      await (supabase as any).rpc('record_purchase_attachment_viewed', {
+        p_purchase_id: purchase.id,
+      }).catch(() => undefined)
+
+      if (opened) {
+        opened.location.href = url
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer')
+      }
+    } catch (err) {
+      if (opened) opened.close()
+      alert(err instanceof Error ? err.message : 'Unable to open bill attachment')
+    }
+  }
+
   // Summary stats
   const countedPurchases = purchases.filter(isCountedPurchase)
   const totalSpent     = countedPurchases.reduce((s, p) => s + p.total_amount, 0)
@@ -750,13 +783,13 @@ export default function PurchaseHistoryTab() {
 
               {/* Bill indicator */}
               <div className="w-20 flex-shrink-0 flex justify-center">
-                {p.bill_url ? (
-                  <a href={p.bill_url} target="_blank" rel="noopener noreferrer"
-                    onClick={e => e.stopPropagation()}
+                {p.bill_path || p.bill_url ? (
+                  <button type="button"
+                    onClick={e => { e.stopPropagation(); openBillAttachment(p) }}
                     className="flex items-center gap-1 text-[10px] font-medium text-amber-600 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-lg transition-colors">
                     <Paperclip size={10} />
                     Bill
-                  </a>
+                  </button>
                 ) : (
                   <span className="text-gray-300 text-xs">—</span>
                 )}
@@ -839,6 +872,7 @@ export default function PurchaseHistoryTab() {
           items={viewingItems}
           loading={loadingItems}
           onClose={() => { setViewingPurchase(null); setViewingItems([]) }}
+          onOpenBill={openBillAttachment}
         />
       )}
 
