@@ -4,8 +4,9 @@ import { Search, Calendar, Filter, Eye, TrendingUp, FileText, Receipt } from 'lu
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import type { InvoiceType, ZatcaStatus } from '@/types/database'
+import type { InvoiceType, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { saudiNow } from '@/lib/utils/date'
+import CreateCreditNoteModal from './CreateCreditNoteModal'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,8 @@ interface InvoiceRow {
   status: string
   documentType: InvoiceType
   invoiceReference: string | null
+  linkedCreditNoteId: string | null
+  linkedCreditNoteNumber: string | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -68,6 +71,16 @@ function Badge({ label, bg, text }: { label: string; bg: string; text: string })
   )
 }
 
+function creditNoteDisabledReason(row: InvoiceRow, role: string | null | undefined): string | null {
+  if (row.documentType === 'credit_note') return 'Credit notes cannot be credited in this MVP.'
+  if (row.linkedCreditNoteId) return 'This invoice already has a full credit note.'
+  if (row.status === 'cancelled') return 'Cancelled invoices cannot be credited here.'
+  if (row.status !== 'posted') return 'Only posted invoices can be credited.'
+  if (!(row.zatcaStatus === 'reported' || row.zatcaStatus === 'cleared')) return 'Only reported or cleared invoices can be credited.'
+  if (role && !['owner', 'admin', 'branch'].includes(role)) return 'You do not have permission to create credit notes.'
+  return null
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function InvoicesPage() {
@@ -76,6 +89,8 @@ export default function InvoicesPage() {
 
   const [rows,    setRows]    = useState<InvoiceRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [creditModalRow, setCreditModalRow] = useState<InvoiceRow | null>(null)
 
   const { start: defaultStart, end: defaultEnd } = thisMonth()
   const [startDate, setStartDate] = useState(defaultStart)
@@ -111,7 +126,39 @@ export default function InvoicesPage() {
 
         if (cancelled) return
 
-        const processed: InvoiceRow[] = (data ?? []).map((inv: any) => ({
+        const invoices = data ?? []
+        const normalInvoiceIds = invoices
+          .filter((inv: any) => inv.zatca_invoice_type !== 'credit_note')
+          .map((inv: any) => inv.id)
+
+        const creditByOriginal = new Map<string, { id: string; invoice_number: string }>()
+        if (normalInvoiceIds.length > 0) {
+          const { data: creditNotes } = await supabase
+            .from('invoices')
+            .select('id, invoice_number, original_invoice_id, created_at')
+            .eq('tenant_id', tid)
+            .eq('branch_id', profile?.branch_id)
+            .in('original_invoice_id', normalInvoiceIds)
+            .eq('zatca_invoice_type', 'credit_note')
+            .neq('status', 'cancelled')
+            .order('created_at', { ascending: false })
+
+          for (const creditNote of creditNotes ?? []) {
+            const originalId = (creditNote as any).original_invoice_id
+            if (originalId && !creditByOriginal.has(originalId)) {
+              creditByOriginal.set(originalId, {
+                id: (creditNote as any).id,
+                invoice_number: (creditNote as any).invoice_number,
+              })
+            }
+          }
+        }
+
+        if (cancelled) return
+
+        const processed: InvoiceRow[] = invoices.map((inv: any) => {
+          const linkedCreditNote = creditByOriginal.get(inv.id) ?? null
+          return {
           id:            inv.id,
           invoiceNumber: inv.invoice_number,
           date:          inv.invoice_date,
@@ -128,7 +175,10 @@ export default function InvoicesPage() {
           status:      inv.status,
           documentType: inv.zatca_invoice_type as InvoiceType,
           invoiceReference: inv.invoice_reference ?? null,
-        }))
+          linkedCreditNoteId: linkedCreditNote?.id ?? null,
+          linkedCreditNoteNumber: linkedCreditNote?.invoice_number ?? null,
+        }
+        })
         setRows(processed)
       } finally {
         if (!cancelled) setLoading(false)
@@ -136,13 +186,13 @@ export default function InvoicesPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [startDate, endDate, profile?.tenant_id])
+  }, [startDate, endDate, profile?.tenant_id, profile?.branch_id, refreshKey])
 
   // ── Filtered ──────────────────────────────────────────────────────────────
 
   const q = search.trim().toLowerCase()
   const filtered = rows.filter(r => {
-    if (q && !r.invoiceNumber.toLowerCase().includes(q) && !(r.customerName ?? '').toLowerCase().includes(q)) return false
+    if (q && !r.invoiceNumber.toLowerCase().includes(q) && !(r.customerName ?? '').toLowerCase().includes(q) && !(r.invoiceReference ?? '').toLowerCase().includes(q)) return false
     if (payFilter !== 'all' && r.paymentMethod !== payFilter) return false
     if (zatcaFilter !== 'all' && r.zatcaStatus !== zatcaFilter) return false
     return true
@@ -249,7 +299,7 @@ export default function InvoicesPage() {
           <div className="w-24 text-right font-bold">Total</div>
           <div className="w-16 text-center">Method</div>
           <div className="w-24 text-center">ZATCA</div>
-          <div className="w-10" />
+          <div className="w-20" />
         </div>
 
         {loading ? (
@@ -269,6 +319,7 @@ export default function InvoicesPage() {
               const pay   = r.paymentMethod ? (PAY_BADGE[r.paymentMethod] ?? PAY_BADGE.other) : null
               const isCancelled = r.status === 'cancelled'
               const isCreditNote = r.documentType === 'credit_note'
+              const creditDisabledReason = creditNoteDisabledReason(r, profile?.role)
               return (
                 <div
                   key={r.id}
@@ -284,6 +335,9 @@ export default function InvoicesPage() {
                     )}
                     {isCreditNote && r.invoiceReference && (
                       <p className="mt-0.5 text-[9px] text-gray-400">for {r.invoiceReference}</p>
+                    )}
+                    {!isCreditNote && r.linkedCreditNoteNumber && (
+                      <p className="mt-0.5 text-[9px] text-amber-600">credited by {r.linkedCreditNoteNumber}</p>
                     )}
                   </div>
                   <div className="w-24 text-xs text-gray-500">{fmtDate(r.date)}</div>
@@ -310,13 +364,28 @@ export default function InvoicesPage() {
                   <div className="w-24 flex justify-center">
                     <Badge {...zatca} />
                   </div>
-                  <div className="w-10 flex justify-center">
+                  <div className="w-20 flex justify-center gap-1">
                     <button
                       onClick={() => navigate(`/invoices/${r.id}`)}
                       className="p-1.5 rounded-lg hover:bg-primary-50 text-gray-400 hover:text-primary-600 transition-colors"
+                      title="View"
                     >
                       <Eye size={14} />
                     </button>
+                    {!isCreditNote && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (creditDisabledReason) return
+                          setCreditModalRow(r)
+                        }}
+                        disabled={!!creditDisabledReason}
+                        title={creditDisabledReason ?? 'Create Credit Note / Refund'}
+                        className="p-1.5 rounded-lg text-gray-400 transition-colors hover:bg-amber-50 hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                      >
+                        <FileText size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
               )
@@ -341,11 +410,26 @@ export default function InvoicesPage() {
               </div>
               <div className="w-16" />
               <div className="w-24" />
-              <div className="w-10" />
+              <div className="w-20" />
             </div>
           </>
         )}
       </div>
+
+      <CreateCreditNoteModal
+        open={!!creditModalRow}
+        invoice={creditModalRow ? {
+          id: creditModalRow.id,
+          invoice_number: creditModalRow.invoiceNumber,
+          total_amount: creditModalRow.totalAmount,
+        } : null}
+        defaultRefundMethod={(creditModalRow?.paymentMethod ?? 'cash') as PaymentMethod}
+        onClose={() => setCreditModalRow(null)}
+        onCreated={() => {
+          setCreditModalRow(null)
+          setRefreshKey(key => key + 1)
+        }}
+      />
     </div>
   )
 }

@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, Printer, RefreshCw, Loader2, AlertCircle, CheckCircle2, Bug, FileText, X } from 'lucide-react'
+import { ArrowLeft, Printer, RefreshCw, Loader2, AlertCircle, CheckCircle2, Bug, FileText } from 'lucide-react'
 import QRCode from 'qrcode'
-import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { buildZatcaQR, decodeTLV } from '@/lib/zatca/qr'
@@ -11,6 +10,7 @@ import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { printSilent } from '@/lib/electron'
 import { submitInvoiceToZatca } from '@/lib/zatca/submission'
+import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 
 function WhatsAppIcon({ size = 13 }: { size?: number }) {
   return (
@@ -58,16 +58,6 @@ interface OriginalInvoiceLink {
   zatca_status: ZatcaStatus
 }
 
-interface CreateCreditNoteResult {
-  credit_note_invoice_id?: string
-  credit_note_invoice_number?: string
-  created_at?: string
-  total?: number
-  refund_status?: string
-  zatca_status?: ZatcaStatus
-  idempotent_replay?: boolean
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(n: number) {
@@ -96,16 +86,6 @@ const PAY_LABEL: Record<string, string> = {
 
 function paymentLabel(method: string | null | undefined): string {
   return method ? (PAY_LABEL[method] ?? method) : '—'
-}
-
-function safeCreditNoteError(error: unknown): string {
-  const message = typeof (error as any)?.message === 'string' ? (error as any).message : ''
-  if (/already.*credited/i.test(message)) return 'This invoice already has a full credit note.'
-  if (/reported|cleared/i.test(message)) return 'Only reported or cleared invoices can be credited.'
-  if (/posted/i.test(message)) return 'Only posted invoices can be credited.'
-  if (/reason/i.test(message)) return 'A credit note reason is required.'
-  if (/forbidden|unauthorized|permission/i.test(message)) return 'You do not have permission to create this credit note.'
-  return 'Could not create the credit note. Please check the invoice status and try again.'
 }
 
 function creditStatusLabel(linkedCreditNote: LinkedCreditNote | null): string {
@@ -232,13 +212,6 @@ export default function InvoiceDetailPage() {
   const [isPhase2,     setIsPhase2]     = useState(false)
   const [isPrinting,   setIsPrinting]   = useState(false)
   const [creditModalOpen, setCreditModalOpen] = useState(false)
-  const [creditReason, setCreditReason] = useState('')
-  const [creditConfirm, setCreditConfirm] = useState('')
-  const [refundMethod, setRefundMethod] = useState<PaymentMethod>('cash')
-  const [returnStock, setReturnStock] = useState(false)
-  const [creatingCreditNote, setCreatingCreditNote] = useState(false)
-  const [creditError, setCreditError] = useState<string | null>(null)
-  const [creditIdempotencyKey, setCreditIdempotencyKey] = useState('')
 
   useEffect(() => {
     const before = () => setIsPrinting(true)
@@ -446,77 +419,34 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
 
   function openCreditModal() {
     if (!invoice) return
-    setCreditReason('')
-    setCreditConfirm('')
-    setRefundMethod((payment?.method ?? invoice.payment_method ?? 'cash') as PaymentMethod)
-    setReturnStock(false)
-    setCreditError(null)
-    setCreditIdempotencyKey(globalThis.crypto?.randomUUID?.() ?? `${invoice.id}-${Date.now()}`)
     setCreditModalOpen(true)
   }
 
-  async function handleCreateCreditNote() {
+  function handleCreditNoteCreated(result: CreditNoteCreatedResult) {
     if (!invoice) return
-    const reason = creditReason.trim()
-    if (reason.length < 3) {
-      setCreditError('Enter a clear reason for the credit note.')
-      return
-    }
-    if (creditConfirm.trim() !== invoice.invoice_number) {
-      setCreditError('Type the original invoice number to confirm.')
-      return
-    }
-
-    setCreatingCreditNote(true)
-    setCreditError(null)
-    try {
-      const payload = {
-        original_invoice_id: invoice.id,
-        idempotency_key: creditIdempotencyKey || `${invoice.id}-${Date.now()}`,
-        reason,
-        refund_method: refundMethod,
-        return_stock: returnStock,
-      }
-      const { data, error } = await (supabase as any).rpc('create_full_credit_note', { p_payload: payload })
-      if (error) throw error
-
-      const result = data as CreateCreditNoteResult
-      if (!result.credit_note_invoice_id || !result.credit_note_invoice_number) {
-        throw new Error('Credit note was not returned')
-      }
-
-      setLinkedCreditNote({
-        id: result.credit_note_invoice_id,
-        invoice_number: result.credit_note_invoice_number,
-        total_amount: Number(result.total ?? invoice.total_amount),
-        zatca_status: result.zatca_status ?? 'pending',
-        payment_status: result.refund_status ?? 'completed',
-        credit_reason: reason,
-        created_at: result.created_at ?? new Date().toISOString(),
-      })
-      setRefunds(prev => [{
-        id: `local-${result.credit_note_invoice_id}`,
-        tenant_id: invoice.tenant_id,
-        branch_id: invoice.branch_id,
-        original_invoice_id: invoice.id,
-        credit_note_invoice_id: result.credit_note_invoice_id,
-        payment_id: payment?.id ?? null,
-        method: refundMethod,
-        amount: Number(result.total ?? invoice.total_amount),
-        reason,
-        status: 'completed',
-        created_by: null,
-        created_at: result.created_at ?? new Date().toISOString(),
-      }, ...prev])
-      setCreditModalOpen(false)
-      toast.success(result.idempotent_replay ? 'Credit note already exists' : 'Credit note created')
-    } catch (err) {
-      const safeMessage = safeCreditNoteError(err)
-      setCreditError(safeMessage)
-      toast.error(safeMessage)
-    } finally {
-      setCreatingCreditNote(false)
-    }
+    setLinkedCreditNote({
+      id: result.creditNoteId,
+      invoice_number: result.creditNoteNumber,
+      total_amount: result.total,
+      zatca_status: result.zatcaStatus,
+      payment_status: result.refundStatus,
+      credit_reason: result.reason,
+      created_at: result.createdAt,
+    })
+    setRefunds(prev => [{
+      id: `local-${result.creditNoteId}`,
+      tenant_id: invoice.tenant_id,
+      branch_id: invoice.branch_id,
+      original_invoice_id: invoice.id,
+      credit_note_invoice_id: result.creditNoteId,
+      payment_id: payment?.id ?? null,
+      method: result.refundMethod,
+      amount: result.total,
+      reason: result.reason,
+      status: 'completed',
+      created_by: null,
+      created_at: result.createdAt,
+    }, ...prev])
   }
 
   // ── Loading / Error states ─────────────────────────────────────────────────
@@ -1197,108 +1127,17 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
         </div>
       )}
 
-      {creditModalOpen && (
-        <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-              <div>
-                <h2 className="text-base font-bold text-gray-900">Create Full Credit Note</h2>
-                <p className="text-xs text-gray-500">Original invoice {invoice.invoice_number}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCreditModalOpen(false)}
-                className="rounded-full p-2 text-gray-400 hover:bg-gray-50 hover:text-gray-700"
-                aria-label="Close"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-4 px-5 py-4">
-              <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
-                This creates a new credit note document for the full invoice amount. The original invoice remains unchanged.
-              </div>
-
-              <label className="block space-y-1.5">
-                <span className="text-xs font-semibold text-gray-700">Reason</span>
-                <textarea
-                  value={creditReason}
-                  onChange={e => setCreditReason(e.target.value)}
-                  rows={3}
-                  maxLength={500}
-                  className="w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-[#0F2419]"
-                  placeholder="Returned goods, order cancelled, duplicate sale..."
-                />
-              </label>
-
-              <label className="block space-y-1.5">
-                <span className="text-xs font-semibold text-gray-700">Refund method</span>
-                <select
-                  value={refundMethod}
-                  onChange={e => setRefundMethod(e.target.value as PaymentMethod)}
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-[#0F2419]"
-                >
-                  <option value="cash">Cash</option>
-                  <option value="card">Card / POS</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="other">Other</option>
-                </select>
-              </label>
-
-              <label className="flex items-start gap-3 rounded-xl border border-gray-100 px-3 py-2">
-                <input
-                  type="checkbox"
-                  checked={returnStock}
-                  onChange={e => setReturnStock(e.target.checked)}
-                  className="mt-1"
-                />
-                <span>
-                  <span className="block text-xs font-semibold text-gray-700">Return tracked stock</span>
-                  <span className="block text-[11px] leading-relaxed text-gray-500">
-                    Adds stock back only for products configured with stock tracking.
-                  </span>
-                </span>
-              </label>
-
-              <label className="block space-y-1.5">
-                <span className="text-xs font-semibold text-gray-700">Type invoice number to confirm</span>
-                <input
-                  value={creditConfirm}
-                  onChange={e => setCreditConfirm(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-mono outline-none transition-colors focus:border-[#0F2419]"
-                  placeholder={invoice.invoice_number}
-                />
-              </label>
-
-              {creditError && (
-                <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
-                  {creditError}
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
-              <button
-                type="button"
-                onClick={() => setCreditModalOpen(false)}
-                className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleCreateCreditNote}
-                disabled={creatingCreditNote}
-                className="inline-flex items-center gap-2 rounded-xl bg-[#0F2419] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {creatingCreditNote && <Loader2 size={13} className="animate-spin" />}
-                Create Credit Note
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CreateCreditNoteModal
+        open={creditModalOpen}
+        invoice={{
+          id: invoice.id,
+          invoice_number: invoice.invoice_number,
+          total_amount: Number(invoice.total_amount),
+        }}
+        defaultRefundMethod={(payment?.method ?? invoice.payment_method ?? 'cash') as PaymentMethod}
+        onClose={() => setCreditModalOpen(false)}
+        onCreated={handleCreditNoteCreated}
+      />
     </div>
   )
 }
