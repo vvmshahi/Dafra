@@ -1,9 +1,10 @@
 import { Link } from 'react-router-dom'
 import { MessageCircle, Mail, Lock } from 'lucide-react'
 import { MeemLogo } from '@/components/MeemLogo'
+import { supportConfig } from '@/config/support'
 
-const WA_LINK    = 'https://wa.me/919895953210'
-const EMAIL_LINK = 'mailto:vvmshahin@gmail.com'
+const WA_LINK    = supportConfig.whatsappLink
+const EMAIL_LINK = supportConfig.emailLink
 
 function GeometricPattern() {
   return (
@@ -41,11 +42,11 @@ export default function SignupPage() {
             <br />
             <span className="text-gold-400">للمطاعم والكافيهات</span>
           </h2>
-          <p className="text-lg font-light text-white/70">ZATCA-compliant invoicing for Saudi SMEs.</p>
+          <p className="text-lg font-light text-white/70">ZATCA-ready invoicing for Saudi SMEs.</p>
         </div>
 
         <div className="relative z-10">
-          <p className="text-white/30 text-xs">هيئة الزكاة والضريبة والجمارك · ZATCA Certified</p>
+          <p className="text-white/30 text-xs">Built for Saudi VAT and ZATCA e-invoicing workflows</p>
         </div>
       </div>
 

@@ -51,3 +51,5 @@ zatca-docs/*.pdf
 zatca-docs/*.zip
 zatca-docs/*.xlsx
 zatca-docs/*.jar
+.vercel
+.env*

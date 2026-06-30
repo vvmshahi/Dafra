@@ -5,8 +5,9 @@ import Sidebar from './Sidebar'
 import TopHeader from './TopHeader'
 import { useAuth } from '@/hooks/useAuth'
 import { useSubscription } from '@/hooks/useSubscription'
+import { supportConfig } from '@/config/support'
 
-const WA_LINK = 'https://wa.me/919895953210'
+const WA_LINK = supportConfig.whatsappLink
 
 function SubscriptionBanner() {
   const { profile } = useAuth()

@@ -22,6 +22,7 @@ import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
 import { MeemLogo } from '@/components/MeemLogo'
 import { printSilent } from '@/lib/electron'
+import { supportConfig } from '@/config/support'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -996,8 +997,8 @@ function SessionSummaryModal({ summary, onDone, onNewSession }: {
 
 // ── POSPage ───────────────────────────────────────────────────────────────────
 
-const WA_LINK    = 'https://wa.me/919895953210'
-const EMAIL_LINK = 'mailto:vvmshahin@gmail.com'
+const WA_LINK    = supportConfig.whatsappLink
+const EMAIL_LINK = supportConfig.emailLink
 
 export default function POSPage() {
   const { profile, user } = useAuth()

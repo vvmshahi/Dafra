@@ -19,6 +19,7 @@ function useProvideAuth() {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [loading, setLoading] = useState(true)
+  const [authError, setAuthError] = useState<string | null>(null)
   // null = not yet checked, true = has ≥1 branch, false = no branches
   const [hasBranch, setHasBranch] = useState<boolean | null>(null)
 
@@ -36,6 +37,7 @@ function useProvideAuth() {
 
     async function fetchProfile(userId: string) {
       try {
+        if (mounted) setAuthError(null)
         const { data, error } = await supabase
           .from('user_profiles')
           .select('*')
@@ -65,7 +67,12 @@ function useProvideAuth() {
         }
       } catch (err) {
         console.error('[useAuth] fetchProfile error:', err)
-        if (mounted) setHasBranch(true) // fail open
+        if (mounted) {
+          setProfile(null)
+          setTenant(null)
+          setHasBranch(false)
+          setAuthError('We could not load your account profile. Please retry or sign in again.')
+        }
       } finally {
         if (mounted) setLoading(false)
       }
@@ -90,6 +97,7 @@ function useProvideAuth() {
         setSession(session)
         setLoading(true)
         setHasBranch(null)
+        setAuthError(null)
         fetchProfile(session.user.id)
       }
       if (event === 'SIGNED_OUT') {
@@ -98,6 +106,7 @@ function useProvideAuth() {
         setProfile(null)
         setTenant(null)
         setHasBranch(null)
+        setAuthError(null)
         setLoading(false)
       }
       if (event === 'TOKEN_REFRESHED' && session) {
@@ -197,6 +206,7 @@ function useProvideAuth() {
     profile,
     tenant,
     loading,
+    authError,
     isOnboarded: computeIsOnboarded(profile),
     isAuthenticated,
     isNewUser,

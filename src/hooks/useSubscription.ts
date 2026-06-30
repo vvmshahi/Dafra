@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 
 export interface SubscriptionState {
-  status:          'active' | 'grace_period' | 'suspended' | 'expired' | 'cancelled' | 'lifetime_free' | 'loading'
+  status:          'active' | 'grace_period' | 'suspended' | 'expired' | 'cancelled' | 'lifetime_free' | 'activation_required' | 'loading'
   isBlocked:       boolean
   showWarning:     boolean
   daysUntilExpiry: number
@@ -17,6 +17,8 @@ const DEFAULT: SubscriptionState = {
   status: 'loading', isBlocked: false, showWarning: false,
   daysUntilExpiry: 999, isLifetimeFree: false, isPhase2: false, plan: '', maxBranches: 1,
 }
+
+const ALLOW_MISSING_SUBSCRIPTION = import.meta.env.VITE_ALLOW_MISSING_SUBSCRIPTION === 'true'
 
 export function useSubscription(): SubscriptionState {
   const { profile } = useAuth()
@@ -46,7 +48,15 @@ export function useSubscription(): SubscriptionState {
       ])
 
       if (!sub) {
-        setState({ ...DEFAULT, status: 'active', isPhase2: false })
+        setState({
+          ...DEFAULT,
+          status: ALLOW_MISSING_SUBSCRIPTION ? 'active' : 'activation_required',
+          isBlocked: !ALLOW_MISSING_SUBSCRIPTION,
+          showWarning: ALLOW_MISSING_SUBSCRIPTION,
+          isPhase2: false,
+          plan: ALLOW_MISSING_SUBSCRIPTION ? 'Pilot access' : 'Activation required',
+          maxBranches: tenant?.max_branches ?? 1,
+        })
         return
       }
 

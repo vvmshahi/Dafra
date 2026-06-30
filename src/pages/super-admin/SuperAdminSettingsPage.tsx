@@ -1,7 +1,8 @@
 import { CheckCircle2, MessageCircle, Mail, Package } from 'lucide-react'
+import { supportConfig } from '@/config/support'
 
-const WA_LINK    = 'https://wa.me/919895953210'
-const EMAIL_LINK = 'mailto:vvmshahin@gmail.com'
+const WA_LINK    = supportConfig.whatsappLink
+const EMAIL_LINK = supportConfig.emailLink
 
 const PLANS = [
   {
@@ -19,7 +20,7 @@ const PLANS = [
   },
   {
     name:     'Phase 2',
-    subtitle: 'Full ZATCA Compliance',
+    subtitle: 'ZATCA Phase 2 workflows',
     price:    100,
     features: [
       'Everything in Phase 1',
@@ -93,13 +94,13 @@ export default function SuperAdminSettingsPage() {
               rel="noopener noreferrer"
               className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm"
             >
-              <MessageCircle size={15} /> WhatsApp: +91 9895953210
+              <MessageCircle size={15} /> WhatsApp Support
             </a>
             <a
               href={EMAIL_LINK}
               className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm"
             >
-              <Mail size={15} /> vvmshahin@gmail.com
+              <Mail size={15} /> {supportConfig.email}
             </a>
           </div>
         </div>

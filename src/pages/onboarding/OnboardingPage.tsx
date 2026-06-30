@@ -127,7 +127,7 @@ const PLAN_DISPLAY = [
   },
   {
     title:    'Phase 2',
-    subtitle: 'Full ZATCA Compliance',
+    subtitle: 'ZATCA Phase 2 workflows',
     price:    100,
     badge:    'Most Popular',
     features: [

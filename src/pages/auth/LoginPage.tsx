@@ -83,7 +83,7 @@ export default function LoginPage() {
         <div className="relative z-10 space-y-6">
           <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/10 text-white/80 text-xs px-3 py-1.5 rounded-full">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            ZATCA Phase 2 Certified
+            ZATCA Phase 2 ready
           </div>
 
           <div>
@@ -99,12 +99,12 @@ export default function LoginPage() {
           </div>
 
           <p className="text-white/60 text-sm leading-relaxed max-w-sm">
-            POS, invoicing, inventory, and ZATCA compliance — all in one platform built for Saudi SMEs.
+            POS, invoicing, inventory, and ZATCA-ready workflows in one platform built for Saudi SMEs.
           </p>
 
           {/* Feature pills */}
           <div className="flex flex-wrap gap-2">
-            {['ZATCA Compliant', 'Multi-Branch', 'Real-time Reports', 'Arabic + English'].map(f => (
+            {['ZATCA-ready', 'Multi-Branch', 'Real-time Reports', 'Arabic + English'].map(f => (
               <span key={f} className="text-xs bg-white/10 text-white/80 border border-white/10 rounded-full px-3 py-1">
                 {f}
               </span>

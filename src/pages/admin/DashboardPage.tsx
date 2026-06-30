@@ -189,7 +189,7 @@ function WelcomeState({ onAddBranch }: { onAddBranch: () => void }) {
           You have not added any branches yet.
         </p>
         <p className="text-sm text-gray-400 mt-1 mb-8 leading-relaxed">
-          Add your first branch to start selling, generate ZATCA-compliant invoices, and use the POS.
+          Add your first branch to start selling, generate ZATCA-ready invoices, and use the POS.
         </p>
 
         <button

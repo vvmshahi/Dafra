@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { MeemLogo } from '@/components/MeemLogo'
+import { supportConfig } from '@/config/support'
 import {
   CheckCircle2, Zap, GitBranch, BarChart3, Package, Globe,
   Star, ChevronDown, ChevronUp, Menu, X, ArrowRight,
   Shield, MessageCircle, Mail,
 } from 'lucide-react'
 
-const WA_LINK    = 'https://wa.me/919895953210'
-const EMAIL_LINK = 'mailto:vvmshahin@gmail.com'
+const WA_LINK    = supportConfig.whatsappLink
+const EMAIL_LINK = supportConfig.emailLink
 
 function scrollToContact() {
   document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })
@@ -275,7 +276,7 @@ function HeroSection() {
             {/* Badge */}
             <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/10 text-white/80 text-xs px-3.5 py-1.5 rounded-full">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-              معتمد من هيئة الزكاة والضريبة والجمارك — ZATCA Certified
+              ZATCA-ready POS for small Saudi businesses
             </div>
 
             {/* Arabic headline */}
@@ -364,9 +365,9 @@ function HeroSection() {
 const FEATURES = [
   {
     icon: Shield,
-    title: 'ZATCA Compliant',
+    title: 'ZATCA-ready',
     titleAr: 'متوافق مع الزكاة',
-    desc: 'Phase 1 QR codes and Phase 2 cryptographic signing. Fully certified for Saudi e-invoicing regulations.',
+    desc: 'Supports ZATCA Phase 1 and Phase 2 e-invoicing workflows when business setup and onboarding are completed correctly.',
     color: 'text-emerald-600', bg: 'bg-emerald-50',
   },
   {
@@ -522,7 +523,7 @@ function PricingSection() {
 
             <div className="relative z-10 mb-2">
               <p className="text-xs font-semibold text-gold-400/80 uppercase tracking-wider mb-1">Phase 2</p>
-              <p className="text-sm text-white/50 mb-4">Full ZATCA Compliance</p>
+              <p className="text-sm text-white/50 mb-4">ZATCA Phase 2 workflows</p>
               <div className="flex items-end gap-1">
                 <span className="text-4xl font-black text-white">SAR {annual ? '1,000' : '100'}</span>
                 <span className="text-white/60 mb-1.5 ml-1">/ branch / {annual ? 'year' : 'month'}</span>
@@ -666,12 +667,12 @@ const FAQS = [
     a: 'ZATCA (زكاة وضريبة وجمارك) mandates that all VAT-registered businesses in Saudi Arabia issue electronic invoices. Phase 1 (from Dec 2021) requires QR codes on simplified invoices. Phase 2 (from 2023 onward) requires cryptographic digital signing and integration with the ZATCA portal.',
   },
   {
-    q: 'Is Meem certified by ZATCA?',
-    a: 'Yes. Meem generates fully compliant ZATCA Phase 1 QR codes using the TLV (Tag-Length-Value) encoding standard. Phase 2 compliance with digital signing is available on our Phase 2 plan and is currently in the ZATCA certification process.',
+    q: 'Does Meem support ZATCA e-invoicing?',
+    a: 'Meem is built for Saudi VAT and ZATCA e-invoicing workflows, including Phase 1 QR invoices and Phase 2 integration features. Compliance depends on correct business setup, onboarding, and continued use according to ZATCA requirements.',
   },
   {
     q: 'Can I use it offline?',
-    a: 'The POS works smoothly with a stable internet connection. For offline use, invoices are queued locally and synced automatically once connectivity is restored. ZATCA submission is queued during downtime.',
+    a: 'Meem is designed for use with a stable internet connection. If connectivity is interrupted, reconnect before completing new invoices or retrying ZATCA submission.',
   },
   {
     q: 'How do I migrate from my current system?',
@@ -774,7 +775,7 @@ function Footer() {
           <div className="md:col-span-2 space-y-3">
             <MeemLogo size="sm" />
             <p className="text-sm leading-relaxed max-w-xs">
-              Smart POS & ZATCA-compliant invoicing for Saudi restaurants, cafés and retail — نظام فوترة متوافق مع الزكاة
+              Smart POS & ZATCA-ready invoicing for Saudi restaurants, cafés and retail — نظام فوترة جاهز للزكاة
             </p>
             <div className="flex items-center gap-2 text-xs">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -807,7 +808,7 @@ function Footer() {
             <a href={EMAIL_LINK}
               className="flex items-center gap-2 text-sm hover:text-white transition-colors">
               <Mail size={14} />
-              vvmshahin@gmail.com
+              {supportConfig.email}
             </a>
           </div>
         </div>

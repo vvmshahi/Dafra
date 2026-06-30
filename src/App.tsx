@@ -49,6 +49,31 @@ function FullscreenSpinner() {
   )
 }
 
+function AuthLoadError() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-6">
+      <div className="max-w-sm w-full rounded-2xl bg-white border border-gray-100 p-6 text-center shadow-sm">
+        <h1 className="text-lg font-bold text-gray-900">Account could not be loaded</h1>
+        <p className="text-sm text-gray-500 mt-2">
+          We could not verify your account profile. Please check your connection and try again.
+        </p>
+        <div className="flex gap-2 justify-center mt-5">
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700"
+          >
+            Retry
+          </button>
+          <a href="/login" className="px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-50">
+            Sign in again
+          </a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Guards ────────────────────────────────────────────────────────────────
 
 /**
@@ -57,8 +82,9 @@ function FullscreenSpinner() {
  * and owners with no branches to /setup-branch.
  */
 function RequireAuth() {
-  const { isAuthenticated, loading, isOnboarded, profile, hasBranch } = useAuth()
+  const { isAuthenticated, loading, authError, isOnboarded, profile, hasBranch } = useAuth()
   if (loading)               return <FullscreenSpinner />
+  if (authError)             return <AuthLoadError />
   if (!isAuthenticated)      return <Navigate to="/login" replace />
   if (isOnboarded === null)  return <FullscreenSpinner />
   if (isOnboarded === false) return <Navigate to="/onboarding" replace />
@@ -75,8 +101,9 @@ function RequireAuth() {
  * Redirects everyone else to their appropriate home.
  */
 function RequireSetupBranch() {
-  const { isAuthenticated, loading, isOnboarded, profile, hasBranch } = useAuth()
+  const { isAuthenticated, loading, authError, isOnboarded, profile, hasBranch } = useAuth()
   if (loading)               return <FullscreenSpinner />
+  if (authError)             return <AuthLoadError />
   if (!isAuthenticated)      return <Navigate to="/login" replace />
   if (isOnboarded === null)  return <FullscreenSpinner />
   if (isOnboarded === false) return <Navigate to="/onboarding" replace />
@@ -93,8 +120,9 @@ function RequireSetupBranch() {
  * Redirects everyone else to their appropriate home.
  */
 function RequireOnboarding() {
-  const { isAuthenticated, profile, loading, isOnboarded } = useAuth()
+  const { isAuthenticated, profile, loading, authError, isOnboarded } = useAuth()
   if (loading)               return <FullscreenSpinner />
+  if (authError)             return <AuthLoadError />
   if (!isAuthenticated)      return <Navigate to="/login" replace />
   if (isOnboarded === null)  return <FullscreenSpinner />
   if (profile?.role === 'super_admin') return <Navigate to="/super-admin" replace />
@@ -105,24 +133,27 @@ function RequireOnboarding() {
 
 /** Super admin only. */
 function RequireSuperAdmin() {
-  const { hasRole, loading } = useAuth()
+  const { hasRole, loading, authError } = useAuth()
   if (loading)                 return <FullscreenSpinner />
+  if (authError)               return <AuthLoadError />
   if (!hasRole('super_admin')) return <Navigate to="/dashboard" replace />
   return <Outlet />
 }
 
 /** Branch role only — POS and branch dashboard. */
 function RequireBranch() {
-  const { hasRole, loading } = useAuth()
+  const { hasRole, loading, authError } = useAuth()
   if (loading) return <FullscreenSpinner />
+  if (authError) return <AuthLoadError />
   if (!hasRole('branch')) return <Navigate to="/dashboard" replace />
   return <Outlet />
 }
 
 /** POS — branch role only. */
 function RequirePOS() {
-  const { hasRole, loading } = useAuth()
+  const { hasRole, loading, authError } = useAuth()
   if (loading) return <FullscreenSpinner />
+  if (authError) return <AuthLoadError />
   if (!hasRole('branch')) return <Navigate to="/branch" replace />
   return <Outlet />
 }
@@ -132,8 +163,9 @@ function RequirePOS() {
  * Waits for isOnboarded before deciding — never redirects on stale state.
  */
 function SmartRedirect() {
-  const { isAuthenticated, profile, loading, isOnboarded } = useAuth()
+  const { isAuthenticated, profile, loading, authError, isOnboarded } = useAuth()
   if (loading)          return <FullscreenSpinner />
+  if (authError)        return <AuthLoadError />
   if (!isAuthenticated) return <LandingPage />
   // Authenticated — wait for profile fetch to complete
   if (isOnboarded === null) return <FullscreenSpinner />

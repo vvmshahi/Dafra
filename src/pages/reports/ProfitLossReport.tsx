@@ -11,11 +11,14 @@ import {
   EmptyChart, SectionHeader, ChartTooltip, CHART_COLORS,
 } from './reportUtils'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
+import { creditedInvoiceAmount, positiveInvoiceAmount, signedInvoiceAmount } from './accounting'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface MonthRow {
   month:       string
+  grossSales:  number
+  creditNotes: number
   revenue:     number
   cogs:        number
   grossProfit: number
@@ -26,6 +29,8 @@ interface MonthRow {
 interface ExpenseCat { name: string; value: number }
 
 interface PLData {
+  grossSales:    number
+  creditNotes:   number
   totalRevenue:  number
   totalCOGS:     number
   grossProfit:   number
@@ -65,7 +70,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
           { data: expData },
           { data: fixedData },
         ] = await Promise.all([
-          invFilter(supabase.from('invoices').select('invoice_date, total_amount')),
+          invFilter(supabase.from('invoices').select('invoice_date, total_amount, zatca_invoice_type')),
           purFilter(supabase.from('purchases').select('purchase_date, total_amount')),
           expFilter(supabase.from('expenses').select('expense_date, total_paid, category_id, expense_categories(name,color)')),
           (branchId ? supabase.from('fixed_expenses').eq('branch_id', branchId) : supabase.from('fixed_expenses').eq('tenant_id', tid))
@@ -83,7 +88,9 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
         const months = generateMonths(startDate, endDate)
         const fixedTotal = fixedMonthly * months.length
 
-        const totalRevenue  = invoices.reduce((s: number, i: any) => s + Number(i.total_amount), 0)
+        const grossSales    = invoices.reduce((s: number, i: any) => s + positiveInvoiceAmount(i, i.total_amount), 0)
+        const creditNotes   = invoices.reduce((s: number, i: any) => s + creditedInvoiceAmount(i, i.total_amount), 0)
+        const totalRevenue  = invoices.reduce((s: number, i: any) => s + signedInvoiceAmount(i, i.total_amount), 0)
         const totalCOGS     = purchases.reduce((s: number, p: any) => s + Number(p.total_amount), 0)
         const varExpenses   = expenses.reduce((s: number, e: any) => s + Number(e.total_paid), 0)
         const totalExpenses = varExpenses + fixedTotal
@@ -93,12 +100,15 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
 
         // Monthly rows
         const monthlyRows: MonthRow[] = months.map(m => {
-          const rev  = invoices.filter((i: any)  => (i.invoice_date  as string).startsWith(m)).reduce((s: number, i: any) => s + Number(i.total_amount), 0)
+          const monthInvoices = invoices.filter((i: any) => (i.invoice_date as string).startsWith(m))
+          const grossSales = monthInvoices.reduce((s: number, i: any) => s + positiveInvoiceAmount(i, i.total_amount), 0)
+          const creditNotes = monthInvoices.reduce((s: number, i: any) => s + creditedInvoiceAmount(i, i.total_amount), 0)
+          const rev  = monthInvoices.reduce((s: number, i: any) => s + signedInvoiceAmount(i, i.total_amount), 0)
           const cogs = purchases.filter((p: any) => (p.purchase_date as string).startsWith(m)).reduce((s: number, p: any) => s + Number(p.total_amount), 0)
           const exp  = expenses.filter((e: any)  => (e.expense_date  as string).startsWith(m)).reduce((s: number, e: any) => s + Number(e.total_paid), 0) + fixedMonthly
           const gp   = rev - cogs
           const np   = gp - exp
-          return { month: m, revenue: rev, cogs, grossProfit: gp, expenses: exp, netProfit: np }
+          return { month: m, grossSales, creditNotes, revenue: rev, cogs, grossProfit: gp, expenses: exp, netProfit: np }
         })
 
         // Expense by category
@@ -112,7 +122,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
           .map(([name, value]) => ({ name, value }))
           .sort((a, b) => b.value - a.value)
 
-        setData({ totalRevenue, totalCOGS, grossProfit, totalExpenses, netProfit, margin, monthlyRows, expenseByCat })
+        setData({ grossSales, creditNotes, totalRevenue, totalCOGS, grossProfit, totalExpenses, netProfit, margin, monthlyRows, expenseByCat })
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -154,7 +164,9 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
 
       {/* ── Summary cards ──────────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
-        <StatCard label="Total Revenue"    value={<Rial amount={data!.totalRevenue} />}   primary />
+        <StatCard label="Gross Sales"      value={<Rial amount={data!.grossSales} />}     primary />
+        <StatCard label="Credit Notes / Returns" value={<Rial amount={data!.creditNotes} />} accent="amber" />
+        <StatCard label="Net Sales"        value={<Rial amount={data!.totalRevenue} />}   accent="emerald" />
         <StatCard label="Total Purchases"  value={<Rial amount={data!.totalCOGS} />}      accent="amber" sub="cost of goods" />
         <StatCard label="Gross Profit"     value={<Rial amount={data!.grossProfit} />}    accent={data!.grossProfit >= 0 ? 'emerald' : 'red'} />
         <StatCard label="Total Expenses"   value={<Rial amount={data!.totalExpenses} />}  accent="red" />
@@ -224,7 +236,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100">
-                {['Month','Revenue','Purchases','Gross Profit','Expenses','Net Profit'].map(h => (
+                {['Month','Gross Sales','Credit Notes','Net Sales','Purchases','Gross Profit','Expenses','Net Profit'].map(h => (
                   <th key={h} className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">
                     {h}
                   </th>
@@ -235,6 +247,8 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
               {data!.monthlyRows.map(r => (
                 <tr key={r.month} className="border-b border-gray-50 hover:bg-gray-50/50">
                   <td className="px-4 py-3 font-medium text-gray-700">{fmtMonth(r.month)}</td>
+                  <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={r.grossSales} /></td>
+                  <td className="px-4 py-3 tabular-nums text-amber-700"><Rial amount={r.creditNotes} /></td>
                   <td className="px-4 py-3 tabular-nums text-emerald-600 font-semibold"><Rial amount={r.revenue} /></td>
                   <td className="px-4 py-3 tabular-nums text-amber-600"><Rial amount={r.cogs} /></td>
                   <td className={`px-4 py-3 tabular-nums font-semibold ${r.grossProfit >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>
@@ -249,6 +263,8 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
               {/* Totals row */}
               <tr className="bg-gray-50 font-bold border-t-2 border-gray-200">
                 <td className="px-4 py-3 text-gray-700">Total</td>
+                <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={data!.grossSales} /></td>
+                <td className="px-4 py-3 tabular-nums text-amber-700"><Rial amount={data!.creditNotes} /></td>
                 <td className="px-4 py-3 tabular-nums text-emerald-600"><Rial amount={data!.totalRevenue} /></td>
                 <td className="px-4 py-3 tabular-nums text-amber-600"><Rial amount={data!.totalCOGS} /></td>
                 <td className={`px-4 py-3 tabular-nums ${data!.grossProfit >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>

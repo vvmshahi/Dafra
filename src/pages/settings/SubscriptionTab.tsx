@@ -3,9 +3,10 @@ import { CheckCircle2, AlertTriangle, MessageCircle, Mail, CreditCard } from 'lu
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { useSubscription } from '@/hooks/useSubscription'
+import { supportConfig } from '@/config/support'
 
-const WA_LINK    = 'https://wa.me/919895953210'
-const EMAIL_LINK = 'mailto:vvmshahin@gmail.com'
+const WA_LINK    = supportConfig.whatsappLink
+const EMAIL_LINK = supportConfig.emailLink
 
 function ContactButtons({ label = 'Contact Us to Renew' }: { label?: string }) {
   return (
@@ -97,6 +98,7 @@ export default function SubscriptionTab() {
   // Expired / grace period / blocked
   if (sub.isBlocked || sub.status === 'grace_period') {
     const inGrace = sub.status === 'grace_period'
+    const needsActivation = sub.status === 'activation_required'
     return (
       <div className="space-y-5">
         <div className={`flex items-start gap-4 border rounded-2xl p-6 ${inGrace ? 'bg-red-50 border-red-100' : 'bg-red-50 border-red-200'}`}>
@@ -105,14 +107,20 @@ export default function SubscriptionTab() {
           </div>
           <div>
             <p className="text-base font-bold text-red-800">
-              {inGrace ? `Subscription Expired — ${sub.daysUntilExpiry} day${sub.daysUntilExpiry !== 1 ? 's' : ''} left` : 'Subscription Suspended'}
+              {needsActivation
+                ? 'Subscription Activation Required'
+                : inGrace
+                ? `Subscription Expired — ${sub.daysUntilExpiry} day${sub.daysUntilExpiry !== 1 ? 's' : ''} left`
+                : 'Subscription Suspended'}
             </p>
             <p className="text-sm text-red-700 mt-1">
-              {inGrace
+              {needsActivation
+                ? 'This workspace needs manual subscription activation before invoicing can be used.'
+                : inGrace
                 ? 'Invoicing will be paused when the grace period ends. Renew now to avoid interruption.'
                 : 'Your account has been suspended. Contact us to reactivate.'}
             </p>
-            <ContactButtons label="Renew Now" />
+            <ContactButtons label={needsActivation ? 'Contact Us to Activate' : 'Renew Now'} />
           </div>
         </div>
       </div>

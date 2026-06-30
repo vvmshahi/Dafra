@@ -6,12 +6,17 @@ import {
   StatCard, SkeletonCard, SkeletonTable, SectionHeader,
 } from './reportUtils'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { creditedInvoiceAmount, positiveInvoiceAmount, signedInvoiceAmount } from './accounting'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface MonthVat {
   month:          string
+  grossSales:     number
+  creditNotes:    number
   salesAmount:    number
+  vatOnSales:     number
+  vatCredited:    number
   vatCollected:   number
   purchaseAmount: number
   vatPaidPur:     number
@@ -21,6 +26,10 @@ interface MonthVat {
 }
 
 interface VatData {
+  grossSales:     number
+  creditNotes:    number
+  vatOnSales:     number
+  vatCredited:    number
   vatCollected:  number
   vatPaidTotal:  number
   netPayable:    number
@@ -51,7 +60,7 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
           (branchId
             ? supabase.from('invoices').eq('branch_id', branchId)
             : supabase.from('invoices').eq('tenant_id', tid))
-            .select('invoice_date, total_amount, tax_amount')
+            .select('invoice_date, total_amount, tax_amount, zatca_invoice_type')
             .neq('status', 'cancelled')
             .gte('invoice_date', startDate)
             .lte('invoice_date', endDate),
@@ -80,12 +89,16 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
         const purchases = (purData ?? []) as any[]
         const expenses  = (expData ?? []) as any[]
 
-        const vatCollected = invoices.reduce((s: number, i: any)  => s + Number(i.tax_amount), 0)
+        const grossSales   = invoices.reduce((s: number, i: any)  => s + positiveInvoiceAmount(i, i.total_amount), 0)
+        const creditNotes  = invoices.reduce((s: number, i: any)  => s + creditedInvoiceAmount(i, i.total_amount), 0)
+        const vatOnSales   = invoices.reduce((s: number, i: any)  => s + positiveInvoiceAmount(i, i.tax_amount), 0)
+        const vatCredited  = invoices.reduce((s: number, i: any)  => s + creditedInvoiceAmount(i, i.tax_amount), 0)
+        const vatCollected = invoices.reduce((s: number, i: any)  => s + signedInvoiceAmount(i, i.tax_amount), 0)
         const vatPaidPur   = purchases.reduce((s: number, p: any) => s + Number(p.vat_amount), 0)
         const vatPaidExp   = expenses.reduce((s: number, e: any)  => s + Number(e.vat_amount), 0)
         const vatPaidTotal = vatPaidPur + vatPaidExp
         const netPayable   = vatCollected - vatPaidTotal
-        const salesTotal   = invoices.reduce((s: number, i: any)  => s + Number(i.total_amount), 0)
+        const salesTotal   = invoices.reduce((s: number, i: any)  => s + signedInvoiceAmount(i, i.total_amount), 0)
 
         // Monthly rows
         const months = generateMonths(startDate, endDate)
@@ -93,12 +106,21 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
           const inv = invoices.filter((i: any)  => (i.invoice_date  as string).startsWith(m))
           const pur = purchases.filter((p: any) => (p.purchase_date as string).startsWith(m))
           const exp = expenses.filter((e: any)  => (e.expense_date  as string).startsWith(m))
-          const vc  = inv.reduce((s: number, i: any) => s + Number(i.tax_amount),  0)
+          const grossSales = inv.reduce((s: number, i: any) => s + positiveInvoiceAmount(i, i.total_amount), 0)
+          const creditNotes = inv.reduce((s: number, i: any) => s + creditedInvoiceAmount(i, i.total_amount), 0)
+          const salesAmount = inv.reduce((s: number, i: any) => s + signedInvoiceAmount(i, i.total_amount), 0)
+          const vatOnSales = inv.reduce((s: number, i: any) => s + positiveInvoiceAmount(i, i.tax_amount), 0)
+          const vatCredited = inv.reduce((s: number, i: any) => s + creditedInvoiceAmount(i, i.tax_amount), 0)
+          const vc  = inv.reduce((s: number, i: any) => s + signedInvoiceAmount(i, i.tax_amount),  0)
           const pp  = pur.reduce((s: number, p: any) => s + Number(p.vat_amount),  0)
           const pe  = exp.reduce((s: number, e: any) => s + Number(e.vat_amount),  0)
           return {
             month:          m,
-            salesAmount:    inv.reduce((s: number, i: any) => s + Number(i.total_amount), 0),
+            grossSales,
+            creditNotes,
+            salesAmount,
+            vatOnSales,
+            vatCredited,
             vatCollected:   vc,
             purchaseAmount: pur.reduce((s: number, p: any) => s + Number(p.total_amount), 0),
             vatPaidPur:     pp,
@@ -108,7 +130,7 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
           }
         })
 
-        setData({ vatCollected, vatPaidTotal, netPayable, salesTotal, monthlyRows })
+        setData({ grossSales, creditNotes, vatOnSales, vatCredited, vatCollected, vatPaidTotal, netPayable, salesTotal, monthlyRows })
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -132,10 +154,22 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
       {/* ── Summary cards ──────────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
         <StatCard
-          label="Output VAT (Collected)"
-          value={<Rial amount={data?.vatCollected ?? 0} />}
-          sub="VAT charged on sales"
+          label="VAT on Sales"
+          value={<Rial amount={data?.vatOnSales ?? 0} />}
+          sub="VAT before credit notes"
           primary
+        />
+        <StatCard
+          label="VAT Credited"
+          value={<Rial amount={data?.vatCredited ?? 0} />}
+          sub="VAT reduced by returns"
+          accent="amber"
+        />
+        <StatCard
+          label="Net VAT on Sales"
+          value={<Rial amount={data?.vatCollected ?? 0} />}
+          sub="sales VAT minus credited VAT"
+          accent="emerald"
         />
         <StatCard
           label="Input VAT (Paid)"
@@ -174,7 +208,7 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
             <thead>
               <tr className="border-b border-gray-100">
                 {[
-                  'Month', 'Sales', 'VAT Collected',
+                  'Month', 'Gross Sales', 'Credit Notes', 'Net Sales', 'VAT on Sales', 'VAT Credited', 'Net VAT',
                   'Purchases', 'VAT Paid (Pur.)',
                   'Expenses', 'VAT Paid (Exp.)',
                   'Net Payable',
@@ -189,7 +223,11 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
               {(data?.monthlyRows ?? []).map(r => (
                 <tr key={r.month} className="border-b border-gray-50 hover:bg-gray-50/50">
                   <td className="px-4 py-3 font-medium text-gray-700 whitespace-nowrap">{fmtMonth(r.month)}</td>
+                  <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={r.grossSales} /></td>
+                  <td className="px-4 py-3 tabular-nums text-amber-700"><Rial amount={r.creditNotes} /></td>
                   <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={r.salesAmount} /></td>
+                  <td className="px-4 py-3 tabular-nums text-emerald-600"><Rial amount={r.vatOnSales} /></td>
+                  <td className="px-4 py-3 tabular-nums text-amber-700"><Rial amount={r.vatCredited} /></td>
                   <td className="px-4 py-3 tabular-nums text-emerald-600 font-semibold"><Rial amount={r.vatCollected} /></td>
                   <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={r.purchaseAmount} /></td>
                   <td className="px-4 py-3 tabular-nums text-amber-600"><Rial amount={r.vatPaidPur} /></td>
@@ -204,7 +242,11 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
               {(data?.monthlyRows ?? []).length > 0 && (
                 <tr className="bg-gray-50 font-bold border-t-2 border-gray-200">
                   <td className="px-4 py-3 text-gray-700">Total</td>
+                  <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={data!.grossSales} /></td>
+                  <td className="px-4 py-3 tabular-nums text-amber-700"><Rial amount={data!.creditNotes} /></td>
                   <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={data!.salesTotal} /></td>
+                  <td className="px-4 py-3 tabular-nums text-emerald-600"><Rial amount={data!.vatOnSales} /></td>
+                  <td className="px-4 py-3 tabular-nums text-amber-700"><Rial amount={data!.vatCredited} /></td>
                   <td className="px-4 py-3 tabular-nums text-emerald-600"><Rial amount={data!.vatCollected} /></td>
                   <td className="px-4 py-3 tabular-nums text-gray-700">—</td>
                   <td className="px-4 py-3 tabular-nums text-amber-600"><Rial amount={data!.vatPaidTotal} /></td>

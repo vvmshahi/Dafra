@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import type { Branch } from '@/types'
+import { supportConfig } from '@/config/support'
 
 /* ── Types ──────────────────────────────────────────────────── */
 
@@ -949,7 +950,7 @@ function BranchCard({
 
 /* ── Main tab ─────────────────────────────────────────────────── */
 
-const WA_LINK = 'https://wa.me/919895953210'
+const WA_LINK = supportConfig.whatsappLink
 
 export default function BranchesTab() {
   const { profile } = useAuth()
@@ -1046,7 +1047,7 @@ export default function BranchesTab() {
         <div className="card p-12 text-center">
           <Building2 size={36} className="text-gray-200 mx-auto mb-3" />
           <p className="text-sm font-medium text-gray-500">No branches yet</p>
-          <p className="text-xs text-gray-400 mt-1 mb-4">Add your first branch to start generating ZATCA-compliant invoices</p>
+          <p className="text-xs text-gray-400 mt-1 mb-4">Add your first branch to start generating ZATCA-ready invoices</p>
           <Button size="sm" onClick={() => setDrawer('new')}><Plus size={13} /> Add your first branch</Button>
         </div>
       ) : (

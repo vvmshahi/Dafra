@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Calendar, Filter, Eye, TrendingUp, FileText, Receipt } from 'lucide-react'
+import { Search, Calendar, Filter, Eye, TrendingUp, FileText, Receipt, RefreshCw } from 'lucide-react'
+import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import type { InvoiceType, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { saudiNow } from '@/lib/utils/date'
+import { retryFailedSubmissions } from '@/lib/zatca/submission'
 import CreateCreditNoteModal from './CreateCreditNoteModal'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -90,6 +92,7 @@ export default function InvoicesPage() {
 
   const [rows,    setRows]    = useState<InvoiceRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [retryingZatca, setRetryingZatca] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [creditModalRow, setCreditModalRow] = useState<InvoiceRow | null>(null)
 
@@ -205,6 +208,28 @@ export default function InvoicesPage() {
     revenue: filtered.reduce((s, r) => s + (r.documentType === 'credit_note' ? -r.totalAmount : r.totalAmount), 0),
     vat:     filtered.reduce((s, r) => s + (r.documentType === 'credit_note' ? -r.taxAmount : r.taxAmount), 0),
   }
+  const retryableZatcaCount = rows.filter(r => r.status !== 'cancelled' && (r.zatcaStatus === 'failed' || r.zatcaStatus === 'pending')).length
+
+  async function handleRetryZatca() {
+    const tid = profile?.tenant_id
+    if (!tid || retryingZatca) return
+    setRetryingZatca(true)
+    try {
+      const result = await retryFailedSubmissions(tid, profile?.branch_id)
+      if (result.attempted === 0) {
+        toast.info('No failed or pending ZATCA submissions found.')
+      } else if (result.failed === 0) {
+        toast.success(`Retried ${result.succeeded} ZATCA submission${result.succeeded !== 1 ? 's' : ''}.`)
+      } else {
+        toast.warning(`Retried ${result.attempted}. ${result.succeeded} succeeded, ${result.failed} need review.`)
+      }
+      setRefreshKey(key => key + 1)
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Unable to retry ZATCA submissions.')
+    } finally {
+      setRetryingZatca(false)
+    }
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -217,6 +242,18 @@ export default function InvoicesPage() {
           <h1 className="text-xl font-bold text-gray-900">Invoices</h1>
           <p className="text-sm text-gray-400 mt-0.5">فواتير المبيعات · View invoices and credit notes</p>
         </div>
+        {retryableZatcaCount > 0 && (
+          <button
+            type="button"
+            onClick={handleRetryZatca}
+            disabled={retryingZatca}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 text-red-700 text-sm font-semibold hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed"
+            title="Retry failed or pending ZATCA submissions"
+          >
+            <RefreshCw size={14} className={retryingZatca ? 'animate-spin' : ''} />
+            Retry ZATCA ({retryableZatcaCount})
+          </button>
+        )}
       </div>
 
       {/* ── Summary bar ─────────────────────────────────── */}
