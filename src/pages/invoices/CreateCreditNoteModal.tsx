@@ -3,9 +3,11 @@ import { Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import type { PaymentMethod, ZatcaStatus } from '@/types/database'
+import { submitInvoiceToZatca } from '@/lib/zatca/submission'
 
 export interface CreditNoteSourceInvoice {
   id: string
+  branch_id: string
   invoice_number: string
   total_amount: number
 }
@@ -20,6 +22,7 @@ export interface CreditNoteCreatedResult {
   idempotentReplay: boolean
   reason: string
   refundMethod: PaymentMethod
+  autoSubmitSucceeded: boolean
 }
 
 interface RpcCreditNoteResult {
@@ -55,6 +58,16 @@ function newIdempotencyKey(invoiceId: string) {
   return globalThis.crypto?.randomUUID?.() ?? `${invoiceId}-${Date.now()}`
 }
 
+async function fetchCreditNoteStatus(invoiceId: string): Promise<ZatcaStatus | null> {
+  const { data } = await supabase
+    .from('invoices')
+    .select('zatca_status')
+    .eq('id', invoiceId)
+    .maybeSingle()
+
+  return (data?.zatca_status as ZatcaStatus | undefined) ?? null
+}
+
 export default function CreateCreditNoteModal({
   open,
   invoice,
@@ -68,6 +81,7 @@ export default function CreateCreditNoteModal({
   const [refundMethod, setRefundMethod] = useState<PaymentMethod>('cash')
   const [returnStock, setReturnStock] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [idempotencyKey, setIdempotencyKey] = useState('')
 
@@ -79,6 +93,7 @@ export default function CreateCreditNoteModal({
     setReturnStock(defaultReturnStock)
     setError(null)
     setCreating(false)
+    setSubmitting(false)
     setIdempotencyKey(newIdempotencyKey(invoice.id))
   }, [open, invoice, defaultRefundMethod, defaultReturnStock])
 
@@ -97,6 +112,7 @@ export default function CreateCreditNoteModal({
     }
 
     setCreating(true)
+    setSubmitting(false)
     setError(null)
     try {
       const payload = {
@@ -114,27 +130,54 @@ export default function CreateCreditNoteModal({
         throw new Error('Credit note was not returned')
       }
 
+      const creditNoteId = result.credit_note_invoice_id
+      let zatcaStatus = result.zatca_status ?? 'pending'
+      let autoSubmitSucceeded = false
+      const shouldAutoSubmit = zatcaStatus !== 'reported' && zatcaStatus !== 'cleared'
+
+      if (shouldAutoSubmit) {
+        setCreating(false)
+        setSubmitting(true)
+        try {
+          autoSubmitSucceeded = await submitInvoiceToZatca(creditNoteId, invoice.branch_id)
+        } catch {
+          autoSubmitSucceeded = false
+        } finally {
+          const refreshedStatus = await fetchCreditNoteStatus(creditNoteId)
+          zatcaStatus = refreshedStatus ?? zatcaStatus
+        }
+      }
+
       onCreated({
         creditNoteId: result.credit_note_invoice_id,
         creditNoteNumber: result.credit_note_invoice_number,
         createdAt: result.created_at ?? new Date().toISOString(),
         total: Number(result.total ?? invoice.total_amount),
         refundStatus: result.refund_status ?? 'completed',
-        zatcaStatus: result.zatca_status ?? 'pending',
+        zatcaStatus,
         idempotentReplay: Boolean(result.idempotent_replay),
         reason: trimmedReason,
         refundMethod,
+        autoSubmitSucceeded,
       })
       onClose()
-      toast.success(result.idempotent_replay ? 'Credit note already exists' : 'Credit note created')
+      if (autoSubmitSucceeded || zatcaStatus === 'reported' || zatcaStatus === 'cleared') {
+        toast.success(result.idempotent_replay ? 'Credit note already exists and is reported' : 'Credit note created and submitted to ZATCA')
+      } else {
+        toast.error('Credit note created, but ZATCA submission failed. You can retry from the credit note page.')
+      }
     } catch (err) {
       const safeMessage = safeCreditNoteError(err)
       setError(safeMessage)
       toast.error(safeMessage)
     } finally {
       setCreating(false)
+      setSubmitting(false)
     }
   }
+
+  const busy = creating || submitting
+  const actionLabel = submitting ? 'Submitting to ZATCA' : creating ? 'Creating Credit Note' : 'Create Credit Note'
 
   return (
     <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -147,6 +190,7 @@ export default function CreateCreditNoteModal({
           <button
             type="button"
             onClick={onClose}
+            disabled={busy}
             className="rounded-full p-2 text-gray-400 hover:bg-gray-50 hover:text-gray-700"
             aria-label="Close"
           >
@@ -227,18 +271,19 @@ export default function CreateCreditNoteModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+            disabled={busy}
+            className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={handleCreate}
-            disabled={creating}
+            disabled={busy}
             className="inline-flex items-center gap-2 rounded-xl bg-[#0F2419] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {creating && <Loader2 size={13} className="animate-spin" />}
-            Create Credit Note
+            {busy && <Loader2 size={13} className="animate-spin" />}
+            {actionLabel}
           </button>
         </div>
       </div>

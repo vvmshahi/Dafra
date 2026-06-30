@@ -1131,6 +1131,7 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
         open={creditModalOpen}
         invoice={{
           id: invoice.id,
+          branch_id: invoice.branch_id,
           invoice_number: invoice.invoice_number,
           total_amount: Number(invoice.total_amount),
         }}

@@ -12,6 +12,7 @@ import CreateCreditNoteModal from './CreateCreditNoteModal'
 
 interface InvoiceRow {
   id: string
+  branchId: string
   invoiceNumber: string
   date: string
   createdAt: string
@@ -111,7 +112,7 @@ export default function InvoicesPage() {
         const { data } = await supabase
           .from('invoices')
           .select(`
-            id, invoice_number, invoice_reference, zatca_invoice_type, invoice_date, created_at, status,
+            id, branch_id, invoice_number, invoice_reference, zatca_invoice_type, invoice_date, created_at, status,
             subtotal, tax_amount, total_amount, zatca_status,
             customers(name),
             invoice_items(id),
@@ -160,6 +161,7 @@ export default function InvoicesPage() {
           const linkedCreditNote = creditByOriginal.get(inv.id) ?? null
           return {
           id:            inv.id,
+          branchId:      inv.branch_id,
           invoiceNumber: inv.invoice_number,
           date:          inv.invoice_date,
           createdAt:     inv.created_at,
@@ -420,6 +422,7 @@ export default function InvoicesPage() {
         open={!!creditModalRow}
         invoice={creditModalRow ? {
           id: creditModalRow.id,
+          branch_id: creditModalRow.branchId,
           invoice_number: creditModalRow.invoiceNumber,
           total_amount: creditModalRow.totalAmount,
         } : null}
