@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -85,7 +86,12 @@ Deno.serve(async (req: Request) => {
       pay_method, pay_ref, notes,
     } = body
 
-    console.log('[create-owner-account] Body parsed — company_name:', company_name, 'email:', email, 'plan_id:', plan_id, 'payment_type:', payment_type)
+    console.log('[create-owner-account] Body parsed:', {
+      hasCompanyName: !!company_name,
+      hasEmail: !!email,
+      hasPlanId: !!plan_id,
+      payment_type,
+    })
 
     if (!company_name || !email || !plan_id) {
       console.error('[create-owner-account] Missing required fields')
@@ -96,9 +102,52 @@ Deno.serve(async (req: Request) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase()
+    const ipHash = await hashRequestIp(req)
+    const reqId = requestId(req)
+    const auditBase = {
+      tenantId: null,
+      branchId: null,
+      actorUserId: caller.id,
+      actorRole: 'super_admin',
+      targetType: 'tenant',
+      targetId: null,
+      ipHash,
+      requestId: reqId,
+    }
+
+    await auditEvent(adminClient as any, {
+      ...auditBase,
+      action: 'owner_account_create_attempted',
+      severity: 'warning',
+      status: 'attempted',
+      metadata: { paymentType: payment_type ?? null },
+    })
+
+    const rate = await enforceRateLimit(adminClient as any, {
+      ...auditBase,
+      action: 'create_owner_account',
+      scope: 'actor',
+      scopeId: caller.id,
+      maxAttempts: 20,
+      windowSeconds: 86400,
+      metadata: { paymentType: payment_type ?? null },
+    })
+
+    if (!rate.allowed) {
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'owner_account_create_rate_limited',
+        severity: 'warning',
+        status: 'blocked',
+        metadata: { retryAfterSeconds: rate.retryAfterSeconds },
+      })
+      return new Response(JSON.stringify(rateLimitBody(rate)), {
+        status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     // ── Step 1: Create auth user ─────────────────────────────────────────────
-    console.log('[create-owner-account] Step 1: Creating auth user for', normalizedEmail)
+    console.log('[create-owner-account] Step 1: Creating auth user')
     const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
       email:         normalizedEmail,
       email_confirm: true,
@@ -107,6 +156,13 @@ Deno.serve(async (req: Request) => {
 
     if (createErr) {
       console.error('[create-owner-account] Step 1 FAILED — auth user creation:', createErr.message)
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'owner_account_create_failed',
+        severity: 'warning',
+        status: 'failed',
+        metadata: { stage: 'auth_create' },
+      })
       return new Response(JSON.stringify({ error: createErr.message }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -138,6 +194,15 @@ Deno.serve(async (req: Request) => {
     if (tenantErr || !tenantRow) {
       console.error('[create-owner-account] Step 2 FAILED — tenant insert:', tenantErr?.message, tenantErr?.code, tenantErr?.details)
       await adminClient.auth.admin.deleteUser(newUserId)
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'owner_account_create_failed',
+        severity: 'warning',
+        status: 'failed',
+        targetType: 'user_profile',
+        targetId: newUserId,
+        metadata: { stage: 'tenant_insert' },
+      })
       return new Response(
         JSON.stringify({ error: 'Failed to create tenant: ' + (tenantErr?.message ?? 'unknown') }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -206,8 +271,8 @@ Deno.serve(async (req: Request) => {
       console.log('[create-owner-account] Step 5 OK — subscription created')
     }
 
-    // ── Step 6: Send password setup email ────────────────────────────────────
-    console.log('[create-owner-account] Step 6: Sending password setup email to', normalizedEmail)
+    // ── Step 6: Send setup email ────────────────────────────────────────────
+    console.log('[create-owner-account] Step 6: Sending setup email')
     let emailWarning: string | null = null
 
     const { error: linkErr } = await adminClient.auth.admin.generateLink({
@@ -222,7 +287,7 @@ Deno.serve(async (req: Request) => {
       console.error('[create-owner-account] Step 6 WARNING — generateLink failed:', linkErr.message)
       emailWarning = `Account created but password setup email failed: ${linkErr.message}. Send a manual password reset from the Supabase dashboard.`
     } else {
-      console.log('[create-owner-account] Step 6 OK — password setup email sent')
+      console.log('[create-owner-account] Step 6 OK — setup email sent')
     }
 
     const response: Record<string, unknown> = {
@@ -231,6 +296,21 @@ Deno.serve(async (req: Request) => {
       email:     normalizedEmail,
     }
     if (emailWarning) response.warning = emailWarning
+
+    await auditEvent(adminClient as any, {
+      ...auditBase,
+      tenantId,
+      action: 'owner_account_created',
+      severity: 'warning',
+      status: 'succeeded',
+      targetType: 'tenant',
+      targetId: tenantId,
+      metadata: {
+        userId: newUserId,
+        emailLinkSent: !emailWarning,
+        paymentType: payment_type ?? null,
+      },
+    })
 
     console.log('[create-owner-account] SUCCESS — returning 200')
     return new Response(JSON.stringify(response), {

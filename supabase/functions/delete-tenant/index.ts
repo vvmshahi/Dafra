@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -209,6 +210,18 @@ Deno.serve(async (req: Request) => {
 
     const tenant = tenantRow as TenantRow
     const allowed = isAuthorizedForTenantDelete(callerProfile as CallerProfile, tenant.id)
+    const ipHash = await hashRequestIp(req)
+    const reqId = requestId(req)
+    const auditBase = {
+      tenantId: tenant.id,
+      branchId: null,
+      actorUserId: caller.id,
+      actorRole: String(callerProfile.role),
+      targetType: 'tenant',
+      targetId: tenant.id,
+      ipHash,
+      requestId: reqId,
+    }
     console.info('[delete-tenant] audit:', {
       action: 'delete_tenant_authorize',
       targetTenantId: tenant.id,
@@ -217,13 +230,53 @@ Deno.serve(async (req: Request) => {
       allowed,
     })
 
+    await auditEvent(adminClient as any, {
+      ...auditBase,
+      action: 'delete_tenant_attempted',
+      severity: 'critical',
+      status: allowed ? 'attempted' : 'blocked',
+      metadata: { dryRun },
+    })
+
     if (!allowed) {
       return jsonResponse({ error: 'Forbidden' }, 403)
+    }
+
+    if (!dryRun) {
+      const rate = await enforceRateLimit(adminClient as any, {
+        ...auditBase,
+        action: 'delete_tenant',
+        scope: 'tenant',
+        scopeId: tenant.id,
+        maxAttempts: 2,
+        windowSeconds: 86400,
+      })
+
+      if (!rate.allowed) {
+        await auditEvent(adminClient as any, {
+          ...auditBase,
+          action: 'delete_tenant_rate_limited',
+          severity: 'critical',
+          status: 'blocked',
+          metadata: { retryAfterSeconds: rate.retryAfterSeconds },
+        })
+        return jsonResponse(rateLimitBody(rate), 429)
+      }
     }
 
     const plan = await collectTenantDeletionPlan(adminClient, tenant)
 
     if (dryRun) {
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'delete_tenant_dry_run',
+        severity: 'warning',
+        status: plan.productionConnectedCredentialCount > 0 ? 'blocked' : 'succeeded',
+        metadata: {
+          productionProtected: plan.productionConnectedCredentialCount > 0,
+          counts: plan.counts,
+        },
+      })
       console.info('[delete-tenant] audit:', {
         action: 'delete_tenant_dry_run',
         targetTenantId: tenant.id,
@@ -247,6 +300,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (plan.productionConnectedCredentialCount > 0) {
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'delete_tenant_blocked',
+        severity: 'critical',
+        status: 'blocked',
+        metadata: { reason: 'production_connected_zatca_credentials' },
+      })
       console.info('[delete-tenant] audit:', {
         action: 'delete_tenant_blocked',
         targetTenantId: tenant.id,
@@ -311,8 +371,23 @@ Deno.serve(async (req: Request) => {
     }
 
     if (authDeleteFailures > 0) {
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'delete_tenant_failed',
+        severity: 'critical',
+        status: 'failed',
+        metadata: { reason: 'auth_delete_failures', authDeleteFailures },
+      })
       return jsonResponse({ error: 'Tenant data deleted but one or more auth users could not be removed' }, 500)
     }
+
+    await auditEvent(adminClient as any, {
+      ...auditBase,
+      action: 'delete_tenant_completed',
+      severity: 'critical',
+      status: 'succeeded',
+      metadata: { counts: plan.counts },
+    })
 
     console.info('[delete-tenant] audit:', {
       action: 'delete_tenant_complete',

@@ -39,6 +39,7 @@ import {
   type SampleSeller,
 } from '../_shared/zatca/samples.ts'
 import { loadSafeOnboardingStatus, saveOnboardingState } from '../_shared/zatca/storage.ts'
+import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
 
 interface RequestBody {
   action?: 'onboard' | 'status' | 'preflight'
@@ -158,8 +159,26 @@ Deno.serve(async (req: Request) => {
     setTrace(trace, 'auth_checked', 'success', 'Authenticated tenant owner confirmed.')
     const branch = await loadOwnedBranch(db, branchId, owner.tenantId)
     setTrace(trace, 'owner_branch_loaded', 'success', 'Owner branch loaded for this tenant.')
+    const ipHash = await hashRequestIp(req)
+    const reqId = requestId(req)
+    const auditBase = {
+      tenantId: owner.tenantId,
+      branchId: branch.id,
+      actorUserId: owner.userId,
+      actorRole: 'owner',
+      targetType: 'branch',
+      targetId: branch.id,
+      ipHash,
+      requestId: reqId,
+    }
 
     if (body.action === 'preflight') {
+      await auditEvent(db as any, {
+        ...auditBase,
+        action: 'zatca_onboarding_preflight_attempted',
+        status: 'attempted',
+      })
+
       if (!isFunctionalityMap(body.functionalityMap)) {
         setTrace(trace, 'seller_data_validated', 'failed', 'Select a ZATCA invoice capability before preflight.')
         skipPendingTrace(trace)
@@ -220,6 +239,13 @@ Deno.serve(async (req: Request) => {
           : 'Production ZATCA calls are currently disabled.',
       )
       skipPendingTrace(trace, 'Preflight only. No credential generation or ZATCA calls were used.')
+      await auditEvent(db as any, {
+        ...auditBase,
+        action: 'zatca_onboarding_preflight_completed',
+        status: allowed ? 'succeeded' : 'failed',
+        severity: allowed ? 'info' : 'warning',
+        metadata: { productionCallsAllowed: allowed },
+      })
       return jsonResponse({
         ok: allowed,
         preflight: true,
@@ -274,6 +300,38 @@ Deno.serve(async (req: Request) => {
     }
 
     const dryRun = body.dryRun !== false
+    await auditEvent(db as any, {
+      ...auditBase,
+      action: dryRun ? 'zatca_onboarding_dry_run_attempted' : 'zatca_onboarding_attempted',
+      severity: dryRun ? 'info' : 'warning',
+      status: 'attempted',
+      metadata: { dryRun, forceReconnect: body.forceReconnect === true },
+    })
+
+    if (!dryRun) {
+      const rate = await enforceRateLimit(db as any, {
+        ...auditBase,
+        action: 'zatca_onboard_production',
+        scope: 'branch',
+        scopeId: branch.id,
+        maxAttempts: 3,
+        windowSeconds: 86400,
+        metadata: { forceReconnect: body.forceReconnect === true },
+      })
+
+      if (!rate.allowed) {
+        await auditEvent(db as any, {
+          ...auditBase,
+          action: 'zatca_onboarding_rate_limited',
+          severity: 'warning',
+          status: 'blocked',
+          metadata: { retryAfterSeconds: rate.retryAfterSeconds },
+        })
+        skipPendingTrace(trace, 'Rate limited before production onboarding.')
+        return jsonResponse({ ...rateLimitBody(rate), trace }, 429)
+      }
+    }
+
     const tenant = await loadTenant(db, owner.tenantId)
     logOnboardingStage('seller data loaded', { branchId: branch.id, tenantId: owner.tenantId })
     const csrParams = buildCsrParams(branch, tenant, body.functionalityMap)
@@ -297,6 +355,12 @@ Deno.serve(async (req: Request) => {
       setTrace(trace, 'feature_flag_checked', 'skipped', 'Dry run does not require the production-call feature flag.')
       setTrace(trace, 'compliance_samples_started', 'skipped', 'Dry run uses simulated compliance sample results.')
       skipPendingTrace(trace, 'Dry run completed without ZATCA calls or credential storage.')
+      await auditEvent(db as any, {
+        ...auditBase,
+        action: 'zatca_onboarding_dry_run_completed',
+        status: 'succeeded',
+        metadata: { functionalityMap: body.functionalityMap },
+      })
       return jsonResponse({
         ok: true,
         dryRun: true,
@@ -578,6 +642,14 @@ Deno.serve(async (req: Request) => {
       connectedAt,
     })
     setTrace(trace, 'production_credentials_saved', 'success', 'Encrypted production credentials were saved.')
+
+    await auditEvent(db as any, {
+      ...auditBase,
+      action: 'zatca_onboarding_completed',
+      severity: 'warning',
+      status: 'succeeded',
+      metadata: { functionalityMap: body.functionalityMap },
+    })
 
     return jsonResponse({
       ok: true,

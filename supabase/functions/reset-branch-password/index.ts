@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -82,6 +83,48 @@ Deno.serve(async (req: Request) => {
       })
     }
 
+    const ipHash = await hashRequestIp(req)
+    const reqId = requestId(req)
+    const auditBase = {
+      tenantId: callerProfile.tenant_id,
+      branchId: branch_id,
+      actorUserId: caller.id,
+      actorRole: 'owner',
+      targetType: 'branch',
+      targetId: branch_id,
+      ipHash,
+      requestId: reqId,
+    }
+
+    await auditEvent(adminClient as any, {
+      ...auditBase,
+      action: 'branch_password_reset_attempted',
+      severity: 'warning',
+      status: 'attempted',
+    })
+
+    const rate = await enforceRateLimit(adminClient as any, {
+      ...auditBase,
+      action: 'reset_branch_password',
+      scope: 'branch',
+      scopeId: branch_id,
+      maxAttempts: 5,
+      windowSeconds: 3600,
+    })
+
+    if (!rate.allowed) {
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'branch_password_reset_rate_limited',
+        severity: 'warning',
+        status: 'blocked',
+        metadata: { retryAfterSeconds: rate.retryAfterSeconds },
+      })
+      return new Response(JSON.stringify(rateLimitBody(rate)), {
+        status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     // ── Find branch user ──────────────────────────────────────────────────────
     const { data: branchUser } = await adminClient
       .from('user_profiles')
@@ -91,6 +134,13 @@ Deno.serve(async (req: Request) => {
       .maybeSingle()
 
     if (!branchUser) {
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'branch_password_reset_failed',
+        severity: 'warning',
+        status: 'failed',
+        metadata: { reason: 'branch_user_not_found' },
+      })
       return new Response(JSON.stringify({ error: 'No branch user found for this branch' }), {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -102,20 +152,39 @@ Deno.serve(async (req: Request) => {
     })
 
     if (updateErr) {
-      console.error('[reset-branch-password] updateUserById failed:', updateErr.message)
+      console.error('[reset-branch-credential] updateUserById failed:', updateErr.message)
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'branch_password_reset_failed',
+        severity: 'warning',
+        status: 'failed',
+        targetType: 'user_profile',
+        targetId: branchUser.id,
+        metadata: { stage: 'auth_update' },
+      })
       return new Response(JSON.stringify({ error: updateErr.message }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    console.log('[reset-branch-password] Password reset for branch:', branch_id, 'user:', branchUser.id)
+    await auditEvent(adminClient as any, {
+      ...auditBase,
+      action: 'branch_password_reset_completed',
+      severity: 'warning',
+      status: 'succeeded',
+      targetType: 'user_profile',
+      targetId: branchUser.id,
+      metadata: { branchId: branch_id },
+    })
+
+    console.log('[reset-branch-credential] Credential update for branch:', branch_id, 'user:', branchUser.id)
     return new Response(JSON.stringify({ success: true }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal error'
-    console.error('[reset-branch-password] Unhandled error:', message)
+    console.error('[reset-branch-credential] Unhandled error:', message)
     return new Response(JSON.stringify({ error: message }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

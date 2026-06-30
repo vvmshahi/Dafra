@@ -18,6 +18,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { create as xmlCreate } from 'https://esm.sh/xmlbuilder2@4.0.3'
 import { secp256k1 } from 'https://esm.sh/@noble/curves@2.2.0/secp256k1.js'
 import { extractEcPrivateKeyScalar, signZatcaInvoiceHash } from '../_shared/zatca/signing_core.mjs'
+import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -1796,7 +1797,59 @@ Deno.serve(async (req: Request) => {
     const invoiceAuth = await authorizeInvoiceSubmission(supabase as any, invoiceId, callerProfile)
     if (!invoiceAuth.ok) return invoiceAuth.response
 
+    const ipHash = await hashRequestIp(req)
+    const reqId = requestId(req)
+    const auditBase = {
+      tenantId: invoiceAuth.target.tenantId,
+      branchId: invoiceAuth.target.branchId,
+      actorUserId: user.id,
+      actorRole: callerProfile.role,
+      targetType: 'invoice',
+      targetId: invoiceId,
+      ipHash,
+      requestId: reqId,
+    }
+
+    await auditEvent(supabase as any, {
+      ...auditBase,
+      action: 'zatca_submit_attempted',
+      status: 'attempted',
+      metadata: { source: 'zatca-submit' },
+    })
+
+    const rate = await enforceRateLimit(supabase as any, {
+      ...auditBase,
+      action: 'zatca_submit_invoice',
+      scope: 'invoice',
+      scopeId: invoiceId,
+      maxAttempts: 8,
+      windowSeconds: 600,
+      metadata: { source: 'zatca-submit' },
+    })
+
+    if (!rate.allowed) {
+      await auditEvent(supabase as any, {
+        ...auditBase,
+        action: 'zatca_submit_rate_limited',
+        severity: 'warning',
+        status: 'blocked',
+        metadata: { retryAfterSeconds: rate.retryAfterSeconds },
+      })
+      return jsonResponse(rateLimitBody(rate), 429)
+    }
+
     const result = await processInvoice(supabase as any, invoiceId, invoiceAuth.target.tenantId)
+    const succeeded = ['reported', 'cleared'].includes(result.invoiceStatus)
+    await auditEvent(supabase as any, {
+      ...auditBase,
+      action: succeeded ? 'zatca_submit_succeeded' : 'zatca_submit_failed',
+      severity: succeeded ? 'info' : 'warning',
+      status: succeeded ? 'succeeded' : 'failed',
+      metadata: {
+        invoiceStatus: result.invoiceStatus,
+        diagnostics: result.diagnostics ? safeSubmitDiagnosticSummary(result.diagnostics) : undefined,
+      },
+    })
     return jsonResponse(result)
 
   } catch (err: any) {

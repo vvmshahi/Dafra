@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -71,7 +72,11 @@ Deno.serve(async (req: Request) => {
     // ── Step 4: Parse and validate request body ───────────────────────────
     const { email, password, full_name, tenant_id, branch_id } = await req.json()
 
-    console.log('[create-branch-user] Request: email=', email, '| tenant_id=', tenant_id, '| branch_id=', branch_id)
+    console.log('[create-branch-user] Request parsed:', {
+      hasEmail: !!email,
+      tenant_id,
+      branch_id,
+    })
 
     if (!email || !password || !tenant_id || !branch_id) {
       return new Response(
@@ -93,9 +98,62 @@ Deno.serve(async (req: Request) => {
       })
     }
 
+    const { data: branchRow, error: branchErr } = await adminClient
+      .from('branches')
+      .select('id, tenant_id')
+      .eq('id', branch_id)
+      .maybeSingle()
+
+    if (branchErr || !branchRow || branchRow.tenant_id !== tenant_id) {
+      return new Response(JSON.stringify({ error: 'Branch not found' }), {
+        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const ipHash = await hashRequestIp(req)
+    const reqId = requestId(req)
+    const auditBase = {
+      tenantId: tenant_id,
+      branchId: branch_id,
+      actorUserId: callerId,
+      actorRole: 'owner',
+      targetType: 'branch',
+      targetId: branch_id,
+      ipHash,
+      requestId: reqId,
+    }
+
+    await auditEvent(adminClient as any, {
+      ...auditBase,
+      action: 'branch_user_create_attempted',
+      status: 'attempted',
+    })
+
+    const rate = await enforceRateLimit(adminClient as any, {
+      ...auditBase,
+      action: 'create_branch_user',
+      scope: 'tenant',
+      scopeId: tenant_id,
+      maxAttempts: 10,
+      windowSeconds: 3600,
+    })
+
+    if (!rate.allowed) {
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'branch_user_create_rate_limited',
+        severity: 'warning',
+        status: 'blocked',
+        metadata: { retryAfterSeconds: rate.retryAfterSeconds },
+      })
+      return new Response(JSON.stringify(rateLimitBody(rate)), {
+        status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     // ── Step 5: Create the auth user via admin API ────────────────────────
     const normalizedEmail = email.trim().toLowerCase()
-    console.log('[create-branch-user] Creating auth user:', normalizedEmail)
+    console.log('[create-branch-user] Creating auth user:', { hasEmail: true, branch_id })
 
     const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
       email: normalizedEmail,
@@ -111,6 +169,13 @@ Deno.serve(async (req: Request) => {
 
     if (createErr) {
       console.error('[create-branch-user] createUser failed:', createErr.message)
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'branch_user_create_failed',
+        severity: 'warning',
+        status: 'failed',
+        metadata: { stage: 'auth_create' },
+      })
       return new Response(JSON.stringify({ error: createErr.message }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -150,6 +215,15 @@ Deno.serve(async (req: Request) => {
 
       if (upsertErr) {
         console.error('[create-branch-user] Profile upsert failed:', upsertErr.message)
+        await auditEvent(adminClient as any, {
+          ...auditBase,
+          action: 'branch_user_create_failed',
+          severity: 'warning',
+          status: 'failed',
+          targetType: 'user_profile',
+          targetId: newUserId,
+          metadata: { stage: 'profile_upsert' },
+        })
         return new Response(
           JSON.stringify({ user_id: newUserId, warning: 'Profile setup failed: ' + upsertErr.message }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -157,6 +231,15 @@ Deno.serve(async (req: Request) => {
       }
       console.log('[create-branch-user] Profile upserted successfully')
     }
+
+    await auditEvent(adminClient as any, {
+      ...auditBase,
+      action: 'branch_user_created',
+      status: 'succeeded',
+      targetType: 'user_profile',
+      targetId: newUserId,
+      metadata: { branchId: branch_id },
+    })
 
     console.log('[create-branch-user] Success — user_id:', newUserId)
     return new Response(JSON.stringify({ user_id: newUserId }), {

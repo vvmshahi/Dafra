@@ -8,6 +8,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, isUuid, jsonResponse, requireEnv, safeErrorMessage } from '../_shared/zatca/config.ts'
 import { loadOwnedBranch, requireTenantOwner } from '../_shared/zatca/auth.ts'
+import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
 
 const REQUIRED_CONFIRMATION = 'DELETE ZATCA CONNECTION'
 
@@ -42,6 +43,45 @@ Deno.serve(async (req: Request) => {
 
     const owner = await requireTenantOwner(db, req)
     const branch = await loadOwnedBranch(db, body.branchId, owner.tenantId)
+    const ipHash = await hashRequestIp(req)
+    const reqId = requestId(req)
+    const auditBase = {
+      tenantId: owner.tenantId,
+      branchId: branch.id,
+      actorUserId: owner.userId,
+      actorRole: 'owner',
+      targetType: 'branch',
+      targetId: branch.id,
+      ipHash,
+      requestId: reqId,
+    }
+
+    await auditEvent(db as any, {
+      ...auditBase,
+      action: 'zatca_disconnect_attempted',
+      severity: 'warning',
+      status: 'attempted',
+    })
+
+    const rate = await enforceRateLimit(db as any, {
+      ...auditBase,
+      action: 'zatca_disconnect_production',
+      scope: 'branch',
+      scopeId: branch.id,
+      maxAttempts: 3,
+      windowSeconds: 86400,
+    })
+
+    if (!rate.allowed) {
+      await auditEvent(db as any, {
+        ...auditBase,
+        action: 'zatca_disconnect_rate_limited',
+        severity: 'warning',
+        status: 'blocked',
+        metadata: { retryAfterSeconds: rate.retryAfterSeconds },
+      })
+      return jsonResponse(rateLimitBody(rate), 429)
+    }
 
     const [pendingInvoices, pendingQueue, credentials] = await Promise.all([
       db
@@ -73,6 +113,13 @@ Deno.serve(async (req: Request) => {
     const pendingInvoiceCount = pendingInvoices.count ?? 0
     const pendingQueueCount = pendingQueue.count ?? 0
     if (pendingInvoiceCount > 0 || pendingQueueCount > 0) {
+      await auditEvent(db as any, {
+        ...auditBase,
+        action: 'zatca_disconnect_blocked',
+        severity: 'warning',
+        status: 'blocked',
+        metadata: { pendingInvoiceCount, pendingQueueCount },
+      })
       return jsonResponse({
         ok: false,
         branchId: branch.id,
@@ -85,6 +132,12 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!credentials.data) {
+      await auditEvent(db as any, {
+        ...auditBase,
+        action: 'zatca_disconnect_completed',
+        status: 'succeeded',
+        metadata: { previousStatus: 'not_started' },
+      })
       return jsonResponse({
         ok: true,
         branchId: branch.id,
@@ -122,6 +175,14 @@ Deno.serve(async (req: Request) => {
       branchId: branch.id,
       tenantId: owner.tenantId,
       previousStatus: credentials.data.onboarding_status,
+    })
+
+    await auditEvent(db as any, {
+      ...auditBase,
+      action: 'zatca_disconnect_completed',
+      severity: 'warning',
+      status: 'succeeded',
+      metadata: { previousStatus: credentials.data.onboarding_status },
     })
 
     return jsonResponse({

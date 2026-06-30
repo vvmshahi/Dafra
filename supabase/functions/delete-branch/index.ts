@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -197,6 +198,18 @@ Deno.serve(async (req: Request) => {
 
     const branch = branchRow as BranchRow
     const allowed = isAuthorizedForBranchDelete(callerProfile as CallerProfile, branch)
+    const ipHash = await hashRequestIp(req)
+    const reqId = requestId(req)
+    const auditBase = {
+      tenantId: branch.tenant_id,
+      branchId: branch.id,
+      actorUserId: caller.id,
+      actorRole: String(callerProfile.role),
+      targetType: 'branch',
+      targetId: branch.id,
+      ipHash,
+      requestId: reqId,
+    }
     console.info('[delete-branch] audit:', {
       action: 'delete_branch_authorize',
       targetTenantId: branch.tenant_id,
@@ -206,13 +219,53 @@ Deno.serve(async (req: Request) => {
       allowed,
     })
 
+    await auditEvent(adminClient as any, {
+      ...auditBase,
+      action: 'delete_branch_attempted',
+      severity: 'critical',
+      status: allowed ? 'attempted' : 'blocked',
+      metadata: { dryRun },
+    })
+
     if (!allowed) {
       return jsonResponse({ error: 'Forbidden' }, 403)
+    }
+
+    if (!dryRun) {
+      const rate = await enforceRateLimit(adminClient as any, {
+        ...auditBase,
+        action: 'delete_branch',
+        scope: 'branch',
+        scopeId: branch.id,
+        maxAttempts: 3,
+        windowSeconds: 86400,
+      })
+
+      if (!rate.allowed) {
+        await auditEvent(adminClient as any, {
+          ...auditBase,
+          action: 'delete_branch_rate_limited',
+          severity: 'critical',
+          status: 'blocked',
+          metadata: { retryAfterSeconds: rate.retryAfterSeconds },
+        })
+        return jsonResponse(rateLimitBody(rate), 429)
+      }
     }
 
     const plan = await collectBranchDeletionPlan(adminClient, branch)
 
     if (dryRun) {
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'delete_branch_dry_run',
+        severity: 'warning',
+        status: plan.productionConnectedCredentialCount > 0 ? 'blocked' : 'succeeded',
+        metadata: {
+          productionProtected: plan.productionConnectedCredentialCount > 0,
+          counts: plan.counts,
+        },
+      })
       console.info('[delete-branch] audit:', {
         action: 'delete_branch_dry_run',
         targetTenantId: branch.tenant_id,
@@ -237,6 +290,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (plan.productionConnectedCredentialCount > 0) {
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'delete_branch_blocked',
+        severity: 'critical',
+        status: 'blocked',
+        metadata: { reason: 'production_connected_zatca_credentials' },
+      })
       console.info('[delete-branch] audit:', {
         action: 'delete_branch_blocked',
         targetTenantId: branch.tenant_id,
@@ -295,8 +355,23 @@ Deno.serve(async (req: Request) => {
     }
 
     if (authDeleteFailures > 0) {
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'delete_branch_failed',
+        severity: 'critical',
+        status: 'failed',
+        metadata: { reason: 'auth_delete_failures', authDeleteFailures },
+      })
       return jsonResponse({ error: 'Branch data deleted but one or more auth users could not be removed' }, 500)
     }
+
+    await auditEvent(adminClient as any, {
+      ...auditBase,
+      action: 'delete_branch_completed',
+      severity: 'critical',
+      status: 'succeeded',
+      metadata: { counts: plan.counts },
+    })
 
     console.info('[delete-branch] audit:', {
       action: 'delete_branch_complete',
