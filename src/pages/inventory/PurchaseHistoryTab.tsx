@@ -185,16 +185,18 @@ function PurchaseDetailModal({
 }
 
 function DeletePurchaseBillModal({
-  purchase, deleting, error, confirmText, onConfirmText, onClose, onDelete,
+  purchase, deleting, error, confirmed, onConfirmed, onClose, onDelete,
 }: {
   purchase: PurchaseRow
   deleting: boolean
   error: string
-  confirmText: string
-  onConfirmText: (value: string) => void
+  confirmed: boolean
+  onConfirmed: (value: boolean) => void
   onClose: () => void
   onDelete: () => void
 }) {
+  const supplierName = purchase.suppliers?.name ?? 'No supplier'
+
   return (
     <>
       <div className="fixed inset-0 bg-black/40 z-50" onClick={onClose} />
@@ -215,6 +217,10 @@ function DeletePurchaseBillModal({
           <div className="px-6 py-5 space-y-4">
             <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm">
               <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Supplier</span>
+                <span className="font-medium text-gray-700 truncate">{supplierName}</span>
+              </div>
+              <div className="flex justify-between gap-3">
                 <span className="text-gray-500">Total</span>
                 <span className="font-semibold text-gray-900"><Rial amount={purchase.total_amount} /></span>
               </div>
@@ -224,15 +230,17 @@ function DeletePurchaseBillModal({
               </div>
             </div>
 
-            <div>
-              <label className="label">Type DELETE PURCHASE BILL to confirm</label>
+            <label className="flex items-start gap-3 rounded-xl border border-gray-200 px-4 py-3 cursor-pointer">
               <input
-                className="input"
-                value={confirmText}
-                onChange={e => onConfirmText(e.target.value)}
-                placeholder="DELETE PURCHASE BILL"
+                type="checkbox"
+                checked={confirmed}
+                onChange={e => onConfirmed(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
               />
-            </div>
+              <span className="text-sm text-gray-600">
+                I understand this bill-only purchase record will be permanently deleted.
+              </span>
+            </label>
 
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600">
@@ -248,7 +256,7 @@ function DeletePurchaseBillModal({
               variant="danger"
               className="flex-1"
               loading={deleting}
-              disabled={confirmText !== 'DELETE PURCHASE BILL'}
+              disabled={!confirmed}
               onClick={onDelete}
             >
               Delete
@@ -276,7 +284,7 @@ export default function PurchaseHistoryTab() {
   const [viewingItems,    setViewingItems]    = useState<PurchaseItem[]>([])
   const [loadingItems,    setLoadingItems]    = useState(false)
   const [deleteTarget,    setDeleteTarget]    = useState<PurchaseRow | null>(null)
-  const [deleteConfirm,   setDeleteConfirm]   = useState('')
+  const [deleteConfirmed, setDeleteConfirmed] = useState(false)
   const [deleteError,     setDeleteError]     = useState('')
   const [deleting,        setDeleting]        = useState(false)
 
@@ -332,14 +340,14 @@ export default function PurchaseHistoryTab() {
 
   const openDelete = (purchase: PurchaseRow) => {
     setDeleteTarget(purchase)
-    setDeleteConfirm('')
+    setDeleteConfirmed(false)
     setDeleteError('')
   }
 
   const closeDelete = () => {
     if (deleting) return
     setDeleteTarget(null)
-    setDeleteConfirm('')
+    setDeleteConfirmed(false)
     setDeleteError('')
   }
 
@@ -350,13 +358,16 @@ export default function PurchaseHistoryTab() {
 
     const { error } = await (supabase as any).rpc('delete_purchase_bill', {
       p_purchase_id: deleteTarget.id,
-      p_confirm_text: deleteConfirm,
+      p_confirm: deleteConfirmed,
     })
 
     if (error) {
-      const message = /item|stock|receiving|detailed/i.test(error.message ?? '')
+      const rawMessage = error.message ?? ''
+      const message = /permission|forbidden|unauthorized/i.test(rawMessage)
+        ? 'You do not have permission to delete this purchase bill.'
+        : /item|stock|receiving|detailed/i.test(rawMessage)
         ? 'This purchase cannot be deleted because it contains item/stock receiving details. Use reversal/cancel flow after Phase 4C.'
-        : error.message ?? 'Delete failed'
+        : rawMessage || 'Delete failed'
       setDeleteError(message)
       setDeleting(false)
       return
@@ -364,7 +375,7 @@ export default function PurchaseHistoryTab() {
 
     setDeleting(false)
     setDeleteTarget(null)
-    setDeleteConfirm('')
+    setDeleteConfirmed(false)
     await load()
   }
 
@@ -570,8 +581,8 @@ export default function PurchaseHistoryTab() {
           purchase={deleteTarget}
           deleting={deleting}
           error={deleteError}
-          confirmText={deleteConfirm}
-          onConfirmText={setDeleteConfirm}
+          confirmed={deleteConfirmed}
+          onConfirmed={setDeleteConfirmed}
           onClose={closeDelete}
           onDelete={deletePurchaseBill}
         />
