@@ -794,6 +794,10 @@ export type FixedExpenseUpdate = Partial<Omit<FixedExpenseInsert, 'tenant_id' | 
 export type SupplierPaymentTerms = 'cash' | 'credit_30' | 'credit_60'
 export type InventoryUnitType = 'pieces' | 'kg' | 'grams' | 'liters' | 'ml' | 'boxes' | 'bags' | 'other'
 export type PurchasePaymentMethod = 'cash' | 'card' | 'bank_transfer'
+export type PurchaseMode = 'simple_bill' | 'detailed_receiving'
+export type PurchaseStatus = 'draft' | 'posted' | 'cancelled'
+export type PurchaseTaxInputMode = 'none' | 'included' | 'excluded' | 'manual'
+export type PurchasePaymentStatus = 'paid' | 'unpaid' | 'partial'
 
 export interface Supplier {
   id: string
@@ -838,6 +842,11 @@ export interface Purchase {
   supplier_id: string | null
   added_by: string | null
   purchase_date: string
+  purchase_mode: PurchaseMode
+  status: PurchaseStatus
+  bill_number: string | null
+  tax_input_mode: PurchaseTaxInputMode
+  payment_status: PurchasePaymentStatus
   subtotal: number
   vat_amount: number
   total_amount: number
@@ -897,6 +906,11 @@ export interface PurchaseInsert {
   supplier_id?: string | null
   added_by?: string | null
   purchase_date?: string
+  purchase_mode?: PurchaseMode
+  status?: PurchaseStatus
+  bill_number?: string | null
+  tax_input_mode?: PurchaseTaxInputMode
+  payment_status?: PurchasePaymentStatus
   subtotal?: number
   vat_amount?: number
   total_amount?: number

@@ -26,6 +26,15 @@ const PAY_BADGE: Record<string, 'success' | 'info' | 'neutral'> = {
 const PAY_LABEL: Record<string, string> = {
   cash: 'Cash', card: 'Card', bank_transfer: 'Bank',
 }
+const MODE_LABEL: Record<string, string> = {
+  simple_bill: 'Bill only',
+  detailed_receiving: 'Receiving',
+}
+const PAYMENT_STATUS_LABEL: Record<string, string> = {
+  paid: 'Paid',
+  unpaid: 'Unpaid',
+  partial: 'Partial',
+}
 
 const fmt = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -42,6 +51,7 @@ function PurchaseDetailModal({
 }) {
   const supplierName = purchase.suppliers?.name ?? '—'
   const pay          = purchase.payment_method
+  const mode         = purchase.purchase_mode ?? 'detailed_receiving'
 
   return (
     <>
@@ -75,10 +85,24 @@ function PurchaseDetailModal({
                 <p className="font-medium text-gray-800 mt-0.5">{supplierName}</p>
               </div>
               <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2">
+                <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Type</p>
+                <p className="font-medium text-gray-800 mt-0.5">{MODE_LABEL[mode] ?? mode}</p>
+              </div>
+              <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2">
                 <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Payment</p>
-                <p className="font-medium text-gray-800 mt-0.5">{PAY_LABEL[pay] ?? pay}</p>
+                <p className="font-medium text-gray-800 mt-0.5">
+                  {PAY_LABEL[pay] ?? pay}
+                  {purchase.payment_status ? ` · ${PAYMENT_STATUS_LABEL[purchase.payment_status] ?? purchase.payment_status}` : ''}
+                </p>
               </div>
             </div>
+
+            {purchase.bill_number && (
+              <div className="bg-gray-50 rounded-xl px-3 py-2">
+                <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Bill Number</p>
+                <p className="font-medium text-gray-800 mt-0.5">{purchase.bill_number}</p>
+              </div>
+            )}
 
             {/* Bill image */}
             {purchase.bill_url && (
@@ -308,15 +332,19 @@ export default function PurchaseHistoryTab() {
                 <p className="text-sm font-semibold text-gray-900 truncate">
                   {p.suppliers?.name ?? <span className="text-gray-400 font-normal">No supplier</span>}
                 </p>
-                {p.notes && (
-                  <p className="text-xs text-gray-400 truncate">{p.notes}</p>
-                )}
+                <p className="text-xs text-gray-400 truncate">
+                  {MODE_LABEL[p.purchase_mode ?? 'detailed_receiving'] ?? 'Purchase'}
+                  {p.bill_number ? ` · Bill ${p.bill_number}` : ''}
+                  {p.notes ? ` · ${p.notes}` : ''}
+                </p>
               </div>
 
               {/* Item count */}
               <div className="w-16 text-center hidden sm:block">
                 <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                  {p.purchase_items.length} item{p.purchase_items.length !== 1 ? 's' : ''}
+                  {(p.purchase_mode ?? 'detailed_receiving') === 'simple_bill'
+                    ? 'Bill'
+                    : `${p.purchase_items.length} item${p.purchase_items.length !== 1 ? 's' : ''}`}
                 </span>
               </div>
 

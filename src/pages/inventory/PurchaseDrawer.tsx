@@ -16,6 +16,10 @@ interface LineItem {
   unit_cost:         string
 }
 
+type PurchaseMode = 'simple_bill' | 'detailed_receiving'
+type TaxInputMode = 'none' | 'included' | 'excluded' | 'manual'
+type PaymentStatus = 'paid' | 'unpaid' | 'partial'
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function newLine(): LineItem {
@@ -24,6 +28,31 @@ function newLine(): LineItem {
 
 function lineTotal(l: LineItem): number {
   return (parseFloat(l.quantity) || 0) * (parseFloat(l.unit_cost) || 0)
+}
+
+function roundMoney(n: number): number {
+  return Math.max(0, Math.round(n * 100) / 100)
+}
+
+function calculateSimpleTotals(amountRaw: string, taxMode: TaxInputMode, manualVatRaw: string) {
+  const amount = Math.max(0, parseFloat(amountRaw) || 0)
+  const manualVat = Math.max(0, parseFloat(manualVatRaw) || 0)
+
+  if (taxMode === 'included') {
+    const vat = roundMoney(amount * 15 / 115)
+    return { subtotal: roundMoney(amount - vat), vat, total: roundMoney(amount) }
+  }
+
+  if (taxMode === 'excluded') {
+    const vat = roundMoney(amount * 0.15)
+    return { subtotal: roundMoney(amount), vat, total: roundMoney(amount + vat) }
+  }
+
+  if (taxMode === 'manual') {
+    return { subtotal: roundMoney(Math.max(0, amount - manualVat)), vat: roundMoney(manualVat), total: roundMoney(amount) }
+  }
+
+  return { subtotal: roundMoney(amount), vat: 0, total: roundMoney(amount) }
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -41,6 +70,12 @@ const PAY_OPTIONS = [
   { value: 'card',          label: 'Card',          icon: CreditCard },
   { value: 'bank_transfer', label: 'Bank Transfer', icon: Building   },
 ] as const
+
+const PAYMENT_STATUS_OPTIONS: { value: PaymentStatus; label: string }[] = [
+  { value: 'paid',    label: 'Paid' },
+  { value: 'unpaid',  label: 'Unpaid' },
+  { value: 'partial', label: 'Partial' },
+]
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -63,18 +98,30 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
   const [billFile,    setBillFile]    = useState<File | null>(null)
   const [billPreview, setBillPreview] = useState<string | null>(null)
 
-  const [date,       setDate]       = useState('')
-  const [supplierId, setSupplierId] = useState('')
-  const [payMethod,  setPayMethod]  = useState<'cash' | 'card' | 'bank_transfer'>('cash')
-  const [hasVat,     setHasVat]     = useState(false)
-  const [lines,      setLines]      = useState<LineItem[]>([newLine()])
-  const [notes,      setNotes]      = useState('')
+  const [mode,          setMode]          = useState<PurchaseMode>('simple_bill')
+  const [date,          setDate]          = useState('')
+  const [supplierId,    setSupplierId]    = useState('')
+  const [billNumber,    setBillNumber]    = useState('')
+  const [payMethod,     setPayMethod]     = useState<'cash' | 'card' | 'bank_transfer'>('cash')
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('paid')
+  const [taxMode,       setTaxMode]       = useState<TaxInputMode>('included')
+  const [simpleAmount,  setSimpleAmount]  = useState('')
+  const [manualVat,     setManualVat]     = useState('')
+  const [hasVat,        setHasVat]        = useState(false)
+  const [lines,         setLines]         = useState<LineItem[]>([newLine()])
+  const [notes,         setNotes]         = useState('')
 
   useEffect(() => {
     if (open) {
+      setMode('simple_bill')
       setDate(new Date().toISOString().split('T')[0])
       setSupplierId('')
+      setBillNumber('')
       setPayMethod('cash')
+      setPaymentStatus('paid')
+      setTaxMode('included')
+      setSimpleAmount('')
+      setManualVat('')
       setHasVat(false)
       setLines([newLine()])
       setBillFile(null)
@@ -113,7 +160,7 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
   const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0)
   const vatAmt   = hasVat ? subtotal * 0.15 : 0
   const totalAmt = subtotal + vatAmt
-  const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const simpleTotals = calculateSimpleTotals(simpleAmount, taxMode, manualVat)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -121,7 +168,23 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
     const validLines = lines.filter(
       l => l.name.trim() && (parseFloat(l.quantity) || 0) > 0
     )
-    if (validLines.length === 0) {
+    if (!date) {
+      setError('Purchase date is required')
+      return
+    }
+    if (mode === 'simple_bill' && !supplierId) {
+      setError('Supplier is required for simple bill entry')
+      return
+    }
+    if (mode === 'simple_bill' && simpleTotals.total <= 0) {
+      setError('Enter a bill amount greater than zero')
+      return
+    }
+    if (mode === 'simple_bill' && taxMode === 'manual' && manualVat && Number(manualVat) > simpleTotals.total) {
+      setError('VAT amount cannot be greater than the bill total')
+      return
+    }
+    if (mode === 'detailed_receiving' && validLines.length === 0) {
       setError('Add at least one item with a name and quantity')
       return
     }
@@ -132,6 +195,10 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
     try {
       const tid = profile?.tenant_id!
       const bid = profile?.branch_id!
+      const purchaseSubtotal = mode === 'simple_bill' ? simpleTotals.subtotal : roundMoney(subtotal)
+      const purchaseVat = mode === 'simple_bill' ? simpleTotals.vat : roundMoney(vatAmt)
+      const purchaseTotal = mode === 'simple_bill' ? simpleTotals.total : roundMoney(totalAmt)
+      const purchaseTaxMode = mode === 'simple_bill' ? taxMode : (hasVat ? 'excluded' : 'none')
 
       // Upload bill
       let billUrl: string | null = null
@@ -158,9 +225,14 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
           supplier_id:    supplierId || null,
           added_by:       profile?.id ?? null,
           purchase_date:  date,
-          subtotal:       parseFloat(subtotal.toFixed(2)),
-          vat_amount:     parseFloat(vatAmt.toFixed(2)),
-          total_amount:   parseFloat(totalAmt.toFixed(2)),
+          purchase_mode:  mode,
+          status:         'posted',
+          bill_number:    billNumber.trim() || null,
+          tax_input_mode: purchaseTaxMode,
+          payment_status: paymentStatus,
+          subtotal:       purchaseSubtotal,
+          vat_amount:     purchaseVat,
+          total_amount:   purchaseTotal,
           payment_method: payMethod,
           bill_url:       billUrl,
           notes:          notes.trim() || null,
@@ -171,6 +243,12 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
       if (purErr) { setError(purErr.message); return }
 
       const purchaseId = purData.id
+
+      if (mode === 'simple_bill') {
+        onSaved()
+        onClose()
+        return
+      }
 
       // Insert line items (trigger updates inventory_items.current_quantity)
       const { error: itemsErr } = await q.from('purchase_items').insert(
@@ -206,7 +284,9 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
             <div>
               <h2 className="text-base font-bold text-gray-900">Add Purchase</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Record stock received from supplier</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {mode === 'simple_bill' ? 'Record a supplier bill' : 'Record stock received from supplier'}
+              </p>
             </div>
             <button type="button" onClick={onClose}
               className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400">
@@ -216,6 +296,28 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+
+            {/* ── Mode selector ─────────────────────────────── */}
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { value: 'simple_bill', label: 'Simple Bill', desc: 'No stock update' },
+                { value: 'detailed_receiving', label: 'Receive Stock', desc: 'Linked lines update stock' },
+              ] as { value: PurchaseMode; label: string; desc: string }[]).map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setMode(opt.value)}
+                  className={`text-left rounded-xl border px-4 py-3 transition-all ${
+                    mode === opt.value
+                      ? 'border-primary-500 bg-primary-50 text-primary-700'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  <span className="block text-sm font-semibold">{opt.label}</span>
+                  <span className="block text-xs opacity-70 mt-0.5">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
 
             {/* ── Header info ───────────────────────────────── */}
             <div className="space-y-4">
@@ -227,7 +329,7 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
                   <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
                 </div>
                 <div>
-                  <label className="label">Supplier</label>
+                  <label className="label">Supplier {mode === 'simple_bill' && <span className="text-red-500">*</span>}</label>
                   <select className="input" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
                     <option value="">— No Supplier —</option>
                     {suppliers.map(s => (
@@ -235,12 +337,21 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
                     ))}
                   </select>
                 </div>
+                <div className="col-span-2">
+                  <label className="label">Bill / Invoice Number</label>
+                  <input
+                    className="input"
+                    value={billNumber}
+                    onChange={e => setBillNumber(e.target.value)}
+                    placeholder="Optional supplier bill number"
+                  />
+                </div>
               </div>
             </div>
 
             {/* ── Payment method ────────────────────────────── */}
             <div className="space-y-3">
-              <SectionLabel>Payment Method</SectionLabel>
+              <SectionLabel>Payment</SectionLabel>
               <div className="flex gap-2">
                 {PAY_OPTIONS.map(({ value, label, icon: Icon }) => (
                   <button
@@ -258,125 +369,222 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
                   </button>
                 ))}
               </div>
-            </div>
-
-            {/* ── Line items ────────────────────────────────── */}
-            <div className="space-y-3">
-              <SectionLabel>Items Purchased</SectionLabel>
-
-              <div className="space-y-2">
-                {lines.map((line, idx) => (
-                  <div key={line.key} className="bg-gray-50 rounded-xl p-3 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-gray-400 w-5">{idx + 1}.</span>
-                      <select
-                        className="input flex-1 text-sm"
-                        value={line.inventory_item_id}
-                        onChange={e => selectItem(line.key, e.target.value)}
-                      >
-                        <option value="">— Select stock item (optional) —</option>
-                        {inventoryItems.map(i => (
-                          <option key={i.id} value={i.id}>{i.name}</option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => removeLine(line.key)}
-                        disabled={lines.length === 1}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors disabled:opacity-30"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-
-                    <div className="flex gap-2 pl-7">
-                      <div className="flex-1">
-                        <input
-                          className="input text-sm"
-                          value={line.name}
-                          onChange={e => updateLine(line.key, { name: e.target.value })}
-                          placeholder="Item name *"
-                        />
-                      </div>
-                      <div className="w-24">
-                        <input
-                          className="input text-sm"
-                          type="number"
-                          step="0.001"
-                          min="0"
-                          value={line.quantity}
-                          onChange={e => updateLine(line.key, { quantity: e.target.value })}
-                          placeholder="Qty *"
-                        />
-                      </div>
-                      <div className="w-28">
-                        <input
-                          className="input text-sm"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={line.unit_cost}
-                          onChange={e => updateLine(line.key, { unit_cost: e.target.value })}
-                          placeholder="Unit cost"
-                        />
-                      </div>
-                      <div className="w-28 flex items-center justify-end">
-                        <span className="text-sm font-semibold text-gray-700 tabular-nums">
-                          <Rial amount={lineTotal(line)} />
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+              <div className="grid grid-cols-3 gap-2">
+                {PAYMENT_STATUS_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setPaymentStatus(opt.value)}
+                    className={`py-2 rounded-xl border text-sm font-medium transition-all ${
+                      paymentStatus === opt.value
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
                 ))}
               </div>
-
-              <button
-                type="button"
-                onClick={() => setLines(prev => [...prev, newLine()])}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-gray-200 text-sm text-gray-400 hover:border-primary-400 hover:text-primary-500 transition-colors"
-              >
-                <Plus size={15} />
-                Add another item
-              </button>
             </div>
 
-            {/* ── VAT toggle ────────────────────────────────── */}
-            <div className="flex items-center justify-between bg-amber-50 rounded-xl px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-amber-800">Include VAT (15%)</p>
-                <p className="text-xs text-amber-600 mt-0.5">Add 15% VAT to the subtotal</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setHasVat(v => !v)}
-                className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
-                  hasVat ? 'bg-amber-500' : 'bg-gray-200'
-                }`}
-              >
-                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
-                  hasVat ? 'translate-x-[22px]' : 'translate-x-1'
-                }`} />
-              </button>
-            </div>
-
-            {/* ── Totals ────────────────────────────────────── */}
-            {subtotal > 0 && (
-              <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2">
-                <div className="flex justify-between text-sm text-gray-600">
-                  <span>Subtotal</span>
-                  <span className="tabular-nums font-medium"><Rial amount={subtotal} /></span>
+            {mode === 'simple_bill' && (
+              <div className="space-y-4">
+                <SectionLabel>Bill Amount</SectionLabel>
+                <div>
+                  <label className="label">
+                    {taxMode === 'excluded' ? 'Subtotal Before VAT' : 'Total Amount'}
+                    <span className="text-red-500"> *</span>
+                  </label>
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={simpleAmount}
+                    onChange={e => setSimpleAmount(e.target.value)}
+                    placeholder="0.00"
+                  />
                 </div>
-                {hasVat && (
-                  <div className="flex justify-between text-sm text-gray-600">
-                    <span>VAT (15%)</span>
-                    <span className="tabular-nums font-medium"><Rial amount={vatAmt} /></span>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { value: 'included', label: 'VAT Included' },
+                    { value: 'excluded', label: 'VAT Excluded' },
+                    { value: 'manual', label: 'Manual VAT' },
+                  ] as { value: TaxInputMode; label: string }[]).map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setTaxMode(opt.value)}
+                      className={`py-2 rounded-xl border text-xs font-semibold transition-all ${
+                        taxMode === opt.value
+                          ? 'border-amber-500 bg-amber-50 text-amber-700'
+                          : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {taxMode === 'manual' && (
+                  <div>
+                    <label className="label">VAT Amount</label>
+                    <input
+                      className="input"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={manualVat}
+                      onChange={e => setManualVat(e.target.value)}
+                      placeholder="0.00"
+                    />
                   </div>
                 )}
-                <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-2">
-                  <span>Total</span>
-                  <span className="tabular-nums text-emerald-600"><Rial amount={totalAmt} /></span>
-                </div>
+
+                {simpleTotals.total > 0 && (
+                  <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2">
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>Subtotal</span>
+                      <span className="tabular-nums font-medium"><Rial amount={simpleTotals.subtotal} /></span>
+                    </div>
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>VAT</span>
+                      <span className="tabular-nums font-medium"><Rial amount={simpleTotals.vat} /></span>
+                    </div>
+                    <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-2">
+                      <span>Total</span>
+                      <span className="tabular-nums text-emerald-600"><Rial amount={simpleTotals.total} /></span>
+                    </div>
+                  </div>
+                )}
               </div>
+            )}
+
+            {mode === 'detailed_receiving' && (
+              <>
+                {/* ── Line items ────────────────────────────────── */}
+                <div className="space-y-3">
+                  <SectionLabel>Items Purchased</SectionLabel>
+                  <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    Linked stock items increase stock immediately in the current system.
+                  </div>
+
+                  <div className="space-y-2">
+                    {lines.map((line, idx) => (
+                      <div key={line.key} className="bg-gray-50 rounded-xl p-3 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-gray-400 w-5">{idx + 1}.</span>
+                          <select
+                            className="input flex-1 text-sm"
+                            value={line.inventory_item_id}
+                            onChange={e => selectItem(line.key, e.target.value)}
+                          >
+                            <option value="">— Select stock item (optional) —</option>
+                            {inventoryItems.map(i => (
+                              <option key={i.id} value={i.id}>{i.name}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => removeLine(line.key)}
+                            disabled={lines.length === 1}
+                            className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors disabled:opacity-30"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+
+                        <div className="flex gap-2 pl-7">
+                          <div className="flex-1">
+                            <input
+                              className="input text-sm"
+                              value={line.name}
+                              onChange={e => updateLine(line.key, { name: e.target.value })}
+                              placeholder="Item name *"
+                            />
+                          </div>
+                          <div className="w-24">
+                            <input
+                              className="input text-sm"
+                              type="number"
+                              step="0.001"
+                              min="0"
+                              value={line.quantity}
+                              onChange={e => updateLine(line.key, { quantity: e.target.value })}
+                              placeholder="Qty *"
+                            />
+                          </div>
+                          <div className="w-28">
+                            <input
+                              className="input text-sm"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={line.unit_cost}
+                              onChange={e => updateLine(line.key, { unit_cost: e.target.value })}
+                              placeholder="Unit cost"
+                            />
+                          </div>
+                          <div className="w-28 flex items-center justify-end">
+                            <span className="text-sm font-semibold text-gray-700 tabular-nums">
+                              <Rial amount={lineTotal(line)} />
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setLines(prev => [...prev, newLine()])}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-gray-200 text-sm text-gray-400 hover:border-primary-400 hover:text-primary-500 transition-colors"
+                  >
+                    <Plus size={15} />
+                    Add another item
+                  </button>
+                </div>
+
+                {/* ── VAT toggle ────────────────────────────────── */}
+                <div className="flex items-center justify-between bg-amber-50 rounded-xl px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-amber-800">Include VAT (15%)</p>
+                    <p className="text-xs text-amber-600 mt-0.5">Add 15% VAT to the subtotal</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setHasVat(v => !v)}
+                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
+                      hasVat ? 'bg-amber-500' : 'bg-gray-200'
+                    }`}
+                  >
+                    <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
+                      hasVat ? 'translate-x-[22px]' : 'translate-x-1'
+                    }`} />
+                  </button>
+                </div>
+
+                {/* ── Totals ────────────────────────────────────── */}
+                {subtotal > 0 && (
+                  <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2">
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>Subtotal</span>
+                      <span className="tabular-nums font-medium"><Rial amount={subtotal} /></span>
+                    </div>
+                    {hasVat && (
+                      <div className="flex justify-between text-sm text-gray-600">
+                        <span>VAT (15%)</span>
+                        <span className="tabular-nums font-medium"><Rial amount={vatAmt} /></span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-2">
+                      <span>Total</span>
+                      <span className="tabular-nums text-emerald-600"><Rial amount={totalAmt} /></span>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
             {/* ── Bill upload ───────────────────────────────── */}
@@ -437,7 +645,7 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
             <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
             <Button type="submit" className="flex-1" loading={saving}>
-              Record Purchase
+              {mode === 'simple_bill' ? 'Record Bill' : 'Record Purchase'}
             </Button>
           </div>
         </form>
