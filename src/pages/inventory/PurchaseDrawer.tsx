@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import type { Supplier, InventoryItem } from '@/types'
+import type { Supplier, InventoryItem, Purchase, PurchaseItem } from '@/types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -17,7 +17,7 @@ interface LineItem {
 }
 
 type PurchaseMode = 'simple_bill' | 'detailed_receiving'
-type TaxInputMode = 'none' | 'included' | 'excluded' | 'manual'
+type TaxInputMode = 'included' | 'excluded'
 type PaymentStatus = 'paid' | 'unpaid' | 'partial'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -34,9 +34,8 @@ function roundMoney(n: number): number {
   return Math.max(0, Math.round(n * 100) / 100)
 }
 
-function calculateSimpleTotals(amountRaw: string, taxMode: TaxInputMode, manualVatRaw: string) {
+function calculatePurchaseTotals(amountRaw: string, taxMode: TaxInputMode) {
   const amount = Math.max(0, parseFloat(amountRaw) || 0)
-  const manualVat = Math.max(0, parseFloat(manualVatRaw) || 0)
 
   if (taxMode === 'included') {
     const vat = roundMoney(amount * 15 / 115)
@@ -47,12 +46,6 @@ function calculateSimpleTotals(amountRaw: string, taxMode: TaxInputMode, manualV
     const vat = roundMoney(amount * 0.15)
     return { subtotal: roundMoney(amount), vat, total: roundMoney(amount + vat) }
   }
-
-  if (taxMode === 'manual') {
-    return { subtotal: roundMoney(Math.max(0, amount - manualVat)), vat: roundMoney(manualVat), total: roundMoney(amount) }
-  }
-
-  return { subtotal: roundMoney(amount), vat: 0, total: roundMoney(amount) }
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -83,15 +76,26 @@ interface Props {
   open:           boolean
   suppliers:      Supplier[]
   inventoryItems: InventoryItem[]
+  editingPurchase?: Purchase | null
+  editingItems?:    PurchaseItem[]
   onClose:        () => void
   onSaved:        () => void
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClose, onSaved }: Props) {
+export default function PurchaseDrawer({
+  open,
+  suppliers,
+  inventoryItems,
+  editingPurchase = null,
+  editingItems = [],
+  onClose,
+  onSaved,
+}: Props) {
   const { profile } = useAuth()
   const fileRef     = useRef<HTMLInputElement>(null)
+  const isEditing   = Boolean(editingPurchase)
 
   const [saving,      setSaving]      = useState(false)
   const [error,       setError]       = useState('')
@@ -106,30 +110,43 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('paid')
   const [taxMode,       setTaxMode]       = useState<TaxInputMode>('included')
   const [simpleAmount,  setSimpleAmount]  = useState('')
-  const [manualVat,     setManualVat]     = useState('')
-  const [hasVat,        setHasVat]        = useState(false)
   const [lines,         setLines]         = useState<LineItem[]>([newLine()])
   const [notes,         setNotes]         = useState('')
 
   useEffect(() => {
     if (open) {
-      setMode('simple_bill')
-      setDate(new Date().toISOString().split('T')[0])
-      setSupplierId('')
-      setBillNumber('')
-      setPayMethod('cash')
-      setPaymentStatus('paid')
-      setTaxMode('included')
-      setSimpleAmount('')
-      setManualVat('')
-      setHasVat(false)
-      setLines([newLine()])
+      const purchaseMode = editingPurchase?.purchase_mode ?? 'simple_bill'
+      const nextTaxMode = editingPurchase?.tax_input_mode === 'excluded' ? 'excluded' : 'included'
+
+      setMode(purchaseMode)
+      setDate(editingPurchase?.purchase_date ?? new Date().toISOString().split('T')[0])
+      setSupplierId(editingPurchase?.supplier_id ?? '')
+      setBillNumber(editingPurchase?.bill_number ?? '')
+      setPayMethod((editingPurchase?.payment_method as 'cash' | 'card' | 'bank_transfer') ?? 'cash')
+      setPaymentStatus((editingPurchase?.payment_status as PaymentStatus) ?? 'paid')
+      setTaxMode(nextTaxMode)
+      setSimpleAmount(
+        editingPurchase
+          ? String(nextTaxMode === 'excluded' ? editingPurchase.subtotal : editingPurchase.total_amount)
+          : ''
+      )
+      setLines(
+        editingPurchase && purchaseMode === 'detailed_receiving'
+          ? (editingItems.length > 0 ? editingItems.map(item => ({
+              key: item.id,
+              inventory_item_id: item.inventory_item_id ?? '',
+              name: item.supplier_item_name ?? item.name,
+              quantity: String(item.quantity),
+              unit_cost: String(item.unit_cost),
+            })) : [newLine()])
+          : [newLine()]
+      )
       setBillFile(null)
-      setBillPreview(null)
-      setNotes('')
+      setBillPreview(editingPurchase?.bill_url ?? null)
+      setNotes(editingPurchase?.notes ?? '')
       setError('')
     }
-  }, [open])
+  }, [open, editingPurchase, editingItems])
 
   const updateLine = (key: string, patch: Partial<LineItem>) =>
     setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l))
@@ -157,10 +174,9 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
   }
 
   // Totals
-  const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0)
-  const vatAmt   = hasVat ? subtotal * 0.15 : 0
-  const totalAmt = subtotal + vatAmt
-  const simpleTotals = calculateSimpleTotals(simpleAmount, taxMode, manualVat)
+  const rawLineAmount = roundMoney(lines.reduce((s, l) => s + lineTotal(l), 0))
+  const simpleTotals = calculatePurchaseTotals(simpleAmount, taxMode)
+  const detailedTotals = calculatePurchaseTotals(String(rawLineAmount), taxMode)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -180,10 +196,6 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
       setError('Enter a bill amount greater than zero')
       return
     }
-    if (mode === 'simple_bill' && taxMode === 'manual' && manualVat && Number(manualVat) > simpleTotals.total) {
-      setError('VAT amount cannot be greater than the bill total')
-      return
-    }
     if (mode === 'detailed_receiving' && validLines.length === 0) {
       setError('Add at least one item with a name and quantity')
       return
@@ -195,10 +207,7 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
     try {
       const tid = profile?.tenant_id!
       const bid = profile?.branch_id!
-      const purchaseSubtotal = mode === 'simple_bill' ? simpleTotals.subtotal : roundMoney(subtotal)
-      const purchaseVat = mode === 'simple_bill' ? simpleTotals.vat : roundMoney(vatAmt)
-      const purchaseTotal = mode === 'simple_bill' ? simpleTotals.total : roundMoney(totalAmt)
-      const purchaseTaxMode = mode === 'simple_bill' ? taxMode : (hasVat ? 'excluded' : 'none')
+      const purchaseTotals = mode === 'simple_bill' ? simpleTotals : detailedTotals
 
       // Upload bill
       let billUrl: string | null = null
@@ -217,6 +226,46 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
 
       const q = supabase as unknown as { from: (t: string) => any }
 
+      if (isEditing && editingPurchase) {
+        const payload: Record<string, unknown> = {
+          purchase_id:     editingPurchase.id,
+          supplier_id:     supplierId || null,
+          purchase_date:   date,
+          bill_number:     billNumber.trim() || null,
+          tax_input_mode:  taxMode,
+          payment_status:  paymentStatus,
+          payment_method:  payMethod,
+          notes:           notes.trim() || null,
+        }
+
+        if (mode === 'simple_bill') {
+          payload.amount = Number(simpleAmount)
+        } else {
+          payload.items = validLines.map(l => ({
+            inventory_item_id: l.inventory_item_id || null,
+            name:              l.name.trim(),
+            quantity:          parseFloat(l.quantity),
+            unit_cost:         parseFloat(l.unit_cost) || 0,
+          }))
+        }
+
+        if (billUrl !== null) {
+          payload.bill_url = billUrl
+        } else if (editingPurchase.bill_url && billPreview === null) {
+          payload.bill_url = null
+        }
+
+        const { error: editErr } = await (supabase as any).rpc('update_purchase_entry', {
+          p_payload: payload,
+        })
+
+        if (editErr) { setError(editErr.message); return }
+
+        onSaved()
+        onClose()
+        return
+      }
+
       // Insert purchase header. Receive Stock is saved pending confirmation;
       // Phase 4C stock changes happen only through confirm_purchase_receiving.
       const { data: purData, error: purErr } = await q.from('purchases')
@@ -230,11 +279,11 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
           status:         mode === 'detailed_receiving' ? 'draft' : 'posted',
           receiving_status: mode === 'detailed_receiving' ? 'pending_confirmation' : 'not_applicable',
           bill_number:    billNumber.trim() || null,
-          tax_input_mode: purchaseTaxMode,
+          tax_input_mode: taxMode,
           payment_status: paymentStatus,
-          subtotal:       purchaseSubtotal,
-          vat_amount:     purchaseVat,
-          total_amount:   purchaseTotal,
+          subtotal:       purchaseTotals.subtotal,
+          vat_amount:     purchaseTotals.vat,
+          total_amount:   purchaseTotals.total,
           payment_method: payMethod,
           bill_url:       billUrl,
           notes:          notes.trim() || null,
@@ -291,9 +340,9 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
             <div>
-              <h2 className="text-base font-bold text-gray-900">Add Purchase</h2>
+              <h2 className="text-base font-bold text-gray-900">{isEditing ? 'Edit Purchase' : 'Add Purchase'}</h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                {mode === 'simple_bill' ? 'Record a supplier bill' : 'Record stock received from supplier'}
+                {mode === 'simple_bill' ? 'Record a supplier bill' : 'Record stock from supplier'}
               </p>
             </div>
             <button type="button" onClick={onClose}
@@ -314,12 +363,13 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
                 <button
                   key={opt.value}
                   type="button"
-                  onClick={() => setMode(opt.value)}
+                  disabled={isEditing}
+                  onClick={() => { if (!isEditing) setMode(opt.value) }}
                   className={`text-left rounded-xl border px-4 py-3 transition-all ${
                     mode === opt.value
                       ? 'border-primary-500 bg-primary-50 text-primary-700'
                       : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                  }`}
+                  } ${isEditing ? 'cursor-default' : ''}`}
                 >
                   <span className="block text-sm font-semibold">{opt.label}</span>
                   <span className="block text-xs opacity-70 mt-0.5">{opt.desc}</span>
@@ -414,11 +464,10 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {([
                     { value: 'included', label: 'VAT Included' },
                     { value: 'excluded', label: 'VAT Excluded' },
-                    { value: 'manual', label: 'Manual VAT' },
                   ] as { value: TaxInputMode; label: string }[]).map(opt => (
                     <button
                       key={opt.value}
@@ -434,21 +483,6 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
                     </button>
                   ))}
                 </div>
-
-                {taxMode === 'manual' && (
-                  <div>
-                    <label className="label">VAT Amount</label>
-                    <input
-                      className="input"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={manualVat}
-                      onChange={e => setManualVat(e.target.value)}
-                      placeholder="0.00"
-                    />
-                  </div>
-                )}
 
                 {simpleTotals.total > 0 && (
                   <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2">
@@ -554,41 +588,44 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
                   </button>
                 </div>
 
-                {/* ── VAT toggle ────────────────────────────────── */}
-                <div className="flex items-center justify-between bg-amber-50 rounded-xl px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium text-amber-800">Include VAT (15%)</p>
-                    <p className="text-xs text-amber-600 mt-0.5">Add 15% VAT to the subtotal</p>
+                {/* ── VAT mode ──────────────────────────────────── */}
+                <div className="space-y-2">
+                  <SectionLabel>VAT</SectionLabel>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { value: 'included', label: 'VAT Included' },
+                      { value: 'excluded', label: 'VAT Excluded' },
+                    ] as { value: TaxInputMode; label: string }[]).map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setTaxMode(opt.value)}
+                        className={`py-2 rounded-xl border text-xs font-semibold transition-all ${
+                          taxMode === opt.value
+                            ? 'border-amber-500 bg-amber-50 text-amber-700'
+                            : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setHasVat(v => !v)}
-                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
-                      hasVat ? 'bg-amber-500' : 'bg-gray-200'
-                    }`}
-                  >
-                    <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
-                      hasVat ? 'translate-x-[22px]' : 'translate-x-1'
-                    }`} />
-                  </button>
                 </div>
 
                 {/* ── Totals ────────────────────────────────────── */}
-                {subtotal > 0 && (
+                {rawLineAmount > 0 && (
                   <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2">
                     <div className="flex justify-between text-sm text-gray-600">
                       <span>Subtotal</span>
-                      <span className="tabular-nums font-medium"><Rial amount={subtotal} /></span>
+                      <span className="tabular-nums font-medium"><Rial amount={detailedTotals.subtotal} /></span>
                     </div>
-                    {hasVat && (
-                      <div className="flex justify-between text-sm text-gray-600">
-                        <span>VAT (15%)</span>
-                        <span className="tabular-nums font-medium"><Rial amount={vatAmt} /></span>
-                      </div>
-                    )}
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>VAT (15%)</span>
+                      <span className="tabular-nums font-medium"><Rial amount={detailedTotals.vat} /></span>
+                    </div>
                     <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-2">
                       <span>Total</span>
-                      <span className="tabular-nums text-emerald-600"><Rial amount={totalAmt} /></span>
+                      <span className="tabular-nums text-emerald-600"><Rial amount={detailedTotals.total} /></span>
                     </div>
                   </div>
                 )}
@@ -653,7 +690,7 @@ export default function PurchaseDrawer({ open, suppliers, inventoryItems, onClos
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
             <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
             <Button type="submit" className="flex-1" loading={saving}>
-              {mode === 'simple_bill' ? 'Record Bill' : 'Save for Confirmation'}
+              {isEditing ? 'Save Changes' : mode === 'simple_bill' ? 'Record Bill' : 'Save for Confirmation'}
             </Button>
           </div>
         </form>

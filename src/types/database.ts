@@ -183,6 +183,14 @@ export interface Database {
         Args: { p_purchase_id: string; p_reason: string; p_confirm?: boolean }
         Returns: Record<string, unknown>
       }
+      delete_purchase_receiving: {
+        Args: { p_purchase_id: string; p_confirm?: boolean }
+        Returns: Record<string, unknown>
+      }
+      update_purchase_entry: {
+        Args: { p_payload: Record<string, unknown> }
+        Returns: Record<string, unknown>
+      }
     }
     Enums: {
       user_role: UserRole
