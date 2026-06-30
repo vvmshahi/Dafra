@@ -2,8 +2,8 @@
  * ZATCA Phase 2 — Settings Tab
  *
  * Per-branch certificate management:
- *   - Sandbox uses the legacy 4-step browser CSR flow.
  *   - Production uses backend-only onboarding through zatca-onboard-production.
+ *   - Legacy sandbox certificate rows are displayed as safe metadata only.
  *
  * Each branch operates independently and maintains separate certs per environment.
  */
@@ -12,44 +12,32 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   ShieldCheck, ShieldX, ShieldAlert, Clock, Building2,
   CheckCircle2, AlertTriangle, ExternalLink, Lock,
-  Key, Loader2, Copy, Info, ChevronDown,
-  Cpu, Wifi, BadgeCheck, FlaskConical, X, Trash2, RefreshCw,
+  Loader2, Info, ChevronDown,
+  Cpu, Wifi, FlaskConical, X, Trash2, RefreshCw,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
-import { generateKeyPair, encryptPrivateKey } from '@/lib/zatca/crypto'
-import { generateCSR } from '@/lib/zatca/csr'
 import {
   getProductionOnboardingStatus,
   disconnectProductionZatca,
   onboardProductionZatca,
   preflightProductionZatca,
-  requestComplianceCsid,
-  requestProductionCsid,
+  listZatcaCertificateStatus,
   type ProductionOnboardingResponse,
   type ProductionOnboardingTraceEntry,
   type ProductionOnboardingStatus,
+  type SafeZatcaCertificateStatus,
   type ZatcaFunctionalityMap,
 } from '@/lib/zatca/api'
 import { getCachedProductionStatus, readCachedProductionStatus, writeCachedProductionStatus } from '@/lib/zatca/status'
-import type { Branch, ZatcaCertificate, CertificateStatus } from '@/types'
+import type { Branch, CertificateStatus } from '@/types'
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 
 type BranchWithCert = Branch & {
-  allCerts: ZatcaCertificate[]
+  allCerts: SafeZatcaCertificateStatus[]
   productionStatus?: ProductionOnboardingResponse | null
-}
-type OnboardingStep = 1 | 2 | 3 | 4
-
-/* ── Step helpers ────────────────────────────────────────────────────────── */
-
-function certStep(cert: ZatcaCertificate | null): OnboardingStep {
-  if (!cert || !cert.csr)             return 1
-  if (cert.status === 'compliance')   return 3
-  if (cert.status === 'active')       return 4
-  return 2
 }
 
 /* ── Status config ───────────────────────────────────────────────────────── */
@@ -73,18 +61,6 @@ function InfoRow({ label, value, mono = false }: { label: string; value: string;
     <div className="bg-gray-50 rounded-xl px-3 py-2">
       <p className="text-[10px] text-gray-400 font-medium">{label}</p>
       <p className={`text-xs text-gray-700 mt-0.5 truncate ${mono ? 'font-mono' : 'font-medium'}`}>{value}</p>
-    </div>
-  )
-}
-
-function StepDot({ n, active, done }: { n: number; active: boolean; done: boolean }) {
-  return (
-    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold border-2 transition-all ${
-      done   ? 'bg-emerald-500 border-emerald-500 text-white' :
-      active ? 'bg-primary-600 border-primary-600 text-white' :
-               'bg-white border-gray-200 text-gray-400'
-    }`}>
-      {done ? <CheckCircle2 size={14} /> : n}
     </div>
   )
 }
@@ -169,494 +145,63 @@ function GuideModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-/* ── CSR display block (FIX 3) ───────────────────────────────────────────── */
+/* ── Legacy sandbox status ───────────────────────────────────────────────── */
 
-function CsrBlock({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false)
-  const copy = async () => {
-    await navigator.clipboard.writeText(value)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2500)
-  }
-  return (
-    <div className="space-y-2">
-      <textarea
-        readOnly
-        value={value}
-        rows={6}
-        className="w-full text-[10px] font-mono text-gray-700 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 resize-none focus:outline-none leading-relaxed"
-      />
-      <button
-        onClick={copy}
-        className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-semibold transition-all ${
-          copied
-            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-            : 'bg-white border-gray-200 text-gray-700 hover:border-primary-300 hover:text-primary-700'
-        }`}
-      >
-        {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
-        {copied ? 'Copied!' : 'Copy Certificate Request'}
-      </button>
-    </div>
-  )
-}
-
-/* ── Stepper ─────────────────────────────────────────────────────────────── */
-
-const STEPS = [
-  { n: 1, label: 'Generate' },
-  { n: 2, label: 'Enter OTP' },
-  { n: 3, label: 'Activate' },
-  { n: 4, label: 'Done' },
-] as const
-
-function Stepper({ current }: { current: OnboardingStep }) {
-  return (
-    <div className="flex items-center gap-0">
-      {STEPS.map(({ n, label }, i) => (
-        <div key={n} className="flex items-center flex-1 last:flex-none">
-          <div className="flex flex-col items-center gap-1">
-            <StepDot n={n} active={current === n} done={current > n} />
-            <span className={`text-[9px] font-semibold whitespace-nowrap ${
-              current === n ? 'text-primary-600' : current > n ? 'text-emerald-600' : 'text-gray-400'
-            }`}>
-              {label}
-            </span>
-          </div>
-          {i < STEPS.length - 1 && (
-            <div className={`flex-1 h-0.5 mx-2 mb-4 rounded-full transition-colors ${
-              current > n ? 'bg-emerald-400' : 'bg-gray-200'
-            }`} />
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/* ── Step 1: Generate Security Certificate (FIX 1 + FIX 2) ──────────────── */
-
-type FieldCheck = { label: string; valid: boolean; hint: string }
-
-function Step1GenerateKeys({
-  branch, environment, onDone,
+function LegacySandboxStatusPanel({
+  cert,
+  productionConnected,
 }: {
-  branch: BranchWithCert
-  environment: 'sandbox'
-  onDone: (cert: ZatcaCertificate) => void
+  cert: SafeZatcaCertificateStatus | null
+  productionConnected: boolean
 }) {
-  const { profile } = useAuth()
-  const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState<string | null>(null)
-  const [csrPem, setCsrPem]   = useState<string | null>(null)
-
-  const fieldChecks: FieldCheck[] = [
-    {
-      label: 'Company Name',
-      valid: !!((branch.business_name || branch.name) ?? '').trim(),
-      hint:  'missing',
-    },
-    {
-      label: 'VAT Number',
-      valid: !!(branch.vat_number && /^3\d{13}3$/.test(branch.vat_number)),
-      hint:  'must be 15 digits, starting and ending with 3',
-    },
-    {
-      label: 'CR / License Number',
-      valid: !!(branch.cr_number && /^[a-zA-Z0-9]+$/.test(branch.cr_number)),
-      hint:  'alphanumeric characters only',
-    },
-    {
-      label: 'Building Number',
-      valid: !!(branch.building_number && /^\d{4}$/.test(branch.building_number)),
-      hint:  'must be exactly 4 digits',
-    },
-    {
-      label: 'Postal Code',
-      valid: !!(branch.postal_code && /^\d{5}$/.test(branch.postal_code)),
-      hint:  'must be exactly 5 digits',
-    },
-    {
-      label: 'Street Name',
-      valid: !!branch.street?.trim(),
-      hint:  'missing',
-    },
-    {
-      label: 'City',
-      valid: !!branch.city?.trim(),
-      hint:  'missing',
-    },
-    {
-      label: 'District',
-      valid: !!branch.district?.trim(),
-      hint:  'missing',
-    },
-  ]
-  const invalidFields   = fieldChecks.filter(f => !f.valid)
-  const branchDataValid = invalidFields.length === 0
-
-  const navigateToBranches = () => {
-    const el = document.querySelector('[data-tab="branches"]') as HTMLElement | null
-    el?.click()
-  }
-
-  const generate = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const keyPair      = await generateKeyPair()
-      const businessName = branch.business_name || branch.name
-      const location     = [branch.building_number, branch.street, branch.district, branch.city, branch.postal_code]
-        .filter(Boolean).join(', ') || branch.city || 'Riyadh, SA'
-      const csr = await generateCSR({
-        commonName:   businessName,
-        branchId:     branch.id,
-        vatNumber:    branch.vat_number ?? '',
-        branchName:   branch.name,
-        businessName: businessName,
-        invoiceType:  '1100',
-        location,
-        industry:     'Supply activities',
-      }, keyPair)
-
-      const encryptedKey = await encryptPrivateKey(keyPair.privateKeyPem)
-
-      const { data, error: dbErr } = await (supabase as any)
-        .from('zatca_certificates')
-        .upsert({
-          tenant_id:             profile?.tenant_id,
-          branch_id:             branch.id,
-          csr,
-          private_key_encrypted: encryptedKey,
-          public_key_pem:        keyPair.publicKeyPem,
-          status:                'pending',
-          environment,
-        }, { onConflict: 'branch_id,environment' })
-        .select()
-        .single()
-
-      if (dbErr) throw new Error(dbErr.message)
-      setCsrPem(csr)
-      onDone(data)
-    } catch (err: any) {
-      setError(err.message ?? 'Key generation failed')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      {branchDataValid ? (
-        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-3.5 py-2.5">
-          <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0" />
-          <p className="text-[11px] font-semibold text-emerald-700">✓ Branch details complete</p>
-        </div>
-      ) : (
-        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3.5 space-y-2.5">
-          <div className="flex items-start gap-2.5">
-            <AlertTriangle size={13} className="text-amber-600 mt-0.5 flex-shrink-0" />
-            <p className="text-[11px] font-semibold text-amber-800">
-              Complete branch details before generating certificate. The following fields need attention:
-            </p>
-          </div>
-          <ul className="space-y-1 pl-5">
-            {invalidFields.map(f => (
-              <li key={f.label} className="text-[11px] text-amber-700">
-                ❌ <span className="font-semibold">{f.label}</span>
-                {f.hint === 'missing' ? ' — missing' : ` — ${f.hint}`}
-              </li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            onClick={navigateToBranches}
-            className="text-[11px] font-semibold text-amber-900 underline underline-offset-2 hover:text-amber-800 transition-colors"
-          >
-            Update Branch Settings →
-          </button>
-        </div>
-      )}
-
-      <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl p-3.5">
-        <Info size={13} className="text-blue-600 mt-0.5 flex-shrink-0" />
-        <p className="text-[11px] text-blue-700 leading-relaxed">
-          This will generate a sandbox digital signature key in your browser and create a sandbox security certificate request.
-          The private key is encrypted before being stored securely in the database.
-        </p>
-      </div>
-
-      {error && (
-        <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl p-3">
-          <AlertTriangle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
-          <p className="text-[11px] text-red-700">{error}</p>
-        </div>
-      )}
-
-      <button
-        onClick={generate}
-        disabled={loading || !branchDataValid}
-        className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50"
-      >
-        {loading ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
-        {loading ? 'Generating…' : 'Generate Security Certificate'}
-      </button>
-
-      {csrPem && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-emerald-600">
-            <CheckCircle2 size={14} />
-            <span className="text-xs font-semibold">Security certificate generated and stored</span>
-          </div>
-          <p className="text-[11px] text-gray-500 leading-relaxed">
-            Proceed to Step 2 to register this certificate with ZATCA.
-          </p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-/* ── Device details block (shown in Step 2) ──────────────────────────────── */
-
-function DeviceDetailsBlock({ branch }: { branch: BranchWithCert }) {
-  const serial = `1-Meem|2-POS|3-${branch.id.substring(0, 8)}`
-  const [copied, setCopied] = useState(false)
-  const copy = async () => {
-    await navigator.clipboard.writeText(serial)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2500)
-  }
-  return (
-    <div className="bg-gray-50 border border-gray-100 rounded-xl p-3.5 space-y-3">
-      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-        When registering in Fatoorah Portal, use these details:
-      </p>
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] text-gray-500 flex-shrink-0">Device Name</span>
-          <span className="text-[11px] font-medium text-gray-800 text-right">Enter any name (e.g. {branch.name})</span>
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] text-gray-500 flex-shrink-0">Model</span>
-          <span className="text-[11px] font-medium text-gray-800">POS</span>
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] text-gray-500 flex-shrink-0">Serial Number</span>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-mono font-medium text-gray-800">{serial}</span>
-            <button
-              onClick={copy}
-              className={`flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded transition-colors ${
-                copied ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-700'
-              }`}
-            >
-              {copied ? <CheckCircle2 size={11} /> : <Copy size={11} />}
-              {copied ? 'Copied!' : 'Copy'}
-            </button>
-          </div>
-        </div>
-      </div>
-      <p className="text-[11px] text-gray-500 leading-relaxed border-t border-gray-200 pt-2.5">
-        The serial number above is already embedded in your Certificate Request.
-        Make sure to use the exact same serial number when adding a new device in the Fatoorah portal.
-      </p>
-    </div>
-  )
-}
-
-/* ── Step 2: Enter OTP (FIX 3 — 2a/2b layout) ───────────────────────────── */
-
-function Step2EnterOTP({
-  branch, cert, environment, onDone,
-}: {
-  branch: BranchWithCert
-  cert: ZatcaCertificate
-  environment: 'sandbox'
-  onDone: (updated: ZatcaCertificate) => void
-}) {
-  const [otp, setOtp]         = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState<string | null>(null)
-
-  const register = async () => {
-    if (otp.length < 6) { setError('OTP must be 6 digits'); return }
-    setLoading(true)
-    setError(null)
-    try {
-      await requestComplianceCsid(cert.csr!, otp, branch.id, environment)
-      const { data, error: dbErr } = await (supabase as any)
-        .from('zatca_certificates')
-        .select('*')
-        .eq('branch_id', branch.id)
-        .eq('environment', environment)
-        .single()
-      if (dbErr) throw new Error(dbErr.message)
-      onDone(data)
-    } catch (err: any) {
-      setError(err.message ?? 'Registration failed')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className="space-y-5">
-      {/* Step 2a — Copy CSR */}
-      {cert.csr && (
-        <div className="space-y-2.5">
+  if (!cert) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-xl p-4">
+          <Info size={15} className="text-gray-500 mt-0.5 flex-shrink-0" />
           <div>
-            <p className="text-xs font-bold text-gray-800">Step 2a — Copy this into Fatoorah Portal</p>
+            <p className="text-xs font-semibold text-gray-800">No sandbox certificate metadata</p>
             <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
-              Go to{' '}
-              <a
-                href="https://fatoorah.zatca.gov.sa"
-                target="_blank" rel="noopener noreferrer"
-                className="font-semibold text-primary-600 underline"
-              >
-                fatoorah.zatca.gov.sa
-              </a>
-              {' → '}E-Invoicing → My Devices → Add New Device → paste this Security Certificate Request:
+              Browser-based sandbox certificate setup is no longer available from this page.
+              Use the production onboarding flow for live Phase 2 connectivity.
             </p>
           </div>
-          <CsrBlock value={cert.csr} />
-          <DeviceDetailsBlock branch={branch} />
         </div>
-      )}
-
-      {/* Step 2b — Enter OTP */}
-      <div className="space-y-2.5 border-t border-gray-100 pt-4">
-        <div>
-          <p className="text-xs font-bold text-gray-800">Step 2b — Enter the OTP you received</p>
-          <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
-            After pasting above, the Fatoorah portal shows a 6-digit OTP. Enter it here:
-          </p>
-        </div>
-        <input
-          type="text"
-          inputMode="numeric"
-          maxLength={6}
-          placeholder="000000"
-          value={otp}
-          onChange={e => setOtp(e.target.value.replace(/\D/g, '').substring(0, 6))}
-          className="input text-center text-2xl tracking-[0.5em] font-mono"
-        />
-        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-          For sandbox testing, use OTP: <span className="font-mono font-bold tracking-widest">123345</span>
-        </p>
       </div>
-
-      {error && (
-        <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl p-3">
-          <AlertTriangle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
-          <pre className="text-[11px] text-red-700 whitespace-pre-wrap break-all font-mono leading-relaxed">{error}</pre>
-        </div>
-      )}
-
-      <button
-        onClick={register}
-        disabled={loading || otp.length < 6}
-        className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50"
-      >
-        {loading ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}
-        {loading ? 'Registering with ZATCA…' : 'Register Device with ZATCA'}
-      </button>
-    </div>
-  )
-}
-
-/* ── Step 3: Activate sandbox certificate ───────────────────────────────── */
-
-function Step3Activate({
-  branch, environment, onDone,
-}: {
-  branch: BranchWithCert
-  environment: 'sandbox'
-  onDone: (updated: ZatcaCertificate) => void
-}) {
-  const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState<string | null>(null)
-
-  const activate = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      await requestProductionCsid(branch.id, environment)
-      const { data, error: dbErr } = await (supabase as any)
-        .from('zatca_certificates')
-        .select('*')
-        .eq('branch_id', branch.id)
-        .eq('environment', environment)
-        .single()
-      if (dbErr) throw new Error(dbErr.message)
-      onDone(data)
-    } catch (err: any) {
-      setError(err.message ?? 'Activation failed')
-    } finally {
-      setLoading(false)
-    }
+    )
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3.5">
-        <CheckCircle2 size={13} className="text-emerald-600 mt-0.5 flex-shrink-0" />
-        <p className="text-[11px] text-emerald-700 leading-relaxed">
-          Compliance certificate registered successfully. Click below to activate it.
-          This will activate the branch in the ZATCA sandbox.
-        </p>
-      </div>
-
-      {error && (
-        <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl p-3">
-          <AlertTriangle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
-          <p className="text-[11px] text-red-700">{error}</p>
-        </div>
-      )}
-
-      <button
-        onClick={activate}
-        disabled={loading}
-        className="btn-primary w-full flex items-center justify-center gap-2 py-3"
-      >
-        {loading ? <Loader2 size={14} className="animate-spin" /> : <BadgeCheck size={14} />}
-        {loading ? 'Activating certificate…' : 'Activate Certificate'}
-      </button>
-
-      <p className="text-[11px] text-gray-400 text-center">
-        This contacts the ZATCA sandbox to issue your active sandbox certificate.
-      </p>
-    </div>
-  )
-}
-
-/* ── Step 4: Done (FIX 1 — rename "CSID" terms) ─────────────────────────── */
-
-function Step4Done({ cert }: { cert: ZatcaCertificate }) {
   const activatedDate = cert.activated_at
     ? new Date(cert.activated_at).toLocaleDateString('en-SA', { day: '2-digit', month: 'short', year: 'numeric' })
     : '—'
+  const lastUpdated = formatDateTime(cert.updated_at ?? cert.created_at)
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-xl p-4">
-        <ShieldCheck size={15} className="text-emerald-600 mt-0.5 flex-shrink-0" />
+      <div className={`flex items-start gap-3 rounded-xl p-4 ${
+        productionConnected
+          ? 'bg-gray-50 border border-gray-100'
+          : cert.status === 'active'
+          ? 'bg-amber-50 border border-amber-100'
+          : 'bg-gray-50 border border-gray-100'
+      }`}>
+        <Info size={15} className={productionConnected ? 'text-gray-500 mt-0.5 flex-shrink-0' : 'text-amber-600 mt-0.5 flex-shrink-0'} />
         <div>
-          <p className="text-xs font-semibold text-emerald-800">Branch is Phase 2 compliant</p>
-          <p className="text-[11px] text-emerald-700 mt-0.5">
-            Active sandbox certificate is configured for test submissions.
+          <p className="text-xs font-semibold text-gray-800">Sandbox certificate metadata</p>
+          <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
+            Legacy sandbox setup is read-only here. Sensitive certificate material is not loaded in the browser.
           </p>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <InfoRow
-          label="Compliance Certificate"
-          value={cert.compliance_csid ? '✅ Issued' : '❌ Not registered'}
+          label="Certificate Row"
+          value={cert.certificate_exists ? 'Exists' : 'Not found'}
         />
         <InfoRow
           label="Active Certificate"
-          value={cert.production_csid ? '✅ Active' : '❌ Not activated'}
+          value={cert.status === 'active' ? 'Active' : 'Not active'}
         />
         <InfoRow
           label="Environment"
@@ -671,20 +216,20 @@ function Step4Done({ cert }: { cert: ZatcaCertificate }) {
           value={String(cert.invoice_counter ?? 0)}
         />
         <InfoRow
+          label="Status"
+          value={CERT_CONFIG[cert.status]?.label ?? cert.status}
+        />
+        <InfoRow
+          label="Updated"
+          value={lastUpdated}
+        />
+        <InfoRow
           label="Serial Number"
           value={cert.serial_number ?? '—'}
           mono
         />
       </div>
 
-      {cert.last_invoice_hash && (
-        <div className="bg-gray-900 rounded-xl p-3">
-          <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-1.5">
-            Last Invoice Hash
-          </p>
-          <p className="text-[10px] text-green-400 font-mono break-all">{cert.last_invoice_hash}</p>
-        </div>
-      )}
     </div>
   )
 }
@@ -1376,19 +921,19 @@ function branchSummaryText(bc: BranchWithCert): string {
     bc.allCerts[0] ??
     null
   )
-  if (!bestCert || !bestCert.csr) return 'Certificate not configured'
-  if (bestCert.status === 'active')     return '✅ Certificate Active — Phase 2 Enabled'
-  if (bestCert.status === 'compliance') return '🔄 Activation Pending'
-  return '⏳ OTP Registration Pending'
+  if (!bestCert) return 'Production onboarding available'
+  if (bestCert.status === 'active') return 'Sandbox metadata: active'
+  if (bestCert.status === 'compliance') return 'Sandbox metadata: compliance issued'
+  if (bestCert.certificate_exists) return 'Sandbox metadata available'
+  return 'Production onboarding available'
 }
 
 function BranchAccordionRow({
-  bc, isExpanded, onToggle, onCertUpdate, onProductionStatusUpdate,
+  bc, isExpanded, onToggle, onProductionStatusUpdate,
 }: {
   bc: BranchWithCert
   isExpanded: boolean
   onToggle: () => void
-  onCertUpdate: (branchId: string, cert: ZatcaCertificate) => void
   onProductionStatusUpdate: (branchId: string, status: ProductionOnboardingResponse) => void
 }) {
   const phase = bc.zatca_phase ?? 1
@@ -1419,49 +964,12 @@ function BranchAccordionRow({
     'sandbox'
   ) as 'sandbox' | 'production'
   const [environment,  setEnvironment]  = useState<'sandbox' | 'production'>(initialEnv)
-  const [regenerating, setRegenerating] = useState(false)
 
   const cert     = bc.allCerts.find(c => c.environment === environment) ?? null
-  const isActive = cert?.status === 'active'
-  const isEnvironmentLocked = isActive || productionConnected
-  const step     = certStep(cert)
+  const isEnvironmentLocked = productionConnected
   const handleProductionStatusChange = useCallback((nextStatus: ProductionOnboardingResponse) => {
     onProductionStatusUpdate(bc.id, nextStatus)
   }, [bc.id, onProductionStatusUpdate])
-
-  const handleRegenerate = async () => {
-    if (!window.confirm(
-      'This will discard the current certificate and all credentials for this environment. Are you sure?'
-    )) return
-    setRegenerating(true)
-    try {
-      if (cert?.id) {
-        const { data, error: dbErr } = await (supabase as any)
-          .from('zatca_certificates')
-          .update({
-            csr:                   null,
-            private_key_encrypted: null,
-            public_key_pem:        null,
-            compliance_csid:       null,
-            compliance_secret:     null,
-            compliance_request_id: null,
-            production_csid:       null,
-            production_secret:     null,
-            status:                'pending',
-          })
-          .eq('id', cert.id)
-          .select()
-          .single()
-        if (!dbErr && data) onCertUpdate(bc.id, data)
-      }
-    } finally {
-      setRegenerating(false)
-    }
-  }
-
-  const handleDone = (updated: ZatcaCertificate) => {
-    onCertUpdate(bc.id, updated)
-  }
 
   return (
     <div className="card overflow-hidden">
@@ -1574,37 +1082,12 @@ function BranchAccordionRow({
                   />
                 </div>
               ) : (
-                <>
-                  <Stepper current={step} />
-
-                  <div className="border-t border-gray-100 pt-4">
-                    {step === 1 && (
-                      <Step1GenerateKeys branch={bc} environment={environment} onDone={handleDone} />
-                    )}
-                    {step === 2 && cert && (
-                      <Step2EnterOTP branch={bc} cert={cert} environment={environment} onDone={handleDone} />
-                    )}
-                    {step === 3 && (
-                      <Step3Activate branch={bc} environment={environment} onDone={handleDone} />
-                    )}
-                    {step === 4 && cert && (
-                      <Step4Done cert={cert} />
-                    )}
-                  </div>
-
-                  {cert && (
-                    <div className="pt-3 border-t border-gray-100">
-                      <button
-                        onClick={handleRegenerate}
-                        disabled={regenerating}
-                        className="flex items-center gap-1.5 text-[11px] text-gray-400 hover:text-red-500 transition-colors"
-                      >
-                        {regenerating ? <Loader2 size={11} className="animate-spin" /> : <Key size={11} />}
-                        Regenerate certificate (discard current{isActive ? ' — unlocks environment toggle' : ''})
-                      </button>
-                    </div>
-                  )}
-                </>
+                <div className="border-t border-gray-100 pt-4">
+                  <LegacySandboxStatusPanel
+                    cert={cert}
+                    productionConnected={productionConnected}
+                  />
+                </div>
               )}
             </>
           )}
@@ -1627,14 +1110,13 @@ export default function ZatcaTab() {
     if (!profile?.tenant_id) return
     setLoading(true)
     const tid = profile.tenant_id
-    const [branchesRes, certsRes] = await Promise.all([
+    const [branchesRes, certs] = await Promise.all([
       (supabase as any).from('branches').select('*').eq('tenant_id', tid)
         .order('is_main_branch', { ascending: false })
         .order('created_at', { ascending: true }),
-      (supabase as any).from('zatca_certificates').select('*').eq('tenant_id', tid),
+      listZatcaCertificateStatus(),
     ])
     const branches = (branchesRes.data as Branch[]) ?? []
-    const certs    = (certsRes.data as ZatcaCertificate[]) ?? []
     const productionStatuses = new Map<string, ProductionOnboardingResponse | null>()
     if (profile.role === 'owner') {
       await Promise.all(branches
@@ -1651,7 +1133,7 @@ export default function ZatcaTab() {
     }
     setData(branches.map(b => ({
       ...b,
-      allCerts: certs.filter(c => c.branch_id === b.id),
+      allCerts: certs.filter(c => c.tenant_id === tid && c.branch_id === b.id),
       productionStatus: productionStatuses.has(b.id) ? productionStatuses.get(b.id) ?? null : undefined,
     })))
     // Auto-expand first branch if only one
@@ -1660,17 +1142,6 @@ export default function ZatcaTab() {
   }, [profile?.tenant_id, profile?.role])
 
   useEffect(() => { load() }, [load])
-
-  const handleCertUpdate = (branchId: string, cert: ZatcaCertificate) => {
-    setData(prev => prev.map(b => {
-      if (b.id !== branchId) return b
-      const idx = b.allCerts.findIndex(c => c.environment === cert.environment)
-      const newCerts = idx >= 0
-        ? b.allCerts.map((c, i) => i === idx ? cert : c)
-        : [...b.allCerts, cert]
-      return { ...b, allCerts: newCerts }
-    }))
-  }
 
   const handleProductionStatusUpdate = useCallback((branchId: string, status: ProductionOnboardingResponse) => {
     writeCachedProductionStatus(branchId, status)
@@ -1764,7 +1235,6 @@ export default function ZatcaTab() {
               bc={bc}
               isExpanded={expandedId === bc.id}
               onToggle={() => handleToggle(bc.id)}
-              onCertUpdate={handleCertUpdate}
               onProductionStatusUpdate={handleProductionStatusUpdate}
             />
           ))}

@@ -7,14 +7,13 @@
  *  - CORS is handled by the Edge Function
  *
  * Edge Function endpoints:
- *   POST /functions/v1/zatca-compliance   — Sandbox Compliance CSID registration
- *   POST /functions/v1/zatca-production   — Sandbox CSID activation
  *   POST /functions/v1/zatca-submit       — Invoice reporting / clearance
  *   POST /functions/v1/zatca-onboard-production — Owner-only production onboarding
  *   POST /functions/v1/zatca-disconnect-production — Owner-only local production disconnect
  */
 
 import { supabase } from '@/lib/supabase'
+import type { CertificateStatus } from '@/types'
 
 const EDGE = (name: string) =>
   `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`
@@ -234,47 +233,83 @@ export async function disconnectProductionZatca(params: {
   })
 }
 
-// ── Compliance CSID ───────────────────────────────────────────────────────────
+// ── Safe legacy certificate metadata ─────────────────────────────────────────
 
-export interface ComplianceCsidResponse {
-  binarySecurityToken: string  // base64 DER certificate
-  secret:              string  // compliance secret
-  requestID:           string  // used to request production CSID
+export interface SafeZatcaCertificateStatus {
+  id: string
+  tenant_id: string
+  branch_id: string
+  status: CertificateStatus
+  environment: string
+  serial_number: string | null
+  valid_from: string | null
+  valid_to: string | null
+  activated_at: string | null
+  invoice_counter: number | null
+  certificate_exists: boolean
+  created_at: string | null
+  updated_at: string | null
 }
 
-/**
- * Register a new sandbox EGS device with ZATCA.
- * Calls POST /compliance on the ZATCA sandbox API.
- *
- * @param csr - PEM CSR string
- * @param otp - 6-digit OTP from the Fatoorah portal
- * @param branchId - stored with the certificate record
- */
-export async function requestComplianceCsid(
-  csr:         string,
-  otp:         string,
-  branchId:    string,
-  environment: 'sandbox' = 'sandbox',
-): Promise<ComplianceCsidResponse> {
-  return edgePost<ComplianceCsidResponse>('zatca-compliance', { csr, otp, branchId, environment })
+const SAFE_CERTIFICATE_STATUS_COLUMNS = `
+  id,
+  tenant_id,
+  branch_id,
+  status,
+  environment,
+  serial_number,
+  valid_from,
+  valid_to,
+  activated_at,
+  invoice_counter,
+  created_at,
+  updated_at
+`
+
+function normalizeCertificateStatus(row: any): SafeZatcaCertificateStatus {
+  const status = (row?.status ?? 'pending') as CertificateStatus
+  return {
+    id: String(row.id),
+    tenant_id: String(row.tenant_id),
+    branch_id: String(row.branch_id),
+    status,
+    environment: String(row.environment ?? 'sandbox'),
+    serial_number: row.serial_number ?? null,
+    valid_from: row.valid_from ?? null,
+    valid_to: row.valid_to ?? null,
+    activated_at: row.activated_at ?? null,
+    invoice_counter: row.invoice_counter ?? null,
+    certificate_exists: Boolean(row.certificate_exists ?? (status === 'active' || status === 'compliance')),
+    created_at: row.created_at ?? null,
+    updated_at: row.updated_at ?? null,
+  }
 }
 
-// ── Sandbox CSID activation ───────────────────────────────────────────────────
+export async function listZatcaCertificateStatus(): Promise<SafeZatcaCertificateStatus[]> {
+  const rpc = await (supabase as any)
+    .rpc('list_zatca_certificate_status')
 
-export interface ProductionCsidResponse {
-  binarySecurityToken: string
-  secret:              string
-}
+  if (!rpc.error) {
+    return ((rpc.data ?? []) as any[]).map(normalizeCertificateStatus)
+  }
 
-/**
- * Convert a sandbox compliance CSID into an active sandbox CSID.
- * Requires the compliance_request_id stored after step 2.
- */
-export async function requestProductionCsid(
-  branchId:    string,
-  environment: 'sandbox' = 'sandbox',
-): Promise<ProductionCsidResponse> {
-  return edgePost<ProductionCsidResponse>('zatca-production', { branchId, environment })
+  const message = String(rpc.error?.message ?? '')
+  const missingRpc = /list_zatca_certificate_status|function .* does not exist|schema cache/i.test(message)
+  if (!missingRpc) {
+    throw new Error('Unable to load ZATCA certificate status')
+  }
+
+  // Allows deploying this frontend before the Phase 3A SQL is manually applied.
+  // This fallback intentionally reads only safe display metadata.
+  const fallback = await (supabase as any)
+    .from('zatca_certificates')
+    .select(SAFE_CERTIFICATE_STATUS_COLUMNS)
+
+  if (fallback.error) {
+    throw new Error('Unable to load ZATCA certificate status')
+  }
+
+  return ((fallback.data ?? []) as any[]).map(normalizeCertificateStatus)
 }
 
 // ── Invoice submission ────────────────────────────────────────────────────────
