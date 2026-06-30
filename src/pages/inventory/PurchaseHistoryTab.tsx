@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Eye, ShoppingCart, Paperclip, X } from 'lucide-react'
+import { Plus, Eye, ShoppingCart, Paperclip, X, Trash2, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
@@ -184,6 +184,82 @@ function PurchaseDetailModal({
   )
 }
 
+function DeletePurchaseBillModal({
+  purchase, deleting, error, confirmText, onConfirmText, onClose, onDelete,
+}: {
+  purchase: PurchaseRow
+  deleting: boolean
+  error: string
+  confirmText: string
+  onConfirmText: (value: string) => void
+  onClose: () => void
+  onDelete: () => void
+}) {
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-50" onClick={onClose} />
+      <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+          <div className="px-6 py-5 border-b border-gray-100 flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-red-50 text-red-500 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle size={18} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-gray-900">Delete Purchase Bill</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                This permanently deletes this bill-only purchase record. Attached files are not deleted in this phase.
+              </p>
+            </div>
+          </div>
+
+          <div className="px-6 py-5 space-y-4">
+            <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Total</span>
+                <span className="font-semibold text-gray-900"><Rial amount={purchase.total_amount} /></span>
+              </div>
+              <div className="flex justify-between gap-3 mt-1">
+                <span className="text-gray-500">Date</span>
+                <span className="font-medium text-gray-700">{new Date(purchase.purchase_date).toLocaleDateString('en-GB')}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="label">Type DELETE PURCHASE BILL to confirm</label>
+              <input
+                className="input"
+                value={confirmText}
+                onChange={e => onConfirmText(e.target.value)}
+                placeholder="DELETE PURCHASE BILL"
+              />
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600">
+                {error}
+              </div>
+            )}
+          </div>
+
+          <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
+            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
+            <Button
+              type="button"
+              variant="danger"
+              className="flex-1"
+              loading={deleting}
+              disabled={confirmText !== 'DELETE PURCHASE BILL'}
+              onClick={onDelete}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── Main tab ──────────────────────────────────────────────────────────────────
 
 export default function PurchaseHistoryTab() {
@@ -199,6 +275,10 @@ export default function PurchaseHistoryTab() {
   const [viewingPurchase, setViewingPurchase] = useState<PurchaseRow | null>(null)
   const [viewingItems,    setViewingItems]    = useState<PurchaseItem[]>([])
   const [loadingItems,    setLoadingItems]    = useState(false)
+  const [deleteTarget,    setDeleteTarget]    = useState<PurchaseRow | null>(null)
+  const [deleteConfirm,   setDeleteConfirm]   = useState('')
+  const [deleteError,     setDeleteError]     = useState('')
+  const [deleting,        setDeleting]        = useState(false)
 
   const load = useCallback(async () => {
     const tid = profile?.tenant_id
@@ -244,6 +324,48 @@ export default function PurchaseHistoryTab() {
       .order('created_at')
     setViewingItems((data ?? []) as unknown as PurchaseItem[])
     setLoadingItems(false)
+  }
+
+  const canDeleteBillOnly = (purchase: PurchaseRow) =>
+    (purchase.purchase_mode ?? 'detailed_receiving') === 'simple_bill' &&
+    purchase.purchase_items.length === 0
+
+  const openDelete = (purchase: PurchaseRow) => {
+    setDeleteTarget(purchase)
+    setDeleteConfirm('')
+    setDeleteError('')
+  }
+
+  const closeDelete = () => {
+    if (deleting) return
+    setDeleteTarget(null)
+    setDeleteConfirm('')
+    setDeleteError('')
+  }
+
+  const deletePurchaseBill = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    setDeleteError('')
+
+    const { error } = await (supabase as any).rpc('delete_purchase_bill', {
+      p_purchase_id: deleteTarget.id,
+      p_confirm_text: deleteConfirm,
+    })
+
+    if (error) {
+      const message = /item|stock|receiving|detailed/i.test(error.message ?? '')
+        ? 'This purchase cannot be deleted because it contains item/stock receiving details. Use reversal/cancel flow after Phase 4C.'
+        : error.message ?? 'Delete failed'
+      setDeleteError(message)
+      setDeleting(false)
+      return
+    }
+
+    setDeleting(false)
+    setDeleteTarget(null)
+    setDeleteConfirm('')
+    await load()
   }
 
   // Summary stats
@@ -308,7 +430,7 @@ export default function PurchaseHistoryTab() {
             <div className="w-24 hidden md:block text-right">VAT</div>
             <div className="w-32 text-right">Total</div>
             <div className="w-20 flex-shrink-0 text-center">Bill</div>
-            <div className="w-8 flex-shrink-0" />
+            <div className="w-20 flex-shrink-0 text-center" />
           </div>
 
           {purchases.map(p => (
@@ -383,8 +505,8 @@ export default function PurchaseHistoryTab() {
                 )}
               </div>
 
-              {/* View details */}
-              <div className="w-8 flex-shrink-0">
+              {/* Actions */}
+              <div className="w-20 flex-shrink-0 flex justify-center gap-1">
                 <button
                   onClick={() => viewDetails(p)}
                   className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
@@ -392,6 +514,15 @@ export default function PurchaseHistoryTab() {
                 >
                   <Eye size={14} />
                 </button>
+                {canDeleteBillOnly(p) && (
+                  <button
+                    onClick={() => openDelete(p)}
+                    className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                    title="Delete bill-only purchase"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -412,7 +543,7 @@ export default function PurchaseHistoryTab() {
               <p className="text-[10px] text-gray-400">total spent</p>
             </div>
             <div className="w-20" />
-            <div className="w-8" />
+            <div className="w-20" />
           </div>
         </div>
       )}
@@ -431,6 +562,18 @@ export default function PurchaseHistoryTab() {
           items={viewingItems}
           loading={loadingItems}
           onClose={() => { setViewingPurchase(null); setViewingItems([]) }}
+        />
+      )}
+
+      {deleteTarget && (
+        <DeletePurchaseBillModal
+          purchase={deleteTarget}
+          deleting={deleting}
+          error={deleteError}
+          confirmText={deleteConfirm}
+          onConfirmText={setDeleteConfirm}
+          onClose={closeDelete}
+          onDelete={deletePurchaseBill}
         />
       )}
     </div>
