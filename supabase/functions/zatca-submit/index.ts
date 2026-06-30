@@ -530,6 +530,12 @@ function buildInvoice(data: any, opts: any): string {
   root.ele(NS.cbc, 'DocumentCurrencyCode').txt('SAR')
   root.ele(NS.cbc, 'TaxCurrencyCode').txt('SAR')
 
+  if (data.billingReferenceId) {
+    const billingReference = root.ele(NS.cac, 'BillingReference')
+    billingReference.ele(NS.cac, 'InvoiceDocumentReference')
+      .ele(NS.cbc, 'ID').txt(data.billingReferenceId)
+  }
+
   const icv = root.ele(NS.cac, 'AdditionalDocumentReference')
   icv.ele(NS.cbc, 'ID').txt('ICV')
   icv.ele(NS.cbc, 'UUID').txt(String(data.counterValue))
@@ -576,7 +582,11 @@ function buildInvoice(data: any, opts: any): string {
     customer.ele(NS.cac, 'PartyLegalEntity').ele(NS.cbc, 'RegistrationName').txt(data.buyer.name)
   }
 
-  root.ele(NS.cac, 'PaymentMeans').ele(NS.cbc, 'PaymentMeansCode').txt(data.paymentMeansCode ?? '10')
+  const paymentMeans = root.ele(NS.cac, 'PaymentMeans')
+  paymentMeans.ele(NS.cbc, 'PaymentMeansCode').txt(data.paymentMeansCode ?? '10')
+  if (data.creditReason) {
+    paymentMeans.ele(NS.cbc, 'InstructionNote').txt(data.creditReason)
+  }
 
   const headerAllowance = root.ele(NS.cac, 'AllowanceCharge')
   headerAllowance.ele(NS.cbc, 'ChargeIndicator').txt('false')
@@ -640,7 +650,14 @@ function toSaudiDate(utcDate: Date): Date {
   return new Date(utcDate.getTime() + 3 * 60 * 60 * 1000)  // UTC+3, no DST
 }
 
-function buildInvoiceXMLData(inv: any, branch: any, items: any[], customer: any, isSimplified: boolean): any {
+function buildInvoiceXMLData(
+  inv: any,
+  branch: any,
+  items: any[],
+  customer: any,
+  isSimplified: boolean,
+  creditNote?: { billingReferenceId?: string; reason?: string },
+): any {
   const saudiCreatedAt = toSaudiDate(new Date(inv.created_at))
   const issueDate = saudiCreatedAt.toISOString().split('T')[0]        // YYYY-MM-DD Saudi
   const issueTime = saudiCreatedAt.toISOString().split('T')[1].split('.')[0]  // HH:MM:SS Saudi
@@ -648,6 +665,8 @@ function buildInvoiceXMLData(inv: any, branch: any, items: any[], customer: any,
     invoiceNumber:   inv.invoice_number,
     uuid:            inv.zatca_uuid,
     invoiceTypeCode: inv.zatca_type_code ?? '388',
+    billingReferenceId: creditNote?.billingReferenceId,
+    creditReason: creditNote?.reason,
     issueDate,
     issueTime,
     counterValue:    inv.zatca_counter_number ?? 1,
@@ -1371,7 +1390,8 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
 
   const { data: inv, error: invErr } = await db
     .from('invoices')
-    .select(`id, invoice_number, zatca_uuid, zatca_invoice_type, zatca_type_code, invoice_date, created_at,
+    .select(`id, invoice_number, invoice_reference, original_invoice_id, credit_reason,
+      zatca_uuid, zatca_invoice_type, zatca_type_code, invoice_date, created_at,
       zatca_counter_number, zatca_prev_invoice_hash, zatca_xml_hash, zatca_status,
       subtotal, discount_amount, taxable_amount, tax_amount, total_amount,
       branch_id, tenant_id, customer_id,
@@ -1387,6 +1407,64 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
   if (['reported', 'cleared'].includes(inv.zatca_status)) {
     console.info('[zatca-submit] already submitted:', { invoiceId, invoiceStatus: inv.zatca_status })
     return { invoiceStatus: inv.zatca_status }
+  }
+
+  const isCreditNote = inv.zatca_invoice_type === 'credit_note'
+  let originalInvoice: any = null
+
+  if (isCreditNote) {
+    if (!inv.original_invoice_id) {
+      console.error('[zatca-submit] credit note missing original invoice:', { invoiceId })
+      await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+      return { invoiceStatus: 'failed' }
+    }
+
+    const { data: original, error: originalErr } = await db
+      .from('invoices')
+      .select('id, invoice_number, zatca_invoice_type, zatca_status')
+      .eq('id', inv.original_invoice_id)
+      .eq('tenant_id', callerTenantId)
+      .maybeSingle()
+
+    if (originalErr || !original?.id) {
+      console.error('[zatca-submit] credit note original invoice lookup failed:', safeZatcaText(originalErr?.message ?? 'missing original', 180))
+      await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+      return { invoiceStatus: 'failed' }
+    }
+
+    if (!['simplified', 'standard'].includes(original.zatca_invoice_type)) {
+      console.error('[zatca-submit] unsupported credit note original type:', {
+        invoiceId,
+        originalInvoiceId: original.id,
+        originalType: original.zatca_invoice_type,
+      })
+      await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+      return { invoiceStatus: 'failed' }
+    }
+
+    if (!['reported', 'cleared'].includes(original.zatca_status)) {
+      console.error('[zatca-submit] credit note original invoice is not reported or cleared:', {
+        invoiceId,
+        originalInvoiceId: original.id,
+        originalStatus: original.zatca_status,
+      })
+      await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+      return { invoiceStatus: 'failed' }
+    }
+
+    if ((inv.zatca_type_code ?? '') !== '381') {
+      console.error('[zatca-submit] credit note has invalid ZATCA type code:', { invoiceId })
+      await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+      return { invoiceStatus: 'failed' }
+    }
+
+    if (!String(inv.credit_reason ?? '').trim()) {
+      console.error('[zatca-submit] credit note missing reason:', { invoiceId })
+      await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+      return { invoiceStatus: 'failed' }
+    }
+
+    originalInvoice = original
   }
 
   const { data: branch } = await db
@@ -1445,7 +1523,13 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     const secretKey = credentials.privateKey
 
     const isSimplified = inv.zatca_invoice_type === 'simplified'
-    console.info('[zatca-submit] building XML:', { invoiceId, branchId: inv.branch_id, isSimplified })
+      || (isCreditNote && originalInvoice?.zatca_invoice_type === 'simplified')
+    console.info('[zatca-submit] building XML:', {
+      invoiceId,
+      branchId: inv.branch_id,
+      isSimplified,
+      isCreditNote,
+    })
     const previous = await resolvePreviousInvoiceHash(db, inv)
     const zatcaCounterNumber = await resolveZatcaCounterNumber(db, inv)
     diagnostics = {
@@ -1460,7 +1544,19 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
       zatca_prev_invoice_hash: previous.previousHash,
       zatca_counter_number: zatcaCounterNumber,
     }
-    const xmlData = buildInvoiceXMLData(invoiceForXml, branch, inv.invoice_items ?? [], inv.customers ?? null, isSimplified)
+    const xmlData = buildInvoiceXMLData(
+      invoiceForXml,
+      branch,
+      inv.invoice_items ?? [],
+      inv.customers ?? null,
+      isSimplified,
+      isCreditNote
+        ? {
+          billingReferenceId: inv.invoice_reference || originalInvoice?.invoice_number,
+          reason: String(inv.credit_reason ?? '').trim(),
+        }
+        : undefined,
+    )
     const unsignedXml = buildInvoice(xmlData, {
       profileId:        isSimplified ? 'reporting:1.0' : 'clearance:1.0',
       typeCodeName:     isSimplified ? '0200000' : '0100000',

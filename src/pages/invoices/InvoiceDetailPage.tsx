@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, Printer, Download, RefreshCw, Loader2, AlertCircle, CheckCircle2, Bug } from 'lucide-react'
+import { ArrowLeft, Printer, RefreshCw, Loader2, AlertCircle, CheckCircle2, Bug, FileText, X } from 'lucide-react'
 import QRCode from 'qrcode'
+import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { buildZatcaQR, decodeTLV } from '@/lib/zatca/qr'
 import { toSaudiTime } from '@/lib/utils/date'
 import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
-import type { Invoice, InvoiceItem, Payment, Branch } from '@/types/database'
+import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { printSilent } from '@/lib/electron'
 import { submitInvoiceToZatca } from '@/lib/zatca/submission'
 
@@ -40,6 +41,33 @@ interface Customer {
   phone: string | null
 }
 
+interface LinkedCreditNote {
+  id: string
+  invoice_number: string
+  total_amount: number
+  zatca_status: ZatcaStatus
+  payment_status: string | null
+  credit_reason: string | null
+  created_at: string
+}
+
+interface OriginalInvoiceLink {
+  id: string
+  invoice_number: string
+  total_amount: number
+  zatca_status: ZatcaStatus
+}
+
+interface CreateCreditNoteResult {
+  credit_note_invoice_id?: string
+  credit_note_invoice_number?: string
+  created_at?: string
+  total?: number
+  refund_status?: string
+  zatca_status?: ZatcaStatus
+  idempotent_replay?: boolean
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(n: number) {
@@ -70,9 +98,27 @@ function paymentLabel(method: string | null | undefined): string {
   return method ? (PAY_LABEL[method] ?? method) : '—'
 }
 
+function safeCreditNoteError(error: unknown): string {
+  const message = typeof (error as any)?.message === 'string' ? (error as any).message : ''
+  if (/already.*credited/i.test(message)) return 'This invoice already has a full credit note.'
+  if (/reported|cleared/i.test(message)) return 'Only reported or cleared invoices can be credited.'
+  if (/posted/i.test(message)) return 'Only posted invoices can be credited.'
+  if (/reason/i.test(message)) return 'A credit note reason is required.'
+  if (/forbidden|unauthorized|permission/i.test(message)) return 'You do not have permission to create this credit note.'
+  return 'Could not create the credit note. Please check the invoice status and try again.'
+}
+
+function creditStatusLabel(linkedCreditNote: LinkedCreditNote | null): string {
+  if (!linkedCreditNote) return 'Not credited'
+  if (linkedCreditNote.zatca_status === 'reported' || linkedCreditNote.zatca_status === 'cleared') return 'Fully credited'
+  if (linkedCreditNote.zatca_status === 'failed') return 'Credit note failed'
+  return 'Credit note pending'
+}
+
 const INVOICE_DETAIL_SELECT = `
   id, tenant_id, branch_id, customer_id, created_by,
-  invoice_number, invoice_reference, zatca_uuid, zatca_invoice_type, zatca_type_code,
+  invoice_number, invoice_reference, original_invoice_id, credit_reason,
+  credit_note_idempotency_key, zatca_uuid, zatca_invoice_type, zatca_type_code,
   zatca_counter_number, zatca_prev_invoice_hash, zatca_xml_hash, zatca_qr_code,
   zatca_status, zatca_submission_id, zatca_submitted_at, zatca_clearance_status,
   zatca_warnings,
@@ -172,9 +218,12 @@ export default function InvoiceDetailPage() {
   const [invoice,  setInvoice]  = useState<Invoice | null>(null)
   const [items,    setItems]    = useState<InvoiceItem[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
+  const [refunds,  setRefunds]  = useState<PaymentRefund[]>([])
   const [branch,   setBranch]   = useState<Branch | null>(null)
   const [tenant,   setTenant]   = useState<Tenant | null>(null)
   const [customer, setCustomer] = useState<Customer | null>(null)
+  const [linkedCreditNote, setLinkedCreditNote] = useState<LinkedCreditNote | null>(null)
+  const [originalInvoiceLink, setOriginalInvoiceLink] = useState<OriginalInvoiceLink | null>(null)
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState<string | null>(null)
   const [qrDataUrl,    setQrDataUrl]    = useState<string | null>(null)
@@ -182,6 +231,14 @@ export default function InvoiceDetailPage() {
   const [resubmitting, setResubmitting] = useState(false)
   const [isPhase2,     setIsPhase2]     = useState(false)
   const [isPrinting,   setIsPrinting]   = useState(false)
+  const [creditModalOpen, setCreditModalOpen] = useState(false)
+  const [creditReason, setCreditReason] = useState('')
+  const [creditConfirm, setCreditConfirm] = useState('')
+  const [refundMethod, setRefundMethod] = useState<PaymentMethod>('cash')
+  const [returnStock, setReturnStock] = useState(false)
+  const [creatingCreditNote, setCreatingCreditNote] = useState(false)
+  const [creditError, setCreditError] = useState<string | null>(null)
+  const [creditIdempotencyKey, setCreditIdempotencyKey] = useState('')
 
   useEffect(() => {
     const before = () => setIsPrinting(true)
@@ -233,12 +290,41 @@ export default function InvoiceDetailPage() {
         const tenantData = results[1].data as Tenant
         const custData   = results[2]?.data as Customer | null ?? null
 
+        const [creditNoteResult, originalInvoiceResult, refundResult] = await Promise.all([
+          inv.zatca_invoice_type === 'credit_note'
+            ? Promise.resolve({ data: null })
+            : supabase
+              .from('invoices')
+              .select('id, invoice_number, total_amount, zatca_status, payment_status, credit_reason, created_at')
+              .eq('original_invoice_id', inv.id)
+              .eq('zatca_invoice_type', 'credit_note')
+              .neq('status', 'cancelled')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+          inv.original_invoice_id
+            ? supabase
+              .from('invoices')
+              .select('id, invoice_number, total_amount, zatca_status')
+              .eq('id', inv.original_invoice_id)
+              .maybeSingle()
+            : Promise.resolve({ data: null }),
+          (supabase as any)
+            .from('payment_refunds')
+            .select('*')
+            .or(`original_invoice_id.eq.${inv.id},credit_note_invoice_id.eq.${inv.id}`)
+            .order('created_at', { ascending: false }),
+        ])
+
         setInvoice(inv as Invoice)
         setItems((itemData ?? []) as InvoiceItem[])
         setPayments((pmtData ?? []) as Payment[])
+        setRefunds((refundResult.data ?? []) as PaymentRefund[])
         setBranch(branchData)
         setTenant(tenantData)
         setCustomer(custData)
+        setLinkedCreditNote((creditNoteResult.data ?? null) as LinkedCreditNote | null)
+        setOriginalInvoiceLink((originalInvoiceResult.data ?? null) as OriginalInvoiceLink | null)
 
         const [{ data: sandboxCert }] = await Promise.all([
           (supabase as any)
@@ -327,16 +413,16 @@ export default function InvoiceDetailPage() {
     const m = (n: number) => `SAR ${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
     const lines = items.map(i => `${i.name} × ${Number(i.quantity)}  ${m(Number(i.total))}`).join('\n')
     const bizName = brandName
-    const msg = `فاتورتك من ${bizName}
+    const msg = `${isCreditNote ? 'إشعارك الدائن' : 'فاتورتك'} من ${bizName}
 ━━━━━━━━━━━━━━━
-رقم الفاتورة: ${invoice!.invoice_number}
-التاريخ: ${date}
+${isCreditNote ? 'رقم الإشعار الدائن' : 'رقم الفاتورة'}: ${invoice!.invoice_number}
+${isCreditNote && invoice!.invoice_reference ? `الفاتورة الأصلية: ${invoice!.invoice_reference}\n` : ''}التاريخ: ${date}
 ━━━━━━━━━━━━━━━
 ${lines}
 ━━━━━━━━━━━━━━━
 المجموع: ${m(Number(invoice!.subtotal))}
 الضريبة: ${m(Number(invoice!.tax_amount))}
-الإجمالي: ${m(Number(invoice!.total_amount))}
+${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'}: ${m(Number(invoice!.total_amount))}
 ━━━━━━━━━━━━━━━
 شكراً لزيارتكم 🌿`
     window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank')
@@ -355,6 +441,81 @@ ${lines}
       if (refreshed) setInvoice(refreshed as Invoice)
     } finally {
       setResubmitting(false)
+    }
+  }
+
+  function openCreditModal() {
+    if (!invoice) return
+    setCreditReason('')
+    setCreditConfirm('')
+    setRefundMethod((payment?.method ?? invoice.payment_method ?? 'cash') as PaymentMethod)
+    setReturnStock(false)
+    setCreditError(null)
+    setCreditIdempotencyKey(globalThis.crypto?.randomUUID?.() ?? `${invoice.id}-${Date.now()}`)
+    setCreditModalOpen(true)
+  }
+
+  async function handleCreateCreditNote() {
+    if (!invoice) return
+    const reason = creditReason.trim()
+    if (reason.length < 3) {
+      setCreditError('Enter a clear reason for the credit note.')
+      return
+    }
+    if (creditConfirm.trim() !== invoice.invoice_number) {
+      setCreditError('Type the original invoice number to confirm.')
+      return
+    }
+
+    setCreatingCreditNote(true)
+    setCreditError(null)
+    try {
+      const payload = {
+        original_invoice_id: invoice.id,
+        idempotency_key: creditIdempotencyKey || `${invoice.id}-${Date.now()}`,
+        reason,
+        refund_method: refundMethod,
+        return_stock: returnStock,
+      }
+      const { data, error } = await (supabase as any).rpc('create_full_credit_note', { p_payload: payload })
+      if (error) throw error
+
+      const result = data as CreateCreditNoteResult
+      if (!result.credit_note_invoice_id || !result.credit_note_invoice_number) {
+        throw new Error('Credit note was not returned')
+      }
+
+      setLinkedCreditNote({
+        id: result.credit_note_invoice_id,
+        invoice_number: result.credit_note_invoice_number,
+        total_amount: Number(result.total ?? invoice.total_amount),
+        zatca_status: result.zatca_status ?? 'pending',
+        payment_status: result.refund_status ?? 'completed',
+        credit_reason: reason,
+        created_at: result.created_at ?? new Date().toISOString(),
+      })
+      setRefunds(prev => [{
+        id: `local-${result.credit_note_invoice_id}`,
+        tenant_id: invoice.tenant_id,
+        branch_id: invoice.branch_id,
+        original_invoice_id: invoice.id,
+        credit_note_invoice_id: result.credit_note_invoice_id,
+        payment_id: payment?.id ?? null,
+        method: refundMethod,
+        amount: Number(result.total ?? invoice.total_amount),
+        reason,
+        status: 'completed',
+        created_by: null,
+        created_at: result.created_at ?? new Date().toISOString(),
+      }, ...prev])
+      setCreditModalOpen(false)
+      toast.success(result.idempotent_replay ? 'Credit note already exists' : 'Credit note created')
+    } catch (err) {
+      const safeMessage = safeCreditNoteError(err)
+      setCreditError(safeMessage)
+      toast.error(safeMessage)
+    } finally {
+      setCreatingCreditNote(false)
     }
   }
 
@@ -396,6 +557,43 @@ ${lines}
     ? Number(payment.change_amount ?? 0)
     : null
   const isCancelled = invoice.status === 'cancelled'
+  const isCreditNote = invoice.zatca_invoice_type === 'credit_note'
+  const refund = refunds[0] ?? null
+  const isStandardDocument = invoice.zatca_invoice_type === 'standard'
+    || (isCreditNote && customer?.customer_type === 'business' && !!customer?.vat_number)
+  const documentTitleAr = isCreditNote
+    ? (isStandardDocument ? 'إشعار دائن ضريبي' : 'إشعار دائن ضريبي مبسط')
+    : (isStandardDocument ? 'فاتورة ضريبية' : 'فاتورة ضريبية مبسطة')
+  const documentTitleEn = isCreditNote
+    ? (isStandardDocument ? 'Tax Credit Note' : 'Simplified Tax Credit Note')
+    : (isStandardDocument ? 'Standard Tax Invoice' : 'Simplified Tax Invoice')
+  const documentNumberLabel = isCreditNote ? 'Credit Note #' : 'Invoice #'
+  const creditLabel = creditStatusLabel(linkedCreditNote)
+  const creditLabelClass = linkedCreditNote
+    ? linkedCreditNote.zatca_status === 'failed'
+      ? 'text-red-600 bg-red-50 border-red-100'
+      : linkedCreditNote.zatca_status === 'reported' || linkedCreditNote.zatca_status === 'cleared'
+      ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
+      : 'text-amber-700 bg-amber-50 border-amber-100'
+    : 'text-gray-600 bg-gray-50 border-gray-100'
+  const canCreateCreditNote = !isCreditNote
+    && !isCancelled
+    && invoice.status === 'posted'
+    && (invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared')
+    && !linkedCreditNote
+  const creditDisabledReason = isCreditNote
+    ? 'Credit notes cannot be credited in this MVP.'
+    : linkedCreditNote
+    ? 'This invoice already has a full credit note.'
+    : invoice.status !== 'posted'
+    ? 'Only posted invoices can be credited.'
+    : !(invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared')
+    ? 'Only reported or cleared invoices can be credited.'
+    : isCancelled
+    ? 'Cancelled invoices cannot be credited here.'
+    : null
+  const canSubmitCurrentDocument = invoice.zatca_status === 'failed'
+    || (isCreditNote && invoice.zatca_status === 'pending')
 
   const brandName = branch.display_name || branch.business_name || branch.name
   const legalName = branch.business_name || branch.name
@@ -455,8 +653,11 @@ ${lines}
             ? (customer.business_name ?? customer.company_name)
             : (customer?.name ?? null)
         }
-        buyerVatNumber={invoice.zatca_invoice_type === 'standard' ? (customer?.vat_number ?? null) : null}
-        isStandardInvoice={invoice.zatca_invoice_type === 'standard'}
+        buyerVatNumber={isStandardDocument ? (customer?.vat_number ?? null) : null}
+        isStandardInvoice={isStandardDocument}
+        documentType={isCreditNote ? 'credit_note' : 'invoice'}
+        originalInvoiceNumber={invoice.invoice_reference ?? originalInvoiceLink?.invoice_number ?? null}
+        creditReason={invoice.credit_reason}
         logoUrl={branch.logo_url}
         showLogo={branch.show_logo ?? true}
         qrDataUrl={qrDataUrl}
@@ -474,11 +675,11 @@ ${lines}
         </button>
 
         <div className="flex items-center gap-2">
-          {invoice.zatca_status === 'failed' && (
+          {canSubmitCurrentDocument && (
             <button onClick={handleResend} disabled={resubmitting}
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-600 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 transition-colors disabled:opacity-50">
               <RefreshCw size={13} className={resubmitting ? 'animate-spin' : ''} />
-              Resend to ZATCA
+              {isCreditNote && invoice.zatca_status === 'pending' ? 'Submit Credit Note to ZATCA' : 'Resend to ZATCA'}
             </button>
           )}
           {customer?.phone && (
@@ -496,7 +697,7 @@ ${lines}
           <button onClick={handlePrintA4}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0F2419] rounded-xl hover:bg-[#1a3a28] transition-colors">
             <Printer size={13} />
-            Print Invoice (PDF)
+            Print {isCreditNote ? 'Credit Note' : 'Invoice'} (PDF)
           </button>
         </div>
       </div>
@@ -508,6 +709,76 @@ ${lines}
           This invoice has been cancelled and is void.
         </div>
       )}
+
+      {/* ── Refund / Credit Note status ─────────────────── */}
+      <div className="no-print bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <FileText size={16} className="text-[#0F2419]" />
+              <h2 className="text-sm font-bold text-gray-900">Refund / Credit Note</h2>
+              {!isCreditNote && (
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${creditLabelClass}`}>
+                  {creditLabel}
+                </span>
+              )}
+            </div>
+
+            {isCreditNote ? (
+              <div className="space-y-1 text-xs text-gray-600">
+                <p>This document credits original invoice <span className="font-semibold text-gray-900">{invoice.invoice_reference ?? originalInvoiceLink?.invoice_number ?? '—'}</span>.</p>
+                {invoice.credit_reason && <p><span className="font-semibold text-gray-800">Reason:</span> {invoice.credit_reason}</p>}
+                {originalInvoiceLink && (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/invoices/${originalInvoiceLink.id}`)}
+                    className="text-xs font-semibold text-[#0F2419] underline underline-offset-2"
+                  >
+                    Open original invoice
+                  </button>
+                )}
+              </div>
+            ) : linkedCreditNote ? (
+              <div className="space-y-1 text-xs text-gray-600">
+                <p>Full credit note <span className="font-semibold text-gray-900">{linkedCreditNote.invoice_number}</span> exists for this invoice.</p>
+                <p>ZATCA status: <span className="font-semibold">{ZATCA_STATUS[linkedCreditNote.zatca_status]?.label ?? linkedCreditNote.zatca_status}</span></p>
+                {linkedCreditNote.credit_reason && <p><span className="font-semibold text-gray-800">Reason:</span> {linkedCreditNote.credit_reason}</p>}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">
+                Create a full credit note only after the original invoice has been reported or cleared.
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            {linkedCreditNote && !isCreditNote && (
+              <button
+                type="button"
+                onClick={() => navigate(`/invoices/${linkedCreditNote.id}`)}
+                className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Open Credit Note
+              </button>
+            )}
+            {!isCreditNote && !linkedCreditNote && (
+              <button
+                type="button"
+                onClick={openCreditModal}
+                disabled={!canCreateCreditNote}
+                title={creditDisabledReason ?? undefined}
+                className="rounded-xl bg-[#0F2419] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
+              >
+                Create Full Credit Note / Refund
+              </button>
+            )}
+          </div>
+        </div>
+
+        {creditDisabledReason && !isCreditNote && !linkedCreditNote && (
+          <p className="mt-3 text-[11px] text-gray-400">{creditDisabledReason}</p>
+        )}
+      </div>
 
       {/* ══════════════════════════════════════════════════ */}
       {/* PRINTABLE INVOICE AREA                            */}
@@ -553,15 +824,21 @@ ${lines}
             {/* Invoice info + QR (right) */}
             <div className="text-right flex-shrink-0">
               <p className="text-lg font-bold text-[#0F2419]" dir="rtl" style={{ fontFamily: 'Cairo, sans-serif' }}>
-                فاتورة ضريبية مبسطة
+                {documentTitleAr}
               </p>
-              <p className="text-xs text-gray-400 mb-3">Simplified Tax Invoice</p>
+              <p className="text-xs text-gray-400 mb-3">{documentTitleEn}</p>
 
               <div className="space-y-1">
                 <div className="flex items-center justify-end gap-3">
                   <span className="text-xs font-semibold text-gray-800 font-mono">{invoice.invoice_number}</span>
-                  <span className="text-[10px] text-gray-400 uppercase tracking-wide">Invoice #</span>
+                  <span className="text-[10px] text-gray-400 uppercase tracking-wide">{documentNumberLabel}</span>
                 </div>
+                {isCreditNote && (invoice.invoice_reference || originalInvoiceLink?.invoice_number) && (
+                  <div className="flex items-center justify-end gap-3">
+                    <span className="text-xs text-gray-700">{invoice.invoice_reference ?? originalInvoiceLink?.invoice_number}</span>
+                    <span className="text-[10px] text-gray-400 uppercase tracking-wide">Original Invoice</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-end gap-3">
                   <span className="text-xs text-gray-700">{invDate}</span>
                   <span className="text-[10px] text-gray-400 uppercase tracking-wide">Date</span>
@@ -612,6 +889,19 @@ ${lines}
             <p className="text-sm text-gray-600">Walk-in Customer</p>
           )}
         </div>
+
+        {isCreditNote && (
+          <div className="px-8 py-4 border-b border-gray-100 bg-amber-50/40">
+            <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-widest mb-2">Credit Note Reference</p>
+            <div className="grid gap-2 text-xs text-gray-700 sm:grid-cols-2">
+              <span><span className="font-semibold">Original Invoice:</span> {invoice.invoice_reference ?? originalInvoiceLink?.invoice_number ?? '—'}</span>
+              <span><span className="font-semibold">Credit Amount:</span> <Rial amount={Number(invoice.total_amount)} /></span>
+              {invoice.credit_reason && (
+                <span className="sm:col-span-2"><span className="font-semibold">Reason:</span> {invoice.credit_reason}</span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Line items table ─────────────────────────────── */}
         <div className="px-8 py-4">
@@ -675,7 +965,7 @@ ${lines}
                 <span className="tabular-nums font-semibold"><Rial amount={Number(invoice.tax_amount)} /></span>
               </div>
               <div className="flex justify-between font-bold text-gray-900 text-base pt-1.5 border-t border-gray-200">
-                <span>Total</span>
+                <span>{isCreditNote ? 'Credit Total' : 'Total'}</span>
                 <span className="tabular-nums text-[#0F2419]"><Rial amount={Number(invoice.total_amount)} /></span>
               </div>
             </div>
@@ -701,6 +991,18 @@ ${lines}
           </div>
         )}
 
+        {isCreditNote && refund && (
+          <div className="px-8 py-4 border-t border-gray-100 bg-gray-50/40">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Refund</p>
+            <div className="flex flex-wrap gap-6 text-xs text-gray-700">
+              <span><span className="font-semibold">Method:</span> {paymentLabel(refund.method)}</span>
+              <span><span className="font-semibold">Amount:</span> <Rial amount={Number(refund.amount)} /></span>
+              <span><span className="font-semibold">Status:</span> {refund.status}</span>
+              <span><span className="font-semibold">Date:</span> {fmtDateTime(refund.created_at).date}</span>
+            </div>
+          </div>
+        )}
+
         {/* ── Notes ────────────────────────────────────────── */}
         {invoice.notes && (
           <div className="px-8 py-3 border-t border-gray-100">
@@ -722,7 +1024,7 @@ ${lines}
                   <Loader2 size={20} className="animate-spin text-gray-300" />
                 </div>
               )}
-              <p className="text-[9px] text-gray-400 mt-1.5">Scan to verify invoice</p>
+              <p className="text-[9px] text-gray-400 mt-1.5">Scan to verify {isCreditNote ? 'credit note' : 'invoice'}</p>
             </div>
 
             {/* ZATCA info — screen only, not required on printed invoices */}
@@ -768,7 +1070,7 @@ ${lines}
                 </div>
                 <div>
                   <p className="text-[9px] font-semibold text-gray-300 uppercase tracking-widest">Invoice Type</p>
-                  <p>{invoice.zatca_invoice_type === 'simplified' ? 'Simplified Tax Invoice' : 'Standard Tax Invoice'}</p>
+                  <p>{documentTitleEn}</p>
                 </div>
                 <div>
                   <p className="text-[9px] font-semibold text-gray-300 uppercase tracking-widest">Phase</p>
@@ -789,7 +1091,7 @@ ${lines}
         {/* Footer note */}
         <div className="px-8 pb-6 text-center">
           <p className="text-[9px] text-gray-300">
-            This is a computer-generated invoice.
+            This is a computer-generated {isCreditNote ? 'credit note' : 'invoice'}.
           </p>
         </div>
       </div>
@@ -892,6 +1194,109 @@ ${lines}
               </div>
             )
           })()}
+        </div>
+      )}
+
+      {creditModalOpen && (
+        <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+              <div>
+                <h2 className="text-base font-bold text-gray-900">Create Full Credit Note</h2>
+                <p className="text-xs text-gray-500">Original invoice {invoice.invoice_number}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreditModalOpen(false)}
+                className="rounded-full p-2 text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+                aria-label="Close"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 py-4">
+              <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+                This creates a new credit note document for the full invoice amount. The original invoice remains unchanged.
+              </div>
+
+              <label className="block space-y-1.5">
+                <span className="text-xs font-semibold text-gray-700">Reason</span>
+                <textarea
+                  value={creditReason}
+                  onChange={e => setCreditReason(e.target.value)}
+                  rows={3}
+                  maxLength={500}
+                  className="w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-[#0F2419]"
+                  placeholder="Returned goods, order cancelled, duplicate sale..."
+                />
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-xs font-semibold text-gray-700">Refund method</span>
+                <select
+                  value={refundMethod}
+                  onChange={e => setRefundMethod(e.target.value as PaymentMethod)}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-[#0F2419]"
+                >
+                  <option value="cash">Cash</option>
+                  <option value="card">Card / POS</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+
+              <label className="flex items-start gap-3 rounded-xl border border-gray-100 px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={returnStock}
+                  onChange={e => setReturnStock(e.target.checked)}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="block text-xs font-semibold text-gray-700">Return tracked stock</span>
+                  <span className="block text-[11px] leading-relaxed text-gray-500">
+                    Adds stock back only for products configured with stock tracking.
+                  </span>
+                </span>
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-xs font-semibold text-gray-700">Type invoice number to confirm</span>
+                <input
+                  value={creditConfirm}
+                  onChange={e => setCreditConfirm(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-mono outline-none transition-colors focus:border-[#0F2419]"
+                  placeholder={invoice.invoice_number}
+                />
+              </label>
+
+              {creditError && (
+                <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {creditError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setCreditModalOpen(false)}
+                className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateCreditNote}
+                disabled={creatingCreditNote}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#0F2419] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {creatingCreditNote && <Loader2 size={13} className="animate-spin" />}
+                Create Credit Note
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

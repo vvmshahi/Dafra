@@ -86,6 +86,11 @@ export interface Database {
         }
         Update: Partial<Omit<Payment, 'id'>>
       }
+      payment_refunds: {
+        Row: PaymentRefund
+        Insert: Omit<PaymentRefund, 'id' | 'created_at'>
+        Update: Partial<Omit<PaymentRefund, 'id'>>
+      }
       sync_queue: {
         Row: SyncQueueItem
         Insert: Omit<SyncQueueItem, 'id' | 'created_at' | 'updated_at'>
@@ -163,6 +168,10 @@ export interface Database {
         Returns: { tenant_id: string; branch_id: string }
       }
       pos_checkout: {
+        Args: { p_payload: Record<string, unknown> }
+        Returns: Record<string, unknown>
+      }
+      create_full_credit_note: {
         Args: { p_payload: Record<string, unknown> }
         Returns: Record<string, unknown>
       }
@@ -460,6 +469,9 @@ export interface Invoice {
   created_by: string | null
   invoice_number: string
   invoice_reference: string | null
+  original_invoice_id: string | null
+  credit_reason: string | null
+  credit_note_idempotency_key: string | null
   zatca_uuid: string
   zatca_invoice_type: InvoiceType
   zatca_type_code: string
@@ -503,6 +515,7 @@ export interface InvoiceItem {
   invoice_id: string
   tenant_id: string
   product_id: string | null
+  original_invoice_item_id: string | null
   name: string
   name_ar: string | null
   description: string | null
@@ -535,6 +548,21 @@ export interface Payment {
   paid_at: string
   created_at: string
   updated_at: string
+}
+
+export interface PaymentRefund {
+  id: string
+  tenant_id: string
+  branch_id: string
+  original_invoice_id: string
+  credit_note_invoice_id: string
+  payment_id: string | null
+  method: PaymentMethod
+  amount: number
+  reason: string
+  status: 'pending' | 'completed' | 'failed'
+  created_by: string | null
+  created_at: string
 }
 
 export interface SyncQueueItem {

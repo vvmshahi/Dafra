@@ -4,7 +4,7 @@ import { Search, Calendar, Filter, Eye, TrendingUp, FileText, Receipt } from 'lu
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import type { ZatcaStatus } from '@/types/database'
+import type { InvoiceType, ZatcaStatus } from '@/types/database'
 import { saudiNow } from '@/lib/utils/date'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -22,6 +22,8 @@ interface InvoiceRow {
   paymentMethod: string | null
   zatcaStatus: ZatcaStatus
   status: string
+  documentType: InvoiceType
+  invoiceReference: string | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -94,7 +96,7 @@ export default function InvoicesPage() {
         const { data } = await supabase
           .from('invoices')
           .select(`
-            id, invoice_number, invoice_date, created_at, status,
+            id, invoice_number, invoice_reference, zatca_invoice_type, invoice_date, created_at, status,
             subtotal, tax_amount, total_amount, zatca_status,
             customers(name),
             invoice_items(id),
@@ -124,6 +126,8 @@ export default function InvoicesPage() {
             : null,
           zatcaStatus: inv.zatca_status as ZatcaStatus,
           status:      inv.status,
+          documentType: inv.zatca_invoice_type as InvoiceType,
+          invoiceReference: inv.invoice_reference ?? null,
         }))
         setRows(processed)
       } finally {
@@ -146,8 +150,8 @@ export default function InvoicesPage() {
 
   const summary = {
     count:   filtered.length,
-    revenue: filtered.reduce((s, r) => s + r.totalAmount, 0),
-    vat:     filtered.reduce((s, r) => s + r.taxAmount, 0),
+    revenue: filtered.reduce((s, r) => s + (r.documentType === 'credit_note' ? -r.totalAmount : r.totalAmount), 0),
+    vat:     filtered.reduce((s, r) => s + (r.documentType === 'credit_note' ? -r.taxAmount : r.taxAmount), 0),
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -159,16 +163,16 @@ export default function InvoicesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Invoices</h1>
-          <p className="text-sm text-gray-400 mt-0.5">فواتير المبيعات · View and manage issued invoices</p>
+          <p className="text-sm text-gray-400 mt-0.5">فواتير المبيعات · View invoices and credit notes</p>
         </div>
       </div>
 
       {/* ── Summary bar ─────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: 'Total Invoices', value: String(summary.count), icon: FileText, color: 'text-primary-600', bg: 'bg-primary-50' },
-          { label: 'Total Revenue',  value: <Rial amount={summary.revenue} />, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'VAT Collected',  value: <Rial amount={summary.vat} />,    icon: Receipt,    color: 'text-amber-600',   bg: 'bg-amber-50'   },
+          { label: 'Total Documents', value: String(summary.count), icon: FileText, color: 'text-primary-600', bg: 'bg-primary-50' },
+          { label: 'Net Revenue',     value: <Rial amount={summary.revenue} />, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          { label: 'Net VAT',         value: <Rial amount={summary.vat} />,    icon: Receipt,    color: 'text-amber-600',   bg: 'bg-amber-50'   },
         ].map(s => (
           <div key={s.label} className="card px-5 py-4 flex items-center gap-4">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.bg}`}>
@@ -236,7 +240,7 @@ export default function InvoicesPage() {
 
         {/* Table header */}
         <div className="flex gap-2 px-4 py-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100 bg-gray-50">
-          <div className="w-28">Invoice #</div>
+          <div className="w-28">Document #</div>
           <div className="w-24">Date</div>
           <div className="flex-1">Customer</div>
           <div className="w-10 text-right">Items</div>
@@ -264,6 +268,7 @@ export default function InvoicesPage() {
               const zatca = ZATCA_BADGE[r.zatcaStatus] ?? ZATCA_BADGE.pending
               const pay   = r.paymentMethod ? (PAY_BADGE[r.paymentMethod] ?? PAY_BADGE.other) : null
               const isCancelled = r.status === 'cancelled'
+              const isCreditNote = r.documentType === 'credit_note'
               return (
                 <div
                   key={r.id}
@@ -271,8 +276,14 @@ export default function InvoicesPage() {
                 >
                   <div className="w-28">
                     <span className="text-xs font-bold text-gray-900 font-mono">{r.invoiceNumber}</span>
+                    {isCreditNote && (
+                      <span className="ml-1 text-[9px] font-semibold text-amber-700 bg-amber-50 px-1 py-0.5 rounded">CN</span>
+                    )}
                     {isCancelled && (
                       <span className="ml-1 text-[9px] font-semibold text-red-500 bg-red-50 px-1 py-0.5 rounded">VOID</span>
+                    )}
+                    {isCreditNote && r.invoiceReference && (
+                      <p className="mt-0.5 text-[9px] text-gray-400">for {r.invoiceReference}</p>
                     )}
                   </div>
                   <div className="w-24 text-xs text-gray-500">{fmtDate(r.date)}</div>
@@ -281,13 +292,17 @@ export default function InvoicesPage() {
                   </div>
                   <div className="w-10 text-right text-xs text-gray-500 tabular-nums">{r.itemsCount}</div>
                   <div className="w-24 text-right text-xs text-gray-600 tabular-nums">
-                    {fmt(r.subtotal)}
+                    {isCreditNote ? `-${fmt(r.subtotal)}` : fmt(r.subtotal)}
                   </div>
                   <div className="w-20 text-right text-xs text-amber-600 tabular-nums">
-                    {fmt(r.taxAmount)}
+                    {isCreditNote ? `-${fmt(r.taxAmount)}` : fmt(r.taxAmount)}
                   </div>
                   <div className="w-24 text-right text-sm font-bold text-gray-900 tabular-nums">
-                    <Rial amount={r.totalAmount} />
+                    {isCreditNote ? (
+                      <span className="text-amber-700">- <Rial amount={r.totalAmount} /></span>
+                    ) : (
+                      <Rial amount={r.totalAmount} />
+                    )}
                   </div>
                   <div className="w-16 flex justify-center">
                     {pay ? <Badge {...pay} /> : <span className="text-gray-300 text-xs">—</span>}
@@ -310,7 +325,7 @@ export default function InvoicesPage() {
             {/* Totals row */}
             <div className="flex gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
               <div className="w-28 text-xs font-semibold text-gray-500">
-                {filtered.length} invoice{filtered.length !== 1 ? 's' : ''}
+                {filtered.length} document{filtered.length !== 1 ? 's' : ''}
               </div>
               <div className="w-24" />
               <div className="flex-1" />

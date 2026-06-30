@@ -40,6 +40,9 @@ export interface ThermalReceiptProps {
   customerName?: string | null
   buyerVatNumber?: string | null
   isStandardInvoice?: boolean
+  documentType?: 'invoice' | 'credit_note'
+  originalInvoiceNumber?: string | null
+  creditReason?: string | null
   qrDataUrl?: string | null
   receiptFooter?: string | null
   showFooter?: boolean
@@ -108,10 +111,19 @@ export default function ThermalReceipt({
   invoiceNumber, date, time,
   items, subtotal, taxAmount, total,
   paymentMethod, cashReceived, change, showCashChange = true,
-  customerName, buyerVatNumber, isStandardInvoice = false, qrDataUrl, receiptFooter, showFooter = true,
+  customerName, buyerVatNumber, isStandardInvoice = false,
+  documentType = 'invoice', originalInvoiceNumber, creditReason,
+  qrDataUrl, receiptFooter, showFooter = true,
 }: ThermalReceiptProps) {
   // Line 2 (legal name) only shown if it differs from Line 1 (brand name)
   const showLegalName = businessNameEn && businessNameEn !== businessNameAr
+  const isCreditNote = documentType === 'credit_note'
+  const titleAr = isCreditNote
+    ? (isStandardInvoice ? 'إشعار دائن ضريبي' : 'إشعار دائن ضريبي مبسط')
+    : (isStandardInvoice ? 'فاتورة ضريبية' : 'فاتورة ضريبية مبسطة')
+  const titleEn = isCreditNote
+    ? (isStandardInvoice ? 'Tax Credit Note' : 'Simplified Tax Credit Note')
+    : (isStandardInvoice ? 'Standard Tax Invoice' : 'Simplified Tax Invoice')
 
   return (
     <div
@@ -165,10 +177,10 @@ export default function ThermalReceipt({
       {/* Invoice title */}
       <div style={{ textAlign: 'center', margin: '4px 0' }}>
         <div style={{ fontFamily: 'Cairo, "Segoe UI", sans-serif', fontSize: '13px', fontWeight: 'bold', direction: 'rtl' }}>
-          {isStandardInvoice ? 'فاتورة ضريبية' : 'فاتورة ضريبية مبسطة'}
+          {titleAr}
         </div>
         <div style={{ fontSize: '10px', color: '#555' }}>
-          {isStandardInvoice ? 'Standard Tax Invoice' : 'Simplified Tax Invoice'}
+          {titleEn}
         </div>
       </div>
 
@@ -176,10 +188,22 @@ export default function ThermalReceipt({
 
       {/* Invoice meta */}
       <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-        <div>Invoice: <strong>{invoiceNumber}</strong></div>
+        <div>{isCreditNote ? 'Credit Note' : 'Invoice'}: <strong>{invoiceNumber}</strong></div>
+        {isCreditNote && originalInvoiceNumber && (
+          <div>Original Invoice: <strong>{originalInvoiceNumber}</strong></div>
+        )}
         <div>Date: {date}</div>
         <div>Time: {time}</div>
       </div>
+
+      {isCreditNote && creditReason && (
+        <>
+          <Dash />
+          <div style={{ fontSize: '11px', marginBottom: '4px' }}>
+            <div>Reason: <strong>{creditReason}</strong></div>
+          </div>
+        </>
+      )}
 
       <Dash />
 
@@ -203,14 +227,14 @@ export default function ThermalReceipt({
         <TRow left="Subtotal:" right={<Amt n={subtotal} />} />
         <TRow left="VAT (15%):" right={<Amt n={taxAmount} />} />
         <div style={{ borderTop: '1px solid #000', margin: '3px 0' }} />
-        <TRow left="TOTAL:" right={<Amt n={total} />} bold />
+        <TRow left={isCreditNote ? 'CREDIT TOTAL:' : 'TOTAL:'} right={<Amt n={total} />} bold />
       </div>
 
       <Dash />
 
       {/* Payment */}
       <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-        <div>Payment: <strong>{paymentLabel(paymentMethod)}</strong></div>
+        <div>{isCreditNote ? 'Refund' : 'Payment'}: <strong>{paymentLabel(paymentMethod)}</strong></div>
         {paymentMethod === 'cash' && cashReceived != null && cashReceived > 0 && (
           <TRow left="Received:" right={<Amt n={cashReceived} />} />
         )}
