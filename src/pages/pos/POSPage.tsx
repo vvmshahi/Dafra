@@ -26,6 +26,15 @@ import { supportConfig } from '@/config/support'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+type PosPaymentChoice = 'cash' | 'card' | 'split'
+
+interface ReceiptPayment {
+  method: PaymentMethod
+  amount: number
+  amountReceived: number | null
+  changeAmount: number | null
+}
+
 interface PosProduct {
   id: string
   name: string
@@ -96,6 +105,8 @@ interface ReceiptData {
   showCashChange: boolean
   logoUrl: string | null
   showLogo: boolean
+  payments: ReceiptPayment[]
+  displayPaymentMethod: string
 }
 
 interface PosCheckoutItemResult {
@@ -122,6 +133,13 @@ interface PosCheckoutResult {
   payment_status: string
   amount_received?: number | string | null
   change_amount?: number | string | null
+  display_payment_method?: string | null
+  payments?: {
+    method: PaymentMethod
+    amount: number | string
+    amount_received?: number | string | null
+    change_amount?: number | string | null
+  }[]
   zatca_invoice_type: 'simplified' | 'standard'
   items: PosCheckoutItemResult[]
   idempotent_replay?: boolean
@@ -166,6 +184,14 @@ function num(value: number | string | null | undefined): number {
   return Number(value ?? 0)
 }
 
+function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+function amountInput(value: number): string {
+  return Math.max(0, round2(value)).toFixed(2)
+}
+
 function createCheckoutIdempotencyKey() {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -178,6 +204,15 @@ function safeCheckoutErrorMessage(err: unknown): string {
 
   if (/amount paid is less|underpaid/i.test(message)) {
     return 'Amount received is less than invoice total.'
+  }
+  if (/split payment.*not enabled/i.test(message)) {
+    return 'Split Payment is not enabled for this branch.'
+  }
+  if (/split payment.*equal|split payment.*balanced/i.test(message)) {
+    return 'Split Payment amounts must equal the invoice total.'
+  }
+  if (/split payment.*greater than zero|requires both cash and card/i.test(message)) {
+    return 'Split Payment needs both cash and card amounts.'
   }
   if (/insufficient stock/i.test(message)) {
     return 'Insufficient stock for one or more items.'
@@ -192,10 +227,21 @@ function safeCheckoutErrorMessage(err: unknown): string {
 }
 
 function paymentMethodLabel(method: string | null | undefined): string {
+  if (method === 'split') return 'Split Payment'
   if (method === 'cash') return 'Cash'
   if (method === 'card') return 'Card / POS'
   if (method === 'bank_transfer') return 'Bank Transfer'
   return 'Other'
+}
+
+function isSplitPaymentRows(payments: ReceiptPayment[]): boolean {
+  return payments.length > 1
+    && payments.some(payment => payment.method === 'cash' && payment.amount > 0)
+    && payments.some(payment => payment.method === 'card' && payment.amount > 0)
+}
+
+function paymentRowsTotal(payments: ReceiptPayment[]): number {
+  return round2(payments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0))
 }
 
 const cartKey = (bid: string) => `pos_cart_${bid}`
@@ -342,6 +388,9 @@ ${lines}
     timeZone: 'Asia/Riyadh', day: '2-digit', month: '2-digit', year: 'numeric',
   })
   const invTime = toSaudiTime(receipt.createdAt)
+  const isSplitPayment = receipt.displayPaymentMethod === 'split' || isSplitPaymentRows(receipt.payments)
+  const cashPayment = receipt.payments.find(payment => payment.method === 'cash')
+  const cardPayment = receipt.payments.find(payment => payment.method === 'card')
 
   async function printPosA4() {
     const existing = document.getElementById('pos-pdf-print-style')
@@ -442,11 +491,20 @@ ${lines}
         </div>
         {/* Payment */}
         <div style={{ fontSize: '12px', color: '#374151', marginBottom: '20px', padding: '10px 14px', background: '#f9fafb', borderRadius: '8px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-          <span><strong>Payment:</strong> {paymentMethodLabel(receipt.paymentMethod)}</span>
-          {receipt.paymentMethod === 'cash' && receipt.cashReceived > 0 && (
+          <span><strong>Payment:</strong> {paymentMethodLabel(isSplitPayment ? 'split' : receipt.paymentMethod)}</span>
+          {isSplitPayment && cashPayment && (
+            <span><strong>Cash:</strong> <Rial amount={cashPayment.amount} /></span>
+          )}
+          {isSplitPayment && cardPayment && (
+            <span><strong>Card:</strong> <Rial amount={cardPayment.amount} /></span>
+          )}
+          {isSplitPayment && (
+            <span><strong>Total paid:</strong> <Rial amount={paymentRowsTotal(receipt.payments)} /></span>
+          )}
+          {!isSplitPayment && receipt.paymentMethod === 'cash' && receipt.cashReceived > 0 && (
             <span><strong>Received:</strong> <Rial amount={receipt.cashReceived} /></span>
           )}
-          {receipt.showCashChange && receipt.paymentMethod === 'cash' && receipt.change > 0.005 && (
+          {!isSplitPayment && receipt.showCashChange && receipt.paymentMethod === 'cash' && receipt.change > 0.005 && (
             <span><strong>Change:</strong> <Rial amount={receipt.change} /></span>
           )}
         </div>
@@ -484,7 +542,8 @@ ${lines}
         subtotal={receipt.subtotal}
         taxAmount={receipt.taxAmount}
         total={receipt.total}
-        paymentMethod={receipt.paymentMethod}
+        paymentMethod={isSplitPayment ? 'split' : receipt.paymentMethod}
+        payments={receipt.payments}
         cashReceived={receipt.cashReceived}
         change={receipt.change}
         showCashChange={receipt.showCashChange}
@@ -990,6 +1049,134 @@ function SessionSummaryModal({ summary, onDone, onNewSession }: {
   )
 }
 
+function SplitPaymentModal({
+  total,
+  cashValue,
+  cardValue,
+  submitting,
+  onCashChange,
+  onCardChange,
+  onUseCash,
+  onUseCard,
+  onClose,
+  onComplete,
+}: {
+  total: number
+  cashValue: string
+  cardValue: string
+  submitting: boolean
+  onCashChange: (value: string) => void
+  onCardChange: (value: string) => void
+  onUseCash: () => void
+  onUseCard: () => void
+  onClose: () => void
+  onComplete: () => void
+}) {
+  const cashAmount = parseFloat(cashValue) || 0
+  const cardAmount = parseFloat(cardValue) || 0
+  const paidTotal = round2(cashAmount + cardAmount)
+  const balance = round2(total - paidTotal)
+  const isBalanced = Math.abs(balance) <= 0.01
+  const hasNegative = cashAmount < 0 || cardAmount < 0
+  const canComplete = isBalanced && !hasNegative && cashAmount > 0 && cardAmount > 0 && !submitting
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+          <div>
+            <h3 className="text-sm font-bold text-gray-900">Split Payment</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Total <Rial amount={total} /></p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-700 flex items-center justify-center"
+          >
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-3">
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-gray-700">Cash amount</span>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={cashValue}
+                onChange={e => onCashChange(e.target.value)}
+                className="input pl-10 tabular-nums"
+                autoFocus
+              />
+            </div>
+          </label>
+
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-gray-700">Card amount</span>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={cardValue}
+                onChange={e => onCardChange(e.target.value)}
+                className="input pl-10 tabular-nums"
+              />
+            </div>
+          </label>
+
+          <div className={`rounded-xl px-3 py-2 text-xs ${
+            isBalanced && !hasNegative ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+          }`}>
+            <div className="flex justify-between">
+              <span>Total paid</span>
+              <span className="font-semibold tabular-nums"><Rial amount={paidTotal} /></span>
+            </div>
+            <div className="flex justify-between mt-1">
+              <span>{balance >= 0 ? 'Remaining' : 'Over by'}</span>
+              <span className="font-semibold tabular-nums"><Rial amount={Math.abs(balance)} /></span>
+            </div>
+          </div>
+
+          {cashAmount <= 0 && cardAmount > 0 && (
+            <button type="button" onClick={onUseCard} className="w-full text-xs font-semibold text-indigo-700 bg-indigo-50 rounded-xl py-2">
+              Use normal Card payment
+            </button>
+          )}
+          {cardAmount <= 0 && cashAmount > 0 && (
+            <button type="button" onClick={onUseCash} className="w-full text-xs font-semibold text-emerald-700 bg-emerald-50 rounded-xl py-2">
+              Use normal Cash payment
+            </button>
+          )}
+        </div>
+
+        <div className="flex gap-2 border-t border-gray-100 px-5 py-4 bg-gray-50">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-white disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onComplete}
+            disabled={!canComplete}
+            className="flex-1 rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:from-gray-200 disabled:to-gray-300 disabled:text-gray-400 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Processing...' : 'Complete Sale'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── POSPage ───────────────────────────────────────────────────────────────────
 
 const WA_LINK    = supportConfig.whatsappLink
@@ -1024,8 +1211,12 @@ export default function POSPage() {
   const [custSearch,   setCustSearch]   = useState('')
   const [custOpen,     setCustOpen]     = useState(false)
   const [note,         setNote]         = useState('')
-  const [payMethod,    setPayMethod]    = useState<'cash' | 'card'>('cash')
+  const [payMethod,    setPayMethod]    = useState<PosPaymentChoice>('cash')
   const [cashReceived, setCashReceived] = useState('')
+  const [splitCash,    setSplitCash]    = useState('')
+  const [splitCard,    setSplitCard]    = useState('')
+  const [splitOpen,    setSplitOpen]    = useState(false)
+  const [splitLastEdited, setSplitLastEdited] = useState<'cash' | 'card'>('cash')
   const [submitting,   setSubmitting]   = useState(false)
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [showExpense,  setShowExpense]  = useState(false)
@@ -1165,6 +1356,17 @@ export default function POSPage() {
   const totals  = computeTotals(cart, vatMode)
   const cashAmt = parseFloat(cashReceived) || 0
   const change  = payMethod === 'cash' ? Math.max(0, cashAmt - totals.total) : 0
+  const splitPaymentsEnabled = branch?.allow_split_payments ?? false
+  const splitCashAmount = parseFloat(splitCash) || 0
+  const splitCardAmount = parseFloat(splitCard) || 0
+  const splitPaidTotal = round2(splitCashAmount + splitCardAmount)
+  const splitBalanced = Math.abs(splitPaidTotal - round2(totals.total)) <= 0.01
+  const splitReady = splitPaymentsEnabled
+    && splitCashAmount > 0
+    && splitCardAmount > 0
+    && splitCashAmount <= totals.total + 0.01
+    && splitCardAmount <= totals.total + 0.01
+    && splitBalanced
 
   const filteredCusts = custSearch.trim()
     ? customers.filter(c =>
@@ -1173,6 +1375,55 @@ export default function POSPage() {
       )
     : customers
   const selectedCust = customers.find(c => c.id === customerId)
+
+  useEffect(() => {
+    if (payMethod !== 'split') return
+    if (splitLastEdited === 'cash') {
+      setSplitCard(amountInput(totals.total - splitCashAmount))
+    } else {
+      setSplitCash(amountInput(totals.total - splitCardAmount))
+    }
+  // Rebalance when the cart total changes while the split dialog is open.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totals.total])
+
+  function openSplitPayment() {
+    if (!splitPaymentsEnabled) return
+    setPayMethod('split')
+    setSplitLastEdited('cash')
+    setSplitCash('')
+    setSplitCard(amountInput(totals.total))
+    setSplitOpen(true)
+  }
+
+  function updateSplitCash(value: string) {
+    const amount = parseFloat(value) || 0
+    setSplitLastEdited('cash')
+    setSplitCash(value)
+    setSplitCard(amountInput(totals.total - amount))
+  }
+
+  function updateSplitCard(value: string) {
+    const amount = parseFloat(value) || 0
+    setSplitLastEdited('card')
+    setSplitCard(value)
+    setSplitCash(amountInput(totals.total - amount))
+  }
+
+  function useNormalCardPayment() {
+    setPayMethod('card')
+    setSplitOpen(false)
+    setSplitCash('')
+    setSplitCard('')
+  }
+
+  function useNormalCashPayment() {
+    setPayMethod('cash')
+    setSplitOpen(false)
+    setSplitCash('')
+    setSplitCard('')
+    setCashReceived(amountInput(totals.total))
+  }
 
   // ── Cart ops ─────────────────────────────────────────────────────────────
 
@@ -1211,13 +1462,32 @@ export default function POSPage() {
     checkoutKeyRef.current = idempotencyKey
 
     try {
+      if (payMethod === 'split') {
+        if (!splitPaymentsEnabled) {
+          toast.error('Split Payment is not enabled for this branch.')
+          return
+        }
+        if (!splitReady) {
+          setSplitOpen(true)
+          toast.error('Split Payment must be balanced before checkout.')
+          return
+        }
+      }
+
       const cashTenderProvided = payMethod === 'cash' && cashReceived.trim() !== ''
+      const splitPayments = payMethod === 'split'
+        ? [
+            { method: 'cash', amount: round2(splitCashAmount) },
+            { method: 'card', amount: round2(splitCardAmount) },
+          ]
+        : null
       const payload = {
         branch_id: branch.id,
         customer_id: customerId,
         session_id: session?.id ?? null,
-        payment_method: payMethod,
+        payment_method: payMethod === 'split' ? 'other' : payMethod,
         amount_paid: cashTenderProvided ? cashAmt : null,
+        ...(splitPayments ? { payments: splitPayments } : {}),
         note: note || null,
         idempotency_key: idempotencyKey,
         items: cart.map(item => ({
@@ -1234,13 +1504,32 @@ export default function POSPage() {
       const serverTax = num(checkout.tax_amount)
       const serverSubtotal = num(checkout.subtotal)
       const createdAt = checkout.created_at
-      const receiptPaymentMethod = checkout.payment_method ?? payMethod
+      const receiptPaymentMethod: PaymentMethod = checkout.payment_method ?? (payMethod === 'split' ? 'other' : payMethod)
+      const receiptPayments: ReceiptPayment[] = Array.isArray(checkout.payments) && checkout.payments.length > 0
+        ? checkout.payments.map(payment => ({
+            method: payment.method,
+            amount: num(payment.amount),
+            amountReceived: payment.amount_received == null ? null : num(payment.amount_received),
+            changeAmount: payment.change_amount == null ? null : num(payment.change_amount),
+          }))
+        : [{
+            method: receiptPaymentMethod,
+            amount: serverTotal,
+            amountReceived: receiptPaymentMethod === 'cash'
+              ? num(checkout.amount_received ?? serverTotal)
+              : serverTotal,
+            changeAmount: receiptPaymentMethod === 'cash'
+              ? num(checkout.change_amount ?? 0)
+              : 0,
+          }]
+      const displayPaymentMethod = checkout.display_payment_method
+        ?? (isSplitPaymentRows(receiptPayments) ? 'split' : receiptPaymentMethod)
       const serverAmountReceived = num(checkout.amount_received ?? serverTotal)
       const serverChangeAmount = num(checkout.change_amount ?? Math.max(0, serverAmountReceived - serverTotal))
-      const receiptCashReceived = receiptPaymentMethod === 'cash'
+      const receiptCashReceived = displayPaymentMethod !== 'split' && receiptPaymentMethod === 'cash'
         ? serverAmountReceived
         : serverTotal
-      const receiptChange = receiptPaymentMethod === 'cash' ? serverChangeAmount : 0
+      const receiptChange = displayPaymentMethod !== 'split' && receiptPaymentMethod === 'cash' ? serverChangeAmount : 0
       const isB2BInvoice = checkout.zatca_invoice_type === 'standard'
 
       const branchAddr = [
@@ -1286,11 +1575,16 @@ export default function POSPage() {
         showCashChange:  branch.show_cash_change ?? true,
         logoUrl:         branch.logo_url ?? null,
         showLogo:        branch.show_logo ?? true,
+        payments:        receiptPayments,
+        displayPaymentMethod,
       })
       setCart([])
       setCustomerId(null)
       setNote('')
       setCashReceived('')
+      setSplitCash('')
+      setSplitCard('')
+      setSplitOpen(false)
       checkoutKeyRef.current = null
 
       submitInvoiceToZatca(checkout.invoice_id, branch.id)
@@ -1410,7 +1704,9 @@ export default function POSPage() {
   }
 
   const canCharge = cart.length > 0 && !submitting &&
-    !(payMethod === 'cash' && cashReceived !== '' && cashAmt < totals.total - 0.001)
+    (payMethod === 'split'
+      ? splitReady
+      : !(payMethod === 'cash' && cashReceived !== '' && cashAmt < totals.total - 0.001))
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -1431,6 +1727,20 @@ export default function POSPage() {
           userId={profile.id ?? null}
           sessionId={session.id}
           onClose={() => setShowExpense(false)}
+        />
+      )}
+      {splitOpen && (
+        <SplitPaymentModal
+          total={totals.total}
+          cashValue={splitCash}
+          cardValue={splitCard}
+          submitting={submitting}
+          onCashChange={updateSplitCash}
+          onCardChange={updateSplitCard}
+          onUseCash={useNormalCashPayment}
+          onUseCard={useNormalCardPayment}
+          onClose={() => setSplitOpen(false)}
+          onComplete={charge}
         />
       )}
       {showCloseSession && (
@@ -1738,7 +2048,7 @@ export default function POSPage() {
         <div className="px-4 pb-2 flex-shrink-0 space-y-2">
           <div className="flex gap-2">
             {(['cash', 'card'] as const).map(m => (
-              <button key={m} onClick={() => setPayMethod(m)}
+              <button key={m} onClick={() => { setPayMethod(m); setSplitOpen(false) }}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
                   payMethod === m
                     ? m === 'cash'
@@ -1750,6 +2060,21 @@ export default function POSPage() {
                 {m === 'cash' ? 'Cash' : 'Card'}
               </button>
             ))}
+            {splitPaymentsEnabled && (
+              <button
+                type="button"
+                onClick={openSplitPayment}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                  payMethod === 'split'
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <Banknote size={12} />
+                <CreditCard size={12} />
+                Split
+              </button>
+            )}
           </div>
 
           {payMethod === 'cash' && cart.length > 0 && (
@@ -1777,12 +2102,32 @@ export default function POSPage() {
               )}
             </div>
           )}
+
+          {payMethod === 'split' && cart.length > 0 && (
+            <div className="rounded-xl bg-gray-50 border border-gray-100 px-3 py-2 space-y-1">
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>Cash</span>
+                <span className="font-semibold tabular-nums"><Rial amount={splitCashAmount} /></span>
+              </div>
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>Card</span>
+                <span className="font-semibold tabular-nums"><Rial amount={splitCardAmount} /></span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSplitOpen(true)}
+                className="text-[11px] font-semibold text-primary-700 hover:text-primary-900"
+              >
+                Edit Split Payment
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Charge button */}
         <div className="px-4 pb-5 flex-shrink-0">
           <button
-            onClick={charge}
+            onClick={payMethod === 'split' ? () => setSplitOpen(true) : charge}
             disabled={!canCharge}
             className="w-full py-3.5 rounded-2xl font-bold text-sm text-white transition-all flex items-center justify-center gap-2
               bg-gradient-to-r from-[#1a3a28] to-primary-600

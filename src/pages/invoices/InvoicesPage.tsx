@@ -62,6 +62,7 @@ const ZATCA_BADGE: Record<string, { label: string; bg: string; text: string }> =
 const PAY_BADGE: Record<string, { label: string; bg: string; text: string }> = {
   cash:          { label: 'Cash',  bg: 'bg-emerald-50', text: 'text-emerald-700' },
   card:          { label: 'Card',  bg: 'bg-indigo-50',  text: 'text-indigo-700'  },
+  split:         { label: 'Split', bg: 'bg-slate-100',  text: 'text-slate-700'   },
   bank_transfer: { label: 'Bank',  bg: 'bg-amber-50',   text: 'text-amber-700'   },
   other:         { label: 'Other', bg: 'bg-gray-50',    text: 'text-gray-600'    },
 }
@@ -162,6 +163,10 @@ export default function InvoicesPage() {
 
         const processed: InvoiceRow[] = invoices.map((inv: any) => {
           const linkedCreditNote = creditByOriginal.get(inv.id) ?? null
+          const payments = Array.isArray(inv.payments) ? inv.payments : []
+          const isSplitPayment = payments.length > 1
+            && payments.some((payment: any) => payment.method === 'cash')
+            && payments.some((payment: any) => payment.method === 'card')
           return {
           id:            inv.id,
           branchId:      inv.branch_id,
@@ -173,8 +178,8 @@ export default function InvoicesPage() {
           subtotal:      Number(inv.subtotal),
           taxAmount:     Number(inv.tax_amount),
           totalAmount:   Number(inv.total_amount),
-          paymentMethod: Array.isArray(inv.payments) && inv.payments.length > 0
-            ? inv.payments[0].method
+          paymentMethod: payments.length > 0
+            ? (isSplitPayment ? 'split' : payments[0].method)
             : null,
           zatcaStatus: inv.zatca_status as ZatcaStatus,
           status:      inv.status,
@@ -308,6 +313,7 @@ export default function InvoicesPage() {
             <option value="all">All Methods</option>
             <option value="cash">Cash</option>
             <option value="card">Card</option>
+            <option value="split">Split Payment</option>
             <option value="bank_transfer">Bank Transfer</option>
           </select>
         </div>
@@ -463,7 +469,7 @@ export default function InvoicesPage() {
           invoice_number: creditModalRow.invoiceNumber,
           total_amount: creditModalRow.totalAmount,
         } : null}
-        defaultRefundMethod={(creditModalRow?.paymentMethod ?? 'cash') as PaymentMethod}
+        defaultRefundMethod={(creditModalRow?.paymentMethod === 'split' ? 'other' : (creditModalRow?.paymentMethod ?? 'cash')) as PaymentMethod}
         onClose={() => setCreditModalRow(null)}
         onCreated={() => {
           setCreditModalRow(null)

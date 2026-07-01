@@ -88,6 +88,16 @@ function paymentLabel(method: string | null | undefined): string {
   return method ? (PAY_LABEL[method] ?? method) : '—'
 }
 
+function isSplitPaymentRows(payments: Payment[]): boolean {
+  return payments.length > 1
+    && payments.some(payment => payment.method === 'cash' && Number(payment.amount) > 0)
+    && payments.some(payment => payment.method === 'card' && Number(payment.amount) > 0)
+}
+
+function paymentRowsTotal(payments: Payment[]): number {
+  return payments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0)
+}
+
 function creditStatusLabel(linkedCreditNote: LinkedCreditNote | null): string {
   if (!linkedCreditNote) return 'Not credited'
   if (linkedCreditNote.zatca_status === 'reported' || linkedCreditNote.zatca_status === 'cleared') return 'Fully credited'
@@ -236,7 +246,7 @@ export default function InvoiceDetailPage() {
         const [{ data: inv, error: invErr }, { data: itemData }, { data: pmtData }] = await Promise.all([
           supabase.from('invoices').select(INVOICE_DETAIL_SELECT).eq('id', id).single(),
           supabase.from('invoice_items').select('*').eq('invoice_id', id).order('sort_order'),
-          supabase.from('payments').select('*').eq('invoice_id', id),
+          supabase.from('payments').select('*').eq('invoice_id', id).order('paid_at', { ascending: true }).order('created_at', { ascending: true }),
         ])
 
         if (invErr || !inv) { setError('Invoice not found'); setLoading(false); return }
@@ -479,7 +489,10 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
   const zatcaMeta = ZATCA_STATUS[invoice.zatca_status] ?? ZATCA_STATUS.pending
   const zatcaFailureSummary = invoice.zatca_status === 'failed' ? getZatcaFailureSummary(invoice) : null
   const payment   = payments[0] ?? null
-  const payLabel  = payment ? paymentLabel(payment.method) : null
+  const isSplitPayment = isSplitPaymentRows(payments)
+  const payLabel  = payments.length > 0 ? (isSplitPayment ? 'Split Payment' : paymentLabel(payment?.method)) : null
+  const cashPayment = payments.find(p => p.method === 'cash')
+  const cardPayment = payments.find(p => p.method === 'card')
   const cashReceived = payment?.method === 'cash'
     ? Number(payment.amount_received ?? payment.amount ?? invoice.total_amount)
     : null
@@ -575,7 +588,8 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
         subtotal={Number(invoice.subtotal)}
         taxAmount={Number(invoice.tax_amount)}
         total={Number(invoice.total_amount)}
-        paymentMethod={payment?.method ?? 'card'}
+        paymentMethod={isSplitPayment ? 'split' : (payment?.method ?? 'card')}
+        payments={payments.map(p => ({ method: p.method, amount: Number(p.amount) }))}
         cashReceived={cashReceived}
         change={changeAmount}
         customerName={
@@ -903,20 +917,28 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
         </div>
 
         {/* ── Payment info ─────────────────────────────────── */}
-        {payment && (
+        {payments.length > 0 && (
           <div className="px-8 py-4 border-t border-gray-100 bg-gray-50/40">
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Payment</p>
             <div className="flex flex-wrap gap-6 text-xs text-gray-700">
               <span><span className="font-semibold">Method:</span> {payLabel}</span>
-              <span><span className="font-semibold">Amount:</span> <Rial amount={Number(payment.amount)} /></span>
-              {payment.method === 'cash' && cashReceived !== null && (
+              {isSplitPayment ? (
+                <>
+                  {cashPayment && <span><span className="font-semibold">Cash:</span> <Rial amount={Number(cashPayment.amount)} /></span>}
+                  {cardPayment && <span><span className="font-semibold">Card:</span> <Rial amount={Number(cardPayment.amount)} /></span>}
+                  <span><span className="font-semibold">Total paid:</span> <Rial amount={paymentRowsTotal(payments)} /></span>
+                </>
+              ) : (
+                <span><span className="font-semibold">Amount:</span> <Rial amount={Number(payment?.amount ?? 0)} /></span>
+              )}
+              {!isSplitPayment && payment?.method === 'cash' && cashReceived !== null && (
                 <span><span className="font-semibold">Received:</span> <Rial amount={cashReceived} /></span>
               )}
-              {(branch.show_cash_change ?? true) && payment.method === 'cash' && (changeAmount ?? 0) > 0.005 && (
+              {!isSplitPayment && (branch.show_cash_change ?? true) && payment?.method === 'cash' && (changeAmount ?? 0) > 0.005 && (
                 <span><span className="font-semibold">Change:</span> <Rial amount={changeAmount ?? 0} /></span>
               )}
-              <span><span className="font-semibold">Date:</span> {fmtDateTime(payment.paid_at).date}</span>
-              {payment.reference && <span><span className="font-semibold">Ref:</span> {payment.reference}</span>}
+              {payment && <span><span className="font-semibold">Date:</span> {fmtDateTime(payment.paid_at).date}</span>}
+              {payment?.reference && <span><span className="font-semibold">Ref:</span> {payment.reference}</span>}
             </div>
           </div>
         )}
@@ -1135,7 +1157,7 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
           invoice_number: invoice.invoice_number,
           total_amount: Number(invoice.total_amount),
         }}
-        defaultRefundMethod={(payment?.method ?? invoice.payment_method ?? 'cash') as PaymentMethod}
+        defaultRefundMethod={(isSplitPayment ? 'other' : (payment?.method ?? invoice.payment_method ?? 'cash')) as PaymentMethod}
         onClose={() => setCreditModalOpen(false)}
         onCreated={handleCreditNoteCreated}
       />

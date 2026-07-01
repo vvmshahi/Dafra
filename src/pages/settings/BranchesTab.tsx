@@ -4,6 +4,7 @@ import {
   Upload, Globe, Phone, Mail, MapPin, FileText,
   ReceiptText, ShieldCheck, ChevronDown, ChevronRight,
   Star, KeyRound, LogIn, Loader2, AlertTriangle,
+  CreditCard,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -40,6 +41,8 @@ type BranchForm = {
   receipt_footer: string
   show_logo: boolean
   invoice_language: 'en' | 'ar' | 'both'
+  // POS checkout
+  allow_split_payments: boolean
   // zatca
   zatca_phase: 1 | 2
   is_active: boolean
@@ -62,6 +65,7 @@ const EMPTY_FORM: BranchForm = {
   receipt_footer: '',
   show_logo: true,
   invoice_language: 'both',
+  allow_split_payments: false,
   zatca_phase: 1,
   is_active: true,
   is_main_branch: false,
@@ -176,6 +180,7 @@ function BranchDrawer({
           receipt_footer:   branch.receipt_footer ?? '',
           show_logo:        branch.show_logo ?? true,
           invoice_language: branch.invoice_language ?? 'both',
+          allow_split_payments: branch.allow_split_payments ?? false,
           zatca_phase:      branch.zatca_phase ?? 1,
           is_active:        branch.is_active,
           is_main_branch:   branch.is_main_branch,
@@ -228,6 +233,7 @@ function BranchDrawer({
   const identity  = useSection(true)
   const address   = useSection(true)
   const contact   = useSection(true)
+  const checkout  = useSection(false)
   const invoice   = useSection(false)
   const zatca     = useSection(false)
 
@@ -277,6 +283,7 @@ function BranchDrawer({
         receipt_footer:   form.receipt_footer.trim() || null,
         show_logo:        form.show_logo,
         invoice_language: form.invoice_language,
+        allow_split_payments: form.allow_split_payments,
         zatca_phase:      isNew ? (isPhase2 ? 2 : 1) : form.zatca_phase,
         is_active:        form.is_active,
         is_main_branch:   form.is_main_branch,
@@ -497,6 +504,28 @@ function BranchDrawer({
                 <Input label="Phone Number" icon={Phone} type="tel" value={form.phone} onChange={e => set('phone')(e.target.value)} placeholder="+966 5x xxx xxxx" />
                 <Input label="Email (optional)" icon={Mail} type="email" value={form.email} onChange={e => set('email')(e.target.value)} placeholder="branch@company.com" />
                 <Input label="Website (optional)" icon={Globe} type="url" value={form.website} onChange={e => set('website')(e.target.value)} placeholder="https://company.com" />
+              </div>
+            )}
+          </div>
+
+          {/* ── POS CHECKOUT ─────────────────────────── */}
+          <div className={sectionClass(checkout.open)}>
+            <SectionHeader icon={CreditCard} title="POS Checkout" open={checkout.open} toggle={checkout.toggle}
+              color="text-indigo-600" bg="bg-indigo-50" />
+            {checkout.open && (
+              <div className="px-5 py-4 space-y-3">
+                <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-xl bg-gray-50 border border-gray-100">
+                  <input
+                    type="checkbox"
+                    checked={form.allow_split_payments}
+                    onChange={e => set('allow_split_payments')(e.target.checked)}
+                    className="rounded border-gray-300 text-primary-500 focus:ring-primary-500 flex-shrink-0"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">Allow Split Payment</p>
+                    <p className="text-[11px] text-gray-400">Cashiers can split one invoice between cash and card.</p>
+                  </div>
+                </label>
               </div>
             )}
           </div>

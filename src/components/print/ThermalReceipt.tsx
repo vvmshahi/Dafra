@@ -8,6 +8,11 @@ export interface ThermalItem {
   lineTotal: number
 }
 
+export interface ThermalPayment {
+  method: string
+  amount: number
+}
+
 export interface ThermalReceiptProps {
   id?: string
   preview?: boolean
@@ -34,6 +39,7 @@ export interface ThermalReceiptProps {
   taxAmount: number
   total: number
   paymentMethod: string
+  payments?: ThermalPayment[]
   cashReceived?: number | null
   change?: number | null
   showCashChange?: boolean
@@ -69,6 +75,7 @@ const Dash = () => (
 )
 
 function paymentLabel(method: string): string {
+  if (method === 'split') return 'Split Payment'
   if (method === 'cash') return 'Cash'
   if (method === 'card') return 'Card / POS'
   if (method === 'bank_transfer') return 'Bank Transfer'
@@ -110,7 +117,7 @@ export default function ThermalReceipt({
   website, showWebsite, email, showEmail,
   invoiceNumber, date, time,
   items, subtotal, taxAmount, total,
-  paymentMethod, cashReceived, change, showCashChange = true,
+  paymentMethod, payments = [], cashReceived, change, showCashChange = true,
   customerName, buyerVatNumber, isStandardInvoice = false,
   documentType = 'invoice', originalInvoiceNumber, creditReason,
   qrDataUrl, receiptFooter, showFooter = true,
@@ -118,6 +125,13 @@ export default function ThermalReceipt({
   // Line 2 (legal name) only shown if it differs from Line 1 (brand name)
   const showLegalName = businessNameEn && businessNameEn !== businessNameAr
   const isCreditNote = documentType === 'credit_note'
+  const isSplitPayment = paymentMethod === 'split'
+    || (payments.length > 1
+      && payments.some(payment => payment.method === 'cash' && Number(payment.amount) > 0)
+      && payments.some(payment => payment.method === 'card' && Number(payment.amount) > 0))
+  const cashPayment = payments.find(payment => payment.method === 'cash')
+  const cardPayment = payments.find(payment => payment.method === 'card')
+  const paidTotal = payments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0)
   const titleAr = isCreditNote
     ? (isStandardInvoice ? 'إشعار دائن ضريبي' : 'إشعار دائن ضريبي مبسط')
     : (isStandardInvoice ? 'فاتورة ضريبية' : 'فاتورة ضريبية مبسطة')
@@ -234,11 +248,20 @@ export default function ThermalReceipt({
 
       {/* Payment */}
       <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-        <div>{isCreditNote ? 'Refund' : 'Payment'}: <strong>{paymentLabel(paymentMethod)}</strong></div>
-        {paymentMethod === 'cash' && cashReceived != null && cashReceived > 0 && (
+        <div>{isCreditNote ? 'Refund' : 'Payment'}: <strong>{paymentLabel(isSplitPayment ? 'split' : paymentMethod)}</strong></div>
+        {isSplitPayment && cashPayment && (
+          <TRow left="Cash:" right={<Amt n={Number(cashPayment.amount)} />} />
+        )}
+        {isSplitPayment && cardPayment && (
+          <TRow left="Card:" right={<Amt n={Number(cardPayment.amount)} />} />
+        )}
+        {isSplitPayment && (
+          <TRow left="Total paid:" right={<Amt n={paidTotal} />} />
+        )}
+        {!isSplitPayment && paymentMethod === 'cash' && cashReceived != null && cashReceived > 0 && (
           <TRow left="Received:" right={<Amt n={cashReceived} />} />
         )}
-        {showCashChange && paymentMethod === 'cash' && (change ?? 0) > 0.005 && (
+        {!isSplitPayment && showCashChange && paymentMethod === 'cash' && (change ?? 0) > 0.005 && (
           <TRow left="Change:" right={<Amt n={change ?? 0} />} />
         )}
       </div>

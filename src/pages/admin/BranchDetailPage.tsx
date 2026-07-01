@@ -181,7 +181,7 @@ export default function BranchDetailPage() {
     setInvLoading(true)
     const { data } = await db()
       .from('invoices')
-      .select('id, invoice_number, total_amount, status, invoice_date, payment_method, customers(name)')
+      .select('id, invoice_number, total_amount, status, invoice_date, payment_method, customers(name), payments(method)')
       .eq('tenant_id', tid)
       .eq('branch_id', branchId)
       .order('created_at', { ascending: false })
@@ -510,6 +510,11 @@ export default function BranchDetailPage() {
               <tbody className="divide-y divide-gray-50">
                 {recentInvs.map(inv => {
                   const cfg = statusConfig[inv.status as keyof typeof statusConfig] ?? statusConfig.draft
+                  const payments = Array.isArray(inv.payments) ? inv.payments : []
+                  const isSplitPayment = payments.length > 1
+                    && payments.some((payment: any) => payment.method === 'cash')
+                    && payments.some((payment: any) => payment.method === 'card')
+                  const displayPaymentMethod = isSplitPayment ? 'split' : inv.payment_method
                   return (
                     <tr key={inv.id}
                       onClick={() => navigate(`/invoices/${inv.id}`)}
@@ -525,17 +530,21 @@ export default function BranchDetailPage() {
                       </td>
                       <td className="px-6 py-3.5">
                         <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${
-                          inv.payment_method === 'cash'
+                          displayPaymentMethod === 'cash'
                             ? 'bg-emerald-50 text-emerald-700'
-                            : inv.payment_method === 'card'
+                            : displayPaymentMethod === 'card'
                             ? 'bg-blue-50 text-blue-700'
+                            : displayPaymentMethod === 'split'
+                            ? 'bg-slate-100 text-slate-700'
                             : 'bg-gray-50 text-gray-600'
                         }`}>
-                          {inv.payment_method === 'cash'
+                          {displayPaymentMethod === 'cash'
                             ? <><Banknote size={10} /> Cash</>
-                            : inv.payment_method === 'card'
+                            : displayPaymentMethod === 'card'
                             ? <><CreditCard size={10} /> Card</>
-                            : inv.payment_method ?? '—'
+                            : displayPaymentMethod === 'split'
+                            ? <><CreditCard size={10} /> Split</>
+                            : displayPaymentMethod ?? '—'
                           }
                         </span>
                       </td>

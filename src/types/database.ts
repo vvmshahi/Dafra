@@ -336,6 +336,7 @@ export interface Branch {
   show_footer: boolean
   show_cash_change: boolean
   print_mode: 'thermal' | 'pdf' | 'both'
+  allow_split_payments: boolean
   created_at: string
   updated_at: string
 }
@@ -665,6 +666,7 @@ export interface BranchInsert {
   show_footer?: boolean
   show_cash_change?: boolean
   print_mode?: string | null
+  allow_split_payments?: boolean
 }
 
 export type BranchUpdate = Partial<BranchInsert>
