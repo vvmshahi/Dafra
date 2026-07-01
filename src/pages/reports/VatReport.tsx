@@ -99,6 +99,10 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
 
   if (error) return <ReportErrorState message={error} />
 
+  const monthlyRows = data?.monthlyRows ?? []
+  const purchaseInputVatTotal = monthlyRows.reduce((sum, row) => sum + row.vatPaidPur, 0)
+  const expenseInputVatTotal = monthlyRows.reduce((sum, row) => sum + row.vatPaidExp, 0)
+
   return (
     <div className="space-y-5">
 
@@ -123,9 +127,9 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
           accent="emerald"
         />
         <StatCard
-          label="Input VAT (Paid)"
+          label="Input VAT Support"
           value={<Rial amount={data?.vatPaidTotal ?? 0} />}
-          sub="VAT paid on purchases + expenses"
+          sub="claimable purchases + expenses"
           accent="amber"
         />
         <StatCard
@@ -157,8 +161,8 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
               <tr className="border-b border-gray-100">
                 {[
                   'Month', 'Gross Sales', 'Credit Notes', 'Net Sales', 'VAT on Sales', 'VAT Credited', 'Net VAT',
-                  'Purchases', 'VAT Paid (Pur.)',
-                  'Expenses', 'VAT Paid (Exp.)',
+                  'Purchases', 'Input VAT (Pur.)',
+                  'Expenses', 'Input VAT (Exp.)',
                   'Net Payable',
                 ].map(h => (
                   <th key={h} className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">
@@ -168,7 +172,7 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
               </tr>
             </thead>
             <tbody>
-              {(data?.monthlyRows ?? []).map(r => (
+              {monthlyRows.map(r => (
                 <tr key={r.month} className="border-b border-gray-50 hover:bg-gray-50/50">
                   <td className="px-4 py-3 font-medium text-gray-700 whitespace-nowrap">{fmtMonth(r.month)}</td>
                   <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={r.grossSales} /></td>
@@ -187,7 +191,7 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
                 </tr>
               ))}
               {/* Totals */}
-              {(data?.monthlyRows ?? []).length > 0 && (
+              {monthlyRows.length > 0 && (
                 <tr className="bg-gray-50 font-bold border-t-2 border-gray-200">
                   <td className="px-4 py-3 text-gray-700">Total</td>
                   <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={data!.grossSales} /></td>
@@ -197,9 +201,9 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
                   <td className="px-4 py-3 tabular-nums text-amber-700"><Rial amount={data!.vatCredited} /></td>
                   <td className="px-4 py-3 tabular-nums text-emerald-600"><Rial amount={data!.vatCollected} /></td>
                   <td className="px-4 py-3 tabular-nums text-gray-700">—</td>
-                  <td className="px-4 py-3 tabular-nums text-amber-600"><Rial amount={data!.vatPaidTotal} /></td>
+                  <td className="px-4 py-3 tabular-nums text-amber-600"><Rial amount={purchaseInputVatTotal} /></td>
                   <td className="px-4 py-3 tabular-nums text-gray-700">—</td>
-                  <td className="px-4 py-3 tabular-nums text-amber-600">—</td>
+                  <td className="px-4 py-3 tabular-nums text-amber-600"><Rial amount={expenseInputVatTotal} /></td>
                   <td className={`px-4 py-3 tabular-nums ${data!.netPayable >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                     <Rial amount={data!.netPayable} />
                   </td>
@@ -208,7 +212,7 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
             </tbody>
           </table>
         </div>
-        {(data?.monthlyRows ?? []).length === 0 && (
+        {monthlyRows.length === 0 && (
           <div className="py-12 text-center text-sm text-gray-400">No VAT data for this period</div>
         )}
       </div>

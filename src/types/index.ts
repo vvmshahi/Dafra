@@ -35,6 +35,7 @@ export type {
   CustomerInsert,
   CustomerUpdate,
   VatExpenseTreatment,
+  ExpenseVatClaimStatus,
   ExpensePaymentMethod,
   ExpenseCategory,
   Expense,

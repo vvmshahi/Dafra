@@ -3,22 +3,15 @@ import { X, ImagePlus, CreditCard, Banknote, Building } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
-import type { ExpenseCategory, VatExpenseTreatment, ExpensePaymentMethod } from '@/types'
+import type { ExpenseCategory, ExpensePaymentMethod } from '@/types'
 import type { ExpenseRow } from './DailyExpensesTab'
 import { Rial } from '@/components/ui/RiyalSymbol'
-
-// ── VAT helpers ───────────────────────────────────────────────────────────────
-
-function calcVat(amount: number, treatment: VatExpenseTreatment) {
-  if (treatment === 'no_vat')  return { vatAmount: 0, totalPaid: amount }
-  if (treatment === 'included') {
-    const vat = (amount * 15) / 115
-    return { vatAmount: vat, totalPaid: amount }
-  }
-  // on_top: amount is net, total = amount + vat
-  const vat = amount * 0.15
-  return { vatAmount: vat, totalPaid: amount + vat }
-}
+import {
+  SIMPLE_EXPENSE_VAT_OPTIONS,
+  calculateExpenseVat,
+  resolveExpenseVatChoice,
+  type SimpleExpenseVatChoice,
+} from '@/lib/utils/expenseVat'
 
 // ── Payment method options ────────────────────────────────────────────────────
 
@@ -26,14 +19,6 @@ const PAY_OPTIONS: { value: ExpensePaymentMethod; label: string; icon: React.Ele
   { value: 'cash',          label: 'Cash',          icon: Banknote  },
   { value: 'card',          label: 'Card',          icon: CreditCard },
   { value: 'bank_transfer', label: 'Bank Transfer', icon: Building  },
-]
-
-// ── VAT options ───────────────────────────────────────────────────────────────
-
-const VAT_OPTIONS: { value: VatExpenseTreatment; label: string; desc: string }[] = [
-  { value: 'no_vat',   label: 'No VAT',          desc: 'Non-taxable expense'        },
-  { value: 'included', label: 'VAT Included',    desc: 'Extract 15% from amount'    },
-  { value: 'on_top',   label: 'VAT on Top',      desc: 'Add 15% to amount'          },
 ]
 
 // ── Section label ─────────────────────────────────────────────────────────────
@@ -73,7 +58,7 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
   const [vendorName,  setVendorName]  = useState('')
   const [categoryId,  setCategoryId]  = useState('')
   const [amount,      setAmount]      = useState('')
-  const [vatTreat,    setVatTreat]    = useState<VatExpenseTreatment>('no_vat')
+  const [vatChoice,   setVatChoice]   = useState<SimpleExpenseVatChoice>('not_claimable')
   const [payMethod,   setPayMethod]   = useState<ExpensePaymentMethod>('cash')
   const [notes,       setNotes]       = useState('')
 
@@ -84,8 +69,12 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
       setDescription(expense.description)
       setVendorName(expense.vendor_name ?? '')
       setCategoryId(expense.category_id ?? '')
-      setAmount(String(expense.amount))
-      setVatTreat((expense.vat_treatment as VatExpenseTreatment) ?? 'no_vat')
+      setAmount(String(expense.total_paid ?? expense.amount))
+      setVatChoice(resolveExpenseVatChoice(
+        expense.vat_claim_status,
+        expense.vat_treatment,
+        expense.vat_amount,
+      ))
       setPayMethod((expense.payment_method as ExpensePaymentMethod) ?? 'cash')
       setNotes(expense.notes ?? '')
       setImagePreview(expense.receipt_url)
@@ -96,7 +85,7 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
       setVendorName('')
       setCategoryId('')
       setAmount('')
-      setVatTreat('no_vat')
+      setVatChoice('not_claimable')
       setPayMethod('cash')
       setNotes('')
       setImagePreview(null)
@@ -114,11 +103,7 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
 
   // Live VAT preview
   const amountNum = parseFloat(amount) || 0
-  const { vatAmount, totalPaid } = calcVat(amountNum, vatTreat)
-  const fmt = (n: number) => n.toLocaleString('en-US', {
-    minimumFractionDigits: 2, maximumFractionDigits: 2,
-  })
-
+  const { vatAmount, totalPaid, expenseBeforeVat } = calculateExpenseVat(amountNum, vatChoice)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!description.trim()) { setError('Description is required'); return }
@@ -148,7 +133,7 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
         receiptUrl = null
       }
 
-      const { vatAmount: va, totalPaid: tp } = calcVat(amountNum, vatTreat)
+      const calculatedVat = calculateExpenseVat(amountNum, vatChoice)
 
       const payload: Record<string, unknown> = {
         tenant_id:      tid,
@@ -158,10 +143,12 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
         expense_date:   date,
         description:    description.trim(),
         vendor_name:    vendorName.trim() || null,
-        amount:         amountNum,
-        vat_treatment:  vatTreat,
-        vat_amount:     parseFloat(va.toFixed(2)),
-        total_paid:     parseFloat(tp.toFixed(2)),
+        amount:         calculatedVat.amount,
+        vat_treatment:  calculatedVat.vatTreatment,
+        vat_claim_status: calculatedVat.vatClaimStatus,
+        expense_before_vat: calculatedVat.expenseBeforeVat,
+        vat_amount:     calculatedVat.vatAmount,
+        total_paid:     calculatedVat.totalPaid,
         payment_method: payMethod,
         receipt_url:    receiptUrl,
         notes:          notes.trim() || null,
@@ -248,7 +235,7 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
               <SectionLabel>Amount &amp; VAT</SectionLabel>
 
               <div>
-                <label className="label">Amount (SAR) <span className="text-red-500">*</span></label>
+                <label className="label">Amount paid (SAR) <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium pointer-events-none">
                     SAR
@@ -266,15 +253,15 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
               </div>
 
               <div>
-                <label className="label">VAT Treatment</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {VAT_OPTIONS.map(opt => (
+                <label className="label">VAT claimable?</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {SIMPLE_EXPENSE_VAT_OPTIONS.map(opt => (
                     <button
                       key={opt.value}
                       type="button"
-                      onClick={() => setVatTreat(opt.value)}
+                      onClick={() => setVatChoice(opt.value)}
                       className={`text-left px-3 py-2.5 rounded-xl border transition-all ${
-                        vatTreat === opt.value
+                        vatChoice === opt.value
                           ? 'border-primary-500 bg-primary-50 text-primary-700'
                           : 'border-gray-200 hover:border-gray-300 text-gray-600'
                       }`}
@@ -289,14 +276,26 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
               {/* Live VAT preview */}
               {amountNum > 0 && (
                 <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
-                  {vatTreat !== 'no_vat' && (
+                  {vatChoice === 'claimable' && (
+                    <>
+                      <div className="flex justify-between text-gray-500">
+                        <span>Expense before VAT</span>
+                        <span className="tabular-nums font-medium"><Rial amount={expenseBeforeVat} /></span>
+                      </div>
+                      <div className="flex justify-between text-gray-500">
+                        <span>Claimable VAT (15%)</span>
+                        <span className="tabular-nums font-medium"><Rial amount={vatAmount} /></span>
+                      </div>
+                    </>
+                  )}
+                  {vatChoice !== 'claimable' && (
                     <div className="flex justify-between text-gray-500">
-                      <span>VAT (15%)</span>
-                      <span className="tabular-nums font-medium"><Rial amount={vatAmount} /></span>
+                      <span>Expense amount</span>
+                      <span className="tabular-nums font-medium"><Rial amount={expenseBeforeVat} /></span>
                     </div>
                   )}
                   <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1.5">
-                    <span>Total Paid</span>
+                    <span>Amount paid</span>
                     <span className="tabular-nums text-primary-600"><Rial amount={totalPaid} /></span>
                   </div>
                 </div>

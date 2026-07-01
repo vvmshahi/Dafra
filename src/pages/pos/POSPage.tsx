@@ -23,6 +23,11 @@ import { useSubscription } from '@/hooks/useSubscription'
 import { MeemLogo } from '@/components/MeemLogo'
 import { printSilent } from '@/lib/electron'
 import { supportConfig } from '@/config/support'
+import {
+  SIMPLE_EXPENSE_VAT_OPTIONS,
+  calculateExpenseVat,
+  type SimpleExpenseVatChoice,
+} from '@/lib/utils/expenseVat'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -209,7 +214,10 @@ function QuickExpenseModal({
   const [desc,   setDesc]   = useState('')
   const [vendor, setVendor] = useState('')
   const [method, setMethod] = useState<'cash' | 'card'>('cash')
+  const [vatChoice, setVatChoice] = useState<SimpleExpenseVatChoice>('not_claimable')
   const [saving, setSaving] = useState(false)
+  const amountNum = parseFloat(amount) || 0
+  const vatPreview = calculateExpenseVat(amountNum, vatChoice)
 
   async function save() {
     const amt = parseFloat(amount)
@@ -224,10 +232,12 @@ function QuickExpenseModal({
         expense_date:   saudiDateStr(),
         description:    desc.trim(),
         vendor_name:    vendor.trim() || null,
-        amount:         amt,
-        vat_treatment:  'no_vat',
-        vat_amount:     0,
-        total_paid:     amt,
+        amount:         vatPreview.amount,
+        vat_treatment:  vatPreview.vatTreatment,
+        vat_claim_status: vatPreview.vatClaimStatus,
+        expense_before_vat: vatPreview.expenseBeforeVat,
+        vat_amount:     vatPreview.vatAmount,
+        total_paid:     vatPreview.totalPaid,
         payment_method: method,
         session_id:     sessionId ?? null,
       })
@@ -246,7 +256,7 @@ function QuickExpenseModal({
         </div>
         <div className="p-5 space-y-3">
           <div>
-            <label className="label">Amount (SAR)</label>
+            <label className="label">Amount paid (SAR)</label>
             <input type="number" min="0" step="0.01" value={amount}
               onChange={e => setAmount(e.target.value)} className="input" placeholder="0.00" autoFocus />
           </div>
@@ -260,6 +270,42 @@ function QuickExpenseModal({
             <input type="text" value={vendor} onChange={e => setVendor(e.target.value)}
               className="input" placeholder="Vendor name" />
           </div>
+          <div>
+            <label className="label">VAT claimable?</label>
+            <div className="grid grid-cols-2 gap-2">
+              {SIMPLE_EXPENSE_VAT_OPTIONS.map(opt => (
+                <button key={opt.value} onClick={() => setVatChoice(opt.value)}
+                  className={`text-left px-3 py-2.5 rounded-xl text-xs border transition-all ${
+                    vatChoice === opt.value
+                      ? 'bg-primary-50 text-primary-700 border-primary-500'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                  }`}>
+                  <span className="block font-semibold">{opt.label}</span>
+                  <span className="block text-[10px] text-gray-400 mt-0.5 leading-tight">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {amountNum > 0 && (
+            <div className="rounded-xl bg-gray-50 px-3 py-2 text-xs space-y-1">
+              {vatChoice === 'claimable' && (
+                <>
+                  <div className="flex justify-between text-gray-500">
+                    <span>Expense before VAT</span>
+                    <span className="font-medium tabular-nums"><Rial amount={vatPreview.expenseBeforeVat} /></span>
+                  </div>
+                  <div className="flex justify-between text-gray-500">
+                    <span>Claimable VAT</span>
+                    <span className="font-medium tabular-nums"><Rial amount={vatPreview.vatAmount} /></span>
+                  </div>
+                </>
+              )}
+              <div className="flex justify-between font-semibold text-gray-900 border-t border-gray-200 pt-1">
+                <span>Amount paid</span>
+                <span className="tabular-nums text-primary-600"><Rial amount={vatPreview.totalPaid} /></span>
+              </div>
+            </div>
+          )}
           <div>
             <label className="label">Payment Method</label>
             <div className="flex gap-2">

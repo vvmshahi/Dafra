@@ -6,31 +6,34 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
-import type { Expense, ExpenseCategory, VatExpenseTreatment, ExpensePaymentMethod } from '@/types'
+import type { Expense, ExpenseCategory, ExpenseVatClaimStatus } from '@/types'
 import ExpenseDrawer from './ExpenseDrawer'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { effectiveExpenseVatClaimStatus } from '@/lib/utils/expenseVat'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface CategorySnap { name: string; color: string | null; icon: string | null }
 interface AddedBySnap  { full_name: string | null }
 
-interface ExpenseRow extends Expense {
+export interface ExpenseRow extends Expense {
   expense_categories: CategorySnap | null
   user_profiles:      AddedBySnap  | null
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const VAT_LABEL: Record<VatExpenseTreatment, string> = {
-  no_vat:   'No VAT',
-  included: 'VAT Incl.',
-  on_top:   'VAT Added',
+const VAT_LABEL: Record<ExpenseVatClaimStatus, string> = {
+  no_vat:        'No input VAT',
+  not_claimable: 'No input VAT',
+  claimable:     'Claimable',
+  needs_review:  'Review VAT',
 }
-const VAT_BADGE: Record<VatExpenseTreatment, 'neutral' | 'info' | 'gold'> = {
-  no_vat:   'neutral',
-  included: 'info',
-  on_top:   'gold',
+const VAT_BADGE: Record<ExpenseVatClaimStatus, 'neutral' | 'info' | 'warning'> = {
+  no_vat:        'neutral',
+  not_claimable: 'neutral',
+  claimable:     'info',
+  needs_review:  'warning',
 }
 
 const PAY_LABEL: Record<string, string> = {
@@ -84,7 +87,12 @@ function ExpenseRow({ expense, onEdit, onDelete }: {
   const catColor  = expense.expense_categories?.color ?? '#6b7280'
   const catIcon   = expense.expense_categories?.icon  ?? '💰'
   const catName   = expense.expense_categories?.name
-  const vat       = (expense.vat_treatment as VatExpenseTreatment) ?? 'no_vat'
+  const vat       = effectiveExpenseVatClaimStatus(
+    expense.vat_claim_status,
+    expense.vat_treatment,
+    expense.vat_amount,
+  )
+  const claimableVat = vat === 'claimable' ? Number(expense.vat_amount ?? 0) : 0
   const pay       = expense.payment_method as string
 
   return (
@@ -145,9 +153,16 @@ function ExpenseRow({ expense, onEdit, onDelete }: {
             minimumFractionDigits: 2, maximumFractionDigits: 2,
           })}
         </p>
-        {expense.vat_amount > 0 && (
+        {claimableVat > 0 && (
           <p className="text-[10px] text-gray-400">
-            VAT {expense.vat_amount.toLocaleString('en-US', {
+            VAT {claimableVat.toLocaleString('en-US', {
+              minimumFractionDigits: 2, maximumFractionDigits: 2,
+            })}
+          </p>
+        )}
+        {vat === 'needs_review' && Number(expense.vat_amount ?? 0) > 0 && (
+          <p className="text-[10px] text-amber-600">
+            Review {Number(expense.vat_amount).toLocaleString('en-US', {
               minimumFractionDigits: 2, maximumFractionDigits: 2,
             })}
           </p>
@@ -244,7 +259,8 @@ export default function DailyExpensesTab() {
         .select([
           'id,tenant_id,branch_id,category_id,added_by',
           'expense_date,description,vendor_name',
-          'amount,vat_treatment,vat_amount,total_paid',
+          'amount,vat_treatment,vat_claim_status,expense_before_vat,vat_amount,total_paid',
+          'tax_invoice_number,supplier_vat_number',
           'payment_method,receipt_url,notes,created_at,updated_at',
           'expense_categories(name,color,icon)',
           'user_profiles!added_by(full_name)',
@@ -294,7 +310,10 @@ export default function DailyExpensesTab() {
   const totalPaid = filtered.reduce((s, e) => s + e.total_paid, 0)
   const cashTotal = filtered.filter(e => e.payment_method === 'cash').reduce((s, e) => s + e.total_paid, 0)
   const cardTotal = filtered.filter(e => e.payment_method === 'card').reduce((s, e) => s + e.total_paid, 0)
-  const vatTotal  = filtered.reduce((s, e) => s + e.vat_amount, 0)
+  const vatTotal  = filtered.reduce((s, e) => {
+    const vatStatus = effectiveExpenseVatClaimStatus(e.vat_claim_status, e.vat_treatment, e.vat_amount)
+    return s + (vatStatus === 'claimable' ? Number(e.vat_amount ?? 0) : 0)
+  }, 0)
   const isFiltered = !!search || !!filterCat || !!filterPay
 
   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -310,7 +329,7 @@ export default function DailyExpensesTab() {
             sub={`${filtered.length} expense${filtered.length !== 1 ? 's' : ''}`} accent />
           <SumCard label="Cash"         value={<Rial amount={cashTotal} />} />
           <SumCard label="Card"         value={<Rial amount={cardTotal} />} />
-          {vatTotal > 0 && <SumCard label="VAT Total" value={<Rial amount={vatTotal} />} />}
+          {vatTotal > 0 && <SumCard label="Claimable VAT" value={<Rial amount={vatTotal} />} />}
         </div>
         <Button size="sm" onClick={openAdd} className="flex-shrink-0 self-start">
           <Plus size={14} />
@@ -455,7 +474,7 @@ export default function DailyExpensesTab() {
                 <Rial amount={totalPaid} />
               </p>
               {vatTotal > 0 && (
-                <p className="text-[10px] text-gray-400">incl. VAT {fmt(vatTotal)}</p>
+                <p className="text-[10px] text-gray-400">claimable VAT {fmt(vatTotal)}</p>
               )}
             </div>
             <div className="w-20 hidden xl:block" />

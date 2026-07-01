@@ -3,6 +3,7 @@
 
 export type UserRole = 'super_admin' | 'owner' | 'branch'
 export type VatExpenseTreatment = 'no_vat' | 'included' | 'on_top'
+export type ExpenseVatClaimStatus = 'no_vat' | 'claimable' | 'not_claimable' | 'needs_review'
 export type ExpensePaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'other'
 export type InvoiceType = 'standard' | 'simplified' | 'credit_note' | 'debit_note'
 export type InvoiceStatus = 'draft' | 'posted' | 'cancelled'
@@ -764,9 +765,13 @@ export interface Expense {
   vendor_name: string | null
   amount: number
   vat_treatment: VatExpenseTreatment
+  vat_claim_status: ExpenseVatClaimStatus | null
+  expense_before_vat: number | null
   vat_amount: number
   total_paid: number
   payment_method: ExpensePaymentMethod
+  tax_invoice_number: string | null
+  supplier_vat_number: string | null
   receipt_url: string | null
   notes: string | null
   created_at: string
@@ -806,10 +811,14 @@ export interface ExpenseInsert {
   description: string
   vendor_name?: string | null
   amount: number
-  vat_treatment?: string
+  vat_treatment?: VatExpenseTreatment
+  vat_claim_status?: ExpenseVatClaimStatus | null
+  expense_before_vat?: number | null
   vat_amount?: number
   total_paid?: number
-  payment_method?: string
+  payment_method?: ExpensePaymentMethod
+  tax_invoice_number?: string | null
+  supplier_vat_number?: string | null
   receipt_url?: string | null
   notes?: string | null
 }
