@@ -23,11 +23,6 @@ import { useSubscription } from '@/hooks/useSubscription'
 import { MeemLogo } from '@/components/MeemLogo'
 import { printSilent } from '@/lib/electron'
 import { supportConfig } from '@/config/support'
-import {
-  SIMPLE_EXPENSE_VAT_OPTIONS,
-  calculateExpenseVat,
-  type SimpleExpenseVatChoice,
-} from '@/lib/utils/expenseVat'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -213,15 +208,12 @@ function QuickExpenseModal({
   const [amount, setAmount] = useState('')
   const [desc,   setDesc]   = useState('')
   const [vendor, setVendor] = useState('')
-  const [method, setMethod] = useState<'cash' | 'card'>('cash')
-  const [vatChoice, setVatChoice] = useState<SimpleExpenseVatChoice>('not_claimable')
   const [saving, setSaving] = useState(false)
-  const amountNum = parseFloat(amount) || 0
-  const vatPreview = calculateExpenseVat(amountNum, vatChoice)
 
   async function save() {
     const amt = parseFloat(amount)
     if (!amt || !desc.trim()) return
+    const totalPaid = Number(amt.toFixed(2))
     setSaving(true)
     try {
       const q = supabase as unknown as { from: (t: string) => any }
@@ -232,13 +224,13 @@ function QuickExpenseModal({
         expense_date:   saudiDateStr(),
         description:    desc.trim(),
         vendor_name:    vendor.trim() || null,
-        amount:         vatPreview.amount,
-        vat_treatment:  vatPreview.vatTreatment,
-        vat_claim_status: vatPreview.vatClaimStatus,
-        expense_before_vat: vatPreview.expenseBeforeVat,
-        vat_amount:     vatPreview.vatAmount,
-        total_paid:     vatPreview.totalPaid,
-        payment_method: method,
+        amount:         totalPaid,
+        vat_treatment:  'no_vat',
+        vat_claim_status: 'not_claimable',
+        expense_before_vat: totalPaid,
+        vat_amount:     0,
+        total_paid:     totalPaid,
+        payment_method: 'cash',
         session_id:     sessionId ?? null,
       })
       onClose()
@@ -251,7 +243,12 @@ function QuickExpenseModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h3 className="font-semibold text-gray-900 text-sm">Quick Expense</h3>
+          <div>
+            <h3 className="font-semibold text-gray-900 text-sm">Quick cash expense</h3>
+            <p className="text-[10px] text-gray-400 mt-0.5">
+              VAT is not claimed here. Add VAT invoices from Expenses.
+            </p>
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
         </div>
         <div className="p-5 space-y-3">
@@ -270,56 +267,8 @@ function QuickExpenseModal({
             <input type="text" value={vendor} onChange={e => setVendor(e.target.value)}
               className="input" placeholder="Vendor name" />
           </div>
-          <div>
-            <label className="label">VAT claimable?</label>
-            <div className="grid grid-cols-2 gap-2">
-              {SIMPLE_EXPENSE_VAT_OPTIONS.map(opt => (
-                <button key={opt.value} onClick={() => setVatChoice(opt.value)}
-                  className={`text-left px-3 py-2.5 rounded-xl text-xs border transition-all ${
-                    vatChoice === opt.value
-                      ? 'bg-primary-50 text-primary-700 border-primary-500'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                  }`}>
-                  <span className="block font-semibold">{opt.label}</span>
-                  <span className="block text-[10px] text-gray-400 mt-0.5 leading-tight">{opt.desc}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          {amountNum > 0 && (
-            <div className="rounded-xl bg-gray-50 px-3 py-2 text-xs space-y-1">
-              {vatChoice === 'claimable' && (
-                <>
-                  <div className="flex justify-between text-gray-500">
-                    <span>Expense before VAT</span>
-                    <span className="font-medium tabular-nums"><Rial amount={vatPreview.expenseBeforeVat} /></span>
-                  </div>
-                  <div className="flex justify-between text-gray-500">
-                    <span>Claimable VAT</span>
-                    <span className="font-medium tabular-nums"><Rial amount={vatPreview.vatAmount} /></span>
-                  </div>
-                </>
-              )}
-              <div className="flex justify-between font-semibold text-gray-900 border-t border-gray-200 pt-1">
-                <span>Amount paid</span>
-                <span className="tabular-nums text-primary-600"><Rial amount={vatPreview.totalPaid} /></span>
-              </div>
-            </div>
-          )}
-          <div>
-            <label className="label">Payment Method</label>
-            <div className="flex gap-2">
-              {(['cash', 'card'] as const).map(m => (
-                <button key={m} onClick={() => setMethod(m)}
-                  className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all ${
-                    method === m
-                      ? 'bg-primary-500 text-white border-primary-500'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                  }`}>
-                  {m === 'cash' ? '💵 Cash' : '💳 Card'}
-                </button>
-              ))}
-            </div>
+          <div className="rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-500">
+            This is recorded as a cash expense with no input VAT claim.
           </div>
         </div>
         <div className="px-5 pb-5 flex gap-2">

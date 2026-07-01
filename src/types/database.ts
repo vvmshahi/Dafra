@@ -770,6 +770,7 @@ export interface Expense {
   vat_amount: number
   total_paid: number
   payment_method: ExpensePaymentMethod
+  session_id: string | null
   tax_invoice_number: string | null
   supplier_vat_number: string | null
   receipt_url: string | null
@@ -817,6 +818,7 @@ export interface ExpenseInsert {
   vat_amount?: number
   total_paid?: number
   payment_method?: ExpensePaymentMethod
+  session_id?: string | null
   tax_invoice_number?: string | null
   supplier_vat_number?: string | null
   receipt_url?: string | null

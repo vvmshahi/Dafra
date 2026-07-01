@@ -260,6 +260,7 @@ export default function DailyExpensesTab() {
           'id,tenant_id,branch_id,category_id,added_by',
           'expense_date,description,vendor_name',
           'amount,vat_treatment,vat_claim_status,expense_before_vat,vat_amount,total_paid',
+          'session_id',
           'tax_invoice_number,supplier_vat_number',
           'payment_method,receipt_url,notes,created_at,updated_at',
           'expense_categories(name,color,icon)',

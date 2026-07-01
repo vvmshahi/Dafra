@@ -15,7 +15,7 @@ export const SIMPLE_EXPENSE_VAT_OPTIONS: {
   {
     value: 'claimable',
     label: 'VAT claimable',
-    desc: '15% VAT included in paid amount',
+    desc: 'I have a valid VAT invoice / bill',
   },
 ]
 

@@ -9,6 +9,7 @@
 --   - Store claimable VAT separately when VAT is included in the paid amount.
 --   - Keep cash/bank/card movement based on total_paid.
 --   - Count only explicitly claimable expense VAT as input VAT.
+--   - Keep POS quick/session expenses out of expense input VAT.
 --   - Keep non-claimable/no-VAT expenses fully in expense/profit totals.
 --
 -- Important:
@@ -118,7 +119,8 @@ SELECT
     ELSE COALESCE(x.raw_expense_before_vat, x.total_paid)
   END AS expense_before_vat,
   x.tax_invoice_number,
-  x.supplier_vat_number
+  x.supplier_vat_number,
+  x.session_id
 FROM (
   SELECT
     e.id,
@@ -133,6 +135,8 @@ FROM (
     COALESCE(e.vat_amount, 0) AS vat_amount,
     COALESCE(e.total_paid, e.amount, 0) AS total_paid,
     CASE
+      WHEN e.session_id IS NOT NULL
+        THEN 'not_claimable'
       WHEN e.vat_claim_status IN ('no_vat', 'claimable', 'not_claimable', 'needs_review')
         THEN e.vat_claim_status
       WHEN COALESCE(e.vat_amount, 0) > 0
@@ -143,6 +147,7 @@ FROM (
     e.expense_before_vat AS raw_expense_before_vat,
     e.tax_invoice_number,
     e.supplier_vat_number,
+    e.session_id,
     e.created_at
   FROM public.expenses e
 ) x;
@@ -173,12 +178,14 @@ COMMIT;
 --   )
 -- ORDER BY column_name;
 --
--- 2) Confirm reporting view keeps expense totals on total_paid and only
---    claimable rows feed expense input VAT:
+-- 2) Confirm reporting view keeps expense totals on total_paid, treats
+--    POS/session-linked expenses as not claimable, and only claimable
+--    detailed rows feed expense input VAT:
 --
 -- SELECT
 --   id,
 --   total_paid,
+--   session_id,
 --   vat_claim_status,
 --   vat_amount,
 --   input_vat_amount,
@@ -190,6 +197,7 @@ COMMIT;
 -- LIMIT 20;
 --
 -- Expected:
---   claimable rows: input_vat_amount = vat_amount, profit = total_paid - VAT.
---   no_vat/not_claimable/needs_review rows: input_vat_amount = 0,
---   profit_expense_amount = total_paid.
+--   claimable non-session rows: input_vat_amount = vat_amount,
+--   profit = total_paid - VAT.
+--   session-linked/no_vat/not_claimable/needs_review rows:
+--   input_vat_amount = 0, profit_expense_amount = total_paid.
