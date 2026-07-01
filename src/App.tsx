@@ -18,6 +18,7 @@ import ExpensesPage        from '@/pages/expenses/ExpensesPage'
 import SuppliersPage       from '@/pages/suppliers/SuppliersPage'
 import InventoryPage       from '@/pages/inventory/InventoryPage'
 import ReportsPage         from '@/pages/reports/ReportsPage'
+import OperationsPage      from '@/pages/operations/OperationsPage'
 import SuperAdminDashboard    from '@/pages/super-admin/SuperAdminDashboard'
 import ClientsPage             from '@/pages/super-admin/ClientsPage'
 import ClientDetailPage        from '@/pages/super-admin/ClientDetailPage'
@@ -245,6 +246,7 @@ export default function App() {
             <Route path="/profile"    element={<ProfilePage />} />
             <Route path="/day-closing" element={<DayClosingPage />} />
             <Route path="/reports"   element={<ReportsPage />} />
+            <Route path="/operations" element={<OperationsPage />} />
             <Route path="/suppliers" element={<SuppliersPage />} />
             <Route path="/settings"  element={<SettingsPage />} />
           </Route>

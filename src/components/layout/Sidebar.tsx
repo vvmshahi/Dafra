@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Receipt, Package, Warehouse, Users,
   CreditCard, BarChart2, Truck, Settings, Settings2, Building2,
   LogOut, ChevronRight, ChevronLeft, FileText, UserSquare2,
-  Store,
+  Store, ShieldCheck,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import type { LucideIcon } from 'lucide-react'
@@ -40,6 +40,14 @@ const superAdminNav: NavItem[] = [
   { label: 'Subscriptions', path: '/super-admin/subscriptions', icon: CreditCard      },
   { label: 'Settings',      path: '/super-admin/settings',      icon: Settings        },
 ]
+
+const operationsNavItem: NavItem = {
+  label: 'Operations',
+  path: '/operations',
+  icon: ShieldCheck,
+}
+
+const operationsRoles = new Set(['owner', 'admin', 'super_admin'])
 
 interface NavItemRowProps {
   item: NavItem
@@ -79,9 +87,15 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const isSuperAdmin = profile?.role === 'super_admin'
   const isBranch     = profile?.role === 'branch'
-  const isOwner      = !isSuperAdmin && !isBranch
+  const canViewOperations = operationsRoles.has(String(profile?.role ?? ''))
 
-  const navItems = isSuperAdmin ? superAdminNav : isBranch ? branchNav : ownerNav
+  const navItems = isSuperAdmin
+    ? [...superAdminNav, operationsNavItem]
+    : isBranch
+      ? branchNav
+      : canViewOperations
+        ? [...ownerNav, operationsNavItem]
+        : ownerNav
   const subtitle = isSuperAdmin ? 'Super Admin Console' : (tenant?.name ?? 'Meem Platform')
   const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? 'User'
   const roleLabel = isBranch ? 'Branch' : (profile?.role?.replace(/_/g, ' ') ?? '')
