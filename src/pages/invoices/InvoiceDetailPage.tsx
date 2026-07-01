@@ -416,7 +416,7 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
     setResubmitting(true)
     try {
       setInvoice(prev => prev ? { ...prev, zatca_status: 'pending' } : prev)
-      await submitInvoiceToZatca(invoice.id, invoice.branch_id)
+      await submitInvoiceToZatca(invoice.id, invoice.branch_id, { source: 'manual_retry' })
       const { data: refreshed } = await supabase.from('invoices').select(INVOICE_DETAIL_SELECT).eq('id', invoice.id).single()
       if (refreshed) setInvoice(refreshed as Invoice)
     } catch {

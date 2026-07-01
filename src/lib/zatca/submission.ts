@@ -1,9 +1,63 @@
 import { supabase } from '@/lib/supabase'
 
-export async function submitInvoiceToZatca(invoiceId: string, branchId: string): Promise<boolean> {
-  const { data, error } = await supabase.functions.invoke('zatca-submit', { body: { invoiceId, branchId } })
+export type ZatcaSubmitSource = 'auto_checkout' | 'auto_credit_note' | 'manual_retry' | 'bulk_retry'
+
+export interface ZatcaSubmitResult {
+  ok: boolean
+  invoiceStatus: string
+  retryable: boolean
+}
+
+export interface ZatcaSubmitOptions {
+  source?: ZatcaSubmitSource
+}
+
+export async function submitInvoiceToZatcaDetailed(
+  invoiceId: string,
+  branchId: string,
+  options: ZatcaSubmitOptions = {},
+): Promise<ZatcaSubmitResult> {
+  const source = options.source ?? 'manual_retry'
+  const { data, error } = await supabase.functions.invoke('zatca-submit', {
+    body: { invoiceId, branchId, source },
+  })
   if (error) throw new Error(error.message)
-  return data?.invoiceStatus === 'reported' || data?.invoiceStatus === 'cleared'
+  const invoiceStatus = String(data?.invoiceStatus ?? 'error')
+  return {
+    ok: invoiceStatus === 'reported' || invoiceStatus === 'cleared',
+    invoiceStatus,
+    retryable: invoiceStatus === 'pending' || invoiceStatus === 'error',
+  }
+}
+
+export async function submitInvoiceToZatca(invoiceId: string, branchId: string, options: ZatcaSubmitOptions = {}): Promise<boolean> {
+  const result = await submitInvoiceToZatcaDetailed(invoiceId, branchId, options)
+  return result.ok
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+export async function submitInvoiceToZatcaWithRetry(
+  invoiceId: string,
+  branchId: string,
+  options: ZatcaSubmitOptions & { retryDelayMs?: number } = {},
+): Promise<ZatcaSubmitResult> {
+  try {
+    const first = await submitInvoiceToZatcaDetailed(invoiceId, branchId, options)
+    if (first.ok || !first.retryable) return first
+  } catch (error) {
+    console.warn('[zatca submission] first attempt failed', {
+      invoiceId,
+      branchId,
+      source: options.source ?? 'manual_retry',
+      message: error instanceof Error ? error.message : String(error ?? ''),
+    })
+  }
+
+  await wait(options.retryDelayMs ?? 1500)
+  return submitInvoiceToZatcaDetailed(invoiceId, branchId, options)
 }
 
 export interface ZatcaRetrySummary {
@@ -47,7 +101,7 @@ export async function retryFailedSubmissions(tenantId: string, branchId?: string
   for (const invoice of data ?? []) {
     summary.attempted += 1
     try {
-      const ok = await submitInvoiceToZatca(invoice.id, invoice.branch_id)
+      const ok = await submitInvoiceToZatca(invoice.id, invoice.branch_id, { source: 'bulk_retry' })
       if (ok) summary.succeeded += 1
       else {
         summary.failed += 1

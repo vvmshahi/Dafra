@@ -46,6 +46,7 @@ interface SubmissionCredentials {
 }
 
 interface SubmitDiagnostics {
+  source?: string
   environment?: 'sandbox' | 'production'
   invoiceId?: string
   branchId?: string
@@ -104,6 +105,8 @@ interface AuthorizedTarget {
 }
 
 const TENANT_SUBMIT_ROLES = new Set(['owner', 'admin'])
+const AUTO_SUBMIT_SOURCES = new Set(['auto_checkout', 'auto_credit_note'])
+const SUBMIT_SOURCES = new Set(['auto_checkout', 'auto_credit_note', 'manual_retry', 'bulk_retry'])
 
 function jsonResponse(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -149,6 +152,10 @@ function logSubmitAuthorization(params: {
     callerRole: params.callerRole ?? null,
     allowed: params.allowed,
   })
+}
+
+function normalizeSubmitSource(value: unknown): string {
+  return typeof value === 'string' && SUBMIT_SOURCES.has(value) ? value : 'manual_retry'
 }
 
 async function loadCallerProfile(db: any, userId: string): Promise<CallerProfile | null> {
@@ -1212,6 +1219,7 @@ function summarizeZatcaResponse(body: any): Record<string, unknown> {
 
 function safeSubmitDiagnosticSummary(diagnostics: SubmitDiagnostics): Record<string, unknown> {
   const summary: Record<string, unknown> = {
+    source: diagnostics.source,
     invoiceId: diagnostics.invoiceId,
     branchId: diagnostics.branchId,
     environment: diagnostics.environment,
@@ -1280,6 +1288,7 @@ function buildSafeZatcaRecord(body: any, diagnostics: SubmitDiagnostics, invoice
   if (warnings.length > 0) record.warnings = warnings
   if (invoiceStatus === 'failed') {
     record.failureSummary = {
+      source: diagnostics.source,
       httpStatus: diagnostics.httpStatus,
       validationStatus: diagnostics.validationStatus,
       reportingStatus: diagnostics.reportingStatus,
@@ -1383,11 +1392,11 @@ function buildSafeFailureResponse(
 
 // ── Main invoice processor ────────────────────────────────────────────────────
 
-async function processInvoice(db: any, invoiceId: string, callerTenantId: string): Promise<{
+async function processInvoice(db: any, invoiceId: string, callerTenantId: string, source: string): Promise<{
   invoiceStatus: string
   diagnostics?: SubmitDiagnostics
 }> {
-  console.info('[zatca-submit] processInvoice:', { invoiceId })
+  console.info('[zatca-submit] processInvoice:', { invoiceId, source })
 
   const { data: inv, error: invErr } = await db
     .from('invoices')
@@ -1512,6 +1521,7 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
   }
 
   let diagnostics: SubmitDiagnostics = {
+    source,
     invoiceId,
     branchId: inv.branch_id,
     environment: credentials.environment,
@@ -1683,19 +1693,22 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     }
 
     console.error('[zatca-submit] error:', safeZatcaText(err.message ?? 'unknown', 240))
+    const isRetryableAutoSubmit = AUTO_SUBMIT_SOURCES.has(source)
+    const retryStatus = isRetryableAutoSubmit ? 'pending' : 'failed'
     await db.from('invoices').update({
-      zatca_status: 'failed',
+      zatca_status: retryStatus,
       zatca_reporting_response: buildSafeFailureResponse('SUBMISSION_EXCEPTION', err.message ?? 'unknown', diagnostics),
       zatca_warnings: {
         failureSummary: {
           statusString: 'SUBMISSION_EXCEPTION',
           message: safeZatcaText(err.message ?? 'unknown', 240),
+          retryable: isRetryableAutoSubmit,
           diagnostics: safeSubmitDiagnosticSummary(diagnostics),
         },
       },
     }).eq('id', invoiceId)
     await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, safeZatcaText(err.message, 180) ?? 'submission exception')
-    return { invoiceStatus: 'failed' }
+    return { invoiceStatus: retryStatus, diagnostics }
   }
 }
 
@@ -1790,6 +1803,7 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json().catch(() => ({}))
     const invoiceId = body?.invoiceId as string | undefined
+    const source = normalizeSubmitSource(body?.source)
     if (!invoiceId) {
       return jsonResponse({ error: 'Missing required field: invoiceId' }, 400)
     }
@@ -1814,7 +1828,7 @@ Deno.serve(async (req: Request) => {
       ...auditBase,
       action: 'zatca_submit_attempted',
       status: 'attempted',
-      metadata: { source: 'zatca-submit' },
+      metadata: { source },
     })
 
     const rate = await enforceRateLimit(supabase as any, {
@@ -1824,7 +1838,7 @@ Deno.serve(async (req: Request) => {
       scopeId: invoiceId,
       maxAttempts: 8,
       windowSeconds: 600,
-      metadata: { source: 'zatca-submit' },
+      metadata: { source },
     })
 
     if (!rate.allowed) {
@@ -1838,7 +1852,7 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(rateLimitBody(rate), 429)
     }
 
-    const result = await processInvoice(supabase as any, invoiceId, invoiceAuth.target.tenantId)
+    const result = await processInvoice(supabase as any, invoiceId, invoiceAuth.target.tenantId, source)
     const succeeded = ['reported', 'cleared'].includes(result.invoiceStatus)
     await auditEvent(supabase as any, {
       ...auditBase,
@@ -1846,6 +1860,7 @@ Deno.serve(async (req: Request) => {
       severity: succeeded ? 'info' : 'warning',
       status: succeeded ? 'succeeded' : 'failed',
       metadata: {
+        source,
         invoiceStatus: result.invoiceStatus,
         diagnostics: result.diagnostics ? safeSubmitDiagnosticSummary(result.diagnostics) : undefined,
       },

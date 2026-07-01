@@ -12,7 +12,7 @@ import { Rial } from '@/components/ui/RiyalSymbol'
 import { displayName as dn } from '@/lib/utils/display'
 import { buildZatcaQR } from '@/lib/zatca/qr'
 import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
-import { submitInvoiceToZatca } from '@/lib/zatca/submission'
+import { submitInvoiceToZatcaWithRetry } from '@/lib/zatca/submission'
 import { toast } from 'sonner'
 import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
@@ -342,7 +342,7 @@ function ReceiptView({ receipt, onNewSale, printMode, zatcaStatus }: {
   receipt: ReceiptData
   onNewSale: () => void
   printMode: 'thermal' | 'pdf' | 'both'
-  zatcaStatus: 'submitted' | 'failed' | null
+  zatcaStatus: 'submitted' | 'pending' | 'failed' | null
 }) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
 
@@ -620,6 +620,11 @@ ${lines}
           {zatcaStatus === 'submitted' && (
             <div className="mx-6 mb-2 flex items-center gap-1.5 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5">
               <span className="text-emerald-500">✓</span> Submitted to ZATCA
+            </div>
+          )}
+          {zatcaStatus === 'pending' && (
+            <div className="mx-6 mb-2 flex items-center gap-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">
+              <span>⚠</span> ZATCA submission pending — retry from Invoices if needed
             </div>
           )}
           {zatcaStatus === 'failed' && (
@@ -1231,7 +1236,7 @@ export default function POSPage() {
   const [submitting,   setSubmitting]   = useState(false)
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [showExpense,  setShowExpense]  = useState(false)
-  const [zatcaResult,  setZatcaResult]  = useState<'submitted' | 'failed' | null>(null)
+  const [zatcaResult,  setZatcaResult]  = useState<'submitted' | 'pending' | 'failed' | null>(null)
   const checkoutKeyRef = useRef<string | null>(null)
 
   // ── Load data ────────────────────────────────────────────────────────────
@@ -1598,17 +1603,31 @@ export default function POSPage() {
       setSplitOpen(false)
       checkoutKeyRef.current = null
 
-      submitInvoiceToZatca(checkout.invoice_id, branch.id)
-        .then((submitted) => {
-          if (submitted) {
+      submitInvoiceToZatcaWithRetry(checkout.invoice_id, branch.id, {
+        source: 'auto_checkout',
+        retryDelayMs: 1500,
+      })
+        .then((result) => {
+          if (result.ok) {
             setZatcaResult('submitted')
             toast.success('Submitted to ZATCA', { duration: 2000 })
-          } else {
+          } else if (result.invoiceStatus === 'failed') {
             setZatcaResult('failed')
             toast.error('ZATCA submission failed')
+          } else {
+            setZatcaResult('pending')
+            toast.warning('Invoice created. ZATCA submission is pending retry.', { duration: 3500 })
           }
         })
-        .catch(() => { setZatcaResult('failed'); toast.error('ZATCA submission failed') })
+        .catch((error) => {
+          console.warn('[POSPage charge] auto ZATCA submit failed after retry', {
+            invoiceId: checkout.invoice_id,
+            branchId: branch.id,
+            message: error instanceof Error ? error.message : String(error ?? ''),
+          })
+          setZatcaResult('pending')
+          toast.warning('Invoice created. ZATCA submission is pending retry.', { duration: 3500 })
+        })
     } catch (err) {
       const safeMessage = safeCheckoutErrorMessage(err)
       console.warn('[POSPage charge] checkout failed:', safeMessage)

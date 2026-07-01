@@ -3,7 +3,7 @@ import { Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import type { PaymentMethod, ZatcaStatus } from '@/types/database'
-import { submitInvoiceToZatca } from '@/lib/zatca/submission'
+import { submitInvoiceToZatcaWithRetry } from '@/lib/zatca/submission'
 import { useAuth } from '@/hooks/useAuth'
 import { resolveBusinessType } from '@/lib/utils/businessType'
 
@@ -212,7 +212,11 @@ export default function CreateCreditNoteModal({
         setCreating(false)
         setSubmitting(true)
         try {
-          autoSubmitSucceeded = await submitInvoiceToZatca(creditNoteId, invoice.branch_id)
+          const submitResult = await submitInvoiceToZatcaWithRetry(creditNoteId, invoice.branch_id, {
+            source: 'auto_credit_note',
+            retryDelayMs: 1500,
+          })
+          autoSubmitSucceeded = submitResult.ok
         } catch {
           autoSubmitSucceeded = false
         } finally {
