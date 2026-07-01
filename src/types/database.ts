@@ -193,6 +193,13 @@ export interface Database {
         }
         Returns: Record<string, unknown>
       }
+      get_branch_dashboard_recent_invoices: {
+        Args: {
+          p_branch_id: string
+          p_limit?: number | null
+        }
+        Returns: Record<string, unknown>[]
+      }
       create_full_credit_note: {
         Args: { p_payload: Record<string, unknown> }
         Returns: Record<string, unknown>

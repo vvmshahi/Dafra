@@ -14,7 +14,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { MeemLogo } from '@/components/MeemLogo'
-import { getCachedProductionStatus, productionStatusLabel, readCachedProductionStatus } from '@/lib/zatca/status'
+import { productionStatusLabel } from '@/lib/zatca/status'
 import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
 import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
 
@@ -57,6 +57,7 @@ interface DashboardBranchStat {
   todayCount: number
   todayCash: number
   todayCard: number
+  productionStatus?: ProductionOnboardingResponse | null
 }
 
 interface DashboardDailySale {
@@ -73,6 +74,23 @@ interface DashboardSummary {
   totalExpenses: number
   dailySales: DashboardDailySale[]
   branchStats: DashboardBranchStat[]
+}
+
+interface RecentInvoiceRow {
+  id: string
+  invoiceNumber?: string
+  invoice_number?: string
+  customerName?: string | null
+  customer_name?: string | null
+  totalAmount?: number
+  total_amount?: number
+  displayTotal?: number
+  display_total?: number
+  status: string
+  invoiceDate?: string
+  invoice_date?: string
+  documentType?: string
+  zatca_invoice_type?: string
 }
 
 const EMPTY_DASHBOARD_SUMMARY: DashboardSummary = {
@@ -120,6 +138,65 @@ function ChartTooltip({ active, payload, label }: any) {
   )
 }
 
+function numberOrZero(value: unknown) {
+  const n = typeof value === 'number' ? value : Number(value ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+function normalizeProductionStatus(value: unknown): ProductionOnboardingResponse | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  const onboardingStatus = typeof record.onboardingStatus === 'string'
+    ? record.onboardingStatus
+    : typeof record.onboarding_status === 'string'
+    ? record.onboarding_status
+    : null
+
+  if (!onboardingStatus) return null
+
+  return {
+    ok: onboardingStatus === 'production_connected',
+    branchId: typeof record.branchId === 'string' ? record.branchId : typeof record.branch_id === 'string' ? record.branch_id : '',
+    environment: 'production',
+    onboardingStatus: onboardingStatus as ProductionOnboardingResponse['onboardingStatus'],
+    connectedAt: typeof record.connectedAt === 'string' ? record.connectedAt : typeof record.connected_at === 'string' ? record.connected_at : null,
+    disconnectedAt: typeof record.disconnectedAt === 'string' ? record.disconnectedAt : typeof record.disconnected_at === 'string' ? record.disconnected_at : null,
+    updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : typeof record.updated_at === 'string' ? record.updated_at : null,
+  }
+}
+
+function hasObject(value: unknown) {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function rpcErrorDebug(error: unknown) {
+  if (error && typeof error === 'object') {
+    const rpcError = error as { code?: unknown; message?: unknown; details?: unknown; hint?: unknown }
+    return {
+      code: typeof rpcError.code === 'string' ? rpcError.code : null,
+      message: typeof rpcError.message === 'string' ? rpcError.message : null,
+      details: typeof rpcError.details === 'string' ? rpcError.details : null,
+      hint: typeof rpcError.hint === 'string' ? rpcError.hint : null,
+      error,
+    }
+  }
+  return {
+    code: null,
+    message: error instanceof Error ? error.message : String(error ?? ''),
+    details: null,
+    hint: null,
+    error,
+  }
+}
+
+function logBranchDashboardFailure(name: string, params: Record<string, unknown>, error: unknown) {
+  console.error('[BranchDashboardPage] data load failed', {
+    name,
+    params,
+    ...rpcErrorDebug(error),
+  })
+}
+
 export default function BranchDashboardPage() {
   const navigate = useNavigate()
   const { profile, tenant, signOut } = useAuth()
@@ -145,45 +222,59 @@ export default function BranchDashboardPage() {
   const [zatcaPhase,   setZatcaPhase]   = useState<1 | 2>(1)
   const [hasActiveCert, setHasActiveCert] = useState(false)
   const [productionStatus, setProductionStatus] = useState<ProductionOnboardingResponse | null>(null)
+  const [productionStatusReadable, setProductionStatusReadable] = useState(true)
+  const [statsAvailable, setStatsAvailable] = useState(false)
+  const [statsError, setStatsError] = useState('')
+  const [chartError, setChartError] = useState('')
+  const [invoiceError, setInvoiceError] = useState('')
 
   const loadStats = useCallback(async () => {
     if (!tid || !bid) { setStatsLoading(false); return }
     setStatsLoading(true)
+    setStatsError('')
+    setStatsAvailable(false)
     const today = saudiDateStr()
+    const summaryParams = { p_branch_id: bid, p_start_date: today, p_end_date: today }
     try {
-      const [summary, branchRes, certRes] = await Promise.all([
+      const [summary, branchRes] = await Promise.all([
         loadReportSummary<DashboardSummary>(
           'get_dashboard_summary',
-          { p_branch_id: bid, p_start_date: today, p_end_date: today },
+          summaryParams,
           EMPTY_DASHBOARD_SUMMARY,
         ),
         db().from('branches').select('name, zatca_phase').eq('id', bid).maybeSingle(),
-        db().from('zatca_certificates')
-          .select('id')
-          .eq('branch_id', bid)
-          .eq('status', 'active')
-          .maybeSingle(),
       ])
 
       const branchSummary = asArray<DashboardBranchStat>(summary.branchStats)[0]
-      setTodaySales(Number(summary.totalSales ?? branchSummary?.todaySales ?? 0))
-      setTodayCount(Number(summary.totalCount ?? branchSummary?.todayCount ?? 0))
-      setTodayCash(Number(summary.totalCash ?? branchSummary?.todayCash ?? 0))
-      setTodayCard(Number(summary.totalCard ?? branchSummary?.todayCard ?? 0))
-      setTodayVat(Number(summary.totalVat ?? 0))
-      setTodayExpenses(Number(summary.totalExpenses ?? 0))
+      setStatsAvailable(true)
+      setTodaySales(numberOrZero(summary.totalSales ?? branchSummary?.todaySales))
+      setTodayCount(Math.trunc(numberOrZero(summary.totalCount ?? branchSummary?.todayCount)))
+      setTodayCash(numberOrZero(summary.totalCash ?? branchSummary?.todayCash))
+      setTodayCard(numberOrZero(summary.totalCard ?? branchSummary?.todayCard))
+      setTodayVat(numberOrZero(summary.totalVat))
+      setTodayExpenses(numberOrZero(summary.totalExpenses))
       setBranchName(branchRes.data?.name ?? '')
       setZatcaPhase(branchRes.data?.zatca_phase ?? 1)
-      setHasActiveCert(!!certRes.data)
-      setProductionStatus(readCachedProductionStatus(bid))
+      setHasActiveCert(false)
+      setProductionStatus(normalizeProductionStatus(branchSummary?.productionStatus))
+      setProductionStatusReadable((branchRes.data?.zatca_phase ?? 1) === 2
+        ? hasObject(branchSummary?.productionStatus)
+        : true)
     } catch (error) {
-      console.error('[BranchDashboardPage] failed to load dashboard summary', error)
+      logBranchDashboardFailure('get_dashboard_summary', summaryParams, error)
+      setStatsAvailable(false)
+      setStatsError('Branch totals could not be loaded. Refresh and try again.')
       setTodaySales(0)
       setTodayCount(0)
       setTodayCash(0)
       setTodayCard(0)
       setTodayVat(0)
       setTodayExpenses(0)
+      try {
+        const { data } = await db().from('branches').select('name, zatca_phase').eq('id', bid).maybeSingle()
+        setBranchName(data?.name ?? '')
+        setZatcaPhase(data?.zatca_phase ?? 1)
+      } catch {}
     } finally {
       setStatsLoading(false)
     }
@@ -192,15 +283,17 @@ export default function BranchDashboardPage() {
   const loadChart = useCallback(async () => {
     if (!tid || !bid) { setChartLoading(false); return }
     setChartLoading(true)
+    setChartError('')
     const fromDay = saudiNow(); fromDay.setUTCDate(fromDay.getUTCDate() - 6)
+    const params = {
+      p_branch_id: bid,
+      p_start_date: fromDay.toISOString().split('T')[0],
+      p_end_date: saudiDateStr(),
+    }
     try {
       const summary = await loadReportSummary<DashboardSummary>(
         'get_dashboard_summary',
-        {
-          p_branch_id: bid,
-          p_start_date: fromDay.toISOString().split('T')[0],
-          p_end_date: saudiDateStr(),
-        },
+        params,
         EMPTY_DASHBOARD_SUMMARY,
       )
       setSalesData(asArray<DashboardDailySale>(summary.dailySales).map(row => ({
@@ -208,7 +301,8 @@ export default function BranchDashboardPage() {
         sales: Number(row.sales ?? 0),
       })))
     } catch (error) {
-      console.error('[BranchDashboardPage] failed to load dashboard chart', error)
+      logBranchDashboardFailure('get_dashboard_summary', params, error)
+      setChartError('Sales chart could not be loaded.')
       setSalesData(last7Days())
     } finally {
       setChartLoading(false)
@@ -218,15 +312,19 @@ export default function BranchDashboardPage() {
   const loadInvoices = useCallback(async () => {
     if (!tid || !bid) { setInvLoading(false); return }
     setInvLoading(true)
-    const { data } = await db()
-      .from('invoices')
-      .select('id, invoice_number, total_amount, status, invoice_date, customers(name)')
-      .eq('tenant_id', tid)
-      .eq('branch_id', bid)
-      .order('created_at', { ascending: false })
-      .limit(6)
-    setRecentInvs(data ?? [])
-    setInvLoading(false)
+    setInvoiceError('')
+    const params = { p_branch_id: bid, p_limit: 6 }
+    try {
+      const { data, error } = await (supabase as any).rpc('get_branch_dashboard_recent_invoices', params)
+      if (error) throw error
+      setRecentInvs(asArray<RecentInvoiceRow>(data))
+    } catch (error) {
+      logBranchDashboardFailure('get_branch_dashboard_recent_invoices', params, error)
+      setInvoiceError('Recent invoices could not be loaded.')
+      setRecentInvs([])
+    } finally {
+      setInvLoading(false)
+    }
   }, [tid, bid])
 
   const loadLowStock = useCallback(async () => {
@@ -253,16 +351,9 @@ export default function BranchDashboardPage() {
   useEffect(() => { loadInvoices() }, [loadInvoices])
   useEffect(() => { loadLowStock() }, [loadLowStock])
 
-  useEffect(() => {
-    if (!bid || zatcaPhase !== 2) return
-    let cancelled = false
-    getCachedProductionStatus(bid)
-      .then(status => { if (!cancelled) setProductionStatus(status) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [bid, zatcaPhase])
-
-  const zatcaStatus = productionStatusLabel(productionStatus, hasActiveCert)
+  const zatcaStatus = zatcaPhase === 2 && !productionStatusReadable
+    ? { label: 'Phase 2 status unavailable', tone: 'neutral' as const }
+    : productionStatusLabel(productionStatus, hasActiveCert)
 
   useEffect(() => {
     if (!bid) return
@@ -323,52 +414,69 @@ export default function BranchDashboardPage() {
           </p>
         </div>
 
+        {(statsError || chartError || invoiceError) && (
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
+            <AlertCircle size={16} className="text-amber-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-900">Branch dashboard data needs a refresh</p>
+              <p className="text-xs text-amber-800 mt-0.5">{statsError || chartError || invoiceError}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { loadStats(); loadChart(); loadInvoices() }}
+              className="text-xs font-semibold text-amber-900 hover:text-amber-700"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* KPI cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <StatCard
             label="Today's Sales"
-            value={<Rial amount={todaySales} />}
-            sub={`${todayCount} invoice${todayCount !== 1 ? 's' : ''}`}
+            value={statsAvailable ? <Rial amount={todaySales} /> : 'Unavailable'}
+            sub={statsAvailable ? `${todayCount} invoice${todayCount !== 1 ? 's' : ''}` : 'Retry to load totals'}
             icon={TrendingUp}
             gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28]"
             loading={statsLoading}
           />
           <StatCard
             label="Invoices Today"
-            value={String(todayCount)}
-            sub="Posted this session"
+            value={statsAvailable ? String(todayCount) : 'Unavailable'}
+            sub={statsAvailable ? 'Posted today' : 'Retry to load totals'}
             icon={FileText}
             gradient="bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]"
             loading={statsLoading}
           />
           <StatCard
             label="Today's Expenses"
-            value={<Rial amount={todayExpenses} />}
-            sub="Recorded today"
+            value={statsAvailable ? <Rial amount={todayExpenses} /> : 'Unavailable'}
+            sub={statsAvailable ? 'Recorded today' : 'Retry to load totals'}
             icon={CreditCard}
             gradient="bg-gradient-to-br from-[#7c3aed] to-[#5b21b6]"
             loading={statsLoading}
           />
           <StatCard
             label="Cash Today"
-            value={<Rial amount={todayCash} />}
-            sub="Cash payments"
+            value={statsAvailable ? <Rial amount={todayCash} /> : 'Unavailable'}
+            sub={statsAvailable ? 'Cash payments' : 'Retry to load totals'}
             icon={Banknote}
             gradient="bg-gradient-to-br from-[#059669] to-[#047857]"
             loading={statsLoading}
           />
           <StatCard
             label="Card Today"
-            value={<Rial amount={todayCard} />}
-            sub="Card payments"
+            value={statsAvailable ? <Rial amount={todayCard} /> : 'Unavailable'}
+            sub={statsAvailable ? 'Card payments' : 'Retry to load totals'}
             icon={CreditCard}
             gradient="bg-gradient-to-br from-[#0891b2] to-[#0e7490]"
             loading={statsLoading}
           />
           <StatCard
             label="VAT Collected"
-            value={<Rial amount={todayVat} />}
-            sub="Tax on today's sales"
+            value={statsAvailable ? <Rial amount={todayVat} /> : 'Unavailable'}
+            sub={statsAvailable ? "Tax on today's sales" : 'Retry to load totals'}
             icon={BadgePercent}
             gradient="bg-gradient-to-br from-[#b45309] to-[#92400e]"
             loading={statsLoading}
@@ -385,6 +493,11 @@ export default function BranchDashboardPage() {
             {chartLoading ? (
               <div className="h-[200px] flex items-center justify-center">
                 <Loader2 size={22} className="animate-spin text-gray-300" />
+              </div>
+            ) : chartError ? (
+              <div className="h-[200px] flex flex-col items-center justify-center text-gray-300">
+                <AlertCircle size={28} className="mb-2" />
+                <p className="text-sm text-gray-400">{chartError}</p>
               </div>
             ) : salesData.every(d => d.sales === 0) ? (
               <div className="h-[200px] flex flex-col items-center justify-center text-gray-300">
@@ -480,6 +593,15 @@ export default function BranchDashboardPage() {
                 </div>
               ))}
             </div>
+          ) : invoiceError ? (
+            <div className="py-10 text-center">
+              <AlertCircle size={28} className="text-amber-300 mx-auto mb-2" />
+              <p className="text-sm text-gray-500">{invoiceError}</p>
+              <button onClick={loadInvoices}
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold rounded-xl transition-colors">
+                Retry
+              </button>
+            </div>
           ) : recentInvs.length === 0 ? (
             <div className="py-10 text-center">
               <Package size={28} className="text-gray-200 mx-auto mb-2" />
@@ -505,23 +627,33 @@ export default function BranchDashboardPage() {
                 <tbody className="divide-y divide-gray-50">
                   {recentInvs.map(inv => {
                     const cfg = statusConfig[inv.status as keyof typeof statusConfig] ?? statusConfig.draft
+                    const invoiceNumber = inv.invoiceNumber ?? inv.invoice_number ?? ''
+                    const customerName = inv.customerName ?? inv.customer_name ?? 'Walk-in Customer'
+                    const amount = numberOrZero(inv.displayTotal ?? inv.display_total ?? inv.totalAmount ?? inv.total_amount)
+                    const invoiceDate = inv.invoiceDate ?? inv.invoice_date ?? ''
+                    const documentType = inv.documentType ?? inv.zatca_invoice_type ?? 'simplified'
                     return (
                       <tr key={inv.id}
                         onClick={() => navigate(`/invoices/${inv.id}`)}
                         className="hover:bg-gray-50/60 transition-colors cursor-pointer">
                         <td className="px-6 py-3.5 text-xs font-mono font-semibold text-primary-600">
-                          {inv.invoice_number}
+                          {invoiceNumber}
+                          {documentType === 'credit_note' && (
+                            <span className="ml-2 rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
+                              CREDIT
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-3.5 text-sm text-gray-700">
-                          {inv.customers?.name ?? 'Walk-in Customer'}
+                          {customerName}
                         </td>
                         <td className="px-6 py-3.5 text-sm font-semibold text-gray-900 text-right tabular-nums">
-                          <Rial amount={Number(inv.total_amount)} />
+                          <Rial amount={amount} />
                         </td>
                         <td className="px-6 py-3.5">
                           <Badge variant={cfg.variant} dot>{cfg.label}</Badge>
                         </td>
-                        <td className="px-6 py-3.5 text-xs text-gray-400">{inv.invoice_date}</td>
+                        <td className="px-6 py-3.5 text-xs text-gray-400">{invoiceDate}</td>
                       </tr>
                     )
                   })}

@@ -29,6 +29,10 @@ export interface ClosedSessionSummary {
 
 const q = () => supabase as unknown as { from: (t: string) => any }
 
+function invoiceAccountingSign(invoice: { zatca_invoice_type?: string | null }): number {
+  return invoice.zatca_invoice_type === 'credit_note' ? -1 : 1
+}
+
 export function usePosSession(
   branchId: string | undefined,
   tenantId: string | undefined,
@@ -81,17 +85,20 @@ export function usePosSession(
 
     // 1. Fetch invoices linked to this session (exclude cancelled)
     const { data: invData } = await q().from('invoices')
-      .select('id, total_amount, tax_amount')
+      .select('id, zatca_invoice_type')
       .eq('session_id', session.id)
       .neq('status', 'cancelled')
 
     const invoiceIds = (invData ?? []).map((i: any) => i.id)
+    const signByInvoiceId = new Map(
+      (invData ?? []).map((invoice: any) => [invoice.id, invoiceAccountingSign(invoice)]),
+    )
 
     // 2. Fetch payments for those invoices
     let paymentsData: any[] = []
     if (invoiceIds.length > 0) {
       const { data: pmtData } = await q().from('payments')
-        .select('method, amount')
+        .select('invoice_id, method, amount')
         .in('invoice_id', invoiceIds)
       paymentsData = pmtData ?? []
     }
@@ -104,10 +111,10 @@ export function usePosSession(
     // 4. Calculate totals
     const cashSales = paymentsData
       .filter((p: any) => p.method === 'cash')
-      .reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0)
+      .reduce((s: number, p: any) => s + (signByInvoiceId.get(p.invoice_id) ?? 1) * Number(p.amount ?? 0), 0)
     const cardSales = paymentsData
       .filter((p: any) => p.method === 'card')
-      .reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0)
+      .reduce((s: number, p: any) => s + (signByInvoiceId.get(p.invoice_id) ?? 1) * Number(p.amount ?? 0), 0)
     const totalExpenses = (expData ?? [])
       .reduce((s: number, e: any) => s + Number(e.total_paid ?? 0), 0)
     const cashExpenses = (expData ?? [])

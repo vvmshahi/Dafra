@@ -457,6 +457,28 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
       created_by: null,
       created_at: result.createdAt,
     }, ...prev])
+
+    void (async () => {
+      const [creditNoteResult, refundResult] = await Promise.all([
+        supabase
+          .from('invoices')
+          .select('id, invoice_number, total_amount, zatca_status, payment_status, credit_reason, created_at')
+          .eq('id', result.creditNoteId)
+          .maybeSingle(),
+        (supabase as any)
+          .from('payment_refunds')
+          .select('*')
+          .or(`original_invoice_id.eq.${invoice.id},credit_note_invoice_id.eq.${result.creditNoteId}`)
+          .order('created_at', { ascending: false }),
+      ])
+
+      if (creditNoteResult.data) {
+        setLinkedCreditNote(creditNoteResult.data as LinkedCreditNote)
+      }
+      if (refundResult.data) {
+        setRefunds(refundResult.data as PaymentRefund[])
+      }
+    })()
   }
 
   // ── Loading / Error states ─────────────────────────────────────────────────
@@ -501,7 +523,7 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
     : null
   const isCancelled = invoice.status === 'cancelled'
   const isCreditNote = invoice.zatca_invoice_type === 'credit_note'
-  const refund = refunds[0] ?? null
+  const hasRefunds = refunds.length > 0
   const isStandardDocument = invoice.zatca_invoice_type === 'standard'
     || (isCreditNote && customer?.customer_type === 'business' && !!customer?.vat_number)
   const documentTitleAr = isCreditNote
@@ -943,14 +965,18 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
           </div>
         )}
 
-        {isCreditNote && refund && (
+        {isCreditNote && hasRefunds && (
           <div className="px-8 py-4 border-t border-gray-100 bg-gray-50/40">
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Refund</p>
-            <div className="flex flex-wrap gap-6 text-xs text-gray-700">
-              <span><span className="font-semibold">Method:</span> {paymentLabel(refund.method)}</span>
-              <span><span className="font-semibold">Amount:</span> <Rial amount={Number(refund.amount)} /></span>
-              <span><span className="font-semibold">Status:</span> {refund.status}</span>
-              <span><span className="font-semibold">Date:</span> {fmtDateTime(refund.created_at).date}</span>
+            <div className="space-y-1.5 text-xs text-gray-700">
+              {refunds.map(refund => (
+                <div key={refund.id} className="flex flex-wrap gap-6">
+                  <span><span className="font-semibold">Method:</span> {paymentLabel(refund.method)}</span>
+                  <span><span className="font-semibold">Amount:</span> <Rial amount={Number(refund.amount)} /></span>
+                  <span><span className="font-semibold">Status:</span> {refund.status}</span>
+                  <span><span className="font-semibold">Date:</span> {fmtDateTime(refund.created_at).date}</span>
+                </div>
+              ))}
             </div>
           </div>
         )}

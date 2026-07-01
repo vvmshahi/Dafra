@@ -34,7 +34,13 @@ interface RpcCreditNoteResult {
   total?: number
   refund_status?: string
   zatca_status?: ZatcaStatus
+  refund_method?: PaymentMethod
   idempotent_replay?: boolean
+}
+
+interface CreditNotePaymentRow {
+  method: PaymentMethod
+  amount: number
 }
 
 interface CreateCreditNoteModalProps {
@@ -60,6 +66,38 @@ function newIdempotencyKey(invoiceId: string) {
   return globalThis.crypto?.randomUUID?.() ?? `${invoiceId}-${Date.now()}`
 }
 
+const QUICK_REASONS = [
+  'Test sale',
+  'Customer refund',
+  'Cancelled order',
+  'Billing mistake',
+] as const
+
+function paymentLabel(method: PaymentMethod | string | null | undefined): string {
+  if (method === 'cash') return 'Cash'
+  if (method === 'card') return 'Card / POS'
+  if (method === 'bank_transfer') return 'Bank Transfer'
+  return 'Other'
+}
+
+function money(amount: number): string {
+  return Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function resolveAutoRefundMethod(payments: CreditNotePaymentRow[]): PaymentMethod {
+  const methods = new Set(payments.filter(row => row.amount > 0).map(row => row.method))
+  if (methods.size === 1) return [...methods][0]
+  return 'other'
+}
+
+function refundPlanText(payments: CreditNotePaymentRow[], loading: boolean): string {
+  if (loading) return 'Loading original payment details...'
+  const usable = payments.filter(row => row.amount > 0)
+  if (usable.length === 0) return 'Original payment details unavailable; refund recorded as Other.'
+  if (usable.length === 1) return `Refund follows original payment: ${paymentLabel(usable[0].method)}.`
+  return `Refund preserves original split: ${usable.map(row => `${paymentLabel(row.method)} SAR ${money(row.amount)}`).join(' · ')}.`
+}
+
 async function fetchCreditNoteStatus(invoiceId: string): Promise<ZatcaStatus | null> {
   const { data } = await supabase
     .from('invoices')
@@ -79,9 +117,10 @@ export default function CreateCreditNoteModal({
   onCreated,
 }: CreateCreditNoteModalProps) {
   const { tenant } = useAuth()
-  const [reason, setReason] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const [refundMethod, setRefundMethod] = useState<PaymentMethod>('cash')
+  const [selectedReason, setSelectedReason] = useState<(typeof QUICK_REASONS)[number] | ''>('')
+  const [remarks, setRemarks] = useState('')
+  const [originalPayments, setOriginalPayments] = useState<CreditNotePaymentRow[]>([])
+  const [paymentsLoading, setPaymentsLoading] = useState(false)
   const [returnStock, setReturnStock] = useState(false)
   const [creating, setCreating] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -92,27 +131,57 @@ export default function CreateCreditNoteModal({
 
   useEffect(() => {
     if (!open || !invoice) return
-    setReason('')
-    setConfirm('')
-    setRefundMethod(defaultRefundMethod ?? 'cash')
+    setSelectedReason('')
+    setRemarks('')
+    setOriginalPayments([])
+    setPaymentsLoading(true)
     setReturnStock(isServiceBusiness ? false : defaultReturnStock)
     setError(null)
     setCreating(false)
     setSubmitting(false)
     setIdempotencyKey(newIdempotencyKey(invoice.id))
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data, error } = await (supabase as any)
+          .from('payments')
+          .select('method, amount')
+          .eq('invoice_id', invoice.id)
+          .order('paid_at', { ascending: true })
+          .order('created_at', { ascending: true })
+
+        if (cancelled) return
+        if (error) throw error
+        setOriginalPayments((data ?? []).map((row: any) => ({
+          method: row.method as PaymentMethod,
+          amount: Number(row.amount ?? 0),
+        })))
+      } catch (err) {
+        if (!cancelled) {
+          console.error('[CreateCreditNoteModal] failed to load original payments', err)
+          setOriginalPayments([])
+        }
+      } finally {
+        if (!cancelled) setPaymentsLoading(false)
+      }
+    })()
+
+    return () => { cancelled = true }
   }, [open, invoice, defaultRefundMethod, defaultReturnStock, isServiceBusiness])
 
   if (!open || !invoice) return null
 
   async function handleCreate() {
     if (!invoice) return
-    const trimmedReason = reason.trim()
-    if (trimmedReason.length < 3) {
-      setError('Enter a clear reason for the credit note.')
+    if (!selectedReason) {
+      setError('Choose a reason for the credit note.')
       return
     }
-    if (confirm.trim() !== invoice.invoice_number) {
-      setError('Type the original invoice number to confirm.')
+    const trimmedRemarks = remarks.trim()
+    const finalReason = trimmedRemarks ? `${selectedReason} - ${trimmedRemarks}` : selectedReason
+    if (finalReason.length > 500) {
+      setError('Remarks are too long.')
       return
     }
 
@@ -123,8 +192,7 @@ export default function CreateCreditNoteModal({
       const payload = {
         original_invoice_id: invoice.id,
         idempotency_key: idempotencyKey || newIdempotencyKey(invoice.id),
-        reason: trimmedReason,
-        refund_method: refundMethod,
+        reason: finalReason,
         return_stock: isServiceBusiness ? false : returnStock,
       }
       const { data, error: rpcError } = await (supabase as any).rpc('create_full_credit_note', { p_payload: payload })
@@ -161,8 +229,8 @@ export default function CreateCreditNoteModal({
         refundStatus: result.refund_status ?? 'completed',
         zatcaStatus,
         idempotentReplay: Boolean(result.idempotent_replay),
-        reason: trimmedReason,
-        refundMethod,
+        reason: finalReason,
+        refundMethod: result.refund_method ?? resolveAutoRefundMethod(originalPayments),
         autoSubmitSucceeded,
       })
       onClose()
@@ -216,29 +284,42 @@ export default function CreateCreditNoteModal({
 
           <label className="block space-y-1.5">
             <span className="text-xs font-semibold text-gray-700">Reason</span>
-            <textarea
-              value={reason}
-              onChange={e => setReason(e.target.value)}
-              rows={3}
-              maxLength={500}
-              className="w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-[#0F2419]"
-              placeholder="Returned goods, order cancelled, duplicate sale..."
-            />
+            <div className="grid grid-cols-2 gap-2">
+              {QUICK_REASONS.map(reason => (
+                <button
+                  key={reason}
+                  type="button"
+                  onClick={() => setSelectedReason(reason)}
+                  className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                    selectedReason === reason
+                      ? 'border-[#0F2419] bg-[#0F2419] text-white'
+                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {reason}
+                </button>
+              ))}
+            </div>
           </label>
 
           <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-gray-700">Refund method</span>
-            <select
-              value={refundMethod}
-              onChange={e => setRefundMethod(e.target.value as PaymentMethod)}
-              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-[#0F2419]"
-            >
-              <option value="cash">Cash</option>
-              <option value="card">Card / POS</option>
-              <option value="bank_transfer">Bank Transfer</option>
-              <option value="other">Other</option>
-            </select>
+            <span className="text-xs font-semibold text-gray-700">Optional remarks</span>
+            <textarea
+              value={remarks}
+              onChange={e => setRemarks(e.target.value)}
+              rows={2}
+              maxLength={430}
+              className="w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-[#0F2419]"
+              placeholder="Add a short note if needed"
+            />
           </label>
+
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2">
+            <p className="text-xs font-semibold text-emerald-800">Refund source</p>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-emerald-700">
+              {refundPlanText(originalPayments, paymentsLoading)}
+            </p>
+          </div>
 
           {isServiceBusiness ? (
             <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
@@ -264,15 +345,9 @@ export default function CreateCreditNoteModal({
             </label>
           )}
 
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-gray-700">Type invoice number to confirm</span>
-            <input
-              value={confirm}
-              onChange={e => setConfirm(e.target.value)}
-              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-mono outline-none transition-colors focus:border-[#0F2419]"
-              placeholder={invoice.invoice_number}
-            />
-          </label>
+          <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-700">
+            This will create a credit note and cannot be undone.
+          </div>
 
           {error && (
             <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">

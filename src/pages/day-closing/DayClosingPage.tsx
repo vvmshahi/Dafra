@@ -56,6 +56,10 @@ function today() {
   return saudiDateStr()
 }
 
+function invoiceAccountingSign(invoice: { zatca_invoice_type?: string | null }): number {
+  return invoice.zatca_invoice_type === 'credit_note' ? -1 : 1
+}
+
 // ── KPI Card ──────────────────────────────────────────────────────────────────
 
 function KpiCard({
@@ -176,9 +180,10 @@ export default function DayClosingPage() {
     const [branchRes, invRes, closingsRes] = await Promise.all([
       db().from('branches').select('name, name_ar').eq('id', branchId).single(),
       db().from('invoices')
-        .select('id, total_amount, tax_amount')
+        .select('id, total_amount, tax_amount, zatca_invoice_type')
         .eq('branch_id', branchId)
-        .eq('invoice_date', todayStr),
+        .eq('invoice_date', todayStr)
+        .neq('status', 'cancelled'),
       db().from('day_closings')
         .select('*')
         .eq('branch_id', branchId)
@@ -199,8 +204,11 @@ export default function DayClosingPage() {
     // Today's invoices
     const invoices: any[] = invRes.data ?? []
     const invoiceIds = invoices.map(i => i.id)
-    const totalSales   = invoices.reduce((s, i) => s + Number(i.total_amount ?? 0), 0)
-    const totalVat     = invoices.reduce((s, i) => s + Number(i.tax_amount ?? 0), 0)
+    const signByInvoiceId = new Map(
+      invoices.map(invoice => [invoice.id, invoiceAccountingSign(invoice)]),
+    )
+    const totalSales   = invoices.reduce((s, i) => s + invoiceAccountingSign(i) * Number(i.total_amount ?? 0), 0)
+    const totalVat     = invoices.reduce((s, i) => s + invoiceAccountingSign(i) * Number(i.tax_amount ?? 0), 0)
     const invoiceCount = invoices.length
 
     // Payments for today's invoices
@@ -208,11 +216,12 @@ export default function DayClosingPage() {
     if (invoiceIds.length > 0) {
       const { data: payments } = await db()
         .from('payments')
-        .select('method, amount')
+        .select('invoice_id, method, amount')
         .in('invoice_id', invoiceIds)
       for (const p of payments ?? []) {
-        if (p.method === 'cash') cashSales += Number(p.amount ?? 0)
-        else                     cardSales += Number(p.amount ?? 0)
+        const signedAmount = (signByInvoiceId.get(p.invoice_id) ?? 1) * Number(p.amount ?? 0)
+        if (p.method === 'cash') cashSales += signedAmount
+        else if (p.method === 'card') cardSales += signedAmount
       }
     }
 

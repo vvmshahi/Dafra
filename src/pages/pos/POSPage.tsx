@@ -244,6 +244,10 @@ function paymentRowsTotal(payments: ReceiptPayment[]): number {
   return round2(payments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0))
 }
 
+function invoiceAccountingSign(invoice: { zatca_invoice_type?: string | null }): number {
+  return invoice.zatca_invoice_type === 'credit_note' ? -1 : 1
+}
+
 const cartKey = (bid: string) => `pos_cart_${bid}`
 
 // ── Quick Expense modal ───────────────────────────────────────────────────────
@@ -809,18 +813,25 @@ function CloseSessionModal({ session, onClose, onCancel }: {
     const db = () => supabase as unknown as { from: (t: string) => any }
     async function fetchData() {
       const [{ data: invData }, { data: expData }] = await Promise.all([
-        db().from('invoices').select('id, total_amount').eq('session_id', session.id).neq('status', 'cancelled'),
+        db().from('invoices').select('id, zatca_invoice_type').eq('session_id', session.id).neq('status', 'cancelled'),
         db().from('expenses').select('total_paid, payment_method').eq('session_id', session.id),
       ])
       const ids = (invData ?? []).map((i: any) => i.id)
+      const signByInvoiceId = new Map(
+        (invData ?? []).map((invoice: any) => [invoice.id, invoiceAccountingSign(invoice)]),
+      )
       let pmts: any[] = []
       if (ids.length > 0) {
-        const { data } = await db().from('payments').select('method, amount').in('invoice_id', ids)
+        const { data } = await db().from('payments').select('invoice_id, method, amount').in('invoice_id', ids)
         pmts = data ?? []
       }
       setInvoiceCount((invData ?? []).length)
-      setCashSales(pmts.filter((p: any) => p.method === 'cash').reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0))
-      setCardSales(pmts.filter((p: any) => p.method === 'card').reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0))
+      setCashSales(pmts
+        .filter((p: any) => p.method === 'cash')
+        .reduce((s: number, p: any) => s + (signByInvoiceId.get(p.invoice_id) ?? 1) * Number(p.amount ?? 0), 0))
+      setCardSales(pmts
+        .filter((p: any) => p.method === 'card')
+        .reduce((s: number, p: any) => s + (signByInvoiceId.get(p.invoice_id) ?? 1) * Number(p.amount ?? 0), 0))
       setTotalExpenses((expData ?? []).reduce((s: number, e: any) => s + Number(e.total_paid ?? 0), 0))
       setCashExpenses((expData ?? []).filter((e: any) => e.payment_method === 'cash').reduce((s: number, e: any) => s + Number(e.total_paid ?? 0), 0))
       setLoadingData(false)
