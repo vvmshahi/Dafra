@@ -6,10 +6,10 @@ import { useAuth } from '@/hooks/useAuth'
 import {
   type ReportProps, fmtDate, fmtMonth,
   StatCard, SkeletonCard, SkeletonChart, SkeletonTable,
-  EmptyChart, SectionHeader, ChartTooltip,
+  EmptyChart, ReportErrorState, SectionHeader, ChartTooltip,
 } from './reportUtils'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import { asArray, loadReportSummary, reportParams } from './reportingRpc'
+import { asArray, loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -41,6 +41,7 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<PurchData | null>(null)
+  const [error,   setError]   = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -48,6 +49,7 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
       const tid = profile?.tenant_id
       if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
+      setError(null)
       try {
         const summary = await loadReportSummary<PurchData>(
           'get_purchase_report_summary',
@@ -66,7 +68,10 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
         })
       } catch (error) {
         console.error('Unable to load purchase report summary', error)
-        if (!cancelled) setData(EMPTY_PURCHASE_DATA)
+        if (!cancelled) {
+          setData(null)
+          setError(reportErrorMessage(error))
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -84,6 +89,8 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
       </div>
     )
   }
+
+  if (error) return <ReportErrorState message={error} />
 
   const noData = !data || (data.totalPurchased === 0 && data.topItems.length === 0)
 

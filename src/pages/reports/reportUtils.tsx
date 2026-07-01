@@ -164,6 +164,15 @@ export function EmptyChart({ message = 'No data for this period' }: { message?: 
   )
 }
 
+export function ReportErrorState({ message }: { message: string }) {
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <p className="font-semibold">Report could not be loaded</p>
+      <p className="mt-1 text-amber-800">{message}</p>
+    </div>
+  )
+}
+
 // ── Recharts custom tooltip ───────────────────────────────────────────────────
 
 export function ChartTooltip({ active, payload, label }: any) {

@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import {
   type ReportProps, fmtDate,
-  StatCard, SkeletonCard, SkeletonTable, SectionHeader,
+  StatCard, SkeletonCard, SkeletonTable, ReportErrorState, SectionHeader,
 } from './reportUtils'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import { asArray, loadReportSummary, reportParams } from './reportingRpc'
+import { asArray, loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -42,6 +42,7 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<CustData | null>(null)
+  const [error,   setError]   = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -49,6 +50,7 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
       const tid = profile?.tenant_id
       if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
+      setError(null)
       try {
         const summary = await loadReportSummary<CustData>(
           'get_customer_report_summary',
@@ -62,7 +64,10 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
         })
       } catch (error) {
         console.error('Unable to load customer report summary', error)
-        if (!cancelled) setData(EMPTY_CUSTOMER_DATA)
+        if (!cancelled) {
+          setData(null)
+          setError(reportErrorMessage(error))
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -79,6 +84,8 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
       </div>
     )
   }
+
+  if (error) return <ReportErrorState message={error} />
 
   return (
     <div className="space-y-5">

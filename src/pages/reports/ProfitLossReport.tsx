@@ -7,10 +7,10 @@ import { useAuth } from '@/hooks/useAuth'
 import {
   type ReportProps, fmtMonth,
   StatCard, SkeletonCard, SkeletonChart, SkeletonTable,
-  EmptyChart, SectionHeader, ChartTooltip, CHART_COLORS,
+  EmptyChart, ReportErrorState, SectionHeader, ChartTooltip, CHART_COLORS,
 } from './reportUtils'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
-import { asArray, loadReportSummary, reportParams } from './reportingRpc'
+import { asArray, loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -61,6 +61,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<PLData | null>(null)
+  const [error,   setError]   = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -68,6 +69,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
       const tid = profile?.tenant_id
       if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
+      setError(null)
       try {
         const summary = await loadReportSummary<PLData>(
           'get_profit_report_summary',
@@ -82,7 +84,10 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
         })
       } catch (error) {
         console.error('Unable to load profit summary', error)
-        if (!cancelled) setData(EMPTY_PL_DATA)
+        if (!cancelled) {
+          setData(null)
+          setError(reportErrorMessage(error))
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -100,6 +105,8 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
       </div>
     )
   }
+
+  if (error) return <ReportErrorState message={error} />
 
   const noData = !data || (data.totalRevenue === 0 && data.totalCOGS === 0 && data.totalExpenses === 0)
 

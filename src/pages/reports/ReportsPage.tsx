@@ -60,10 +60,11 @@ export default function ReportsPage() {
       .then(({ data }) => {
         const list = (data ?? []) as unknown as Branch[]
         setBranches(list)
-        // Default to user's own branch
-        if (profile?.branch_id) setBranchId(profile.branch_id)
+        // Branch users default to their assigned branch. Owners/admin-style users
+        // default to all tenant branches so reports do not silently filter to a stale profile branch.
+        setBranchId(profile?.role === 'branch' && profile.branch_id ? profile.branch_id : null)
       })
-  }, [profile?.tenant_id, profile?.branch_id])
+  }, [profile?.tenant_id, profile?.branch_id, profile?.role])
 
   const handlePreset = (p: DatePreset) => {
     setPreset(p)

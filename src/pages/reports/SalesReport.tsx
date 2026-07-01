@@ -7,10 +7,10 @@ import { useAuth } from '@/hooks/useAuth'
 import {
   type ReportProps, fmt,
   StatCard, SkeletonCard, SkeletonTable, SkeletonChart,
-  EmptyChart, SectionHeader, ChartTooltip, CHART_COLORS,
+  EmptyChart, ReportErrorState, SectionHeader, ChartTooltip, CHART_COLORS,
 } from './reportUtils'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
-import { asArray, loadReportSummary, reportParams } from './reportingRpc'
+import { asArray, loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -64,6 +64,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<SalesData | null>(null)
+  const [error,   setError]   = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -71,6 +72,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
       const tid = profile?.tenant_id
       if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
+      setError(null)
       try {
         const summary = await loadReportSummary<SalesData>(
           'get_sales_report_summary',
@@ -87,7 +89,10 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
         })
       } catch (error) {
         console.error('Unable to load sales report summary', error)
-        if (!cancelled) setData(EMPTY_SALES_DATA)
+        if (!cancelled) {
+          setData(null)
+          setError(reportErrorMessage(error))
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -105,6 +110,8 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
       </div>
     )
   }
+
+  if (error) return <ReportErrorState message={error} />
 
   if (!data || data.invoiceCount === 0) {
     return (

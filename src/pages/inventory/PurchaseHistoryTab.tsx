@@ -31,6 +31,7 @@ const PAY_LABEL: Record<string, string> = {
 const MODE_LABEL: Record<string, string> = {
   simple_bill: 'Bill',
   detailed_receiving: 'Stock',
+  receive_stock: 'Stock',
 }
 const PAYMENT_STATUS_LABEL: Record<string, string> = {
   paid: 'Paid',
@@ -445,11 +446,14 @@ export default function PurchaseHistoryTab() {
     (purchase.purchase_mode ?? 'detailed_receiving') === 'simple_bill' &&
     purchase.purchase_items.length === 0
 
+  const purchaseMode = (purchase: PurchaseRow) =>
+    (purchase.purchase_mode ?? 'detailed_receiving') as string
+
   const receivingStatus = (purchase: PurchaseRow) =>
     purchase.receiving_status ?? 'not_applicable'
 
   const isDetailedReceiving = (purchase: PurchaseRow) =>
-    (purchase.purchase_mode ?? 'detailed_receiving') === 'detailed_receiving'
+    ['detailed_receiving', 'receive_stock'].includes(purchaseMode(purchase))
 
   const isDeletedPurchase = (purchase: PurchaseRow) =>
     purchase.status === 'cancelled' ||
@@ -472,7 +476,7 @@ export default function PurchaseHistoryTab() {
     isInEditWindow(purchase) &&
     !isDeletedPurchase(purchase) &&
     (
-      ((purchase.purchase_mode ?? 'detailed_receiving') === 'simple_bill' && purchase.purchase_items.length === 0) ||
+      (purchaseMode(purchase) === 'simple_bill' && purchase.purchase_items.length === 0) ||
       (isDetailedReceiving(purchase) && ['draft', 'pending_confirmation'].includes(receivingStatus(purchase)))
     )
 
@@ -486,21 +490,21 @@ export default function PurchaseHistoryTab() {
 
   const isCountedPurchase = (purchase: PurchaseRow) => {
     if (isDeletedPurchase(purchase)) return false
-    if ((purchase.purchase_mode ?? 'detailed_receiving') === 'simple_bill') return true
+    if (purchaseMode(purchase) === 'simple_bill') return true
     return ['confirmed', 'confirmed_legacy'].includes(receivingStatus(purchase)) ||
-      (receivingStatus(purchase) === 'not_applicable' && purchase.status === 'posted')
+      (purchaseMode(purchase) === 'detailed_receiving' && receivingStatus(purchase) === 'not_applicable' && purchase.status === 'posted')
   }
 
   const purchaseStatusLabel = (purchase: PurchaseRow) => {
     if (isDeletedPurchase(purchase)) return 'Deleted'
-    if ((purchase.purchase_mode ?? 'detailed_receiving') === 'simple_bill') return 'Bill'
+    if (purchaseMode(purchase) === 'simple_bill') return 'Bill'
     if (['confirmed', 'confirmed_legacy'].includes(receivingStatus(purchase))) return 'Stock Added'
     return 'Pending'
   }
 
   const purchaseStatusVariant = (purchase: PurchaseRow): 'success' | 'warning' | 'danger' | 'neutral' => {
     if (isDeletedPurchase(purchase)) return 'danger'
-    if ((purchase.purchase_mode ?? 'detailed_receiving') === 'simple_bill') return 'neutral'
+    if (purchaseMode(purchase) === 'simple_bill') return 'neutral'
     if (['confirmed', 'confirmed_legacy'].includes(receivingStatus(purchase))) return 'success'
     return 'warning'
   }
@@ -547,7 +551,7 @@ export default function PurchaseHistoryTab() {
     setDeleting(true)
     setDeleteError('')
 
-    const fn = (deleteTarget.purchase_mode ?? 'detailed_receiving') === 'simple_bill'
+    const fn = purchaseMode(deleteTarget) === 'simple_bill'
       ? 'delete_purchase_bill'
       : 'delete_purchase_receiving'
 
@@ -740,7 +744,7 @@ export default function PurchaseHistoryTab() {
                   {p.suppliers?.name ?? <span className="text-gray-400 font-normal">No supplier</span>}
                 </p>
                 <p className="text-xs text-gray-400 truncate">
-                  {MODE_LABEL[p.purchase_mode ?? 'detailed_receiving'] ?? 'Purchase'}
+                  {MODE_LABEL[purchaseMode(p)] ?? 'Purchase'}
                   {p.bill_number ? ` · Bill ${p.bill_number}` : ''}
                   {p.notes ? ` · ${p.notes}` : ''}
                 </p>
@@ -754,7 +758,7 @@ export default function PurchaseHistoryTab() {
               {/* Item count */}
               <div className="w-16 text-center hidden sm:block">
                 <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                  {(p.purchase_mode ?? 'detailed_receiving') === 'simple_bill'
+                  {purchaseMode(p) === 'simple_bill'
                     ? 'Bill'
                     : `${p.purchase_items.length} item${p.purchase_items.length !== 1 ? 's' : ''}`}
                 </span>

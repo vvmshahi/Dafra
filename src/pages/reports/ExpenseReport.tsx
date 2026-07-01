@@ -6,10 +6,10 @@ import { useAuth } from '@/hooks/useAuth'
 import {
   type ReportProps, fmtDate,
   StatCard, SkeletonCard, SkeletonChart,
-  EmptyChart, SectionHeader, CHART_COLORS,
+  EmptyChart, ReportErrorState, SectionHeader, CHART_COLORS,
 } from './reportUtils'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
-import { asArray, loadReportSummary, reportParams } from './reportingRpc'
+import { asArray, loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -44,6 +44,7 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<ExpData | null>(null)
+  const [error,   setError]   = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -51,6 +52,7 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
       const tid = profile?.tenant_id
       if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
+      setError(null)
       try {
         const summary = await loadReportSummary<ExpData>(
           'get_expense_report_summary',
@@ -65,7 +67,10 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
         })
       } catch (error) {
         console.error('Unable to load expense report summary', error)
-        if (!cancelled) setData(EMPTY_EXPENSE_DATA)
+        if (!cancelled) {
+          setData(null)
+          setError(reportErrorMessage(error))
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -83,6 +88,8 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
       </div>
     )
   }
+
+  if (error) return <ReportErrorState message={error} />
 
   return (
     <div className="space-y-5">

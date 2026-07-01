@@ -221,6 +221,8 @@ SELECT
         AND COALESCE(p.receiving_status, 'not_applicable') IN ('confirmed', 'confirmed_legacy')
       )
       OR (
+        COALESCE(p.purchase_mode, 'detailed_receiving') = 'detailed_receiving'
+        AND
         COALESCE(p.receiving_status, 'not_applicable') = 'not_applicable'
         AND COALESCE(p.status, 'posted') = 'posted'
       )

@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import {
   type ReportProps, fmtMonth,
-  StatCard, SkeletonCard, SkeletonTable, SectionHeader,
+  StatCard, SkeletonCard, SkeletonTable, ReportErrorState, SectionHeader,
 } from './reportUtils'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import { asArray, loadReportSummary, reportParams } from './reportingRpc'
+import { asArray, loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -54,6 +54,7 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<VatData | null>(null)
+  const [error,   setError]   = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -61,6 +62,7 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
       const tid = profile?.tenant_id
       if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
+      setError(null)
       try {
         const summary = await loadReportSummary<VatData>(
           'get_vat_support_summary',
@@ -74,7 +76,10 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
         })
       } catch (error) {
         console.error('Unable to load VAT support summary', error)
-        if (!cancelled) setData(EMPTY_VAT_DATA)
+        if (!cancelled) {
+          setData(null)
+          setError(reportErrorMessage(error))
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -91,6 +96,8 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
       </div>
     )
   }
+
+  if (error) return <ReportErrorState message={error} />
 
   return (
     <div className="space-y-5">
