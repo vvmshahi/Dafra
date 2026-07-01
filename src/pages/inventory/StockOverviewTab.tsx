@@ -137,7 +137,7 @@ export default function StockOverviewTab() {
           </div>
           <p className="text-gray-700 font-semibold">No stock items yet</p>
           <p className="text-gray-400 text-sm mt-1 max-w-xs">
-            Add your raw materials, supplies, and ingredients to track inventory
+            Add your raw materials, supplies, and ingredients to track stock
           </p>
           <Button className="mt-5" onClick={openAdd}>
             <Plus size={15} />

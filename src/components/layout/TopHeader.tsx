@@ -7,7 +7,7 @@ const titles: Record<string, string> = {
   '/dashboard':                 'Dashboard',
   '/pos':                       'Point of Sale',
   '/products':                  'Products',
-  '/inventory':                 'Inventory',
+  '/inventory':                 'Stock',
   '/customers':                 'Customers',
   '/expenses':                  'Expenses',
   '/reports':                   'Reports',
@@ -29,7 +29,9 @@ export default function TopHeader() {
   const { profile, tenant, user } = useAuth()
 
   const navigate = useNavigate()
-  const title   = titles[location.pathname] ?? 'Meem'
+  const title   = location.pathname === '/inventory' && new URLSearchParams(location.search).get('tab') === 'purchases'
+    ? 'Purchases'
+    : titles[location.pathname] ?? 'Meem'
 
   // Subtitle: tenant business name for regular users, empty for super admin
   const isSuperAdmin = profile?.role === 'super_admin'

@@ -81,16 +81,18 @@ Deno.serve(async (req: Request) => {
     const body = await req.json()
     const {
       company_name, company_name_ar, vat_number, cr_number,
-      email, phone, city,
+      email, phone, city, business_type,
       plan_id, payment_type, duration_months, ends_at, branch_count,
       pay_method, pay_ref, notes,
     } = body
+    const normalizedBusinessType = business_type === 'service' ? 'service' : 'trading'
 
     console.log('[create-owner-account] Body parsed:', {
       hasCompanyName: !!company_name,
       hasEmail: !!email,
       hasPlanId: !!plan_id,
       payment_type,
+      business_type: normalizedBusinessType,
     })
 
     if (!company_name || !email || !plan_id) {
@@ -120,7 +122,7 @@ Deno.serve(async (req: Request) => {
       action: 'owner_account_create_attempted',
       severity: 'warning',
       status: 'attempted',
-      metadata: { paymentType: payment_type ?? null },
+      metadata: { paymentType: payment_type ?? null, businessType: normalizedBusinessType },
     })
 
     const rate = await enforceRateLimit(adminClient as any, {
@@ -130,7 +132,7 @@ Deno.serve(async (req: Request) => {
       scopeId: caller.id,
       maxAttempts: 20,
       windowSeconds: 86400,
-      metadata: { paymentType: payment_type ?? null },
+      metadata: { paymentType: payment_type ?? null, businessType: normalizedBusinessType },
     })
 
     if (!rate.allowed) {
@@ -183,6 +185,7 @@ Deno.serve(async (req: Request) => {
         email:        normalizedEmail,
         phone:        phone?.trim() || null,
         city:         city?.trim() || null,
+        business_type: normalizedBusinessType,
         country:      'SA',
         is_active:    true,
         address:      notes?.trim() || null,
@@ -309,6 +312,7 @@ Deno.serve(async (req: Request) => {
         userId: newUserId,
         emailLinkSent: !emailWarning,
         paymentType: payment_type ?? null,
+        businessType: normalizedBusinessType,
       },
     })
 

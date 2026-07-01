@@ -99,7 +99,7 @@ export default function LoginPage() {
           </div>
 
           <p className="text-white/60 text-sm leading-relaxed max-w-sm">
-            POS, invoicing, inventory, and ZATCA-ready workflows in one platform built for Saudi SMEs.
+            POS, invoicing, stock, and ZATCA-ready workflows in one platform built for Saudi SMEs.
           </p>
 
           {/* Feature pills */}

@@ -2,6 +2,7 @@
 // Run `supabase gen types typescript` to regenerate after schema changes.
 
 export type UserRole = 'super_admin' | 'owner' | 'branch'
+export type BusinessType = 'trading' | 'service'
 export type VatExpenseTreatment = 'no_vat' | 'included' | 'on_top'
 export type ExpenseVatClaimStatus = 'no_vat' | 'claimable' | 'not_claimable' | 'needs_review'
 export type ExpensePaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'other'
@@ -255,6 +256,7 @@ export interface Tenant {
   cr_number: string | null
   email: string | null
   phone: string | null
+  business_type: BusinessType | null
   address: string | null
   address_ar: string | null
   building_number: string | null

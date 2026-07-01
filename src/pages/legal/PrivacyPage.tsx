@@ -6,7 +6,7 @@ import { supportConfig } from '@/config/support'
 const sections = [
   {
     title: 'Data We Collect',
-    body: 'We collect account, tenant, branch, user, product, customer, supplier, invoice, payment, purchase, inventory, expense, audit, and support information needed to operate Meem.',
+    body: 'We collect account, tenant, branch, user, product, customer, supplier, invoice, payment, purchase, stock, expense, audit, and support information needed to operate Meem.',
   },
   {
     title: 'How We Use Data',
@@ -68,4 +68,3 @@ export default function PrivacyPage() {
     </div>
   )
 }
-

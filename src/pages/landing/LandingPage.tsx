@@ -381,7 +381,7 @@ const FEATURES = [
     icon: GitBranch,
     title: 'Multi-Branch',
     titleAr: 'إدارة متعددة الفروع',
-    desc: 'Manage all your locations from one dashboard. Separate inventory, staff, and reports per branch.',
+    desc: 'Manage all your locations from one dashboard. Separate stock, staff, and reports per branch.',
     color: 'text-primary-600', bg: 'bg-primary-50',
   },
   {
@@ -393,7 +393,7 @@ const FEATURES = [
   },
   {
     icon: Package,
-    title: 'Inventory Control',
+    title: 'Stock Control',
     titleAr: 'إدارة المخزون',
     desc: 'Track stock levels, set reorder alerts, manage suppliers and purchase orders seamlessly.',
     color: 'text-blue-600', bg: 'bg-blue-50',
@@ -419,7 +419,7 @@ function FeaturesSection() {
             Everything you need to run your business
           </h2>
           <p className="text-gray-500 mt-4 max-w-xl mx-auto">
-            One platform for your POS, invoicing, inventory, and compliance — built specifically for Saudi restaurants and cafés.
+            One platform for your POS, invoicing, stock, and compliance — built specifically for Saudi restaurants and cafés.
           </p>
         </div>
 
@@ -492,7 +492,7 @@ function PricingSection() {
                 'POS Billing Terminal',
                 'Invoice Management',
                 'Expense Tracking',
-                'Inventory Management',
+                'Stock Management',
                 'Sales Reports',
                 '1 Branch included',
               ].map(f => (

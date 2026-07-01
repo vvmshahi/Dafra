@@ -133,7 +133,7 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
               <h2 className="text-base font-bold text-gray-900">
                 {item ? 'Edit Stock Item' : 'Add Stock Item'}
               </h2>
-              <p className="text-xs text-gray-400 mt-0.5">Inventory item record</p>
+              <p className="text-xs text-gray-400 mt-0.5">Stock item record</p>
             </div>
             <button type="button" onClick={onClose}
               className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400">

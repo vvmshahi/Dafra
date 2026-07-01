@@ -11,6 +11,7 @@ import {
 } from './reportUtils'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { asArray, loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
+import { resolveBusinessType } from '@/lib/utils/businessType'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ const EMPTY_PL_DATA: PLData = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ProfitLossReport({ startDate, endDate, branchId }: ReportProps) {
-  const { profile } = useAuth()
+  const { profile, tenant } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<PLData | null>(null)
   const [error,   setError]   = useState<string | null>(null)
@@ -125,6 +126,14 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
     Expenses: r.expenses + r.cogs,
     'Net Estimate': r.netProfit,
   }))
+  const businessType = resolveBusinessType(tenant?.business_type)
+  const isService = businessType === 'service'
+  const reportTitle = isService ? 'Simple Profit Estimate' : 'Profit Estimate'
+  const purchaseCostLabel = isService ? 'Materials / Purchases' : 'Purchase Costs'
+  const purchaseCostSub = isService ? 'materials and purchase-period costs' : 'counted purchase estimate'
+  const monthlySub = isService
+    ? 'Materials and purchases are simple period costs, not recipe/BOM costing'
+    : 'Purchase-period costs are not true stock COGS'
 
   return (
     <div className="space-y-5">
@@ -134,7 +143,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
         <StatCard label="Gross Sales"      value={<Rial amount={data!.grossSales} />}     primary />
         <StatCard label="Credit Notes / Returns" value={<Rial amount={data!.creditNotes} />} accent="amber" />
         <StatCard label="Net Sales"        value={<Rial amount={data!.totalRevenue} />}   accent="emerald" />
-        <StatCard label="Purchase Costs"   value={<Rial amount={data!.totalCOGS} />}      accent="amber" sub="counted purchase estimate" />
+        <StatCard label={purchaseCostLabel} value={<Rial amount={data!.totalCOGS} />}      accent="amber" sub={purchaseCostSub} />
         <StatCard label="Gross Profit"     value={<Rial amount={data!.grossProfit} />}    accent={data!.grossProfit >= 0 ? 'emerald' : 'red'} />
         <StatCard label="Total Expenses"   value={<Rial amount={data!.totalExpenses} />}  accent="red" />
         <StatCard label="Net Estimate"     value={<Rial amount={data!.netProfit} />}      accent={data!.netProfit >= 0 ? 'emerald' : 'red'} sub="net sales − purchases − expenses" />
@@ -146,7 +155,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
 
         {/* Monthly bar chart */}
         <div className="lg:col-span-2 card p-4 space-y-3">
-          <SectionHeader title={`${data!.reportLabel ?? 'Simple Profit Estimate'} by Month`} />
+          <SectionHeader title={`${reportTitle} by Month`} />
           {chartData.length === 0 ? <EmptyChart /> : (
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
@@ -197,13 +206,13 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
       {/* ── Monthly P&L table ───────────────────────────────── */}
       <div className="card overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-          <SectionHeader title="Monthly Simple Profit Summary" sub="Purchase-period costs are not true inventory COGS" />
+          <SectionHeader title={`Monthly ${reportTitle} Summary`} sub={monthlySub} />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100">
-                {['Month','Gross Sales','Credit Notes','Net Sales','Purchases','Gross Profit','Expenses','Net Profit'].map(h => (
+                {['Month','Gross Sales','Credit Notes','Net Sales', isService ? 'Materials / Purchases' : 'Purchases','Gross Profit','Expenses','Net Profit'].map(h => (
                   <th key={h} className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">
                     {h}
                   </th>

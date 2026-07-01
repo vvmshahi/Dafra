@@ -708,7 +708,7 @@ export default function PurchaseHistoryTab() {
           </div>
           <p className="text-gray-700 font-semibold">No purchases recorded yet</p>
           <p className="text-gray-400 text-sm mt-1 max-w-xs">
-            Record your first purchase to track inventory and supplier spending
+            Record your first purchase to track stock and supplier spending
           </p>
           <Button className="mt-5" onClick={openAdd}>
             <Plus size={15} />

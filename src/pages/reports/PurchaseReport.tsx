@@ -10,6 +10,7 @@ import {
 } from './reportUtils'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { asArray, loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
+import { resolveBusinessType } from '@/lib/utils/businessType'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ const EMPTY_PURCHASE_DATA: PurchData = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function PurchaseReport({ startDate, endDate, branchId }: ReportProps) {
-  const { profile } = useAuth()
+  const { profile, tenant } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<PurchData | null>(null)
   const [error,   setError]   = useState<string | null>(null)
@@ -93,6 +94,12 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
   if (error) return <ReportErrorState message={error} />
 
   const noData = !data || (data.totalPurchased === 0 && data.topItems.length === 0)
+  const businessType = resolveBusinessType(tenant?.business_type)
+  const isService = businessType === 'service'
+  const purchasesLabel = isService ? 'Materials / Purchases' : 'Counted Purchases'
+  const trendTitle = isService ? 'Monthly Materials / Purchase Trend' : 'Monthly Purchase Trend'
+  const topItemsTitle = isService ? 'Top Purchased Materials / Items' : 'Top Purchased Items'
+  const topItemsSub = isService ? 'materials and business purchases' : 'by total cost'
 
   if (noData) {
     return (
@@ -108,14 +115,14 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
 
       {/* ── Summary cards ──────────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
-        <StatCard label="Counted Purchases" value={<Rial amount={data!.totalPurchased} />} primary />
+        <StatCard label={purchasesLabel} value={<Rial amount={data!.totalPurchased} />} primary />
         <StatCard label="Input VAT Support" value={<Rial amount={data!.totalVat} />}      accent="amber" sub="counted purchases only" />
         <StatCard label="Suppliers Used"   value={String(data!.supplierCount)}           sub="unique vendors" />
       </div>
 
       {/* ── Monthly trend chart ─────────────────────────────── */}
       <div className="card p-4 space-y-3">
-        <SectionHeader title="Monthly Purchase Trend" />
+        <SectionHeader title={trendTitle} />
         {!data!.monthlyBars.length ? <EmptyChart /> : (
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={data!.monthlyBars} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
@@ -178,7 +185,7 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
         {/* Top purchased items */}
         <div className="card overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-            <SectionHeader title="Top Purchased Items" sub="by total cost" />
+            <SectionHeader title={topItemsTitle} sub={topItemsSub} />
           </div>
           {!data!.topItems.length ? (
             <div className="py-10 text-center text-sm text-gray-400">No items recorded</div>

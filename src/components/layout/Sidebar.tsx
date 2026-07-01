@@ -27,7 +27,8 @@ const branchNav: NavItem[] = [
   { label: 'Invoices',         path: '/invoices',          icon: FileText   },
   { label: 'Invoice Settings', path: '/invoice-settings',  icon: Settings2  },
   { label: 'Products',         path: '/products',          icon: Package    },
-  { label: 'Inventory',   path: '/inventory',    icon: Warehouse      },
+  { label: 'Stock',       path: '/inventory?tab=stock',     icon: Warehouse      },
+  { label: 'Purchases',   path: '/inventory?tab=purchases', icon: Truck          },
   { label: 'Customers',   path: '/customers',    icon: Users          },
   { label: 'Expenses',    path: '/expenses',     icon: CreditCard     },
   { label: 'Suppliers',   path: '/suppliers',    icon: Truck          },
@@ -100,6 +101,19 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? 'User'
   const roleLabel = isBranch ? 'Branch' : (profile?.role?.replace(/_/g, ' ') ?? '')
 
+  function isNavActive(item: NavItem) {
+    if (item.path === '/super-admin') return location.pathname === item.path
+    if (item.path === '/inventory?tab=stock') {
+      const tab = new URLSearchParams(location.search).get('tab')
+      return location.pathname === '/inventory' && tab !== 'purchases'
+    }
+    if (item.path === '/inventory?tab=purchases') {
+      const tab = new URLSearchParams(location.search).get('tab')
+      return location.pathname === '/inventory' && tab === 'purchases'
+    }
+    return location.pathname.startsWith(item.path)
+  }
+
   return (
     <aside className={`
       flex-shrink-0 bg-sidebar flex flex-col h-full shadow-sidebar
@@ -155,9 +169,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto sidebar-scroll">
         {navItems.map(item => {
-          const isActive = item.path === '/super-admin'
-            ? location.pathname === item.path
-            : location.pathname.startsWith(item.path)
+          const isActive = isNavActive(item)
           return (
             <NavLink key={item.label} to={item.path} title={collapsed ? item.label : undefined}>
               <NavItemRow item={item} isActive={isActive} collapsed={collapsed} />

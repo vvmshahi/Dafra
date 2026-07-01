@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { supabase } from '@/lib/supabase'
+import type { BusinessType } from '@/types'
+import { BUSINESS_TYPE_OPTIONS, businessTypeLabel, resolveBusinessType } from '@/lib/utils/businessType'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -16,6 +18,7 @@ interface TenantDetail {
   id: string; name: string; name_ar: string | null
   vat_number: string; cr_number: string | null
   email: string | null; phone: string | null; website: string | null
+  business_type: BusinessType | null
   address: string | null; city: string | null; country: string
   is_active: boolean; suspended_at: string | null; suspended_reason: string | null
   last_active_at: string | null; created_at: string; updated_at: string
@@ -410,6 +413,9 @@ export default function ClientDetailPage() {
   const [notes,        setNotes]        = useState('')
   const [savingNotes,  setSavingNotes]  = useState(false)
   const [notesSaved,   setNotesSaved]   = useState(false)
+  const [businessType, setBusinessType] = useState<BusinessType>('trading')
+  const [savingBusinessType, setSavingBusinessType] = useState(false)
+  const [businessTypeSaved, setBusinessTypeSaved] = useState(false)
 
   async function load() {
     if (!id) return
@@ -453,6 +459,7 @@ export default function ClientDetailPage() {
 
     setTenant(t)
     setNotes(t?.address ?? '')
+    setBusinessType(resolveBusinessType(t?.business_type))
 
     const rawSub = subscriptions?.[0]
     if (rawSub) {
@@ -489,6 +496,19 @@ export default function ClientDetailPage() {
     setSavingNotes(false)
     setNotesSaved(true)
     setTimeout(() => setNotesSaved(false), 2000)
+  }
+
+  async function saveBusinessType() {
+    if (!id) return
+    setSavingBusinessType(true)
+    await (supabase as any)
+      .from('tenants')
+      .update({ business_type: businessType })
+      .eq('id', id)
+    setSavingBusinessType(false)
+    setBusinessTypeSaved(true)
+    setTimeout(() => setBusinessTypeSaved(false), 2000)
+    load()
   }
 
   async function confirmSuspend() {
@@ -724,6 +744,30 @@ export default function ClientDetailPage() {
         {/* Company info */}
         <div className="card p-6">
           <h2 className="text-sm font-semibold text-gray-900 mb-4">Company Information</h2>
+          <div className="py-2.5 border-b border-gray-50">
+            <span className="block text-xs text-gray-400 mb-1.5">Business Type</span>
+            <div className="flex items-center gap-2">
+              <select
+                value={businessType}
+                onChange={e => setBusinessType(e.target.value as BusinessType)}
+                className="input h-9 text-sm flex-1"
+              >
+                {BUSINESS_TYPE_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <button
+                onClick={saveBusinessType}
+                disabled={savingBusinessType || businessType === resolveBusinessType(tenant.business_type)}
+                className="px-3 py-2 rounded-xl bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700 disabled:opacity-50"
+              >
+                {savingBusinessType ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1">
+              {businessTypeSaved ? 'Saved.' : businessTypeLabel(businessType)}
+            </p>
+          </div>
           <InfoRow label="VAT Number"  value={tenant.vat_number} />
           <InfoRow label="CR Number"   value={tenant.cr_number} />
           <InfoRow label="Email"       value={tenant.email

@@ -4,6 +4,8 @@ import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import type { PaymentMethod, ZatcaStatus } from '@/types/database'
 import { submitInvoiceToZatca } from '@/lib/zatca/submission'
+import { useAuth } from '@/hooks/useAuth'
+import { resolveBusinessType } from '@/lib/utils/businessType'
 
 export interface CreditNoteSourceInvoice {
   id: string
@@ -76,6 +78,7 @@ export default function CreateCreditNoteModal({
   onClose,
   onCreated,
 }: CreateCreditNoteModalProps) {
+  const { tenant } = useAuth()
   const [reason, setReason] = useState('')
   const [confirm, setConfirm] = useState('')
   const [refundMethod, setRefundMethod] = useState<PaymentMethod>('cash')
@@ -84,18 +87,20 @@ export default function CreateCreditNoteModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [idempotencyKey, setIdempotencyKey] = useState('')
+  const businessType = resolveBusinessType(tenant?.business_type)
+  const isServiceBusiness = businessType === 'service'
 
   useEffect(() => {
     if (!open || !invoice) return
     setReason('')
     setConfirm('')
     setRefundMethod(defaultRefundMethod ?? 'cash')
-    setReturnStock(defaultReturnStock)
+    setReturnStock(isServiceBusiness ? false : defaultReturnStock)
     setError(null)
     setCreating(false)
     setSubmitting(false)
     setIdempotencyKey(newIdempotencyKey(invoice.id))
-  }, [open, invoice, defaultRefundMethod, defaultReturnStock])
+  }, [open, invoice, defaultRefundMethod, defaultReturnStock, isServiceBusiness])
 
   if (!open || !invoice) return null
 
@@ -120,7 +125,7 @@ export default function CreateCreditNoteModal({
         idempotency_key: idempotencyKey || newIdempotencyKey(invoice.id),
         reason: trimmedReason,
         refund_method: refundMethod,
-        return_stock: returnStock,
+        return_stock: isServiceBusiness ? false : returnStock,
       }
       const { data, error: rpcError } = await (supabase as any).rpc('create_full_credit_note', { p_payload: payload })
       if (rpcError) throw rpcError
@@ -235,20 +240,29 @@ export default function CreateCreditNoteModal({
             </select>
           </label>
 
-          <label className="flex items-start gap-3 rounded-xl border border-gray-100 px-3 py-2">
-            <input
-              type="checkbox"
-              checked={returnStock}
-              onChange={e => setReturnStock(e.target.checked)}
-              className="mt-1"
-            />
-            <span>
-              <span className="block text-xs font-semibold text-gray-700">Return tracked stock</span>
-              <span className="block text-[11px] leading-relaxed text-gray-500">
-                Adds stock back only for products configured with stock tracking.
+          {isServiceBusiness ? (
+            <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+              <p className="text-xs font-semibold text-gray-700">Stock is not returned for service credit notes</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-gray-500">
+                This credit note reduces sales and VAT, but does not increase stock.
+              </p>
+            </div>
+          ) : (
+            <label className="flex items-start gap-3 rounded-xl border border-gray-100 px-3 py-2">
+              <input
+                type="checkbox"
+                checked={returnStock}
+                onChange={e => setReturnStock(e.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                <span className="block text-xs font-semibold text-gray-700">Return tracked stock</span>
+                <span className="block text-[11px] leading-relaxed text-gray-500">
+                  Adds stock back only for products configured with stock tracking.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+          )}
 
           <label className="block space-y-1.5">
             <span className="text-xs font-semibold text-gray-700">Type invoice number to confirm</span>

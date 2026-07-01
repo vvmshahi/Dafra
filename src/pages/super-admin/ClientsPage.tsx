@@ -7,6 +7,8 @@ import {
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { supabase } from '@/lib/supabase'
+import type { BusinessType } from '@/types'
+import { BUSINESS_TYPE_OPTIONS, businessTypeLabel, resolveBusinessType } from '@/lib/utils/businessType'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -16,6 +18,7 @@ interface ClientRow {
   name_ar:      string | null
   vat_number:   string
   city:         string | null
+  business_type: BusinessType | null
   is_active:    boolean
   suspended_at: string | null
   created_at:   string
@@ -190,6 +193,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
   const [email,         setEmail]         = useState('')
   const [phone,         setPhone]         = useState('')
   const [city,          setCity]          = useState('')
+  const [businessType,  setBusinessType]  = useState<BusinessType>('trading')
   const [planId,        setPlanId]        = useState('')
   const [branchCount,   setBranchCount]   = useState(1)
   const [paymentType,   setPaymentType]   = useState<PaymentType>('one_time')
@@ -244,6 +248,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
           email:           email.trim().toLowerCase(),
           phone:           phone.trim() || null,
           city:            city.trim() || null,
+          business_type:    businessType,
           plan_id:         planId,
           branch_count:    branchCount,
           payment_type:    paymentType,
@@ -310,6 +315,26 @@ function CreateAccountModal({ onCreated, onCancel }: {
                   <label className="block text-xs font-medium text-gray-700 mb-1.5">Phone</label>
                   <input value={phone} onChange={e => setPhone(e.target.value)}
                     className="input w-full text-sm h-9" placeholder="+966 5x xxx xxxx" />
+                </div>
+              </div>
+              <div className="mt-3">
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">Business Type</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {BUSINESS_TYPE_OPTIONS.map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setBusinessType(option.value)}
+                      className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                        businessType === option.value
+                          ? 'border-primary-500 bg-primary-50 text-primary-700'
+                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      <p className="text-xs font-semibold">{option.shortLabel}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{option.description}</p>
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
@@ -484,7 +509,7 @@ export default function ClientsPage() {
     const { data } = await (supabase as any)
       .from('tenants')
       .select(`
-        id, name, name_ar, vat_number, city, is_active, suspended_at, created_at,
+        id, name, name_ar, vat_number, city, business_type, is_active, suspended_at, created_at,
         tenant_subscriptions(status, ends_at, subscription_plans(name)),
         branches(id),
         user_profiles(id)
@@ -500,6 +525,7 @@ export default function ClientsPage() {
         name_ar:      r.name_ar,
         vat_number:   r.vat_number,
         city:         r.city,
+        business_type: resolveBusinessType(r.business_type),
         is_active:    r.is_active,
         suspended_at: r.suspended_at,
         created_at:   r.created_at,
@@ -713,6 +739,7 @@ export default function ClientsPage() {
                           <div>
                             <p className="text-sm font-medium text-gray-900">{c.name}</p>
                             {c.name_ar && <p className="text-xs text-gray-400 mt-0.5" dir="rtl">{c.name_ar}</p>}
+                            <p className="text-[10px] text-gray-400 mt-0.5">{businessTypeLabel(c.business_type)}</p>
                           </div>
                         </td>
                         <td className="px-4 py-3.5 text-sm text-gray-500">

@@ -6,6 +6,8 @@ import SubscriptionTab from './SubscriptionTab'
 import AccountTab      from './AccountTab'
 import PrinterTab      from './PrinterTab'
 import { isElectron }  from '@/lib/electron'
+import { useAuth } from '@/hooks/useAuth'
+import { businessTypeDescription, businessTypeLabel, resolveBusinessType } from '@/lib/utils/businessType'
 
 /* ── Tab config ─────────────────────────────────────────────── */
 
@@ -27,9 +29,13 @@ const TABS = isElectron() ? [...BASE_TABS, ...ELECTRON_TABS] : BASE_TABS
 /* ── Page ───────────────────────────────────────────────────── */
 
 export default function SettingsPage() {
+  const { profile, tenant } = useAuth()
   const [active, setActive] = useState<TabId>('branches')
 
   const current = TABS.find(t => t.id === active)!
+  const role = String(profile?.role ?? '')
+  const canViewBusinessType = role === 'owner' || role === 'admin'
+  const tenantBusinessType = resolveBusinessType(tenant?.business_type)
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -67,6 +73,19 @@ export default function SettingsPage() {
           <p className="text-xs text-gray-400">{current.desc}</p>
         </div>
       </div>
+
+      {canViewBusinessType && tenant && (
+        <div className="card p-4 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Business Type</p>
+            <p className="text-sm font-bold text-gray-900 mt-1">{businessTypeLabel(tenantBusinessType)}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{businessTypeDescription(tenantBusinessType)}</p>
+          </div>
+          <span className="rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-semibold text-gray-500">
+            Read only
+          </span>
+        </div>
+      )}
 
       {/* Tab content */}
       {active === 'branches'     && <BranchesTab />}

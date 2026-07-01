@@ -6,7 +6,7 @@ import { supportConfig } from '@/config/support'
 const sections = [
   {
     title: 'Service',
-    body: 'Meem provides cloud-based POS, invoicing, inventory, purchase, reporting, and ZATCA-ready e-invoicing workflow tools for small businesses. Features may vary by plan, branch setup, and enabled integrations.',
+    body: 'Meem provides cloud-based POS, invoicing, stock, purchase, reporting, and ZATCA-ready e-invoicing workflow tools for small businesses. Features may vary by plan, branch setup, and enabled integrations.',
   },
   {
     title: 'Your Responsibilities',
@@ -68,4 +68,3 @@ export default function TermsPage() {
     </div>
   )
 }
-
