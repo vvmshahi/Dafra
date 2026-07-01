@@ -101,7 +101,7 @@ function PurchaseDetailModal({
                 <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Type</p>
                 <p className="font-medium text-gray-800 mt-0.5">{MODE_LABEL[mode] ?? mode}</p>
               </div>
-              {mode === 'detailed_receiving' && (
+              {['detailed_receiving', 'receive_stock'].includes(mode) && (
                 <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2">
                   <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Status</p>
                   <p className="font-medium text-gray-800 mt-0.5">{RECEIVING_LABEL[receiving] ?? receiving}</p>
@@ -467,17 +467,23 @@ export default function PurchaseHistoryTab() {
     return purchaseDate >= cutoff
   }
 
+  const isPendingStockReceiving = (purchase: PurchaseRow) =>
+    isDetailedReceiving(purchase) &&
+    (
+      ['draft', 'pending_confirmation'].includes(receivingStatus(purchase)) ||
+      (receivingStatus(purchase) === 'not_applicable' && purchase.status === 'draft')
+    )
+
   const canConfirmReceiving = (purchase: PurchaseRow) =>
     isInEditWindow(purchase) &&
-    isDetailedReceiving(purchase) &&
-    ['draft', 'pending_confirmation'].includes(receivingStatus(purchase))
+    isPendingStockReceiving(purchase)
 
   const canEditPurchase = (purchase: PurchaseRow) =>
     isInEditWindow(purchase) &&
     !isDeletedPurchase(purchase) &&
     (
       (purchaseMode(purchase) === 'simple_bill' && purchase.purchase_items.length === 0) ||
-      (isDetailedReceiving(purchase) && ['draft', 'pending_confirmation'].includes(receivingStatus(purchase)))
+      isPendingStockReceiving(purchase)
     )
 
   const canDeletePurchase = (purchase: PurchaseRow) =>
@@ -485,12 +491,13 @@ export default function PurchaseHistoryTab() {
     !isDeletedPurchase(purchase) &&
     (
       canDeleteBillOnly(purchase) ||
-      (isDetailedReceiving(purchase) && ['draft', 'pending_confirmation', 'confirmed'].includes(receivingStatus(purchase)))
+      isPendingStockReceiving(purchase) ||
+      (isDetailedReceiving(purchase) && receivingStatus(purchase) === 'confirmed')
     )
 
   const isCountedPurchase = (purchase: PurchaseRow) => {
     if (isDeletedPurchase(purchase)) return false
-    if (purchaseMode(purchase) === 'simple_bill') return true
+    if (['simple_bill', 'bill_only'].includes(purchaseMode(purchase))) return purchase.status === 'posted'
     return ['confirmed', 'confirmed_legacy'].includes(receivingStatus(purchase)) ||
       (purchaseMode(purchase) === 'detailed_receiving' && receivingStatus(purchase) === 'not_applicable' && purchase.status === 'posted')
   }

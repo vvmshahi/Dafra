@@ -85,11 +85,11 @@ export default function ReportsPage() {
         <h1 className="text-lg font-bold text-gray-900 flex-1">Reports</h1>
         <button
           disabled
-          title="Export — coming soon"
+          title="Export coming soon"
           className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-400 cursor-not-allowed opacity-60"
         >
           <Download size={14} />
-          Export
+          Export coming soon
         </button>
       </div>
 
