@@ -13,7 +13,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { saudiNow, saudiDateStr } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
-import { getCachedProductionStatus, productionStatusLabel, readCachedProductionStatus } from '@/lib/zatca/status'
+import { productionStatusLabel } from '@/lib/zatca/status'
 import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
 import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
 
@@ -69,7 +69,9 @@ interface BranchStat {
   todayCard:  number
   sessionOpen: boolean
   sessionOpenedAt: string | null
+  metricsAvailable: boolean
   productionStatus?: ProductionOnboardingResponse | null
+  productionStatusReadable?: boolean
 }
 
 interface DashboardDailySale {
@@ -122,12 +124,85 @@ function branchRowToStat(branch: BranchRow): BranchStat {
     todayCard: 0,
     sessionOpen: false,
     sessionOpenedAt: null,
-    productionStatus: (branch.zatca_phase ?? 1) === 2 ? readCachedProductionStatus(branch.id) : null,
+    metricsAvailable: false,
+    productionStatus: null,
+    productionStatusReadable: (branch.zatca_phase ?? 1) !== 2,
   }
+}
+
+function numberOrZero(value: unknown) {
+  const n = typeof value === 'number' ? value : Number(value ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+function normalizeProductionStatus(value: unknown): ProductionOnboardingResponse | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  const onboardingStatus = typeof record.onboardingStatus === 'string'
+    ? record.onboardingStatus
+    : typeof record.onboarding_status === 'string'
+    ? record.onboarding_status
+    : null
+
+  if (!onboardingStatus) return null
+
+  return {
+    ok: onboardingStatus === 'production_connected',
+    branchId: typeof record.branchId === 'string' ? record.branchId : typeof record.branch_id === 'string' ? record.branch_id : '',
+    environment: 'production',
+    onboardingStatus: onboardingStatus as ProductionOnboardingResponse['onboardingStatus'],
+    connectedAt: typeof record.connectedAt === 'string' ? record.connectedAt : typeof record.connected_at === 'string' ? record.connected_at : null,
+    disconnectedAt: typeof record.disconnectedAt === 'string' ? record.disconnectedAt : typeof record.disconnected_at === 'string' ? record.disconnected_at : null,
+    updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : typeof record.updated_at === 'string' ? record.updated_at : null,
+  }
+}
+
+function hasProductionStatusField(value: unknown) {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function rpcErrorDebug(error: unknown) {
+  if (error && typeof error === 'object') {
+    const rpcError = error as { code?: unknown; message?: unknown; details?: unknown; hint?: unknown }
+    return {
+      code: typeof rpcError.code === 'string' ? rpcError.code : null,
+      message: typeof rpcError.message === 'string' ? rpcError.message : null,
+      details: typeof rpcError.details === 'string' ? rpcError.details : null,
+      hint: typeof rpcError.hint === 'string' ? rpcError.hint : null,
+      error,
+    }
+  }
+  return {
+    code: null,
+    message: error instanceof Error ? error.message : String(error ?? ''),
+    details: null,
+    hint: null,
+    error,
+  }
+}
+
+function logDashboardRpcError(functionName: string, params: Record<string, unknown>, error: unknown) {
+  console.error('[DashboardPage] RPC failed', {
+    functionName,
+    params,
+    ...rpcErrorDebug(error),
+  })
 }
 
 function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: boolean; onView: () => void }) {
   const zatca = productionStatusLabel(branch.productionStatus)
+  const zatcaUnavailable = branch.zatca_phase === 2 && branch.productionStatusReadable === false
+  const zatcaLabel = zatcaUnavailable ? 'Phase 2 status unavailable' : branch.zatca_phase === 2 ? zatca.label : 'Phase 1'
+  const zatcaTone = zatcaUnavailable ? 'text-gray-400' : branch.zatca_phase === 2 && zatca.tone === 'success'
+    ? 'text-emerald-600'
+    : branch.zatca_phase === 2
+    ? 'text-amber-600'
+    : 'text-gray-400'
+  const metricValue = (value: number, className: string, fallback = 'Unavailable') => {
+    if (loading) return <div className={`h-5 rounded animate-pulse mt-1 ${className.includes('text-base') ? 'w-16' : 'w-12'} bg-gray-100`} />
+    if (!branch.metricsAvailable) return <p className="text-xs font-semibold text-gray-400 mt-1">{fallback}</p>
+    return <p className={`${className} mt-0.5 tabular-nums`}><Rial amount={value} /></p>
+  }
 
   return (
     <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col gap-4 ${!branch.is_active ? 'opacity-60' : ''}`}>
@@ -153,15 +228,9 @@ function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: 
             <Badge variant={branch.is_active ? 'success' : 'neutral'} dot className="text-[10px]">
               {branch.is_active ? 'Active' : 'Inactive'}
             </Badge>
-            <span className={`flex items-center gap-0.5 text-[10px] ${
-              branch.zatca_phase === 2 && zatca.tone === 'success'
-                ? 'text-emerald-600'
-                : branch.zatca_phase === 2
-                ? 'text-amber-600'
-                : 'text-gray-400'
-            }`}>
-              <ShieldCheck size={10} className={branch.zatca_phase === 2 && zatca.tone === 'success' ? 'text-emerald-500' : 'text-violet-400'} />
-              {branch.zatca_phase === 2 ? zatca.label : 'Phase 1'}
+            <span className={`flex items-center gap-0.5 text-[10px] ${zatcaTone}`}>
+              <ShieldCheck size={10} className={branch.zatca_phase === 2 && !zatcaUnavailable && zatca.tone === 'success' ? 'text-emerald-500' : 'text-violet-400'} />
+              {zatcaLabel}
             </span>
             {branch.sessionOpen ? (
               <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium">
@@ -184,29 +253,28 @@ function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: 
           <p className="text-[10px] text-primary-600 font-medium">Today's Sales</p>
           {loading
             ? <div className="h-5 w-16 bg-primary-100 rounded animate-pulse mt-1" />
-            : <p className="text-base font-bold text-primary-700 mt-0.5 tabular-nums"><Rial amount={branch.todaySales} /></p>
-          }
+            : metricValue(branch.todaySales, 'text-base font-bold text-primary-700')}
         </div>
         <div className="bg-gray-50 rounded-xl p-3">
           <p className="text-[10px] text-gray-500 font-medium">Invoices</p>
           {loading
             ? <div className="h-5 w-8 bg-gray-100 rounded animate-pulse mt-1" />
-            : <p className="text-base font-bold text-gray-800 mt-0.5">{branch.todayCount}</p>
+            : branch.metricsAvailable
+            ? <p className="text-base font-bold text-gray-800 mt-0.5">{branch.todayCount}</p>
+            : <p className="text-xs font-semibold text-gray-400 mt-1">Unavailable</p>
           }
         </div>
         <div className="bg-emerald-50 rounded-xl p-3">
           <p className="text-[10px] text-emerald-600 font-medium flex items-center gap-1"><Banknote size={10} />Cash</p>
           {loading
             ? <div className="h-5 w-16 bg-emerald-100 rounded animate-pulse mt-1" />
-            : <p className="text-sm font-bold text-emerald-700 mt-0.5 tabular-nums"><Rial amount={branch.todayCash} /></p>
-          }
+            : metricValue(branch.todayCash, 'text-sm font-bold text-emerald-700')}
         </div>
         <div className="bg-blue-50 rounded-xl p-3">
           <p className="text-[10px] text-blue-600 font-medium flex items-center gap-1"><CreditCard size={10} />Card</p>
           {loading
             ? <div className="h-5 w-16 bg-blue-100 rounded animate-pulse mt-1" />
-            : <p className="text-sm font-bold text-blue-700 mt-0.5 tabular-nums"><Rial amount={branch.todayCard} /></p>
-          }
+            : metricValue(branch.todayCard, 'text-sm font-bold text-blue-700')}
         </div>
       </div>
 
@@ -281,6 +349,8 @@ export default function DashboardPage() {
   const [salesData,     setSalesData]     = useState<{ day: string; sales: number }[]>([])
   const [branchLoadError, setBranchLoadError] = useState('')
   const [dashboardLoadError, setDashboardLoadError] = useState('')
+  const [dashboardSummaryAvailable, setDashboardSummaryAvailable] = useState(false)
+  const [chartLoadError, setChartLoadError] = useState('')
 
   const tid = profile?.tenant_id
 
@@ -292,6 +362,7 @@ export default function DashboardPage() {
     setBranchLoading(true)
     setBranchLoadError('')
     setDashboardLoadError('')
+    setDashboardSummaryAvailable(false)
     const today = saudiDateStr()
     let fallbackBranchStats: BranchStat[] = []
     try {
@@ -309,57 +380,57 @@ export default function DashboardPage() {
         fallbackBranchStats = ((branchRows as BranchRow[]) ?? []).map(branchRowToStat)
       }
 
+      const summaryParams = { p_branch_id: null, p_start_date: today, p_end_date: today }
       const summary = await loadReportSummary<DashboardSummary>(
         'get_dashboard_summary',
-        { p_branch_id: null, p_start_date: today, p_end_date: today },
+        summaryParams,
         EMPTY_DASHBOARD_SUMMARY,
       )
 
-      setTotalSales(Number(summary.totalSales ?? 0))
-      setTotalCount(Number(summary.totalCount ?? 0))
-      setTotalCash(Number(summary.totalCash ?? 0))
-      setTotalCard(Number(summary.totalCard ?? 0))
-      setTotalVat(Number(summary.totalVat ?? 0))
-      setTotalExpenses(Number(summary.totalExpenses ?? 0))
+      setDashboardSummaryAvailable(true)
+      setTotalSales(numberOrZero(summary.totalSales))
+      setTotalCount(Math.trunc(numberOrZero(summary.totalCount)))
+      setTotalCash(numberOrZero(summary.totalCash))
+      setTotalCard(numberOrZero(summary.totalCard))
+      setTotalVat(numberOrZero(summary.totalVat))
+      setTotalExpenses(numberOrZero(summary.totalExpenses))
 
       const rpcStatsById = new Map(asArray<BranchStat>(summary.branchStats).map(branch => [branch.id, branch]))
       const stats = fallbackBranchStats.length > 0
         ? fallbackBranchStats.map(fallback => {
             const branch = rpcStatsById.get(fallback.id)
+            const productionStatus = normalizeProductionStatus(branch?.productionStatus)
             return {
               ...fallback,
               ...branch,
-              todaySales: Number(branch?.todaySales ?? 0),
-              todayCount: Number(branch?.todayCount ?? 0),
-              todayCash: Number(branch?.todayCash ?? 0),
-              todayCard: Number(branch?.todayCard ?? 0),
-              productionStatus: (fallback.zatca_phase ?? 1) === 2 ? readCachedProductionStatus(fallback.id) : null,
+              todaySales: numberOrZero(branch?.todaySales),
+              todayCount: Math.trunc(numberOrZero(branch?.todayCount)),
+              todayCash: numberOrZero(branch?.todayCash),
+              todayCard: numberOrZero(branch?.todayCard),
+              metricsAvailable: !!branch,
+              productionStatus,
+              productionStatusReadable: (fallback.zatca_phase ?? 1) === 2
+                ? hasProductionStatusField(branch?.productionStatus)
+                : true,
             }
           })
         : asArray<BranchStat>(summary.branchStats).map(branch => ({
             ...branch,
-            todaySales: Number(branch.todaySales ?? 0),
-            todayCount: Number(branch.todayCount ?? 0),
-            todayCash: Number(branch.todayCash ?? 0),
-            todayCard: Number(branch.todayCard ?? 0),
-            productionStatus: (branch.zatca_phase ?? 1) === 2 ? readCachedProductionStatus(branch.id) : null,
+            todaySales: numberOrZero(branch.todaySales),
+            todayCount: Math.trunc(numberOrZero(branch.todayCount)),
+            todayCash: numberOrZero(branch.todayCash),
+            todayCard: numberOrZero(branch.todayCard),
+            metricsAvailable: true,
+            productionStatus: normalizeProductionStatus(branch.productionStatus),
+            productionStatusReadable: (branch.zatca_phase ?? 1) === 2
+              ? hasProductionStatusField(branch.productionStatus)
+              : true,
           }))
       setBranchStats(stats)
-
-      stats
-        .filter(branch => (branch.zatca_phase ?? 1) === 2)
-        .forEach(branch => {
-          getCachedProductionStatus(branch.id)
-            .then(status => {
-              setBranchStats(prev => prev.map(item => (
-                item.id === branch.id ? { ...item, productionStatus: status } : item
-              )))
-            })
-            .catch(() => {})
-        })
     } catch (error) {
-      console.error('[DashboardPage] failed to load dashboard summary', error)
-      setDashboardLoadError('Dashboard totals could not be loaded. Branches are shown with zero totals until the report RPC responds.')
+      logDashboardRpcError('get_dashboard_summary', { p_branch_id: null, p_start_date: today, p_end_date: today }, error)
+      setDashboardSummaryAvailable(false)
+      setDashboardLoadError('Dashboard totals could not be loaded. Branches are shown, but branch and KPI totals are unavailable until the report RPC responds.')
       setTotalSales(0)
       setTotalCount(0)
       setTotalCash(0)
@@ -376,16 +447,18 @@ export default function DashboardPage() {
   const loadChart = useCallback(async () => {
     if (!tid) { setChartLoading(false); return }
     setChartLoading(true)
+    setChartLoadError('')
     const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
     const fromDay = saudiNow(); fromDay.setUTCDate(fromDay.getUTCDate() - (days - 1))
+    const params = {
+      p_branch_id: null,
+      p_start_date: fromDay.toISOString().split('T')[0],
+      p_end_date: saudiDateStr(),
+    }
     try {
       const summary = await loadReportSummary<DashboardSummary>(
         'get_dashboard_summary',
-        {
-          p_branch_id: null,
-          p_start_date: fromDay.toISOString().split('T')[0],
-          p_end_date: saudiDateStr(),
-        },
+        params,
         EMPTY_DASHBOARD_SUMMARY,
       )
 
@@ -397,7 +470,8 @@ export default function DashboardPage() {
         return { day: label, sales: Number(row.sales ?? 0) }
       }))
     } catch (error) {
-      console.error('[DashboardPage] failed to load dashboard chart', error)
+      logDashboardRpcError('get_dashboard_summary', params, error)
+      setChartLoadError('Sales trend could not be loaded. Retry after the dashboard summary is available.')
       setSalesData([])
     } finally {
       setChartLoading(false)
@@ -438,23 +512,23 @@ export default function DashboardPage() {
 
       {/* ── Summary KPIs ─────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
-        <StatCard label="Total Sales Today" value={<Rial amount={totalSales} />}
-          sub={`${totalCount} invoice${totalCount !== 1 ? 's' : ''} across all branches`}
+        <StatCard label="Total Sales Today" value={dashboardSummaryAvailable ? <Rial amount={totalSales} /> : 'Unavailable'}
+          sub={dashboardSummaryAvailable ? `${totalCount} invoice${totalCount !== 1 ? 's' : ''} across all branches` : 'Retry to load totals'}
           icon={TrendingUp} gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28]" loading={statsLoading} />
-        <StatCard label="Total Invoices" value={String(totalCount)}
-          sub="All branches combined"
+        <StatCard label="Total Invoices" value={dashboardSummaryAvailable ? String(totalCount) : 'Unavailable'}
+          sub={dashboardSummaryAvailable ? 'All branches combined' : 'Retry to load totals'}
           icon={FileText} gradient="bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]" loading={statsLoading} />
-        <StatCard label="Cash Today" value={<Rial amount={totalCash} />}
-          sub="Cash payments"
+        <StatCard label="Cash Today" value={dashboardSummaryAvailable ? <Rial amount={totalCash} /> : 'Unavailable'}
+          sub={dashboardSummaryAvailable ? 'Cash payments' : 'Retry to load totals'}
           icon={Banknote} gradient="bg-gradient-to-br from-[#059669] to-[#047857]" loading={statsLoading} />
-        <StatCard label="Card Today" value={<Rial amount={totalCard} />}
-          sub="Card payments"
+        <StatCard label="Card Today" value={dashboardSummaryAvailable ? <Rial amount={totalCard} /> : 'Unavailable'}
+          sub={dashboardSummaryAvailable ? 'Card payments' : 'Retry to load totals'}
           icon={CreditCard} gradient="bg-gradient-to-br from-[#0891b2] to-[#0e7490]" loading={statsLoading} />
-        <StatCard label="VAT Collected" value={<Rial amount={totalVat} />}
-          sub="Tax on today's sales"
+        <StatCard label="VAT Collected" value={dashboardSummaryAvailable ? <Rial amount={totalVat} /> : 'Unavailable'}
+          sub={dashboardSummaryAvailable ? "Tax on today's sales" : 'Retry to load totals'}
           icon={BadgePercent} gradient="bg-gradient-to-br from-[#b45309] to-[#92400e]" loading={statsLoading} />
-        <StatCard label="Expenses Today" value={<Rial amount={totalExpenses} />}
-          sub="All branches combined"
+        <StatCard label="Expenses Today" value={dashboardSummaryAvailable ? <Rial amount={totalExpenses} /> : 'Unavailable'}
+          sub={dashboardSummaryAvailable ? 'All branches combined' : 'Retry to load totals'}
           icon={Receipt} gradient="bg-gradient-to-br from-[#7c3aed] to-[#5b21b6]" loading={statsLoading} />
       </div>
 
@@ -537,6 +611,11 @@ export default function DashboardPage() {
         {chartLoading ? (
           <div className="h-[220px] flex items-center justify-center">
             <Loader2 size={24} className="animate-spin text-gray-300" />
+          </div>
+        ) : chartLoadError ? (
+          <div className="h-[220px] flex flex-col items-center justify-center text-gray-300">
+            <AlertCircle size={32} className="mb-2" />
+            <p className="text-sm text-gray-400">{chartLoadError}</p>
           </div>
         ) : salesData.every(d => d.sales === 0) ? (
           <div className="h-[220px] flex flex-col items-center justify-center text-gray-300">

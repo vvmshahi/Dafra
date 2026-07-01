@@ -178,6 +178,21 @@ export interface Database {
         Args: { p_payload: Record<string, unknown> }
         Returns: Record<string, unknown>
       }
+      update_branch_pos_settings: {
+        Args: {
+          p_branch_id: string
+          p_payload: { allow_split_payments: boolean }
+        }
+        Returns: Record<string, unknown>
+      }
+      get_dashboard_summary: {
+        Args: {
+          p_branch_id?: string | null
+          p_start_date?: string | null
+          p_end_date?: string | null
+        }
+        Returns: Record<string, unknown>
+      }
       create_full_credit_note: {
         Args: { p_payload: Record<string, unknown> }
         Returns: Record<string, unknown>
@@ -666,7 +681,6 @@ export interface BranchInsert {
   show_footer?: boolean
   show_cash_change?: boolean
   print_mode?: string | null
-  allow_split_payments?: boolean
 }
 
 export type BranchUpdate = Partial<BranchInsert>

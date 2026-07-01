@@ -160,6 +160,26 @@ function branchPosSettingsErrorMessage(error: unknown): string {
   return message || 'Failed to save POS checkout settings.'
 }
 
+function branchPosSettingsErrorDebug(error: unknown) {
+  if (error && typeof error === 'object') {
+    const rpcError = error as { code?: unknown; message?: unknown; details?: unknown; hint?: unknown }
+    return {
+      code: typeof rpcError.code === 'string' ? rpcError.code : null,
+      message: typeof rpcError.message === 'string' ? rpcError.message : null,
+      details: typeof rpcError.details === 'string' ? rpcError.details : null,
+      hint: typeof rpcError.hint === 'string' ? rpcError.hint : null,
+      error,
+    }
+  }
+  return {
+    code: null,
+    message: error instanceof Error ? error.message : String(error ?? ''),
+    details: null,
+    hint: null,
+    error,
+  }
+}
+
 /* ── Drawer ──────────────────────────────────────────────────── */
 
 function BranchDrawer({
@@ -203,6 +223,7 @@ function BranchDrawer({
           is_main_branch:   branch.is_main_branch,
           login_email:      '',
           login_password:   '',
+          login_confirm_password: '',
         }
       : { ...EMPTY_FORM },
   )
@@ -273,11 +294,19 @@ function BranchDrawer({
   }
 
   const savePosSettings = async (branchId: string) => {
-    const { error } = await (supabase as any).rpc('update_branch_pos_settings', {
+    const params = {
       p_branch_id: branchId,
       p_payload: { allow_split_payments: form.allow_split_payments },
-    })
-    if (error) throw new Error(branchPosSettingsErrorMessage(error))
+    }
+    const { error } = await (supabase as any).rpc('update_branch_pos_settings', params)
+    if (error) {
+      console.error('[BranchesTab] POS settings RPC failed', {
+        functionName: 'update_branch_pos_settings',
+        params,
+        ...branchPosSettingsErrorDebug(error),
+      })
+      throw new Error(branchPosSettingsErrorMessage(error))
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -286,8 +315,7 @@ function BranchDrawer({
     setSaving(true)
 
     try {
-      const payload = {
-        tenant_id:        tenantId,
+      const branchPayload = {
         name:             form.name.trim(),
         name_ar:          form.name_ar.trim() || null,
         business_name:    form.business_name.trim() || null,
@@ -311,10 +339,6 @@ function BranchDrawer({
         zatca_phase:      isNew ? (isPhase2 ? 2 : 1) : form.zatca_phase,
         is_active:        form.is_active,
         is_main_branch:   form.is_main_branch,
-        // Store the login email on the branch record so the owner can see it
-        ...(isNew && form.login_email.trim()
-          ? { branch_email: form.login_email.trim().toLowerCase() }
-          : {}),
       }
 
       // supabase-js@2.45 PostgrestVersion "12" resolves hand-written Database
@@ -322,7 +346,16 @@ function BranchDrawer({
       // untyped reference for write calls while keeping reads typed.
       const q = supabase as unknown as { from: (t: string) => any }
       if (isNew) {
-        const { data, error } = await q.from('branches').insert(payload).select('id').single()
+        const insertPayload = {
+          tenant_id: tenantId,
+          ...branchPayload,
+          // Store the login email on the branch record so the owner can see it.
+          ...(form.login_email.trim()
+            ? { branch_email: form.login_email.trim().toLowerCase() }
+            : {}),
+        }
+
+        const { data, error } = await q.from('branches').insert(insertPayload).select('id').single()
         if (error) throw error
         const logoUrl = await uploadLogo(data.id)
         if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', data.id)
@@ -347,7 +380,7 @@ function BranchDrawer({
           return  // Keep drawer open so owner sees the error; list already refreshed above
         }
       } else {
-        const { error } = await q.from('branches').update(payload).eq('id', branch!.id)
+        const { error } = await q.from('branches').update(branchPayload).eq('id', branch!.id)
         if (error) throw error
         const logoUrl = await uploadLogo(branch!.id)
         if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', branch!.id)
