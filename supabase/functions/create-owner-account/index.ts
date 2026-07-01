@@ -274,11 +274,14 @@ Deno.serve(async (req: Request) => {
       console.log('[create-owner-account] Step 5 OK — subscription created')
     }
 
-    // ── Step 6: Send setup email ────────────────────────────────────────────
-    console.log('[create-owner-account] Step 6: Sending setup email')
-    let emailWarning: string | null = null
+    // ── Step 6: Generate manual setup link ──────────────────────────────────
+    // generateLink returns an action_link for a custom/manual send flow; it
+    // does not send an email by itself.
+    console.log('[create-owner-account] Step 6: Generating owner setup link')
+    let setupLinkWarning: string | null = null
+    let setupLink: string | null = null
 
-    const { error: linkErr } = await adminClient.auth.admin.generateLink({
+    const { data: linkData, error: linkErr } = await adminClient.auth.admin.generateLink({
       type:  'recovery',
       email: normalizedEmail,
       options: {
@@ -288,17 +291,25 @@ Deno.serve(async (req: Request) => {
 
     if (linkErr) {
       console.error('[create-owner-account] Step 6 WARNING — generateLink failed:', linkErr.message)
-      emailWarning = `Account created but password setup email failed: ${linkErr.message}. Send a manual password reset from the Supabase dashboard.`
+      setupLinkWarning = `Account created but setup link generation failed: ${linkErr.message}. Send a manual password reset from the Supabase dashboard.`
     } else {
-      console.log('[create-owner-account] Step 6 OK — setup email sent')
+      setupLink = linkData?.properties?.action_link ?? null
+      if (!setupLink) {
+        setupLinkWarning = 'Account created but Supabase did not return a setup link. Send a manual password reset from the Supabase dashboard.'
+        console.warn('[create-owner-account] Step 6 WARNING — setup link missing')
+      } else {
+        console.log('[create-owner-account] Step 6 OK — setup link generated')
+      }
     }
 
     const response: Record<string, unknown> = {
       user_id:   newUserId,
       tenant_id: tenantId,
       email:     normalizedEmail,
+      setup_link_generated: !!setupLink,
     }
-    if (emailWarning) response.warning = emailWarning
+    if (setupLink) response.setup_link = setupLink
+    if (setupLinkWarning) response.warning = setupLinkWarning
 
     await auditEvent(adminClient as any, {
       ...auditBase,
@@ -310,7 +321,7 @@ Deno.serve(async (req: Request) => {
       targetId: tenantId,
       metadata: {
         userId: newUserId,
-        emailLinkSent: !emailWarning,
+        setupLinkGenerated: !!setupLink,
         paymentType: payment_type ?? null,
         businessType: normalizedBusinessType,
       },

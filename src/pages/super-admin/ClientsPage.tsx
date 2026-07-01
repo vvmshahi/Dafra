@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, Building2, UserX, UserCheck, ChevronDown, ChevronUp,
-  ChevronRight, Plus, MapPin, Loader2,
+  ChevronRight, Plus, MapPin, Loader2, Copy, CheckCircle2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
@@ -145,6 +145,15 @@ function RestoreModal({ client, onConfirm, onCancel, acting }: {
 
 interface PlanOption { id: string; name: string; price_monthly: number }
 
+interface CreateOwnerAccountResponse {
+  user_id?: string
+  tenant_id?: string
+  email?: string
+  setup_link?: string
+  setup_link_generated?: boolean
+  warning?: string
+}
+
 const DURATIONS = [
   { label: '1 Month',        months: 1  },
   { label: '2 Months',       months: 2  },
@@ -205,6 +214,8 @@ function CreateAccountModal({ onCreated, onCancel }: {
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState('')
   const [warning, setWarning] = useState('')
+  const [created, setCreated] = useState<CreateOwnerAccountResponse | null>(null)
+  const [copied,  setCopied]  = useState(false)
 
   useEffect(() => {
     ;(supabase as any)
@@ -263,17 +274,24 @@ function CreateAccountModal({ onCreated, onCancel }: {
       const errMsg = fnErr?.message ?? (fnData as any)?.error ?? null
       if (errMsg) throw new Error(errMsg)
 
-      const warn = (fnData as any)?.warning ?? null
-      if (warn) {
-        setWarning(warn)
-        return
-      }
-
-      onCreated()
+      const result = (fnData ?? {}) as CreateOwnerAccountResponse
+      setCreated(result)
+      setWarning(result.warning ?? '')
     } catch (err: any) {
       setError(err.message ?? 'Failed to create account')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function copySetupLink() {
+    if (!created?.setup_link) return
+    setCopied(false)
+    try {
+      await navigator.clipboard.writeText(created.setup_link)
+      setCopied(true)
+    } catch {
+      setError('Copy failed. Select the setup link and copy it manually.')
     }
   }
 
@@ -285,7 +303,55 @@ function CreateAccountModal({ onCreated, onCancel }: {
           <p className="text-xs text-gray-400 mt-0.5">Creates the owner user, tenant, and subscription in one step.</p>
         </div>
 
-        {loading ? (
+        {created ? (
+          <div className="p-6 space-y-5">
+            <div className="flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+              <CheckCircle2 size={18} className="text-emerald-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-emerald-900">Client account created</p>
+                <p className="text-xs text-emerald-700 mt-0.5">
+                  Send the setup link to the owner manually. It may expire, so regenerate if needed.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Owner email</p>
+              <p className="text-sm font-semibold text-gray-800 mt-1">{created.email ?? email.trim().toLowerCase()}</p>
+            </div>
+
+            {created.setup_link ? (
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-gray-700">Owner setup link</label>
+                <textarea
+                  readOnly
+                  value={created.setup_link}
+                  rows={4}
+                  className="input w-full resize-none text-xs font-mono"
+                  onFocus={e => e.currentTarget.select()}
+                />
+                <button
+                  type="button"
+                  onClick={copySetupLink}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700"
+                >
+                  <Copy size={14} />
+                  {copied ? 'Copied' : 'Copy setup link'}
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                Setup link was not returned. Send a password reset manually from Supabase Auth, then ask the owner to set their password.
+              </div>
+            )}
+
+            {warning && (
+              <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                {warning}
+              </div>
+            )}
+          </div>
+        ) : loading ? (
           <div className="flex items-center justify-center py-16">
             <LoadingSpinner size="md" />
           </div>
@@ -350,8 +416,8 @@ function CreateAccountModal({ onCreated, onCancel }: {
               <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 mt-3">
                 <span className="text-blue-500 text-sm flex-shrink-0">✉</span>
                 <p className="text-xs text-blue-700">
-                  A password setup email will be sent to the client automatically.
-                  They click the link to set their own password and log in.
+                  A setup link will be generated for manual sending.
+                  Copy it after creation and send it to the owner directly.
                 </p>
               </div>
             </div>
@@ -456,30 +522,26 @@ function CreateAccountModal({ onCreated, onCancel }: {
             {error && (
               <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
             )}
-            {warning && (
-              <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
-                <p className="text-xs font-semibold text-amber-800 mb-0.5">Account created — action needed</p>
-                <p className="text-xs text-amber-700">{warning}</p>
-                <button onClick={onCreated} className="text-xs font-medium text-amber-800 underline mt-2">
-                  Close and view client list
-                </button>
-              </div>
-            )}
           </div>
         )}
 
         <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
-          <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">
-            Cancel
-          </button>
           <button
-            onClick={handleCreate}
-            disabled={saving || loading}
-            className="flex items-center gap-1.5 px-5 py-2 text-sm font-medium text-white bg-primary-600 rounded-xl hover:bg-primary-700 disabled:opacity-50 transition-colors"
+            onClick={created ? onCreated : onCancel}
+            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium"
           >
-            {saving && <Loader2 size={14} className="animate-spin" />}
-            {saving ? 'Creating…' : 'Create Account'}
+            {created ? 'Close and view client list' : 'Cancel'}
           </button>
+          {!created && (
+            <button
+              onClick={handleCreate}
+              disabled={saving || loading}
+              className="flex items-center gap-1.5 px-5 py-2 text-sm font-medium text-white bg-primary-600 rounded-xl hover:bg-primary-700 disabled:opacity-50 transition-colors"
+            >
+              {saving && <Loader2 size={14} className="animate-spin" />}
+              {saving ? 'Creating…' : 'Create Account'}
+            </button>
+          )}
         </div>
       </div>
     </div>
