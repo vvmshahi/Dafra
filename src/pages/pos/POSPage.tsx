@@ -756,7 +756,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
     async function fetchData() {
       const [{ data: invData }, { data: expData }] = await Promise.all([
         db().from('invoices').select('id, total_amount').eq('session_id', session.id).neq('status', 'cancelled'),
-        db().from('expenses').select('amount, payment_method').eq('session_id', session.id),
+        db().from('expenses').select('total_paid, payment_method').eq('session_id', session.id),
       ])
       const ids = (invData ?? []).map((i: any) => i.id)
       let pmts: any[] = []
@@ -767,8 +767,8 @@ function CloseSessionModal({ session, onClose, onCancel }: {
       setInvoiceCount((invData ?? []).length)
       setCashSales(pmts.filter((p: any) => p.method === 'cash').reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0))
       setCardSales(pmts.filter((p: any) => p.method === 'card').reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0))
-      setTotalExpenses((expData ?? []).reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0))
-      setCashExpenses((expData ?? []).filter((e: any) => e.payment_method === 'cash').reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0))
+      setTotalExpenses((expData ?? []).reduce((s: number, e: any) => s + Number(e.total_paid ?? 0), 0))
+      setCashExpenses((expData ?? []).filter((e: any) => e.payment_method === 'cash').reduce((s: number, e: any) => s + Number(e.total_paid ?? 0), 0))
       setLoadingData(false)
     }
     fetchData()

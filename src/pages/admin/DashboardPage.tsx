@@ -11,12 +11,11 @@ import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { saudiNow, saudiDateStr, saudiTodayRange } from '@/lib/utils/date'
+import { saudiNow, saudiDateStr } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
 import { getCachedProductionStatus, productionStatusLabel, readCachedProductionStatus } from '@/lib/zatca/status'
 import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
-
-const db = () => supabase as any
+import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
 
 
 // ── KPI stat card ─────────────────────────────────────────────────────────────
@@ -71,6 +70,33 @@ interface BranchStat {
   sessionOpen: boolean
   sessionOpenedAt: string | null
   productionStatus?: ProductionOnboardingResponse | null
+}
+
+interface DashboardDailySale {
+  date: string
+  sales: number
+}
+
+interface DashboardSummary {
+  totalSales: number
+  totalCount: number
+  totalCash: number
+  totalCard: number
+  totalVat: number
+  totalExpenses: number
+  dailySales: DashboardDailySale[]
+  branchStats: BranchStat[]
+}
+
+const EMPTY_DASHBOARD_SUMMARY: DashboardSummary = {
+  totalSales: 0,
+  totalCount: 0,
+  totalCash: 0,
+  totalCard: 0,
+  totalVat: 0,
+  totalExpenses: 0,
+  dailySales: [],
+  branchStats: [],
 }
 
 function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: boolean; onView: () => void }) {
@@ -235,81 +261,55 @@ export default function DashboardPage() {
     if (!tid) return
     setStatsLoading(true)
     setBranchLoading(true)
-
-    const { start, end } = saudiTodayRange()
     const today = saudiDateStr()
-    const [todayRes, branchRes, expRes, sessionRes] = await Promise.all([
-      db().from('invoices')
-        .select('total_amount, branch_id, payment_method, tax_amount')
-        .eq('tenant_id', tid)
-        .gte('created_at', start)
-        .lte('created_at', end),
-      db().from('branches')
-        .select('id, name, logo_url, is_active, is_main_branch, zatca_phase')
-        .eq('tenant_id', tid)
-        .order('is_main_branch', { ascending: false })
-        .order('created_at', { ascending: true }),
-      db().from('expenses')
-        .select('amount')
-        .eq('tenant_id', tid)
-        .eq('expense_date', today),
-      db().from('pos_sessions')
-        .select('branch_id, opened_at')
-        .eq('tenant_id', tid)
-        .eq('status', 'open'),
-    ])
+    try {
+      const summary = await loadReportSummary<DashboardSummary>(
+        'get_dashboard_summary',
+        { p_branch_id: null, p_start_date: today, p_end_date: today },
+        EMPTY_DASHBOARD_SUMMARY,
+      )
 
-    const invs: any[]         = todayRes.data ?? []
-    const branches: any[]     = branchRes.data ?? []
-    const openSessions: any[] = sessionRes?.data ?? []
+      setTotalSales(Number(summary.totalSales ?? 0))
+      setTotalCount(Number(summary.totalCount ?? 0))
+      setTotalCash(Number(summary.totalCash ?? 0))
+      setTotalCard(Number(summary.totalCard ?? 0))
+      setTotalVat(Number(summary.totalVat ?? 0))
+      setTotalExpenses(Number(summary.totalExpenses ?? 0))
 
-    const cash = invs.filter(i => i.payment_method === 'cash').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0)
-    const card = invs.filter(i => i.payment_method === 'card').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0)
-    const vat  = invs.reduce((s: number, i: any) => s + Number(i.tax_amount ?? 0), 0)
-    const exps = (expRes.data ?? []).reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0)
-    setTotalSales(invs.reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0))
-    setTotalCount(invs.length)
-    setTotalCash(cash)
-    setTotalCard(card)
-    setTotalVat(vat)
-    setTotalExpenses(exps)
-    setStatsLoading(false)
+      const stats = asArray<BranchStat>(summary.branchStats).map(branch => ({
+        ...branch,
+        todaySales: Number(branch.todaySales ?? 0),
+        todayCount: Number(branch.todayCount ?? 0),
+        todayCash: Number(branch.todayCash ?? 0),
+        todayCard: Number(branch.todayCard ?? 0),
+        productionStatus: (branch.zatca_phase ?? 1) === 2 ? readCachedProductionStatus(branch.id) : null,
+      }))
+      setBranchStats(stats)
 
-    const productionStatuses = new Map<string, ProductionOnboardingResponse | null>()
-    for (const branch of branches) {
-      if ((branch.zatca_phase ?? 1) === 2) {
-        productionStatuses.set(branch.id, readCachedProductionStatus(branch.id))
-      }
+      stats
+        .filter(branch => (branch.zatca_phase ?? 1) === 2)
+        .forEach(branch => {
+          getCachedProductionStatus(branch.id)
+            .then(status => {
+              setBranchStats(prev => prev.map(item => (
+                item.id === branch.id ? { ...item, productionStatus: status } : item
+              )))
+            })
+            .catch(() => {})
+        })
+    } catch (error) {
+      console.error('[DashboardPage] failed to load dashboard summary', error)
+      setTotalSales(0)
+      setTotalCount(0)
+      setTotalCash(0)
+      setTotalCard(0)
+      setTotalVat(0)
+      setTotalExpenses(0)
+      setBranchStats([])
+    } finally {
+      setStatsLoading(false)
+      setBranchLoading(false)
     }
-
-    const stats: BranchStat[] = branches.map((b: any) => {
-      const bInvs      = invs.filter((i: any) => i.branch_id === b.id)
-      const openSession = openSessions.find((s: any) => s.branch_id === b.id)
-      return {
-        ...b,
-        todaySales:      bInvs.reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0),
-        todayCount:      bInvs.length,
-        todayCash:       bInvs.filter((i: any) => i.payment_method === 'cash').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0),
-        todayCard:       bInvs.filter((i: any) => i.payment_method === 'card').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0),
-        sessionOpen:     !!openSession,
-        sessionOpenedAt: openSession?.opened_at ?? null,
-        productionStatus: productionStatuses.get(b.id) ?? null,
-      }
-    })
-    setBranchStats(stats)
-    setBranchLoading(false)
-
-    branches
-      .filter((branch: any) => (branch.zatca_phase ?? 1) === 2)
-      .forEach((branch: any) => {
-        getCachedProductionStatus(branch.id)
-          .then(status => {
-            setBranchStats(prev => prev.map(item => (
-              item.id === branch.id ? { ...item, productionStatus: status } : item
-            )))
-          })
-          .catch(() => {})
-      })
   }, [tid])
 
   const loadChart = useCallback(async () => {
@@ -317,31 +317,30 @@ export default function DashboardPage() {
     setChartLoading(true)
     const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
     const fromDay = saudiNow(); fromDay.setUTCDate(fromDay.getUTCDate() - (days - 1))
+    try {
+      const summary = await loadReportSummary<DashboardSummary>(
+        'get_dashboard_summary',
+        {
+          p_branch_id: null,
+          p_start_date: fromDay.toISOString().split('T')[0],
+          p_end_date: saudiDateStr(),
+        },
+        EMPTY_DASHBOARD_SUMMARY,
+      )
 
-    const { data } = await db()
-      .from('invoices')
-      .select('invoice_date, total_amount')
-      .eq('tenant_id', tid)
-      .gte('invoice_date', fromDay.toISOString().split('T')[0])
-      .order('invoice_date', { ascending: true })
-
-    const buckets: Record<string, number> = {}
-    for (let i = days - 1; i >= 0; i--) {
-      const d = saudiNow(); d.setUTCDate(d.getUTCDate() - i)
-      buckets[d.toISOString().split('T')[0]] = 0
+      setSalesData(asArray<DashboardDailySale>(summary.dailySales).map(row => {
+        const d = new Date(row.date + 'T12:00:00Z')
+        const label = days <= 7
+          ? d.toLocaleDateString('en-US', { weekday: 'short' })
+          : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        return { day: label, sales: Number(row.sales ?? 0) }
+      }))
+    } catch (error) {
+      console.error('[DashboardPage] failed to load dashboard chart', error)
+      setSalesData([])
+    } finally {
+      setChartLoading(false)
     }
-    for (const inv of data ?? []) {
-      const key = inv.invoice_date?.slice(0, 10)
-      if (key && key in buckets) buckets[key] += Number(inv.total_amount ?? 0)
-    }
-    setSalesData(Object.entries(buckets).map(([date, sales]) => {
-      const d = new Date(date + 'T12:00:00Z')
-      const label = days <= 7
-        ? d.toLocaleDateString('en-US', { weekday: 'short' })
-        : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      return { day: label, sales }
-    }))
-    setChartLoading(false)
   }, [tid, period])
 
   useEffect(() => { loadStats() }, [loadStats])

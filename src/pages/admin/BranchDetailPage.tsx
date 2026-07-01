@@ -10,11 +10,12 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
-import { saudiTodayRange } from '@/lib/utils/date'
+import { saudiNow, saudiDateStr } from '@/lib/utils/date'
 import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { getCachedProductionStatus, productionStatusLabel, readCachedProductionStatus } from '@/lib/zatca/status'
 import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
+import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
 
 const db = () => supabase as any
 
@@ -60,6 +61,33 @@ const statusConfig = {
   paid:      { variant: 'success' as const, label: 'Paid',      icon: CheckCircle2 },
   pending:   { variant: 'warning' as const, label: 'Pending',   icon: Clock },
   cancelled: { variant: 'danger'  as const, label: 'Cancelled', icon: AlertCircle },
+}
+
+interface DashboardDailySale {
+  date: string
+  sales: number
+}
+
+interface DashboardSummary {
+  totalSales: number
+  totalCount: number
+  totalCash: number
+  totalCard: number
+  totalVat: number
+  totalExpenses: number
+  dailySales: DashboardDailySale[]
+  branchStats: unknown[]
+}
+
+const EMPTY_DASHBOARD_SUMMARY: DashboardSummary = {
+  totalSales: 0,
+  totalCount: 0,
+  totalCash: 0,
+  totalCard: 0,
+  totalVat: 0,
+  totalExpenses: 0,
+  dailySales: [],
+  branchStats: [],
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -122,29 +150,30 @@ export default function BranchDetailPage() {
   const loadStats = useCallback(async () => {
     if (!tid || !branchId) { setStatsLoading(false); return }
     setStatsLoading(true)
-    const { start, end } = saudiTodayRange()
-    const [invRes, expRes] = await Promise.all([
-      db().from('invoices')
-        .select('total_amount, tax_amount, payment_method')
-        .eq('tenant_id', tid)
-        .eq('branch_id', branchId)
-        .gte('created_at', start)
-        .lte('created_at', end),
-      db().from('expenses')
-        .select('amount')
-        .eq('tenant_id', tid)
-        .eq('branch_id', branchId)
-        .gte('expense_date', start.slice(0, 10))
-        .lte('expense_date', end.slice(0, 10)),
-    ])
-    const invs: any[] = invRes.data ?? []
-    setTodaySales(invs.reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0))
-    setTodayCount(invs.length)
-    setTodayCash(invs.filter(i => i.payment_method === 'cash').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0))
-    setTodayCard(invs.filter(i => i.payment_method === 'card').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0))
-    setTodayVat(invs.reduce((s: number, i: any) => s + Number(i.tax_amount ?? 0), 0))
-    setTodayExpenses((expRes.data ?? []).reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0))
-    setStatsLoading(false)
+    const today = saudiDateStr()
+    try {
+      const summary = await loadReportSummary<DashboardSummary>(
+        'get_dashboard_summary',
+        { p_branch_id: branchId, p_start_date: today, p_end_date: today },
+        EMPTY_DASHBOARD_SUMMARY,
+      )
+      setTodaySales(Number(summary.totalSales ?? 0))
+      setTodayCount(Number(summary.totalCount ?? 0))
+      setTodayCash(Number(summary.totalCash ?? 0))
+      setTodayCard(Number(summary.totalCard ?? 0))
+      setTodayVat(Number(summary.totalVat ?? 0))
+      setTodayExpenses(Number(summary.totalExpenses ?? 0))
+    } catch (error) {
+      console.error('[BranchDetailPage] failed to load dashboard summary', error)
+      setTodaySales(0)
+      setTodayCount(0)
+      setTodayCash(0)
+      setTodayCard(0)
+      setTodayVat(0)
+      setTodayExpenses(0)
+    } finally {
+      setStatsLoading(false)
+    }
   }, [tid, branchId])
 
   const loadInvoices = useCallback(async () => {
@@ -164,29 +193,27 @@ export default function BranchDetailPage() {
   const loadChart = useCallback(async () => {
     if (!tid || !branchId) { setChartLoading(false); return }
     setChartLoading(true)
-    const from = new Date(); from.setDate(from.getDate() - 6); from.setHours(0, 0, 0, 0)
-    const { data } = await db()
-      .from('invoices')
-      .select('invoice_date, total_amount')
-      .eq('tenant_id', tid)
-      .eq('branch_id', branchId)
-      .gte('invoice_date', from.toISOString().slice(0, 10))
-      .order('invoice_date', { ascending: true })
-
-    const buckets: Record<string, number> = {}
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(); d.setDate(d.getDate() - i)
-      buckets[d.toISOString().slice(0, 10)] = 0
+    const from = saudiNow(); from.setUTCDate(from.getUTCDate() - 6)
+    try {
+      const summary = await loadReportSummary<DashboardSummary>(
+        'get_dashboard_summary',
+        {
+          p_branch_id: branchId,
+          p_start_date: from.toISOString().slice(0, 10),
+          p_end_date: saudiDateStr(),
+        },
+        EMPTY_DASHBOARD_SUMMARY,
+      )
+      setSalesData(asArray<DashboardDailySale>(summary.dailySales).map(row => ({
+        day: new Date(row.date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short' }),
+        sales: Number(row.sales ?? 0),
+      })))
+    } catch (error) {
+      console.error('[BranchDetailPage] failed to load dashboard chart', error)
+      setSalesData([])
+    } finally {
+      setChartLoading(false)
     }
-    for (const inv of data ?? []) {
-      const key = inv.invoice_date?.slice(0, 10)
-      if (key && key in buckets) buckets[key] += Number(inv.total_amount ?? 0)
-    }
-    setSalesData(Object.entries(buckets).map(([date, sales]) => ({
-      day: new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' }),
-      sales,
-    })))
-    setChartLoading(false)
   }, [tid, branchId])
 
   const loadLowStock = useCallback(async () => {
@@ -211,14 +238,13 @@ export default function BranchDetailPage() {
   const loadExpenses = useCallback(async () => {
     if (!tid || !branchId) { setExpLoading(false); return }
     setExpLoading(true)
-    const { start, end } = saudiTodayRange()
+    const today = saudiDateStr()
     const { data } = await db()
       .from('expenses')
-      .select('id, description, amount, payment_method, expense_date, expense_categories(name)')
+      .select('id, description, total_paid, payment_method, expense_date, expense_categories(name)')
       .eq('tenant_id', tid)
       .eq('branch_id', branchId)
-      .gte('expense_date', start.slice(0, 10))
-      .lte('expense_date', end.slice(0, 10))
+      .eq('expense_date', today)
       .order('created_at', { ascending: false })
       .limit(5)
     setRecentExps(data ?? [])
@@ -573,7 +599,7 @@ export default function BranchDetailPage() {
                     {exp.payment_method === 'cash' ? 'Cash' : exp.payment_method === 'card' ? 'Card' : exp.payment_method ?? '—'}
                   </span>
                   <span className="text-sm font-semibold text-gray-900 tabular-nums">
-                    <Rial amount={Number(exp.amount)} />
+                    <Rial amount={Number(exp.total_paid ?? 0)} />
                   </span>
                 </div>
               </div>

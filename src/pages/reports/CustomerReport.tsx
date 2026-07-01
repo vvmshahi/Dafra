@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import {
-  type ReportProps, fmt, fmtDate,
+  type ReportProps, fmtDate,
   StatCard, SkeletonCard, SkeletonTable, SectionHeader,
 } from './reportUtils'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { asArray, loadReportSummary, reportParams } from './reportingRpc'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -27,6 +27,15 @@ interface CustData {
   topCustomers:   TopCustomer[]
 }
 
+const EMPTY_CUSTOMER_DATA: CustData = {
+  totalCount: 0,
+  newThisPeriod: 0,
+  individualCount: 0,
+  businessCount: 0,
+  totalRevenue: 0,
+  topCustomers: [],
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CustomerReport({ startDate, endDate, branchId }: ReportProps) {
@@ -41,64 +50,19 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
       if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
       try {
-        // Customers are tenant-scoped, not branch-scoped
-        const [{ data: custData }, { data: invData }] = await Promise.all([
-          supabase
-            .from('customers')
-            .select('id, name, customer_type, created_at')
-            .eq('tenant_id', tid)
-            .eq('is_active', true),
-          (branchId
-            ? supabase.from('invoices').eq('branch_id', branchId)
-            : supabase.from('invoices').eq('tenant_id', tid))
-            .select('customer_id, total_amount, invoice_date')
-            .neq('status', 'cancelled')
-            .gte('invoice_date', startDate)
-            .lte('invoice_date', endDate),
-        ])
-
+        const summary = await loadReportSummary<CustData>(
+          'get_customer_report_summary',
+          reportParams(startDate, endDate, branchId),
+          EMPTY_CUSTOMER_DATA,
+        )
         if (cancelled) return
-
-        const customers = (custData ?? []) as any[]
-        const invoices  = (invData  ?? []) as any[]
-
-        const totalCount      = customers.length
-        const newThisPeriod   = customers.filter((c: any) => {
-          const created = (c.created_at as string).slice(0, 10)
-          return created >= startDate && created <= endDate
-        }).length
-        const individualCount = customers.filter((c: any) => c.customer_type === 'individual').length
-        const businessCount   = customers.filter((c: any) => c.customer_type === 'business').length
-        const totalRevenue    = invoices.reduce((s: number, i: any) => s + Number(i.total_amount), 0)
-
-        // Top customers by spend
-        const aggMap = new Map<string, { total: number; count: number; lastDate: string }>()
-        for (const inv of invoices) {
-          if (!inv.customer_id) continue
-          const curr = aggMap.get(inv.customer_id) ?? { total: 0, count: 0, lastDate: '' }
-          curr.total += Number(inv.total_amount)
-          curr.count += 1
-          if (!curr.lastDate || inv.invoice_date > curr.lastDate) curr.lastDate = inv.invoice_date
-          aggMap.set(inv.customer_id, curr)
-        }
-
-        const custMap = new Map(customers.map((c: any) => [c.id, c]))
-        const topCustomers: TopCustomer[] = Array.from(aggMap.entries())
-          .map(([id, stats]) => {
-            const cust = custMap.get(id)
-            return {
-              id,
-              name:         cust?.name ?? 'Unknown',
-              type:         cust?.customer_type ?? 'individual',
-              totalSpent:   stats.total,
-              orderCount:   stats.count,
-              lastPurchase: stats.lastDate || null,
-            }
-          })
-          .sort((a, b) => b.totalSpent - a.totalSpent)
-          .slice(0, 15)
-
-        setData({ totalCount, newThisPeriod, individualCount, businessCount, totalRevenue, topCustomers })
+        setData({
+          ...summary,
+          topCustomers: asArray<TopCustomer>(summary.topCustomers),
+        })
+      } catch (error) {
+        console.error('Unable to load customer report summary', error)
+        if (!cancelled) setData(EMPTY_CUSTOMER_DATA)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -123,7 +87,7 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
       <div className="flex flex-wrap gap-3">
         <StatCard label="Total Customers"   value={String(data?.totalCount ?? 0)}          primary />
         <StatCard label="New This Period"   value={String(data?.newThisPeriod ?? 0)}       accent="emerald" sub="joined during range" />
-        <StatCard label="Total Revenue"     value={<Rial amount={data?.totalRevenue ?? 0} />}  accent="emerald" sub="from invoices" />
+        <StatCard label="Net Customer Revenue" value={<Rial amount={data?.totalRevenue ?? 0} />}  accent="emerald" sub="credit notes deducted" />
         <StatCard label="Avg per Customer"  value={data?.topCustomers.length
           ? <Rial amount={data.totalRevenue / Math.max(data.topCustomers.length, 1)} />
           : <Rial amount={0} />}

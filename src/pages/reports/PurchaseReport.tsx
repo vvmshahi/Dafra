@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts'
-import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import {
-  type ReportProps, fmt, fmtDate, fmtMonth, generateMonths,
+  type ReportProps, fmtDate, fmtMonth,
   StatCard, SkeletonCard, SkeletonChart, SkeletonTable,
   EmptyChart, SectionHeader, ChartTooltip,
 } from './reportUtils'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { asArray, loadReportSummary, reportParams } from './reportingRpc'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -26,6 +26,15 @@ interface PurchData {
   monthlyBars:    MonthBar[]
 }
 
+const EMPTY_PURCHASE_DATA: PurchData = {
+  totalPurchased: 0,
+  totalVat: 0,
+  supplierCount: 0,
+  bySupplier: [],
+  topItems: [],
+  monthlyBars: [],
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function PurchaseReport({ startDate, endDate, branchId }: ReportProps) {
@@ -40,77 +49,24 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
       if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
       try {
-        // Purchases in range
-        const { data: purData } = await (branchId
-          ? supabase.from('purchases').eq('branch_id', branchId)
-          : supabase.from('purchases').eq('tenant_id', tid))
-          .select('id, purchase_date, total_amount, vat_amount, supplier_id, suppliers(name)')
-          .gte('purchase_date', startDate)
-          .lte('purchase_date', endDate)
-          .order('purchase_date', { ascending: false })
-
-        const purchases = (purData ?? []) as any[]
-        const ids       = purchases.map(p => p.id)
-
-        // Purchase items for top items
-        let items: any[] = []
-        if (ids.length > 0) {
-          const { data: itemData } = await supabase
-            .from('purchase_items')
-            .select('name, quantity, total')
-            .in('purchase_id', ids)
-          items = (itemData ?? []) as any[]
-        }
-
+        const summary = await loadReportSummary<PurchData>(
+          'get_purchase_report_summary',
+          reportParams(startDate, endDate, branchId),
+          EMPTY_PURCHASE_DATA,
+        )
         if (cancelled) return
-
-        const totalPurchased = purchases.reduce((s: number, p: any) => s + Number(p.total_amount), 0)
-        const totalVat       = purchases.reduce((s: number, p: any) => s + Number(p.vat_amount),   0)
-
-        // By supplier
-        const supMap = new Map<string, { name: string; total: number; count: number; lastDate: string }>()
-        for (const p of purchases) {
-          const sid  = p.supplier_id ?? '__none__'
-          const name = (p.suppliers as any)?.name ?? 'No Supplier'
-          const curr = supMap.get(sid) ?? { name, total: 0, count: 0, lastDate: '' }
-          curr.total += Number(p.total_amount)
-          curr.count += 1
-          if (!curr.lastDate || p.purchase_date > curr.lastDate) curr.lastDate = p.purchase_date
-          supMap.set(sid, curr)
-        }
-        const bySupplier: BySupplier[] = Array.from(supMap.values())
-          .sort((a, b) => b.total - a.total)
-
-        // Top items
-        const itemMap = new Map<string, { quantity: number; total: number }>()
-        for (const it of items) {
-          const curr = itemMap.get(it.name) ?? { quantity: 0, total: 0 }
-          curr.quantity += Number(it.quantity)
-          curr.total    += Number(it.total)
-          itemMap.set(it.name, curr)
-        }
-        const topItems: TopItem[] = Array.from(itemMap.entries())
-          .map(([name, s]) => ({ name, ...s }))
-          .sort((a, b) => b.total - a.total)
-          .slice(0, 10)
-
-        // Monthly bars
-        const months = generateMonths(startDate, endDate)
-        const monthlyBars: MonthBar[] = months.map(m => ({
-          month:     fmtMonth(m),
-          Purchases: purchases
-            .filter((p: any) => (p.purchase_date as string).startsWith(m))
-            .reduce((s: number, p: any) => s + Number(p.total_amount), 0),
-        }))
-
         setData({
-          totalPurchased,
-          totalVat,
-          supplierCount: new Set(purchases.map(p => p.supplier_id).filter(Boolean)).size,
-          bySupplier,
-          topItems,
-          monthlyBars,
+          ...summary,
+          bySupplier: asArray<BySupplier>(summary.bySupplier),
+          topItems: asArray<TopItem>(summary.topItems),
+          monthlyBars: asArray<MonthBar>(summary.monthlyBars).map(row => ({
+            ...row,
+            month: fmtMonth(row.month),
+          })),
         })
+      } catch (error) {
+        console.error('Unable to load purchase report summary', error)
+        if (!cancelled) setData(EMPTY_PURCHASE_DATA)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -145,8 +101,8 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
 
       {/* ── Summary cards ──────────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
-        <StatCard label="Total Purchased"  value={<Rial amount={data!.totalPurchased} />} primary />
-        <StatCard label="VAT Paid"         value={<Rial amount={data!.totalVat} />}      accent="amber" sub="input VAT" />
+        <StatCard label="Counted Purchases" value={<Rial amount={data!.totalPurchased} />} primary />
+        <StatCard label="Input VAT Support" value={<Rial amount={data!.totalVat} />}      accent="amber" sub="counted purchases only" />
         <StatCard label="Suppliers Used"   value={String(data!.supplierCount)}           sub="unique vendors" />
       </div>
 

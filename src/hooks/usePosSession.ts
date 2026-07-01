@@ -98,7 +98,7 @@ export function usePosSession(
 
     // 3. Fetch expenses for this session
     const { data: expData } = await q().from('expenses')
-      .select('amount, payment_method')
+      .select('total_paid, payment_method')
       .eq('session_id', session.id)
 
     // 4. Calculate totals
@@ -109,10 +109,10 @@ export function usePosSession(
       .filter((p: any) => p.method === 'card')
       .reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0)
     const totalExpenses = (expData ?? [])
-      .reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0)
+      .reduce((s: number, e: any) => s + Number(e.total_paid ?? 0), 0)
     const cashExpenses = (expData ?? [])
       .filter((e: any) => e.payment_method === 'cash')
-      .reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0)
+      .reduce((s: number, e: any) => s + Number(e.total_paid ?? 0), 0)
     const totalInvoices = (invData ?? []).length
 
     // 5. Expected cash = opening + cash sales - cash expenses

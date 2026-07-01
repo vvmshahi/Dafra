@@ -3,7 +3,6 @@ import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
   PieChart, Pie, Cell, Tooltip, Legend,
 } from 'recharts'
-import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import {
   type ReportProps, fmt,
@@ -11,7 +10,7 @@ import {
   EmptyChart, SectionHeader, ChartTooltip, CHART_COLORS,
 } from './reportUtils'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
-import { creditedInvoiceAmount, invoiceAccountingSign, positiveInvoiceAmount, signedInvoiceAmount } from './accounting'
+import { asArray, loadReportSummary, reportParams } from './reportingRpc'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -44,6 +43,21 @@ const METHOD_COLORS: Record<string, string> = {
   cash: '#10b981', card: '#6366f1', bank_transfer: '#f59e0b', other: '#9ca3af',
 }
 
+const EMPTY_SALES_DATA: SalesData = {
+  grossSales: 0,
+  creditNotes: 0,
+  totalRevenue: 0,
+  invoiceCount: 0,
+  avgOrderValue: 0,
+  vatOnSales: 0,
+  vatCredited: 0,
+  vatCollected: 0,
+  dailySales: [],
+  byMethod: [],
+  topProducts: [],
+  catPerformance: [],
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function SalesReport({ startDate, endDate, branchId }: ReportProps) {
@@ -58,123 +72,22 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
       if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
       try {
-        // 1. Invoices in range (non-cancelled)
-        let invQuery = supabase
-          .from('invoices')
-          .select('id, invoice_date, total_amount, tax_amount, zatca_invoice_type')
-          .neq('status', 'cancelled')
-          .gte('invoice_date', startDate)
-          .lte('invoice_date', endDate)
-        invQuery = branchId
-          ? invQuery.eq('branch_id', branchId)
-          : invQuery.eq('tenant_id', tid)
-        const { data: invData } = await invQuery
-
-        const invoices = (invData ?? []) as any[]
-        const invoiceIds = invoices.map(i => i.id)
-        const signByInvoiceId = new Map(invoices.map(i => [i.id, invoiceAccountingSign(i)]))
-
-        // 2. Payments + items (skip if no invoices)
-        let payments: any[] = []
-        let items:    any[] = []
-        let products: any[] = []
-
-        if (invoiceIds.length > 0) {
-          const [{ data: payData }, { data: itemData }] = await Promise.all([
-            supabase.from('payments').select('invoice_id, method, amount').in('invoice_id', invoiceIds),
-            supabase.from('invoice_items').select('invoice_id, name, quantity, total, product_id').in('invoice_id', invoiceIds),
-          ])
-          payments = (payData ?? []) as any[]
-          items    = (itemData ?? []) as any[]
-
-          // 3. Products for category info
-          const productIds = [...new Set(items.map(i => i.product_id).filter(Boolean))]
-          if (productIds.length > 0) {
-            const { data: prodData } = await supabase
-              .from('products')
-              .select('id, categories(name)')
-              .in('id', productIds)
-            products = (prodData ?? []) as any[]
-          }
-        }
-
+        const summary = await loadReportSummary<SalesData>(
+          'get_sales_report_summary',
+          reportParams(startDate, endDate, branchId),
+          EMPTY_SALES_DATA,
+        )
         if (cancelled) return
-
-        // Totals
-        const grossSales = invoices.reduce((s, i) => s + positiveInvoiceAmount(i, i.total_amount), 0)
-        const creditNotes = invoices.reduce((s, i) => s + creditedInvoiceAmount(i, i.total_amount), 0)
-        const totalRevenue = invoices.reduce((s, i) => s + signedInvoiceAmount(i, i.total_amount), 0)
-        const vatOnSales = invoices.reduce((s, i) => s + positiveInvoiceAmount(i, i.tax_amount), 0)
-        const vatCredited = invoices.reduce((s, i) => s + creditedInvoiceAmount(i, i.tax_amount), 0)
-        const vatCollected = invoices.reduce((s, i) => s + signedInvoiceAmount(i, i.tax_amount), 0)
-
-        // Daily sales
-        const dayMap = new Map<string, DaySale>()
-        for (const inv of invoices) {
-          const d = inv.invoice_date as string
-          const curr = dayMap.get(d) ?? { date: d, revenue: 0, invoices: 0 }
-          curr.revenue  += signedInvoiceAmount(inv, inv.total_amount)
-          curr.invoices += 1
-          dayMap.set(d, curr)
-        }
-        const dailySales = Array.from(dayMap.values())
-          .sort((a, b) => a.date.localeCompare(b.date))
-
-        // Payment method breakdown
-        const methodMap = new Map<string, number>()
-        for (const p of payments) {
-          const sign = signByInvoiceId.get(p.invoice_id) ?? 1
-          methodMap.set(p.method, (methodMap.get(p.method) ?? 0) + sign * Number(p.amount))
-        }
-        const byMethod: MethodData[] = Array.from(methodMap.entries())
-          .map(([name, value]) => ({ name: METHOD_LABELS[name] ?? name, value }))
-
-        // Top products
-        const prodMap = new Map<string, { quantity: number; revenue: number }>()
-        for (const item of items) {
-          const sign = signByInvoiceId.get(item.invoice_id) ?? 1
-          const curr = prodMap.get(item.name) ?? { quantity: 0, revenue: 0 }
-          curr.quantity += sign * Number(item.quantity)
-          curr.revenue  += sign * Number(item.total)
-          prodMap.set(item.name, curr)
-        }
-        const topProducts: TopProduct[] = Array.from(prodMap.entries())
-          .map(([name, s]) => ({ name, ...s, pct: totalRevenue > 0 ? (s.revenue / totalRevenue) * 100 : 0 }))
-          .sort((a, b) => b.revenue - a.revenue)
-          .slice(0, 10)
-
-        // Category performance
-        const catIdMap = new Map<string, string>()
-        for (const p of products) {
-          catIdMap.set(p.id, (p.categories as any)?.name ?? 'Uncategorized')
-        }
-        const catMap = new Map<string, { items: number; revenue: number }>()
-        for (const item of items) {
-          const sign = signByInvoiceId.get(item.invoice_id) ?? 1
-          const cat = (item.product_id && catIdMap.get(item.product_id)) ?? 'Uncategorized'
-          const curr = catMap.get(cat) ?? { items: 0, revenue: 0 }
-          curr.items   += sign * Number(item.quantity)
-          curr.revenue += sign * Number(item.total)
-          catMap.set(cat, curr)
-        }
-        const catPerformance: CatPerf[] = Array.from(catMap.entries())
-          .map(([name, s]) => ({ name, ...s, pct: totalRevenue > 0 ? (s.revenue / totalRevenue) * 100 : 0 }))
-          .sort((a, b) => b.revenue - a.revenue)
-
         setData({
-          grossSales,
-          creditNotes,
-          totalRevenue,
-          invoiceCount: invoices.length,
-          avgOrderValue: invoices.length > 0 ? totalRevenue / invoices.length : 0,
-          vatOnSales,
-          vatCredited,
-          vatCollected,
-          dailySales,
-          byMethod,
-          topProducts,
-          catPerformance,
+          ...summary,
+          dailySales: asArray<DaySale>(summary.dailySales),
+          byMethod: asArray<MethodData>(summary.byMethod),
+          topProducts: asArray<TopProduct>(summary.topProducts),
+          catPerformance: asArray<CatPerf>(summary.catPerformance),
         })
+      } catch (error) {
+        console.error('Unable to load sales report summary', error)
+        if (!cancelled) setData(EMPTY_SALES_DATA)
       } finally {
         if (!cancelled) setLoading(false)
       }

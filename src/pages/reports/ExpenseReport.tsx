@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
 } from 'recharts'
-import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import {
-  type ReportProps, fmt, fmtDate, generateMonths,
+  type ReportProps, fmtDate,
   StatCard, SkeletonCard, SkeletonChart,
   EmptyChart, SectionHeader, CHART_COLORS,
 } from './reportUtils'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
+import { asArray, loadReportSummary, reportParams } from './reportingRpc'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -23,6 +23,15 @@ interface ExpData {
   catBars:       CatBar[]
   log:           ExpenseLog[]
   monthlyFixed:  number
+}
+
+const EMPTY_EXPENSE_DATA: ExpData = {
+  totalVariable: 0,
+  totalFixed: 0,
+  grandTotal: 0,
+  catBars: [],
+  log: [],
+  monthlyFixed: 0,
 }
 
 const PAY_LABEL: Record<string, string> = {
@@ -43,57 +52,20 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
       if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
       try {
-        const [{ data: expData }, { data: fixData }] = await Promise.all([
-          (branchId
-            ? supabase.from('expenses').eq('branch_id', branchId)
-            : supabase.from('expenses').eq('tenant_id', tid))
-            .select('expense_date, description, total_paid, payment_method, expense_categories(name,color,icon)')
-            .gte('expense_date', startDate)
-            .lte('expense_date', endDate)
-            .order('expense_date', { ascending: false }),
-          (branchId
-            ? supabase.from('fixed_expenses').eq('branch_id', branchId)
-            : supabase.from('fixed_expenses').eq('tenant_id', tid))
-            .select('monthly_amount, is_active')
-            .eq('is_active', true),
-        ])
-
+        const summary = await loadReportSummary<ExpData>(
+          'get_expense_report_summary',
+          reportParams(startDate, endDate, branchId),
+          EMPTY_EXPENSE_DATA,
+        )
         if (cancelled) return
-
-        const expenses  = (expData  ?? []) as any[]
-        const fixedList = (fixData  ?? []) as any[]
-
-        const months       = generateMonths(startDate, endDate)
-        const monthlyFixed = fixedList.reduce((s: number, f: any) => s + Number(f.monthly_amount), 0)
-        const totalFixed   = monthlyFixed * months.length
-        const totalVariable = expenses.reduce((s: number, e: any) => s + Number(e.total_paid), 0)
-        const grandTotal    = totalVariable + totalFixed
-
-        // Category bars
-        const catMap = new Map<string, { value: number; color: string }>()
-        for (const e of expenses) {
-          const cat   = (e.expense_categories as any)?.name  ?? 'Uncategorized'
-          const color = (e.expense_categories as any)?.color ?? '#6b7280'
-          const curr  = catMap.get(cat) ?? { value: 0, color }
-          curr.value += Number(e.total_paid)
-          catMap.set(cat, curr)
-        }
-        if (totalFixed > 0) catMap.set('Fixed Costs', { value: totalFixed, color: '#6366f1' })
-        const catBars: CatBar[] = Array.from(catMap.entries())
-          .map(([name, { value, color }]) => ({ name, value, color }))
-          .sort((a, b) => b.value - a.value)
-          .slice(0, 10)
-
-        // Expense log
-        const log: ExpenseLog[] = expenses.map((e: any) => ({
-          date:        e.expense_date,
-          description: e.description,
-          category:    (e.expense_categories as any)?.name ?? '—',
-          amount:      Number(e.total_paid),
-          method:      e.payment_method,
-        }))
-
-        setData({ totalVariable, totalFixed, grandTotal, catBars, log, monthlyFixed })
+        setData({
+          ...summary,
+          catBars: asArray<CatBar>(summary.catBars),
+          log: asArray<ExpenseLog>(summary.log),
+        })
+      } catch (error) {
+        console.error('Unable to load expense report summary', error)
+        if (!cancelled) setData(EMPTY_EXPENSE_DATA)
       } finally {
         if (!cancelled) setLoading(false)
       }

@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import {
-  type ReportProps, fmt, fmtMonth, generateMonths,
+  type ReportProps, fmtMonth,
   StatCard, SkeletonCard, SkeletonTable, SectionHeader,
 } from './reportUtils'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import { creditedInvoiceAmount, positiveInvoiceAmount, signedInvoiceAmount } from './accounting'
+import { asArray, loadReportSummary, reportParams } from './reportingRpc'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -37,6 +36,18 @@ interface VatData {
   monthlyRows:   MonthVat[]
 }
 
+const EMPTY_VAT_DATA: VatData = {
+  grossSales: 0,
+  creditNotes: 0,
+  vatOnSales: 0,
+  vatCredited: 0,
+  vatCollected: 0,
+  vatPaidTotal: 0,
+  netPayable: 0,
+  salesTotal: 0,
+  monthlyRows: [],
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function VatReport({ startDate, endDate, branchId }: ReportProps) {
@@ -51,86 +62,19 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
       if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
       try {
-        const [
-          { data: invData },
-          { data: purData },
-          { data: expData },
-        ] = await Promise.all([
-          // Output VAT from sales
-          (branchId
-            ? supabase.from('invoices').eq('branch_id', branchId)
-            : supabase.from('invoices').eq('tenant_id', tid))
-            .select('invoice_date, total_amount, tax_amount, zatca_invoice_type')
-            .neq('status', 'cancelled')
-            .gte('invoice_date', startDate)
-            .lte('invoice_date', endDate),
-
-          // Input VAT from purchases
-          (branchId
-            ? supabase.from('purchases').eq('branch_id', branchId)
-            : supabase.from('purchases').eq('tenant_id', tid))
-            .select('purchase_date, total_amount, vat_amount')
-            .gte('purchase_date', startDate)
-            .lte('purchase_date', endDate),
-
-          // Input VAT from expenses
-          (branchId
-            ? supabase.from('expenses').eq('branch_id', branchId)
-            : supabase.from('expenses').eq('tenant_id', tid))
-            .select('expense_date, total_paid, vat_amount, vat_treatment')
-            .gte('expense_date', startDate)
-            .lte('expense_date', endDate)
-            .neq('vat_treatment', 'no_vat'),
-        ])
-
+        const summary = await loadReportSummary<VatData>(
+          'get_vat_support_summary',
+          reportParams(startDate, endDate, branchId),
+          EMPTY_VAT_DATA,
+        )
         if (cancelled) return
-
-        const invoices  = (invData ?? []) as any[]
-        const purchases = (purData ?? []) as any[]
-        const expenses  = (expData ?? []) as any[]
-
-        const grossSales   = invoices.reduce((s: number, i: any)  => s + positiveInvoiceAmount(i, i.total_amount), 0)
-        const creditNotes  = invoices.reduce((s: number, i: any)  => s + creditedInvoiceAmount(i, i.total_amount), 0)
-        const vatOnSales   = invoices.reduce((s: number, i: any)  => s + positiveInvoiceAmount(i, i.tax_amount), 0)
-        const vatCredited  = invoices.reduce((s: number, i: any)  => s + creditedInvoiceAmount(i, i.tax_amount), 0)
-        const vatCollected = invoices.reduce((s: number, i: any)  => s + signedInvoiceAmount(i, i.tax_amount), 0)
-        const vatPaidPur   = purchases.reduce((s: number, p: any) => s + Number(p.vat_amount), 0)
-        const vatPaidExp   = expenses.reduce((s: number, e: any)  => s + Number(e.vat_amount), 0)
-        const vatPaidTotal = vatPaidPur + vatPaidExp
-        const netPayable   = vatCollected - vatPaidTotal
-        const salesTotal   = invoices.reduce((s: number, i: any)  => s + signedInvoiceAmount(i, i.total_amount), 0)
-
-        // Monthly rows
-        const months = generateMonths(startDate, endDate)
-        const monthlyRows: MonthVat[] = months.map(m => {
-          const inv = invoices.filter((i: any)  => (i.invoice_date  as string).startsWith(m))
-          const pur = purchases.filter((p: any) => (p.purchase_date as string).startsWith(m))
-          const exp = expenses.filter((e: any)  => (e.expense_date  as string).startsWith(m))
-          const grossSales = inv.reduce((s: number, i: any) => s + positiveInvoiceAmount(i, i.total_amount), 0)
-          const creditNotes = inv.reduce((s: number, i: any) => s + creditedInvoiceAmount(i, i.total_amount), 0)
-          const salesAmount = inv.reduce((s: number, i: any) => s + signedInvoiceAmount(i, i.total_amount), 0)
-          const vatOnSales = inv.reduce((s: number, i: any) => s + positiveInvoiceAmount(i, i.tax_amount), 0)
-          const vatCredited = inv.reduce((s: number, i: any) => s + creditedInvoiceAmount(i, i.tax_amount), 0)
-          const vc  = inv.reduce((s: number, i: any) => s + signedInvoiceAmount(i, i.tax_amount),  0)
-          const pp  = pur.reduce((s: number, p: any) => s + Number(p.vat_amount),  0)
-          const pe  = exp.reduce((s: number, e: any) => s + Number(e.vat_amount),  0)
-          return {
-            month:          m,
-            grossSales,
-            creditNotes,
-            salesAmount,
-            vatOnSales,
-            vatCredited,
-            vatCollected:   vc,
-            purchaseAmount: pur.reduce((s: number, p: any) => s + Number(p.total_amount), 0),
-            vatPaidPur:     pp,
-            expenseAmount:  exp.reduce((s: number, e: any) => s + Number(e.total_paid),   0),
-            vatPaidExp:     pe,
-            netPayable:     vc - pp - pe,
-          }
+        setData({
+          ...summary,
+          monthlyRows: asArray<MonthVat>(summary.monthlyRows),
         })
-
-        setData({ grossSales, creditNotes, vatOnSales, vatCredited, vatCollected, vatPaidTotal, netPayable, salesTotal, monthlyRows })
+      } catch (error) {
+        console.error('Unable to load VAT support summary', error)
+        if (!cancelled) setData(EMPTY_VAT_DATA)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -178,22 +122,19 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
           accent="amber"
         />
         <StatCard
-          label="Net VAT Payable to ZATCA"
+          label="Net VAT Support Estimate"
           value={<Rial amount={data?.netPayable ?? 0} />}
           sub="Output − Input VAT"
           accent={(data?.netPayable ?? 0) >= 0 ? 'red' : 'emerald'}
         />
       </div>
 
-      {/* ── ZATCA note ──────────────────────────────────────── */}
+      {/* ── VAT support note ──────────────────────────────────────── */}
       <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 flex gap-3">
-        <div className="text-lg">🏛️</div>
         <div>
-          <p className="text-sm font-semibold text-amber-800">ZATCA Quarterly Filing</p>
+          <p className="text-sm font-semibold text-amber-800">VAT Support Report</p>
           <p className="text-xs text-amber-700 mt-0.5">
-            VAT returns are typically filed quarterly. Net VAT payable of{' '}
-            <strong><Rial amount={data?.netPayable ?? 0} /></strong> is due to ZATCA for this period.
-            Consult your accountant before filing.
+            This report is for business review and VAT support. Final filing should be reviewed by your accountant.
           </p>
         </div>
       </div>

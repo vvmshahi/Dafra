@@ -9,13 +9,14 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { saudiNow, saudiDateStr, saudiTodayRange } from '@/lib/utils/date'
+import { saudiNow, saudiDateStr } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { MeemLogo } from '@/components/MeemLogo'
 import { getCachedProductionStatus, productionStatusLabel, readCachedProductionStatus } from '@/lib/zatca/status'
 import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
+import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
 
 const db = () => supabase as any
 
@@ -47,6 +48,43 @@ const zatcaToneClass = {
   neutral: 'bg-gray-500/20 border-gray-400/20 text-gray-300',
   info: 'bg-blue-500/20 border-blue-400/20 text-blue-300',
 } as const
+
+interface DashboardBranchStat {
+  id: string
+  name: string
+  zatca_phase: number
+  todaySales: number
+  todayCount: number
+  todayCash: number
+  todayCard: number
+}
+
+interface DashboardDailySale {
+  date: string
+  sales: number
+}
+
+interface DashboardSummary {
+  totalSales: number
+  totalCount: number
+  totalCash: number
+  totalCard: number
+  totalVat: number
+  totalExpenses: number
+  dailySales: DashboardDailySale[]
+  branchStats: DashboardBranchStat[]
+}
+
+const EMPTY_DASHBOARD_SUMMARY: DashboardSummary = {
+  totalSales: 0,
+  totalCount: 0,
+  totalCash: 0,
+  totalCard: 0,
+  totalVat: 0,
+  totalExpenses: 0,
+  dailySales: [],
+  branchStats: [],
+}
 
 function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
   label: string; value: React.ReactNode; sub: string
@@ -111,67 +149,70 @@ export default function BranchDashboardPage() {
   const loadStats = useCallback(async () => {
     if (!tid || !bid) { setStatsLoading(false); return }
     setStatsLoading(true)
-    const { start, end } = saudiTodayRange()
     const today = saudiDateStr()
-    const [invRes, expRes, branchRes, certRes] = await Promise.all([
-      db().from('invoices')
-        .select('total_amount, id, payment_method, tax_amount')
-        .eq('tenant_id', tid)
-        .eq('branch_id', bid)
-        .gte('created_at', start)
-        .lte('created_at', end),
-      db().from('expenses')
-        .select('amount')
-        .eq('tenant_id', tid)
-        .eq('branch_id', bid)
-        .eq('expense_date', today),
-      db().from('branches').select('name, zatca_phase').eq('id', bid).maybeSingle(),
-      db().from('zatca_certificates')
-        .select('id')
-        .eq('branch_id', bid)
-        .eq('status', 'active')
-        .maybeSingle(),
-    ])
-    const invs = invRes.data ?? []
-    setTodaySales(invs.reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0))
-    setTodayCount(invs.length)
-    setTodayCash(invs.filter((i: any) => i.payment_method === 'cash').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0))
-    setTodayCard(invs.filter((i: any) => i.payment_method === 'card').reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0))
-    setTodayVat(invs.reduce((s: number, i: any) => s + Number(i.tax_amount ?? 0), 0))
-    setTodayExpenses((expRes.data ?? []).reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0))
-    setBranchName(branchRes.data?.name ?? '')
-    setZatcaPhase(branchRes.data?.zatca_phase ?? 1)
-    setHasActiveCert(!!certRes.data)
-    setProductionStatus(readCachedProductionStatus(bid))
-    setStatsLoading(false)
+    try {
+      const [summary, branchRes, certRes] = await Promise.all([
+        loadReportSummary<DashboardSummary>(
+          'get_dashboard_summary',
+          { p_branch_id: bid, p_start_date: today, p_end_date: today },
+          EMPTY_DASHBOARD_SUMMARY,
+        ),
+        db().from('branches').select('name, zatca_phase').eq('id', bid).maybeSingle(),
+        db().from('zatca_certificates')
+          .select('id')
+          .eq('branch_id', bid)
+          .eq('status', 'active')
+          .maybeSingle(),
+      ])
+
+      const branchSummary = asArray<DashboardBranchStat>(summary.branchStats)[0]
+      setTodaySales(Number(summary.totalSales ?? branchSummary?.todaySales ?? 0))
+      setTodayCount(Number(summary.totalCount ?? branchSummary?.todayCount ?? 0))
+      setTodayCash(Number(summary.totalCash ?? branchSummary?.todayCash ?? 0))
+      setTodayCard(Number(summary.totalCard ?? branchSummary?.todayCard ?? 0))
+      setTodayVat(Number(summary.totalVat ?? 0))
+      setTodayExpenses(Number(summary.totalExpenses ?? 0))
+      setBranchName(branchRes.data?.name ?? '')
+      setZatcaPhase(branchRes.data?.zatca_phase ?? 1)
+      setHasActiveCert(!!certRes.data)
+      setProductionStatus(readCachedProductionStatus(bid))
+    } catch (error) {
+      console.error('[BranchDashboardPage] failed to load dashboard summary', error)
+      setTodaySales(0)
+      setTodayCount(0)
+      setTodayCash(0)
+      setTodayCard(0)
+      setTodayVat(0)
+      setTodayExpenses(0)
+    } finally {
+      setStatsLoading(false)
+    }
   }, [tid, bid])
 
   const loadChart = useCallback(async () => {
     if (!tid || !bid) { setChartLoading(false); return }
     setChartLoading(true)
     const fromDay = saudiNow(); fromDay.setUTCDate(fromDay.getUTCDate() - 6)
-    const { data } = await db()
-      .from('invoices')
-      .select('invoice_date, total_amount')
-      .eq('tenant_id', tid)
-      .eq('branch_id', bid)
-      .gte('invoice_date', fromDay.toISOString().split('T')[0])
-      .order('invoice_date', { ascending: true })
-
-    const buckets: Record<string, number> = {}
-    for (let i = 6; i >= 0; i--) {
-      const d = saudiNow(); d.setUTCDate(d.getUTCDate() - i)
-      buckets[d.toISOString().split('T')[0]] = 0
+    try {
+      const summary = await loadReportSummary<DashboardSummary>(
+        'get_dashboard_summary',
+        {
+          p_branch_id: bid,
+          p_start_date: fromDay.toISOString().split('T')[0],
+          p_end_date: saudiDateStr(),
+        },
+        EMPTY_DASHBOARD_SUMMARY,
+      )
+      setSalesData(asArray<DashboardDailySale>(summary.dailySales).map(row => ({
+        day: new Date(row.date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short' }),
+        sales: Number(row.sales ?? 0),
+      })))
+    } catch (error) {
+      console.error('[BranchDashboardPage] failed to load dashboard chart', error)
+      setSalesData(last7Days())
+    } finally {
+      setChartLoading(false)
     }
-    for (const inv of data ?? []) {
-      const key = inv.invoice_date?.slice(0, 10)
-      if (key && key in buckets) buckets[key] += Number(inv.total_amount ?? 0)
-    }
-    setSalesData(Object.entries(buckets).map(([date, sales]) => ({
-      day: new Date(date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short' }),
-      sales,
-    })))
-    setChartLoading(false)
   }, [tid, bid])
 
   const loadInvoices = useCallback(async () => {

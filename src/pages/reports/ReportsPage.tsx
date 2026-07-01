@@ -17,8 +17,8 @@ type TabId = 'sales' | 'pl' | 'vat' | 'expenses' | 'customers' | 'purchases'
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'sales',     label: 'Sales',         icon: TrendingUp  },
-  { id: 'pl',        label: 'Profit & Loss', icon: BarChart2   },
-  { id: 'vat',       label: 'VAT',           icon: FileText    },
+  { id: 'pl',        label: 'Profit Estimate', icon: BarChart2   },
+  { id: 'vat',       label: 'VAT Support',     icon: FileText    },
   { id: 'expenses',  label: 'Expenses',      icon: CreditCard  },
   { id: 'customers', label: 'Customers',     icon: Users       },
   { id: 'purchases', label: 'Purchases',     icon: ShoppingCart },

@@ -3,15 +3,14 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   PieChart, Pie, Cell, Tooltip, Legend,
 } from 'recharts'
-import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import {
-  type ReportProps, fmt, fmtMonth, generateMonths,
+  type ReportProps, fmtMonth,
   StatCard, SkeletonCard, SkeletonChart, SkeletonTable,
   EmptyChart, SectionHeader, ChartTooltip, CHART_COLORS,
 } from './reportUtils'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
-import { creditedInvoiceAmount, positiveInvoiceAmount, signedInvoiceAmount } from './accounting'
+import { asArray, loadReportSummary, reportParams } from './reportingRpc'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,6 +28,7 @@ interface MonthRow {
 interface ExpenseCat { name: string; value: number }
 
 interface PLData {
+  reportLabel?:   string
   grossSales:    number
   creditNotes:   number
   totalRevenue:  number
@@ -39,6 +39,20 @@ interface PLData {
   margin:        number
   monthlyRows:   MonthRow[]
   expenseByCat:  ExpenseCat[]
+}
+
+const EMPTY_PL_DATA: PLData = {
+  reportLabel: 'Simple Profit Estimate',
+  grossSales: 0,
+  creditNotes: 0,
+  totalRevenue: 0,
+  totalCOGS: 0,
+  grossProfit: 0,
+  totalExpenses: 0,
+  netProfit: 0,
+  margin: 0,
+  monthlyRows: [],
+  expenseByCat: [],
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -52,84 +66,30 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
     let cancelled = false
     async function load() {
       const tid = profile?.tenant_id
-      const bid = branchId ?? profile?.branch_id
       if (!tid || !startDate || !endDate) { setLoading(false); return }
       setLoading(true)
       try {
-        // Filter clause helpers
-        const invFilter = (q: any) => (branchId ? q.eq('branch_id', branchId) : q.eq('tenant_id', tid))
-          .neq('status', 'cancelled').gte('invoice_date', startDate).lte('invoice_date', endDate)
-        const purFilter = (q: any) => (branchId ? q.eq('branch_id', branchId) : q.eq('tenant_id', tid))
-          .gte('purchase_date', startDate).lte('purchase_date', endDate)
-        const expFilter = (q: any) => (branchId ? q.eq('branch_id', branchId) : q.eq('tenant_id', tid))
-          .gte('expense_date', startDate).lte('expense_date', endDate)
-
-        const [
-          { data: invData },
-          { data: purData },
-          { data: expData },
-          { data: fixedData },
-        ] = await Promise.all([
-          invFilter(supabase.from('invoices').select('invoice_date, total_amount, zatca_invoice_type')),
-          purFilter(supabase.from('purchases').select('purchase_date, total_amount')),
-          expFilter(supabase.from('expenses').select('expense_date, total_paid, category_id, expense_categories(name,color)')),
-          (branchId ? supabase.from('fixed_expenses').eq('branch_id', branchId) : supabase.from('fixed_expenses').eq('tenant_id', tid))
-            .select('monthly_amount, is_active').eq('is_active', true),
-        ])
-
+        const summary = await loadReportSummary<PLData>(
+          'get_profit_report_summary',
+          reportParams(startDate, endDate, branchId),
+          EMPTY_PL_DATA,
+        )
         if (cancelled) return
-
-        const invoices     = (invData   ?? []) as any[]
-        const purchases    = (purData   ?? []) as any[]
-        const expenses     = (expData   ?? []) as any[]
-        const fixedMonthly = ((fixedData ?? []) as any[]).reduce((s: number, f: any) => s + Number(f.monthly_amount), 0)
-
-        // Estimate fixed expenses for the date range (# of months × monthly total)
-        const months = generateMonths(startDate, endDate)
-        const fixedTotal = fixedMonthly * months.length
-
-        const grossSales    = invoices.reduce((s: number, i: any) => s + positiveInvoiceAmount(i, i.total_amount), 0)
-        const creditNotes   = invoices.reduce((s: number, i: any) => s + creditedInvoiceAmount(i, i.total_amount), 0)
-        const totalRevenue  = invoices.reduce((s: number, i: any) => s + signedInvoiceAmount(i, i.total_amount), 0)
-        const totalCOGS     = purchases.reduce((s: number, p: any) => s + Number(p.total_amount), 0)
-        const varExpenses   = expenses.reduce((s: number, e: any) => s + Number(e.total_paid), 0)
-        const totalExpenses = varExpenses + fixedTotal
-        const grossProfit   = totalRevenue - totalCOGS
-        const netProfit     = grossProfit  - totalExpenses
-        const margin        = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0
-
-        // Monthly rows
-        const monthlyRows: MonthRow[] = months.map(m => {
-          const monthInvoices = invoices.filter((i: any) => (i.invoice_date as string).startsWith(m))
-          const grossSales = monthInvoices.reduce((s: number, i: any) => s + positiveInvoiceAmount(i, i.total_amount), 0)
-          const creditNotes = monthInvoices.reduce((s: number, i: any) => s + creditedInvoiceAmount(i, i.total_amount), 0)
-          const rev  = monthInvoices.reduce((s: number, i: any) => s + signedInvoiceAmount(i, i.total_amount), 0)
-          const cogs = purchases.filter((p: any) => (p.purchase_date as string).startsWith(m)).reduce((s: number, p: any) => s + Number(p.total_amount), 0)
-          const exp  = expenses.filter((e: any)  => (e.expense_date  as string).startsWith(m)).reduce((s: number, e: any) => s + Number(e.total_paid), 0) + fixedMonthly
-          const gp   = rev - cogs
-          const np   = gp - exp
-          return { month: m, grossSales, creditNotes, revenue: rev, cogs, grossProfit: gp, expenses: exp, netProfit: np }
+        setData({
+          ...summary,
+          monthlyRows: asArray<MonthRow>(summary.monthlyRows),
+          expenseByCat: asArray<ExpenseCat>(summary.expenseByCat),
         })
-
-        // Expense by category
-        const catMap = new Map<string, number>()
-        for (const e of expenses) {
-          const cat = (e.expense_categories as any)?.name ?? 'Uncategorized'
-          catMap.set(cat, (catMap.get(cat) ?? 0) + Number(e.total_paid))
-        }
-        if (fixedMonthly > 0) catMap.set('Fixed Costs', (catMap.get('Fixed Costs') ?? 0) + fixedTotal)
-        const expenseByCat: ExpenseCat[] = Array.from(catMap.entries())
-          .map(([name, value]) => ({ name, value }))
-          .sort((a, b) => b.value - a.value)
-
-        setData({ grossSales, creditNotes, totalRevenue, totalCOGS, grossProfit, totalExpenses, netProfit, margin, monthlyRows, expenseByCat })
+      } catch (error) {
+        console.error('Unable to load profit summary', error)
+        if (!cancelled) setData(EMPTY_PL_DATA)
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
     load()
     return () => { cancelled = true }
-  }, [startDate, endDate, branchId, profile?.tenant_id, profile?.branch_id])
+  }, [startDate, endDate, branchId, profile?.tenant_id])
 
   if (loading) {
     return (
@@ -156,7 +116,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
     month:    fmtMonth(r.month),
     Revenue:  r.revenue,
     Expenses: r.expenses + r.cogs,
-    'Net P&L': r.netProfit,
+    'Net Estimate': r.netProfit,
   }))
 
   return (
@@ -167,10 +127,10 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
         <StatCard label="Gross Sales"      value={<Rial amount={data!.grossSales} />}     primary />
         <StatCard label="Credit Notes / Returns" value={<Rial amount={data!.creditNotes} />} accent="amber" />
         <StatCard label="Net Sales"        value={<Rial amount={data!.totalRevenue} />}   accent="emerald" />
-        <StatCard label="Total Purchases"  value={<Rial amount={data!.totalCOGS} />}      accent="amber" sub="cost of goods" />
+        <StatCard label="Purchase Costs"   value={<Rial amount={data!.totalCOGS} />}      accent="amber" sub="counted purchase estimate" />
         <StatCard label="Gross Profit"     value={<Rial amount={data!.grossProfit} />}    accent={data!.grossProfit >= 0 ? 'emerald' : 'red'} />
         <StatCard label="Total Expenses"   value={<Rial amount={data!.totalExpenses} />}  accent="red" />
-        <StatCard label="Net Profit"       value={<Rial amount={data!.netProfit} />}      accent={data!.netProfit >= 0 ? 'emerald' : 'red'} sub="revenue − COGS − expenses" />
+        <StatCard label="Net Estimate"     value={<Rial amount={data!.netProfit} />}      accent={data!.netProfit >= 0 ? 'emerald' : 'red'} sub="net sales − purchases − expenses" />
         <StatCard label="Net Margin"       value={`${data!.margin.toFixed(1)}%`}          accent={data!.margin >= 0 ? 'emerald' : 'red'} />
       </div>
 
@@ -179,7 +139,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
 
         {/* Monthly bar chart */}
         <div className="lg:col-span-2 card p-4 space-y-3">
-          <SectionHeader title="Revenue vs Expenses by Month" />
+          <SectionHeader title={`${data!.reportLabel ?? 'Simple Profit Estimate'} by Month`} />
           {chartData.length === 0 ? <EmptyChart /> : (
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
@@ -230,7 +190,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
       {/* ── Monthly P&L table ───────────────────────────────── */}
       <div className="card overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-          <SectionHeader title="Monthly P&L Summary" />
+          <SectionHeader title="Monthly Simple Profit Summary" sub="Purchase-period costs are not true inventory COGS" />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
