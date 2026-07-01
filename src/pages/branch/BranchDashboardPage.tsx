@@ -143,6 +143,17 @@ function numberOrZero(value: unknown) {
   return Number.isFinite(n) ? n : 0
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function pick(record: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const key of keys) {
+    if (key in record) return record[key]
+  }
+  return undefined
+}
+
 function normalizeProductionStatus(value: unknown): ProductionOnboardingResponse | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const record = value as Record<string, unknown>
@@ -167,6 +178,21 @@ function normalizeProductionStatus(value: unknown): ProductionOnboardingResponse
 
 function hasObject(value: unknown) {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function normalizeBranchSummary(value: unknown): DashboardBranchStat | null {
+  if (!isRecord(value)) return null
+  const id = typeof pick(value, 'id', 'branch_id') === 'string'
+    ? String(pick(value, 'id', 'branch_id'))
+    : ''
+  return {
+    id,
+    todaySales: numberOrZero(pick(value, 'todaySales', 'today_sales')),
+    todayCount: Math.trunc(numberOrZero(pick(value, 'todayCount', 'invoice_count', 'today_count'))),
+    todayCash: numberOrZero(pick(value, 'todayCash', 'cash_total', 'cash_today')),
+    todayCard: numberOrZero(pick(value, 'todayCard', 'card_total', 'card_today')),
+    productionStatus: normalizeProductionStatus(pick(value, 'productionStatus', 'production_status')),
+  }
 }
 
 function rpcErrorDebug(error: unknown) {
@@ -245,14 +271,17 @@ export default function BranchDashboardPage() {
         db().from('branches').select('name, zatca_phase').eq('id', bid).maybeSingle(),
       ])
 
-      const branchSummary = asArray<DashboardBranchStat>(summary.branchStats)[0]
+      const summaryRecord = summary as Record<string, unknown>
+      const branchSummary = asArray<unknown>(pick(summaryRecord, 'branchStats', 'branch_stats'))
+        .map(normalizeBranchSummary)
+        .find(row => row?.id === bid) ?? null
       setStatsAvailable(true)
-      setTodaySales(numberOrZero(summary.totalSales ?? branchSummary?.todaySales))
-      setTodayCount(Math.trunc(numberOrZero(summary.totalCount ?? branchSummary?.todayCount)))
-      setTodayCash(numberOrZero(summary.totalCash ?? branchSummary?.todayCash))
-      setTodayCard(numberOrZero(summary.totalCard ?? branchSummary?.todayCard))
-      setTodayVat(numberOrZero(summary.totalVat))
-      setTodayExpenses(numberOrZero(summary.totalExpenses))
+      setTodaySales(numberOrZero(pick(summaryRecord, 'totalSales', 'total_sales') ?? branchSummary?.todaySales))
+      setTodayCount(Math.trunc(numberOrZero(pick(summaryRecord, 'totalCount', 'total_invoices') ?? branchSummary?.todayCount)))
+      setTodayCash(numberOrZero(pick(summaryRecord, 'totalCash', 'cash_total') ?? branchSummary?.todayCash))
+      setTodayCard(numberOrZero(pick(summaryRecord, 'totalCard', 'card_total') ?? branchSummary?.todayCard))
+      setTodayVat(numberOrZero(pick(summaryRecord, 'totalVat', 'vat_collected')))
+      setTodayExpenses(numberOrZero(pick(summaryRecord, 'totalExpenses', 'expenses_total')))
       setBranchName(branchRes.data?.name ?? '')
       setZatcaPhase(branchRes.data?.zatca_phase ?? 1)
       setHasActiveCert(false)
@@ -296,9 +325,10 @@ export default function BranchDashboardPage() {
         params,
         EMPTY_DASHBOARD_SUMMARY,
       )
-      setSalesData(asArray<DashboardDailySale>(summary.dailySales).map(row => ({
-        day: new Date(row.date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short' }),
-        sales: Number(row.sales ?? 0),
+      const summaryRecord = summary as Record<string, unknown>
+      setSalesData(asArray<Record<string, unknown>>(pick(summaryRecord, 'dailySales', 'daily_sales')).map(row => ({
+        day: new Date(String(pick(row, 'date', 'report_date') ?? '') + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short' }),
+        sales: numberOrZero(pick(row, 'sales', 'sales_amount')),
       })))
     } catch (error) {
       logBranchDashboardFailure('get_dashboard_summary', params, error)

@@ -135,6 +135,53 @@ function numberOrZero(value: unknown) {
   return Number.isFinite(n) ? n : 0
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function pick(record: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const key of keys) {
+    if (key in record) return record[key]
+  }
+  return undefined
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === 'string' ? value : null
+}
+
+function booleanOr(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback
+}
+
+function normalizeDashboardBranchStat(value: unknown): BranchStat | null {
+  if (!isRecord(value)) return null
+  const id = stringOrNull(pick(value, 'id', 'branch_id'))
+  if (!id) return null
+  const zatcaPhase = Math.trunc(numberOrZero(pick(value, 'zatca_phase', 'zatcaPhase'))) || 1
+  const productionStatusValue = pick(value, 'productionStatus', 'production_status')
+  return {
+    id,
+    name: stringOrNull(pick(value, 'name', 'branch_name')) ?? '',
+    logo_url: stringOrNull(pick(value, 'logo_url', 'logoUrl')),
+    is_active: booleanOr(pick(value, 'is_active', 'isActive'), true),
+    is_main_branch: booleanOr(pick(value, 'is_main_branch', 'isMainBranch'), false),
+    zatca_phase: zatcaPhase,
+    todaySales: numberOrZero(pick(value, 'todaySales', 'today_sales')),
+    todayCount: Math.trunc(numberOrZero(pick(value, 'todayCount', 'invoice_count', 'today_count'))),
+    todayCash: numberOrZero(pick(value, 'todayCash', 'cash_total', 'cash_today')),
+    todayCard: numberOrZero(pick(value, 'todayCard', 'card_total', 'card_today')),
+    sessionOpen: booleanOr(pick(value, 'sessionOpen', 'session_open'), false),
+    sessionOpenedAt: stringOrNull(pick(value, 'sessionOpenedAt', 'session_opened_at')),
+    metricsAvailable: booleanOr(pick(value, 'metricsAvailable', 'metrics_available'), true),
+    productionStatus: normalizeProductionStatus(productionStatusValue),
+    productionStatusReadable: booleanOr(
+      pick(value, 'productionStatusReadable', 'production_status_readable'),
+      zatcaPhase === 2 ? hasProductionStatusField(productionStatusValue) : true,
+    ),
+  }
+}
+
 function normalizeProductionStatus(value: unknown): ProductionOnboardingResponse | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const record = value as Record<string, unknown>
@@ -388,18 +435,21 @@ export default function DashboardPage() {
       )
 
       setDashboardSummaryAvailable(true)
-      setTotalSales(numberOrZero(summary.totalSales))
-      setTotalCount(Math.trunc(numberOrZero(summary.totalCount)))
-      setTotalCash(numberOrZero(summary.totalCash))
-      setTotalCard(numberOrZero(summary.totalCard))
-      setTotalVat(numberOrZero(summary.totalVat))
-      setTotalExpenses(numberOrZero(summary.totalExpenses))
+      const summaryRecord = summary as Record<string, unknown>
+      setTotalSales(numberOrZero(pick(summaryRecord, 'totalSales', 'total_sales')))
+      setTotalCount(Math.trunc(numberOrZero(pick(summaryRecord, 'totalCount', 'total_invoices'))))
+      setTotalCash(numberOrZero(pick(summaryRecord, 'totalCash', 'cash_total')))
+      setTotalCard(numberOrZero(pick(summaryRecord, 'totalCard', 'card_total')))
+      setTotalVat(numberOrZero(pick(summaryRecord, 'totalVat', 'vat_collected')))
+      setTotalExpenses(numberOrZero(pick(summaryRecord, 'totalExpenses', 'expenses_total')))
 
-      const rpcStatsById = new Map(asArray<BranchStat>(summary.branchStats).map(branch => [branch.id, branch]))
+      const rpcStats = asArray<unknown>(pick(summaryRecord, 'branchStats', 'branch_stats'))
+        .map(normalizeDashboardBranchStat)
+        .filter((branch): branch is BranchStat => !!branch)
+      const rpcStatsById = new Map(rpcStats.map(branch => [branch.id, branch]))
       const stats = fallbackBranchStats.length > 0
         ? fallbackBranchStats.map(fallback => {
             const branch = rpcStatsById.get(fallback.id)
-            const productionStatus = normalizeProductionStatus(branch?.productionStatus)
             return {
               ...fallback,
               ...branch,
@@ -408,22 +458,22 @@ export default function DashboardPage() {
               todayCash: numberOrZero(branch?.todayCash),
               todayCard: numberOrZero(branch?.todayCard),
               metricsAvailable: !!branch,
-              productionStatus,
+              productionStatus: branch?.productionStatus ?? null,
               productionStatusReadable: (fallback.zatca_phase ?? 1) === 2
-                ? hasProductionStatusField(branch?.productionStatus)
+                ? Boolean(branch?.productionStatusReadable)
                 : true,
             }
           })
-        : asArray<BranchStat>(summary.branchStats).map(branch => ({
+        : rpcStats.map(branch => ({
             ...branch,
             todaySales: numberOrZero(branch.todaySales),
             todayCount: Math.trunc(numberOrZero(branch.todayCount)),
             todayCash: numberOrZero(branch.todayCash),
             todayCard: numberOrZero(branch.todayCard),
             metricsAvailable: true,
-            productionStatus: normalizeProductionStatus(branch.productionStatus),
+            productionStatus: branch.productionStatus,
             productionStatusReadable: (branch.zatca_phase ?? 1) === 2
-              ? hasProductionStatusField(branch.productionStatus)
+              ? Boolean(branch.productionStatusReadable)
               : true,
           }))
       setBranchStats(stats)
@@ -462,12 +512,14 @@ export default function DashboardPage() {
         EMPTY_DASHBOARD_SUMMARY,
       )
 
-      setSalesData(asArray<DashboardDailySale>(summary.dailySales).map(row => {
-        const d = new Date(row.date + 'T12:00:00Z')
+      const summaryRecord = summary as Record<string, unknown>
+      setSalesData(asArray<Record<string, unknown>>(pick(summaryRecord, 'dailySales', 'daily_sales')).map(row => {
+        const reportDate = String(pick(row, 'date', 'report_date') ?? '')
+        const d = new Date(reportDate + 'T12:00:00Z')
         const label = days <= 7
           ? d.toLocaleDateString('en-US', { weekday: 'short' })
           : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-        return { day: label, sales: Number(row.sales ?? 0) }
+        return { day: label, sales: numberOrZero(pick(row, 'sales', 'sales_amount')) }
       }))
     } catch (error) {
       logDashboardRpcError('get_dashboard_summary', params, error)
