@@ -10,7 +10,7 @@ import {
   EmptyChart, ReportErrorState, SectionHeader, ChartTooltip, CHART_COLORS,
 } from './reportUtils'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
-import { asArray, loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
+import { loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -58,6 +58,59 @@ const EMPTY_SALES_DATA: SalesData = {
   catPerformance: [],
 }
 
+function numberOrZero(value: unknown) {
+  const n = typeof value === 'number' ? value : Number(value ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+function stringOrFallback(value: unknown, fallback: string) {
+  return typeof value === 'string' && value.trim() ? value : fallback
+}
+
+function arrayFromKeys<T>(record: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = record[key]
+    if (Array.isArray(value)) return value as T[]
+  }
+  return []
+}
+
+function normalizeSalesSummary(summary: SalesData): SalesData {
+  const record = summary as unknown as Record<string, unknown>
+
+  return {
+    grossSales: numberOrZero(record.grossSales),
+    creditNotes: numberOrZero(record.creditNotes),
+    totalRevenue: numberOrZero(record.totalRevenue),
+    invoiceCount: Math.trunc(numberOrZero(record.invoiceCount)),
+    avgOrderValue: numberOrZero(record.avgOrderValue),
+    vatOnSales: numberOrZero(record.vatOnSales),
+    vatCredited: numberOrZero(record.vatCredited),
+    vatCollected: numberOrZero(record.vatCollected),
+    dailySales: arrayFromKeys<Record<string, unknown>>(record, 'dailySales').map(row => ({
+      date: stringOrFallback(row.date, ''),
+      revenue: numberOrZero(row.revenue),
+      invoices: Math.trunc(numberOrZero(row.invoices)),
+    })),
+    byMethod: arrayFromKeys<Record<string, unknown>>(record, 'byMethod', 'paymentBreakdown').map(row => ({
+      name: stringOrFallback(row.name, 'Other'),
+      value: numberOrZero(row.value),
+    })),
+    topProducts: arrayFromKeys<Record<string, unknown>>(record, 'topProducts').map(row => ({
+      name: stringOrFallback(row.name, 'Unknown item'),
+      quantity: numberOrZero(row.quantity),
+      revenue: numberOrZero(row.revenue),
+      pct: numberOrZero(row.pct),
+    })),
+    catPerformance: arrayFromKeys<Record<string, unknown>>(record, 'catPerformance', 'categoryBreakdown').map(row => ({
+      name: stringOrFallback(row.name, 'Uncategorized'),
+      items: numberOrZero(row.items),
+      revenue: numberOrZero(row.revenue),
+      pct: numberOrZero(row.pct),
+    })),
+  }
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function SalesReport({ startDate, endDate, branchId }: ReportProps) {
@@ -80,13 +133,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
           EMPTY_SALES_DATA,
         )
         if (cancelled) return
-        setData({
-          ...summary,
-          dailySales: asArray<DaySale>(summary.dailySales),
-          byMethod: asArray<MethodData>(summary.byMethod),
-          topProducts: asArray<TopProduct>(summary.topProducts),
-          catPerformance: asArray<CatPerf>(summary.catPerformance),
-        })
+        setData(normalizeSalesSummary(summary))
       } catch (error) {
         console.error('Unable to load sales report summary', error)
         if (!cancelled) {
