@@ -5,7 +5,7 @@ import {
 import {
   TrendingUp, FileText, Loader2, Building2, Store,
   Plus, ArrowRight, ShoppingBag, CreditCard, Banknote,
-  ShieldCheck, Eye, BadgePercent, Receipt,
+  ShieldCheck, Eye, BadgePercent, Receipt, AlertCircle,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
@@ -77,6 +77,15 @@ interface DashboardDailySale {
   sales: number
 }
 
+interface BranchRow {
+  id: string
+  name: string
+  logo_url: string | null
+  is_active: boolean
+  is_main_branch: boolean
+  zatca_phase: number | null
+}
+
 interface DashboardSummary {
   totalSales: number
   totalCount: number
@@ -97,6 +106,24 @@ const EMPTY_DASHBOARD_SUMMARY: DashboardSummary = {
   totalExpenses: 0,
   dailySales: [],
   branchStats: [],
+}
+
+function branchRowToStat(branch: BranchRow): BranchStat {
+  return {
+    id: branch.id,
+    name: branch.name,
+    logo_url: branch.logo_url,
+    is_active: branch.is_active,
+    is_main_branch: branch.is_main_branch,
+    zatca_phase: branch.zatca_phase ?? 1,
+    todaySales: 0,
+    todayCount: 0,
+    todayCash: 0,
+    todayCard: 0,
+    sessionOpen: false,
+    sessionOpenedAt: null,
+    productionStatus: (branch.zatca_phase ?? 1) === 2 ? readCachedProductionStatus(branch.id) : null,
+  }
 }
 
 function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: boolean; onView: () => void }) {
@@ -252,6 +279,8 @@ export default function DashboardPage() {
   const [totalExpenses, setTotalExpenses] = useState(0)
   const [branchStats,   setBranchStats]   = useState<BranchStat[]>([])
   const [salesData,     setSalesData]     = useState<{ day: string; sales: number }[]>([])
+  const [branchLoadError, setBranchLoadError] = useState('')
+  const [dashboardLoadError, setDashboardLoadError] = useState('')
 
   const tid = profile?.tenant_id
 
@@ -261,8 +290,25 @@ export default function DashboardPage() {
     if (!tid) return
     setStatsLoading(true)
     setBranchLoading(true)
+    setBranchLoadError('')
+    setDashboardLoadError('')
     const today = saudiDateStr()
+    let fallbackBranchStats: BranchStat[] = []
     try {
+      const { data: branchRows, error: branchError } = await supabase
+        .from('branches')
+        .select('id, name, logo_url, is_active, is_main_branch, zatca_phase')
+        .eq('tenant_id', tid)
+        .order('is_main_branch', { ascending: false })
+        .order('created_at', { ascending: true })
+
+      if (branchError) {
+        console.error('[DashboardPage] failed to load branches', branchError)
+        setBranchLoadError('Branches could not be loaded. Refresh the page or open Settings > Branches to verify access.')
+      } else {
+        fallbackBranchStats = ((branchRows as BranchRow[]) ?? []).map(branchRowToStat)
+      }
+
       const summary = await loadReportSummary<DashboardSummary>(
         'get_dashboard_summary',
         { p_branch_id: null, p_start_date: today, p_end_date: today },
@@ -276,14 +322,28 @@ export default function DashboardPage() {
       setTotalVat(Number(summary.totalVat ?? 0))
       setTotalExpenses(Number(summary.totalExpenses ?? 0))
 
-      const stats = asArray<BranchStat>(summary.branchStats).map(branch => ({
-        ...branch,
-        todaySales: Number(branch.todaySales ?? 0),
-        todayCount: Number(branch.todayCount ?? 0),
-        todayCash: Number(branch.todayCash ?? 0),
-        todayCard: Number(branch.todayCard ?? 0),
-        productionStatus: (branch.zatca_phase ?? 1) === 2 ? readCachedProductionStatus(branch.id) : null,
-      }))
+      const rpcStatsById = new Map(asArray<BranchStat>(summary.branchStats).map(branch => [branch.id, branch]))
+      const stats = fallbackBranchStats.length > 0
+        ? fallbackBranchStats.map(fallback => {
+            const branch = rpcStatsById.get(fallback.id)
+            return {
+              ...fallback,
+              ...branch,
+              todaySales: Number(branch?.todaySales ?? 0),
+              todayCount: Number(branch?.todayCount ?? 0),
+              todayCash: Number(branch?.todayCash ?? 0),
+              todayCard: Number(branch?.todayCard ?? 0),
+              productionStatus: (fallback.zatca_phase ?? 1) === 2 ? readCachedProductionStatus(fallback.id) : null,
+            }
+          })
+        : asArray<BranchStat>(summary.branchStats).map(branch => ({
+            ...branch,
+            todaySales: Number(branch.todaySales ?? 0),
+            todayCount: Number(branch.todayCount ?? 0),
+            todayCash: Number(branch.todayCash ?? 0),
+            todayCard: Number(branch.todayCard ?? 0),
+            productionStatus: (branch.zatca_phase ?? 1) === 2 ? readCachedProductionStatus(branch.id) : null,
+          }))
       setBranchStats(stats)
 
       stats
@@ -299,13 +359,14 @@ export default function DashboardPage() {
         })
     } catch (error) {
       console.error('[DashboardPage] failed to load dashboard summary', error)
+      setDashboardLoadError('Dashboard totals could not be loaded. Branches are shown with zero totals until the report RPC responds.')
       setTotalSales(0)
       setTotalCount(0)
       setTotalCash(0)
       setTotalCard(0)
       setTotalVat(0)
       setTotalExpenses(0)
-      setBranchStats([])
+      setBranchStats(fallbackBranchStats)
     } finally {
       setStatsLoading(false)
       setBranchLoading(false)
@@ -368,7 +429,7 @@ export default function DashboardPage() {
   // While branchLoading===true (profile not yet loaded, or fetch in flight)
   // we fall through to the full layout with skeleton cards — never flash
   // the empty state prematurely.
-  if (!branchLoading && branchStats.length === 0) {
+  if (!branchLoading && !branchLoadError && branchStats.length === 0) {
     return <WelcomeState onAddBranch={() => navigate('/settings')} />
   }
 
@@ -397,6 +458,23 @@ export default function DashboardPage() {
           icon={Receipt} gradient="bg-gradient-to-br from-[#7c3aed] to-[#5b21b6]" loading={statsLoading} />
       </div>
 
+      {(branchLoadError || dashboardLoadError) && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
+          <AlertCircle size={16} className="text-amber-600 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-900">Dashboard data needs a refresh</p>
+            <p className="text-xs text-amber-800 mt-0.5">{branchLoadError || dashboardLoadError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={loadStats}
+            className="text-xs font-semibold text-amber-900 hover:text-amber-700"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* ── Branch grid ──────────────────────────────────────── */}
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -413,6 +491,16 @@ export default function DashboardPage() {
             {[1, 2, 3].map(i => (
               <div key={i} className="bg-white rounded-2xl border border-gray-100 p-5 h-52 animate-pulse" />
             ))}
+          </div>
+        ) : branchLoadError && branchStats.length === 0 ? (
+          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5">
+            <div className="flex items-start gap-3">
+              <AlertCircle size={18} className="text-amber-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-amber-900">Branches could not be loaded</p>
+                <p className="text-xs text-amber-800 mt-1">{branchLoadError}</p>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">

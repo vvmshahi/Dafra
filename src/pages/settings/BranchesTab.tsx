@@ -143,6 +143,23 @@ function useSection(initial = true) {
   return { open, toggle: () => setOpen(v => !v) }
 }
 
+function branchPosSettingsErrorMessage(error: unknown): string {
+  const message = error && typeof error === 'object' && 'message' in error
+    ? String((error as { message?: unknown }).message ?? '')
+    : String(error ?? '')
+
+  if (/permission|forbidden|unauthorized|42501/i.test(message)) {
+    return 'You do not have permission to update POS checkout settings for this branch.'
+  }
+  if (/function .*update_branch_pos_settings|could not find the function|PGRST202|schema cache/i.test(message)) {
+    return 'The POS settings update is not available yet. Apply the latest SQL hotfix, then refresh and try again.'
+  }
+  if (/allow_split_payments|unsupported POS setting|invalid POS settings/i.test(message)) {
+    return 'The POS checkout settings payload was rejected. Refresh and try again.'
+  }
+  return message || 'Failed to save POS checkout settings.'
+}
+
 /* ── Drawer ──────────────────────────────────────────────────── */
 
 function BranchDrawer({
@@ -255,6 +272,14 @@ function BranchDrawer({
     return data.publicUrl
   }
 
+  const savePosSettings = async (branchId: string) => {
+    const { error } = await (supabase as any).rpc('update_branch_pos_settings', {
+      p_branch_id: branchId,
+      p_payload: { allow_split_payments: form.allow_split_payments },
+    })
+    if (error) throw new Error(branchPosSettingsErrorMessage(error))
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -283,7 +308,6 @@ function BranchDrawer({
         receipt_footer:   form.receipt_footer.trim() || null,
         show_logo:        form.show_logo,
         invoice_language: form.invoice_language,
-        allow_split_payments: form.allow_split_payments,
         zatca_phase:      isNew ? (isPhase2 ? 2 : 1) : form.zatca_phase,
         is_active:        form.is_active,
         is_main_branch:   form.is_main_branch,
@@ -302,6 +326,7 @@ function BranchDrawer({
         if (error) throw error
         const logoUrl = await uploadLogo(data.id)
         if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', data.id)
+        if (form.allow_split_payments) await savePosSettings(data.id)
 
         // Refresh the parent branch list now (branch is in DB regardless of login outcome)
         onRefresh?.()
@@ -326,6 +351,9 @@ function BranchDrawer({
         if (error) throw error
         const logoUrl = await uploadLogo(branch!.id)
         if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', branch!.id)
+        if (form.allow_split_payments !== (branch!.allow_split_payments ?? false)) {
+          await savePosSettings(branch!.id)
+        }
       }
 
       onSaved()
