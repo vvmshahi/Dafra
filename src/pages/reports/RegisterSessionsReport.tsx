@@ -4,7 +4,9 @@ import { supabase } from '@/lib/supabase'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import {
   type RegisterSessionSummary,
+  logRegisterSessionRpcError,
   normalizeRegisterSessionList,
+  registerSessionRpcErrorMessage,
   registerSessionLabel,
   registerSessionTimeRange,
 } from '@/lib/registerSessions'
@@ -31,16 +33,22 @@ export default function RegisterSessionsReport({ branchId }: ReportProps) {
     setLoading(true)
     setError('')
     try {
-      const { data, error: rpcError } = await (supabase as any).rpc('get_register_sessions', {
-        p_branch_id: branchId,
+      const params = {
+        ...(branchId ? { p_branch_id: branchId } : {}),
         p_limit: 80,
+      }
+      const { data, error: rpcError } = await (supabase as any).rpc('get_register_sessions', {
+        ...params,
       })
       if (rpcError) throw rpcError
       setSessions(normalizeRegisterSessionList(data))
     } catch (err) {
-      console.error('[RegisterSessionsReport] failed to load register sessions', err)
+      logRegisterSessionRpcError('get_register_sessions', {
+        ...(branchId ? { p_branch_id: branchId } : {}),
+        p_limit: 80,
+      }, err)
       setSessions([])
-      setError('Register Sessions are unavailable until the Phase 5C-5A SQL patch is applied.')
+      setError(registerSessionRpcErrorMessage(err))
     } finally {
       setLoading(false)
     }

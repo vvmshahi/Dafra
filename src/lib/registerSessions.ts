@@ -38,6 +38,21 @@ export interface RegisterSessionSummary {
   recentInvoices: RegisterInvoiceRow[]
 }
 
+type RpcErrorLike = {
+  code?: unknown
+  message?: unknown
+  details?: unknown
+  hint?: unknown
+}
+
+export interface RegisterSessionRpcErrorInfo {
+  code: string
+  message: string
+  details: string
+  hint: string
+  combined: string
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -157,4 +172,55 @@ export function formatSaudiSessionDateTime(utcString: string): string {
     minute: '2-digit',
     hour12: true,
   })
+}
+
+export function registerSessionRpcErrorInfo(error: unknown): RegisterSessionRpcErrorInfo {
+  const fields = isRecord(error)
+    ? {
+        code: typeof (error as RpcErrorLike).code === 'string' ? String((error as RpcErrorLike).code) : '',
+        message: typeof (error as RpcErrorLike).message === 'string' ? String((error as RpcErrorLike).message) : '',
+        details: typeof (error as RpcErrorLike).details === 'string' ? String((error as RpcErrorLike).details) : '',
+        hint: typeof (error as RpcErrorLike).hint === 'string' ? String((error as RpcErrorLike).hint) : '',
+      }
+    : {
+        code: '',
+        message: error instanceof Error ? error.message : String(error ?? ''),
+        details: '',
+        hint: '',
+      }
+  return {
+    ...fields,
+    combined: [fields.code, fields.message, fields.details, fields.hint].filter(Boolean).join(' '),
+  }
+}
+
+export function logRegisterSessionRpcError(functionName: string, params: Record<string, unknown>, error: unknown) {
+  const info = registerSessionRpcErrorInfo(error)
+  console.error('[registerSessions] RPC failed', {
+    functionName,
+    params,
+    code: info.code || null,
+    message: info.message || null,
+    details: info.details || null,
+    hint: info.hint || null,
+    error,
+  })
+}
+
+export function registerSessionRpcErrorMessage(error: unknown): string {
+  const { combined } = registerSessionRpcErrorInfo(error)
+
+  if (/PGRST202|schema cache|could not find the function|function .* not found/i.test(combined)) {
+    return 'Register Session RPC is not available in the Supabase REST schema yet. Reload the schema, then refresh.'
+  }
+
+  if (/permission|42501|unauthorized|jwt|session/i.test(combined)) {
+    return 'Your session permissions could not be verified. Refresh and sign in again if needed.'
+  }
+
+  if (/22023|invalid/i.test(combined)) {
+    return 'Register session request was invalid. Refresh and try again.'
+  }
+
+  return 'Register session data could not be loaded. Please refresh.'
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { normalizeRegisterSession } from '@/lib/registerSessions'
+import { logRegisterSessionRpcError, normalizeRegisterSession } from '@/lib/registerSessions'
 
 export interface PosSession {
   id: string
@@ -102,7 +102,13 @@ export function usePosSession(
       p_branch_id: branchId,
       p_opening_cash: openingCash,
     })
-    if (error) throw error
+    if (error) {
+      logRegisterSessionRpcError('open_register_session', {
+        p_branch_id: branchId,
+        p_opening_cash: openingCash,
+      }, error)
+      throw error
+    }
     const nextSession = posSessionFromRpc(data)
     setSession({ ...nextSession, tenant_id: tenantId, opened_by: userId ?? null })
   }, [branchId, tenantId, userId])
@@ -123,7 +129,15 @@ export function usePosSession(
       p_closing_checks: closingChecks ?? {},
       p_notes: notes,
     })
-    if (error) throw error
+    if (error) {
+      logRegisterSessionRpcError('close_register_session', {
+        p_session_id: session.id,
+        p_actual_cash: closingCashActual,
+        p_closing_checks: closingChecks ?? {},
+        p_notes: notes,
+      }, error)
+      throw error
+    }
 
     setSession(null)
     return closedSummaryFromRpc(data)

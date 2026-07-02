@@ -18,8 +18,10 @@ import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
 import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
 import {
   type RegisterSessionSummary,
+  logRegisterSessionRpcError,
   normalizeRegisterSessionList,
   registerSessionLabel,
+  registerSessionRpcErrorMessage,
   registerSessionTimeRange,
 } from '@/lib/registerSessions'
 
@@ -510,8 +512,6 @@ export default function DashboardPage() {
 
       try {
         const { data, error } = await (supabase as any).rpc('get_register_session_summary', {
-          p_branch_id: null,
-          p_session_id: null,
         })
         if (error) throw error
         registerSessionsByBranch = new Map(
@@ -519,8 +519,8 @@ export default function DashboardPage() {
         )
         registerSessionAvailable = true
       } catch (sessionError) {
-        logDashboardRpcError('get_register_session_summary', { p_branch_id: null, p_session_id: null }, sessionError)
-        setRegisterSessionLoadError('Register Session summaries are unavailable until the Phase 5C-5A SQL patch is applied.')
+        logRegisterSessionRpcError('get_register_session_summary', {}, sessionError)
+        setRegisterSessionLoadError(registerSessionRpcErrorMessage(sessionError))
       }
 
       setDashboardSummaryAvailable(true)

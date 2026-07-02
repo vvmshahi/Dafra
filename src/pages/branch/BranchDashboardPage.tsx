@@ -20,8 +20,10 @@ import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
 import {
   type RegisterSessionSummary,
   formatSaudiSessionDateTime,
+  logRegisterSessionRpcError,
   normalizeRegisterSession,
   registerSessionLabel,
+  registerSessionRpcErrorMessage,
   registerSessionTimeRange,
 } from '@/lib/registerSessions'
 
@@ -371,14 +373,13 @@ export default function BranchDashboardPage() {
         db().from('branches').select('name, zatca_phase').eq('id', bid).maybeSingle(),
         (supabase as any).rpc('get_register_session_summary', {
           p_branch_id: bid,
-          p_session_id: null,
         }),
       ])
 
       if (registerRes.error) {
-        logBranchDashboardFailure('get_register_session_summary', { p_branch_id: bid, p_session_id: null }, registerRes.error)
+        logRegisterSessionRpcError('get_register_session_summary', { p_branch_id: bid }, registerRes.error)
         setRegisterSession(null)
-        setRegisterSessionError('Register Session summary is unavailable until the Phase 5C-5A SQL patch is applied.')
+        setRegisterSessionError(registerSessionRpcErrorMessage(registerRes.error))
       } else {
         const sessionValue = isRecord(registerRes.data)
           ? pick(registerRes.data, 'session')
