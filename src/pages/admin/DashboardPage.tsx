@@ -16,6 +16,12 @@ import { useAuth } from '@/hooks/useAuth'
 import { productionStatusLabel } from '@/lib/zatca/status'
 import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
 import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
+import {
+  type RegisterSessionSummary,
+  normalizeRegisterSessionList,
+  registerSessionLabel,
+  registerSessionTimeRange,
+} from '@/lib/registerSessions'
 
 
 // ── KPI stat card ─────────────────────────────────────────────────────────────
@@ -70,6 +76,8 @@ interface BranchStat {
   sessionOpen: boolean
   sessionOpenedAt: string | null
   metricsAvailable: boolean
+  registerSession?: RegisterSessionSummary | null
+  registerSessionAvailable?: boolean
   productionStatus?: ProductionOnboardingResponse | null
   productionStatusReadable?: boolean
 }
@@ -125,6 +133,8 @@ function branchRowToStat(branch: BranchRow): BranchStat {
     sessionOpen: false,
     sessionOpenedAt: null,
     metricsAvailable: false,
+    registerSession: null,
+    registerSessionAvailable: false,
     productionStatus: null,
     productionStatusReadable: (branch.zatca_phase ?? 1) !== 2,
   }
@@ -238,6 +248,7 @@ function logDashboardRpcError(functionName: string, params: Record<string, unkno
 
 function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: boolean; onView: () => void }) {
   const zatca = productionStatusLabel(branch.productionStatus)
+  const session = branch.registerSession ?? null
   const zatcaUnavailable = branch.zatca_phase === 2 && branch.productionStatusReadable === false
   const zatcaLabel = zatcaUnavailable ? 'Phase 2 status unavailable' : branch.zatca_phase === 2 ? zatca.label : 'Phase 1'
   const zatcaTone = zatcaUnavailable ? 'text-gray-400' : branch.zatca_phase === 2 && zatca.tone === 'success'
@@ -294,16 +305,75 @@ function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: 
         </div>
       </div>
 
+      {/* Register Session */}
+      <div className={`rounded-xl border px-3 py-3 ${
+        session?.isLongOpen
+          ? 'border-amber-200 bg-amber-50'
+          : session?.status === 'open'
+          ? 'border-emerald-100 bg-emerald-50'
+          : 'border-gray-100 bg-gray-50'
+      }`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+              {registerSessionLabel(session)}
+            </p>
+            <p className="mt-1 text-[11px] leading-snug text-gray-600">
+              {registerSessionTimeRange(session)}
+            </p>
+          </div>
+          {session?.status && (
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+              session.isLongOpen
+                ? 'bg-amber-100 text-amber-700'
+                : session.status === 'open'
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-gray-200 text-gray-600'
+            }`}>
+              {session.isLongOpen ? 'Long open' : session.status === 'open' ? 'Open' : 'Closed'}
+            </span>
+          )}
+        </div>
+        {session?.isLongOpen && (
+          <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-snug text-amber-800">
+            <AlertCircle size={12} className="mt-0.5 flex-shrink-0" />
+            Close this register before starting a new shift.
+          </p>
+        )}
+        {session?.sessionId ? (
+          <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+            <div>
+              <p className="text-gray-400">Session sales</p>
+              <p className="font-bold text-gray-900 tabular-nums"><Rial amount={session.totalSales} /></p>
+            </div>
+            <div>
+              <p className="text-gray-400">Expected cash</p>
+              <p className="font-bold text-gray-900 tabular-nums"><Rial amount={session.expectedCash} /></p>
+            </div>
+            <div>
+              <p className="text-gray-400">Cash</p>
+              <p className="font-semibold text-emerald-700 tabular-nums"><Rial amount={session.cashTotal} /></p>
+            </div>
+            <div>
+              <p className="text-gray-400">Card</p>
+              <p className="font-semibold text-blue-700 tabular-nums"><Rial amount={session.cardTotal} /></p>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-2 text-[11px] text-gray-400">No register sessions yet.</p>
+        )}
+      </div>
+
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-2">
         <div className="bg-primary-50 rounded-xl p-3">
-          <p className="text-[10px] text-primary-600 font-medium">Today's Sales</p>
+          <p className="text-[10px] text-primary-600 font-medium">Today by Date</p>
           {loading
             ? <div className="h-5 w-16 bg-primary-100 rounded animate-pulse mt-1" />
             : metricValue(branch.todaySales, 'text-base font-bold text-primary-700')}
         </div>
         <div className="bg-gray-50 rounded-xl p-3">
-          <p className="text-[10px] text-gray-500 font-medium">Invoices</p>
+          <p className="text-[10px] text-gray-500 font-medium">Date invoices</p>
           {loading
             ? <div className="h-5 w-8 bg-gray-100 rounded animate-pulse mt-1" />
             : branch.metricsAvailable
@@ -396,6 +466,7 @@ export default function DashboardPage() {
   const [salesData,     setSalesData]     = useState<{ day: string; sales: number }[]>([])
   const [branchLoadError, setBranchLoadError] = useState('')
   const [dashboardLoadError, setDashboardLoadError] = useState('')
+  const [registerSessionLoadError, setRegisterSessionLoadError] = useState('')
   const [dashboardSummaryAvailable, setDashboardSummaryAvailable] = useState(false)
   const [chartLoadError, setChartLoadError] = useState('')
 
@@ -409,9 +480,12 @@ export default function DashboardPage() {
     setBranchLoading(true)
     setBranchLoadError('')
     setDashboardLoadError('')
+    setRegisterSessionLoadError('')
     setDashboardSummaryAvailable(false)
     const today = saudiDateStr()
     let fallbackBranchStats: BranchStat[] = []
+    let registerSessionsByBranch = new Map<string, RegisterSessionSummary>()
+    let registerSessionAvailable = false
     try {
       const { data: branchRows, error: branchError } = await supabase
         .from('branches')
@@ -433,6 +507,21 @@ export default function DashboardPage() {
         summaryParams,
         EMPTY_DASHBOARD_SUMMARY,
       )
+
+      try {
+        const { data, error } = await (supabase as any).rpc('get_register_session_summary', {
+          p_branch_id: null,
+          p_session_id: null,
+        })
+        if (error) throw error
+        registerSessionsByBranch = new Map(
+          normalizeRegisterSessionList(data).map(session => [session.branchId, session]),
+        )
+        registerSessionAvailable = true
+      } catch (sessionError) {
+        logDashboardRpcError('get_register_session_summary', { p_branch_id: null, p_session_id: null }, sessionError)
+        setRegisterSessionLoadError('Register Session summaries are unavailable until the Phase 5C-5A SQL patch is applied.')
+      }
 
       setDashboardSummaryAvailable(true)
       const summaryRecord = summary as Record<string, unknown>
@@ -458,6 +547,8 @@ export default function DashboardPage() {
               todayCash: numberOrZero(branch?.todayCash),
               todayCard: numberOrZero(branch?.todayCard),
               metricsAvailable: !!branch,
+              registerSession: registerSessionsByBranch.get(fallback.id) ?? null,
+              registerSessionAvailable,
               productionStatus: branch?.productionStatus ?? null,
               productionStatusReadable: (fallback.zatca_phase ?? 1) === 2
                 ? Boolean(branch?.productionStatusReadable)
@@ -471,6 +562,8 @@ export default function DashboardPage() {
             todayCash: numberOrZero(branch.todayCash),
             todayCard: numberOrZero(branch.todayCard),
             metricsAvailable: true,
+            registerSession: registerSessionsByBranch.get(branch.id) ?? null,
+            registerSessionAvailable,
             productionStatus: branch.productionStatus,
             productionStatusReadable: (branch.zatca_phase ?? 1) === 2
               ? Boolean(branch.productionStatusReadable)
@@ -564,32 +657,32 @@ export default function DashboardPage() {
 
       {/* ── Summary KPIs ─────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
-        <StatCard label="Total Sales Today" value={dashboardSummaryAvailable ? <Rial amount={totalSales} /> : 'Unavailable'}
+        <StatCard label="Sales Today by Date" value={dashboardSummaryAvailable ? <Rial amount={totalSales} /> : 'Unavailable'}
           sub={dashboardSummaryAvailable ? `${totalCount} invoice${totalCount !== 1 ? 's' : ''} across all branches` : 'Retry to load totals'}
           icon={TrendingUp} gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28]" loading={statsLoading} />
-        <StatCard label="Total Invoices" value={dashboardSummaryAvailable ? String(totalCount) : 'Unavailable'}
+        <StatCard label="Invoices by Date" value={dashboardSummaryAvailable ? String(totalCount) : 'Unavailable'}
           sub={dashboardSummaryAvailable ? 'All branches combined' : 'Retry to load totals'}
           icon={FileText} gradient="bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]" loading={statsLoading} />
-        <StatCard label="Cash Today" value={dashboardSummaryAvailable ? <Rial amount={totalCash} /> : 'Unavailable'}
+        <StatCard label="Cash Today by Date" value={dashboardSummaryAvailable ? <Rial amount={totalCash} /> : 'Unavailable'}
           sub={dashboardSummaryAvailable ? 'Cash payments' : 'Retry to load totals'}
           icon={Banknote} gradient="bg-gradient-to-br from-[#059669] to-[#047857]" loading={statsLoading} />
-        <StatCard label="Card Today" value={dashboardSummaryAvailable ? <Rial amount={totalCard} /> : 'Unavailable'}
+        <StatCard label="Card Today by Date" value={dashboardSummaryAvailable ? <Rial amount={totalCard} /> : 'Unavailable'}
           sub={dashboardSummaryAvailable ? 'Card payments' : 'Retry to load totals'}
           icon={CreditCard} gradient="bg-gradient-to-br from-[#0891b2] to-[#0e7490]" loading={statsLoading} />
-        <StatCard label="VAT Collected" value={dashboardSummaryAvailable ? <Rial amount={totalVat} /> : 'Unavailable'}
+        <StatCard label="VAT Today by Date" value={dashboardSummaryAvailable ? <Rial amount={totalVat} /> : 'Unavailable'}
           sub={dashboardSummaryAvailable ? "Tax on today's sales" : 'Retry to load totals'}
           icon={BadgePercent} gradient="bg-gradient-to-br from-[#b45309] to-[#92400e]" loading={statsLoading} />
-        <StatCard label="Expenses Today" value={dashboardSummaryAvailable ? <Rial amount={totalExpenses} /> : 'Unavailable'}
+        <StatCard label="Expenses by Date" value={dashboardSummaryAvailable ? <Rial amount={totalExpenses} /> : 'Unavailable'}
           sub={dashboardSummaryAvailable ? 'All branches combined' : 'Retry to load totals'}
           icon={Receipt} gradient="bg-gradient-to-br from-[#7c3aed] to-[#5b21b6]" loading={statsLoading} />
       </div>
 
-      {(branchLoadError || dashboardLoadError) && (
+      {(branchLoadError || dashboardLoadError || registerSessionLoadError) && (
         <div className="flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
           <AlertCircle size={16} className="text-amber-600 mt-0.5 flex-shrink-0" />
           <div className="flex-1">
             <p className="text-sm font-semibold text-amber-900">Dashboard data needs a refresh</p>
-            <p className="text-xs text-amber-800 mt-0.5">{branchLoadError || dashboardLoadError}</p>
+            <p className="text-xs text-amber-800 mt-0.5">{branchLoadError || dashboardLoadError || registerSessionLoadError}</p>
           </div>
           <button
             type="button"
@@ -605,7 +698,7 @@ export default function DashboardPage() {
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-            <Building2 size={15} className="text-gray-400" /> Branches — Today
+            <Building2 size={15} className="text-gray-400" /> Branch Register Sessions
           </h2>
           <button onClick={() => navigate('/settings')}
             className="text-xs text-primary-600 font-medium hover:text-primary-700 flex items-center gap-1">

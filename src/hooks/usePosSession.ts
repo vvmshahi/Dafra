@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { normalizeRegisterSession } from '@/lib/registerSessions'
 
 export interface PosSession {
   id: string
@@ -29,8 +30,42 @@ export interface ClosedSessionSummary {
 
 const q = () => supabase as unknown as { from: (t: string) => any }
 
-function invoiceAccountingSign(invoice: { zatca_invoice_type?: string | null }): number {
-  return invoice.zatca_invoice_type === 'credit_note' ? -1 : 1
+function posSessionFromRpc(value: unknown): PosSession {
+  const summary = normalizeRegisterSession(value)
+  if (!summary?.sessionId || !summary.openedAt || !summary.status) {
+    throw new Error('Register session RPC returned an invalid session')
+  }
+  return {
+    id: summary.sessionId,
+    branch_id: summary.branchId,
+    tenant_id: '',
+    opened_by: null,
+    opened_at: summary.openedAt,
+    opening_cash: summary.openingCash,
+    status: summary.status,
+    closed_at: summary.closedAt,
+  }
+}
+
+function closedSummaryFromRpc(value: unknown): ClosedSessionSummary {
+  const summary = normalizeRegisterSession(value)
+  if (!summary?.sessionId || !summary.openedAt || !summary.closedAt) {
+    throw new Error('Register close RPC returned an invalid summary')
+  }
+  return {
+    id: summary.sessionId,
+    opened_at: summary.openedAt,
+    closed_at: summary.closedAt,
+    opening_cash: summary.openingCash,
+    closing_cash_actual: summary.actualCash ?? 0,
+    closing_cash_expected: summary.expectedCash,
+    closing_cash_difference: summary.cashDifference ?? 0,
+    total_cash_sales: summary.cashTotal,
+    total_card_sales: summary.cardTotal,
+    total_expenses: summary.expensesTotal,
+    total_invoices: summary.invoiceCount,
+    notes: null,
+  }
 }
 
 export function usePosSession(
@@ -63,89 +98,36 @@ export function usePosSession(
 
   const openSession = useCallback(async (openingCash: number): Promise<void> => {
     if (!branchId || !tenantId) return
-    const { data, error } = await q().from('pos_sessions').insert({
-      branch_id:    branchId,
-      tenant_id:    tenantId,
-      opened_by:    userId ?? null,
-      opening_cash: openingCash,
-      status:       'open',
-    }).select('*').single()
+    const { data, error } = await (supabase as any).rpc('open_register_session', {
+      p_branch_id: branchId,
+      p_opening_cash: openingCash,
+    })
     if (error) throw error
-    setSession(data)
+    const nextSession = posSessionFromRpc(data)
+    setSession({ ...nextSession, tenant_id: tenantId, opened_by: userId ?? null })
   }, [branchId, tenantId, userId])
 
   const closeSession = useCallback(async ({
     closingCashActual,
     notes,
+    closingChecks,
   }: {
     closingCashActual: number
     notes: string
+    closingChecks?: Record<string, unknown>
   }): Promise<ClosedSessionSummary> => {
     if (!session) throw new Error('No active session')
-
-    // 1. Fetch invoices linked to this session (exclude cancelled)
-    const { data: invData } = await q().from('invoices')
-      .select('id, zatca_invoice_type')
-      .eq('session_id', session.id)
-      .neq('status', 'cancelled')
-
-    const invoiceIds = (invData ?? []).map((i: any) => i.id)
-    const signByInvoiceId = new Map(
-      (invData ?? []).map((invoice: any) => [invoice.id, invoiceAccountingSign(invoice)]),
-    )
-
-    // 2. Fetch payments for those invoices
-    let paymentsData: any[] = []
-    if (invoiceIds.length > 0) {
-      const { data: pmtData } = await q().from('payments')
-        .select('invoice_id, method, amount')
-        .in('invoice_id', invoiceIds)
-      paymentsData = pmtData ?? []
-    }
-
-    // 3. Fetch expenses for this session
-    const { data: expData } = await q().from('expenses')
-      .select('total_paid, payment_method')
-      .eq('session_id', session.id)
-
-    // 4. Calculate totals
-    const cashSales = paymentsData
-      .filter((p: any) => p.method === 'cash')
-      .reduce((s: number, p: any) => s + (signByInvoiceId.get(p.invoice_id) ?? 1) * Number(p.amount ?? 0), 0)
-    const cardSales = paymentsData
-      .filter((p: any) => p.method === 'card')
-      .reduce((s: number, p: any) => s + (signByInvoiceId.get(p.invoice_id) ?? 1) * Number(p.amount ?? 0), 0)
-    const totalExpenses = (expData ?? [])
-      .reduce((s: number, e: any) => s + Number(e.total_paid ?? 0), 0)
-    const cashExpenses = (expData ?? [])
-      .filter((e: any) => e.payment_method === 'cash')
-      .reduce((s: number, e: any) => s + Number(e.total_paid ?? 0), 0)
-    const totalInvoices = (invData ?? []).length
-
-    // 5. Expected cash = opening + cash sales - cash expenses
-    const openingCash = Number(session.opening_cash)
-    const closingCashExpected = openingCash + cashSales - cashExpenses
-    const closingCashDifference = closingCashActual - closingCashExpected
-
-    // 6. Update session
-    const { data, error } = await q().from('pos_sessions').update({
-      closed_by:               userId ?? null,
-      closed_at:               new Date().toISOString(),
-      closing_cash_expected:   closingCashExpected,
-      closing_cash_actual:     closingCashActual,
-      closing_cash_difference: closingCashDifference,
-      total_cash_sales:        cashSales,
-      total_card_sales:        cardSales,
-      total_expenses:          totalExpenses,
-      total_invoices:          totalInvoices,
-      notes:                   notes.trim() || null,
-      status:                  'closed',
-    }).eq('id', session.id).select('*').single()
+    const { data, error } = await (supabase as any).rpc('close_register_session', {
+      p_session_id: session.id,
+      p_actual_cash: closingCashActual,
+      p_closing_checks: closingChecks ?? {},
+      p_notes: notes,
+    })
     if (error) throw error
 
     setSession(null)
-    return data as ClosedSessionSummary
-  }, [session, userId])
+    return closedSummaryFromRpc(data)
+  }, [session])
 
   return { session, loading, openSession, closeSession, fetchActiveSession }
 }

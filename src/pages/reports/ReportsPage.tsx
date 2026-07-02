@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, BarChart2, FileText, CreditCard, Users, ShoppingCart, Download } from 'lucide-react'
+import { TrendingUp, BarChart2, FileText, CreditCard, Users, ShoppingCart, Download, Clock3 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import type { Branch } from '@/types'
@@ -10,12 +10,14 @@ import VatReport        from './VatReport'
 import ExpenseReport    from './ExpenseReport'
 import CustomerReport   from './CustomerReport'
 import PurchaseReport   from './PurchaseReport'
+import RegisterSessionsReport from './RegisterSessionsReport'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type TabId = 'sales' | 'pl' | 'vat' | 'expenses' | 'customers' | 'purchases'
+type TabId = 'sessions' | 'sales' | 'pl' | 'vat' | 'expenses' | 'customers' | 'purchases'
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
+  { id: 'sessions', label: 'Register Sessions', icon: Clock3 },
   { id: 'sales',     label: 'Sales',         icon: TrendingUp  },
   { id: 'pl',        label: 'Profit Estimate', icon: BarChart2   },
   { id: 'vat',       label: 'VAT Support',     icon: FileText    },
@@ -38,7 +40,7 @@ const PRESETS: { id: DatePreset; label: string }[] = [
 export default function ReportsPage() {
   const { profile } = useAuth()
 
-  const [tab,       setTab]       = useState<TabId>('sales')
+  const [tab,       setTab]       = useState<TabId>('sessions')
   const [preset,    setPreset]    = useState<DatePreset>('this_month')
   const [startDate, setStartDate] = useState('')
   const [endDate,   setEndDate]   = useState('')
@@ -118,42 +120,46 @@ export default function ReportsPage() {
 
       {/* ── Date range + branch filter ───────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Preset pills */}
-        <div className="flex items-center gap-1 p-1 bg-white border border-gray-100 rounded-xl shadow-card flex-wrap">
-          {PRESETS.map(p => (
-            <button
-              key={p.id}
-              onClick={() => handlePreset(p.id)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                preset === p.id
-                  ? 'bg-gray-900 text-white'
-                  : 'text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+        {tab !== 'sessions' && (
+          <>
+            {/* Preset pills */}
+            <div className="flex items-center gap-1 p-1 bg-white border border-gray-100 rounded-xl shadow-card flex-wrap">
+              {PRESETS.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => handlePreset(p.id)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                    preset === p.id
+                      ? 'bg-gray-900 text-white'
+                      : 'text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
 
-        {/* Custom date inputs */}
-        {preset === 'custom' && (
-          <div className="flex items-center gap-2">
-            <input
-              type="date"
-              className="input py-1.5 text-sm w-36"
-              value={startDate}
-              max={endDate}
-              onChange={e => setStartDate(e.target.value)}
-            />
-            <span className="text-gray-400 text-sm">→</span>
-            <input
-              type="date"
-              className="input py-1.5 text-sm w-36"
-              value={endDate}
-              min={startDate}
-              onChange={e => setEndDate(e.target.value)}
-            />
-          </div>
+            {/* Custom date inputs */}
+            {preset === 'custom' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  className="input py-1.5 text-sm w-36"
+                  value={startDate}
+                  max={endDate}
+                  onChange={e => setStartDate(e.target.value)}
+                />
+                <span className="text-gray-400 text-sm">→</span>
+                <input
+                  type="date"
+                  className="input py-1.5 text-sm w-36"
+                  value={endDate}
+                  min={startDate}
+                  onChange={e => setEndDate(e.target.value)}
+                />
+              </div>
+            )}
+          </>
         )}
 
         {/* Branch selector */}
@@ -172,7 +178,7 @@ export default function ReportsPage() {
       </div>
 
       {/* ── Date range label ─────────────────────────────────── */}
-      {startDate && endDate && (
+      {tab !== 'sessions' && startDate && endDate && (
         <p className="text-xs text-gray-400">
           Showing data from{' '}
           <span className="font-medium text-gray-600">
@@ -189,7 +195,8 @@ export default function ReportsPage() {
       )}
 
       {/* ── Active report ────────────────────────────────────── */}
-      {startDate && endDate && (
+      {tab === 'sessions' && <RegisterSessionsReport branchId={branchId} />}
+      {tab !== 'sessions' && startDate && endDate && (
         <>
           {tab === 'sales'     && <SalesReport      {...reportProps} />}
           {tab === 'pl'        && <ProfitLossReport  {...reportProps} />}

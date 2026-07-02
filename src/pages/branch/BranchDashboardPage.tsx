@@ -17,6 +17,13 @@ import { MeemLogo } from '@/components/MeemLogo'
 import { productionStatusLabel } from '@/lib/zatca/status'
 import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
 import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
+import {
+  type RegisterSessionSummary,
+  formatSaudiSessionDateTime,
+  normalizeRegisterSession,
+  registerSessionLabel,
+  registerSessionTimeRange,
+} from '@/lib/registerSessions'
 
 const db = () => supabase as any
 
@@ -138,6 +145,96 @@ function ChartTooltip({ active, payload, label }: any) {
   )
 }
 
+function SessionMetric({ label, value, tone = 'gray' }: {
+  label: string
+  value: React.ReactNode
+  tone?: 'gray' | 'green' | 'blue' | 'amber'
+}) {
+  const toneClass = {
+    gray: 'bg-gray-50 text-gray-900',
+    green: 'bg-emerald-50 text-emerald-800',
+    blue: 'bg-blue-50 text-blue-800',
+    amber: 'bg-amber-50 text-amber-800',
+  }[tone]
+  return (
+    <div className={`rounded-xl px-3 py-3 ${toneClass}`}>
+      <p className="text-[10px] font-semibold uppercase tracking-wide opacity-60">{label}</p>
+      <p className="mt-1 text-sm font-bold tabular-nums">{value}</p>
+    </div>
+  )
+}
+
+function RegisterSessionPanel({ session, loading, error }: {
+  session: RegisterSessionSummary | null
+  loading: boolean
+  error: string
+}) {
+  const title = registerSessionLabel(session)
+  const hasSession = !!session?.sessionId
+  return (
+    <section className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-bold text-gray-900">{title}</h2>
+          <p className="mt-1 text-xs text-gray-500">{registerSessionTimeRange(session)}</p>
+        </div>
+        {hasSession && (
+          <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+            session.isLongOpen
+              ? 'bg-amber-100 text-amber-700'
+              : session.status === 'open'
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'bg-gray-100 text-gray-600'
+          }`}>
+            {session.isLongOpen ? 'Long open' : session.status === 'open' ? 'Open' : 'Closed'}
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map(i => <div key={i} className="h-16 rounded-xl bg-gray-50 animate-pulse" />)}
+        </div>
+      ) : error ? (
+        <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-3 py-3 text-xs text-amber-800">
+          {error}
+        </div>
+      ) : !hasSession ? (
+        <div className="mt-4 rounded-xl bg-gray-50 px-3 py-3 text-xs text-gray-500">
+          No register session has been opened for this branch yet.
+        </div>
+      ) : (
+        <>
+          {session.isLongOpen && (
+            <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
+              <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-amber-600" />
+              <p className="text-xs text-amber-800">
+                This register session has been open since {session.openedAt ? formatSaudiSessionDateTime(session.openedAt) : 'earlier'}. Close it before starting a new shift.
+              </p>
+            </div>
+          )}
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <SessionMetric label="Total sales" value={<Rial amount={session.totalSales} />} tone="green" />
+            <SessionMetric label="Invoices" value={String(session.invoiceCount)} />
+            <SessionMetric label="Cash" value={<Rial amount={session.cashTotal} />} tone="green" />
+            <SessionMetric label="Card" value={<Rial amount={session.cardTotal} />} tone="blue" />
+            <SessionMetric label="VAT" value={<Rial amount={session.vatTotal} />} tone="amber" />
+            <SessionMetric label="Credit notes" value={<Rial amount={session.creditNoteTotal} />} tone="amber" />
+            <SessionMetric label="Expenses" value={<Rial amount={session.expensesTotal} />} />
+            <SessionMetric label="Expected cash" value={<Rial amount={session.expectedCash} />} tone="green" />
+            {session.status === 'closed' && (
+              <>
+                <SessionMetric label="Actual cash" value={<Rial amount={session.actualCash ?? 0} />} />
+                <SessionMetric label="Difference" value={<Rial amount={session.cashDifference ?? 0} />} tone={(session.cashDifference ?? 0) === 0 ? 'gray' : 'amber'} />
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
 function numberOrZero(value: unknown) {
   const n = typeof value === 'number' ? value : Number(value ?? 0)
   return Number.isFinite(n) ? n : 0
@@ -249,6 +346,8 @@ export default function BranchDashboardPage() {
   const [hasActiveCert, setHasActiveCert] = useState(false)
   const [productionStatus, setProductionStatus] = useState<ProductionOnboardingResponse | null>(null)
   const [productionStatusReadable, setProductionStatusReadable] = useState(true)
+  const [registerSession, setRegisterSession] = useState<RegisterSessionSummary | null>(null)
+  const [registerSessionError, setRegisterSessionError] = useState('')
   const [statsAvailable, setStatsAvailable] = useState(false)
   const [statsError, setStatsError] = useState('')
   const [chartError, setChartError] = useState('')
@@ -258,18 +357,34 @@ export default function BranchDashboardPage() {
     if (!tid || !bid) { setStatsLoading(false); return }
     setStatsLoading(true)
     setStatsError('')
+    setRegisterSessionError('')
     setStatsAvailable(false)
     const today = saudiDateStr()
     const summaryParams = { p_branch_id: bid, p_start_date: today, p_end_date: today }
     try {
-      const [summary, branchRes] = await Promise.all([
+      const [summary, branchRes, registerRes] = await Promise.all([
         loadReportSummary<DashboardSummary>(
           'get_dashboard_summary',
           summaryParams,
           EMPTY_DASHBOARD_SUMMARY,
         ),
         db().from('branches').select('name, zatca_phase').eq('id', bid).maybeSingle(),
+        (supabase as any).rpc('get_register_session_summary', {
+          p_branch_id: bid,
+          p_session_id: null,
+        }),
       ])
+
+      if (registerRes.error) {
+        logBranchDashboardFailure('get_register_session_summary', { p_branch_id: bid, p_session_id: null }, registerRes.error)
+        setRegisterSession(null)
+        setRegisterSessionError('Register Session summary is unavailable until the Phase 5C-5A SQL patch is applied.')
+      } else {
+        const sessionValue = isRecord(registerRes.data)
+          ? pick(registerRes.data, 'session')
+          : null
+        setRegisterSession(normalizeRegisterSession(sessionValue))
+      }
 
       const summaryRecord = summary as Record<string, unknown>
       const branchSummary = asArray<unknown>(pick(summaryRecord, 'branchStats', 'branch_stats'))
@@ -299,6 +414,7 @@ export default function BranchDashboardPage() {
       setTodayCard(0)
       setTodayVat(0)
       setTodayExpenses(0)
+      setRegisterSession(null)
       try {
         const { data } = await db().from('branches').select('name, zatca_phase').eq('id', bid).maybeSingle()
         setBranchName(data?.name ?? '')
@@ -391,6 +507,7 @@ export default function BranchDashboardPage() {
       .channel('branch-dashboard-' + bid)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices',  filter: `branch_id=eq.${bid}` }, () => loadStats())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses',  filter: `branch_id=eq.${bid}` }, () => loadStats())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pos_sessions',  filter: `branch_id=eq.${bid}` }, () => loadStats())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [bid, loadStats])
@@ -461,10 +578,16 @@ export default function BranchDashboardPage() {
           </div>
         )}
 
-        {/* KPI cards */}
+        <RegisterSessionPanel
+          session={registerSession}
+          loading={statsLoading && !registerSession}
+          error={registerSessionError}
+        />
+
+        {/* Date KPI cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <StatCard
-            label="Today's Sales"
+            label="Sales Today by Date"
             value={statsAvailable ? <Rial amount={todaySales} /> : 'Unavailable'}
             sub={statsAvailable ? `${todayCount} invoice${todayCount !== 1 ? 's' : ''}` : 'Retry to load totals'}
             icon={TrendingUp}
@@ -472,7 +595,7 @@ export default function BranchDashboardPage() {
             loading={statsLoading}
           />
           <StatCard
-            label="Invoices Today"
+            label="Invoices by Date"
             value={statsAvailable ? String(todayCount) : 'Unavailable'}
             sub={statsAvailable ? 'Posted today' : 'Retry to load totals'}
             icon={FileText}
@@ -480,7 +603,7 @@ export default function BranchDashboardPage() {
             loading={statsLoading}
           />
           <StatCard
-            label="Today's Expenses"
+            label="Expenses by Date"
             value={statsAvailable ? <Rial amount={todayExpenses} /> : 'Unavailable'}
             sub={statsAvailable ? 'Recorded today' : 'Retry to load totals'}
             icon={CreditCard}
@@ -488,7 +611,7 @@ export default function BranchDashboardPage() {
             loading={statsLoading}
           />
           <StatCard
-            label="Cash Today"
+            label="Cash Today by Date"
             value={statsAvailable ? <Rial amount={todayCash} /> : 'Unavailable'}
             sub={statsAvailable ? 'Cash payments' : 'Retry to load totals'}
             icon={Banknote}
@@ -496,7 +619,7 @@ export default function BranchDashboardPage() {
             loading={statsLoading}
           />
           <StatCard
-            label="Card Today"
+            label="Card Today by Date"
             value={statsAvailable ? <Rial amount={todayCard} /> : 'Unavailable'}
             sub={statsAvailable ? 'Card payments' : 'Retry to load totals'}
             icon={CreditCard}
@@ -504,7 +627,7 @@ export default function BranchDashboardPage() {
             loading={statsLoading}
           />
           <StatCard
-            label="VAT Collected"
+            label="VAT Today by Date"
             value={statsAvailable ? <Rial amount={todayVat} /> : 'Unavailable'}
             sub={statsAvailable ? "Tax on today's sales" : 'Retry to load totals'}
             icon={BadgePercent}

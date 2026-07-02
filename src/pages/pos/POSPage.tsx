@@ -12,6 +12,7 @@ import { Rial } from '@/components/ui/RiyalSymbol'
 import { displayName as dn } from '@/lib/utils/display'
 import { buildZatcaQR } from '@/lib/zatca/qr'
 import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
+import { formatSaudiSessionDateTime } from '@/lib/registerSessions'
 import { submitInvoiceToZatcaWithRetry } from '@/lib/zatca/submission'
 import { toast } from 'sonner'
 import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
@@ -750,7 +751,7 @@ function OpenSessionModal({
             <ShoppingBag size={22} />
           </div>
           <h3 className="font-bold text-lg">Open Register</h3>
-          <p className="text-white/70 text-xs mt-1">Start a new POS session</p>
+          <p className="text-white/70 text-xs mt-1">Start a new Register Session</p>
         </div>
         <div className="p-5 space-y-4">
           <div>
@@ -770,7 +771,7 @@ function OpenSessionModal({
           <div className="flex gap-2">
             <button onClick={handleSkip} disabled={saving}
               className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50">
-              Skip
+              Open with 0
             </button>
             <button onClick={handleOpen} disabled={saving}
               className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2">
@@ -792,7 +793,7 @@ function OpenSessionModal({
 
 function CloseSessionModal({ session, onClose, onCancel }: {
   session: PosSession
-  onClose: (params: { closingCashActual: number; notes: string }) => Promise<void>
+  onClose: (params: { closingCashActual: number; notes: string; closingChecks?: Record<string, unknown> }) => Promise<void>
   onCancel: () => void
 }) {
   const [cashActual,    setCashActual]    = useState('')
@@ -802,12 +803,14 @@ function CloseSessionModal({ session, onClose, onCancel }: {
   const [invoiceCount,  setInvoiceCount]  = useState(0)
   const [cashSales,     setCashSales]     = useState(0)
   const [cardSales,     setCardSales]     = useState(0)
+  const [creditRefunds, setCreditRefunds] = useState(0)
   const [totalExpenses, setTotalExpenses] = useState(0)
   const [cashExpenses,  setCashExpenses]  = useState(0)
+  const [cashSalesOk,   setCashSalesOk]   = useState(false)
+  const [cardSalesOk,   setCardSalesOk]   = useState(false)
+  const [expensesOk,    setExpensesOk]    = useState(false)
 
-  const openedAt = new Date(session.opened_at).toLocaleTimeString('en-US', {
-    timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit',
-  })
+  const openedAt = formatSaudiSessionDateTime(session.opened_at)
   const durationMs = Date.now() - new Date(session.opened_at).getTime()
   const durationH  = Math.floor(durationMs / 3_600_000)
   const durationM  = Math.floor((durationMs % 3_600_000) / 60_000)
@@ -837,6 +840,9 @@ function CloseSessionModal({ session, onClose, onCancel }: {
       setCardSales(pmts
         .filter((p: any) => p.method === 'card')
         .reduce((s: number, p: any) => s + (signByInvoiceId.get(p.invoice_id) ?? 1) * Number(p.amount ?? 0), 0))
+      setCreditRefunds(pmts
+        .filter((p: any) => (signByInvoiceId.get(p.invoice_id) ?? 1) < 0)
+        .reduce((s: number, p: any) => s + Math.abs(Number(p.amount ?? 0)), 0))
       setTotalExpenses((expData ?? []).reduce((s: number, e: any) => s + Number(e.total_paid ?? 0), 0))
       setCashExpenses((expData ?? []).filter((e: any) => e.payment_method === 'cash').reduce((s: number, e: any) => s + Number(e.total_paid ?? 0), 0))
       setLoadingData(false)
@@ -852,7 +858,19 @@ function CloseSessionModal({ session, onClose, onCancel }: {
     if (cashActual === '') return
     setSaving(true)
     try {
-      await onClose({ closingCashActual: actualCash, notes })
+      await onClose({
+        closingCashActual: actualCash,
+        notes,
+        closingChecks: {
+          cash_sales_confirmed: cashSalesOk,
+          card_sales_confirmed: cardSalesOk,
+          cash_expenses_confirmed: expensesOk,
+          credit_refunds_preview: creditRefunds,
+          expected_cash_preview: expectedCash,
+          actual_cash_entered: actualCash,
+          cash_difference_preview: difference,
+        },
+      })
     } catch (err) {
       console.error('[CloseSessionModal]', err)
     } finally {
@@ -867,8 +885,8 @@ function CloseSessionModal({ session, onClose, onCancel }: {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
-            <h3 className="font-bold text-gray-900">Close Cash Register</h3>
-            <p className="text-[10px] text-gray-400 mt-0.5">Opened at {openedAt} · {duration}</p>
+            <h3 className="font-bold text-gray-900">Close Register</h3>
+            <p className="text-[10px] text-gray-400 mt-0.5">Opened {openedAt} · {duration}</p>
           </div>
           <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
         </div>
@@ -885,7 +903,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
               <div className="bg-gray-50 rounded-xl p-3.5 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Session opened</span>
-                  <span className="font-medium text-gray-800">{openedAt} (Saudi time)</span>
+                  <span className="font-medium text-gray-800">{openedAt}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Opening cash</span>
@@ -900,7 +918,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
 
             {/* Section 2: Transactions */}
             <div className="px-5 pt-4">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Today's Transactions</p>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Register Session Transactions</p>
               <div className="bg-gray-50 rounded-xl p-3.5 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Total invoices</span>
@@ -917,6 +935,10 @@ function CloseSessionModal({ session, onClose, onCancel }: {
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Total expenses</span>
                   <span className="font-medium text-gray-800"><Rial amount={totalExpenses} /></span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Credit notes/refunds</span>
+                  <span className="font-medium text-gray-800"><Rial amount={creditRefunds} /></span>
                 </div>
               </div>
             </div>
@@ -941,6 +963,36 @@ function CloseSessionModal({ session, onClose, onCancel }: {
                   <span>Expected in drawer</span>
                   <span className="tabular-nums"><Rial amount={expectedCash} /></span>
                 </div>
+              </div>
+
+              <div className="mb-3 space-y-2">
+                <label className="flex items-center gap-2 rounded-xl border border-gray-100 bg-white px-3 py-2 text-xs font-medium text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={cashSalesOk}
+                    onChange={e => setCashSalesOk(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  Cash sales/refunds checked
+                </label>
+                <label className="flex items-center gap-2 rounded-xl border border-gray-100 bg-white px-3 py-2 text-xs font-medium text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={cardSalesOk}
+                    onChange={e => setCardSalesOk(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  Card total matches terminal
+                </label>
+                <label className="flex items-center gap-2 rounded-xl border border-gray-100 bg-white px-3 py-2 text-xs font-medium text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={expensesOk}
+                    onChange={e => setExpensesOk(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  POS cash expenses checked
+                </label>
               </div>
 
               <div className="mb-3">
@@ -986,9 +1038,9 @@ function CloseSessionModal({ session, onClose, onCancel }: {
             className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50">
             Cancel
           </button>
-          <button onClick={handleClose} disabled={saving || cashActual === '' || loadingData}
+          <button onClick={handleClose} disabled={saving || cashActual === '' || loadingData || !cashSalesOk || !cardSalesOk || !expensesOk}
             className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-            {saving ? <Loader2 size={14} className="animate-spin" /> : 'Close Session'}
+            {saving ? <Loader2 size={14} className="animate-spin" /> : 'Close Register'}
           </button>
         </div>
       </div>
@@ -1003,12 +1055,8 @@ function SessionSummaryModal({ summary, onDone, onNewSession }: {
   onDone: () => void
   onNewSession: () => void
 }) {
-  const openedAt = new Date(summary.opened_at).toLocaleTimeString('en-US', {
-    timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit',
-  })
-  const closedAt = new Date(summary.closed_at).toLocaleTimeString('en-US', {
-    timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit',
-  })
+  const openedAt = formatSaudiSessionDateTime(summary.opened_at)
+  const closedAt = formatSaudiSessionDateTime(summary.closed_at)
   const diff      = Number(summary.closing_cash_difference ?? 0)
   const diffColor = diff > 0.005 ? 'text-emerald-600' : diff < -0.005 ? 'text-red-600' : 'text-gray-700'
 
@@ -1029,8 +1077,8 @@ function SessionSummaryModal({ summary, onDone, onNewSession }: {
           <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
             <Check size={22} strokeWidth={2.5} />
           </div>
-          <h3 className="font-bold text-lg">Session Closed</h3>
-          <p className="text-white/70 text-xs mt-1">{openedAt} — {closedAt}</p>
+          <h3 className="font-bold text-lg">Register Session Closed</h3>
+          <p className="text-white/70 text-xs mt-1">{openedAt}{' -> '}{closedAt}</p>
         </div>
         <div className="p-5">
           <div className="space-y-2">
@@ -1053,7 +1101,7 @@ function SessionSummaryModal({ summary, onDone, onNewSession }: {
         <div className="px-5 pb-5 flex gap-2">
           <button onClick={onNewSession}
             className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-            New Session
+            New Register
           </button>
           <button onClick={onDone}
             className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white text-sm font-semibold hover:opacity-90 transition-opacity">
@@ -1719,7 +1767,7 @@ export default function POSPage() {
               onClick={() => setShowOpenSession(true)}
               className="w-full py-3 bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity"
             >
-              Open New Session
+              Open Register
             </button>
             <button
               onClick={() => navigate('/branch')}
@@ -1832,7 +1880,7 @@ export default function POSPage() {
         <div className="bg-emerald-50 border-b border-emerald-100 px-5 py-1.5 flex items-center gap-2 flex-shrink-0">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
           <span className="text-xs text-emerald-700">
-            Session open since {toSaudiTime(session.opened_at)}
+            Register Session open since {toSaudiTime(session.opened_at)}
             {Number(session.opening_cash) > 0 && (
               <> · Opening: <Rial amount={Number(session.opening_cash)} /></>
             )}
