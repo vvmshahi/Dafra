@@ -1,17 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from 'recharts'
-import {
   TrendingUp, FileText, Loader2, Building2, Store,
-  Plus, ArrowRight, ShoppingBag, CreditCard, Banknote,
+  Plus, ArrowRight, CreditCard, Banknote,
   ShieldCheck, Eye, BadgePercent, Receipt, AlertCircle,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
-import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { saudiNow, saudiDateStr } from '@/lib/utils/date'
+import { saudiDateStr } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
 import { productionStatusLabel } from '@/lib/zatca/status'
 import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
@@ -48,16 +45,6 @@ function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
         </div>
       </div>
       <div className="absolute -bottom-3 -right-3 w-20 h-20 rounded-full bg-white/5" />
-    </div>
-  )
-}
-
-function ChartTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-3.5 py-2.5">
-      <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-      <p className="text-sm font-bold text-gray-900">{sarStr(Number(payload[0].value))}</p>
     </div>
   )
 }
@@ -248,9 +235,16 @@ function logDashboardRpcError(functionName: string, params: Record<string, unkno
   })
 }
 
-function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: boolean; onView: () => void }) {
+function BranchCard({ branch, onView }: { branch: BranchStat; onView: () => void }) {
   const zatca = productionStatusLabel(branch.productionStatus)
   const session = branch.registerSession ?? null
+  const hasSession = !!session?.sessionId
+  const isOpen = session?.status === 'open'
+  const sessionPrefix = isOpen ? 'Current Session' : 'Last Session'
+  const cashFinalLabel = session?.status === 'closed' && session.actualCash !== null ? 'Difference' : 'Expected Cash'
+  const cashFinalValue = session?.status === 'closed' && session.actualCash !== null
+    ? session.cashDifference ?? 0
+    : session?.expectedCash ?? 0
   const zatcaUnavailable = branch.zatca_phase === 2 && branch.productionStatusReadable === false
   const zatcaLabel = zatcaUnavailable ? 'Phase 2 status unavailable' : branch.zatca_phase === 2 ? zatca.label : 'Phase 1'
   const zatcaTone = zatcaUnavailable ? 'text-gray-400' : branch.zatca_phase === 2 && zatca.tone === 'success'
@@ -258,11 +252,6 @@ function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: 
     : branch.zatca_phase === 2
     ? 'text-amber-600'
     : 'text-gray-400'
-  const metricValue = (value: number, className: string, fallback = 'Unavailable') => {
-    if (loading) return <div className={`h-5 rounded animate-pulse mt-1 ${className.includes('text-base') ? 'w-16' : 'w-12'} bg-gray-100`} />
-    if (!branch.metricsAvailable) return <p className="text-xs font-semibold text-gray-400 mt-1">{fallback}</p>
-    return <p className={`${className} mt-0.5 tabular-nums`}><Rial amount={value} /></p>
-  }
 
   return (
     <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col gap-4 ${!branch.is_active ? 'opacity-60' : ''}`}>
@@ -292,7 +281,7 @@ function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: 
               <ShieldCheck size={10} className={branch.zatca_phase === 2 && !zatcaUnavailable && zatca.tone === 'success' ? 'text-emerald-500' : 'text-violet-400'} />
               {zatcaLabel}
             </span>
-            {branch.sessionOpen ? (
+            {isOpen ? (
               <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
                 Open
@@ -342,15 +331,15 @@ function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: 
             Close this register before starting a new shift.
           </p>
         )}
-        {session?.sessionId ? (
+        {hasSession ? (
           <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
             <div>
-              <p className="text-gray-400">Session sales</p>
+              <p className="text-gray-400">{sessionPrefix} sales</p>
               <p className="font-bold text-gray-900 tabular-nums"><Rial amount={session.totalSales} /></p>
             </div>
             <div>
-              <p className="text-gray-400">Expected cash</p>
-              <p className="font-bold text-gray-900 tabular-nums"><Rial amount={session.expectedCash} /></p>
+              <p className="text-gray-400">{cashFinalLabel}</p>
+              <p className="font-bold text-gray-900 tabular-nums"><Rial amount={cashFinalValue} /></p>
             </div>
             <div>
               <p className="text-gray-400">Cash</p>
@@ -360,41 +349,18 @@ function BranchCard({ branch, loading, onView }: { branch: BranchStat; loading: 
               <p className="text-gray-400">Card</p>
               <p className="font-semibold text-blue-700 tabular-nums"><Rial amount={session.cardTotal} /></p>
             </div>
+            <div>
+              <p className="text-gray-400">Invoices</p>
+              <p className="font-semibold text-gray-800 tabular-nums">{session.invoiceCount}</p>
+            </div>
+            <div>
+              <p className="text-gray-400">VAT</p>
+              <p className="font-semibold text-amber-700 tabular-nums"><Rial amount={session.vatTotal} /></p>
+            </div>
           </div>
         ) : (
-          <p className="mt-2 text-[11px] text-gray-400">No register sessions yet.</p>
+          <p className="mt-2 text-[11px] text-gray-400">No register session yet.</p>
         )}
-      </div>
-
-      {/* KPIs */}
-      <div className="grid grid-cols-2 gap-2">
-        <div className="bg-primary-50 rounded-xl p-3">
-          <p className="text-[10px] text-primary-600 font-medium">Today by Date</p>
-          {loading
-            ? <div className="h-5 w-16 bg-primary-100 rounded animate-pulse mt-1" />
-            : metricValue(branch.todaySales, 'text-base font-bold text-primary-700')}
-        </div>
-        <div className="bg-gray-50 rounded-xl p-3">
-          <p className="text-[10px] text-gray-500 font-medium">Date invoices</p>
-          {loading
-            ? <div className="h-5 w-8 bg-gray-100 rounded animate-pulse mt-1" />
-            : branch.metricsAvailable
-            ? <p className="text-base font-bold text-gray-800 mt-0.5">{branch.todayCount}</p>
-            : <p className="text-xs font-semibold text-gray-400 mt-1">Unavailable</p>
-          }
-        </div>
-        <div className="bg-emerald-50 rounded-xl p-3">
-          <p className="text-[10px] text-emerald-600 font-medium flex items-center gap-1"><Banknote size={10} />Cash</p>
-          {loading
-            ? <div className="h-5 w-16 bg-emerald-100 rounded animate-pulse mt-1" />
-            : metricValue(branch.todayCash, 'text-sm font-bold text-emerald-700')}
-        </div>
-        <div className="bg-blue-50 rounded-xl p-3">
-          <p className="text-[10px] text-blue-600 font-medium flex items-center gap-1"><CreditCard size={10} />Card</p>
-          {loading
-            ? <div className="h-5 w-16 bg-blue-100 rounded animate-pulse mt-1" />
-            : metricValue(branch.todayCard, 'text-sm font-bold text-blue-700')}
-        </div>
       </div>
 
       {/* View Details */}
@@ -452,25 +418,14 @@ function WelcomeState({ onAddBranch }: { onAddBranch: () => void }) {
 export default function DashboardPage() {
   const navigate = useNavigate()
   const { profile } = useAuth()
-  const [period, setPeriod] = useState<'7d' | '30d' | '90d'>('7d')
 
   const [statsLoading,  setStatsLoading]  = useState(true)
   const [branchLoading, setBranchLoading] = useState(true)
-  const [chartLoading,  setChartLoading]  = useState(true)
 
-  const [totalSales,    setTotalSales]    = useState(0)
-  const [totalCount,    setTotalCount]    = useState(0)
-  const [totalCash,     setTotalCash]     = useState(0)
-  const [totalCard,     setTotalCard]     = useState(0)
-  const [totalVat,      setTotalVat]      = useState(0)
-  const [totalExpenses, setTotalExpenses] = useState(0)
   const [branchStats,   setBranchStats]   = useState<BranchStat[]>([])
-  const [salesData,     setSalesData]     = useState<{ day: string; sales: number }[]>([])
   const [branchLoadError, setBranchLoadError] = useState('')
   const [dashboardLoadError, setDashboardLoadError] = useState('')
   const [registerSessionLoadError, setRegisterSessionLoadError] = useState('')
-  const [dashboardSummaryAvailable, setDashboardSummaryAvailable] = useState(false)
-  const [chartLoadError, setChartLoadError] = useState('')
 
   const tid = profile?.tenant_id
 
@@ -483,7 +438,6 @@ export default function DashboardPage() {
     setBranchLoadError('')
     setDashboardLoadError('')
     setRegisterSessionLoadError('')
-    setDashboardSummaryAvailable(false)
     const today = saudiDateStr()
     let fallbackBranchStats: BranchStat[] = []
     let registerSessionsByBranch = new Map<string, RegisterSessionSummary>()
@@ -503,13 +457,6 @@ export default function DashboardPage() {
         fallbackBranchStats = ((branchRows as BranchRow[]) ?? []).map(branchRowToStat)
       }
 
-      const summaryParams = { p_branch_id: null, p_start_date: today, p_end_date: today }
-      const summary = await loadReportSummary<DashboardSummary>(
-        'get_dashboard_summary',
-        summaryParams,
-        EMPTY_DASHBOARD_SUMMARY,
-      )
-
       try {
         const { data, error } = await (supabase as any).rpc('get_register_session_summary', {
         })
@@ -523,14 +470,19 @@ export default function DashboardPage() {
         setRegisterSessionLoadError(registerSessionRpcErrorMessage(sessionError))
       }
 
-      setDashboardSummaryAvailable(true)
-      const summaryRecord = summary as Record<string, unknown>
-      setTotalSales(numberOrZero(pick(summaryRecord, 'totalSales', 'total_sales')))
-      setTotalCount(Math.trunc(numberOrZero(pick(summaryRecord, 'totalCount', 'total_invoices'))))
-      setTotalCash(numberOrZero(pick(summaryRecord, 'totalCash', 'cash_total')))
-      setTotalCard(numberOrZero(pick(summaryRecord, 'totalCard', 'card_total')))
-      setTotalVat(numberOrZero(pick(summaryRecord, 'totalVat', 'vat_collected')))
-      setTotalExpenses(numberOrZero(pick(summaryRecord, 'totalExpenses', 'expenses_total')))
+      const summaryParams = { p_branch_id: null, p_start_date: today, p_end_date: today }
+      let summaryRecord: Record<string, unknown> = EMPTY_DASHBOARD_SUMMARY as unknown as Record<string, unknown>
+      try {
+        const summary = await loadReportSummary<DashboardSummary>(
+          'get_dashboard_summary',
+          summaryParams,
+          EMPTY_DASHBOARD_SUMMARY,
+        )
+        summaryRecord = summary as Record<string, unknown>
+      } catch (summaryError) {
+        logDashboardRpcError('get_dashboard_summary', summaryParams, summaryError)
+        setDashboardLoadError('Branch metadata could not be refreshed. Register Session totals are still shown.')
+      }
 
       const rpcStats = asArray<unknown>(pick(summaryRecord, 'branchStats', 'branch_stats'))
         .map(normalizeDashboardBranchStat)
@@ -571,15 +523,8 @@ export default function DashboardPage() {
           }))
       setBranchStats(stats)
     } catch (error) {
-      logDashboardRpcError('get_dashboard_summary', { p_branch_id: null, p_start_date: today, p_end_date: today }, error)
-      setDashboardSummaryAvailable(false)
-      setDashboardLoadError('Dashboard totals could not be loaded. Branches are shown, but branch and KPI totals are unavailable until the report RPC responds.')
-      setTotalSales(0)
-      setTotalCount(0)
-      setTotalCash(0)
-      setTotalCard(0)
-      setTotalVat(0)
-      setTotalExpenses(0)
+      logDashboardRpcError('dashboard_register_session_load', { p_branch_id: null }, error)
+      setDashboardLoadError('Dashboard register session data could not be loaded. Refresh and try again.')
       setBranchStats(fallbackBranchStats)
     } finally {
       setStatsLoading(false)
@@ -587,44 +532,7 @@ export default function DashboardPage() {
     }
   }, [tid])
 
-  const loadChart = useCallback(async () => {
-    if (!tid) { setChartLoading(false); return }
-    setChartLoading(true)
-    setChartLoadError('')
-    const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
-    const fromDay = saudiNow(); fromDay.setUTCDate(fromDay.getUTCDate() - (days - 1))
-    const params = {
-      p_branch_id: null,
-      p_start_date: fromDay.toISOString().split('T')[0],
-      p_end_date: saudiDateStr(),
-    }
-    try {
-      const summary = await loadReportSummary<DashboardSummary>(
-        'get_dashboard_summary',
-        params,
-        EMPTY_DASHBOARD_SUMMARY,
-      )
-
-      const summaryRecord = summary as Record<string, unknown>
-      setSalesData(asArray<Record<string, unknown>>(pick(summaryRecord, 'dailySales', 'daily_sales')).map(row => {
-        const reportDate = String(pick(row, 'date', 'report_date') ?? '')
-        const d = new Date(reportDate + 'T12:00:00Z')
-        const label = days <= 7
-          ? d.toLocaleDateString('en-US', { weekday: 'short' })
-          : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-        return { day: label, sales: numberOrZero(pick(row, 'sales', 'sales_amount')) }
-      }))
-    } catch (error) {
-      logDashboardRpcError('get_dashboard_summary', params, error)
-      setChartLoadError('Sales trend could not be loaded. Retry after the dashboard summary is available.')
-      setSalesData([])
-    } finally {
-      setChartLoading(false)
-    }
-  }, [tid, period])
-
   useEffect(() => { loadStats() }, [loadStats])
-  useEffect(() => { loadChart() }, [loadChart])
 
   // Realtime: re-fetch when branches or invoices change so the dashboard
   // updates immediately when a branch creates a sale at the POS.
@@ -639,10 +547,22 @@ export default function DashboardPage() {
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'invoices',
         filter: `tenant_id=eq.${tid}`,
-      }, () => { loadStats(); loadChart() })
+      }, () => loadStats())
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'payments',
+        filter: `tenant_id=eq.${tid}`,
+      }, () => loadStats())
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'expenses',
+        filter: `tenant_id=eq.${tid}`,
+      }, () => loadStats())
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'pos_sessions',
+        filter: `tenant_id=eq.${tid}`,
+      }, () => loadStats())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [tid, loadStats, loadChart])
+  }, [tid, loadStats])
 
   // Show WelcomeState ONLY after loading completes with zero branches.
   // While branchLoading===true (profile not yet loaded, or fetch in flight)
@@ -652,28 +572,52 @@ export default function DashboardPage() {
     return <WelcomeState onAddBranch={() => navigate('/settings')} />
   }
 
+  const sessionSummaries = branchStats
+    .map(branch => branch.registerSession ?? null)
+    .filter((session): session is RegisterSessionSummary => !!session?.sessionId)
+  const openSessionCount = sessionSummaries.filter(session => session.status === 'open').length
+  const lastSessionCount = sessionSummaries.filter(session => session.status !== 'open').length
+  const sessionTotals = sessionSummaries.reduce(
+    (totals, session) => ({
+      sales: totals.sales + session.totalSales,
+      invoices: totals.invoices + session.invoiceCount,
+      cash: totals.cash + session.cashTotal,
+      card: totals.card + session.cardTotal,
+      vat: totals.vat + session.vatTotal,
+      expectedCash: totals.expectedCash + session.expectedCash,
+    }),
+    { sales: 0, invoices: 0, cash: 0, card: 0, vat: 0, expectedCash: 0 },
+  )
+  const sessionSub = registerSessionLoadError
+    ? 'Retry to load register sessions'
+    : sessionSummaries.length === 0
+    ? 'No register sessions yet'
+    : `${openSessionCount} current · ${lastSessionCount} last`
+  const sessionAmount = (amount: number) => registerSessionLoadError ? 'Unavailable' : <Rial amount={amount} />
+  const sessionCount = registerSessionLoadError ? 'Unavailable' : String(sessionTotals.invoices)
+
   return (
     <div className="space-y-6">
 
-      {/* ── Summary KPIs ─────────────────────────────────────── */}
+      {/* ── Register Session KPIs ────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
-        <StatCard label="Sales Today by Date" value={dashboardSummaryAvailable ? <Rial amount={totalSales} /> : 'Unavailable'}
-          sub={dashboardSummaryAvailable ? `${totalCount} invoice${totalCount !== 1 ? 's' : ''} across all branches` : 'Retry to load totals'}
+        <StatCard label="Session Sales" value={sessionAmount(sessionTotals.sales)}
+          sub={sessionSub}
           icon={TrendingUp} gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28]" loading={statsLoading} />
-        <StatCard label="Invoices by Date" value={dashboardSummaryAvailable ? String(totalCount) : 'Unavailable'}
-          sub={dashboardSummaryAvailable ? 'All branches combined' : 'Retry to load totals'}
+        <StatCard label="Session Invoices" value={sessionCount}
+          sub={sessionSub}
           icon={FileText} gradient="bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]" loading={statsLoading} />
-        <StatCard label="Cash Today by Date" value={dashboardSummaryAvailable ? <Rial amount={totalCash} /> : 'Unavailable'}
-          sub={dashboardSummaryAvailable ? 'Cash payments' : 'Retry to load totals'}
+        <StatCard label="Session Cash" value={sessionAmount(sessionTotals.cash)}
+          sub="Cash and split cash"
           icon={Banknote} gradient="bg-gradient-to-br from-[#059669] to-[#047857]" loading={statsLoading} />
-        <StatCard label="Card Today by Date" value={dashboardSummaryAvailable ? <Rial amount={totalCard} /> : 'Unavailable'}
-          sub={dashboardSummaryAvailable ? 'Card payments' : 'Retry to load totals'}
+        <StatCard label="Session Card" value={sessionAmount(sessionTotals.card)}
+          sub="Card and split card"
           icon={CreditCard} gradient="bg-gradient-to-br from-[#0891b2] to-[#0e7490]" loading={statsLoading} />
-        <StatCard label="VAT Today by Date" value={dashboardSummaryAvailable ? <Rial amount={totalVat} /> : 'Unavailable'}
-          sub={dashboardSummaryAvailable ? "Tax on today's sales" : 'Retry to load totals'}
+        <StatCard label="Session VAT" value={sessionAmount(sessionTotals.vat)}
+          sub="Register-session VAT"
           icon={BadgePercent} gradient="bg-gradient-to-br from-[#b45309] to-[#92400e]" loading={statsLoading} />
-        <StatCard label="Expenses by Date" value={dashboardSummaryAvailable ? <Rial amount={totalExpenses} /> : 'Unavailable'}
-          sub={dashboardSummaryAvailable ? 'All branches combined' : 'Retry to load totals'}
+        <StatCard label="Expected Cash" value={sessionAmount(sessionTotals.expectedCash)}
+          sub="Across shown sessions"
           icon={Receipt} gradient="bg-gradient-to-br from-[#7c3aed] to-[#5b21b6]" loading={statsLoading} />
       </div>
 
@@ -727,7 +671,6 @@ export default function DashboardPage() {
               <BranchCard
                 key={b.id}
                 branch={b}
-                loading={false}
                 onView={() => navigate(`/dashboard/branches/${b.id}`)}
               />
             ))}
@@ -735,59 +678,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── Sales trend chart ────────────────────────────────── */}
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Sales Trend</h2>
-            <p className="text-xs text-gray-400 mt-0.5">All branches combined</p>
-          </div>
-          <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
-            {(['7d', '30d', '90d'] as const).map(p => (
-              <button key={p} onClick={() => setPeriod(p)}
-                className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                  period === p ? 'bg-white text-gray-900 shadow-card' : 'text-gray-500 hover:text-gray-700'
-                }`}>
-                {p === '7d' ? '7 days' : p === '30d' ? '30 days' : '90 days'}
-              </button>
-            ))}
-          </div>
-        </div>
-        {chartLoading ? (
-          <div className="h-[220px] flex items-center justify-center">
-            <Loader2 size={24} className="animate-spin text-gray-300" />
-          </div>
-        ) : chartLoadError ? (
-          <div className="h-[220px] flex flex-col items-center justify-center text-gray-300">
-            <AlertCircle size={32} className="mb-2" />
-            <p className="text-sm text-gray-400">{chartLoadError}</p>
-          </div>
-        ) : salesData.every(d => d.sales === 0) ? (
-          <div className="h-[220px] flex flex-col items-center justify-center text-gray-300">
-            <ShoppingBag size={32} className="mb-2" />
-            <p className="text-sm">No sales data for this period</p>
-          </div>
-        ) : (
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={salesData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="#1B6B3A" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#1B6B3A" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-              <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false}
-                tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
-              <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#1B6B3A', strokeWidth: 1, strokeDasharray: '4 4' }} />
-              <Area type="monotone" dataKey="sales" stroke="#1B6B3A" strokeWidth={2}
-                fill="url(#salesGrad)" dot={false}
-                activeDot={{ r: 5, fill: '#1B6B3A', strokeWidth: 2, stroke: '#fff' }} />
-            </AreaChart>
-          </ResponsiveContainer>
-        )}
-      </div>
     </div>
   )
 }

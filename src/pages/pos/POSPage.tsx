@@ -809,6 +809,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
   const [cashSalesOk,   setCashSalesOk]   = useState(false)
   const [cardSalesOk,   setCardSalesOk]   = useState(false)
   const [expensesOk,    setExpensesOk]    = useState(false)
+  const [creditRefundsOk, setCreditRefundsOk] = useState(false)
 
   const openedAt = formatSaudiSessionDateTime(session.opened_at)
   const durationMs = Date.now() - new Date(session.opened_at).getTime()
@@ -853,6 +854,20 @@ function CloseSessionModal({ session, onClose, onCancel }: {
   const expectedCash  = openingCash + cashSales - cashExpenses
   const actualCash    = parseFloat(cashActual) || 0
   const difference    = cashActual !== '' ? actualCash - expectedCash : null
+  const differenceState = difference === null
+    ? { label: 'Enter actual cash', className: 'bg-gray-100 text-gray-500' }
+    : Math.abs(difference) < 0.005
+    ? { label: 'Balanced', className: 'bg-emerald-100 text-emerald-700' }
+    : difference > 0
+    ? { label: `Over by SAR ${fmt(difference)}`, className: 'bg-emerald-100 text-emerald-700' }
+    : { label: `Short by SAR ${fmt(Math.abs(difference))}`, className: 'bg-red-100 text-red-700' }
+  const canClose = cashActual !== ''
+    && cashSalesOk
+    && cardSalesOk
+    && expensesOk
+    && creditRefundsOk
+    && !loadingData
+    && !saving
 
   async function handleClose() {
     if (cashActual === '') return
@@ -865,6 +880,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
           cash_sales_confirmed: cashSalesOk,
           card_sales_confirmed: cardSalesOk,
           cash_expenses_confirmed: expensesOk,
+          credit_refunds_confirmed: creditRefundsOk,
           credit_refunds_preview: creditRefunds,
           expected_cash_preview: expectedCash,
           actual_cash_entered: actualCash,
@@ -879,166 +895,131 @@ function CloseSessionModal({ session, onClose, onCancel }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 overflow-y-auto py-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[calc(100vh-1.5rem)] mx-2 overflow-hidden flex flex-col">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between gap-4 px-5 py-3.5 border-b border-gray-100 flex-shrink-0">
           <div>
             <h3 className="font-bold text-gray-900">Close Register</h3>
             <p className="text-[10px] text-gray-400 mt-0.5">Opened {openedAt} · {duration}</p>
+          </div>
+          <div className="hidden sm:block text-right">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Expected cash</p>
+            <p className="text-sm font-bold text-gray-900 tabular-nums"><Rial amount={expectedCash} /></p>
           </div>
           <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
         </div>
 
         {loadingData ? (
-          <div className="flex items-center justify-center py-12">
+          <div className="flex items-center justify-center py-12 flex-1">
             <Loader2 size={24} className="animate-spin text-gray-300" />
           </div>
         ) : (
-          <>
-            {/* Section 1: Session Summary */}
-            <div className="px-5 pt-4">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Session Summary</p>
-              <div className="bg-gray-50 rounded-xl p-3.5 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Session opened</span>
-                  <span className="font-medium text-gray-800">{openedAt}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Opening cash</span>
-                  <span className="font-medium text-gray-800"><Rial amount={openingCash} /></span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Duration</span>
-                  <span className="font-medium text-gray-800">{duration}</span>
-                </div>
+          <div className="px-5 py-4 space-y-4 overflow-y-auto">
+            <section>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Check session totals</p>
+                <p className="text-[10px] text-gray-400">{invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''}</p>
               </div>
-            </div>
-
-            {/* Section 2: Transactions */}
-            <div className="px-5 pt-4">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Register Session Transactions</p>
-              <div className="bg-gray-50 rounded-xl p-3.5 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total invoices</span>
-                  <span className="font-medium text-gray-800">{invoiceCount}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Cash sales</span>
-                  <span className="font-medium text-gray-800"><Rial amount={cashSales} /></span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Card sales</span>
-                  <span className="font-medium text-gray-800"><Rial amount={cardSales} /></span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total expenses</span>
-                  <span className="font-medium text-gray-800"><Rial amount={totalExpenses} /></span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Credit notes/refunds</span>
-                  <span className="font-medium text-gray-800"><Rial amount={creditRefunds} /></span>
-                </div>
-              </div>
-            </div>
-
-            {/* Section 3: Cash Reconciliation */}
-            <div className="px-5 pt-4">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Cash Reconciliation</p>
-              <div className="bg-gray-50 rounded-xl p-3.5 space-y-2 mb-3">
-                <div className="flex justify-between text-sm text-gray-500">
-                  <span>Opening cash</span>
-                  <span className="tabular-nums"><Rial amount={openingCash} /></span>
-                </div>
-                <div className="flex justify-between text-sm text-gray-500">
-                  <span>+ Cash sales</span>
-                  <span className="tabular-nums"><Rial amount={cashSales} /></span>
-                </div>
-                <div className="flex justify-between text-sm text-gray-500">
-                  <span>− Cash expenses</span>
-                  <span className="tabular-nums"><Rial amount={cashExpenses} /></span>
-                </div>
-                <div className="flex justify-between text-sm font-bold text-gray-900 pt-1.5 border-t border-gray-200">
-                  <span>Expected in drawer</span>
-                  <span className="tabular-nums"><Rial amount={expectedCash} /></span>
-                </div>
-              </div>
-
-              <div className="mb-3 space-y-2">
-                <label className="flex items-center gap-2 rounded-xl border border-gray-100 bg-white px-3 py-2 text-xs font-medium text-gray-600">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-xs font-medium text-gray-600">
+                  <span className="min-w-0 flex-1">Cash sales/refunds</span>
+                  <span className="font-bold text-gray-900 tabular-nums"><Rial amount={cashSales} /></span>
                   <input
                     type="checkbox"
                     checked={cashSalesOk}
                     onChange={e => setCashSalesOk(e.target.checked)}
                     className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                   />
-                  Cash sales/refunds checked
                 </label>
-                <label className="flex items-center gap-2 rounded-xl border border-gray-100 bg-white px-3 py-2 text-xs font-medium text-gray-600">
+                <label className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-xs font-medium text-gray-600">
+                  <span className="min-w-0 flex-1">Card sales</span>
+                  <span className="font-bold text-gray-900 tabular-nums"><Rial amount={cardSales} /></span>
                   <input
                     type="checkbox"
                     checked={cardSalesOk}
                     onChange={e => setCardSalesOk(e.target.checked)}
                     className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                   />
-                  Card total matches terminal
                 </label>
-                <label className="flex items-center gap-2 rounded-xl border border-gray-100 bg-white px-3 py-2 text-xs font-medium text-gray-600">
+                <label className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-xs font-medium text-gray-600">
+                  <span className="min-w-0 flex-1">POS cash expenses</span>
+                  <span className="font-bold text-gray-900 tabular-nums"><Rial amount={cashExpenses} /></span>
                   <input
                     type="checkbox"
                     checked={expensesOk}
                     onChange={e => setExpensesOk(e.target.checked)}
                     className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                   />
-                  POS cash expenses checked
+                </label>
+                <label className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-xs font-medium text-gray-600">
+                  <span className="min-w-0 flex-1">Credit notes/refunds</span>
+                  <span className="font-bold text-gray-900 tabular-nums"><Rial amount={creditRefunds} /></span>
+                  <input
+                    type="checkbox"
+                    checked={creditRefundsOk}
+                    onChange={e => setCreditRefundsOk(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
                 </label>
               </div>
+            </section>
 
-              <div className="mb-3">
-                <label className="label">Actual cash in drawer (required)</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
-                  <input
-                    type="number" min="0" step="0.01" value={cashActual}
-                    onChange={e => setCashActual(e.target.value)}
-                    className="input pl-10" placeholder="0.00" autoFocus
-                  />
+            <section>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Cash count</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="rounded-xl bg-gray-50 border border-gray-100 px-3.5 py-3 space-y-2">
+                  <div className="flex justify-between text-sm text-gray-500">
+                    <span>Opening cash</span>
+                    <span className="tabular-nums"><Rial amount={openingCash} /></span>
+                  </div>
+                  <div className="flex justify-between text-sm text-gray-500">
+                    <span>Expected in drawer</span>
+                    <span className="tabular-nums"><Rial amount={expectedCash} /></span>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>Total expenses</span>
+                    <span className="tabular-nums"><Rial amount={totalExpenses} /></span>
+                  </div>
                 </div>
-                {difference !== null && (
-                  <p className={`text-xs mt-1.5 font-semibold ${
-                    Math.abs(difference) < 0.005
-                      ? 'text-emerald-600'
-                      : difference > 0 ? 'text-emerald-600' : 'text-red-500'
-                  }`}>
-                    {Math.abs(difference) < 0.005
-                      ? '✓ Balanced'
-                      : difference > 0
-                        ? `+SAR ${fmt(difference)} surplus`
-                        : `-SAR ${fmt(Math.abs(difference))} shortage`
-                    }
-                  </p>
-                )}
+                <div className="rounded-xl bg-white border border-gray-100 px-3.5 py-3">
+                  <label className="label">Actual cash counted</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
+                    <input
+                      type="number" min="0" step="0.01" value={cashActual}
+                      onChange={e => setCashActual(e.target.value)}
+                      className="input pl-10 h-10" placeholder="0.00" autoFocus
+                    />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-400">Difference</span>
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${differenceState.className}`}>
+                      {differenceState.label}
+                    </span>
+                  </div>
+                </div>
               </div>
+            </section>
 
-              <div>
-                <label className="label">Notes (optional)</label>
-                <textarea
-                  value={notes} onChange={e => setNotes(e.target.value)}
-                  className="input resize-none" rows={2}
-                  placeholder="Any notes about this session..."
-                />
-              </div>
-            </div>
-          </>
+            <section>
+              <label className="label">Notes (optional)</label>
+              <textarea
+                value={notes} onChange={e => setNotes(e.target.value)}
+                className="input resize-none min-h-0" rows={2}
+                placeholder="Optional closing note"
+              />
+            </section>
+          </div>
         )}
 
-        <div className="px-5 py-4 flex gap-2">
+        <div className="px-5 py-3.5 flex gap-2 border-t border-gray-100 flex-shrink-0">
           <button onClick={onCancel} disabled={saving}
             className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50">
             Cancel
           </button>
-          <button onClick={handleClose} disabled={saving || cashActual === '' || loadingData || !cashSalesOk || !cardSalesOk || !expensesOk}
+          <button onClick={handleClose} disabled={!canClose}
             className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {saving ? <Loader2 size={14} className="animate-spin" /> : 'Close Register'}
           </button>

@@ -1,18 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from 'recharts'
-import {
   TrendingUp, FileText, Receipt, CreditCard, AlertTriangle,
   ArrowRight, CheckCircle2, Clock, AlertCircle, Loader2,
   LogOut, Package, Banknote, BadgePercent,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { saudiNow, saudiDateStr } from '@/lib/utils/date'
+import { saudiDateStr } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
-import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
+import { Rial } from '@/components/ui/RiyalSymbol'
 import { MeemLogo } from '@/components/MeemLogo'
 import { productionStatusLabel } from '@/lib/zatca/status'
 import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
@@ -28,20 +25,6 @@ import {
 } from '@/lib/registerSessions'
 
 const db = () => supabase as any
-
-function last7Days() {
-  const result = []
-  for (let i = 6; i >= 0; i--) {
-    const d = saudiNow(); d.setUTCDate(d.getUTCDate() - i)
-    const date = d.toISOString().split('T')[0]
-    result.push({
-      day:   new Date(date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short' }),
-      date,
-      sales: 0,
-    })
-  }
-  return result
-}
 
 const statusConfig = {
   posted:  { variant: 'success' as const, label: 'Posted',  icon: CheckCircle2 },
@@ -137,35 +120,6 @@ function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
   )
 }
 
-function ChartTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-3.5 py-2.5">
-      <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-      <p className="text-sm font-bold text-gray-900">{sarStr(Number(payload[0].value))}</p>
-    </div>
-  )
-}
-
-function SessionMetric({ label, value, tone = 'gray' }: {
-  label: string
-  value: React.ReactNode
-  tone?: 'gray' | 'green' | 'blue' | 'amber'
-}) {
-  const toneClass = {
-    gray: 'bg-gray-50 text-gray-900',
-    green: 'bg-emerald-50 text-emerald-800',
-    blue: 'bg-blue-50 text-blue-800',
-    amber: 'bg-amber-50 text-amber-800',
-  }[tone]
-  return (
-    <div className={`rounded-xl px-3 py-3 ${toneClass}`}>
-      <p className="text-[10px] font-semibold uppercase tracking-wide opacity-60">{label}</p>
-      <p className="mt-1 text-sm font-bold tabular-nums">{value}</p>
-    </div>
-  )
-}
-
 function RegisterSessionPanel({ session, loading, error }: {
   session: RegisterSessionSummary | null
   loading: boolean
@@ -173,64 +127,114 @@ function RegisterSessionPanel({ session, loading, error }: {
 }) {
   const title = registerSessionLabel(session)
   const hasSession = !!session?.sessionId
+  const isOpen = session?.status === 'open'
+  const labelPrefix = isOpen ? 'Session' : 'Last Session'
+  const cashFinalLabel = session?.status === 'closed' && session.actualCash !== null ? 'Difference' : 'Expected Cash'
+  const cashFinalValue = session?.status === 'closed' && session.actualCash !== null
+    ? session.cashDifference ?? 0
+    : session?.expectedCash ?? 0
   return (
-    <section className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-bold text-gray-900">{title}</h2>
-          <p className="mt-1 text-xs text-gray-500">{registerSessionTimeRange(session)}</p>
-        </div>
-        {hasSession && (
-          <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
-            session.isLongOpen
-              ? 'bg-amber-100 text-amber-700'
-              : session.status === 'open'
-              ? 'bg-emerald-100 text-emerald-700'
-              : 'bg-gray-100 text-gray-600'
-          }`}>
-            {session.isLongOpen ? 'Long open' : session.status === 'open' ? 'Open' : 'Closed'}
-          </span>
-        )}
-      </div>
-
+    <section className="space-y-4">
       {loading ? (
-        <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[1, 2, 3, 4].map(i => <div key={i} className="h-16 rounded-xl bg-gray-50 animate-pulse" />)}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5, 6].map(i => <div key={i} className="h-28 rounded-2xl bg-white border border-gray-100 animate-pulse" />)}
         </div>
       ) : error ? (
-        <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-3 py-3 text-xs text-amber-800">
+        <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           {error}
         </div>
       ) : !hasSession ? (
-        <div className="mt-4 rounded-xl bg-gray-50 px-3 py-3 text-xs text-gray-500">
-          No register session has been opened for this branch yet.
+        <div className="rounded-2xl border border-gray-100 bg-white px-5 py-6 shadow-sm">
+          <h2 className="text-sm font-bold text-gray-900">No Register Session</h2>
+          <p className="mt-1 text-sm text-gray-500">Open a register to start tracking sales for this shift.</p>
         </div>
       ) : (
         <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <StatCard
+              label={`${labelPrefix} Sales`}
+              value={<Rial amount={session.totalSales} />}
+              sub={`${session.invoiceCount} invoice${session.invoiceCount !== 1 ? 's' : ''}`}
+              icon={TrendingUp}
+              gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28]"
+            />
+            <StatCard
+              label={`${labelPrefix} Invoices`}
+              value={String(session.invoiceCount)}
+              sub={isOpen ? 'Current register' : 'Closed register'}
+              icon={FileText}
+              gradient="bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]"
+            />
+            <StatCard
+              label={`${labelPrefix} Cash`}
+              value={<Rial amount={session.cashTotal} />}
+              sub="Cash and split cash"
+              icon={Banknote}
+              gradient="bg-gradient-to-br from-[#059669] to-[#047857]"
+            />
+            <StatCard
+              label={`${labelPrefix} Card`}
+              value={<Rial amount={session.cardTotal} />}
+              sub="Card and split card"
+              icon={CreditCard}
+              gradient="bg-gradient-to-br from-[#0891b2] to-[#0e7490]"
+            />
+            <StatCard
+              label={`${labelPrefix} VAT`}
+              value={<Rial amount={session.vatTotal} />}
+              sub="Session VAT"
+              icon={BadgePercent}
+              gradient="bg-gradient-to-br from-[#b45309] to-[#92400e]"
+            />
+            <StatCard
+              label={cashFinalLabel}
+              value={<Rial amount={cashFinalValue} />}
+              sub={session.status === 'closed' && session.actualCash !== null ? 'Actual vs expected' : 'Expected in drawer'}
+              icon={Receipt}
+              gradient="bg-gradient-to-br from-[#4f46e5] to-[#3730a3]"
+            />
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-gray-900">{title}</h2>
+                <p className="mt-1 text-xs text-gray-500">{registerSessionTimeRange(session)}</p>
+                <p className="mt-2 text-xs text-gray-500">
+                  {session.status === 'open' ? (
+                    <>
+                      Opening cash: <Rial amount={session.openingCash} /> · Expected cash: <Rial amount={session.expectedCash} />
+                    </>
+                  ) : (
+                    <>
+                      Actual cash: <Rial amount={session.actualCash ?? 0} /> · Difference: <Rial amount={session.cashDifference ?? 0} />
+                    </>
+                  )}
+                </p>
+                <p className="mt-1 text-xs text-gray-400">
+                  Credit notes/refunds: <Rial amount={session.creditNoteTotal} /> · Expenses: <Rial amount={session.expensesTotal} />
+                </p>
+              </div>
+              <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                session.isLongOpen
+                  ? 'bg-amber-100 text-amber-700'
+                  : session.status === 'open'
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-gray-100 text-gray-600'
+              }`}>
+                {session.isLongOpen ? 'Long open' : session.status === 'open' ? 'Open' : 'Closed'}
+              </span>
+            </div>
+          </div>
+
           {session.isLongOpen && (
-            <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
+            <div className="flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
               <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-amber-600" />
               <p className="text-xs text-amber-800">
                 This register session has been open since {session.openedAt ? formatSaudiSessionDateTime(session.openedAt) : 'earlier'}. Close it before starting a new shift.
               </p>
             </div>
           )}
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <SessionMetric label="Total sales" value={<Rial amount={session.totalSales} />} tone="green" />
-            <SessionMetric label="Invoices" value={String(session.invoiceCount)} />
-            <SessionMetric label="Cash" value={<Rial amount={session.cashTotal} />} tone="green" />
-            <SessionMetric label="Card" value={<Rial amount={session.cardTotal} />} tone="blue" />
-            <SessionMetric label="VAT" value={<Rial amount={session.vatTotal} />} tone="amber" />
-            <SessionMetric label="Credit notes" value={<Rial amount={session.creditNoteTotal} />} tone="amber" />
-            <SessionMetric label="Expenses" value={<Rial amount={session.expensesTotal} />} />
-            <SessionMetric label="Expected cash" value={<Rial amount={session.expectedCash} />} tone="green" />
-            {session.status === 'closed' && (
-              <>
-                <SessionMetric label="Actual cash" value={<Rial amount={session.actualCash ?? 0} />} />
-                <SessionMetric label="Difference" value={<Rial amount={session.cashDifference ?? 0} />} tone={(session.cashDifference ?? 0) === 0 ? 'gray' : 'amber'} />
-              </>
-            )}
-          </div>
         </>
       )}
     </section>
@@ -330,17 +334,9 @@ export default function BranchDashboardPage() {
   const bid = profile?.branch_id
 
   const [statsLoading, setStatsLoading] = useState(true)
-  const [chartLoading, setChartLoading] = useState(true)
   const [invLoading,   setInvLoading]   = useState(true)
   const [lowStockLoading, setLowStockLoading] = useState(true)
 
-  const [todaySales,    setTodaySales]    = useState(0)
-  const [todayCount,    setTodayCount]    = useState(0)
-  const [todayCash,     setTodayCash]     = useState(0)
-  const [todayCard,     setTodayCard]     = useState(0)
-  const [todayVat,      setTodayVat]      = useState(0)
-  const [todayExpenses, setTodayExpenses] = useState(0)
-  const [salesData,    setSalesData]    = useState(last7Days())
   const [recentInvs,   setRecentInvs]   = useState<any[]>([])
   const [lowStock,     setLowStock]     = useState<any[]>([])
   const [branchName,   setBranchName]   = useState('')
@@ -350,9 +346,7 @@ export default function BranchDashboardPage() {
   const [productionStatusReadable, setProductionStatusReadable] = useState(true)
   const [registerSession, setRegisterSession] = useState<RegisterSessionSummary | null>(null)
   const [registerSessionError, setRegisterSessionError] = useState('')
-  const [statsAvailable, setStatsAvailable] = useState(false)
   const [statsError, setStatsError] = useState('')
-  const [chartError, setChartError] = useState('')
   const [invoiceError, setInvoiceError] = useState('')
 
   const loadStats = useCallback(async () => {
@@ -360,16 +354,10 @@ export default function BranchDashboardPage() {
     setStatsLoading(true)
     setStatsError('')
     setRegisterSessionError('')
-    setStatsAvailable(false)
     const today = saudiDateStr()
     const summaryParams = { p_branch_id: bid, p_start_date: today, p_end_date: today }
     try {
-      const [summary, branchRes, registerRes] = await Promise.all([
-        loadReportSummary<DashboardSummary>(
-          'get_dashboard_summary',
-          summaryParams,
-          EMPTY_DASHBOARD_SUMMARY,
-        ),
+      const [branchRes, registerRes] = await Promise.all([
         db().from('branches').select('name, zatca_phase').eq('id', bid).maybeSingle(),
         (supabase as any).rpc('get_register_session_summary', {
           p_branch_id: bid,
@@ -387,34 +375,34 @@ export default function BranchDashboardPage() {
         setRegisterSession(normalizeRegisterSession(sessionValue))
       }
 
-      const summaryRecord = summary as Record<string, unknown>
-      const branchSummary = asArray<unknown>(pick(summaryRecord, 'branchStats', 'branch_stats'))
-        .map(normalizeBranchSummary)
-        .find(row => row?.id === bid) ?? null
-      setStatsAvailable(true)
-      setTodaySales(numberOrZero(pick(summaryRecord, 'totalSales', 'total_sales') ?? branchSummary?.todaySales))
-      setTodayCount(Math.trunc(numberOrZero(pick(summaryRecord, 'totalCount', 'total_invoices') ?? branchSummary?.todayCount)))
-      setTodayCash(numberOrZero(pick(summaryRecord, 'totalCash', 'cash_total') ?? branchSummary?.todayCash))
-      setTodayCard(numberOrZero(pick(summaryRecord, 'totalCard', 'card_total') ?? branchSummary?.todayCard))
-      setTodayVat(numberOrZero(pick(summaryRecord, 'totalVat', 'vat_collected')))
-      setTodayExpenses(numberOrZero(pick(summaryRecord, 'totalExpenses', 'expenses_total')))
       setBranchName(branchRes.data?.name ?? '')
-      setZatcaPhase(branchRes.data?.zatca_phase ?? 1)
+      const branchZatcaPhase = branchRes.data?.zatca_phase ?? 1
+      setZatcaPhase(branchZatcaPhase)
       setHasActiveCert(false)
-      setProductionStatus(normalizeProductionStatus(branchSummary?.productionStatus))
-      setProductionStatusReadable((branchRes.data?.zatca_phase ?? 1) === 2
-        ? hasObject(branchSummary?.productionStatus)
-        : true)
+
+      try {
+        const summary = await loadReportSummary<DashboardSummary>(
+          'get_dashboard_summary',
+          summaryParams,
+          EMPTY_DASHBOARD_SUMMARY,
+        )
+        const summaryRecord = summary as Record<string, unknown>
+        const branchSummary = asArray<unknown>(pick(summaryRecord, 'branchStats', 'branch_stats'))
+          .map(normalizeBranchSummary)
+          .find(row => row?.id === bid) ?? null
+        setProductionStatus(normalizeProductionStatus(branchSummary?.productionStatus))
+        setProductionStatusReadable(branchZatcaPhase === 2
+          ? hasObject(branchSummary?.productionStatus)
+          : true)
+      } catch (summaryError) {
+        logBranchDashboardFailure('get_dashboard_summary', summaryParams, summaryError)
+        setStatsError('Branch metadata could not be refreshed. Register Session totals are still shown.')
+        setProductionStatus(null)
+        setProductionStatusReadable(branchZatcaPhase !== 2)
+      }
     } catch (error) {
-      logBranchDashboardFailure('get_dashboard_summary', summaryParams, error)
-      setStatsAvailable(false)
-      setStatsError('Branch totals could not be loaded. Refresh and try again.')
-      setTodaySales(0)
-      setTodayCount(0)
-      setTodayCash(0)
-      setTodayCard(0)
-      setTodayVat(0)
-      setTodayExpenses(0)
+      logBranchDashboardFailure('branch_register_session_load', { p_branch_id: bid }, error)
+      setStatsError('Branch dashboard data could not be loaded. Refresh and try again.')
       setRegisterSession(null)
       try {
         const { data } = await db().from('branches').select('name, zatca_phase').eq('id', bid).maybeSingle()
@@ -423,36 +411,6 @@ export default function BranchDashboardPage() {
       } catch {}
     } finally {
       setStatsLoading(false)
-    }
-  }, [tid, bid])
-
-  const loadChart = useCallback(async () => {
-    if (!tid || !bid) { setChartLoading(false); return }
-    setChartLoading(true)
-    setChartError('')
-    const fromDay = saudiNow(); fromDay.setUTCDate(fromDay.getUTCDate() - 6)
-    const params = {
-      p_branch_id: bid,
-      p_start_date: fromDay.toISOString().split('T')[0],
-      p_end_date: saudiDateStr(),
-    }
-    try {
-      const summary = await loadReportSummary<DashboardSummary>(
-        'get_dashboard_summary',
-        params,
-        EMPTY_DASHBOARD_SUMMARY,
-      )
-      const summaryRecord = summary as Record<string, unknown>
-      setSalesData(asArray<Record<string, unknown>>(pick(summaryRecord, 'dailySales', 'daily_sales')).map(row => ({
-        day: new Date(String(pick(row, 'date', 'report_date') ?? '') + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short' }),
-        sales: numberOrZero(pick(row, 'sales', 'sales_amount')),
-      })))
-    } catch (error) {
-      logBranchDashboardFailure('get_dashboard_summary', params, error)
-      setChartError('Sales chart could not be loaded.')
-      setSalesData(last7Days())
-    } finally {
-      setChartLoading(false)
     }
   }, [tid, bid])
 
@@ -494,7 +452,6 @@ export default function BranchDashboardPage() {
   }, [tid])
 
   useEffect(() => { loadStats() },    [loadStats])
-  useEffect(() => { loadChart() },    [loadChart])
   useEffect(() => { loadInvoices() }, [loadInvoices])
   useEffect(() => { loadLowStock() }, [loadLowStock])
 
@@ -562,16 +519,16 @@ export default function BranchDashboardPage() {
           </p>
         </div>
 
-        {(statsError || chartError || invoiceError) && (
+        {(statsError || invoiceError) && (
           <div className="flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
             <AlertCircle size={16} className="text-amber-600 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
               <p className="text-sm font-semibold text-amber-900">Branch dashboard data needs a refresh</p>
-              <p className="text-xs text-amber-800 mt-0.5">{statsError || chartError || invoiceError}</p>
+              <p className="text-xs text-amber-800 mt-0.5">{statsError || invoiceError}</p>
             </div>
             <button
               type="button"
-              onClick={() => { loadStats(); loadChart(); loadInvoices() }}
+              onClick={() => { loadStats(); loadInvoices() }}
               className="text-xs font-semibold text-amber-900 hover:text-amber-700"
             >
               Retry
@@ -585,105 +542,10 @@ export default function BranchDashboardPage() {
           error={registerSessionError}
         />
 
-        {/* Date KPI cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <StatCard
-            label="Sales Today by Date"
-            value={statsAvailable ? <Rial amount={todaySales} /> : 'Unavailable'}
-            sub={statsAvailable ? `${todayCount} invoice${todayCount !== 1 ? 's' : ''}` : 'Retry to load totals'}
-            icon={TrendingUp}
-            gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28]"
-            loading={statsLoading}
-          />
-          <StatCard
-            label="Invoices by Date"
-            value={statsAvailable ? String(todayCount) : 'Unavailable'}
-            sub={statsAvailable ? 'Posted today' : 'Retry to load totals'}
-            icon={FileText}
-            gradient="bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]"
-            loading={statsLoading}
-          />
-          <StatCard
-            label="Expenses by Date"
-            value={statsAvailable ? <Rial amount={todayExpenses} /> : 'Unavailable'}
-            sub={statsAvailable ? 'Recorded today' : 'Retry to load totals'}
-            icon={CreditCard}
-            gradient="bg-gradient-to-br from-[#7c3aed] to-[#5b21b6]"
-            loading={statsLoading}
-          />
-          <StatCard
-            label="Cash Today by Date"
-            value={statsAvailable ? <Rial amount={todayCash} /> : 'Unavailable'}
-            sub={statsAvailable ? 'Cash payments' : 'Retry to load totals'}
-            icon={Banknote}
-            gradient="bg-gradient-to-br from-[#059669] to-[#047857]"
-            loading={statsLoading}
-          />
-          <StatCard
-            label="Card Today by Date"
-            value={statsAvailable ? <Rial amount={todayCard} /> : 'Unavailable'}
-            sub={statsAvailable ? 'Card payments' : 'Retry to load totals'}
-            icon={CreditCard}
-            gradient="bg-gradient-to-br from-[#0891b2] to-[#0e7490]"
-            loading={statsLoading}
-          />
-          <StatCard
-            label="VAT Today by Date"
-            value={statsAvailable ? <Rial amount={todayVat} /> : 'Unavailable'}
-            sub={statsAvailable ? "Tax on today's sales" : 'Retry to load totals'}
-            icon={BadgePercent}
-            gradient="bg-gradient-to-br from-[#b45309] to-[#92400e]"
-            loading={statsLoading}
-          />
-        </div>
-
-        {/* Chart + Quick actions */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <div className="mb-4">
-              <h2 className="text-sm font-semibold text-gray-900">Sales — Last 7 Days</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Your branch daily revenue</p>
-            </div>
-            {chartLoading ? (
-              <div className="h-[200px] flex items-center justify-center">
-                <Loader2 size={22} className="animate-spin text-gray-300" />
-              </div>
-            ) : chartError ? (
-              <div className="h-[200px] flex flex-col items-center justify-center text-gray-300">
-                <AlertCircle size={28} className="mb-2" />
-                <p className="text-sm text-gray-400">{chartError}</p>
-              </div>
-            ) : salesData.every(d => d.sales === 0) ? (
-              <div className="h-[200px] flex flex-col items-center justify-center text-gray-300">
-                <TrendingUp size={28} className="mb-2" />
-                <p className="text-sm">No sales this week yet</p>
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <AreaChart data={salesData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="branchSalesGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="#1B6B3A" stopOpacity={0.15} />
-                      <stop offset="95%" stopColor="#1B6B3A" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                  <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false}
-                    tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
-                  <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#1B6B3A', strokeWidth: 1, strokeDasharray: '4 4' }} />
-                  <Area type="monotone" dataKey="sales"
-                    stroke="#1B6B3A" strokeWidth={2}
-                    fill="url(#branchSalesGrad)"
-                    dot={false} activeDot={{ r: 4, fill: '#1B6B3A', strokeWidth: 2, stroke: '#fff' }} />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-
-          {/* Quick actions */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col gap-3">
-            <h2 className="text-sm font-semibold text-gray-900 mb-1">Quick Actions</h2>
+        {/* Quick actions */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+          <h2 className="text-sm font-semibold text-gray-900 mb-3">Quick Actions</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
               { label: 'New Sale',     desc: 'Open POS terminal',     icon: Receipt,    path: '/pos',       primary: true },
               { label: 'Add Expense',  desc: 'Record branch expense',  icon: CreditCard, path: '/expenses',  primary: false },
@@ -711,20 +573,20 @@ export default function BranchDashboardPage() {
                 </div>
               </button>
             ))}
-
-            {/* Low stock alert */}
-            {!lowStockLoading && lowStock.length > 0 && (
-              <div className="mt-1 flex items-start gap-2.5 bg-amber-50 border border-amber-100 rounded-xl px-3.5 py-3">
-                <AlertTriangle size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-amber-800">{lowStock.length} product{lowStock.length !== 1 ? 's' : ''} low on stock</p>
-                  <p className="text-[11px] text-amber-600 mt-0.5 truncate">
-                    {lowStock.map(p => p.name).join(', ')}
-                  </p>
-                </div>
-              </div>
-            )}
           </div>
+
+          {/* Low stock alert */}
+          {!lowStockLoading && lowStock.length > 0 && (
+            <div className="mt-3 flex items-start gap-2.5 bg-amber-50 border border-amber-100 rounded-xl px-3.5 py-3">
+              <AlertTriangle size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-amber-800">{lowStock.length} product{lowStock.length !== 1 ? 's' : ''} low on stock</p>
+                <p className="text-[11px] text-amber-600 mt-0.5 truncate">
+                  {lowStock.map(p => p.name).join(', ')}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Recent invoices */}
