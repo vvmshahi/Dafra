@@ -222,7 +222,7 @@ export default function App() {
             <Route path="/pos" element={<POSPage />} />
           </Route>
 
-          {/* App shell with Sidebar + TopHeader */}
+          {/* App shell with Sidebar */}
           <Route element={<AppLayout />}>
 
             {/* Branch dashboard — inside AppLayout so sidebar shows */}

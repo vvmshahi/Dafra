@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { AlertTriangle, MessageCircle } from 'lucide-react'
 import Sidebar from './Sidebar'
-import TopHeader from './TopHeader'
 import { useAuth } from '@/hooks/useAuth'
 import { useSubscription } from '@/hooks/useSubscription'
 import { supportConfig } from '@/config/support'
@@ -67,6 +66,8 @@ function getInitialCollapsed(): boolean {
 
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(getInitialCollapsed)
+  const location = useLocation()
+  const flushContent = location.pathname === '/branch'
 
   function toggle() {
     setCollapsed(prev => {
@@ -80,9 +81,8 @@ export default function AppLayout() {
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       <Sidebar collapsed={collapsed} onToggle={toggle} />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopHeader />
         <SubscriptionBanner />
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className={`flex-1 overflow-y-auto ${flushContent ? 'p-0' : 'p-6'}`}>
           <Outlet />
         </main>
       </div>

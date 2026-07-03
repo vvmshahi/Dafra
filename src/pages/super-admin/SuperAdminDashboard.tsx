@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Building2, Users, CreditCard, TrendingUp, ArrowRight,
-  CheckCircle2, AlertTriangle, Star,
+  Building2, Users, TrendingUp, ArrowRight,
+  AlertTriangle, Star,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
@@ -233,6 +233,11 @@ export default function SuperAdminDashboard() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-col gap-1">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Kubri Super Admin</p>
+        <h1 className="text-2xl font-black tracking-tight text-gray-900">Platform overview</h1>
+        <p className="text-sm text-gray-500">Clients, branches, subscriptions, and revenue signals.</p>
+      </div>
 
       {/* Error banner */}
       {error && (
@@ -335,20 +340,14 @@ export default function SuperAdminDashboard() {
         </div>
       </div>
 
-      {/* System notices */}
-      <div className="flex items-start gap-2.5 bg-emerald-50 border border-emerald-100 rounded-xl p-4">
-        <CheckCircle2 size={15} className="text-emerald-500 flex-shrink-0 mt-0.5" />
+      {/* Platform notices */}
+      <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-100 rounded-xl p-4">
+        <AlertTriangle size={15} className="text-amber-500 flex-shrink-0 mt-0.5" />
         <div>
-          <p className="text-xs font-semibold text-emerald-700">All systems operational</p>
-          <p className="text-[11px] text-emerald-600 mt-0.5">
-            Supabase · Auth · Storage · ZATCA Phase 1 QR generation
+          <p className="text-xs font-semibold text-amber-800">Production readiness reminder</p>
+          <p className="text-[11px] text-amber-700 mt-0.5">
+            Review subscriptions, branch status, and ZATCA setup before enabling live operations for a client.
           </p>
-        </div>
-        <div className="ml-auto flex items-start gap-2">
-          <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg p-2.5">
-            <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
-            <p className="text-[11px] text-amber-700 font-medium">ZATCA Phase 2 signing not yet configured</p>
-          </div>
         </div>
       </div>
 

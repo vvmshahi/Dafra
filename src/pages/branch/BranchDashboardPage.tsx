@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   TrendingUp, FileText, Receipt, CreditCard, AlertTriangle,
   ArrowRight, CheckCircle2, Clock, AlertCircle, Loader2,
-  LogOut, Package, Banknote, BadgePercent,
+  Package, Banknote, BadgePercent,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
@@ -10,7 +10,6 @@ import { saudiDateStr } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import { MeemLogo } from '@/components/MeemLogo'
 import { productionStatusLabel } from '@/lib/zatca/status'
 import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
 import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
@@ -101,17 +100,17 @@ function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
   icon: React.ElementType; gradient: string; loading?: boolean
 }) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl p-5 ${gradient}`}>
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm font-medium text-white/70">{label}</p>
+    <div className={`relative min-h-[132px] overflow-hidden rounded-2xl p-5 shadow-sm ${gradient}`}>
+      <div className="flex h-full items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-white/70">{label}</p>
           {loading
             ? <div className="mt-1.5 h-7 w-24 bg-white/20 rounded animate-pulse" />
-            : <p className="mt-1.5 text-2xl font-bold text-white tracking-tight">{value}</p>
+            : <p className="mt-2 text-2xl font-black text-white tracking-tight tabular-nums">{value}</p>
           }
-          <p className="mt-1 text-xs text-white/60">{sub}</p>
+          <p className="mt-2 text-xs leading-5 text-white/65">{sub}</p>
         </div>
-        <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0">
+        <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0 shadow-inner shadow-white/10">
           <Icon size={18} className="text-white" />
         </div>
       </div>
@@ -225,16 +224,15 @@ function RegisterSessionPanel({ session, loading, error }: {
                 {session.isLongOpen ? 'Long open' : session.status === 'open' ? 'Open' : 'Closed'}
               </span>
             </div>
-          </div>
-
-          {session.isLongOpen && (
-            <div className="flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
-              <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-amber-600" />
-              <p className="text-xs text-amber-800">
-                This register session has been open since {session.openedAt ? formatSaudiSessionDateTime(session.openedAt) : 'earlier'}. Close it before starting a new shift.
-              </p>
+            {session.isLongOpen && (
+              <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
+                <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-amber-600" />
+                <p className="text-xs text-amber-800">
+                  This register session has been open since {session.openedAt ? formatSaudiSessionDateTime(session.openedAt) : 'earlier'}. Close it before starting a new shift.
+                </p>
+              </div>
+            )}
             </div>
-          )}
         </>
       )}
     </section>
@@ -328,7 +326,7 @@ function logBranchDashboardFailure(name: string, params: Record<string, unknown>
 
 export default function BranchDashboardPage() {
   const navigate = useNavigate()
-  const { profile, tenant, signOut } = useAuth()
+  const { profile, tenant } = useAuth()
 
   const tid = profile?.tenant_id
   const bid = profile?.branch_id
@@ -458,6 +456,18 @@ export default function BranchDashboardPage() {
   const zatcaStatus = zatcaPhase === 2 && !productionStatusReadable
     ? { label: 'Phase 2 status unavailable', tone: 'neutral' as const }
     : productionStatusLabel(productionStatus, hasActiveCert)
+  const dashboardTitle = branchName || tenant?.name || 'My Branch'
+  const dashboardSubtitle = tenant?.name && branchName && tenant.name !== branchName
+    ? tenant.name
+    : tenant?.name_ar || 'Branch dashboard'
+  const dashboardDate = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  const sessionChip = registerSession?.isLongOpen
+    ? { label: 'Long open', className: 'border-amber-300/30 bg-amber-400/15 text-amber-100' }
+    : registerSession?.status === 'open'
+    ? { label: 'Register open', className: 'border-emerald-300/30 bg-emerald-400/15 text-emerald-100' }
+    : registerSession?.status === 'closed'
+    ? { label: 'Last register closed', className: 'border-white/15 bg-white/10 text-white/80' }
+    : null
 
   useEffect(() => {
     if (!bid) return
@@ -474,50 +484,48 @@ export default function BranchDashboardPage() {
     <div className="min-h-screen bg-gray-50">
 
       {/* Header */}
-      <header className="bg-[#0F2419] px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <MeemLogo size="md" />
-          {(branchName || tenant?.name) && (
-            <span className="text-white/50 text-xs">{branchName || tenant?.name}</span>
-          )}
+      <header className="bg-[#0F2419] px-5 py-5 shadow-lg sm:px-7">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gold-300">Branch operations</p>
+          <h1 className="mt-1 truncate text-2xl font-black tracking-tight text-white sm:text-3xl">
+            {statsLoading ? 'Loading branch...' : dashboardTitle}
+          </h1>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/80">
+            <span className="font-semibold text-white/90" dir={tenant?.name_ar && dashboardSubtitle === tenant.name_ar ? 'rtl' : 'ltr'}>
+              {dashboardSubtitle}
+            </span>
+            <span className="hidden text-white/35 sm:inline">/</span>
+            <span className="text-white/70">{dashboardDate}</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {zatcaPhase === 2 ? (
-            <span className={`text-[10px] border px-2.5 py-1 rounded-lg ${zatcaToneClass[zatcaStatus.tone]}`}>
+            <span className={`text-[10px] border px-2.5 py-1.5 rounded-lg font-bold ${zatcaToneClass[zatcaStatus.tone]}`}>
               {zatcaStatus.label}
             </span>
           ) : (
-            <span className="text-[10px] bg-blue-500/20 border border-blue-400/20 text-blue-300 px-2.5 py-1 rounded-lg">
+            <span className="text-[10px] bg-blue-500/20 border border-blue-400/20 text-blue-200 px-2.5 py-1.5 rounded-lg font-bold">
               Phase 1 — QR invoices
+            </span>
+          )}
+          {sessionChip && (
+            <span className={`text-[10px] border px-2.5 py-1.5 rounded-lg font-bold ${sessionChip.className}`}>
+              {sessionChip.label}
             </span>
           )}
           <button
             onClick={() => navigate('/pos')}
-            className="flex items-center gap-2 px-4 py-2 bg-gold-500 text-[#0F2419] text-sm font-bold rounded-xl hover:bg-gold-400 transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 bg-gold-500 text-[#0F2419] text-sm font-black rounded-xl hover:bg-gold-400 transition-colors shadow-lg shadow-gold-950/20"
           >
             <Receipt size={15} />
             New Sale
           </button>
-          <button
-            onClick={signOut}
-            className="w-9 h-9 flex items-center justify-center rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <LogOut size={16} />
-          </button>
+        </div>
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-
-        {/* Welcome */}
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">
-            {statsLoading ? 'Loading…' : branchName ? `${branchName}` : 'My Branch'}
-          </h1>
-          <p className="text-sm text-gray-400 mt-0.5">
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-          </p>
-        </div>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
         {(statsError || invoiceError) && (
           <div className="flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
@@ -544,15 +552,22 @@ export default function BranchDashboardPage() {
 
         {/* Quick actions */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <h2 className="text-sm font-semibold text-gray-900 mb-3">Quick Actions</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-gray-900">Quick Actions</h2>
+              <p className="mt-0.5 text-xs text-gray-400">Daily branch workflow</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
             {[
-              { label: 'New Sale',     desc: 'Open POS terminal',     icon: Receipt,    path: '/pos',       primary: true },
-              { label: 'Add Expense',  desc: 'Record branch expense',  icon: CreditCard, path: '/expenses',  primary: false },
-              { label: 'View Invoices',desc: 'All branch invoices',    icon: FileText,   path: '/invoices',  primary: false },
+              { label: 'New Sale', labelShort: 'New Sale', desc: 'Open POS', icon: Receipt, path: '/pos', primary: true },
+              { label: 'Invoices', labelShort: 'Invoices', desc: 'Review receipts', icon: FileText, path: '/invoices', primary: false },
+              { label: 'Products', labelShort: 'Products', desc: 'Menu and stock', icon: Package, path: '/products', primary: false },
+              { label: 'Expenses', labelShort: 'Expenses', desc: 'Record costs', icon: CreditCard, path: '/expenses', primary: false },
+              { label: 'Reports', labelShort: 'Reports', desc: 'VAT and sales', icon: BadgePercent, path: '/reports', primary: false },
             ].map(action => (
               <button key={action.label} onClick={() => navigate(action.path)}
-                className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left transition-all ${
+                className={`flex min-h-[82px] items-center gap-3 w-full px-4 py-3 rounded-xl text-left transition-all ${
                   action.primary
                     ? 'bg-primary-500 hover:bg-primary-600 text-white shadow-sm'
                     : 'bg-gray-50 hover:bg-gray-100 border border-gray-100'
@@ -565,7 +580,7 @@ export default function BranchDashboardPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className={`text-sm font-semibold truncate ${action.primary ? 'text-white' : 'text-gray-800'}`}>
-                    {action.label}
+                    {action.labelShort}
                   </p>
                   <p className={`text-[11px] truncate ${action.primary ? 'text-white/70' : 'text-gray-400'}`}>
                     {action.desc}

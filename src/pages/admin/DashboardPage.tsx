@@ -417,7 +417,7 @@ function WelcomeState({ onAddBranch }: { onAddBranch: () => void }) {
 
 export default function DashboardPage() {
   const navigate = useNavigate()
-  const { profile } = useAuth()
+  const { profile, tenant } = useAuth()
 
   const [statsLoading,  setStatsLoading]  = useState(true)
   const [branchLoading, setBranchLoading] = useState(true)
@@ -598,6 +598,11 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-col gap-1">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Owner dashboard</p>
+        <h1 className="text-2xl font-black tracking-tight text-gray-900">{tenant?.name ?? 'Business overview'}</h1>
+        <p className="text-sm text-gray-500">Register sessions, branch status, and daily operations.</p>
+      </div>
 
       {/* ── Register Session KPIs ────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
