@@ -4,6 +4,7 @@ import {
   Search, Plus, Minus, Trash2, CreditCard, Banknote,
   Receipt, X, ChevronDown, User, Check, Loader2,
   ShoppingBag, AlertCircle, Zap, Printer, PackageOpen, ArrowLeft, Lock,
+  ChevronLeft, ChevronRight, ChevronUp,
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
@@ -1231,6 +1232,8 @@ export default function POSPage() {
   const { profile, user } = useAuth()
   const navigate  = useNavigate()
   const searchRef = useRef<HTMLInputElement>(null)
+  const categoryScrollRef = useRef<HTMLDivElement>(null)
+  const productScrollRef = useRef<HTMLDivElement>(null)
   const sub       = useSubscription()
 
   // Session management
@@ -1266,6 +1269,12 @@ export default function POSPage() {
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [showExpense,  setShowExpense]  = useState(false)
   const [zatcaResult,  setZatcaResult]  = useState<'submitted' | 'pending' | 'failed' | null>(null)
+  const [scrollState,  setScrollState]  = useState({
+    categoryAtStart: true,
+    categoryAtEnd: true,
+    productsAtStart: true,
+    productsAtEnd: true,
+  })
   const checkoutKeyRef = useRef<string | null>(null)
 
   // ── Load data ────────────────────────────────────────────────────────────
@@ -1402,6 +1411,7 @@ export default function POSPage() {
   const cashAmt = parseFloat(cashReceived) || 0
   const change  = payMethod === 'cash' ? Math.max(0, cashAmt - totals.total) : 0
   const splitPaymentsEnabled = branch?.allow_split_payments ?? false
+  const showPosScrollButtons = branch?.show_pos_scroll_buttons ?? false
   const splitCashAmount = parseFloat(splitCash) || 0
   const splitCardAmount = parseFloat(splitCard) || 0
   const splitPaidTotal = round2(splitCashAmount + splitCardAmount)
@@ -1420,6 +1430,64 @@ export default function POSPage() {
       )
     : customers
   const selectedCust = customers.find(c => c.id === customerId)
+
+  function getScrollState(el: HTMLElement | null) {
+    if (!el) return { atStart: true, atEnd: true }
+    const maxScroll = Math.max(0, el.scrollWidth > el.clientWidth
+      ? el.scrollWidth - el.clientWidth
+      : el.scrollHeight - el.clientHeight)
+    const current = el.scrollWidth > el.clientWidth ? el.scrollLeft : el.scrollTop
+    return {
+      atStart: current <= 2,
+      atEnd: current >= maxScroll - 2,
+    }
+  }
+
+  function updateScrollState() {
+    const category = getScrollState(categoryScrollRef.current)
+    const products = getScrollState(productScrollRef.current)
+    setScrollState(prev => {
+      const next = {
+        categoryAtStart: category.atStart,
+        categoryAtEnd: category.atEnd,
+        productsAtStart: products.atStart,
+        productsAtEnd: products.atEnd,
+      }
+      return prev.categoryAtStart === next.categoryAtStart &&
+        prev.categoryAtEnd === next.categoryAtEnd &&
+        prev.productsAtStart === next.productsAtStart &&
+        prev.productsAtEnd === next.productsAtEnd
+        ? prev
+        : next
+    })
+  }
+
+  function scrollCategories(direction: -1 | 1) {
+    const el = categoryScrollRef.current
+    if (!el) return
+    el.scrollBy({ left: direction * Math.max(180, Math.round(el.clientWidth * 0.7)), behavior: 'smooth' })
+  }
+
+  function scrollProducts(direction: -1 | 1) {
+    const el = productScrollRef.current
+    if (!el) return
+    el.scrollBy({ top: direction * Math.max(220, Math.round(el.clientHeight * 0.75)), behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    if (!showPosScrollButtons) return
+    const categoryEl = categoryScrollRef.current
+    const productEl = productScrollRef.current
+    updateScrollState()
+    categoryEl?.addEventListener('scroll', updateScrollState, { passive: true })
+    productEl?.addEventListener('scroll', updateScrollState, { passive: true })
+    window.addEventListener('resize', updateScrollState)
+    return () => {
+      categoryEl?.removeEventListener('scroll', updateScrollState)
+      productEl?.removeEventListener('scroll', updateScrollState)
+      window.removeEventListener('resize', updateScrollState)
+    }
+  }, [showPosScrollButtons, categories.length, filtered.length])
 
   useEffect(() => {
     if (payMethod !== 'split') return
@@ -1887,7 +1955,18 @@ export default function POSPage() {
               </button>
             )}
           </div>
-          <div className="flex items-center gap-1.5 overflow-x-auto flex-1">
+          {showPosScrollButtons && (
+            <button
+              type="button"
+              onClick={() => scrollCategories(-1)}
+              disabled={scrollState.categoryAtStart}
+              title="Scroll categories left"
+              className="h-11 w-11 rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm flex items-center justify-center hover:bg-gray-50 disabled:opacity-35 disabled:cursor-not-allowed flex-shrink-0"
+            >
+              <ChevronLeft size={20} />
+            </button>
+          )}
+          <div ref={categoryScrollRef} className="flex items-center gap-1.5 overflow-x-auto flex-1">
             <button
               onClick={() => setActiveCat(null)}
               className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${
@@ -1910,53 +1989,90 @@ export default function POSPage() {
               </button>
             ))}
           </div>
+          {showPosScrollButtons && (
+            <button
+              type="button"
+              onClick={() => scrollCategories(1)}
+              disabled={scrollState.categoryAtEnd}
+              title="Scroll categories right"
+              className="h-11 w-11 rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm flex items-center justify-center hover:bg-gray-50 disabled:opacity-35 disabled:cursor-not-allowed flex-shrink-0"
+            >
+              <ChevronRight size={20} />
+            </button>
+          )}
         </div>
 
         {/* Product grid */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {filtered.length === 0 ? (
-            products.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full min-h-[320px] gap-5 text-center px-6">
-                <div className="w-20 h-20 rounded-2xl bg-gray-100 flex items-center justify-center">
-                  <PackageOpen size={36} className="text-gray-300" />
+        <div ref={productScrollRef} className="flex-1 overflow-y-auto p-4">
+          <div className={showPosScrollButtons ? 'flex items-start gap-3 min-h-full' : 'min-h-full'}>
+            <div className="flex-1 min-w-0">
+              {filtered.length === 0 ? (
+                products.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full min-h-[320px] gap-5 text-center px-6">
+                    <div className="w-20 h-20 rounded-2xl bg-gray-100 flex items-center justify-center">
+                      <PackageOpen size={36} className="text-gray-300" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="font-semibold text-gray-700 text-base">No products yet</p>
+                      <p className="text-sm text-gray-400 max-w-[220px]">
+                        Add your menu items to start selling
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => navigate('/products')}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-[#1B6B3A] text-white text-sm font-semibold rounded-xl hover:bg-[#155830] transition-colors shadow-sm"
+                    >
+                      <Plus size={15} />
+                      Go to Products
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-48 text-gray-400">
+                    <AlertCircle size={28} className="mb-2 opacity-40" />
+                    <p className="text-sm">No products found</p>
+                    {search && (
+                      <button onClick={() => setSearch('')} className="text-xs text-primary-500 mt-1 underline">
+                        Clear search
+                      </button>
+                    )}
+                  </div>
+                )
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+                  {filtered.map(p => (
+                    <ProductCard
+                      key={p.id}
+                      product={p}
+                      cartQty={cart.find(c => c.productId === p.id)?.quantity ?? 0}
+                      onAdd={() => addToCart(p)}
+                    />
+                  ))}
                 </div>
-                <div className="space-y-1">
-                  <p className="font-semibold text-gray-700 text-base">No products yet</p>
-                  <p className="text-sm text-gray-400 max-w-[220px]">
-                    Add your menu items to start selling
-                  </p>
-                </div>
+              )}
+            </div>
+            {showPosScrollButtons && (
+              <div className="sticky top-0 flex-shrink-0 self-start flex flex-col gap-2">
                 <button
-                  onClick={() => navigate('/products')}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-[#1B6B3A] text-white text-sm font-semibold rounded-xl hover:bg-[#155830] transition-colors shadow-sm"
+                  type="button"
+                  onClick={() => scrollProducts(-1)}
+                  disabled={scrollState.productsAtStart}
+                  title="Scroll products up"
+                  className="h-12 w-12 rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm flex items-center justify-center hover:bg-gray-50 disabled:opacity-35 disabled:cursor-not-allowed"
                 >
-                  <Plus size={15} />
-                  Go to Products
+                  <ChevronUp size={22} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollProducts(1)}
+                  disabled={scrollState.productsAtEnd}
+                  title="Scroll products down"
+                  className="h-12 w-12 rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm flex items-center justify-center hover:bg-gray-50 disabled:opacity-35 disabled:cursor-not-allowed"
+                >
+                  <ChevronUp size={22} className="rotate-180" />
                 </button>
               </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-48 text-gray-400">
-                <AlertCircle size={28} className="mb-2 opacity-40" />
-                <p className="text-sm">No products found</p>
-                {search && (
-                  <button onClick={() => setSearch('')} className="text-xs text-primary-500 mt-1 underline">
-                    Clear search
-                  </button>
-                )}
-              </div>
-            )
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
-              {filtered.map(p => (
-                <ProductCard
-                  key={p.id}
-                  product={p}
-                  cartQty={cart.find(c => c.productId === p.id)?.quantity ?? 0}
-                  onAdd={() => addToCart(p)}
-                />
-              ))}
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 

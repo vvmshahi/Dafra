@@ -181,7 +181,10 @@ export interface Database {
       update_branch_pos_settings: {
         Args: {
           p_branch_id: string
-          p_payload: { allow_split_payments: boolean }
+          p_payload: {
+            allow_split_payments?: boolean
+            show_pos_scroll_buttons?: boolean
+          }
         }
         Returns: Record<string, unknown>
       }
@@ -359,6 +362,7 @@ export interface Branch {
   show_cash_change: boolean
   print_mode: 'thermal' | 'pdf' | 'both'
   allow_split_payments: boolean
+  show_pos_scroll_buttons: boolean
   created_at: string
   updated_at: string
 }
@@ -688,6 +692,8 @@ export interface BranchInsert {
   show_footer?: boolean
   show_cash_change?: boolean
   print_mode?: string | null
+  allow_split_payments?: boolean
+  show_pos_scroll_buttons?: boolean
 }
 
 export type BranchUpdate = Partial<BranchInsert>

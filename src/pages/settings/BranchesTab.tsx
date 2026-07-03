@@ -43,6 +43,7 @@ type BranchForm = {
   invoice_language: 'en' | 'ar' | 'both'
   // POS checkout
   allow_split_payments: boolean
+  show_pos_scroll_buttons: boolean
   // zatca
   zatca_phase: 1 | 2
   is_active: boolean
@@ -66,6 +67,7 @@ const EMPTY_FORM: BranchForm = {
   show_logo: true,
   invoice_language: 'both',
   allow_split_payments: false,
+  show_pos_scroll_buttons: false,
   zatca_phase: 1,
   is_active: true,
   is_main_branch: false,
@@ -154,7 +156,7 @@ function branchPosSettingsErrorMessage(error: unknown): string {
   if (/function .*update_branch_pos_settings|could not find the function|PGRST202|schema cache/i.test(message)) {
     return 'The POS settings update is not available yet. Apply the latest SQL hotfix, then refresh and try again.'
   }
-  if (/allow_split_payments|unsupported POS setting|invalid POS settings/i.test(message)) {
+  if (/allow_split_payments|show_pos_scroll_buttons|unsupported POS setting|invalid POS settings/i.test(message)) {
     return 'The POS checkout settings payload was rejected. Refresh and try again.'
   }
   return message || 'Failed to save POS checkout settings.'
@@ -218,6 +220,7 @@ function BranchDrawer({
           show_logo:        branch.show_logo ?? true,
           invoice_language: branch.invoice_language ?? 'both',
           allow_split_payments: branch.allow_split_payments ?? false,
+          show_pos_scroll_buttons: branch.show_pos_scroll_buttons ?? false,
           zatca_phase:      branch.zatca_phase ?? 1,
           is_active:        branch.is_active,
           is_main_branch:   branch.is_main_branch,
@@ -296,7 +299,10 @@ function BranchDrawer({
   const savePosSettings = async (branchId: string) => {
     const params = {
       p_branch_id: branchId,
-      p_payload: { allow_split_payments: form.allow_split_payments },
+      p_payload: {
+        allow_split_payments: form.allow_split_payments,
+        show_pos_scroll_buttons: form.show_pos_scroll_buttons,
+      },
     }
     const { error } = await (supabase as any).rpc('update_branch_pos_settings', params)
     if (error) {
@@ -359,7 +365,7 @@ function BranchDrawer({
         if (error) throw error
         const logoUrl = await uploadLogo(data.id)
         if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', data.id)
-        if (form.allow_split_payments) await savePosSettings(data.id)
+        if (form.allow_split_payments || form.show_pos_scroll_buttons) await savePosSettings(data.id)
 
         // Refresh the parent branch list now (branch is in DB regardless of login outcome)
         onRefresh?.()
@@ -384,7 +390,10 @@ function BranchDrawer({
         if (error) throw error
         const logoUrl = await uploadLogo(branch!.id)
         if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', branch!.id)
-        if (form.allow_split_payments !== (branch!.allow_split_payments ?? false)) {
+        if (
+          form.allow_split_payments !== (branch!.allow_split_payments ?? false) ||
+          form.show_pos_scroll_buttons !== (branch!.show_pos_scroll_buttons ?? false)
+        ) {
           await savePosSettings(branch!.id)
         }
       }
@@ -585,6 +594,18 @@ function BranchDrawer({
                   <div>
                     <p className="text-sm font-medium text-gray-800">Allow Split Payment</p>
                     <p className="text-[11px] text-gray-400">Cashiers can split one invoice between cash and card.</p>
+                  </div>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-xl bg-gray-50 border border-gray-100">
+                  <input
+                    type="checkbox"
+                    checked={form.show_pos_scroll_buttons}
+                    onChange={e => set('show_pos_scroll_buttons')(e.target.checked)}
+                    className="rounded border-gray-300 text-primary-500 focus:ring-primary-500 flex-shrink-0"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">Show POS arrow buttons</p>
+                    <p className="text-[11px] text-gray-400">Adds large arrow buttons for category and product navigation on touch screens.</p>
                   </div>
                 </label>
               </div>
