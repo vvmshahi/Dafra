@@ -16,7 +16,7 @@ import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
 import { formatSaudiSessionDateTime } from '@/lib/registerSessions'
 import { submitInvoiceToZatcaWithRetry } from '@/lib/zatca/submission'
 import { toast } from 'sonner'
-import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
+import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import type { Branch, PaymentMethod, VatTreatment } from '@/types/database'
 import { usePosSession } from '@/hooks/usePosSession'
@@ -428,6 +428,12 @@ ${lines}
     s.remove()
   }
 
+  function openReceiptPrintPage() {
+    const url = `/print/receipt/${receipt.invoiceId}?auto=1`
+    const opened = window.open(url, '_blank', 'noopener,noreferrer')
+    if (!opened) window.location.assign(url)
+  }
+
   return (
     <>
       {/* A4 invoice — hidden, shown only via printPosA4() print style */}
@@ -640,7 +646,7 @@ ${lines}
             <div className="flex gap-2">
               {printMode !== 'pdf' && (
                 <button
-                  onClick={() => printThermal()}
+                  onClick={openReceiptPrintPage}
                   className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
                 >
                   <Printer size={14} />

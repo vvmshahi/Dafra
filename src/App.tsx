@@ -41,6 +41,7 @@ import NotFoundPage        from '@/pages/NotFoundPage'
 import LandingPage         from '@/pages/landing/LandingPage'
 import PricingPage         from '@/pages/landing/PricingPage'
 import FAQPage             from '@/pages/landing/FAQPage'
+import ReceiptPrintPage    from '@/pages/print/ReceiptPrintPage'
 
 // ── Shared spinner ────────────────────────────────────────────────────────
 
@@ -212,6 +213,9 @@ export default function App() {
         {/* ── Authenticated ────────────────────────────────── */}
         {/* RequireAuth hard-gates owners without tenant → /onboarding */}
         <Route element={<RequireAuth />}>
+
+          {/* Receipt print view — full-screen, no app shell or checkout modal */}
+          <Route path="/print/receipt/:invoiceId" element={<ReceiptPrintPage />} />
 
           {/* POS — full-screen, no sidebar, branch role only */}
           <Route element={<RequirePOS />}>
