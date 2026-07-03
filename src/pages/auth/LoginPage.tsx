@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Mail, Lock, ArrowRight, CheckCircle2, MessageCircle } from 'lucide-react'
+import { Mail, Lock, ArrowRight, CheckCircle2, MessageCircle, ShieldCheck } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -8,35 +8,27 @@ import { MeemLogo } from '@/components/MeemLogo'
 import { supportConfig } from '@/config/support'
 
 const WA_LINK = supportConfig.whatsappLink
+const EMAIL_LINK = supportConfig.emailLink
 
-/* ── Islamic geometric SVG pattern ─────────────────────────── */
 function GeometricPattern() {
   return (
-    <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
+    <svg className="absolute inset-0 h-full w-full" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <defs>
-        <pattern id="geo" x="0" y="0" width="80" height="80" patternUnits="userSpaceOnUse">
-          {/* Octagon outline */}
-          <path
-            d="M24 4 L56 4 L76 24 L76 56 L56 76 L24 76 L4 56 L4 24 Z"
-            fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="1"
-          />
-          {/* Inner rotated square */}
-          <rect
-            x="22" y="22" width="36" height="36"
-            transform="rotate(45 40 40)"
-            fill="none" stroke="rgba(200,169,110,0.07)" strokeWidth="1"
-          />
-          {/* Center star */}
-          <path
-            d="M40 28 L43 36 L52 36 L45 42 L48 50 L40 45 L32 50 L35 42 L28 36 L37 36 Z"
-            fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="0.8"
-          />
+        <pattern id="kubri-login-pattern" x="0" y="0" width="96" height="96" patternUnits="userSpaceOnUse">
+          <path d="M28 6h40l22 22v40L68 90H28L6 68V28Z" fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
+          <path d="M48 20l28 28-28 28-28-28Z" fill="none" stroke="rgba(200,169,110,0.075)" strokeWidth="1" />
         </pattern>
       </defs>
-      <rect width="100%" height="100%" fill="url(#geo)" />
+      <rect width="100%" height="100%" fill="url(#kubri-login-pattern)" />
     </svg>
   )
 }
+
+const workspaceItems = [
+  'POS sales, cash, card, and split payments',
+  'Invoices, stock, and register sessions',
+  'ZATCA Phase 2 workflows for Saudi branches',
+]
 
 export default function LoginPage() {
   const { signIn } = useAuth()
@@ -64,155 +56,144 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen bg-[#071510] text-white">
+      <GeometricPattern />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(27,107,58,0.40),transparent_34%),radial-gradient(circle_at_82%_16%,rgba(200,169,110,0.18),transparent_28%),linear-gradient(135deg,rgba(7,21,16,0.94),rgba(15,36,25,0.98))]" />
 
-      {/* ── Left panel — brand ─────────────────────────────── */}
-      <div className="hidden lg:flex lg:w-[52%] relative bg-[#0F2419] flex-col justify-between p-12 overflow-hidden">
-
-        <GeometricPattern />
-
-        {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-[#1B6B3A]/60 via-transparent to-[#0F2419]/80 pointer-events-none" />
-
-        {/* Gold glow */}
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gold-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        {/* Logo */}
-        <div className="relative z-10">
+      <main className="relative z-10 grid min-h-screen grid-cols-1 lg:grid-cols-[1.03fr_0.97fr]">
+        <section className="hidden flex-col justify-between px-10 py-10 lg:flex xl:px-14">
           <MeemLogo size="lg" />
-        </div>
 
-        {/* Center content */}
-        <div className="relative z-10 space-y-6">
-          <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/10 text-white/80 text-xs px-3 py-1.5 rounded-full">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            ZATCA Phase 2 workflows
-          </div>
-
-          <div>
-            <h2
-              className="text-5xl font-black text-white leading-tight mb-2"
-              style={{ fontFamily: 'Cairo, sans-serif' }}
-            >
-              إدارة أعمالك
-              <br />
-              <span className="text-gold-400">بذكاء</span>
+          <div className="max-w-xl">
+            <p className="mb-5 text-sm font-bold uppercase tracking-[0.22em] text-gold-300">Kubri POS workspace</p>
+            <h2 className="text-5xl font-black leading-[1.03] tracking-tight xl:text-6xl">
+              Your simple bridge to ZATCA Phase 2 invoicing.
             </h2>
-            <p className="text-xl font-light text-white mt-1">Manage your business smarter.</p>
-          </div>
-
-          <p className="text-white/60 text-sm leading-relaxed max-w-sm">
-            POS, invoicing, stock, and ZATCA-ready workflows in one platform built for Saudi businesses.
-          </p>
-
-          {/* Feature pills */}
-          <div className="flex flex-wrap gap-2">
-            {['ZATCA-ready', 'Multi-Branch', 'Real-time Reports', 'Arabic + English'].map(f => (
-              <span key={f} className="text-xs bg-white/10 text-white/80 border border-white/10 rounded-full px-3 py-1">
-                {f}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Bottom tagline */}
-          <div className="relative z-10">
-            <p className="text-white/40 text-xs">
-              Built for Saudi businesses
+            <p className="mt-6 max-w-lg text-base leading-8 text-white/75">
+              Manage POS, invoices, register sessions, and ZATCA Phase 2 workflows from one secure workspace.
             </p>
-          </div>
-      </div>
 
-      {/* ── Right panel — form ─────────────────────────────── */}
-      <div className="flex-1 flex items-center justify-center bg-white p-8">
-        <div className="w-full max-w-[380px] space-y-8">
-
-          {/* Mobile logo */}
-          <div className="flex lg:hidden mb-6">
-            <MeemLogo size="sm" />
-          </div>
-
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Welcome back</h1>
-            <p className="text-gray-500 text-sm mt-1">Sign in to your Kubri account</p>
-          </div>
-
-          {successMsg && (
-            <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 text-emerald-700 text-sm px-4 py-3 rounded-xl">
-              <CheckCircle2 size={16} className="mt-0.5 text-emerald-500 flex-shrink-0" />
-              {successMsg}
+            <div className="mt-8 space-y-3">
+              {workspaceItems.map(item => (
+                <div key={item} className="flex items-start gap-3 border-l-2 border-gold-400/50 bg-white/[0.045] px-4 py-3">
+                  <CheckCircle2 size={17} className="mt-0.5 flex-shrink-0 text-gold-300" />
+                  <span className="text-sm font-semibold text-white/85">{item}</span>
+                </div>
+              ))}
             </div>
-          )}
+          </div>
 
-          {error && (
-            <div className="flex items-start gap-3 bg-red-50 border border-red-100 text-red-700 text-sm px-4 py-3 rounded-xl">
-              <span className="mt-0.5 text-red-400">⚠</span>
-              {error}
+          <div className="grid max-w-xl grid-cols-2 gap-3">
+            <div className="border border-white/10 bg-white/[0.045] p-4">
+              <p className="text-xs font-bold text-white">Built for Saudi businesses</p>
+              <p className="mt-1 text-xs leading-5 text-white/55">Branch teams, owners, and counters in one workspace.</p>
             </div>
-          )}
+            <div className="border border-white/10 bg-white/[0.045] p-4">
+              <p className="text-xs font-bold text-white">Secure access</p>
+              <p className="mt-1 text-xs leading-5 text-white/55">Role-based access keeps each team focused.</p>
+            </div>
+          </div>
+        </section>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              label="Email address"
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="you@company.com"
-              icon={Mail}
-              required
-              autoComplete="email"
-            />
-            <Input
-              label="Password"
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••"
-              icon={Lock}
-              required
-              autoComplete="current-password"
-            />
-
-            <div className="flex items-center justify-between text-sm">
-              <label className="flex items-center gap-2 text-gray-600 cursor-pointer select-none">
-                <input type="checkbox" className="rounded border-gray-300 text-primary-500 focus:ring-primary-500" />
-                Remember me
-              </label>
-              <Link to="/forgot-password" className="text-primary-600 font-medium hover:text-primary-700">
-                Forgot password?
-              </Link>
+        <section className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8">
+          <div className="w-full max-w-[440px]">
+            <div className="mb-8 flex justify-center lg:hidden">
+              <MeemLogo size="md" />
             </div>
 
-            <Button type="submit" loading={loading} className="w-full mt-2 gap-2">
-              Sign in
-              {!loading && <ArrowRight size={16} />}
-            </Button>
-          </form>
+            <div className="border border-white/10 bg-white px-6 py-7 text-gray-900 shadow-[0_32px_120px_rgba(0,0,0,0.34)] sm:px-8">
+              <div className="mb-7">
+                <div className="mb-5 flex h-12 w-12 items-center justify-center bg-[#0F2419]">
+                  <ShieldCheck size={22} className="text-gold-300" />
+                </div>
+                <h1 className="text-2xl font-black tracking-tight text-gray-950">Sign in to Kubri</h1>
+                <p className="mt-2 text-sm leading-6 text-gray-500">
+                  Manage POS, invoices, register sessions, and ZATCA Phase 2 workflows from one secure workspace.
+                </p>
+              </div>
 
-          <p className="text-center text-sm text-gray-500">
-            Need an account?{' '}
-            <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="font-semibold text-primary-600 hover:text-primary-700">
-              Contact us on WhatsApp
-            </a>
-          </p>
+              {successMsg && (
+                <div className="mb-4 flex items-start gap-3 border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0 text-emerald-500" />
+                  <span>{successMsg}</span>
+                </div>
+              )}
 
-          {/* Trust indicators */}
-          <div className="pt-4 border-t border-gray-100 flex items-center justify-center gap-4">
-            {['Secure login', 'Saudi businesses', 'ZATCA-ready workflows'].map(t => (
-              <span key={t} className="text-xs text-gray-400">{t}</span>
-            ))}
+              {error && (
+                <div className="mb-4 flex items-start gap-3 border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  <span className="mt-0.5 flex-shrink-0 text-red-400">!</span>
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <Input
+                  label="Email address"
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="you@company.com"
+                  icon={Mail}
+                  required
+                  autoComplete="email"
+                />
+                <Input
+                  label="Password"
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Password"
+                  icon={Lock}
+                  required
+                  autoComplete="current-password"
+                />
+
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <label className="flex items-center gap-2 text-gray-600 cursor-pointer select-none">
+                    <input type="checkbox" className="rounded border-gray-300 text-primary-500 focus:ring-primary-500" />
+                    Remember me
+                  </label>
+                  <Link to="/forgot-password" className="font-semibold text-primary-700 hover:text-primary-800">
+                    Forgot password?
+                  </Link>
+                </div>
+
+                <Button type="submit" loading={loading} variant="gold" className="w-full gap-2 bg-gold-500 text-[#0F2419] hover:bg-gold-400">
+                  Sign in
+                  {!loading && <ArrowRight size={16} />}
+                </Button>
+              </form>
+
+              <div className="mt-6 border-t border-gray-100 pt-5">
+                <p className="text-center text-sm text-gray-500">
+                  Need an account?{' '}
+                  <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="font-bold text-primary-700 hover:text-primary-800">
+                    Talk to us
+                  </a>
+                </p>
+                <div className="mt-4 flex flex-col gap-2 text-center text-sm sm:flex-row">
+                  <a
+                    href={WA_LINK}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex flex-1 items-center justify-center gap-2 bg-emerald-500 px-4 py-2.5 font-semibold text-white hover:bg-emerald-600"
+                  >
+                    <MessageCircle size={15} />
+                    WhatsApp
+                  </a>
+                  <a
+                    href={EMAIL_LINK}
+                    className="inline-flex flex-1 items-center justify-center gap-2 border border-gray-200 px-4 py-2.5 font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    <Mail size={15} />
+                    support@kubri.shop
+                  </a>
+                </div>
+              </div>
+            </div>
           </div>
-          <a
-            href={WA_LINK}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 text-sm font-semibold text-emerald-600 hover:text-emerald-700"
-          >
-            <MessageCircle size={15} />
-            Get Started
-          </a>
-        </div>
-      </div>
+        </section>
+      </main>
     </div>
   )
 }

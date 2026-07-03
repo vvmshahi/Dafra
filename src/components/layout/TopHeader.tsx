@@ -31,7 +31,7 @@ export default function TopHeader() {
   const navigate = useNavigate()
   const title   = location.pathname === '/inventory' && new URLSearchParams(location.search).get('tab') === 'purchases'
     ? 'Purchases'
-    : titles[location.pathname] ?? 'Kubri'
+    : titles[location.pathname] ?? 'Kubri POS'
 
   // Subtitle: tenant business name for regular users, empty for super admin
   const isSuperAdmin = profile?.role === 'super_admin'

@@ -474,7 +474,7 @@ function DisconnectConnectionModal({
           <div className="rounded-xl border border-red-100 bg-red-50 p-3.5">
             <p className="text-xs font-semibold text-red-800">This affects only {branch.name}.</p>
             <p className="mt-1 text-[11px] leading-relaxed text-red-700">
-              This removes the production credentials from Dafra and stops this branch from submitting invoices through this connection.
+              This removes the production credentials from Kubri and stops this branch from submitting invoices through this connection.
               It may not remove or revoke the device from the FATOORA portal. Manage the device in FATOORA separately if required.
             </p>
           </div>

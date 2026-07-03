@@ -66,7 +66,7 @@ export default function SignupPage() {
           <div className="text-center">
             <h1 className="text-2xl font-bold text-gray-900">Account creation is by invitation only</h1>
             <p className="text-gray-500 text-sm mt-3 leading-relaxed">
-              Contact us to get started with Kubri. We will guide your account and branch setup on WhatsApp.
+              Talk to us to get started with Kubri. We will guide your account and branch setup on WhatsApp.
             </p>
           </div>
 
@@ -78,14 +78,14 @@ export default function SignupPage() {
               className="flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-6 py-3.5 rounded-xl transition-colors shadow-md"
             >
               <MessageCircle size={18} />
-              Get Started
+              Talk to us on WhatsApp
             </a>
             <a
               href={EMAIL_LINK}
               className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold px-6 py-3.5 rounded-xl transition-colors"
             >
               <Mail size={18} />
-              Email Us
+              support@kubri.shop
             </a>
           </div>
 

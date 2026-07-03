@@ -60,11 +60,8 @@ export default function ForgotPasswordPage() {
 
         {/* Center */}
         <div className="relative z-10 space-y-6">
-          <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/10 text-white/80 text-xs px-3 py-1.5 rounded-full">
-            <span className="w-2 h-2 rounded-full bg-gold-400 animate-pulse" />
-            Secure account recovery
-          </div>
           <div>
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.22em] text-gold-300">Kubri account recovery</p>
             <h2 className="text-5xl font-black text-white leading-tight mb-2" style={{ fontFamily: 'Cairo, sans-serif' }}>
               نسيت كلمة
               <br />

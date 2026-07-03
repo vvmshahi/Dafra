@@ -1899,7 +1899,6 @@ export default function POSPage() {
           <div className="h-4 w-px bg-white/20 flex-shrink-0" />
           <div className="flex items-center gap-2.5">
             <MeemLogo size="sm" />
-            <span className="font-bold text-sm text-white">POS</span>
           </div>
           <div className="h-4 w-px bg-white/20" />
           <span className="text-white/60 text-xs">{profile?.full_name ?? 'Cashier'}</span>

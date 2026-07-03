@@ -488,7 +488,7 @@ export default function BranchDashboardPage() {
             </span>
           ) : (
             <span className="text-[10px] bg-blue-500/20 border border-blue-400/20 text-blue-300 px-2.5 py-1 rounded-lg">
-              Phase 1 — QR Compliant
+              Phase 1 — QR invoices
             </span>
           )}
           <button

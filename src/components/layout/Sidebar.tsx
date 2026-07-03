@@ -97,7 +97,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       : canViewOperations
         ? [...ownerNav, operationsNavItem]
         : ownerNav
-  const subtitle = isSuperAdmin ? 'Super Admin Console' : (tenant?.name ?? 'Kubri Platform')
+  const subtitle = isSuperAdmin ? 'Kubri Super Admin' : (tenant?.name ?? 'Kubri POS')
   const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? 'User'
   const roleLabel = isBranch ? 'Branch' : (profile?.role?.replace(/_/g, ' ') ?? '')
 
@@ -144,7 +144,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-white font-bold text-xl leading-none tracking-tight" style={{ fontFamily: 'Cairo, sans-serif' }}>
-                  Kubri
+                  Kubri POS
                 </p>
                 <p className="text-sidebar-text text-xs mt-0.5 truncate" title={subtitle}>{subtitle}</p>
               </div>

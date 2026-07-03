@@ -111,11 +111,8 @@ export default function ResetPasswordPage() {
 
         {/* Center */}
         <div className="relative z-10 space-y-6">
-          <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/10 text-white/80 text-xs px-3 py-1.5 rounded-full">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            End-to-end encrypted
-          </div>
           <div>
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.22em] text-gold-300">Kubri password setup</p>
             <h2 className="text-5xl font-black text-white leading-tight mb-2" style={{ fontFamily: 'Cairo, sans-serif' }}>
               كلمة مرور
               <br />
