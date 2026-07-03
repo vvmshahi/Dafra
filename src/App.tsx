@@ -39,6 +39,8 @@ import TermsPage            from '@/pages/legal/TermsPage'
 import PrivacyPage          from '@/pages/legal/PrivacyPage'
 import NotFoundPage        from '@/pages/NotFoundPage'
 import LandingPage         from '@/pages/landing/LandingPage'
+import PricingPage         from '@/pages/landing/PricingPage'
+import FAQPage             from '@/pages/landing/FAQPage'
 
 // ── Shared spinner ────────────────────────────────────────────────────────
 
@@ -191,6 +193,8 @@ export default function App() {
         <Route path="/reset-password"  element={<ResetPasswordPage />} />
         <Route path="/terms"           element={<TermsPage />} />
         <Route path="/privacy"         element={<PrivacyPage />} />
+        <Route path="/pricing"         element={<PricingPage />} />
+        <Route path="/faq"             element={<FAQPage />} />
 
         {/* Root: landing page for guests, smart redirect for authenticated */}
         <Route path="/" element={<SmartRedirect />} />

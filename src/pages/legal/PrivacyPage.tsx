@@ -6,7 +6,7 @@ import { supportConfig } from '@/config/support'
 const sections = [
   {
     title: 'Data We Collect',
-    body: 'We collect account, tenant, branch, user, product, customer, supplier, invoice, payment, purchase, stock, expense, audit, and support information needed to operate Meem.',
+    body: 'We collect account, tenant, branch, user, product, customer, supplier, invoice, payment, purchase, stock, expense, audit, and support information needed to operate Kubri.',
   },
   {
     title: 'How We Use Data',
@@ -14,7 +14,7 @@ const sections = [
   },
   {
     title: 'Storage and Security',
-    body: 'Meem uses Supabase-backed authentication, database, storage, and Edge Function infrastructure. We use row-level access controls, private storage paths where appropriate, and browser-safe error messages that avoid exposing secrets.',
+    body: 'Kubri uses Supabase-backed authentication, database, storage, and Edge Function infrastructure. We use row-level access controls, private storage paths where appropriate, and browser-safe error messages that avoid exposing secrets.',
   },
   {
     title: 'Sharing',

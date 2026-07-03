@@ -131,7 +131,7 @@ export default function ResetPasswordPage() {
         </div>
 
         <div className="relative z-10">
-          <p className="text-white/40 text-xs">Trusted by Saudi SMEs · هيئة الزكاة والضريبة والجمارك</p>
+          <p className="text-white/40 text-xs">Secure password setup for Kubri users</p>
         </div>
       </div>
 

@@ -132,7 +132,7 @@ export default function SetupBranchPage() {
         <div className="text-center">
           <h1 className="text-2xl font-black text-white">Set Up Your First Branch</h1>
           <p className="text-white/50 text-sm mt-1.5">
-            Create your first branch to start using Meem. This takes less than 2 minutes.
+            Create your first branch to start using Kubri. This takes less than 2 minutes.
           </p>
           {profile?.full_name && (
             <p className="text-white/30 text-xs mt-2">Welcome, {profile.full_name}</p>

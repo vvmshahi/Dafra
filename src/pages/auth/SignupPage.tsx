@@ -38,11 +38,11 @@ export default function SignupPage() {
 
         <div className="relative z-10 space-y-4">
           <h2 className="text-4xl font-black text-white leading-tight" style={{ fontFamily: 'Cairo, sans-serif' }}>
-            نظام فوترة ذكي
+            جسر بسيط
             <br />
-            <span className="text-gold-400">للمطاعم والكافيهات</span>
+            <span className="text-gold-400">للفوترة ونقاط البيع</span>
           </h2>
-          <p className="text-lg font-light text-white/70">ZATCA-ready invoicing for Saudi SMEs.</p>
+          <p className="text-lg font-light text-white/70">ZATCA-ready invoicing for Saudi businesses.</p>
         </div>
 
         <div className="relative z-10">
@@ -66,7 +66,7 @@ export default function SignupPage() {
           <div className="text-center">
             <h1 className="text-2xl font-bold text-gray-900">Account creation is by invitation only</h1>
             <p className="text-gray-500 text-sm mt-3 leading-relaxed">
-              Contact us to get started with Meem. We'll set up your account and have you running within 24 hours.
+              Contact us to get started with Kubri. We will guide your account and branch setup on WhatsApp.
             </p>
           </div>
 
@@ -78,7 +78,7 @@ export default function SignupPage() {
               className="flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-6 py-3.5 rounded-xl transition-colors shadow-md"
             >
               <MessageCircle size={18} />
-              WhatsApp Us
+              Get Started
             </a>
             <a
               href={EMAIL_LINK}

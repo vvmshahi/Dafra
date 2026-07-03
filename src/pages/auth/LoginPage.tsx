@@ -1,10 +1,13 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Mail, Lock, ArrowRight, CheckCircle2 } from 'lucide-react'
+import { Mail, Lock, ArrowRight, CheckCircle2, MessageCircle } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { MeemLogo } from '@/components/MeemLogo'
+import { supportConfig } from '@/config/support'
+
+const WA_LINK = supportConfig.whatsappLink
 
 /* ── Islamic geometric SVG pattern ─────────────────────────── */
 function GeometricPattern() {
@@ -83,7 +86,7 @@ export default function LoginPage() {
         <div className="relative z-10 space-y-6">
           <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/10 text-white/80 text-xs px-3 py-1.5 rounded-full">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            ZATCA Phase 2 ready
+            ZATCA Phase 2 workflows
           </div>
 
           <div>
@@ -99,7 +102,7 @@ export default function LoginPage() {
           </div>
 
           <p className="text-white/60 text-sm leading-relaxed max-w-sm">
-            POS, invoicing, stock, and ZATCA-ready workflows in one platform built for Saudi SMEs.
+            POS, invoicing, stock, and ZATCA-ready workflows in one platform built for Saudi businesses.
           </p>
 
           {/* Feature pills */}
@@ -113,11 +116,11 @@ export default function LoginPage() {
         </div>
 
         {/* Bottom tagline */}
-        <div className="relative z-10">
-          <p className="text-white/40 text-xs">
-            Trusted by Saudi SMEs · هيئة الزكاة والضريبة والجمارك
-          </p>
-        </div>
+          <div className="relative z-10">
+            <p className="text-white/40 text-xs">
+              Built for Saudi businesses
+            </p>
+          </div>
       </div>
 
       {/* ── Right panel — form ─────────────────────────────── */}
@@ -131,7 +134,7 @@ export default function LoginPage() {
 
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Welcome back</h1>
-            <p className="text-gray-500 text-sm mt-1">Sign in to your Meem account</p>
+            <p className="text-gray-500 text-sm mt-1">Sign in to your Kubri account</p>
           </div>
 
           {successMsg && (
@@ -187,18 +190,27 @@ export default function LoginPage() {
           </form>
 
           <p className="text-center text-sm text-gray-500">
-            New to Meem?{' '}
-            <Link to="/signup" className="font-semibold text-primary-600 hover:text-primary-700">
-              Start free trial
-            </Link>
+            Need an account?{' '}
+            <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="font-semibold text-primary-600 hover:text-primary-700">
+              Contact us on WhatsApp
+            </a>
           </p>
 
           {/* Trust indicators */}
           <div className="pt-4 border-t border-gray-100 flex items-center justify-center gap-4">
-            {['🔒 SSL Secure', '🇸🇦 Saudi Hosted', '✓ ZATCA'].map(t => (
+            {['Secure login', 'Saudi businesses', 'ZATCA-ready workflows'].map(t => (
               <span key={t} className="text-xs text-gray-400">{t}</span>
             ))}
           </div>
+          <a
+            href={WA_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 text-sm font-semibold text-emerald-600 hover:text-emerald-700"
+          >
+            <MessageCircle size={15} />
+            Get Started
+          </a>
         </div>
       </div>
     </div>

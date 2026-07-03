@@ -14,17 +14,17 @@ export function MeemLogo({ size = 'md', showText = true }: MeemLogoProps) {
   return (
     <div className="flex items-center gap-3">
       <div className={`${s.box} rounded-xl bg-gold-500 flex items-center justify-center shadow-lg flex-shrink-0`}>
-        <span className={`${s.letter} text-white font-bold`} style={{ fontFamily: 'Cairo, serif' }}>
-          م
+        <span className={`${s.letter} text-white font-black`} style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+          K
         </span>
       </div>
       {showText && (
         <div className="flex flex-col leading-tight">
-          <span className={`${s.name} font-bold text-gold-500`} style={{ fontFamily: 'Cairo, serif' }}>
-            ميم
+          <span className={`${s.name} font-bold text-gold-500`} style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+            Kubri
           </span>
           <span className={`${s.sub} text-gold-400 tracking-widest uppercase font-medium`}>
-            MEEM
+            POS
           </span>
         </div>
       )}

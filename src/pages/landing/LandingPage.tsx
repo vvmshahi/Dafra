@@ -1,840 +1,442 @@
-import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { MeemLogo } from '@/components/MeemLogo'
 import { supportConfig } from '@/config/support'
 import {
-  CheckCircle2, Zap, GitBranch, BarChart3, Package, Globe,
-  Star, ChevronDown, ChevronUp, Menu, X, ArrowRight,
-  Shield, MessageCircle, Mail,
+  ArrowRight, BarChart3, CheckCircle2, CreditCard, Download,
+  GitBranch, Mail, Menu, MessageCircle, Package, Receipt,
+  ShieldCheck, Store, X,
 } from 'lucide-react'
+import { useEffect, useState, type MouseEvent } from 'react'
 
-const WA_LINK    = supportConfig.whatsappLink
+const WA_LINK = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
 
-function scrollToContact() {
-  document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })
+function scrollTo(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
 }
 
-// ── Islamic geometric SVG pattern ─────────────────────────────────────────────
-function GeometricPattern({ opacity = 0.04 }: { opacity?: number }) {
+function Pattern() {
   return (
-    <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
+    <svg className="absolute inset-0 h-full w-full" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <defs>
-        <pattern id="geo-land" x="0" y="0" width="80" height="80" patternUnits="userSpaceOnUse">
-          <path d="M24 4 L56 4 L76 24 L76 56 L56 76 L24 76 L4 56 L4 24 Z"
-            fill="none" stroke={`rgba(255,255,255,${opacity})`} strokeWidth="1" />
-          <rect x="22" y="22" width="36" height="36" transform="rotate(45 40 40)"
-            fill="none" stroke={`rgba(200,169,110,${opacity * 1.8})`} strokeWidth="1" />
-          <path d="M40 28 L43 36 L52 36 L45 42 L48 50 L40 45 L32 50 L35 42 L28 36 L37 36 Z"
-            fill="none" stroke={`rgba(255,255,255,${opacity * 0.8})`} strokeWidth="0.8" />
+        <pattern id="kubri-home-pattern" x="0" y="0" width="96" height="96" patternUnits="userSpaceOnUse">
+          <path d="M28 6h40l22 22v40L68 90H28L6 68V28Z" fill="none" stroke="rgba(255,255,255,0.035)" strokeWidth="1" />
+          <path d="M48 20l28 28-28 28-28-28Z" fill="none" stroke="rgba(200,169,110,0.065)" strokeWidth="1" />
         </pattern>
       </defs>
-      <rect width="100%" height="100%" fill="url(#geo-land)" />
+      <rect width="100%" height="100%" fill="url(#kubri-home-pattern)" />
     </svg>
   )
 }
 
-// ── POS Mockup ────────────────────────────────────────────────────────────────
-function POSMockup() {
-  const items = [
-    { name: 'قهوة عربية', price: '12', emoji: '☕' },
-    { name: 'كابتشينو',   price: '18', emoji: '🥛' },
-    { name: 'كرواسان',    price: '14', emoji: '🥐' },
-    { name: 'عصير برتقال',price: '16', emoji: '🍊' },
-    { name: 'ماء معدني',  price: '5',  emoji: '💧' },
-    { name: 'شاي أخضر',   price: '10', emoji: '🍵' },
+function ProductMockup() {
+  const products = [
+    ['Retail item', '45.00'],
+    ['Repair service', '80.00'],
+    ['Coffee order', '18.00'],
+    ['Gift box', '35.00'],
+    ['Rice 5kg', '28.00'],
+    ['Water pack', '12.00'],
   ]
-  const cart = [
-    { name: 'قهوة عربية', qty: 2, price: 24 },
-    { name: 'كرواسان',    qty: 1, price: 14 },
-  ]
+
   return (
-    <div className="relative w-full max-w-[520px] mx-auto">
-      {/* Glow effect */}
-      <div className="absolute -inset-4 bg-gold-500/20 rounded-3xl blur-2xl" />
-      {/* Screen */}
-      <div className="relative rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
-        {/* Browser chrome */}
-        <div className="bg-gray-900 px-4 py-2.5 flex items-center gap-2">
-          <div className="flex gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-red-400/80" />
-            <div className="w-2.5 h-2.5 rounded-full bg-yellow-400/80" />
-            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400/80" />
+    <div className="relative mx-auto w-full max-w-[560px]">
+      <div className="absolute -inset-8 rounded-[32px] bg-gold-500/10 blur-3xl" />
+      <div className="absolute -right-4 top-10 hidden rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-white shadow-2xl backdrop-blur md:block">
+        <p className="text-[11px] font-semibold text-gold-200">Owner dashboard</p>
+        <p className="mt-1 text-xs text-white/70">3 branches in view</p>
+      </div>
+      <div className="relative overflow-hidden rounded-[26px] border border-white/10 bg-[#071510] shadow-[0_30px_110px_rgba(0,0,0,0.42)]">
+        <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.04] px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
+            <span className="h-2.5 w-2.5 rounded-full bg-gold-400/80" />
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/80" />
           </div>
-          <div className="flex-1 bg-gray-800 rounded text-[10px] text-gray-400 px-3 py-0.5 mx-3 text-center">
-            app.meem.sa/pos
-          </div>
+          <span className="rounded-full bg-[#0F2419] px-3 py-1 text-[10px] font-semibold text-white/60">app.kubri.shop/pos</span>
         </div>
-        {/* POS body */}
-        <div className="bg-[#0a1e12] flex h-[280px] sm:h-[320px]">
-          {/* Left: product grid */}
-          <div className="flex-1 p-3 overflow-hidden">
-            {/* Search bar */}
-            <div className="bg-white/5 rounded-lg px-3 py-1.5 mb-3 flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-white/20" />
-              <div className="h-1.5 bg-white/10 rounded flex-1" />
+
+        <div className="grid min-h-[340px] grid-cols-[1fr_152px] bg-[#0A1D13] sm:grid-cols-[1fr_180px]">
+          <div className="p-4">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/40">Register session open</p>
+                <p className="mt-1 text-sm font-bold text-white">Main counter</p>
+              </div>
+              <span className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-[10px] font-bold text-emerald-200">
+                ZATCA Phase 2 ready
+              </span>
             </div>
-            {/* Category tabs */}
-            <div className="flex gap-1.5 mb-3">
-              {['الكل', 'مشروبات', 'طعام'].map((c, i) => (
-                <span key={c} className={`text-[9px] px-2 py-0.5 rounded-full font-medium ${
-                  i === 0 ? 'bg-gold-500 text-[#0F2419]' : 'bg-white/10 text-white/60'
-                }`}>{c}</span>
+            <div className="mb-4 grid grid-cols-4 gap-2">
+              {['All', 'Retail', 'Food', 'Service'].map((cat, index) => (
+                <span key={cat} className={`rounded-xl px-2 py-2 text-center text-[10px] font-semibold ${
+                  index === 0 ? 'bg-gold-500 text-[#0F2419]' : 'bg-white/[0.06] text-white/60'
+                }`}>
+                  {cat}
+                </span>
               ))}
             </div>
-            {/* Products */}
-            <div className="grid grid-cols-3 gap-1.5">
-              {items.map(item => (
-                <div key={item.name}
-                  className="bg-white/5 hover:bg-white/10 rounded-lg p-2 cursor-pointer transition-colors border border-white/5">
-                  <div className="text-base mb-1">{item.emoji}</div>
-                  <p className="text-[8px] text-white/80 font-medium leading-tight mb-0.5" dir="rtl">{item.name}</p>
-                  <p className="text-[9px] text-gold-400 font-bold">{item.price} ر.س</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {products.map(([name, price]) => (
+                <div key={name} className="min-h-[76px] rounded-2xl border border-white/10 bg-white/[0.055] p-3">
+                  <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-xl bg-gold-400/10">
+                    <Package size={13} className="text-gold-300" />
+                  </div>
+                  <p className="truncate text-[11px] font-semibold text-white/80">{name}</p>
+                  <p className="mt-1 text-[10px] font-bold text-gold-300">SAR {price}</p>
                 </div>
               ))}
             </div>
           </div>
-          {/* Right: cart */}
-          <div className="w-[130px] sm:w-[150px] bg-[#0F2419]/80 border-l border-white/5 flex flex-col p-2">
-            <p className="text-[9px] text-white/40 font-semibold uppercase tracking-wider mb-2">الطلب</p>
-            <div className="flex-1 space-y-1.5 overflow-hidden">
-              {cart.map(ci => (
-                <div key={ci.name} className="bg-white/5 rounded p-1.5">
-                  <p className="text-[8px] text-white/80 mb-0.5" dir="rtl">{ci.name}</p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[8px] text-white/40">×{ci.qty}</span>
-                    <span className="text-[8px] text-gold-400 font-bold">{ci.price} ر.س</span>
+
+          <div className="flex flex-col border-l border-white/10 bg-[#0F2419]/90 p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/40">Current order</p>
+            <div className="mt-3 flex-1 space-y-2">
+              {[
+                ['Repair service', '1', '80.00'],
+                ['Retail item', '2', '90.00'],
+                ['Coffee order', '1', '18.00'],
+              ].map(([name, qty, price]) => (
+                <div key={name} className="rounded-xl bg-white/[0.055] p-2">
+                  <p className="truncate text-[10px] font-semibold text-white/80">{name}</p>
+                  <div className="mt-1 flex justify-between text-[10px]">
+                    <span className="text-white/40">x{qty}</span>
+                    <span className="font-bold text-gold-300">SAR {price}</span>
                   </div>
                 </div>
               ))}
             </div>
-            <div className="border-t border-white/10 pt-2 mt-2 space-y-1">
-              <div className="flex justify-between">
-                <span className="text-[8px] text-white/40">الضريبة</span>
-                <span className="text-[8px] text-white/60">5.70 ر.س</span>
+            <div className="space-y-1 border-t border-white/10 pt-3">
+              <div className="flex justify-between text-[10px] text-white/50">
+                <span>VAT</span><span>SAR 24.52</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[8px] text-white/60 font-medium">الإجمالي</span>
-                <span className="text-[9px] text-gold-400 font-bold">43.70 ر.س</span>
+              <div className="flex justify-between text-xs font-black text-white">
+                <span>Total</span><span className="text-gold-300">SAR 188.00</span>
               </div>
             </div>
-            <button className="mt-2 w-full bg-gold-500 rounded text-[9px] text-[#0F2419] font-bold py-1.5">
-              دفع الآن
+            <button className="mt-3 rounded-xl bg-gold-500 py-2 text-[11px] font-black text-[#0F2419]">
+              Complete sale
             </button>
           </div>
-        </div>
-        {/* Status bar */}
-        <div className="bg-gray-900 px-4 py-1.5 flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[9px] text-gray-400">متصل · ZATCA Phase 1 ✓</span>
-          </div>
-          <span className="text-[9px] text-gray-500">الرياض — فرع الملز</span>
-        </div>
-      </div>
-      {/* Floating badges */}
-      <div className="absolute -left-4 top-12 bg-white rounded-xl shadow-xl px-3 py-2 flex items-center gap-2 border border-gray-100">
-        <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center">
-          <CheckCircle2 size={14} className="text-emerald-500" />
-        </div>
-        <div>
-          <p className="text-[9px] text-gray-400">ZATCA</p>
-          <p className="text-[10px] font-bold text-gray-800">Compliant ✓</p>
-        </div>
-      </div>
-      <div className="absolute -right-4 bottom-16 bg-white rounded-xl shadow-xl px-3 py-2 flex items-center gap-2 border border-gray-100">
-        <div className="w-7 h-7 rounded-lg bg-gold-50 flex items-center justify-center">
-          <Zap size={14} className="text-gold-600" />
-        </div>
-        <div>
-          <p className="text-[9px] text-gray-400">فاتورة جديدة</p>
-          <p className="text-[10px] font-bold text-gray-800">خلال 3 ثوانٍ</p>
         </div>
       </div>
     </div>
   )
 }
 
-// ── Navbar ────────────────────────────────────────────────────────────────────
-function Navbar() {
+function Header() {
+  const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
-  const [open,     setOpen]     = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20)
+    const onScroll = () => setScrolled(window.scrollY > 18)
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
-  function scrollTo(id: string) {
-    setOpen(false)
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
-  }
+  const navLinks = [
+    { label: 'Features', type: 'section', target: 'features' },
+    { label: 'Pricing', type: 'route', target: '/pricing' },
+    { label: 'Windows app', type: 'section', target: 'windows' },
+    { label: 'FAQ', type: 'route', target: '/faq' },
+    { label: 'Contact', type: 'section', target: 'contact' },
+  ] as const
 
   return (
-    <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-      scrolled
-        ? 'bg-[#0F2419]/95 backdrop-blur-md shadow-lg border-b border-white/5'
-        : 'bg-transparent'
-    }`}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center h-16 gap-8">
-          {/* Logo */}
-          <Link to="/" className="flex-shrink-0">
-            <MeemLogo size="sm" />
-          </Link>
-
-          {/* Desktop links */}
-          <div className="hidden md:flex items-center gap-6 flex-1">
-            {[
-              { label: 'Features', id: 'features' },
-              { label: 'Pricing',  id: 'pricing' },
-              { label: 'FAQ',      id: 'faq' },
-              { label: 'Contact',  id: 'contact' },
-            ].map(l => (
-              <button
-                key={l.id}
-                onClick={() => scrollTo(l.id)}
-                className="text-white/70 hover:text-white text-sm font-medium transition-colors"
-              >
-                {l.label}
-              </button>
+    <header className={`fixed left-0 right-0 top-0 z-50 transition-all duration-300 ${scrolled ? 'bg-[#071510]/90 shadow-[0_12px_50px_rgba(0,0,0,0.25)] backdrop-blur-xl' : 'bg-transparent'}`}>
+      <div className="mx-auto max-w-7xl px-4 pt-3 sm:px-6 lg:px-8">
+        <nav className="flex h-14 items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.055] px-3 shadow-inner shadow-white/5 backdrop-blur-xl">
+          <Link to="/" className="flex-shrink-0"><MeemLogo size="sm" /></Link>
+          <div className="hidden flex-1 items-center justify-center gap-1 md:flex">
+            {navLinks.map(link => (
+              link.type === 'section' ? (
+                <button key={link.label} onClick={() => scrollTo(link.target)}
+                  className="rounded-xl px-3 py-2 text-sm font-semibold text-white/70 transition-colors hover:bg-white/[0.07] hover:text-white">
+                  {link.label}
+                </button>
+              ) : (
+                <Link key={link.label} to={link.target}
+                  className="rounded-xl px-3 py-2 text-sm font-semibold text-white/70 transition-colors hover:bg-white/[0.07] hover:text-white">
+                  {link.label}
+                </Link>
+              )
             ))}
           </div>
-
-          {/* Desktop CTAs */}
-          <div className="hidden md:flex items-center gap-3 ml-auto">
-            <Link to="/login"
-              className="text-white/80 hover:text-white text-sm font-medium px-4 py-2 rounded-xl border border-white/20 hover:border-white/40 transition-colors">
-              Login
+          <div className="ml-auto hidden items-center gap-2 md:flex">
+            <Link to="/login" className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-white/75 transition-colors hover:border-white/30 hover:bg-white/[0.06] hover:text-white">
+              Sign in
             </Link>
-            <button
-              onClick={scrollToContact}
-              className="flex items-center gap-1.5 bg-gold-500 hover:bg-gold-400 text-[#0F2419] text-sm font-bold px-4 py-2 rounded-xl transition-colors shadow-lg shadow-gold-500/20">
+            <a href={WA_LINK} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-xl bg-gold-500 px-4 py-2 text-sm font-black text-[#0F2419] shadow-lg shadow-gold-500/20 transition-all hover:-translate-y-0.5 hover:bg-gold-400">
               Get Started <ArrowRight size={14} />
-            </button>
+            </a>
           </div>
-
-          {/* Mobile hamburger */}
-          <button
-            onClick={() => setOpen(!open)}
-            className="md:hidden ml-auto p-2 text-white/80 hover:text-white"
-          >
-            {open ? <X size={22} /> : <Menu size={22} />}
+          <button onClick={() => setOpen(v => !v)} className="ml-auto rounded-xl p-2 text-white/75 hover:bg-white/[0.07] md:hidden">
+            {open ? <X size={21} /> : <Menu size={21} />}
           </button>
-        </div>
+        </nav>
       </div>
-
-      {/* Mobile menu */}
       {open && (
-        <div className="md:hidden bg-[#0F2419]/98 backdrop-blur-md border-t border-white/10 px-4 py-4 space-y-2">
-          {[
-            { label: 'Features', id: 'features' },
-            { label: 'Pricing',  id: 'pricing' },
-            { label: 'FAQ',      id: 'faq' },
-            { label: 'Contact',  id: 'contact' },
-          ].map(l => (
-            <button
-              key={l.id}
-              onClick={() => scrollTo(l.id)}
-              className="block w-full text-left text-white/80 hover:text-white text-sm font-medium px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors"
-            >
-              {l.label}
-            </button>
+        <div className="mx-4 mt-2 rounded-2xl border border-white/10 bg-[#071510]/95 p-3 shadow-2xl backdrop-blur-xl md:hidden">
+          {navLinks.map(link => (
+            link.type === 'section' ? (
+              <button key={link.label} onClick={() => { setOpen(false); scrollTo(link.target) }}
+                className="block w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-white/75 hover:bg-white/[0.07] hover:text-white">
+                {link.label}
+              </button>
+            ) : (
+              <Link key={link.label} to={link.target} onClick={() => setOpen(false)}
+                className="block rounded-xl px-3 py-2.5 text-sm font-semibold text-white/75 hover:bg-white/[0.07] hover:text-white">
+                {link.label}
+              </Link>
+            )
           ))}
-          <div className="pt-2 space-y-2 border-t border-white/10">
-            <Link to="/login" onClick={() => setOpen(false)}
-              className="block text-center text-white/80 text-sm font-medium px-4 py-2.5 rounded-xl border border-white/20">
-              Login
-            </Link>
-            <button onClick={() => { setOpen(false); scrollToContact() }}
-              className="block w-full text-center bg-gold-500 text-[#0F2419] text-sm font-bold px-4 py-2.5 rounded-xl">
-              Get Started — Contact Us
-            </button>
+          <div className="mt-2 grid grid-cols-2 gap-2 border-t border-white/10 pt-3">
+            <button onClick={() => navigate('/login')} className="rounded-xl border border-white/10 px-3 py-2.5 text-sm font-semibold text-white/80">Sign in</button>
+            <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="rounded-xl bg-gold-500 px-3 py-2.5 text-center text-sm font-black text-[#0F2419]">Get Started</a>
           </div>
         </div>
       )}
-    </nav>
+    </header>
   )
 }
 
-// ── Hero ──────────────────────────────────────────────────────────────────────
-function HeroSection() {
-  return (
-    <section id="hero" className="relative min-h-screen bg-[#0F2419] flex items-center overflow-hidden pt-16">
-      <GeometricPattern />
-      {/* Gradient blobs */}
-      <div className="absolute top-1/4 left-1/4 w-[600px] h-[600px] bg-[#1B6B3A]/30 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-gold-500/10 rounded-full blur-3xl pointer-events-none" />
-
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-32">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-
-          {/* Left: Copy */}
-          <div className="space-y-8">
-            {/* Badge */}
-            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/10 text-white/80 text-xs px-3.5 py-1.5 rounded-full">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-              ZATCA-ready POS for small Saudi businesses
-            </div>
-
-            {/* Arabic headline */}
-            <div>
-              <h1
-                className="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-tight"
-                style={{ fontFamily: 'Cairo, sans-serif' }}
-                dir="rtl"
-              >
-                نظام فوترة ذكي
-                <br />
-                <span className="text-gold-400">للمطاعم والكافيهات</span>
-              </h1>
-              <p className="text-xl text-white/60 mt-4 font-light leading-relaxed max-w-lg">
-                Smart POS & ZATCA-Compliant Invoicing<br />
-                for Saudi SMEs
-              </p>
-            </div>
-
-            {/* Sub-points */}
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                'ZATCA Phase 1 & 2',
-                'Arabic + English',
-                'Multi-branch POS',
-                'VAT Reports',
-              ].map(f => (
-                <div key={f} className="flex items-center gap-2">
-                  <CheckCircle2 size={14} className="text-gold-400 flex-shrink-0" />
-                  <span className="text-sm text-white/70">{f}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* CTAs */}
-            <div className="flex flex-wrap gap-3">
-              <button
-                onClick={scrollToContact}
-                className="flex items-center gap-2 bg-gold-500 hover:bg-gold-400 text-[#0F2419] font-bold px-6 py-3.5 rounded-xl transition-all shadow-xl shadow-gold-500/30 hover:shadow-gold-500/40 hover:-translate-y-0.5"
-              >
-                Get Started — Contact Us <ArrowRight size={16} />
-              </button>
-              <button
-                onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
-                className="flex items-center gap-2 border border-white/20 text-white hover:bg-white/10 font-medium px-6 py-3.5 rounded-xl transition-all"
-              >
-                See Features
-              </button>
-            </div>
-
-            {/* Social proof */}
-            <div className="flex items-center gap-4 pt-2">
-              <div className="flex -space-x-2">
-                {['م', 'أ', 'خ', 'ف'].map((c, i) => (
-                  <div key={i} className={`w-8 h-8 rounded-full border-2 border-[#0F2419] flex items-center justify-center text-xs font-bold text-white ${
-                    ['bg-emerald-600','bg-blue-600','bg-purple-600','bg-amber-600'][i]
-                  }`}>{c}</div>
-                ))}
-              </div>
-              <div>
-                <div className="flex items-center gap-0.5">
-                  {[...Array(5)].map((_, i) => <Star key={i} size={12} fill="#C8A96E" className="text-gold-400" />)}
-                </div>
-                <p className="text-xs text-white/50 mt-0.5">Trusted by Saudi SMEs</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Mockup */}
-          <div className="lg:pl-8">
-            <POSMockup />
-          </div>
-        </div>
-      </div>
-
-      {/* Scroll indicator */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 animate-bounce">
-        <span className="text-white/40 text-xs">Scroll</span>
-        <ChevronDown size={16} className="text-white/40" />
-      </div>
-    </section>
-  )
-}
-
-// ── Features ──────────────────────────────────────────────────────────────────
 const FEATURES = [
   {
-    icon: Shield,
-    title: 'ZATCA-ready',
-    titleAr: 'متوافق مع الزكاة',
-    desc: 'Supports ZATCA Phase 1 and Phase 2 e-invoicing workflows when business setup and onboarding are completed correctly.',
-    color: 'text-emerald-600', bg: 'bg-emerald-50',
+    icon: Receipt,
+    title: 'Fast POS checkout',
+    desc: 'A focused counter workflow for sales, receipts, customers, and branch controls.',
   },
   {
-    icon: Zap,
-    title: 'Fast POS',
-    titleAr: 'نقطة بيع سريعة',
-    desc: 'Tap to bill in seconds. Barcode scanner support, cash and card payments, instant receipt printing.',
-    color: 'text-gold-600', bg: 'bg-gold-50',
+    icon: ShieldCheck,
+    title: 'ZATCA Phase 2 invoicing',
+    desc: 'ZATCA-ready workflows for Saudi e-invoicing with safe business setup.',
   },
   {
-    icon: GitBranch,
-    title: 'Multi-Branch',
-    titleAr: 'إدارة متعددة الفروع',
-    desc: 'Manage all your locations from one dashboard. Separate stock, staff, and reports per branch.',
-    color: 'text-primary-600', bg: 'bg-primary-50',
-  },
-  {
-    icon: BarChart3,
-    title: 'Smart Reports',
-    titleAr: 'تقارير ذكية',
-    desc: 'Daily P&L, VAT summary, top products, and customer insights. Export-ready for tax filing.',
-    color: 'text-violet-600', bg: 'bg-violet-50',
+    icon: CreditCard,
+    title: 'Payments and split payments',
+    desc: 'Track cash, card, and split tenders cleanly across every invoice.',
   },
   {
     icon: Package,
-    title: 'Stock Control',
-    titleAr: 'إدارة المخزون',
-    desc: 'Track stock levels, set reorder alerts, manage suppliers and purchase orders seamlessly.',
-    color: 'text-blue-600', bg: 'bg-blue-50',
+    title: 'Stock and purchases',
+    desc: 'Products, suppliers, purchase receiving, and branch inventory in one place.',
   },
   {
-    icon: Globe,
-    title: 'Works Everywhere',
-    titleAr: 'يعمل في كل مكان',
-    desc: 'Web browser, tablet, Windows POS terminal. Works with your existing hardware.',
-    color: 'text-rose-600', bg: 'bg-rose-50',
+    icon: Store,
+    title: 'Register session closing',
+    desc: 'Open shifts, close registers, review totals, and keep cash checks organized.',
+  },
+  {
+    icon: BarChart3,
+    title: 'VAT support reports',
+    desc: 'Sales, purchases, expenses, and VAT summaries prepared for owner review.',
+  },
+  {
+    icon: GitBranch,
+    title: 'Multi-branch dashboard',
+    desc: 'See every branch from one owner dashboard with sales, sessions, reports, and settings in one place.',
   },
 ]
 
-function FeaturesSection() {
+function Hero() {
   return (
-    <section id="features" className="py-24 bg-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <span className="inline-block text-xs font-semibold text-primary-600 bg-primary-50 px-3 py-1 rounded-full mb-4 uppercase tracking-wide">
-            Features
-          </span>
-          <h2 className="text-3xl sm:text-4xl font-bold text-gray-900">
-            Everything you need to run your business
-          </h2>
-          <p className="text-gray-500 mt-4 max-w-xl mx-auto">
-            One platform for your POS, invoicing, stock, and compliance — built specifically for Saudi restaurants and cafés.
+    <section className="relative overflow-hidden bg-[#071510] pt-28">
+      <Pattern />
+      <div className="absolute left-[8%] top-20 h-[540px] w-[540px] rounded-full bg-primary-500/25 blur-3xl" />
+      <div className="absolute bottom-[-160px] right-[10%] h-[520px] w-[520px] rounded-full bg-gold-500/10 blur-3xl" />
+      <div className="relative z-10 mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl grid-cols-1 items-center gap-14 px-4 pb-20 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:px-8">
+        <div>
+          <h1 className="max-w-3xl text-4xl font-black leading-[1.04] tracking-tight text-white sm:text-6xl lg:text-7xl">
+            Your simple bridge to ZATCA Phase 2 invoicing.
+          </h1>
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-white/80 sm:text-xl">
+            Run POS sales, payments, stock, register sessions, and VAT reports from one simple platform built for Saudi businesses.
           </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {FEATURES.map(f => (
-            <div
-              key={f.title}
-              className="group p-6 rounded-2xl border border-gray-100 hover:border-primary-100 hover:shadow-lg hover:-translate-y-1 transition-all duration-200 bg-white"
-            >
-              <div className={`w-11 h-11 rounded-xl ${f.bg} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
-                <f.icon size={20} className={f.color} />
+          <div className="mt-8 grid max-w-xl grid-cols-1 gap-3 text-sm font-semibold text-white/80 sm:grid-cols-2">
+            {[
+              'ZATCA Phase 2 workflows',
+              'Cash, card, and split payments',
+              'Register session closing',
+              'Multi-branch dashboards',
+            ].map(item => (
+              <div key={item} className="flex items-center gap-2">
+                <CheckCircle2 size={16} className="flex-shrink-0 text-gold-300" />
+                <span>{item}</span>
               </div>
-              <h3 className="text-base font-semibold text-gray-900">{f.title}</h3>
-              <p className="text-xs text-gray-400 mt-0.5 mb-2" style={{ fontFamily: 'Cairo, sans-serif' }} dir="rtl">{f.titleAr}</p>
-              <p className="text-sm text-gray-500 leading-relaxed">{f.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ── Pricing ───────────────────────────────────────────────────────────────────
-function PricingSection() {
-  const [annual, setAnnual] = useState(false)
-
-  return (
-    <section id="pricing" className="py-24 bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <span className="inline-block text-xs font-semibold text-primary-600 bg-primary-50 px-3 py-1 rounded-full mb-4 uppercase tracking-wide">
-            Pricing
-          </span>
-          <h2 className="text-3xl sm:text-4xl font-bold text-gray-900">
-            Simple, transparent pricing
-          </h2>
-          <p className="text-gray-500 mt-4">Per branch · No hidden fees</p>
-
-          {/* Monthly / Annual toggle */}
-          <div className="flex items-center justify-center gap-3 mt-6">
-            <span className={`text-sm font-medium ${!annual ? 'text-gray-900' : 'text-gray-400'}`}>Monthly</span>
-            <button
-              onClick={() => setAnnual(v => !v)}
-              className={`relative w-12 h-6 rounded-full transition-colors ${annual ? 'bg-primary-500' : 'bg-gray-200'}`}
-            >
-              <span className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${annual ? 'translate-x-6' : ''}`} />
-            </button>
-            <span className={`text-sm font-medium ${annual ? 'text-gray-900' : 'text-gray-400'}`}>
-              Annual <span className="text-emerald-600 font-semibold text-xs ml-1">Save 2 months</span>
-            </span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
-          {/* Phase 1 */}
-          <div className="bg-white rounded-2xl border border-gray-200 p-8 flex flex-col">
-            <div className="mb-2">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Phase 1</p>
-              <p className="text-sm text-gray-500 mb-4">ZATCA QR Code Invoicing</p>
-              <div className="flex items-end gap-1">
-                <span className="text-4xl font-black text-gray-900">SAR {annual ? '500' : '50'}</span>
-                <span className="text-gray-500 mb-1.5 ml-1">/ branch / {annual ? 'year' : 'month'}</span>
-              </div>
-            </div>
-
-            <ul className="space-y-3 flex-1 my-8">
-              {[
-                'ZATCA Phase 1 QR Code',
-                'POS Billing Terminal',
-                'Invoice Management',
-                'Expense Tracking',
-                'Stock Management',
-                'Sales Reports',
-                '1 Branch included',
-              ].map(f => (
-                <li key={f} className="flex items-center gap-3 text-sm text-gray-700">
-                  <CheckCircle2 size={15} className="text-emerald-500 flex-shrink-0" />
-                  {f}
-                </li>
-              ))}
-            </ul>
-
-            <button
-              onClick={scrollToContact}
-              className="block w-full text-center bg-gray-900 hover:bg-gray-800 text-white font-semibold py-3.5 rounded-xl transition-colors"
-            >
-              Get Started
-            </button>
-          </div>
-
-          {/* Phase 2 — Popular */}
-          <div className="relative bg-[#0F2419] rounded-2xl border-2 border-gold-400 p-8 flex flex-col shadow-xl shadow-primary-900/20">
-            <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-              <span className="bg-gold-500 text-[#0F2419] text-xs font-black px-4 py-1 rounded-full shadow-lg">
-                ★ MOST POPULAR
-              </span>
-            </div>
-
-            <GeometricPattern opacity={0.03} />
-
-            <div className="relative z-10 mb-2">
-              <p className="text-xs font-semibold text-gold-400/80 uppercase tracking-wider mb-1">Phase 2</p>
-              <p className="text-sm text-white/50 mb-4">ZATCA Phase 2 workflows</p>
-              <div className="flex items-end gap-1">
-                <span className="text-4xl font-black text-white">SAR {annual ? '1,000' : '100'}</span>
-                <span className="text-white/60 mb-1.5 ml-1">/ branch / {annual ? 'year' : 'month'}</span>
-              </div>
-            </div>
-
-            <ul className="relative z-10 space-y-3 flex-1 my-8">
-              {[
-                'Everything in Phase 1',
-                'ZATCA Phase 2 Digital Signing',
-                'Automatic ZATCA Reporting',
-                'XML Invoice Generation',
-                'Phase 2 QR Code',
-                '1 Branch included',
-                'Additional branches: +SAR 100/month',
-              ].map(f => (
-                <li key={f} className="flex items-center gap-3 text-sm text-white/85">
-                  <CheckCircle2 size={15} className="text-gold-400 flex-shrink-0" />
-                  {f}
-                </li>
-              ))}
-            </ul>
-
-            <button
-              onClick={scrollToContact}
-              className="relative z-10 block w-full text-center bg-gold-500 hover:bg-gold-400 text-[#0F2419] font-bold py-3.5 rounded-xl transition-colors shadow-lg shadow-gold-500/20"
-            >
-              Get Started
-            </button>
-          </div>
-        </div>
-
-        {/* Branch note */}
-        <p className="text-center text-sm text-gray-400 mt-6">
-          Additional branches billed at the same rate per branch per month.
-        </p>
-
-        {/* Contact section */}
-        <div id="contact" className="mt-16 bg-white rounded-2xl border border-gray-200 p-8 md:p-12 text-center shadow-sm">
-          <h3 className="text-2xl font-bold text-gray-900">Ready to get started?</h3>
-          <p className="text-gray-500 mt-3 max-w-md mx-auto">
-            Contact us to set up your account. We'll have you running within 24 hours.
-          </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-8">
-            <a
-              href={WA_LINK}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-6 py-3.5 rounded-xl transition-colors shadow-md w-full sm:w-auto justify-center"
-            >
-              <MessageCircle size={18} />
-              WhatsApp Us
-            </a>
-            <a
-              href={EMAIL_LINK}
-              className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold px-6 py-3.5 rounded-xl transition-colors w-full sm:w-auto justify-center"
-            >
-              <Mail size={18} />
-              Email Us
-            </a>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ── Testimonials ──────────────────────────────────────────────────────────────
-const TESTIMONIALS = [
-  {
-    name:    'محمد الرشيد',
-    nameEn:  'Mohammed Al-Rashid',
-    role:    'مالك مقهى — الرياض',
-    rating:  5,
-    text:    'ميم غيّرت طريقة إدارتي للمقهى. الآن أصدر فواتير ZATCA في ثوانٍ والتقارير تصلني يومياً.',
-  },
-  {
-    name:    'فاطمة القحطاني',
-    nameEn:  'Fatima Al-Qahtani',
-    role:    'مديرة مطعم — جدة',
-    rating:  5,
-    text:    'النظام سهل جداً ويعمل على الآيباد بدون أي مشاكل. فريق الدعم سريع جداً في الرد.',
-  },
-  {
-    name:    'خالد العتيبي',
-    nameEn:  'Khalid Al-Otaibi',
-    role:    'صاحب سلسلة مطاعم — الدمام',
-    rating:  5,
-    text:    'أفضل نظام POS جربته. تقارير يومية مع حسابات الضريبة تلقائياً وربط مباشر مع ZATCA.',
-  },
-]
-
-function TestimonialsSection() {
-  return (
-    <section className="py-24 bg-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <span className="inline-block text-xs font-semibold text-primary-600 bg-primary-50 px-3 py-1 rounded-full mb-4 uppercase tracking-wide">
-            Testimonials
-          </span>
-          <h2 className="text-3xl sm:text-4xl font-bold text-gray-900">
-            What our clients say
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {TESTIMONIALS.map(t => (
-            <div key={t.name} className="bg-gray-50 rounded-2xl p-6 border border-gray-100">
-              {/* Stars */}
-              <div className="flex items-center gap-0.5 mb-4">
-                {[...Array(t.rating)].map((_, i) => (
-                  <Star key={i} size={14} fill="#C8A96E" className="text-gold-400" />
-                ))}
-              </div>
-              {/* Quote */}
-              <p className="text-sm text-gray-700 leading-relaxed mb-6" dir="rtl" style={{ fontFamily: 'Cairo, sans-serif' }}>
-                "{t.text}"
-              </p>
-              {/* Author */}
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                  {t.name.charAt(0)}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900" style={{ fontFamily: 'Cairo, sans-serif' }}>{t.name}</p>
-                  <p className="text-xs text-gray-400">{t.role}</p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ── FAQ ───────────────────────────────────────────────────────────────────────
-const FAQS = [
-  {
-    q: 'What is ZATCA e-invoicing?',
-    a: 'ZATCA (زكاة وضريبة وجمارك) mandates that all VAT-registered businesses in Saudi Arabia issue electronic invoices. Phase 1 (from Dec 2021) requires QR codes on simplified invoices. Phase 2 (from 2023 onward) requires cryptographic digital signing and integration with the ZATCA portal.',
-  },
-  {
-    q: 'Does Meem support ZATCA e-invoicing?',
-    a: 'Meem is built for Saudi VAT and ZATCA e-invoicing workflows, including Phase 1 QR invoices and Phase 2 integration features. Compliance depends on correct business setup, onboarding, and continued use according to ZATCA requirements.',
-  },
-  {
-    q: 'Can I use it offline?',
-    a: 'Meem is designed for use with a stable internet connection. If connectivity is interrupted, reconnect before completing new invoices or retrying ZATCA submission.',
-  },
-  {
-    q: 'How do I migrate from my current system?',
-    a: 'Our onboarding team can help you import your product catalog and customer data. We provide a simple CSV import for products, customers, and suppliers. The process typically takes under an hour.',
-  },
-  {
-    q: 'Is my data secure?',
-    a: 'All data is hosted on Supabase with row-level security — each business can only access their own data. Data is encrypted at rest and in transit (TLS 1.3). Servers are hosted in AWS regions close to Saudi Arabia.',
-  },
-  {
-    q: 'How do I get support?',
-    a: 'Phase 1 plan includes email support with a 24-hour response time. Phase 2 plan includes priority WhatsApp support with responses within 2 hours during business hours. We also have comprehensive Arabic documentation.',
-  },
-]
-
-function FAQItem({ faq }: { faq: typeof FAQS[0] }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="border-b border-gray-100 last:border-0">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center justify-between w-full py-5 text-left gap-4"
-      >
-        <span className="text-sm font-semibold text-gray-900">{faq.q}</span>
-        <div className={`flex-shrink-0 w-6 h-6 rounded-lg ${open ? 'bg-primary-50 text-primary-600' : 'bg-gray-100 text-gray-500'} flex items-center justify-center transition-colors`}>
-          {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </div>
-      </button>
-      {open && (
-        <div className="pb-5 -mt-1">
-          <p className="text-sm text-gray-600 leading-relaxed">{faq.a}</p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function FAQSection() {
-  return (
-    <section id="faq" className="py-24 bg-gray-50">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <span className="inline-block text-xs font-semibold text-primary-600 bg-primary-50 px-3 py-1 rounded-full mb-4 uppercase tracking-wide">
-            FAQ
-          </span>
-          <h2 className="text-3xl sm:text-4xl font-bold text-gray-900">
-            Common questions
-          </h2>
-        </div>
-        <div className="bg-white rounded-2xl border border-gray-100 px-8 shadow-sm">
-          {FAQS.map(f => <FAQItem key={f.q} faq={f} />)}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ── CTA Banner ────────────────────────────────────────────────────────────────
-function CTABanner() {
-  return (
-    <section className="py-20 bg-[#0F2419] relative overflow-hidden">
-      <GeometricPattern opacity={0.03} />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-gold-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="relative z-10 max-w-3xl mx-auto px-4 text-center space-y-6">
-        <h2 className="text-3xl sm:text-4xl font-black text-white" style={{ fontFamily: 'Cairo, sans-serif' }}>
-          ابدأ رحلتك مع ميم اليوم
-        </h2>
-        <p className="text-white/60">Contact us and we'll have your account ready within 24 hours.</p>
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <a
-            href={WA_LINK}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-8 py-4 rounded-xl transition-all shadow-xl hover:-translate-y-0.5"
-          >
-            <MessageCircle size={18} /> WhatsApp Us
-          </a>
-          <a
-            href={EMAIL_LINK}
-            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-semibold px-8 py-4 rounded-xl transition-all"
-          >
-            <Mail size={18} /> Email Us
-          </a>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ── Footer ────────────────────────────────────────────────────────────────────
-function Footer() {
-  function scrollTo(id: string) {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
-  }
-  return (
-    <footer className="bg-[#071510] text-white/50 py-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
-          {/* Brand */}
-          <div className="md:col-span-2 space-y-3">
-            <MeemLogo size="sm" />
-            <p className="text-sm leading-relaxed max-w-xs">
-              Smart POS & ZATCA-ready invoicing for Saudi restaurants, cafés and retail — نظام فوترة جاهز للزكاة
-            </p>
-            <div className="flex items-center gap-2 text-xs">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              All systems operational
-            </div>
-          </div>
-
-          {/* Links */}
-          <div className="space-y-3">
-            <p className="text-white text-xs font-semibold uppercase tracking-wider">Product</p>
-            {['Features', 'Pricing', 'FAQ'].map(l => (
-              <button
-                key={l}
-                onClick={() => scrollTo(l.toLowerCase())}
-                className="block text-sm hover:text-white transition-colors"
-              >
-                {l}
-              </button>
             ))}
           </div>
-
-          {/* Contact */}
-          <div className="space-y-3">
-            <p className="text-white text-xs font-semibold uppercase tracking-wider">Contact</p>
+          <div className="mt-9 flex flex-col gap-3 sm:flex-row">
             <a href={WA_LINK} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-2 text-sm hover:text-white transition-colors">
-              <MessageCircle size={14} />
-              WhatsApp Support
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gold-500 px-6 py-4 text-sm font-black text-[#0F2419] shadow-xl shadow-gold-500/20 transition-all hover:-translate-y-0.5 hover:bg-gold-400">
+              Get Started <ArrowRight size={17} />
             </a>
-            <a href={EMAIL_LINK}
-              className="flex items-center gap-2 text-sm hover:text-white transition-colors">
-              <Mail size={14} />
-              {supportConfig.email}
+            <Link to="/pricing" className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-4 text-sm font-bold text-white transition-all hover:border-white/30 hover:bg-white/[0.08]">
+              View Pricing
+            </Link>
+          </div>
+        </div>
+        <ProductMockup />
+      </div>
+    </section>
+  )
+}
+
+function Features() {
+  return (
+    <section id="features" className="relative overflow-hidden bg-[#0F2419] py-24">
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0)),radial-gradient(circle_at_80%_10%,rgba(200,169,110,0.16),transparent_30%)]" />
+      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
+          <h2 className="text-3xl font-black leading-tight text-white sm:text-5xl">Built for the daily rhythm of Saudi branches.</h2>
+          <p className="max-w-2xl text-base leading-7 text-white/70 lg:ml-auto">
+            From the counter to the owner dashboard, Kubri keeps sales, tax workflows, stock, sessions, and reports moving together.
+          </p>
+        </div>
+        <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-6">
+          {FEATURES.map((feature, index) => (
+            <article
+              key={feature.title}
+              className={`group min-h-[220px] rounded-[24px] border border-white/10 bg-white/[0.065] p-6 shadow-[0_24px_90px_rgba(0,0,0,0.20)] backdrop-blur transition-all hover:-translate-y-1 hover:border-gold-400/40 hover:bg-white/[0.09] ${
+                index === 0 || index === 1 ? 'lg:col-span-3' : index === 6 ? 'lg:col-span-6' : 'lg:col-span-2'
+              }`}
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-gold-400/20 bg-gold-400/10 shadow-inner shadow-white/5">
+                <feature.icon size={22} className="text-gold-300" />
+              </div>
+              <h3 className="mt-6 text-lg font-bold text-white">{feature.title}</h3>
+              <p className="mt-3 text-sm leading-6 text-white/65">{feature.desc}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function PricingTeaser() {
+  return (
+    <section className="bg-[#071510] px-4 py-16 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-white/[0.09] to-white/[0.035] p-6 shadow-[0_28px_100px_rgba(0,0,0,0.28)] backdrop-blur md:p-8">
+        <div className="grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
+          <div>
+            <p className="text-sm font-bold text-gold-300">Start from SAR 100/month</p>
+            <h2 className="mt-3 text-3xl font-black text-white">Simple pricing for each branch.</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65">Yearly option available. Includes a 7-day money-back guarantee.</p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Link to="/pricing" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gold-500 px-5 py-3 text-sm font-black text-[#0F2419] hover:bg-gold-400">
+              View Pricing <ArrowRight size={15} />
+            </Link>
+            <a href={WA_LINK} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center justify-center rounded-2xl border border-white/10 px-5 py-3 text-sm font-bold text-white hover:bg-white/[0.07]">
+              Get Started
             </a>
           </div>
         </div>
+      </div>
+    </section>
+  )
+}
 
-        <div className="border-t border-white/10 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
-          <p>© 2026 Meem Platform. All rights reserved.</p>
-          <p className="flex items-center gap-1.5">
-            Made with pride in Saudi Arabia 🇸🇦
+function WindowsSection() {
+  function preventDownload(e: MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault()
+  }
+
+  return (
+    <section id="windows" className="bg-[#0F2419] px-4 py-20 sm:px-6 lg:px-8">
+      <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[1fr_0.85fr] lg:items-center">
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.06] p-8 shadow-[0_24px_90px_rgba(0,0,0,0.20)]">
+          <h2 className="text-3xl font-black text-white sm:text-4xl">Built for the counter.</h2>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-white/70">
+            Use Kubri on your Windows POS device for a focused counter experience with products, payments, invoices, and register sessions in one view.
           </p>
+          <a href="#" onClick={preventDownload}
+            className="mt-7 inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-black text-[#0F2419] hover:bg-gold-100">
+            <Download size={17} /> Download for Windows
+          </a>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+          {['Touch-friendly POS', 'Fast invoice flow', 'Branch-ready settings'].map(item => (
+            <div key={item} className="rounded-2xl border border-gold-400/20 bg-gold-400/10 px-5 py-4 text-sm font-bold text-gold-100">
+              {item}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ContactSection() {
+  return (
+    <section id="contact" className="relative overflow-hidden bg-[#071510] px-4 py-20 sm:px-6 lg:px-8">
+      <Pattern />
+      <div className="relative mx-auto max-w-4xl text-center">
+        <h2 className="text-3xl font-black text-white sm:text-5xl">Bring Kubri to your counter.</h2>
+        <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-white/70">
+          Talk to us and get your business ready for ZATCA Phase 2 workflows.
+        </p>
+        <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <a href={WA_LINK} target="_blank" rel="noopener noreferrer"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-6 py-4 text-sm font-black text-white shadow-xl shadow-emerald-950/30 hover:bg-emerald-600 sm:w-auto">
+            <MessageCircle size={17} /> WhatsApp
+          </a>
+          <a href={EMAIL_LINK}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.05] px-6 py-4 text-sm font-bold text-white hover:bg-white/[0.08] sm:w-auto">
+            <Mail size={17} /> support@kubri.shop
+          </a>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function Footer() {
+  return (
+    <footer className="bg-[#050F0B] px-4 py-12 text-white/60 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <div className="grid gap-10 md:grid-cols-[1.4fr_0.8fr_0.8fr]">
+          <div>
+            <MeemLogo size="sm" />
+            <p className="mt-4 max-w-sm text-sm leading-6">Kubri POS for Saudi businesses that need sales, ZATCA Phase 2 workflows, stock, sessions, VAT reports, and branch visibility.</p>
+            <p className="mt-3 text-sm font-semibold text-gold-300">kubri.shop</p>
+          </div>
+          <div className="space-y-3">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-white">Product</p>
+            <button onClick={() => scrollTo('features')} className="block text-sm hover:text-white">Features</button>
+            <Link to="/pricing" className="block text-sm hover:text-white">Pricing</Link>
+            <button onClick={() => scrollTo('windows')} className="block text-sm hover:text-white">Windows app</button>
+            <Link to="/faq" className="block text-sm hover:text-white">FAQ</Link>
+          </div>
+          <div className="space-y-3">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-white">Contact</p>
+            <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="block text-sm hover:text-white">WhatsApp support</a>
+            <a href={EMAIL_LINK} className="block text-sm hover:text-white">support@kubri.shop</a>
+            <Link to="/terms" className="block text-sm hover:text-white">Terms</Link>
+            <Link to="/privacy" className="block text-sm hover:text-white">Privacy</Link>
+          </div>
+        </div>
+        <div className="mt-10 flex flex-col gap-3 border-t border-white/10 pt-6 text-xs sm:flex-row sm:items-center sm:justify-between">
+          <p>© 2026 Kubri. All rights reserved.</p>
+          <p>Built for Saudi businesses.</p>
         </div>
       </div>
     </footer>
   )
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
 export default function LandingPage() {
   return (
-    <div className="scroll-smooth">
-      <Navbar />
-      <HeroSection />
-      <FeaturesSection />
-      <PricingSection />
-      <TestimonialsSection />
-      <FAQSection />
-      <CTABanner />
+    <div className="min-h-screen bg-[#071510]">
+      <Header />
+      <Hero />
+      <Features />
+      <PricingTeaser />
+      <WindowsSection />
+      <ContactSection />
       <Footer />
     </div>
   )

@@ -305,7 +305,7 @@ export default function DayClosingPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? 'Unknown'
-  const tenantName  = tenant?.name ?? 'Meem'
+  const tenantName  = tenant?.name ?? 'Kubri'
 
   if (!branchId) {
     return (

@@ -6,7 +6,7 @@ import { supportConfig } from '@/config/support'
 const sections = [
   {
     title: 'Service',
-    body: 'Meem provides cloud-based POS, invoicing, stock, purchase, reporting, and ZATCA-ready e-invoicing workflow tools for small businesses. Features may vary by plan, branch setup, and enabled integrations.',
+    body: 'Kubri provides cloud-based POS, invoicing, stock, purchase, reporting, and ZATCA-ready e-invoicing workflow tools for small businesses. Features may vary by plan, branch setup, and enabled integrations.',
   },
   {
     title: 'Your Responsibilities',
@@ -14,19 +14,19 @@ const sections = [
   },
   {
     title: 'ZATCA and VAT',
-    body: 'Meem is built to support Saudi VAT and ZATCA e-invoicing workflows. Compliance depends on correct business setup, successful onboarding where required, and continued use according to ZATCA requirements. Meem does not replace your accountant, tax advisor, or legal advisor.',
+    body: 'Kubri is built to support Saudi VAT and ZATCA e-invoicing workflows. Compliance depends on correct business setup, successful setup where required, and continued use according to ZATCA requirements. Kubri does not replace your accountant, tax advisor, or legal advisor.',
   },
   {
     title: 'Subscriptions and Payment',
-    body: 'Subscription pricing, branch limits, trial access, renewal, suspension, and cancellation terms are confirmed during onboarding or in a written agreement. A payment gateway may be added later; until then, billing may be handled manually.',
+    body: 'Subscription pricing, branch limits, guarantee periods, renewal, suspension, and cancellation terms are confirmed during setup or in a written agreement. A payment gateway may be added later; until then, billing may be handled through direct payment channels.',
   },
   {
     title: 'Availability and Support',
-    body: 'We aim to keep the service reliable, but cloud services, internet connectivity, Supabase, payment providers, printers, and ZATCA systems may experience downtime. Support requests should be sent through the official support channels shown below.',
+    body: 'We aim to keep the service reliable, but cloud services, internet connectivity, Supabase, payment providers, printers, and ZATCA systems may experience downtime. Support requests should be sent through the support channels shown below.',
   },
   {
     title: 'Limitations',
-    body: 'To the maximum extent allowed by law, Meem is provided without guarantees of uninterrupted operation or error-free tax filing. You should review reports, invoices, ZATCA statuses, and VAT returns before relying on them for official filing.',
+    body: 'To the maximum extent allowed by law, Kubri is provided without guarantees of uninterrupted operation or error-free tax filing. You should review reports, invoices, ZATCA statuses, and VAT returns before relying on them for submission.',
   },
 ]
 
