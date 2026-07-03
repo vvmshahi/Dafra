@@ -1,9 +1,26 @@
+interface ElectronApi {
+  isElectron: true
+  printSilent: () => Promise<{ success: boolean; errorType?: string | null }>
+  getPrinters: () => Promise<any[]>
+  getDefaultPrinter: () => Promise<string | null>
+  savePrinter: (name: string) => Promise<{ success?: boolean } | void>
+  clearPrinter: () => Promise<{ success?: boolean } | void>
+}
+
+declare global {
+  interface Window {
+    electronAPI?: ElectronApi
+  }
+}
+
 export const isElectron = (): boolean =>
-  typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron
+  typeof window !== 'undefined' && window.electronAPI?.isElectron === true
+
+export const isDesktopApp = (): boolean => isElectron()
 
 export const printSilent = async (): Promise<void> => {
   if (isElectron()) {
-    const result = await (window as any).electronAPI.printSilent()
+    const result = await window.electronAPI?.printSilent()
     if (!result?.success) window.print()
   } else {
     window.print()
@@ -12,20 +29,20 @@ export const printSilent = async (): Promise<void> => {
 
 export const getPrinters = async (): Promise<any[]> => {
   if (!isElectron()) return []
-  return (window as any).electronAPI.getPrinters()
+  return window.electronAPI?.getPrinters() ?? []
 }
 
 export const getDefaultPrinter = async (): Promise<string | null> => {
   if (!isElectron()) return null
-  return (window as any).electronAPI.getDefaultPrinter()
+  return window.electronAPI?.getDefaultPrinter() ?? null
 }
 
 export const savePrinter = async (name: string): Promise<void> => {
   if (!isElectron()) return
-  await (window as any).electronAPI.savePrinter(name)
+  await window.electronAPI?.savePrinter(name)
 }
 
 export const clearPrinter = async (): Promise<void> => {
   if (!isElectron()) return
-  await (window as any).electronAPI.clearPrinter()
+  await window.electronAPI?.clearPrinter()
 }

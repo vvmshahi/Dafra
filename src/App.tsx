@@ -1,8 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
+import type { ReactNode } from 'react'
 import { Toaster } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import AppLayout from '@/components/layout/AppLayout'
+import { isDesktopApp } from '@/lib/electron'
 
 // Pages
 import LoginPage           from '@/pages/auth/LoginPage'
@@ -170,13 +172,41 @@ function SmartRedirect() {
   const { isAuthenticated, profile, loading, authError, isOnboarded } = useAuth()
   if (loading)          return <FullscreenSpinner />
   if (authError)        return <AuthLoadError />
-  if (!isAuthenticated) return <LandingPage />
+  if (!isAuthenticated) return isDesktopApp() ? <Navigate to="/login" replace /> : <LandingPage />
   // Authenticated — wait for profile fetch to complete
   if (isOnboarded === null) return <FullscreenSpinner />
-  if (profile?.role === 'super_admin') return <Navigate to="/super-admin" replace />
-  if (isOnboarded === false)           return <Navigate to="/onboarding"  replace />
-  if (profile?.role === 'branch')      return <Navigate to="/branch"       replace />
-  return <Navigate to="/dashboard" replace />
+  return <Navigate to={protectedDefaultPath(profile, isOnboarded)} replace />
+}
+
+function protectedDefaultPath(profile: { role?: string } | null, isOnboarded: boolean | null) {
+  if (profile?.role === 'super_admin') return '/super-admin'
+  if (isOnboarded === false)           return '/onboarding'
+  if (profile?.role === 'branch')      return '/branch'
+  return '/dashboard'
+}
+
+function DesktopEntry() {
+  const { isAuthenticated, profile, loading, authError, isOnboarded } = useAuth()
+  if (loading)          return <FullscreenSpinner />
+  if (authError)        return <AuthLoadError />
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (isOnboarded === null) return <FullscreenSpinner />
+  return <Navigate to={protectedDefaultPath(profile, isOnboarded)} replace />
+}
+
+function DesktopAwareLogin() {
+  const { isAuthenticated, profile, loading, authError, isOnboarded } = useAuth()
+  if (!isDesktopApp()) return <LoginPage />
+  if (loading) return <FullscreenSpinner />
+  if (authError) return <AuthLoadError />
+  if (!isAuthenticated) return <LoginPage />
+  if (isOnboarded === null) return <FullscreenSpinner />
+  return <Navigate to={protectedDefaultPath(profile, isOnboarded)} replace />
+}
+
+function BrowserOnlyPublicRoute({ children }: { children: ReactNode }) {
+  if (isDesktopApp()) return <DesktopEntry />
+  return <>{children}</>
 }
 
 // ── App ───────────────────────────────────────────────────────────────────
@@ -188,14 +218,14 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         {/* ── Public ──────────────────────────────────────── */}
-        <Route path="/login"           element={<LoginPage />} />
-        <Route path="/signup"          element={<SignupPage />} />
+        <Route path="/login"           element={<DesktopAwareLogin />} />
+        <Route path="/signup"          element={<BrowserOnlyPublicRoute><SignupPage /></BrowserOnlyPublicRoute>} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password"  element={<ResetPasswordPage />} />
-        <Route path="/terms"           element={<TermsPage />} />
-        <Route path="/privacy"         element={<PrivacyPage />} />
-        <Route path="/pricing"         element={<PricingPage />} />
-        <Route path="/faq"             element={<FAQPage />} />
+        <Route path="/terms"           element={<BrowserOnlyPublicRoute><TermsPage /></BrowserOnlyPublicRoute>} />
+        <Route path="/privacy"         element={<BrowserOnlyPublicRoute><PrivacyPage /></BrowserOnlyPublicRoute>} />
+        <Route path="/pricing"         element={<BrowserOnlyPublicRoute><PricingPage /></BrowserOnlyPublicRoute>} />
+        <Route path="/faq"             element={<BrowserOnlyPublicRoute><FAQPage /></BrowserOnlyPublicRoute>} />
 
         {/* Root: landing page for guests, smart redirect for authenticated */}
         <Route path="/" element={<SmartRedirect />} />
@@ -265,14 +295,5 @@ export default function App() {
       </Routes>
     </BrowserRouter>
     </>
-  )
-}
-
-// Inline placeholder for routes not yet built.
-function PlaceholderPage({ title }: { title: string }) {
-  return (
-    <div className="card p-8 text-center">
-      <p className="text-gray-400 text-sm">{title} — coming soon</p>
-    </div>
   )
 }

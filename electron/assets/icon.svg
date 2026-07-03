@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <rect width="256" height="256" rx="48" fill="#C8A96E"/>
-  <text x="128" y="185" font-size="160" fill="white" text-anchor="middle" font-family="serif">م</text>
+  <rect width="256" height="256" rx="56" fill="#0F2419"/>
+  <rect x="18" y="18" width="220" height="220" rx="44" fill="#C8A96E"/>
+  <text x="128" y="171" font-size="126" font-weight="800" fill="white" text-anchor="middle" font-family="Inter, Arial, sans-serif">K</text>
 </svg>

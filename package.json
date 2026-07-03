@@ -1,8 +1,9 @@
 {
-  "name": "meem",
+  "name": "kubri",
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "main": "electron/main.cjs",
   "engines": {
     "node": ">=20.19.0"
   },
@@ -10,9 +11,45 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "desktop:dev": "concurrently -k -n vite,electron -c green,blue \"vite --host 127.0.0.1 --port 5175 --strictPort\" \"wait-on http://127.0.0.1:5175 && node electron/run.cjs\"",
+    "desktop:preview": "npm run build && node electron/run.cjs --preview",
+    "desktop:build": "npm run build && electron-builder --win",
     "zatca:validate-sample": "node scripts/validate-zatca-compliance-sample.mjs",
     "zatca:export-real-invoice": "node scripts/export-zatca-real-invoice-xml.mjs",
     "zatca:validate-real-invoice": "node scripts/export-zatca-real-invoice-xml.mjs --validate"
+  },
+  "build": {
+    "appId": "com.kubri.pos",
+    "productName": "Kubri POS",
+    "copyright": "Copyright 2026 Kubri",
+    "directories": {
+      "output": "dist-electron",
+      "buildResources": "electron/assets"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/assets/icon.ico",
+      "artifactName": "Kubri POS Setup ${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Kubri POS"
+    }
   },
   "dependencies": {
     "@noble/curves": "^2.2.0",
@@ -31,9 +68,13 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
+    "concurrently": "^9.2.3",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3",
     "postcss": "^8.4.41",
     "tailwindcss": "^3.4.10",
     "typescript": "^5.5.3",
-    "vite": "^5.4.2"
+    "vite": "^5.4.2",
+    "wait-on": "^8.0.5"
   }
 }

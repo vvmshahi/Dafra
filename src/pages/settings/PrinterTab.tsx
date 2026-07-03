@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Printer, RefreshCw, X } from 'lucide-react'
-import { getDefaultPrinter, getPrinters } from '@/lib/electron'
+import { clearPrinter, getDefaultPrinter, getPrinters } from '@/lib/electron'
 import { PrinterSetupModal } from '@/components/PrinterSetupModal'
 import { Button } from '@/components/ui/Button'
 
@@ -53,7 +53,6 @@ export default function PrinterTab() {
             </div>
             <button
               onClick={async () => {
-                const { clearPrinter } = await import('@/lib/electron')
                 await clearPrinter()
                 setDefaultPrinter(null)
               }}

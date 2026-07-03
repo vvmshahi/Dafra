@@ -1,124 +1,60 @@
-# Meem Desktop App (Electron)
+# Kubri POS Desktop App
 
-Wraps `https://dafra.vercel.app` in a native Windows desktop window.
-No React code is bundled — all updates happen automatically via Vercel.
+This Electron wrapper packages the local Vite build as a Windows desktop POS app.
+It does not load the public marketing website in production.
 
----
+## Behavior
 
-## First-time setup
+- Browser users keep the normal public website flow.
+- Electron users start at the desktop app entry route.
+- Logged-out Electron users are sent to `/login`.
+- Logged-in Electron users are redirected by existing role behavior:
+  - branch users: `/branch`
+  - owners/admins: `/dashboard`
+  - super admins: `/super-admin`
+- Public marketing routes such as `/pricing` and `/faq` are not shown inside Electron.
 
-From the project root, install Electron dependencies using the separate package file:
-
-```bash
-npm install --prefix . \
-  electron@^28.0.0 \
-  electron-builder@^24.9.1 \
-  electron-store@^8.1.0 \
-  electron-updater@^6.1.7
-```
-
-Or copy `package-electron.json` to a clean directory and run `npm install` there.
-
----
-
-## Run in development
+## Development
 
 ```bash
-npx electron .
+npm run desktop:dev
 ```
 
-The window opens, loads `https://dafra.vercel.app`, and maximises automatically.
+This starts Vite on `http://127.0.0.1:5175` and opens Electron against that local dev server.
 
----
-
-## Build Windows installer
+## Preview Bundled App
 
 ```bash
-npx electron-builder --win
+npm run desktop:preview
 ```
 
-Output: `dist-electron/Meem Setup 1.0.0.exe`
+This builds the React app, then opens Electron against the bundled `dist` output through the
+`kubri://app/` protocol.
 
-Distribute this file to branch staff — double-click installs, creates desktop shortcut
-"Meem POS" and a Start Menu entry.
+## Windows Build
 
----
-
-## Icons
-
-| File | Purpose |
-|---|---|
-| `electron/assets/icon.svg` | Source (gold م on rounded square) |
-| `electron/assets/icon.ico` | Required for Windows `.exe` and installer |
-| `electron/assets/icon.png` | Required by electron-builder for some targets |
-
-**Generating icon.ico from the SVG:**
-
-1. Open `electron/assets/icon.svg` in a browser, screenshot at 256×256
-2. Convert at https://convertico.com (upload PNG → download .ico)
-3. OR install `electron-icon-builder` and run:
-   ```bash
-   npx electron-icon-builder --input=electron/assets/icon.svg --output=electron/assets
-   ```
-
----
-
-## Auto-updates
-
-The app checks GitHub Releases on startup (after 5 s).
-Release channel is configured in `package-electron.json`:
-
-```json
-"publish": {
-  "provider": "github",
-  "owner": "vvmshahi",
-  "repo": "Dafra"
-}
+```bash
+npm run desktop:build
 ```
 
-To ship a new version:
+Output is written to `dist-electron/`.
 
-1. Bump `version` in `package-electron.json`
-2. Build: `npx electron-builder --win`
-3. Create a GitHub Release tagged `v1.0.x`
-4. Upload `dist-electron/Meem Setup 1.0.x.exe` and `dist-electron/latest.yml` as release assets
-5. Running clients will detect and download the update automatically
+## Files
 
----
-
-## Printer setup (for branch staff)
-
-After installing, open **Settings → Printer** in the app and select the thermal printer.
-Receipts will then print silently (no dialog) from the POS and invoice views.
-
----
-
-## Changing the target URL
-
-Edit `electron/main.js`:
-
-```js
-const APP_URL = 'https://your-new-url.vercel.app'
-```
-
-Rebuild and redistribute.
-
----
-
-## File structure
-
-```
+```text
 electron/
-  main.js        – Main process (window, IPC, auto-updater)
-  preload.js     – Secure bridge between web page and Node
-  printer.js     – Printer helper utilities
-  updater.js     – Auto-updater setup helper
+  main.cjs       Main process, window security, bundled app loading, IPC
+  preload.cjs    Safe bridge exposed as window.electronAPI
+  printer.cjs    Existing printer IPC helper compatibility
+  run.cjs        Cross-platform local launcher for npm desktop scripts
   assets/
-    icon.svg     – Source icon (generate .ico/.png from this)
-    icon.ico     – Windows icon (must be generated — see above)
-
-package-electron.json  – Separate package.json for Electron builds
-src/lib/electron.ts    – Web-side helper (isElectron, printSilent, …)
-src/components/PrinterSetupModal.tsx – Printer selection UI
-src/pages/settings/PrinterTab.tsx   – Settings tab (Electron-only)
+    icon.svg
+    icon.png
+    icon.ico
 ```
+
+## Notes
+
+- Auto-update is intentionally not implemented in Phase 7A-1.
+- Silent/direct receipt printing is intentionally left for Phase 7B.
+- Supabase auth persistence remains handled by the existing browser client.
