@@ -28,6 +28,7 @@ import SubscriptionsPage       from '@/pages/super-admin/SubscriptionsPage'
 import SuperAdminSettingsPage  from '@/pages/super-admin/SuperAdminSettingsPage'
 import POSPage             from '@/pages/pos/POSPage'
 import SettingsPage        from '@/pages/settings/SettingsPage'
+import DevicePrinterPage   from '@/pages/settings/DevicePrinterPage'
 import InvoicesPage        from '@/pages/invoices/InvoicesPage'
 import InvoiceDetailPage   from '@/pages/invoices/InvoiceDetailPage'
 import EmployeesPage        from '@/pages/employees/EmployeesPage'
@@ -286,6 +287,7 @@ export default function App() {
             <Route path="/reports"   element={<ReportsPage />} />
             <Route path="/operations" element={<OperationsPage />} />
             <Route path="/suppliers" element={<SuppliersPage />} />
+            <Route path="/device-printer" element={<DevicePrinterPage />} />
             <Route path="/settings"  element={<SettingsPage />} />
           </Route>
         </Route>

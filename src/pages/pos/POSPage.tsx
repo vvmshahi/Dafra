@@ -23,7 +23,7 @@ import { usePosSession } from '@/hooks/usePosSession'
 import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
 import { MeemLogo } from '@/components/MeemLogo'
-import { printSilent } from '@/lib/electron'
+import { getPrinterSettings, isElectron, printReceipt, printSilent } from '@/lib/electron'
 import { supportConfig } from '@/config/support'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -147,6 +147,8 @@ interface PosCheckoutResult {
   idempotent_replay?: boolean
 }
 
+const DEVICE_PRINTER_PATH = '/device-printer'
+
 // ── VAT helpers ───────────────────────────────────────────────────────────────
 
 function resolveMode(
@@ -176,6 +178,24 @@ function computeTotals(cart: CartItem[], vatMode: 'exclusive' | 'inclusive') {
     }
   }
   return { subtotal, taxAmount, total: subtotal + taxAmount }
+}
+
+function receiptPreviewUrl(invoiceId: string, autoPrint = true) {
+  return `/print/receipt/${invoiceId}${autoPrint ? '?auto=1' : ''}`
+}
+
+function openReceiptPreview(invoiceId: string, autoPrint = true) {
+  const url = receiptPreviewUrl(invoiceId, autoPrint)
+  const opened = window.open(url, '_blank', 'noopener,noreferrer')
+  if (!opened) window.location.assign(url)
+}
+
+function printFailureMessage(errorType?: string | null, message?: string | null) {
+  if (message) return message
+  if (errorType === 'NO_PRINTER_CONFIGURED') return 'Choose a receipt printer to enable direct printing.'
+  if (errorType === 'PRINTER_NOT_FOUND') return 'Selected printer was not found on this device.'
+  if (errorType) return errorType
+  return 'Receipt print failed.'
 }
 
 function fmt(n: number) {
@@ -340,13 +360,16 @@ function QuickExpenseModal({
 
 // ── Receipt overlay ───────────────────────────────────────────────────────────
 
-function ReceiptView({ receipt, onNewSale, printMode, zatcaStatus }: {
+function ReceiptView({ receipt, onNewSale, onOpenPrinterSettings, printMode, zatcaStatus }: {
   receipt: ReceiptData
   onNewSale: () => void
+  onOpenPrinterSettings: () => void
   printMode: 'thermal' | 'pdf' | 'both'
   zatcaStatus: 'submitted' | 'pending' | 'failed' | null
 }) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [printingReceipt, setPrintingReceipt] = useState(false)
+  const [printError, setPrintError] = useState<string | null>(null)
 
   useEffect(() => {
     async function genQR() {
@@ -428,10 +451,43 @@ ${lines}
     s.remove()
   }
 
-  function openReceiptPrintPage() {
-    const url = `/print/receipt/${receipt.invoiceId}?auto=1`
-    const opened = window.open(url, '_blank', 'noopener,noreferrer')
-    if (!opened) window.location.assign(url)
+  async function openReceiptPrintPage() {
+    setPrintError(null)
+
+    if (!isElectron()) {
+      openReceiptPreview(receipt.invoiceId)
+      return
+    }
+
+    setPrintingReceipt(true)
+    try {
+      const settings = await getPrinterSettings()
+      if (!settings.selectedPrinterName) {
+        const message = 'Choose a receipt printer to enable direct printing.'
+        setPrintError(message)
+        toast.info(message, {
+          action: { label: 'Device Printer', onClick: onOpenPrinterSettings },
+        })
+        return
+      }
+
+      const result = await printReceipt({ invoiceId: receipt.invoiceId })
+      if (result.success) {
+        toast.success('Receipt sent to printer', { duration: 1800 })
+        return
+      }
+
+      const message = printFailureMessage(result.errorType, result.message)
+      setPrintError(message)
+      toast.error(message)
+      if (settings.fallbackToPreview) openReceiptPreview(receipt.invoiceId, false)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Receipt print failed.'
+      setPrintError(message)
+      toast.error(message)
+    } finally {
+      setPrintingReceipt(false)
+    }
   }
 
   return (
@@ -641,16 +697,46 @@ ${lines}
             </div>
           )}
 
+          {printError && (
+            <div className="mx-6 mb-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5">
+              <p className="text-xs font-semibold text-red-700">{printError}</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void openReceiptPrintPage()}
+                  className="rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-semibold text-red-700 shadow-sm hover:bg-red-100"
+                >
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenPrinterSettings}
+                  className="rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  Choose Printer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openReceiptPreview(receipt.invoiceId, false)}
+                  className="rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  Open Print Preview
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="px-6 pb-6 space-y-2">
             <div className="flex gap-2">
               {printMode !== 'pdf' && (
                 <button
-                  onClick={openReceiptPrintPage}
+                  onClick={() => void openReceiptPrintPage()}
+                  disabled={printingReceipt}
                   className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
                 >
-                  <Printer size={14} />
-                  Print Receipt
+                  {printingReceipt ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
+                  {printingReceipt ? 'Printing...' : 'Print Receipt'}
                 </button>
               )}
               {printMode === 'pdf' || printMode === 'both' ? (
@@ -1570,6 +1656,34 @@ export default function POSPage() {
     )
   }
 
+  async function maybeAutoPrintReceiptAfterSale(invoiceId: string) {
+    if (!isElectron()) return
+
+    try {
+      const settings = await getPrinterSettings()
+      if (!settings.autoPrintAfterSale) return
+
+      if (!settings.selectedPrinterName) {
+        toast.info('Choose a receipt printer to enable direct printing.', {
+          action: { label: 'Device Printer', onClick: () => navigate(DEVICE_PRINTER_PATH) },
+        })
+        return
+      }
+
+      const result = await printReceipt({ invoiceId })
+      if (result.success) {
+        toast.success('Receipt sent to printer', { duration: 1800 })
+        return
+      }
+
+      const message = printFailureMessage(result.errorType, result.message)
+      toast.error(message)
+      if (settings.fallbackToPreview) openReceiptPreview(invoiceId, false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Receipt print failed.')
+    }
+  }
+
   // ── Charge ───────────────────────────────────────────────────────────────
 
   async function charge() {
@@ -1697,6 +1811,7 @@ export default function POSPage() {
         payments:        receiptPayments,
         displayPaymentMethod,
       })
+      void maybeAutoPrintReceiptAfterSale(checkout.invoice_id)
       setCart([])
       setCustomerId(null)
       setNote('')
@@ -1849,6 +1964,7 @@ export default function POSPage() {
         <ReceiptView
           receipt={receipt}
           onNewSale={() => { setReceipt(null); setZatcaResult(null) }}
+          onOpenPrinterSettings={() => navigate(DEVICE_PRINTER_PATH)}
           printMode={branch?.print_mode ?? 'thermal'}
           zatcaStatus={zatcaResult}
         />
@@ -1914,6 +2030,17 @@ export default function POSPage() {
             <span className="text-[10px] bg-white/10 border border-white/10 text-white/50 px-2 py-1 rounded-lg">
               {vatMode === 'inclusive' ? 'VAT Incl.' : 'VAT Excl.'}
             </span>
+            {isElectron() && (
+              <button
+                type="button"
+                onClick={() => navigate(DEVICE_PRINTER_PATH)}
+                title="Device Printer"
+                className="text-xs bg-white/10 border border-white/10 text-white/70 px-3 py-1.5 rounded-lg hover:bg-white/15 hover:text-white transition-colors flex items-center gap-1.5"
+              >
+                <Printer size={12} />
+                Printer
+              </button>
+            )}
             <button
               onClick={() => setShowExpense(true)}
               className="text-xs bg-amber-500/20 border border-amber-400/20 text-amber-300 px-3 py-1.5 rounded-lg hover:bg-amber-500/30 transition-colors flex items-center gap-1.5"

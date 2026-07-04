@@ -51,13 +51,13 @@ function customerDisplayName(customer: Customer | null): string | null {
   return customer.name
 }
 
-function useReceiptPrintStyle() {
+function useReceiptPrintStyle(paperWidth: 58 | 80) {
   useEffect(() => {
     const style = document.createElement('style')
     style.id = 'receipt-route-print-style'
     style.textContent = `
       @media print {
-        @page { size: 80mm auto; margin: 0 3mm; }
+        @page { size: ${paperWidth}mm auto; margin: 0 3mm; }
         html, body {
           margin: 0 !important;
           background: white !important;
@@ -76,7 +76,7 @@ function useReceiptPrintStyle() {
           visibility: visible !important;
           position: static !important;
           width: 100% !important;
-          max-width: 300px !important;
+          max-width: ${paperWidth === 58 ? '220px' : '300px'} !important;
           margin: 0 auto !important;
           color: #000 !important;
           background: #fff !important;
@@ -89,7 +89,7 @@ function useReceiptPrintStyle() {
     `
     document.head.appendChild(style)
     return () => { document.getElementById('receipt-route-print-style')?.remove() }
-  }, [])
+  }, [paperWidth])
 }
 
 export default function ReceiptPrintPage() {
@@ -97,7 +97,11 @@ export default function ReceiptPrintPage() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const autoPrint = params.get('auto') === '1'
+  const electronPrint = params.get('electronPrint') === '1'
+  const printJobId = params.get('printJobId')
+  const paperWidth: 58 | 80 = params.get('paperWidth') === '58' ? 58 : 80
   const printedRef = useRef(false)
+  const electronReadyRef = useRef(false)
 
   const [invoice, setInvoice] = useState<Invoice | null>(null)
   const [items, setItems] = useState<InvoiceItem[]>([])
@@ -109,7 +113,7 @@ export default function ReceiptPrintPage() {
   const [error, setError] = useState<string | null>(null)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
 
-  useReceiptPrintStyle()
+  useReceiptPrintStyle(paperWidth)
 
   useEffect(() => {
     if (!invoiceId) return
@@ -195,13 +199,13 @@ export default function ReceiptPrintPage() {
   }, [invoice, branch, tenant])
 
   useEffect(() => {
-    if (!autoPrint || printedRef.current || loading || error || !invoice || !branch || !qrDataUrl) return
+    if (!autoPrint || electronPrint || printedRef.current || loading || error || !invoice || !branch || !qrDataUrl) return
     printedRef.current = true
     const timer = window.setTimeout(() => {
       void printSilent()
     }, 350)
     return () => window.clearTimeout(timer)
-  }, [autoPrint, loading, error, invoice, branch, qrDataUrl])
+  }, [autoPrint, electronPrint, loading, error, invoice, branch, qrDataUrl])
 
   const receipt = useMemo(() => {
     if (!invoice || !branch || !tenant) return null
@@ -253,6 +257,25 @@ export default function ReceiptPrintPage() {
       documentType: isCreditNote ? 'credit_note' as const : 'invoice' as const,
     }
   }, [invoice, branch, tenant, items, payments, customer])
+
+  useEffect(() => {
+    if (!electronPrint || electronReadyRef.current || loading || error || !invoice || !branch || !tenant || !receipt || !qrDataUrl) return
+    electronReadyRef.current = true
+    window.electronAPI?.receiptReady?.({
+      invoiceId: invoice.id,
+      jobId: printJobId,
+    })
+  }, [electronPrint, loading, error, invoice, branch, tenant, receipt, qrDataUrl, printJobId])
+
+  useEffect(() => {
+    if (!electronPrint || electronReadyRef.current || !error || !invoiceId) return
+    electronReadyRef.current = true
+    window.electronAPI?.receiptFailed?.({
+      invoiceId,
+      jobId: printJobId,
+      error,
+    })
+  }, [electronPrint, error, invoiceId, printJobId])
 
   if (loading) {
     return (

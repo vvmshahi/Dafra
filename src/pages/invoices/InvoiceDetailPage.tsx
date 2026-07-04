@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, Printer, RefreshCw, Loader2, AlertCircle, CheckCircle2, Bug, FileText } from 'lucide-react'
 import QRCode from 'qrcode'
@@ -203,6 +203,7 @@ export default function InvoiceDetailPage() {
   const location   = useLocation()
   const debugMode  = new URLSearchParams(location.search).get('debug') === 'true'
   const autoPrint  = new URLSearchParams(location.search).get('print') === '1'
+  const autoPrintRef = useRef(false)
   usePrintStyle()
 
   const [invoice,  setInvoice]  = useState<Invoice | null>(null)
@@ -373,10 +374,11 @@ export default function InvoiceDetailPage() {
 
   // Auto-print when ?print=1 is in the URL
   useEffect(() => {
-    if (!autoPrint || loading || !invoice || !branch) return
+    if (!autoPrint || autoPrintRef.current || loading || !invoice || !branch || !qrDataUrl) return
+    autoPrintRef.current = true
     const t = setTimeout(() => printSilent(), 500)
     return () => clearTimeout(t)
-  }, [autoPrint, loading, invoice, branch])
+  }, [autoPrint, loading, invoice, branch, qrDataUrl])
 
   // ── Actions ────────────────────────────────────────────────────────────────
 

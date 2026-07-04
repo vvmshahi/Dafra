@@ -3,9 +3,10 @@ import {
   LayoutDashboard, Receipt, Package, Warehouse, Users,
   CreditCard, BarChart2, Truck, Settings, Settings2, Building2,
   LogOut, ChevronRight, ChevronLeft, FileText, UserSquare2,
-  Store, ShieldCheck,
+  Store, ShieldCheck, Printer,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { isElectron } from '@/lib/electron'
 import type { LucideIcon } from 'lucide-react'
 
 interface NavItem {
@@ -34,6 +35,12 @@ const branchNav: NavItem[] = [
   { label: 'Suppliers',   path: '/suppliers',    icon: Truck          },
   { label: 'Reports',     path: '/reports',      icon: BarChart2      },
 ]
+
+const branchDevicePrinterNavItem: NavItem = {
+  label: 'Device Printer',
+  path: '/device-printer',
+  icon: Printer,
+}
 
 const superAdminNav: NavItem[] = [
   { label: 'Overview',      path: '/super-admin',               icon: LayoutDashboard },
@@ -93,7 +100,14 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const navItems = isSuperAdmin
     ? [...superAdminNav, operationsNavItem]
     : isBranch
-      ? branchNav
+      ? isElectron()
+        ? [
+            branchNav[0],
+            branchNav[1],
+            branchDevicePrinterNavItem,
+            ...branchNav.slice(2),
+          ]
+        : branchNav
       : canViewOperations
         ? [...ownerNav, operationsNavItem]
         : ownerNav

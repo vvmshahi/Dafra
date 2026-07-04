@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Building2, ShieldCheck, CreditCard, UserCircle, Printer } from 'lucide-react'
 import BranchesTab     from './BranchesTab'
 import ZatcaTab        from './ZatcaTab'
@@ -30,7 +31,16 @@ const TABS = isElectron() ? [...BASE_TABS, ...ELECTRON_TABS] : BASE_TABS
 
 export default function SettingsPage() {
   const { profile, tenant } = useAuth()
-  const [active, setActive] = useState<TabId>('branches')
+  const [params] = useSearchParams()
+  const requestedTab = params.get('tab') as TabId | null
+  const initialTab = requestedTab && TABS.some(tab => tab.id === requestedTab) ? requestedTab : 'branches'
+  const [active, setActive] = useState<TabId>(initialTab)
+
+  useEffect(() => {
+    if (requestedTab && TABS.some(tab => tab.id === requestedTab)) {
+      setActive(requestedTab)
+    }
+  }, [requestedTab])
 
   const current = TABS.find(t => t.id === active)!
   const role = String(profile?.role ?? '')

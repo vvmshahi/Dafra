@@ -19,4 +19,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   clearPrinter: () =>
     ipcRenderer.invoke('clear-printer'),
+
+  getPrinterSettings: () =>
+    ipcRenderer.invoke('get-printer-settings'),
+
+  savePrinterSettings: (settings) =>
+    ipcRenderer.invoke('save-printer-settings', settings),
+
+  clearPrinterSettings: () =>
+    ipcRenderer.invoke('clear-printer-settings'),
+
+  testPrint: (settings) =>
+    ipcRenderer.invoke('test-print', settings),
+
+  printReceipt: (request) =>
+    ipcRenderer.invoke('print-receipt', request),
+
+  receiptReady: (payload) =>
+    ipcRenderer.send('receipt-print-ready', payload),
+
+  receiptFailed: (payload) =>
+    ipcRenderer.send('receipt-print-failed', payload),
 })
