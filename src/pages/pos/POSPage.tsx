@@ -367,6 +367,7 @@ function ReceiptView({ receipt, onNewSale, onOpenPrinterSettings, printMode, zat
   printMode: 'thermal' | 'pdf' | 'both'
   zatcaStatus: 'submitted' | 'pending' | 'failed' | null
 }) {
+  const navigate = useNavigate()
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [printingReceipt, setPrintingReceipt] = useState(false)
   const [printError, setPrintError] = useState<string | null>(null)
@@ -455,7 +456,7 @@ ${lines}
     setPrintError(null)
 
     if (!isElectron()) {
-      openReceiptPreview(receipt.invoiceId)
+      navigate(receiptPreviewUrl(receipt.invoiceId, true))
       return
     }
 
