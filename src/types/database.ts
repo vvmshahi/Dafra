@@ -45,6 +45,11 @@ export interface Database {
         Insert: Omit<UserProfile, 'created_at' | 'updated_at'>
         Update: UserProfileUpdate
       }
+      branch_login_usernames: {
+        Row: BranchLoginUsername
+        Insert: BranchLoginUsernameInsert
+        Update: BranchLoginUsernameUpdate
+      }
       zatca_certificates: {
         Row: ZatcaCertificate
         Insert: Omit<ZatcaCertificate, 'id' | 'created_at' | 'updated_at'>
@@ -152,6 +157,10 @@ export interface Database {
       get_my_branch_id: { Args: Record<never, never>; Returns: string }
       get_my_role: { Args: Record<never, never>; Returns: UserRole }
       is_super_admin: { Args: Record<never, never>; Returns: boolean }
+      normalize_branch_login_username: { Args: { p_username: string }; Returns: string }
+      is_reserved_branch_login_username: { Args: { p_username: string }; Returns: boolean }
+      is_valid_branch_login_username: { Args: { p_username: string }; Returns: boolean }
+      can_manage_branch_login_username: { Args: { p_tenant_id: string }; Returns: boolean }
       complete_onboarding: {
         Args: {
           p_company_name:     string
@@ -372,6 +381,7 @@ export interface UserProfile {
   tenant_id: string | null
   branch_id: string | null
   role: UserRole
+  email: string | null
   full_name: string | null
   full_name_ar: string | null
   phone: string | null
@@ -379,6 +389,21 @@ export interface UserProfile {
   is_active: boolean
   created_at: string
   updated_at: string
+}
+
+export interface BranchLoginUsername {
+  id: string
+  tenant_id: string
+  branch_id: string
+  user_id: string
+  username: string
+  normalized_username: string
+  internal_auth_email: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  created_by: string | null
+  updated_by: string | null
 }
 
 export interface ZatcaCertificate {
@@ -699,6 +724,20 @@ export interface BranchInsert {
 export type BranchUpdate = Partial<BranchInsert>
 
 export type UserProfileUpdate = Partial<Omit<UserProfile, 'id' | 'created_at' | 'updated_at'>>
+
+export interface BranchLoginUsernameInsert {
+  tenant_id: string
+  branch_id: string
+  user_id: string
+  username: string
+  normalized_username: string
+  internal_auth_email: string
+  is_active?: boolean
+  created_by?: string | null
+  updated_by?: string | null
+}
+
+export type BranchLoginUsernameUpdate = Partial<Omit<BranchLoginUsername, 'id' | 'created_at' | 'updated_at'>>
 
 export interface CategoryInsert {
   tenant_id: string

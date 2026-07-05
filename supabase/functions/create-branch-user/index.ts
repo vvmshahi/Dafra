@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
+import { internalBranchAuthEmail, validateBranchUsername } from '../_shared/branch-username.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -70,17 +71,21 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Step 4: Parse and validate request body ───────────────────────────
-    const { email, password, full_name, tenant_id, branch_id } = await req.json()
+    const { email, username, password, full_name, tenant_id, branch_id } = await req.json()
+    const requestedEmail = typeof email === 'string' ? email.trim() : ''
+    const requestedUsername = typeof username === 'string' ? username.trim() : ''
+    const usesUsername = requestedUsername.length > 0
 
     console.log('[create-branch-user] Request parsed:', {
-      hasEmail: !!email,
+      hasEmail: requestedEmail.length > 0,
+      hasUsername: usesUsername,
       tenant_id,
       branch_id,
     })
 
-    if (!email || !password || !tenant_id || !branch_id) {
+    if ((!requestedEmail && !usesUsername) || !password || !tenant_id || !branch_id) {
       return new Response(
-        JSON.stringify({ error: 'Missing required fields: email, password, tenant_id, branch_id' }),
+        JSON.stringify({ error: 'Missing required fields: email or username, password, tenant_id, branch_id' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
@@ -92,7 +97,7 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    if (password.length < 8) {
+    if (typeof password !== 'string' || password.length < 8) {
       return new Response(JSON.stringify({ error: 'Password must be at least 8 characters' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -108,6 +113,30 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Branch not found' }), {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    let normalizedEmail = requestedEmail.toLowerCase()
+    let usernameMapping: {
+      username: string
+      normalizedUsername: string
+      internalAuthEmail: string
+    } | null = null
+
+    if (usesUsername) {
+      const usernameValidation = validateBranchUsername(requestedUsername)
+      if (!usernameValidation.ok) {
+        return new Response(JSON.stringify({ error: usernameValidation.message }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const internalAuthEmail = internalBranchAuthEmail(usernameValidation.normalizedUsername, branch_id)
+      normalizedEmail = internalAuthEmail
+      usernameMapping = {
+        username: usernameValidation.normalizedUsername,
+        normalizedUsername: usernameValidation.normalizedUsername,
+        internalAuthEmail,
+      }
     }
 
     const ipHash = await hashRequestIp(req)
@@ -151,9 +180,47 @@ Deno.serve(async (req: Request) => {
       })
     }
 
+    if (usernameMapping) {
+      const { data: existingUsername, error: existingUsernameErr } = await adminClient
+        .from('branch_login_usernames')
+        .select('id')
+        .eq('normalized_username', usernameMapping.normalizedUsername)
+        .maybeSingle()
+
+      if (existingUsernameErr) {
+        console.error('[create-branch-user] username lookup failed:', existingUsernameErr.message)
+        await auditEvent(adminClient as any, {
+          ...auditBase,
+          action: 'branch_user_create_failed',
+          severity: 'warning',
+          status: 'failed',
+          metadata: { stage: 'username_lookup' },
+        })
+        return new Response(JSON.stringify({ error: 'Could not validate username availability' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (existingUsername) {
+        await auditEvent(adminClient as any, {
+          ...auditBase,
+          action: 'branch_user_create_failed',
+          severity: 'warning',
+          status: 'failed',
+          metadata: { stage: 'username_lookup', reason: 'username_taken' },
+        })
+        return new Response(JSON.stringify({ error: 'Username is already taken' }), {
+          status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+    }
+
     // ── Step 5: Create the auth user via admin API ────────────────────────
-    const normalizedEmail = email.trim().toLowerCase()
-    console.log('[create-branch-user] Creating auth user:', { hasEmail: true, branch_id })
+    console.log('[create-branch-user] Creating auth user:', {
+      hasEmail: !usernameMapping,
+      hasUsername: !!usernameMapping,
+      branch_id,
+    })
 
     const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
       email: normalizedEmail,
@@ -164,6 +231,7 @@ Deno.serve(async (req: Request) => {
         role:      'branch',
         tenant_id,
         branch_id,
+        login_method: usernameMapping ? 'branch_username' : 'branch_email',
       },
     })
 
@@ -183,6 +251,7 @@ Deno.serve(async (req: Request) => {
 
     const newUserId = created.user.id
     console.log('[create-branch-user] Auth user created:', newUserId)
+    const nowIso = new Date().toISOString()
 
     // ── Step 6: Set the user_profiles row ────────────────────────────────
     const { data: updatedRows, error: updateErr } = await adminClient
@@ -192,7 +261,8 @@ Deno.serve(async (req: Request) => {
         tenant_id,
         branch_id,
         full_name:  full_name?.trim() ?? '',
-        updated_at: new Date().toISOString(),
+        email:      normalizedEmail,
+        updated_at: nowIso,
       })
       .eq('id', newUserId)
       .select('id')
@@ -210,11 +280,14 @@ Deno.serve(async (req: Request) => {
           branch_id,
           full_name:  full_name?.trim() ?? '',
           email:      normalizedEmail,
-          updated_at: new Date().toISOString(),
+          updated_at: nowIso,
         }, { onConflict: 'id' })
 
       if (upsertErr) {
         console.error('[create-branch-user] Profile upsert failed:', upsertErr.message)
+        if (usernameMapping) {
+          await adminClient.auth.admin.deleteUser(newUserId)
+        }
         await auditEvent(adminClient as any, {
           ...auditBase,
           action: 'branch_user_create_failed',
@@ -224,6 +297,12 @@ Deno.serve(async (req: Request) => {
           targetId: newUserId,
           metadata: { stage: 'profile_upsert' },
         })
+        if (usernameMapping) {
+          return new Response(
+            JSON.stringify({ error: 'Profile setup failed: ' + upsertErr.message }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
         return new Response(
           JSON.stringify({ user_id: newUserId, warning: 'Profile setup failed: ' + upsertErr.message }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -232,17 +311,64 @@ Deno.serve(async (req: Request) => {
       console.log('[create-branch-user] Profile upserted successfully')
     }
 
+    if (usernameMapping) {
+      const { error: usernameInsertErr } = await adminClient
+        .from('branch_login_usernames')
+        .insert({
+          tenant_id,
+          branch_id,
+          user_id: newUserId,
+          username: usernameMapping.username,
+          normalized_username: usernameMapping.normalizedUsername,
+          internal_auth_email: usernameMapping.internalAuthEmail,
+          created_by: callerId,
+          updated_by: callerId,
+        })
+
+      if (usernameInsertErr) {
+        console.error('[create-branch-user] Username mapping insert failed:', usernameInsertErr.message)
+        await adminClient.auth.admin.deleteUser(newUserId)
+        await auditEvent(adminClient as any, {
+          ...auditBase,
+          action: 'branch_user_create_failed',
+          severity: 'warning',
+          status: 'failed',
+          targetType: 'user_profile',
+          targetId: newUserId,
+          metadata: {
+            stage: 'username_mapping_insert',
+            reason: usernameInsertErr.code === '23505' ? 'username_taken' : 'insert_failed',
+          },
+        })
+
+        return new Response(
+          JSON.stringify({
+            error: usernameInsertErr.code === '23505'
+              ? 'Username is already taken'
+              : 'Username setup failed: ' + usernameInsertErr.message,
+          }),
+          {
+            status: usernameInsertErr.code === '23505' ? 409 : 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        )
+      }
+    }
+
     await auditEvent(adminClient as any, {
       ...auditBase,
       action: 'branch_user_created',
       status: 'succeeded',
       targetType: 'user_profile',
       targetId: newUserId,
-      metadata: { branchId: branch_id },
+      metadata: { branchId: branch_id, loginMode: usernameMapping ? 'username' : 'email' },
     })
 
     console.log('[create-branch-user] Success — user_id:', newUserId)
-    return new Response(JSON.stringify({ user_id: newUserId }), {
+    return new Response(JSON.stringify({
+      user_id: newUserId,
+      ...(usernameMapping ? { username: usernameMapping.normalizedUsername } : {}),
+    }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
 
