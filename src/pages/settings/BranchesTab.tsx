@@ -12,8 +12,15 @@ import { useSubscription } from '@/hooks/useSubscription'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
-import type { Branch } from '@/types'
+import type { Branch, BranchLoginUsername } from '@/types'
 import { supportConfig } from '@/config/support'
+import {
+  BRANCH_USERNAME_HELPER_TEXT,
+  branchUsernameCreateErrorMessage,
+  isInternalBranchAuthEmail,
+  normalizeBranchUsernameInput,
+  validateBranchUsernameInput,
+} from '@/lib/utils/branchUsername'
 
 /* ── Types ──────────────────────────────────────────────────── */
 
@@ -49,9 +56,13 @@ type BranchForm = {
   is_active: boolean
   is_main_branch: boolean
   // branch login (new branches only)
-  login_email: string
+  login_username: string
   login_password: string
   login_confirm_password: string
+}
+
+type BranchWithLogin = Branch & {
+  branch_username?: string | null
 }
 
 const EMPTY_FORM: BranchForm = {
@@ -71,7 +82,7 @@ const EMPTY_FORM: BranchForm = {
   zatca_phase: 1,
   is_active: true,
   is_main_branch: false,
-  login_email: '',
+  login_username: '',
   login_password: '',
   login_confirm_password: '',
 }
@@ -80,6 +91,26 @@ const EMPTY_FORM: BranchForm = {
 
 function sectionClass(open: boolean) {
   return `border border-gray-100 rounded-2xl overflow-hidden mb-3 transition-shadow ${open ? 'shadow-sm' : ''}`
+}
+
+function branchUsername(branch: BranchWithLogin): string | null {
+  return branch.branch_username?.trim() || null
+}
+
+function branchLegacyEmail(branch: BranchWithLogin): string | null {
+  const email = branch.branch_email?.trim() || null
+  if (!email || isInternalBranchAuthEmail(email)) return null
+  return email
+}
+
+function branchLoginCredential(branch: BranchWithLogin): { label: string; value: string; kind: 'username' | 'email' } | null {
+  const username = branchUsername(branch)
+  if (username) return { label: 'Branch username', value: username, kind: 'username' }
+
+  const legacyEmail = branchLegacyEmail(branch)
+  if (legacyEmail) return { label: 'Legacy branch email', value: legacyEmail, kind: 'email' }
+
+  return null
 }
 
 function SectionHeader({
@@ -187,7 +218,7 @@ function branchPosSettingsErrorDebug(error: unknown) {
 function BranchDrawer({
   branch, tenantId, isPhase2, onClose, onSaved, onRefresh, onResetPassword,
 }: {
-  branch: Branch | null
+  branch: BranchWithLogin | null
   tenantId: string
   isPhase2: boolean
   onClose: () => void
@@ -224,7 +255,7 @@ function BranchDrawer({
           zatca_phase:      branch.zatca_phase ?? 1,
           is_active:        branch.is_active,
           is_main_branch:   branch.is_main_branch,
-          login_email:      '',
+          login_username:   '',
           login_password:   '',
           login_confirm_password: '',
         }
@@ -241,7 +272,6 @@ function BranchDrawer({
   const CR_RE     = /^[a-zA-Z0-9]+$/
   const BLDG_RE   = /^\d{4}$/
   const POSTAL_RE = /^\d{5}$/
-  const EMAIL_RE  = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
   // Pre-touch all fields when editing so errors show immediately
   const [touched, setTouched] = useState<Set<string>>(
@@ -260,8 +290,7 @@ function BranchDrawer({
     city:            !form.city.trim() ? 'Required' : null,
     district:        !form.district.trim() ? 'Required' : null,
     ...(isNew ? {
-      login_email:            !form.login_email.trim() ? 'Branch email is required'
-                              : !EMAIL_RE.test(form.login_email.trim()) ? 'Enter a valid email address' : null,
+      login_username:         validateBranchUsernameInput(form.login_username),
       login_password:         !form.login_password ? 'Password is required'
                               : form.login_password.length < 8 ? 'Must be at least 8 characters' : null,
       login_confirm_password: !form.login_confirm_password ? 'Please confirm the password'
@@ -355,10 +384,6 @@ function BranchDrawer({
         const insertPayload = {
           tenant_id: tenantId,
           ...branchPayload,
-          // Store the login email on the branch record so the owner can see it.
-          ...(form.login_email.trim()
-            ? { branch_email: form.login_email.trim().toLowerCase() }
-            : {}),
         }
 
         const { data, error } = await q.from('branches').insert(insertPayload).select('id').single()
@@ -373,7 +398,7 @@ function BranchDrawer({
         // Create the branch login user via edge function (no email confirmation)
         const { data: fnData, error: fnErr } = await supabase.functions.invoke('create-branch-user', {
           body: {
-            email:     form.login_email.trim().toLowerCase(),
+            username:  normalizeBranchUsernameInput(form.login_username),
             password:  form.login_password,
             full_name: form.name.trim(),
             tenant_id: tenantId,
@@ -382,7 +407,7 @@ function BranchDrawer({
         })
         const fnErrMsg = fnErr?.message ?? (fnData as any)?.error ?? null
         if (fnErrMsg) {
-          setError(`Branch created! But login setup failed: ${fnErrMsg}. Click Cancel to close.`)
+          setError(`Branch created, but login setup failed: ${branchUsernameCreateErrorMessage(fnErrMsg)} Click Cancel to close.`)
           return  // Keep drawer open so owner sees the error; list already refreshed above
         }
       } else {
@@ -729,16 +754,20 @@ function BranchDrawer({
               <SectionHeader icon={KeyRound} title="Branch Login" open={true} toggle={() => {}}
                 color="text-indigo-600" bg="bg-indigo-50" />
               <div className="px-5 py-4 space-y-3">
-                {branch?.branch_email ? (
+                {branch && branchLoginCredential(branch) ? (
                   <>
                     <div>
-                      <label className="label">Branch Email</label>
+                      <label className="label">{branchLoginCredential(branch)!.label}</label>
                       <input
                         readOnly
-                        value={branch.branch_email}
+                        value={branchLoginCredential(branch)!.value}
                         className="input w-full bg-gray-50 text-gray-600 cursor-default mt-1.5"
                       />
-                      <p className="text-[11px] text-gray-400 mt-1">Login email for POS and branch dashboard access</p>
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        {branchLoginCredential(branch)!.kind === 'username'
+                          ? 'Username for POS and branch dashboard access'
+                          : 'Legacy email login for POS and branch dashboard access'}
+                      </p>
                     </div>
                     <button
                       type="button"
@@ -751,7 +780,7 @@ function BranchDrawer({
                 ) : (
                   <div className="flex items-start gap-2 text-xs text-gray-400">
                     <LogIn size={14} className="flex-shrink-0 mt-0.5" />
-                    <p>No login configured for this branch. Add a new branch with login credentials to enable POS access.</p>
+                    <p>Username not set for this branch.</p>
                   </div>
                 )}
               </div>
@@ -765,12 +794,21 @@ function BranchDrawer({
                 color="text-indigo-600" bg="bg-indigo-50" />
               <div className="px-5 py-4 space-y-3">
                 <p className="text-xs text-gray-400">
-                  Set login credentials for this branch's POS terminal. No email is sent — share these directly with your staff.
+                  Set username credentials for this branch's POS terminal. No email is sent - share these directly with your staff.
                 </p>
-                <div onBlur={() => touch('login_email')}>
-                  <Input label="Branch Email" icon={Mail} type="email" value={form.login_email}
-                    onChange={e => set('login_email')(e.target.value)} placeholder="branch@company.com" required />
-                  {fieldErr('login_email') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('login_email')}</p>}
+                <div onBlur={() => touch('login_username')}>
+                  <Input
+                    label="Branch username"
+                    icon={LogIn}
+                    type="text"
+                    value={form.login_username}
+                    onChange={e => set('login_username')(normalizeBranchUsernameInput(e.target.value))}
+                    placeholder="main_counter"
+                    helperText={BRANCH_USERNAME_HELPER_TEXT}
+                    required
+                    autoComplete="username"
+                  />
+                  {fieldErr('login_username') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('login_username')}</p>}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div onBlur={() => touch('login_password')}>
@@ -810,7 +848,7 @@ function BranchDrawer({
 
 /* ── Reset password modal ────────────────────────────────────── */
 
-function ResetPasswordModal({ branch, onClose }: { branch: Branch; onClose: () => void }) {
+function ResetPasswordModal({ branch, onClose }: { branch: BranchWithLogin; onClose: () => void }) {
   const [newPwd,     setNewPwd]     = useState('')
   const [confirmPwd, setConfirmPwd] = useState('')
   const [saving,     setSaving]     = useState(false)
@@ -858,10 +896,10 @@ function ResetPasswordModal({ branch, onClose }: { branch: Branch; onClose: () =
           </div>
         ) : (
           <div className="space-y-3">
-            {branch.branch_email && (
+            {branchLoginCredential(branch) && (
               <div className="bg-gray-50 rounded-xl px-3 py-2.5">
-                <p className="text-[11px] text-gray-400 font-medium">Branch Email</p>
-                <p className="text-sm text-gray-700 mt-0.5">{branch.branch_email}</p>
+                <p className="text-[11px] text-gray-400 font-medium">{branchLoginCredential(branch)!.label}</p>
+                <p className="text-sm text-gray-700 mt-0.5">{branchLoginCredential(branch)!.value}</p>
               </div>
             )}
             <Input label="New Password" type="password" value={newPwd}
@@ -993,8 +1031,10 @@ function DeleteConfirmModal({
 function BranchCard({
   branch, onEdit, onDelete, onResetPassword,
 }: {
-  branch: Branch; onEdit: () => void; onDelete: () => void; onResetPassword: () => void
+  branch: BranchWithLogin; onEdit: () => void; onDelete: () => void; onResetPassword: () => void
 }) {
+  const loginCredential = branchLoginCredential(branch)
+
   return (
     <div className={`card p-5 flex items-start gap-4 ${!branch.is_active ? 'opacity-60' : ''}`}>
       {/* Logo / initials */}
@@ -1028,9 +1068,11 @@ function BranchCard({
             <ShieldCheck size={10} />
             Phase {branch.zatca_phase ?? 1}
           </span>
-          {branch.branch_email ? (
+          {loginCredential ? (
             <span className="flex items-center gap-1.5">
-              <span className="flex items-center gap-1 text-indigo-500"><LogIn size={10} /> {branch.branch_email}</span>
+              <span className="flex items-center gap-1 text-indigo-500">
+                <LogIn size={10} /> {loginCredential.value}
+              </span>
               <button
                 type="button"
                 onClick={e => { e.stopPropagation(); onResetPassword() }}
@@ -1040,7 +1082,7 @@ function BranchCard({
               </button>
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-gray-300 italic"><LogIn size={10} /> No login configured</span>
+            <span className="flex items-center gap-1 text-gray-300 italic"><LogIn size={10} /> Username not set</span>
           )}
         </div>
       </div>
@@ -1066,12 +1108,12 @@ const WA_LINK = supportConfig.whatsappLink
 export default function BranchesTab() {
   const { profile } = useAuth()
   const sub = useSubscription()
-  const [branches, setBranches]     = useState<Branch[]>([])
+  const [branches, setBranches]     = useState<BranchWithLogin[]>([])
   const [loading, setLoading]       = useState(true)
   const [loadError, setLoadError]   = useState('')
-  const [drawerBranch, setDrawer]     = useState<Branch | 'new' | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<Branch | null>(null)
-  const [resetTarget, setResetTarget]  = useState<Branch | null>(null)
+  const [drawerBranch, setDrawer]     = useState<BranchWithLogin | 'new' | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<BranchWithLogin | null>(null)
+  const [resetTarget, setResetTarget]  = useState<BranchWithLogin | null>(null)
 
   const load = async () => {
     if (!profile?.tenant_id) return
@@ -1089,9 +1131,29 @@ export default function BranchesTab() {
       return
     }
     const loaded = (data as Branch[]) ?? []
-    setBranches(loaded)
+    const usernameByBranch = new Map<string, string>()
+    const { data: usernameRows, error: usernameError } = await supabase
+      .from('branch_login_usernames')
+      .select('branch_id, username, normalized_username')
+      .eq('tenant_id', profile.tenant_id)
+      .eq('is_active', true)
+
+    if (usernameError) {
+      console.warn('[BranchesTab] Branch username lookup skipped:', usernameError.message)
+    } else {
+      ;((usernameRows ?? []) as Array<Pick<BranchLoginUsername, 'branch_id' | 'username' | 'normalized_username'>>)
+        .forEach(row => {
+          usernameByBranch.set(row.branch_id, row.username || row.normalized_username)
+        })
+    }
+
+    const loadedWithLogins: BranchWithLogin[] = loaded.map(branch => ({
+      ...branch,
+      branch_username: usernameByBranch.get(branch.id) ?? null,
+    }))
+    setBranches(loadedWithLogins)
     setLoading(false)
-    return loaded
+    return loadedWithLogins
   }
 
   useEffect(() => { load() }, [profile?.tenant_id])
@@ -1202,7 +1264,7 @@ export default function BranchesTab() {
           onSaved={() => { setDrawer(null); load() }}
           onRefresh={load}
           onResetPassword={drawerBranch !== 'new' ? () => {
-            const b = drawerBranch as Branch
+            const b = drawerBranch as BranchWithLogin
             setDrawer(null)
             setResetTarget(b)
           } : undefined}

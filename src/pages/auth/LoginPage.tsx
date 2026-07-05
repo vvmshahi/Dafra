@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Mail, Lock, ArrowRight, CheckCircle2, MessageCircle, ShieldCheck } from 'lucide-react'
+import { UserRound, Mail, Lock, ArrowRight, CheckCircle2, MessageCircle, ShieldCheck } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -37,16 +37,16 @@ export default function LoginPage() {
   const from       = (location.state as { from?: string })?.from ?? '/'
   const successMsg = (location.state as { successMsg?: string })?.successMsg ?? null
 
-  const [email,    setEmail]    = useState('')
-  const [password, setPassword] = useState('')
-  const [error,    setError]    = useState('')
-  const [loading,  setLoading]  = useState(false)
+  const [identifier, setIdentifier] = useState('')
+  const [password,   setPassword]   = useState('')
+  const [error,      setError]      = useState('')
+  const [loading,    setLoading]    = useState(false)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
-    const { error } = await signIn(email, password)
+    const { error } = await signIn(identifier, password)
     setLoading(false)
     if (error) {
       setError(error.message)
@@ -128,14 +128,14 @@ export default function LoginPage() {
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <Input
-                  label="Email address"
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="you@company.com"
-                  icon={Mail}
+                  label="Email or branch username"
+                  type="text"
+                  value={identifier}
+                  onChange={e => setIdentifier(e.target.value)}
+                  placeholder="owner@company.com or branch_counter"
+                  icon={UserRound}
                   required
-                  autoComplete="email"
+                  autoComplete="username"
                 />
                 <Input
                   label="Password"

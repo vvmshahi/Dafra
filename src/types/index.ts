@@ -16,6 +16,7 @@ export type {
   Tenant,
   TenantSubscription,
   Branch,
+  BranchLoginUsername,
   UserProfile,
   ZatcaCertificate,
   Category,

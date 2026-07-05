@@ -2,6 +2,11 @@ import { createContext, createElement, useContext, useEffect, useState, useCallb
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import type { UserProfile, UserRole, Tenant } from '@/types'
+import {
+  INVALID_LOGIN_CREDENTIALS_MESSAGE,
+  normalizeBranchUsernameInput,
+  validateBranchUsernameInput,
+} from '@/lib/utils/branchUsername'
 
 function computeIsOnboarded(profile: UserProfile | null): boolean | null {
   if (profile === null) return null
@@ -163,10 +168,37 @@ function useProvideAuth() {
     }
   }, [])
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) console.error('[useAuth] signIn error:', error.message, error.status)
-    return { error }
+  const signIn = async (identifier: string, password: string) => {
+    const trimmedIdentifier = identifier.trim()
+    let authEmail = trimmedIdentifier
+
+    if (!trimmedIdentifier.includes('@')) {
+      const username = normalizeBranchUsernameInput(trimmedIdentifier)
+      const usernameError = validateBranchUsernameInput(username)
+      if (usernameError) return { error: new Error(INVALID_LOGIN_CREDENTIALS_MESSAGE) }
+
+      const { data, error: resolverError } = await supabase.functions.invoke<{
+        ok?: boolean
+        authEmail?: unknown
+        message?: unknown
+      }>('resolve-branch-username', {
+        body: { username },
+      })
+
+      if (resolverError || data?.ok !== true || typeof data.authEmail !== 'string') {
+        console.error('[useAuth] branch username resolver failed:', resolverError?.message ?? data?.message ?? 'not resolved')
+        return { error: new Error(INVALID_LOGIN_CREDENTIALS_MESSAGE) }
+      }
+
+      authEmail = data.authEmail
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password })
+    if (error) {
+      console.error('[useAuth] signIn error:', error.message, error.status)
+      return { error: new Error(INVALID_LOGIN_CREDENTIALS_MESSAGE) }
+    }
+    return { error: null }
   }
 
   const signUp = async (email: string, password: string, fullName: string) => {

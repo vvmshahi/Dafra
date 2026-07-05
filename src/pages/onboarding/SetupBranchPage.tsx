@@ -6,12 +6,17 @@ import { useSubscription } from '@/hooks/useSubscription'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { MeemLogo } from '@/components/MeemLogo'
+import {
+  BRANCH_USERNAME_HELPER_TEXT,
+  branchUsernameCreateErrorMessage,
+  normalizeBranchUsernameInput,
+  validateBranchUsernameInput,
+} from '@/lib/utils/branchUsername'
 
 const VAT_RE    = /^3\d{13}3$/
 const CR_RE     = /^[a-zA-Z0-9]+$/
 const BLDG_RE   = /^\d{4}$/
 const POSTAL_RE = /^\d{5}$/
-const EMAIL_RE  = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function SetupBranchPage() {
   const navigate = useNavigate()
@@ -28,7 +33,7 @@ export default function SetupBranchPage() {
   const [city,     setCity]     = useState('')
   const [phone,    setPhone]    = useState('')
 
-  const [loginEmail,   setLoginEmail]   = useState('')
+  const [loginUsername, setLoginUsername] = useState('')
   const [loginPwd,     setLoginPwd]     = useState('')
   const [loginConfirm, setLoginConfirm] = useState('')
 
@@ -49,8 +54,7 @@ export default function SetupBranchPage() {
     street:   !street.trim()   ? 'Street name is required' : null,
     district: !district.trim() ? 'District is required' : null,
     city:     !city.trim()     ? 'City is required' : null,
-    loginEmail:   !loginEmail.trim()   ? 'Branch email is required'
-                  : !EMAIL_RE.test(loginEmail.trim()) ? 'Enter a valid email address' : null,
+    loginUsername: validateBranchUsernameInput(loginUsername),
     loginPwd:     !loginPwd             ? 'Password is required'
                   : loginPwd.length < 8 ? 'Must be at least 8 characters' : null,
     loginConfirm: !loginConfirm         ? 'Confirm your password'
@@ -90,7 +94,6 @@ export default function SetupBranchPage() {
           invoice_language: 'both',
           show_logo:        true,
           zatca_phase:      isPhase2 ? 2 : 1,
-          branch_email:     loginEmail.trim().toLowerCase(),
         })
         .select('id')
         .single()
@@ -100,7 +103,7 @@ export default function SetupBranchPage() {
       // Create the branch user (no email sent — owner sets credentials directly)
       const { data: fnData, error: fnErr } = await supabase.functions.invoke('create-branch-user', {
         body: {
-          email:     loginEmail.trim().toLowerCase(),
+          username:  normalizeBranchUsernameInput(loginUsername),
           password:  loginPwd,
           full_name: name.trim(),
           tenant_id: profile!.tenant_id,
@@ -109,7 +112,7 @@ export default function SetupBranchPage() {
       })
 
       const fnErrMsg = fnErr?.message ?? (fnData as any)?.error ?? null
-      if (fnErrMsg) throw new Error(`Branch created but login setup failed: ${fnErrMsg}`)
+      if (fnErrMsg) throw new Error(`Branch created but login setup failed: ${branchUsernameCreateErrorMessage(fnErrMsg)}`)
 
       await refreshBranchCount()
       navigate('/dashboard', { replace: true })
@@ -265,14 +268,16 @@ export default function SetupBranchPage() {
                 <div className="space-y-3">
                   <div>
                     <Input
-                      label="Branch Email"
-                      type="email"
-                      value={loginEmail}
-                      onChange={e => setLoginEmail(e.target.value)}
-                      placeholder="branch@company.com"
+                      label="Branch username"
+                      type="text"
+                      value={loginUsername}
+                      onChange={e => setLoginUsername(normalizeBranchUsernameInput(e.target.value))}
+                      placeholder="main_counter"
+                      helperText={BRANCH_USERNAME_HELPER_TEXT}
+                      autoComplete="username"
                       required
                     />
-                    {fieldErr('loginEmail') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('loginEmail')}</p>}
+                    {fieldErr('loginUsername') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('loginUsername')}</p>}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
