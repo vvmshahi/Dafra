@@ -12,6 +12,28 @@ export type ZatcaStatus = 'not_submitted' | 'pending' | 'reported' | 'cleared' |
 export type PaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'other'
 export type PaymentStatus = 'pending' | 'paid' | 'partial' | 'refunded'
 export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'cancelled'
+export type ManualSubscriptionPlanInterval = 'monthly' | 'yearly' | 'manual' | 'custom' | 'lifetime'
+export type ManualPaymentStatus = 'unpaid' | 'manual_verified' | 'overdue' | 'refunded'
+export type SubscriptionLifecycleStatus =
+  | 'setup_pending'
+  | 'active'
+  | 'payment_due'
+  | 'grace_period'
+  | 'suspended'
+  | 'cancelled'
+  | 'lifetime_free'
+export type TenantOnboardingStatusValue =
+  | 'details_pending'
+  | 'owner_invited'
+  | 'owner_setup_complete'
+  | 'branch_setup_pending'
+  | 'zatca_setup_pending'
+  | 'ready_for_billing'
+  | 'live'
+export type OwnerSetupStatus = 'owner_invited' | 'owner_setup_complete' | 'setup_link_expired' | 'setup_blocked'
+export type BranchSetupStatus = 'branch_setup_pending' | 'first_branch_created' | 'branch_setup_complete'
+export type ZatcaSetupStatus = 'zatca_setup_pending' | 'not_required' | 'in_progress' | 'production_ready' | 'needs_attention'
+export type TenantSupportNoteType = 'general' | 'payment' | 'onboarding' | 'support' | 'risk' | 'zatca'
 export type SyncStatus = 'pending' | 'processing' | 'success' | 'failed'
 export type CertificateStatus = 'pending' | 'compliance' | 'active' | 'revoked' | 'expired'
 
@@ -25,13 +47,28 @@ export interface Database {
       }
       tenants: {
         Row: Tenant
-        Insert: Omit<Tenant, 'id' | 'created_at' | 'updated_at'>
+        Insert: TenantInsert
         Update: Partial<Omit<Tenant, 'id'>>
       }
       tenant_subscriptions: {
         Row: TenantSubscription
-        Insert: Omit<TenantSubscription, 'id' | 'created_at' | 'updated_at'>
+        Insert: TenantSubscriptionInsert
         Update: Partial<Omit<TenantSubscription, 'id'>>
+      }
+      manual_subscription_payments: {
+        Row: ManualSubscriptionPayment
+        Insert: ManualSubscriptionPaymentInsert
+        Update: Partial<Omit<ManualSubscriptionPaymentInsert, 'tenant_id'>>
+      }
+      tenant_onboarding_status: {
+        Row: TenantOnboardingStatus
+        Insert: TenantOnboardingStatusInsert
+        Update: Partial<Omit<TenantOnboardingStatusInsert, 'tenant_id'>>
+      }
+      tenant_support_notes: {
+        Row: TenantSupportNote
+        Insert: TenantSupportNoteInsert
+        Update: Partial<Omit<TenantSupportNoteInsert, 'tenant_id' | 'created_by'>>
       }
       branches: {
         Row: Branch
@@ -161,6 +198,18 @@ export interface Database {
       is_reserved_branch_login_username: { Args: { p_username: string }; Returns: boolean }
       is_valid_branch_login_username: { Args: { p_username: string }; Returns: boolean }
       can_manage_branch_login_username: { Args: { p_tenant_id: string }; Returns: boolean }
+      get_tenant_branch_usage: {
+        Args: { p_tenant_id: string }
+        Returns: TenantBranchUsage[]
+      }
+      can_create_branch: {
+        Args: { p_tenant_id: string }
+        Returns: boolean
+      }
+      get_tenant_subscription_access: {
+        Args: { p_tenant_id: string }
+        Returns: TenantSubscriptionAccess[]
+      }
       complete_onboarding: {
         Args: {
           p_company_name:     string
@@ -308,6 +357,7 @@ export interface Tenant {
   suspended_at: string | null
   suspended_reason: string | null
   last_active_at: string | null
+  max_branches: number
   created_at: string
   updated_at: string
 }
@@ -322,8 +372,195 @@ export interface TenantSubscription {
   trial_ends_at: string | null
   cancelled_at: string | null
   moyasar_subscription_id: string | null
+  plan_interval: ManualSubscriptionPlanInterval
+  price_per_branch: number | null
+  paid_branch_count: number
+  current_period_start: string | null
+  current_period_end: string | null
+  next_due_date: string | null
+  grace_until_date: string | null
+  manual_payment_status: ManualPaymentStatus
+  subscription_lifecycle_status: SubscriptionLifecycleStatus
+  last_payment_id: string | null
+  last_payment_at: string | null
+  suspended_at: string | null
+  suspended_reason: string | null
+  updated_by: string | null
   created_at: string
   updated_at: string
+}
+
+export interface TenantInsert {
+  name: string
+  name_ar?: string | null
+  vat_number: string
+  cr_number?: string | null
+  email?: string | null
+  phone?: string | null
+  business_type?: BusinessType | null
+  address?: string | null
+  address_ar?: string | null
+  building_number?: string | null
+  additional_number?: string | null
+  street?: string | null
+  street_ar?: string | null
+  district?: string | null
+  district_ar?: string | null
+  city?: string | null
+  city_ar?: string | null
+  country?: string
+  postal_code?: string | null
+  logo_url?: string | null
+  is_active?: boolean
+  suspended_at?: string | null
+  suspended_reason?: string | null
+  last_active_at?: string | null
+  max_branches?: number
+}
+
+export interface TenantSubscriptionInsert {
+  tenant_id: string
+  plan_id: string
+  status?: SubscriptionStatus
+  starts_at?: string
+  ends_at?: string | null
+  trial_ends_at?: string | null
+  cancelled_at?: string | null
+  moyasar_subscription_id?: string | null
+  plan_interval?: ManualSubscriptionPlanInterval
+  price_per_branch?: number | null
+  paid_branch_count?: number
+  current_period_start?: string | null
+  current_period_end?: string | null
+  next_due_date?: string | null
+  grace_until_date?: string | null
+  manual_payment_status?: ManualPaymentStatus
+  subscription_lifecycle_status?: SubscriptionLifecycleStatus
+  last_payment_id?: string | null
+  last_payment_at?: string | null
+  suspended_at?: string | null
+  suspended_reason?: string | null
+  updated_by?: string | null
+}
+
+export interface ManualSubscriptionPayment {
+  id: string
+  tenant_id: string
+  subscription_id: string | null
+  amount: number
+  currency: string
+  plan_interval: ManualSubscriptionPlanInterval
+  paid_branch_count: number
+  price_per_branch: number | null
+  payment_method: string | null
+  payment_reference: string | null
+  payment_received_at: string
+  coverage_start_date: string
+  coverage_end_date: string
+  next_due_date: string
+  grace_until_date: string
+  status: ManualPaymentStatus
+  money_back_until_date: string | null
+  notes: string | null
+  verified_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TenantOnboardingStatus {
+  id: string
+  tenant_id: string
+  onboarding_status: TenantOnboardingStatusValue
+  owner_setup_status: OwnerSetupStatus
+  branch_setup_status: BranchSetupStatus
+  zatca_setup_status: ZatcaSetupStatus
+  ready_for_billing: boolean
+  owner_setup_link_sent_at: string | null
+  owner_setup_completed_at: string | null
+  first_branch_created_at: string | null
+  first_invoice_created_at: string | null
+  notes: string | null
+  updated_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TenantSupportNote {
+  id: string
+  tenant_id: string
+  note: string
+  note_type: TenantSupportNoteType
+  created_by: string | null
+  created_at: string
+}
+
+export interface TenantBranchUsage {
+  tenant_id: string
+  max_branches: number
+  active_branch_count: number
+  total_branch_count: number
+  remaining_branches: number
+  can_create_branch: boolean
+  reason: string
+}
+
+export interface TenantSubscriptionAccess {
+  tenant_id: string
+  lifecycle_status: string
+  manual_payment_status: string
+  max_branches: number
+  paid_branch_count: number
+  current_period_end: string | null
+  next_due_date: string | null
+  grace_until_date: string | null
+  days_until_due: number | null
+  days_overdue: number | null
+  can_use_pos: boolean
+  can_create_branch: boolean
+  reason: string
+}
+
+export interface ManualSubscriptionPaymentInsert {
+  tenant_id: string
+  subscription_id?: string | null
+  amount: number
+  currency?: string
+  plan_interval: ManualSubscriptionPlanInterval
+  paid_branch_count: number
+  price_per_branch?: number | null
+  payment_method?: string | null
+  payment_reference?: string | null
+  payment_received_at?: string
+  coverage_start_date: string
+  coverage_end_date: string
+  next_due_date: string
+  grace_until_date: string
+  status?: ManualPaymentStatus
+  money_back_until_date?: string | null
+  notes?: string | null
+  verified_by?: string | null
+}
+
+export interface TenantOnboardingStatusInsert {
+  tenant_id: string
+  onboarding_status?: TenantOnboardingStatusValue
+  owner_setup_status?: OwnerSetupStatus
+  branch_setup_status?: BranchSetupStatus
+  zatca_setup_status?: ZatcaSetupStatus
+  ready_for_billing?: boolean
+  owner_setup_link_sent_at?: string | null
+  owner_setup_completed_at?: string | null
+  first_branch_created_at?: string | null
+  first_invoice_created_at?: string | null
+  notes?: string | null
+  updated_by?: string | null
+}
+
+export interface TenantSupportNoteInsert {
+  tenant_id: string
+  note: string
+  note_type?: TenantSupportNoteType
+  created_by?: string | null
 }
 
 export interface Branch {
