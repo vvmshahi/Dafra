@@ -22,11 +22,20 @@ interface ClientRow {
   is_active:    boolean
   suspended_at: string | null
   created_at:   string
+  maxBranches:  number
   plan:         string | null
   subStatus:    string | null
   endsAt:       string | null
   branchCount:  number
   userCount:    number
+  lifecycleStatus: string
+  manualPaymentStatus: string
+  nextDueDate: string | null
+  graceUntilDate: string | null
+  paidBranchCount: number
+  activeBranchCount: number
+  totalBranchCount: number
+  branchUsageError?: boolean
 }
 
 interface BranchSummary {
@@ -37,8 +46,8 @@ interface BranchSummary {
   invoice_counter: number
 }
 
-type ComputedStatus = 'active' | 'lifetime_free' | 'grace_period' | 'expired' | 'suspended' | 'inactive'
-type StatusFilter   = 'all' | 'active' | 'grace_period' | 'lifetime_free' | 'suspended' | 'expired'
+type ComputedStatus = 'active' | 'lifetime_free' | 'grace_period' | 'payment_due' | 'suspended' | 'cancelled' | 'inactive'
+type StatusFilter   = 'all' | 'active' | 'grace_period' | 'lifetime_free' | 'suspended' | 'payment_due'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -47,24 +56,48 @@ const GRACE_MS = 7 * 86_400_000
 function getStatus(c: ClientRow): ComputedStatus {
   if (c.suspended_at) return 'suspended'
   if (!c.is_active)   return 'inactive'
+  if (c.lifecycleStatus === 'cancelled') return 'cancelled'
+  if (c.lifecycleStatus === 'suspended') return 'suspended'
+  if (c.lifecycleStatus === 'payment_due') return 'payment_due'
+  if (c.lifecycleStatus === 'grace_period') return 'grace_period'
+  if (c.lifecycleStatus === 'lifetime_free') return 'lifetime_free'
   if (c.subStatus === 'lifetime_free' || (c.subStatus === 'active' && c.endsAt === null)) return 'lifetime_free'
   if (c.subStatus === 'active' && c.endsAt !== null) {
     const exp = new Date(c.endsAt).getTime()
     const now = Date.now()
     if (exp >= now) return 'active'
     if (now < exp + GRACE_MS) return 'grace_period'
-    return 'expired'
+    return 'payment_due'
   }
   return 'inactive'
 }
 
-const STATUS_META: Record<ComputedStatus, { label: string; variant: 'success' | 'warning' | 'danger' | 'default' }> = {
+const STATUS_META: Record<ComputedStatus, { label: string; variant: 'success' | 'warning' | 'danger' | 'neutral' }> = {
   active:        { label: 'Active',        variant: 'success'  },
   lifetime_free: { label: 'Lifetime Free', variant: 'success'  },
   grace_period:  { label: 'Grace Period',  variant: 'warning'  },
-  expired:       { label: 'Expired',       variant: 'danger'   },
+  payment_due:   { label: 'Payment Due',   variant: 'danger'   },
   suspended:     { label: 'Suspended',     variant: 'danger'   },
-  inactive:      { label: 'Inactive',      variant: 'default'  },
+  cancelled:     { label: 'Cancelled',     variant: 'danger'   },
+  inactive:      { label: 'Inactive',      variant: 'neutral'  },
+}
+
+function formatDate(value: string | null) {
+  return value ? value.slice(0, 10) : '—'
+}
+
+function getBillingSignal(c: ClientRow): { label: string; className: string } {
+  const status = getStatus(c)
+  if (status === 'suspended') return { label: 'Suspended', className: 'bg-red-50 text-red-700 ring-red-200' }
+  if (status === 'payment_due') return { label: 'Overdue', className: 'bg-red-50 text-red-700 ring-red-200' }
+  if (status === 'grace_period') return { label: 'In grace', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
+  if (status === 'lifetime_free') return { label: 'Lifetime', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
+  if (c.nextDueDate) {
+    const days = Math.ceil((new Date(c.nextDueDate).getTime() - Date.now()) / GRACE_MS)
+    if (days >= 0 && days <= 7) return { label: 'Due soon', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
+  }
+  if (c.manualPaymentStatus === 'manual_verified') return { label: 'Paid', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
+  return { label: 'Unpaid', className: 'bg-gray-50 text-gray-600 ring-gray-200' }
 }
 
 function PlanBadge({ plan }: { plan: string | null }) {
@@ -571,16 +604,17 @@ export default function ClientsPage() {
     const { data } = await (supabase as any)
       .from('tenants')
       .select(`
-        id, name, name_ar, vat_number, city, business_type, is_active, suspended_at, created_at,
-        tenant_subscriptions(status, ends_at, subscription_plans(name)),
-        branches(id),
+        id, name, name_ar, vat_number, city, business_type, is_active, suspended_at, created_at, max_branches,
+        tenant_subscriptions(status, ends_at, manual_payment_status, subscription_lifecycle_status, next_due_date, grace_until_date, paid_branch_count, subscription_plans(name)),
+        branches(id, is_active),
         user_profiles(id)
       `)
       .order('created_at', { ascending: false })
       .limit(200)
 
-    const rows: ClientRow[] = (data ?? []).map((r: any) => {
+    const baseRows: ClientRow[] = (data ?? []).map((r: any) => {
       const sub = r.tenant_subscriptions?.[0]
+      const activeBranchCount = (r.branches ?? []).filter((b: any) => b.is_active !== false).length
       return {
         id:           r.id,
         name:         r.name,
@@ -591,13 +625,46 @@ export default function ClientsPage() {
         is_active:    r.is_active,
         suspended_at: r.suspended_at,
         created_at:   r.created_at,
+        maxBranches:  r.max_branches ?? 999,
         plan:         sub?.subscription_plans?.name ?? null,
         subStatus:    sub?.status ?? null,
         endsAt:       sub?.ends_at ?? null,
         branchCount:  r.branches?.length ?? 0,
         userCount:    r.user_profiles?.length ?? 0,
+        lifecycleStatus: sub?.subscription_lifecycle_status ?? (sub?.status === 'active' ? 'active' : 'inactive'),
+        manualPaymentStatus: sub?.manual_payment_status ?? 'unpaid',
+        nextDueDate: sub?.next_due_date ?? sub?.ends_at ?? null,
+        graceUntilDate: sub?.grace_until_date ?? null,
+        paidBranchCount: Math.max(1, sub?.paid_branch_count ?? r.max_branches ?? 1),
+        activeBranchCount,
+        totalBranchCount: r.branches?.length ?? 0,
       }
     })
+
+    const rows = await Promise.all(baseRows.map(async row => {
+      try {
+        const [{ data: accessRows, error: accessError }, { data: usageRows, error: usageError }] = await Promise.all([
+          (supabase as any).rpc('get_tenant_subscription_access', { p_tenant_id: row.id }),
+          (supabase as any).rpc('get_tenant_branch_usage', { p_tenant_id: row.id }),
+        ])
+        const access = Array.isArray(accessRows) ? accessRows[0] : accessRows
+        const usage = Array.isArray(usageRows) ? usageRows[0] : usageRows
+        return {
+          ...row,
+          lifecycleStatus: accessError || !access ? row.lifecycleStatus : access.lifecycle_status,
+          manualPaymentStatus: accessError || !access ? row.manualPaymentStatus : access.manual_payment_status,
+          nextDueDate: accessError || !access ? row.nextDueDate : access.next_due_date,
+          graceUntilDate: accessError || !access ? row.graceUntilDate : access.grace_until_date,
+          paidBranchCount: accessError || !access ? row.paidBranchCount : access.paid_branch_count,
+          maxBranches: usageError || !usage ? row.maxBranches : usage.max_branches,
+          activeBranchCount: usageError || !usage ? row.activeBranchCount : usage.active_branch_count,
+          totalBranchCount: usageError || !usage ? row.totalBranchCount : usage.total_branch_count,
+          branchUsageError: Boolean(accessError || usageError),
+        }
+      } catch {
+        return { ...row, branchUsageError: true }
+      }
+    }))
 
     setClients(rows)
     setLoading(false)
@@ -671,7 +738,7 @@ export default function ClientsPage() {
     grace_period: clients.filter(c => getStatus(c) === 'grace_period').length,
     lifetime_free:clients.filter(c => getStatus(c) === 'lifetime_free').length,
     suspended:    clients.filter(c => getStatus(c) === 'suspended').length,
-    expired:      clients.filter(c => getStatus(c) === 'expired').length,
+    payment_due:  clients.filter(c => getStatus(c) === 'payment_due').length,
   }), [clients])
 
   const TABS: { key: StatusFilter; label: string }[] = [
@@ -680,7 +747,7 @@ export default function ClientsPage() {
     { key: 'grace_period', label: `Grace Period (${counts.grace_period})` },
     { key: 'lifetime_free',label: `Lifetime (${counts.lifetime_free})` },
     { key: 'suspended',    label: `Suspended (${counts.suspended})` },
-    { key: 'expired',      label: `Expired (${counts.expired})` },
+    { key: 'payment_due',  label: `Payment Due (${counts.payment_due})` },
   ]
 
   return (
@@ -765,7 +832,7 @@ export default function ClientsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100">
-                  {['', 'Business', 'City', 'Plan', 'Branches', 'Users', 'Joined', 'Status', ''].map((h, i) => (
+                  {['', 'Business', 'City', 'Plan', 'Billing', 'Branches', 'Users', 'Joined', 'Status', ''].map((h, i) => (
                     <th key={i} className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">
                       {h}
                     </th>
@@ -778,6 +845,8 @@ export default function ClientsPage() {
                   const isExpanded = expanded.has(c.id)
                   const isBranchLoading = loadingBranch.has(c.id)
                   const clientBranches  = branches[c.id]
+                  const signal = getBillingSignal(c)
+                  const branchWarning = c.activeBranchCount > c.paidBranchCount || c.totalBranchCount > c.paidBranchCount
 
                   return (
                     <React.Fragment key={c.id}>
@@ -812,7 +881,31 @@ export default function ClientsPage() {
                           ) : '—'}
                         </td>
                         <td className="px-4 py-3.5"><PlanBadge plan={c.plan} /></td>
-                        <td className="px-4 py-3.5 text-sm text-gray-600 tabular-nums">{c.branchCount}</td>
+                        <td className="px-4 py-3.5 min-w-[180px]">
+                          <div className="flex flex-col gap-1.5">
+                            <span className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${signal.className}`}>
+                              {signal.label}
+                            </span>
+                            <div className="text-[11px] leading-4 text-gray-500">
+                              <span className="font-medium text-gray-700">{c.manualPaymentStatus.replace(/_/g, ' ')}</span>
+                              <span className="text-gray-300"> · </span>
+                              Due {formatDate(c.nextDueDate)}
+                              {c.graceUntilDate && (
+                                <span className="block text-gray-400">Grace until {formatDate(c.graceUntilDate)}</span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5 text-sm text-gray-600 tabular-nums">
+                          <div className={branchWarning ? 'text-amber-700' : ''}>
+                            <span className="font-semibold">{c.activeBranchCount}</span>
+                            <span className="text-gray-400">/{c.paidBranchCount} paid</span>
+                          </div>
+                          <p className="text-[11px] text-gray-400">
+                            {c.totalBranchCount} total · max {c.maxBranches}
+                            {c.branchUsageError ? ' · fallback' : ''}
+                          </p>
+                        </td>
                         <td className="px-4 py-3.5 text-sm text-gray-600 tabular-nums">{c.userCount}</td>
                         <td className="px-4 py-3.5 text-xs text-gray-400 whitespace-nowrap">{c.created_at.slice(0, 10)}</td>
                         <td className="px-4 py-3.5">
@@ -844,7 +937,7 @@ export default function ClientsPage() {
                       {/* Expanded branches row */}
                       {isExpanded && (
                         <tr className="border-b border-gray-100 bg-gray-50/40">
-                          <td colSpan={9} className="px-8 py-3">
+                          <td colSpan={10} className="px-8 py-3">
                             {isBranchLoading || !clientBranches ? (
                               <div className="flex items-center gap-2 text-xs text-gray-400">
                                 <Loader2 size={12} className="animate-spin" /> Loading branches…
@@ -875,7 +968,7 @@ export default function ClientsPage() {
                 })}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-5 py-10 text-center">
+                    <td colSpan={10} className="px-5 py-10 text-center">
                       <Building2 size={28} className="text-gray-200 mx-auto mb-2" />
                       <p className="text-sm text-gray-400">No clients found</p>
                     </td>
