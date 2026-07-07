@@ -2,11 +2,11 @@ import { Link, useNavigate } from 'react-router-dom'
 import { MeemLogo } from '@/components/MeemLogo'
 import { supportConfig } from '@/config/support'
 import {
-  ArrowRight, BarChart3, CheckCircle2, CreditCard, Download,
-  GitBranch, Mail, Menu, MessageCircle, Package, Receipt,
-  ShieldCheck, Store, X,
+  Apple, ArrowRight, BarChart3, Boxes, Building2, CheckCircle2,
+  ClipboardCheck, CreditCard, Download, Mail, Menu, MessageCircle,
+  Package, Receipt, ShieldCheck, ShoppingCart, X,
 } from 'lucide-react'
-import { useEffect, useState, type MouseEvent } from 'react'
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 
 const WA_LINK = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
@@ -42,11 +42,11 @@ function ProductMockup() {
   return (
     <div className="relative mx-auto w-full max-w-[560px]">
       <div className="absolute -inset-8 rounded-[32px] bg-gold-500/10 blur-3xl" />
-      <div className="absolute -right-4 top-10 hidden rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-white shadow-2xl backdrop-blur md:block">
+      <div className="absolute -right-4 top-10 hidden rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-white shadow-2xl shadow-black/20 backdrop-blur-xl md:block">
         <p className="text-[11px] font-semibold text-gold-200">Owner dashboard</p>
         <p className="mt-1 text-xs text-white/70">3 branches in view</p>
       </div>
-      <div className="relative overflow-hidden rounded-[26px] border border-white/10 bg-[#071510] shadow-[0_30px_110px_rgba(0,0,0,0.42)]">
+      <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#071510] shadow-[0_32px_120px_rgba(0,0,0,0.46)] ring-1 ring-white/[0.04]">
         <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.04] px-4 py-3">
           <div className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
@@ -114,7 +114,7 @@ function ProductMockup() {
                 <span>Total</span><span className="text-gold-300">SAR 188.00</span>
               </div>
             </div>
-            <button className="mt-3 rounded-xl bg-gold-500 py-2 text-[11px] font-black text-[#0F2419]">
+            <button className="mt-3 rounded-xl bg-gold-500 py-2 text-[11px] font-black text-[#0F2419] shadow-lg shadow-black/20">
               Complete sale
             </button>
           </div>
@@ -138,47 +138,59 @@ function Header() {
   const navLinks = [
     { label: 'Features', type: 'section', target: 'features' },
     { label: 'Pricing', type: 'route', target: '/pricing' },
-    { label: 'Windows app', type: 'section', target: 'windows' },
+    { label: 'Download App', type: 'section', target: 'windows' },
     { label: 'FAQ', type: 'route', target: '/faq' },
     { label: 'Contact', type: 'section', target: 'contact' },
   ] as const
 
+  const navItemClass = 'group relative isolate overflow-hidden rounded-2xl px-3.5 py-2 text-sm font-semibold text-white/[0.74] transition-[color,background,transform] duration-200 before:absolute before:inset-x-2 before:top-0 before:h-px before:scale-x-0 before:bg-gold-300/80 before:opacity-0 before:blur-[1px] before:transition-[transform,opacity] before:duration-200 after:absolute after:inset-0 after:-z-10 after:rounded-2xl after:bg-[radial-gradient(circle_at_50%_0%,rgba(200,169,110,0.28),transparent_54%)] after:opacity-0 after:transition-opacity after:duration-200 hover:bg-white/[0.055] hover:text-white hover:before:scale-x-100 hover:before:opacity-100 hover:after:opacity-100 active:scale-[0.98]'
+  const actionBaseClass = 'group relative isolate inline-flex h-10 items-center justify-center overflow-hidden rounded-full px-4 text-sm font-black transition-[background,border-color,box-shadow,transform] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] active:scale-[0.98]'
+
   return (
-    <header className={`fixed left-0 right-0 top-0 z-50 transition-all duration-300 ${scrolled ? 'bg-[#071510]/90 shadow-[0_12px_50px_rgba(0,0,0,0.25)] backdrop-blur-xl' : 'bg-transparent'}`}>
-      <div className="mx-auto max-w-7xl px-4 pt-3 sm:px-6 lg:px-8">
-        <nav className="flex h-14 items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.055] px-3 shadow-inner shadow-white/5 backdrop-blur-xl">
-          <Link to="/" className="flex-shrink-0"><MeemLogo size="sm" /></Link>
-          <div className="hidden flex-1 items-center justify-center gap-1 md:flex">
+    <header className={`fixed left-0 right-0 top-0 z-50 transition-[background,box-shadow] duration-300 ${scrolled ? 'bg-[#071510]/75 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl' : 'bg-transparent'}`}>
+      <div className="mx-auto max-w-7xl px-4 pt-4 sm:px-6 lg:px-8">
+        <nav className="relative flex h-[62px] items-center justify-between md:justify-center">
+          <Link to="/" className="z-10 flex-shrink-0 rounded-[22px] border border-white/[0.10] bg-[#06120D]/[0.58] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-2xl transition-[background,border-color,transform] duration-150 hover:border-white/[0.18] hover:bg-white/[0.045] active:scale-[0.98] md:absolute md:left-0">
+            <MeemLogo size="sm" />
+          </Link>
+
+          <div className="hidden items-center justify-center rounded-[26px] border border-white/[0.13] bg-[#06120D]/[0.72] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_24px_80px_rgba(0,0,0,0.30)] ring-1 ring-white/[0.035] backdrop-blur-2xl md:flex">
             {navLinks.map(link => (
               link.type === 'section' ? (
                 <button key={link.label} onClick={() => scrollTo(link.target)}
-                  className="rounded-xl px-3 py-2 text-sm font-semibold text-white/70 transition-colors hover:bg-white/[0.07] hover:text-white">
+                  className={navItemClass}>
                   {link.label}
                 </button>
               ) : (
                 <Link key={link.label} to={link.target}
-                  className="rounded-xl px-3 py-2 text-sm font-semibold text-white/70 transition-colors hover:bg-white/[0.07] hover:text-white">
+                  className={navItemClass}>
                   {link.label}
                 </Link>
               )
             ))}
           </div>
-          <div className="ml-auto hidden items-center gap-2 md:flex">
-            <Link to="/login" className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-white/75 transition-colors hover:border-white/30 hover:bg-white/[0.06] hover:text-white">
-              Sign in
+
+          <div className="hidden items-center gap-1.5 rounded-full border border-white/[0.12] bg-[#06120D]/[0.66] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_62px_rgba(0,0,0,0.24)] ring-1 ring-white/[0.035] backdrop-blur-2xl md:absolute md:right-0 md:flex">
+            <Link to="/login" className={`${actionBaseClass} border border-white/[0.10] bg-white/[0.06] text-white/[0.90] hover:border-white/[0.18] hover:bg-white/[0.10] hover:text-white`}>
+              <span className="absolute inset-0 -z-10 translate-x-[-105%] rounded-full bg-white/[0.08] opacity-0 transition-[opacity,transform] duration-300 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
+              <span className="relative pr-0 transition-transform duration-200 group-hover:-translate-x-1.5">Sign in</span>
+              <ArrowRight size={14} className="absolute right-3 translate-x-2 opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
             </Link>
             <a href={WA_LINK} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-xl bg-gold-500 px-4 py-2 text-sm font-black text-[#0F2419] shadow-lg shadow-gold-500/20 transition-all hover:-translate-y-0.5 hover:bg-gold-400">
-              Get Started <ArrowRight size={14} />
+              className={`${actionBaseClass} border border-gold-200/60 bg-gold-500 pl-5 pr-5 text-[#071510] shadow-[0_10px_30px_rgba(200,169,110,0.26)] hover:-translate-y-0.5 hover:border-gold-100 hover:shadow-[0_18px_48px_rgba(200,169,110,0.34)]`}>
+              <span className="absolute inset-0 -z-10 translate-x-[-105%] rounded-full bg-[#0F2419] opacity-0 transition-[opacity,transform] duration-300 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
+              <span className="relative transition-[color,transform] duration-200 group-hover:-translate-x-1.5 group-hover:text-white group-focus-visible:text-white">Get Started</span>
+              <ArrowRight size={14} className="absolute right-3 translate-x-2 text-white opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
             </a>
           </div>
-          <button onClick={() => setOpen(v => !v)} className="ml-auto rounded-xl p-2 text-white/75 hover:bg-white/[0.07] md:hidden">
+
+          <button onClick={() => setOpen(v => !v)} className="ml-auto rounded-[18px] border border-white/[0.10] bg-[#06120D]/[0.58] p-3 text-white/75 shadow-[0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-2xl transition-colors hover:bg-white/[0.07] md:hidden">
             {open ? <X size={21} /> : <Menu size={21} />}
           </button>
         </nav>
       </div>
       {open && (
-        <div className="mx-4 mt-2 rounded-2xl border border-white/10 bg-[#071510]/95 p-3 shadow-2xl backdrop-blur-xl md:hidden">
+        <div className="mx-4 mt-2 rounded-[22px] border border-white/10 bg-[#071510]/95 p-3 shadow-2xl shadow-black/30 backdrop-blur-2xl md:hidden">
           {navLinks.map(link => (
             link.type === 'section' ? (
               <button key={link.label} onClick={() => { setOpen(false); scrollTo(link.target) }}
@@ -204,7 +216,7 @@ function Header() {
 
 const FEATURES = [
   {
-    icon: Receipt,
+    icon: ShoppingCart,
     title: 'Fast POS checkout',
     desc: 'A focused counter workflow for sales, receipts, customers, and branch controls.',
   },
@@ -219,12 +231,12 @@ const FEATURES = [
     desc: 'Track cash, card, and split tenders cleanly across every invoice.',
   },
   {
-    icon: Package,
+    icon: Boxes,
     title: 'Stock and purchases',
     desc: 'Products, suppliers, purchase receiving, and branch inventory in one place.',
   },
   {
-    icon: Store,
+    icon: ClipboardCheck,
     title: 'Register session closing',
     desc: 'Open shifts, close registers, review totals, and keep cash checks organized.',
   },
@@ -234,19 +246,72 @@ const FEATURES = [
     desc: 'Sales, purchases, expenses, and VAT summaries prepared for owner review.',
   },
   {
-    icon: GitBranch,
+    icon: Building2,
     title: 'Multi-branch dashboard',
     desc: 'See every branch from one owner dashboard with sales, sessions, reports, and settings in one place.',
   },
 ]
 
+function FeatureCardPattern() {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 opacity-70"
+      style={{
+        backgroundImage:
+          'linear-gradient(rgba(27,107,58,0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(27,107,58,0.055) 1px, transparent 1px)',
+        backgroundSize: '28px 28px',
+        maskImage: 'linear-gradient(135deg, black 0%, rgba(0,0,0,0.72) 34%, transparent 76%)',
+      }}
+    />
+  )
+}
+
+function FeatureCard({ feature, featured = false }: {
+  feature: typeof FEATURES[number]
+  featured?: boolean
+}) {
+  return (
+    <article
+      className={`group relative isolate flex min-h-[260px] overflow-hidden rounded-[28px] border border-[#D9E4DA] bg-gradient-to-br from-white via-[#FBFAF5] to-[#EEF7F1] p-6 shadow-[0_18px_60px_rgba(7,21,16,0.08)] ring-1 ring-white transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-1 hover:border-gold-300 hover:shadow-[0_26px_80px_rgba(7,21,16,0.13)] ${
+        featured ? 'lg:col-span-2' : ''
+      }`}
+    >
+      <FeatureCardPattern />
+      <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-gold-400/15 blur-3xl transition-opacity duration-200 group-hover:opacity-90" aria-hidden="true" />
+      <div className="absolute bottom-0 left-0 h-px w-full bg-gradient-to-r from-primary-500/20 via-gold-400/50 to-transparent" aria-hidden="true" />
+
+      <div className={`relative z-10 flex h-full w-full flex-col ${featured ? 'lg:max-w-2xl' : ''}`}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex h-13 w-13 items-center justify-center rounded-[20px] border border-primary-500/10 bg-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_12px_30px_rgba(27,107,58,0.10)] transition-[background,box-shadow,transform] duration-200 group-hover:-translate-y-0.5 group-hover:bg-[#EEF7F1] group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_16px_36px_rgba(27,107,58,0.14)]">
+            <feature.icon size={23} className="text-primary-700" aria-hidden="true" />
+          </div>
+          <div className="mt-1 h-2 w-10 rounded-full bg-gradient-to-r from-gold-300/80 to-primary-500/30 opacity-70" aria-hidden="true" />
+        </div>
+
+        <div className="mt-8">
+          <h3 className="text-xl font-black leading-tight text-[#071510]">{feature.title}</h3>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-[#52665A]">{feature.desc}</p>
+        </div>
+
+        <div className="mt-auto pt-8">
+          <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-primary-700/55">
+            <span className="h-px w-8 bg-primary-700/20" aria-hidden="true" />
+            Kubri POS
+          </div>
+        </div>
+      </div>
+    </article>
+  )
+}
+
 function Hero() {
   return (
-    <section className="relative overflow-hidden bg-[#071510] pt-28">
+    <section className="relative overflow-hidden border-b border-[#D9E1D8] bg-[#071510] pt-28">
       <Pattern />
       <div className="absolute left-[8%] top-20 h-[540px] w-[540px] rounded-full bg-primary-500/25 blur-3xl" />
       <div className="absolute bottom-[-160px] right-[10%] h-[520px] w-[520px] rounded-full bg-gold-500/10 blur-3xl" />
-      <div className="relative z-10 mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl grid-cols-1 items-center gap-14 px-4 pb-20 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:px-8">
+      <div className="relative z-10 mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl grid-cols-1 items-center gap-14 px-4 pb-24 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:px-8">
         <div>
           <h1 className="max-w-3xl text-4xl font-black leading-[1.04] tracking-tight text-white sm:text-6xl lg:text-7xl">
             Your simple bridge to ZATCA Phase 2 invoicing.
@@ -254,7 +319,7 @@ function Hero() {
           <p className="mt-6 max-w-2xl text-lg leading-8 text-white/80 sm:text-xl">
             Run POS sales, payments, stock, register sessions, and VAT reports from one simple platform built for Saudi businesses.
           </p>
-          <div className="mt-8 grid max-w-xl grid-cols-1 gap-3 text-sm font-semibold text-white/80 sm:grid-cols-2">
+          <div className="mt-8 grid max-w-xl grid-cols-1 gap-3 text-sm font-semibold text-white/[0.82] sm:grid-cols-2">
             {[
               'ZATCA Phase 2 workflows',
               'Cash, card, and split payments',
@@ -269,10 +334,10 @@ function Hero() {
           </div>
           <div className="mt-9 flex flex-col gap-3 sm:flex-row">
             <a href={WA_LINK} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gold-500 px-6 py-4 text-sm font-black text-[#0F2419] shadow-xl shadow-gold-500/20 transition-all hover:-translate-y-0.5 hover:bg-gold-400">
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gold-500 px-6 py-4 text-sm font-black text-[#0F2419] shadow-xl shadow-gold-500/25 transition-[background,transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:bg-gold-400 hover:shadow-gold-500/30 active:translate-y-0 active:scale-[0.98]">
               Get Started <ArrowRight size={17} />
             </a>
-            <Link to="/pricing" className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-4 text-sm font-bold text-white transition-all hover:border-white/30 hover:bg-white/[0.08]">
+            <Link to="/pricing" className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-4 text-sm font-bold text-white transition-[background,border-color,transform] duration-150 hover:border-white/30 hover:bg-white/[0.08] active:scale-[0.98]">
               View Pricing
             </Link>
           </div>
@@ -285,29 +350,30 @@ function Hero() {
 
 function Features() {
   return (
-    <section id="features" className="relative overflow-hidden bg-[#0F2419] py-24">
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0)),radial-gradient(circle_at_80%_10%,rgba(200,169,110,0.16),transparent_30%)]" />
+    <section id="features" className="relative scroll-mt-28 overflow-hidden bg-[#F7F5EF] py-28">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(200,169,110,0.13),transparent_30%),linear-gradient(180deg,#F7F5EF_0%,#FFFFFF_45%,#F7F5EF_100%)]" />
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
-          <h2 className="text-3xl font-black leading-tight text-white sm:text-5xl">Built for the daily rhythm of Saudi branches.</h2>
-          <p className="max-w-2xl text-base leading-7 text-white/70 lg:ml-auto">
-            From the counter to the owner dashboard, Kubri keeps sales, tax workflows, stock, sessions, and reports moving together.
+        <div className="grid gap-7 border-b border-[#DDE6DD] pb-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-end">
+          <div>
+            <div className="mb-4 flex items-center gap-3">
+              <span className="h-px w-10 bg-gradient-to-r from-primary-600/50 to-gold-400/70" aria-hidden="true" />
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-primary-700/70">Daily operations</p>
+            </div>
+            <h2 className="max-w-3xl text-3xl font-black leading-tight text-[#071510] sm:text-5xl">
+              Built for the daily rhythm of Saudi businesses.
+            </h2>
+          </div>
+          <p className="max-w-2xl text-base leading-7 text-[#385246] lg:ml-auto">
+            From counter sales to owner dashboards, Kubri keeps invoices, stock, sessions, purchases, expenses, and reports connected.
           </p>
         </div>
-        <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-6">
+        <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
           {FEATURES.map((feature, index) => (
-            <article
+            <FeatureCard
               key={feature.title}
-              className={`group min-h-[220px] rounded-[24px] border border-white/10 bg-white/[0.065] p-6 shadow-[0_24px_90px_rgba(0,0,0,0.20)] backdrop-blur transition-all hover:-translate-y-1 hover:border-gold-400/40 hover:bg-white/[0.09] ${
-                index === 0 || index === 1 ? 'lg:col-span-3' : index === 6 ? 'lg:col-span-6' : 'lg:col-span-2'
-              }`}
-            >
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-gold-400/20 bg-gold-400/10 shadow-inner shadow-white/5">
-                <feature.icon size={22} className="text-gold-300" />
-              </div>
-              <h3 className="mt-6 text-lg font-bold text-white">{feature.title}</h3>
-              <p className="mt-3 text-sm leading-6 text-white/65">{feature.desc}</p>
-            </article>
+              feature={feature}
+              featured={index === 6}
+            />
           ))}
         </div>
       </div>
@@ -315,28 +381,70 @@ function Features() {
   )
 }
 
+function PricingGlowLink({ to, children, primary = false }: {
+  to: string
+  children: ReactNode
+  primary?: boolean
+}) {
+  const baseClass = 'group relative isolate inline-flex items-center justify-center gap-2 overflow-hidden rounded-2xl px-5 py-3 text-sm font-black transition-[border-color,box-shadow,transform] duration-200 before:absolute before:inset-[-1px] before:-z-20 before:rounded-2xl before:bg-gradient-to-r before:from-gold-300 before:via-primary-300 before:to-gold-500 before:opacity-0 before:blur-md before:transition-opacity before:duration-200 after:absolute after:inset-[1px] after:-z-10 after:rounded-[15px] after:transition-colors after:duration-200 hover:-translate-y-0.5 hover:before:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] active:translate-y-0 active:scale-[0.98]'
+  const toneClass = primary
+    ? 'border border-gold-200/60 bg-gold-500 text-[#071510] shadow-[0_16px_42px_rgba(200,169,110,0.25)] after:bg-gold-500 hover:border-gold-100 hover:shadow-[0_22px_62px_rgba(200,169,110,0.34)] hover:after:bg-gold-400'
+    : 'border border-white/12 bg-white/[0.055] text-white shadow-[0_16px_42px_rgba(0,0,0,0.18)] after:bg-[#0B1D14]/95 hover:border-white/25 hover:shadow-[0_20px_58px_rgba(0,0,0,0.25)] hover:after:bg-[#10281B]/95'
+
+  return (
+    <Link to={to} className={`${baseClass} ${toneClass}`}>
+      <span className="relative z-10">{children}</span>
+      <ArrowRight size={15} className="relative z-10 transition-transform duration-200 group-hover:translate-x-0.5" />
+    </Link>
+  )
+}
+
+function PricingGlowAnchor({ href, children }: {
+  href: string
+  children: ReactNode
+}) {
+  const className = 'group relative isolate inline-flex items-center justify-center gap-2 overflow-hidden rounded-2xl border border-white/12 bg-white/[0.055] px-5 py-3 text-sm font-black text-white shadow-[0_16px_42px_rgba(0,0,0,0.18)] transition-[border-color,box-shadow,transform] duration-200 before:absolute before:inset-[-1px] before:-z-20 before:rounded-2xl before:bg-gradient-to-r before:from-primary-300 before:via-gold-300 before:to-primary-500 before:opacity-0 before:blur-md before:transition-opacity before:duration-200 after:absolute after:inset-[1px] after:-z-10 after:rounded-[15px] after:bg-[#0B1D14]/95 after:transition-colors after:duration-200 hover:-translate-y-0.5 hover:border-white/25 hover:shadow-[0_20px_58px_rgba(0,0,0,0.25)] hover:before:opacity-70 hover:after:bg-[#10281B]/95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] active:translate-y-0 active:scale-[0.98]'
+
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+      <span className="relative z-10">{children}</span>
+    </a>
+  )
+}
+
 function PricingTeaser() {
   return (
-    <section className="bg-[#071510] px-4 py-16 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-white/[0.09] to-white/[0.035] p-6 shadow-[0_28px_100px_rgba(0,0,0,0.28)] backdrop-blur md:p-8">
-        <div className="grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
+    <section className="relative overflow-hidden border-y border-white/10 bg-[#071510] px-4 py-20 sm:px-6 lg:px-8">
+      <Pattern />
+      <div className="absolute left-[12%] top-0 h-72 w-72 rounded-full bg-primary-500/20 blur-3xl" aria-hidden="true" />
+      <div className="absolute bottom-[-100px] right-[15%] h-72 w-72 rounded-full bg-gold-500/12 blur-3xl" aria-hidden="true" />
+      <div className="relative mx-auto max-w-7xl overflow-hidden rounded-[32px] border border-white/10 bg-[#071510]/85 p-6 shadow-[0_30px_110px_rgba(0,0,0,0.34)] ring-1 ring-white/[0.05] backdrop-blur md:p-8">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(200,169,110,0.16),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.09),rgba(255,255,255,0.025))]" aria-hidden="true" />
+        <div className="relative grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
           <div>
-            <p className="text-sm font-bold text-gold-300">Start from SAR 100/month</p>
-            <h2 className="mt-3 text-3xl font-black text-white">Simple pricing for each branch.</h2>
+            <p className="text-sm font-black text-gold-300">Flat ﷼100/month</p>
+            <h2 className="mt-3 text-3xl font-black text-white">One simple price for your business.</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65">Yearly option available. Includes a 7-day money-back guarantee.</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
-            <Link to="/pricing" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gold-500 px-5 py-3 text-sm font-black text-[#0F2419] hover:bg-gold-400">
-              View Pricing <ArrowRight size={15} />
-            </Link>
-            <a href={WA_LINK} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center justify-center rounded-2xl border border-white/10 px-5 py-3 text-sm font-bold text-white hover:bg-white/[0.07]">
+            <PricingGlowLink to="/pricing" primary>
+              View Pricing
+            </PricingGlowLink>
+            <PricingGlowAnchor href={WA_LINK}>
               Get Started
-            </a>
+            </PricingGlowAnchor>
           </div>
         </div>
       </div>
     </section>
+  )
+}
+
+function WhatsAppIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+      <path d="M12.04 2.25a9.65 9.65 0 0 0-8.4 14.38L2.5 21.75l5.23-1.1a9.66 9.66 0 1 0 4.31-18.4Zm0 1.75a7.91 7.91 0 0 1 6.77 12.01 7.9 7.9 0 0 1-9.05 3.13l-.29-.11-3.89.82.84-3.76-.15-.31A7.9 7.9 0 0 1 12.04 4Zm-3.36 4.1c-.18 0-.46.06-.7.33-.24.27-.92.9-.92 2.18s.95 2.54 1.08 2.71c.13.18 1.84 2.95 4.54 4.02 2.24.88 2.7.7 3.19.66.49-.04 1.58-.64 1.8-1.27.22-.62.22-1.15.16-1.27-.07-.11-.24-.18-.51-.31-.27-.13-1.58-.78-1.82-.87-.24-.09-.42-.13-.6.13-.18.27-.69.87-.84 1.04-.15.18-.31.2-.58.07-.27-.13-1.13-.42-2.15-1.33-.79-.71-1.33-1.58-1.49-1.85-.15-.27-.02-.41.12-.54.12-.12.27-.31.4-.47.13-.16.18-.27.27-.45.09-.18.04-.33-.02-.47-.07-.13-.6-1.44-.82-1.98-.22-.52-.44-.45-.6-.46h-.51Z" />
+    </svg>
   )
 }
 
@@ -345,22 +453,31 @@ function WindowsSection() {
     e.preventDefault()
   }
 
+  const downloadButtonClass = 'group relative isolate inline-flex items-center justify-center gap-2 overflow-hidden rounded-2xl border border-[#D8E2D8] bg-white/80 px-5 py-3.5 text-sm font-black text-[#071510] shadow-[0_14px_36px_rgba(7,21,16,0.08)] transition-[border-color,box-shadow,transform] duration-200 before:absolute before:inset-[-1px] before:-z-20 before:rounded-2xl before:bg-gradient-to-r before:from-primary-300/70 before:via-gold-300/80 before:to-primary-500/60 before:opacity-0 before:blur-md before:transition-opacity before:duration-200 after:absolute after:inset-[1px] after:-z-10 after:rounded-[15px] after:bg-gradient-to-br after:from-white after:to-[#F7F5EF] after:transition-colors after:duration-200 hover:-translate-y-0.5 hover:border-gold-300 hover:shadow-[0_20px_54px_rgba(7,21,16,0.12)] hover:before:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F7F5EF] active:translate-y-0 active:scale-[0.98]'
+
   return (
-    <section id="windows" className="bg-[#0F2419] px-4 py-20 sm:px-6 lg:px-8">
-      <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[1fr_0.85fr] lg:items-center">
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.06] p-8 shadow-[0_24px_90px_rgba(0,0,0,0.20)]">
-          <h2 className="text-3xl font-black text-white sm:text-4xl">Built for the counter.</h2>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-white/70">
-            Use Kubri on your Windows POS device for a focused counter experience with products, payments, invoices, and register sessions in one view.
+    <section id="windows" className="relative scroll-mt-28 overflow-hidden bg-[#F7F5EF] px-4 py-24 sm:px-6 lg:px-8">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_16%,rgba(200,169,110,0.14),transparent_31%),radial-gradient(circle_at_86%_70%,rgba(27,107,58,0.10),transparent_34%),linear-gradient(180deg,#F7F5EF_0%,#FFFFFF_42%,#F7F5EF_100%)]" />
+      <div className="relative mx-auto grid max-w-7xl gap-6 lg:grid-cols-[1fr_0.78fr] lg:items-center">
+        <div className="rounded-[30px] border border-[#DDE6DD] bg-white/78 p-7 shadow-[0_22px_70px_rgba(7,21,16,0.10)] ring-1 ring-white backdrop-blur sm:p-8">
+          <h2 className="text-3xl font-black text-[#071510] sm:text-4xl">Built for the counter.</h2>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-[#52665A]">
+            Use Kubri on your desktop POS device for a focused counter experience with products, payments, invoices, and register sessions in one view.
           </p>
-          <a href="#" onClick={preventDownload}
-            className="mt-7 inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-black text-[#0F2419] hover:bg-gold-100">
-            <Download size={17} /> Download for Windows
-          </a>
+          <div className="mt-7 grid gap-3 sm:grid-cols-2">
+            <a href="#" onClick={preventDownload}
+              className={downloadButtonClass}>
+              <Download size={17} className="transition-transform duration-200 group-hover:-translate-y-0.5" /> Download for Windows
+            </a>
+            <a href="#" onClick={preventDownload}
+              className={downloadButtonClass}>
+              <Apple size={17} className="transition-transform duration-200 group-hover:-translate-y-0.5" /> Download for Mac
+            </a>
+          </div>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
           {['Touch-friendly POS', 'Fast invoice flow', 'Branch-ready settings'].map(item => (
-            <div key={item} className="rounded-2xl border border-gold-400/20 bg-gold-400/10 px-5 py-4 text-sm font-bold text-gold-100">
+            <div key={item} className="rounded-2xl border border-primary-500/10 bg-white/82 px-5 py-4 text-sm font-black text-[#0F2419] shadow-[0_14px_40px_rgba(7,21,16,0.07)] backdrop-blur">
               {item}
             </div>
           ))}
@@ -372,20 +489,21 @@ function WindowsSection() {
 
 function ContactSection() {
   return (
-    <section id="contact" className="relative overflow-hidden bg-[#071510] px-4 py-20 sm:px-6 lg:px-8">
+    <section id="contact" className="relative overflow-hidden border-y border-white/10 bg-[#071510] px-4 py-24 sm:px-6 lg:px-8">
       <Pattern />
-      <div className="relative mx-auto max-w-4xl text-center">
-        <h2 className="text-3xl font-black text-white sm:text-5xl">Bring Kubri to your counter.</h2>
+      <div className="absolute left-1/2 top-12 h-72 w-72 -translate-x-1/2 rounded-full bg-gold-500/10 blur-3xl" />
+      <div className="relative mx-auto max-w-4xl rounded-[32px] border border-white/10 bg-white/[0.045] px-6 py-12 text-center shadow-[0_28px_100px_rgba(0,0,0,0.24)] ring-1 ring-white/[0.04] backdrop-blur sm:px-10">
+        <h2 className="text-3xl font-black text-white sm:text-5xl">Bring Kubri to your business.</h2>
         <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-white/70">
           Talk to us and get your business ready for ZATCA Phase 2 workflows.
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <a href={WA_LINK} target="_blank" rel="noopener noreferrer"
-            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-6 py-4 text-sm font-black text-white shadow-xl shadow-emerald-950/30 hover:bg-emerald-600 sm:w-auto">
-            <MessageCircle size={17} /> WhatsApp
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-300/30 bg-emerald-500 px-6 py-4 text-sm font-black text-white shadow-xl shadow-emerald-950/30 transition-[border-color,background,transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:border-emerald-200/60 hover:bg-emerald-600 hover:shadow-emerald-950/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] active:translate-y-0 active:scale-[0.98] sm:w-auto">
+            <WhatsAppIcon className="h-4 w-4" /> WhatsApp
           </a>
           <a href={EMAIL_LINK}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.05] px-6 py-4 text-sm font-bold text-white hover:bg-white/[0.08] sm:w-auto">
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/[0.055] px-6 py-4 text-sm font-bold text-white shadow-[0_16px_42px_rgba(0,0,0,0.18)] transition-[background,border-color,transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/[0.09] hover:shadow-[0_20px_58px_rgba(0,0,0,0.25)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] active:translate-y-0 active:scale-[0.98] sm:w-auto">
             <Mail size={17} /> support@kubri.shop
           </a>
         </div>
@@ -396,30 +514,32 @@ function ContactSection() {
 
 function Footer() {
   return (
-    <footer className="bg-[#050F0B] px-4 py-12 text-white/60 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
+    <footer className="relative overflow-hidden border-t border-gold-400/15 bg-[#050F0B] px-4 py-14 text-white/65 sm:px-6 lg:px-8">
+      <Pattern />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_16%_10%,rgba(200,169,110,0.12),transparent_30%),radial-gradient(circle_at_85%_24%,rgba(27,107,58,0.24),transparent_34%),linear-gradient(180deg,#071510_0%,#050F0B_100%)]" />
+      <div className="relative mx-auto max-w-7xl">
         <div className="grid gap-10 md:grid-cols-[1.4fr_0.8fr_0.8fr]">
           <div>
             <MeemLogo size="sm" />
             <p className="mt-4 max-w-sm text-sm leading-6">Kubri POS for Saudi businesses that need sales, ZATCA Phase 2 workflows, stock, sessions, VAT reports, and branch visibility.</p>
-            <p className="mt-3 text-sm font-semibold text-gold-300">kubri.shop</p>
+            <p className="mt-3 text-sm font-black text-gold-300">kubri.shop</p>
           </div>
           <div className="space-y-3">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-white">Product</p>
-            <button onClick={() => scrollTo('features')} className="block text-sm hover:text-white">Features</button>
-            <Link to="/pricing" className="block text-sm hover:text-white">Pricing</Link>
-            <button onClick={() => scrollTo('windows')} className="block text-sm hover:text-white">Windows app</button>
-            <Link to="/faq" className="block text-sm hover:text-white">FAQ</Link>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-white">Product</p>
+            <button onClick={() => scrollTo('features')} className="block text-sm font-semibold text-white/70 hover:text-gold-200">Features</button>
+            <Link to="/pricing" className="block text-sm font-semibold text-white/70 hover:text-gold-200">Pricing</Link>
+            <button onClick={() => scrollTo('windows')} className="block text-sm font-semibold text-white/70 hover:text-gold-200">Download App</button>
+            <Link to="/faq" className="block text-sm font-semibold text-white/70 hover:text-gold-200">FAQ</Link>
           </div>
           <div className="space-y-3">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-white">Contact</p>
-            <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="block text-sm hover:text-white">WhatsApp support</a>
-            <a href={EMAIL_LINK} className="block text-sm hover:text-white">support@kubri.shop</a>
-            <Link to="/terms" className="block text-sm hover:text-white">Terms</Link>
-            <Link to="/privacy" className="block text-sm hover:text-white">Privacy</Link>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-white">Contact</p>
+            <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="block text-sm font-semibold text-white/70 hover:text-gold-200">WhatsApp support</a>
+            <a href={EMAIL_LINK} className="block text-sm font-semibold text-white/70 hover:text-gold-200">support@kubri.shop</a>
+            <Link to="/terms" className="block text-sm font-semibold text-white/70 hover:text-gold-200">Terms</Link>
+            <Link to="/privacy" className="block text-sm font-semibold text-white/70 hover:text-gold-200">Privacy</Link>
           </div>
         </div>
-        <div className="mt-10 flex flex-col gap-3 border-t border-white/10 pt-6 text-xs sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-10 flex flex-col gap-3 border-t border-white/10 pt-6 text-xs font-semibold text-white/55 sm:flex-row sm:items-center sm:justify-between">
           <p>© 2026 Kubri. All rights reserved.</p>
           <p>Built for Saudi businesses.</p>
         </div>
