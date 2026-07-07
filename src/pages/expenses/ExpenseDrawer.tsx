@@ -130,7 +130,7 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
 
       if (imageFile) {
         const ext  = imageFile.name.split('.').pop() ?? 'jpg'
-        const path = `${tid}/${Date.now()}.${ext}`
+        const path = `${tid}/${bid}/expenses/${Date.now()}.${ext}`
         const { error: upErr } = await supabase.storage
           .from('expense-receipts')
           .upload(path, imageFile, { upsert: true })
