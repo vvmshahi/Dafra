@@ -14,6 +14,7 @@ export type PaymentStatus = 'pending' | 'paid' | 'partial' | 'refunded'
 export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'cancelled'
 export type ManualSubscriptionPlanInterval = 'monthly' | 'yearly' | 'manual' | 'custom' | 'lifetime'
 export type ManualPaymentStatus = 'unpaid' | 'manual_verified' | 'overdue' | 'refunded'
+export type BillingSignal = 'paid' | 'due_soon' | 'in_grace' | 'overdue' | 'suspended' | 'unknown'
 export type SubscriptionLifecycleStatus =
   | 'setup_pending'
   | 'active'
@@ -209,6 +210,10 @@ export interface Database {
       get_tenant_subscription_access: {
         Args: { p_tenant_id: string }
         Returns: TenantSubscriptionAccess[]
+      }
+      get_super_admin_clients_billing_summary: {
+        Args: Record<never, never>
+        Returns: SuperAdminClientBillingSummary[]
       }
       complete_onboarding: {
         Args: {
@@ -518,6 +523,52 @@ export interface TenantSubscriptionAccess {
   can_use_pos: boolean
   can_create_branch: boolean
   reason: string
+}
+
+export interface SuperAdminClientBillingSummary {
+  tenant_id: string
+  business_name: string
+  business_name_ar: string | null
+  vat_number: string
+  city: string | null
+  contact_name: string | null
+  contact_email: string | null
+  phone: string | null
+  business_type: BusinessType | null
+  tenant_is_active: boolean
+  suspended_at: string | null
+  suspended_reason: string | null
+  created_at: string
+  subscription_id: string | null
+  subscription_plan_name: string | null
+  lifecycle_status: string
+  manual_payment_status: string
+  current_period_start: string | null
+  current_period_end: string | null
+  next_due_date: string | null
+  grace_until_date: string | null
+  days_until_due: number | null
+  days_overdue: number | null
+  can_use_pos: boolean
+  access_reason: string
+  paid_branch_count: number
+  max_branches: number
+  active_branch_count: number
+  total_branch_count: number
+  user_count: number
+  remaining_branches: number
+  can_create_branch: boolean
+  branch_usage_reason: string
+  last_payment_at: string | null
+  last_payment_amount: number | null
+  last_payment_currency: string | null
+  last_payment_method: string | null
+  onboarding_status: TenantOnboardingStatusValue | null
+  owner_setup_status: OwnerSetupStatus | null
+  branch_setup_status: BranchSetupStatus | null
+  zatca_setup_status: ZatcaSetupStatus | null
+  ready_for_billing: boolean
+  billing_signal: BillingSignal
 }
 
 export interface ManualSubscriptionPaymentInsert {

@@ -7,7 +7,7 @@ import {
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { supabase } from '@/lib/supabase'
-import type { BusinessType } from '@/types'
+import type { BusinessType, SuperAdminClientBillingSummary } from '@/types'
 import { BUSINESS_TYPE_OPTIONS, businessTypeLabel, resolveBusinessType } from '@/lib/utils/businessType'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -35,6 +35,7 @@ interface ClientRow {
   paidBranchCount: number
   activeBranchCount: number
   totalBranchCount: number
+  billingSignal: string | null
   branchUsageError?: boolean
 }
 
@@ -87,6 +88,11 @@ function formatDate(value: string | null) {
 }
 
 function getBillingSignal(c: ClientRow): { label: string; className: string } {
+  if (c.billingSignal === 'suspended') return { label: 'Suspended', className: 'bg-red-50 text-red-700 ring-red-200' }
+  if (c.billingSignal === 'overdue') return { label: 'Overdue', className: 'bg-red-50 text-red-700 ring-red-200' }
+  if (c.billingSignal === 'in_grace') return { label: 'In grace', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
+  if (c.billingSignal === 'due_soon') return { label: 'Due soon', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
+  if (c.billingSignal === 'paid') return { label: 'Paid', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
   const status = getStatus(c)
   if (status === 'suspended') return { label: 'Suspended', className: 'bg-red-50 text-red-700 ring-red-200' }
   if (status === 'payment_due') return { label: 'Overdue', className: 'bg-red-50 text-red-700 ring-red-200' }
@@ -594,13 +600,42 @@ export default function ClientsPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [branches, setBranches] = useState<Record<string, BranchSummary[]>>({})
   const [loadingBranch, setLoadingBranch] = useState<Set<string>>(new Set())
+  const [billingSummaryWarning, setBillingSummaryWarning] = useState('')
 
   const [suspendTarget, setSuspendTarget] = useState<ClientRow | null>(null)
   const [restoreTarget, setRestoreTarget] = useState<ClientRow | null>(null)
   const [suspendReason, setSuspendReason] = useState('')
   const [showCreate,    setShowCreate]    = useState(false)
 
-  async function fetchClients() {
+  function mapBillingSummaryRow(r: SuperAdminClientBillingSummary): ClientRow {
+    return {
+      id: r.tenant_id,
+      name: r.business_name,
+      name_ar: r.business_name_ar,
+      vat_number: r.vat_number,
+      city: r.city,
+      business_type: resolveBusinessType(r.business_type),
+      is_active: r.tenant_is_active,
+      suspended_at: r.suspended_at,
+      created_at: r.created_at,
+      maxBranches: r.max_branches,
+      plan: r.subscription_plan_name,
+      subStatus: r.lifecycle_status,
+      endsAt: r.current_period_end,
+      branchCount: r.total_branch_count,
+      userCount: r.user_count,
+      lifecycleStatus: r.lifecycle_status,
+      manualPaymentStatus: r.manual_payment_status,
+      nextDueDate: r.next_due_date,
+      graceUntilDate: r.grace_until_date,
+      paidBranchCount: r.paid_branch_count,
+      activeBranchCount: r.active_branch_count,
+      totalBranchCount: r.total_branch_count,
+      billingSignal: r.billing_signal,
+    }
+  }
+
+  async function fetchClientsFallback() {
     const { data } = await (supabase as any)
       .from('tenants')
       .select(`
@@ -612,7 +647,7 @@ export default function ClientsPage() {
       .order('created_at', { ascending: false })
       .limit(200)
 
-    const baseRows: ClientRow[] = (data ?? []).map((r: any) => {
+    return (data ?? []).map((r: any) => {
       const sub = r.tenant_subscriptions?.[0]
       const activeBranchCount = (r.branches ?? []).filter((b: any) => b.is_active !== false).length
       return {
@@ -638,35 +673,26 @@ export default function ClientsPage() {
         paidBranchCount: Math.max(1, sub?.paid_branch_count ?? r.max_branches ?? 1),
         activeBranchCount,
         totalBranchCount: r.branches?.length ?? 0,
-      }
+        billingSignal: null,
+        branchUsageError: true,
+      } satisfies ClientRow
     })
+  }
 
-    const rows = await Promise.all(baseRows.map(async row => {
-      try {
-        const [{ data: accessRows, error: accessError }, { data: usageRows, error: usageError }] = await Promise.all([
-          (supabase as any).rpc('get_tenant_subscription_access', { p_tenant_id: row.id }),
-          (supabase as any).rpc('get_tenant_branch_usage', { p_tenant_id: row.id }),
-        ])
-        const access = Array.isArray(accessRows) ? accessRows[0] : accessRows
-        const usage = Array.isArray(usageRows) ? usageRows[0] : usageRows
-        return {
-          ...row,
-          lifecycleStatus: accessError || !access ? row.lifecycleStatus : access.lifecycle_status,
-          manualPaymentStatus: accessError || !access ? row.manualPaymentStatus : access.manual_payment_status,
-          nextDueDate: accessError || !access ? row.nextDueDate : access.next_due_date,
-          graceUntilDate: accessError || !access ? row.graceUntilDate : access.grace_until_date,
-          paidBranchCount: accessError || !access ? row.paidBranchCount : access.paid_branch_count,
-          maxBranches: usageError || !usage ? row.maxBranches : usage.max_branches,
-          activeBranchCount: usageError || !usage ? row.activeBranchCount : usage.active_branch_count,
-          totalBranchCount: usageError || !usage ? row.totalBranchCount : usage.total_branch_count,
-          branchUsageError: Boolean(accessError || usageError),
-        }
-      } catch {
-        return { ...row, branchUsageError: true }
-      }
-    }))
+  async function fetchClients() {
+    setLoading(true)
+    const { data, error } = await (supabase as any).rpc('get_super_admin_clients_billing_summary')
 
+    if (!error && Array.isArray(data)) {
+      setClients((data as SuperAdminClientBillingSummary[]).map(mapBillingSummaryRow))
+      setBillingSummaryWarning('')
+      setLoading(false)
+      return
+    }
+
+    const rows = await fetchClientsFallback()
     setClients(rows)
+    setBillingSummaryWarning('Billing summary RPC is unavailable, so the list is showing fallback tenant data.')
     setLoading(false)
   }
 
@@ -794,6 +820,12 @@ export default function ClientsPage() {
           <Plus size={15} /> Create Account
         </button>
       </div>
+
+      {billingSummaryWarning && (
+        <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {billingSummaryWarning}
+        </div>
+      )}
 
       {/* Search + filter tabs */}
       <div className="flex flex-col sm:flex-row gap-3">
