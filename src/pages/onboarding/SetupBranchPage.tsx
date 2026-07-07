@@ -12,6 +12,7 @@ import {
   normalizeBranchUsernameInput,
   validateBranchUsernameInput,
 } from '@/lib/utils/branchUsername'
+import { branchCreationErrorMessage, branchIdFromRpcResult } from '@/lib/utils/branchCreation'
 
 const VAT_RE    = /^3\d{13}3$/
 const CR_RE     = /^[a-zA-Z0-9]+$/
@@ -71,34 +72,31 @@ export default function SetupBranchPage() {
     setSaving(true)
     setError('')
     try {
-      // Create branch and get its ID
       const { data: branchData, error: insertErr } = await (supabase as any)
-        .from('branches')
-        .insert({
-          tenant_id:        profile!.tenant_id,
-          name:             name.trim(),
-          vat_number:       vat.trim(),
-          cr_number:        cr.trim(),
-          building_number:  bldg.trim(),
-          postal_code:      postal.trim(),
-          street:           street.trim(),
-          district:         district.trim(),
-          city:             city.trim(),
-          phone:            phone.trim() || null,
-          country:          'SA',
-          is_main_branch:   true,
-          is_active:        true,
-          invoice_counter:  0,
-          vat_mode:         'exclusive',
-          invoice_prefix:   'INV',
-          invoice_language: 'both',
-          show_logo:        true,
-          zatca_phase:      isPhase2 ? 2 : 1,
+        .rpc('create_branch_for_tenant', {
+          p_payload: {
+            name:             name.trim(),
+            vat_number:       vat.trim(),
+            cr_number:        cr.trim(),
+            building_number:  bldg.trim(),
+            postal_code:      postal.trim(),
+            street:           street.trim(),
+            district:         district.trim(),
+            city:             city.trim(),
+            phone:            phone.trim() || null,
+            country:          'SA',
+            is_main_branch:   true,
+            is_active:        true,
+            vat_mode:         'exclusive',
+            invoice_prefix:   'INV',
+            invoice_language: 'both',
+            show_logo:        true,
+            zatca_phase:      isPhase2 ? 2 : 1,
+          },
         })
-        .select('id')
-        .single()
 
       if (insertErr) throw insertErr
+      const branchId = branchIdFromRpcResult(branchData)
 
       // Create the branch user (no email sent — owner sets credentials directly)
       const { data: fnData, error: fnErr } = await supabase.functions.invoke('create-branch-user', {
@@ -107,7 +105,7 @@ export default function SetupBranchPage() {
           password:  loginPwd,
           full_name: name.trim(),
           tenant_id: profile!.tenant_id,
-          branch_id: branchData.id,
+          branch_id: branchId,
         },
       })
 
@@ -117,7 +115,7 @@ export default function SetupBranchPage() {
       await refreshBranchCount()
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
-      setError(err?.message ?? 'Failed to create branch. Please try again.')
+      setError(branchCreationErrorMessage(err?.message))
     } finally {
       setSaving(false)
     }

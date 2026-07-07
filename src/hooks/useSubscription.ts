@@ -11,11 +11,14 @@ export interface SubscriptionState {
   isPhase2:        boolean
   plan:            string
   maxBranches:     number
+  suspendedAt:     string | null
+  suspendedReason: string | null
 }
 
 const DEFAULT: SubscriptionState = {
   status: 'loading', isBlocked: false, showWarning: false,
   daysUntilExpiry: 999, isLifetimeFree: false, isPhase2: false, plan: '', maxBranches: 1,
+  suspendedAt: null, suspendedReason: null,
 }
 
 const ALLOW_MISSING_SUBSCRIPTION = import.meta.env.VITE_ALLOW_MISSING_SUBSCRIPTION === 'true'
@@ -42,20 +45,26 @@ export function useSubscription(): SubscriptionState {
           .maybeSingle(),
         (supabase as any)
           .from('tenants')
-          .select('is_active, max_branches')
+          .select('is_active, suspended_at, suspended_reason, max_branches')
           .eq('id', tid)
           .maybeSingle(),
       ])
 
+      const isManuallySuspended = tenant?.is_active === false || !!tenant?.suspended_at
+
       if (!sub) {
         setState({
           ...DEFAULT,
-          status: ALLOW_MISSING_SUBSCRIPTION ? 'active' : 'activation_required',
-          isBlocked: !ALLOW_MISSING_SUBSCRIPTION,
+          status: isManuallySuspended
+            ? 'suspended'
+            : ALLOW_MISSING_SUBSCRIPTION ? 'active' : 'activation_required',
+          isBlocked: isManuallySuspended,
           showWarning: ALLOW_MISSING_SUBSCRIPTION,
           isPhase2: false,
           plan: ALLOW_MISSING_SUBSCRIPTION ? 'Pilot access' : 'Activation required',
           maxBranches: tenant?.max_branches ?? 1,
+          suspendedAt: tenant?.suspended_at ?? null,
+          suspendedReason: tenant?.suspended_reason ?? null,
         })
         return
       }
@@ -69,7 +78,6 @@ export function useSubscription(): SubscriptionState {
       const isPhase2    = Array.isArray(features) ? features.includes('zatca_phase2') : false
 
       const isLifetimeFree = sub.status === 'active' && endsAt === null
-      const isSuspended    = tenant?.is_active === false || sub.status === 'cancelled'
 
       const daysUntilExpiry = endsAt
         ? Math.ceil((endsAt - now) / 86_400_000)
@@ -83,15 +91,15 @@ export function useSubscription(): SubscriptionState {
         ? Math.ceil((graceEnds - now) / 86_400_000)
         : 0
 
-      const isBlocked    = (!isLifetimeFree && isPastGrace) || isSuspended
+      const isBlocked    = isManuallySuspended
       const showWarning  = !isLifetimeFree && !isBlocked && daysUntilExpiry <= 7 && daysUntilExpiry >= 0
 
       let status: SubscriptionState['status'] = 'active'
-      if (isLifetimeFree)  status = 'lifetime_free'
-      else if (isSuspended) status = 'suspended'
+      if (isManuallySuspended) status = 'suspended'
+      else if (isLifetimeFree) status = 'lifetime_free'
+      else if (sub.status === 'cancelled') status = 'cancelled'
       else if (isInGrace)   status = 'grace_period'
       else if (isPastGrace) status = 'expired'
-      else if (sub.status === 'cancelled') status = 'cancelled'
       else if (isExpired)   status = 'expired'
 
       setState({
@@ -103,6 +111,8 @@ export function useSubscription(): SubscriptionState {
         isPhase2,
         plan: planName,
         maxBranches,
+        suspendedAt: tenant?.suspended_at ?? null,
+        suspendedReason: tenant?.suspended_reason ?? null,
       })
     })()
   }, [profile?.tenant_id])

@@ -98,6 +98,7 @@ export default function SubscriptionTab() {
   // Expired / grace period / blocked
   if (sub.isBlocked || sub.status === 'grace_period') {
     const inGrace = sub.status === 'grace_period'
+    const isSuspended = sub.status === 'suspended'
     const needsActivation = sub.status === 'activation_required'
     return (
       <div className="space-y-5">
@@ -117,10 +118,10 @@ export default function SubscriptionTab() {
               {needsActivation
                 ? 'This workspace needs manual subscription activation before invoicing can be used.'
                 : inGrace
-                ? 'Invoicing will be paused when the grace period ends. Renew now to avoid interruption.'
-                : 'Your account has been suspended. Contact us to reactivate.'}
+                ? 'Your subscription is in grace. Kubri support will contact you for renewal.'
+                : 'Account suspended. New billing is disabled. You can still view existing records.'}
             </p>
-            <ContactButtons label={needsActivation ? 'Contact Us to Activate' : 'Renew Now'} />
+            <ContactButtons label={needsActivation ? 'Contact Us to Activate' : isSuspended ? 'Contact Us' : 'Renew Now'} />
           </div>
         </div>
       </div>

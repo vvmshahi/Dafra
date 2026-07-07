@@ -21,6 +21,7 @@ import {
   normalizeBranchUsernameInput,
   validateBranchUsernameInput,
 } from '@/lib/utils/branchUsername'
+import { branchCreationErrorMessage, branchIdFromRpcResult } from '@/lib/utils/branchCreation'
 
 /* ── Types ──────────────────────────────────────────────────── */
 
@@ -381,16 +382,14 @@ function BranchDrawer({
       // untyped reference for write calls while keeping reads typed.
       const q = supabase as unknown as { from: (t: string) => any }
       if (isNew) {
-        const insertPayload = {
-          tenant_id: tenantId,
-          ...branchPayload,
-        }
-
-        const { data, error } = await q.from('branches').insert(insertPayload).select('id').single()
+        const { data, error } = await (supabase as any).rpc('create_branch_for_tenant', {
+          p_payload: branchPayload,
+        })
         if (error) throw error
-        const logoUrl = await uploadLogo(data.id)
-        if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', data.id)
-        if (form.allow_split_payments || form.show_pos_scroll_buttons) await savePosSettings(data.id)
+        const branchId = branchIdFromRpcResult(data)
+        const logoUrl = await uploadLogo(branchId)
+        if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', branchId)
+        if (form.allow_split_payments || form.show_pos_scroll_buttons) await savePosSettings(branchId)
 
         // Refresh the parent branch list now (branch is in DB regardless of login outcome)
         onRefresh?.()
@@ -402,7 +401,7 @@ function BranchDrawer({
             password:  form.login_password,
             full_name: form.name.trim(),
             tenant_id: tenantId,
-            branch_id: data.id,
+            branch_id: branchId,
           },
         })
         const fnErrMsg = fnErr?.message ?? (fnData as any)?.error ?? null
@@ -425,7 +424,7 @@ function BranchDrawer({
 
       onSaved()
     } catch (err: any) {
-      setError(err?.message ?? 'Failed to save branch')
+      setError(isNew ? branchCreationErrorMessage(err?.message) : (err?.message ?? 'Failed to save branch'))
     } finally {
       setSaving(false)
     }

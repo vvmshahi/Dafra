@@ -26,6 +26,9 @@ import { MeemLogo } from '@/components/MeemLogo'
 import { getPrinterSettings, isElectron, printReceipt, printSilent } from '@/lib/electron'
 import { supportConfig } from '@/config/support'
 
+const ACCOUNT_SUSPENDED_BILLING_MESSAGE =
+  'Account suspended. New billing is disabled. You can still view existing records. Please contact the business owner or Kubri support.'
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type PosPaymentChoice = 'cash' | 'card' | 'split'
@@ -224,6 +227,9 @@ function safeCheckoutErrorMessage(err: unknown): string {
     ? String((err as { message?: unknown }).message ?? '')
     : ''
 
+  if (/account is suspended|new billing is disabled|suspended/i.test(message)) {
+    return ACCOUNT_SUSPENDED_BILLING_MESSAGE
+  }
   if (/amount paid is less|underpaid/i.test(message)) {
     return 'Amount received is less than invoice total.'
   }
@@ -246,6 +252,23 @@ function safeCheckoutErrorMessage(err: unknown): string {
     return 'Checkout is not allowed for this branch.'
   }
   return 'Checkout failed. Please review the cart and try again.'
+}
+
+function registerSessionErrorMessage(err: unknown): string {
+  const message = err && typeof err === 'object' && 'message' in err
+    ? String((err as { message?: unknown }).message ?? '')
+    : ''
+
+  if (/account is suspended|new register sessions cannot be opened|suspended/i.test(message)) {
+    return 'Account is suspended. New register sessions cannot be opened.'
+  }
+  if (/already open/i.test(message)) {
+    return 'Register is already open for this branch.'
+  }
+  if (/forbidden|unauthorized|not found|inactive/i.test(message)) {
+    return 'Register cannot be opened for this branch.'
+  }
+  return message || 'Register could not be opened. Please try again.'
 }
 
 function paymentMethodLabel(method: string | null | undefined): string {
@@ -1515,6 +1538,7 @@ export default function POSPage() {
     && splitCashAmount <= totals.total + 0.01
     && splitCardAmount <= totals.total + 0.01
     && splitBalanced
+  const isAccountSuspended = sub.status === 'suspended'
 
   const filteredCusts = custSearch.trim()
     ? customers.filter(c =>
@@ -1616,6 +1640,20 @@ export default function POSPage() {
     setSplitCash(amountInput(totals.total - amount))
   }
 
+  async function handleOpenRegister(openingCash: number) {
+    if (isAccountSuspended) {
+      toast.error('Account is suspended. New register sessions cannot be opened.')
+      return
+    }
+
+    try {
+      await openSession(openingCash)
+      setShowOpenSession(false)
+    } catch (err) {
+      toast.error(registerSessionErrorMessage(err))
+    }
+  }
+
   function useNormalCardPayment() {
     setPayMethod('card')
     setSplitOpen(false)
@@ -1690,6 +1728,10 @@ export default function POSPage() {
   async function charge() {
     const tid = profile?.tenant_id
     if (!tid || !branch || cart.length === 0 || submitting) return
+    if (isAccountSuspended) {
+      toast.error(ACCOUNT_SUSPENDED_BILLING_MESSAGE)
+      return
+    }
     setSubmitting(true)
     setZatcaResult(null)
     const idempotencyKey = checkoutKeyRef.current ?? createCheckoutIdempotencyKey()
@@ -1877,46 +1919,14 @@ export default function POSPage() {
     )
   }
 
-  if (sub.isBlocked) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center bg-[#0F2419] text-center px-6 gap-6">
-        <div className="w-16 h-16 rounded-2xl bg-red-500/20 flex items-center justify-center">
-          <AlertCircle size={32} className="text-red-400" />
-        </div>
-        <div>
-          <h2 className="text-2xl font-black text-white">Subscription Paused</h2>
-          <p className="text-white/60 mt-2 max-w-sm">
-            Contact us to reactivate your account and continue making sales.
-          </p>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <a
-            href={WA_LINK}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-6 py-3 rounded-xl transition-colors"
-          >
-            WhatsApp Us
-          </a>
-          <a
-            href={EMAIL_LINK}
-            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-semibold px-6 py-3 rounded-xl transition-colors"
-          >
-            Email Us
-          </a>
-        </div>
-      </div>
-    )
-  }
-
   // Blocked state — no active session
   if (!session) {
     return (
       <div className="flex h-screen bg-[#0F2419] items-center justify-center">
-        {showOpenSession && (
+        {showOpenSession && !isAccountSuspended && (
           <OpenSessionModal
-            onOpen={async (cash) => { await openSession(cash); setShowOpenSession(false) }}
-            onSkip={async () => { await openSession(0); setShowOpenSession(false) }}
+            onOpen={handleOpenRegister}
+            onSkip={() => handleOpenRegister(0)}
             onBack={() => navigate('/branch')}
           />
         )}
@@ -1927,19 +1937,49 @@ export default function POSPage() {
             onNewSession={() => { setSessionSummary(null); setShowOpenSession(true) }}
           />
         )}
-        {!showOpenSession && !sessionSummary && (
+        {(!showOpenSession || isAccountSuspended) && !sessionSummary && (
           <div className="bg-white rounded-2xl shadow-2xl p-8 text-center max-w-sm mx-4 w-full">
-            <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <Lock size={28} className="text-gray-400" />
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 ${
+              isAccountSuspended ? 'bg-red-50' : 'bg-gray-100'
+            }`}>
+              {isAccountSuspended
+                ? <AlertCircle size={28} className="text-red-500" />
+                : <Lock size={28} className="text-gray-400" />}
             </div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">Register Closed</h2>
-            <p className="text-sm text-gray-500 mb-6">Open a new session to start accepting payments.</p>
-            <button
-              onClick={() => setShowOpenSession(true)}
-              className="w-full py-3 bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity"
-            >
-              Open Register
-            </button>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">
+              {isAccountSuspended ? 'Account Suspended' : 'Register Closed'}
+            </h2>
+            <p className="text-sm text-gray-500 mb-6">
+              {isAccountSuspended
+                ? 'New register sessions and billing are disabled. You can still view existing records.'
+                : 'Open a new session to start accepting payments.'}
+            </p>
+            {!isAccountSuspended && (
+              <button
+                onClick={() => setShowOpenSession(true)}
+                className="w-full py-3 bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity"
+              >
+                Open Register
+              </button>
+            )}
+            {isAccountSuspended && (
+              <div className="flex gap-2">
+                <a
+                  href={WA_LINK}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-3 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors"
+                >
+                  Contact Us
+                </a>
+                <a
+                  href={EMAIL_LINK}
+                  className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors"
+                >
+                  Email
+                </a>
+              </div>
+            )}
             <button
               onClick={() => navigate('/branch')}
               className="mt-3 w-full text-sm text-gray-400 hover:text-gray-600 transition-colors"
@@ -1952,7 +1992,7 @@ export default function POSPage() {
     )
   }
 
-  const canCharge = cart.length > 0 && !submitting &&
+  const canCharge = !isAccountSuspended && cart.length > 0 && !submitting &&
     (payMethod === 'split'
       ? splitReady
       : !(payMethod === 'cash' && cashReceived !== '' && cashAmt < totals.total - 0.001))
@@ -2432,6 +2472,12 @@ export default function POSPage() {
           )}
         </div>
 
+        {isAccountSuspended && (
+          <div className="mx-4 mb-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5 text-xs text-red-700">
+            {ACCOUNT_SUSPENDED_BILLING_MESSAGE}
+          </div>
+        )}
+
         {/* Charge button */}
         <div className="px-4 pb-5 flex-shrink-0">
           <button
@@ -2444,6 +2490,8 @@ export default function POSPage() {
           >
             {submitting
               ? <><Loader2 size={16} className="animate-spin" /> Processing…</>
+              : isAccountSuspended
+                ? <><AlertCircle size={16} /> Billing disabled</>
               : <>
                   {payMethod === 'cash' ? <Banknote size={16} /> : <CreditCard size={16} />}
                   Charge — <Rial amount={totals.total} />

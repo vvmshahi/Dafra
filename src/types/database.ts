@@ -237,6 +237,10 @@ export interface Database {
         }
         Returns: { tenant_id: string; branch_id: string }
       }
+      create_branch_for_tenant: {
+        Args: { p_payload: Record<string, unknown> }
+        Returns: Record<string, unknown>
+      }
       pos_checkout: {
         Args: { p_payload: Record<string, unknown> }
         Returns: Record<string, unknown>
