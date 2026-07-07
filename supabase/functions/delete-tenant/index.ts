@@ -10,6 +10,7 @@ const corsHeaders = {
 interface CallerProfile {
   role: string
   tenant_id: string | null
+  is_active: boolean | null
 }
 
 interface TenantRow {
@@ -42,8 +43,8 @@ function bearerToken(req: Request): string {
 }
 
 function isAuthorizedForTenantDelete(caller: CallerProfile, tenantId: string): boolean {
-  if (caller.role === 'super_admin') return true
-  return caller.role === 'owner' && caller.tenant_id === tenantId
+  void tenantId
+  return caller.role === 'super_admin' && caller.is_active === true
 }
 
 async function countQuery(query: any, label: string): Promise<number> {
@@ -177,7 +178,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: callerProfile, error: profileErr } = await adminClient
       .from('user_profiles')
-      .select('role, tenant_id')
+      .select('role, tenant_id, is_active')
       .eq('id', caller.id)
       .maybeSingle()
 
@@ -400,6 +401,6 @@ Deno.serve(async (req: Request) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal error'
     console.error('[delete-tenant] unhandled error:', message)
-    return jsonResponse({ error: message }, 500)
+    return jsonResponse({ error: 'Internal error' }, 500)
   }
 })

@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import {
-  Plus, Pencil, Trash2, Building2, CheckCircle2, X,
+  Plus, Pencil, Building2, CheckCircle2, X,
   Upload, Globe, Phone, Mail, MapPin, FileText,
   ReceiptText, ShieldCheck, ChevronDown, ChevronRight,
-  Star, KeyRound, LogIn, Loader2, AlertTriangle,
+  Star, KeyRound, LogIn,
   CreditCard,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -919,118 +919,14 @@ function ResetPasswordModal({ branch, onClose }: { branch: BranchWithLogin; onCl
   )
 }
 
-/* ── Delete confirm modal ────────────────────────────────────── */
-
-function DeleteConfirmModal({
-  branch,
-  onClose,
-  onDeleted,
-}: {
-  branch: Branch
-  onClose: () => void
-  onDeleted: () => void
-}) {
-  const [invoiceCount, setInvoiceCount] = useState<number | null>(null)
-  const [confirmName, setConfirmName]   = useState('')
-  const [deleting, setDeleting]         = useState(false)
-  const [error, setError]               = useState('')
-
-  useEffect(() => {
-    supabase
-      .from('invoices')
-      .select('id', { count: 'exact', head: true })
-      .eq('branch_id', branch.id)
-      .then(({ count }) => setInvoiceCount(count ?? 0))
-  }, [branch.id])
-
-  const hasInvoices = (invoiceCount ?? 0) > 0
-  const canDelete   = confirmName.trim() === branch.name.trim()
-
-  async function handleDelete() {
-    if (!canDelete) return
-    setDeleting(true)
-    setError('')
-    try {
-      const { data, error: fnErr } = await supabase.functions.invoke('delete-branch', {
-        body: {
-          branchId: branch.id,
-          confirmation: confirmName.trim(),
-        },
-      })
-      const errMsg = fnErr?.message ?? (data as any)?.error ?? null
-      if (errMsg) throw new Error(errMsg)
-      onDeleted()
-    } catch (err: any) {
-      setError(err.message ?? 'Failed to delete branch')
-      setDeleting(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
-              <AlertTriangle size={15} className="text-red-500" />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold text-gray-900">Delete Branch</h2>
-              <p className="text-xs text-gray-400 mt-0.5">{branch.name}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
-            <X size={16} />
-          </button>
-        </div>
-
-        {invoiceCount === null ? (
-          <div className="flex justify-center py-6">
-            <Loader2 size={20} className="animate-spin text-gray-300" />
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-xs text-red-700 space-y-1">
-              {hasInvoices && <p className="font-semibold">This branch has {invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''}.</p>}
-              <p>All invoices, expenses, POS sessions, and the branch login will be permanently deleted. This cannot be undone.</p>
-            </div>
-            <div>
-              <label className="label">Type <span className="font-mono font-bold text-gray-800">{branch.name}</span> to confirm</label>
-              <input
-                className="input mt-1.5"
-                value={confirmName}
-                onChange={e => setConfirmName(e.target.value)}
-                placeholder={branch.name}
-              />
-            </div>
-
-            {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
-
-            <div className="flex justify-end gap-2 pt-1">
-              <Button type="button" variant="ghost" onClick={onClose} disabled={deleting}>Cancel</Button>
-              <Button
-                type="button"
-                disabled={!canDelete || deleting}
-                loading={deleting}
-                onClick={handleDelete}
-                className="bg-red-600 hover:bg-red-700 text-white border-red-600"
-              >
-                Delete Branch
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 /* ── Branch card ─────────────────────────────────────────────── */
 
+const WA_LINK = supportConfig.whatsappLink
+
 function BranchCard({
-  branch, onEdit, onDelete, onResetPassword,
+  branch, onEdit, onResetPassword,
 }: {
-  branch: BranchWithLogin; onEdit: () => void; onDelete: () => void; onResetPassword: () => void
+  branch: BranchWithLogin; onEdit: () => void; onResetPassword: () => void
 }) {
   const loginCredential = branchLoginCredential(branch)
 
@@ -1091,18 +987,21 @@ function BranchCard({
           className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors">
           <Pencil size={14} />
         </button>
-        <button onClick={onDelete}
-          className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors">
-          <Trash2 size={14} />
-        </button>
+        <a
+          href={WA_LINK}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs font-medium text-gray-400 hover:text-primary-600 transition-colors"
+          title="Contact Kubri support to delete this branch."
+        >
+          Contact support
+        </a>
       </div>
     </div>
   )
 }
 
 /* ── Main tab ─────────────────────────────────────────────────── */
-
-const WA_LINK = supportConfig.whatsappLink
 
 export default function BranchesTab() {
   const { profile } = useAuth()
@@ -1111,7 +1010,6 @@ export default function BranchesTab() {
   const [loading, setLoading]       = useState(true)
   const [loadError, setLoadError]   = useState('')
   const [drawerBranch, setDrawer]     = useState<BranchWithLogin | 'new' | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<BranchWithLogin | null>(null)
   const [resetTarget, setResetTarget]  = useState<BranchWithLogin | null>(null)
   const [branchUsage, setBranchUsage] = useState<TenantBranchUsage | null>(null)
   const [branchUsageError, setBranchUsageError] = useState(false)
@@ -1261,20 +1159,10 @@ export default function BranchesTab() {
               key={b.id}
               branch={b}
               onEdit={() => setDrawer(b)}
-              onDelete={() => setDeleteTarget(b)}
               onResetPassword={() => setResetTarget(b)}
             />
           ))}
         </div>
-      )}
-
-      {/* Delete confirm modal */}
-      {deleteTarget && (
-        <DeleteConfirmModal
-          branch={deleteTarget}
-          onClose={() => setDeleteTarget(null)}
-          onDeleted={() => { setDeleteTarget(null); load() }}
-        />
       )}
 
       {/* Reset password modal */}

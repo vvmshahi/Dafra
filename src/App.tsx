@@ -81,6 +81,35 @@ function AuthLoadError() {
   )
 }
 
+function UnauthorizedPage() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center px-6">
+      <div className="max-w-sm w-full rounded-2xl bg-white border border-gray-100 p-6 text-center shadow-sm">
+        <h1 className="text-lg font-bold text-gray-900">You do not have access to this page.</h1>
+        <p className="text-sm text-gray-500 mt-2">
+          Please use the pages available for your account role.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function roleOf(profile: { role?: string } | null | undefined) {
+  return String(profile?.role ?? '')
+}
+
+function isOwnerAdminRole(role: string) {
+  return role === 'owner' || role === 'admin'
+}
+
+function isBranchRole(role: string) {
+  return role === 'branch'
+}
+
+function isSuperAdminRole(role: string) {
+  return role === 'super_admin'
+}
+
 // ── Guards ────────────────────────────────────────────────────────────────
 
 /**
@@ -140,28 +169,47 @@ function RequireOnboarding() {
 
 /** Super admin only. */
 function RequireSuperAdmin() {
-  const { hasRole, loading, authError } = useAuth()
+  const { profile, loading, authError } = useAuth()
   if (loading)                 return <FullscreenSpinner />
   if (authError)               return <AuthLoadError />
-  if (!hasRole('super_admin')) return <Navigate to="/dashboard" replace />
+  if (!isSuperAdminRole(roleOf(profile))) return <UnauthorizedPage />
   return <Outlet />
 }
 
 /** Branch role only — POS and branch dashboard. */
 function RequireBranch() {
-  const { hasRole, loading, authError } = useAuth()
+  const { profile, loading, authError } = useAuth()
   if (loading) return <FullscreenSpinner />
   if (authError) return <AuthLoadError />
-  if (!hasRole('branch')) return <Navigate to="/dashboard" replace />
+  if (!isBranchRole(roleOf(profile))) return <UnauthorizedPage />
   return <Outlet />
 }
 
 /** POS — branch role only. */
 function RequirePOS() {
-  const { hasRole, loading, authError } = useAuth()
+  const { profile, loading, authError } = useAuth()
   if (loading) return <FullscreenSpinner />
   if (authError) return <AuthLoadError />
-  if (!hasRole('branch')) return <Navigate to="/branch" replace />
+  if (!isBranchRole(roleOf(profile))) return <UnauthorizedPage />
+  return <Outlet />
+}
+
+/** Owner/admin global management pages. */
+function RequireOwnerAdmin() {
+  const { profile, loading, authError } = useAuth()
+  if (loading) return <FullscreenSpinner />
+  if (authError) return <AuthLoadError />
+  if (!isOwnerAdminRole(roleOf(profile))) return <UnauthorizedPage />
+  return <Outlet />
+}
+
+/** Owner/admin and super-admin internal operations. */
+function RequireOwnerAdminOrSuperAdmin() {
+  const { profile, loading, authError } = useAuth()
+  if (loading) return <FullscreenSpinner />
+  if (authError) return <AuthLoadError />
+  const role = roleOf(profile)
+  if (!isOwnerAdminRole(role) && !isSuperAdminRole(role)) return <UnauthorizedPage />
   return <Outlet />
 }
 
@@ -271,9 +319,14 @@ export default function App() {
               <Route path="/super-admin/settings"           element={<SuperAdminSettingsPage />} />
             </Route>
 
-            {/* Owner routes */}
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/dashboard/branches/:branchId" element={<BranchDetailPage />} />
+            {/* Owner/admin global overview routes */}
+            <Route element={<RequireOwnerAdmin />}>
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/dashboard/branches/:branchId" element={<BranchDetailPage />} />
+              <Route path="/employees"   element={<EmployeesPage />} />
+            </Route>
+
+            {/* Tenant operational routes: owner/admin and branch users; RLS/RPCs own row scope */}
             <Route path="/invoices"       element={<InvoicesPage />} />
             <Route path="/invoices/:id"   element={<InvoiceDetailPage />} />
             <Route path="/products"  element={<ProductsPage />} />
@@ -281,14 +334,16 @@ export default function App() {
             <Route path="/customers"     element={<CustomersPage />} />
             <Route path="/customers/:id" element={<CustomerDetailPage />} />
             <Route path="/expenses"   element={<ExpensesPage />} />
-            <Route path="/employees"   element={<EmployeesPage />} />
             <Route path="/profile"    element={<ProfilePage />} />
             <Route path="/day-closing" element={<DayClosingPage />} />
             <Route path="/reports"   element={<ReportsPage />} />
-            <Route path="/operations" element={<OperationsPage />} />
             <Route path="/suppliers" element={<SuppliersPage />} />
             <Route path="/device-printer" element={<DevicePrinterPage />} />
             <Route path="/settings"  element={<SettingsPage />} />
+
+            <Route element={<RequireOwnerAdminOrSuperAdmin />}>
+              <Route path="/operations" element={<OperationsPage />} />
+            </Route>
           </Route>
         </Route>
 
