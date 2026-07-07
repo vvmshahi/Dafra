@@ -36,6 +36,8 @@ interface ClientRow {
   activeBranchCount: number
   totalBranchCount: number
   billingSignal: string | null
+  ownerSetupStatus?: string | null
+  ownerSetupLinkSentAt?: string | null
   branchUsageError?: boolean
 }
 
@@ -632,6 +634,8 @@ export default function ClientsPage() {
       activeBranchCount: r.active_branch_count,
       totalBranchCount: r.total_branch_count,
       billingSignal: r.billing_signal,
+      ownerSetupStatus: r.owner_setup_status,
+      ownerSetupLinkSentAt: null,
     }
   }
 
@@ -674,6 +678,8 @@ export default function ClientsPage() {
         activeBranchCount,
         totalBranchCount: r.branches?.length ?? 0,
         billingSignal: null,
+        ownerSetupStatus: null,
+        ownerSetupLinkSentAt: null,
         branchUsageError: true,
       } satisfies ClientRow
     })
@@ -903,6 +909,11 @@ export default function ClientsPage() {
                             <p className="text-sm font-medium text-gray-900">{c.name}</p>
                             {c.name_ar && <p className="text-xs text-gray-400 mt-0.5" dir="rtl">{c.name_ar}</p>}
                             <p className="text-[10px] text-gray-400 mt-0.5">{businessTypeLabel(c.business_type)}</p>
+                            {c.ownerSetupStatus && c.ownerSetupStatus !== 'owner_setup_complete' && (
+                              <p className="text-[10px] text-amber-600 mt-0.5">
+                                Owner setup: {c.ownerSetupStatus.replace(/_/g, ' ')}
+                              </p>
+                            )}
                           </div>
                         </td>
                         <td className="px-4 py-3.5 text-sm text-gray-500">

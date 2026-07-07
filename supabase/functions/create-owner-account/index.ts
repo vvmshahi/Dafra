@@ -302,6 +302,22 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    if (setupLink) {
+      const { error: onboardingErr } = await adminClient
+        .from('tenant_onboarding_status')
+        .upsert({
+          tenant_id: tenantId,
+          onboarding_status: 'owner_invited',
+          owner_setup_status: 'owner_invited',
+          owner_setup_link_sent_at: new Date().toISOString(),
+          updated_by: caller.id,
+        }, { onConflict: 'tenant_id' })
+
+      if (onboardingErr) {
+        console.error('[create-owner-account] Step 6 WARNING — onboarding tracking failed:', onboardingErr.message)
+      }
+    }
+
     const response: Record<string, unknown> = {
       user_id:   newUserId,
       tenant_id: tenantId,

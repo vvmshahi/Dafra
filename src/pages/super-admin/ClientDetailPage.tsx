@@ -5,6 +5,7 @@ import {
   UserX, UserCheck, Trash2, MapPin, Phone, Mail,
   AlertTriangle, CheckCircle2, Settings, Star,
   Plus, NotebookPen, ClipboardCheck, CalendarDays, ReceiptText,
+  Copy, Link2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/Badge'
@@ -61,7 +62,7 @@ interface BranchItem {
 
 interface UserItem {
   id: string; full_name: string | null; role: string
-  is_active: boolean; created_at: string
+  email: string | null; is_active: boolean; created_at: string
 }
 
 interface InvoiceStats {
@@ -146,6 +147,16 @@ interface SupportNoteRow {
   note_type: TenantSupportNoteType
   created_by: string | null
   created_at: string
+}
+
+interface ResendOwnerSetupResponse {
+  setupLink?: string
+  ownerEmail?: string
+  ownerUserId?: string
+  ownerName?: string | null
+  ownerSetupLinkSentAt?: string
+  expiresNote?: string
+  error?: string
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1037,6 +1048,121 @@ function OnboardingCard({ tenantId, row, onSaved }: {
   )
 }
 
+function OwnerSetupLinkCard({ tenantId, owner, row, onSaved }: {
+  tenantId: string
+  owner: UserItem | null
+  row: OnboardingRow | null
+  onSaved: () => void
+}) {
+  const [sending, setSending] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [result, setResult] = useState<ResendOwnerSetupResponse | null>(null)
+
+  const ownerEmail = result?.ownerEmail ?? owner?.email ?? null
+  const lastSentAt = result?.ownerSetupLinkSentAt ?? row?.owner_setup_link_sent_at ?? null
+
+  async function resendLink() {
+    setCopied(false)
+    setResult(null)
+    setSending(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('resend-owner-setup-link', {
+        body: { tenant_id: tenantId },
+      })
+      const payload = (data ?? {}) as ResendOwnerSetupResponse
+      const errMsg = error?.message ?? payload.error ?? null
+      if (errMsg) throw new Error(errMsg)
+      if (!payload.setupLink) throw new Error('Setup link was not returned')
+      setResult(payload)
+      toast.success('Owner setup link generated')
+      onSaved()
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to resend owner setup link')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  async function copyLink() {
+    if (!result?.setupLink) return
+    setCopied(false)
+    try {
+      await navigator.clipboard.writeText(result.setupLink)
+      setCopied(true)
+      toast.success('Setup link copied')
+    } catch {
+      toast.error('Copy failed. Select the link and copy it manually.')
+    }
+  }
+
+  return (
+    <div className="card p-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl bg-primary-50 flex items-center justify-center flex-shrink-0">
+            <Link2 size={16} className="text-primary-600" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Owner setup link</h2>
+            <p className="text-xs text-gray-500 mt-1 max-w-xl">
+              Generate a fresh setup link for the owner. Send this link manually by WhatsApp or email.
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              This does not change the owner account unless they open the link and set a new password.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={resendLink}
+          disabled={sending || !owner}
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+        >
+          {sending ? 'Generating...' : 'Resend owner setup link'}
+        </button>
+      </div>
+
+      {!owner && (
+        <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          No active owner profile was found for this tenant.
+        </div>
+      )}
+
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+        <InfoRow label="Owner email" value={ownerEmail ?? '—'} />
+        <InfoRow label="Owner user" value={owner?.full_name ?? result?.ownerName ?? '—'} />
+        <InfoRow label="Setup status" value={humanize(row?.owner_setup_status ?? 'owner_invited')} />
+        <InfoRow label="Last setup link sent" value={formatDate(lastSentAt)} />
+        <InfoRow label="Owner completed" value={formatDate(row?.owner_setup_completed_at)} />
+        <InfoRow label="Completion tracking" value={row?.owner_setup_completed_at ? 'Recorded' : 'Not automatically detected yet'} />
+      </div>
+
+      {result?.setupLink && (
+        <div className="mt-4 rounded-xl border border-primary-100 bg-primary-50 px-4 py-3">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <label className="text-xs font-semibold text-primary-800">Fresh setup link</label>
+            <button
+              onClick={copyLink}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-primary-700 ring-1 ring-primary-100 hover:bg-primary-50"
+            >
+              <Copy size={12} /> {copied ? 'Copied' : 'Copy setup link'}
+            </button>
+          </div>
+          <textarea
+            readOnly
+            value={result.setupLink}
+            rows={3}
+            className="input w-full resize-none bg-white text-xs font-mono"
+            onFocus={e => e.currentTarget.select()}
+          />
+          <p className="text-[11px] text-primary-700 mt-2">
+            {result.expiresNote ?? 'This setup link uses Supabase recovery link expiry settings.'}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SupportNotesCard({ tenantId, notes, onSaved }: {
   tenantId: string
   notes: SupportNoteRow[]
@@ -1178,7 +1304,7 @@ export default function ClientDetailPage() {
         .eq('tenant_id', id)
         .order('is_main_branch', { ascending: false }),
       (supabase as any).from('user_profiles')
-        .select('id, full_name, role, is_active, created_at')
+        .select('id, full_name, role, email, is_active, created_at')
         .eq('tenant_id', id)
         .order('created_at', { ascending: true }),
       (supabase as any).from('invoices')
@@ -1380,6 +1506,7 @@ export default function ClientDetailPage() {
   }
 
   const isSuspended = !!tenant.suspended_at
+  const ownerProfile = users.find(user => user.role === 'owner' && user.is_active !== false) ?? null
 
   return (
     <div className="space-y-6">
@@ -1653,6 +1780,15 @@ export default function ClientDetailPage() {
           access={access}
           onSaved={load}
         />
+        <OwnerSetupLinkCard
+          tenantId={tenant.id}
+          owner={ownerProfile}
+          row={onboarding}
+          onSaved={load}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <OnboardingCard
           tenantId={tenant.id}
           row={onboarding}
