@@ -1133,7 +1133,7 @@ function OwnerSetupLinkCard({ tenantId, owner, row, onSaved }: {
         <InfoRow label="Setup status" value={humanize(row?.owner_setup_status ?? 'owner_invited')} />
         <InfoRow label="Last setup link sent" value={formatDate(lastSentAt)} />
         <InfoRow label="Owner completed" value={formatDate(row?.owner_setup_completed_at)} />
-        <InfoRow label="Completion tracking" value={row?.owner_setup_completed_at ? 'Recorded' : 'Not automatically detected yet'} />
+        <InfoRow label="Completion tracking" value={row?.owner_setup_completed_at ? 'Recorded automatically' : 'Waiting for owner password setup/login'} />
       </div>
 
       {result?.setupLink && (

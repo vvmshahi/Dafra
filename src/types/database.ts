@@ -215,6 +215,10 @@ export interface Database {
         Args: Record<never, never>
         Returns: SuperAdminClientBillingSummary[]
       }
+      mark_owner_setup_complete: {
+        Args: Record<never, never>
+        Returns: OwnerSetupCompletionResult[]
+      }
       complete_onboarding: {
         Args: {
           p_company_name:     string
@@ -573,6 +577,14 @@ export interface SuperAdminClientBillingSummary {
   zatca_setup_status: ZatcaSetupStatus | null
   ready_for_billing: boolean
   billing_signal: BillingSignal
+}
+
+export interface OwnerSetupCompletionResult {
+  tenant_id: string
+  onboarding_status: TenantOnboardingStatusValue
+  owner_setup_status: OwnerSetupStatus
+  owner_setup_completed_at: string | null
+  already_completed: boolean
 }
 
 export interface ManualSubscriptionPaymentInsert {

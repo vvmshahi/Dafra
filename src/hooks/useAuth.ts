@@ -1,7 +1,8 @@
-import { createContext, createElement, useContext, useEffect, useState, useCallback, type ReactNode } from 'react'
+import { createContext, createElement, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import type { UserProfile, UserRole, Tenant } from '@/types'
+import { markOwnerSetupCompleteSilently } from '@/lib/ownerSetupCompletion'
 import {
   INVALID_LOGIN_CREDENTIALS_MESSAGE,
   normalizeBranchUsernameInput,
@@ -27,6 +28,7 @@ function useProvideAuth() {
   const [authError, setAuthError] = useState<string | null>(null)
   // null = not yet checked, true = has ≥1 branch, false = no branches
   const [hasBranch, setHasBranch] = useState<boolean | null>(null)
+  const ownerSetupCompletionAttempts = useRef(new Set<string>())
 
   useEffect(() => {
     let mounted = true
@@ -61,6 +63,11 @@ function useProvideAuth() {
           if (!mounted) return
           setTenant(tData as unknown as Tenant | null)
           if (p.role === 'owner') {
+            const attemptKey = `${p.id}:${p.tenant_id}`
+            if (p.is_active !== false && !ownerSetupCompletionAttempts.current.has(attemptKey)) {
+              ownerSetupCompletionAttempts.current.add(attemptKey)
+              void markOwnerSetupCompleteSilently('owner_profile_load', { knownOwner: true })
+            }
             await fetchBranchCount(p.tenant_id)
           } else {
             // Branch users and super admins don't need the branch gate

@@ -30,6 +30,7 @@ export type {
   TenantBranchUsage,
   TenantSubscriptionAccess,
   SuperAdminClientBillingSummary,
+  OwnerSetupCompletionResult,
   Branch,
   BranchLoginUsername,
   UserProfile,

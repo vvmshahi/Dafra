@@ -2,6 +2,7 @@ import { useState, useEffect, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Lock, ArrowRight, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { markOwnerSetupCompleteSilently } from '@/lib/ownerSetupCompletion'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { MeemLogo } from '@/components/MeemLogo'
@@ -85,6 +86,7 @@ export default function ResetPasswordPage() {
     }
 
     setStatus('success')
+    await markOwnerSetupCompleteSilently('password_update')
     // Sign out after password update so user must log in with new password
     await supabase.auth.signOut()
     setTimeout(() => {
