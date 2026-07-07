@@ -27,7 +27,7 @@ import { getPrinterSettings, isElectron, printReceipt, printSilent } from '@/lib
 import { supportConfig } from '@/config/support'
 
 const ACCOUNT_SUSPENDED_BILLING_MESSAGE =
-  'Account suspended. New billing is disabled. You can still view existing records. Please contact the business owner or Kubri support.'
+  'Account suspended. New billing and register opening are disabled. Existing records remain available. Please contact the business owner or Kubri support.'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1951,7 +1951,7 @@ export default function POSPage() {
             </h2>
             <p className="text-sm text-gray-500 mb-6">
               {isAccountSuspended
-                ? 'New register sessions and billing are disabled. You can still view existing records.'
+                ? 'New billing and register opening are disabled. Existing records remain available.'
                 : 'Open a new session to start accepting payments.'}
             </p>
             {!isAccountSuspended && (

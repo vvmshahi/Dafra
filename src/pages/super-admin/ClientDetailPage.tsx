@@ -434,7 +434,7 @@ function SuspendModal({ name, reason, onReasonChange, onConfirm, onCancel, actin
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
         <h2 className="text-base font-semibold text-gray-900 mb-1">Suspend Client</h2>
         <p className="text-sm text-gray-500 mb-4">
-          Suspending <strong>{name}</strong> will block all their users from logging in.
+          Suspending <strong>{name}</strong> blocks new billing, register opening, and branch creation. Existing records remain available.
         </p>
         <label className="block text-xs font-medium text-gray-700 mb-1.5">Reason (optional)</label>
         <input
@@ -543,6 +543,8 @@ function SubscriptionOpsCard({ sub, access, usage }: {
   const totalBranches = usage?.total_branch_count ?? 0
   const paidBranches = access?.paid_branch_count ?? sub?.paid_branch_count ?? 1
   const exceedsPaid = activeBranches > paidBranches || totalBranches > paidBranches
+  const isSuspensionEnforced = lifecycle === 'suspended'
+  const wouldBlockIfEnabled = access?.can_use_pos === false && !isSuspensionEnforced
 
   return (
     <div className="card p-6">
@@ -594,8 +596,8 @@ function SubscriptionOpsCard({ sub, access, usage }: {
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <Badge variant={access?.can_use_pos === false ? 'danger' : 'success'} dot>
-          {access?.can_use_pos === false ? 'Future billing block' : 'POS allowed now'}
+        <Badge variant={isSuspensionEnforced ? 'danger' : wouldBlockIfEnabled ? 'warning' : 'success'} dot>
+          {isSuspensionEnforced ? 'Enforced: suspended' : wouldBlockIfEnabled ? 'Would block if enabled' : 'POS allowed now'}
         </Badge>
         <Badge variant={usage?.can_create_branch === false ? 'warning' : 'success'} dot>
           {usage?.can_create_branch === false ? 'Branch limit reached' : 'Can create branch'}
@@ -603,9 +605,15 @@ function SubscriptionOpsCard({ sub, access, usage }: {
         {exceedsPaid && <Badge variant="warning" dot>Usage exceeds paid count</Badge>}
       </div>
 
-      {access?.can_use_pos === false && (
-        <p className="mt-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-medium text-red-700">
-          Billing would be blocked in future enforcement phase.
+      {(isSuspensionEnforced || wouldBlockIfEnabled) && (
+        <p className={`mt-3 rounded-xl border px-4 py-3 text-xs font-medium ${
+          isSuspensionEnforced
+            ? 'border-red-100 bg-red-50 text-red-700'
+            : 'border-amber-100 bg-amber-50 text-amber-800'
+        }`}>
+          {isSuspensionEnforced
+            ? 'Manual suspension blocks new POS checkout, register opening, and branch creation.'
+            : 'Payment status is visibility-only. This tenant would be blocked only if automatic payment enforcement is enabled later.'}
         </p>
       )}
       {access?.reason && <p className="mt-3 text-xs text-gray-400">Reason: {humanize(access.reason)}</p>}
@@ -1458,6 +1466,9 @@ export default function ClientDetailPage() {
               Since {tenant.suspended_at!.slice(0, 10)}
               {tenant.suspended_reason ? ` · ${tenant.suspended_reason}` : ''}
             </p>
+            <p className="text-xs text-red-600 mt-1">
+              New billing, register opening, and branch creation are disabled. Existing records remain available.
+            </p>
           </div>
         </div>
       )}
@@ -1490,7 +1501,7 @@ export default function ClientDetailPage() {
         {/* Quick stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-gray-100">
           {[
-            { label: 'Branches', value: branchUsage ? `${branchUsage.active_branch_count}/${branchUsage.total_branch_count}` : branches.length, icon: Building2 },
+            { label: 'Active / total branches', value: branchUsage ? `${branchUsage.active_branch_count}/${branchUsage.total_branch_count}` : branches.length, icon: Building2 },
             { label: 'Users',    value: users.length,    icon: Users },
             { label: 'Invoices', value: stats?.total ?? 0, icon: FileText },
             { label: 'Revenue',  value: <Rial amount={stats?.revenue ?? 0} />, icon: CreditCard },

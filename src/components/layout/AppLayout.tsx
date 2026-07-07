@@ -22,7 +22,7 @@ function SubscriptionBanner() {
       <div className="flex items-center gap-3 bg-red-700 text-white px-4 py-2.5 text-sm flex-shrink-0">
         <AlertTriangle size={15} className="flex-shrink-0" />
         <span className="flex-1">
-          Account suspended. New billing is disabled. You can still view existing records. Please contact the business owner or Kubri support.
+          Account suspended. New billing and register opening are disabled. Existing invoices and reports remain available.
         </span>
         <a
           href={WA_LINK}
@@ -40,10 +40,10 @@ function SubscriptionBanner() {
 
   if (sub.status === 'grace_period') {
     return (
-      <div className="flex items-center gap-3 bg-red-600 text-white px-4 py-2.5 text-sm flex-shrink-0">
+      <div className="flex items-center gap-3 bg-amber-600 text-white px-4 py-2.5 text-sm flex-shrink-0">
         <AlertTriangle size={15} className="flex-shrink-0" />
         <span className="flex-1">
-          Subscription expired. <strong>{sub.daysUntilExpiry} day{sub.daysUntilExpiry !== 1 ? 's' : ''}</strong> remaining in grace. Contact us now.
+          Grace period active. Billing remains available unless the account is suspended.
         </span>
         <a
           href={WA_LINK}
@@ -62,7 +62,7 @@ function SubscriptionBanner() {
       <div className="flex items-center gap-3 bg-amber-500 text-white px-4 py-2.5 text-sm flex-shrink-0">
         <AlertTriangle size={15} className="flex-shrink-0" />
         <span className="flex-1">
-          Your subscription expires in <strong>{sub.daysUntilExpiry} day{sub.daysUntilExpiry !== 1 ? 's' : ''}</strong>. Contact us to renew.
+          Payment is due soon. Please contact Kubri support if payment is already completed.
         </span>
         <a
           href={WA_LINK}
@@ -71,6 +71,25 @@ function SubscriptionBanner() {
           className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
         >
           <MessageCircle size={13} /> Renew Now
+        </a>
+      </div>
+    )
+  }
+
+  if (sub.status === 'expired') {
+    return (
+      <div className="flex items-center gap-3 bg-amber-600 text-white px-4 py-2.5 text-sm flex-shrink-0">
+        <AlertTriangle size={15} className="flex-shrink-0" />
+        <span className="flex-1">
+          Payment is overdue. Billing remains available during pilot unless the account is suspended.
+        </span>
+        <a
+          href={WA_LINK}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+        >
+          <MessageCircle size={13} /> Contact Us
         </a>
       </div>
     )

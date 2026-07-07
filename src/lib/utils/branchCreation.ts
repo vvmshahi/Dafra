@@ -10,7 +10,7 @@ export function branchCreationErrorMessage(message?: string | null): string {
   }
 
   if (/only tenant owners|unauthorized|forbidden/i.test(text)) {
-    return 'Only tenant owners can create branches.'
+    return 'Only tenant owners/admins can create branches.'
   }
 
   return text || 'Failed to create branch. Please try again.'

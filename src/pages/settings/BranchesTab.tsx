@@ -12,7 +12,7 @@ import { useSubscription } from '@/hooks/useSubscription'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
-import type { Branch, BranchLoginUsername } from '@/types'
+import type { Branch, BranchLoginUsername, TenantBranchUsage } from '@/types'
 import { supportConfig } from '@/config/support'
 import {
   BRANCH_USERNAME_HELPER_TEXT,
@@ -1113,11 +1113,15 @@ export default function BranchesTab() {
   const [drawerBranch, setDrawer]     = useState<BranchWithLogin | 'new' | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<BranchWithLogin | null>(null)
   const [resetTarget, setResetTarget]  = useState<BranchWithLogin | null>(null)
+  const [branchUsage, setBranchUsage] = useState<TenantBranchUsage | null>(null)
+  const [branchUsageError, setBranchUsageError] = useState(false)
 
   const load = async () => {
     if (!profile?.tenant_id) return
     setLoading(true)
     setLoadError('')
+    setBranchUsage(null)
+    setBranchUsageError(false)
     const { data, error } = await supabase
       .from('branches')
       .select('*')
@@ -1131,19 +1135,31 @@ export default function BranchesTab() {
     }
     const loaded = (data as Branch[]) ?? []
     const usernameByBranch = new Map<string, string>()
-    const { data: usernameRows, error: usernameError } = await supabase
-      .from('branch_login_usernames')
-      .select('branch_id, username, normalized_username')
-      .eq('tenant_id', profile.tenant_id)
-      .eq('is_active', true)
+    const [usernameResult, usageResult] = await Promise.all([
+      supabase
+        .from('branch_login_usernames')
+        .select('branch_id, username, normalized_username')
+        .eq('tenant_id', profile.tenant_id)
+        .eq('is_active', true),
+      (supabase as any).rpc('get_tenant_branch_usage', { p_tenant_id: profile.tenant_id }),
+    ])
 
-    if (usernameError) {
-      console.warn('[BranchesTab] Branch username lookup skipped:', usernameError.message)
+    if (usernameResult.error) {
+      console.warn('[BranchesTab] Branch username lookup skipped:', usernameResult.error.message)
     } else {
-      ;((usernameRows ?? []) as Array<Pick<BranchLoginUsername, 'branch_id' | 'username' | 'normalized_username'>>)
+      ;((usernameResult.data ?? []) as Array<Pick<BranchLoginUsername, 'branch_id' | 'username' | 'normalized_username'>>)
         .forEach(row => {
           usernameByBranch.set(row.branch_id, row.username || row.normalized_username)
         })
+    }
+
+    if (usageResult.error) {
+      console.warn('[BranchesTab] Branch usage helper skipped:', usageResult.error.message)
+      setBranchUsage(null)
+      setBranchUsageError(true)
+    } else {
+      setBranchUsage(((usageResult.data ?? [])[0] as TenantBranchUsage | undefined) ?? null)
+      setBranchUsageError(false)
     }
 
     const loadedWithLogins: BranchWithLogin[] = loaded.map(branch => ({
@@ -1171,21 +1187,32 @@ export default function BranchesTab() {
   }, [sub.isPhase2, sub.status, profile?.tenant_id])
 
   const tenantId = profile?.tenant_id ?? ''
+  const fallbackActiveBranches = branches.filter(branch => branch.is_active !== false).length
+  const activeBranchCount = branchUsage?.active_branch_count ?? fallbackActiveBranches
+  const totalBranchCount = branchUsage?.total_branch_count ?? branches.length
+  const maxBranches = branchUsage?.max_branches ?? sub.maxBranches
+  const remainingBranches = branchUsage?.remaining_branches ?? Math.max(maxBranches - activeBranchCount, 0)
+  const canCreateActiveBranch = sub.status !== 'suspended' && (branchUsage?.can_create_branch ?? activeBranchCount < maxBranches)
 
   return (
     <div className="space-y-4">
 
       {/* Toolbar */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h3 className="text-sm font-semibold text-gray-900">Branches</h3>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {branches.length} / {sub.maxBranches} branch{sub.maxBranches !== 1 ? 'es' : ''} used
-          </p>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
+            <span><span className="font-medium text-gray-600">{activeBranchCount}</span> / {maxBranches} active branches used</span>
+            <span>Total branches: <span className="font-medium text-gray-600">{totalBranchCount}</span></span>
+            <span>Remaining branch slots: <span className="font-medium text-gray-600">{remainingBranches}</span></span>
+            {branchUsageError && <span className="text-amber-600">Using local count</span>}
+          </div>
         </div>
-        {branches.length >= sub.maxBranches ? (
+        {!canCreateActiveBranch ? (
           <div className="text-right">
-            <p className="text-xs text-red-600 font-medium">Branch limit reached</p>
+            <p className="text-xs text-red-600 font-medium">
+              {sub.status === 'suspended' ? 'Account suspended' : 'Branch limit reached'}
+            </p>
             <a
               href={WA_LINK}
               target="_blank"
@@ -1194,6 +1221,9 @@ export default function BranchesTab() {
             >
               Contact us to add more
             </a>
+            <Button onClick={() => setDrawer('new')} size="sm" disabled className="mt-2">
+              <Plus size={14} /> Add Branch
+            </Button>
           </div>
         ) : (
           <Button onClick={() => setDrawer('new')} size="sm">
@@ -1220,7 +1250,9 @@ export default function BranchesTab() {
           <Building2 size={36} className="text-gray-200 mx-auto mb-3" />
           <p className="text-sm font-medium text-gray-500">No branches yet</p>
           <p className="text-xs text-gray-400 mt-1 mb-4">Add your first branch to start generating ZATCA-ready invoices</p>
-          <Button size="sm" onClick={() => setDrawer('new')}><Plus size={13} /> Add your first branch</Button>
+          <Button size="sm" onClick={() => setDrawer('new')} disabled={!canCreateActiveBranch}>
+            <Plus size={13} /> Add your first branch
+          </Button>
         </div>
       ) : (
         <div className="space-y-3">

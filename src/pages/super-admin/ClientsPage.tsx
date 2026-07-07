@@ -130,7 +130,7 @@ function SuspendModal({ client, reason, onReasonChange, onConfirm, onCancel, act
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
         <h2 className="text-base font-semibold text-gray-900 mb-1">Suspend Client</h2>
         <p className="text-sm text-gray-500 mb-4">
-          Suspending <strong>{client.name}</strong> will block all their users from logging in.
+          Suspending <strong>{client.name}</strong> blocks new billing, register opening, and branch creation. Existing records remain available.
         </p>
         <label className="block text-xs font-medium text-gray-700 mb-1.5">Reason (optional)</label>
         <input
@@ -917,6 +917,9 @@ export default function ClientsPage() {
                           <div className="flex flex-col gap-1.5">
                             <span className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${signal.className}`}>
                               {signal.label}
+                            </span>
+                            <span className="text-[10px] text-gray-400">
+                              {c.suspended_at ? 'Enforcement active' : 'Visibility only'}
                             </span>
                             <div className="text-[11px] leading-4 text-gray-500">
                               <span className="font-medium text-gray-700">{c.manualPaymentStatus.replace(/_/g, ' ')}</span>

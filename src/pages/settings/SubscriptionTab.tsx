@@ -35,14 +35,15 @@ export default function SubscriptionTab() {
 
   const [endsAt,    setEndsAt]    = useState<string | null>(null)
   const [planName,  setPlanName]  = useState<string>('')
-  const [branches,  setBranches]  = useState(0)
+  const [activeBranches, setActiveBranches] = useState(0)
+  const [totalBranches, setTotalBranches] = useState(0)
   const [loading,   setLoading]   = useState(true)
 
   useEffect(() => {
     const tid = profile?.tenant_id
     if (!tid) { setLoading(false); return }
     ;(async () => {
-      const [subRes, branchRes] = await Promise.all([
+      const [subRes, activeBranchRes, totalBranchRes] = await Promise.all([
         (supabase as any)
           .from('tenant_subscriptions')
           .select('ends_at, subscription_plans(name)')
@@ -50,14 +51,22 @@ export default function SubscriptionTab() {
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle(),
+        supabase.from('branches').select('id', { count: 'exact', head: true }).eq('tenant_id', tid).eq('is_active', true),
         supabase.from('branches').select('id', { count: 'exact', head: true }).eq('tenant_id', tid),
       ])
       setEndsAt(subRes.data?.ends_at ?? null)
       setPlanName(subRes.data?.subscription_plans?.name ?? '')
-      setBranches(branchRes.count ?? 0)
+      setActiveBranches(activeBranchRes.count ?? 0)
+      setTotalBranches(totalBranchRes.count ?? 0)
       setLoading(false)
     })()
   }, [profile?.tenant_id])
+
+  const branchUsageLine = `${activeBranches} / ${sub.maxBranches} active branches used`
+  const branchTotalLine = totalBranches === activeBranches
+    ? null
+    : `${totalBranches} total branches`
+  const nextBillingDate = sub.nextDueDate ?? endsAt
 
   if (loading || sub.status === 'loading') {
     return (
@@ -88,40 +97,62 @@ export default function SubscriptionTab() {
           <CreditCard size={18} className="text-gray-300 mt-0.5 flex-shrink-0" />
           <div className="text-sm text-gray-500">
             <p className="font-medium text-gray-700">Branches</p>
-            <p>{branches} / {sub.maxBranches} used</p>
+            <p>{branchUsageLine}</p>
+            {branchTotalLine && <p className="text-xs text-gray-400 mt-0.5">{branchTotalLine}</p>}
           </div>
         </div>
       </div>
     )
   }
 
-  // Expired / grace period / blocked
-  if (sub.isBlocked || sub.status === 'grace_period') {
+  // Activation, grace, overdue, and suspension states. Only suspension blocks billing.
+  if (sub.status === 'activation_required' || sub.status === 'suspended' || sub.status === 'grace_period' || sub.status === 'expired') {
     const inGrace = sub.status === 'grace_period'
     const isSuspended = sub.status === 'suspended'
     const needsActivation = sub.status === 'activation_required'
+    const isOverdue = sub.status === 'expired'
+    const tone = isSuspended ? 'red' : 'amber'
     return (
       <div className="space-y-5">
-        <div className={`flex items-start gap-4 border rounded-2xl p-6 ${inGrace ? 'bg-red-50 border-red-100' : 'bg-red-50 border-red-200'}`}>
-          <div className="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
-            <AlertTriangle size={24} className="text-red-600" />
+        <div className={`flex items-start gap-4 border rounded-2xl p-6 ${tone === 'red' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-100'}`}>
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${tone === 'red' ? 'bg-red-100' : 'bg-amber-100'}`}>
+            <AlertTriangle size={24} className={tone === 'red' ? 'text-red-600' : 'text-amber-600'} />
           </div>
           <div>
-            <p className="text-base font-bold text-red-800">
+            <p className={`text-base font-bold ${tone === 'red' ? 'text-red-800' : 'text-amber-800'}`}>
               {needsActivation
                 ? 'Subscription Activation Required'
                 : inGrace
-                ? `Subscription Expired — ${sub.daysUntilExpiry} day${sub.daysUntilExpiry !== 1 ? 's' : ''} left`
+                ? 'Grace Period Active'
+                : isOverdue
+                ? 'Payment Overdue'
                 : 'Subscription Suspended'}
             </p>
-            <p className="text-sm text-red-700 mt-1">
+            <p className={`text-sm mt-1 ${tone === 'red' ? 'text-red-700' : 'text-amber-700'}`}>
               {needsActivation
-                ? 'This workspace needs manual subscription activation before invoicing can be used.'
+                ? 'This workspace needs manual subscription activation. Billing remains available unless the account is suspended.'
                 : inGrace
-                ? 'Your subscription is in grace. Kubri support will contact you for renewal.'
-                : 'Account suspended. New billing is disabled. You can still view existing records.'}
+                ? 'Grace period active. Billing remains available unless the account is suspended.'
+                : isOverdue
+                ? 'Payment is overdue. Billing remains available during pilot unless the account is suspended.'
+                : 'Account suspended. New billing and register opening are disabled. Existing records remain available.'}
             </p>
+            {(sub.nextDueDate || sub.graceUntilDate || sub.daysOverdue > 0) && (
+              <p className={`text-xs mt-2 ${tone === 'red' ? 'text-red-600' : 'text-amber-700'}`}>
+                {sub.nextDueDate && <>Next due: {new Date(sub.nextDueDate).toLocaleDateString('en-SA')}</>}
+                {sub.graceUntilDate && <> · Grace until: {new Date(sub.graceUntilDate).toLocaleDateString('en-SA')}</>}
+                {sub.daysOverdue > 0 && <> · {sub.daysOverdue} day{sub.daysOverdue !== 1 ? 's' : ''} overdue</>}
+              </p>
+            )}
             <ContactButtons label={needsActivation ? 'Contact Us to Activate' : isSuspended ? 'Contact Us' : 'Renew Now'} />
+          </div>
+        </div>
+        <div className="card p-5 flex gap-4">
+          <CreditCard size={18} className="text-gray-300 mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-gray-500">
+            <p className="font-medium text-gray-700">Branches</p>
+            <p>{branchUsageLine}</p>
+            {branchTotalLine && <p className="text-xs text-gray-400 mt-0.5">{branchTotalLine}</p>}
           </div>
         </div>
       </div>
@@ -138,11 +169,14 @@ export default function SubscriptionTab() {
           </div>
           <div>
             <p className="text-base font-bold text-amber-800">
-              Expires in {sub.daysUntilExpiry} day{sub.daysUntilExpiry !== 1 ? 's' : ''}
+              Payment Due Soon
             </p>
-            {endsAt && (
+            <p className="text-sm text-amber-700 mt-1">
+              Payment is due soon. Please contact Kubri support if payment is already completed.
+            </p>
+            {sub.nextDueDate && (
               <p className="text-sm text-amber-700 mt-1">
-                Expiry date: {new Date(endsAt).toLocaleDateString('en-SA')}
+                Due date: {new Date(sub.nextDueDate).toLocaleDateString('en-SA')}
               </p>
             )}
             {planName && <p className="text-xs text-amber-600 mt-1">Plan: {planName}</p>}
@@ -153,7 +187,8 @@ export default function SubscriptionTab() {
           <CreditCard size={18} className="text-gray-300 mt-0.5 flex-shrink-0" />
           <div className="text-sm text-gray-500">
             <p className="font-medium text-gray-700">Branches</p>
-            <p>{branches} / {sub.maxBranches} used</p>
+            <p>{branchUsageLine}</p>
+            {branchTotalLine && <p className="text-xs text-gray-400 mt-0.5">{branchTotalLine}</p>}
           </div>
         </div>
       </div>
@@ -170,9 +205,9 @@ export default function SubscriptionTab() {
         <div>
           <p className="text-base font-bold text-emerald-800">Subscription Active</p>
           {planName && <p className="text-sm text-emerald-700 mt-0.5">Plan: {planName}</p>}
-          {endsAt && (
+          {nextBillingDate && (
             <p className="text-sm text-emerald-700 mt-0.5">
-              Renews / Expires: {new Date(endsAt).toLocaleDateString('en-SA')}
+              Renews / Expires: {new Date(nextBillingDate).toLocaleDateString('en-SA')}
             </p>
           )}
         </div>
@@ -182,7 +217,8 @@ export default function SubscriptionTab() {
         <CreditCard size={18} className="text-gray-300 mt-0.5 flex-shrink-0" />
         <div className="text-sm text-gray-500">
           <p className="font-medium text-gray-700">Branches</p>
-          <p>{branches} / {sub.maxBranches} used</p>
+          <p>{branchUsageLine}</p>
+          {branchTotalLine && <p className="text-xs text-gray-400 mt-0.5">{branchTotalLine}</p>}
         </div>
       </div>
 

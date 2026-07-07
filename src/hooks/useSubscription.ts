@@ -13,12 +13,17 @@ export interface SubscriptionState {
   maxBranches:     number
   suspendedAt:     string | null
   suspendedReason: string | null
+  nextDueDate:     string | null
+  graceUntilDate:  string | null
+  daysUntilDue:    number | null
+  daysOverdue:     number
 }
 
 const DEFAULT: SubscriptionState = {
   status: 'loading', isBlocked: false, showWarning: false,
   daysUntilExpiry: 999, isLifetimeFree: false, isPhase2: false, plan: '', maxBranches: 1,
   suspendedAt: null, suspendedReason: null,
+  nextDueDate: null, graceUntilDate: null, daysUntilDue: null, daysOverdue: 0,
 }
 
 const ALLOW_MISSING_SUBSCRIPTION = import.meta.env.VITE_ALLOW_MISSING_SUBSCRIPTION === 'true'
@@ -38,7 +43,7 @@ export function useSubscription(): SubscriptionState {
       const [{ data: sub }, { data: tenant }] = await Promise.all([
         (supabase as any)
           .from('tenant_subscriptions')
-          .select('status, ends_at, trial_ends_at, cancelled_at, subscription_plans(name, max_branches, features)')
+          .select('status, ends_at, trial_ends_at, cancelled_at, current_period_end, next_due_date, grace_until_date, subscription_lifecycle_status, subscription_plans(name, max_branches, features)')
           .eq('tenant_id', tid)
           .order('created_at', { ascending: false })
           .limit(1)
@@ -65,34 +70,55 @@ export function useSubscription(): SubscriptionState {
           maxBranches: tenant?.max_branches ?? 1,
           suspendedAt: tenant?.suspended_at ?? null,
           suspendedReason: tenant?.suspended_reason ?? null,
+          nextDueDate: null,
+          graceUntilDate: null,
+          daysUntilDue: null,
+          daysOverdue: 0,
         })
         return
       }
 
-      const now         = Date.now()
-      const endsAt      = sub.ends_at ? new Date(sub.ends_at).getTime() : null
+      const now         = new Date()
+      const today       = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+      const dueDate     = sub.next_due_date ?? sub.current_period_end ?? sub.ends_at ?? null
+      const graceDate   = sub.grace_until_date ?? (
+        dueDate
+          ? new Date(new Date(dueDate).getTime() + 7 * 86_400_000).toISOString().slice(0, 10)
+          : null
+      )
+      const dueAt       = dueDate ? new Date(dueDate).getTime() : null
+      const graceAt     = graceDate ? new Date(graceDate).getTime() : null
       const planName    = sub.subscription_plans?.name ?? ''
       // Per-client limit (set by super admin) takes priority over plan default
       const maxBranches = tenant?.max_branches ?? sub.subscription_plans?.max_branches ?? 1
       const features    = sub.subscription_plans?.features ?? []
       const isPhase2    = Array.isArray(features) ? features.includes('zatca_phase2') : false
 
-      const isLifetimeFree = sub.status === 'active' && endsAt === null
+      const isLifetimeFree = (
+        sub.subscription_lifecycle_status === 'lifetime_free' ||
+        (sub.status === 'active' && dueAt === null && !sub.ends_at)
+      )
 
-      const daysUntilExpiry = endsAt
-        ? Math.ceil((endsAt - now) / 86_400_000)
+      const daysUntilDue = dueAt !== null
+        ? Math.ceil((dueAt - today) / 86_400_000)
+        : null
+      const daysOverdue = dueAt !== null && today > dueAt
+        ? Math.ceil((today - dueAt) / 86_400_000)
+        : 0
+
+      const daysUntilExpiry = daysUntilDue !== null
+        ? daysUntilDue
         : 9999
 
-      const isExpired   = endsAt !== null && now > endsAt
-      const graceEnds   = endsAt ? endsAt + 7 * 86_400_000 : null
-      const isInGrace   = isExpired && graceEnds !== null && now < graceEnds
-      const isPastGrace = isExpired && (graceEnds === null || now >= graceEnds)
-      const daysInGrace = isInGrace && graceEnds
-        ? Math.ceil((graceEnds - now) / 86_400_000)
+      const isExpired   = dueAt !== null && today > dueAt
+      const isInGrace   = isExpired && graceAt !== null && today <= graceAt
+      const isPastGrace = isExpired && (graceAt === null || today > graceAt)
+      const daysInGrace = isInGrace && graceAt
+        ? Math.ceil((graceAt - today) / 86_400_000)
         : 0
 
       const isBlocked    = isManuallySuspended
-      const showWarning  = !isLifetimeFree && !isBlocked && daysUntilExpiry <= 7 && daysUntilExpiry >= 0
+      const showWarning  = !isLifetimeFree && !isBlocked && daysUntilDue !== null && daysUntilDue <= 7 && daysUntilDue >= 0
 
       let status: SubscriptionState['status'] = 'active'
       if (isManuallySuspended) status = 'suspended'
@@ -113,6 +139,10 @@ export function useSubscription(): SubscriptionState {
         maxBranches,
         suspendedAt: tenant?.suspended_at ?? null,
         suspendedReason: tenant?.suspended_reason ?? null,
+        nextDueDate: dueDate,
+        graceUntilDate: graceDate,
+        daysUntilDue,
+        daysOverdue,
       })
     })()
   }, [profile?.tenant_id])
