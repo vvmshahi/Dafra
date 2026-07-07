@@ -97,6 +97,7 @@ interface CallerProfile {
   role: string
   tenant_id: string | null
   branch_id: string | null
+  is_active: boolean
 }
 
 interface AuthorizedTarget {
@@ -161,7 +162,7 @@ function normalizeSubmitSource(value: unknown): string {
 async function loadCallerProfile(db: any, userId: string): Promise<CallerProfile | null> {
   const { data, error } = await db
     .from('user_profiles')
-    .select('id, role, tenant_id, branch_id')
+    .select('id, role, tenant_id, branch_id, is_active')
     .eq('id', userId)
     .maybeSingle()
 
@@ -170,13 +171,14 @@ async function loadCallerProfile(db: any, userId: string): Promise<CallerProfile
     return null
   }
 
-  if (!data?.id || !data?.role) return null
+  if (!data?.id || !data?.role || data.is_active !== true) return null
 
   return {
     id: data.id,
     role: String(data.role),
     tenant_id: data.tenant_id ?? null,
     branch_id: data.branch_id ?? null,
+    is_active: true,
   }
 }
 

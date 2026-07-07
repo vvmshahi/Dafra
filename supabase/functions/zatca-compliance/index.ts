@@ -61,11 +61,22 @@ Deno.serve(async (req: Request) => {
     }
 
     const [{ data: callerProfile }, { data: branch }] = await Promise.all([
-      supabase.from('user_profiles').select('tenant_id').eq('id', user.id).maybeSingle(),
-      supabase.from('branches').select('tenant_id').eq('id', branchId).maybeSingle(),
+      supabase.from('user_profiles').select('tenant_id, branch_id, role, is_active').eq('id', user.id).maybeSingle(),
+      supabase.from('branches').select('id, tenant_id').eq('id', branchId).maybeSingle(),
     ])
 
-    if (!branch || !callerProfile || branch.tenant_id !== callerProfile.tenant_id) {
+    const callerRole = callerProfile?.role
+    const authorized = !!branch &&
+      !!callerProfile &&
+      callerProfile.is_active === true &&
+      branch.tenant_id === callerProfile.tenant_id &&
+      (
+        callerRole === 'owner' ||
+        callerRole === 'admin' ||
+        (callerRole === 'branch' && callerProfile.branch_id === branch.id)
+      )
+
+    if (!authorized) {
       return new Response(JSON.stringify({ error: 'Branch not found or access denied' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -91,7 +102,6 @@ Deno.serve(async (req: Request) => {
     console.info('[zatca-compliance] sandbox compliance request:', {
       branchId,
       environment: env,
-      csrLength: csr.length,
     })
 
     // Call ZATCA Compliance API
@@ -156,7 +166,7 @@ Deno.serve(async (req: Request) => {
 
   } catch (err: any) {
     console.error('[zatca-compliance] unexpected error:', err.message ?? 'unknown')
-    return new Response(JSON.stringify({ error: err.message ?? 'Internal server error' }), {
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }

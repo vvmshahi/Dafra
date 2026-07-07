@@ -45,12 +45,17 @@ Deno.serve(async (req: Request) => {
 
     const { data: callerProfile, error: profileErr } = await adminClient
       .from('user_profiles')
-      .select('role, tenant_id')
+      .select('role, tenant_id, is_active')
       .eq('id', caller.id)
       .maybeSingle()
 
-    if (profileErr || !callerProfile || callerProfile.role !== 'owner') {
-      return new Response(JSON.stringify({ error: 'Forbidden: owner role required' }), {
+    if (
+      profileErr ||
+      !callerProfile ||
+      callerProfile.is_active !== true ||
+      !['owner', 'admin'].includes(callerProfile.role)
+    ) {
+      return new Response(JSON.stringify({ error: 'Forbidden: owner/admin role required' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -89,7 +94,7 @@ Deno.serve(async (req: Request) => {
       tenantId: callerProfile.tenant_id,
       branchId: branch_id,
       actorUserId: caller.id,
-      actorRole: 'owner',
+      actorRole: callerProfile.role,
       targetType: 'branch',
       targetId: branch_id,
       ipHash,
@@ -177,7 +182,7 @@ Deno.serve(async (req: Request) => {
       metadata: { branchId: branch_id },
     })
 
-    console.log('[reset-branch-credential] Credential update for branch:', branch_id, 'user:', branchUser.id)
+    console.info('[reset-branch-credential] credential updated:', { branchId: branch_id, userId: branchUser.id })
     return new Response(JSON.stringify({ success: true }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
@@ -185,7 +190,7 @@ Deno.serve(async (req: Request) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal error'
     console.error('[reset-branch-credential] Unhandled error:', message)
-    return new Response(JSON.stringify({ error: message }), {
+    return new Response(JSON.stringify({ error: 'Internal error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }

@@ -122,7 +122,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: mapping, error: lookupErr } = await adminClient
       .from('branch_login_usernames')
-      .select('internal_auth_email')
+      .select('internal_auth_email, user_id')
       .eq('normalized_username', username.normalizedUsername)
       .eq('is_active', true)
       .maybeSingle()
@@ -139,13 +139,44 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ ok: false, message: GENERIC_LOGIN_MESSAGE })
     }
 
-    if (!mapping?.internal_auth_email) {
+    if (!mapping?.internal_auth_email || !mapping?.user_id) {
       await auditEvent(adminClient as any, {
         ...auditBase,
         action: 'branch_username_resolve_failed',
         severity: 'warning',
         status: 'failed',
         metadata: { reason: 'not_found' },
+      })
+      return jsonResponse({ ok: false, message: GENERIC_LOGIN_MESSAGE })
+    }
+
+    const { data: profile, error: profileErr } = await adminClient
+      .from('user_profiles')
+      .select('id')
+      .eq('id', mapping.user_id)
+      .eq('role', 'branch')
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (profileErr) {
+      console.warn('[resolve-branch-username] profile check failed:', profileErr.message)
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'branch_username_resolve_failed',
+        severity: 'warning',
+        status: 'failed',
+        metadata: { reason: 'profile_lookup_error' },
+      })
+      return jsonResponse({ ok: false, message: GENERIC_LOGIN_MESSAGE })
+    }
+
+    if (!profile) {
+      await auditEvent(adminClient as any, {
+        ...auditBase,
+        action: 'branch_username_resolve_failed',
+        severity: 'warning',
+        status: 'failed',
+        metadata: { reason: 'inactive_or_missing_branch_profile' },
       })
       return jsonResponse({ ok: false, message: GENERIC_LOGIN_MESSAGE })
     }

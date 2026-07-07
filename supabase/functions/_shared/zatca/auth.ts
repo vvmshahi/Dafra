@@ -24,7 +24,7 @@ export async function requireTenantUser(db: any, req: Request): Promise<TenantUs
     .eq('id', user.id)
     .maybeSingle()
 
-  if (profileErr || !profile?.tenant_id || profile.is_active === false) {
+  if (profileErr || !profile?.tenant_id || profile.is_active !== true) {
     throw new Error('Forbidden: active tenant user required')
   }
 
@@ -50,7 +50,7 @@ export async function requireTenantOwner(db: any, req: Request): Promise<OwnerCo
     .eq('id', user.id)
     .maybeSingle()
 
-  if (profileErr || !profile?.tenant_id || profile.role !== 'owner' || profile.is_active === false) {
+  if (profileErr || !profile?.tenant_id || profile.role !== 'owner' || profile.is_active !== true) {
     throw new Error('Forbidden: tenant owner role required')
   }
 
