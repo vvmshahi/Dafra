@@ -13,6 +13,8 @@ import {
 
 interface ReportProps {
   branchId: string | null
+  startDate: string
+  endDate: string
 }
 
 function SessionAmount({ label, amount }: { label: string; amount: number }) {
@@ -24,7 +26,7 @@ function SessionAmount({ label, amount }: { label: string; amount: number }) {
   )
 }
 
-export default function RegisterSessionsReport({ branchId }: ReportProps) {
+export default function RegisterSessionsReport({ branchId, startDate, endDate }: ReportProps) {
   const [sessions, setSessions] = useState<RegisterSessionSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -36,23 +38,27 @@ export default function RegisterSessionsReport({ branchId }: ReportProps) {
       const params = {
         ...(branchId ? { p_branch_id: branchId } : {}),
         p_limit: 80,
+        p_start_date: startDate,
+        p_end_date: endDate,
       }
-      const { data, error: rpcError } = await (supabase as any).rpc('get_register_sessions', {
+      const { data, error: rpcError } = await (supabase as any).rpc('get_register_sessions_filtered', {
         ...params,
       })
       if (rpcError) throw rpcError
       setSessions(normalizeRegisterSessionList(data))
     } catch (err) {
-      logRegisterSessionRpcError('get_register_sessions', {
+      logRegisterSessionRpcError('get_register_sessions_filtered', {
         ...(branchId ? { p_branch_id: branchId } : {}),
         p_limit: 80,
+        p_start_date: startDate,
+        p_end_date: endDate,
       }, err)
       setSessions([])
       setError(registerSessionRpcErrorMessage(err))
     } finally {
       setLoading(false)
     }
-  }, [branchId])
+  }, [branchId, startDate, endDate])
 
   useEffect(() => { load() }, [load])
 
@@ -94,7 +100,7 @@ export default function RegisterSessionsReport({ branchId }: ReportProps) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-bold text-gray-900">Register Sessions</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Operational open-to-close reporting. Date-wise reports remain available in the other tabs.</p>
+          <p className="text-xs text-gray-400 mt-0.5">Operational open-to-close reporting filtered by the selected session date range.</p>
         </div>
         <button
           onClick={load}

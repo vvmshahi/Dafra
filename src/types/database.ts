@@ -266,6 +266,23 @@ export interface Database {
         }
         Returns: Record<string, unknown>
       }
+      get_register_sessions_filtered: {
+        Args: {
+          p_branch_id?: string | null
+          p_limit?: number | null
+          p_start_date?: string | null
+          p_end_date?: string | null
+        }
+        Returns: Record<string, unknown>
+      }
+      get_supplier_purchase_totals: {
+        Args: {
+          p_branch_id: string
+          p_start_date: string
+          p_end_date: string
+        }
+        Returns: Record<string, unknown>
+      }
       get_dashboard_summary: {
         Args: {
           p_branch_id?: string | null

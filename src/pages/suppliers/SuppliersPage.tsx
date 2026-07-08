@@ -8,11 +8,19 @@ import { Rial } from '@/components/ui/RiyalSymbol'
 import { displayName as dn } from '@/lib/utils/display'
 import type { Supplier } from '@/types'
 import SupplierDrawer from './SupplierDrawer'
+import {
+  CompactDateRangeFilter,
+  type DatePreset,
+  formatDateRangeLabel,
+  getDateRange,
+} from '@/pages/reports/reportUtils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SupplierWithStats extends Supplier {
   total_purchases:    number
+  total_vat:          number
+  purchase_count:     number
   last_purchase_date: string | null
 }
 
@@ -25,6 +33,15 @@ const TERMS_LABEL: Record<string, string> = {
 const fmt = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+function numberOrZero(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === 'string' ? value : null
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function SuppliersPage() {
@@ -35,42 +52,75 @@ export default function SuppliersPage() {
   const [search,      setSearch]      = useState('')
   const [drawerOpen,  setDrawerOpen]  = useState(false)
   const [editing,     setEditing]     = useState<Supplier | null>(null)
+  const [preset,      setPreset]      = useState<DatePreset>('this_month')
+  const initialRange = getDateRange('this_month')
+  const [startDate,   setStartDate]   = useState(initialRange.start)
+  const [endDate,     setEndDate]     = useState(initialRange.end)
+
+  const handlePreset = (nextPreset: DatePreset) => {
+    setPreset(nextPreset)
+    if (nextPreset !== 'custom') {
+      const range = getDateRange(nextPreset)
+      setStartDate(range.start)
+      setEndDate(range.end)
+    }
+  }
 
   const load = useCallback(async () => {
     const bid = profile?.branch_id
     if (!bid) { setLoading(false); return }
+    if (!startDate || !endDate) return
+    setLoading(true)
 
-    const [{ data: suppData }, { data: purData }] = await Promise.all([
+    const [{ data: suppData }, totalsResult] = await Promise.all([
       supabase
         .from('suppliers')
         .select('*')
         .eq('branch_id', bid)
         .eq('is_active', true)
         .order('name'),
-      supabase
-        .from('purchases')
-        .select('supplier_id, total_amount, purchase_date')
-        .eq('branch_id', bid),
+      (supabase as any).rpc('get_supplier_purchase_totals', {
+        p_branch_id: bid,
+        p_start_date: startDate,
+        p_end_date: endDate,
+      }),
     ])
 
-    const aggMap = new Map<string, { total: number; lastDate: string }>()
-    for (const p of (purData ?? []) as any[]) {
-      if (!p.supplier_id) continue
-      const curr = aggMap.get(p.supplier_id) ?? { total: 0, lastDate: '' }
-      curr.total += Number(p.total_amount)
-      if (!curr.lastDate || p.purchase_date > curr.lastDate) curr.lastDate = p.purchase_date
-      aggMap.set(p.supplier_id, curr)
+    if (totalsResult.error) {
+      console.error('[SuppliersPage] get_supplier_purchase_totals failed', totalsResult.error)
+    }
+
+    const totalsPayload = totalsResult.data as Record<string, unknown> | null
+    const totalsRows = (
+      Array.isArray(totalsPayload?.supplierTotals)
+        ? totalsPayload?.supplierTotals
+        : Array.isArray(totalsPayload?.supplier_totals)
+        ? totalsPayload?.supplier_totals
+        : []
+    ) as Record<string, unknown>[]
+    const aggMap = new Map<string, { total: number; vat: number; count: number; lastDate: string | null }>()
+    for (const row of totalsRows) {
+      const supplierId = stringOrNull(row.supplierId) ?? stringOrNull(row.supplier_id)
+      if (!supplierId) continue
+      aggMap.set(supplierId, {
+        total: numberOrZero(row.totalPurchased ?? row.total_purchased),
+        vat: numberOrZero(row.totalVat ?? row.total_vat),
+        count: Math.trunc(numberOrZero(row.purchaseCount ?? row.purchase_count)),
+        lastDate: stringOrNull(row.lastPurchaseDate) ?? stringOrNull(row.last_purchase_date),
+      })
     }
 
     setSuppliers(
       ((suppData ?? []) as unknown as Supplier[]).map(s => ({
         ...s,
-        total_purchases:    aggMap.get(s.id)?.total    ?? 0,
+        total_purchases:    aggMap.get(s.id)?.total ?? 0,
+        total_vat:          aggMap.get(s.id)?.vat ?? 0,
+        purchase_count:     aggMap.get(s.id)?.count ?? 0,
         last_purchase_date: aggMap.get(s.id)?.lastDate ?? null,
       }))
     )
     setLoading(false)
-  }, [profile?.branch_id])
+  }, [profile?.branch_id, startDate, endDate])
 
   useEffect(() => { load() }, [load])
 
@@ -97,6 +147,7 @@ export default function SuppliersPage() {
 
   const totalPurchased = suppliers.reduce((s, sup) => s + sup.total_purchases, 0)
   const creditCount    = suppliers.filter(s => s.payment_terms !== 'cash').length
+  const rangeLabel = formatDateRangeLabel(startDate, endDate)
 
   return (
     <div className="space-y-5">
@@ -125,7 +176,7 @@ export default function SuppliersPage() {
         <div className="rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
           <p className="text-xs font-medium text-gray-400">Total Purchased</p>
           <p className="text-xl font-bold text-emerald-600 mt-0.5"><Rial amount={totalPurchased} /></p>
-          <p className="text-[10px] text-gray-400 mt-0.5">all time</p>
+          <p className="text-[10px] text-gray-400 mt-0.5">{rangeLabel || 'selected range'}</p>
         </div>
         <div className="rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
           <p className="text-xs font-medium text-gray-400">On Credit Terms</p>
@@ -134,15 +185,32 @@ export default function SuppliersPage() {
         </div>
       </div>
 
-      {/* ── Search ──────────────────────────────────────────── */}
-      <div className="relative">
-        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-        <input
-          className="input pl-9"
-          placeholder="Search by name, VAT number, contact person..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
+      {/* ── Filters + search ────────────────────────────────── */}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <CompactDateRangeFilter
+            preset={preset}
+            startDate={startDate}
+            endDate={endDate}
+            onPreset={handlePreset}
+            onStartDate={value => { setPreset('custom'); setStartDate(value) }}
+            onEndDate={value => { setPreset('custom'); setEndDate(value) }}
+          />
+          {rangeLabel && (
+            <p className="text-xs text-gray-400">
+              Purchases from <span className="font-medium text-gray-600">{rangeLabel}</span>
+            </p>
+          )}
+        </div>
+        <div className="relative">
+          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <input
+            className="input pl-9"
+            placeholder="Search by name, VAT number, contact person..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
       </div>
 
       {/* ── Content ─────────────────────────────────────────── */}
@@ -176,7 +244,7 @@ export default function SuppliersPage() {
             <div className="w-36 hidden md:block">Contact</div>
             <div className="w-24 hidden sm:block">City</div>
             <div className="w-24 hidden lg:block">Terms</div>
-            <div className="w-40 text-right">Total Purchases</div>
+            <div className="w-40 text-right">Purchased in Range</div>
             <div className="w-16 flex-shrink-0" />
           </div>
 
@@ -241,7 +309,7 @@ export default function SuppliersPage() {
                 </p>
                 {supplier.last_purchase_date ? (
                   <p className="text-[10px] text-gray-400">
-                    Last: {new Date(supplier.last_purchase_date).toLocaleDateString('en-GB', {
+                    {supplier.purchase_count} purchase{supplier.purchase_count === 1 ? '' : 's'} · Last: {new Date(supplier.last_purchase_date).toLocaleDateString('en-GB', {
                       day: '2-digit', month: 'short', year: '2-digit',
                     })}
                   </p>

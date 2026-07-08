@@ -3,7 +3,13 @@ import { TrendingUp, BarChart2, FileText, CreditCard, Users, ShoppingCart, Downl
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import type { Branch } from '@/types'
-import { type DatePreset, getDateRange } from './reportUtils'
+import {
+  CompactDateRangeFilter,
+  REPORT_DATE_PRESETS,
+  type DatePreset,
+  formatDateRangeLabel,
+  getDateRange,
+} from './reportUtils'
 import SalesReport      from './SalesReport'
 import ProfitLossReport from './ProfitLossReport'
 import VatReport        from './VatReport'
@@ -24,15 +30,6 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'expenses',  label: 'Expenses',      icon: CreditCard  },
   { id: 'customers', label: 'Customers',     icon: Users       },
   { id: 'purchases', label: 'Purchases',     icon: ShoppingCart },
-]
-
-const PRESETS: { id: DatePreset; label: string }[] = [
-  { id: 'today',      label: 'Today'      },
-  { id: 'yesterday',  label: 'Yesterday'  },
-  { id: 'this_week',  label: 'This Week'  },
-  { id: 'this_month', label: 'This Month' },
-  { id: 'last_month', label: 'Last Month' },
-  { id: 'custom',     label: 'Custom'     },
 ]
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -120,47 +117,15 @@ export default function ReportsPage() {
 
       {/* ── Date range + branch filter ───────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
-        {tab !== 'sessions' && (
-          <>
-            {/* Preset pills */}
-            <div className="flex items-center gap-1 p-1 bg-white border border-gray-100 rounded-xl shadow-card flex-wrap">
-              {PRESETS.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => handlePreset(p.id)}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                    preset === p.id
-                      ? 'bg-gray-900 text-white'
-                      : 'text-gray-500 hover:bg-gray-50'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Custom date inputs */}
-            {preset === 'custom' && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  className="input py-1.5 text-sm w-36"
-                  value={startDate}
-                  max={endDate}
-                  onChange={e => setStartDate(e.target.value)}
-                />
-                <span className="text-gray-400 text-sm">→</span>
-                <input
-                  type="date"
-                  className="input py-1.5 text-sm w-36"
-                  value={endDate}
-                  min={startDate}
-                  onChange={e => setEndDate(e.target.value)}
-                />
-              </div>
-            )}
-          </>
-        )}
+        <CompactDateRangeFilter
+          preset={preset}
+          startDate={startDate}
+          endDate={endDate}
+          presets={REPORT_DATE_PRESETS}
+          onPreset={handlePreset}
+          onStartDate={setStartDate}
+          onEndDate={setEndDate}
+        />
 
         {/* Branch selector */}
         {branches.length > 1 && (
@@ -178,16 +143,9 @@ export default function ReportsPage() {
       </div>
 
       {/* ── Date range label ─────────────────────────────────── */}
-      {tab !== 'sessions' && startDate && endDate && (
+      {startDate && endDate && (
         <p className="text-xs text-gray-400">
-          Showing data from{' '}
-          <span className="font-medium text-gray-600">
-            {new Date(startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-          </span>
-          {' '}to{' '}
-          <span className="font-medium text-gray-600">
-            {new Date(endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-          </span>
+          Showing data from <span className="font-medium text-gray-600">{formatDateRangeLabel(startDate, endDate)}</span>
           {branchId && branches.length > 1 && (
             <> · <span className="font-medium text-gray-600">{branches.find(b => b.id === branchId)?.name}</span></>
           )}
@@ -195,7 +153,9 @@ export default function ReportsPage() {
       )}
 
       {/* ── Active report ────────────────────────────────────── */}
-      {tab === 'sessions' && <RegisterSessionsReport branchId={branchId} />}
+      {tab === 'sessions' && startDate && endDate && (
+        <RegisterSessionsReport branchId={branchId} startDate={startDate} endDate={endDate} />
+      )}
       {tab !== 'sessions' && startDate && endDate && (
         <>
           {tab === 'sales'     && <SalesReport      {...reportProps} />}

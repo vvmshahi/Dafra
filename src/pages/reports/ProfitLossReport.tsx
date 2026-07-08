@@ -139,12 +139,21 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
     <div className="space-y-5">
 
       {/* ── Summary cards ──────────────────────────────────── */}
+      <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
+        <p className="text-xs font-semibold text-amber-900">
+          Sales figures include VAT. Use VAT Support for output VAT details.
+        </p>
+        <p className="mt-0.5 text-[11px] leading-5 text-amber-700">
+          Estimated gross profit is based on current reporting totals; detailed VAT-exclusive profit can be added in a later accounting phase.
+        </p>
+      </div>
+
       <div className="flex flex-wrap gap-3">
-        <StatCard label="Gross Sales"      value={<Rial amount={data!.grossSales} />}     primary />
+        <StatCard label="Gross Sales incl. VAT"      value={<Rial amount={data!.grossSales} />}     primary />
         <StatCard label="Credit Notes / Returns" value={<Rial amount={data!.creditNotes} />} accent="amber" />
-        <StatCard label="Net Sales"        value={<Rial amount={data!.totalRevenue} />}   accent="emerald" />
+        <StatCard label="Net Sales incl. VAT"        value={<Rial amount={data!.totalRevenue} />}   accent="emerald" />
         <StatCard label={purchaseCostLabel} value={<Rial amount={data!.totalCOGS} />}      accent="amber" sub={purchaseCostSub} />
-        <StatCard label="Gross Profit"     value={<Rial amount={data!.grossProfit} />}    accent={data!.grossProfit >= 0 ? 'emerald' : 'red'} />
+        <StatCard label="Estimated Gross Profit"     value={<Rial amount={data!.grossProfit} />}    accent={data!.grossProfit >= 0 ? 'emerald' : 'red'} />
         <StatCard label="Total Expenses"   value={<Rial amount={data!.totalExpenses} />}  accent="red" />
         <StatCard label="Net Estimate"     value={<Rial amount={data!.netProfit} />}      accent={data!.netProfit >= 0 ? 'emerald' : 'red'} sub="net sales − purchases − expenses" />
         <StatCard label="Net Margin"       value={`${data!.margin.toFixed(1)}%`}          accent={data!.margin >= 0 ? 'emerald' : 'red'} />
@@ -212,7 +221,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100">
-                {['Month','Gross Sales','Credit Notes','Net Sales', isService ? 'Materials / Purchases' : 'Purchases','Gross Profit','Expenses','Net Profit'].map(h => (
+                {['Month','Gross Sales incl. VAT','Credit Notes','Net Sales incl. VAT', isService ? 'Materials / Purchases' : 'Purchases','Estimated Gross Profit','Expenses','Net Profit'].map(h => (
                   <th key={h} className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">
                     {h}
                   </th>

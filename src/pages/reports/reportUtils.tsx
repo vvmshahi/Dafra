@@ -14,7 +14,7 @@ export const fmtDate = (iso: string) =>
 
 export const fmtMonth = (yyyymm: string) => {
   const [y, m] = yyyymm.split('-')
-  return new Date(Number(y), Number(m) - 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+  return new Date(Number(y), Number(m) - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 }
 
 // ── Date range helpers ────────────────────────────────────────────────────────
@@ -49,6 +49,89 @@ export function getDateRange(preset: DatePreset): { start: string; end: string }
     }
     default: return { start: pad(now), end: pad(now) }
   }
+}
+
+export const COMPACT_DATE_PRESETS: { id: DatePreset; label: string }[] = [
+  { id: 'today',      label: 'Today'      },
+  { id: 'yesterday',  label: 'Yesterday'  },
+  { id: 'this_month', label: 'This Month' },
+  { id: 'last_month', label: 'Last Month' },
+  { id: 'custom',     label: 'Custom'     },
+]
+
+export const REPORT_DATE_PRESETS: { id: DatePreset; label: string }[] = [
+  { id: 'today',      label: 'Today'      },
+  { id: 'yesterday',  label: 'Yesterday'  },
+  { id: 'this_week',  label: 'This Week'  },
+  { id: 'this_month', label: 'This Month' },
+  { id: 'last_month', label: 'Last Month' },
+  { id: 'custom',     label: 'Custom'     },
+]
+
+export function formatDateRangeLabel(start: string, end: string) {
+  if (!start || !end) return ''
+  const fmtLabel = (value: string) =>
+    new Date(value).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return `${fmtLabel(start)} to ${fmtLabel(end)}`
+}
+
+export function CompactDateRangeFilter({
+  preset,
+  startDate,
+  endDate,
+  presets = COMPACT_DATE_PRESETS,
+  onPreset,
+  onStartDate,
+  onEndDate,
+}: {
+  preset: DatePreset
+  startDate: string
+  endDate: string
+  presets?: { id: DatePreset; label: string }[]
+  onPreset: (preset: DatePreset) => void
+  onStartDate: (value: string) => void
+  onEndDate: (value: string) => void
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-1 p-1 bg-white border border-gray-100 rounded-xl shadow-card flex-wrap">
+        {presets.map(p => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => onPreset(p.id)}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              preset === p.id
+                ? 'bg-gray-900 text-white'
+                : 'text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {preset === 'custom' && (
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            className="input py-1.5 text-sm w-36"
+            value={startDate}
+            max={endDate}
+            onChange={e => onStartDate(e.target.value)}
+          />
+          <span className="text-gray-400 text-sm">→</span>
+          <input
+            type="date"
+            className="input py-1.5 text-sm w-36"
+            value={endDate}
+            min={startDate}
+            onChange={e => onEndDate(e.target.value)}
+          />
+        </div>
+      )}
+    </>
+  )
 }
 
 export function generateMonths(start: string, end: string): string[] {
