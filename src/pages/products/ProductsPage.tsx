@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Plus, LayoutGrid, List, Search, Tag, Pencil, Trash2, Package, X,
+  Plus, LayoutGrid, List, Search, Tag, Pencil, Trash2, Package, X, FolderPlus,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -57,6 +57,17 @@ const VAT_BADGE: Record<VatTreatment, 'neutral' | 'info' | 'gold'> = {
   exempt:    'gold',
 }
 
+const CATEGORY_ICON_PRESETS = [
+  '🍔', '🍟', '🥤', '🌯', '🍕', '🍗', '🐟', '☕', '🍰',
+  '🛍️', '📦', '🧾', '🏷️', '🛒', '🎁',
+  '🛠️', '✂️', '🚗', '📱', '💻',
+  '⭐', '🔥', '✅', '💳', '📊',
+]
+
+const normalizeIcon = (value: string) => value.trim() || '📦'
+
+const isIconTooLong = (value: string) => Array.from(value.trim()).length > 10
+
 // ── Category filter tab ───────────────────────────────────────────────────────
 
 function CategoryTab({
@@ -109,29 +120,33 @@ function ProductCard({
           </div>
         )}
 
-        {/* Availability pill */}
+        {/* Availability status */}
         <button
           onClick={() => onToggle(!product.is_available)}
-          className={`absolute top-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors ${
+          title="Toggle POS availability"
+          aria-label={`Mark ${product.name} as ${product.is_available ? 'unavailable' : 'available'}`}
+          className={`absolute top-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full border shadow-sm transition-colors ${
             product.is_available
-              ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+              : 'bg-white/90 text-gray-600 border-gray-200 hover:bg-gray-50'
           }`}
         >
           {product.is_available ? 'Available' : 'Unavailable'}
         </button>
 
-        {/* Hover action buttons */}
-        <div className="absolute top-2 left-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Touch-friendly action buttons */}
+        <div className="absolute top-2 left-2 flex gap-1">
           <button
             onClick={onEdit}
-            className="w-7 h-7 bg-white/90 backdrop-blur-sm rounded-lg flex items-center justify-center shadow-sm hover:bg-white transition-colors"
+            aria-label={`Edit ${product.name}`}
+            className="w-7 h-7 bg-white/90 backdrop-blur-sm rounded-lg flex items-center justify-center shadow-sm border border-white/70 hover:bg-white hover:text-primary-600 transition-colors"
           >
             <Pencil size={12} className="text-gray-600" />
           </button>
           <button
             onClick={onDelete}
-            className="w-7 h-7 bg-white/90 backdrop-blur-sm rounded-lg flex items-center justify-center shadow-sm hover:bg-red-50 transition-colors"
+            aria-label={`Delete ${product.name}`}
+            className="w-7 h-7 bg-white/90 backdrop-blur-sm rounded-lg flex items-center justify-center shadow-sm border border-white/70 hover:bg-red-50 transition-colors"
           >
             <Trash2 size={12} className="text-red-500" />
           </button>
@@ -251,7 +266,13 @@ function ProductListRow({
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 
-function EmptyState({ filtered, onAdd }: { filtered: boolean; onAdd: () => void }) {
+function EmptyState({
+  filtered, onAdd, onClear,
+}: {
+  filtered: boolean
+  onAdd: () => void
+  onClear: () => void
+}) {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
       <div className="w-16 h-16 rounded-2xl bg-primary-50 flex items-center justify-center mb-4">
@@ -271,7 +292,179 @@ function EmptyState({ filtered, onAdd }: { filtered: boolean; onAdd: () => void 
           Add Product
         </Button>
       )}
+      {filtered && (
+        <Button variant="secondary" className="mt-5" onClick={onClear}>
+          Clear filters
+        </Button>
+      )}
     </div>
+  )
+}
+
+function AddCategoryDialog({
+  open, categories, onClose, onCreated,
+}: {
+  open: boolean
+  categories: Category[]
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const { profile } = useAuth()
+  const [name, setName] = useState('')
+  const [icon, setIcon] = useState('📦')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!open) {
+      setName('')
+      setIcon('📦')
+      setError('')
+      setSaving(false)
+    }
+  }, [open])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const cleanName = name.trim()
+    if (!cleanName) { setError('Category name is required'); return }
+
+    const cleanIcon = normalizeIcon(icon)
+    if (isIconTooLong(cleanIcon)) { setError('Icon must be 10 characters or fewer.'); return }
+
+    const duplicate = categories.some(cat =>
+      cat.name.trim().toLowerCase() === cleanName.toLowerCase()
+    )
+    if (duplicate) { setError('Category already exists.'); return }
+
+    setSaving(true)
+    setError('')
+    const nextSortOrder = categories.length
+      ? Math.max(...categories.map(cat => Number(cat.sort_order ?? 0))) + 1
+      : 0
+
+    const q = supabase as unknown as { from: (t: string) => any }
+    const { error: err } = await q.from('categories').insert({
+      tenant_id: profile?.tenant_id,
+      branch_id: profile?.branch_id,
+      name: cleanName,
+      color: '#1c5c2e',
+      icon: cleanIcon,
+      sort_order: nextSortOrder,
+    })
+
+    if (err) {
+      setError(err.message)
+      setSaving(false)
+      return
+    }
+
+    setSaving(false)
+    onCreated()
+    onClose()
+  }
+
+  if (!open) return null
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <form
+          onSubmit={handleSubmit}
+          className="w-full max-w-lg max-h-[90vh] rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden flex flex-col"
+        >
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+            <div>
+              <h2 className="text-base font-bold text-gray-900">Add Category</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Create a new product category for this branch.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="px-6 py-5 space-y-4 overflow-y-auto">
+            <div className="flex items-start gap-3">
+              <div className="w-16 flex-shrink-0">
+                <label className="label">Icon</label>
+                <div
+                  className="w-14 h-11 rounded-xl border border-primary-200 bg-primary-50 text-2xl flex items-center justify-center"
+                  aria-label="Selected category icon"
+                >
+                  {normalizeIcon(icon)}
+                </div>
+              </div>
+              <div className="flex-1">
+                <label className="label">Category name</label>
+                <input
+                  className="input"
+                  value={name}
+                  onChange={e => { setName(e.target.value); setError('') }}
+                  placeholder="e.g. Beverages"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3 space-y-3">
+              <div className="grid grid-cols-7 sm:grid-cols-9 gap-1.5">
+                {CATEGORY_ICON_PRESETS.map(preset => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => { setIcon(preset); setError('') }}
+                    className={`h-9 rounded-lg text-lg flex items-center justify-center transition-all ${
+                      normalizeIcon(icon) === preset
+                        ? 'bg-primary-100 ring-2 ring-primary-400'
+                        : 'bg-white hover:bg-gray-100'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+              <div>
+                <label className="label text-xs">Custom icon</label>
+                <input
+                  className="input py-2 text-sm"
+                  value={icon}
+                  onChange={e => { setIcon(e.target.value); setError('') }}
+                  maxLength={10}
+                  placeholder="Paste emoji or short text"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">Up to 10 characters. Empty uses 📦.</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-2.5 text-xs text-gray-500">
+              New categories are added to the end of your category order.
+            </div>
+
+            {error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-600">
+                {error}
+              </div>
+            )}
+          </div>
+
+          <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
+            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" className="flex-1" loading={saving}>
+              Add Category
+            </Button>
+          </div>
+        </form>
+      </div>
+    </>
   )
 }
 
@@ -289,6 +482,7 @@ export default function ProductsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editing,    setEditing]    = useState<ProductRow | null>(null)
   const [catsOpen,   setCatsOpen]   = useState(false)
+  const [addCatOpen, setAddCatOpen] = useState(false)
 
   const load = useCallback(async () => {
     const bid = profile?.branch_id
@@ -340,10 +534,11 @@ export default function ProductsPage() {
   }
 
   const filtered = products.filter(p => {
-    const q = search.toLowerCase()
-    const matchSearch = !search
+    const query = search.trim()
+    const q = query.toLowerCase()
+    const matchSearch = !query
       || p.name.toLowerCase().includes(q)
-      || (p.name_ar ?? '').includes(search)
+      || (p.name_ar ?? '').includes(query)
       || (p.sku ?? '').toLowerCase().includes(q)
     const matchCat = activeCat === 'all' || p.category_id === activeCat
     return matchSearch && matchCat
@@ -355,7 +550,7 @@ export default function ProductsPage() {
     <div className="space-y-5">
 
       {/* ── Header ──────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <div className="flex-1 flex items-center gap-2 min-w-0">
           <h1 className="text-lg font-bold text-gray-900">Products</h1>
           {!loading && (
@@ -366,7 +561,11 @@ export default function ProductsPage() {
         </div>
         <Button variant="secondary" size="sm" onClick={() => setCatsOpen(true)}>
           <Tag size={14} />
-          Categories
+          Manage Categories
+        </Button>
+        <Button variant="secondary" size="sm" onClick={() => setAddCatOpen(true)}>
+          <FolderPlus size={14} />
+          Add Category
         </Button>
         <Button size="sm" onClick={openAdd}>
           <Plus size={14} />
@@ -442,7 +641,11 @@ export default function ProductsPage() {
           <LoadingSpinner size="lg" />
         </div>
       ) : filtered.length === 0 ? (
-        <EmptyState filtered={isFiltered} onAdd={openAdd} />
+        <EmptyState
+          filtered={isFiltered}
+          onAdd={openAdd}
+          onClear={() => { setSearch(''); setActiveCat('all') }}
+        />
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {filtered.map(p => (
@@ -484,14 +687,22 @@ export default function ProductsPage() {
         open={drawerOpen}
         product={editing}
         categories={categories}
+        products={products}
         onClose={() => setDrawerOpen(false)}
         onSaved={load}
       />
       <CategoriesModal
         open={catsOpen}
         categories={categories}
+        products={products}
         onClose={() => setCatsOpen(false)}
         onChanged={load}
+      />
+      <AddCategoryDialog
+        open={addCatOpen}
+        categories={categories}
+        onClose={() => setAddCatOpen(false)}
+        onCreated={load}
       />
     </div>
   )

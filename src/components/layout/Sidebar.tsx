@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { isElectron } from '@/lib/electron'
+import { isStockModuleVisible } from '@/lib/utils/businessType'
 import type { LucideIcon } from 'lucide-react'
 
 interface NavItem {
@@ -28,8 +29,8 @@ const branchNav: NavItem[] = [
   { label: 'Invoices',         path: '/invoices',          icon: FileText   },
   { label: 'Invoice Settings', path: '/invoice-settings',  icon: Settings2  },
   { label: 'Products',         path: '/products',          icon: Package    },
-  { label: 'Stock',       path: '/inventory?tab=stock',     icon: Warehouse      },
-  { label: 'Purchases',   path: '/inventory?tab=purchases', icon: Truck          },
+  { label: 'Stock',       path: '/inventory',     icon: Warehouse      },
+  { label: 'Purchases',   path: '/purchases',     icon: Truck          },
   { label: 'Customers',   path: '/customers',    icon: Users          },
   { label: 'Expenses',    path: '/expenses',     icon: CreditCard     },
   { label: 'Suppliers',   path: '/suppliers',    icon: Truck          },
@@ -90,24 +91,31 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
-  const { profile, tenant, user, signOut } = useAuth()
+  const { profile, tenant, branch, user, signOut } = useAuth()
   const location = useLocation()
 
   const isSuperAdmin = profile?.role === 'super_admin'
   const isBranch     = profile?.role === 'branch'
   const canViewOperations = operationsRoles.has(String(profile?.role ?? ''))
+  const stockVisible = isStockModuleVisible({
+    businessType: tenant?.business_type,
+    stockEnabled: branch?.stock_enabled,
+  })
+  const branchNavigation = branchNav.filter(item => (
+    item.path !== '/inventory' || stockVisible
+  ))
 
   const navItems = isSuperAdmin
     ? [...superAdminNav, operationsNavItem]
     : isBranch
       ? isElectron()
         ? [
-            branchNav[0],
-            branchNav[1],
+            branchNavigation[0],
+            branchNavigation[1],
             branchDevicePrinterNavItem,
-            ...branchNav.slice(2),
+            ...branchNavigation.slice(2),
           ]
-        : branchNav
+        : branchNavigation
       : canViewOperations
         ? [...ownerNav, operationsNavItem]
         : ownerNav
@@ -117,14 +125,6 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   function isNavActive(item: NavItem) {
     if (item.path === '/super-admin') return location.pathname === item.path
-    if (item.path === '/inventory?tab=stock') {
-      const tab = new URLSearchParams(location.search).get('tab')
-      return location.pathname === '/inventory' && tab !== 'purchases'
-    }
-    if (item.path === '/inventory?tab=purchases') {
-      const tab = new URLSearchParams(location.search).get('tab')
-      return location.pathname === '/inventory' && tab === 'purchases'
-    }
     return location.pathname.startsWith(item.path)
   }
 

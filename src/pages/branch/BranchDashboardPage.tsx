@@ -32,12 +32,12 @@ const statusConfig = {
   pending: { variant: 'warning' as const, label: 'Pending', icon: Clock },
 }
 
-const zatcaToneClass = {
-  success: 'bg-emerald-500/20 border-emerald-400/20 text-emerald-300',
-  warning: 'bg-amber-500/20 border-amber-400/20 text-amber-300',
-  danger: 'bg-red-500/20 border-red-400/20 text-red-300',
-  neutral: 'bg-gray-500/20 border-gray-400/20 text-gray-300',
-  info: 'bg-blue-500/20 border-blue-400/20 text-blue-300',
+const zatcaIndicatorClass = {
+  success: 'bg-emerald-300 shadow-[0_0_16px_rgba(110,231,183,0.72)]',
+  warning: 'bg-amber-300 shadow-[0_0_16px_rgba(252,211,77,0.70)]',
+  danger: 'bg-red-300 shadow-[0_0_16px_rgba(252,165,165,0.70)]',
+  neutral: 'bg-white/55 shadow-[0_0_14px_rgba(255,255,255,0.38)]',
+  info: 'bg-blue-300 shadow-[0_0_16px_rgba(147,197,253,0.70)]',
 } as const
 
 interface DashboardBranchStat {
@@ -100,7 +100,7 @@ function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
   icon: React.ElementType; gradient: string; loading?: boolean
 }) {
   return (
-    <div className={`relative min-h-[132px] overflow-hidden rounded-2xl p-5 shadow-sm ${gradient}`}>
+    <div className={`relative min-h-[122px] overflow-hidden rounded-2xl p-4 shadow-sm ${gradient}`}>
       <div className="flex h-full items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold uppercase tracking-wide text-white/70">{label}</p>
@@ -110,8 +110,8 @@ function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
           }
           <p className="mt-2 text-xs leading-5 text-white/65">{sub}</p>
         </div>
-        <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0 shadow-inner shadow-white/10">
-          <Icon size={18} className="text-white" />
+        <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0 shadow-inner shadow-white/10">
+          <Icon size={17} className="text-white" />
         </div>
       </div>
       <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/5" />
@@ -119,10 +119,11 @@ function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
   )
 }
 
-function RegisterSessionPanel({ session, loading, error }: {
+function RegisterSessionPanel({ session, loading, error, children }: {
   session: RegisterSessionSummary | null
   loading: boolean
   error: string
+  children?: React.ReactNode
 }) {
   const title = registerSessionLabel(session)
   const hasSession = !!session?.sessionId
@@ -139,13 +140,19 @@ function RegisterSessionPanel({ session, loading, error }: {
           {[1, 2, 3, 4, 5, 6].map(i => <div key={i} className="h-28 rounded-2xl bg-white border border-gray-100 animate-pulse" />)}
         </div>
       ) : error ? (
-        <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {error}
+        <div className="grid gap-4 lg:grid-cols-[3fr_1fr]">
+          <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            {error}
+          </div>
+          {children}
         </div>
       ) : !hasSession ? (
-        <div className="rounded-2xl border border-gray-100 bg-white px-5 py-6 shadow-sm">
-          <h2 className="text-sm font-bold text-gray-900">No Register Session</h2>
-          <p className="mt-1 text-sm text-gray-500">Open a register to start tracking sales for this shift.</p>
+        <div className="grid gap-4 lg:grid-cols-[3fr_1fr]">
+          <div className="rounded-2xl border border-gray-100 bg-white px-5 py-6 shadow-sm">
+            <h2 className="text-sm font-bold text-gray-900">No Register Session</h2>
+            <p className="mt-1 text-sm text-gray-500">Open a register to start tracking sales for this shift.</p>
+          </div>
+          {children}
         </div>
       ) : (
         <>
@@ -194,48 +201,130 @@ function RegisterSessionPanel({ session, loading, error }: {
             />
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-bold text-gray-900">{title}</h2>
-                <p className="mt-1 text-xs text-gray-500">{registerSessionTimeRange(session)}</p>
-                <p className="mt-2 text-xs text-gray-500">
-                  {session.status === 'open' ? (
-                    <>
-                      Opening cash: <Rial amount={session.openingCash} /> · Expected cash: <Rial amount={session.expectedCash} />
-                    </>
-                  ) : (
-                    <>
-                      Actual cash: <Rial amount={session.actualCash ?? 0} /> · Difference: <Rial amount={session.cashDifference ?? 0} />
-                    </>
-                  )}
-                </p>
-                <p className="mt-1 text-xs text-gray-400">
-                  Credit notes/refunds: <Rial amount={session.creditNoteTotal} /> · Expenses: <Rial amount={session.expensesTotal} />
-                </p>
+          <div className="grid gap-4 lg:grid-cols-[3fr_1fr]">
+            <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
+              <div className="border-b border-gray-100 bg-gradient-to-r from-[#F7FAF6] to-white px-5 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary-600">Current Register Session</p>
+                    <h2 className="mt-1 text-lg font-black text-gray-950">{title}</h2>
+                    <p className="mt-1 text-xs text-gray-500">{registerSessionTimeRange(session)}</p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1.5 text-[10px] font-black ${
+                    session.isLongOpen
+                      ? 'bg-amber-100 text-amber-700'
+                      : session.status === 'open'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {session.isLongOpen ? 'Long open' : session.status === 'open' ? 'Open' : 'Closed'}
+                  </span>
+                </div>
               </div>
-              <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                session.isLongOpen
-                  ? 'bg-amber-100 text-amber-700'
-                  : session.status === 'open'
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : 'bg-gray-100 text-gray-600'
-              }`}>
-                {session.isLongOpen ? 'Long open' : session.status === 'open' ? 'Open' : 'Closed'}
-              </span>
-            </div>
-            {session.isLongOpen && (
-              <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
-                <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-amber-600" />
-                <p className="text-xs text-amber-800">
-                  This register session has been open since {session.openedAt ? formatSaudiSessionDateTime(session.openedAt) : 'earlier'}. Close it before starting a new shift.
-                </p>
+
+              <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
+                {(session.status === 'open'
+                  ? [
+                    { label: 'Opened', value: session.openedAt ? formatSaudiSessionDateTime(session.openedAt) : 'Earlier' },
+                    { label: 'Opening cash', value: <Rial amount={session.openingCash} /> },
+                    { label: 'Expected cash', value: <Rial amount={session.expectedCash} />, emphasis: true },
+                    { label: 'Credit notes/refunds', value: <Rial amount={session.creditNoteTotal} /> },
+                    { label: 'Expenses', value: <Rial amount={session.expensesTotal} /> },
+                  ]
+                  : [
+                    { label: 'Closed', value: session.closedAt ? formatSaudiSessionDateTime(session.closedAt) : 'Closed register' },
+                    { label: 'Opening cash', value: <Rial amount={session.openingCash} /> },
+                    { label: 'Actual cash', value: <Rial amount={session.actualCash ?? 0} /> },
+                    { label: 'Difference', value: <Rial amount={session.cashDifference ?? 0} />, emphasis: true },
+                    { label: 'Credit notes/refunds', value: <Rial amount={session.creditNoteTotal} /> },
+                    { label: 'Expenses', value: <Rial amount={session.expensesTotal} /> },
+                  ]).map(item => (
+                  <div key={item.label} className={`rounded-2xl border px-4 py-3 ${
+                    item.emphasis
+                      ? 'border-primary-100 bg-primary-50'
+                      : 'border-gray-100 bg-gray-50/70'
+                  }`}>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{item.label}</p>
+                    <p className={`mt-1 text-sm font-black tabular-nums ${item.emphasis ? 'text-primary-700' : 'text-gray-900'}`}>
+                      {item.value}
+                    </p>
+                  </div>
+                ))}
               </div>
-            )}
+
+              {session.isLongOpen && (
+                <div className="mx-5 mb-5 flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
+                  <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-amber-600" />
+                  <p className="text-xs text-amber-800">
+                    This register session has been open since {session.openedAt ? formatSaudiSessionDateTime(session.openedAt) : 'earlier'}. Close it before starting a new shift.
+                  </p>
+                </div>
+              )}
             </div>
+            {children}
+          </div>
         </>
       )}
     </section>
+  )
+}
+
+function QuickActionsPanel({ onNavigate, lowStock, lowStockLoading }: {
+  onNavigate: (path: string) => void
+  lowStock: Array<{ name: string }>
+  lowStockLoading: boolean
+}) {
+  const actions = [
+    { label: 'New Sale', desc: 'Open POS', icon: Receipt, path: '/pos', primary: true },
+    { label: 'Expenses', desc: 'Record costs', icon: CreditCard, path: '/expenses', primary: false },
+    { label: 'Invoices', desc: 'Review receipts', icon: FileText, path: '/invoices', primary: false },
+  ]
+
+  return (
+    <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+      <div className="mb-4">
+        <h2 className="text-sm font-black text-gray-900">Quick Actions</h2>
+        <p className="mt-0.5 text-xs text-gray-400">Daily branch workflow</p>
+      </div>
+
+      <div className="grid gap-2.5">
+        {actions.map(action => (
+          <button key={action.label} onClick={() => onNavigate(action.path)}
+            className={`group flex min-h-[68px] w-full items-center gap-3 rounded-2xl px-3.5 py-3 text-left transition-all ${
+              action.primary
+                ? 'bg-[#0F2419] text-white shadow-sm hover:bg-[#173F2F]'
+                : 'border border-gray-100 bg-gray-50/80 hover:border-primary-100 hover:bg-primary-50/60'
+            }`}
+          >
+            <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${
+              action.primary ? 'bg-gold-400/20 text-gold-200' : 'border border-gray-200 bg-white text-gray-500 group-hover:text-primary-600'
+            }`}>
+              <action.icon size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className={`truncate text-sm font-black ${action.primary ? 'text-white' : 'text-gray-900'}`}>
+                {action.label}
+              </p>
+              <p className={`truncate text-[11px] font-medium ${action.primary ? 'text-white/65' : 'text-gray-400'}`}>
+                {action.desc}
+              </p>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {!lowStockLoading && lowStock.length > 0 && (
+        <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-amber-100 bg-amber-50 px-3.5 py-3">
+          <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-amber-500" />
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-amber-800">{lowStock.length} product{lowStock.length !== 1 ? 's' : ''} low on stock</p>
+            <p className="mt-0.5 truncate text-[11px] text-amber-600">
+              {lowStock.map(p => p.name).join(', ')}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -461,13 +550,6 @@ export default function BranchDashboardPage() {
     ? tenant.name
     : tenant?.name_ar || 'Branch dashboard'
   const dashboardDate = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
-  const sessionChip = registerSession?.isLongOpen
-    ? { label: 'Long open', className: 'border-amber-300/30 bg-amber-400/15 text-amber-100' }
-    : registerSession?.status === 'open'
-    ? { label: 'Register open', className: 'border-emerald-300/30 bg-emerald-400/15 text-emerald-100' }
-    : registerSession?.status === 'closed'
-    ? { label: 'Last register closed', className: 'border-white/15 bg-white/10 text-white/80' }
-    : null
 
   useEffect(() => {
     if (!bid) return
@@ -484,10 +566,12 @@ export default function BranchDashboardPage() {
     <div className="min-h-screen bg-gray-50">
 
       {/* Header */}
-      <header className="bg-[#0F2419] px-5 py-5 shadow-lg sm:px-7">
+      <header className="relative overflow-hidden bg-[#0F2419] px-5 py-5 shadow-[0_18px_50px_rgba(15,36,25,0.24)] sm:px-7">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(34,121,70,0.20),transparent_32%),radial-gradient(circle_at_85%_12%,rgba(216,183,106,0.11),transparent_30%),linear-gradient(135deg,rgba(7,21,16,0.94),rgba(15,36,25,0.98))]" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold-300/45 to-transparent" />
         <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gold-300">Branch operations</p>
+        <div className="relative z-10 min-w-0">
+          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-gold-300">Branch operations</p>
           <h1 className="mt-1 truncate text-2xl font-black tracking-tight text-white sm:text-3xl">
             {statsLoading ? 'Loading branch...' : dashboardTitle}
           </h1>
@@ -499,21 +583,7 @@ export default function BranchDashboardPage() {
             <span className="text-white/70">{dashboardDate}</span>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {zatcaPhase === 2 ? (
-            <span className={`text-[10px] border px-2.5 py-1.5 rounded-lg font-bold ${zatcaToneClass[zatcaStatus.tone]}`}>
-              {zatcaStatus.label}
-            </span>
-          ) : (
-            <span className="text-[10px] bg-blue-500/20 border border-blue-400/20 text-blue-200 px-2.5 py-1.5 rounded-lg font-bold">
-              Phase 1 — QR invoices
-            </span>
-          )}
-          {sessionChip && (
-            <span className={`text-[10px] border px-2.5 py-1.5 rounded-lg font-bold ${sessionChip.className}`}>
-              {sessionChip.label}
-            </span>
-          )}
+        <div className="relative z-10 flex flex-col items-start gap-2 sm:items-end">
           <button
             onClick={() => navigate('/pos')}
             className="flex items-center gap-2 px-4 py-2.5 bg-gold-500 text-[#0F2419] text-sm font-black rounded-xl hover:bg-gold-400 transition-colors shadow-lg shadow-gold-950/20"
@@ -521,6 +591,10 @@ export default function BranchDashboardPage() {
             <Receipt size={15} />
             New Sale
           </button>
+          <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.065] px-3 py-1.5 text-xs font-black text-emerald-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+            <span className={`h-2.5 w-2.5 rounded-full ${zatcaPhase === 2 ? zatcaIndicatorClass[zatcaStatus.tone] : zatcaIndicatorClass.info}`} />
+            <span>{zatcaPhase === 2 ? zatcaStatus.label : 'Phase 1 — QR invoices'}</span>
+          </div>
         </div>
         </div>
       </header>
@@ -548,61 +622,13 @@ export default function BranchDashboardPage() {
           session={registerSession}
           loading={statsLoading && !registerSession}
           error={registerSessionError}
-        />
-
-        {/* Quick actions */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-bold text-gray-900">Quick Actions</h2>
-              <p className="mt-0.5 text-xs text-gray-400">Daily branch workflow</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
-            {[
-              { label: 'New Sale', labelShort: 'New Sale', desc: 'Open POS', icon: Receipt, path: '/pos', primary: true },
-              { label: 'Invoices', labelShort: 'Invoices', desc: 'Review receipts', icon: FileText, path: '/invoices', primary: false },
-              { label: 'Products', labelShort: 'Products', desc: 'Menu and stock', icon: Package, path: '/products', primary: false },
-              { label: 'Expenses', labelShort: 'Expenses', desc: 'Record costs', icon: CreditCard, path: '/expenses', primary: false },
-              { label: 'Reports', labelShort: 'Reports', desc: 'VAT and sales', icon: BadgePercent, path: '/reports', primary: false },
-            ].map(action => (
-              <button key={action.label} onClick={() => navigate(action.path)}
-                className={`flex min-h-[82px] items-center gap-3 w-full px-4 py-3 rounded-xl text-left transition-all ${
-                  action.primary
-                    ? 'bg-primary-500 hover:bg-primary-600 text-white shadow-sm'
-                    : 'bg-gray-50 hover:bg-gray-100 border border-gray-100'
-                }`}
-              >
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                  action.primary ? 'bg-white/20' : 'bg-white border border-gray-200'
-                }`}>
-                  <action.icon size={15} className={action.primary ? 'text-white' : 'text-gray-500'} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className={`text-sm font-semibold truncate ${action.primary ? 'text-white' : 'text-gray-800'}`}>
-                    {action.labelShort}
-                  </p>
-                  <p className={`text-[11px] truncate ${action.primary ? 'text-white/70' : 'text-gray-400'}`}>
-                    {action.desc}
-                  </p>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {/* Low stock alert */}
-          {!lowStockLoading && lowStock.length > 0 && (
-            <div className="mt-3 flex items-start gap-2.5 bg-amber-50 border border-amber-100 rounded-xl px-3.5 py-3">
-              <AlertTriangle size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-amber-800">{lowStock.length} product{lowStock.length !== 1 ? 's' : ''} low on stock</p>
-                <p className="text-[11px] text-amber-600 mt-0.5 truncate">
-                  {lowStock.map(p => p.name).join(', ')}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
+        >
+          <QuickActionsPanel
+            onNavigate={navigate}
+            lowStock={lowStock}
+            lowStockLoading={lowStockLoading}
+          />
+        </RegisterSessionPanel>
 
         {/* Recent invoices */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">

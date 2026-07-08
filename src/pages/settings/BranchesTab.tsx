@@ -4,7 +4,7 @@ import {
   Upload, Globe, Phone, Mail, MapPin, FileText,
   ReceiptText, ShieldCheck, ChevronDown, ChevronRight,
   Star, KeyRound, LogIn,
-  CreditCard,
+  CreditCard, Warehouse,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -22,6 +22,7 @@ import {
   validateBranchUsernameInput,
 } from '@/lib/utils/branchUsername'
 import { branchCreationErrorMessage, branchIdFromRpcResult } from '@/lib/utils/branchCreation'
+import { resolveBusinessType } from '@/lib/utils/businessType'
 
 /* ── Types ──────────────────────────────────────────────────── */
 
@@ -52,6 +53,7 @@ type BranchForm = {
   // POS checkout
   allow_split_payments: boolean
   show_pos_scroll_buttons: boolean
+  stock_enabled: boolean | null
   // zatca
   zatca_phase: 1 | 2
   is_active: boolean
@@ -65,6 +67,8 @@ type BranchForm = {
 type BranchWithLogin = Branch & {
   branch_username?: string | null
 }
+
+type StockModuleSetting = 'default' | 'enabled' | 'disabled'
 
 const EMPTY_FORM: BranchForm = {
   name: '', name_ar: '',
@@ -80,6 +84,7 @@ const EMPTY_FORM: BranchForm = {
   invoice_language: 'both',
   allow_split_payments: false,
   show_pos_scroll_buttons: false,
+  stock_enabled: null,
   zatca_phase: 1,
   is_active: true,
   is_main_branch: false,
@@ -112,6 +117,26 @@ function branchLoginCredential(branch: BranchWithLogin): { label: string; value:
   if (legacyEmail) return { label: 'Legacy branch email', value: legacyEmail, kind: 'email' }
 
   return null
+}
+
+function stockModuleSetting(value: boolean | null | undefined): StockModuleSetting {
+  if (value === true) return 'enabled'
+  if (value === false) return 'disabled'
+  return 'default'
+}
+
+function stockModuleValue(setting: StockModuleSetting): boolean | null {
+  if (setting === 'enabled') return true
+  if (setting === 'disabled') return false
+  return null
+}
+
+function stockModuleHint(setting: boolean | null, tenantBusinessType: string | null | undefined) {
+  if (setting === true) return 'Stock will be visible in the branch sidebar.'
+  if (setting === false) return 'Stock will be hidden from the branch sidebar.'
+  return resolveBusinessType(tenantBusinessType) === 'service'
+    ? 'Default for service businesses: Stock is hidden.'
+    : 'Default for trading businesses: Stock is visible.'
 }
 
 function SectionHeader({
@@ -214,13 +239,49 @@ function branchPosSettingsErrorDebug(error: unknown) {
   }
 }
 
+function branchModuleSettingsErrorMessage(error: unknown): string {
+  const message = error && typeof error === 'object' && 'message' in error
+    ? String((error as { message?: unknown }).message ?? '')
+    : String(error ?? '')
+
+  if (/permission|forbidden|unauthorized|42501/i.test(message)) {
+    return 'You do not have permission to update module settings for this branch.'
+  }
+  if (/function .*update_branch_module_settings|could not find the function|PGRST202|schema cache/i.test(message)) {
+    return 'The Stock module setting is not available yet. Apply the Stock module SQL migration, then refresh and try again.'
+  }
+  return message || 'Failed to save module settings.'
+}
+
+function branchModuleSettingsErrorDebug(error: unknown) {
+  if (error && typeof error === 'object') {
+    const rpcError = error as { code?: unknown; message?: unknown; details?: unknown; hint?: unknown }
+    return {
+      code: typeof rpcError.code === 'string' ? rpcError.code : null,
+      message: typeof rpcError.message === 'string' ? rpcError.message : null,
+      details: typeof rpcError.details === 'string' ? rpcError.details : null,
+      hint: typeof rpcError.hint === 'string' ? rpcError.hint : null,
+      error,
+    }
+  }
+  return {
+    code: null,
+    message: error instanceof Error ? error.message : String(error ?? ''),
+    details: null,
+    hint: null,
+    error,
+  }
+}
+
 /* ── Drawer ──────────────────────────────────────────────────── */
 
 function BranchDrawer({
-  branch, tenantId, isPhase2, onClose, onSaved, onRefresh, onResetPassword,
+  branch, tenantId, tenantBusinessType, canEditModuleSettings, isPhase2, onClose, onSaved, onRefresh, onResetPassword,
 }: {
   branch: BranchWithLogin | null
   tenantId: string
+  tenantBusinessType?: string | null
+  canEditModuleSettings: boolean
   isPhase2: boolean
   onClose: () => void
   onSaved: () => void
@@ -253,6 +314,7 @@ function BranchDrawer({
           invoice_language: branch.invoice_language ?? 'both',
           allow_split_payments: branch.allow_split_payments ?? false,
           show_pos_scroll_buttons: branch.show_pos_scroll_buttons ?? false,
+          stock_enabled:    branch.stock_enabled ?? null,
           zatca_phase:      branch.zatca_phase ?? 1,
           is_active:        branch.is_active,
           is_main_branch:   branch.is_main_branch,
@@ -305,10 +367,11 @@ function BranchDrawer({
   const address   = useSection(true)
   const contact   = useSection(true)
   const checkout  = useSection(false)
+  const modules   = useSection(false)
   const invoice   = useSection(false)
   const zatca     = useSection(false)
 
-  const set = (k: keyof BranchForm) => (v: string | boolean | number) =>
+  const set = (k: keyof BranchForm) => (v: string | boolean | number | null) =>
     setForm(prev => ({ ...prev, [k]: v }))
 
   const handleLogoFile = (f: File) => {
@@ -342,6 +405,22 @@ function BranchDrawer({
         ...branchPosSettingsErrorDebug(error),
       })
       throw new Error(branchPosSettingsErrorMessage(error))
+    }
+  }
+
+  const saveModuleSettings = async (branchId: string) => {
+    const params = {
+      p_branch_id: branchId,
+      p_stock_enabled: form.stock_enabled,
+    }
+    const { error } = await (supabase as any).rpc('update_branch_module_settings', params)
+    if (error) {
+      console.error('[BranchesTab] Module settings RPC failed', {
+        functionName: 'update_branch_module_settings',
+        params,
+        ...branchModuleSettingsErrorDebug(error),
+      })
+      throw new Error(branchModuleSettingsErrorMessage(error))
     }
   }
 
@@ -390,6 +469,7 @@ function BranchDrawer({
         const logoUrl = await uploadLogo(branchId)
         if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', branchId)
         if (form.allow_split_payments || form.show_pos_scroll_buttons) await savePosSettings(branchId)
+        if (canEditModuleSettings && form.stock_enabled !== null) await saveModuleSettings(branchId)
 
         // Refresh the parent branch list now (branch is in DB regardless of login outcome)
         onRefresh?.()
@@ -419,6 +499,9 @@ function BranchDrawer({
           form.show_pos_scroll_buttons !== (branch!.show_pos_scroll_buttons ?? false)
         ) {
           await savePosSettings(branch!.id)
+        }
+        if (canEditModuleSettings && form.stock_enabled !== (branch!.stock_enabled ?? null)) {
+          await saveModuleSettings(branch!.id)
         }
       }
 
@@ -635,6 +718,57 @@ function BranchDrawer({
               </div>
             )}
           </div>
+
+          {canEditModuleSettings && (
+            <div className={sectionClass(modules.open)}>
+              <SectionHeader icon={Warehouse} title="Branch Modules" open={modules.open} toggle={modules.toggle}
+                color="text-teal-600" bg="bg-teal-50" />
+              {modules.open && (
+                <div className="px-5 py-4 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">Stock module</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      Use Stock if this branch tracks physical stock items such as packaged goods, accessories, or resale items.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { key: 'default', label: 'Default', desc: 'Follow business type default' },
+                      { key: 'enabled', label: 'Enabled', desc: 'Show Stock for this branch' },
+                      { key: 'disabled', label: 'Disabled', desc: 'Hide Stock for this branch' },
+                    ] as { key: StockModuleSetting; label: string; desc: string }[]).map(option => {
+                      const selected = stockModuleSetting(form.stock_enabled) === option.key
+                      return (
+                        <button
+                          key={option.key}
+                          type="button"
+                          onClick={() => set('stock_enabled')(stockModuleValue(option.key))}
+                          className={`rounded-xl border px-3 py-3 text-left transition-all ${
+                            selected
+                              ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500'
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <p className="text-sm font-semibold text-gray-800">{option.label}</p>
+                          <p className="mt-0.5 text-[11px] leading-4 text-gray-400">{option.desc}</p>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5">
+                    <p className="text-[11px] font-medium text-gray-600">
+                      {stockModuleHint(form.stock_enabled, tenantBusinessType)}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-gray-400">
+                      Stock controls the branch Stock page visibility. Purchases remain available for supplier bills and materials.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── INVOICE SETTINGS ──────────────────────── */}
           <div className={sectionClass(invoice.open)}>
@@ -1004,7 +1138,7 @@ function BranchCard({
 /* ── Main tab ─────────────────────────────────────────────────── */
 
 export default function BranchesTab() {
-  const { profile } = useAuth()
+  const { profile, tenant } = useAuth()
   const sub = useSubscription()
   const [branches, setBranches]     = useState<BranchWithLogin[]>([])
   const [loading, setLoading]       = useState(true)
@@ -1085,6 +1219,7 @@ export default function BranchesTab() {
   }, [sub.isPhase2, sub.status, profile?.tenant_id])
 
   const tenantId = profile?.tenant_id ?? ''
+  const canEditModuleSettings = ['owner', 'admin', 'super_admin'].includes(String(profile?.role ?? ''))
   const fallbackActiveBranches = branches.filter(branch => branch.is_active !== false).length
   const activeBranchCount = branchUsage?.active_branch_count ?? fallbackActiveBranches
   const totalBranchCount = branchUsage?.total_branch_count ?? branches.length
@@ -1178,6 +1313,8 @@ export default function BranchesTab() {
         <BranchDrawer
           branch={drawerBranch === 'new' ? null : drawerBranch}
           tenantId={tenantId}
+          tenantBusinessType={tenant?.business_type}
+          canEditModuleSettings={canEditModuleSettings}
           isPhase2={sub.isPhase2}
           onClose={() => setDrawer(null)}
           onSaved={() => { setDrawer(null); load() }}

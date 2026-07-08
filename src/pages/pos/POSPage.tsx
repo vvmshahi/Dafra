@@ -608,7 +608,12 @@ ${lines}
               <div style={{ fontSize: '9px', color: '#d1d5db', marginTop: '4px' }}>Scan to verify invoice</div>
             </div>
           )}
-          <div style={{ fontSize: '9px', color: '#d1d5db' }}>This is a computer-generated invoice.</div>
+          <div style={{ fontSize: '9px', color: '#9ca3af' }}>
+            {receipt.showFooter && receipt.receiptFooter ? (
+              <div style={{ marginBottom: '4px', color: '#4b5563', fontWeight: 600 }}>{receipt.receiptFooter}</div>
+            ) : null}
+            <div style={{ color: '#d1d5db' }}>This is a computer-generated invoice.</div>
+          </div>
         </div>
       </div>
 

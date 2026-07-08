@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import { X, Plus, Pencil, Trash2, Check } from 'lucide-react'
+import { X, Pencil, Trash2, Check, GripVertical } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import type { Category } from '@/types'
+import type { ProductRow } from './ProductsPage'
 
 // ── Palette & defaults ────────────────────────────────────────────────────────
 
@@ -14,16 +14,22 @@ const COLOR_PALETTE = [
 ]
 
 const PRESET_ICONS = [
-  '📦', '🍕', '🍔', '☕', '🥤', '🍰',
-  '🛍️', '💊', '📱', '🎁', '🧴', '🥗',
-  '🍣', '🥩', '🧃', '🍦', '🫙', '🥪',
+  '🍔', '🍟', '🥤', '🌯', '🍕', '🍗', '🐟', '☕', '🍰',
+  '🛍️', '📦', '🧾', '🏷️', '🛒', '🎁',
+  '🛠️', '✂️', '🚗', '📱', '💻',
+  '⭐', '🔥', '✅', '💳', '📊',
 ]
+
+const normalizeIcon = (value: string) => value.trim() || '📦'
+
+const isIconTooLong = (value: string) => Array.from(value.trim()).length > 10
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Props {
   open: boolean
   categories: Category[]
+  products: ProductRow[]
   onClose: () => void
   onChanged: () => void
 }
@@ -44,31 +50,40 @@ const blank = (): FormState => ({
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function CategoriesModal({ open, categories, onClose, onChanged }: Props) {
-  const { profile } = useAuth()
-
+export default function CategoriesModal({ open, categories, products, onClose, onChanged }: Props) {
   const [form,      setForm]      = useState<FormState>(blank())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showForm,  setShowForm]  = useState(false)
   const [saving,    setSaving]    = useState(false)
+  const [reorderingId, setReorderingId] = useState<string | null>(null)
+  const [draggedId, setDraggedId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [localCategories, setLocalCategories] = useState<Category[]>([])
   const [error,     setError]     = useState('')
+  const [notice,    setNotice]    = useState('')
+
+  const sortCategories = (items: Category[]) => [...items].sort((a, b) => {
+    const order = Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)
+    return order || a.name.localeCompare(b.name)
+  })
+
+  const orderedCategories = localCategories
 
   // Reset form when modal closes
   useEffect(() => {
+    if (open) {
+      setLocalCategories(sortCategories(categories))
+    }
+
     if (!open) {
       setShowForm(false)
       setEditingId(null)
       setForm(blank())
       setError('')
+      setDraggedId(null)
+      setDragOverId(null)
     }
-  }, [open])
-
-  const startAdd = () => {
-    setEditingId(null)
-    setForm(blank())
-    setError('')
-    setShowForm(true)
-  }
+  }, [open, categories])
 
   const startEdit = (cat: Category) => {
     setEditingId(cat.id)
@@ -81,56 +96,122 @@ export default function CategoriesModal({ open, categories, onClose, onChanged }
       sortOrder:   String(cat.sort_order ?? 0),
     })
     setError('')
+    setNotice('')
     setShowForm(true)
   }
 
-  const cancelForm = () => {
+  const cancelForm = (clearNotice = true) => {
     setShowForm(false)
     setEditingId(null)
     setForm(blank())
     setError('')
+    if (clearNotice) setNotice('')
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.name.trim()) { setError('Category name is required'); return }
+    if (!editingId) { setError('Choose a category to edit'); return }
+    const normalizedName = form.name.trim().toLowerCase()
+    if (!normalizedName) { setError('Category name is required'); return }
+
+    const cleanIcon = normalizeIcon(form.icon)
+    if (isIconTooLong(cleanIcon)) { setError('Icon must be 10 characters or fewer.'); return }
+
+    const duplicate = categories.some(cat =>
+      cat.id !== editingId && cat.name.trim().toLowerCase() === normalizedName
+    )
+    if (duplicate) { setError('A category with this name already exists'); return }
 
     setSaving(true)
     setError('')
+    setNotice('')
 
     const payload = {
       name:        form.name.trim(),
       name_ar:     form.nameAr.trim()      || null,
       description: form.description.trim() || null,
       color:       form.color,
-      icon:        form.icon || '📦',
+      icon:        cleanIcon,
       sort_order:  Number(form.sortOrder)  || 0,
     }
 
     const q = supabase as unknown as { from: (t: string) => any }
 
-    if (editingId) {
-      const { error: err } = await q.from('categories').update(payload).eq('id', editingId)
-      if (err) { setError(err.message); setSaving(false); return }
-    } else {
-      const { error: err } = await q.from('categories').insert({
-        ...payload,
-        tenant_id: profile?.tenant_id,
-        branch_id: profile?.branch_id,
-      })
-      if (err) { setError(err.message); setSaving(false); return }
-    }
+    const { error: err } = await q.from('categories').update(payload).eq('id', editingId)
+    if (err) { setError(err.message); setSaving(false); return }
 
     setSaving(false)
-    cancelForm()
+    const successMessage = editingId ? 'Category changes saved.' : 'Category added.'
+    cancelForm(false)
+    setNotice(successMessage)
     onChanged()
   }
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete category "${name}"?\n\nProducts in this category won't be deleted — they'll just have no category.`)) return
+    const productCount = products.filter(p => p.category_id === id).length
+    const warning = productCount > 0
+      ? `This category is used by ${productCount} ${productCount === 1 ? 'product' : 'products'}. Deleting it will remove the category from those products.`
+      : 'Deleting this category may uncategorize existing products.'
+    if (!confirm(`Delete category "${name}"?\n\n${warning}`)) return
+
+    setError('')
+    setNotice('')
     const q = supabase as unknown as { from: (t: string) => any }
-    await q.from('categories').delete().eq('id', id)
+    const { error: err } = await q.from('categories').delete().eq('id', id)
+    if (err) {
+      setError(err.message)
+      return
+    }
+    setNotice('Category deleted.')
     onChanged()
+  }
+
+  const persistOrder = async (nextOrder: Category[], movedId: string) => {
+    const previousOrder = orderedCategories
+    const normalizedOrder = nextOrder.map((cat, sortOrder) => ({ ...cat, sort_order: sortOrder }))
+    setLocalCategories(normalizedOrder)
+
+    setReorderingId(movedId)
+    setError('')
+    setNotice('')
+
+    const q = supabase as unknown as { from: (t: string) => any }
+    const results = await Promise.all(
+      normalizedOrder.map((cat, sortOrder) =>
+        q.from('categories').update({ sort_order: sortOrder }).eq('id', cat.id)
+      )
+    )
+    const failed = results.find(result => result.error)
+    if (failed?.error) {
+      setError(failed.error.message)
+      setLocalCategories(previousOrder)
+      setReorderingId(null)
+      return
+    }
+
+    setNotice('Category order saved.')
+    setReorderingId(null)
+    onChanged()
+  }
+
+  const handleDropCategory = async (targetId: string) => {
+    if (!draggedId || draggedId === targetId || reorderingId) {
+      setDraggedId(null)
+      setDragOverId(null)
+      return
+    }
+
+    const fromIndex = orderedCategories.findIndex(cat => cat.id === draggedId)
+    const toIndex = orderedCategories.findIndex(cat => cat.id === targetId)
+    if (fromIndex === -1 || toIndex === -1) return
+
+    const nextOrder = [...orderedCategories]
+    const [moved] = nextOrder.splice(fromIndex, 1)
+    nextOrder.splice(toIndex, 0, moved)
+
+    setDraggedId(null)
+    setDragOverId(null)
+    await persistOrder(nextOrder, moved.id)
   }
 
   if (!open) return null
@@ -149,7 +230,10 @@ export default function CategoriesModal({ open, categories, onClose, onChanged }
             <div>
               <h2 className="text-base font-bold text-gray-900">Manage Categories</h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                {categories.length} {categories.length === 1 ? 'category' : 'categories'}
+                {categories.length} {categories.length === 1 ? 'category' : 'categories'} · Changes are saved immediately.
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Drag categories to set the order shown from left to right in POS.
               </p>
             </div>
             <button
@@ -163,14 +247,28 @@ export default function CategoriesModal({ open, categories, onClose, onChanged }
           {/* ── Body ────────────────────────────────────────── */}
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
 
-            {/* Add / Edit form */}
+            {/* Edit form */}
+            {notice && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-medium text-emerald-700">
+                {notice}
+              </div>
+            )}
+            {error && !showForm && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-medium text-red-600">
+                {error}
+              </div>
+            )}
+
             {showForm ? (
               <form
                 onSubmit={handleSubmit}
                 className="border border-primary-200 bg-primary-50/20 rounded-xl p-4 space-y-3"
               >
                 <p className="text-sm font-semibold text-gray-800">
-                  {editingId ? 'Edit Category' : 'New Category'}
+                  Edit Category
+                </p>
+                <p className="text-xs text-gray-500">
+                  Saving updates applies them right away.
                 </p>
 
                 {/* Names */}
@@ -247,12 +345,14 @@ export default function CategoriesModal({ open, categories, onClose, onChanged }
                     <input
                       className="input w-14 py-1.5 text-center text-xl"
                       value={form.icon}
+                      onBlur={() => setForm(f => ({ ...f, icon: normalizeIcon(f.icon) }))}
                       onChange={e => setForm(f => ({ ...f, icon: e.target.value }))}
-                      maxLength={2}
+                      maxLength={10}
                       placeholder="✏️"
-                      title="Type any emoji"
+                      title="Type any emoji or short text"
                     />
                   </div>
+                  <p className="text-[11px] text-gray-400 mt-1">Up to 10 characters. Empty uses 📦.</p>
                 </div>
 
                 {/* Sort order */}
@@ -274,42 +374,76 @@ export default function CategoriesModal({ open, categories, onClose, onChanged }
                     Cancel
                   </Button>
                   <Button type="submit" size="sm" loading={saving}>
-                    {editingId ? 'Save Changes' : 'Add Category'}
+                    Save Changes
                   </Button>
                 </div>
               </form>
-            ) : (
-              /* Add button */
-              <button
-                onClick={startAdd}
-                className="w-full flex items-center gap-2 px-4 py-3 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-500 hover:border-primary-400 hover:text-primary-600 hover:bg-primary-50/20 transition-colors"
-              >
-                <Plus size={16} />
-                Add Category
-              </button>
-            )}
+            ) : null}
 
             {/* ── Category grid ──────────────────────────────── */}
             {categories.length === 0 ? (
               <div className="text-center py-8 text-gray-400 text-sm">
-                No categories yet. Add one above to get started.
+                No categories yet. Use Add Category on the products page to create one.
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {categories.map(cat => {
+              <div className="space-y-2">
+                {orderedCategories.map((cat, index) => {
                   const color = cat.color ?? '#6b7280'
                   const icon  = cat.icon  ?? '📦'
                   const isEditing = editingId === cat.id
+                  const isReordering = reorderingId === cat.id
+                  const isDragging = draggedId === cat.id
+                  const isDragTarget = dragOverId === cat.id && draggedId !== cat.id
 
                   return (
                     <div
                       key={cat.id}
-                      className={`flex items-center gap-3 p-3 rounded-xl border transition-colors bg-white ${
+                      draggable={reorderingId === null}
+                      onDragStart={e => {
+                        setDraggedId(cat.id)
+                        e.dataTransfer.effectAllowed = 'move'
+                        e.dataTransfer.setData('text/plain', cat.id)
+                      }}
+                      onDragOver={e => {
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = 'move'
+                        setDragOverId(cat.id)
+                      }}
+                      onDragLeave={() => setDragOverId(current => current === cat.id ? null : current)}
+                      onDrop={e => {
+                        e.preventDefault()
+                        handleDropCategory(cat.id)
+                      }}
+                      onDragEnd={() => {
+                        setDraggedId(null)
+                        setDragOverId(null)
+                      }}
+                      className={`flex items-center gap-3 p-3 rounded-xl border transition-all bg-white ${
                         isEditing
                           ? 'border-primary-300 bg-primary-50/20'
-                          : 'border-gray-100 hover:border-gray-200'
-                      }`}
+                          : isDragTarget
+                            ? 'border-primary-300 bg-primary-50/30'
+                            : 'border-gray-100 hover:border-gray-200'
+                      } ${isDragging ? 'opacity-60 shadow-sm' : ''}`}
                     >
+                      {/* Order number */}
+                      <div className="w-8 h-8 rounded-xl bg-primary-50 border border-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                        {index + 1}
+                      </div>
+
+                      {/* Drag handle */}
+                      <button
+                        type="button"
+                        className={`w-7 h-9 rounded-lg flex items-center justify-center text-gray-300 hover:bg-gray-100 hover:text-gray-500 transition-colors ${
+                          reorderingId === null ? 'cursor-grab active:cursor-grabbing' : 'cursor-wait'
+                        }`}
+                        aria-label={`Drag to reorder ${cat.name}`}
+                        title="Drag to reorder"
+                        tabIndex={0}
+                      >
+                        <GripVertical size={16} />
+                      </button>
+
                       {/* Color swatch + icon */}
                       <div
                         className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
@@ -324,6 +458,7 @@ export default function CategoriesModal({ open, categories, onClose, onChanged }
                         {cat.name_ar && (
                           <p className="text-xs text-gray-400 truncate" dir="rtl">{cat.name_ar}</p>
                         )}
+                        <p className="text-[11px] text-gray-400 mt-0.5">Priority {index + 1}</p>
                       </div>
 
                       {/* Color dot */}
@@ -336,13 +471,17 @@ export default function CategoriesModal({ open, categories, onClose, onChanged }
                       <div className="flex items-center gap-0.5 flex-shrink-0">
                         <button
                           onClick={() => startEdit(cat)}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                          disabled={isReordering}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40 transition-colors"
+                          aria-label={`Edit ${cat.name}`}
                         >
                           <Pencil size={13} />
                         </button>
                         <button
                           onClick={() => handleDelete(cat.id, cat.name)}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                          disabled={isReordering}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-40 transition-colors"
+                          aria-label={`Delete ${cat.name}`}
                         >
                           <Trash2 size={13} />
                         </button>

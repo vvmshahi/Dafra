@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Calendar, Filter, Eye, TrendingUp, FileText, Receipt, RefreshCw } from 'lucide-react'
+import { Search, Calendar, Filter, Eye, TrendingUp, FileText, Receipt, RefreshCw, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -43,12 +43,56 @@ function thisMonth() {
   }
 }
 
+type QuickRange = 'today' | 'yesterday' | 'this_month' | 'last_month' | 'custom'
+
+function dateInputValue(date: Date) {
+  return date.toISOString().split('T')[0]
+}
+
+function quickRangeDates(range: Exclude<QuickRange, 'custom'>) {
+  const now = saudiNow()
+  const today = dateInputValue(now)
+
+  if (range === 'today') {
+    return { start: today, end: today }
+  }
+
+  if (range === 'yesterday') {
+    const yesterday = new Date(now)
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+    const value = dateInputValue(yesterday)
+    return { start: value, end: value }
+  }
+
+  if (range === 'last_month') {
+    const firstOfThisMonth = new Date(now)
+    firstOfThisMonth.setUTCDate(1)
+    const lastOfPreviousMonth = new Date(firstOfThisMonth)
+    lastOfPreviousMonth.setUTCDate(0)
+    const firstOfPreviousMonth = new Date(lastOfPreviousMonth)
+    firstOfPreviousMonth.setUTCDate(1)
+    return {
+      start: dateInputValue(firstOfPreviousMonth),
+      end: dateInputValue(lastOfPreviousMonth),
+    }
+  }
+
+  const first = new Date(now)
+  first.setUTCDate(1)
+  return { start: dateInputValue(first), end: today }
+}
+
 function fmt(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function fmtTime(s: string | null | undefined) {
+  if (!s) return '—'
+  return new Date(s).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
 const ZATCA_BADGE: Record<string, { label: string; bg: string; text: string }> = {
@@ -100,9 +144,28 @@ export default function InvoicesPage() {
   const { start: defaultStart, end: defaultEnd } = thisMonth()
   const [startDate, setStartDate] = useState(defaultStart)
   const [endDate,   setEndDate]   = useState(defaultEnd)
+  const [quickRange, setQuickRange] = useState<QuickRange>('this_month')
   const [search,    setSearch]    = useState('')
   const [payFilter, setPayFilter] = useState('all')
   const [zatcaFilter, setZatcaFilter] = useState('all')
+
+  function applyQuickRange(range: QuickRange) {
+    setQuickRange(range)
+    if (range === 'custom') return
+
+    const next = quickRangeDates(range)
+    setStartDate(next.start)
+    setEndDate(next.end)
+  }
+
+  function updateManualDate(which: 'start' | 'end', value: string) {
+    setQuickRange('custom')
+    if (which === 'start') {
+      setStartDate(value)
+      return
+    }
+    setEndDate(value)
+  }
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
 
@@ -242,10 +305,11 @@ export default function InvoicesPage() {
     <div className="space-y-5">
 
       {/* ── Page header ─────────────────────────────────── */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Invoices</h1>
-          <p className="text-sm text-gray-400 mt-0.5">فواتير المبيعات · View invoices and credit notes</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-600">Branch documents</p>
+          <h1 className="mt-1 text-2xl font-bold text-gray-950">Invoices</h1>
+          <p className="text-sm text-gray-500 mt-1">فواتير المبيعات · View invoices and credit notes</p>
         </div>
         {retryableZatcaCount > 0 && (
           <button
@@ -262,84 +326,106 @@ export default function InvoicesPage() {
       </div>
 
       {/* ── Summary bar ─────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {[
-          { label: 'Total Documents', value: String(summary.count), icon: FileText, color: 'text-primary-600', bg: 'bg-primary-50' },
-          { label: 'Net Revenue',     value: <Rial amount={summary.revenue} />, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'Net VAT',         value: <Rial amount={summary.vat} />,    icon: Receipt,    color: 'text-amber-600',   bg: 'bg-amber-50'   },
+          { label: 'Total Invoices', value: String(summary.count), icon: FileText, color: 'text-primary-700', bg: 'bg-primary-50 ring-primary-100' },
+          { label: 'Net Revenue',    value: <Rial amount={summary.revenue} />, icon: TrendingUp, color: 'text-emerald-700', bg: 'bg-emerald-50 ring-emerald-100' },
+          { label: 'Net VAT',        value: <Rial amount={summary.vat} />,    icon: Receipt,    color: 'text-amber-700',   bg: 'bg-amber-50 ring-amber-100'   },
         ].map(s => (
-          <div key={s.label} className="card px-5 py-4 flex items-center gap-4">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.bg}`}>
+          <div key={s.label} className="card px-5 py-4 flex items-center gap-4 border border-gray-100 shadow-sm">
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ring-1 ${s.bg}`}>
               <s.icon size={18} className={s.color} />
             </div>
             <div>
-              <p className="text-xs text-gray-400 font-medium">{s.label}</p>
-              <p className="text-lg font-bold text-gray-900">{s.value}</p>
+              <p className="text-xs text-gray-500 font-semibold">{s.label}</p>
+              <p className="mt-0.5 text-lg font-bold text-gray-950 tabular-nums">{s.value}</p>
             </div>
           </div>
         ))}
       </div>
 
       {/* ── Filters ─────────────────────────────────────── */}
-      <div className="card px-4 py-3 flex flex-wrap items-center gap-3">
-
-        {/* Date range */}
-        <div className="flex items-center gap-1.5">
-          <Calendar size={14} className="text-gray-400" />
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-            className="input py-1.5 text-xs w-36" />
-          <span className="text-gray-300 text-xs">–</span>
-          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-            className="input py-1.5 text-xs w-36" />
+      <div className="card p-4 space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {[
+            { key: 'today', label: 'Today' },
+            { key: 'yesterday', label: 'Yesterday' },
+            { key: 'this_month', label: 'This month' },
+            { key: 'last_month', label: 'Last month' },
+            { key: 'custom', label: 'Custom' },
+          ].map(option => (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => applyQuickRange(option.key as QuickRange)}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                quickRange === option.key
+                  ? 'bg-primary-700 text-white shadow-sm'
+                  : 'bg-gray-50 text-gray-600 hover:bg-primary-50 hover:text-primary-700'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
 
-        <div className="h-5 w-px bg-gray-100" />
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[auto_minmax(220px,1fr)_auto_auto] lg:items-center">
+          {/* Date range */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Calendar size={14} className="text-gray-400" />
+            <input type="date" value={startDate} onChange={e => updateManualDate('start', e.target.value)}
+              className="input py-1.5 text-xs w-36" />
+            <span className="text-gray-300 text-xs">–</span>
+            <input type="date" value={endDate} onChange={e => updateManualDate('end', e.target.value)}
+              className="input py-1.5 text-xs w-36" />
+          </div>
 
-        {/* Search */}
-        <div className="relative flex-1 min-w-48">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search invoice # or customer…"
-            className="input pl-8 py-1.5 text-xs w-full" />
-        </div>
+          {/* Search */}
+          <div className="relative">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Search invoice #, reference, or customer..."
+              className="input pl-8 py-1.5 text-xs w-full" />
+          </div>
 
-        <div className="h-5 w-px bg-gray-100" />
+          {/* Payment filter */}
+          <div className="flex items-center gap-1.5">
+            <Filter size={13} className="text-gray-400" />
+            <select value={payFilter} onChange={e => setPayFilter(e.target.value)}
+              className="input py-1.5 text-xs pr-7 w-full sm:w-auto">
+              <option value="all">All Methods</option>
+              <option value="cash">Cash</option>
+              <option value="card">Card</option>
+              <option value="split">Split Payment</option>
+              <option value="bank_transfer">Bank Transfer</option>
+            </select>
+          </div>
 
-        {/* Payment filter */}
-        <div className="flex items-center gap-1.5">
-          <Filter size={13} className="text-gray-400" />
-          <select value={payFilter} onChange={e => setPayFilter(e.target.value)}
+          {/* ZATCA filter */}
+          <select value={zatcaFilter} onChange={e => setZatcaFilter(e.target.value)}
             className="input py-1.5 text-xs pr-7">
-            <option value="all">All Methods</option>
-            <option value="cash">Cash</option>
-            <option value="card">Card</option>
-            <option value="split">Split Payment</option>
-            <option value="bank_transfer">Bank Transfer</option>
+            <option value="all">All ZATCA Status</option>
+            <option value="not_submitted">Not Required</option>
+            <option value="pending">Pending</option>
+            <option value="reported">Reported</option>
+            <option value="cleared">Cleared</option>
+            <option value="failed">Failed</option>
           </select>
         </div>
-
-        {/* ZATCA filter */}
-        <select value={zatcaFilter} onChange={e => setZatcaFilter(e.target.value)}
-          className="input py-1.5 text-xs pr-7">
-          <option value="all">All ZATCA Status</option>
-          <option value="not_submitted">Not Required</option>
-          <option value="pending">Pending</option>
-          <option value="reported">Reported</option>
-          <option value="cleared">Cleared</option>
-          <option value="failed">Failed</option>
-        </select>
       </div>
 
       {/* ── Table ───────────────────────────────────────── */}
       <div className="card overflow-hidden">
+        <div className="overflow-x-auto">
 
         {/* Table header */}
-        <div className="flex gap-2 px-4 py-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100 bg-gray-50">
+        <div className="flex min-w-[980px] gap-2 px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-100 bg-gray-50/80">
           <div className="w-28">Document #</div>
           <div className="w-24">Date</div>
+          <div className="w-16">Time</div>
           <div className="flex-1">Customer</div>
-          <div className="w-10 text-right">Items</div>
-          <div className="w-24 text-right">Subtotal</div>
+          <div className="w-10 text-right">Lines</div>
+          <div className="w-24 text-right">Before VAT</div>
           <div className="w-20 text-right">VAT</div>
           <div className="w-24 text-right font-bold">Total</div>
           <div className="w-16 text-center">Method</div>
@@ -354,7 +440,7 @@ export default function InvoicesPage() {
         ) : filtered.length === 0 ? (
           <div className="py-16 text-center">
             <FileText size={32} className="text-gray-200 mx-auto mb-3" />
-            <p className="text-sm text-gray-400">No invoices found</p>
+            <p className="text-sm text-gray-400">No invoices found for this filter.</p>
             <p className="text-xs text-gray-300 mt-1">Try a different date range or clear filters</p>
           </div>
         ) : (
@@ -368,7 +454,7 @@ export default function InvoicesPage() {
               return (
                 <div
                   key={r.id}
-                  className={`flex gap-2 px-4 py-3 border-t border-gray-50 items-center hover:bg-gray-50/60 transition-colors ${isCancelled ? 'opacity-50' : ''}`}
+                  className={`flex min-w-[980px] gap-2 px-4 py-3 border-t border-gray-50 items-center hover:bg-primary-50/30 transition-colors ${isCancelled ? 'opacity-50' : ''}`}
                 >
                   <div className="w-28">
                     <span className="text-xs font-bold text-gray-900 font-mono">{r.invoiceNumber}</span>
@@ -386,6 +472,7 @@ export default function InvoicesPage() {
                     )}
                   </div>
                   <div className="w-24 text-xs text-gray-500">{fmtDate(r.date)}</div>
+                  <div className="w-16 text-xs text-gray-500 tabular-nums">{fmtTime(r.createdAt)}</div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-gray-800 truncate">{r.customerName ?? 'Walk-in Customer'}</p>
                   </div>
@@ -425,10 +512,11 @@ export default function InvoicesPage() {
                           setCreditModalRow(r)
                         }}
                         disabled={!!creditDisabledReason}
-                        title={creditDisabledReason ?? 'Create Credit Note / Refund'}
+                        title={creditDisabledReason ?? 'Create credit note'}
+                        aria-label={creditDisabledReason ?? 'Create credit note'}
                         className="p-1.5 rounded-lg text-gray-400 transition-colors hover:bg-amber-50 hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"
                       >
-                        <FileText size={14} />
+                        <RotateCcw size={14} />
                       </button>
                     )}
                   </div>
@@ -437,11 +525,12 @@ export default function InvoicesPage() {
             })}
 
             {/* Totals row */}
-            <div className="flex gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
+            <div className="flex min-w-[980px] gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
               <div className="w-28 text-xs font-semibold text-gray-500">
                 {filtered.length} document{filtered.length !== 1 ? 's' : ''}
               </div>
               <div className="w-24" />
+              <div className="w-16" />
               <div className="flex-1" />
               <div className="w-10" />
               <div className="w-24 text-right text-xs font-bold text-gray-700 tabular-nums">
@@ -459,6 +548,7 @@ export default function InvoicesPage() {
             </div>
           </>
         )}
+        </div>
       </div>
 
       <CreateCreditNoteModal

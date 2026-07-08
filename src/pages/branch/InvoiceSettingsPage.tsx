@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Upload, Check, Loader2, Info } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { Upload, Check, Loader2, Info, AlertCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
@@ -21,6 +21,62 @@ interface FormState {
   show_footer: boolean
   show_cash_change: boolean
   print_mode: 'thermal' | 'pdf' | 'both'
+}
+
+type FieldErrors = Partial<Record<keyof FormState | 'logo_file', string>>
+
+const FOOTER_MAX_LENGTH = 500
+const LOGO_MAX_BYTES = 2 * 1024 * 1024
+const LOGO_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+
+function normalizeWebsite(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return `https://${trimmed}`
+}
+
+function validateSettings(form: FormState): FieldErrors {
+  const errors: FieldErrors = {}
+  const email = form.email.trim()
+  const website = form.website.trim()
+  const phone = form.phone.trim()
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.email = 'Enter a valid email address.'
+  }
+
+  if (website) {
+    try {
+      const url = new URL(normalizeWebsite(website))
+      if (!['http:', 'https:'].includes(url.protocol) || !url.hostname.includes('.')) {
+        errors.website = 'Enter a valid website, such as example.com.'
+      }
+    } catch {
+      errors.website = 'Enter a valid website, such as example.com.'
+    }
+  }
+
+  if (phone && (!/^[0-9+\-() ]+$/.test(phone) || phone.length < 7 || phone.length > 50)) {
+    errors.phone = 'Use 7-50 digits or phone symbols only.'
+  }
+
+  if (form.receipt_footer.length > FOOTER_MAX_LENGTH) {
+    errors.receipt_footer = `Footer must be ${FOOTER_MAX_LENGTH} characters or fewer.`
+  }
+
+  return errors
+}
+
+function formSignature(form: FormState) {
+  return JSON.stringify({
+    ...form,
+    display_name: form.display_name.trim(),
+    phone: form.phone.trim(),
+    website: form.website.trim(),
+    email: form.email.trim(),
+    receipt_footer: form.receipt_footer.trim(),
+  })
 }
 
 // ── Sample data for live preview ──────────────────────────────────────────────
@@ -195,6 +251,9 @@ export default function InvoiceSettingsPage() {
   const [saving,       setSaving]       = useState(false)
   const [saveOk,       setSaveOk]       = useState(false)
   const [saveError,    setSaveError]    = useState<string | null>(null)
+  const [fieldErrors,  setFieldErrors]  = useState<FieldErrors>({})
+  const [savedSignature, setSavedSignature] = useState<string | null>(null)
+  const [uploadedLogoPendingSave, setUploadedLogoPendingSave] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [previewMode,  setPreviewMode]  = useState<'thermal' | 'a4'>('thermal')
 
@@ -222,7 +281,7 @@ export default function InvoiceSettingsPage() {
       if (data) {
         const b = data as Branch
         setBranch(b)
-        setForm({
+        const nextForm: FormState = {
           display_name:     b.display_name     ?? '',
           phone:            b.phone            ?? '',
           show_logo:        b.show_logo        ?? true,
@@ -235,7 +294,9 @@ export default function InvoiceSettingsPage() {
           show_footer:      b.show_footer      ?? true,
           show_cash_change: b.show_cash_change ?? true,
           print_mode:       (b.print_mode as 'thermal' | 'pdf' | 'both') ?? 'thermal',
-        })
+        }
+        setForm(nextForm)
+        setSavedSignature(formSignature(nextForm))
       }
       setLoading(false)
     })
@@ -243,12 +304,39 @@ export default function InvoiceSettingsPage() {
 
   function set<K extends keyof FormState>(key: K, val: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: val }))
+    setSaveOk(false)
+    setSaveError(null)
+    setFieldErrors(prev => {
+      if (!prev[key]) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
   }
+
+  const currentErrors = useMemo(() => validateSettings(form), [form])
+  const hasValidationErrors = Object.keys(currentErrors).length > 0
+  const hasUnsavedChanges = savedSignature !== null && formSignature(form) !== savedSignature
+  const saveDisabled = saving || !hasUnsavedChanges || hasValidationErrors
 
   async function uploadLogo(file: File) {
     const bid = profile?.branch_id
     if (!bid) return
-    if (file.size > 2 * 1024 * 1024) { setSaveError('Logo must be under 2MB'); return }
+    setSaveError(null)
+    setSaveOk(false)
+    if (!LOGO_MIME_TYPES.includes(file.type)) {
+      setFieldErrors(prev => ({ ...prev, logo_file: 'Upload a PNG, JPG, or WebP logo.' }))
+      return
+    }
+    if (file.size > LOGO_MAX_BYTES) {
+      setFieldErrors(prev => ({ ...prev, logo_file: 'Logo must be under 2MB.' }))
+      return
+    }
+    setFieldErrors(prev => {
+      const next = { ...prev }
+      delete next.logo_file
+      return next
+    })
     setUploadingLogo(true)
     try {
       const ext  = file.name.split('.').pop() ?? 'png'
@@ -257,6 +345,7 @@ export default function InvoiceSettingsPage() {
       if (error) throw error
       const { data: urlData } = supabase.storage.from('branch-assets').getPublicUrl(path)
       set('logo_url', urlData.publicUrl)
+      setUploadedLogoPendingSave(true)
     } catch (err: any) {
       setSaveError(err?.message ?? 'Logo upload failed')
     } finally {
@@ -269,19 +358,26 @@ export default function InvoiceSettingsPage() {
     if (!bid) return
     setSaving(true)
     setSaveError(null)
+    setFieldErrors({})
     setSaveOk(false)
     try {
+      const validationErrors = validateSettings(form)
+      if (Object.keys(validationErrors).length > 0) {
+        setFieldErrors(validationErrors)
+        return
+      }
+      const normalizedWebsite = normalizeWebsite(form.website)
       const payload = {
         branch_id:         bid,
-        display_name:     form.display_name     || null,
-        phone:            form.phone            || null,
+        display_name:     form.display_name.trim()     || null,
+        phone:            form.phone.trim()            || null,
         show_logo:        form.show_logo,
         logo_url:         form.logo_url,
-        website:          form.website          || null,
-        email:            form.email            || null,
+        website:          normalizedWebsite             || null,
+        email:            form.email.trim()             || null,
         show_website:     form.show_website,
         show_email:       form.show_email,
-        receipt_footer:   form.receipt_footer   || null,
+        receipt_footer:   form.receipt_footer.trim()   || null,
         show_footer:      form.show_footer,
         show_cash_change: form.show_cash_change,
         print_mode:       form.print_mode,
@@ -290,7 +386,18 @@ export default function InvoiceSettingsPage() {
         p_payload: payload,
       })
       if (error) throw error
+      const savedForm: FormState = {
+        ...form,
+        display_name: form.display_name.trim(),
+        phone: form.phone.trim(),
+        website: normalizedWebsite,
+        email: form.email.trim(),
+        receipt_footer: form.receipt_footer.trim(),
+      }
+      setForm(savedForm)
       setBranch(prev => prev ? { ...prev, ...payload } : prev)
+      setSavedSignature(formSignature(savedForm))
+      setUploadedLogoPendingSave(false)
       setSaveOk(true)
       setTimeout(() => setSaveOk(false), 3000)
     } catch (err: any) {
@@ -319,23 +426,36 @@ export default function InvoiceSettingsPage() {
     <div className="space-y-5">
 
       {/* Page header */}
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">Invoice Settings</h1>
-        <p className="text-sm text-gray-400 mt-0.5">إعدادات الفاتورة · Configure invoice appearance and compliance</p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-600">Branch account</p>
+          <h1 className="mt-1 text-2xl font-bold text-gray-950">Invoice Settings</h1>
+          <p className="text-sm text-gray-500 mt-1">إعدادات الفاتورة · Configure receipt and invoice appearance</p>
+        </div>
+        <div className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
+          hasUnsavedChanges
+            ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
+            : saveOk
+            ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+            : 'bg-gray-50 text-gray-500 ring-1 ring-gray-100'
+        }`}>
+          <span className={`h-2 w-2 rounded-full ${hasUnsavedChanges ? 'bg-amber-500' : saveOk ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+          {hasUnsavedChanges ? 'Unsaved changes' : saveOk ? 'Settings saved' : 'Saved'}
+        </div>
       </div>
 
-      <div className="flex gap-6 items-start">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,520px)_minmax(420px,1fr)] xl:items-start">
 
-        {/* ── LEFT: Form (fixed width) ──────────────────────── */}
-        <div className="w-[420px] flex-shrink-0 space-y-4">
+        {/* ── LEFT: Form ──────────────────────── */}
+        <div className="min-w-0 space-y-4">
 
-          {/* ── Section 1: Display Settings ──────────────────── */}
+          {/* Business identity */}
           <div className="card px-5 py-4 space-y-3.5">
             <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
-              <div className="w-6 h-6 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0 text-blue-600 text-xs font-bold">✦</div>
+              <div className="w-7 h-7 bg-primary-50 rounded-xl flex items-center justify-center flex-shrink-0 text-primary-700 text-xs font-bold">K</div>
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">Display Settings</h2>
-                <p className="text-[10px] text-gray-400">How your brand appears on invoices</p>
+                <h2 className="text-sm font-semibold text-gray-900">Business identity</h2>
+                <p className="text-[10px] text-gray-400">Brand name and logo used on printed documents</p>
               </div>
             </div>
 
@@ -347,33 +467,6 @@ export default function InvoiceSettingsPage() {
               <input type="text" value={form.display_name}
                 onChange={e => set('display_name', e.target.value)}
                 className="input" placeholder="e.g. Ameen Café (optional)" />
-            </div>
-
-            <div>
-              <label className="label flex items-center">
-                Email
-                <InfoTip text="Shown on invoices when 'Show Email' is enabled" />
-              </label>
-              <input type="email" value={form.email}
-                onChange={e => set('email', e.target.value)}
-                className="input" placeholder="info@example.com" />
-            </div>
-
-            <div>
-              <label className="label flex items-center">
-                Website
-                <InfoTip text="Shown on invoices when 'Show Website' is enabled" />
-              </label>
-              <input type="url" value={form.website}
-                onChange={e => set('website', e.target.value)}
-                className="input" placeholder="https://example.com" />
-            </div>
-
-            <div>
-              <label className="label">Phone Number</label>
-              <input type="tel" value={form.phone}
-                onChange={e => set('phone', e.target.value)}
-                className="input" placeholder="+966 5X XXX XXXX" />
             </div>
 
             {/* Logo upload */}
@@ -388,48 +481,100 @@ export default function InvoiceSettingsPage() {
                   <Toggle checked={form.show_logo} onChange={v => set('show_logo', v)} />
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/70 p-3">
+                <div className="flex items-center gap-3">
                 {form.logo_url ? (
                   <div className="relative flex-shrink-0">
                     <img src={form.logo_url} alt="logo"
-                      className="w-14 h-14 object-contain rounded-xl border border-gray-200 bg-gray-50" />
+                      className="w-16 h-16 object-contain rounded-xl border border-gray-200 bg-white" />
                     <button
                       onClick={() => set('logo_url', null)}
-                      className="absolute -top-1.5 -right-1.5 w-4.5 h-4.5 w-[18px] h-[18px] bg-red-500 text-white rounded-full flex items-center justify-center text-[9px] hover:bg-red-600 transition-colors"
+                      className="absolute -top-1.5 -right-1.5 w-[18px] h-[18px] bg-red-500 text-white rounded-full flex items-center justify-center text-[9px] hover:bg-red-600 transition-colors"
+                      title="Remove logo"
                     >
                       ✕
                     </button>
                   </div>
                 ) : (
-                  <div className="w-14 h-14 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center bg-gray-50 flex-shrink-0">
+                  <div className="w-16 h-16 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center bg-white flex-shrink-0">
                     <span className="text-gray-300 text-xl leading-none">+</span>
                   </div>
                 )}
-                <label className={`flex-1 cursor-pointer flex items-center justify-center gap-2 px-3 py-2.5 border border-gray-200 rounded-xl text-xs text-gray-600 hover:bg-gray-50 transition-colors ${uploadingLogo ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                  <Upload size={13} />
-                  {uploadingLogo ? 'Uploading…' : 'Upload Logo'}
-                  <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only"
-                    disabled={uploadingLogo}
-                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadLogo(f) }} />
-                </label>
+                  <div className="min-w-0 flex-1">
+                    <label className={`cursor-pointer inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors ${uploadingLogo ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                      <Upload size={13} />
+                      {uploadingLogo ? 'Uploading...' : form.logo_url ? 'Replace logo' : 'Upload logo'}
+                      <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only"
+                        disabled={uploadingLogo}
+                        onChange={e => { const f = e.target.files?.[0]; if (f) uploadLogo(f) }} />
+                    </label>
+                    <p className="mt-2 text-[10px] leading-relaxed text-gray-400">PNG, JPG, or WebP. Max 2MB. Save settings after uploading to apply this logo.</p>
+                    {uploadedLogoPendingSave && (
+                      <p className="mt-1 text-[10px] font-semibold text-amber-700">Logo uploaded. Save settings to keep it on this branch.</p>
+                    )}
+                    {fieldErrors.logo_file && <p className="mt-1 text-[10px] font-semibold text-red-600">{fieldErrors.logo_file}</p>}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* ── Section 3: Optional Fields ────────────────────── */}
+          {/* Contact details */}
           <div className="card px-5 py-4 space-y-3.5">
             <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
-              <div className="w-6 h-6 bg-purple-50 rounded-lg flex items-center justify-center flex-shrink-0 text-purple-600 text-xs font-bold">⊞</div>
+              <div className="w-7 h-7 bg-emerald-50 rounded-xl flex items-center justify-center flex-shrink-0 text-emerald-700 text-xs font-bold">@</div>
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">Optional Invoice Fields</h2>
-                <p className="text-[10px] text-gray-400">Control what prints on invoices</p>
+                <h2 className="text-sm font-semibold text-gray-900">Contact details</h2>
+                <p className="text-[10px] text-gray-400">Optional contact information for invoices and receipts</p>
+              </div>
+            </div>
+
+            <div>
+              <label className="label">Phone Number</label>
+              <input type="tel" value={form.phone}
+                onChange={e => set('phone', e.target.value)}
+                className={`input ${currentErrors.phone ? 'border-red-200 bg-red-50/40' : ''}`} placeholder="+966 5X XXX XXXX" />
+              {currentErrors.phone && <p className="mt-1 text-[10px] font-semibold text-red-600">{currentErrors.phone}</p>}
+            </div>
+
+            <div>
+              <label className="label flex items-center">
+                Email
+                <InfoTip text="Shown on invoices when Show Email is enabled" />
+              </label>
+              <input type="email" value={form.email}
+                onChange={e => set('email', e.target.value)}
+                className={`input ${currentErrors.email ? 'border-red-200 bg-red-50/40' : ''}`} placeholder="info@example.com" />
+              {currentErrors.email && <p className="mt-1 text-[10px] font-semibold text-red-600">{currentErrors.email}</p>}
+            </div>
+
+            <div>
+              <label className="label flex items-center">
+                Website
+                <InfoTip text="Shown on invoices when Show Website is enabled. Plain domains are saved with https://" />
+              </label>
+              <input type="url" value={form.website}
+                onChange={e => set('website', e.target.value)}
+                className={`input ${currentErrors.website ? 'border-red-200 bg-red-50/40' : ''}`} placeholder="example.com" />
+              {currentErrors.website
+                ? <p className="mt-1 text-[10px] font-semibold text-red-600">{currentErrors.website}</p>
+                : <p className="mt-1 text-[10px] text-gray-400">You can enter example.com; it will be saved as https://example.com.</p>}
+            </div>
+          </div>
+
+          {/* Optional printed fields */}
+          <div className="card px-5 py-4 space-y-3.5">
+            <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
+              <div className="w-7 h-7 bg-gold-50 rounded-xl flex items-center justify-center flex-shrink-0 text-gold-700 text-xs font-bold">✓</div>
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">Optional printed fields</h2>
+                <p className="text-[10px] text-gray-400">Choose which saved details appear on printed documents</p>
               </div>
             </div>
 
             {([
               { key: 'show_website'     as const, label: 'Show Website',     desc: form.website || 'No website set' },
               { key: 'show_email'       as const, label: 'Show Email',       desc: form.email   || 'No email set'   },
-              { key: 'show_footer'      as const, label: 'Show Footer Text', desc: 'Custom message at receipt bottom' },
               { key: 'show_cash_change' as const, label: 'Show Cash Change', desc: 'Print change amount on cash receipts' },
             ]).map(({ key, label, desc }) => (
               <div key={key} className="flex items-center justify-between gap-3">
@@ -440,6 +585,17 @@ export default function InvoiceSettingsPage() {
                 <Toggle checked={form[key] as boolean} onChange={v => set(key, v)} />
               </div>
             ))}
+          </div>
+
+          {/* Footer message */}
+          <div className="card px-5 py-4 space-y-3.5">
+            <div className="flex items-center justify-between gap-3 pb-2 border-b border-gray-100">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">Footer message</h2>
+                <p className="text-[10px] text-gray-400">Printed at the bottom of thermal and A4 documents</p>
+              </div>
+              <Toggle checked={form.show_footer} onChange={v => set('show_footer', v)} />
+            </div>
 
             <div>
               <label className="label flex items-center">
@@ -448,26 +604,34 @@ export default function InvoiceSettingsPage() {
               </label>
               <textarea value={form.receipt_footer}
                 onChange={e => set('receipt_footer', e.target.value)}
-                className="input resize-none text-xs" rows={2}
+                className={`input resize-none text-xs ${currentErrors.receipt_footer ? 'border-red-200 bg-red-50/40' : ''}`} rows={3}
                 placeholder="e.g. Thank you for your business! Visit again." />
+              <div className="mt-1 flex items-center justify-between gap-2">
+                {currentErrors.receipt_footer
+                  ? <p className="text-[10px] font-semibold text-red-600">{currentErrors.receipt_footer}</p>
+                  : <p className="text-[10px] text-gray-400">Keep it short for thermal receipts.</p>}
+                <p className={`text-[10px] tabular-nums ${form.receipt_footer.length > FOOTER_MAX_LENGTH ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>
+                  {form.receipt_footer.length}/{FOOTER_MAX_LENGTH}
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* ── Section 4: Print Settings ─────────────────────── */}
+          {/* Print behavior */}
           <div className="card px-5 py-4 space-y-3.5">
             <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
-              <div className="w-6 h-6 bg-amber-50 rounded-lg flex items-center justify-center flex-shrink-0 text-amber-600 text-xs font-bold">⎙</div>
+              <div className="w-7 h-7 bg-amber-50 rounded-xl flex items-center justify-center flex-shrink-0 text-amber-700 text-xs font-bold">⎙</div>
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">Print Settings</h2>
-                <p className="text-[10px] text-gray-400">Default print format after each sale</p>
+                <h2 className="text-sm font-semibold text-gray-900">Default print action after sale</h2>
+                <p className="text-[10px] text-gray-400">Controls the buttons shown after checkout. Direct printer uses thermal receipt format.</p>
               </div>
             </div>
 
             <div className="space-y-2">
               {([
-                { value: 'thermal' as const, label: 'Thermal Receipt',   desc: '80mm thermal printer format'       },
-                { value: 'pdf'     as const, label: 'A4 Invoice',        desc: 'Full A4 format for email / archive' },
-                { value: 'both'    as const, label: 'Both',              desc: 'Show thermal and A4 options'        },
+                { value: 'thermal' as const, label: 'Thermal receipt', desc: 'Show the receipt print action after sale' },
+                { value: 'pdf'     as const, label: 'A4 invoice',      desc: 'Show the A4 invoice print action after sale' },
+                { value: 'both'    as const, label: 'Both actions',    desc: 'Show receipt and A4 invoice actions' },
               ]).map(opt => (
                 <button key={opt.value} type="button"
                   onClick={() => set('print_mode', opt.value)}
@@ -493,31 +657,47 @@ export default function InvoiceSettingsPage() {
             </div>
           </div>
 
-          {/* Save */}
-          {saveError && (
-            <div className="px-3 py-2.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600">
-              {saveError}
-            </div>
-          )}
-          <button
-            onClick={save}
-            disabled={saving}
-            className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {saving ? (
-              <><Loader2 size={15} className="animate-spin" /> Saving…</>
-            ) : saveOk ? (
-              <><Check size={15} /> Settings Saved</>
-            ) : (
-              'Save Settings'
+          {/* Sticky save */}
+          <div className="sticky bottom-3 z-10 rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-lg backdrop-blur">
+            {saveError && (
+              <div className="mb-2 flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
+                <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+                <span>{saveError}</span>
+              </div>
             )}
-          </button>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className={`text-xs font-semibold ${hasUnsavedChanges ? 'text-amber-700' : saveOk ? 'text-emerald-700' : 'text-gray-600'}`}>
+                  {hasUnsavedChanges ? 'Unsaved changes' : saveOk ? 'Settings saved' : 'No changes to save'}
+                </p>
+                <p className="text-[10px] text-gray-400">
+                  {hasValidationErrors ? 'Fix the highlighted fields before saving.' : 'Saved settings apply to future prints and reprints.'}
+                </p>
+              </div>
+              <button
+                onClick={save}
+                disabled={saveDisabled}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? (
+                  <><Loader2 size={15} className="animate-spin" /> Saving...</>
+                ) : saveOk ? (
+                  <><Check size={15} /> Saved</>
+                ) : (
+                  'Save settings'
+                )}
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* ── RIGHT: Live Preview ───────────────────────────── */}
-        <div className="flex-1 min-w-0 space-y-3 sticky top-4">
+        <div className="min-w-0 space-y-3 xl:sticky xl:top-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-900">Live Preview</h2>
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">Live preview</h2>
+              <p className="text-[10px] text-gray-400">Preview updates before saving.</p>
+            </div>
             <div className="flex border border-gray-200 rounded-xl overflow-hidden text-xs">
               <button
                 onClick={() => setPreviewMode('thermal')}
@@ -525,7 +705,7 @@ export default function InvoiceSettingsPage() {
                   previewMode === 'thermal' ? 'bg-primary-500 text-white' : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                Thermal
+                Thermal preview
               </button>
               <button
                 onClick={() => setPreviewMode('a4')}
@@ -533,7 +713,7 @@ export default function InvoiceSettingsPage() {
                   previewMode === 'a4' ? 'bg-primary-500 text-white' : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                A4
+                A4 preview
               </button>
             </div>
           </div>
@@ -578,7 +758,7 @@ export default function InvoiceSettingsPage() {
           )}
 
           <p className="text-[10px] text-gray-400 text-center">
-            Preview updates in real-time as you edit the form
+            Preview is visual. Use Save settings to apply changes to printed documents.
           </p>
         </div>
       </div>

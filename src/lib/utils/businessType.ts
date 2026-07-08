@@ -33,3 +33,15 @@ export function businessTypeDescription(value: string | null | undefined) {
   const businessType = resolveBusinessType(value)
   return BUSINESS_TYPE_OPTIONS.find(option => option.value === businessType)?.description ?? BUSINESS_TYPE_OPTIONS[0].description
 }
+
+export function isStockModuleVisible({
+  businessType,
+  stockEnabled,
+}: {
+  businessType: string | null | undefined
+  stockEnabled: boolean | null | undefined
+}) {
+  if (stockEnabled === true) return true
+  if (stockEnabled === false) return false
+  return resolveBusinessType(businessType) !== 'service'
+}

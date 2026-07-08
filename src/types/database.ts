@@ -259,6 +259,13 @@ export interface Database {
         }
         Returns: Record<string, unknown>
       }
+      update_branch_module_settings: {
+        Args: {
+          p_branch_id: string
+          p_stock_enabled: boolean | null
+        }
+        Returns: Record<string, unknown>
+      }
       get_dashboard_summary: {
         Args: {
           p_branch_id?: string | null
@@ -676,6 +683,7 @@ export interface Branch {
   print_mode: 'thermal' | 'pdf' | 'both'
   allow_split_payments: boolean
   show_pos_scroll_buttons: boolean
+  stock_enabled: boolean | null
   created_at: string
   updated_at: string
 }
@@ -1023,6 +1031,7 @@ export interface BranchInsert {
   print_mode?: string | null
   allow_split_payments?: boolean
   show_pos_scroll_buttons?: boolean
+  stock_enabled?: boolean | null
 }
 
 export type BranchUpdate = Partial<BranchInsert>

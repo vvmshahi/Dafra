@@ -1007,6 +1007,12 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
               <p className="text-[9px] text-gray-400 mt-1.5">Scan to verify {isCreditNote ? 'credit note' : 'invoice'}</p>
             </div>
 
+            {(branch.show_footer ?? true) && branch.receipt_footer && (
+              <div className="flex-1 rounded-xl bg-gray-50 px-4 py-3 text-xs font-medium text-gray-600">
+                {branch.receipt_footer}
+              </div>
+            )}
+
             {/* ZATCA info — screen only, not required on printed invoices */}
             {!isPrinting && <div className="flex-1 space-y-3">
               <div>

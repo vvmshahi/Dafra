@@ -46,13 +46,17 @@ interface Props {
   open: boolean
   product: ProductRow | null
   categories: Category[]
+  products: ProductRow[]
   onClose: () => void
   onSaved: () => void
 }
 
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function ProductDrawer({ open, product, categories, onClose, onSaved }: Props) {
+export default function ProductDrawer({ open, product, categories, products, onClose, onSaved }: Props) {
   const { profile } = useAuth()
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -77,6 +81,50 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
   const [sortOrder,    setSortOrder]    = useState('0')
   const [sku,          setSku]          = useState('')
   const [notes,        setNotes]        = useState('')
+
+  const baseline = product
+    ? JSON.stringify({
+        name: product.name,
+        nameAr: product.name_ar ?? '',
+        categoryId: product.category_id ?? '',
+        description: product.description ?? '',
+        price: String(product.price),
+        vatTreatment: (product.vat_treatment as VatTreatment) ?? 'inherit',
+        imagePreview: product.image_url,
+        isAvailable: product.is_available ?? true,
+        sortOrder: String(product.sort_order ?? 0),
+        sku: product.sku ?? '',
+        notes: product.notes ?? '',
+      })
+    : JSON.stringify({
+        name: '',
+        nameAr: '',
+        categoryId: '',
+        description: '',
+        price: '',
+        vatTreatment: 'inherit',
+        imagePreview: null,
+        isAvailable: true,
+        sortOrder: '0',
+        sku: '',
+        notes: '',
+      })
+
+  const current = JSON.stringify({
+    name,
+    nameAr,
+    categoryId,
+    description,
+    price,
+    vatTreatment,
+    imagePreview,
+    isAvailable,
+    sortOrder,
+    sku,
+    notes,
+  })
+
+  const hasUnsavedChanges = open && !saving && (imageFile !== null || current !== baseline)
 
   // Populate form when editing, reset when adding
   useEffect(() => {
@@ -112,14 +160,45 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setError('Upload a JPEG, PNG, WebP, or GIF image.')
+      e.target.value = ''
+      return
+    }
+
+    if (file.size > MAX_IMAGE_BYTES) {
+      setError('Image must be 5 MB or smaller.')
+      e.target.value = ''
+      return
+    }
+
+    if (imagePreview?.startsWith('blob:')) URL.revokeObjectURL(imagePreview)
+    setError('')
     setImageFile(file)
     setImagePreview(URL.createObjectURL(file))
+  }
+
+  const requestClose = () => {
+    if (hasUnsavedChanges && !confirm('Discard unsaved product changes?')) return
+    if (imagePreview?.startsWith('blob:')) URL.revokeObjectURL(imagePreview)
+    onClose()
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) { setError('Product name is required'); return }
-    if (!price || isNaN(Number(price))) { setError('A valid price is required'); return }
+    const numericPrice = Number(price)
+    if (!price || isNaN(numericPrice)) { setError('A valid price is required'); return }
+    if (numericPrice < 0) { setError('Price must be zero or higher'); return }
+
+    const cleanSku = sku.trim().toLowerCase()
+    if (cleanSku) {
+      const duplicate = products.some(p =>
+        p.id !== product?.id && (p.sku ?? '').trim().toLowerCase() === cleanSku
+      )
+      if (duplicate) { setError('SKU already exists for another product in this branch'); return }
+    }
 
     setSaving(true)
     setError('')
@@ -152,7 +231,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
         name_ar:       nameAr.trim()       || null,
         category_id:   categoryId          || null,
         description:   description.trim()  || null,
-        price:         Number(price),
+        price:         numericPrice,
         vat_treatment: vatTreatment,
         image_url:     imageUrl,
         is_available:  isAvailable,
@@ -171,6 +250,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
         if (err) { setError(err.message); return }
       }
 
+      if (imagePreview?.startsWith('blob:')) URL.revokeObjectURL(imagePreview)
       onSaved()
       onClose()
     } finally {
@@ -183,7 +263,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/30 z-40" onClick={requestClose} />
 
       {/* Drawer */}
       <div className="fixed inset-y-0 right-0 w-full max-w-[560px] bg-white shadow-2xl z-50 flex flex-col">
@@ -201,7 +281,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={requestClose}
               className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
             >
               <X size={18} />
@@ -330,7 +410,11 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setImageFile(null); setImagePreview(null) }}
+                      onClick={() => {
+                        if (imagePreview?.startsWith('blob:')) URL.revokeObjectURL(imagePreview)
+                        setImageFile(null)
+                        setImagePreview(null)
+                      }}
                       className="bg-white text-red-500 text-xs font-medium px-3 py-1.5 rounded-lg shadow hover:bg-red-50"
                     >
                       Remove
@@ -420,7 +504,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
 
           {/* ── Footer ──────────────────────────────────────── */}
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
+            <Button type="button" variant="secondary" className="flex-1" onClick={requestClose}>
               Cancel
             </Button>
             <Button type="submit" className="flex-1" loading={saving}>

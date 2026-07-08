@@ -1,7 +1,7 @@
 import { createContext, createElement, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
-import type { UserProfile, UserRole, Tenant } from '@/types'
+import type { Branch, UserProfile, UserRole, Tenant } from '@/types'
 import { markOwnerSetupCompleteSilently } from '@/lib/ownerSetupCompletion'
 import {
   INVALID_LOGIN_CREDENTIALS_MESSAGE,
@@ -24,6 +24,7 @@ function useProvideAuth() {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [tenant, setTenant] = useState<Tenant | null>(null)
+  const [branch, setBranch] = useState<Branch | null>(null)
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
   // null = not yet checked, true = has ≥1 branch, false = no branches
@@ -62,6 +63,17 @@ function useProvideAuth() {
             .maybeSingle()
           if (!mounted) return
           setTenant(tData as unknown as Tenant | null)
+          if (p.branch_id) {
+            const { data: bData } = await supabase
+              .from('branches')
+              .select('*')
+              .eq('id', p.branch_id)
+              .maybeSingle()
+            if (!mounted) return
+            setBranch(bData as unknown as Branch | null)
+          } else {
+            setBranch(null)
+          }
           if (p.role === 'owner') {
             const attemptKey = `${p.id}:${p.tenant_id}`
             if (p.is_active !== false && !ownerSetupCompletionAttempts.current.has(attemptKey)) {
@@ -74,6 +86,7 @@ function useProvideAuth() {
             if (mounted) setHasBranch(true)
           }
         } else {
+          setBranch(null)
           // No tenant yet (mid-onboarding) — branch gate doesn't apply
           if (mounted) setHasBranch(true)
         }
@@ -82,6 +95,7 @@ function useProvideAuth() {
         if (mounted) {
           setProfile(null)
           setTenant(null)
+          setBranch(null)
           setHasBranch(false)
           setAuthError('We could not load your account profile. Please retry or sign in again.')
         }
@@ -117,6 +131,7 @@ function useProvideAuth() {
         setSession(null)
         setProfile(null)
         setTenant(null)
+        setBranch(null)
         setHasBranch(null)
         setAuthError(null)
         setLoading(false)
@@ -169,6 +184,18 @@ function useProvideAuth() {
           .eq('id', p.tenant_id)
           .maybeSingle()
         setTenant(tData as unknown as Tenant | null)
+        if (p.branch_id) {
+          const { data: bData } = await supabase
+            .from('branches')
+            .select('*')
+            .eq('id', p.branch_id)
+            .maybeSingle()
+          setBranch(bData as unknown as Branch | null)
+        } else {
+          setBranch(null)
+        }
+      } else {
+        setBranch(null)
       }
     } catch (err) {
       console.error('[useAuth] refreshProfile error:', err)
@@ -244,6 +271,7 @@ function useProvideAuth() {
     session,
     profile,
     tenant,
+    branch,
     loading,
     authError,
     isOnboarded: computeIsOnboarded(profile),
