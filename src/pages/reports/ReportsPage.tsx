@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, BarChart2, FileText, CreditCard, Users, ShoppingCart, Download, Clock3 } from 'lucide-react'
+import { TrendingUp, BarChart2, FileText, CreditCard, Users, ShoppingCart, Download, Clock3, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import type { Branch } from '@/types'
@@ -17,6 +18,7 @@ import ExpenseReport    from './ExpenseReport'
 import CustomerReport   from './CustomerReport'
 import PurchaseReport   from './PurchaseReport'
 import RegisterSessionsReport from './RegisterSessionsReport'
+import type { PhaseAReportKind } from './pdf/reportPdfExporters'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -32,10 +34,17 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'purchases', label: 'Purchases',     icon: ShoppingCart },
 ]
 
+const PHASE_A_EXPORTS: Partial<Record<TabId, PhaseAReportKind>> = {
+  sessions: 'sessions',
+  sales: 'sales',
+  pl: 'pl',
+  vat: 'vat',
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
-  const { profile } = useAuth()
+  const { profile, tenant, branch: authBranch } = useAuth()
 
   const [tab,       setTab]       = useState<TabId>('sessions')
   const [preset,    setPreset]    = useState<DatePreset>('this_month')
@@ -43,6 +52,7 @@ export default function ReportsPage() {
   const [endDate,   setEndDate]   = useState('')
   const [branchId,  setBranchId]  = useState<string | null>(null)
   const [branches,  setBranches]  = useState<Branch[]>([])
+  const [exporting, setExporting] = useState(false)
 
   // Init date range from preset
   useEffect(() => {
@@ -75,6 +85,53 @@ export default function ReportsPage() {
   }
 
   const reportProps = { startDate, endDate, branchId }
+  const exportKind = PHASE_A_EXPORTS[tab]
+  const exportSupported = !!exportKind
+  const selectedBranch = branchId
+    ? branches.find(b => b.id === branchId) ?? (authBranch?.id === branchId ? authBranch : null)
+    : branches.length === 1
+      ? branches[0]
+      : null
+  const branchLabel = branchId
+    ? selectedBranch?.name ?? 'Selected Branch'
+    : branches.length === 1
+      ? branches[0].name
+      : 'All Branches'
+  const exportDisabled = exporting || !startDate || !endDate
+
+  const handleExport = async () => {
+    if (!exportKind) {
+      toast.info('PDF export for this report is coming in Phase PDF-B.')
+      return
+    }
+
+    if (!startDate || !endDate) {
+      toast.error('Choose a valid date range and try again.')
+      return
+    }
+
+    setExporting(true)
+    let pdfModule: typeof import('./pdf/reportPdfExporters') | null = null
+    try {
+      pdfModule = await import('./pdf/reportPdfExporters')
+      await pdfModule.exportPhaseAReportPdf({
+        reportKind: exportKind,
+        startDate,
+        endDate,
+        branchId,
+        tenant,
+        branch: selectedBranch,
+        profile,
+        branchLabel,
+      })
+      toast.success('PDF report downloaded.')
+    } catch (error) {
+      console.error('Report PDF export failed', error)
+      toast.error(pdfModule?.reportPdfErrorMessage(error) ?? 'PDF export failed. Please refresh and try again.')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -82,14 +139,22 @@ export default function ReportsPage() {
       {/* ── Page header ─────────────────────────────────────── */}
       <div className="flex items-center gap-3">
         <h1 className="text-lg font-bold text-gray-900 flex-1">Reports</h1>
-        <button
-          disabled
-          title="Export coming soon"
-          className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-400 cursor-not-allowed opacity-60"
-        >
-          <Download size={14} />
-          Export coming soon
-        </button>
+        {exportSupported && (
+          <button
+            type="button"
+            disabled={exportDisabled}
+            onClick={handleExport}
+            title="Download PDF report"
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+              exportDisabled
+                ? 'border-gray-200 text-gray-400 cursor-not-allowed opacity-60'
+                : 'border-primary-200 bg-white text-primary-700 hover:bg-primary-50'
+            }`}
+          >
+            {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            {exporting ? 'Exporting...' : 'Export PDF'}
+          </button>
+        )}
       </div>
 
       {/* ── Tab bar ─────────────────────────────────────────── */}
