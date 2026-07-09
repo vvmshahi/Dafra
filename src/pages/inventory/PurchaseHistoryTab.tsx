@@ -412,6 +412,7 @@ export default function PurchaseHistoryTab() {
         .from('suppliers')
         .select('*')
         .eq('tenant_id', tid)
+        .eq('branch_id', bid)
         .eq('is_active', true)
         .order('name'),
       supabase

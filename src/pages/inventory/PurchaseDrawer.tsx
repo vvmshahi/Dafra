@@ -371,6 +371,10 @@ export default function PurchaseDrawer({
       setError('Supplier is required for simple bill entry')
       return
     }
+    if (supplierId && !suppliers.some(supplier => supplier.id === supplierId)) {
+      setError('Select a valid supplier for this branch.')
+      return
+    }
     if (mode === 'simple_bill' && simpleTotals.total <= 0) {
       setError('Enter a bill amount greater than zero')
       return
