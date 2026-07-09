@@ -30,21 +30,21 @@ function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
   icon: React.ElementType; gradient: string; loading?: boolean
 }) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl p-5 ${gradient}`}>
+    <div className={`relative overflow-hidden rounded-2xl border border-white/10 p-5 shadow-card-md ${gradient}`}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-white/70">{label}</p>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-white/65">{label}</p>
           {loading
             ? <div className="mt-1.5 h-7 w-24 bg-white/20 rounded animate-pulse" />
-            : <p className="mt-1 text-xl font-bold text-white tracking-tight tabular-nums">{value}</p>
+            : <p className="mt-2 text-2xl font-black text-white tracking-tight tabular-nums">{value}</p>
           }
-          <p className="mt-0.5 text-[11px] text-white/60">{sub}</p>
+          <p className="mt-1 text-[11px] font-medium text-white/60">{sub}</p>
         </div>
-        <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0 ml-3">
+        <div className="w-10 h-10 rounded-xl bg-white/15 ring-1 ring-white/15 flex items-center justify-center flex-shrink-0 ml-3">
           <Icon size={17} className="text-white" />
         </div>
       </div>
-      <div className="absolute -bottom-3 -right-3 w-20 h-20 rounded-full bg-white/5" />
+      <div className="absolute inset-x-0 bottom-0 h-1 bg-gold-400/70" />
     </div>
   )
 }
@@ -254,40 +254,40 @@ function BranchCard({ branch, onView }: { branch: BranchStat; onView: () => void
     : 'text-gray-400'
 
   return (
-    <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col gap-4 ${!branch.is_active ? 'opacity-60' : ''}`}>
+    <div className={`group bg-white rounded-2xl border border-gray-100 shadow-card p-5 flex flex-col gap-4 transition-all duration-150 hover:-translate-y-0.5 hover:border-primary-100 hover:shadow-card-md ${!branch.is_active ? 'opacity-60' : ''}`}>
 
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+      <div className="flex items-start gap-3">
+        <div className="w-11 h-11 rounded-xl bg-primary-50 ring-1 ring-primary-100 flex items-center justify-center overflow-hidden flex-shrink-0">
           {branch.logo_url
             ? <img src={branch.logo_url} alt={branch.name} className="w-full h-full object-cover" />
-            : <Store size={18} className="text-gray-400" />
+            : <Store size={18} className="text-primary-600" />
           }
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-semibold text-sm text-gray-900 truncate">{branch.name}</span>
+            <span className="font-bold text-sm text-gray-950 truncate" style={{ fontFamily: 'Inter, Cairo, sans-serif' }}>{branch.name}</span>
             {branch.is_main_branch && (
               <span className="text-[9px] font-bold bg-gold-500/10 text-gold-700 px-1.5 py-0.5 rounded-full ring-1 ring-gold-500/20 flex-shrink-0">
                 MAIN
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            <Badge variant={branch.is_active ? 'success' : 'neutral'} dot className="text-[10px]">
+          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+            <Badge variant={branch.is_active ? 'success' : 'neutral'} dot className="text-[10px] bg-white">
               {branch.is_active ? 'Active' : 'Inactive'}
             </Badge>
-            <span className={`flex items-center gap-0.5 text-[10px] ${zatcaTone}`}>
+            <span className={`inline-flex items-center gap-1 rounded-full bg-gray-50 px-2 py-0.5 text-[10px] font-semibold ring-1 ring-gray-100 ${zatcaTone}`}>
               <ShieldCheck size={10} className={branch.zatca_phase === 2 && !zatcaUnavailable && zatca.tone === 'success' ? 'text-emerald-500' : 'text-violet-400'} />
               {zatcaLabel}
             </span>
             {isOpen ? (
-              <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium">
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700 font-semibold ring-1 ring-emerald-100">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
                 Open
               </span>
             ) : (
-              <span className="flex items-center gap-1 text-[10px] text-gray-400">
+              <span className="inline-flex items-center gap-1 rounded-full bg-gray-50 px-2 py-0.5 text-[10px] text-gray-500 font-semibold ring-1 ring-gray-100">
                 <span className="w-1.5 h-1.5 rounded-full bg-gray-300 flex-shrink-0" />
                 Closed
               </span>
@@ -297,12 +297,12 @@ function BranchCard({ branch, onView }: { branch: BranchStat; onView: () => void
       </div>
 
       {/* Register Session */}
-      <div className={`rounded-xl border px-3 py-3 ${
+      <div className={`rounded-2xl border px-4 py-4 ${
         session?.isLongOpen
           ? 'border-amber-200 bg-amber-50'
           : session?.status === 'open'
-          ? 'border-emerald-100 bg-emerald-50'
-          : 'border-gray-100 bg-gray-50'
+          ? 'border-emerald-100 bg-emerald-50/70'
+          : 'border-gray-100 bg-gray-50/80'
       }`}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -333,27 +333,27 @@ function BranchCard({ branch, onView }: { branch: BranchStat; onView: () => void
         )}
         {hasSession ? (
           <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
-            <div>
+            <div className="rounded-xl bg-white/70 px-3 py-2 ring-1 ring-black/5">
               <p className="text-gray-400">{sessionPrefix} sales</p>
               <p className="font-bold text-gray-900 tabular-nums"><Rial amount={session.totalSales} /></p>
             </div>
-            <div>
+            <div className="rounded-xl bg-white/70 px-3 py-2 ring-1 ring-black/5">
               <p className="text-gray-400">{cashFinalLabel}</p>
               <p className="font-bold text-gray-900 tabular-nums"><Rial amount={cashFinalValue} /></p>
             </div>
-            <div>
+            <div className="rounded-xl bg-white/70 px-3 py-2 ring-1 ring-black/5">
               <p className="text-gray-400">Cash</p>
               <p className="font-semibold text-emerald-700 tabular-nums"><Rial amount={session.cashTotal} /></p>
             </div>
-            <div>
+            <div className="rounded-xl bg-white/70 px-3 py-2 ring-1 ring-black/5">
               <p className="text-gray-400">Card</p>
               <p className="font-semibold text-blue-700 tabular-nums"><Rial amount={session.cardTotal} /></p>
             </div>
-            <div>
+            <div className="rounded-xl bg-white/70 px-3 py-2 ring-1 ring-black/5">
               <p className="text-gray-400">Invoices</p>
               <p className="font-semibold text-gray-800 tabular-nums">{session.invoiceCount}</p>
             </div>
-            <div>
+            <div className="rounded-xl bg-white/70 px-3 py-2 ring-1 ring-black/5">
               <p className="text-gray-400">VAT</p>
               <p className="font-semibold text-amber-700 tabular-nums"><Rial amount={session.vatTotal} /></p>
             </div>
@@ -366,7 +366,7 @@ function BranchCard({ branch, onView }: { branch: BranchStat; onView: () => void
       {/* View Details */}
       <button
         onClick={onView}
-        className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all"
+        className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-primary-50 hover:border-primary-200 hover:text-primary-700 active:scale-[0.99] transition-all"
       >
         <Eye size={14} /> View Details
       </button>
@@ -452,7 +452,7 @@ export default function DashboardPage() {
 
       if (branchError) {
         console.error('[DashboardPage] failed to load branches', branchError)
-        setBranchLoadError('Branches could not be loaded. Refresh the page or open Settings > Branches to verify access.')
+        setBranchLoadError('Branches could not be loaded. Refresh the page or open Branches to verify access.')
       } else {
         fallbackBranchStats = ((branchRows as BranchRow[]) ?? []).map(branchRowToStat)
       }
@@ -569,7 +569,7 @@ export default function DashboardPage() {
   // we fall through to the full layout with skeleton cards — never flash
   // the empty state prematurely.
   if (!branchLoading && !branchLoadError && branchStats.length === 0) {
-    return <WelcomeState onAddBranch={() => navigate('/settings')} />
+    return <WelcomeState onAddBranch={() => navigate('/branches')} />
   }
 
   const sessionSummaries = branchStats
@@ -598,32 +598,43 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-1">
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Owner dashboard</p>
-        <h1 className="text-2xl font-black tracking-tight text-gray-900">{tenant?.name ?? 'Business overview'}</h1>
-        <p className="text-sm text-gray-500">Register sessions, branch status, and daily operations.</p>
+      <div className="relative overflow-hidden rounded-3xl bg-[#0F2419] px-5 py-6 shadow-card-lg sm:px-7">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gold-500" />
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-gold-300">Owner dashboard</p>
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">{tenant?.name ?? 'Business overview'}</h1>
+            <p className="mt-1 text-sm text-primary-100/80">Register sessions, branch status, and daily operations.</p>
+          </div>
+          <button
+            onClick={() => navigate('/branches')}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-4 py-2.5 text-sm font-semibold text-white ring-1 ring-white/15 transition-all hover:bg-white/15 active:scale-[0.98] sm:self-center"
+          >
+            <Building2 size={15} /> Manage branches
+          </button>
+        </div>
       </div>
 
       {/* ── Register Session KPIs ────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard label="Session Sales" value={sessionAmount(sessionTotals.sales)}
           sub={sessionSub}
-          icon={TrendingUp} gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28]" loading={statsLoading} />
+          icon={TrendingUp} gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F2419]" loading={statsLoading} />
         <StatCard label="Session Invoices" value={sessionCount}
           sub={sessionSub}
-          icon={FileText} gradient="bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]" loading={statsLoading} />
+          icon={FileText} gradient="bg-gradient-to-br from-[#0e6f53] to-[#0F4A28]" loading={statsLoading} />
         <StatCard label="Session Cash" value={sessionAmount(sessionTotals.cash)}
           sub="Cash and split cash"
           icon={Banknote} gradient="bg-gradient-to-br from-[#059669] to-[#047857]" loading={statsLoading} />
         <StatCard label="Session Card" value={sessionAmount(sessionTotals.card)}
           sub="Card and split card"
-          icon={CreditCard} gradient="bg-gradient-to-br from-[#0891b2] to-[#0e7490]" loading={statsLoading} />
+          icon={CreditCard} gradient="bg-gradient-to-br from-[#256f7a] to-[#174852]" loading={statsLoading} />
         <StatCard label="Session VAT" value={sessionAmount(sessionTotals.vat)}
           sub="Register-session VAT"
           icon={BadgePercent} gradient="bg-gradient-to-br from-[#b45309] to-[#92400e]" loading={statsLoading} />
         <StatCard label="Expected Cash" value={sessionAmount(sessionTotals.expectedCash)}
           sub="Across shown sessions"
-          icon={Receipt} gradient="bg-gradient-to-br from-[#7c3aed] to-[#5b21b6]" loading={statsLoading} />
+          icon={Receipt} gradient="bg-gradient-to-br from-[#4a5568] to-[#1f2937]" loading={statsLoading} />
       </div>
 
       {(branchLoadError || dashboardLoadError || registerSessionLoadError) && (
@@ -646,10 +657,10 @@ export default function DashboardPage() {
       {/* ── Branch grid ──────────────────────────────────────── */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-            <Building2 size={15} className="text-gray-400" /> Branch Register Sessions
+          <h2 className="text-base font-black text-gray-950 flex items-center gap-2">
+            <Building2 size={16} className="text-primary-600" /> Branch Register Sessions
           </h2>
-          <button onClick={() => navigate('/settings')}
+          <button onClick={() => navigate('/branches')}
             className="text-xs text-primary-600 font-medium hover:text-primary-700 flex items-center gap-1">
             Manage <ArrowRight size={12} />
           </button>

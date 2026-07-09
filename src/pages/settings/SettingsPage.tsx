@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Building2, ShieldCheck, CreditCard, UserCircle, Printer } from 'lucide-react'
-import BranchesTab     from './BranchesTab'
-import ZatcaTab        from './ZatcaTab'
+import { CreditCard, UserCircle, Printer } from 'lucide-react'
 import SubscriptionTab from './SubscriptionTab'
 import AccountTab      from './AccountTab'
 import PrinterTab      from './PrinterTab'
@@ -12,11 +10,9 @@ import { businessTypeDescription, businessTypeLabel, resolveBusinessType } from 
 
 /* ── Tab config ─────────────────────────────────────────────── */
 
-type TabId = 'branches' | 'zatca' | 'subscription' | 'account' | 'printer'
+type TabId = 'subscription' | 'account' | 'printer'
 
 const BASE_TABS: { id: TabId; label: string; icon: React.ElementType; desc: string }[] = [
-  { id: 'branches',     label: 'Branches',     icon: Building2,   desc: 'Locations, invoice settings & ZATCA config' },
-  { id: 'zatca',        label: 'ZATCA',        icon: ShieldCheck, desc: 'Certificates & e-invoicing compliance'     },
   { id: 'subscription', label: 'Subscription', icon: CreditCard,  desc: 'Plan, billing & usage limits'             },
   { id: 'account',      label: 'Account',      icon: UserCircle,  desc: 'Profile, name, phone & password'          },
 ]
@@ -32,13 +28,15 @@ const TABS = isElectron() ? [...BASE_TABS, ...ELECTRON_TABS] : BASE_TABS
 export default function SettingsPage() {
   const { profile, tenant } = useAuth()
   const [params] = useSearchParams()
-  const requestedTab = params.get('tab') as TabId | null
-  const initialTab = requestedTab && TABS.some(tab => tab.id === requestedTab) ? requestedTab : 'branches'
+  const requestedTab = params.get('tab')
+  const initialTab = requestedTab && TABS.some(tab => tab.id === requestedTab) ? requestedTab as TabId : 'subscription'
   const [active, setActive] = useState<TabId>(initialTab)
 
   useEffect(() => {
     if (requestedTab && TABS.some(tab => tab.id === requestedTab)) {
-      setActive(requestedTab)
+      setActive(requestedTab as TabId)
+    } else if (requestedTab) {
+      setActive('subscription')
     }
   }, [requestedTab])
 
@@ -98,8 +96,6 @@ export default function SettingsPage() {
       )}
 
       {/* Tab content */}
-      {active === 'branches'     && <BranchesTab />}
-      {active === 'zatca'        && <ZatcaTab />}
       {active === 'subscription' && <SubscriptionTab />}
       {active === 'account'      && <AccountTab />}
       {active === 'printer'      && <PrinterTab />}

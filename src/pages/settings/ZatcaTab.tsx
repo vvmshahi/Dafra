@@ -58,9 +58,9 @@ const CERT_CONFIG: Record<CertificateStatus, {
 
 function InfoRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="bg-gray-50 rounded-xl px-3 py-2">
-      <p className="text-[10px] text-gray-400 font-medium">{label}</p>
-      <p className={`text-xs text-gray-700 mt-0.5 truncate ${mono ? 'font-mono' : 'font-medium'}`}>{value}</p>
+    <div className="bg-gray-50/80 rounded-xl px-3 py-2 ring-1 ring-gray-100">
+      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">{label}</p>
+      <p className={`text-xs text-gray-800 mt-1 truncate ${mono ? 'font-mono' : 'font-semibold'}`}>{value}</p>
     </div>
   )
 }
@@ -364,7 +364,7 @@ function ProductionConnectionStatus({
 }) {
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+      <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
         <ShieldCheck size={16} className="text-emerald-600 mt-0.5 flex-shrink-0" />
         <div className="min-w-0">
           <p className="text-sm font-semibold text-emerald-800">Connected to ZATCA Production / FATOORA</p>
@@ -386,8 +386,8 @@ function ProductionConnectionStatus({
         <InfoRow label="Last Updated" value={formatDateTime(status.updatedAt)} />
       </div>
 
-      <div className="rounded-xl border border-amber-100 bg-amber-50 px-3.5 py-3">
-        <p className="text-[11px] text-amber-800 leading-relaxed">
+      <div className="rounded-2xl border border-gold-200 bg-gold-50 px-3.5 py-3">
+        <p className="text-[11px] text-gold-900 leading-relaxed">
           Production onboarding can stay disabled for normal live use. Existing connected branches continue to submit invoices;
           only onboarding or re-onboarding requires the production onboarding feature flag.
         </p>
@@ -972,18 +972,18 @@ function BranchAccordionRow({
   }, [bc.id, onProductionStatusUpdate])
 
   return (
-    <div className="card overflow-hidden">
+    <div className="card overflow-hidden transition-all duration-150 hover:border-primary-100 hover:shadow-card-md">
       {/* Collapsed header row — always visible */}
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors text-left"
+        className="w-full flex items-center gap-3 px-4 py-4 hover:bg-primary-50/50 transition-colors text-left"
       >
-        <div className="w-8 h-8 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
-          <Building2 size={14} className="text-gray-500" />
+        <div className="w-10 h-10 rounded-2xl bg-primary-50 ring-1 ring-primary-100 flex items-center justify-center flex-shrink-0">
+          <Building2 size={16} className="text-primary-600" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate">{bc.name}</p>
-          <p className="text-[11px] text-gray-400 mt-0.5 truncate">{branchSummaryText(bc)}</p>
+          <p className="text-sm font-black text-gray-950 truncate">{bc.name}</p>
+          <p className="text-[11px] text-gray-500 mt-1 truncate">{branchSummaryText(bc)}</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {phase >= 2 && (productionConnected || bestCert) && (
@@ -1010,19 +1010,19 @@ function BranchAccordionRow({
 
       {/* Expanded content */}
       {isExpanded && (
-        <div className="border-t border-gray-100 p-5 space-y-5">
+        <div className="border-t border-gray-100 bg-white p-5 space-y-5">
           {/* Phase 1 — info card (FIX 4) */}
           {phase < 2 ? (
             <div className="space-y-4">
-              <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl p-4">
-                <Info size={14} className="text-blue-500 mt-0.5 flex-shrink-0" />
+              <div className="flex items-start gap-3 bg-primary-50 border border-primary-100 rounded-2xl p-4">
+                <Info size={14} className="text-primary-600 mt-0.5 flex-shrink-0" />
                 <div className="space-y-1.5">
-                  <p className="text-xs font-semibold text-blue-800">This branch is on Phase 1</p>
-                  <p className="text-[11px] text-blue-700 leading-relaxed">
+                  <p className="text-xs font-semibold text-primary-900">This branch is on Phase 1</p>
+                  <p className="text-[11px] text-primary-800 leading-relaxed">
                     Phase 1 invoices include a ZATCA QR code with seller details.
                     No certificate registration is required.
                   </p>
-                  <p className="text-[11px] text-blue-700 leading-relaxed">
+                  <p className="text-[11px] text-primary-800 leading-relaxed">
                     Upgrade to Phase 2 to enable digital signing and automatic ZATCA reporting.
                   </p>
                 </div>
@@ -1040,7 +1040,7 @@ function BranchAccordionRow({
           ) : (
             <>
               {/* Environment toggle / locked */}
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between rounded-2xl border border-gray-100 bg-gray-50/80 px-3.5 py-3">
                 <p className="text-[11px] text-gray-500">Environment</p>
                 {isEnvironmentLocked ? (
                   <span className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-gray-200 bg-gray-50 text-gray-500">
@@ -1074,7 +1074,7 @@ function BranchAccordionRow({
               </div>
 
               {environment === 'production' ? (
-                <div className="border-t border-gray-100 pt-4">
+                <div className="rounded-2xl border border-gray-100 p-4">
                   <ProductionOnboardingPanel
                     branch={bc}
                     initialStatus={bc.productionStatus}
@@ -1082,7 +1082,7 @@ function BranchAccordionRow({
                   />
                 </div>
               ) : (
-                <div className="border-t border-gray-100 pt-4">
+                <div className="rounded-2xl border border-gray-100 p-4">
                   <LegacySandboxStatusPanel
                     cert={cert}
                     productionConnected={productionConnected}
@@ -1169,16 +1169,16 @@ export default function ZatcaTab() {
   const showSandboxBanner = phase2Branches.length > 0 && unknownProductionCount === 0 && !allProduction
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
 
       {/* Sandbox banner */}
       {showSandboxBanner && (
-        <div className="flex items-center gap-3 bg-amber-400 rounded-2xl px-4 py-3">
+        <div className="flex items-center gap-3 rounded-2xl border border-gold-200 bg-gold-50 px-4 py-3">
           <FlaskConical size={16} className="text-amber-900 flex-shrink-0" />
           <div className="flex-1">
-            <p className="text-xs font-bold text-amber-900 uppercase tracking-wide">Sandbox Mode — Not Live</p>
-            <p className="text-[11px] text-amber-800 mt-0.5">
+            <p className="text-xs font-bold text-gold-900 uppercase tracking-wide">Sandbox Mode - Not Live</p>
+            <p className="text-[11px] text-gold-900/75 mt-0.5">
               Calls go to the ZATCA developer portal (test environment). No real invoices are submitted.
               Switch each branch to Production when ready to go live.
             </p>
@@ -1187,32 +1187,22 @@ export default function ZatcaTab() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="card p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">ZATCA Phase 2 — Certificate Management</h3>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <h3 className="text-base font-black text-gray-950">Branch ZATCA connections</h3>
+          <p className="text-xs text-gray-500 mt-1">
             {data.length} branch{data.length !== 1 ? 'es' : ''} · {phase2Count} on Phase 2 · {activeCount} active
           </p>
         </div>
         <button
           onClick={() => setShowGuide(true)}
-          className="flex items-center gap-1.5 text-[11px] font-medium text-gray-500 hover:text-primary-600 transition-colors border border-gray-200 hover:border-primary-200 px-2.5 py-1.5 rounded-lg"
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700"
           title="ZATCA e-Invoicing Guide"
         >
           <Info size={13} />
           Guide
         </button>
-      </div>
-
-      {/* Security notice */}
-      <div className="flex items-start gap-3 bg-amber-50 border border-amber-100 rounded-2xl p-4">
-        <Lock size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
-        <div>
-          <p className="text-xs font-semibold text-amber-800">Private keys are encrypted at rest</p>
-          <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
-            Your private keys are encrypted with AES-256-GCM before storage.
-            ZATCA API credentials are stored server-side and never exposed to the browser.
-          </p>
         </div>
       </div>
 
@@ -1225,10 +1215,10 @@ export default function ZatcaTab() {
         <div className="card p-12 text-center">
           <Cpu size={36} className="text-gray-200 mx-auto mb-3" />
           <p className="text-sm font-medium text-gray-500">No branches configured</p>
-          <p className="text-xs text-gray-400 mt-1">Add branches in the Branches tab first</p>
+          <p className="text-xs text-gray-400 mt-1">Add branches in the Branches page first</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {data.map(bc => (
             <BranchAccordionRow
               key={bc.id}
@@ -1252,6 +1242,19 @@ export default function ZatcaTab() {
           </div>
         </div>
       )}
+
+      {/* Security note */}
+      <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3.5 shadow-card">
+        <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+          <Lock size={14} />
+        </div>
+        <div>
+          <p className="text-xs font-bold text-gray-900">Connection details are protected</p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-gray-500">
+            Private keys are encrypted before storage, and ZATCA API credentials stay on the server instead of being exposed in the browser.
+          </p>
+        </div>
+      </div>
     </div>
   )
 }

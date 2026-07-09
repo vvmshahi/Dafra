@@ -548,7 +548,7 @@ function BranchDrawer({
 
           {/* Info note */}
           <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 mb-3">
-            <span className="text-blue-500 flex-shrink-0 mt-0.5 text-sm">ℹ️</span>
+            <FileText size={14} className="text-blue-500 flex-shrink-0 mt-0.5" />
             <p className="text-[11px] text-blue-700 leading-relaxed">
               Each branch requires its own CR number and address. The Company Name and VAT number are shared across all your branches.
             </p>
@@ -872,7 +872,7 @@ function BranchDrawer({
                     <div>
                       <p className="text-xs font-semibold text-gray-700">Certificate Status</p>
                       <p className="text-[11px] text-gray-400 mt-1">
-                        Managed in the ZATCA tab. Upload your CSID via the ZATCA Certificates section after saving branch details.
+                        Managed from ZATCA in the owner sidebar after saving branch details.
                       </p>
                     </div>
                   </div>
@@ -1063,73 +1063,101 @@ function BranchCard({
   branch: BranchWithLogin; onEdit: () => void; onResetPassword: () => void
 }) {
   const loginCredential = branchLoginCredential(branch)
+  const contactItems = [
+    branch.city ? { icon: MapPin, label: 'City', value: branch.city } : null,
+    branch.phone ? { icon: Phone, label: 'Phone', value: branch.phone } : null,
+    branch.email ? { icon: Mail, label: 'Email', value: branch.email } : null,
+    branch.vat_number ? { icon: FileText, label: 'VAT', value: branch.vat_number } : null,
+  ].filter(Boolean) as Array<{ icon: React.ElementType; label: string; value: string }>
 
   return (
-    <div className={`card p-5 flex items-start gap-4 ${!branch.is_active ? 'opacity-60' : ''}`}>
-      {/* Logo / initials */}
-      <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0 overflow-hidden border border-gray-200">
-        {branch.logo_url
-          ? <img src={branch.logo_url} alt={branch.name} className="w-full h-full object-cover" />
-          : <span className="text-lg font-bold text-gray-400">{branch.name.charAt(0)}</span>
-        }
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-semibold text-gray-900 text-sm">{branch.name}</span>
-          {branch.name_ar && <span className="text-gray-400 text-xs" style={{ fontFamily: 'Cairo' }}>{branch.name_ar}</span>}
-          {branch.is_main_branch && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-gold-500/10 text-gold-700 px-2 py-0.5 rounded-full ring-1 ring-gold-500/20">
-              <Star size={9} /> MAIN
-            </span>
-          )}
-          <Badge variant={branch.is_active ? 'success' : 'neutral'} dot>
-            {branch.is_active ? 'Active' : 'Inactive'}
-          </Badge>
+    <div className={`card overflow-hidden transition-all duration-150 hover:-translate-y-0.5 hover:border-primary-100 hover:shadow-card-md ${!branch.is_active ? 'opacity-60' : ''}`}>
+      <div className="flex items-start justify-between gap-4 border-b border-gray-100 bg-gradient-to-r from-white to-primary-50/40 p-5">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-primary-50 flex items-center justify-center flex-shrink-0 overflow-hidden border border-primary-100">
+            {branch.logo_url
+              ? <img src={branch.logo_url} alt={branch.name} className="w-full h-full object-cover" />
+              : <span className="text-lg font-black text-primary-700">{branch.name.charAt(0)}</span>
+            }
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-black text-gray-950 text-base truncate">{branch.name}</span>
+              {branch.name_ar && <span className="text-gray-500 text-sm leading-5" style={{ fontFamily: 'Cairo' }}>{branch.name_ar}</span>}
+              {branch.is_main_branch && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-gold-500/10 text-gold-700 px-2 py-0.5 rounded-full ring-1 ring-gold-500/20">
+                  <Star size={9} /> MAIN
+                </span>
+              )}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <Badge variant={branch.is_active ? 'success' : 'neutral'} dot>
+                {branch.is_active ? 'Active' : 'Inactive'}
+              </Badge>
+              <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-primary-700 ring-1 ring-primary-100">
+                <ShieldCheck size={11} />
+                Phase {branch.zatca_phase ?? 1}
+              </span>
+              {branch.invoice_prefix && (
+                <span className="rounded-full bg-white px-2.5 py-0.5 font-mono text-[11px] font-semibold text-gray-500 ring-1 ring-gray-100">
+                  #{branch.invoice_prefix}-XXXX
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-400">
-          {branch.city && <span className="flex items-center gap-1"><MapPin size={10} /> {branch.city}</span>}
-          {branch.phone && <span className="flex items-center gap-1"><Phone size={10} /> {branch.phone}</span>}
-          {branch.vat_number && <span>VAT {branch.vat_number}</span>}
-          {branch.invoice_prefix && <span className="font-mono">#{branch.invoice_prefix}-XXXX</span>}
-          <span className="flex items-center gap-1">
-            <ShieldCheck size={10} />
-            Phase {branch.zatca_phase ?? 1}
-          </span>
+        <button onClick={onEdit}
+          className="w-9 h-9 flex items-center justify-center rounded-xl text-gray-400 hover:bg-white hover:text-primary-700 active:scale-[0.97] transition-all"
+          title="Edit branch">
+          <Pencil size={15} />
+        </button>
+      </div>
+
+      <div className="grid gap-4 p-5 lg:grid-cols-[1fr_220px]">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {contactItems.length ? contactItems.map(item => (
+            <div key={item.label} className="rounded-xl border border-gray-100 bg-gray-50/70 px-3 py-2.5">
+              <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                <item.icon size={11} /> {item.label}
+              </p>
+              <p className="mt-1 truncate text-sm font-semibold text-gray-800">{item.value}</p>
+            </div>
+          )) : (
+            <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-3 py-2.5 text-sm text-gray-400">
+              Contact details are not set.
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Branch login</p>
           {loginCredential ? (
-            <span className="flex items-center gap-1.5">
-              <span className="flex items-center gap-1 text-indigo-500">
-                <LogIn size={10} /> {loginCredential.value}
-              </span>
+            <div className="mt-2 space-y-2">
+              <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-indigo-600">
+                <LogIn size={13} /> {loginCredential.value}
+              </p>
               <button
                 type="button"
                 onClick={e => { e.stopPropagation(); onResetPassword() }}
-                className="text-[10px] text-gray-400 hover:text-gray-700 underline transition-colors"
+                className="text-xs font-semibold text-gray-500 hover:text-primary-700 transition-colors"
               >
                 Reset password
               </button>
-            </span>
+            </div>
           ) : (
-            <span className="flex items-center gap-1 text-gray-300 italic"><LogIn size={10} /> Username not set</span>
+            <p className="mt-2 flex items-center gap-1 text-sm text-gray-300 italic"><LogIn size={12} /> Username not set</p>
           )}
+          <a
+            href={WA_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 inline-flex text-xs font-semibold text-gray-400 hover:text-primary-600 transition-colors"
+            title="Contact Kubri support to delete this branch."
+          >
+            Contact support
+          </a>
         </div>
-      </div>
-
-      <div className="flex items-center gap-1.5 flex-shrink-0">
-        <button onClick={onEdit}
-          className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors">
-          <Pencil size={14} />
-        </button>
-        <a
-          href={WA_LINK}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs font-medium text-gray-400 hover:text-primary-600 transition-colors"
-          title="Contact Kubri support to delete this branch."
-        >
-          Contact support
-        </a>
       </div>
     </div>
   )
@@ -1228,12 +1256,12 @@ export default function BranchesTab() {
   const canCreateActiveBranch = sub.status !== 'suspended' && (branchUsage?.can_create_branch ?? activeBranchCount < maxBranches)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
 
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">Branches</h3>
+          <h3 className="text-base font-black text-gray-950">Branch directory</h3>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
             <span><span className="font-medium text-gray-600">{activeBranchCount}</span> / {maxBranches} active branches used</span>
             <span>Total branches: <span className="font-medium text-gray-600">{totalBranchCount}</span></span>
@@ -1288,7 +1316,7 @@ export default function BranchesTab() {
           </Button>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid gap-4 xl:grid-cols-2">
           {branches.map(b => (
             <BranchCard
               key={b.id}
@@ -1327,16 +1355,6 @@ export default function BranchesTab() {
         />
       )}
 
-      {/* ZATCA hint */}
-      <div className="flex items-start gap-3 bg-primary-50 border border-primary-100 rounded-2xl p-4">
-        <CheckCircle2 size={16} className="text-primary-600 mt-0.5 flex-shrink-0" />
-        <div>
-          <p className="text-xs font-semibold text-primary-800">ZATCA tip</p>
-          <p className="text-[11px] text-primary-700 mt-0.5 leading-relaxed">
-            Each branch requires its own CSID certificate for Phase 2 e-invoicing. After adding a branch, go to the ZATCA tab to upload certificates.
-          </p>
-        </div>
-      </div>
     </div>
   )
 }

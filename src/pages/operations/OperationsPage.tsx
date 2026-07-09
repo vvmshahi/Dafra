@@ -77,7 +77,7 @@ function statusBadge(health: BranchHealth): { label: string; detail: string; ton
   if (phase >= 2 && health.productionStatusReadable && productionStatus !== 'production_connected') {
     return {
       label: productionStatus === 'disconnected' ? 'Disconnected' : 'Not connected',
-      detail: 'Check ZATCA settings',
+      detail: 'Open ZATCA',
       tone: 'neutral',
       icon: ShieldAlert,
     }
@@ -257,11 +257,11 @@ export default function OperationsPage() {
           <p className="text-sm text-gray-400 mt-0.5">Pilot ZATCA health by branch</p>
         </div>
         <Link
-          to="/settings"
+          to="/zatca"
           className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50"
         >
           <Settings size={14} />
-          Go to ZATCA settings
+          Go to ZATCA
         </Link>
       </div>
 

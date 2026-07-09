@@ -13,6 +13,7 @@ import OnboardingPage      from '@/pages/onboarding/OnboardingPage'
 import SetupBranchPage     from '@/pages/onboarding/SetupBranchPage'
 import DashboardPage       from '@/pages/admin/DashboardPage'
 import BranchDetailPage    from '@/pages/admin/BranchDetailPage'
+import BranchesPage        from '@/pages/branches/BranchesPage'
 import ProductsPage         from '@/pages/products/ProductsPage'
 import CustomersPage        from '@/pages/customers/CustomersPage'
 import CustomerDetailPage   from '@/pages/customers/CustomerDetailPage'
@@ -22,6 +23,7 @@ import InventoryPage       from '@/pages/inventory/InventoryPage'
 import PurchasesPage       from '@/pages/purchases/PurchasesPage'
 import ReportsPage         from '@/pages/reports/ReportsPage'
 import OperationsPage      from '@/pages/operations/OperationsPage'
+import ZatcaPage           from '@/pages/zatca/ZatcaPage'
 import SuperAdminDashboard    from '@/pages/super-admin/SuperAdminDashboard'
 import ClientsPage             from '@/pages/super-admin/ClientsPage'
 import ClientDetailPage        from '@/pages/super-admin/ClientDetailPage'
@@ -324,6 +326,8 @@ export default function App() {
             <Route element={<RequireOwnerAdmin />}>
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/dashboard/branches/:branchId" element={<BranchDetailPage />} />
+              <Route path="/branches"   element={<BranchesPage />} />
+              <Route path="/zatca"      element={<ZatcaPage />} />
               <Route path="/employees"   element={<EmployeesPage />} />
             </Route>
 

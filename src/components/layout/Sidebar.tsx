@@ -18,6 +18,8 @@ interface NavItem {
 
 const ownerNav: NavItem[] = [
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+  { label: 'Branches',  path: '/branches',  icon: Building2       },
+  { label: 'ZATCA',     path: '/zatca',     icon: ShieldCheck     },
   { label: 'Employees', path: '/employees', icon: UserSquare2     },
   { label: 'Reports',   path: '/reports',   icon: BarChart2       },
   { label: 'Settings',  path: '/settings',  icon: Settings        },
