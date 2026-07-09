@@ -141,8 +141,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       <div className={`pt-6 pb-4 border-b border-sidebar-border ${collapsed ? 'px-2' : 'px-5'}`}>
         {collapsed ? (
           <div className="flex flex-col items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gold-500 flex items-center justify-center shadow-sm">
-              <span className="text-sidebar font-black text-base leading-none">K</span>
+            <div className="w-9 h-9 flex items-center justify-center">
+              <img src="/brand/kubri-logo-mark.png" alt="Kubri" className="w-8 h-8 object-contain" />
             </div>
             <button
               onClick={onToggle}
@@ -155,8 +155,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         ) : (
           <div>
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gold-500 flex items-center justify-center flex-shrink-0 shadow-sm">
-                <span className="text-sidebar font-black text-base leading-none">K</span>
+              <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
+                <img src="/brand/kubri-logo-mark.png" alt="Kubri" className="w-8 h-8 object-contain" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-white font-bold text-xl leading-none tracking-tight" style={{ fontFamily: 'Cairo, sans-serif' }}>

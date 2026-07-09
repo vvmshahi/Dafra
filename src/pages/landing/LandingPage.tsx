@@ -6,10 +6,12 @@ import {
   ClipboardCheck, CreditCard, Download, Mail, Menu, MessageCircle,
   Package, Receipt, ShieldCheck, ShoppingCart, X,
 } from 'lucide-react'
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 const WA_LINK = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
+const KUBRI_WINDOWS_DOWNLOAD_URL = import.meta.env.VITE_KUBRI_WINDOWS_DOWNLOAD_URL || ''
+const KUBRI_MAC_DOWNLOAD_URL = import.meta.env.VITE_KUBRI_MAC_DOWNLOAD_URL || ''
 
 function scrollTo(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
@@ -449,11 +451,10 @@ function WhatsAppIcon({ className = '' }: { className?: string }) {
 }
 
 function WindowsSection() {
-  function preventDownload(e: MouseEvent<HTMLAnchorElement>) {
-    e.preventDefault()
-  }
-
   const downloadButtonClass = 'group relative isolate inline-flex items-center justify-center gap-2 overflow-hidden rounded-2xl border border-[#D8E2D8] bg-white/80 px-5 py-3.5 text-sm font-black text-[#071510] shadow-[0_14px_36px_rgba(7,21,16,0.08)] transition-[border-color,box-shadow,transform] duration-200 before:absolute before:inset-[-1px] before:-z-20 before:rounded-2xl before:bg-gradient-to-r before:from-primary-300/70 before:via-gold-300/80 before:to-primary-500/60 before:opacity-0 before:blur-md before:transition-opacity before:duration-200 after:absolute after:inset-[1px] after:-z-10 after:rounded-[15px] after:bg-gradient-to-br after:from-white after:to-[#F7F5EF] after:transition-colors after:duration-200 hover:-translate-y-0.5 hover:border-gold-300 hover:shadow-[0_20px_54px_rgba(7,21,16,0.12)] hover:before:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F7F5EF] active:translate-y-0 active:scale-[0.98]'
+  const disabledButtonClass = `${downloadButtonClass} cursor-not-allowed opacity-60 hover:translate-y-0 hover:border-[#D8E2D8] hover:shadow-[0_14px_36px_rgba(7,21,16,0.08)] hover:before:opacity-0`
+  const windowsReady = Boolean(KUBRI_WINDOWS_DOWNLOAD_URL)
+  const macReady = Boolean(KUBRI_MAC_DOWNLOAD_URL)
 
   return (
     <section id="windows" className="relative scroll-mt-28 overflow-hidden bg-[#F7F5EF] px-4 py-24 sm:px-6 lg:px-8">
@@ -465,14 +466,28 @@ function WindowsSection() {
             Use Kubri on your desktop POS device for a focused counter experience with products, payments, invoices, and register sessions in one view.
           </p>
           <div className="mt-7 grid gap-3 sm:grid-cols-2">
-            <a href="#" onClick={preventDownload}
-              className={downloadButtonClass}>
-              <Download size={17} className="transition-transform duration-200 group-hover:-translate-y-0.5" /> Download for Windows
-            </a>
-            <a href="#" onClick={preventDownload}
-              className={downloadButtonClass}>
-              <Apple size={17} className="transition-transform duration-200 group-hover:-translate-y-0.5" /> Download for Mac
-            </a>
+            {windowsReady ? (
+              <a href={KUBRI_WINDOWS_DOWNLOAD_URL} target="_blank" rel="noreferrer"
+                className={downloadButtonClass}>
+                <Download size={17} className="transition-transform duration-200 group-hover:-translate-y-0.5" /> Download for Windows
+              </a>
+            ) : (
+              <span aria-disabled="true" title="Windows installer coming soon"
+                className={disabledButtonClass}>
+                <Download size={17} /> Windows app coming soon
+              </span>
+            )}
+            {macReady ? (
+              <a href={KUBRI_MAC_DOWNLOAD_URL} target="_blank" rel="noreferrer"
+                className={downloadButtonClass}>
+                <Apple size={17} className="transition-transform duration-200 group-hover:-translate-y-0.5" /> Download for Mac
+              </a>
+            ) : (
+              <span aria-disabled="true" title="Mac app coming soon"
+                className={disabledButtonClass}>
+                <Apple size={17} /> Mac app coming soon
+              </span>
+            )}
           </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
