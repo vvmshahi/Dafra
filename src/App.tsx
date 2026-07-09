@@ -329,6 +329,7 @@ export default function App() {
               <Route path="/branches"   element={<BranchesPage />} />
               <Route path="/zatca"      element={<ZatcaPage />} />
               <Route path="/employees"   element={<EmployeesPage />} />
+              <Route path="/settings"  element={<SettingsPage />} />
             </Route>
 
             {/* Tenant operational routes: owner/admin and branch users; RLS/RPCs own row scope */}
@@ -345,7 +346,6 @@ export default function App() {
             <Route path="/reports"   element={<ReportsPage />} />
             <Route path="/suppliers" element={<SuppliersPage />} />
             <Route path="/device-printer" element={<DevicePrinterPage />} />
-            <Route path="/settings"  element={<SettingsPage />} />
 
             <Route element={<RequireOwnerAdminOrSuperAdmin />}>
               <Route path="/operations" element={<OperationsPage />} />

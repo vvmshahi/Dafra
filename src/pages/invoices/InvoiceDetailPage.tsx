@@ -201,7 +201,7 @@ export default function InvoiceDetailPage() {
   const { id }     = useParams<{ id: string }>()
   const navigate   = useNavigate()
   const location   = useLocation()
-  const debugMode  = new URLSearchParams(location.search).get('debug') === 'true'
+  const debugMode  = import.meta.env.DEV && new URLSearchParams(location.search).get('debug') === 'true'
   const autoPrint  = new URLSearchParams(location.search).get('print') === '1'
   const autoPrintRef = useRef(false)
   usePrintStyle()
