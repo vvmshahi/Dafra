@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { X, Plus, Trash2, ImagePlus, Banknote, CreditCard, Building } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -100,6 +100,8 @@ interface Props {
   open:           boolean
   suppliers:      Supplier[]
   inventoryItems: InventoryItem[]
+  tenantId:       string
+  branchId:       string
   editingPurchase?: Purchase | null
   editingItems?:    PurchaseItem[]
   onClose:        () => void
@@ -112,6 +114,8 @@ export default function PurchaseDrawer({
   open,
   suppliers,
   inventoryItems,
+  tenantId,
+  branchId,
   editingPurchase = null,
   editingItems = [],
   onClose,
@@ -137,6 +141,12 @@ export default function PurchaseDrawer({
   const [simpleAmount,  setSimpleAmount]  = useState('')
   const [lines,         setLines]         = useState<LineItem[]>([newLine()])
   const [notes,         setNotes]         = useState('')
+  const resolvedTenantId = tenantId || profile?.tenant_id || ''
+  const resolvedBranchId = branchId || profile?.branch_id || ''
+  const branchSuppliers = useMemo(
+    () => suppliers.filter(supplier => supplier.branch_id === resolvedBranchId),
+    [suppliers, resolvedBranchId],
+  )
 
   useEffect(() => {
     if (open) {
@@ -145,7 +155,7 @@ export default function PurchaseDrawer({
 
       setMode(purchaseMode)
       setDate(editingPurchase?.purchase_date ?? new Date().toISOString().split('T')[0])
-      setSupplierId(editingPurchase?.supplier_id ?? '')
+      setSupplierId(editingPurchase ? (editingPurchase.supplier_id ?? '') : '')
       setBillNumber(editingPurchase?.bill_number ?? '')
       setPayMethod((editingPurchase?.payment_method as 'cash' | 'card' | 'bank_transfer') ?? 'cash')
       setPaymentStatus((editingPurchase?.payment_status as PaymentStatus) ?? 'paid')
@@ -178,6 +188,17 @@ export default function PurchaseDrawer({
       setError('')
     }
   }, [open, editingPurchase, editingItems])
+
+  useEffect(() => {
+    if (!open || !supplierId) return
+    if (!branchSuppliers.some(supplier => supplier.id === supplierId)) {
+      setSupplierId('')
+    }
+  }, [open, supplierId, branchSuppliers])
+
+  const handleSupplierChange = (value: string) => {
+    setSupplierId(value)
+  }
 
   const updateLine = (key: string, patch: Partial<LineItem>) =>
     setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l))
@@ -249,7 +270,7 @@ export default function PurchaseDrawer({
         const { data, error: suggestionErr } = await (supabase as any).rpc('suggest_supplier_item_mapping', {
           p_supplier_id: supplierId,
           p_supplier_item_name: line.supplier_item_name,
-          p_branch_id: profile?.branch_id ?? null,
+          p_branch_id: resolvedBranchId || null,
         })
 
         if (suggestionErr) {
@@ -294,7 +315,7 @@ export default function PurchaseDrawer({
     }, 350)
 
     return () => window.clearTimeout(timer)
-  }, [open, mode, supplierId, lines, inventoryItems, profile?.branch_id])
+  }, [open, mode, supplierId, lines, inventoryItems, resolvedBranchId])
 
   // Totals
   const rawLineAmount = roundMoney(lines.reduce((s, l) => s + lineTotal(l), 0))
@@ -348,7 +369,7 @@ export default function PurchaseDrawer({
           supplier_id: supplierId,
           supplier_item_name: lineSupplierName(line),
           matched_inventory_item_id: line.inventory_item_id,
-          branch_id: profile?.branch_id ?? null,
+          branch_id: resolvedBranchId || null,
         },
       })
     ))
@@ -363,6 +384,9 @@ export default function PurchaseDrawer({
     const validLines = lines.filter(
       l => lineSupplierName(l) && (parseFloat(l.quantity) || 0) > 0
     )
+    const selectedSupplier = supplierId
+      ? branchSuppliers.find(supplier => supplier.id === supplierId) ?? null
+      : null
     if (!date) {
       setError('Purchase date is required')
       return
@@ -371,7 +395,7 @@ export default function PurchaseDrawer({
       setError('Supplier is required for simple bill entry')
       return
     }
-    if (supplierId && !suppliers.some(supplier => supplier.id === supplierId)) {
+    if (supplierId && !selectedSupplier) {
       setError('Select a valid supplier for this branch.')
       return
     }
@@ -388,16 +412,46 @@ export default function PurchaseDrawer({
     setError('')
 
     try {
-      const tid = profile?.tenant_id
-      const bid = profile?.branch_id
+      const tid = resolvedTenantId
+      const bid = resolvedBranchId
       if (!tid || !bid) {
         setError('Branch profile is required before saving purchases')
+        return
+      }
+      if (selectedSupplier && selectedSupplier.tenant_id !== tid) {
+        setError('This supplier is not valid for this business.')
+        return
+      }
+      if (selectedSupplier && selectedSupplier.branch_id !== bid) {
+        setError('This supplier belongs to another branch. Select a supplier for this branch.')
         return
       }
 
       const purchaseTotals = mode === 'simple_bill' ? simpleTotals : detailedTotals
 
+      const purchasePayload = {
+        tenant_id:      tid,
+        branch_id:      bid,
+        supplier_id:    supplierId || null,
+        added_by:       profile?.id ?? null,
+        purchase_date:  date,
+        purchase_mode:  mode,
+        status:         mode === 'detailed_receiving' ? 'draft' : 'posted',
+        receiving_status: mode === 'detailed_receiving' ? 'pending_confirmation' : 'not_applicable',
+        bill_number:    billNumber.trim() || null,
+        tax_input_mode: taxMode,
+        payment_status: paymentStatus,
+        subtotal:       purchaseTotals.subtotal,
+        vat_amount:     purchaseTotals.vat,
+        total_amount:   purchaseTotals.total,
+        payment_method: payMethod,
+        bill_url:       null,
+        bill_path:      null as string | null,
+        notes:          notes.trim() || null,
+      }
+
       const billPath = await uploadBill(tid, bid, editingPurchase?.id ?? crypto.randomUUID())
+      purchasePayload.bill_path = billPath
 
       const q = supabase as unknown as { from: (t: string) => any }
 
@@ -443,30 +497,17 @@ export default function PurchaseDrawer({
       // Insert purchase header. Receive Stock is saved pending confirmation;
       // Phase 4C stock changes happen only through confirm_purchase_receiving.
       const { data: purData, error: purErr } = await q.from('purchases')
-        .insert({
-          tenant_id:      tid,
-          branch_id:      bid,
-          supplier_id:    supplierId || null,
-          added_by:       profile?.id ?? null,
-          purchase_date:  date,
-          purchase_mode:  mode,
-          status:         mode === 'detailed_receiving' ? 'draft' : 'posted',
-          receiving_status: mode === 'detailed_receiving' ? 'pending_confirmation' : 'not_applicable',
-          bill_number:    billNumber.trim() || null,
-          tax_input_mode: taxMode,
-          payment_status: paymentStatus,
-          subtotal:       purchaseTotals.subtotal,
-          vat_amount:     purchaseTotals.vat,
-          total_amount:   purchaseTotals.total,
-          payment_method: payMethod,
-          bill_url:       null,
-          bill_path:      billPath,
-          notes:          notes.trim() || null,
-        })
+        .insert(purchasePayload)
         .select('id')
         .single()
 
-      if (purErr) { setError(purErr.message); return }
+      if (purErr) {
+        const mappedUiError = /Purchase supplier does not belong/i.test(purErr.message)
+          ? 'Selected supplier does not match this branch. Refresh the page and select a supplier from this branch.'
+          : purErr.message
+        setError(mappedUiError)
+        return
+      }
 
       const purchaseId = purData.id
 
@@ -495,7 +536,10 @@ export default function PurchaseDrawer({
         }))
       )
 
-      if (itemsErr) { setError(itemsErr.message); return }
+      if (itemsErr) {
+        setError(itemsErr.message)
+        return
+      }
 
       if (billPath) await setPurchaseAttachment(purchaseId, billPath)
       await rememberSelectedMatches(validLines).catch(err => console.warn('Remembering supplier item mapping failed', err))
@@ -510,6 +554,12 @@ export default function PurchaseDrawer({
   }
 
   if (!open) return null
+
+  const selectedSupplier = supplierId
+    ? branchSuppliers.find(supplier => supplier.id === supplierId)
+    : null
+  const simpleBillCanSubmit = mode !== 'simple_bill' ||
+    Boolean(date && supplierId && selectedSupplier && selectedSupplier.branch_id === resolvedBranchId && simpleTotals.total > 0)
 
   return (
     <>
@@ -569,12 +619,22 @@ export default function PurchaseDrawer({
                 </div>
                 <div>
                   <label className="label">Supplier {mode === 'simple_bill' && <span className="text-red-500">*</span>}</label>
-                  <select className="input" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
+                  <select className="input" value={supplierId} onChange={e => handleSupplierChange(e.target.value)}>
                     <option value="">— No Supplier —</option>
-                    {suppliers.map(s => (
+                    {branchSuppliers.map(s => (
                       <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
                   </select>
+                  {branchSuppliers.length === 0 && (
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-amber-600">
+                      No suppliers found for this branch. Add a supplier first.
+                    </p>
+                  )}
+                  {supplierId && !selectedSupplier && (
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-red-600">
+                      Select a valid supplier for this branch.
+                    </p>
+                  )}
                 </div>
                 <div className="col-span-2">
                   <label className="label">Bill / Invoice Number</label>
@@ -890,7 +950,7 @@ export default function PurchaseDrawer({
           {/* Footer */}
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
             <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
-            <Button type="submit" className="flex-1" loading={saving}>
+            <Button type="submit" className="flex-1" loading={saving} disabled={saving || !simpleBillCanSubmit}>
               {isEditing ? 'Save Changes' : mode === 'simple_bill' ? 'Record Bill' : 'Save for Confirmation'}
             </Button>
           </div>

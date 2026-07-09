@@ -1254,6 +1254,7 @@ export type PurchaseItemMatchSource = 'manual' | 'ai' | 'mapping' | 'none'
 export interface Supplier {
   id: string
   tenant_id: string
+  branch_id: string
   name: string
   name_ar: string | null
   vat_number: string | null
@@ -1368,6 +1369,7 @@ export interface SupplierItemMapping {
 
 export interface SupplierInsert {
   tenant_id: string
+  branch_id?: string | null
   name: string
   name_ar?: string | null
   vat_number?: string | null

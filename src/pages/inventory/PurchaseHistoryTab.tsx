@@ -399,7 +399,15 @@ export default function PurchaseHistoryTab() {
   const load = useCallback(async () => {
     const tid = profile?.tenant_id
     const bid = profile?.branch_id
-    if (!tid || !bid) { setLoading(false); return }
+    if (!tid || !bid) {
+      setPurchases([])
+      setSuppliers([])
+      setInventoryItems([])
+      setLoading(false)
+      return
+    }
+
+    setSuppliers([])
 
     const [{ data: purData }, { data: supData }, { data: invData }] = await Promise.all([
       supabase
@@ -410,7 +418,25 @@ export default function PurchaseHistoryTab() {
         .order('created_at',    { ascending: false }),
       supabase
         .from('suppliers')
-        .select('*')
+        .select(`
+          id,
+          tenant_id,
+          branch_id,
+          name,
+          name_ar,
+          vat_number,
+          cr_number,
+          contact_person,
+          phone,
+          email,
+          city,
+          address,
+          payment_terms,
+          notes,
+          is_active,
+          created_at,
+          updated_at
+        `)
         .eq('tenant_id', tid)
         .eq('branch_id', bid)
         .eq('is_active', true)
@@ -426,7 +452,7 @@ export default function PurchaseHistoryTab() {
     setSuppliers((supData ?? []) as unknown as Supplier[])
     setInventoryItems((invData ?? []) as unknown as InventoryItem[])
     setLoading(false)
-  }, [profile?.tenant_id, profile?.branch_id])
+  }, [profile?.id, profile?.role, profile?.tenant_id, profile?.branch_id])
 
   useEffect(() => { load() }, [load])
 
@@ -872,6 +898,8 @@ export default function PurchaseHistoryTab() {
         open={drawerOpen}
         suppliers={suppliers}
         inventoryItems={inventoryItems}
+        tenantId={profile?.tenant_id ?? ''}
+        branchId={profile?.branch_id ?? ''}
         editingPurchase={editingPurchase}
         editingItems={editingItems}
         onClose={closeDrawer}
