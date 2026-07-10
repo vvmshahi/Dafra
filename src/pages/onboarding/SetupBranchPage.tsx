@@ -7,6 +7,18 @@ import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { MeemLogo } from '@/components/MeemLogo'
 import {
+  AlertTriangle,
+  ArrowRight,
+  Building2,
+  CheckCircle2,
+  KeyRound,
+  LogOut,
+  MapPin,
+  Phone,
+  ShieldCheck,
+  UserRound,
+} from 'lucide-react'
+import {
   BRANCH_USERNAME_HELPER_TEXT,
   branchUsernameCreateErrorMessage,
   normalizeBranchUsernameInput,
@@ -122,213 +134,244 @@ export default function SetupBranchPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-
-      {/* Dark header */}
-      <div className="bg-[#0F2419] px-6 py-8">
-        <div className="flex justify-center mb-8">
+    <div className="min-h-screen bg-[#F7F3EA] text-gray-950">
+      <div className="relative overflow-hidden bg-[#0F2419] px-4 pb-28 pt-6 text-white sm:px-6">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gold-500" />
+        <div className="mx-auto flex max-w-6xl items-center justify-between">
           <MeemLogo size="lg" />
+          <button
+            onClick={() => supabase.auth.signOut()}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <LogOut size={13} />
+            Sign out
+          </button>
         </div>
 
-        <div className="text-center">
-          <h1 className="text-2xl font-black text-white">Set Up Your First Branch</h1>
-          <p className="text-white/50 text-sm mt-1.5">
-            Create your first branch to start using Kubri. This takes less than 2 minutes.
-          </p>
-          {profile?.full_name && (
-            <p className="text-white/30 text-xs mt-2">Welcome, {profile.full_name}</p>
-          )}
+        <div className="mx-auto mt-12 grid max-w-6xl gap-8 lg:grid-cols-[1fr_360px] lg:items-end">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-gold-300">First branch setup</p>
+            <h1 className="mt-3 max-w-3xl text-4xl font-black tracking-tight text-white sm:text-5xl">
+              Create your first branch
+            </h1>
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-primary-100/80 sm:text-base">
+              This branch will be used for POS, invoices, and ZATCA device setup. You can add more branches later from your owner workspace.
+            </p>
+            {profile?.full_name && (
+              <p className="mt-4 text-sm font-medium text-white/55">Welcome, {profile.full_name}</p>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 shadow-card backdrop-blur">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gold-400/15 text-gold-300">
+                <ShieldCheck size={17} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-white">Owner-controlled setup</p>
+                <p className="mt-1 text-xs leading-5 text-white/60">
+                  Create the branch record and its POS login in one step. No email is sent to staff.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {['Branch identity', 'National address', 'Branch username'].map(item => (
+                <div key={item} className="flex items-center gap-2 text-xs font-semibold text-white/70">
+                  <CheckCircle2 size={13} className="text-gold-300" />
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Form card */}
-      <div className="flex-1 flex items-start justify-center px-4 py-8">
-        <div className="w-full max-w-2xl bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-          <form onSubmit={handleSubmit}>
-            <div className="p-8 space-y-6">
+      <main className="-mt-20 px-4 pb-10 sm:px-6">
+        <form
+          onSubmit={handleSubmit}
+          className="mx-auto grid max-w-6xl overflow-hidden rounded-[28px] border border-[#E8DFC9] bg-[#FFFDF7] shadow-card-lg lg:grid-cols-[300px_1fr]"
+        >
+          <aside className="border-b border-[#EEE5D1] bg-[#F3EAD7] p-6 lg:border-b-0 lg:border-r">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0F2419] text-gold-300">
+              <Building2 size={20} />
+            </div>
+            <h2 className="mt-5 text-lg font-black text-[#10291E]">Branch details</h2>
+            <p className="mt-2 text-sm leading-6 text-[#4D5B50]">
+              Use the registered branch information from your VAT certificate, commercial registration, and Saudi National Address.
+            </p>
+            <div className="mt-6 rounded-2xl border border-[#E3D5B8] bg-white/60 p-4">
+              <p className="text-xs font-bold text-[#10291E]">Good to know</p>
+              <p className="mt-1 text-[11px] leading-5 text-[#5B6259]">
+                Each branch needs its own CR number and address. The branch login is for POS staff access.
+              </p>
+            </div>
+          </aside>
 
-              {/* Info note */}
-              <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
-                <span className="text-blue-500 flex-shrink-0 mt-0.5 text-sm">ℹ️</span>
-                <p className="text-[11px] text-blue-700 leading-relaxed">
-                  Each branch requires its own CR number and address. The Company Name and VAT number are shared across all your branches.
-                </p>
-              </div>
-
-              {/* Branch identity */}
-              <div>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Branch Identity</p>
-                <Input
-                  label="Branch Name"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  required
-                />
-                {fieldErr('name') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('name')}</p>}
-
-                <div className="grid grid-cols-2 gap-3 mt-3">
+          <div className="p-5 sm:p-7 lg:p-8">
+            <div className="space-y-8">
+              <section>
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+                    <Building2 size={16} />
+                  </div>
                   <div>
+                    <h3 className="text-sm font-black text-gray-950">Branch identity</h3>
+                    <p className="text-xs text-gray-500">Registered branch and tax details.</p>
+                  </div>
+                </div>
+                <div className="grid gap-3">
+                  <Input
+                    label="Branch Name"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    error={fieldErr('name') || undefined}
+                    required
+                  />
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <Input
                       label="VAT Registration Number"
                       value={vat}
                       onChange={e => setVat(e.target.value)}
                       maxLength={15}
                       helperText="From your VAT Registration Certificate. Must be 15 digits starting and ending with 3."
+                      error={fieldErr('vat') || undefined}
                       required
                     />
-                    {fieldErr('vat') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('vat')}</p>}
-                  </div>
-                  <div>
                     <Input
                       label="CR / License Number"
                       value={cr}
                       onChange={e => setCr(e.target.value)}
-                      helperText="Commercial Registration number for this specific branch. Each branch has its own CR."
+                      helperText="Commercial Registration number for this specific branch."
+                      error={fieldErr('cr') || undefined}
                       required
                     />
-                    {fieldErr('cr') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('cr')}</p>}
                   </div>
                 </div>
-              </div>
+              </section>
 
-              {/* Address */}
-              <div>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
-                  Branch Address <span className="text-red-400">· Required for ZATCA invoicing</span>
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Input
-                      label="Building Number"
-                      value={bldg}
-                      onChange={e => setBldg(e.target.value)}
-                      helperText="4-digit building number from your Saudi National Address (العنوان الوطني). Use leading zeros e.g. 0056"
-                    />
-                    {fieldErr('bldg') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('bldg')}</p>}
+              <section>
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+                    <MapPin size={16} />
                   </div>
                   <div>
-                    <Input
-                      label="Street Name"
-                      value={street}
-                      onChange={e => setStreet(e.target.value)}
-                    />
-                    {fieldErr('street') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('street')}</p>}
+                    <h3 className="text-sm font-black text-gray-950">Branch address</h3>
+                    <p className="text-xs text-gray-500">Required for ZATCA invoicing.</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3 mt-3">
-                  <div>
-                    <Input
-                      label="District"
-                      value={district}
-                      onChange={e => setDistrict(e.target.value)}
-                      helperText="Neighbourhood or district name as in your registered address."
-                    />
-                    {fieldErr('district') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('district')}</p>}
-                  </div>
-                  <div>
-                    <Input
-                      label="City"
-                      value={city}
-                      onChange={e => setCity(e.target.value)}
-                    />
-                    {fieldErr('city') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('city')}</p>}
-                  </div>
-                </div>
-                <div className="mt-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Input
+                    label="Building Number"
+                    value={bldg}
+                    onChange={e => setBldg(e.target.value)}
+                    helperText="4-digit building number from your Saudi National Address. Use leading zeros e.g. 0056."
+                    error={fieldErr('bldg') || undefined}
+                  />
+                  <Input
+                    label="Street Name"
+                    value={street}
+                    onChange={e => setStreet(e.target.value)}
+                    error={fieldErr('street') || undefined}
+                  />
+                  <Input
+                    label="District"
+                    value={district}
+                    onChange={e => setDistrict(e.target.value)}
+                    helperText="Neighbourhood or district name as in your registered address."
+                    error={fieldErr('district') || undefined}
+                  />
+                  <Input
+                    label="City"
+                    value={city}
+                    onChange={e => setCity(e.target.value)}
+                    error={fieldErr('city') || undefined}
+                  />
                   <Input
                     label="Postal Code"
                     value={postal}
                     onChange={e => setPostal(e.target.value)}
                     helperText="5-digit postal code from your Saudi National Address document."
+                    error={fieldErr('postal') || undefined}
                   />
-                  {fieldErr('postal') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('postal')}</p>}
+                  <Input
+                    label="Phone Number"
+                    type="tel"
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                    placeholder="+966 5x xxx xxxx"
+                    icon={Phone}
+                  />
                 </div>
-              </div>
+              </section>
 
-              {/* Contact */}
-              <div>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Contact (Optional)</p>
-                <Input
-                  label="Phone Number"
-                  type="tel"
-                  value={phone}
-                  onChange={e => setPhone(e.target.value)}
-                  placeholder="+966 5x xxx xxxx"
-                />
-              </div>
-
-              {/* Branch Login */}
-              <div>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Branch Login</p>
-                <p className="text-xs text-gray-400 mb-3">
-                  Create the login for this branch's POS terminal. No email is sent — share these credentials directly with your staff.
-                </p>
-                <div className="space-y-3">
+              <section>
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+                    <KeyRound size={16} />
+                  </div>
                   <div>
+                    <h3 className="text-sm font-black text-gray-950">Branch login</h3>
+                    <p className="text-xs text-gray-500">
+                      Create the login for this branch&apos;s POS terminal. Share these credentials directly with your staff.
+                    </p>
+                  </div>
+                </div>
+                <div className="grid gap-3">
+                  <Input
+                    label="Branch username"
+                    type="text"
+                    value={loginUsername}
+                    onChange={e => setLoginUsername(normalizeBranchUsernameInput(e.target.value))}
+                    placeholder="main_counter"
+                    helperText={BRANCH_USERNAME_HELPER_TEXT}
+                    autoComplete="username"
+                    icon={UserRound}
+                    error={fieldErr('loginUsername') || undefined}
+                    required
+                  />
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <Input
-                      label="Branch username"
-                      type="text"
-                      value={loginUsername}
-                      onChange={e => setLoginUsername(normalizeBranchUsernameInput(e.target.value))}
-                      placeholder="main_counter"
-                      helperText={BRANCH_USERNAME_HELPER_TEXT}
-                      autoComplete="username"
+                      label="Password"
+                      type="password"
+                      value={loginPwd}
+                      onChange={e => setLoginPwd(e.target.value)}
+                      placeholder="Min. 8 characters"
+                      error={fieldErr('loginPwd') || undefined}
                       required
                     />
-                    {fieldErr('loginUsername') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('loginUsername')}</p>}
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Input
-                        label="Password"
-                        type="password"
-                        value={loginPwd}
-                        onChange={e => setLoginPwd(e.target.value)}
-                        placeholder="Min. 8 characters"
-                        required
-                      />
-                      {fieldErr('loginPwd') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('loginPwd')}</p>}
-                    </div>
-                    <div>
-                      <Input
-                        label="Confirm Password"
-                        type="password"
-                        value={loginConfirm}
-                        onChange={e => setLoginConfirm(e.target.value)}
-                        placeholder="Repeat password"
-                        required
-                      />
-                      {fieldErr('loginConfirm') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('loginConfirm')}</p>}
-                    </div>
+                    <Input
+                      label="Confirm Password"
+                      type="password"
+                      value={loginConfirm}
+                      onChange={e => setLoginConfirm(e.target.value)}
+                      placeholder="Repeat password"
+                      error={fieldErr('loginConfirm') || undefined}
+                      required
+                    />
                   </div>
                 </div>
-              </div>
+              </section>
 
               {error && (
-                <div className="flex items-center gap-2 bg-red-50 border border-red-100 text-red-700 text-sm px-4 py-3 rounded-xl">
-                  <span className="text-red-400 flex-shrink-0">⚠</span> {error}
+                <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  <AlertTriangle size={15} className="mt-0.5 flex-shrink-0 text-red-500" />
+                  <span>{error}</span>
                 </div>
               )}
             </div>
 
-            <div className="px-8 py-5 border-t border-gray-100 bg-gray-50">
-              <Button type="submit" loading={saving} disabled={saving} className="w-full justify-center">
+            <div className="mt-8 flex flex-col gap-3 border-t border-gray-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs leading-5 text-gray-500">
+                You can edit branch details and add more branches later.
+              </p>
+              <Button type="submit" variant="gold" loading={saving} disabled={saving} className="justify-center px-5">
                 Create Branch &amp; Get Started
+                {!saving && <ArrowRight size={15} />}
               </Button>
             </div>
-          </form>
-        </div>
-      </div>
-
-      {/* Sign out — small, at very bottom */}
-      <div className="pb-6 text-center">
-        <button
-          onClick={() => supabase.auth.signOut()}
-          className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
-        >
-          Sign out
-        </button>
-      </div>
+          </div>
+        </form>
+      </main>
     </div>
   )
 }

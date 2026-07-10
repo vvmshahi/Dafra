@@ -11,10 +11,10 @@ export default function ZatcaPage() {
             <ShieldCheck size={20} className="text-gold-300" />
           </div>
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-gold-300">Phase 2 readiness</p>
-            <h1 className="mt-2 text-2xl font-black tracking-tight text-white">ZATCA</h1>
+            <p className="text-xs font-bold uppercase tracking-wide text-gold-300">Production Phase 2</p>
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-white">ZATCA setup</h1>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-primary-100/80">
-              Manage branch onboarding, production connection status, and certificate metadata from one owner workspace.
+              Connect each branch to your ZATCA account with a Fatoora OTP and monitor live production status from one owner workspace.
             </p>
           </div>
         </div>
