@@ -9,6 +9,7 @@ import {
 import { useEffect, useState, type ReactNode } from 'react'
 
 const WA_LINK = supportConfig.whatsappLink
+const WA_NUMBER = supportConfig.whatsappNumber
 const EMAIL_LINK = supportConfig.emailLink
 const KUBRI_WINDOWS_DOWNLOAD_URL = import.meta.env.VITE_KUBRI_WINDOWS_DOWNLOAD_URL || ''
 const KUBRI_MAC_DOWNLOAD_URL = import.meta.env.VITE_KUBRI_MAC_DOWNLOAD_URL || ''
@@ -525,7 +526,7 @@ function ContactSection() {
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <a href={WA_LINK} target="_blank" rel="noopener noreferrer"
             className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-300/30 bg-emerald-500 px-6 py-4 text-sm font-black text-white shadow-xl shadow-emerald-950/30 transition-[border-color,background,transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:border-emerald-200/60 hover:bg-emerald-600 hover:shadow-emerald-950/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] active:translate-y-0 active:scale-[0.98] sm:w-auto">
-            <WhatsAppIcon className="h-4 w-4" /> WhatsApp
+            <WhatsAppIcon className="h-4 w-4" /> WhatsApp {WA_NUMBER}
           </a>
           <a href={EMAIL_LINK}
             className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/[0.055] px-6 py-4 text-sm font-bold text-white shadow-[0_16px_42px_rgba(0,0,0,0.18)] transition-[background,border-color,transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/[0.09] hover:shadow-[0_20px_58px_rgba(0,0,0,0.25)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] active:translate-y-0 active:scale-[0.98] sm:w-auto">
@@ -558,7 +559,7 @@ function Footer() {
           </div>
           <div className="space-y-3">
             <p className="text-xs font-black uppercase tracking-[0.18em] text-white">Contact</p>
-            <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="block text-sm font-semibold text-white/70 hover:text-gold-200">WhatsApp support</a>
+            <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="block text-sm font-semibold text-white/70 hover:text-gold-200">WhatsApp {WA_NUMBER}</a>
             <a href={EMAIL_LINK} className="block text-sm font-semibold text-white/70 hover:text-gold-200">support@kubri.shop</a>
             <Link to="/terms" className="block text-sm font-semibold text-white/70 hover:text-gold-200">Terms</Link>
             <Link to="/privacy" className="block text-sm font-semibold text-white/70 hover:text-gold-200">Privacy</Link>
