@@ -60,6 +60,9 @@ const operationsNavItem: NavItem = {
 
 const operationsRoles = new Set(['owner', 'admin', 'super_admin'])
 
+const KUBRI_WORDMARK_SRC = '/brand/kubiri-wordmark.png?v=kubri-2'
+const KUBRI_MARK_SRC = '/brand/kubiri-logo-mark.png?v=kubri-2'
+
 interface NavItemRowProps {
   item: NavItem
   isActive: boolean
@@ -121,7 +124,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       : canViewOperations
         ? [...ownerNav, operationsNavItem]
         : ownerNav
-  const subtitle = isSuperAdmin ? 'Kubri Super Admin' : (tenant?.name ?? 'Kubri POS')
+  const subtitle = isSuperAdmin ? 'Kubri Super Admin' : (tenant?.name ?? 'Kubri')
   const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? 'User'
   const roleLabel = isBranch ? 'Branch' : (profile?.role?.replace(/_/g, ' ') ?? '')
 
@@ -142,7 +145,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         {collapsed ? (
           <div className="flex flex-col items-center gap-3">
             <div className="w-9 h-9 flex items-center justify-center">
-              <img src="/brand/kubri-logo-mark.png" alt="Kubri" className="w-8 h-8 object-contain" />
+              <img src={KUBRI_MARK_SRC} alt="Kubri" className="w-8 h-8 object-contain" />
             </div>
             <button
               onClick={onToggle}
@@ -153,25 +156,20 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </button>
           </div>
         ) : (
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
-                <img src="/brand/kubri-logo-mark.png" alt="Kubri" className="w-8 h-8 object-contain" />
+          <div className="relative">
+            <div className="pr-8">
+              <div className="flex h-14 w-[184px] max-w-full items-center overflow-visible">
+                <img src={KUBRI_WORDMARK_SRC} alt="Kubri" className="h-full w-full object-contain object-left" />
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-white font-bold text-xl leading-none tracking-tight" style={{ fontFamily: 'Cairo, sans-serif' }}>
-                  Kubri POS
-                </p>
-                <p className="text-sidebar-text text-xs mt-0.5 truncate" title={subtitle}>{subtitle}</p>
-              </div>
-              <button
-                onClick={onToggle}
-                title="Collapse sidebar"
-                className="text-sidebar-text hover:text-white hover:bg-sidebar-hover transition-colors p-1.5 rounded-lg flex-shrink-0"
-              >
-                <ChevronLeft size={15} />
-              </button>
+              <p className="mt-1 text-xs text-sidebar-text truncate" title={subtitle}>{subtitle}</p>
             </div>
+            <button
+              onClick={onToggle}
+              title="Collapse sidebar"
+              className="absolute right-0 top-2 text-sidebar-text hover:text-white hover:bg-sidebar-hover transition-colors p-1.5 rounded-lg"
+            >
+              <ChevronLeft size={15} />
+            </button>
             {isSuperAdmin && (
               <div className="mt-3 inline-flex items-center gap-1.5 bg-red-900/40 text-red-300 text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-red-700/50">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />

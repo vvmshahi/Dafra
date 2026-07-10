@@ -110,7 +110,7 @@ export default function PricingPage() {
 
         <section className="relative z-10 mx-auto max-w-6xl">
           <div className="mx-auto max-w-3xl text-center">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-[#A77F29]">Kubri POS pricing</p>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-[#A77F29]">Kubri pricing</p>
             <h2 className="mt-2 text-2xl font-black leading-tight text-[#10291E] sm:text-3xl">
               One clear price per active branch.
             </h2>
@@ -149,7 +149,7 @@ export default function PricingPage() {
 
                   <div className="mt-5">
                     <div className="flex flex-wrap items-center gap-3">
-                      <p className="text-sm font-bold text-[#E8D6A4]">Kubri POS</p>
+                      <p className="text-sm font-bold text-[#E8D6A4]">Kubri</p>
                       {billingCycle === 'yearly' && (
                         <span className="rounded-full border border-[#D8B76A]/35 bg-[#D8B76A]/15 px-3 py-1 text-xs font-black text-[#F3DE9A]">
                           Save 17% yearly

@@ -117,7 +117,7 @@ function PrintReport({
     <div id="day-closing-print" className="hidden print:block font-mono text-[11px] text-black p-8 leading-relaxed">
       <pre style={{ fontFamily: 'monospace', whiteSpace: 'pre' }}>
 {`${line}
-         DAFRA — DAY CLOSING REPORT
+         Kubri — DAY CLOSING REPORT
          ${tenantName}
          ${branchName}
          ${dateStr}

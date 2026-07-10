@@ -1,4 +1,4 @@
-# Kubri POS Desktop App
+# Kubri Desktop App
 
 This Electron wrapper packages the local Vite build as a Windows desktop POS app.
 It does not load the public marketing website in production.

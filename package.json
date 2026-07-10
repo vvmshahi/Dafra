@@ -23,7 +23,7 @@
   },
   "build": {
     "appId": "com.kubri.pos",
-    "productName": "Kubri POS",
+    "productName": "Kubri",
     "copyright": "Copyright 2026 Kubri",
     "directories": {
       "output": "dist-electron",
@@ -44,7 +44,7 @@
         }
       ],
       "icon": "electron/assets/icon.ico",
-      "artifactName": "Kubri-POS-Setup-${version}.${ext}"
+      "artifactName": "Kubri-Setup-${version}.${ext}"
     },
     "mac": {
       "target": [
@@ -64,14 +64,14 @@
         }
       ],
       "icon": "electron/assets/icon.icns",
-      "artifactName": "Kubri-POS-${version}-${arch}.${ext}"
+      "artifactName": "Kubri-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Kubri POS"
+      "shortcutName": "Kubri"
     }
   },
   "dependencies": {

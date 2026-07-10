@@ -67,7 +67,7 @@ export default function LoginPage() {
           </div>
 
           <div className="relative z-10 max-w-md">
-            <p className="mb-3 text-xs font-black uppercase tracking-[0.22em] text-[#D8B76A]">Kubri POS workspace</p>
+            <p className="mb-3 text-xs font-black uppercase tracking-[0.22em] text-[#D8B76A]">Kubri workspace</p>
             <h2 className="text-4xl font-black leading-[1.08] tracking-tight xl:text-5xl">
               Welcome back to Kubri.
             </h2>

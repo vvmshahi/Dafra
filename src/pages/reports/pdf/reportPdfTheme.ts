@@ -230,5 +230,5 @@ export function buildReportPdfContext(input: BuildReportPdfContextInput): Report
 }
 
 export function reportPdfFileName(context: ReportPdfContext): string {
-  return `kubri-${context.reportSlug}-${context.startDate}-to-${context.endDate}.pdf`
+  return `kubiri-${context.reportSlug}-${context.startDate}-to-${context.endDate}.pdf`
 }

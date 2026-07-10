@@ -12,6 +12,7 @@ const WA_LINK = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
 const KUBRI_WINDOWS_DOWNLOAD_URL = import.meta.env.VITE_KUBRI_WINDOWS_DOWNLOAD_URL || ''
 const KUBRI_MAC_DOWNLOAD_URL = import.meta.env.VITE_KUBRI_MAC_DOWNLOAD_URL || ''
+const KUBRI_WORDMARK_SRC = '/brand/kubiri-wordmark.png?v=kubri-2'
 
 function scrollTo(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
@@ -152,8 +153,8 @@ function Header() {
     <header className={`fixed left-0 right-0 top-0 z-50 transition-[background,box-shadow] duration-300 ${scrolled ? 'bg-[#071510]/75 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl' : 'bg-transparent'}`}>
       <div className="mx-auto max-w-7xl px-4 pt-4 sm:px-6 lg:px-8">
         <nav className="relative flex h-[62px] items-center justify-between md:justify-center">
-          <Link to="/" className="z-10 flex-shrink-0 rounded-[22px] border border-white/[0.10] bg-[#06120D]/[0.58] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-2xl transition-[background,border-color,transform] duration-150 hover:border-white/[0.18] hover:bg-white/[0.045] active:scale-[0.98] md:absolute md:left-0">
-            <MeemLogo size="sm" />
+          <Link to="/" className="z-10 flex-shrink-0 transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.98] md:absolute md:left-0">
+            <MeemLogo size="md" />
           </Link>
 
           <div className="hidden items-center justify-center rounded-[26px] border border-white/[0.13] bg-[#06120D]/[0.72] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_24px_80px_rgba(0,0,0,0.30)] ring-1 ring-white/[0.035] backdrop-blur-2xl md:flex">
@@ -299,7 +300,7 @@ function FeatureCard({ feature, featured = false }: {
         <div className="mt-auto pt-8">
           <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-primary-700/55">
             <span className="h-px w-8 bg-primary-700/20" aria-hidden="true" />
-            Kubri POS
+            Kubri
           </div>
         </div>
       </div>
@@ -508,7 +509,16 @@ function ContactSection() {
       <Pattern />
       <div className="absolute left-1/2 top-12 h-72 w-72 -translate-x-1/2 rounded-full bg-gold-500/10 blur-3xl" />
       <div className="relative mx-auto max-w-4xl rounded-[32px] border border-white/10 bg-white/[0.045] px-6 py-12 text-center shadow-[0_28px_100px_rgba(0,0,0,0.24)] ring-1 ring-white/[0.04] backdrop-blur sm:px-10">
-        <h2 className="text-3xl font-black text-white sm:text-5xl">Bring Kubri to your business.</h2>
+        <h2 className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-2 text-3xl font-black text-white sm:gap-x-2 sm:text-5xl" aria-label="Bring Kubri to your business.">
+          <span aria-hidden="true">Bring</span>
+          <img
+            src={KUBRI_WORDMARK_SRC}
+            alt=""
+            aria-hidden="true"
+            className="inline-block h-[0.98em] w-auto -translate-y-[0.08em] object-contain sm:h-[1.04em]"
+          />
+          <span aria-hidden="true">to your business.</span>
+        </h2>
         <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-white/70">
           Talk to us and get your business ready for ZATCA Phase 2 workflows.
         </p>
@@ -535,8 +545,8 @@ function Footer() {
       <div className="relative mx-auto max-w-7xl">
         <div className="grid gap-10 md:grid-cols-[1.4fr_0.8fr_0.8fr]">
           <div>
-            <MeemLogo size="sm" />
-            <p className="mt-4 max-w-sm text-sm leading-6">Kubri POS for Saudi businesses that need sales, ZATCA Phase 2 workflows, stock, sessions, VAT reports, and branch visibility.</p>
+            <MeemLogo size="md" />
+            <p className="mt-4 max-w-sm text-sm leading-6">Kubri for Saudi businesses that need sales, ZATCA Phase 2 workflows, stock, sessions, VAT reports, and branch visibility.</p>
             <p className="mt-3 text-sm font-black text-gold-300">kubri.shop</p>
           </div>
           <div className="space-y-3">

@@ -3,33 +3,36 @@ interface MeemLogoProps {
   showText?: boolean
 }
 
+const KUBRI_WORDMARK_SRC = '/brand/kubiri-wordmark.png?v=kubri-2'
+const KUBRI_MARK_SRC = '/brand/kubiri-logo-mark.png?v=kubri-2'
+
 export function MeemLogo({ size = 'md', showText = true }: MeemLogoProps) {
   const sizes = {
-    sm: { box: 'w-8 h-8',   mark: 'w-7 h-7',    name: 'text-lg',  sub: 'text-xs'  },
-    md: { box: 'w-10 h-10', mark: 'w-9 h-9',    name: 'text-xl',  sub: 'text-sm'  },
-    lg: { box: 'w-14 h-14', mark: 'w-12 h-12',  name: 'text-2xl', sub: 'text-base' },
+    sm: { markBox: 'w-8 h-8',  mark: 'w-7 h-7',   wordmark: 'h-9 w-auto' },
+    md: { markBox: 'w-10 h-10', mark: 'w-9 h-9',   wordmark: 'h-12 w-auto' },
+    lg: { markBox: 'w-14 h-14', mark: 'w-12 h-12', wordmark: 'h-16 w-auto' },
   }
   const s = sizes[size]
 
+  if (showText) {
+    return (
+      <img
+        src={KUBRI_WORDMARK_SRC}
+        alt="Kubri"
+        className={`${s.wordmark} object-contain object-left`}
+      />
+    )
+  }
+
   return (
-    <div className="flex items-center gap-3">
-      <div className={`${s.box} flex items-center justify-center flex-shrink-0`}>
+    <div className="flex items-center">
+      <div className={`${s.markBox} flex items-center justify-center flex-shrink-0`}>
         <img
-          src="/brand/kubri-logo-mark.png"
+          src={KUBRI_MARK_SRC}
           alt="Kubri"
           className={`${s.mark} object-contain`}
         />
       </div>
-      {showText && (
-        <div className="flex flex-col leading-tight">
-          <span className={`${s.name} font-bold text-gold-500`} style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-            Kubri
-          </span>
-          <span className={`${s.sub} text-gold-400 tracking-widest uppercase font-medium`}>
-            POS
-          </span>
-        </div>
-      )}
     </div>
   )
 }

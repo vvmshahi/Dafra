@@ -269,7 +269,7 @@ function configureWindowNavigation(window) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
-          title: 'Kubri POS',
+          title: 'Kubri',
           backgroundColor: '#0F2419',
           webPreferences: webPreferences(),
         },
@@ -294,7 +294,7 @@ function createWindow() {
     height: 800,
     minWidth: 1024,
     minHeight: 640,
-    title: 'Kubri POS',
+    title: 'Kubri',
     icon: iconPath(),
     webPreferences: webPreferences(),
     show: false,
@@ -493,7 +493,7 @@ function testPrintHtml(settings) {
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Kubri POS Test Print</title>
+    <title>Kubri Test Print</title>
     <style>
       @page { size: ${settings.paperWidth}mm auto; margin: 0 3mm; }
       html, body {
@@ -522,7 +522,7 @@ function testPrintHtml(settings) {
   </head>
   <body>
     <main class="receipt">
-      <div class="center brand">Kubri POS</div>
+      <div class="center brand">Kubri</div>
       <div class="center">Printer Test Receipt</div>
       <div class="rule"></div>
       <div class="row"><span>Printer</span><strong>${escapeHtml(settings.selectedPrinterName)}</strong></div>
