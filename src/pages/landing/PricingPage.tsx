@@ -20,7 +20,7 @@ import { MeemLogo } from '@/components/MeemLogo'
 import { supportConfig } from '@/config/support'
 
 const WA_LINK = supportConfig.whatsappLink
-const RIYAL = '⃁'
+const CURRENCY = 'SAR'
 
 const FEATURES = [
   { label: 'ZATCA Phase 2 workflows', icon: FileText },
@@ -40,15 +40,15 @@ const FEATURES = [
 const PLANS = {
   monthly: {
     label: 'Monthly',
-    price: `${RIYAL}100`,
+    price: `${CURRENCY} 100`,
     period: '/ month / branch',
     helper: 'Pay month to month.',
   },
   yearly: {
     label: 'Yearly',
-    price: `${RIYAL}1,000`,
+    price: `${CURRENCY} 1,000`,
     period: '/ year / branch',
-    helper: `Save ${RIYAL}200 compared with monthly billing.`,
+    helper: `Save ${CURRENCY} 200 compared with monthly billing.`,
   },
 } as const
 

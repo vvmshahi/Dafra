@@ -426,7 +426,7 @@ function PricingTeaser() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(200,169,110,0.16),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.09),rgba(255,255,255,0.025))]" aria-hidden="true" />
         <div className="relative grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
           <div>
-            <p className="text-sm font-black text-gold-300">Flat ﷼100/month</p>
+            <p className="text-sm font-black text-gold-300">Flat SAR 100/month</p>
             <h2 className="mt-3 text-3xl font-black text-white">One simple price for your business.</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65">Yearly option available. Includes a 7-day money-back guarantee.</p>
           </div>
