@@ -328,6 +328,9 @@ function AddCategoryDialog({
     e.preventDefault()
     const cleanName = name.trim()
     if (!cleanName) { setError('Category name is required'); return }
+    const tid = profile?.tenant_id
+    const bid = profile?.branch_id
+    if (!tid || !bid) { setError('Branch context is required before adding categories.'); return }
 
     const cleanIcon = normalizeIcon(icon)
     if (isIconTooLong(cleanIcon)) { setError('Icon must be 10 characters or fewer.'); return }
@@ -345,8 +348,8 @@ function AddCategoryDialog({
 
     const q = supabase as unknown as { from: (t: string) => any }
     const { error: err } = await q.from('categories').insert({
-      tenant_id: profile?.tenant_id,
-      branch_id: profile?.branch_id,
+      tenant_id: tid,
+      branch_id: bid,
       name: cleanName,
       color: '#1c5c2e',
       icon: cleanIcon,
@@ -485,8 +488,9 @@ export default function ProductsPage() {
   const [addCatOpen, setAddCatOpen] = useState(false)
 
   const load = useCallback(async () => {
+    const tid = profile?.tenant_id
     const bid = profile?.branch_id
-    if (!bid) { setLoading(false); return }
+    if (!tid || !bid) { setLoading(false); return }
 
     const [{ data: prods }, { data: cats }] = await Promise.all([
       supabase
@@ -497,6 +501,7 @@ export default function ProductsPage() {
           'vat_treatment', 'notes', 'is_service',
           'categories(name,name_ar,color,icon)',
         ].join(','))
+        .eq('tenant_id', tid)
         .eq('branch_id', bid)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
@@ -504,6 +509,7 @@ export default function ProductsPage() {
       supabase
         .from('categories')
         .select('*')
+        .eq('tenant_id', tid)
         .eq('branch_id', bid)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
@@ -513,7 +519,7 @@ export default function ProductsPage() {
     setProducts((prods  ?? []) as unknown as ProductRow[])
     setCategories((cats ?? []) as unknown as Category[])
     setLoading(false)
-  }, [profile?.branch_id])
+  }, [profile?.tenant_id, profile?.branch_id])
 
   useEffect(() => { load() }, [load])
 

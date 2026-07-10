@@ -1,69 +1,120 @@
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Mail, MessageCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { MeemLogo } from '@/components/MeemLogo'
 import { supportConfig } from '@/config/support'
 
+const WA_LINK = supportConfig.whatsappLink
+const EMAIL_LINK = supportConfig.emailLink
+
 const sections = [
   {
-    title: 'Service',
-    body: 'Kubri provides cloud-based POS, invoicing, stock, purchase, reporting, and ZATCA-ready e-invoicing workflow tools for small businesses. Features may vary by plan, branch setup, and enabled integrations.',
+    title: 'Using Kubri',
+    body: 'Kubri provides POS, invoicing, reporting, stock, purchase, expense, branch management, and ZATCA workflow tools for businesses. Features may vary by plan, account setup, enabled modules, and pilot availability.',
   },
   {
-    title: 'Your Responsibilities',
-    body: 'You are responsible for entering accurate business, VAT, branch, customer, product, invoice, payment, and return information. You must keep login credentials secure and only give access to authorized staff.',
+    title: 'Pilot access and onboarding',
+    body: 'During pilot launch, account creation, onboarding, branch setup, and payment may be handled manually by the Kubri team. We may limit, pause, or adjust pilot access to keep the service reliable for active customers.',
   },
   {
-    title: 'ZATCA and VAT',
-    body: 'Kubri is built to support Saudi VAT and ZATCA e-invoicing workflows. Compliance depends on correct business setup, successful setup where required, and continued use according to ZATCA requirements. Kubri does not replace your accountant, tax advisor, or legal advisor.',
+    title: 'Business responsibilities',
+    body: 'You are responsible for entering accurate business, branch, VAT, customer, product, invoice, payment, return, purchase, and expense information. You are also responsible for keeping login credentials secure and granting access only to authorized staff.',
   },
   {
-    title: 'Subscriptions and Payment',
-    body: 'Subscription pricing, branch limits, guarantee periods, renewal, suspension, and cancellation terms are confirmed during setup or in a written agreement. A payment gateway may be added later; until then, billing may be handled through direct payment channels.',
+    title: 'ZATCA, VAT, and professional review',
+    body: 'Kubri supports ZATCA Phase 2 invoicing workflows and VAT-support reporting, but it does not replace your accountant, tax advisor, or legal advisor. Businesses should verify tax setup, submissions, reports, and legal obligations with qualified professionals.',
   },
   {
-    title: 'Availability and Support',
-    body: 'We aim to keep the service reliable, but cloud services, internet connectivity, Supabase, payment providers, printers, and ZATCA systems may experience downtime. Support requests should be sent through the support channels shown below.',
+    title: 'Subscriptions and payment',
+    body: 'Pricing, renewal timing, branch limits, guarantee periods, suspension, and cancellation details may be confirmed during setup or in a written agreement. Direct payment or manual activation may apply during the pilot period.',
   },
   {
-    title: 'Limitations',
-    body: 'To the maximum extent allowed by law, Kubri is provided without guarantees of uninterrupted operation or error-free tax filing. You should review reports, invoices, ZATCA statuses, and VAT returns before relying on them for submission.',
+    title: 'Availability and support',
+    body: 'We work to keep Kubri stable, but internet connectivity, cloud infrastructure, printers, payment providers, and external government systems may experience interruptions. Support requests can be sent through the channels on this page.',
+  },
+  {
+    title: 'Review before relying',
+    body: 'To the extent allowed by law, Kubri is provided without a promise of uninterrupted operation, error-free records, or specific compliance outcomes. Review invoices, reports, ZATCA statuses, and VAT figures before relying on them for filing or business decisions.',
   },
 ]
 
-export default function TermsPage() {
+function Pattern() {
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-100 px-6 py-4 flex items-center gap-4">
-        <Link to="/" className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">
-          <ArrowLeft size={16} />
-          Back
-        </Link>
-        <MeemLogo size="sm" />
-      </header>
+    <svg className="absolute inset-0 h-full w-full" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <pattern id="kubri-terms-pattern" x="0" y="0" width="96" height="96" patternUnits="userSpaceOnUse">
+          <path d="M28 6h40l22 22v40L68 90H28L6 68V28Z" fill="none" stroke="rgba(255,255,255,0.035)" strokeWidth="1" />
+          <path d="M48 20l28 28-28 28-28-28Z" fill="none" stroke="rgba(200,169,110,0.065)" strokeWidth="1" />
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#kubri-terms-pattern)" />
+    </svg>
+  )
+}
 
-      <main className="flex-1 px-6 py-10">
-        <div className="max-w-3xl mx-auto bg-white border border-gray-100 rounded-2xl p-6 sm:p-8 space-y-6">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-primary-600">Starter legal content</p>
-            <h1 className="text-2xl font-bold text-gray-900 mt-2">Terms of Service</h1>
-            <p className="text-sm text-gray-500 mt-2">
-              These starter terms are intended for pilot launch readiness and should be reviewed by a qualified lawyer before broad public launch.
-            </p>
-          </div>
+export default function TermsPage() {
+  const actionBaseClass = 'group relative isolate inline-flex h-10 items-center justify-center overflow-hidden rounded-full px-4 text-sm font-black transition-[background,border-color,box-shadow,transform] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] active:scale-[0.98]'
 
-          <div className="space-y-5">
-            {sections.map(section => (
-              <section key={section.title}>
-                <h2 className="text-sm font-bold text-gray-900">{section.title}</h2>
-                <p className="text-sm text-gray-600 leading-relaxed mt-1">{section.body}</p>
-              </section>
-            ))}
-          </div>
-
-          <div className="rounded-xl bg-gray-50 border border-gray-100 p-4 text-sm text-gray-600">
-            Questions or support requests: <a href={supportConfig.emailLink} className="font-semibold text-primary-700 hover:underline">{supportConfig.email}</a>
+  return (
+    <div className="min-h-screen bg-[#071510] text-white">
+      <header className="relative overflow-hidden border-b border-white/10 bg-[#0F2419]">
+        <Pattern />
+        <div className="relative z-10 mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <Link to="/"><MeemLogo size="sm" /></Link>
+          <div className="flex items-center gap-2">
+            <Link to="/privacy" className="hidden rounded-full px-3 py-2 text-sm font-semibold text-white/78 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] sm:inline">Privacy</Link>
+            <Link to="/login" className={`${actionBaseClass} border border-white/[0.10] bg-white/[0.06] text-white/[0.90] hover:border-white/[0.18] hover:bg-white/[0.10] hover:text-white`}>
+              <span className="absolute inset-0 -z-10 translate-x-[-105%] rounded-full bg-white/[0.08] opacity-0 transition-[opacity,transform] duration-300 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
+              <span className="relative transition-transform duration-200 group-hover:-translate-x-1.5">Sign in</span>
+              <ArrowRight size={14} className="absolute right-3 translate-x-2 opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
+            </Link>
           </div>
         </div>
+
+        <div className="relative z-10 mx-auto max-w-7xl px-4 pb-6 pt-4 sm:px-6 lg:px-8">
+          <Link to="/" className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-white/60 hover:text-white">
+            <ArrowLeft size={15} /> Home
+          </Link>
+          <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr] lg:items-end">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-[#D8B76A]">Legal</p>
+              <h1 className="mt-2 text-3xl font-black leading-tight sm:text-5xl">Terms and Conditions</h1>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">
+                Practical terms for using Kubri during pilot launch and ongoing business operations.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 rounded-2xl border border-[#D8B76A]/20 bg-[#D8B76A]/10 px-4 py-3 text-sm text-[#F1DFA8] lg:ml-auto">
+              <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 font-bold hover:text-white">
+                <MessageCircle size={15} /> WhatsApp support
+              </a>
+              <a href={EMAIL_LINK} className="inline-flex items-center gap-2 font-bold hover:text-white">
+                <Mail size={15} /> {supportConfig.email}
+              </a>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="relative overflow-hidden bg-[#F6F2E8] px-4 py-6 text-[#173326] sm:px-6 sm:py-8 lg:px-8">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#C8A96E]/70 to-transparent" />
+        </div>
+
+        <section className="relative z-10 mx-auto max-w-4xl">
+          <div className="rounded-[26px] border border-[#D9CBAA] bg-[#FFFDF7] p-4 shadow-[0_22px_68px_rgba(15,36,25,0.13)] sm:p-6">
+            <div className="space-y-3">
+              {sections.map(section => (
+                <section key={section.title} className="rounded-2xl border border-[#E1D7BC] bg-[#FBF7EB] p-4">
+                  <h2 className="text-sm font-black uppercase tracking-[0.16em] text-[#A77F29]">{section.title}</h2>
+                  <p className="mt-2 text-sm leading-6 text-[#496154]">{section.body}</p>
+                </section>
+              ))}
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-[#D9CBAA] bg-gradient-to-br from-[#F8F2E3] to-[#EEF5EA] p-4 text-sm leading-6 text-[#496154]">
+              Questions about these terms: <a href={EMAIL_LINK} className="font-black text-[#0F3A2A] hover:text-[#A77F29]">{supportConfig.email}</a>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
   )

@@ -23,6 +23,7 @@ export interface ClosedSessionSummary {
   closing_cash_difference: number
   total_cash_sales: number
   total_card_sales: number
+  total_session_sales: number
   total_expenses: number
   total_invoices: number
   notes: string | null
@@ -62,6 +63,7 @@ function closedSummaryFromRpc(value: unknown): ClosedSessionSummary {
     closing_cash_difference: summary.cashDifference ?? 0,
     total_cash_sales: summary.cashTotal,
     total_card_sales: summary.cardTotal,
+    total_session_sales: summary.totalSales,
     total_expenses: summary.expensesTotal,
     total_invoices: summary.invoiceCount,
     notes: null,

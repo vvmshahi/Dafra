@@ -20,6 +20,7 @@ export interface ReportPdfContext {
   phone: string | null
   email: string | null
   generatedBy: string | null
+  brandWordmarkDataUrl?: string | null
 }
 
 export interface BuildReportPdfContextInput {
@@ -37,23 +38,32 @@ export interface BuildReportPdfContextInput {
 export const PDF_THEME = {
   colors: {
     green: [15, 36, 25] as [number, number, number],
-    green2: [24, 74, 52] as [number, number, number],
+    green2: [27, 86, 57] as [number, number, number],
+    teal: [34, 128, 112] as [number, number, number],
+    indigo: [39, 76, 142] as [number, number, number],
+    slate: [79, 91, 103] as [number, number, number],
     gold: [190, 142, 55] as [number, number, number],
-    goldSoft: [255, 247, 232] as [number, number, number],
-    text: [31, 41, 55] as [number, number, number],
-    muted: [107, 114, 128] as [number, number, number],
-    lightText: [156, 163, 175] as [number, number, number],
-    border: [223, 226, 221] as [number, number, number],
-    soft: [250, 248, 242] as [number, number, number],
-    softGreen: [235, 244, 238] as [number, number, number],
+    amber: [179, 111, 37] as [number, number, number],
+    goldSoft: [255, 248, 235] as [number, number, number],
+    text: [29, 36, 34] as [number, number, number],
+    muted: [104, 113, 108] as [number, number, number],
+    lightText: [150, 157, 153] as [number, number, number],
+    border: [223, 226, 218] as [number, number, number],
+    soft: [249, 248, 244] as [number, number, number],
+    soft2: [244, 246, 241] as [number, number, number],
+    softGreen: [234, 243, 237] as [number, number, number],
+    softSlate: [242, 244, 245] as [number, number, number],
     warning: [146, 64, 14] as [number, number, number],
     white: [255, 255, 255] as [number, number, number],
+    whiteMuted: [220, 230, 224] as [number, number, number],
+    cardMuted: [231, 238, 234] as [number, number, number],
   },
   layout: {
     marginLeft: 14,
     marginRight: 14,
     headerTop: 10,
-    contentTop: 58,
+    contentTop: 69,
+    continuedContentTop: 38,
     footerTopOffset: 15,
     pageBottom: 24,
   },

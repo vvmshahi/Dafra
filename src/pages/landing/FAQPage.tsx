@@ -83,7 +83,7 @@ function Pattern() {
 }
 
 export default function FAQPage() {
-  const [openItem, setOpenItem] = useState('What is Kubri?')
+  const [openItem, setOpenItem] = useState('')
   const actionBaseClass = 'group relative isolate inline-flex h-10 items-center justify-center overflow-hidden rounded-full px-4 text-sm font-black transition-[background,border-color,box-shadow,transform] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] active:scale-[0.98]'
 
   return (

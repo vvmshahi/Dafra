@@ -1,6 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Lock, ArrowRight, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Lock, ArrowRight, ArrowLeft, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { markOwnerSetupCompleteSilently } from '@/lib/ownerSetupCompletion'
 import { Button } from '@/components/ui/Button'
@@ -135,7 +135,14 @@ export default function ResetPasswordPage() {
       </div>
 
       {/* ── Right panel ──────────────────────────────────── */}
-      <div className="flex-1 flex items-center justify-center bg-white p-8">
+      <div className="relative flex-1 flex items-center justify-center bg-white p-8">
+        <Link
+          to="/"
+          className="absolute left-5 top-5 inline-flex items-center gap-2 rounded-full border border-[#D9CBAA] bg-white/80 px-3 py-2 text-sm font-black text-[#284334] shadow-[0_10px_26px_rgba(15,36,25,0.06)] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-white sm:left-8 sm:top-8"
+        >
+          <ArrowLeft size={15} />
+          Home
+        </Link>
         <div className="w-full max-w-[380px] space-y-8">
 
           {/* Mobile logo */}

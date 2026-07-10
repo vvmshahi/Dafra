@@ -54,6 +54,13 @@ interface Props {
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 
+const productErrorMessage = (message: string) => {
+  if (message.includes('Product category does not belong')) {
+    return 'Selected category does not match this branch. Refresh the page and select a category from this branch.'
+  }
+  return message
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ProductDrawer({ open, product, categories, products, onClose, onSaved }: Props) {
@@ -126,6 +133,12 @@ export default function ProductDrawer({ open, product, categories, products, onC
 
   const hasUnsavedChanges = open && !saving && (imageFile !== null || current !== baseline)
 
+  const resolvedTenantId = profile?.tenant_id ?? ''
+  const resolvedBranchId = profile?.branch_id ?? ''
+  const selectedCategory = categoryId
+    ? categories.find(c => c.id === categoryId)
+    : null
+
   // Populate form when editing, reset when adding
   useEffect(() => {
     if (open && product) {
@@ -156,6 +169,19 @@ export default function ProductDrawer({ open, product, categories, products, onC
     setImageFile(null)
     setError('')
   }, [open, product])
+
+  useEffect(() => {
+    if (!open || !categoryId) return
+
+    const category = categories.find(c => c.id === categoryId)
+    if (
+      !category ||
+      category.tenant_id !== resolvedTenantId ||
+      category.branch_id !== resolvedBranchId
+    ) {
+      setCategoryId('')
+    }
+  }, [open, categoryId, categories, resolvedTenantId, resolvedBranchId])
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -191,6 +217,22 @@ export default function ProductDrawer({ open, product, categories, products, onC
     const numericPrice = Number(price)
     if (!price || isNaN(numericPrice)) { setError('A valid price is required'); return }
     if (numericPrice < 0) { setError('Price must be zero or higher'); return }
+    if (!resolvedTenantId || !resolvedBranchId) {
+      setError('Branch context is required before saving products.')
+      return
+    }
+    if (categoryId && !selectedCategory) {
+      setError('Select a valid category for this branch.')
+      return
+    }
+    if (selectedCategory?.tenant_id !== undefined && selectedCategory.tenant_id !== resolvedTenantId) {
+      setError('This category is not valid for this business.')
+      return
+    }
+    if (selectedCategory?.branch_id !== undefined && selectedCategory.branch_id !== resolvedBranchId) {
+      setError('This category belongs to another branch. Select a category for this branch.')
+      return
+    }
 
     const cleanSku = sku.trim().toLowerCase()
     if (cleanSku) {
@@ -204,7 +246,7 @@ export default function ProductDrawer({ open, product, categories, products, onC
     setError('')
 
     try {
-      const tid = profile?.tenant_id!
+      const tid = resolvedTenantId
       let imageUrl: string | null = product?.image_url ?? null
 
       // Upload new image if selected
@@ -226,7 +268,7 @@ export default function ProductDrawer({ open, product, categories, products, onC
 
       const payload: Record<string, unknown> = {
         tenant_id:     tid,
-        branch_id:     profile?.branch_id,
+        branch_id:     resolvedBranchId,
         name:          name.trim(),
         name_ar:       nameAr.trim()       || null,
         category_id:   categoryId          || null,
@@ -244,10 +286,10 @@ export default function ProductDrawer({ open, product, categories, products, onC
 
       if (product) {
         const { error: err } = await q.from('products').update(payload).eq('id', product.id)
-        if (err) { setError(err.message); return }
+        if (err) { setError(productErrorMessage(err.message)); return }
       } else {
         const { error: err } = await q.from('products').insert(payload)
-        if (err) { setError(err.message); return }
+        if (err) { setError(productErrorMessage(err.message)); return }
       }
 
       if (imagePreview?.startsWith('blob:')) URL.revokeObjectURL(imagePreview)

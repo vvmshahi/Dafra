@@ -923,6 +923,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
   const [saving,        setSaving]        = useState(false)
   const [loadingData,   setLoadingData]   = useState(true)
   const [invoiceCount,  setInvoiceCount]  = useState(0)
+  const [totalSessionSales, setTotalSessionSales] = useState(0)
   const [cashSales,     setCashSales]     = useState(0)
   const [cardSales,     setCardSales]     = useState(0)
   const [creditRefunds, setCreditRefunds] = useState(0)
@@ -944,7 +945,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
     const db = () => supabase as unknown as { from: (t: string) => any }
     async function fetchData() {
       const [{ data: invData }, { data: expData }] = await Promise.all([
-        db().from('invoices').select('id, zatca_invoice_type').eq('session_id', session.id).neq('status', 'cancelled'),
+        db().from('invoices').select('id, zatca_invoice_type, total_amount').eq('session_id', session.id).neq('status', 'cancelled'),
         db().from('expenses').select('total_paid, payment_method').eq('session_id', session.id),
       ])
       const ids = (invData ?? []).map((i: any) => i.id)
@@ -957,6 +958,8 @@ function CloseSessionModal({ session, onClose, onCancel }: {
         pmts = data ?? []
       }
       setInvoiceCount((invData ?? []).length)
+      setTotalSessionSales((invData ?? [])
+        .reduce((s: number, invoice: any) => s + invoiceAccountingSign(invoice) * Number(invoice.total_amount ?? 0), 0))
       setCashSales(pmts
         .filter((p: any) => p.method === 'cash')
         .reduce((s: number, p: any) => s + (signByInvoiceId.get(p.invoice_id) ?? 1) * Number(p.amount ?? 0), 0))
@@ -1003,6 +1006,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
           card_sales_confirmed: cardSalesOk,
           cash_expenses_confirmed: expensesOk,
           credit_refunds_confirmed: creditRefundsOk,
+          total_session_sales_preview: totalSessionSales,
           credit_refunds_preview: creditRefunds,
           expected_cash_preview: expectedCash,
           actual_cash_entered: actualCash,
@@ -1043,6 +1047,17 @@ function CloseSessionModal({ session, onClose, onCancel }: {
               <div className="flex items-center justify-between mb-2">
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Check session totals</p>
                 <p className="text-[10px] text-gray-400">{invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''}</p>
+              </div>
+              <div className="mb-2 rounded-xl border border-primary-100 bg-primary-50 px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-primary-700">Total Session Sales</p>
+                    <p className="mt-0.5 text-xs text-primary-700/70">All completed session invoices before payment split</p>
+                  </div>
+                  <p className="text-lg font-black text-primary-800 tabular-nums">
+                    <Rial amount={totalSessionSales} />
+                  </p>
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <label className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-xs font-medium text-gray-600">
@@ -1165,6 +1180,7 @@ function SessionSummaryModal({ summary, onDone, onNewSession }: {
 
   const rows: [string, React.ReactNode][] = [
     ['Invoices',              summary.total_invoices],
+    ['Total Session Sales',   <Rial amount={Number(summary.total_session_sales)} />],
     ['Cash Sales',            <Rial amount={Number(summary.total_cash_sales)} />],
     ['Card Sales',            <Rial amount={Number(summary.total_card_sales)} />],
     ['Expenses',              <Rial amount={Number(summary.total_expenses)} />],

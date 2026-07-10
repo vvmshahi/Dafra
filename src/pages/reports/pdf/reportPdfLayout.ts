@@ -19,11 +19,15 @@ type PdfTextAlign = 'left' | 'center' | 'right' | 'justify'
 type PdfTextOptions = { align?: PdfTextAlign; maxWidth?: number }
 type PdfTextRun = { text: string; arabic: boolean }
 
+const KUBRI_WORDMARK_PDF_SRC = '/brand/kubiri-wordmark.png?v=kubri-2'
+let wordmarkPromise: Promise<string | null> | null = null
+
 export interface PdfKpi {
   label: string
   value: string
   sub?: string | null
-  tone?: 'green' | 'gold' | 'plain'
+  tone?: 'green' | 'teal' | 'blue' | 'slate' | 'gold' | 'amber'
+  icon?: string
 }
 
 export interface PdfTableOptions {
@@ -48,6 +52,38 @@ function setDrawColor(doc: jsPDF, color: Rgb) {
   doc.setDrawColor(color[0], color[1], color[2])
 }
 
+function assetUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path
+  const base = import.meta.env.BASE_URL.endsWith('/') ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`
+  return `${base}${path.replace(/^\/+/, '')}`
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.onerror = () => reject(reader.error ?? new Error('Unable to read PDF brand image.'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function loadKubriWordmark(): Promise<string | null> {
+  if (!wordmarkPromise) {
+    wordmarkPromise = fetch(assetUrl(KUBRI_WORDMARK_PDF_SRC))
+      .then(response => {
+        if (!response.ok) throw new Error(`Unable to load ${KUBRI_WORDMARK_PDF_SRC}`)
+        return response.blob()
+      })
+      .then(blobToDataUrl)
+      .catch(error => {
+        if (import.meta.env.DEV) console.warn('Kubri PDF wordmark could not be loaded. Falling back to text.', error)
+        return null
+      })
+  }
+
+  return wordmarkPromise
+}
+
 function pageWidth(doc: jsPDF): number {
   return doc.internal.pageSize.getWidth()
 }
@@ -58,6 +94,36 @@ function pageHeight(doc: jsPDF): number {
 
 function contentWidth(doc: jsPDF): number {
   return pageWidth(doc) - PDF_THEME.layout.marginLeft - PDF_THEME.layout.marginRight
+}
+
+function toneColors(tone: NonNullable<PdfKpi['tone']> = 'green'): { bg: Rgb; accent: Rgb; badge: Rgb } {
+  if (tone === 'gold') return { bg: [150, 100, 24], accent: PDF_THEME.colors.gold, badge: [172, 119, 31] }
+  if (tone === 'amber') return { bg: [157, 83, 25], accent: [226, 147, 55], badge: [183, 98, 30] }
+  if (tone === 'teal') return { bg: [18, 111, 101], accent: [68, 190, 172], badge: [25, 135, 122] }
+  if (tone === 'blue') return { bg: PDF_THEME.colors.indigo, accent: [99, 153, 230], badge: [51, 95, 168] }
+  if (tone === 'slate') return { bg: [50, 64, 78], accent: [132, 148, 166], badge: [68, 82, 98] }
+  return { bg: PDF_THEME.colors.green2, accent: [76, 175, 116], badge: [35, 111, 73] }
+}
+
+function currentPageNumber(doc: jsPDF): number {
+  return doc.internal.getCurrentPageInfo().pageNumber
+}
+
+function currentContentTop(doc: jsPDF): number {
+  return currentPageNumber(doc) === 1 ? PDF_THEME.layout.contentTop : PDF_THEME.layout.continuedContentTop
+}
+
+function kpiIcon(label: string): string {
+  const normalized = label.toLowerCase()
+  if (/vat|tax|provision/.test(normalized)) return 'VAT'
+  if (/invoice|document|credit note|session/.test(normalized)) return '#'
+  if (/cash|wallet/.test(normalized)) return '$'
+  if (/card|payment/.test(normalized)) return 'CARD'
+  if (/expense|cost|purchase|material/.test(normalized)) return 'COST'
+  if (/margin|percent|share/.test(normalized)) return '%'
+  if (/average|summary/.test(normalized)) return 'AVG'
+  if (/profit|sales|revenue|total|gross|net/.test(normalized)) return 'SAR'
+  return 'KPI'
 }
 
 function rightText(doc: jsPDF, text: string, x: number, y: number) {
@@ -191,97 +257,155 @@ function drawLabeledIdentityLine(doc: jsPDF, left: number, right: number, y: num
   drawSmartText(doc, `${label}: ${value}`, left, y, { maxWidth: right - left }, 'normal', `${label}: -`)
 }
 
-export function addHeader(doc: jsPDF, context: ReportPdfContext) {
+function drawReportHeaderBar(doc: jsPDF, context: ReportPdfContext) {
   const width = pageWidth(doc)
   const left = PDF_THEME.layout.marginLeft
   const right = width - PDF_THEME.layout.marginRight
-  const identityWidth = Math.min(118, right - left - 64)
-  const identityRight = left + identityWidth
 
   setFillColor(doc, PDF_THEME.colors.green)
-  doc.rect(0, 0, width, 25, 'F')
+  doc.rect(0, 0, width, 30, 'F')
   setFillColor(doc, PDF_THEME.colors.gold)
-  doc.rect(0, 25, width, 1.2, 'F')
+  doc.rect(0, 30, width, 0.9, 'F')
 
+  if (context.brandWordmarkDataUrl) {
+    try {
+      doc.addImage(context.brandWordmarkDataUrl, 'PNG', left, 7.4, 29, 7.8, undefined, 'FAST')
+    } catch (error) {
+      if (import.meta.env.DEV) console.warn('Kubri PDF wordmark embed failed. Falling back to text.', error)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(12)
+      setTextColor(doc, PDF_THEME.colors.gold)
+      doc.text('Kubri', left, 13.9)
+    }
+  } else {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    setTextColor(doc, PDF_THEME.colors.gold)
+    doc.text('Kubri', left, 13.9)
+  }
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  setTextColor(doc, PDF_THEME.colors.white)
+  doc.text(context.reportTitle, left, 24.1)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7.2)
+  setTextColor(doc, PDF_THEME.colors.whiteMuted)
+  rightText(doc, 'DATE RANGE', right, 10.5)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8.3)
+  setTextColor(doc, PDF_THEME.colors.white)
+  rightText(doc, context.dateRangeLabel, right, 15.4)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7.2)
+  setTextColor(doc, PDF_THEME.colors.whiteMuted)
+  rightText(doc, `Generated ${context.generatedAtLabel}`, right, 21.2)
+}
+
+function drawFirstPageIdentity(doc: jsPDF, context: ReportPdfContext) {
+  const width = pageWidth(doc)
+  const left = PDF_THEME.layout.marginLeft
+  const right = width - PDF_THEME.layout.marginRight
+  const boxY = 35
+  const boxHeight = 28
+  const gap = 5
+  const leftWidth = 58
+  const rightWidth = 50
+  const centerLeft = left + leftWidth + gap
+  const centerRight = right - rightWidth - gap
+  const centerWidth = centerRight - centerLeft
+  const rightLeft = right - rightWidth
+
+  setFillColor(doc, PDF_THEME.colors.white)
+  doc.roundedRect(left, boxY, right - left, boxHeight, 2.2, 2.2, 'F')
+  setDrawColor(doc, PDF_THEME.colors.border)
+  doc.roundedRect(left, boxY, right - left, boxHeight, 2.2, 2.2, 'S')
   setFillColor(doc, PDF_THEME.colors.gold)
-  doc.roundedRect(left, 8.2, 7.6, 7.6, 1.2, 1.2, 'F')
+  doc.rect(left, boxY + 3, 1.2, boxHeight - 6, 'F')
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(6.5)
-  setTextColor(doc, PDF_THEME.colors.green)
-  doc.text('K', left + 2.5, 13.5)
-
-  doc.setFontSize(10)
-  setTextColor(doc, PDF_THEME.colors.white)
-  doc.text('Kubri', left + 10, 13)
-
-  doc.setFontSize(15)
-  doc.text(context.reportTitle, left, 21.5)
+  setTextColor(doc, PDF_THEME.colors.gold)
+  doc.text('BUSINESS PROFILE', left + 4, boxY + 6)
 
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7.5)
-  setTextColor(doc, PDF_THEME.colors.white)
-  rightText(doc, 'Date range', right, 12)
-  rightText(doc, context.dateRangeLabel, right, 17)
-  rightText(doc, `Generated ${context.generatedAtLabel}`, right, 22)
+  doc.setFontSize(6.5)
+  setTextColor(doc, PDF_THEME.colors.muted)
+
+  const leftLines = [
+    { label: 'Branch', value: context.branchName },
+    context.vatNumber ? { label: 'VAT', value: context.vatNumber } : null,
+    context.crNumber ? { label: 'CR', value: context.crNumber } : null,
+    context.address ? { label: 'Address', value: context.address } : null,
+    context.phone ? { label: 'Phone', value: context.phone } : null,
+    context.email ? { label: 'Email', value: context.email } : null,
+  ].filter((line): line is { label: string; value: string } => !!line)
+
+  leftLines.slice(0, 6).forEach((line, index) => {
+    drawLabeledIdentityLine(doc, left + 4, left + leftWidth, boxY + 11 + index * 3.2, line.label, line.value)
+  })
 
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(9)
+  doc.setFontSize(12)
   setTextColor(doc, PDF_THEME.colors.text)
-  const companyLines = splitSmartTextToSize(doc, context.companyName, identityWidth, 'bold', 'Business').slice(0, 2)
-  const companyAlign = identityAlign(companyLines.join(' '))
+  const companyLines = splitSmartTextToSize(doc, context.companyName, centerWidth, 'bold', 'Business').slice(0, 2)
   companyLines.forEach((line, index) => {
     drawSmartText(
       doc,
       line,
-      companyAlign === 'right' ? identityRight : left,
-      34 + index * 4,
-      { align: companyAlign, maxWidth: identityWidth },
+      (centerLeft + centerRight) / 2,
+      boxY + 10 + index * 4.7,
+      { align: 'center', maxWidth: centerWidth },
       'bold',
       'Business',
     )
   })
 
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7.5)
-  setTextColor(doc, PDF_THEME.colors.muted)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8.2)
+  setTextColor(doc, PDF_THEME.colors.green2)
+  drawSmartText(doc, context.branchName, (centerLeft + centerRight) / 2, boxY + 21, { align: 'center', maxWidth: centerWidth }, 'bold')
 
-  const detailLines = [
-    context.legalName ? { kind: 'plain' as const, value: context.legalName } : null,
-    { kind: 'label' as const, label: 'Branch', value: context.branchName },
-    {
-      kind: 'plain' as const,
-      value: [context.vatNumber ? `VAT: ${context.vatNumber}` : null, context.crNumber ? `CR: ${context.crNumber}` : null]
-        .filter(Boolean)
-        .join('   '),
-    },
-    context.address ? { kind: 'plain' as const, value: context.address } : null,
-    {
-      kind: 'plain' as const,
-      value: [context.phone ? `Tel: ${context.phone}` : null, context.email ? `Email: ${context.email}` : null]
-        .filter(Boolean)
-        .join('   '),
-    },
-  ].filter((line): line is NonNullable<typeof line> => !!line && !!line.value)
+  if (context.legalName) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6.6)
+    setTextColor(doc, PDF_THEME.colors.muted)
+    drawSmartText(doc, context.legalName, (centerLeft + centerRight) / 2, boxY + 25.2, { align: 'center', maxWidth: centerWidth })
+  }
 
-  const detailStartY = 39 + Math.max(0, companyLines.length - 1) * 4
-  detailLines.slice(0, Math.max(2, Math.floor((56 - detailStartY) / 4))).forEach((line, index) => {
-    const y = detailStartY + index * 4
-    if (line.kind === 'label') drawLabeledIdentityLine(doc, left, identityRight, y, line.label, line.value)
-    else drawIdentityLine(doc, left, identityRight, y, line.value)
-  })
+  setDrawColor(doc, PDF_THEME.colors.border)
+  doc.line(centerLeft - 2.5, boxY + 5, centerLeft - 2.5, boxY + boxHeight - 5)
+  doc.line(rightLeft - 2.5, boxY + 5, rightLeft - 2.5, boxY + boxHeight - 5)
 
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7.5)
-  setTextColor(doc, PDF_THEME.colors.text)
-  if (context.generatedBy) rightText(doc, 'Generated by', right, 38)
+  doc.setFontSize(6.5)
+  setTextColor(doc, PDF_THEME.colors.gold)
+  rightText(doc, 'PREPARED BY', right - 4, boxY + 6)
 
   doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7.2)
   setTextColor(doc, PDF_THEME.colors.muted)
-  if (context.generatedBy) drawSmartText(doc, context.generatedBy, right, 43, { align: 'right', maxWidth: 58 })
+  drawSmartText(doc, context.generatedBy ?? '-', right - 4, boxY + 11.3, { align: 'right', maxWidth: rightWidth - 4 }, 'normal', '-')
+  drawSmartText(doc, context.branchName, right - 4, boxY + 16, { align: 'right', maxWidth: rightWidth - 4 }, 'normal')
 
-  setFillColor(doc, PDF_THEME.colors.border)
-  doc.rect(left, 57, width - left - PDF_THEME.layout.marginRight, 0.3, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(6.5)
+  setTextColor(doc, PDF_THEME.colors.text)
+  rightText(doc, 'Generated', right - 4, boxY + 22)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(6.7)
+  setTextColor(doc, PDF_THEME.colors.muted)
+  rightText(doc, context.generatedAtLabel, right - 4, boxY + 26)
+
+  setDrawColor(doc, PDF_THEME.colors.border)
+  doc.line(left, boxY + boxHeight + 3, width - PDF_THEME.layout.marginRight, boxY + boxHeight + 3)
+}
+
+export function addHeader(doc: jsPDF, context: ReportPdfContext) {
+  drawReportHeaderBar(doc, context)
+  if (currentPageNumber(doc) === 1) drawFirstPageIdentity(doc, context)
 }
 
 export function addFooter(doc: jsPDF, context: ReportPdfContext) {
@@ -307,6 +431,7 @@ export function addFooter(doc: jsPDF, context: ReportPdfContext) {
 export async function createReportDoc(context: ReportPdfContext): Promise<{ doc: jsPDF; y: number }> {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   await registerPdfFonts(doc)
+  context.brandWordmarkDataUrl = await loadKubriWordmark()
   doc.setProperties({
     title: context.reportTitle,
     subject: context.dateRangeLabel,
@@ -321,67 +446,86 @@ export function ensureSpace(doc: jsPDF, context: ReportPdfContext, y: number, ne
   if (y + neededHeight <= pageHeight(doc) - PDF_THEME.layout.pageBottom) return y
   doc.addPage()
   addHeader(doc, context)
-  return PDF_THEME.layout.contentTop
+  return currentContentTop(doc)
 }
 
 export function addSectionTitle(doc: jsPDF, context: ReportPdfContext, y: number, title: string, sub?: string): number {
-  const nextY = ensureSpace(doc, context, y, 10)
+  const nextY = ensureSpace(doc, context, y + 4, sub ? 16 : 11)
+  const left = PDF_THEME.layout.marginLeft
+  const right = pageWidth(doc) - PDF_THEME.layout.marginRight
+
+  setFillColor(doc, PDF_THEME.colors.gold)
+  doc.rect(left, nextY - 4.5, 1.2, 7.8, 'F')
+
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(10.5)
+  doc.setFontSize(10.2)
   setTextColor(doc, PDF_THEME.colors.text)
-  doc.text(title, PDF_THEME.layout.marginLeft, nextY)
+  doc.text(title, left + 4, nextY)
+
+  const dividerStart = left + 4 + measureSmartText(doc, title, 'bold') + 8
+  if (dividerStart < right - 12) {
+    setDrawColor(doc, PDF_THEME.colors.border)
+    doc.line(dividerStart, nextY + 2.2, right, nextY + 2.2)
+  }
 
   if (sub) {
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7.5)
+    doc.setFontSize(7)
     setTextColor(doc, PDF_THEME.colors.muted)
-    doc.text(sub, PDF_THEME.layout.marginLeft, nextY + 4)
-    return nextY + 8
+    doc.text(sub, left + 4, nextY + 6)
+    return nextY + 13
   }
 
-  return nextY + 5
+  return nextY + 9.5
 }
 
 export function addKpiGrid(doc: jsPDF, context: ReportPdfContext, y: number, kpis: PdfKpi[]): number {
   const columns = 3
-  const gap = 3
+  const gap = 3.2
   const boxWidth = (contentWidth(doc) - gap * (columns - 1)) / columns
-  const boxHeight = 20
+  const boxHeight = 24
   let nextY = y
 
   kpis.forEach((kpi, index) => {
     const column = index % columns
-    if (column === 0) nextY = ensureSpace(doc, context, nextY, boxHeight + 4)
+    if (column === 0) nextY = ensureSpace(doc, context, nextY, boxHeight + 5)
 
     const x = PDF_THEME.layout.marginLeft + column * (boxWidth + gap)
-    const tone = kpi.tone ?? (index === 0 ? 'green' : 'plain')
-    const accentColor = tone === 'gold' ? PDF_THEME.colors.gold : PDF_THEME.colors.green2
+    const tone = kpi.tone ?? (index % 3 === 0 ? 'green' : index % 3 === 1 ? 'slate' : 'gold')
+    const colors = toneColors(tone)
+    const icon = kpi.icon ?? kpiIcon(kpi.label)
+    const badgeSize = 8.4
 
-    setFillColor(doc, tone === 'green' ? PDF_THEME.colors.softGreen : tone === 'gold' ? PDF_THEME.colors.goldSoft : PDF_THEME.colors.soft)
-    doc.roundedRect(x, nextY, boxWidth, boxHeight, 1.5, 1.5, 'F')
-    setDrawColor(doc, PDF_THEME.colors.border)
-    doc.roundedRect(x, nextY, boxWidth, boxHeight, 1.5, 1.5, 'S')
-    setFillColor(doc, accentColor)
-    doc.roundedRect(x, nextY, 1.8, boxHeight, 1.5, 1.5, 'F')
+    setFillColor(doc, colors.bg)
+    doc.roundedRect(x, nextY, boxWidth, boxHeight, 2, 2, 'F')
+    setFillColor(doc, colors.accent)
+    doc.rect(x, nextY, 1.5, boxHeight, 'F')
+    setFillColor(doc, colors.badge)
+    doc.roundedRect(x + boxWidth - badgeSize - 3, nextY + 3, badgeSize, badgeSize, 1.5, 1.5, 'F')
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(icon.length > 3 ? 4.6 : 5.8)
+    setTextColor(doc, PDF_THEME.colors.white)
+    drawSmartText(doc, icon, x + boxWidth - badgeSize / 2 - 3, nextY + 8.4, { align: 'center', maxWidth: badgeSize - 1 }, 'bold')
 
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6.8)
-    setTextColor(doc, PDF_THEME.colors.muted)
-    doc.text(kpi.label.toUpperCase(), x + 4, nextY + 5)
+    doc.setFontSize(6.4)
+    setTextColor(doc, PDF_THEME.colors.cardMuted)
+    drawSmartText(doc, kpi.label.toUpperCase(), x + 4.8, nextY + 5.7, { maxWidth: boxWidth - badgeSize - 12 }, 'normal', '-')
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(10.2)
-    setTextColor(doc, PDF_THEME.colors.text)
-    drawSmartText(doc, kpi.value, x + 4, nextY + 12, { maxWidth: boxWidth - 8 }, 'bold', '-')
+    setTextColor(doc, PDF_THEME.colors.white)
+    drawSmartText(doc, kpi.value, x + 4.8, nextY + 14.1, { maxWidth: boxWidth - 9 }, 'bold', '-')
 
     if (kpi.sub) {
       doc.setFont('helvetica', 'normal')
-      doc.setFontSize(6.5)
-      setTextColor(doc, PDF_THEME.colors.lightText)
-      drawSmartText(doc, kpi.sub, x + 4, nextY + 17, { maxWidth: boxWidth - 8 })
+      doc.setFontSize(6.4)
+      setTextColor(doc, PDF_THEME.colors.cardMuted)
+      drawSmartText(doc, kpi.sub, x + 4.8, nextY + 20, { maxWidth: boxWidth - 9 })
     }
 
-    if (column === columns - 1 || index === kpis.length - 1) nextY += boxHeight + 4
+    if (column === columns - 1 || index === kpis.length - 1) nextY += boxHeight + 5
   })
 
   return nextY
@@ -447,7 +591,7 @@ export function addAutoTable(doc: jsPDF, context: ReportPdfContext, options: Pdf
   }
 
   autoTable(doc, {
-    startY: options.note ? options.startY + 4 : options.startY,
+    startY: options.note ? options.startY + 5 : options.startY,
     head: [options.head.map(cell => pdfDrawableText(cell, '-'))],
     body: options.body.map(row => row.map(cell => pdfDrawableText(cell, '-'))),
     foot: options.foot ? [options.foot.map(cell => pdfDrawableText(cell, '-'))] : undefined,
@@ -455,16 +599,16 @@ export function addAutoTable(doc: jsPDF, context: ReportPdfContext, options: Pdf
     margin: {
       left: PDF_THEME.layout.marginLeft,
       right: PDF_THEME.layout.marginRight,
-      top: PDF_THEME.layout.contentTop,
+      top: PDF_THEME.layout.continuedContentTop,
       bottom: PDF_THEME.layout.pageBottom,
     },
     styles: {
       font: 'helvetica',
       fontSize: options.fontSize ?? 7.2,
-      cellPadding: 1.6,
+      cellPadding: { top: 2.2, right: 1.8, bottom: 2.2, left: 1.8 },
       textColor: PDF_THEME.colors.text,
       lineColor: PDF_THEME.colors.border,
-      lineWidth: 0.1,
+      lineWidth: 0.08,
       overflow: 'linebreak',
       valign: 'middle',
     },
@@ -473,9 +617,10 @@ export function addAutoTable(doc: jsPDF, context: ReportPdfContext, options: Pdf
       textColor: PDF_THEME.colors.white,
       fontStyle: 'bold',
       fontSize: options.fontSize ?? 7.2,
+      cellPadding: { top: 2.4, right: 1.8, bottom: 2.4, left: 1.8 },
     },
     footStyles: {
-      fillColor: PDF_THEME.colors.soft,
+      fillColor: PDF_THEME.colors.goldSoft,
       textColor: PDF_THEME.colors.text,
       fontStyle: 'bold',
     },
@@ -497,10 +642,34 @@ export function addAutoTable(doc: jsPDF, context: ReportPdfContext, options: Pdf
   })
 
   const finalY = (doc as AutoTableDoc).lastAutoTable?.finalY
-  return (typeof finalY === 'number' ? finalY : options.startY) + 8
+  return (typeof finalY === 'number' ? finalY : options.startY) + 9
 }
 
 export function saveReportDoc(doc: jsPDF, context: ReportPdfContext) {
   addFooter(doc, context)
-  doc.save(reportPdfFileName(context))
+  const fileName = reportPdfFileName(context)
+
+  try {
+    doc.save(fileName)
+    return
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Kubri report PDF save failed; trying Blob download fallback.', error)
+    }
+  }
+
+  const blob = doc.output('blob')
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+
+  try {
+    link.href = url
+    link.download = fileName
+    link.rel = 'noopener'
+    document.body.appendChild(link)
+    link.click()
+  } finally {
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
 }

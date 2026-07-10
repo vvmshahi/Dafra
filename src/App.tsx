@@ -1,5 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
-import type { ReactNode } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { useEffect, type ReactNode } from 'react'
 import { Toaster } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
@@ -261,6 +261,17 @@ function BrowserOnlyPublicRoute({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+function ScrollToTop() {
+  const { pathname, hash } = useLocation()
+
+  useEffect(() => {
+    if (hash) return
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [pathname, hash])
+
+  return null
+}
+
 // ── App ───────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -268,6 +279,7 @@ export default function App() {
     <>
     <Toaster position="top-center" richColors />
     <BrowserRouter>
+      <ScrollToTop />
       <Routes>
         {/* ── Public ──────────────────────────────────────── */}
         <Route path="/login"           element={<DesktopAwareLogin />} />

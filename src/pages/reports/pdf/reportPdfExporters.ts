@@ -119,22 +119,24 @@ async function exportRegisterSessionsPdf(context: ReportPdfContext, sessions: Re
   const kpis: PdfKpi[] = [
     { label: 'Total sessions', value: formatNumberPdf(sessions.length), tone: 'green' },
     { label: 'Total sales', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'totalSales')), tone: 'gold' },
-    { label: 'Invoices', value: formatNumberPdf(sumRegisterSessionField(sessions, 'invoiceCount')) },
-    { label: 'Cash', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'cashTotal')) },
-    { label: 'Card', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'cardTotal')) },
-    { label: 'VAT', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'vatTotal')) },
-    { label: 'Credit notes', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'creditNoteTotal')) },
-    { label: 'Expenses', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'expensesTotal')) },
-    { label: 'Expected cash', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'expectedCash')) },
+    { label: 'Invoices', value: formatNumberPdf(sumRegisterSessionField(sessions, 'invoiceCount')), tone: 'blue' },
+    { label: 'Cash', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'cashTotal')), tone: 'teal' },
+    { label: 'Card', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'cardTotal')), tone: 'slate' },
+    { label: 'VAT', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'vatTotal')), tone: 'amber' },
+    { label: 'Credit notes', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'creditNoteTotal')), tone: 'slate' },
+    { label: 'Expenses', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'expensesTotal')), tone: 'amber' },
+    { label: 'Expected cash', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'expectedCash')), tone: 'green' },
     {
       label: 'Actual cash',
       value: hasActualCash ? formatCurrencyPdf(sumRegisterSessionField(sessions, 'actualCash')) : '-',
       sub: hasActualCash ? `${actualCashCount} closed sessions` : 'closed sessions only',
+      tone: 'teal',
     },
     {
       label: 'Cash difference',
       value: hasActualCash ? formatCurrencyPdf(sumRegisterSessionField(sessions, 'cashDifference')) : '-',
       sub: 'actual minus expected',
+      tone: 'blue',
     },
   ]
 
@@ -226,9 +228,9 @@ async function exportVatSupportPdf(context: ReportPdfContext, data: VatSupportEx
 
   const kpis: PdfKpi[] = [
     { label: 'Output VAT', value: formatCurrencyPdf(data.vatOnSales), sub: 'VAT before credit notes', tone: 'green' },
-    { label: 'VAT credited', value: formatCurrencyPdf(data.vatCredited), sub: 'VAT reduced by returns' },
-    { label: 'Net VAT on sales', value: formatCurrencyPdf(data.vatCollected), sub: 'output minus credited VAT' },
-    { label: 'Input VAT support', value: formatCurrencyPdf(data.vatPaidTotal), sub: 'claimable purchases + expenses' },
+    { label: 'VAT credited', value: formatCurrencyPdf(data.vatCredited), sub: 'VAT reduced by returns', tone: 'slate' },
+    { label: 'Net VAT on sales', value: formatCurrencyPdf(data.vatCollected), sub: 'output minus credited VAT', tone: 'teal' },
+    { label: 'Input VAT support', value: formatCurrencyPdf(data.vatPaidTotal), sub: 'claimable purchases + expenses', tone: 'blue' },
     {
       label: vatImpactLabel(data.netPayable),
       value: formatCurrencyPdf(Math.abs(data.netPayable)),
@@ -304,14 +306,14 @@ async function exportSalesPdf(context: ReportPdfContext, data: SalesExportData) 
 
   const kpis: PdfKpi[] = [
     { label: 'Gross Sales', value: formatCurrencyPdf(data.grossSales), tone: 'green' },
-    { label: 'Credit Notes', value: formatCurrencyPdf(data.creditNotes) },
+    { label: 'Credit Notes', value: formatCurrencyPdf(data.creditNotes), tone: 'slate' },
     { label: 'Net Sales', value: formatCurrencyPdf(data.totalRevenue), tone: 'gold' },
-    { label: 'VAT', value: formatCurrencyPdf(data.vatCollected), sub: `sales ${formatCurrencyPdf(data.vatOnSales)} | credited ${formatCurrencyPdf(data.vatCredited)}` },
-    { label: 'Documents', value: formatNumberPdf(data.invoiceCount), sub: 'non-cancelled' },
-    { label: 'Average Sale', value: formatCurrencyPdf(data.avgOrderValue) },
-    { label: 'Cash', value: formatCurrencyPdf(paymentValue(data, 'Cash')) },
-    { label: 'Card', value: formatCurrencyPdf(paymentValue(data, 'Card')) },
-    { label: 'Other payments', value: formatCurrencyPdf(otherPayments) },
+    { label: 'VAT', value: formatCurrencyPdf(data.vatCollected), sub: `sales ${formatCurrencyPdf(data.vatOnSales)} | credited ${formatCurrencyPdf(data.vatCredited)}`, tone: 'amber' },
+    { label: 'Documents', value: formatNumberPdf(data.invoiceCount), sub: 'non-cancelled', tone: 'blue' },
+    { label: 'Average Sale', value: formatCurrencyPdf(data.avgOrderValue), tone: 'teal' },
+    { label: 'Cash', value: formatCurrencyPdf(paymentValue(data, 'Cash')), tone: 'green' },
+    { label: 'Card', value: formatCurrencyPdf(paymentValue(data, 'Card')), tone: 'blue' },
+    { label: 'Other payments', value: formatCurrencyPdf(otherPayments), tone: 'slate' },
   ]
 
   let nextY = addSectionTitle(doc, context, y, 'Summary')
@@ -426,21 +428,21 @@ async function exportProfitEstimatePdf(context: ReportPdfContext, data: ProfitEs
 
   const salesKpis: PdfKpi[] = [
     { label: 'Net sales incl. VAT', value: formatCurrencyPdf(data.totalRevenue), tone: 'green' },
-    { label: 'Net VAT on sales', value: formatCurrencyPdf(vatData.vatCollected) },
+    { label: 'Net VAT on sales', value: formatCurrencyPdf(vatData.vatCollected), tone: 'amber' },
     { label: 'Estimated sales excl. VAT', value: formatCurrencyPdf(estimatedSalesExVat), tone: 'gold' },
   ]
   const costKpis: PdfKpi[] = [
-    { label: 'Purchases / materials excl. VAT', value: formatCurrencyPdf(data.totalCOGS), tone: 'green' },
-    { label: 'Expenses excl. VAT', value: formatCurrencyPdf(data.totalExpenses) },
-    { label: 'Total operating costs excl. VAT', value: formatCurrencyPdf(totalOperatingCosts), tone: 'gold' },
+    { label: 'Purchases / materials excl. VAT', value: formatCurrencyPdf(data.totalCOGS), tone: 'teal' },
+    { label: 'Expenses excl. VAT', value: formatCurrencyPdf(data.totalExpenses), tone: 'slate' },
+    { label: 'Total operating costs excl. VAT', value: formatCurrencyPdf(totalOperatingCosts), tone: 'amber' },
   ]
   const profitKpis: PdfKpi[] = [
     { label: 'Estimated Business Profit', value: formatCurrencyPdf(estimatedBusinessProfit), tone: 'green' },
-    { label: 'Estimated Margin', value: formatPercentPdf(estimatedMargin), tone: 'gold' },
+    { label: 'Estimated Margin', value: formatPercentPdf(estimatedMargin), tone: 'blue' },
   ]
   const vatKpis: PdfKpi[] = [
-    { label: 'Output VAT', value: formatCurrencyPdf(vatData.vatOnSales), tone: 'green' },
-    { label: 'Input VAT Support', value: formatCurrencyPdf(vatData.vatPaidTotal) },
+    { label: 'Output VAT', value: formatCurrencyPdf(vatData.vatOnSales), tone: 'amber' },
+    { label: 'Input VAT Support', value: formatCurrencyPdf(vatData.vatPaidTotal), tone: 'teal' },
     {
       label: vatImpactLabel(netVatEstimate),
       value: formatCurrencyPdf(Math.abs(netVatEstimate)),

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { UserRound, Mail, Lock, ArrowRight, CheckCircle2, MessageCircle } from 'lucide-react'
+import { UserRound, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, MessageCircle } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -91,6 +91,13 @@ export default function LoginPage() {
         </section>
 
         <section className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#F6F2E8] px-5 py-8 text-[#10291E] sm:px-8 lg:px-10">
+          <Link
+            to="/"
+            className="absolute left-5 top-5 z-20 inline-flex items-center gap-2 rounded-full border border-[#D9CBAA] bg-white/70 px-3 py-2 text-sm font-black text-[#284334] shadow-[0_10px_26px_rgba(15,36,25,0.06)] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F6F2E8] sm:left-8 sm:top-8"
+          >
+            <ArrowLeft size={15} />
+            Home
+          </Link>
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute right-[-14rem] top-[-16rem] h-[32rem] w-[32rem] rounded-full bg-[#D8B76A]/25 blur-3xl" />
             <div className="absolute bottom-[-18rem] left-[-12rem] h-[36rem] w-[36rem] rounded-full bg-[#0F3A2A]/15 blur-3xl" />

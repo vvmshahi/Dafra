@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { MessageCircle, Mail, Lock } from 'lucide-react'
+import { ArrowLeft, MessageCircle, Mail, Lock } from 'lucide-react'
 import { MeemLogo } from '@/components/MeemLogo'
 import { supportConfig } from '@/config/support'
 
@@ -51,7 +51,14 @@ export default function SignupPage() {
       </div>
 
       {/* Right panel */}
-      <div className="flex-1 flex items-center justify-center bg-white p-8">
+      <div className="relative flex-1 flex items-center justify-center bg-white p-8">
+        <Link
+          to="/"
+          className="absolute left-5 top-5 inline-flex items-center gap-2 rounded-full border border-[#D9CBAA] bg-white/80 px-3 py-2 text-sm font-black text-[#284334] shadow-[0_10px_26px_rgba(15,36,25,0.06)] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-white sm:left-8 sm:top-8"
+        >
+          <ArrowLeft size={15} />
+          Home
+        </Link>
         <div className="w-full max-w-[420px] space-y-6">
 
           {/* Mobile logo */}

@@ -782,6 +782,7 @@ export interface Employee {
 export interface Category {
   id: string
   tenant_id: string
+  branch_id: string
   parent_id: string | null
   name: string
   name_ar: string | null
@@ -1071,6 +1072,7 @@ export type BranchLoginUsernameUpdate = Partial<Omit<BranchLoginUsername, 'id' |
 
 export interface CategoryInsert {
   tenant_id: string
+  branch_id?: string | null
   parent_id?: string | null
   name: string
   name_ar?: string | null
