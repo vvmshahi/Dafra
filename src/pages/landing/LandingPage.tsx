@@ -11,8 +11,9 @@ import { useEffect, useState, type ReactNode } from 'react'
 const WA_LINK = supportConfig.whatsappLink
 const WA_NUMBER = supportConfig.whatsappNumber
 const EMAIL_LINK = supportConfig.emailLink
-const KUBRI_WINDOWS_DOWNLOAD_URL = import.meta.env.VITE_KUBRI_WINDOWS_DOWNLOAD_URL || ''
-const KUBRI_MAC_DOWNLOAD_URL = import.meta.env.VITE_KUBRI_MAC_DOWNLOAD_URL || ''
+const KUBRI_WINDOWS_DOWNLOAD_URL = 'https://github.com/vvmshahi/kubri-downloads/releases/download/v1.0.0/Kubri-Setup-1.0.0.exe'
+const KUBRI_MAC_APPLE_SILICON_DOWNLOAD_URL = 'https://github.com/vvmshahi/kubri-downloads/releases/download/v1.0.0/Kubri-1.0.0-arm64.dmg'
+const KUBRI_MAC_INTEL_DOWNLOAD_URL = 'https://github.com/vvmshahi/kubri-downloads/releases/download/v1.0.0/Kubri-1.0.0-x64.dmg'
 const KUBRI_WORDMARK_SRC = '/brand/kubiri-wordmark.png?v=kubri-2'
 
 function scrollTo(id: string) {
@@ -453,10 +454,9 @@ function WhatsAppIcon({ className = '' }: { className?: string }) {
 }
 
 function WindowsSection() {
+  const [showMacModal, setShowMacModal] = useState(false)
   const downloadButtonClass = 'group relative isolate inline-flex items-center justify-center gap-2 overflow-hidden rounded-2xl border border-[#D8E2D8] bg-white/80 px-5 py-3.5 text-sm font-black text-[#071510] shadow-[0_14px_36px_rgba(7,21,16,0.08)] transition-[border-color,box-shadow,transform] duration-200 before:absolute before:inset-[-1px] before:-z-20 before:rounded-2xl before:bg-gradient-to-r before:from-primary-300/70 before:via-gold-300/80 before:to-primary-500/60 before:opacity-0 before:blur-md before:transition-opacity before:duration-200 after:absolute after:inset-[1px] after:-z-10 after:rounded-[15px] after:bg-gradient-to-br after:from-white after:to-[#F7F5EF] after:transition-colors after:duration-200 hover:-translate-y-0.5 hover:border-gold-300 hover:shadow-[0_20px_54px_rgba(7,21,16,0.12)] hover:before:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F7F5EF] active:translate-y-0 active:scale-[0.98]'
-  const disabledButtonClass = `${downloadButtonClass} cursor-not-allowed opacity-60 hover:translate-y-0 hover:border-[#D8E2D8] hover:shadow-[0_14px_36px_rgba(7,21,16,0.08)] hover:before:opacity-0`
-  const windowsReady = Boolean(KUBRI_WINDOWS_DOWNLOAD_URL)
-  const macReady = Boolean(KUBRI_MAC_DOWNLOAD_URL)
+  const modalButtonClass = 'group inline-flex w-full items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.075] px-4 py-4 text-left text-white shadow-[0_14px_38px_rgba(0,0,0,0.18)] transition-[background,border-color,transform] duration-150 hover:-translate-y-0.5 hover:border-gold-300/50 hover:bg-white/[0.11] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] active:translate-y-0 active:scale-[0.98]'
 
   return (
     <section id="windows" className="relative scroll-mt-28 overflow-hidden bg-[#F7F5EF] px-4 py-24 sm:px-6 lg:px-8">
@@ -468,29 +468,18 @@ function WindowsSection() {
             Use Kubri on your desktop POS device for a focused counter experience with products, payments, invoices, and register sessions in one view.
           </p>
           <div className="mt-7 grid gap-3 sm:grid-cols-2">
-            {windowsReady ? (
-              <a href={KUBRI_WINDOWS_DOWNLOAD_URL} target="_blank" rel="noreferrer"
-                className={downloadButtonClass}>
-                <Download size={17} className="transition-transform duration-200 group-hover:-translate-y-0.5" /> Download for Windows
-              </a>
-            ) : (
-              <span aria-disabled="true" title="Windows installer coming soon"
-                className={disabledButtonClass}>
-                <Download size={17} /> Windows app coming soon
-              </span>
-            )}
-            {macReady ? (
-              <a href={KUBRI_MAC_DOWNLOAD_URL} target="_blank" rel="noreferrer"
-                className={downloadButtonClass}>
-                <Apple size={17} className="transition-transform duration-200 group-hover:-translate-y-0.5" /> Download for Mac
-              </a>
-            ) : (
-              <span aria-disabled="true" title="Mac app coming soon"
-                className={disabledButtonClass}>
-                <Apple size={17} /> Mac app coming soon
-              </span>
-            )}
+            <a href={KUBRI_WINDOWS_DOWNLOAD_URL} target="_blank" rel="noopener noreferrer"
+              className={downloadButtonClass}>
+              <Download size={17} className="transition-transform duration-200 group-hover:-translate-y-0.5" /> Download for Windows
+            </a>
+            <button type="button" onClick={() => setShowMacModal(true)}
+              className={downloadButtonClass}>
+              <Apple size={17} className="transition-transform duration-200 group-hover:-translate-y-0.5" /> Download for Mac
+            </button>
           </div>
+          <p className="mt-4 rounded-2xl border border-[#D9CBAA] bg-[#FFF9EA]/80 px-4 py-3 text-xs font-semibold leading-5 text-[#5D563F]">
+            Kubri desktop apps are currently pilot builds. On Windows, if SmartScreen appears, choose "More info" and then "Run anyway". Mac builds may require approval because they are not yet notarized.
+          </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
           {['Touch-friendly POS', 'Fast invoice flow', 'Branch-ready settings'].map(item => (
@@ -500,6 +489,48 @@ function WindowsSection() {
           ))}
         </div>
       </div>
+
+      {showMacModal && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#071510]/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="mac-download-title">
+          <div className="relative w-full max-w-lg overflow-hidden rounded-[28px] border border-white/12 bg-[#071510] p-5 text-white shadow-[0_30px_100px_rgba(0,0,0,0.45)] ring-1 ring-gold-300/10 sm:p-6">
+            <Pattern />
+            <div className="absolute inset-x-0 top-0 h-1 bg-gold-500" />
+            <button
+              type="button"
+              onClick={() => setShowMacModal(false)}
+              className="absolute right-4 top-4 z-10 rounded-full border border-white/10 bg-white/[0.06] p-2 text-white/65 transition-colors hover:bg-white/[0.12] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300/80"
+              aria-label="Close Mac version chooser"
+            >
+              <X size={17} />
+            </button>
+            <div className="relative z-10 pr-10">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-gold-300/20 bg-gold-400/10 text-gold-300">
+                <Apple size={22} />
+              </div>
+              <h3 id="mac-download-title" className="mt-5 text-2xl font-black tracking-tight">Choose your Mac version</h3>
+              <p className="mt-2 text-sm leading-6 text-white/66">
+                Select Apple Silicon for M1, M2, M3, or M4 Macs. Select Intel for older Macs.
+              </p>
+            </div>
+            <div className="relative z-10 mt-6 grid gap-3">
+              <a href={KUBRI_MAC_APPLE_SILICON_DOWNLOAD_URL} target="_blank" rel="noopener noreferrer" className={modalButtonClass}>
+                <span>
+                  <span className="block text-sm font-black">Apple Silicon Mac</span>
+                  <span className="mt-1 block text-xs font-semibold text-white/55">M1, M2, M3, and M4</span>
+                </span>
+                <Download size={17} className="flex-shrink-0 text-gold-300 transition-transform duration-150 group-hover:-translate-y-0.5" />
+              </a>
+              <a href={KUBRI_MAC_INTEL_DOWNLOAD_URL} target="_blank" rel="noopener noreferrer" className={modalButtonClass}>
+                <span>
+                  <span className="block text-sm font-black">Intel Mac</span>
+                  <span className="mt-1 block text-xs font-semibold text-white/55">Older Intel-based Macs</span>
+                </span>
+                <Download size={17} className="flex-shrink-0 text-gold-300 transition-transform duration-150 group-hover:-translate-y-0.5" />
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
