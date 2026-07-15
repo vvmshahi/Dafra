@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Switch } from '@/components/ui/Switch'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
-import type { Category, ProductSecurePayload, ProductSecureResult, ProductSkuSuggestionResult, VatTreatment } from '@/types'
+import type { Category, ProductSecurePayload, ProductSecureResult, ProductSecureUpdatePayload, ProductSkuSuggestionResult, VatTreatment } from '@/types'
 import type { ProductRow } from './ProductsPage'
 
 // ── VAT options ───────────────────────────────────────────────────────────────
@@ -58,6 +58,9 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 
 const productErrorMessage = (message: string) => {
+  if (/unsupported product field/i.test(message)) {
+    return 'Product could not be updated because one of the fields is not supported. Please refresh and try again.'
+  }
   if (message.includes('Product category does not belong')) {
     return 'Selected category does not match this branch. Refresh the page and select a category from this branch.'
   }
@@ -413,8 +416,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
         imageUrl = null
       }
 
-      const payload: ProductSecurePayload = {
-        branch_id:     resolvedBranchId,
+      const payload: Omit<ProductSecurePayload, 'branch_id'> = {
         name:          name.trim(),
         name_ar:       nameAr.trim()       || null,
         category_id:   categoryId          || null,
@@ -436,18 +438,26 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
           setError('Product id is required before saving changes.')
           return
         }
+        const updatePayload: ProductSecureUpdatePayload = {
+          ...payload,
+          product_id: savedProductId,
+        }
         const { data, error: err } = await supabase.rpc('update_product_secure', {
-          p_payload: {
-            ...payload,
-            product_id: savedProductId,
-          },
+          p_payload: updatePayload,
         })
-        if (err) { setError(productErrorMessage(err.message)); return }
+        if (err) {
+          console.error('Product update failed', { code: err.code, message: err.message })
+          setError(productErrorMessage(err.message))
+          return
+        }
         const result = data as ProductSecureResult | null
         if (result?.sku) setSku(result.sku)
       } else {
         const { data, error: err } = await supabase.rpc('create_product_secure', {
-          p_payload: payload,
+          p_payload: {
+            ...payload,
+            branch_id: resolvedBranchId,
+          },
         })
         if (err) { setError(productErrorMessage(err.message)); return }
         const result = data as ProductSecureResult | null

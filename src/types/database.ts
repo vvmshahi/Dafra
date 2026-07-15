@@ -1229,7 +1229,7 @@ export interface ProductSecurePayload {
   is_service?: boolean
 }
 
-export type ProductSecureUpdatePayload = ProductSecurePayload & {
+export type ProductSecureUpdatePayload = Omit<ProductSecurePayload, 'branch_id'> & {
   product_id: string
 }
 
