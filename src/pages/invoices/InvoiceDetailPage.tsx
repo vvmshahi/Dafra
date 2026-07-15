@@ -10,6 +10,7 @@ import { toSaudiTime } from '@/lib/utils/date'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
+import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { submitInvoiceToZatca } from '@/lib/zatca/submission'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 
@@ -237,6 +238,7 @@ export default function InvoiceDetailPage() {
   const [resubmitting, setResubmitting] = useState(false)
   const [isPhase2,     setIsPhase2]     = useState(false)
   const [isPrinting,   setIsPrinting]   = useState(false)
+  const [thermalPrinting, setThermalPrinting] = useState(false)
   const [creditModalOpen, setCreditModalOpen] = useState(false)
 
   useEffect(() => {
@@ -432,17 +434,25 @@ export default function InvoiceDetailPage() {
   }
 
   async function handlePrintThermal() {
-    if (!invoice) return
-    if (!isElectron()) {
-      navigate(`/print/receipt/${invoice.id}?auto=1`)
-      return
-    }
+    if (!invoice || thermalPrinting) return
 
-    const result = await printReceipt({ invoiceId: invoice.id })
-    if (result.success) {
-      toast.success('Receipt sent to printer', { duration: 1800 })
-    } else {
-      toast.error(result.message || result.errorType || 'Receipt print failed.')
+    setThermalPrinting(true)
+    try {
+      if (!isElectron()) {
+        await printReceiptInHiddenFrame(invoice.id)
+        return
+      }
+
+      const result = await printReceipt({ invoiceId: invoice.id })
+      if (result.success) {
+        toast.success('Receipt sent to printer', { duration: 1800 })
+      } else {
+        toast.error(result.message || result.errorType || 'Receipt print failed.')
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Receipt print failed.')
+    } finally {
+      setThermalPrinting(false)
     }
   }
 
@@ -741,10 +751,10 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
               WhatsApp
             </button>
           )}
-          <button onClick={() => void handlePrintThermal()}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
-            <Printer size={13} />
-            Print Receipt
+          <button onClick={() => void handlePrintThermal()} disabled={thermalPrinting}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50">
+            {thermalPrinting ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
+            {thermalPrinting ? 'Printing...' : 'Print Receipt'}
           </button>
           <button onClick={() => void handlePrintA4()}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0F2419] rounded-xl hover:bg-[#1a3a28] transition-colors">

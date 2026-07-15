@@ -24,6 +24,7 @@ import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
 import { MeemLogo } from '@/components/MeemLogo'
 import { getPrinterSettings, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
+import { openReceiptPreview, printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { supportConfig } from '@/config/support'
 import { resolveBusinessType } from '@/lib/utils/businessType'
 
@@ -195,16 +196,6 @@ function computeTotals(cart: CartItem[], vatMode: 'exclusive' | 'inclusive') {
     }
   }
   return { subtotal, taxAmount, total: subtotal + taxAmount }
-}
-
-function receiptPreviewUrl(invoiceId: string, autoPrint = true) {
-  return `/print/receipt/${invoiceId}${autoPrint ? '?auto=1' : ''}`
-}
-
-function openReceiptPreview(invoiceId: string, autoPrint = true) {
-  const url = receiptPreviewUrl(invoiceId, autoPrint)
-  const opened = window.open(url, '_blank', 'noopener,noreferrer')
-  if (!opened) window.location.assign(url)
 }
 
 function printFailureMessage(errorType?: string | null, message?: string | null) {
@@ -404,7 +395,6 @@ function ReceiptView({ receipt, onNewSale, onOpenPrinterSettings, printMode, zat
   printMode: 'thermal' | 'pdf' | 'both'
   zatcaStatus: 'submitted' | 'pending' | 'failed' | null
 }) {
-  const navigate = useNavigate()
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [printingReceipt, setPrintingReceipt] = useState(false)
   const [printError, setPrintError] = useState<string | null>(null)
@@ -493,15 +483,16 @@ ${lines}
   }
 
   async function openReceiptPrintPage() {
+    if (printingReceipt) return
     setPrintError(null)
-
-    if (!isElectron()) {
-      navigate(receiptPreviewUrl(receipt.invoiceId, true))
-      return
-    }
 
     setPrintingReceipt(true)
     try {
+      if (!isElectron()) {
+        await printReceiptInHiddenFrame(receipt.invoiceId)
+        return
+      }
+
       const settings = await getPrinterSettings()
       if (!settings.receiptPrinterName) {
         const message = 'Choose a receipt printer to enable direct printing.'
@@ -521,7 +512,7 @@ ${lines}
       const message = printFailureMessage(result.errorType, result.message)
       setPrintError(message)
       toast.error(message)
-      if (settings.fallbackToPreview) openReceiptPreview(receipt.invoiceId, false)
+      if (settings.fallbackToPreview) await printReceiptInHiddenFrame(receipt.invoiceId)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Receipt print failed.'
       setPrintError(message)
@@ -750,9 +741,10 @@ ${lines}
                 <button
                   type="button"
                   onClick={() => void openReceiptPrintPage()}
+                  disabled={printingReceipt}
                   className="rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-semibold text-red-700 shadow-sm hover:bg-red-100"
                 >
-                  Retry
+                  {printingReceipt ? 'Printing...' : 'Retry'}
                 </button>
                 <button
                   type="button"
@@ -763,7 +755,11 @@ ${lines}
                 </button>
                 <button
                   type="button"
-                  onClick={() => openReceiptPreview(receipt.invoiceId, false)}
+                  onClick={() => {
+                    if (!openReceiptPreview(receipt.invoiceId, false)) {
+                      toast.error('Could not open print preview. Check popup permissions.')
+                    }
+                  }}
                   className="rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
                 >
                   Open Print Preview
@@ -1930,7 +1926,7 @@ export default function POSPage() {
 
       const message = printFailureMessage(result.errorType, result.message)
       toast.error(message)
-      if (settings.fallbackToPreview) openReceiptPreview(invoiceId, false)
+      if (settings.fallbackToPreview) await printReceiptInHiddenFrame(invoiceId)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Receipt print failed.')
     }
