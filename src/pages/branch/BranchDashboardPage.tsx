@@ -133,11 +133,12 @@ function RegisterSessionPanel({ session, loading, error, children }: {
   const cashFinalValue = session?.status === 'closed' && session.actualCash !== null
     ? session.cashDifference ?? 0
     : session?.expectedCash ?? 0
+  const grossSales = session ? session.totalSales + session.creditNoteTotal : 0
   return (
     <section className="space-y-4">
       {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          {[1, 2, 3, 4, 5, 6].map(i => <div key={i} className="h-28 rounded-2xl bg-white border border-gray-100 animate-pulse" />)}
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-8 gap-4">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map(i => <div key={i} className="h-28 rounded-2xl bg-white border border-gray-100 animate-pulse" />)}
         </div>
       ) : error ? (
         <div className="grid gap-4 lg:grid-cols-[3fr_1fr]">
@@ -156,13 +157,27 @@ function RegisterSessionPanel({ session, loading, error, children }: {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-8 gap-4">
             <StatCard
-              label={`${labelPrefix} Sales`}
-              value={<Rial amount={session.totalSales} />}
+              label="Gross Sales"
+              value={<Rial amount={grossSales} />}
               sub={`${session.invoiceCount} invoice${session.invoiceCount !== 1 ? 's' : ''}`}
               icon={TrendingUp}
               gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28]"
+            />
+            <StatCard
+              label="Credit Notes"
+              value={<Rial amount={session.creditNoteTotal} />}
+              sub="Refund documents"
+              icon={Receipt}
+              gradient="bg-gradient-to-br from-[#64748b] to-[#334155]"
+            />
+            <StatCard
+              label="Net Sales"
+              value={<Rial amount={session.totalSales} />}
+              sub="Gross less credit notes"
+              icon={TrendingUp}
+              gradient="bg-gradient-to-br from-[#0e6f53] to-[#0F4A28]"
             />
             <StatCard
               label={`${labelPrefix} Invoices`}
@@ -186,9 +201,9 @@ function RegisterSessionPanel({ session, loading, error, children }: {
               gradient="bg-gradient-to-br from-[#0891b2] to-[#0e7490]"
             />
             <StatCard
-              label={`${labelPrefix} VAT`}
+              label="Net VAT"
               value={<Rial amount={session.vatTotal} />}
-              sub="Session VAT"
+              sub="Session net VAT"
               icon={BadgePercent}
               gradient="bg-gradient-to-br from-[#b45309] to-[#92400e]"
             />

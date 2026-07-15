@@ -47,7 +47,7 @@ export default function ReportsPage() {
   const { profile, tenant, branch: authBranch } = useAuth()
 
   const [tab,       setTab]       = useState<TabId>('sessions')
-  const [preset,    setPreset]    = useState<DatePreset>('this_month')
+  const [preset,    setPreset]    = useState<DatePreset>('today')
   const [startDate, setStartDate] = useState('')
   const [endDate,   setEndDate]   = useState('')
   const [branchId,  setBranchId]  = useState<string | null>(null)
@@ -56,7 +56,7 @@ export default function ReportsPage() {
 
   // Init date range from preset
   useEffect(() => {
-    const { start, end } = getDateRange('this_month')
+    const { start, end } = getDateRange('today')
     setStartDate(start)
     setEndDate(end)
   }, [])

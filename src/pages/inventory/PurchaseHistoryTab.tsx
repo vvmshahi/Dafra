@@ -8,6 +8,13 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import type { Purchase, PurchaseItem, Supplier, InventoryItem } from '@/types'
 import PurchaseDrawer from './PurchaseDrawer'
+import {
+  COMPACT_DATE_PRESETS,
+  CompactDateRangeFilter,
+  type DatePreset,
+  formatDateRangeLabel,
+  getDateRange,
+} from '../reports/reportUtils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -374,6 +381,7 @@ function ConfirmStockModal({
 
 export default function PurchaseHistoryTab() {
   const { profile } = useAuth()
+  const initialDateRange = getDateRange('today')
 
   const [purchases,       setPurchases]       = useState<PurchaseRow[]>([])
   const [suppliers,       setSuppliers]       = useState<Supplier[]>([])
@@ -395,6 +403,17 @@ export default function PurchaseHistoryTab() {
   const [confirmChecked,  setConfirmChecked]  = useState(false)
   const [confirmError,    setConfirmError]    = useState('')
   const [confirming,      setConfirming]      = useState(false)
+  const [datePreset,      setDatePreset]      = useState<DatePreset>('today')
+  const [startDate,       setStartDate]       = useState(initialDateRange.start)
+  const [endDate,         setEndDate]         = useState(initialDateRange.end)
+
+  const handleDatePreset = (nextPreset: DatePreset) => {
+    setDatePreset(nextPreset)
+    if (nextPreset === 'custom') return
+    const nextRange = getDateRange(nextPreset)
+    setStartDate(nextRange.start)
+    setEndDate(nextRange.end)
+  }
 
   const load = useCallback(async () => {
     const tid = profile?.tenant_id
@@ -407,6 +426,7 @@ export default function PurchaseHistoryTab() {
       return
     }
 
+    setLoading(true)
     setSuppliers([])
 
     const [{ data: purData }, { data: supData }, { data: invData }] = await Promise.all([
@@ -414,6 +434,8 @@ export default function PurchaseHistoryTab() {
         .from('purchases')
         .select('*, suppliers(name), purchase_items(id)')
         .eq('branch_id', bid)
+        .gte('purchase_date', startDate)
+        .lte('purchase_date', endDate)
         .order('purchase_date', { ascending: false })
         .order('created_at',    { ascending: false }),
       supabase
@@ -452,7 +474,7 @@ export default function PurchaseHistoryTab() {
     setSuppliers((supData ?? []) as unknown as Supplier[])
     setInventoryItems((invData ?? []) as unknown as InventoryItem[])
     setLoading(false)
-  }, [profile?.id, profile?.role, profile?.tenant_id, profile?.branch_id])
+  }, [profile?.id, profile?.role, profile?.tenant_id, profile?.branch_id, startDate, endDate])
 
   useEffect(() => { load() }, [load])
 
@@ -725,6 +747,23 @@ export default function PurchaseHistoryTab() {
         </Button>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <CompactDateRangeFilter
+          preset={datePreset}
+          startDate={startDate}
+          endDate={endDate}
+          presets={COMPACT_DATE_PRESETS}
+          onPreset={handleDatePreset}
+          onStartDate={value => { setDatePreset('custom'); setStartDate(value) }}
+          onEndDate={value => { setDatePreset('custom'); setEndDate(value) }}
+        />
+        {startDate && endDate && (
+          <p className="text-xs text-gray-400">
+            Showing purchases from <span className="font-medium text-gray-600">{formatDateRangeLabel(startDate, endDate)}</span>
+          </p>
+        )}
+      </div>
+
       {/* ── Content ─────────────────────────────────────────── */}
       {loading ? (
         <div className="flex justify-center py-20"><LoadingSpinner size="lg" /></div>
@@ -733,9 +772,9 @@ export default function PurchaseHistoryTab() {
           <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center mb-4">
             <ShoppingCart size={22} className="text-emerald-300" />
           </div>
-          <p className="text-gray-700 font-semibold">No purchases recorded yet</p>
+          <p className="text-gray-700 font-semibold">No purchases in this date range</p>
           <p className="text-gray-400 text-sm mt-1 max-w-xs">
-            Record your first purchase to track stock and supplier spending
+            Choose another date range or record a purchase for this period
           </p>
           <Button className="mt-5" onClick={openAdd}>
             <Plus size={15} />
