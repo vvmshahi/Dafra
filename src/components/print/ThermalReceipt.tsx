@@ -56,7 +56,7 @@ export interface ThermalReceiptProps {
 
 function Amt({ n }: { n: number }) {
   return (
-    <span style={{ whiteSpace: 'nowrap' }}>
+    <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
       <RiyalSymbol />{' '}{n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
     </span>
   )
@@ -64,8 +64,8 @@ function Amt({ n }: { n: number }) {
 
 function TRow({ left, right, bold }: { left: string; right: ReactNode; bold?: boolean }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: bold ? 'bold' : 'normal', fontSize: bold ? '12px' : '11px', marginBottom: '1px' }}>
-      <span>{left}</span><span>{right}</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px', fontWeight: bold ? 'bold' : 'normal', fontSize: bold ? '12px' : '11px', marginBottom: '1px' }}>
+      <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{left}</span><span style={{ flexShrink: 0 }}>{right}</span>
     </div>
   )
 }
@@ -145,21 +145,22 @@ export default function ThermalReceipt({
       style={{
         display: preview ? 'block' : 'none',
         fontFamily: 'monospace',
-        fontSize: '11px',
+        fontSize: 'var(--receipt-font-size, 11px)',
         color: '#000',
         width: '100%',
-        maxWidth: '300px',
+        maxWidth: 'var(--receipt-content-width, 72mm)',
         margin: '0 auto',
         padding: '6px',
         boxSizing: 'border-box' as const,
-        lineHeight: '1.4',
+        lineHeight: 'var(--receipt-line-height, 1.4)',
         background: 'white',
+        overflow: 'visible',
       }}
     >
       {/* Logo */}
       {showLogo && logoUrl && (
         <div style={{ textAlign: 'center', marginBottom: '6px' }}>
-          <img src={logoUrl} alt="logo" style={{ maxHeight: '60px', maxWidth: '200px', display: 'block', margin: '0 auto', objectFit: 'contain' }} />
+          <img src={logoUrl} alt="logo" style={{ maxHeight: '60px', maxWidth: '80%', display: 'block', margin: '0 auto', objectFit: 'contain' }} />
         </div>
       )}
 
@@ -225,10 +226,10 @@ export default function ThermalReceipt({
       <div style={{ marginBottom: '4px' }}>
         {items.map((item, i) => (
           <div key={i} style={{ marginBottom: '3px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 600, wordBreak: 'break-word' }}>{item.name}</div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#333' }}>
-              <span>{item.qty} x <Amt n={item.unitPrice} /></span>
-              <span><Amt n={item.lineTotal} /></span>
+            <div style={{ fontSize: '11px', fontWeight: 600, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.name}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px', fontSize: '10px', color: '#333' }}>
+              <span style={{ minWidth: 0 }}>{item.qty} x <Amt n={item.unitPrice} /></span>
+              <span style={{ flexShrink: 0 }}><Amt n={item.lineTotal} /></span>
             </div>
           </div>
         ))}
@@ -286,7 +287,7 @@ export default function ThermalReceipt({
       {/* QR code */}
       {qrDataUrl ? (
         <div style={{ textAlign: 'center', margin: '6px 0' }}>
-          <img src={qrDataUrl} alt="ZATCA QR" style={{ width: '150px', height: '150px', display: 'block', margin: '0 auto' }} />
+          <img src={qrDataUrl} alt="ZATCA QR" style={{ width: 'min(34mm, 70%)', height: 'auto', aspectRatio: '1 / 1', display: 'block', margin: '0 auto' }} />
           <div style={{ fontSize: '9px', color: '#888', marginTop: '2px' }}>Scan to verify invoice</div>
         </div>
       ) : (

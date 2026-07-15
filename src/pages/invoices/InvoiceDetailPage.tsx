@@ -2,13 +2,14 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, Printer, RefreshCw, Loader2, AlertCircle, CheckCircle2, Bug, FileText } from 'lucide-react'
 import QRCode from 'qrcode'
+import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { buildZatcaQR, decodeTLV } from '@/lib/zatca/qr'
 import { toSaudiTime } from '@/lib/utils/date'
-import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
+import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
-import { printSilent } from '@/lib/electron'
+import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { submitInvoiceToZatca } from '@/lib/zatca/submission'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 
@@ -376,18 +377,43 @@ export default function InvoiceDetailPage() {
   useEffect(() => {
     if (!autoPrint || autoPrintRef.current || loading || !invoice || !branch || !qrDataUrl) return
     autoPrintRef.current = true
-    const t = setTimeout(() => printSilent(), 500)
+    const t = setTimeout(() => {
+      if (isElectron()) {
+        void printA4Invoice()
+      } else {
+        window.print()
+      }
+    }, 500)
     return () => clearTimeout(t)
   }, [autoPrint, loading, invoice, branch, qrDataUrl])
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
-  function handlePrintA4() {
-    printSilent()
+  async function handlePrintA4() {
+    if (!isElectron()) {
+      window.print()
+      return
+    }
+
+    const result = await printA4Invoice()
+    if (!result.success) {
+      toast.error(result.message || result.errorType || 'A4 print failed.')
+    }
   }
 
-  function handlePrintThermal() {
-    printThermal()
+  async function handlePrintThermal() {
+    if (!invoice) return
+    if (!isElectron()) {
+      navigate(`/print/receipt/${invoice.id}?auto=1`)
+      return
+    }
+
+    const result = await printReceipt({ invoiceId: invoice.id })
+    if (result.success) {
+      toast.success('Receipt sent to printer', { duration: 1800 })
+    } else {
+      toast.error(result.message || result.errorType || 'Receipt print failed.')
+    }
   }
 
   function handleWhatsApp() {
@@ -657,12 +683,12 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
               WhatsApp
             </button>
           )}
-          <button onClick={handlePrintThermal}
+          <button onClick={() => void handlePrintThermal()}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
             <Printer size={13} />
             Print Receipt
           </button>
-          <button onClick={handlePrintA4}
+          <button onClick={() => void handlePrintA4()}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0F2419] rounded-xl hover:bg-[#1a3a28] transition-colors">
             <Printer size={13} />
             Print {isCreditNote ? 'Credit Note' : 'Invoice'} (PDF)

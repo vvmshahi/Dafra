@@ -5,7 +5,7 @@ import QRCode from 'qrcode'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import { supabase } from '@/lib/supabase'
-import { printSilent } from '@/lib/electron'
+import { DEFAULT_PRINTER_SETTINGS, type PrinterSettings } from '@/lib/electron'
 import { buildZatcaQR } from '@/lib/zatca/qr'
 import { toSaudiTime } from '@/lib/utils/date'
 import type { Branch, Invoice, InvoiceItem, Payment } from '@/types/database'
@@ -51,15 +51,67 @@ function customerDisplayName(customer: Customer | null): string | null {
   return customer.name
 }
 
-function useReceiptPrintStyle(paperWidth: 58 | 80) {
+function numberParam(value: string | null, fallback: number, min: number, max: number): number {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  return Math.max(min, Math.min(max, numeric))
+}
+
+function receiptProfileFromParams(params: URLSearchParams): PrinterSettings {
+  const paperWidth = numberParam(params.get('paperWidthMm') ?? params.get('paperWidth'), DEFAULT_PRINTER_SETTINGS.receiptPaperWidthMm, 40, 120)
+  const printableWidth = Math.min(
+    numberParam(params.get('printableWidthMm'), paperWidth === 58 ? 48 : DEFAULT_PRINTER_SETTINGS.receiptPrintableWidthMm, 30, Math.max(30, paperWidth - 1)),
+    paperWidth - 1,
+  )
+
+  return {
+    ...DEFAULT_PRINTER_SETTINGS,
+    receiptPaperPreset: paperWidth === 58 ? '58mm' : paperWidth === 80 ? '80mm' : 'custom',
+    receiptPaperWidthMm: paperWidth,
+    receiptPrintableWidthMm: printableWidth,
+    receiptMarginLeftMm: numberParam(params.get('marginLeftMm'), DEFAULT_PRINTER_SETTINGS.receiptMarginLeftMm, 0, 10),
+    receiptMarginRightMm: numberParam(params.get('marginRightMm'), DEFAULT_PRINTER_SETTINGS.receiptMarginRightMm, 0, 10),
+    receiptMarginTopMm: numberParam(params.get('marginTopMm'), DEFAULT_PRINTER_SETTINGS.receiptMarginTopMm, 0, 10),
+    receiptMarginBottomMm: numberParam(params.get('marginBottomMm'), DEFAULT_PRINTER_SETTINGS.receiptMarginBottomMm, 0, 10),
+    receiptHorizontalOffsetMm: numberParam(params.get('horizontalOffsetMm'), 0, -10, 10),
+    receiptVerticalOffsetMm: numberParam(params.get('verticalOffsetMm'), 0, -10, 10),
+    receiptScalePercent: Math.round(numberParam(params.get('scalePercent'), 100, 70, 110)),
+    receiptFontSize: params.get('fontSize') === 'small' || params.get('fontSize') === 'large' ? params.get('fontSize') as PrinterSettings['receiptFontSize'] : 'normal',
+    receiptDensity: params.get('density') === 'compact' || params.get('density') === 'spacious' ? params.get('density') as PrinterSettings['receiptDensity'] : 'normal',
+  }
+}
+
+function useReceiptPrintStyle(profile: PrinterSettings) {
   useEffect(() => {
     const style = document.createElement('style')
     style.id = 'receipt-route-print-style'
+    const fontSize = profile.receiptFontSize === 'small' ? 10 : profile.receiptFontSize === 'large' ? 12 : 11
+    const lineHeight = profile.receiptDensity === 'compact' ? 1.25 : profile.receiptDensity === 'spacious' ? 1.55 : 1.4
+    const receiptScale = profile.receiptScalePercent / 100
     style.textContent = `
+      #receipt-print-page {
+        --receipt-paper-width: ${profile.receiptPaperWidthMm}mm;
+        --receipt-content-width: ${profile.receiptPrintableWidthMm}mm;
+        --receipt-margin-left: ${profile.receiptMarginLeftMm}mm;
+        --receipt-margin-right: ${profile.receiptMarginRightMm}mm;
+        --receipt-margin-top: ${profile.receiptMarginTopMm}mm;
+        --receipt-margin-bottom: ${profile.receiptMarginBottomMm}mm;
+        --receipt-offset-x: ${profile.receiptHorizontalOffsetMm}mm;
+        --receipt-offset-y: ${profile.receiptVerticalOffsetMm}mm;
+        --receipt-scale: ${receiptScale};
+        --receipt-font-size: ${fontSize}px;
+        --receipt-line-height: ${lineHeight};
+      }
+      #thermal-receipt {
+        max-width: var(--receipt-content-width) !important;
+        font-size: var(--receipt-font-size) !important;
+        line-height: var(--receipt-line-height) !important;
+      }
       @media print {
-        @page { size: ${paperWidth}mm auto; margin: 0 3mm; }
+        @page { size: ${profile.receiptPaperWidthMm}mm auto; margin: 0; }
         html, body {
           margin: 0 !important;
+          padding: 0 !important;
           background: white !important;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
@@ -67,19 +119,22 @@ function useReceiptPrintStyle(paperWidth: 58 | 80) {
         .no-print { display: none !important; }
         #receipt-print-page {
           display: block !important;
-          width: 100% !important;
+          width: ${profile.receiptPaperWidthMm}mm !important;
           background: white !important;
-          padding: 0 !important;
+          padding: ${profile.receiptMarginTopMm}mm ${profile.receiptMarginRightMm}mm ${profile.receiptMarginBottomMm}mm ${profile.receiptMarginLeftMm}mm !important;
+          box-sizing: border-box !important;
         }
         #thermal-receipt {
           display: block !important;
           visibility: visible !important;
           position: static !important;
-          width: 100% !important;
-          max-width: ${paperWidth === 58 ? '220px' : '300px'} !important;
+          width: var(--receipt-content-width) !important;
+          max-width: var(--receipt-content-width) !important;
           margin: 0 auto !important;
           color: #000 !important;
           background: #fff !important;
+          transform: translate(var(--receipt-offset-x), var(--receipt-offset-y)) scale(var(--receipt-scale));
+          transform-origin: top center;
         }
         #thermal-receipt * {
           visibility: visible !important;
@@ -89,7 +144,7 @@ function useReceiptPrintStyle(paperWidth: 58 | 80) {
     `
     document.head.appendChild(style)
     return () => { document.getElementById('receipt-route-print-style')?.remove() }
-  }, [paperWidth])
+  }, [profile])
 }
 
 export default function ReceiptPrintPage() {
@@ -99,7 +154,7 @@ export default function ReceiptPrintPage() {
   const autoPrint = params.get('auto') === '1'
   const electronPrint = params.get('electronPrint') === '1'
   const printJobId = params.get('printJobId')
-  const paperWidth: 58 | 80 = params.get('paperWidth') === '58' ? 58 : 80
+  const receiptProfile = useMemo(() => receiptProfileFromParams(params), [params])
   const printedRef = useRef(false)
   const electronReadyRef = useRef(false)
 
@@ -113,7 +168,7 @@ export default function ReceiptPrintPage() {
   const [error, setError] = useState<string | null>(null)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
 
-  useReceiptPrintStyle(paperWidth)
+  useReceiptPrintStyle(receiptProfile)
 
   useEffect(() => {
     if (!invoiceId) return
@@ -202,7 +257,7 @@ export default function ReceiptPrintPage() {
     if (!autoPrint || electronPrint || printedRef.current || loading || error || !invoice || !branch || !qrDataUrl) return
     printedRef.current = true
     const timer = window.setTimeout(() => {
-      void printSilent()
+      window.print()
     }, 350)
     return () => window.clearTimeout(timer)
   }, [autoPrint, electronPrint, loading, error, invoice, branch, qrDataUrl])
@@ -328,7 +383,7 @@ export default function ReceiptPrintPage() {
             </Link>
             <button
               type="button"
-              onClick={() => void printSilent()}
+              onClick={() => window.print()}
               disabled={!qrDataUrl}
               className="inline-flex items-center gap-1.5 rounded-xl bg-[#0F2419] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1a3a28] disabled:cursor-wait disabled:opacity-60"
             >

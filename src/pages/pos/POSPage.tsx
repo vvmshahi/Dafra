@@ -23,7 +23,7 @@ import { usePosSession } from '@/hooks/usePosSession'
 import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
 import { MeemLogo } from '@/components/MeemLogo'
-import { getPrinterSettings, isElectron, printReceipt, printSilent } from '@/lib/electron'
+import { getPrinterSettings, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { supportConfig } from '@/config/support'
 
 const ACCOUNT_SUSPENDED_BILLING_MESSAGE =
@@ -471,7 +471,10 @@ ${lines}
       }
     `
     document.head.appendChild(s)
-    await printSilent()
+    const result = await printA4Invoice()
+    if (!result.success) {
+      toast.error(result.message || result.errorType || 'A4 print failed.')
+    }
     s.remove()
   }
 
@@ -486,7 +489,7 @@ ${lines}
     setPrintingReceipt(true)
     try {
       const settings = await getPrinterSettings()
-      if (!settings.selectedPrinterName) {
+      if (!settings.receiptPrinterName) {
         const message = 'Choose a receipt printer to enable direct printing.'
         setPrintError(message)
         toast.info(message, {
@@ -1413,6 +1416,7 @@ export default function POSPage() {
     productsAtEnd: true,
   })
   const checkoutKeyRef = useRef<string | null>(null)
+  const autoPrintedReceiptIdRef = useRef<string | null>(null)
 
   // ── Load data ────────────────────────────────────────────────────────────
 
@@ -1718,18 +1722,20 @@ export default function POSPage() {
 
   async function maybeAutoPrintReceiptAfterSale(invoiceId: string) {
     if (!isElectron()) return
+    if (autoPrintedReceiptIdRef.current === invoiceId) return
 
     try {
       const settings = await getPrinterSettings()
-      if (!settings.autoPrintAfterSale) return
+      if (!settings.autoPrintReceiptAfterSale) return
 
-      if (!settings.selectedPrinterName) {
+      if (!settings.receiptPrinterName) {
         toast.info('Choose a receipt printer to enable direct printing.', {
           action: { label: 'Device Printer', onClick: () => navigate(DEVICE_PRINTER_PATH) },
         })
         return
       }
 
+      autoPrintedReceiptIdRef.current = invoiceId
       const result = await printReceipt({ invoiceId })
       if (result.success) {
         toast.success('Receipt sent to printer', { duration: 1800 })
