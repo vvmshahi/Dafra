@@ -261,6 +261,19 @@ export interface Database {
         }
         Returns: Record<string, unknown>
       }
+      update_product_stock_settings: {
+        Args: {
+          p_payload: {
+            product_id: string
+            track_stock?: boolean
+            opening_stock_quantity?: number | null
+            adjustment_quantity?: number | null
+            idempotency_key?: string | null
+            reason?: 'opening_stock' | 'manual_adjustment' | 'tracking_enabled' | 'tracking_disabled'
+          }
+        }
+        Returns: Record<string, unknown>
+      }
       update_branch_module_settings: {
         Args: {
           p_branch_id: string
