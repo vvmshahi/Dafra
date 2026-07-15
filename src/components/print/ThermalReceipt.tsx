@@ -6,6 +6,9 @@ export interface ThermalItem {
   qty: number
   unitPrice: number
   lineTotal: number
+  subtotal?: number
+  taxAmount?: number
+  total?: number
 }
 
 export interface ThermalPayment {
@@ -36,6 +39,7 @@ export interface ThermalReceiptProps {
   cashierName?: string | null  // kept for API compat but no longer rendered
   items: ThermalItem[]
   subtotal: number
+  discountAmount?: number
   taxAmount: number
   total: number
   paymentMethod: string
@@ -62,17 +66,41 @@ function Amt({ n }: { n: number }) {
   )
 }
 
-function TRow({ left, right, bold }: { left: string; right: ReactNode; bold?: boolean }) {
+function TRow({ left, right, bold, strong }: { left: string; right: ReactNode; bold?: boolean; strong?: boolean }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px', fontWeight: bold ? 'bold' : 'normal', fontSize: bold ? '12px' : '11px', marginBottom: '1px' }}>
-      <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{left}</span><span style={{ flexShrink: 0 }}>{right}</span>
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'baseline',
+      gap: '8px',
+      fontWeight: bold || strong ? 'bold' : 'normal',
+      fontSize: strong ? '13px' : bold ? '12px' : '11px',
+      marginBottom: strong ? '4px' : '3px',
+    }}>
+      <span style={{
+        minWidth: '24mm',
+        flex: '1 1 auto',
+        whiteSpace: 'nowrap',
+        overflowWrap: 'normal',
+        wordBreak: 'normal',
+      }}>{left}</span>
+      <span style={{ flexShrink: 0, textAlign: 'right' }}>{right}</span>
     </div>
   )
 }
 
 const Dash = () => (
-  <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />
+  <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
 )
+
+function moneyValue(value: number | null | undefined, fallback = 0): number {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : fallback
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
 
 function paymentLabel(method: string): string {
   if (method === 'split') return 'Split Payment'
@@ -116,7 +144,7 @@ export default function ThermalReceipt({
   businessNameAr, businessNameEn, logoUrl, showLogo = false, branchName, address, vatNumber, phone,
   website, showWebsite, email, showEmail,
   invoiceNumber, date, time,
-  items, subtotal, taxAmount, total,
+  items, subtotal, discountAmount = 0, taxAmount, total,
   paymentMethod, payments = [], cashReceived, change, showCashChange = true,
   customerName, buyerVatNumber, isStandardInvoice = false,
   documentType = 'invoice', originalInvoiceNumber, creditReason,
@@ -132,6 +160,10 @@ export default function ThermalReceipt({
   const cashPayment = payments.find(payment => payment.method === 'cash')
   const cardPayment = payments.find(payment => payment.method === 'card')
   const paidTotal = payments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0)
+  const displayPaidTotal = payments.length > 0 ? paidTotal : total
+  const balance = roundMoney(total - displayPaidTotal)
+  const hasBalance = Math.abs(balance) > 0.005
+  const hasDiscount = Math.abs(moneyValue(discountAmount)) > 0.005
   const titleAr = isCreditNote
     ? (isStandardInvoice ? 'إشعار دائن ضريبي' : 'إشعار دائن ضريبي مبسط')
     : (isStandardInvoice ? 'فاتورة ضريبية' : 'فاتورة ضريبية مبسطة')
@@ -223,13 +255,40 @@ export default function ThermalReceipt({
       <Dash />
 
       {/* Line items */}
-      <div style={{ marginBottom: '4px' }}>
+      <div style={{ marginBottom: '6px' }}>
         {items.map((item, i) => (
-          <div key={i} style={{ marginBottom: '3px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 600, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.name}</div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px', fontSize: '10px', color: '#333' }}>
-              <span style={{ minWidth: 0 }}>{item.qty} x <Amt n={item.unitPrice} /></span>
-              <span style={{ flexShrink: 0 }}><Amt n={item.lineTotal} /></span>
+          <div
+            key={i}
+            style={{
+              marginBottom: i === items.length - 1 ? '0' : '6px',
+              paddingBottom: i === items.length - 1 ? '0' : '4px',
+              borderBottom: i === items.length - 1 ? '0' : '1px dotted #bbb',
+            }}
+          >
+            <div style={{
+              fontSize: '11px',
+              fontWeight: 700,
+              lineHeight: 1.35,
+              marginBottom: '2px',
+              overflowWrap: 'break-word',
+              wordBreak: 'normal',
+            }}>
+              {item.name}
+            </div>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              gap: '8px',
+              fontSize: '10px',
+              color: '#333',
+            }}>
+              <span style={{ minWidth: 0, overflowWrap: 'break-word', wordBreak: 'normal' }}>
+                {item.qty} x <Amt n={item.unitPrice} />
+              </span>
+              <span style={{ flexShrink: 0, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <Amt n={moneyValue(item.total, item.lineTotal)} />
+              </span>
             </div>
           </div>
         ))}
@@ -238,11 +297,16 @@ export default function ThermalReceipt({
       <Dash />
 
       {/* Totals */}
-      <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-        <TRow left="Subtotal:" right={<Amt n={subtotal} />} />
-        <TRow left="VAT (15%):" right={<Amt n={taxAmount} />} />
-        <div style={{ borderTop: '1px solid #000', margin: '3px 0' }} />
-        <TRow left={isCreditNote ? 'CREDIT TOTAL:' : 'TOTAL:'} right={<Amt n={total} />} bold />
+      <div style={{ fontSize: '11px', margin: '8px 0 5px' }}>
+        <TRow left="Before VAT:" right={<Amt n={subtotal} />} />
+        {hasDiscount && <TRow left="Discount:" right={<Amt n={Math.abs(moneyValue(discountAmount))} />} />}
+        <TRow left="VAT 15%:" right={<Amt n={taxAmount} />} />
+        <div style={{ borderTop: '1px solid #000', margin: '5px 0' }} />
+        <TRow left={isCreditNote ? 'Credit Total:' : 'Grand Total:'} right={<Amt n={total} />} strong />
+        <TRow left={isCreditNote ? 'Refunded:' : 'Paid:'} right={<Amt n={displayPaidTotal} />} bold />
+        {hasBalance && !isCreditNote && (
+          <TRow left="Balance:" right={<Amt n={Math.abs(balance)} />} bold />
+        )}
       </div>
 
       <Dash />

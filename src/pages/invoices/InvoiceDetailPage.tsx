@@ -663,6 +663,9 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
     qty:       Number(i.quantity),
     unitPrice: Number(i.unit_price),
     lineTotal: Number(i.total),
+    subtotal:  Number(i.subtotal),
+    taxAmount: Number(i.tax_amount),
+    total:     Number(i.total),
   }))
 
   const thermalAddress = [
@@ -690,6 +693,7 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
         time={invTime}
         items={thermalItems}
         subtotal={Number(invoice.subtotal)}
+        discountAmount={Number(invoice.discount_amount)}
         taxAmount={Number(invoice.tax_amount)}
         total={Number(invoice.total_amount)}
         paymentMethod={isSplitPayment ? 'split' : (payment?.method ?? 'card')}

@@ -33,7 +33,7 @@ const INVOICE_PRINT_SELECT = `
   id, tenant_id, branch_id, customer_id,
   invoice_number, invoice_reference, original_invoice_id, credit_reason,
   zatca_invoice_type, zatca_qr_code,
-  subtotal, tax_amount, total_amount,
+  subtotal, discount_amount, tax_amount, total_amount,
   status, payment_status, created_at
 `
 
@@ -81,13 +81,32 @@ function receiptProfileFromParams(params: URLSearchParams): PrinterSettings {
   }
 }
 
-function useReceiptPrintStyle(profile: PrinterSettings) {
+const BROWSER_RECEIPT_PROFILE: PrinterSettings = {
+  ...DEFAULT_PRINTER_SETTINGS,
+  receiptPaperPreset: '80mm',
+  receiptPaperWidthMm: 80,
+  receiptPrintableWidthMm: 72,
+  receiptMarginLeftMm: 4,
+  receiptMarginRightMm: 4,
+  receiptMarginTopMm: 2,
+  receiptMarginBottomMm: 2,
+  receiptHorizontalOffsetMm: 0,
+  receiptVerticalOffsetMm: 0,
+  receiptScalePercent: 100,
+  receiptFontSize: 'normal',
+  receiptDensity: 'normal',
+}
+
+function useReceiptPrintStyle(profile: PrinterSettings, isElectronPrint: boolean) {
   useEffect(() => {
     const style = document.createElement('style')
     style.id = 'receipt-route-print-style'
     const fontSize = profile.receiptFontSize === 'small' ? 10 : profile.receiptFontSize === 'large' ? 12 : 11
     const lineHeight = profile.receiptDensity === 'compact' ? 1.25 : profile.receiptDensity === 'spacious' ? 1.55 : 1.4
     const receiptScale = profile.receiptScalePercent / 100
+    const receiptTransform = isElectronPrint
+      ? 'translate(var(--receipt-offset-x), var(--receipt-offset-y)) scale(var(--receipt-scale))'
+      : 'none'
     style.textContent = `
       #receipt-print-page {
         --receipt-paper-width: ${profile.receiptPaperWidthMm}mm;
@@ -133,7 +152,7 @@ function useReceiptPrintStyle(profile: PrinterSettings) {
           margin: 0 auto !important;
           color: #000 !important;
           background: #fff !important;
-          transform: translate(var(--receipt-offset-x), var(--receipt-offset-y)) scale(var(--receipt-scale));
+          transform: ${receiptTransform};
           transform-origin: top center;
         }
         #thermal-receipt * {
@@ -144,7 +163,7 @@ function useReceiptPrintStyle(profile: PrinterSettings) {
     `
     document.head.appendChild(style)
     return () => { document.getElementById('receipt-route-print-style')?.remove() }
-  }, [profile])
+  }, [profile, isElectronPrint])
 }
 
 export default function ReceiptPrintPage() {
@@ -154,7 +173,10 @@ export default function ReceiptPrintPage() {
   const autoPrint = params.get('auto') === '1'
   const electronPrint = params.get('electronPrint') === '1'
   const printJobId = params.get('printJobId')
-  const receiptProfile = useMemo(() => receiptProfileFromParams(params), [params])
+  const receiptProfile = useMemo(
+    () => electronPrint ? receiptProfileFromParams(params) : BROWSER_RECEIPT_PROFILE,
+    [electronPrint, params],
+  )
   const printedRef = useRef(false)
   const electronReadyRef = useRef(false)
 
@@ -168,7 +190,7 @@ export default function ReceiptPrintPage() {
   const [error, setError] = useState<string | null>(null)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
 
-  useReceiptPrintStyle(receiptProfile)
+  useReceiptPrintStyle(receiptProfile, electronPrint)
 
   useEffect(() => {
     if (!invoiceId) return
@@ -282,6 +304,9 @@ export default function ReceiptPrintPage() {
       qty: Number(item.quantity),
       unitPrice: Number(item.unit_price),
       lineTotal: Number(item.total),
+      subtotal: Number(item.subtotal),
+      taxAmount: Number(item.tax_amount),
+      total: Number(item.total),
     }))
     const splitPayment = isSplitPaymentRows(payments)
     const payment = payments[0] ?? null
@@ -412,6 +437,7 @@ export default function ReceiptPrintPage() {
           time={receipt.time}
           items={receipt.items}
           subtotal={Number(invoice.subtotal)}
+          discountAmount={Number(invoice.discount_amount ?? 0)}
           taxAmount={Number(invoice.tax_amount)}
           total={Number(invoice.total_amount)}
           paymentMethod={receipt.splitPayment ? 'split' : (receipt.payment?.method ?? 'card')}
