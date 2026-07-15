@@ -137,7 +137,7 @@ function RegisterSessionPanel({ session, loading, error, children }: {
   return (
     <section className="space-y-4">
       {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-8 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {[1, 2, 3, 4, 5, 6, 7, 8].map(i => <div key={i} className="h-28 rounded-2xl bg-white border border-gray-100 animate-pulse" />)}
         </div>
       ) : error ? (
@@ -157,7 +157,7 @@ function RegisterSessionPanel({ session, loading, error, children }: {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-8 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             <StatCard
               label="Gross Sales"
               value={<Rial amount={grossSales} />}
