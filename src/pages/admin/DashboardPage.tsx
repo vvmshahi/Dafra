@@ -618,7 +618,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Register Session KPIs ────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-8 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <StatCard label="Gross Sales" value={sessionAmount(sessionTotals.grossSales)}
           sub={sessionSub}
           icon={TrendingUp} gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F2419]" loading={statsLoading} />
