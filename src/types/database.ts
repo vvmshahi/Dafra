@@ -302,6 +302,14 @@ export interface Database {
         Args: { p_payload: Record<string, unknown> }
         Returns: Record<string, unknown>
       }
+      create_partial_credit_note: {
+        Args: { p_payload: Record<string, unknown> }
+        Returns: Record<string, unknown>
+      }
+      get_invoice_refundable_items: {
+        Args: { p_invoice_id: string }
+        Returns: RefundableInvoiceItem[]
+      }
       confirm_purchase_receiving: {
         Args: { p_purchase_id: string; p_confirm?: boolean }
         Returns: Record<string, unknown>
@@ -954,6 +962,34 @@ export interface InvoiceItem {
   total: number
   sort_order: number
   created_at: string
+}
+
+export interface RefundableInvoiceItem {
+  original_invoice_item_id: string
+  name: string
+  name_ar: string | null
+  sku: string | null
+  unit: string | null
+  product_id: string | null
+  original_quantity: number
+  credited_quantity: number
+  remaining_quantity: number
+  unit_price: number
+  subtotal: number
+  discount_amount: number
+  tax_rate: number
+  tax_amount: number
+  total: number
+  credited_subtotal: number
+  credited_discount_amount: number
+  credited_tax_amount: number
+  credited_total: number
+  remaining_subtotal: number
+  remaining_discount_amount: number
+  remaining_tax_amount: number
+  remaining_total: number
+  track_stock: boolean
+  is_service: boolean
 }
 
 export interface Payment {

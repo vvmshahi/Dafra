@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
@@ -43,6 +43,39 @@ interface CreditNotePaymentRow {
   amount: number
 }
 
+interface RefundableItem {
+  original_invoice_item_id: string
+  name: string
+  name_ar: string | null
+  sku: string | null
+  unit: string | null
+  product_id: string | null
+  original_quantity: number
+  credited_quantity: number
+  remaining_quantity: number
+  unit_price: number
+  subtotal: number
+  discount_amount: number
+  tax_rate: number
+  tax_amount: number
+  total: number
+  remaining_subtotal: number
+  remaining_discount_amount: number
+  remaining_tax_amount: number
+  remaining_total: number
+  track_stock: boolean
+  is_service: boolean
+}
+
+interface ReturnLinePreview {
+  item: RefundableItem
+  quantity: number
+  subtotal: number
+  discount: number
+  tax: number
+  total: number
+}
+
 interface CreateCreditNoteModalProps {
   open: boolean
   invoice: CreditNoteSourceInvoice | null
@@ -54,7 +87,13 @@ interface CreateCreditNoteModalProps {
 
 function safeCreditNoteError(error: unknown): string {
   const message = typeof (error as any)?.message === 'string' ? (error as any).message : ''
-  if (/already.*credited/i.test(message)) return 'This invoice already has a full credit note.'
+  if (/select at least one|no items/i.test(message)) return 'Choose at least one item and enter a return quantity.'
+  if (/invalid returned quantity|quantity.*greater than zero/i.test(message)) return 'Return quantity must be greater than zero.'
+  if (/exceeds remaining|fully credited/i.test(message)) return 'One or more return quantities exceed the remaining refundable quantity.'
+  if (/does not belong/i.test(message)) return 'One returned item does not belong to this invoice.'
+  if (/duplicate/i.test(message)) return 'The same invoice line was selected more than once.'
+  if (/refunds cannot exceed|payment total/i.test(message)) return 'Refund total cannot exceed the original payment total.'
+  if (/stock return failed/i.test(message)) return 'Could not return stock for one of the selected items.'
   if (/reported|cleared/i.test(message)) return 'Only reported or cleared invoices can be credited.'
   if (/posted/i.test(message)) return 'Only posted invoices can be credited.'
   if (/reason/i.test(message)) return 'A credit note reason is required.'
@@ -84,6 +123,58 @@ function money(amount: number): string {
   return Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function qty(amount: number): string {
+  return Number(amount).toLocaleString('en-US', { maximumFractionDigits: 3 })
+}
+
+function quantityStep(item: RefundableItem): string {
+  return Number.isInteger(item.original_quantity) ? '1' : '0.001'
+}
+
+function roundMoney(amount: number): number {
+  return Math.round((Number(amount) + Number.EPSILON) * 100) / 100
+}
+
+function parseReturnQuantity(value: string | undefined): number {
+  const parsed = Number(value ?? 0)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function formatQuantityInput(amount: number): string {
+  return String(Math.round(amount * 1000) / 1000)
+}
+
+function normalizeQuantityInput(value: string, item: RefundableItem): string {
+  if (value.trim() === '') return ''
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return ''
+  if (parsed < 0) return '0'
+  if (parsed > item.remaining_quantity) return formatQuantityInput(item.remaining_quantity)
+  return value
+}
+
+function amountForQuantity(
+  originalAmount: number,
+  remainingAmount: number,
+  item: RefundableItem,
+  returnQuantity: number,
+): number {
+  if (returnQuantity <= 0 || item.original_quantity <= 0) return 0
+  if (Math.abs(returnQuantity - item.remaining_quantity) <= 0.0005) return roundMoney(remainingAmount)
+  return Math.min(roundMoney(originalAmount * (returnQuantity / item.original_quantity)), roundMoney(remainingAmount))
+}
+
+function previewForItem(item: RefundableItem, returnQuantity: number): ReturnLinePreview {
+  return {
+    item,
+    quantity: returnQuantity,
+    subtotal: amountForQuantity(item.subtotal, item.remaining_subtotal, item, returnQuantity),
+    discount: amountForQuantity(item.discount_amount, item.remaining_discount_amount, item, returnQuantity),
+    tax: amountForQuantity(item.tax_amount, item.remaining_tax_amount, item, returnQuantity),
+    total: amountForQuantity(item.total, item.remaining_total, item, returnQuantity),
+  }
+}
+
 function resolveAutoRefundMethod(payments: CreditNotePaymentRow[]): PaymentMethod {
   const methods = new Set(payments.filter(row => row.amount > 0).map(row => row.method))
   if (methods.size === 1) return [...methods][0]
@@ -111,7 +202,6 @@ async function fetchCreditNoteStatus(invoiceId: string): Promise<ZatcaStatus | n
 export default function CreateCreditNoteModal({
   open,
   invoice,
-  defaultRefundMethod = 'cash',
   defaultReturnStock = false,
   onClose,
   onCreated,
@@ -121,6 +211,9 @@ export default function CreateCreditNoteModal({
   const [remarks, setRemarks] = useState('')
   const [originalPayments, setOriginalPayments] = useState<CreditNotePaymentRow[]>([])
   const [paymentsLoading, setPaymentsLoading] = useState(false)
+  const [refundableItems, setRefundableItems] = useState<RefundableItem[]>([])
+  const [itemsLoading, setItemsLoading] = useState(false)
+  const [returnQuantities, setReturnQuantities] = useState<Record<string, string>>({})
   const [returnStock, setReturnStock] = useState(false)
   const [creating, setCreating] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -134,7 +227,10 @@ export default function CreateCreditNoteModal({
     setSelectedReason('')
     setRemarks('')
     setOriginalPayments([])
+    setRefundableItems([])
+    setReturnQuantities({})
     setPaymentsLoading(true)
+    setItemsLoading(true)
     setReturnStock(isServiceBusiness ? false : defaultReturnStock)
     setError(null)
     setCreating(false)
@@ -142,6 +238,7 @@ export default function CreateCreditNoteModal({
     setIdempotencyKey(newIdempotencyKey(invoice.id))
 
     let cancelled = false
+
     ;(async () => {
       try {
         const { data, error } = await (supabase as any)
@@ -167,17 +264,96 @@ export default function CreateCreditNoteModal({
       }
     })()
 
+    ;(async () => {
+      try {
+        const { data, error } = await (supabase as any)
+          .rpc('get_invoice_refundable_items', { p_invoice_id: invoice.id })
+
+        if (cancelled) return
+        if (error) throw error
+
+        const rows: RefundableItem[] = (data ?? []).map((row: any) => ({
+          original_invoice_item_id: String(row.original_invoice_item_id),
+          name: String(row.name ?? 'Item'),
+          name_ar: row.name_ar ?? null,
+          sku: row.sku ?? null,
+          unit: row.unit ?? null,
+          product_id: row.product_id ?? null,
+          original_quantity: Number(row.original_quantity ?? 0),
+          credited_quantity: Number(row.credited_quantity ?? 0),
+          remaining_quantity: Number(row.remaining_quantity ?? 0),
+          unit_price: Number(row.unit_price ?? 0),
+          subtotal: Number(row.subtotal ?? 0),
+          discount_amount: Number(row.discount_amount ?? 0),
+          tax_rate: Number(row.tax_rate ?? 0),
+          tax_amount: Number(row.tax_amount ?? 0),
+          total: Number(row.total ?? 0),
+          remaining_subtotal: Number(row.remaining_subtotal ?? 0),
+          remaining_discount_amount: Number(row.remaining_discount_amount ?? 0),
+          remaining_tax_amount: Number(row.remaining_tax_amount ?? 0),
+          remaining_total: Number(row.remaining_total ?? 0),
+          track_stock: Boolean(row.track_stock),
+          is_service: Boolean(row.is_service),
+        }))
+
+        setRefundableItems(rows)
+        setReturnQuantities(Object.fromEntries(rows.map(row => [row.original_invoice_item_id, '0'])))
+      } catch (err) {
+        if (!cancelled) {
+          console.error('[CreateCreditNoteModal] failed to load refundable items', err)
+          setError('Could not load refundable items for this invoice.')
+          setRefundableItems([])
+        }
+      } finally {
+        if (!cancelled) setItemsLoading(false)
+      }
+    })()
+
     return () => { cancelled = true }
-  }, [open, invoice, defaultRefundMethod, defaultReturnStock, isServiceBusiness])
+  }, [open, invoice, defaultReturnStock, isServiceBusiness])
+
+  const linePreviews = useMemo(() => refundableItems.map(item => {
+    const selectedQuantity = parseReturnQuantity(returnQuantities[item.original_invoice_item_id])
+    return previewForItem(item, selectedQuantity)
+  }), [refundableItems, returnQuantities])
+
+  const selectedLines = linePreviews.filter(line => line.quantity > 0)
+  const totals = selectedLines.reduce((acc, line) => ({
+    subtotal: acc.subtotal + line.subtotal,
+    discount: acc.discount + line.discount,
+    tax: acc.tax + line.tax,
+    total: acc.total + line.total,
+  }), { subtotal: 0, discount: 0, tax: 0, total: 0 })
+  const totalRemainingQuantity = refundableItems.reduce((sum, item) => sum + Math.max(item.remaining_quantity, 0), 0)
 
   if (!open || !invoice) return null
 
   async function handleCreate() {
     if (!invoice) return
+    if (itemsLoading) return
     if (!selectedReason) {
       setError('Choose a reason for the credit note.')
       return
     }
+
+    const lines = refundableItems
+      .map(item => ({
+        item,
+        quantity: parseReturnQuantity(returnQuantities[item.original_invoice_item_id]),
+      }))
+      .filter(line => line.quantity > 0)
+
+    if (lines.length === 0) {
+      setError('Enter a return quantity for at least one item.')
+      return
+    }
+
+    const invalidLine = lines.find(line => line.quantity > line.item.remaining_quantity + 0.0005)
+    if (invalidLine) {
+      setError(`${invalidLine.item.name} exceeds the remaining refundable quantity.`)
+      return
+    }
+
     const trimmedRemarks = remarks.trim()
     const finalReason = trimmedRemarks ? `${selectedReason} - ${trimmedRemarks}` : selectedReason
     if (finalReason.length > 500) {
@@ -194,8 +370,12 @@ export default function CreateCreditNoteModal({
         idempotency_key: idempotencyKey || newIdempotencyKey(invoice.id),
         reason: finalReason,
         return_stock: isServiceBusiness ? false : returnStock,
+        items: lines.map(line => ({
+          original_invoice_item_id: line.item.original_invoice_item_id,
+          quantity: line.quantity,
+        })),
       }
-      const { data, error: rpcError } = await (supabase as any).rpc('create_full_credit_note', { p_payload: payload })
+      const { data, error: rpcError } = await (supabase as any).rpc('create_partial_credit_note', { p_payload: payload })
       if (rpcError) throw rpcError
 
       const result = data as RpcCreditNoteResult
@@ -229,7 +409,7 @@ export default function CreateCreditNoteModal({
         creditNoteId: result.credit_note_invoice_id,
         creditNoteNumber: result.credit_note_invoice_number,
         createdAt: result.created_at ?? new Date().toISOString(),
-        total: Number(result.total ?? invoice.total_amount),
+        total: Number(result.total ?? totals.total),
         refundStatus: result.refund_status ?? 'completed',
         zatcaStatus,
         idempotentReplay: Boolean(result.idempotent_replay),
@@ -255,35 +435,148 @@ export default function CreateCreditNoteModal({
 
   const busy = creating || submitting
   const actionLabel = submitting ? 'Submitting to ZATCA' : creating ? 'Creating Credit Note' : 'Create Credit Note'
+  const createDisabled = busy || itemsLoading || selectedLines.length === 0
 
   return (
     <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
           <div>
-            <h2 className="text-base font-bold text-gray-900">Create Full Credit Note</h2>
-            <p className="text-xs text-gray-500">Original invoice {invoice.invoice_number}</p>
+            <h2 className="text-base font-bold text-gray-900">Create Credit Note</h2>
+            <p className="text-xs text-gray-500">Return selected items from invoice {invoice.invoice_number}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="rounded-full p-2 text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+            className="rounded-full p-2 text-gray-400 hover:bg-gray-50 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Close"
           >
             <X size={16} />
           </button>
         </div>
 
-        <div className="space-y-4 px-5 py-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
-            This creates a new credit note document for the full invoice amount. The original invoice remains unchanged.
+            Choose the returned items and quantities. The original invoice remains unchanged.
           </div>
 
           <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-700">
             <span className="font-semibold text-gray-900">{invoice.invoice_number}</span>
             <span className="mx-2 text-gray-300">·</span>
-            <span>SAR {Number(invoice.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span>Original total SAR {money(invoice.total_amount)}</span>
+            <span className="mx-2 text-gray-300">·</span>
+            <span>Remaining qty {qty(totalRemainingQuantity)}</span>
+          </div>
+
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-xs font-semibold text-gray-700">Returned items</h3>
+              {selectedLines.length > 0 && (
+                <span className="rounded-full bg-[#0F2419] px-2 py-0.5 text-[10px] font-semibold text-white">
+                  {selectedLines.length} selected
+                </span>
+              )}
+            </div>
+
+            {itemsLoading ? (
+              <div className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-4 text-xs text-gray-500">
+                <Loader2 size={14} className="animate-spin" />
+                Loading refundable items...
+              </div>
+            ) : refundableItems.length === 0 || totalRemainingQuantity <= 0 ? (
+              <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-4 text-xs leading-relaxed text-gray-500">
+                This invoice has no remaining refundable items.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {linePreviews.map(line => {
+                  const item = line.item
+                  const disabled = busy || item.remaining_quantity <= 0
+                  return (
+                    <div
+                      key={item.original_invoice_item_id}
+                      className={`rounded-xl border px-3 py-3 ${
+                        item.remaining_quantity <= 0
+                          ? 'border-gray-100 bg-gray-50 opacity-70'
+                          : line.quantity > 0
+                          ? 'border-[#0F2419]/30 bg-[#F8FBF7]'
+                          : 'border-gray-100 bg-white'
+                      }`}
+                    >
+                      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_130px_170px] md:items-center">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
+                          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500">
+                            <span>Original {qty(item.original_quantity)} {item.unit ?? ''}</span>
+                            <span>Credited {qty(item.credited_quantity)}</span>
+                            <span className={item.remaining_quantity > 0 ? 'font-semibold text-emerald-700' : 'font-semibold text-gray-400'}>
+                              Remaining {qty(item.remaining_quantity)}
+                            </span>
+                            {item.track_stock && !item.is_service && <span>Stock item</span>}
+                          </div>
+                        </div>
+
+                        <label className="space-y-1">
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Return qty</span>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            max={item.remaining_quantity}
+                            step={quantityStep(item)}
+                            value={returnQuantities[item.original_invoice_item_id] ?? '0'}
+                            onChange={event => {
+                              const next = normalizeQuantityInput(event.target.value, item)
+                              setReturnQuantities(prev => ({
+                                ...prev,
+                                [item.original_invoice_item_id]: next,
+                              }))
+                            }}
+                            disabled={disabled}
+                            className="h-9 w-full rounded-lg border border-gray-200 px-3 text-sm font-semibold tabular-nums outline-none focus:border-[#0F2419] disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+                          />
+                        </label>
+
+                        <div className="grid grid-cols-3 gap-2 text-right md:block md:space-y-1">
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Subtotal</p>
+                            <p className="text-xs font-semibold tabular-nums text-gray-700">SAR {money(line.subtotal)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">VAT</p>
+                            <p className="text-xs font-semibold tabular-nums text-amber-700">SAR {money(line.tax)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Total</p>
+                            <p className="text-sm font-bold tabular-nums text-[#0F2419]">SAR {money(line.total)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+
+          <div className="grid gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 sm:grid-cols-4">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Subtotal</p>
+              <p className="text-sm font-bold tabular-nums text-gray-800">SAR {money(totals.subtotal)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Discount</p>
+              <p className="text-sm font-bold tabular-nums text-gray-800">SAR {money(totals.discount)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">VAT</p>
+              <p className="text-sm font-bold tabular-nums text-amber-700">SAR {money(totals.tax)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Credit total</p>
+              <p className="text-base font-black tabular-nums text-[#0F2419]">SAR {money(totals.total)}</p>
+            </div>
           </div>
 
           <fieldset className="block space-y-1.5">
@@ -340,12 +633,13 @@ export default function CreateCreditNoteModal({
                 type="checkbox"
                 checked={returnStock}
                 onChange={e => setReturnStock(e.target.checked)}
+                disabled={busy}
                 className="mt-1"
               />
               <span>
                 <span className="block text-xs font-semibold text-gray-700">Return tracked stock</span>
                 <span className="block text-[11px] leading-relaxed text-gray-500">
-                  Adds stock back only for products configured with stock tracking.
+                  Adds back only the selected returned quantity for stock-tracked products.
                 </span>
               </span>
             </label>
@@ -374,7 +668,8 @@ export default function CreateCreditNoteModal({
           <button
             type="button"
             onClick={handleCreate}
-            disabled={busy}
+            disabled={createDisabled}
+            title={selectedLines.length === 0 ? 'Enter a return quantity first' : undefined}
             className="inline-flex items-center gap-2 rounded-xl bg-[#0F2419] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy && <Loader2 size={13} className="animate-spin" />}

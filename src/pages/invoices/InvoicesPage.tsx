@@ -30,6 +30,9 @@ interface InvoiceRow {
   invoiceReference: string | null
   linkedCreditNoteId: string | null
   linkedCreditNoteNumber: string | null
+  creditNoteCount: number
+  creditStatus: 'none' | 'partial' | 'full'
+  remainingRefundableQuantity: number
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -120,12 +123,12 @@ function Badge({ label, bg, text }: { label: string; bg: string; text: string })
 }
 
 function creditNoteDisabledReason(row: InvoiceRow, role: string | null | undefined): string | null {
-  if (row.documentType === 'credit_note') return 'Credit notes cannot be credited in this MVP.'
-  if (row.linkedCreditNoteId) return 'This invoice already has a full credit note.'
+  if (row.documentType === 'credit_note') return 'Credit notes cannot be credited.'
   if (row.status === 'cancelled') return 'Cancelled invoices cannot be credited here.'
   if (row.status !== 'posted') return 'Only posted invoices can be credited.'
   if (!(row.zatcaStatus === 'reported' || row.zatcaStatus === 'cleared')) return 'Only reported or cleared invoices can be credited.'
   if (role && !['owner', 'admin', 'branch'].includes(role)) return 'You do not have permission to create credit notes.'
+  if (row.creditStatus === 'full' || row.remainingRefundableQuantity <= 0) return 'All refundable quantities have already been credited.'
   return null
 }
 
@@ -182,7 +185,7 @@ export default function InvoicesPage() {
             id, branch_id, invoice_number, invoice_reference, zatca_invoice_type, invoice_date, created_at, status,
             subtotal, tax_amount, total_amount, zatca_status,
             customers(name),
-            invoice_items(id),
+            invoice_items(id, quantity),
             payments(method)
           `)
           .eq('tenant_id', tid)
@@ -199,7 +202,8 @@ export default function InvoicesPage() {
           .filter((inv: any) => inv.zatca_invoice_type !== 'credit_note')
           .map((inv: any) => inv.id)
 
-        const creditByOriginal = new Map<string, { id: string; invoice_number: string }>()
+        const creditByOriginal = new Map<string, { id: string; invoice_number: string; count: number }>()
+        const creditedQuantityByOriginalItem = new Map<string, number>()
         if (normalInvoiceIds.length > 0) {
           const { data: creditNotes } = await supabase
             .from('invoices')
@@ -213,11 +217,35 @@ export default function InvoicesPage() {
 
           for (const creditNote of creditNotes ?? []) {
             const originalId = (creditNote as any).original_invoice_id
-            if (originalId && !creditByOriginal.has(originalId)) {
+            if (!originalId) continue
+            const existing = creditByOriginal.get(originalId)
+            if (existing) {
+              creditByOriginal.set(originalId, { ...existing, count: existing.count + 1 })
+            } else {
               creditByOriginal.set(originalId, {
                 id: (creditNote as any).id,
                 invoice_number: (creditNote as any).invoice_number,
+                count: 1,
               })
+            }
+          }
+
+          const creditNoteIds = (creditNotes ?? []).map((creditNote: any) => creditNote.id).filter(Boolean)
+          if (creditNoteIds.length > 0) {
+            const { data: creditItems } = await supabase
+              .from('invoice_items')
+              .select('original_invoice_item_id, quantity')
+              .in('invoice_id', creditNoteIds)
+              .not('original_invoice_item_id', 'is', null)
+
+            for (const item of creditItems ?? []) {
+              const originalItemId = (item as any).original_invoice_item_id
+              if (!originalItemId) continue
+              const credited = Number((item as any).quantity ?? 0)
+              creditedQuantityByOriginalItem.set(
+                originalItemId,
+                (creditedQuantityByOriginalItem.get(originalItemId) ?? 0) + credited,
+              )
             }
           }
         }
@@ -227,6 +255,22 @@ export default function InvoicesPage() {
         const processed: InvoiceRow[] = invoices.map((inv: any) => {
           const linkedCreditNote = creditByOriginal.get(inv.id) ?? null
           const payments = Array.isArray(inv.payments) ? inv.payments : []
+          const invoiceItems = Array.isArray(inv.invoice_items) ? inv.invoice_items : []
+          let originalQuantityTotal = 0
+          let remainingRefundableQuantity = 0
+          for (const item of invoiceItems) {
+            const originalQuantity = Number((item as any).quantity ?? 0)
+            const creditedQuantity = creditedQuantityByOriginalItem.get((item as any).id) ?? 0
+            originalQuantityTotal += originalQuantity
+            remainingRefundableQuantity += Math.max(originalQuantity - creditedQuantity, 0)
+          }
+          const creditStatus: InvoiceRow['creditStatus'] = inv.zatca_invoice_type === 'credit_note' || !linkedCreditNote
+            ? 'none'
+            : invoiceItems.length > 0 && remainingRefundableQuantity <= 0.0005
+            ? 'full'
+            : invoiceItems.length === 0
+            ? 'full'
+            : 'partial'
           const isSplitPayment = payments.length > 1
             && payments.some((payment: any) => payment.method === 'cash')
             && payments.some((payment: any) => payment.method === 'card')
@@ -237,7 +281,7 @@ export default function InvoicesPage() {
           date:          inv.invoice_date,
           createdAt:     inv.created_at,
           customerName:  (inv.customers as any)?.name ?? null,
-          itemsCount:    Array.isArray(inv.invoice_items) ? inv.invoice_items.length : 0,
+          itemsCount:    invoiceItems.length,
           subtotal:      Number(inv.subtotal),
           taxAmount:     Number(inv.tax_amount),
           totalAmount:   Number(inv.total_amount),
@@ -250,6 +294,9 @@ export default function InvoicesPage() {
           invoiceReference: inv.invoice_reference ?? null,
           linkedCreditNoteId: linkedCreditNote?.id ?? null,
           linkedCreditNoteNumber: linkedCreditNote?.invoice_number ?? null,
+          creditNoteCount: linkedCreditNote?.count ?? 0,
+          creditStatus,
+          remainingRefundableQuantity: originalQuantityTotal > 0 ? remainingRefundableQuantity : 0,
         }
         })
         setRows(processed)
@@ -467,8 +514,12 @@ export default function InvoicesPage() {
                     {isCreditNote && r.invoiceReference && (
                       <p className="mt-0.5 text-[9px] text-gray-400">for {r.invoiceReference}</p>
                     )}
-                    {!isCreditNote && r.linkedCreditNoteNumber && (
-                      <p className="mt-0.5 text-[9px] text-amber-600">credited by {r.linkedCreditNoteNumber}</p>
+                    {!isCreditNote && r.creditStatus !== 'none' && (
+                      <p className={`mt-0.5 text-[9px] ${r.creditStatus === 'full' ? 'text-emerald-700' : 'text-amber-600'}`}>
+                        {r.creditStatus === 'full' ? 'fully credited' : 'partially credited'}
+                        {r.linkedCreditNoteNumber ? ` · latest ${r.linkedCreditNoteNumber}` : ''}
+                        {r.creditNoteCount > 1 ? ` · ${r.creditNoteCount} notes` : ''}
+                      </p>
                     )}
                   </div>
                   <div className="w-24 text-xs text-gray-500">{fmtDate(r.date)}</div>
