@@ -834,6 +834,13 @@ function ProductCard({ product, cartQty, onAdd }: {
   product: PosProduct; cartQty: number; onAdd: () => void
 }) {
   const color = product.catColor ?? '#10b981'
+  const imageUrl = product.imageUrl?.trim() || null
+  const [imageFailed, setImageFailed] = useState(false)
+
+  useEffect(() => {
+    setImageFailed(false)
+  }, [imageUrl])
+
   return (
     <button onClick={onAdd}
       className="bg-white border border-gray-100 rounded-2xl p-3 text-left hover:border-primary-300 hover:shadow-md transition-all relative">
@@ -842,9 +849,20 @@ function ProductCard({ product, cartQty, onAdd }: {
           {cartQty}
         </span>
       )}
-      <div className="w-full aspect-square rounded-xl mb-2.5 flex items-center justify-center"
+      <div className="w-full aspect-square rounded-xl mb-2.5 flex items-center justify-center overflow-hidden"
         style={{ backgroundColor: `${color}18` }}>
-        <ShoppingBag size={22} style={{ color }} />
+        {imageUrl && !imageFailed ? (
+          <img
+            src={imageUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="w-full h-full object-cover"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <ShoppingBag size={22} style={{ color }} />
+        )}
       </div>
       <p className="text-xs font-semibold text-gray-800 leading-snug line-clamp-2">{dn(product.name, product.nameAr)}</p>
       <p className="text-sm font-bold text-primary-600 mt-1"><Rial amount={product.price} /></p>
