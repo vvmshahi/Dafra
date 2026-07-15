@@ -849,12 +849,6 @@ function formatStockQuantity(value: number | null | undefined) {
   })
 }
 
-function quantityValue(value: string): number | null {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed <= 0) return null
-  return Math.round(parsed * 1000) / 1000
-}
-
 function QuickBillingPanel({
   products,
   cart,
@@ -864,26 +858,10 @@ function QuickBillingPanel({
   products: PosProduct[]
   cart: CartItem[]
   query: string
-  onAdd: (product: PosProduct, quantity: number) => void
+  onAdd: (product: PosProduct) => void
 }) {
-  const [quantities, setQuantities] = useState<Record<string, string>>({})
-
-  function valueFor(productId: string) {
-    return quantities[productId] ?? '1'
-  }
-
-  function setValue(productId: string, value: string) {
-    setQuantities(prev => ({ ...prev, [productId]: value }))
-  }
-
-  function add(product: PosProduct) {
-    const qty = quantityValue(valueFor(product.id))
-    if (!qty) return
-    onAdd(product, qty)
-    setValue(product.id, '1')
-  }
-
   if (products.length === 0) {
+    const hasQuery = query.trim().length > 0
     return (
       <div className="flex flex-col items-center justify-center h-full min-h-[320px] gap-4 text-center px-6">
         <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center">
@@ -891,11 +869,17 @@ function QuickBillingPanel({
         </div>
         <div className="space-y-1">
           <p className="font-semibold text-gray-700 text-sm">
-            {query ? 'No matching products found.' : 'No products yet'}
+            {hasQuery ? 'No matching products found.' : 'Search by product name, SKU or barcode to add an item.'}
           </p>
-          <p className="text-xs text-gray-400 max-w-[240px]">
-            {query ? 'Try another product name, SKU or barcode.' : 'Add products to start billing from this view.'}
-          </p>
+          {hasQuery && query.trim().length < 2 ? (
+            <p className="text-xs text-gray-400 max-w-[240px]">
+              Type at least 2 characters, or scan an exact SKU or barcode.
+            </p>
+          ) : hasQuery ? (
+            <p className="text-xs text-gray-400 max-w-[240px]">
+              Try another product name, SKU or barcode.
+            </p>
+          ) : null}
         </div>
       </div>
     )
@@ -903,46 +887,43 @@ function QuickBillingPanel({
 
   return (
     <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-      <div className="hidden lg:grid grid-cols-[minmax(220px,1.7fr)_minmax(150px,1fr)_120px_110px_96px_92px] gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[10px] font-bold uppercase text-gray-400">
+      <div className="hidden lg:grid grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_120px_110px_92px] gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[10px] font-bold uppercase text-gray-400">
         <span>Product</span>
+        <span>Category</span>
         <span>SKU / Barcode</span>
         <span>Available stock</span>
         <span className="text-right">Price</span>
-        <span>Quantity</span>
         <span className="text-right">Add</span>
       </div>
       <div className="divide-y divide-gray-100">
         {products.map(product => {
           const codeParts = [product.sku, product.barcode].filter(Boolean)
           const cartQty = cart.find(item => item.productId === product.id)?.quantity ?? 0
-          const rawQty = valueFor(product.id)
-          const validQty = quantityValue(rawQty)
 
           return (
-            <form
+            <div
               key={product.id}
-              onSubmit={event => {
-                event.preventDefault()
-                add(product)
-              }}
-              className="grid grid-cols-1 lg:grid-cols-[minmax(220px,1.7fr)_minmax(150px,1fr)_120px_110px_96px_92px] gap-3 px-4 py-3 items-center hover:bg-emerald-50/30 transition-colors"
+              className="grid grid-cols-1 lg:grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_120px_110px_92px] gap-3 px-4 py-3 items-center hover:bg-emerald-50/30 transition-colors"
             >
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2">
                   {dn(product.name, product.nameAr)}
                 </p>
-                <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                  {product.catName && (
-                    <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
-                      {product.catName}
-                    </span>
-                  )}
-                  {cartQty > 0 && (
-                    <span className="inline-flex rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold text-primary-700">
-                      In cart: {cartQty}
-                    </span>
-                  )}
-                </div>
+                {cartQty > 0 && (
+                  <span className="mt-1 inline-flex rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold text-primary-700">
+                    In cart: {cartQty}
+                  </span>
+                )}
+              </div>
+
+              <div className="min-w-0">
+                {product.catName ? (
+                  <span className="inline-flex max-w-full rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500 truncate">
+                    {product.catName}
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-300">Uncategorized</span>
+                )}
               </div>
 
               <div className="min-w-0 text-xs text-gray-500">
@@ -972,27 +953,15 @@ function QuickBillingPanel({
                 </span>
               </div>
 
-              <input
-                type="number"
-                min="0.001"
-                step="0.001"
-                value={rawQty}
-                onChange={event => setValue(product.id, event.target.value)}
-                className={`input h-9 text-sm tabular-nums ${
-                  rawQty && !validQty ? 'border-red-200 focus:border-red-300 focus:ring-red-100' : ''
-                }`}
-                aria-label={`Quantity for ${product.name}`}
-              />
-
               <button
-                type="submit"
-                disabled={!validQty}
-                className="h-9 rounded-xl bg-[#1B6B3A] text-white text-xs font-bold hover:bg-[#155830] transition-colors disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                type="button"
+                onClick={() => onAdd(product)}
+                className="h-9 rounded-xl bg-[#1B6B3A] text-white text-xs font-bold hover:bg-[#155830] transition-colors flex items-center justify-center gap-1.5"
               >
                 <Plus size={13} />
                 Add
               </button>
-            </form>
+            </div>
           )
         })}
       </div>
@@ -1728,12 +1697,19 @@ export default function POSPage() {
     return matchCat && (p.name.toLowerCase().includes(searchQ) || (p.nameAr ?? '').includes(searchText))
   }), [products, activeCat, searchQ, searchText])
   const quickFiltered = useMemo(() => products.filter(p => {
-    if (!searchQ) return true
-    return p.name.toLowerCase().includes(searchQ)
-      || (p.nameAr ?? '').includes(searchText)
-      || (p.sku ?? '').toLowerCase().includes(searchQ)
-      || (p.barcode ?? '').toLowerCase().includes(searchQ)
-  }), [products, searchQ, searchText])
+    if (!searchQ) return false
+
+    const sku = (p.sku ?? '').toLowerCase()
+    const barcode = (p.barcode ?? '').toLowerCase()
+    const exactCodeMatch = sku === searchQ || barcode === searchQ
+    if (searchQ.length < 2) return exactCodeMatch
+
+    return exactCodeMatch
+      || p.name.toLowerCase().includes(searchQ)
+      || (p.nameAr ?? '').toLowerCase().includes(searchQ)
+      || sku.includes(searchQ)
+      || barcode.includes(searchQ)
+  }).slice(0, 20), [products, searchQ])
 
   const vatMode = branch?.vat_mode ?? 'exclusive'
   const totals  = computeTotals(cart, vatMode)
@@ -2456,7 +2432,7 @@ export default function POSPage() {
               products={quickFiltered}
               cart={cart}
               query={searchText}
-              onAdd={addQuantityToCart}
+              onAdd={addToCart}
             />
           ) : (
             <div className={showPosScrollButtons ? 'flex items-start gap-3 min-h-full' : 'min-h-full'}>
