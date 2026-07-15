@@ -3,6 +3,7 @@
 
 export type UserRole = 'super_admin' | 'owner' | 'branch'
 export type BusinessType = 'trading' | 'service'
+export type BranchPosMode = 'touch' | 'quick'
 export type VatExpenseTreatment = 'no_vat' | 'included' | 'on_top'
 export type ExpenseVatClaimStatus = 'no_vat' | 'claimable' | 'not_claimable' | 'needs_review'
 export type ExpensePaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'other'
@@ -255,6 +256,7 @@ export interface Database {
           p_payload: {
             allow_split_payments?: boolean
             show_pos_scroll_buttons?: boolean
+            pos_mode?: BranchPosMode
           }
         }
         Returns: Record<string, unknown>
@@ -708,6 +710,7 @@ export interface Branch {
   print_mode: 'thermal' | 'pdf' | 'both'
   allow_split_payments: boolean
   show_pos_scroll_buttons: boolean
+  pos_mode: BranchPosMode
   stock_enabled: boolean | null
   created_at: string
   updated_at: string
@@ -1085,6 +1088,7 @@ export interface BranchInsert {
   print_mode?: string | null
   allow_split_payments?: boolean
   show_pos_scroll_buttons?: boolean
+  pos_mode?: string | null
   stock_enabled?: boolean | null
 }
 

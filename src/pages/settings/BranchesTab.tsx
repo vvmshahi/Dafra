@@ -12,7 +12,7 @@ import { useSubscription } from '@/hooks/useSubscription'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
-import type { Branch, BranchLoginUsername, TenantBranchUsage } from '@/types'
+import type { Branch, BranchLoginUsername, BranchPosMode, TenantBranchUsage } from '@/types'
 import { supportConfig } from '@/config/support'
 import {
   BRANCH_USERNAME_HELPER_TEXT,
@@ -53,6 +53,7 @@ type BranchForm = {
   // POS checkout
   allow_split_payments: boolean
   show_pos_scroll_buttons: boolean
+  pos_mode: BranchPosMode
   stock_enabled: boolean | null
   // zatca
   zatca_phase: 1 | 2
@@ -70,6 +71,23 @@ type BranchWithLogin = Branch & {
 
 type StockModuleSetting = 'default' | 'enabled' | 'disabled'
 
+const POS_MODE_OPTIONS: Array<{
+  value: BranchPosMode
+  label: string
+  description: string
+}> = [
+  {
+    value: 'touch',
+    label: 'Touch POS',
+    description: 'Best for cafes, restaurants, service counters, and businesses using visual product cards.',
+  },
+  {
+    value: 'quick',
+    label: 'Quick Billing',
+    description: 'Best for trading, wholesale, retail, warehouses, and businesses that search products by name, SKU, or barcode.',
+  },
+]
+
 const EMPTY_FORM: BranchForm = {
   name: '', name_ar: '',
   business_name: '', business_name_ar: '',
@@ -84,6 +102,7 @@ const EMPTY_FORM: BranchForm = {
   invoice_language: 'both',
   allow_split_payments: false,
   show_pos_scroll_buttons: false,
+  pos_mode: 'touch',
   stock_enabled: null,
   zatca_phase: 1,
   is_active: true,
@@ -123,6 +142,10 @@ function stockModuleSetting(value: boolean | null | undefined): StockModuleSetti
   if (value === true) return 'enabled'
   if (value === false) return 'disabled'
   return 'default'
+}
+
+function branchPosMode(value: string | null | undefined): BranchPosMode {
+  return value === 'quick' ? 'quick' : 'touch'
 }
 
 function stockModuleValue(setting: StockModuleSetting): boolean | null {
@@ -213,7 +236,7 @@ function branchPosSettingsErrorMessage(error: unknown): string {
   if (/function .*update_branch_pos_settings|could not find the function|PGRST202|schema cache/i.test(message)) {
     return 'The POS settings update is not available yet. Apply the latest SQL hotfix, then refresh and try again.'
   }
-  if (/allow_split_payments|show_pos_scroll_buttons|unsupported POS setting|invalid POS settings/i.test(message)) {
+  if (/allow_split_payments|show_pos_scroll_buttons|pos_mode|unsupported POS setting|invalid POS settings/i.test(message)) {
     return 'The POS checkout settings payload was rejected. Refresh and try again.'
   }
   return message || 'Failed to save POS checkout settings.'
@@ -314,6 +337,7 @@ function BranchDrawer({
           invoice_language: branch.invoice_language ?? 'both',
           allow_split_payments: branch.allow_split_payments ?? false,
           show_pos_scroll_buttons: branch.show_pos_scroll_buttons ?? false,
+          pos_mode:        branchPosMode(branch.pos_mode),
           stock_enabled:    branch.stock_enabled ?? null,
           zatca_phase:      branch.zatca_phase ?? 1,
           is_active:        branch.is_active,
@@ -390,12 +414,22 @@ function BranchDrawer({
   }
 
   const savePosSettings = async (branchId: string) => {
+    const currentPosMode = branch ? branchPosMode(branch.pos_mode) : 'touch'
+    const payload: {
+      allow_split_payments: boolean
+      show_pos_scroll_buttons: boolean
+      pos_mode?: BranchPosMode
+    } = {
+      allow_split_payments: form.allow_split_payments,
+      show_pos_scroll_buttons: form.show_pos_scroll_buttons,
+    }
+    if (form.pos_mode !== currentPosMode) {
+      payload.pos_mode = form.pos_mode
+    }
+
     const params = {
       p_branch_id: branchId,
-      p_payload: {
-        allow_split_payments: form.allow_split_payments,
-        show_pos_scroll_buttons: form.show_pos_scroll_buttons,
-      },
+      p_payload: payload,
     }
     const { error } = await (supabase as any).rpc('update_branch_pos_settings', params)
     if (error) {
@@ -468,7 +502,9 @@ function BranchDrawer({
         const branchId = branchIdFromRpcResult(data)
         const logoUrl = await uploadLogo(branchId)
         if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', branchId)
-        if (form.allow_split_payments || form.show_pos_scroll_buttons) await savePosSettings(branchId)
+        if (form.allow_split_payments || form.show_pos_scroll_buttons || form.pos_mode !== 'touch') {
+          await savePosSettings(branchId)
+        }
         if (canEditModuleSettings && form.stock_enabled !== null) await saveModuleSettings(branchId)
 
         // Refresh the parent branch list now (branch is in DB regardless of login outcome)
@@ -496,7 +532,8 @@ function BranchDrawer({
         if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', branch!.id)
         if (
           form.allow_split_payments !== (branch!.allow_split_payments ?? false) ||
-          form.show_pos_scroll_buttons !== (branch!.show_pos_scroll_buttons ?? false)
+          form.show_pos_scroll_buttons !== (branch!.show_pos_scroll_buttons ?? false) ||
+          form.pos_mode !== branchPosMode(branch!.pos_mode)
         ) {
           await savePosSettings(branch!.id)
         }
@@ -691,6 +728,33 @@ function BranchDrawer({
               color="text-indigo-600" bg="bg-indigo-50" />
             {checkout.open && (
               <div className="px-5 py-4 space-y-3">
+                <div className="rounded-xl bg-gray-50 border border-gray-100 p-3">
+                  <div className="mb-3">
+                    <p className="text-sm font-medium text-gray-800">Billing Interface</p>
+                    <p className="text-[11px] text-gray-400">Choose the POS screen this branch opens by default.</p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {POS_MODE_OPTIONS.map(option => {
+                      const selected = form.pos_mode === option.value
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => set('pos_mode')(option.value)}
+                          className={`rounded-xl border px-3 py-2.5 text-left transition-colors active:scale-[0.99] ${
+                            selected
+                              ? 'border-primary-200 bg-white text-primary-800 shadow-sm ring-1 ring-primary-100'
+                              : 'border-gray-100 bg-white/70 text-gray-600 hover:border-gray-200 hover:bg-white'
+                          }`}
+                        >
+                          <span className="block text-sm font-semibold text-gray-900">{option.label}</span>
+                          <span className="mt-1 block text-[11px] leading-4 text-gray-400">{option.description}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
                 <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-xl bg-gray-50 border border-gray-100">
                   <input
                     type="checkbox"

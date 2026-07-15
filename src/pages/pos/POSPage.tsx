@@ -18,7 +18,7 @@ import { submitInvoiceToZatcaWithRetry } from '@/lib/zatca/submission'
 import { toast } from 'sonner'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
-import type { Branch, PaymentMethod, VatTreatment } from '@/types/database'
+import type { Branch, BranchPosMode, PaymentMethod, VatTreatment } from '@/types/database'
 import { usePosSession } from '@/hooks/usePosSession'
 import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
@@ -33,7 +33,7 @@ const ACCOUNT_SUSPENDED_BILLING_MESSAGE =
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type PosPaymentChoice = 'cash' | 'card' | 'split'
-type PosMode = 'touch' | 'quick'
+type PosMode = BranchPosMode
 
 interface ReceiptPayment {
   method: PaymentMethod
@@ -122,6 +122,10 @@ interface ReceiptData {
   showLogo: boolean
   payments: ReceiptPayment[]
   displayPaymentMethod: string
+}
+
+function branchPosMode(value: string | null | undefined): PosMode {
+  return value === 'quick' ? 'quick' : 'touch'
 }
 
 interface PosCheckoutItemResult {
@@ -1531,7 +1535,6 @@ export default function POSPage() {
   const [loading,    setLoading]    = useState(true)
 
   const [search,       setSearch]       = useState('')
-  const [posMode,      setPosMode]      = useState<PosMode>('touch')
   const [activeCat,    setActiveCat]    = useState<string | null>(null)
   const [cart,         setCart]         = useState<CartItem[]>([])
   const [customerId,   setCustomerId]   = useState<string | null>(null)
@@ -1557,12 +1560,8 @@ export default function POSPage() {
   const checkoutKeyRef = useRef<string | null>(null)
   const autoPrintedReceiptIdRef = useRef<string | null>(null)
   const businessType = resolveBusinessType(tenant?.business_type)
-  const canUseQuickBilling = businessType === 'trading'
-  const activePosMode: PosMode = canUseQuickBilling ? posMode : 'touch'
-
-  useEffect(() => {
-    if (!canUseQuickBilling && posMode !== 'touch') setPosMode('touch')
-  }, [canUseQuickBilling, posMode])
+  const savedBranchPosMode = branchPosMode(branch?.pos_mode)
+  const activePosMode: PosMode = businessType === 'trading' ? savedBranchPosMode : 'touch'
 
   // ── Load data ────────────────────────────────────────────────────────────
 
@@ -2310,32 +2309,6 @@ export default function POSPage() {
 
         {/* Search + category tabs */}
         <div className="px-4 py-2.5 border-b border-gray-100 bg-white flex items-center gap-3 flex-shrink-0">
-          {canUseQuickBilling && (
-            <div className="flex rounded-xl bg-gray-100 p-1 flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => setPosMode('touch')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  activePosMode === 'touch'
-                    ? 'bg-white text-[#0F2419] shadow-sm'
-                    : 'text-gray-500 hover:text-gray-800'
-                }`}
-              >
-                Touch POS
-              </button>
-              <button
-                type="button"
-                onClick={() => setPosMode('quick')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  activePosMode === 'quick'
-                    ? 'bg-[#1B6B3A] text-white shadow-sm'
-                    : 'text-gray-500 hover:text-gray-800'
-                }`}
-              >
-                Quick Billing
-              </button>
-            </div>
-          )}
           {activePosMode === 'quick' ? (
             <div className="relative flex-1 max-w-xl min-w-[220px]">
               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />

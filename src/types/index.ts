@@ -1,6 +1,7 @@
 export type {
   UserRole,
   BusinessType,
+  BranchPosMode,
   InvoiceType,
   InvoiceStatus,
   ZatcaStatus,
