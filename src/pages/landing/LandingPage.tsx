@@ -11,9 +11,9 @@ import { useEffect, useState, type ReactNode } from 'react'
 const WA_LINK = supportConfig.whatsappLink
 const WA_NUMBER = supportConfig.whatsappNumber
 const EMAIL_LINK = supportConfig.emailLink
-const KUBRI_WINDOWS_DOWNLOAD_URL = 'https://github.com/vvmshahi/kubri-downloads/releases/download/v1.0.0/Kubri-Setup-1.0.0.exe'
-const KUBRI_MAC_APPLE_SILICON_DOWNLOAD_URL = 'https://github.com/vvmshahi/kubri-downloads/releases/download/v1.0.0/Kubri-1.0.0-arm64.dmg'
-const KUBRI_MAC_INTEL_DOWNLOAD_URL = 'https://github.com/vvmshahi/kubri-downloads/releases/download/v1.0.0/Kubri-1.0.0-x64.dmg'
+const KUBRI_WINDOWS_DOWNLOAD_URL = 'https://github.com/vvmshahi/kubri-downloads/releases/download/v1.0.1/Kubri-Setup-1.0.1.exe'
+const KUBRI_MAC_APPLE_SILICON_DOWNLOAD_URL = 'https://github.com/vvmshahi/kubri-downloads/releases/download/v1.0.1/Kubri-1.0.1-arm64.dmg'
+const KUBRI_MAC_INTEL_DOWNLOAD_URL = 'https://github.com/vvmshahi/kubri-downloads/releases/download/v1.0.1/Kubri-1.0.1-x64.dmg'
 const KUBRI_WORDMARK_SRC = '/brand/kubiri-wordmark.png?v=kubri-2'
 
 function scrollTo(id: string) {
