@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, Plus, Minus, Trash2, CreditCard, Banknote,
@@ -18,13 +18,14 @@ import { submitInvoiceToZatcaWithRetry } from '@/lib/zatca/submission'
 import { toast } from 'sonner'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
-import type { Branch, PaymentMethod, VatTreatment } from '@/types/database'
+import type { Branch, BranchPosMode, PaymentMethod, VatTreatment } from '@/types/database'
 import { usePosSession } from '@/hooks/usePosSession'
 import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
 import { MeemLogo } from '@/components/MeemLogo'
-import { getPrinterSettings, isElectron, printReceipt, printSilent } from '@/lib/electron'
+import { getPrinterSettings, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { supportConfig } from '@/config/support'
+import { resolveBusinessType } from '@/lib/utils/businessType'
 
 const ACCOUNT_SUSPENDED_BILLING_MESSAGE =
   'Account suspended. New billing and register opening are disabled. Existing records remain available. Please contact the business owner or Kubri support.'
@@ -32,6 +33,7 @@ const ACCOUNT_SUSPENDED_BILLING_MESSAGE =
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type PosPaymentChoice = 'cash' | 'card' | 'split'
+type PosMode = BranchPosMode
 
 interface ReceiptPayment {
   method: PaymentMethod
@@ -44,9 +46,17 @@ interface PosProduct {
   id: string
   name: string
   nameAr: string | null
+  sku: string | null
+  barcode: string | null
   price: number
   unit: string
   vatTreatment: VatTreatment
+  stockQuantity: number | null
+  trackStock: boolean
+  imageUrl: string | null
+  isService: boolean
+  isActive: boolean
+  isAvailable: boolean
   catId: string | null
   catName: string | null
   catColor: string | null
@@ -112,6 +122,10 @@ interface ReceiptData {
   showLogo: boolean
   payments: ReceiptPayment[]
   displayPaymentMethod: string
+}
+
+function branchPosMode(value: string | null | undefined): PosMode {
+  return value === 'quick' ? 'quick' : 'touch'
 }
 
 interface PosCheckoutItemResult {
@@ -471,7 +485,10 @@ ${lines}
       }
     `
     document.head.appendChild(s)
-    await printSilent()
+    const result = await printA4Invoice()
+    if (!result.success) {
+      toast.error(result.message || result.errorType || 'A4 print failed.')
+    }
     s.remove()
   }
 
@@ -486,7 +503,7 @@ ${lines}
     setPrintingReceipt(true)
     try {
       const settings = await getPrinterSettings()
-      if (!settings.selectedPrinterName) {
+      if (!settings.receiptPrinterName) {
         const message = 'Choose a receipt printer to enable direct printing.'
         setPrintError(message)
         toast.info(message, {
@@ -825,6 +842,134 @@ function ProductCard({ product, cartQty, onAdd }: {
         </span>
       )}
     </button>
+  )
+}
+
+function formatStockQuantity(value: number | null | undefined) {
+  if (value == null) return '0'
+  return value.toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3,
+  })
+}
+
+function QuickBillingPanel({
+  products,
+  cart,
+  query,
+  onAdd,
+}: {
+  products: PosProduct[]
+  cart: CartItem[]
+  query: string
+  onAdd: (product: PosProduct) => void
+}) {
+  if (products.length === 0) {
+    const hasQuery = query.trim().length > 0
+    return (
+      <div className="flex flex-col items-center justify-center h-full min-h-[320px] gap-4 text-center px-6">
+        <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center">
+          <PackageOpen size={30} className="text-gray-300" />
+        </div>
+        <div className="space-y-1">
+          <p className="font-semibold text-gray-700 text-sm">
+            {hasQuery ? 'No matching products found.' : 'Search by product name, SKU or barcode to add an item.'}
+          </p>
+          {hasQuery && query.trim().length < 2 ? (
+            <p className="text-xs text-gray-400 max-w-[240px]">
+              Type at least 2 characters, or scan an exact SKU or barcode.
+            </p>
+          ) : hasQuery ? (
+            <p className="text-xs text-gray-400 max-w-[240px]">
+              Try another product name, SKU or barcode.
+            </p>
+          ) : null}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+      <div className="hidden lg:grid grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_120px_110px_92px] gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[10px] font-bold uppercase text-gray-400">
+        <span>Product</span>
+        <span>Category</span>
+        <span>SKU / Barcode</span>
+        <span>Available stock</span>
+        <span className="text-right">Price</span>
+        <span className="text-right">Add</span>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {products.map(product => {
+          const codeParts = [product.sku, product.barcode].filter(Boolean)
+          const cartQty = cart.find(item => item.productId === product.id)?.quantity ?? 0
+
+          return (
+            <div
+              key={product.id}
+              className="grid grid-cols-1 lg:grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_120px_110px_92px] gap-3 px-4 py-3 items-center hover:bg-emerald-50/30 transition-colors"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2">
+                  {dn(product.name, product.nameAr)}
+                </p>
+                {cartQty > 0 && (
+                  <span className="mt-1 inline-flex rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold text-primary-700">
+                    In cart: {cartQty}
+                  </span>
+                )}
+              </div>
+
+              <div className="min-w-0">
+                {product.catName ? (
+                  <span className="inline-flex max-w-full rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500 truncate">
+                    {product.catName}
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-300">Uncategorized</span>
+                )}
+              </div>
+
+              <div className="min-w-0 text-xs text-gray-500">
+                {codeParts.length > 0 ? (
+                  <div className="space-y-0.5">
+                    {product.sku && <p className="truncate">SKU: {product.sku}</p>}
+                    {product.barcode && <p className="truncate">Barcode: {product.barcode}</p>}
+                  </div>
+                ) : (
+                  <span className="text-gray-300">No SKU or barcode</span>
+                )}
+              </div>
+
+              <div>
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                  product.trackStock
+                    ? 'bg-amber-50 text-amber-700'
+                    : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {product.trackStock ? `Stock: ${formatStockQuantity(product.stockQuantity)}` : 'Not tracked'}
+                </span>
+              </div>
+
+              <div className="text-left lg:text-right">
+                <span className="text-sm font-bold tabular-nums text-primary-700">
+                  <Rial amount={product.price} />
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => onAdd(product)}
+                className="h-9 rounded-xl bg-[#1B6B3A] text-white text-xs font-bold hover:bg-[#155830] transition-colors flex items-center justify-center gap-1.5"
+              >
+                <Plus size={13} />
+                Add
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
@@ -1366,7 +1511,7 @@ const WA_LINK    = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
 
 export default function POSPage() {
-  const { profile, user } = useAuth()
+  const { profile, user, tenant } = useAuth()
   const navigate  = useNavigate()
   const searchRef = useRef<HTMLInputElement>(null)
   const categoryScrollRef = useRef<HTMLDivElement>(null)
@@ -1413,6 +1558,10 @@ export default function POSPage() {
     productsAtEnd: true,
   })
   const checkoutKeyRef = useRef<string | null>(null)
+  const autoPrintedReceiptIdRef = useRef<string | null>(null)
+  const businessType = resolveBusinessType(tenant?.business_type)
+  const savedBranchPosMode = branchPosMode(branch?.pos_mode)
+  const activePosMode: PosMode = businessType === 'trading' ? savedBranchPosMode : 'touch'
 
   // ── Load data ────────────────────────────────────────────────────────────
 
@@ -1428,7 +1577,7 @@ export default function POSPage() {
           supabase.from('branches').select('*').eq('id', bid).single(),
           supabase
             .from('products')
-            .select('id, name, name_ar, price, unit, vat_treatment, category_id, categories(id, name, color, icon)')
+            .select('id, name, name_ar, sku, barcode, price, unit, vat_treatment, category_id, stock_quantity, track_stock, image_url, is_service, is_active, is_available, categories(id, name, color, icon)')
             .eq('branch_id', bid)
             .eq('is_active', true)
             .eq('is_available', true)
@@ -1447,14 +1596,22 @@ export default function POSPage() {
         setBranch(branchData as Branch)
 
         const prods: PosProduct[] = (prodData ?? []).map((p: any) => ({
-          id:           p.id,
-          name:         p.name,
-          nameAr:       p.name_ar,
-          price:        Number(p.price),
-          unit:         p.unit ?? 'pcs',
-          vatTreatment: (p.vat_treatment ?? 'inherit') as VatTreatment,
-          catId:        p.category_id,
-          catName:      (p.categories as any)?.name ?? null,
+          id:            p.id,
+          name:          p.name,
+          nameAr:        p.name_ar,
+          sku:           p.sku ?? null,
+          barcode:       p.barcode ?? null,
+          price:         Number(p.price),
+          unit:          p.unit ?? 'pcs',
+          vatTreatment:  (p.vat_treatment ?? 'inherit') as VatTreatment,
+          stockQuantity: p.stock_quantity == null ? null : Number(p.stock_quantity),
+          trackStock:    Boolean(p.track_stock),
+          imageUrl:      p.image_url ?? null,
+          isService:     Boolean(p.is_service),
+          isActive:      p.is_active !== false,
+          isAvailable:   p.is_available !== false,
+          catId:         p.category_id,
+          catName:       (p.categories as any)?.name ?? null,
           catColor:     (p.categories as any)?.color ?? null,
         }))
         setProducts(prods)
@@ -1522,12 +1679,7 @@ export default function POSPage() {
   useEffect(() => {
     function onEnter(e: KeyboardEvent) {
       if (e.key !== 'Enter' || e.target !== searchRef.current) return
-      const q = search.trim().toLowerCase()
-      const visible = products.filter(p => {
-        const matchCat = !activeCat || p.catId === activeCat
-        if (!q) return matchCat
-        return matchCat && (p.name.toLowerCase().includes(q) || (p.nameAr ?? '').includes(search.trim()))
-      })
+      const visible = activePosMode === 'quick' ? quickFiltered : filtered
       if (visible.length === 1) addToCart(visible[0])
     }
     window.addEventListener('keydown', onEnter)
@@ -1536,12 +1688,27 @@ export default function POSPage() {
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
-  const searchQ = search.trim().toLowerCase()
-  const filtered = products.filter(p => {
+  const searchText = search.trim()
+  const searchQ = searchText.toLowerCase()
+  const filtered = useMemo(() => products.filter(p => {
     const matchCat = !activeCat || p.catId === activeCat
     if (!searchQ) return matchCat
-    return matchCat && (p.name.toLowerCase().includes(searchQ) || (p.nameAr ?? '').includes(search.trim()))
-  })
+    return matchCat && (p.name.toLowerCase().includes(searchQ) || (p.nameAr ?? '').includes(searchText))
+  }), [products, activeCat, searchQ, searchText])
+  const quickFiltered = useMemo(() => products.filter(p => {
+    if (!searchQ) return false
+
+    const sku = (p.sku ?? '').toLowerCase()
+    const barcode = (p.barcode ?? '').toLowerCase()
+    const exactCodeMatch = sku === searchQ || barcode === searchQ
+    if (searchQ.length < 2) return exactCodeMatch
+
+    return exactCodeMatch
+      || p.name.toLowerCase().includes(searchQ)
+      || (p.nameAr ?? '').toLowerCase().includes(searchQ)
+      || sku.includes(searchQ)
+      || barcode.includes(searchQ)
+  }).slice(0, 20), [products, searchQ])
 
   const vatMode = branch?.vat_mode ?? 'exclusive'
   const totals  = computeTotals(cart, vatMode)
@@ -1613,7 +1780,7 @@ export default function POSPage() {
   }
 
   useEffect(() => {
-    if (!showPosScrollButtons) return
+    if (!showPosScrollButtons || activePosMode !== 'touch') return
     const categoryEl = categoryScrollRef.current
     const productEl = productScrollRef.current
     updateScrollState()
@@ -1625,7 +1792,7 @@ export default function POSPage() {
       productEl?.removeEventListener('scroll', updateScrollState)
       window.removeEventListener('resize', updateScrollState)
     }
-  }, [showPosScrollButtons, categories.length, filtered.length])
+  }, [showPosScrollButtons, activePosMode, categories.length, filtered.length])
 
   useEffect(() => {
     if (payMethod !== 'split') return
@@ -1692,10 +1859,11 @@ export default function POSPage() {
 
   // ── Cart ops ─────────────────────────────────────────────────────────────
 
-  function addToCart(product: PosProduct) {
+  function addQuantityToCart(product: PosProduct, quantity: number) {
+    if (!Number.isFinite(quantity) || quantity <= 0) return
     setCart(prev => {
       const existing = prev.find(c => c.productId === product.id)
-      if (existing) return prev.map(c => c.productId === product.id ? { ...c, quantity: c.quantity + 1 } : c)
+      if (existing) return prev.map(c => c.productId === product.id ? { ...c, quantity: c.quantity + quantity } : c)
       return [...prev, {
         productId:    product.id,
         name:         product.name,
@@ -1703,10 +1871,14 @@ export default function POSPage() {
         price:        product.price,
         vatTreatment: product.vatTreatment,
         unit:         product.unit,
-        quantity:     1,
+        quantity,
         catColor:     product.catColor,
       }]
     })
+  }
+
+  function addToCart(product: PosProduct) {
+    addQuantityToCart(product, 1)
   }
 
   function adjustQty(productId: string, delta: number) {
@@ -1718,18 +1890,20 @@ export default function POSPage() {
 
   async function maybeAutoPrintReceiptAfterSale(invoiceId: string) {
     if (!isElectron()) return
+    if (autoPrintedReceiptIdRef.current === invoiceId) return
 
     try {
       const settings = await getPrinterSettings()
-      if (!settings.autoPrintAfterSale) return
+      if (!settings.autoPrintReceiptAfterSale) return
 
-      if (!settings.selectedPrinterName) {
+      if (!settings.receiptPrinterName) {
         toast.info('Choose a receipt printer to enable direct printing.', {
           action: { label: 'Device Printer', onClick: () => navigate(DEVICE_PRINTER_PATH) },
         })
         return
       }
 
+      autoPrintedReceiptIdRef.current = invoiceId
       const result = await printReceipt({ invoiceId })
       if (result.success) {
         toast.success('Receipt sent to printer', { duration: 1800 })
@@ -1854,7 +2028,10 @@ export default function POSPage() {
           name:      i.name_ar?.trim() ? i.name_ar : i.name,
           qty:       num(i.quantity),
           unitPrice: num(i.unit_price),
-          lineTotal: num(i.line_amount),
+          lineTotal: num(i.total),
+          subtotal:  num(i.subtotal),
+          taxAmount: num(i.tax_amount),
+          total:     num(i.total),
         })),
         createdAt,
         businessNameAr:  branch.display_name || branch.business_name || branch.name,
@@ -2132,141 +2309,178 @@ export default function POSPage() {
 
         {/* Search + category tabs */}
         <div className="px-4 py-2.5 border-b border-gray-100 bg-white flex items-center gap-3 flex-shrink-0">
-          <div className="relative w-52 flex-shrink-0">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              ref={searchRef}
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search… (/)"
-              className="input pl-8 py-1.5 text-sm"
-            />
-            {search && (
-              <button onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                <X size={13} />
-              </button>
-            )}
-          </div>
-          {showPosScrollButtons && (
-            <button
-              type="button"
-              onClick={() => scrollCategories(-1)}
-              disabled={scrollState.categoryAtStart}
-              title="Scroll categories left"
-              className="h-11 w-11 rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm flex items-center justify-center hover:bg-gray-50 disabled:opacity-35 disabled:cursor-not-allowed flex-shrink-0"
-            >
-              <ChevronLeft size={20} />
-            </button>
-          )}
-          <div ref={categoryScrollRef} className="flex items-center gap-1.5 overflow-x-auto flex-1">
-            <button
-              onClick={() => setActiveCat(null)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                !activeCat ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              All
-            </button>
-            {categories.map(cat => (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCat(activeCat === cat.id ? null : cat.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                  activeCat === cat.id ? 'text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-                style={activeCat === cat.id ? { backgroundColor: cat.color ?? '#10b981' } : {}}
-              >
-                {cat.icon && <span className="mr-1">{cat.icon}</span>}
-                {cat.name}
-              </button>
-            ))}
-          </div>
-          {showPosScrollButtons && (
-            <button
-              type="button"
-              onClick={() => scrollCategories(1)}
-              disabled={scrollState.categoryAtEnd}
-              title="Scroll categories right"
-              className="h-11 w-11 rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm flex items-center justify-center hover:bg-gray-50 disabled:opacity-35 disabled:cursor-not-allowed flex-shrink-0"
-            >
-              <ChevronRight size={20} />
-            </button>
+          {activePosMode === 'quick' ? (
+            <div className="relative flex-1 max-w-xl min-w-[220px]">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                ref={searchRef}
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search product name, SKU or barcode"
+                className="input pl-8 py-1.5 text-sm"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="relative w-52 flex-shrink-0">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search... (/)"
+                  className="input pl-8 py-1.5 text-sm"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+              {showPosScrollButtons && (
+                <button
+                  type="button"
+                  onClick={() => scrollCategories(-1)}
+                  disabled={scrollState.categoryAtStart}
+                  title="Scroll categories left"
+                  className="h-11 w-11 rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm flex items-center justify-center hover:bg-gray-50 disabled:opacity-35 disabled:cursor-not-allowed flex-shrink-0"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+              )}
+              <div ref={categoryScrollRef} className="flex items-center gap-1.5 overflow-x-auto flex-1">
+                <button
+                  onClick={() => setActiveCat(null)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                    !activeCat ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  All
+                </button>
+                {categories.map(cat => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setActiveCat(activeCat === cat.id ? null : cat.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                      activeCat === cat.id ? 'text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                    style={activeCat === cat.id ? { backgroundColor: cat.color ?? '#10b981' } : {}}
+                  >
+                    {cat.icon && <span className="mr-1">{cat.icon}</span>}
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
+              {showPosScrollButtons && (
+                <button
+                  type="button"
+                  onClick={() => scrollCategories(1)}
+                  disabled={scrollState.categoryAtEnd}
+                  title="Scroll categories right"
+                  className="h-11 w-11 rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm flex items-center justify-center hover:bg-gray-50 disabled:opacity-35 disabled:cursor-not-allowed flex-shrink-0"
+                >
+                  <ChevronRight size={20} />
+                </button>
+              )}
+            </>
           )}
         </div>
 
         {/* Product grid */}
         <div ref={productScrollRef} className="flex-1 overflow-y-auto p-4">
-          <div className={showPosScrollButtons ? 'flex items-start gap-3 min-h-full' : 'min-h-full'}>
-            <div className="flex-1 min-w-0">
-              {filtered.length === 0 ? (
-                products.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full min-h-[320px] gap-5 text-center px-6">
-                    <div className="w-20 h-20 rounded-2xl bg-gray-100 flex items-center justify-center">
-                      <PackageOpen size={36} className="text-gray-300" />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="font-semibold text-gray-700 text-base">No products yet</p>
-                      <p className="text-sm text-gray-400 max-w-[220px]">
-                        Add your menu items to start selling
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => navigate('/products')}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-[#1B6B3A] text-white text-sm font-semibold rounded-xl hover:bg-[#155830] transition-colors shadow-sm"
-                    >
-                      <Plus size={15} />
-                      Go to Products
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-48 text-gray-400">
-                    <AlertCircle size={28} className="mb-2 opacity-40" />
-                    <p className="text-sm">No products found</p>
-                    {search && (
-                      <button onClick={() => setSearch('')} className="text-xs text-primary-500 mt-1 underline">
-                        Clear search
+          {activePosMode === 'quick' ? (
+            <QuickBillingPanel
+              products={quickFiltered}
+              cart={cart}
+              query={searchText}
+              onAdd={addToCart}
+            />
+          ) : (
+            <div className={showPosScrollButtons ? 'flex items-start gap-3 min-h-full' : 'min-h-full'}>
+              <div className="flex-1 min-w-0">
+                {filtered.length === 0 ? (
+                  products.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full min-h-[320px] gap-5 text-center px-6">
+                      <div className="w-20 h-20 rounded-2xl bg-gray-100 flex items-center justify-center">
+                        <PackageOpen size={36} className="text-gray-300" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="font-semibold text-gray-700 text-base">No products yet</p>
+                        <p className="text-sm text-gray-400 max-w-[220px]">
+                          Add your menu items to start selling
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => navigate('/products')}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-[#1B6B3A] text-white text-sm font-semibold rounded-xl hover:bg-[#155830] transition-colors shadow-sm"
+                      >
+                        <Plus size={15} />
+                        Go to Products
                       </button>
-                    )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-48 text-gray-400">
+                      <AlertCircle size={28} className="mb-2 opacity-40" />
+                      <p className="text-sm">No products found</p>
+                      {search && (
+                        <button onClick={() => setSearch('')} className="text-xs text-primary-500 mt-1 underline">
+                          Clear search
+                        </button>
+                      )}
+                    </div>
+                  )
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+                    {filtered.map(p => (
+                      <ProductCard
+                        key={p.id}
+                        product={p}
+                        cartQty={cart.find(c => c.productId === p.id)?.quantity ?? 0}
+                        onAdd={() => addToCart(p)}
+                      />
+                    ))}
                   </div>
-                )
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
-                  {filtered.map(p => (
-                    <ProductCard
-                      key={p.id}
-                      product={p}
-                      cartQty={cart.find(c => c.productId === p.id)?.quantity ?? 0}
-                      onAdd={() => addToCart(p)}
-                    />
-                  ))}
+                )}
+              </div>
+              {showPosScrollButtons && (
+                <div className="sticky top-0 flex-shrink-0 self-start flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => scrollProducts(-1)}
+                    disabled={scrollState.productsAtStart}
+                    title="Scroll products up"
+                    className="h-12 w-12 rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm flex items-center justify-center hover:bg-gray-50 disabled:opacity-35 disabled:cursor-not-allowed"
+                  >
+                    <ChevronUp size={22} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => scrollProducts(1)}
+                    disabled={scrollState.productsAtEnd}
+                    title="Scroll products down"
+                    className="h-12 w-12 rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm flex items-center justify-center hover:bg-gray-50 disabled:opacity-35 disabled:cursor-not-allowed"
+                  >
+                    <ChevronUp size={22} className="rotate-180" />
+                  </button>
                 </div>
               )}
             </div>
-            {showPosScrollButtons && (
-              <div className="sticky top-0 flex-shrink-0 self-start flex flex-col gap-2">
-                <button
-                  type="button"
-                  onClick={() => scrollProducts(-1)}
-                  disabled={scrollState.productsAtStart}
-                  title="Scroll products up"
-                  className="h-12 w-12 rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm flex items-center justify-center hover:bg-gray-50 disabled:opacity-35 disabled:cursor-not-allowed"
-                >
-                  <ChevronUp size={22} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => scrollProducts(1)}
-                  disabled={scrollState.productsAtEnd}
-                  title="Scroll products down"
-                  className="h-12 w-12 rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm flex items-center justify-center hover:bg-gray-50 disabled:opacity-35 disabled:cursor-not-allowed"
-                >
-                  <ChevronUp size={22} className="rotate-180" />
-                </button>
-              </div>
-            )}
-          </div>
+          )}
         </div>
       </div>
 

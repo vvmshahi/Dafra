@@ -25,12 +25,16 @@ interface CategorySnap {
 export interface ProductRow {
   id: string
   tenant_id: string
+  branch_id: string | null
   category_id: string | null
   name: string
   name_ar: string | null
   description: string | null
   sku: string | null
+  barcode: string | null
   price: number
+  stock_quantity: number | null
+  track_stock: boolean
   image_url: string | null
   is_active: boolean
   is_available: boolean
@@ -55,6 +59,35 @@ const VAT_BADGE: Record<VatTreatment, 'neutral' | 'info' | 'gold'> = {
   exclusive: 'neutral',
   inclusive: 'info',
   exempt:    'gold',
+}
+
+const formatStockQuantity = (value: number | null | undefined) => {
+  const numeric = Number(value ?? 0)
+  if (!Number.isFinite(numeric)) return '0'
+  if (Number.isInteger(numeric)) return String(numeric)
+  return numeric.toFixed(3).replace(/\.?0+$/, '')
+}
+
+const stockStatus = (product: ProductRow) => {
+  if (!product.track_stock) {
+    return {
+      label: 'Not tracked',
+      className: 'bg-gray-100 text-gray-500',
+    }
+  }
+
+  const quantity = Number(product.stock_quantity ?? 0)
+  if (quantity <= 0) {
+    return {
+      label: 'Out of stock',
+      className: 'bg-red-50 text-red-600',
+    }
+  }
+
+  return {
+    label: `Stock: ${formatStockQuantity(quantity)}`,
+    className: 'bg-emerald-50 text-emerald-700',
+  }
 }
 
 const CATEGORY_ICON_PRESETS = [
@@ -103,6 +136,7 @@ function ProductCard({
   const color = product.categories?.color ?? '#6b7280'
   const icon  = product.categories?.icon  ?? '📦'
   const vat   = product.vat_treatment ?? 'inherit'
+  const stock = stockStatus(product)
 
   return (
     <div className="card group relative flex flex-col hover:shadow-md transition-shadow duration-200 overflow-hidden">
@@ -166,6 +200,9 @@ function ProductCard({
             </span>
           )}
           <Badge variant={VAT_BADGE[vat]}>{VAT_LABELS[vat]}</Badge>
+          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${stock.className}`}>
+            {stock.label}
+          </span>
         </div>
         <p className="text-base font-bold text-primary-600 mt-auto pt-2">
           <Rial amount={Number(product.price)} />
@@ -188,6 +225,7 @@ function ProductListRow({
   const color = product.categories?.color ?? '#6b7280'
   const icon  = product.categories?.icon  ?? '📦'
   const vat   = product.vat_treatment ?? 'inherit'
+  const stock = stockStatus(product)
 
   return (
     <div className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0">
@@ -206,7 +244,14 @@ function ProductListRow({
       {/* Name */}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-900 truncate">{dn(product.name, product.name_ar)}</p>
-        {product.sku && <p className="text-[11px] text-gray-400">SKU: {product.sku}</p>}
+        {(product.sku || product.barcode) && (
+          <p className="text-[11px] text-gray-400">
+            {product.sku ? `SKU: ${product.sku}` : `Barcode: ${product.barcode}`}
+          </p>
+        )}
+        <p className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold lg:hidden ${stock.className}`}>
+          {stock.label}
+        </p>
       </div>
 
       {/* Category */}
@@ -226,6 +271,13 @@ function ProductListRow({
       {/* VAT */}
       <div className="w-28 flex-shrink-0 hidden md:block">
         <Badge variant={VAT_BADGE[vat]}>{VAT_LABELS[vat]}</Badge>
+      </div>
+
+      {/* Stock */}
+      <div className="w-28 flex-shrink-0 hidden lg:block">
+        <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${stock.className}`}>
+          {stock.label}
+        </span>
       </div>
 
       {/* Price */}
@@ -497,8 +549,8 @@ export default function ProductsPage() {
         .from('products')
         .select([
           'id', 'tenant_id', 'branch_id', 'category_id', 'name', 'name_ar', 'description',
-          'sku', 'price', 'image_url', 'is_active', 'is_available', 'sort_order',
-          'vat_treatment', 'notes', 'is_service',
+          'sku', 'barcode', 'price', 'stock_quantity', 'track_stock', 'image_url',
+          'is_active', 'is_available', 'sort_order', 'vat_treatment', 'notes', 'is_service',
           'categories(name,name_ar,color,icon)',
         ].join(','))
         .eq('tenant_id', tid)
@@ -546,6 +598,7 @@ export default function ProductsPage() {
       || p.name.toLowerCase().includes(q)
       || (p.name_ar ?? '').includes(query)
       || (p.sku ?? '').toLowerCase().includes(q)
+      || (p.barcode ?? '').toLowerCase().includes(q)
     const matchCat = activeCat === 'all' || p.category_id === activeCat
     return matchSearch && matchCat
   })
@@ -605,7 +658,7 @@ export default function ProductsPage() {
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search by name, Arabic name, or SKU..."
+            placeholder="Search by name, Arabic name, SKU, or barcode..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="input pl-9 py-2 text-sm"
@@ -672,6 +725,7 @@ export default function ProductsPage() {
             <div className="flex-1">Product</div>
             <div className="w-28 flex-shrink-0 hidden sm:block">Category</div>
             <div className="w-28 flex-shrink-0 hidden md:block">VAT</div>
+            <div className="w-28 flex-shrink-0 hidden lg:block">Stock</div>
             <div className="w-24 flex-shrink-0 text-right">Price</div>
             <div className="w-24 flex-shrink-0 text-center">Status</div>
             <div className="w-16 flex-shrink-0" />

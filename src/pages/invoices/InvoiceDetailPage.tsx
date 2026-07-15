@@ -2,13 +2,14 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, Printer, RefreshCw, Loader2, AlertCircle, CheckCircle2, Bug, FileText } from 'lucide-react'
 import QRCode from 'qrcode'
+import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { buildZatcaQR, decodeTLV } from '@/lib/zatca/qr'
 import { toSaudiTime } from '@/lib/utils/date'
-import ThermalReceipt, { printThermal } from '@/components/print/ThermalReceipt'
+import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
-import { printSilent } from '@/lib/electron'
+import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { submitInvoiceToZatca } from '@/lib/zatca/submission'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 
@@ -58,6 +59,16 @@ interface OriginalInvoiceLink {
   zatca_status: ZatcaStatus
 }
 
+interface RefundableItemSummary {
+  original_invoice_item_id: string
+  name: string
+  unit: string | null
+  original_quantity: number
+  credited_quantity: number
+  remaining_quantity: number
+  remaining_total: number
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(n: number) {
@@ -98,11 +109,14 @@ function paymentRowsTotal(payments: Payment[]): number {
   return payments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0)
 }
 
-function creditStatusLabel(linkedCreditNote: LinkedCreditNote | null): string {
-  if (!linkedCreditNote) return 'Not credited'
-  if (linkedCreditNote.zatca_status === 'reported' || linkedCreditNote.zatca_status === 'cleared') return 'Fully credited'
-  if (linkedCreditNote.zatca_status === 'failed') return 'Credit note failed'
-  return 'Credit note pending'
+function creditStatusLabel(status: 'none' | 'partial' | 'full'): string {
+  if (status === 'full') return 'Fully credited'
+  if (status === 'partial') return 'Partially credited'
+  return 'Not credited'
+}
+
+function fmtQty(n: number): string {
+  return Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 })
 }
 
 const INVOICE_DETAIL_SELECT = `
@@ -213,7 +227,8 @@ export default function InvoiceDetailPage() {
   const [branch,   setBranch]   = useState<Branch | null>(null)
   const [tenant,   setTenant]   = useState<Tenant | null>(null)
   const [customer, setCustomer] = useState<Customer | null>(null)
-  const [linkedCreditNote, setLinkedCreditNote] = useState<LinkedCreditNote | null>(null)
+  const [linkedCreditNotes, setLinkedCreditNotes] = useState<LinkedCreditNote[]>([])
+  const [refundableItems, setRefundableItems] = useState<RefundableItemSummary[]>([])
   const [originalInvoiceLink, setOriginalInvoiceLink] = useState<OriginalInvoiceLink | null>(null)
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState<string | null>(null)
@@ -274,31 +289,33 @@ export default function InvoiceDetailPage() {
         const tenantData = results[1].data as Tenant
         const custData   = results[2]?.data as Customer | null ?? null
 
-        const [creditNoteResult, originalInvoiceResult, refundResult] = await Promise.all([
-          inv.zatca_invoice_type === 'credit_note'
-            ? Promise.resolve({ data: null })
-            : supabase
-              .from('invoices')
-              .select('id, invoice_number, total_amount, zatca_status, payment_status, credit_reason, created_at')
-              .eq('original_invoice_id', inv.id)
-              .eq('zatca_invoice_type', 'credit_note')
-              .neq('status', 'cancelled')
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle(),
-          inv.original_invoice_id
-            ? supabase
-              .from('invoices')
-              .select('id, invoice_number, total_amount, zatca_status')
+	        const [creditNoteResult, originalInvoiceResult, refundResult, refundableResult] = await Promise.all([
+	          inv.zatca_invoice_type === 'credit_note'
+	            ? Promise.resolve({ data: [] })
+	            : supabase
+	              .from('invoices')
+	              .select('id, invoice_number, total_amount, zatca_status, payment_status, credit_reason, created_at')
+	              .eq('original_invoice_id', inv.id)
+	              .eq('zatca_invoice_type', 'credit_note')
+	              .neq('status', 'cancelled')
+	              .order('created_at', { ascending: false }),
+	          inv.original_invoice_id
+	            ? supabase
+	              .from('invoices')
+	              .select('id, invoice_number, total_amount, zatca_status')
               .eq('id', inv.original_invoice_id)
               .maybeSingle()
             : Promise.resolve({ data: null }),
           (supabase as any)
             .from('payment_refunds')
-            .select('*')
-            .or(`original_invoice_id.eq.${inv.id},credit_note_invoice_id.eq.${inv.id}`)
-            .order('created_at', { ascending: false }),
-        ])
+	            .select('*')
+	            .or(`original_invoice_id.eq.${inv.id},credit_note_invoice_id.eq.${inv.id}`)
+	            .order('created_at', { ascending: false }),
+	          inv.zatca_invoice_type === 'credit_note'
+	            ? Promise.resolve({ data: [] })
+	            : (supabase as any)
+	              .rpc('get_invoice_refundable_items', { p_invoice_id: inv.id }),
+	        ])
 
         setInvoice(inv as Invoice)
         setItems((itemData ?? []) as InvoiceItem[])
@@ -307,8 +324,22 @@ export default function InvoiceDetailPage() {
         setBranch(branchData)
         setTenant(tenantData)
         setCustomer(custData)
-        setLinkedCreditNote((creditNoteResult.data ?? null) as LinkedCreditNote | null)
-        setOriginalInvoiceLink((originalInvoiceResult.data ?? null) as OriginalInvoiceLink | null)
+	        setLinkedCreditNotes((creditNoteResult.data ?? []) as LinkedCreditNote[])
+	        setOriginalInvoiceLink((originalInvoiceResult.data ?? null) as OriginalInvoiceLink | null)
+	        if ((refundableResult as any).error) {
+	          console.error('[InvoiceDetailPage] failed to load refundable items', (refundableResult as any).error)
+	          setRefundableItems([])
+	        } else {
+	          setRefundableItems(((refundableResult as any).data ?? []).map((row: any) => ({
+	            original_invoice_item_id: String(row.original_invoice_item_id),
+	            name: String(row.name ?? 'Item'),
+	            unit: row.unit ?? null,
+	            original_quantity: Number(row.original_quantity ?? 0),
+	            credited_quantity: Number(row.credited_quantity ?? 0),
+	            remaining_quantity: Number(row.remaining_quantity ?? 0),
+	            remaining_total: Number(row.remaining_total ?? 0),
+	          })))
+	        }
 
         const [{ data: sandboxCert }] = await Promise.all([
           (supabase as any)
@@ -376,18 +407,43 @@ export default function InvoiceDetailPage() {
   useEffect(() => {
     if (!autoPrint || autoPrintRef.current || loading || !invoice || !branch || !qrDataUrl) return
     autoPrintRef.current = true
-    const t = setTimeout(() => printSilent(), 500)
+    const t = setTimeout(() => {
+      if (isElectron()) {
+        void printA4Invoice()
+      } else {
+        window.print()
+      }
+    }, 500)
     return () => clearTimeout(t)
   }, [autoPrint, loading, invoice, branch, qrDataUrl])
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
-  function handlePrintA4() {
-    printSilent()
+  async function handlePrintA4() {
+    if (!isElectron()) {
+      window.print()
+      return
+    }
+
+    const result = await printA4Invoice()
+    if (!result.success) {
+      toast.error(result.message || result.errorType || 'A4 print failed.')
+    }
   }
 
-  function handlePrintThermal() {
-    printThermal()
+  async function handlePrintThermal() {
+    if (!invoice) return
+    if (!isElectron()) {
+      navigate(`/print/receipt/${invoice.id}?auto=1`)
+      return
+    }
+
+    const result = await printReceipt({ invoiceId: invoice.id })
+    if (result.success) {
+      toast.success('Receipt sent to printer', { duration: 1800 })
+    } else {
+      toast.error(result.message || result.errorType || 'Receipt print failed.')
+    }
   }
 
   function handleWhatsApp() {
@@ -436,7 +492,7 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
 
   function handleCreditNoteCreated(result: CreditNoteCreatedResult) {
     if (!invoice) return
-    setLinkedCreditNote({
+    setLinkedCreditNotes(prev => [{
       id: result.creditNoteId,
       invoice_number: result.creditNoteNumber,
       total_amount: result.total,
@@ -444,7 +500,7 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
       payment_status: result.refundStatus,
       credit_reason: result.reason,
       created_at: result.createdAt,
-    })
+    }, ...prev])
     setRefunds(prev => [{
       id: `local-${result.creditNoteId}`,
       tenant_id: invoice.tenant_id,
@@ -461,24 +517,39 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
     }, ...prev])
 
     void (async () => {
-      const [creditNoteResult, refundResult] = await Promise.all([
+      const [creditNoteResult, refundResult, refundableResult] = await Promise.all([
         supabase
           .from('invoices')
           .select('id, invoice_number, total_amount, zatca_status, payment_status, credit_reason, created_at')
-          .eq('id', result.creditNoteId)
-          .maybeSingle(),
+          .eq('original_invoice_id', invoice.id)
+          .eq('zatca_invoice_type', 'credit_note')
+          .neq('status', 'cancelled')
+          .order('created_at', { ascending: false }),
         (supabase as any)
           .from('payment_refunds')
           .select('*')
           .or(`original_invoice_id.eq.${invoice.id},credit_note_invoice_id.eq.${result.creditNoteId}`)
           .order('created_at', { ascending: false }),
+        (supabase as any)
+          .rpc('get_invoice_refundable_items', { p_invoice_id: invoice.id }),
       ])
 
       if (creditNoteResult.data) {
-        setLinkedCreditNote(creditNoteResult.data as LinkedCreditNote)
+        setLinkedCreditNotes(creditNoteResult.data as LinkedCreditNote[])
       }
       if (refundResult.data) {
         setRefunds(refundResult.data as PaymentRefund[])
+      }
+      if (refundableResult.data) {
+        setRefundableItems((refundableResult.data as any[]).map((row: any) => ({
+          original_invoice_item_id: String(row.original_invoice_item_id),
+          name: String(row.name ?? 'Item'),
+          unit: row.unit ?? null,
+          original_quantity: Number(row.original_quantity ?? 0),
+          credited_quantity: Number(row.credited_quantity ?? 0),
+          remaining_quantity: Number(row.remaining_quantity ?? 0),
+          remaining_total: Number(row.remaining_total ?? 0),
+        })))
       }
     })()
   }
@@ -526,6 +597,15 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
   const isCancelled = invoice.status === 'cancelled'
   const isCreditNote = invoice.zatca_invoice_type === 'credit_note'
   const hasRefunds = refunds.length > 0
+  const latestCreditNote = linkedCreditNotes[0] ?? null
+  const totalOriginalQuantity = refundableItems.reduce((sum, item) => sum + Number(item.original_quantity ?? 0), 0)
+  const totalCreditedQuantity = refundableItems.reduce((sum, item) => sum + Number(item.credited_quantity ?? 0), 0)
+  const totalRemainingQuantity = refundableItems.reduce((sum, item) => sum + Math.max(Number(item.remaining_quantity ?? 0), 0), 0)
+  const creditStatus: 'none' | 'partial' | 'full' = isCreditNote || linkedCreditNotes.length === 0
+    ? 'none'
+    : totalOriginalQuantity > 0 && totalRemainingQuantity <= 0.0005
+    ? 'full'
+    : 'partial'
   const isStandardDocument = invoice.zatca_invoice_type === 'standard'
     || (isCreditNote && customer?.customer_type === 'business' && !!customer?.vat_number)
   const documentTitleAr = isCreditNote
@@ -535,29 +615,29 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
     ? (isStandardDocument ? 'Tax Credit Note' : 'Simplified Tax Credit Note')
     : (isStandardDocument ? 'Standard Tax Invoice' : 'Simplified Tax Invoice')
   const documentNumberLabel = isCreditNote ? 'Credit Note #' : 'Invoice #'
-  const creditLabel = creditStatusLabel(linkedCreditNote)
-  const creditLabelClass = linkedCreditNote
-    ? linkedCreditNote.zatca_status === 'failed'
-      ? 'text-red-600 bg-red-50 border-red-100'
-      : linkedCreditNote.zatca_status === 'reported' || linkedCreditNote.zatca_status === 'cleared'
-      ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
-      : 'text-amber-700 bg-amber-50 border-amber-100'
+  const creditLabel = creditStatusLabel(creditStatus)
+  const creditLabelClass = creditStatus === 'full'
+    ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
+    : creditStatus === 'partial'
+    ? 'text-amber-700 bg-amber-50 border-amber-100'
     : 'text-gray-600 bg-gray-50 border-gray-100'
   const canCreateCreditNote = !isCreditNote
     && !isCancelled
     && invoice.status === 'posted'
     && (invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared')
-    && !linkedCreditNote
+    && totalRemainingQuantity > 0.0005
   const creditDisabledReason = isCreditNote
-    ? 'Credit notes cannot be credited in this MVP.'
-    : linkedCreditNote
-    ? 'This invoice already has a full credit note.'
+    ? 'Credit notes cannot be credited.'
     : invoice.status !== 'posted'
     ? 'Only posted invoices can be credited.'
     : !(invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared')
     ? 'Only reported or cleared invoices can be credited.'
     : isCancelled
     ? 'Cancelled invoices cannot be credited here.'
+    : totalOriginalQuantity <= 0
+    ? 'Refundable item data is not available.'
+    : creditStatus === 'full' || totalRemainingQuantity <= 0.0005
+    ? 'All refundable quantities have already been credited.'
     : null
   const canSubmitCurrentDocument = invoice.zatca_status === 'failed'
     || (isCreditNote && invoice.zatca_status === 'pending')
@@ -583,6 +663,9 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
     qty:       Number(i.quantity),
     unitPrice: Number(i.unit_price),
     lineTotal: Number(i.total),
+    subtotal:  Number(i.subtotal),
+    taxAmount: Number(i.tax_amount),
+    total:     Number(i.total),
   }))
 
   const thermalAddress = [
@@ -610,6 +693,7 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
         time={invTime}
         items={thermalItems}
         subtotal={Number(invoice.subtotal)}
+        discountAmount={Number(invoice.discount_amount)}
         taxAmount={Number(invoice.tax_amount)}
         total={Number(invoice.total_amount)}
         paymentMethod={isSplitPayment ? 'split' : (payment?.method ?? 'card')}
@@ -657,12 +741,12 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
               WhatsApp
             </button>
           )}
-          <button onClick={handlePrintThermal}
+          <button onClick={() => void handlePrintThermal()}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
             <Printer size={13} />
             Print Receipt
           </button>
-          <button onClick={handlePrintA4}
+          <button onClick={() => void handlePrintA4()}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0F2419] rounded-xl hover:bg-[#1a3a28] transition-colors">
             <Printer size={13} />
             Print {isCreditNote ? 'Credit Note' : 'Invoice'} (PDF)
@@ -706,30 +790,34 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
                   </button>
                 )}
               </div>
-            ) : linkedCreditNote ? (
+            ) : linkedCreditNotes.length > 0 ? (
               <div className="space-y-1 text-xs text-gray-600">
-                <p>Full credit note <span className="font-semibold text-gray-900">{linkedCreditNote.invoice_number}</span> exists for this invoice.</p>
-                <p>ZATCA status: <span className="font-semibold">{ZATCA_STATUS[linkedCreditNote.zatca_status]?.label ?? linkedCreditNote.zatca_status}</span></p>
-                {linkedCreditNote.credit_reason && <p><span className="font-semibold text-gray-800">Reason:</span> {linkedCreditNote.credit_reason}</p>}
+                <p>
+                  {creditLabel}. <span className="font-semibold text-gray-900">{linkedCreditNotes.length}</span> credit note{linkedCreditNotes.length !== 1 ? 's' : ''} linked to this invoice.
+                </p>
+                {latestCreditNote && (
+                  <p>Latest: <span className="font-semibold text-gray-900">{latestCreditNote.invoice_number}</span> · ZATCA <span className="font-semibold">{ZATCA_STATUS[latestCreditNote.zatca_status]?.label ?? latestCreditNote.zatca_status}</span></p>
+                )}
+                <p>Credited quantity {fmtQty(totalCreditedQuantity)} · remaining {fmtQty(totalRemainingQuantity)}</p>
               </div>
             ) : (
               <p className="text-xs text-gray-500">
-                Create a full credit note only after the original invoice has been reported or cleared.
+                Create a credit note only after the original invoice has been reported or cleared.
               </p>
             )}
           </div>
 
           <div className="flex flex-wrap gap-2 sm:justify-end">
-            {linkedCreditNote && !isCreditNote && (
+            {latestCreditNote && !isCreditNote && (
               <button
                 type="button"
-                onClick={() => navigate(`/invoices/${linkedCreditNote.id}`)}
+                onClick={() => navigate(`/invoices/${latestCreditNote.id}`)}
                 className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50"
               >
-                Open Credit Note
+                Open Latest Credit Note
               </button>
             )}
-            {!isCreditNote && !linkedCreditNote && (
+            {!isCreditNote && (
               <button
                 type="button"
                 onClick={openCreditModal}
@@ -737,16 +825,41 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
                 title={creditDisabledReason ?? undefined}
                 className="rounded-xl bg-[#0F2419] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
               >
-                Create Full Credit Note / Refund
+                Create Credit Note / Refund
               </button>
             )}
           </div>
         </div>
 
-        {creditDisabledReason && !isCreditNote && !linkedCreditNote && (
-          <p className="mt-3 text-[11px] text-gray-400">{creditDisabledReason}</p>
+        {!isCreditNote && refundableItems.length > 0 && (
+          <div className="mt-4 overflow-x-auto rounded-xl border border-gray-100">
+            <div className="min-w-[620px]">
+              <div className="grid grid-cols-[minmax(0,1fr)_90px_90px_90px_110px] gap-2 bg-gray-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                <span>Item</span>
+                <span className="text-right">Original</span>
+                <span className="text-right">Credited</span>
+                <span className="text-right">Remaining</span>
+                <span className="text-right">Remaining total</span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {refundableItems.map(item => (
+                  <div key={item.original_invoice_item_id} className="grid grid-cols-[minmax(0,1fr)_90px_90px_90px_110px] gap-2 px-3 py-2 text-xs">
+                    <span className="truncate font-semibold text-gray-800">{item.name}</span>
+                    <span className="text-right tabular-nums text-gray-600">{fmtQty(item.original_quantity)} {item.unit ?? ''}</span>
+                    <span className="text-right tabular-nums text-amber-700">{fmtQty(item.credited_quantity)}</span>
+                    <span className={`text-right tabular-nums font-semibold ${item.remaining_quantity > 0 ? 'text-emerald-700' : 'text-gray-400'}`}>{fmtQty(item.remaining_quantity)}</span>
+                    <span className="text-right tabular-nums font-semibold text-gray-900"><Rial amount={item.remaining_total} /></span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         )}
-      </div>
+
+	        {creditDisabledReason && !isCreditNote && (
+	          <p className="mt-3 text-[11px] text-gray-400">{creditDisabledReason}</p>
+	        )}
+	      </div>
 
       {/* ══════════════════════════════════════════════════ */}
       {/* PRINTABLE INVOICE AREA                            */}

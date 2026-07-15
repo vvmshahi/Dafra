@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, ChevronDown, ChevronUp, ImagePlus } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { X, ChevronDown, ChevronUp, ImagePlus, PackageCheck, SlidersHorizontal, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
+import { Switch } from '@/components/ui/Switch'
+import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import type { Category, VatTreatment } from '@/types'
 import type { ProductRow } from './ProductsPage'
 
@@ -61,10 +64,35 @@ const productErrorMessage = (message: string) => {
   return message
 }
 
+const stockErrorMessage = (message: string) => {
+  if (/stock module is disabled/i.test(message)) return 'Stock tracking is disabled for this branch.'
+  if (/service products cannot track stock/i.test(message)) return 'Service products cannot track stock.'
+  if (/service businesses/i.test(message)) return 'Stock tracking is not available for service businesses.'
+  if (/opening stock/i.test(message)) return message
+  if (/adjustment would make stock negative/i.test(message)) return 'This adjustment would make stock negative.'
+  if (/product belongs to another branch/i.test(message)) return 'This product belongs to another branch.'
+  if (/permission|forbidden|unauthorized/i.test(message)) return 'You do not have permission to update product stock.'
+  if (/unsupported stock|invalid stock|adjust stock before/i.test(message)) return message
+  return 'Stock settings could not be saved. Check the stock values and try again.'
+}
+
+const formatStockQuantity = (value: number | null | undefined) => {
+  const numeric = Number(value ?? 0)
+  if (!Number.isFinite(numeric)) return '0'
+  if (Number.isInteger(numeric)) return String(numeric)
+  return numeric.toFixed(3).replace(/\.?0+$/, '')
+}
+
+const createStockAdjustmentKey = () => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+  return `stock-adjustment-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ProductDrawer({ open, product, categories, products, onClose, onSaved }: Props) {
-  const { profile } = useAuth()
+  const { profile, tenant, branch } = useAuth()
+  const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [s0, setS0] = useState(true)   // Basic Info
@@ -88,6 +116,31 @@ export default function ProductDrawer({ open, product, categories, products, onC
   const [sortOrder,    setSortOrder]    = useState('0')
   const [sku,          setSku]          = useState('')
   const [notes,        setNotes]        = useState('')
+  const [trackStock,   setTrackStock]   = useState(false)
+  const [adjustmentQuantity, setAdjustmentQuantity] = useState('')
+  const [adjustmentIdempotencyKey, setAdjustmentIdempotencyKey] = useState<string | null>(null)
+  const [showAdjustment, setShowAdjustment] = useState(false)
+  const [createdProductId, setCreatedProductId] = useState<string | null>(null)
+  const [createdTrackedProduct, setCreatedTrackedProduct] = useState<{ id: string; name: string } | null>(null)
+
+  const businessType = resolveBusinessType(tenant?.business_type)
+  const stockModuleVisible = isStockModuleVisible({
+    businessType: tenant?.business_type,
+    stockEnabled: branch?.stock_enabled,
+  })
+  const hasStockContext = tenant !== null && branch !== null
+  const stockControlsAllowed = hasStockContext && businessType === 'trading' && stockModuleVisible && product?.is_service !== true
+  const currentStockQuantity = Number(product?.stock_quantity ?? 0)
+  const productWasTracked = Boolean(product?.track_stock)
+  const stockUnavailableMessage = !hasStockContext
+    ? ''
+    : businessType === 'service'
+    ? 'Stock tracking is hidden for service businesses.'
+    : product?.is_service
+      ? 'Service products cannot track stock.'
+      : branch?.stock_enabled === false
+        ? 'Stock tracking is disabled for this branch.'
+        : ''
 
   const baseline = product
     ? JSON.stringify({
@@ -131,7 +184,26 @@ export default function ProductDrawer({ open, product, categories, products, onC
     notes,
   })
 
-  const hasUnsavedChanges = open && !saving && (imageFile !== null || current !== baseline)
+  const stockBaseline = product
+    ? JSON.stringify({
+        trackStock: productWasTracked,
+        adjustmentQuantity: '',
+      })
+    : JSON.stringify({
+        trackStock: stockControlsAllowed,
+        adjustmentQuantity: '',
+      })
+  const stockCurrent = JSON.stringify({
+    trackStock,
+    adjustmentQuantity,
+  })
+
+  const hasUnsavedChanges = open && !saving && (
+    imageFile !== null ||
+    current !== baseline ||
+    createdProductId !== null ||
+    (stockControlsAllowed && stockCurrent !== stockBaseline)
+  )
 
   const resolvedTenantId = profile?.tenant_id ?? ''
   const resolvedBranchId = profile?.branch_id ?? ''
@@ -153,6 +225,7 @@ export default function ProductDrawer({ open, product, categories, products, onC
       setSortOrder(String(product.sort_order ?? 0))
       setSku(product.sku ?? '')
       setNotes(product.notes ?? '')
+      setTrackStock(Boolean(product.track_stock))
     } else {
       setName('')
       setNameAr('')
@@ -165,10 +238,16 @@ export default function ProductDrawer({ open, product, categories, products, onC
       setSortOrder('0')
       setSku('')
       setNotes('')
+      setTrackStock(stockControlsAllowed)
     }
     setImageFile(null)
+    setAdjustmentQuantity('')
+    setAdjustmentIdempotencyKey(null)
+    setShowAdjustment(false)
+    setCreatedProductId(null)
+    setCreatedTrackedProduct(null)
     setError('')
-  }, [open, product])
+  }, [open, product, stockControlsAllowed])
 
   useEffect(() => {
     if (!open || !categoryId) return
@@ -242,6 +321,27 @@ export default function ProductDrawer({ open, product, categories, products, onC
       if (duplicate) { setError('SKU already exists for another product in this branch'); return }
     }
 
+    let adjustmentDelta: number | null = null
+    let manualAdjustmentKey: string | null = null
+    if (stockControlsAllowed && product && adjustmentQuantity.trim() !== '') {
+      adjustmentDelta = Number(adjustmentQuantity)
+      if (!Number.isFinite(adjustmentDelta) || adjustmentDelta === 0) {
+        setError('Enter a non-zero stock adjustment.')
+        return
+      }
+      if (currentStockQuantity + adjustmentDelta < 0) {
+        setError('This adjustment would make stock negative.')
+        return
+      }
+      manualAdjustmentKey = adjustmentIdempotencyKey ?? createStockAdjustmentKey()
+      if (!adjustmentIdempotencyKey) setAdjustmentIdempotencyKey(manualAdjustmentKey)
+    }
+
+    if (stockControlsAllowed && product && productWasTracked && !trackStock) {
+      const confirmed = confirm('Disable stock tracking for this product? The current stock quantity and stock history will be preserved, but POS sales will stop checking stock.')
+      if (!confirmed) return
+    }
+
     setSaving(true)
     setError('')
 
@@ -284,16 +384,61 @@ export default function ProductDrawer({ open, product, categories, products, onC
 
       const q = supabase as unknown as { from: (t: string) => any }
 
-      if (product) {
-        const { error: err } = await q.from('products').update(payload).eq('id', product.id)
+      let savedProductId = product?.id ?? createdProductId
+      const shouldShowTrackedCreationSuccess = !product && trackStock && stockControlsAllowed
+
+      if (product || createdProductId) {
+        const { error: err } = await q.from('products').update(payload).eq('id', savedProductId)
         if (err) { setError(productErrorMessage(err.message)); return }
       } else {
-        const { error: err } = await q.from('products').insert(payload)
+        const { data, error: err } = await q.from('products').insert(payload).select('id').single()
         if (err) { setError(productErrorMessage(err.message)); return }
+        savedProductId = data.id
+        setCreatedProductId(data.id)
       }
 
+      if (stockControlsAllowed && savedProductId) {
+        const stockPayload: Record<string, unknown> = { product_id: savedProductId }
+
+        if (!product && trackStock) {
+          stockPayload.track_stock = true
+          stockPayload.opening_stock_quantity = 0
+          stockPayload.reason = 'opening_stock'
+        } else if (product && trackStock !== productWasTracked) {
+          stockPayload.track_stock = trackStock
+          stockPayload.reason = trackStock ? 'opening_stock' : 'tracking_disabled'
+          if (trackStock) stockPayload.opening_stock_quantity = 0
+        }
+
+        if (product && adjustmentDelta !== null) {
+          stockPayload.adjustment_quantity = adjustmentDelta
+          stockPayload.idempotency_key = manualAdjustmentKey
+          stockPayload.reason = 'manual_adjustment'
+        }
+
+        if (Object.keys(stockPayload).length > 1) {
+          const { error: stockErr } = await (supabase as any).rpc('update_product_stock_settings', {
+            p_payload: stockPayload,
+          })
+
+          if (stockErr) {
+            const prefix = product
+              ? 'Product details were saved, but stock settings were not updated: '
+              : 'Product was created, but stock setup was not completed: '
+            setError(prefix + stockErrorMessage(stockErr.message))
+            return
+          }
+        }
+      }
+
+      setCreatedProductId(null)
+      setAdjustmentIdempotencyKey(null)
       if (imagePreview?.startsWith('blob:')) URL.revokeObjectURL(imagePreview)
       onSaved()
+      if (shouldShowTrackedCreationSuccess && savedProductId) {
+        setCreatedTrackedProduct({ id: savedProductId, name: name.trim() })
+        return
+      }
       onClose()
     } finally {
       setSaving(false)
@@ -301,6 +446,57 @@ export default function ProductDrawer({ open, product, categories, products, onC
   }
 
   if (!open) return null
+
+  if (createdTrackedProduct) {
+    return (
+      <>
+        <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
+        <div className="fixed inset-y-0 right-0 w-full max-w-[480px] bg-white shadow-2xl z-50 flex flex-col">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+            <div>
+              <h2 className="text-base font-bold text-gray-900">Product created successfully.</h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Add quantity, supplier, and purchase cost from Product Stock.
+              </p>
+            </div>
+            <button type="button" onClick={onClose}
+              className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400">
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="flex-1 px-6 py-5">
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+              <p className="text-sm font-semibold text-gray-900">{createdTrackedProduct.name}</p>
+              <p className="mt-1 text-xs leading-5 text-gray-500">
+                Inventory tracking is enabled with zero stock. Use Add Opening Stock to receive the first quantity with its cost and supplier details.
+              </p>
+            </div>
+          </div>
+
+          <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Done
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                onClose()
+                navigate('/inventory', {
+                  state: {
+                    stockTab: 'product',
+                    openProductStockReceiptFor: createdTrackedProduct.id,
+                  },
+                })
+              }}
+            >
+              Add Opening Stock
+            </Button>
+          </div>
+        </div>
+      </>
+    )
+  }
 
   return (
     <>
@@ -486,20 +682,105 @@ export default function ProductDrawer({ open, product, categories, products, onC
                   <p className="text-sm font-medium text-gray-700">Show in POS</p>
                   <p className="text-xs text-gray-400 mt-0.5">Product appears during billing/checkout</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsAvailable(v => !v)}
-                  className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${
-                    isAvailable ? 'bg-primary-500' : 'bg-gray-200'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
-                      isAvailable ? 'translate-x-5' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
+                <Switch
+                  checked={isAvailable}
+                  onChange={setIsAvailable}
+                  ariaLabel="Show in POS"
+                />
               </div>
+
+              {stockControlsAllowed ? (
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3.5 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white text-emerald-600 shadow-sm">
+                        <PackageCheck size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-800">Track inventory</p>
+                        <p className="mt-0.5 text-xs leading-5 text-gray-500">
+                          {product
+                            ? 'Sales reduce tracked stock automatically. Use Adjust Stock for audited quantity changes.'
+                            : 'Sales reduce tracked stock automatically. New products start at zero; receive quantity and cost from Product Stock.'}
+                        </p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={trackStock}
+                      onChange={next => {
+                        if (!next) {
+                          setAdjustmentQuantity('')
+                          setShowAdjustment(false)
+                        }
+                        setTrackStock(next)
+                      }}
+                      ariaLabel="Track inventory"
+                      className={trackStock ? 'bg-emerald-500' : undefined}
+                    />
+                  </div>
+
+                  {product && (
+                    <div className="grid grid-cols-2 gap-2 rounded-lg bg-white/80 p-2.5 text-xs">
+                      <div>
+                        <p className="text-gray-400">Current stock</p>
+                        <p className={`mt-0.5 font-semibold ${productWasTracked ? 'text-gray-800' : 'text-gray-500'}`}>
+                          {productWasTracked ? formatStockQuantity(product.stock_quantity) : 'Not tracked'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-400">Tracking status</p>
+                        <p className={`mt-0.5 font-semibold ${trackStock ? 'text-emerald-700' : 'text-gray-500'}`}>
+                          {trackStock ? 'Tracked' : 'Not tracked'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {product && productWasTracked && trackStock && (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAdjustment(v => !v)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"
+                      >
+                        <SlidersHorizontal size={13} />
+                        Adjust Stock
+                      </button>
+
+                      {showAdjustment && (
+                        <div className="rounded-lg border border-emerald-100 bg-white p-3">
+                          <label className="label">Adjustment quantity</label>
+                          <input
+                            className="input"
+                            type="number"
+                            step="0.001"
+                            value={adjustmentQuantity}
+                            onChange={e => {
+                              setAdjustmentQuantity(e.target.value)
+                              setAdjustmentIdempotencyKey(null)
+                            }}
+                            placeholder="e.g. 5 or -2"
+                          />
+                          <p className="mt-1 text-xs leading-5 text-gray-400">
+                            Use a positive number to add stock or a negative number to reduce it. The final stock cannot go below zero.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {product && productWasTracked && !trackStock && (
+                    <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                      <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+                      Stock quantity and history will be preserved, but POS sales will stop checking stock for this product.
+                    </div>
+                  )}
+                </div>
+              ) : stockUnavailableMessage ? (
+                <div className="rounded-xl border border-gray-100 bg-gray-50 px-3.5 py-3 text-xs leading-5 text-gray-500">
+                  {stockUnavailableMessage}
+                </div>
+              ) : null}
 
               <div>
                 <label className="label">SKU / Item Code</label>

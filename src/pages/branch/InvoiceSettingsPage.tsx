@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import type { Branch } from '@/types/database'
+import { Switch as Toggle } from '@/components/ui/Switch'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -99,21 +100,6 @@ function InfoTip({ text }: { text: string }) {
     >
       <Info size={8} />
     </span>
-  )
-}
-
-// ── Toggle ────────────────────────────────────────────────────────────────────
-
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex items-center cursor-pointer flex-shrink-0">
-      <div
-        className={`relative w-9 h-5 rounded-full transition-colors ${checked ? 'bg-primary-500' : 'bg-gray-200'}`}
-        onClick={() => onChange(!checked)}
-      >
-        <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
-      </div>
-    </label>
   )
 }
 

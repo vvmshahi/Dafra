@@ -3,6 +3,7 @@
 
 export type UserRole = 'super_admin' | 'owner' | 'branch'
 export type BusinessType = 'trading' | 'service'
+export type BranchPosMode = 'touch' | 'quick'
 export type VatExpenseTreatment = 'no_vat' | 'included' | 'on_top'
 export type ExpenseVatClaimStatus = 'no_vat' | 'claimable' | 'not_claimable' | 'needs_review'
 export type ExpensePaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'other'
@@ -166,6 +167,11 @@ export interface Database {
         Insert: InventoryItemInsert
         Update: InventoryItemUpdate
       }
+      product_stock_receipts: {
+        Row: ProductStockReceipt
+        Insert: ProductStockReceiptInsert
+        Update: never
+      }
       purchases: {
         Row: Purchase
         Insert: PurchaseInsert
@@ -255,6 +261,34 @@ export interface Database {
           p_payload: {
             allow_split_payments?: boolean
             show_pos_scroll_buttons?: boolean
+            pos_mode?: BranchPosMode
+          }
+        }
+        Returns: Record<string, unknown>
+      }
+      update_product_stock_settings: {
+        Args: {
+          p_payload: {
+            product_id: string
+            track_stock?: boolean
+            opening_stock_quantity?: number | null
+            adjustment_quantity?: number | null
+            idempotency_key?: string | null
+            reason?: 'opening_stock' | 'manual_adjustment' | 'tracking_enabled' | 'tracking_disabled'
+          }
+        }
+        Returns: Record<string, unknown>
+      }
+      receive_product_stock: {
+        Args: {
+          p_payload: {
+            product_id: string
+            supplier_id?: string | null
+            quantity: number
+            unit_cost: number
+            idempotency_key: string
+            note?: string | null
+            reference?: string | null
           }
         }
         Returns: Record<string, unknown>
@@ -301,6 +335,14 @@ export interface Database {
       create_full_credit_note: {
         Args: { p_payload: Record<string, unknown> }
         Returns: Record<string, unknown>
+      }
+      create_partial_credit_note: {
+        Args: { p_payload: Record<string, unknown> }
+        Returns: Record<string, unknown>
+      }
+      get_invoice_refundable_items: {
+        Args: { p_invoice_id: string }
+        Returns: RefundableInvoiceItem[]
       }
       confirm_purchase_receiving: {
         Args: { p_purchase_id: string; p_confirm?: boolean }
@@ -700,6 +742,7 @@ export interface Branch {
   print_mode: 'thermal' | 'pdf' | 'both'
   allow_split_payments: boolean
   show_pos_scroll_buttons: boolean
+  pos_mode: BranchPosMode
   stock_enabled: boolean | null
   created_at: string
   updated_at: string
@@ -956,6 +999,34 @@ export interface InvoiceItem {
   created_at: string
 }
 
+export interface RefundableInvoiceItem {
+  original_invoice_item_id: string
+  name: string
+  name_ar: string | null
+  sku: string | null
+  unit: string | null
+  product_id: string | null
+  original_quantity: number
+  credited_quantity: number
+  remaining_quantity: number
+  unit_price: number
+  subtotal: number
+  discount_amount: number
+  tax_rate: number
+  tax_amount: number
+  total: number
+  credited_subtotal: number
+  credited_discount_amount: number
+  credited_tax_amount: number
+  credited_total: number
+  remaining_subtotal: number
+  remaining_discount_amount: number
+  remaining_tax_amount: number
+  remaining_total: number
+  track_stock: boolean
+  is_service: boolean
+}
+
 export interface Payment {
   id: string
   tenant_id: string
@@ -1049,6 +1120,7 @@ export interface BranchInsert {
   print_mode?: string | null
   allow_split_payments?: boolean
   show_pos_scroll_buttons?: boolean
+  pos_mode?: string | null
   stock_enabled?: boolean | null
 }
 
@@ -1289,6 +1361,24 @@ export interface InventoryItem {
   created_at: string
   updated_at: string
 }
+
+export interface ProductStockReceipt {
+  id: string
+  tenant_id: string
+  branch_id: string
+  product_id: string
+  supplier_id: string | null
+  quantity: number
+  unit_cost: number
+  total_cost: number
+  idempotency_key: string
+  note: string | null
+  reference: string | null
+  created_by: string
+  created_at: string
+}
+
+export type ProductStockReceiptInsert = Omit<ProductStockReceipt, 'id' | 'created_at'>
 
 export interface Purchase {
   id: string

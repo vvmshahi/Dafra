@@ -15,6 +15,23 @@ function computeIsOnboarded(profile: UserProfile | null): boolean | null {
   return true
 }
 
+function isElectronEnvironment(): boolean {
+  return typeof window !== 'undefined' && window.electronAPI?.isElectron === true
+}
+
+function logDesktopAuthDiagnostic(event: string, session: Session | null) {
+  if (!isElectronEnvironment()) return
+
+  const parts = [
+    `[Kubri Auth] event=${event}`,
+    `timestamp=${new Date().toISOString()}`,
+    `session=${session ? 'true' : 'false'}`,
+    'environment=electron',
+  ]
+  if (session?.user?.id) parts.push(`userId=${session.user.id}`)
+  console.info(parts.join(' '))
+}
+
 type AuthContextValue = ReturnType<typeof useProvideAuth>
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -104,20 +121,37 @@ function useProvideAuth() {
       }
     }
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!mounted) return
-      if (session?.user) {
-        setUser(session.user)
-        setSession(session)
-        fetchProfile(session.user.id)
-      } else {
+    supabase.auth.getSession()
+      .then(({ data: { session }, error }) => {
+        if (!mounted) return
+        if (error) {
+          logDesktopAuthDiagnostic('INITIAL_SESSION_ERROR', null)
+          setLoading(false)
+          setHasBranch(true)
+          return
+        }
+
+        logDesktopAuthDiagnostic('INITIAL_SESSION', session ?? null)
+        if (session?.user) {
+          setUser(session.user)
+          setSession(session)
+          fetchProfile(session.user.id)
+        } else {
+          setLoading(false)
+          setHasBranch(true)
+        }
+      })
+      .catch((error) => {
+        if (!mounted) return
+        void error
+        logDesktopAuthDiagnostic('INITIAL_SESSION_ERROR', null)
         setLoading(false)
         setHasBranch(true)
-      }
-    })
+      })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return
+      logDesktopAuthDiagnostic(event, session ?? null)
       if (event === 'SIGNED_IN' && session) {
         setUser(session.user)
         setSession(session)

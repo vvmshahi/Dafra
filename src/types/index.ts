@@ -1,6 +1,7 @@
 export type {
   UserRole,
   BusinessType,
+  BranchPosMode,
   InvoiceType,
   InvoiceStatus,
   ZatcaStatus,
@@ -76,6 +77,7 @@ export type {
   SupplierItemMappingStatus,
   Supplier,
   InventoryItem,
+  ProductStockReceipt,
   Purchase,
   PurchaseItem,
   SupplierItemMapping,
@@ -83,6 +85,7 @@ export type {
   SupplierUpdate,
   InventoryItemInsert,
   InventoryItemUpdate,
+  ProductStockReceiptInsert,
   PurchaseInsert,
   PurchaseUpdate,
   PurchaseItemInsert,
