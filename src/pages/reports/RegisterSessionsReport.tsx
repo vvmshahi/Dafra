@@ -113,6 +113,7 @@ export default function RegisterSessionsReport({ branchId, startDate, endDate }:
 
       {sessions.map(session => {
         const diff = session.cashDifference ?? 0
+        const grossSales = session.totalSales + session.creditNoteTotal
         return (
           <div key={session.sessionId ?? session.branchId}
             className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
@@ -140,16 +141,17 @@ export default function RegisterSessionsReport({ branchId, startDate, endDate }:
               )}
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-8">
-              <SessionAmount label="Sales" amount={session.totalSales} />
+            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-9">
+              <SessionAmount label="Gross sales" amount={grossSales} />
+              <SessionAmount label="Credit notes" amount={session.creditNoteTotal} />
+              <SessionAmount label="Net sales" amount={session.totalSales} />
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Invoices</p>
                 <p className="mt-1 text-sm font-bold text-gray-900 tabular-nums">{session.invoiceCount}</p>
               </div>
               <SessionAmount label="Cash" amount={session.cashTotal} />
               <SessionAmount label="Card" amount={session.cardTotal} />
-              <SessionAmount label="VAT" amount={session.vatTotal} />
-              <SessionAmount label="Credit notes" amount={session.creditNoteTotal} />
+              <SessionAmount label="Net VAT" amount={session.vatTotal} />
               <SessionAmount label="Expenses" amount={session.expensesTotal} />
               <SessionAmount label="Expected cash" amount={session.expectedCash} />
             </div>

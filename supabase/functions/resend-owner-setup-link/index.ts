@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
+import { resolveOwnerSetupRedirectUrl } from '../_shared/owner_setup_redirect.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -8,7 +9,6 @@ const corsHeaders = {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const REDIRECT_TO = 'https://dafra.vercel.app/reset-password'
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -31,6 +31,15 @@ Deno.serve(async (req: Request) => {
     const serviceRoleKey = Deno.env.get('DAFRA_SERVICE_ROLE_KEY')
 
     if (!serviceRoleKey || !serviceRoleKey.startsWith('eyJ')) {
+      return jsonResponse({ error: 'Server configuration error' }, 500)
+    }
+
+    let ownerSetupRedirectUrl: string
+    try {
+      ownerSetupRedirectUrl = resolveOwnerSetupRedirectUrl()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OWNER_SETUP_REDIRECT_URL is invalid'
+      console.error('[resend-owner-setup-link] FATAL:', message)
       return jsonResponse({ error: 'Server configuration error' }, 500)
     }
 
@@ -183,7 +192,7 @@ Deno.serve(async (req: Request) => {
       type: 'recovery',
       email: ownerEmail,
       options: {
-        redirectTo: REDIRECT_TO,
+        redirectTo: ownerSetupRedirectUrl,
       },
     })
 

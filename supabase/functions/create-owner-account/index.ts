@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
+import { resolveOwnerSetupRedirectUrl } from '../_shared/owner_setup_redirect.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -18,6 +19,17 @@ Deno.serve(async (req: Request) => {
 
     if (!SERVICE_ROLE_KEY || !SERVICE_ROLE_KEY.startsWith('eyJ')) {
       console.error('[create-owner-account] FATAL: DAFRA_SERVICE_ROLE_KEY missing or malformed')
+      return new Response(JSON.stringify({ error: 'Server configuration error' }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    let ownerSetupRedirectUrl: string
+    try {
+      ownerSetupRedirectUrl = resolveOwnerSetupRedirectUrl()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OWNER_SETUP_REDIRECT_URL is invalid'
+      console.error('[create-owner-account] FATAL:', message)
       return new Response(JSON.stringify({ error: 'Server configuration error' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -248,7 +260,7 @@ Deno.serve(async (req: Request) => {
       type:  'recovery',
       email: normalizedEmail,
       options: {
-        redirectTo: 'https://dafra.vercel.app/reset-password',
+        redirectTo: ownerSetupRedirectUrl,
       },
     })
 

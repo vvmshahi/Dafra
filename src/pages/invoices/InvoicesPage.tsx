@@ -37,15 +37,6 @@ interface InvoiceRow {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function thisMonth() {
-  const now = saudiNow()
-  const first = new Date(now); first.setUTCDate(1)
-  return {
-    start: first.toISOString().split('T')[0],
-    end:   now.toISOString().split('T')[0],
-  }
-}
-
 type QuickRange = 'today' | 'yesterday' | 'this_month' | 'last_month' | 'custom'
 
 function dateInputValue(date: Date) {
@@ -144,10 +135,10 @@ export default function InvoicesPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [creditModalRow, setCreditModalRow] = useState<InvoiceRow | null>(null)
 
-  const { start: defaultStart, end: defaultEnd } = thisMonth()
+  const { start: defaultStart, end: defaultEnd } = quickRangeDates('today')
   const [startDate, setStartDate] = useState(defaultStart)
   const [endDate,   setEndDate]   = useState(defaultEnd)
-  const [quickRange, setQuickRange] = useState<QuickRange>('this_month')
+  const [quickRange, setQuickRange] = useState<QuickRange>('today')
   const [search,    setSearch]    = useState('')
   const [payFilter, setPayFilter] = useState('all')
   const [zatcaFilter, setZatcaFilter] = useState('all')

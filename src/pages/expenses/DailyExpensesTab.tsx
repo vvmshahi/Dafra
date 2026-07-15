@@ -233,8 +233,8 @@ export default function DailyExpensesTab() {
   const [editing,     setEditing]     = useState<ExpenseRow | null>(null)
 
   // Filters
-  const [preset,      setPreset]      = useState<Preset>('month')
-  const [dateFrom,    setDateFrom]    = useState(isoFirstOfMonth)
+  const [preset,      setPreset]      = useState<Preset>('today')
+  const [dateFrom,    setDateFrom]    = useState(isoToday)
   const [dateTo,      setDateTo]      = useState(isoToday)
   const [filterCat,   setFilterCat]   = useState('')
   const [filterPay,   setFilterPay]   = useState('')

@@ -579,14 +579,16 @@ export default function DashboardPage() {
   const lastSessionCount = sessionSummaries.filter(session => session.status !== 'open').length
   const sessionTotals = sessionSummaries.reduce(
     (totals, session) => ({
-      sales: totals.sales + session.totalSales,
+      grossSales: totals.grossSales + session.totalSales + session.creditNoteTotal,
+      creditNotes: totals.creditNotes + session.creditNoteTotal,
+      netSales: totals.netSales + session.totalSales,
       invoices: totals.invoices + session.invoiceCount,
       cash: totals.cash + session.cashTotal,
       card: totals.card + session.cardTotal,
       vat: totals.vat + session.vatTotal,
       expectedCash: totals.expectedCash + session.expectedCash,
     }),
-    { sales: 0, invoices: 0, cash: 0, card: 0, vat: 0, expectedCash: 0 },
+    { grossSales: 0, creditNotes: 0, netSales: 0, invoices: 0, cash: 0, card: 0, vat: 0, expectedCash: 0 },
   )
   const sessionSub = registerSessionLoadError
     ? 'Retry to load register sessions'
@@ -616,21 +618,27 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Register Session KPIs ────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
-        <StatCard label="Session Sales" value={sessionAmount(sessionTotals.sales)}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-8 gap-4">
+        <StatCard label="Gross Sales" value={sessionAmount(sessionTotals.grossSales)}
           sub={sessionSub}
           icon={TrendingUp} gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F2419]" loading={statsLoading} />
+        <StatCard label="Credit Notes" value={sessionAmount(sessionTotals.creditNotes)}
+          sub="Refund documents"
+          icon={Receipt} gradient="bg-gradient-to-br from-[#64748b] to-[#334155]" loading={statsLoading} />
+        <StatCard label="Net Sales" value={sessionAmount(sessionTotals.netSales)}
+          sub="Gross less credit notes"
+          icon={TrendingUp} gradient="bg-gradient-to-br from-[#0e6f53] to-[#0F4A28]" loading={statsLoading} />
         <StatCard label="Session Invoices" value={sessionCount}
           sub={sessionSub}
-          icon={FileText} gradient="bg-gradient-to-br from-[#0e6f53] to-[#0F4A28]" loading={statsLoading} />
+          icon={FileText} gradient="bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]" loading={statsLoading} />
         <StatCard label="Session Cash" value={sessionAmount(sessionTotals.cash)}
           sub="Cash and split cash"
           icon={Banknote} gradient="bg-gradient-to-br from-[#059669] to-[#047857]" loading={statsLoading} />
         <StatCard label="Session Card" value={sessionAmount(sessionTotals.card)}
           sub="Card and split card"
           icon={CreditCard} gradient="bg-gradient-to-br from-[#256f7a] to-[#174852]" loading={statsLoading} />
-        <StatCard label="Session VAT" value={sessionAmount(sessionTotals.vat)}
-          sub="Register-session VAT"
+        <StatCard label="Net VAT" value={sessionAmount(sessionTotals.vat)}
+          sub="Register-session net VAT"
           icon={BadgePercent} gradient="bg-gradient-to-br from-[#b45309] to-[#92400e]" loading={statsLoading} />
         <StatCard label="Expected Cash" value={sessionAmount(sessionTotals.expectedCash)}
           sub="Across shown sessions"

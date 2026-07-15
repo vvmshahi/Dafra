@@ -153,6 +153,10 @@ function normalizeQuantityInput(value: string, item: RefundableItem): string {
   return value
 }
 
+function fullReturnQuantity(item: RefundableItem): string {
+  return formatQuantityInput(Math.max(item.remaining_quantity, 0))
+}
+
 function amountForQuantity(
   originalAmount: number,
   remainingAmount: number,
@@ -493,18 +497,19 @@ export default function CreateCreditNoteModal({
                 {linePreviews.map(line => {
                   const item = line.item
                   const disabled = busy || item.remaining_quantity <= 0
+                  const lineIncluded = line.quantity > 0
                   return (
                     <div
                       key={item.original_invoice_item_id}
                       className={`rounded-xl border px-3 py-3 ${
                         item.remaining_quantity <= 0
                           ? 'border-gray-100 bg-gray-50 opacity-70'
-                          : line.quantity > 0
+                          : lineIncluded
                           ? 'border-[#0F2419]/30 bg-[#F8FBF7]'
                           : 'border-gray-100 bg-white'
                       }`}
                     >
-                      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_130px_170px] md:items-center">
+                      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_170px_130px_170px] md:items-center">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
                           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500">
@@ -516,6 +521,29 @@ export default function CreateCreditNoteModal({
                             {item.track_stock && !item.is_service && <span>Stock item</span>}
                           </div>
                         </div>
+
+                        <label className={`flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 transition-colors ${
+                          lineIncluded
+                            ? 'border-[#0F2419]/30 bg-white text-[#0F2419]'
+                            : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-white'
+                        } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}>
+                          <input
+                            type="checkbox"
+                            checked={lineIncluded}
+                            onChange={event => {
+                              setReturnQuantities(prev => ({
+                                ...prev,
+                                [item.original_invoice_item_id]: event.target.checked ? fullReturnQuantity(item) : '0',
+                              }))
+                            }}
+                            disabled={disabled}
+                            className="h-4 w-4 rounded border-gray-300 text-[#0F2419] focus:ring-[#0F2419]"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-xs font-bold">Return full quantity</span>
+                            <span className="block text-[10px] text-gray-500">Tap to fill {qty(item.remaining_quantity)}</span>
+                          </span>
+                        </label>
 
                         <label className="space-y-1">
                           <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Return qty</span>

@@ -24,6 +24,7 @@ import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
 import { MeemLogo } from '@/components/MeemLogo'
 import { getPrinterSettings, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
+import { openReceiptPreview, printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { supportConfig } from '@/config/support'
 import { resolveBusinessType } from '@/lib/utils/businessType'
 
@@ -195,16 +196,6 @@ function computeTotals(cart: CartItem[], vatMode: 'exclusive' | 'inclusive') {
     }
   }
   return { subtotal, taxAmount, total: subtotal + taxAmount }
-}
-
-function receiptPreviewUrl(invoiceId: string, autoPrint = true) {
-  return `/print/receipt/${invoiceId}${autoPrint ? '?auto=1' : ''}`
-}
-
-function openReceiptPreview(invoiceId: string, autoPrint = true) {
-  const url = receiptPreviewUrl(invoiceId, autoPrint)
-  const opened = window.open(url, '_blank', 'noopener,noreferrer')
-  if (!opened) window.location.assign(url)
 }
 
 function printFailureMessage(errorType?: string | null, message?: string | null) {
@@ -404,7 +395,6 @@ function ReceiptView({ receipt, onNewSale, onOpenPrinterSettings, printMode, zat
   printMode: 'thermal' | 'pdf' | 'both'
   zatcaStatus: 'submitted' | 'pending' | 'failed' | null
 }) {
-  const navigate = useNavigate()
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [printingReceipt, setPrintingReceipt] = useState(false)
   const [printError, setPrintError] = useState<string | null>(null)
@@ -493,15 +483,16 @@ ${lines}
   }
 
   async function openReceiptPrintPage() {
+    if (printingReceipt) return
     setPrintError(null)
-
-    if (!isElectron()) {
-      navigate(receiptPreviewUrl(receipt.invoiceId, true))
-      return
-    }
 
     setPrintingReceipt(true)
     try {
+      if (!isElectron()) {
+        await printReceiptInHiddenFrame(receipt.invoiceId)
+        return
+      }
+
       const settings = await getPrinterSettings()
       if (!settings.receiptPrinterName) {
         const message = 'Choose a receipt printer to enable direct printing.'
@@ -521,7 +512,7 @@ ${lines}
       const message = printFailureMessage(result.errorType, result.message)
       setPrintError(message)
       toast.error(message)
-      if (settings.fallbackToPreview) openReceiptPreview(receipt.invoiceId, false)
+      if (settings.fallbackToPreview) await printReceiptInHiddenFrame(receipt.invoiceId)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Receipt print failed.'
       setPrintError(message)
@@ -750,9 +741,10 @@ ${lines}
                 <button
                   type="button"
                   onClick={() => void openReceiptPrintPage()}
+                  disabled={printingReceipt}
                   className="rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-semibold text-red-700 shadow-sm hover:bg-red-100"
                 >
-                  Retry
+                  {printingReceipt ? 'Printing...' : 'Retry'}
                 </button>
                 <button
                   type="button"
@@ -763,7 +755,11 @@ ${lines}
                 </button>
                 <button
                   type="button"
-                  onClick={() => openReceiptPreview(receipt.invoiceId, false)}
+                  onClick={() => {
+                    if (!openReceiptPreview(receipt.invoiceId, false)) {
+                      toast.error('Could not open print preview. Check popup permissions.')
+                    }
+                  }}
                   className="rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
                 >
                   Open Print Preview
@@ -1068,6 +1064,8 @@ function CloseSessionModal({ session, onClose, onCancel }: {
   const [saving,        setSaving]        = useState(false)
   const [loadingData,   setLoadingData]   = useState(true)
   const [invoiceCount,  setInvoiceCount]  = useState(0)
+  const [grossSessionSales, setGrossSessionSales] = useState(0)
+  const [sessionCreditNotes, setSessionCreditNotes] = useState(0)
   const [totalSessionSales, setTotalSessionSales] = useState(0)
   const [cashSales,     setCashSales]     = useState(0)
   const [cardSales,     setCardSales]     = useState(0)
@@ -1102,8 +1100,15 @@ function CloseSessionModal({ session, onClose, onCancel }: {
         const { data } = await db().from('payments').select('invoice_id, method, amount').in('invoice_id', ids)
         pmts = data ?? []
       }
-      setInvoiceCount((invData ?? []).length)
-      setTotalSessionSales((invData ?? [])
+      const invoices = invData ?? []
+      setInvoiceCount(invoices.length)
+      setGrossSessionSales(invoices
+        .filter((invoice: any) => invoiceAccountingSign(invoice) > 0)
+        .reduce((s: number, invoice: any) => s + Number(invoice.total_amount ?? 0), 0))
+      setSessionCreditNotes(invoices
+        .filter((invoice: any) => invoiceAccountingSign(invoice) < 0)
+        .reduce((s: number, invoice: any) => s + Math.abs(Number(invoice.total_amount ?? 0)), 0))
+      setTotalSessionSales(invoices
         .reduce((s: number, invoice: any) => s + invoiceAccountingSign(invoice) * Number(invoice.total_amount ?? 0), 0))
       setCashSales(pmts
         .filter((p: any) => p.method === 'cash')
@@ -1193,20 +1198,29 @@ function CloseSessionModal({ session, onClose, onCancel }: {
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Check session totals</p>
                 <p className="text-[10px] text-gray-400">{invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''}</p>
               </div>
-              <div className="mb-2 rounded-xl border border-primary-100 bg-primary-50 px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-primary-700">Total Session Sales</p>
-                    <p className="mt-0.5 text-xs text-primary-700/70">All completed session invoices before payment split</p>
-                  </div>
-                  <p className="text-lg font-black text-primary-800 tabular-nums">
+              <div className="mb-2 grid grid-cols-1 gap-2 rounded-xl border border-primary-100 bg-primary-50 px-4 py-3 sm:grid-cols-3">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-primary-700">Gross Sales</p>
+                  <p className="mt-1 text-base font-black text-primary-800 tabular-nums">
+                    <Rial amount={grossSessionSales} />
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-primary-700">Refunds / Credit Notes</p>
+                  <p className="mt-1 text-base font-black text-primary-800 tabular-nums">
+                    <Rial amount={sessionCreditNotes} />
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-primary-700">Net Sales</p>
+                  <p className="mt-1 text-lg font-black text-primary-900 tabular-nums">
                     <Rial amount={totalSessionSales} />
                   </p>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <label className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-xs font-medium text-gray-600">
-                  <span className="min-w-0 flex-1">Cash sales/refunds</span>
+                  <span className="min-w-0 flex-1">Net Cash Sales</span>
                   <span className="font-bold text-gray-900 tabular-nums"><Rial amount={cashSales} /></span>
                   <input
                     type="checkbox"
@@ -1216,7 +1230,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
                   />
                 </label>
                 <label className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-xs font-medium text-gray-600">
-                  <span className="min-w-0 flex-1">Card sales</span>
+                  <span className="min-w-0 flex-1">Net Card Sales</span>
                   <span className="font-bold text-gray-900 tabular-nums"><Rial amount={cardSales} /></span>
                   <input
                     type="checkbox"
@@ -1236,7 +1250,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
                   />
                 </label>
                 <label className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-xs font-medium text-gray-600">
-                  <span className="min-w-0 flex-1">Credit notes/refunds</span>
+                  <span className="min-w-0 flex-1">Refunds / Credit Notes</span>
                   <span className="font-bold text-gray-900 tabular-nums"><Rial amount={creditRefunds} /></span>
                   <input
                     type="checkbox"
@@ -1325,7 +1339,7 @@ function SessionSummaryModal({ summary, onDone, onNewSession }: {
 
   const rows: [string, React.ReactNode][] = [
     ['Invoices',              summary.total_invoices],
-    ['Total Session Sales',   <Rial amount={Number(summary.total_session_sales)} />],
+    ['Net Session Sales',     <Rial amount={Number(summary.total_session_sales)} />],
     ['Cash Sales',            <Rial amount={Number(summary.total_cash_sales)} />],
     ['Card Sales',            <Rial amount={Number(summary.total_card_sales)} />],
     ['Expenses',              <Rial amount={Number(summary.total_expenses)} />],
@@ -1912,7 +1926,7 @@ export default function POSPage() {
 
       const message = printFailureMessage(result.errorType, result.message)
       toast.error(message)
-      if (settings.fallbackToPreview) openReceiptPreview(invoiceId, false)
+      if (settings.fallbackToPreview) await printReceiptInHiddenFrame(invoiceId)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Receipt print failed.')
     }
