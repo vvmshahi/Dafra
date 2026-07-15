@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Switch } from '@/components/ui/Switch'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
-import type { Category, VatTreatment } from '@/types'
+import type { Category, ProductSecurePayload, ProductSecureResult, ProductSkuSuggestionResult, VatTreatment } from '@/types'
 import type { ProductRow } from './ProductsPage'
 
 // ── VAT options ───────────────────────────────────────────────────────────────
@@ -61,6 +61,12 @@ const productErrorMessage = (message: string) => {
   if (message.includes('Product category does not belong')) {
     return 'Selected category does not match this branch. Refresh the page and select a category from this branch.'
   }
+  if (/sku already exists/i.test(message)) {
+    return 'SKU already exists for another product in this business.'
+  }
+  if (/sku cannot|sku must|sku may|invalid sku|repeated separators/i.test(message)) {
+    return message
+  }
   return message
 }
 
@@ -90,7 +96,7 @@ const createStockAdjustmentKey = () => {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function ProductDrawer({ open, product, categories, products, onClose, onSaved }: Props) {
+export default function ProductDrawer({ open, product, categories, onClose, onSaved }: Props) {
   const { profile, tenant, branch } = useAuth()
   const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -115,6 +121,9 @@ export default function ProductDrawer({ open, product, categories, products, onC
   const [isAvailable,  setIsAvailable]  = useState(true)
   const [sortOrder,    setSortOrder]    = useState('0')
   const [sku,          setSku]          = useState('')
+  const [skuManuallyEdited, setSkuManuallyEdited] = useState(false)
+  const [suggestedSku, setSuggestedSku] = useState<string | null>(null)
+  const [skuSuggesting, setSkuSuggesting] = useState(false)
   const [notes,        setNotes]        = useState('')
   const [trackStock,   setTrackStock]   = useState(false)
   const [adjustmentQuantity, setAdjustmentQuantity] = useState('')
@@ -205,8 +214,8 @@ export default function ProductDrawer({ open, product, categories, products, onC
     (stockControlsAllowed && stockCurrent !== stockBaseline)
   )
 
-  const resolvedTenantId = profile?.tenant_id ?? ''
-  const resolvedBranchId = profile?.branch_id ?? ''
+  const resolvedTenantId = profile?.tenant_id ?? tenant?.id ?? ''
+  const resolvedBranchId = profile?.branch_id ?? branch?.id ?? ''
   const selectedCategory = categoryId
     ? categories.find(c => c.id === categoryId)
     : null
@@ -224,6 +233,9 @@ export default function ProductDrawer({ open, product, categories, products, onC
       setIsAvailable(product.is_available ?? true)
       setSortOrder(String(product.sort_order ?? 0))
       setSku(product.sku ?? '')
+      setSkuManuallyEdited(true)
+      setSuggestedSku(null)
+      setSkuSuggesting(false)
       setNotes(product.notes ?? '')
       setTrackStock(Boolean(product.track_stock))
     } else {
@@ -237,6 +249,9 @@ export default function ProductDrawer({ open, product, categories, products, onC
       setIsAvailable(true)
       setSortOrder('0')
       setSku('')
+      setSkuManuallyEdited(false)
+      setSuggestedSku(null)
+      setSkuSuggesting(false)
       setNotes('')
       setTrackStock(stockControlsAllowed)
     }
@@ -248,6 +263,46 @@ export default function ProductDrawer({ open, product, categories, products, onC
     setCreatedTrackedProduct(null)
     setError('')
   }, [open, product, stockControlsAllowed])
+
+  useEffect(() => {
+    if (!open || product || skuManuallyEdited || !resolvedBranchId || !name.trim()) {
+      setSuggestedSku(null)
+      setSkuSuggesting(false)
+      return
+    }
+
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      setSkuSuggesting(true)
+      try {
+        const { data, error: suggestErr } = await supabase.rpc('suggest_product_sku', {
+          p_payload: {
+            name: name.trim(),
+            branch_id: resolvedBranchId,
+          },
+        })
+
+        if (cancelled) return
+        if (suggestErr) {
+          setSuggestedSku(null)
+          return
+        }
+
+        const result = data as ProductSkuSuggestionResult | null
+        if (result?.sku) {
+          setSuggestedSku(result.sku)
+          setSku(result.sku)
+        }
+      } finally {
+        if (!cancelled) setSkuSuggesting(false)
+      }
+    }, 350)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [open, product, skuManuallyEdited, resolvedBranchId, name])
 
   useEffect(() => {
     if (!open || !categoryId) return
@@ -313,14 +368,6 @@ export default function ProductDrawer({ open, product, categories, products, onC
       return
     }
 
-    const cleanSku = sku.trim().toLowerCase()
-    if (cleanSku) {
-      const duplicate = products.some(p =>
-        p.id !== product?.id && (p.sku ?? '').trim().toLowerCase() === cleanSku
-      )
-      if (duplicate) { setError('SKU already exists for another product in this branch'); return }
-    }
-
     let adjustmentDelta: number | null = null
     let manualAdjustmentKey: string | null = null
     if (stockControlsAllowed && product && adjustmentQuantity.trim() !== '') {
@@ -366,8 +413,7 @@ export default function ProductDrawer({ open, product, categories, products, onC
         imageUrl = null
       }
 
-      const payload: Record<string, unknown> = {
-        tenant_id:     tid,
+      const payload: ProductSecurePayload = {
         branch_id:     resolvedBranchId,
         name:          name.trim(),
         name_ar:       nameAr.trim()       || null,
@@ -382,19 +428,32 @@ export default function ProductDrawer({ open, product, categories, products, onC
         notes:         notes.trim()        || null,
       }
 
-      const q = supabase as unknown as { from: (t: string) => any }
-
       let savedProductId = product?.id ?? createdProductId
       const shouldShowTrackedCreationSuccess = !product && trackStock && stockControlsAllowed
 
       if (product || createdProductId) {
-        const { error: err } = await q.from('products').update(payload).eq('id', savedProductId)
+        if (!savedProductId) {
+          setError('Product id is required before saving changes.')
+          return
+        }
+        const { data, error: err } = await supabase.rpc('update_product_secure', {
+          p_payload: {
+            ...payload,
+            product_id: savedProductId,
+          },
+        })
         if (err) { setError(productErrorMessage(err.message)); return }
+        const result = data as ProductSecureResult | null
+        if (result?.sku) setSku(result.sku)
       } else {
-        const { data, error: err } = await q.from('products').insert(payload).select('id').single()
+        const { data, error: err } = await supabase.rpc('create_product_secure', {
+          p_payload: payload,
+        })
         if (err) { setError(productErrorMessage(err.message)); return }
-        savedProductId = data.id
-        setCreatedProductId(data.id)
+        const result = data as ProductSecureResult | null
+        savedProductId = result?.product_id ?? null
+        if (result?.sku) setSku(result.sku)
+        if (result?.product_id) setCreatedProductId(result.product_id)
       }
 
       if (stockControlsAllowed && savedProductId) {
@@ -787,9 +846,22 @@ export default function ProductDrawer({ open, product, categories, products, onC
                 <input
                   className="input"
                   value={sku}
-                  onChange={e => setSku(e.target.value)}
+                  onChange={e => {
+                    setSku(e.target.value)
+                    setSkuManuallyEdited(e.target.value.trim() !== '')
+                    if (e.target.value.trim() === '') setSuggestedSku(null)
+                  }}
                   placeholder="e.g. PROD-001 (optional)"
                 />
+                <p className="text-xs text-gray-400 mt-1">
+                  {skuSuggesting
+                    ? 'Generating SKU...'
+                    : skuManuallyEdited
+                      ? 'SKU will be normalized and checked when saving.'
+                      : suggestedSku
+                        ? `Suggested SKU: ${suggestedSku}`
+                        : 'Leave blank to generate a SKU automatically.'}
+                </p>
               </div>
 
               <div>
