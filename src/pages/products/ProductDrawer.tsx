@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { X, ChevronDown, ChevronUp, ImagePlus, PackageCheck, SlidersHorizontal, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -90,6 +91,7 @@ const createStockAdjustmentKey = () => {
 
 export default function ProductDrawer({ open, product, categories, products, onClose, onSaved }: Props) {
   const { profile, tenant, branch } = useAuth()
+  const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [s0, setS0] = useState(true)   // Basic Info
@@ -114,11 +116,11 @@ export default function ProductDrawer({ open, product, categories, products, onC
   const [sku,          setSku]          = useState('')
   const [notes,        setNotes]        = useState('')
   const [trackStock,   setTrackStock]   = useState(false)
-  const [openingStock, setOpeningStock] = useState('0')
   const [adjustmentQuantity, setAdjustmentQuantity] = useState('')
   const [adjustmentIdempotencyKey, setAdjustmentIdempotencyKey] = useState<string | null>(null)
   const [showAdjustment, setShowAdjustment] = useState(false)
   const [createdProductId, setCreatedProductId] = useState<string | null>(null)
+  const [createdTrackedProduct, setCreatedTrackedProduct] = useState<{ id: string; name: string } | null>(null)
 
   const businessType = resolveBusinessType(tenant?.business_type)
   const stockModuleVisible = isStockModuleVisible({
@@ -184,17 +186,14 @@ export default function ProductDrawer({ open, product, categories, products, onC
   const stockBaseline = product
     ? JSON.stringify({
         trackStock: productWasTracked,
-        openingStock: formatStockQuantity(product.stock_quantity),
         adjustmentQuantity: '',
       })
     : JSON.stringify({
         trackStock: stockControlsAllowed,
-        openingStock: '0',
         adjustmentQuantity: '',
       })
   const stockCurrent = JSON.stringify({
     trackStock,
-    openingStock,
     adjustmentQuantity,
   })
 
@@ -226,7 +225,6 @@ export default function ProductDrawer({ open, product, categories, products, onC
       setSku(product.sku ?? '')
       setNotes(product.notes ?? '')
       setTrackStock(Boolean(product.track_stock))
-      setOpeningStock(formatStockQuantity(product.stock_quantity))
     } else {
       setName('')
       setNameAr('')
@@ -240,13 +238,13 @@ export default function ProductDrawer({ open, product, categories, products, onC
       setSku('')
       setNotes('')
       setTrackStock(stockControlsAllowed)
-      setOpeningStock('0')
     }
     setImageFile(null)
     setAdjustmentQuantity('')
     setAdjustmentIdempotencyKey(null)
     setShowAdjustment(false)
     setCreatedProductId(null)
+    setCreatedTrackedProduct(null)
     setError('')
   }, [open, product, stockControlsAllowed])
 
@@ -322,15 +320,6 @@ export default function ProductDrawer({ open, product, categories, products, onC
       if (duplicate) { setError('SKU already exists for another product in this branch'); return }
     }
 
-    let openingQuantity = 0
-    if (stockControlsAllowed && trackStock && (!product || !productWasTracked)) {
-      openingQuantity = Number(openingStock)
-      if (openingStock.trim() === '' || !Number.isFinite(openingQuantity) || openingQuantity < 0) {
-        setError('Opening stock must be zero or higher.')
-        return
-      }
-    }
-
     let adjustmentDelta: number | null = null
     let manualAdjustmentKey: string | null = null
     if (stockControlsAllowed && product && adjustmentQuantity.trim() !== '') {
@@ -395,6 +384,7 @@ export default function ProductDrawer({ open, product, categories, products, onC
       const q = supabase as unknown as { from: (t: string) => any }
 
       let savedProductId = product?.id ?? createdProductId
+      const shouldShowTrackedCreationSuccess = !product && trackStock && stockControlsAllowed
 
       if (product || createdProductId) {
         const { error: err } = await q.from('products').update(payload).eq('id', savedProductId)
@@ -411,12 +401,12 @@ export default function ProductDrawer({ open, product, categories, products, onC
 
         if (!product && trackStock) {
           stockPayload.track_stock = true
-          stockPayload.opening_stock_quantity = openingQuantity
+          stockPayload.opening_stock_quantity = 0
           stockPayload.reason = 'opening_stock'
         } else if (product && trackStock !== productWasTracked) {
           stockPayload.track_stock = trackStock
           stockPayload.reason = trackStock ? 'opening_stock' : 'tracking_disabled'
-          if (trackStock) stockPayload.opening_stock_quantity = openingQuantity
+          if (trackStock) stockPayload.opening_stock_quantity = 0
         }
 
         if (product && adjustmentDelta !== null) {
@@ -444,6 +434,10 @@ export default function ProductDrawer({ open, product, categories, products, onC
       setAdjustmentIdempotencyKey(null)
       if (imagePreview?.startsWith('blob:')) URL.revokeObjectURL(imagePreview)
       onSaved()
+      if (shouldShowTrackedCreationSuccess && savedProductId) {
+        setCreatedTrackedProduct({ id: savedProductId, name: name.trim() })
+        return
+      }
       onClose()
     } finally {
       setSaving(false)
@@ -451,6 +445,57 @@ export default function ProductDrawer({ open, product, categories, products, onC
   }
 
   if (!open) return null
+
+  if (createdTrackedProduct) {
+    return (
+      <>
+        <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
+        <div className="fixed inset-y-0 right-0 w-full max-w-[480px] bg-white shadow-2xl z-50 flex flex-col">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+            <div>
+              <h2 className="text-base font-bold text-gray-900">Product created successfully.</h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Add quantity, supplier, and purchase cost from Product Stock.
+              </p>
+            </div>
+            <button type="button" onClick={onClose}
+              className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400">
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="flex-1 px-6 py-5">
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+              <p className="text-sm font-semibold text-gray-900">{createdTrackedProduct.name}</p>
+              <p className="mt-1 text-xs leading-5 text-gray-500">
+                Inventory tracking is enabled with zero stock. Use Add Opening Stock to receive the first quantity with its cost and supplier details.
+              </p>
+            </div>
+          </div>
+
+          <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Done
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                onClose()
+                navigate('/inventory', {
+                  state: {
+                    stockTab: 'product',
+                    openProductStockReceiptFor: createdTrackedProduct.id,
+                  },
+                })
+              }}
+            >
+              Add Opening Stock
+            </Button>
+          </div>
+        </div>
+      </>
+    )
+  }
 
   return (
     <>
@@ -663,7 +708,7 @@ export default function ProductDrawer({ open, product, categories, products, onC
                         <p className="mt-0.5 text-xs leading-5 text-gray-500">
                           {product
                             ? 'Sales reduce tracked stock automatically. Use Adjust Stock for audited quantity changes.'
-                            : 'Sales reduce this quantity automatically. Enter the stock available when creating this product.'}
+                            : 'Sales reduce tracked stock automatically. New products start at zero; receive quantity and cost from Product Stock.'}
                         </p>
                       </div>
                     </div>
@@ -705,21 +750,6 @@ export default function ProductDrawer({ open, product, categories, products, onC
                           {trackStock ? 'Tracked' : 'Not tracked'}
                         </p>
                       </div>
-                    </div>
-                  )}
-
-                  {trackStock && (!product || !productWasTracked) && (
-                    <div>
-                      <label className="label">Opening stock</label>
-                      <input
-                        className="input"
-                        type="number"
-                        min="0"
-                        step="0.001"
-                        value={openingStock}
-                        onChange={e => setOpeningStock(e.target.value)}
-                        placeholder="0"
-                      />
                     </div>
                   )}
 

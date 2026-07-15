@@ -1,14 +1,27 @@
-import { Link } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
 import ProductStockTab from './ProductStockTab'
 import StockOverviewTab from './StockOverviewTab'
 import { useAuth } from '@/hooks/useAuth'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 
+interface InventoryRouteState {
+  stockTab?: 'product' | 'materials'
+  openProductStockReceiptFor?: string
+}
+
 export default function InventoryPage() {
   const { tenant, branch } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const routeState = location.state as InventoryRouteState | null
   const businessType = resolveBusinessType(tenant?.business_type)
   const isTrading = businessType === 'trading'
+  const requestedStockTab = routeState?.stockTab
+  const initialReceiptProductId =
+    typeof routeState?.openProductStockReceiptFor === 'string'
+      ? routeState.openProductStockReceiptFor
+      : null
   const stockVisible = isStockModuleVisible({
     businessType: tenant?.business_type,
     stockEnabled: branch?.stock_enabled,
@@ -16,8 +29,17 @@ export default function InventoryPage() {
   const [activeTab, setActiveTab] = useState<'product' | 'materials'>(isTrading ? 'product' : 'materials')
 
   useEffect(() => {
+    if (isTrading && requestedStockTab === 'product') {
+      setActiveTab('product')
+      return
+    }
+
     setActiveTab(isTrading ? 'product' : 'materials')
-  }, [isTrading, branch?.id])
+  }, [isTrading, branch?.id, requestedStockTab])
+
+  const clearInventoryRouteState = useCallback(() => {
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.pathname, navigate])
 
   if (!stockVisible) {
     return (
@@ -81,7 +103,14 @@ export default function InventoryPage() {
             ))}
           </div>
 
-          {activeTab === 'product' ? <ProductStockTab /> : <StockOverviewTab />}
+          {activeTab === 'product' ? (
+            <ProductStockTab
+              initialReceiptProductId={initialReceiptProductId}
+              onInitialReceiptHandled={clearInventoryRouteState}
+            />
+          ) : (
+            <StockOverviewTab />
+          )}
         </>
       ) : (
         <StockOverviewTab />

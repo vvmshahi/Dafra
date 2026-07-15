@@ -61,7 +61,15 @@ function productStatus(product: ProductStockRow) {
   return { label: 'In stock', accent: 'green' as const }
 }
 
-export default function ProductStockTab() {
+interface ProductStockTabProps {
+  initialReceiptProductId?: string | null
+  onInitialReceiptHandled?: () => void
+}
+
+export default function ProductStockTab({
+  initialReceiptProductId = null,
+  onInitialReceiptHandled,
+}: ProductStockTabProps) {
   const { profile } = useAuth()
 
   const [products, setProducts] = useState<ProductStockRow[]>([])
@@ -121,6 +129,18 @@ export default function ProductStockTab() {
   }, [profile?.tenant_id, profile?.branch_id])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (!initialReceiptProductId || loading) return
+
+    const product = products.find(item => item.id === initialReceiptProductId)
+    if (product) {
+      setReceiptProduct(product)
+      setReceiptOpen(true)
+    }
+
+    onInitialReceiptHandled?.()
+  }, [initialReceiptProductId, loading, onInitialReceiptHandled, products])
 
   const metrics = useMemo(() => {
     const totalUnits = products.reduce((sum, product) => sum + Number(product.stock_quantity ?? 0), 0)
