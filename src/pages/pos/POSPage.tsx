@@ -298,6 +298,23 @@ function invoiceAccountingSign(invoice: { zatca_invoice_type?: string | null }):
   return invoice.zatca_invoice_type === 'credit_note' ? -1 : 1
 }
 
+function productSearchRank(product: PosProduct, query: string): number {
+  const sku = (product.sku ?? '').toLowerCase()
+  const barcode = (product.barcode ?? '').toLowerCase()
+  const name = product.name.toLowerCase()
+  const nameAr = (product.nameAr ?? '').toLowerCase()
+
+  if (sku === query || barcode === query) return 0
+  if (sku.startsWith(query) || barcode.startsWith(query)) return 1
+  if (name.includes(query) || nameAr.includes(query)) return 2
+  if (sku.includes(query) || barcode.includes(query)) return 3
+  return 99
+}
+
+function productMatchesSearch(product: PosProduct, query: string): boolean {
+  return productSearchRank(product, query) < 99
+}
+
 const cartKey = (bid: string) => `pos_cart_${bid}`
 
 // ── Quick Expense modal ───────────────────────────────────────────────────────
@@ -1704,25 +1721,29 @@ export default function POSPage() {
 
   const searchText = search.trim()
   const searchQ = searchText.toLowerCase()
-  const filtered = useMemo(() => products.filter(p => {
-    const matchCat = !activeCat || p.catId === activeCat
-    if (!searchQ) return matchCat
-    return matchCat && (p.name.toLowerCase().includes(searchQ) || (p.nameAr ?? '').includes(searchText))
-  }), [products, activeCat, searchQ, searchText])
-  const quickFiltered = useMemo(() => products.filter(p => {
-    if (!searchQ) return false
+  const filtered = useMemo(() => {
+    const visible = products.filter(p => {
+      const matchCat = !activeCat || p.catId === activeCat
+      if (!searchQ) return matchCat
+      return matchCat && productMatchesSearch(p, searchQ)
+    })
 
-    const sku = (p.sku ?? '').toLowerCase()
-    const barcode = (p.barcode ?? '').toLowerCase()
-    const exactCodeMatch = sku === searchQ || barcode === searchQ
-    if (searchQ.length < 2) return exactCodeMatch
+    return searchQ
+      ? visible.sort((a, b) => productSearchRank(a, searchQ) - productSearchRank(b, searchQ))
+      : visible
+  }, [products, activeCat, searchQ])
+  const quickFiltered = useMemo(() => {
+    if (!searchQ) return []
 
-    return exactCodeMatch
-      || p.name.toLowerCase().includes(searchQ)
-      || (p.nameAr ?? '').toLowerCase().includes(searchQ)
-      || sku.includes(searchQ)
-      || barcode.includes(searchQ)
-  }).slice(0, 20), [products, searchQ])
+    return products
+      .filter(p => {
+        const exactCodeMatch = (p.sku ?? '').toLowerCase() === searchQ || (p.barcode ?? '').toLowerCase() === searchQ
+        if (searchQ.length < 2) return exactCodeMatch
+        return productMatchesSearch(p, searchQ)
+      })
+      .sort((a, b) => productSearchRank(a, searchQ) - productSearchRank(b, searchQ))
+      .slice(0, 20)
+  }, [products, searchQ])
 
   const vatMode = branch?.vat_mode ?? 'exclusive'
   const totals  = computeTotals(cart, vatMode)

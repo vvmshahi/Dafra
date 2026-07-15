@@ -293,6 +293,18 @@ export interface Database {
         }
         Returns: Record<string, unknown>
       }
+      suggest_product_sku: {
+        Args: { p_payload: ProductSkuSuggestionPayload }
+        Returns: ProductSkuSuggestionResult
+      }
+      create_product_secure: {
+        Args: { p_payload: ProductSecurePayload }
+        Returns: ProductSecureResult
+      }
+      update_product_secure: {
+        Args: { p_payload: ProductSecureUpdatePayload }
+        Returns: ProductSecureResult
+      }
       update_branch_module_settings: {
         Args: {
           p_branch_id: string
@@ -1187,6 +1199,47 @@ export interface ProductInsert {
 }
 
 export type ProductUpdate = Partial<ProductInsert>
+
+export interface ProductSkuSuggestionPayload {
+  name: string
+  branch_id?: string | null
+}
+
+export interface ProductSkuSuggestionResult {
+  ok: boolean
+  sku: string
+  prefix: string
+  tenant_id: string
+  branch_id: string
+}
+
+export interface ProductSecurePayload {
+  branch_id?: string | null
+  name: string
+  name_ar?: string | null
+  category_id?: string | null
+  description?: string | null
+  price: number
+  vat_treatment?: VatTreatment
+  image_url?: string | null
+  is_available?: boolean
+  sort_order?: number
+  sku?: string | null
+  notes?: string | null
+  is_service?: boolean
+}
+
+export type ProductSecureUpdatePayload = ProductSecurePayload & {
+  product_id: string
+}
+
+export interface ProductSecureResult {
+  ok: boolean
+  product_id: string
+  sku: string
+  tenant_id: string
+  branch_id: string
+}
 
 export interface CustomerInsert {
   tenant_id: string
