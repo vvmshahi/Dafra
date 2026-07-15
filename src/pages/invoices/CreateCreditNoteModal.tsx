@@ -286,14 +286,16 @@ export default function CreateCreditNoteModal({
             <span>SAR {Number(invoice.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
 
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-gray-700">Reason</span>
+          <fieldset className="block space-y-1.5">
+            <legend className="text-xs font-semibold text-gray-700">Reason</legend>
             <div className="grid grid-cols-2 gap-2">
               {QUICK_REASONS.map(reason => (
                 <button
                   key={reason}
                   type="button"
                   onClick={() => setSelectedReason(reason)}
+                  disabled={busy}
+                  aria-pressed={selectedReason === reason}
                   className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold transition-colors ${
                     selectedReason === reason
                       ? 'border-[#0F2419] bg-[#0F2419] text-white'
@@ -304,7 +306,7 @@ export default function CreateCreditNoteModal({
                 </button>
               ))}
             </div>
-          </label>
+          </fieldset>
 
           <label className="block space-y-1.5">
             <span className="text-xs font-semibold text-gray-700">Optional remarks</span>
