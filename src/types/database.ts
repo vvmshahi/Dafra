@@ -167,6 +167,11 @@ export interface Database {
         Insert: InventoryItemInsert
         Update: InventoryItemUpdate
       }
+      product_stock_receipts: {
+        Row: ProductStockReceipt
+        Insert: ProductStockReceiptInsert
+        Update: never
+      }
       purchases: {
         Row: Purchase
         Insert: PurchaseInsert
@@ -270,6 +275,20 @@ export interface Database {
             adjustment_quantity?: number | null
             idempotency_key?: string | null
             reason?: 'opening_stock' | 'manual_adjustment' | 'tracking_enabled' | 'tracking_disabled'
+          }
+        }
+        Returns: Record<string, unknown>
+      }
+      receive_product_stock: {
+        Args: {
+          p_payload: {
+            product_id: string
+            supplier_id?: string | null
+            quantity: number
+            unit_cost: number
+            idempotency_key: string
+            note?: string | null
+            reference?: string | null
           }
         }
         Returns: Record<string, unknown>
@@ -1342,6 +1361,24 @@ export interface InventoryItem {
   created_at: string
   updated_at: string
 }
+
+export interface ProductStockReceipt {
+  id: string
+  tenant_id: string
+  branch_id: string
+  product_id: string
+  supplier_id: string | null
+  quantity: number
+  unit_cost: number
+  total_cost: number
+  idempotency_key: string
+  note: string | null
+  reference: string | null
+  created_by: string
+  created_at: string
+}
+
+export type ProductStockReceiptInsert = Omit<ProductStockReceipt, 'id' | 'created_at'>
 
 export interface Purchase {
   id: string

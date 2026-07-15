@@ -1,14 +1,23 @@
 import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import ProductStockTab from './ProductStockTab'
 import StockOverviewTab from './StockOverviewTab'
 import { useAuth } from '@/hooks/useAuth'
-import { isStockModuleVisible } from '@/lib/utils/businessType'
+import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 
 export default function InventoryPage() {
   const { tenant, branch } = useAuth()
+  const businessType = resolveBusinessType(tenant?.business_type)
+  const isTrading = businessType === 'trading'
   const stockVisible = isStockModuleVisible({
     businessType: tenant?.business_type,
     stockEnabled: branch?.stock_enabled,
   })
+  const [activeTab, setActiveTab] = useState<'product' | 'materials'>(isTrading ? 'product' : 'materials')
+
+  useEffect(() => {
+    setActiveTab(isTrading ? 'product' : 'materials')
+  }, [isTrading, branch?.id])
 
   if (!stockVisible) {
     return (
@@ -41,15 +50,42 @@ export default function InventoryPage() {
   return (
     <div className="space-y-5">
 
-      {/* ── Header ──────────────────────────────────────────── */}
       <div className="flex items-center gap-3">
         <h1 className="text-lg font-bold text-gray-900 flex-1">Stock</h1>
       </div>
       <p className="text-xs text-gray-400 -mt-3">
-        Track physical inventory items and current quantities.
+        {isTrading
+          ? 'Manage stock for saleable products and keep raw materials separate.'
+          : 'Track physical inventory items and current quantities.'}
       </p>
 
-      <StockOverviewTab />
+      {isTrading ? (
+        <>
+          <div className="inline-flex rounded-xl border border-gray-100 bg-white p-1 shadow-card">
+            {[
+              { key: 'product' as const, label: 'Product Stock' },
+              { key: 'materials' as const, label: 'Raw Materials' },
+            ].map(tab => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  activeTab === tab.key
+                    ? 'bg-primary-500 text-white shadow-sm'
+                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === 'product' ? <ProductStockTab /> : <StockOverviewTab />}
+        </>
+      ) : (
+        <StockOverviewTab />
+      )}
     </div>
   )
 }
