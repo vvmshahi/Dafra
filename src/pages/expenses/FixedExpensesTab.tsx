@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { Switch } from '@/components/ui/Switch'
 import type { FixedExpense, ExpenseCategory } from '@/types'
 import FixedExpenseDrawer from './FixedExpenseDrawer'
 import { Rial } from '@/components/ui/RiyalSymbol'
@@ -89,17 +90,13 @@ function FixedRow({
 
       {/* Active toggle */}
       <div className="flex-shrink-0">
-        <button
-          onClick={() => onToggle(!item.is_active)}
-          className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${
-            item.is_active ? 'bg-primary-500' : 'bg-gray-200'
-          }`}
+        <Switch
+          checked={item.is_active}
+          onChange={onToggle}
+          size="sm"
+          ariaLabel={item.is_active ? 'Deactivate fixed expense' : 'Activate fixed expense'}
           title={item.is_active ? 'Deactivate' : 'Activate'}
-        >
-          <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
-            item.is_active ? 'translate-x-[18px]' : 'translate-x-0.5'
-          }`} />
-        </button>
+        />
       </div>
 
       {/* Actions */}

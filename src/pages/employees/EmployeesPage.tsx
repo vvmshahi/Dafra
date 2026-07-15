@@ -6,6 +6,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
+import { Switch } from '@/components/ui/Switch'
 import type { Employee, Branch } from '@/types/database'
 
 const db = () => supabase as any
@@ -124,17 +125,12 @@ function EmployeeDrawer({ employee, branches, tenantId, onSave, onClose }: Drawe
                 onChange={e => set('hire_date', e.target.value)} />
             </div>
             <div className="col-span-2 flex items-center gap-3 pt-1">
-              <button
-                type="button"
-                onClick={() => set('is_active', !form.is_active)}
-                className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${
-                  form.is_active ? 'bg-primary-500' : 'bg-gray-200'
-                }`}
-              >
-                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-                  form.is_active ? 'translate-x-5' : 'translate-x-0.5'
-                }`} />
-              </button>
+              <Switch
+                checked={form.is_active}
+                onChange={value => set('is_active', value)}
+                size="sm"
+                ariaLabel="Active employee"
+              />
               <span className="text-sm text-gray-700">Active employee</span>
             </div>
           </div>

@@ -14,6 +14,7 @@ import {
   type ReceiptPaperPreset,
 } from '@/lib/electron'
 import { Button } from '@/components/ui/Button'
+import { Switch as Toggle } from '@/components/ui/Switch'
 
 type Status = {
   type: 'success' | 'error' | 'info'
@@ -21,26 +22,6 @@ type Status = {
 } | null
 
 const numberInput = 'input h-10 tabular-nums'
-
-function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      disabled={disabled}
-      className={`relative h-6 w-11 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-        checked ? 'bg-primary-500' : 'bg-gray-200'
-      }`}
-      aria-pressed={checked}
-    >
-      <span
-        className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-          checked ? 'translate-x-5' : 'translate-x-0.5'
-        }`}
-      />
-    </button>
-  )
-}
 
 function statusClasses(type: NonNullable<Status>['type']) {
   if (type === 'success') return 'border-emerald-100 bg-emerald-50 text-emerald-700'

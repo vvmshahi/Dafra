@@ -3,6 +3,7 @@ import { X, Banknote, CreditCard, Building } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
+import { Switch } from '@/components/ui/Switch'
 import type { ExpenseCategory, ExpensePaymentMethod } from '@/types'
 import type { FixedExpenseRow } from './FixedExpensesTab'
 import { Rial } from '@/components/ui/RiyalSymbol'
@@ -229,17 +230,11 @@ export default function FixedExpenseDrawer({ open, item, categories, onClose, on
                     Inactive expenses are excluded from totals
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsActive(v => !v)}
-                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
-                    isActive ? 'bg-primary-500' : 'bg-gray-200'
-                  }`}
-                >
-                  <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
-                    isActive ? 'translate-x-[22px]' : 'translate-x-1'
-                  }`} />
-                </button>
+                <Switch
+                  checked={isActive}
+                  onChange={setIsActive}
+                  ariaLabel="Active fixed expense"
+                />
               </div>
             </div>
 

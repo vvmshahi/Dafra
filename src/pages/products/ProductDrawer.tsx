@@ -4,6 +4,7 @@ import { X, ChevronDown, ChevronUp, ImagePlus, PackageCheck, SlidersHorizontal, 
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
+import { Switch } from '@/components/ui/Switch'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import type { Category, VatTreatment } from '@/types'
 import type { ProductRow } from './ProductsPage'
@@ -681,19 +682,11 @@ export default function ProductDrawer({ open, product, categories, products, onC
                   <p className="text-sm font-medium text-gray-700">Show in POS</p>
                   <p className="text-xs text-gray-400 mt-0.5">Product appears during billing/checkout</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsAvailable(v => !v)}
-                  className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${
-                    isAvailable ? 'bg-primary-500' : 'bg-gray-200'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
-                      isAvailable ? 'translate-x-5' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
+                <Switch
+                  checked={isAvailable}
+                  onChange={setIsAvailable}
+                  ariaLabel="Show in POS"
+                />
               </div>
 
               {stockControlsAllowed ? (
@@ -712,28 +705,18 @@ export default function ProductDrawer({ open, product, categories, products, onC
                         </p>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTrackStock(v => {
-                          const next = !v
-                          if (!next) {
-                            setAdjustmentQuantity('')
-                            setShowAdjustment(false)
-                          }
-                          return next
-                        })
+                    <Switch
+                      checked={trackStock}
+                      onChange={next => {
+                        if (!next) {
+                          setAdjustmentQuantity('')
+                          setShowAdjustment(false)
+                        }
+                        setTrackStock(next)
                       }}
-                      className={`relative mt-0.5 h-6 w-10 flex-shrink-0 rounded-full transition-colors ${
-                        trackStock ? 'bg-emerald-500' : 'bg-gray-200'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
-                          trackStock ? 'translate-x-5' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
+                      ariaLabel="Track inventory"
+                      className={trackStock ? 'bg-emerald-500' : undefined}
+                    />
                   </div>
 
                   {product && (
