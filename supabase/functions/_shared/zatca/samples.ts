@@ -85,6 +85,7 @@ interface SignedCompliancePayload {
 }
 
 export interface SandboxComplianceValidationInvoice {
+  documentKind: 'invoice' | 'credit_note'
   invoiceNumber: string
   uuid: string
   issueDate: string
@@ -95,6 +96,8 @@ export interface SandboxComplianceValidationInvoice {
   taxableAmount: number
   taxAmount: number
   totalAmount: number
+  billingReferenceId?: string
+  noteReason?: string
   lines: Array<{
     id: number
     name: string
@@ -108,6 +111,7 @@ export interface SandboxComplianceValidationInvoice {
 }
 
 export interface PreparedSandboxComplianceValidation {
+  documentKind: 'invoice' | 'credit_note'
   invoiceHash: string
   uuid: string
   invoice: string
@@ -345,7 +349,7 @@ export async function prepareSandboxComplianceValidation(params: {
     issueDate: input.issueDate,
     issueTime: input.issueTime,
     issueDateTime: `${input.issueDate}T${input.issueTime}`,
-    invoiceTypeCode: '388',
+    invoiceTypeCode: input.documentKind === 'credit_note' ? '381' : '388',
     counterValue: 1,
     prevInvoiceHash: FIRST_INVOICE_HASH,
     sellerName: input.seller.name,
@@ -360,6 +364,8 @@ export async function prepareSandboxComplianceValidation(params: {
       countryCode: input.seller.countryCode,
     },
     buyer: undefined,
+    billingReferenceId: input.billingReferenceId,
+    noteReason: input.noteReason,
     subtotal: input.subtotal,
     discountTotal: input.discountTotal,
     taxableAmount: input.taxableAmount,
@@ -386,7 +392,7 @@ export async function prepareSandboxComplianceValidation(params: {
   const unsignedXml = buildInvoice(data, {
     profileId: 'reporting:1.0',
     typeCodeName: '0200000',
-    invoiceTypeCode: '388',
+    invoiceTypeCode: input.documentKind === 'credit_note' ? '381' : '388',
     requireBuyer: false,
   })
   const signed = await signInvoice(
@@ -396,7 +402,7 @@ export async function prepareSandboxComplianceValidation(params: {
     `${input.issueDate}T${input.issueTime}`,
   )
   const payload: SignedCompliancePayload = {
-    type: 'simplified_invoice',
+    type: input.documentKind === 'credit_note' ? 'simplified_credit_note' : 'simplified_invoice',
     uuid: input.uuid,
     invoiceHash: signed.invoiceHash,
     invoice: utf8ToBase64(signed.signedXml),
@@ -410,6 +416,7 @@ export async function prepareSandboxComplianceValidation(params: {
   const finalRequest = await buildFinalComplianceRequestBody(payload)
   return {
     ...finalRequest,
+    documentKind: input.documentKind,
     signedXml: signed.signedXml,
   }
 }
@@ -438,16 +445,17 @@ export async function submitSandboxComplianceValidation(params: {
       }),
     })
     return safeSummarizeComplianceResponse(
-      'simplified_invoice',
+      params.prepared.documentKind === 'credit_note' ? 'simplified_credit_note' : 'simplified_invoice',
       response.status,
       await safeJson(response),
       response.headers,
     )
   } catch {
+    const creditNote = params.prepared.documentKind === 'credit_note'
     return {
-      type: 'simplified_invoice',
+      type: creditNote ? 'simplified_credit_note' : 'simplified_invoice',
       invoiceKind: 'simplified',
-      documentKind: 'invoice',
+      documentKind: creditNote ? 'credit_note' : 'invoice',
       accepted: false,
       status: 'ambiguous_failed',
       statusString: 'COMPLIANCE_VALIDATION_TRANSPORT_FAILED',
