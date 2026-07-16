@@ -6,9 +6,7 @@ import {
   type SandboxValidationMessage,
   type SandboxValidationResponse,
 } from '@/lib/zatca/api'
-
-const DEMO_TENANT_ID = 'ebf1144b-55ed-472a-99c9-23b5ee915351'
-const TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
+import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 
 function statusLabel(status: SandboxValidationResponse['status']): string {
   switch (status) {
@@ -36,7 +34,7 @@ export function SandboxValidationPanel({
   branchId: string
   onResult?: (result: SandboxValidationResponse) => void
 }) {
-  const inDemoScope = tenantId === DEMO_TENANT_ID && branchId === TRADING_BRANCH_ID
+  const inDemoScope = isPermanentDemoSandboxBranch(tenantId, branchId)
   const [result, setResult] = useState<SandboxValidationResponse | null>(null)
   const [loading, setLoading] = useState(inDemoScope)
   const [submitting, setSubmitting] = useState(false)

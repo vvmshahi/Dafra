@@ -42,6 +42,12 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
+const PERMANENT_DEMO_TENANT_ID = 'ebf1144b-55ed-472a-99c9-23b5ee915351'
+const PERMANENT_DEMO_BRANCH_IDS = new Set([
+  '14271653-b404-44bf-9f39-7e9927569c02',
+  'c30094d7-40ca-4d2e-833a-07aa18c4fa46',
+])
+
 const ACTIONS = [
   'get_status',
   'generate_csr',
@@ -404,6 +410,9 @@ function requireServiceRole(req: Request): void {
 }
 
 async function loadDemoScope(db: any, tenantId: string, branchId: string): Promise<Scope> {
+  if (tenantId !== PERMANENT_DEMO_TENANT_ID || !PERMANENT_DEMO_BRANCH_IDS.has(branchId)) {
+    throw new RequestError('Forbidden: authorized permanent-demo Sandbox branch required', 403)
+  }
   const [tenantResult, branchResult] = await Promise.all([
     db.from('tenants')
       .select('id,name,business_type,is_demo,is_active')

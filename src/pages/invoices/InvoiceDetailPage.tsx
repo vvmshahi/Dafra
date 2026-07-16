@@ -14,7 +14,7 @@ import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { submitInvoiceToZatca } from '@/lib/zatca/submission'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 import { SandboxValidationPanel } from '@/components/zatca/SandboxValidationPanel'
-import { isPermanentDemoTradingBranch } from '@/lib/zatca/submission'
+import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import type { SandboxValidationResponse } from '@/lib/zatca/api'
 
 function WhatsAppIcon({ size = 13 }: { size?: number }) {
@@ -634,7 +634,7 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
     : creditStatus === 'partial'
     ? 'text-amber-700 bg-amber-50 border-amber-100'
     : 'text-gray-600 bg-gray-50 border-gray-100'
-  const demoSandbox = isPermanentDemoTradingBranch(invoice.tenant_id, invoice.branch_id)
+  const demoSandbox = isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)
   const sandboxValidated = sandboxValidation?.status === 'sandbox_validated' ||
     sandboxValidation?.status === 'sandbox_validated_with_warnings'
   const canCreateCreditNote = !isCreditNote

@@ -878,7 +878,7 @@ export default function ZatcaTab() {
   const { profile } = useAuth()
   const [data, setData]         = useState<BranchWithCert[]>([])
   const [loading, setLoading]   = useState(true)
-  const [sandboxStatus, setSandboxStatus] = useState<SandboxDemoConnectionStatus | null>(null)
+  const [sandboxStatuses, setSandboxStatuses] = useState<Record<string, SandboxDemoConnectionStatus | null>>({})
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showGuide, setShowGuide]   = useState(false)
   const [showServiceSandboxStart, setShowServiceSandboxStart] = useState(false)
@@ -895,7 +895,7 @@ export default function ZatcaTab() {
     if (profile.role === 'owner') {
       await Promise.all(branches
         .filter(branch => (branch.zatca_phase ?? 1) === 2 && !(
-          tid === DEMO_TENANT_ID && branch.id === TRADING_BRANCH_ID
+          tid === DEMO_TENANT_ID && [TRADING_BRANCH_ID, SERVICE_BRANCH_ID].includes(branch.id)
         ))
         .map(async branch => {
           const cached = readCachedProductionStatus(branch.id)
@@ -921,9 +921,13 @@ export default function ZatcaTab() {
   useEffect(() => {
     if (profile?.tenant_id !== DEMO_TENANT_ID || profile.role !== 'owner') return
     let mounted = true
-    getSandboxDemoConnectionStatus()
-      .then(status => { if (mounted) setSandboxStatus(status) })
-      .catch(() => { if (mounted) setSandboxStatus(null) })
+    Promise.all([TRADING_BRANCH_ID, SERVICE_BRANCH_ID].map(async branchId => {
+      try {
+        return [branchId, await getSandboxDemoConnectionStatus(branchId)] as const
+      } catch {
+        return [branchId, null] as const
+      }
+    })).then(entries => { if (mounted) setSandboxStatuses(Object.fromEntries(entries)) })
     return () => { mounted = false }
   }, [profile?.tenant_id, profile?.role])
 
@@ -945,6 +949,8 @@ export default function ZatcaTab() {
     b.productionStatus?.onboardingStatus === 'production_connected'
   ).length
   const isPermanentDemo = profile?.tenant_id === DEMO_TENANT_ID
+  const tradingSandboxStatus = sandboxStatuses[TRADING_BRANCH_ID]
+  const serviceSandboxStatus = sandboxStatuses[SERVICE_BRANCH_ID]
   const regularBranches = isPermanentDemo
     ? data.filter(branch => ![TRADING_BRANCH_ID, SERVICE_BRANCH_ID].includes(branch.id))
     : data
@@ -982,8 +988,8 @@ export default function ZatcaTab() {
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-sm font-black text-gray-950">Trading branch · Sandbox validation</h3>
-                <Badge variant={sandboxStatus?.active ? 'success' : 'neutral'} dot>
-                  {sandboxStatus?.active ? 'Active' : 'Checking'}
+                <Badge variant={tradingSandboxStatus?.active ? 'success' : 'neutral'} dot>
+                  {tradingSandboxStatus?.active ? 'Active' : 'Checking'}
                 </Badge>
               </div>
               <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
@@ -992,9 +998,9 @@ export default function ZatcaTab() {
             </div>
           </div>
           <div className="grid gap-2 p-5 sm:grid-cols-2">
-            <InfoRow label="Environment" value={sandboxStatus?.environment ?? 'ZATCA Sandbox'} />
-            <InfoRow label="Connection" value={sandboxStatus?.connection ?? 'Checking…'} />
-            <InfoRow label="Compliance checks" value={sandboxStatus?.complianceChecks ?? 'Checking…'} />
+            <InfoRow label="Environment" value={tradingSandboxStatus?.environment ?? 'ZATCA Sandbox'} />
+            <InfoRow label="Connection" value={tradingSandboxStatus?.connection ?? 'Checking…'} />
+            <InfoRow label="Compliance checks" value={tradingSandboxStatus?.complianceChecks ?? 'Checking…'} />
             <InfoRow label="Production submission" value="Not enabled" />
           </div>
         </section>
@@ -1010,20 +1016,29 @@ export default function ZatcaTab() {
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-black text-gray-950">Service branch · Sandbox validation</h3>
-                  <Badge variant="neutral" dot>Not connected</Badge>
+                  <Badge variant={serviceSandboxStatus?.active ? 'success' : 'neutral'} dot>
+                    {serviceSandboxStatus?.active ? 'Active' : 'Not connected'}
+                  </Badge>
                 </div>
                 <p className="mt-1 text-[11px] text-gray-500">Environment: ZATCA Sandbox</p>
               </div>
             </div>
-            <button
+            {!serviceSandboxStatus?.active && <button
               type="button"
               onClick={() => setShowServiceSandboxStart(value => !value)}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700 transition-colors hover:bg-sky-100 active:scale-[0.98]"
             >
               <Wifi size={13} /> Begin Sandbox compliance onboarding
-            </button>
+            </button>}
           </div>
-          {showServiceSandboxStart && (
+          {serviceSandboxStatus?.active ? (
+            <div className="grid gap-2 border-t border-gray-100 p-5 sm:grid-cols-2">
+              <InfoRow label="Environment" value={serviceSandboxStatus.environment} />
+              <InfoRow label="Connection" value={serviceSandboxStatus.connection} />
+              <InfoRow label="Compliance checks" value={serviceSandboxStatus.complianceChecks} />
+              <InfoRow label="Production submission" value="Not enabled" />
+            </div>
+          ) : showServiceSandboxStart && (
             <div className="border-t border-gray-100 bg-gray-50/70 px-5 py-4">
               <p className="text-xs font-semibold text-gray-800">Secure onboarding requires a new Developer Portal OTP.</p>
               <p className="mt-1 text-[11px] leading-relaxed text-gray-500">

@@ -3,7 +3,7 @@ import { Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import type { PaymentMethod, ZatcaStatus } from '@/types/database'
-import { isPermanentDemoTradingBranch, submitInvoiceForBranch } from '@/lib/zatca/submission'
+import { isPermanentDemoSandboxBranch, submitInvoiceForBranch } from '@/lib/zatca/submission'
 import { useAuth } from '@/hooks/useAuth'
 import { resolveBusinessType } from '@/lib/utils/businessType'
 
@@ -427,7 +427,7 @@ export default function CreateCreditNoteModal({
       })
       onClose()
       if (autoSubmitSucceeded || zatcaStatus === 'reported' || zatcaStatus === 'cleared') {
-        const demoSubmission = isPermanentDemoTradingBranch(profile?.tenant_id, invoice.branch_id)
+        const demoSubmission = isPermanentDemoSandboxBranch(profile?.tenant_id, invoice.branch_id)
         toast.success(result.idempotent_replay ? 'Credit note already exists' : 'Credit note created and submitted to ZATCA', {
           description: demoSubmission ? 'Successfully processed by ZATCA' : undefined,
         })

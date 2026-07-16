@@ -275,7 +275,7 @@ export interface SandboxDemoConnectionStatus {
   ok: boolean
   branchId: string
   environment: 'ZATCA Sandbox'
-  connection: 'Active for compliance validation' | 'Not active'
+  connection: 'Active' | 'Not active'
   complianceChecks: string
   productionSubmission: 'Not enabled'
   active: boolean
@@ -303,9 +303,10 @@ export async function validateInvoiceInSandbox(invoiceId: string): Promise<Sandb
   })
 }
 
-export async function getSandboxDemoConnectionStatus(): Promise<SandboxDemoConnectionStatus> {
+export async function getSandboxDemoConnectionStatus(branchId: string): Promise<SandboxDemoConnectionStatus> {
   return edgePostSafe<SandboxDemoConnectionStatus>('zatca-validate-sandbox-demo', {
     action: 'connection_status',
+    branchId,
   })
 }
 

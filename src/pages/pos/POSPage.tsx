@@ -14,7 +14,7 @@ import { displayName as dn } from '@/lib/utils/display'
 import { buildZatcaQR } from '@/lib/zatca/qr'
 import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
 import { formatSaudiSessionDateTime } from '@/lib/registerSessions'
-import { isPermanentDemoTradingBranch, submitInvoiceForBranch } from '@/lib/zatca/submission'
+import { isPermanentDemoSandboxBranch, submitInvoiceForBranch } from '@/lib/zatca/submission'
 import { toast } from 'sonner'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
@@ -2136,7 +2136,7 @@ export default function POSPage() {
       setSplitOpen(false)
       checkoutKeyRef.current = null
 
-      const demoSandboxValidation = isPermanentDemoTradingBranch(profile?.tenant_id, branch.id)
+      const demoSandboxValidation = isPermanentDemoSandboxBranch(profile?.tenant_id, branch.id)
       if (demoSandboxValidation) setZatcaResult('sandbox_pending')
       submitInvoiceForBranch({
         invoiceId: checkout.invoice_id,

@@ -3,9 +3,15 @@ import { validateInvoiceInSandbox, type SandboxValidationResponse } from '@/lib/
 
 export const PERMANENT_DEMO_TENANT_ID = 'ebf1144b-55ed-472a-99c9-23b5ee915351'
 export const PERMANENT_DEMO_TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
+export const PERMANENT_DEMO_SERVICE_BRANCH_ID = 'c30094d7-40ca-4d2e-833a-07aa18c4fa46'
+export const PERMANENT_DEMO_SANDBOX_BRANCH_IDS = [
+  PERMANENT_DEMO_TRADING_BRANCH_ID,
+  PERMANENT_DEMO_SERVICE_BRANCH_ID,
+] as const
 
-export function isPermanentDemoTradingBranch(tenantId: string | null | undefined, branchId: string | null | undefined): boolean {
-  return tenantId === PERMANENT_DEMO_TENANT_ID && branchId === PERMANENT_DEMO_TRADING_BRANCH_ID
+export function isPermanentDemoSandboxBranch(tenantId: string | null | undefined, branchId: string | null | undefined): boolean {
+  return tenantId === PERMANENT_DEMO_TENANT_ID &&
+    PERMANENT_DEMO_SANDBOX_BRANCH_IDS.includes(branchId as typeof PERMANENT_DEMO_SANDBOX_BRANCH_IDS[number])
 }
 
 export type ZatcaSubmitSource = 'auto_checkout' | 'auto_credit_note' | 'manual_retry' | 'bulk_retry'
@@ -30,7 +36,7 @@ export async function submitInvoiceForBranch(params: {
   branchId: string
   options?: ZatcaSubmitOptions & { retryDelayMs?: number }
 }): Promise<RoutedZatcaResult> {
-  if (isPermanentDemoTradingBranch(params.tenantId, params.branchId)) {
+  if (isPermanentDemoSandboxBranch(params.tenantId, params.branchId)) {
     return { mode: 'sandbox_validation', result: await validateInvoiceInSandbox(params.invoiceId) }
   }
   return {

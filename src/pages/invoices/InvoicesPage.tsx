@@ -8,7 +8,7 @@ import { Rial } from '@/components/ui/RiyalSymbol'
 import type { InvoiceType, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { saudiNow } from '@/lib/utils/date'
 import { retryFailedSubmissions } from '@/lib/zatca/submission'
-import { isPermanentDemoTradingBranch } from '@/lib/zatca/submission'
+import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import { getSandboxValidationStatuses, type SandboxValidationStatus } from '@/lib/zatca/api'
 import CreateCreditNoteModal from './CreateCreditNoteModal'
 
@@ -203,7 +203,7 @@ export default function InvoicesPage() {
         if (cancelled) return
 
         const invoices = data ?? []
-        const demoSandbox = isPermanentDemoTradingBranch(tid, profile?.branch_id)
+        const demoSandbox = isPermanentDemoSandboxBranch(tid, profile?.branch_id)
         const sandboxAttempts = demoSandbox
           ? await getSandboxValidationStatuses(invoices.map((invoice: any) => invoice.id)).catch(() => ({}))
           : {}
@@ -335,7 +335,7 @@ export default function InvoicesPage() {
     revenue: filtered.reduce((s, r) => s + (r.documentType === 'credit_note' ? -r.totalAmount : r.totalAmount), 0),
     vat:     filtered.reduce((s, r) => s + (r.documentType === 'credit_note' ? -r.taxAmount : r.taxAmount), 0),
   }
-  const demoSandbox = isPermanentDemoTradingBranch(profile?.tenant_id, profile?.branch_id)
+  const demoSandbox = isPermanentDemoSandboxBranch(profile?.tenant_id, profile?.branch_id)
   const retryableZatcaCount = demoSandbox ? 0 : rows.filter(r => r.status !== 'cancelled' && (r.zatcaStatus === 'failed' || r.zatcaStatus === 'pending')).length
 
   async function handleRetryZatca() {
