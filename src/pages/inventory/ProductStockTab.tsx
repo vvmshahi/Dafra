@@ -208,7 +208,7 @@ export default function ProductStockTab({
             const quantity = Number(product.stock_quantity ?? 0)
             const cost = Number(product.cost ?? 0)
             const categoryColor = product.categories?.color ?? '#6b7280'
-            const categoryIcon = product.categories?.icon ?? '📦'
+            const categoryIcon = product.categories?.icon ?? ''
 
             return (
               <div

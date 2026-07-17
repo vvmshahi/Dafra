@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import type { Category } from '@/types'
 import type { ProductRow } from './ProductsPage'
+import { CategoryEmojiPicker } from '@/components/ui/CategoryEmojiPicker'
 
 // ── Palette & defaults ────────────────────────────────────────────────────────
 
@@ -13,14 +14,7 @@ const COLOR_PALETTE = [
   '#6b7280', '#1c5c2e', '#0891b2', '#b45309',
 ]
 
-const PRESET_ICONS = [
-  '🍔', '🍟', '🥤', '🌯', '🍕', '🍗', '🐟', '☕', '🍰',
-  '🛍️', '📦', '🧾', '🏷️', '🛒', '🎁',
-  '🛠️', '✂️', '🚗', '📱', '💻',
-  '⭐', '🔥', '✅', '💳', '📊',
-]
-
-const normalizeIcon = (value: string) => value.trim() || '📦'
+const normalizeIcon = (value: string) => value.trim()
 
 const isIconTooLong = (value: string) => Array.from(value.trim()).length > 10
 
@@ -92,7 +86,7 @@ export default function CategoriesModal({ open, categories, products, onClose, o
       nameAr:      cat.name_ar      ?? '',
       description: cat.description  ?? '',
       color:       cat.color        ?? '#6b7280',
-      icon:        cat.icon         ?? '📦',
+      icon:        cat.icon         ?? '',
       sortOrder:   String(cat.sort_order ?? 0),
     })
     setError('')
@@ -131,7 +125,7 @@ export default function CategoriesModal({ open, categories, products, onClose, o
       name_ar:     form.nameAr.trim()      || null,
       description: form.description.trim() || null,
       color:       form.color,
-      icon:        cleanIcon,
+      icon:        cleanIcon || null,
       sort_order:  Number(form.sortOrder)  || 0,
     }
 
@@ -323,36 +317,11 @@ export default function CategoriesModal({ open, categories, products, onClose, o
                   </div>
                 </div>
 
-                {/* Icon presets + custom */}
+                {/* Searchable category emoji */}
                 <div>
-                  <label className="label text-xs">Icon</label>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {PRESET_ICONS.map(icon => (
-                      <button
-                        key={icon}
-                        type="button"
-                        onClick={() => setForm(f => ({ ...f, icon }))}
-                        className={`w-9 h-9 rounded-xl text-xl flex items-center justify-center transition-all ${
-                          form.icon === icon
-                            ? 'bg-primary-100 ring-2 ring-primary-400 scale-110'
-                            : 'hover:bg-gray-100'
-                        }`}
-                      >
-                        {icon}
-                      </button>
-                    ))}
-                    {/* Custom emoji input */}
-                    <input
-                      className="input w-14 py-1.5 text-center text-xl"
-                      value={form.icon}
-                      onBlur={() => setForm(f => ({ ...f, icon: normalizeIcon(f.icon) }))}
-                      onChange={e => setForm(f => ({ ...f, icon: e.target.value }))}
-                      maxLength={10}
-                      placeholder="✏️"
-                      title="Type any emoji or short text"
-                    />
-                  </div>
-                  <p className="text-[11px] text-gray-400 mt-1">Up to 10 characters. Empty uses 📦.</p>
+                  <label className="label text-xs">Category icon</label>
+                  <CategoryEmojiPicker value={form.icon} categoryName={form.name}
+                    onChange={icon => setForm(current => ({ ...current, icon }))} />
                 </div>
 
                 {/* Sort order */}
@@ -389,7 +358,7 @@ export default function CategoriesModal({ open, categories, products, onClose, o
               <div className="space-y-2">
                 {orderedCategories.map((cat, index) => {
                   const color = cat.color ?? '#6b7280'
-                  const icon  = cat.icon  ?? '📦'
+                  const icon  = cat.icon  ?? ''
                   const isEditing = editingId === cat.id
                   const isReordering = reorderingId === cat.id
                   const isDragging = draggedId === cat.id

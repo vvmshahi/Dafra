@@ -707,7 +707,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                   <option value="">— No Category —</option>
                   {categories.map(c => (
                     <option key={c.id} value={c.id}>
-                      {c.icon ?? '📦'} {c.name}
+                      {c.icon ? `${c.icon} ${c.name}` : c.name}
                     </option>
                   ))}
                 </select>

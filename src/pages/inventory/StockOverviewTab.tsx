@@ -160,7 +160,7 @@ export default function StockOverviewTab() {
           {items.map(item => {
             const status   = stockStatus(item)
             const catColor = item.categories?.color ?? '#6b7280'
-            const catIcon  = item.categories?.icon  ?? '📦'
+            const catIcon  = item.categories?.icon  ?? ''
             const catName  = item.categories?.name
 
             return (

@@ -12,6 +12,7 @@ import { displayName as dn } from '@/lib/utils/display'
 import type { Category, VatTreatment } from '@/types'
 import ProductDrawer from './ProductDrawer'
 import CategoriesModal from './CategoriesModal'
+import { CategoryEmojiPicker } from '@/components/ui/CategoryEmojiPicker'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -90,14 +91,7 @@ const stockStatus = (product: ProductRow) => {
   }
 }
 
-const CATEGORY_ICON_PRESETS = [
-  '🍔', '🍟', '🥤', '🌯', '🍕', '🍗', '🐟', '☕', '🍰',
-  '🛍️', '📦', '🧾', '🏷️', '🛒', '🎁',
-  '🛠️', '✂️', '🚗', '📱', '💻',
-  '⭐', '🔥', '✅', '💳', '📊',
-]
-
-const normalizeIcon = (value: string) => value.trim() || '📦'
+const normalizeIcon = (value: string) => value.trim()
 
 const isIconTooLong = (value: string) => Array.from(value.trim()).length > 10
 
@@ -134,7 +128,7 @@ function ProductCard({
   onToggle: (v: boolean) => void
 }) {
   const color = product.categories?.color ?? '#6b7280'
-  const icon  = product.categories?.icon  ?? '📦'
+  const icon  = product.categories?.icon  ?? ''
   const vat   = product.vat_treatment ?? 'inherit'
   const stock = stockStatus(product)
 
@@ -150,7 +144,9 @@ function ProductCard({
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <span className="text-4xl select-none">{icon}</span>
+            {icon
+              ? <span className="text-4xl select-none">{icon}</span>
+              : <Package size={34} className="text-gray-300" aria-hidden="true" />}
           </div>
         )}
 
@@ -223,7 +219,7 @@ function ProductListRow({
   onToggle: (v: boolean) => void
 }) {
   const color = product.categories?.color ?? '#6b7280'
-  const icon  = product.categories?.icon  ?? '📦'
+  const icon  = product.categories?.icon  ?? ''
   const vat   = product.vat_treatment ?? 'inherit'
   const stock = stockStatus(product)
 
@@ -237,7 +233,9 @@ function ProductListRow({
         {product.image_url ? (
           <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
         ) : (
-          <span className="select-none">{icon}</span>
+          icon
+            ? <span className="select-none">{icon}</span>
+            : <Package size={17} className="text-gray-300" aria-hidden="true" />
         )}
       </div>
 
@@ -431,7 +429,7 @@ function AddCategoryDialog({
       branch_id: bid,
       name: cleanName,
       color: '#1c5c2e',
-      icon: cleanIcon,
+      icon: cleanIcon || null,
       sort_order: nextSortOrder,
     })
 
@@ -473,17 +471,8 @@ function AddCategoryDialog({
           </div>
 
           <div className="px-6 py-5 space-y-4 overflow-y-auto">
-            <div className="flex items-start gap-3">
-              <div className="w-16 flex-shrink-0">
-                <label className="label">Icon</label>
-                <div
-                  className="w-14 h-11 rounded-xl border border-primary-200 bg-primary-50 text-2xl flex items-center justify-center"
-                  aria-label="Selected category icon"
-                >
-                  {normalizeIcon(icon)}
-                </div>
-              </div>
-              <div className="flex-1">
+            <div>
+              <div>
                 <label className="label">Category name</label>
                 <input
                   className="input"
@@ -495,34 +484,10 @@ function AddCategoryDialog({
               </div>
             </div>
 
-            <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3 space-y-3">
-              <div className="grid grid-cols-7 sm:grid-cols-9 gap-1.5">
-                {CATEGORY_ICON_PRESETS.map(preset => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => { setIcon(preset); setError('') }}
-                    className={`h-9 rounded-lg text-lg flex items-center justify-center transition-all ${
-                      normalizeIcon(icon) === preset
-                        ? 'bg-primary-100 ring-2 ring-primary-400'
-                        : 'bg-white hover:bg-gray-100'
-                    }`}
-                  >
-                    {preset}
-                  </button>
-                ))}
-              </div>
-              <div>
-                <label className="label text-xs">Custom icon</label>
-                <input
-                  className="input py-2 text-sm"
-                  value={icon}
-                  onChange={e => { setIcon(e.target.value); setError('') }}
-                  maxLength={10}
-                  placeholder="Paste emoji or short text"
-                />
-                <p className="text-[11px] text-gray-400 mt-1">Up to 10 characters. Empty uses 📦.</p>
-              </div>
+            <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3">
+              <label className="label text-xs">Category icon</label>
+              <CategoryEmojiPicker value={icon} categoryName={name}
+                onChange={value => { setIcon(value); setError('') }} />
             </div>
 
             <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-2.5 text-xs text-gray-500">
@@ -711,7 +676,7 @@ export default function ProductsPage() {
           {categories.map(c => (
             <CategoryTab
               key={c.id}
-              label={`${c.icon ?? '📦'} ${c.name}`}
+              label={c.icon ? `${c.icon} ${c.name}` : c.name}
               active={activeCat === c.id}
               color={c.color}
               onClick={() => setActiveCat(c.id)}
