@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, Calendar, Filter, Eye, TrendingUp, FileText, Receipt, RefreshCw, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -6,37 +6,26 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import type { InvoiceType, PaymentMethod, ZatcaStatus } from '@/types/database'
-import { saudiNow } from '@/lib/utils/date'
+import { saudiDateStr, saudiNow } from '@/lib/utils/date'
 import { retryFailedSubmissions } from '@/lib/zatca/submission'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
-import { getSandboxValidationStatuses, type SandboxValidationStatus } from '@/lib/zatca/api'
-import CreateCreditNoteModal from './CreateCreditNoteModal'
+import { getSandboxValidationStatuses } from '@/lib/zatca/api'
+import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
+import {
+  INVOICE_LIST_STALE_MS,
+  getCachedInvoiceRows,
+  invoiceListViewKey,
+  setCachedInvoiceRows,
+  subscribeInvoiceListCache,
+  updateCachedInvoiceRows,
+  upsertInvoiceListRow,
+  type InvoiceListRow,
+  type InvoiceListScope,
+} from '@/lib/invoices/invoiceListCache'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface InvoiceRow {
-  id: string
-  branchId: string
-  invoiceNumber: string
-  date: string
-  createdAt: string
-  customerName: string | null
-  itemsCount: number
-  subtotal: number
-  taxAmount: number
-  totalAmount: number
-  paymentMethod: string | null
-  zatcaStatus: ZatcaStatus
-  displayZatcaStatus: ZatcaStatus | SandboxValidationStatus | 'sandbox_not_validated'
-  status: string
-  documentType: InvoiceType
-  invoiceReference: string | null
-  linkedCreditNoteId: string | null
-  linkedCreditNoteNumber: string | null
-  creditNoteCount: number
-  creditStatus: 'none' | 'partial' | 'full'
-  remainingRefundableQuantity: number
-}
+type InvoiceRow = InvoiceListRow
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -145,6 +134,8 @@ export default function InvoicesPage() {
 
   const [rows,    setRows]    = useState<InvoiceRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [retryingZatca, setRetryingZatca] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [creditModalRow, setCreditModalRow] = useState<InvoiceRow | null>(null)
@@ -156,6 +147,19 @@ export default function InvoicesPage() {
   const [search,    setSearch]    = useState('')
   const [payFilter, setPayFilter] = useState('all')
   const [zatcaFilter, setZatcaFilter] = useState('all')
+  const pageSize = 100
+  const scope = useMemo<InvoiceListScope | null>(() => profile?.tenant_id && profile?.branch_id ? ({
+    tenantId: profile.tenant_id,
+    branchId: profile.branch_id,
+    startDate,
+    endDate,
+    page: 0,
+    pageSize,
+  }) : null, [profile?.tenant_id, profile?.branch_id, startDate, endDate])
+
+  const viewKey = scope
+    ? invoiceListViewKey(scope, { search, paymentMethod: payFilter, zatcaStatus: zatcaFilter })
+    : 'invoice-list-unscoped'
 
   function applyQuickRange(range: QuickRange) {
     setQuickRange(range)
@@ -179,12 +183,25 @@ export default function InvoicesPage() {
 
   useEffect(() => {
     let cancelled = false
-    async function load() {
-      const tid = profile?.tenant_id
-      if (!tid) { setLoading(false); return }
+    const activeScope = scope
+    if (!activeScope) { setRows([]); setLoading(false); return }
+
+    const cached = getCachedInvoiceRows(activeScope)
+    if (cached) {
+      setRows(cached.rows)
+      setLoading(false)
+    } else {
+      setRows([])
       setLoading(true)
+    }
+
+    async function load(silent = false) {
+      const tid = activeScope.tenantId
+      if (silent || cached) setRefreshing(true)
+      else setLoading(true)
+      setLoadError(null)
       try {
-        const { data } = await supabase
+        const { data, error: invoiceError } = await supabase
           .from('invoices')
           .select(`
             id, branch_id, invoice_number, invoice_reference, zatca_invoice_type, invoice_date, created_at, status,
@@ -194,16 +211,17 @@ export default function InvoicesPage() {
             payments(method)
           `)
           .eq('tenant_id', tid)
-          .eq('branch_id', profile?.branch_id)
-          .gte('invoice_date', startDate)
-          .lte('invoice_date', endDate)
+          .eq('branch_id', activeScope.branchId)
+          .gte('invoice_date', activeScope.startDate)
+          .lte('invoice_date', activeScope.endDate)
           .order('created_at', { ascending: false })
-          .limit(500)
+          .range(0, activeScope.pageSize - 1)
+        if (invoiceError) throw invoiceError
 
         if (cancelled) return
 
         const invoices = data ?? []
-        const demoSandbox = isPermanentDemoSandboxBranch(tid, profile?.branch_id)
+        const demoSandbox = isPermanentDemoSandboxBranch(tid, activeScope.branchId)
         const sandboxAttempts = demoSandbox
           ? await getSandboxValidationStatuses(invoices.map((invoice: any) => invoice.id)).catch(() => ({}))
           : {}
@@ -218,7 +236,7 @@ export default function InvoicesPage() {
             .from('invoices')
             .select('id, invoice_number, original_invoice_id, created_at')
             .eq('tenant_id', tid)
-            .eq('branch_id', profile?.branch_id)
+            .eq('branch_id', activeScope.branchId)
             .in('original_invoice_id', normalInvoiceIds)
             .eq('zatca_invoice_type', 'credit_note')
             .neq('status', 'cancelled')
@@ -312,23 +330,43 @@ export default function InvoicesPage() {
         }
         })
         setRows(processed)
+        setCachedInvoiceRows(activeScope, processed)
+      } catch (error) {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : 'Unable to load invoices.')
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) { setLoading(false); setRefreshing(false) }
       }
     }
-    load()
-    return () => { cancelled = true }
-  }, [startDate, endDate, profile?.tenant_id, profile?.branch_id, refreshKey])
+    const stale = !cached || Date.now() - cached.updatedAt >= INVOICE_LIST_STALE_MS
+    if (stale || refreshKey > 0) void load(Boolean(cached))
+
+    const unsubscribe = subscribeInvoiceListCache(() => {
+      if (cancelled) return
+      const next = getCachedInvoiceRows(activeScope)
+      if (next) setRows(next.rows)
+    })
+    const refreshOnFocus = () => { if (!cancelled) void load(true) }
+    window.addEventListener('focus', refreshOnFocus)
+    window.addEventListener('online', refreshOnFocus)
+    return () => {
+      cancelled = true
+      unsubscribe()
+      window.removeEventListener('focus', refreshOnFocus)
+      window.removeEventListener('online', refreshOnFocus)
+    }
+  }, [scope, refreshKey])
 
   // ── Filtered ──────────────────────────────────────────────────────────────
 
-  const q = search.trim().toLowerCase()
-  const filtered = rows.filter(r => {
-    if (q && !r.invoiceNumber.toLowerCase().includes(q) && !(r.customerName ?? '').toLowerCase().includes(q) && !(r.invoiceReference ?? '').toLowerCase().includes(q)) return false
-    if (payFilter !== 'all' && r.paymentMethod !== payFilter) return false
-    if (zatcaFilter !== 'all' && r.displayZatcaStatus !== zatcaFilter) return false
-    return true
-  })
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return rows.filter(r => {
+      if (q && !r.invoiceNumber.toLowerCase().includes(q) && !(r.customerName ?? '').toLowerCase().includes(q) && !(r.invoiceReference ?? '').toLowerCase().includes(q)) return false
+      if (payFilter !== 'all' && r.paymentMethod !== payFilter) return false
+      if (zatcaFilter !== 'all' && r.displayZatcaStatus !== zatcaFilter) return false
+      return true
+    })
+  }, [rows, viewKey, search, payFilter, zatcaFilter])
 
   const summary = {
     count:   filtered.length,
@@ -371,6 +409,12 @@ export default function InvoicesPage() {
           <h1 className="mt-1 text-2xl font-bold text-gray-950">Invoices</h1>
           <p className="text-sm text-gray-500 mt-1">فواتير المبيعات · View invoices and credit notes</p>
         </div>
+        <div className="flex items-center gap-2">
+        {refreshing && rows.length > 0 && (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-400" aria-live="polite">
+            <RefreshCw size={12} className="animate-spin" /> Updating…
+          </span>
+        )}
         {retryableZatcaCount > 0 && (
           <button
             type="button"
@@ -383,6 +427,7 @@ export default function InvoicesPage() {
             Retry ZATCA ({retryableZatcaCount})
           </button>
         )}
+        </div>
       </div>
 
       {/* ── Summary bar ─────────────────────────────────── */}
@@ -506,9 +551,21 @@ export default function InvoicesPage() {
           <div className="w-20" />
         </div>
 
-        {loading ? (
-          <div className="py-16 text-center">
-            <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto" />
+        {loading && rows.length === 0 ? (
+          <div className="divide-y divide-gray-50" aria-label="Loading invoices">
+            {Array.from({ length: 6 }, (_, index) => (
+              <div key={index} className="flex min-w-[980px] gap-2 px-4 py-3">
+                {[112, 96, 64, 220, 40, 96, 80, 96, 64, 96].map((width, cell) => (
+                  <div key={cell} className="h-4 animate-pulse rounded bg-gray-100" style={{ width }} />
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : loadError && rows.length === 0 ? (
+          <div className="py-14 text-center">
+            <p className="text-sm font-semibold text-gray-700">Invoices could not be loaded.</p>
+            <p className="mt-1 text-xs text-gray-400">Check your connection and try again.</p>
+            <button type="button" onClick={() => setRefreshKey(key => key + 1)} className="mt-3 rounded-lg bg-primary-700 px-3 py-2 text-xs font-semibold text-white">Retry</button>
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-16 text-center">
@@ -625,6 +682,12 @@ export default function InvoicesPage() {
             </div>
           </>
         )}
+        {loadError && rows.length > 0 && (
+          <div className="flex items-center justify-between border-t border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+            <span>Could not refresh invoices. Showing the last available results.</span>
+            <button type="button" onClick={() => setRefreshKey(key => key + 1)} className="font-semibold underline underline-offset-2">Retry</button>
+          </div>
+        )}
         </div>
       </div>
 
@@ -638,7 +701,42 @@ export default function InvoicesPage() {
         } : null}
         defaultRefundMethod={(creditModalRow?.paymentMethod === 'split' ? 'other' : (creditModalRow?.paymentMethod ?? 'cash')) as PaymentMethod}
         onClose={() => setCreditModalRow(null)}
-        onCreated={() => {
+        onCreated={(result: CreditNoteCreatedResult) => {
+          if (profile?.tenant_id && profile.branch_id) {
+            const demoStatus = demoSandbox
+              ? (result.autoSubmitSucceeded ? 'sandbox_validated' : 'sandbox_validation_failed')
+              : result.zatcaStatus
+            upsertInvoiceListRow(profile.tenant_id, {
+              id: result.creditNoteId,
+              branchId: profile.branch_id,
+              invoiceNumber: result.creditNoteNumber,
+              date: saudiDateStr(result.createdAt),
+              createdAt: result.createdAt,
+              customerName: creditModalRow?.customerName ?? null,
+              itemsCount: result.itemsCount,
+              subtotal: result.subtotal,
+              taxAmount: result.taxAmount,
+              totalAmount: result.total,
+              paymentMethod: result.refundMethod,
+              zatcaStatus: result.zatcaStatus,
+              displayZatcaStatus: demoStatus,
+              status: 'posted',
+              documentType: 'credit_note',
+              invoiceReference: creditModalRow?.invoiceNumber ?? null,
+              linkedCreditNoteId: null,
+              linkedCreditNoteNumber: null,
+              creditNoteCount: 0,
+              creditStatus: 'none',
+              remainingRefundableQuantity: 0,
+            })
+            updateCachedInvoiceRows(profile.tenant_id, profile.branch_id, cachedRows => cachedRows.map(row => row.id === result.originalInvoiceId ? {
+              ...row,
+              linkedCreditNoteId: result.creditNoteId,
+              linkedCreditNoteNumber: result.creditNoteNumber,
+              creditNoteCount: row.creditNoteCount + (result.idempotentReplay ? 0 : 1),
+              creditStatus: 'partial',
+            } : row))
+          }
           setCreditModalRow(null)
           setRefreshKey(key => key + 1)
         }}

@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { MoneyInput } from '@/components/ui/MoneyInput'
+import { updateCachedInvoiceRows, upsertInvoiceListRow } from '@/lib/invoices/invoiceListCache'
 import { displayName as dn } from '@/lib/utils/display'
 import { buildZatcaQR } from '@/lib/zatca/qr'
 import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
@@ -2119,6 +2120,33 @@ export default function POSPage() {
         payments:        receiptPayments,
         displayPaymentMethod,
       })
+      upsertInvoiceListRow(branch.tenant_id, {
+        id: checkout.invoice_id,
+        branchId: branch.id,
+        invoiceNumber: checkout.invoice_number,
+        date: saudiDateStr(createdAt),
+        createdAt,
+        customerName: selectedCust?.customer_type === 'business' && selectedCust?.business_name
+          ? selectedCust.business_name
+          : (selectedCust?.name ?? null),
+        itemsCount: checkout.items?.length ?? cart.length,
+        subtotal: serverSubtotal,
+        taxAmount: serverTax,
+        totalAmount: serverTotal,
+        paymentMethod: displayPaymentMethod,
+        zatcaStatus: 'pending',
+        displayZatcaStatus: isPermanentDemoSandboxBranch(branch.tenant_id, branch.id)
+          ? 'sandbox_validation_pending'
+          : 'pending',
+        status: 'posted',
+        documentType: checkout.zatca_invoice_type,
+        invoiceReference: null,
+        linkedCreditNoteId: null,
+        linkedCreditNoteNumber: null,
+        creditNoteCount: 0,
+        creditStatus: 'none',
+        remainingRefundableQuantity: (checkout.items ?? []).reduce((sum, item) => sum + num(item.quantity), 0),
+      })
       void maybeAutoPrintReceiptAfterSale(checkout.invoice_id)
       setCart([])
       setCustomerId(null)
@@ -2143,12 +2171,18 @@ export default function POSPage() {
           if (routed.mode === 'sandbox_validation') {
             const validated = routed.result.status === 'sandbox_validated' ||
               routed.result.status === 'sandbox_validated_with_warnings'
+            updateCachedInvoiceRows(branch.tenant_id, branch.id, cachedRows => cachedRows.map(row => row.id === checkout.invoice_id
+              ? { ...row, displayZatcaStatus: routed.result.status }
+              : row))
             setZatcaResult(validated ? 'sandbox_validated' : 'sandbox_failed')
             if (validated) toast.success('ZATCA submission successful', { description: 'Successfully processed by ZATCA', duration: 2500 })
             else toast.error('ZATCA Sandbox validation failed')
             return
           }
           const result = routed.result
+          updateCachedInvoiceRows(branch.tenant_id, branch.id, cachedRows => cachedRows.map(row => row.id === checkout.invoice_id
+            ? { ...row, zatcaStatus: result.invoiceStatus, displayZatcaStatus: result.invoiceStatus }
+            : row))
           if (result.ok) {
             setZatcaResult('submitted')
             toast.success('Submitted to ZATCA', { duration: 2000 })

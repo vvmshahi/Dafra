@@ -25,6 +25,10 @@ export interface CreditNoteCreatedResult {
   reason: string
   refundMethod: PaymentMethod
   autoSubmitSucceeded: boolean
+  subtotal: number
+  taxAmount: number
+  itemsCount: number
+  originalInvoiceId: string
 }
 
 interface RpcCreditNoteResult {
@@ -424,6 +428,10 @@ export default function CreateCreditNoteModal({
         reason: finalReason,
         refundMethod: result.refund_method ?? resolveAutoRefundMethod(originalPayments),
         autoSubmitSucceeded,
+        subtotal: totals.subtotal,
+        taxAmount: totals.tax,
+        itemsCount: lines.length,
+        originalInvoiceId: invoice.id,
       })
       onClose()
       if (autoSubmitSucceeded || zatcaStatus === 'reported' || zatcaStatus === 'cleared') {

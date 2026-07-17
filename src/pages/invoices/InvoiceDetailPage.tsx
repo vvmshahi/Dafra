@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { buildZatcaQR } from '@/lib/zatca/qr'
-import { toSaudiTime } from '@/lib/utils/date'
+import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
@@ -16,6 +16,7 @@ import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCre
 import { SandboxValidationPanel } from '@/components/zatca/SandboxValidationPanel'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import type { SandboxValidationResponse } from '@/lib/zatca/api'
+import { updateCachedInvoiceRows, upsertInvoiceListRow } from '@/lib/invoices/invoiceListCache'
 
 function WhatsAppIcon({ size = 13 }: { size?: number }) {
   return (
@@ -505,6 +506,39 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
 
   function handleCreditNoteCreated(result: CreditNoteCreatedResult) {
     if (!invoice) return
+    const demo = isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)
+    upsertInvoiceListRow(invoice.tenant_id, {
+      id: result.creditNoteId,
+      branchId: invoice.branch_id,
+      invoiceNumber: result.creditNoteNumber,
+      date: saudiDateStr(result.createdAt),
+      createdAt: result.createdAt,
+      customerName: null,
+      itemsCount: result.itemsCount,
+      subtotal: result.subtotal,
+      taxAmount: result.taxAmount,
+      totalAmount: result.total,
+      paymentMethod: result.refundMethod,
+      zatcaStatus: result.zatcaStatus,
+      displayZatcaStatus: demo
+        ? (result.autoSubmitSucceeded ? 'sandbox_validated' : 'sandbox_validation_failed')
+        : result.zatcaStatus,
+      status: 'posted',
+      documentType: 'credit_note',
+      invoiceReference: invoice.invoice_number,
+      linkedCreditNoteId: null,
+      linkedCreditNoteNumber: null,
+      creditNoteCount: 0,
+      creditStatus: 'none',
+      remainingRefundableQuantity: 0,
+    })
+    updateCachedInvoiceRows(invoice.tenant_id, invoice.branch_id, rows => rows.map(row => row.id === invoice.id ? {
+      ...row,
+      linkedCreditNoteId: result.creditNoteId,
+      linkedCreditNoteNumber: result.creditNoteNumber,
+      creditNoteCount: row.creditNoteCount + (result.idempotentReplay ? 0 : 1),
+      creditStatus: 'partial',
+    } : row))
     setLinkedCreditNotes(prev => [{
       id: result.creditNoteId,
       invoice_number: result.creditNoteNumber,
