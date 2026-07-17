@@ -64,6 +64,7 @@ export default function AccountTab() {
   const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? 'User'
   const initials    = displayName.split(' ').map((w: string) => w[0]).join('').substring(0, 2).toUpperCase()
   const roleLabel   = profile?.role?.replace(/_/g, ' ') ?? ''
+  const desktopBuild = typeof window !== 'undefined' && window.electronAPI?.isElectron === true
 
   return (
     <div className="space-y-5">
@@ -93,6 +94,8 @@ export default function AccountTab() {
             ? new Date(profile.created_at).toLocaleDateString('en-SA', { year: 'numeric', month: 'long', day: 'numeric' })
             : ''
         } />
+        {desktopBuild && <InfoRow label="Application" value={`Kubri Desktop ${__APP_VERSION__}`} />}
+        {desktopBuild && <InfoRow label="Build" value={__BUILD_COMMIT__} />}
       </div>
 
       {/* Edit profile */}

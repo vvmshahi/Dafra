@@ -47,6 +47,8 @@ function useProvideAuth() {
   // null = not yet checked, true = has ≥1 branch, false = no branches
   const [hasBranch, setHasBranch] = useState<boolean | null>(null)
   const ownerSetupCompletionAttempts = useRef(new Set<string>())
+  const currentUserId = useRef<string | null>(null)
+  const currentProfile = useRef<UserProfile | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -71,6 +73,7 @@ function useProvideAuth() {
         if (!mounted) return
         if (error) throw error
         const p = data as unknown as UserProfile | null
+        currentProfile.current = p
         setProfile(p)
         if (p?.tenant_id) {
           const { data: tData } = await supabase
@@ -133,6 +136,7 @@ function useProvideAuth() {
 
         logDesktopAuthDiagnostic('INITIAL_SESSION', session ?? null)
         if (session?.user) {
+          currentUserId.current = session.user.id
           setUser(session.user)
           setSession(session)
           fetchProfile(session.user.id)
@@ -153,14 +157,21 @@ function useProvideAuth() {
       if (!mounted) return
       logDesktopAuthDiagnostic(event, session ?? null)
       if (event === 'SIGNED_IN' && session) {
+        const sameAuthenticatedUser = currentUserId.current === session.user.id && currentProfile.current !== null
+        currentUserId.current = session.user.id
         setUser(session.user)
         setSession(session)
+        // Supabase may emit SIGNED_IN again when a hidden tab or desktop window
+        // resumes. Keep the mounted route and form tree intact in that case.
+        if (sameAuthenticatedUser) return
         setLoading(true)
         setHasBranch(null)
         setAuthError(null)
         fetchProfile(session.user.id)
       }
       if (event === 'SIGNED_OUT') {
+        currentUserId.current = null
+        currentProfile.current = null
         setUser(null)
         setSession(null)
         setProfile(null)
@@ -210,6 +221,7 @@ function useProvideAuth() {
         .eq('id', session.user.id)
         .maybeSingle()
       const p = data as unknown as UserProfile | null
+      currentProfile.current = p
       setProfile(p)
       if (p?.tenant_id) {
         const { data: tData } = await supabase

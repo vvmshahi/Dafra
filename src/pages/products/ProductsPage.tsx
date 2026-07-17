@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Plus, LayoutGrid, List, Search, Tag, Pencil, Trash2, Package, X, FolderPlus,
 } from 'lucide-react'
@@ -366,15 +366,42 @@ function AddCategoryDialog({
   const [icon, setIcon] = useState('📦')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const skipNextDraftWrite = useRef(false)
+  const draftKey = profile?.tenant_id && profile?.branch_id
+    ? `kubri:category-draft:${profile.tenant_id}:${profile.branch_id}:add`
+    : ''
 
   useEffect(() => {
-    if (!open) {
+    if (open && draftKey) {
+      skipNextDraftWrite.current = true
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(draftKey) ?? 'null') as { name?: unknown; icon?: unknown } | null
+        if (typeof saved?.name === 'string') setName(saved.name)
+        if (typeof saved?.icon === 'string') setIcon(saved.icon)
+      } catch {}
+    } else if (!open) {
       setName('')
       setIcon('📦')
       setError('')
       setSaving(false)
     }
-  }, [open])
+  }, [open, draftKey])
+
+  useEffect(() => {
+    if (!open || !draftKey) return
+    if (skipNextDraftWrite.current) {
+      skipNextDraftWrite.current = false
+      return
+    }
+    try { sessionStorage.setItem(draftKey, JSON.stringify({ name, icon })) } catch {}
+  }, [open, draftKey, name, icon])
+
+  const closeDialog = () => {
+    if (draftKey) {
+      try { sessionStorage.removeItem(draftKey) } catch {}
+    }
+    onClose()
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -416,14 +443,14 @@ function AddCategoryDialog({
 
     setSaving(false)
     onCreated()
-    onClose()
+    closeDialog()
   }
 
   if (!open) return null
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={closeDialog} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <form
           onSubmit={handleSubmit}
@@ -438,7 +465,7 @@ function AddCategoryDialog({
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={closeDialog}
               className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
             >
               <X size={18} />
@@ -510,7 +537,7 @@ function AddCategoryDialog({
           </div>
 
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
+            <Button type="button" variant="secondary" className="flex-1" onClick={closeDialog}>
               Cancel
             </Button>
             <Button type="submit" className="flex-1" loading={saving}>
@@ -527,6 +554,7 @@ function AddCategoryDialog({
 
 export default function ProductsPage() {
   const { profile } = useAuth()
+  const uiStateRestored = useRef(false)
 
   const [products,   setProducts]   = useState<ProductRow[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -538,6 +566,9 @@ export default function ProductsPage() {
   const [editing,    setEditing]    = useState<ProductRow | null>(null)
   const [catsOpen,   setCatsOpen]   = useState(false)
   const [addCatOpen, setAddCatOpen] = useState(false)
+  const uiStateKey = profile?.tenant_id && profile?.branch_id
+    ? `kubri:products-ui:${profile.tenant_id}:${profile.branch_id}`
+    : ''
 
   const load = useCallback(async () => {
     const tid = profile?.tenant_id
@@ -568,12 +599,49 @@ export default function ProductsPage() {
         .order('name',       { ascending: true }),
     ])
 
-    setProducts((prods  ?? []) as unknown as ProductRow[])
+    const loadedProducts = (prods ?? []) as unknown as ProductRow[]
+    setProducts(loadedProducts)
     setCategories((cats ?? []) as unknown as Category[])
+    if (!uiStateRestored.current && uiStateKey) {
+      uiStateRestored.current = true
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(uiStateKey) ?? 'null') as {
+          search?: unknown; activeCat?: unknown; viewMode?: unknown
+          drawerOpen?: unknown; editingId?: unknown; addCatOpen?: unknown
+        } | null
+        if (saved) {
+          if (typeof saved.search === 'string') setSearch(saved.search)
+          if (typeof saved.activeCat === 'string') setActiveCat(saved.activeCat)
+          if (saved.viewMode === 'grid' || saved.viewMode === 'list') setViewMode(saved.viewMode)
+          if (saved.addCatOpen === true) setAddCatOpen(true)
+          if (saved.drawerOpen === true) {
+            const editingProduct = typeof saved.editingId === 'string'
+              ? loadedProducts.find(item => item.id === saved.editingId) ?? null
+              : null
+            setEditing(editingProduct)
+            setDrawerOpen(true)
+          }
+        }
+      } catch {}
+    }
     setLoading(false)
-  }, [profile?.tenant_id, profile?.branch_id])
+  }, [profile?.tenant_id, profile?.branch_id, uiStateKey])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (!uiStateKey || !uiStateRestored.current) return
+    try {
+      sessionStorage.setItem(uiStateKey, JSON.stringify({
+        search,
+        activeCat,
+        viewMode,
+        drawerOpen,
+        editingId: editing?.id ?? null,
+        addCatOpen,
+      }))
+    } catch {}
+  }, [uiStateKey, search, activeCat, viewMode, drawerOpen, editing?.id, addCatOpen])
 
   const openAdd  = () => { setEditing(null); setDrawerOpen(true) }
   const openEdit = (p: ProductRow) => { setEditing(p); setDrawerOpen(true) }

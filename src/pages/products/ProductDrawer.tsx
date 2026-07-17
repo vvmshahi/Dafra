@@ -97,12 +97,38 @@ const createStockAdjustmentKey = () => {
   return `stock-adjustment-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+interface ProductDraft {
+  name: string
+  nameAr: string
+  categoryId: string
+  description: string
+  price: string
+  vatTreatment: VatTreatment
+  isAvailable: boolean
+  sortOrder: string
+  sku: string
+  skuManuallyEdited: boolean
+  notes: string
+  trackStock: boolean
+}
+
+function readProductDraft(key: string): ProductDraft | null {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(key) ?? 'null')
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as ProductDraft : null
+  } catch {
+    return null
+  }
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ProductDrawer({ open, product, categories, onClose, onSaved }: Props) {
   const { profile, tenant, branch } = useAuth()
   const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement>(null)
+  const initializedFormKey = useRef<string | null>(null)
+  const skipNextDraftWrite = useRef(false)
 
   const [s0, setS0] = useState(true)   // Basic Info
   const [s1, setS1] = useState(true)   // Pricing & VAT
@@ -219,44 +245,56 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
 
   const resolvedTenantId = profile?.tenant_id ?? tenant?.id ?? ''
   const resolvedBranchId = profile?.branch_id ?? branch?.id ?? ''
+  const draftKey = resolvedTenantId && resolvedBranchId
+    ? `kubri:product-draft:${resolvedTenantId}:${resolvedBranchId}:${product ? `edit:${product.id}` : 'add'}`
+    : ''
   const selectedCategory = categoryId
     ? categories.find(c => c.id === categoryId)
     : null
 
-  // Populate form when editing, reset when adding
+  // Initialize once per opened product. Background auth/profile refreshes must
+  // never reset an already mounted form.
   useEffect(() => {
+    if (!open) {
+      initializedFormKey.current = null
+      return
+    }
+    if (!draftKey || initializedFormKey.current === draftKey) return
+    initializedFormKey.current = draftKey
+    const draft = readProductDraft(draftKey)
+    skipNextDraftWrite.current = true
     if (open && product) {
-      setName(product.name)
-      setNameAr(product.name_ar ?? '')
-      setCategoryId(product.category_id ?? '')
-      setDescription(product.description ?? '')
-      setPrice(String(product.price))
-      setVatTreatment((product.vat_treatment as VatTreatment) ?? 'inherit')
+      setName(draft?.name ?? product.name)
+      setNameAr(draft?.nameAr ?? product.name_ar ?? '')
+      setCategoryId(draft?.categoryId ?? product.category_id ?? '')
+      setDescription(draft?.description ?? product.description ?? '')
+      setPrice(draft?.price ?? String(product.price))
+      setVatTreatment(draft?.vatTreatment ?? (product.vat_treatment as VatTreatment) ?? 'inherit')
       setImagePreview(product.image_url)
-      setIsAvailable(product.is_available ?? true)
-      setSortOrder(String(product.sort_order ?? 0))
-      setSku(product.sku ?? '')
-      setSkuManuallyEdited(true)
+      setIsAvailable(draft?.isAvailable ?? product.is_available ?? true)
+      setSortOrder(draft?.sortOrder ?? String(product.sort_order ?? 0))
+      setSku(draft?.sku ?? product.sku ?? '')
+      setSkuManuallyEdited(draft?.skuManuallyEdited ?? true)
       setSuggestedSku(null)
       setSkuSuggesting(false)
-      setNotes(product.notes ?? '')
-      setTrackStock(Boolean(product.track_stock))
+      setNotes(draft?.notes ?? product.notes ?? '')
+      setTrackStock(draft?.trackStock ?? Boolean(product.track_stock))
     } else {
-      setName('')
-      setNameAr('')
-      setCategoryId('')
-      setDescription('')
-      setPrice('')
-      setVatTreatment('inherit')
+      setName(draft?.name ?? '')
+      setNameAr(draft?.nameAr ?? '')
+      setCategoryId(draft?.categoryId ?? '')
+      setDescription(draft?.description ?? '')
+      setPrice(draft?.price ?? '')
+      setVatTreatment(draft?.vatTreatment ?? 'inherit')
       setImagePreview(null)
-      setIsAvailable(true)
-      setSortOrder('0')
-      setSku('')
-      setSkuManuallyEdited(false)
+      setIsAvailable(draft?.isAvailable ?? true)
+      setSortOrder(draft?.sortOrder ?? '0')
+      setSku(draft?.sku ?? '')
+      setSkuManuallyEdited(draft?.skuManuallyEdited ?? false)
       setSuggestedSku(null)
       setSkuSuggesting(false)
-      setNotes('')
-      setTrackStock(stockControlsAllowed)
+      setNotes(draft?.notes ?? '')
+      setTrackStock(draft?.trackStock ?? stockControlsAllowed)
     }
     setImageFile(null)
     setAdjustmentQuantity('')
@@ -265,7 +303,28 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
     setCreatedProductId(null)
     setCreatedTrackedProduct(null)
     setError('')
-  }, [open, product, stockControlsAllowed])
+  }, [open, product, draftKey, stockControlsAllowed])
+
+  useEffect(() => {
+    if (!open || !draftKey || initializedFormKey.current !== draftKey) return
+    if (skipNextDraftWrite.current) {
+      skipNextDraftWrite.current = false
+      return
+    }
+    const draft: ProductDraft = {
+      name, nameAr, categoryId, description, price, vatTreatment,
+      isAvailable, sortOrder, sku, skuManuallyEdited, notes, trackStock,
+    }
+    try { sessionStorage.setItem(draftKey, JSON.stringify(draft)) } catch {}
+  }, [
+    open, draftKey, name, nameAr, categoryId, description, price, vatTreatment,
+    isAvailable, sortOrder, sku, skuManuallyEdited, notes, trackStock,
+  ])
+
+  const clearDraft = () => {
+    if (!draftKey) return
+    try { sessionStorage.removeItem(draftKey) } catch {}
+  }
 
   useEffect(() => {
     if (!open || product || skuManuallyEdited || !resolvedBranchId || !name.trim()) {
@@ -345,6 +404,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
   const requestClose = () => {
     if (hasUnsavedChanges && !confirm('Discard unsaved product changes?')) return
     if (imagePreview?.startsWith('blob:')) URL.revokeObjectURL(imagePreview)
+    clearDraft()
     onClose()
   }
 
@@ -502,6 +562,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
 
       setCreatedProductId(null)
       setAdjustmentIdempotencyKey(null)
+      clearDraft()
       if (imagePreview?.startsWith('blob:')) URL.revokeObjectURL(imagePreview)
       onSaved()
       if (shouldShowTrackedCreationSuccess && savedProductId) {
