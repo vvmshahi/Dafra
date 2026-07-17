@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, Printer, RefreshCw, Loader2, AlertCircle, CheckCircle2, Bug, FileText } from 'lucide-react'
+import { ArrowLeft, Printer, RefreshCw, Loader2, AlertCircle, CheckCircle2, FileText } from 'lucide-react'
 import QRCode from 'qrcode'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import { buildZatcaQR, decodeTLV } from '@/lib/zatca/qr'
+import { buildZatcaQR } from '@/lib/zatca/qr'
 import { toSaudiTime } from '@/lib/utils/date'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
@@ -13,6 +13,9 @@ import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { submitInvoiceToZatca } from '@/lib/zatca/submission'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
+import { SandboxValidationPanel } from '@/components/zatca/SandboxValidationPanel'
+import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
+import type { SandboxValidationResponse } from '@/lib/zatca/api'
 
 function WhatsAppIcon({ size = 13 }: { size?: number }) {
   return (
@@ -216,7 +219,6 @@ export default function InvoiceDetailPage() {
   const { id }     = useParams<{ id: string }>()
   const navigate   = useNavigate()
   const location   = useLocation()
-  const debugMode  = import.meta.env.DEV && new URLSearchParams(location.search).get('debug') === 'true'
   const autoPrint  = new URLSearchParams(location.search).get('print') === '1'
   const autoPrintRef = useRef(false)
   usePrintStyle()
@@ -240,6 +242,7 @@ export default function InvoiceDetailPage() {
   const [isPrinting,   setIsPrinting]   = useState(false)
   const [thermalPrinting, setThermalPrinting] = useState(false)
   const [creditModalOpen, setCreditModalOpen] = useState(false)
+  const [sandboxValidation, setSandboxValidation] = useState<SandboxValidationResponse | null>(null)
 
   useEffect(() => {
     const before = () => setIsPrinting(true)
@@ -370,7 +373,7 @@ export default function InvoiceDetailPage() {
     async function generateQR() {
       // Use the stored TLV from DB when available — guarantees debug panel shows
       // the exact same payload that was encoded into the QR at creation time.
-      const storedPayload = invoice!.zatca_qr_code
+      const storedPayload = sandboxValidation?.qrCode ?? invoice!.zatca_qr_code
 
       const payload = storedPayload ?? buildZatcaQR({
         // QR tag 1: always use legal business_name, never display_name (ZATCA requirement)
@@ -403,7 +406,7 @@ export default function InvoiceDetailPage() {
 
     generateQR()
     return () => { cancelled = true }
-  }, [invoice, branch, tenant])
+  }, [invoice, branch, tenant, sandboxValidation?.qrCode])
 
   // Auto-print when ?print=1 is in the URL
   useEffect(() => {
@@ -631,17 +634,20 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
     : creditStatus === 'partial'
     ? 'text-amber-700 bg-amber-50 border-amber-100'
     : 'text-gray-600 bg-gray-50 border-gray-100'
+  const demoSandbox = isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)
+  const sandboxValidated = sandboxValidation?.status === 'sandbox_validated' ||
+    sandboxValidation?.status === 'sandbox_validated_with_warnings'
   const canCreateCreditNote = !isCreditNote
     && !isCancelled
     && invoice.status === 'posted'
-    && (invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared')
+    && (sandboxValidated || invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared')
     && totalRemainingQuantity > 0.0005
   const creditDisabledReason = isCreditNote
     ? 'Credit notes cannot be credited.'
     : invoice.status !== 'posted'
     ? 'Only posted invoices can be credited.'
-    : !(invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared')
-    ? 'Only reported or cleared invoices can be credited.'
+    : !(sandboxValidated || invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared')
+    ? demoSandbox ? 'Submit this invoice to ZATCA before creating a credit note.' : 'Only reported or cleared invoices can be credited.'
     : isCancelled
     ? 'Cancelled invoices cannot be credited here.'
     : totalOriginalQuantity <= 0
@@ -737,7 +743,7 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
         </button>
 
         <div className="flex items-center gap-2">
-          {canSubmitCurrentDocument && (
+          {canSubmitCurrentDocument && !demoSandbox && (
             <button onClick={handleResend} disabled={resubmitting}
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-600 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 transition-colors disabled:opacity-50">
               <RefreshCw size={13} className={resubmitting ? 'animate-spin' : ''} />
@@ -771,6 +777,13 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
           This invoice has been cancelled and is void.
         </div>
       )}
+
+      <SandboxValidationPanel
+        invoiceId={invoice.id}
+        tenantId={invoice.tenant_id}
+        branchId={invoice.branch_id}
+        onResult={setSandboxValidation}
+      />
 
       {/* ── Refund / Credit Note status ─────────────────── */}
       <div className="no-print bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
@@ -812,7 +825,11 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
               </div>
             ) : (
               <p className="text-xs text-gray-500">
-                Create a credit note only after the original invoice has been reported or cleared.
+                {demoSandbox
+                  ? sandboxValidated
+                    ? 'Create a credit note or refund for this submitted invoice.'
+                    : 'Submit this invoice to ZATCA before creating a credit note.'
+                  : 'Create a credit note only after the original invoice has been reported or cleared.'}
               </p>
             )}
           </div>
@@ -1127,7 +1144,9 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
                   <Loader2 size={20} className="animate-spin text-gray-300" />
                 </div>
               )}
-              <p className="text-[9px] text-gray-400 mt-1.5">Scan to verify {isCreditNote ? 'credit note' : 'invoice'}</p>
+              <p className="text-[9px] text-gray-400 mt-1.5">
+                {`Scan to verify ${isCreditNote ? 'credit note' : 'invoice'}`}
+              </p>
             </div>
 
             {(branch.show_footer ?? true) && branch.receipt_footer && (
@@ -1141,15 +1160,26 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
               <div>
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1.5">ZATCA e-Invoice</p>
                 <div className="flex items-center gap-2">
-                  {invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared'
+                  {demoSandbox
+                    ? sandboxValidated
+                      ? <CheckCircle2 size={16} className="text-emerald-500 flex-shrink-0" />
+                      : <span className="text-sm text-gray-400">○</span>
+                    : invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared'
                     ? <CheckCircle2 size={16} className="text-green-500 flex-shrink-0" />
                     : invoice.zatca_status === 'failed'
                     ? <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
                     : <span className={`text-sm ${zatcaMeta.color}`}>{zatcaMeta.icon}</span>
                   }
-                  <span className={`text-sm font-semibold ${zatcaMeta.color}`}>{zatcaMeta.label}</span>
+                  <span className={`text-sm font-semibold ${demoSandbox ? (sandboxValidated ? 'text-emerald-700' : 'text-gray-600') : zatcaMeta.color}`}>
+                    {demoSandbox ? (sandboxValidated ? 'Submitted' : 'Not submitted') : zatcaMeta.label}
+                  </span>
                 </div>
-                {zatcaFailureSummary && (
+                {demoSandbox && sandboxValidated && (
+                  <p className="mt-2 text-[11px] leading-relaxed text-gray-500">
+                    Successfully processed by ZATCA
+                  </p>
+                )}
+                {!demoSandbox && zatcaFailureSummary && (
                   <div className="mt-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2">
                     <p className="text-[10px] font-semibold uppercase tracking-widest text-red-400">Safe failure summary</p>
                     <p className="mt-1 text-[11px] leading-relaxed text-red-700">
@@ -1183,9 +1213,11 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
                 </div>
                 <div>
                   <p className="text-[9px] font-semibold text-gray-300 uppercase tracking-widest">Phase</p>
-                  <p>{isPhase2 ? 'Phase 2 — Integrated' : 'Phase 1 — QR Only'}</p>
+                  <p>{demoSandbox
+                    ? 'Phase 2 — Integrated'
+                    : isPhase2 ? 'Phase 2 — Integrated' : 'Phase 1 — QR Only'}</p>
                 </div>
-                {invoice.zatca_submitted_at && (
+                {!demoSandbox && invoice.zatca_submitted_at && (
                   <div>
                     <p className="text-[9px] font-semibold text-gray-300 uppercase tracking-widest">Submitted</p>
                     <p>{fmtDateTime(invoice.zatca_submitted_at).date}</p>
@@ -1195,6 +1227,11 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
             </div>}
 
           </div>
+          {demoSandbox && (
+            <p className="mt-3 text-right text-[9px] text-gray-300">
+              Demo environment — no production tax submission was made.
+            </p>
+          )}
         </div>
 
         {/* Footer note */}
@@ -1204,107 +1241,6 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
           </p>
         </div>
       </div>
-
-      {/* ── ZATCA QR Debug Panel (?debug=true) ──────────── */}
-      {debugMode && (
-        <div className="no-print mt-4 rounded-2xl overflow-hidden border border-gray-800 bg-gray-950 text-xs font-mono">
-
-          {/* Header */}
-          <div className="flex items-center gap-2 px-5 py-3 bg-gray-900 border-b border-gray-800">
-            <Bug size={14} className="text-yellow-400" />
-            <span className="text-yellow-400 font-bold text-sm">ZATCA QR Debug Panel</span>
-            <span className="ml-auto text-gray-500 text-[10px]">?debug=true</span>
-          </div>
-
-          {!qrPayload ? (
-            <div className="px-5 py-6 text-gray-500">Generating QR payload…</div>
-          ) : (() => {
-            let fields: ReturnType<typeof decodeTLV> = []
-            let decodeError: string | null = null
-            try { fields = decodeTLV(qrPayload) }
-            catch (e) { decodeError = String(e) }
-
-            const tag2 = fields.find(f => f.tag === 2)?.value ?? ''
-            const tag3 = fields.find(f => f.tag === 3)?.value ?? ''
-            const tag4 = fields.find(f => f.tag === 4)?.value ?? ''
-            const tag5 = fields.find(f => f.tag === 5)?.value ?? ''
-
-            const checks = [
-              {
-                label: 'Tag 2 is 15 digits starting with 3',
-                ok:    /^3\d{14}$/.test(tag2),
-              },
-              {
-                label: 'Tag 3 matches YYYY-MM-DDTHH:MM:SSZ',
-                ok:    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(tag3),
-              },
-              {
-                label: 'Tag 4 is a valid decimal',
-                ok:    /^\d+\.\d+$/.test(tag4),
-              },
-              {
-                label: 'Tag 5 is a valid decimal',
-                ok:    /^\d+\.\d+$/.test(tag5),
-              },
-            ]
-
-            return (
-              <div className="divide-y divide-gray-800">
-
-                {/* Section 1: Raw Base64 */}
-                <div className="px-5 py-4 space-y-1.5">
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
-                    1 · Raw Base64 TLV
-                  </p>
-                  <p className="text-green-400 break-all leading-relaxed">{qrPayload}</p>
-                  <p className="text-gray-600 text-[10px]">{qrPayload.length} chars · source: {invoice.zatca_qr_code ? 'database' : 'generated on-the-fly'}</p>
-                </div>
-
-                {/* Section 2: Decoded fields */}
-                <div className="px-5 py-4 space-y-1.5">
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">
-                    2 · Decoded TLV Fields
-                  </p>
-                  {decodeError ? (
-                    <p className="text-red-400">Decode error: {decodeError}</p>
-                  ) : fields.length === 0 ? (
-                    <p className="text-gray-500">No fields decoded</p>
-                  ) : (
-                    <div className="space-y-1">
-                      {fields.map(f => (
-                        <div key={f.tag} className="flex gap-3">
-                          <span className="text-gray-500 flex-shrink-0 w-40">
-                            Tag {f.tag} — {f.label}:
-                          </span>
-                          <span className="text-cyan-300 break-all">{f.value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Section 3: Validation */}
-                <div className="px-5 py-4 space-y-1.5">
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">
-                    3 · Validation Checks
-                  </p>
-                  <div className="space-y-1">
-                    {checks.map(c => (
-                      <div key={c.label} className="flex items-center gap-2">
-                        <span className={c.ok ? 'text-green-400' : 'text-red-400'}>
-                          {c.ok ? '✅' : '❌'}
-                        </span>
-                        <span className={c.ok ? 'text-gray-300' : 'text-red-300'}>{c.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-              </div>
-            )
-          })()}
-        </div>
-      )}
 
       <CreateCreditNoteModal
         open={creditModalOpen}

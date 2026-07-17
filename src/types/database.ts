@@ -4,6 +4,7 @@
 export type UserRole = 'super_admin' | 'owner' | 'branch'
 export type BusinessType = 'trading' | 'service'
 export type BranchPosMode = 'touch' | 'quick'
+export type ZatcaEnvironment = 'production' | 'sandbox'
 export type VatExpenseTreatment = 'no_vat' | 'included' | 'on_top'
 export type ExpenseVatClaimStatus = 'no_vat' | 'claimable' | 'not_claimable' | 'needs_review'
 export type ExpensePaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'other'
@@ -172,6 +173,21 @@ export interface Database {
         Insert: ProductStockReceiptInsert
         Update: never
       }
+      zatca_sandbox_credentials: {
+        Row: never
+        Insert: never
+        Update: never
+      }
+      zatca_sandbox_chain_state: {
+        Row: never
+        Insert: never
+        Update: never
+      }
+      zatca_sandbox_submission_reservations: {
+        Row: never
+        Insert: never
+        Update: never
+      }
       purchases: {
         Row: Purchase
         Insert: PurchaseInsert
@@ -196,6 +212,19 @@ export interface Database {
       get_next_zatca_counter: {
         Args: { p_branch_id: string; p_env?: string }
         Returns: number
+      }
+      reconcile_zatca_sandbox_onboarding: {
+        Args: {
+          p_credential_id: string
+          p_tenant_id: string
+          p_branch_id: string
+          p_expected_operation: ZatcaSandboxOnboardingAction
+          p_decision: ZatcaSandboxReconciliationDecision
+          p_reconciled_by: string
+          p_summary: string
+          p_verified_result?: Record<string, unknown>
+        }
+        Returns: Record<string, unknown>
       }
       get_my_tenant_id: { Args: Record<never, never>; Returns: string }
       get_my_branch_id: { Args: Record<never, never>; Returns: string }
@@ -304,6 +333,59 @@ export interface Database {
       update_product_secure: {
         Args: { p_payload: ProductSecureUpdatePayload }
         Returns: ProductSecureResult
+      }
+      mark_demo_tenant_secure: {
+        Args: { p_tenant_id: string; p_is_demo?: boolean }
+        Returns: Record<string, unknown>
+      }
+      set_branch_zatca_environment_secure: {
+        Args: { p_branch_id: string; p_environment: ZatcaEnvironment }
+        Returns: Record<string, unknown>
+      }
+      reserve_zatca_sandbox_submission: {
+        Args: { p_tenant_id: string; p_branch_id: string; p_device_id: string; p_invoice_id: string }
+        Returns: ZatcaSandboxReservationResult[]
+      }
+      store_zatca_sandbox_signed_payload: {
+        Args: {
+          p_reservation_id: string; p_tenant_id: string; p_branch_id: string; p_device_id: string
+          p_invoice_id: string; p_invoice_hash: string; p_signed_xml: string
+          p_submission_payload: Record<string, unknown>; p_signature_value: string; p_qr_code: string
+        }
+        Returns: undefined
+      }
+      mark_zatca_sandbox_dispatched: {
+        Args: { p_reservation_id: string; p_tenant_id: string; p_branch_id: string; p_device_id: string; p_invoice_id: string }
+        Returns: undefined
+      }
+      mark_zatca_sandbox_ambiguous: {
+        Args: { p_reservation_id: string; p_tenant_id: string; p_branch_id: string; p_device_id: string; p_invoice_id: string; p_reason: string }
+        Returns: undefined
+      }
+      reconcile_zatca_sandbox_submission: {
+        Args: {
+          p_reservation_id: string
+          p_tenant_id: string
+          p_branch_id: string
+          p_environment: 'sandbox'
+          p_device_id: string
+          p_invoice_id: string
+          p_counter: number
+          p_action: 'mark_ambiguous' | 'mark_dispatched'
+        }
+        Returns: Record<string, unknown>
+      }
+      finalize_zatca_sandbox_submission: {
+        Args: {
+          p_reservation_id: string; p_tenant_id: string; p_branch_id: string; p_device_id: string
+          p_invoice_id: string; p_outcome: 'accepted' | 'rejected'; p_http_status: number
+          p_response_body: Record<string, unknown>
+        }
+        Returns: Record<string, unknown>
+      }
+      cancel_zatca_sandbox_before_dispatch: {
+        Args: { p_reservation_id: string; p_tenant_id: string; p_branch_id: string; p_device_id: string; p_invoice_id: string; p_reason: string }
+        Returns: undefined
       }
       update_branch_module_settings: {
         Args: {
@@ -445,6 +527,7 @@ export interface Tenant {
   postal_code: string | null
   logo_url: string | null
   is_active: boolean
+  is_demo: boolean
   suspended_at: string | null
   suspended_reason: string | null
   last_active_at: string | null
@@ -756,8 +839,137 @@ export interface Branch {
   show_pos_scroll_buttons: boolean
   pos_mode: BranchPosMode
   stock_enabled: boolean | null
+  zatca_environment: ZatcaEnvironment
   created_at: string
   updated_at: string
+}
+
+export interface ZatcaSandboxCredential {
+  id: string
+  tenant_id: string
+  branch_id: string
+  environment: 'sandbox'
+  device_id: string
+  encrypted_private_key: string
+  encrypted_compliance_csid: string | null
+  encrypted_compliance_secret: string | null
+  encrypted_production_csid: string | null
+  encrypted_production_secret: string | null
+  certificate: string | null
+  status: 'pending' | 'compliance' | 'active' | 'revoked' | 'expired' | 'failed'
+  onboarding_status: ZatcaSandboxOnboardingStatus
+  last_successful_onboarding_status: Exclude<
+    ZatcaSandboxOnboardingStatus,
+    'compliance_checks_pending' | 'failed' | 'expired'
+  >
+  failed_step: ZatcaSandboxOnboardingAction | null
+  onboarding_operation: ZatcaSandboxOnboardingAction | null
+  operation_started_at: string | null
+  reconciliation_status: ZatcaSandboxReconciliationStatus
+  reconciliation_decision: ZatcaSandboxReconciliationDecision | null
+  reconciled_at: string | null
+  reconciled_by: string | null
+  reconciliation_summary: Record<string, unknown> | null
+  functionality_map: '0100' | '1000' | '1100' | null
+  egs_serial_number: string | null
+  csr_common_name: string | null
+  csr_organization_name: string | null
+  csr_organizational_unit_name: string | null
+  csr_location: string | null
+  csr_industry: string | null
+  csr_pem: string | null
+  public_key_pem: string | null
+  compliance_request_id: string | null
+  compliance_sample_results: Record<string, unknown>[]
+  last_safe_response: Record<string, unknown>
+  last_error: string | null
+  certificate_valid_from: string | null
+  expires_at: string | null
+  csr_generated_at: string | null
+  compliance_csid_received_at: string | null
+  compliance_checked_at: string | null
+  sandbox_production_csid_received_at: string | null
+  activated_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ZatcaSandboxOnboardingStatus =
+  | 'not_started'
+  | 'csr_ready'
+  | 'compliance_csid_ready'
+  | 'compliance_checks_pending'
+  | 'compliance_passed'
+  | 'sandbox_production_csid_ready'
+  | 'active'
+  | 'failed'
+  | 'expired'
+
+export type ZatcaSandboxOnboardingAction =
+  | 'request_compliance_csid'
+  | 'submit_compliance_documents'
+  | 'request_sandbox_production_csid'
+  | 'activate'
+
+export type ZatcaSandboxReconciliationStatus = 'not_required' | 'required' | 'resolved'
+
+export type ZatcaSandboxReconciliationDecision =
+  | 'mark_verified_success'
+  | 'mark_verified_failure'
+  | 'revoke_and_restart_device'
+
+export interface ZatcaSandboxChainState {
+  tenant_id: string
+  branch_id: string
+  environment: 'sandbox'
+  device_id: string
+  last_counter: number
+  previous_hash: string
+  created_at: string
+  updated_at: string
+}
+
+export type ZatcaSandboxReservationState =
+  | 'reserved' | 'dispatched' | 'accepted' | 'rejected' | 'ambiguous' | 'cancelled_before_dispatch'
+
+export interface ZatcaSandboxSubmissionReservation {
+  id: string
+  tenant_id: string
+  branch_id: string
+  environment: 'sandbox'
+  device_id: string
+  invoice_id: string
+  counter: number
+  previous_hash: string
+  invoice_uuid: string
+  invoice_hash: string | null
+  signed_xml: string | null
+  submission_payload: Record<string, unknown> | null
+  signature_value: string | null
+  qr_code: string | null
+  state: ZatcaSandboxReservationState
+  endpoint_kind: 'reporting' | 'clearance'
+  response_status: number | null
+  response_body: Record<string, unknown> | null
+  failure_reason: string | null
+  reserved_at: string
+  signed_at: string | null
+  dispatched_at: string | null
+  finalized_at: string | null
+  updated_at: string
+}
+
+export interface ZatcaSandboxReservationResult {
+  reservation_id: string
+  invoice_counter: number
+  previous_invoice_hash: string
+  invoice_uuid: string
+  reservation_state: ZatcaSandboxReservationState
+  invoice_hash: string | null
+  signed_xml: string | null
+  submission_payload: Record<string, unknown> | null
+  signature_value: string | null
+  qr_code: string | null
 }
 
 export interface UserProfile {

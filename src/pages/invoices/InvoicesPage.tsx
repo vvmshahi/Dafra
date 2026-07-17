@@ -8,6 +8,8 @@ import { Rial } from '@/components/ui/RiyalSymbol'
 import type { InvoiceType, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { saudiNow } from '@/lib/utils/date'
 import { retryFailedSubmissions } from '@/lib/zatca/submission'
+import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
+import { getSandboxValidationStatuses, type SandboxValidationStatus } from '@/lib/zatca/api'
 import CreateCreditNoteModal from './CreateCreditNoteModal'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -25,6 +27,7 @@ interface InvoiceRow {
   totalAmount: number
   paymentMethod: string | null
   zatcaStatus: ZatcaStatus
+  displayZatcaStatus: ZatcaStatus | SandboxValidationStatus | 'sandbox_not_validated'
   status: string
   documentType: InvoiceType
   invoiceReference: string | null
@@ -95,6 +98,12 @@ const ZATCA_BADGE: Record<string, { label: string; bg: string; text: string }> =
   reported:      { label: 'Reported',      bg: 'bg-green-50',   text: 'text-green-700'   },
   cleared:       { label: 'Cleared',       bg: 'bg-emerald-50', text: 'text-emerald-700' },
   failed:        { label: 'Failed',        bg: 'bg-red-50',     text: 'text-red-600'     },
+  sandbox_validated: { label: 'Submitted', bg: 'bg-green-50', text: 'text-green-700' },
+  sandbox_validated_with_warnings: { label: 'Submitted with warnings', bg: 'bg-amber-50', text: 'text-amber-700' },
+  sandbox_validation_pending: { label: 'Pending', bg: 'bg-gray-100', text: 'text-gray-500' },
+  sandbox_validation_rejected: { label: 'Rejected', bg: 'bg-red-50', text: 'text-red-700' },
+  sandbox_validation_failed: { label: 'Failed', bg: 'bg-red-50', text: 'text-red-600' },
+  sandbox_not_validated: { label: 'Not submitted', bg: 'bg-gray-100', text: 'text-gray-600' },
 }
 
 const PAY_BADGE: Record<string, { label: string; bg: string; text: string }> = {
@@ -117,7 +126,12 @@ function creditNoteDisabledReason(row: InvoiceRow, role: string | null | undefin
   if (row.documentType === 'credit_note') return 'Credit notes cannot be credited.'
   if (row.status === 'cancelled') return 'Cancelled invoices cannot be credited here.'
   if (row.status !== 'posted') return 'Only posted invoices can be credited.'
-  if (!(row.zatcaStatus === 'reported' || row.zatcaStatus === 'cleared')) return 'Only reported or cleared invoices can be credited.'
+  const submitted = row.displayZatcaStatus === 'sandbox_validated' ||
+    row.displayZatcaStatus === 'sandbox_validated_with_warnings' ||
+    row.zatcaStatus === 'reported' || row.zatcaStatus === 'cleared'
+  if (!submitted) return row.displayZatcaStatus.startsWith('sandbox_')
+    ? 'Submit this invoice to ZATCA before creating a credit note.'
+    : 'Only reported or cleared invoices can be credited.'
   if (role && !['owner', 'admin', 'branch'].includes(role)) return 'You do not have permission to create credit notes.'
   if (row.creditStatus === 'full' || row.remainingRefundableQuantity <= 0) return 'All refundable quantities have already been credited.'
   return null
@@ -189,6 +203,10 @@ export default function InvoicesPage() {
         if (cancelled) return
 
         const invoices = data ?? []
+        const demoSandbox = isPermanentDemoSandboxBranch(tid, profile?.branch_id)
+        const sandboxAttempts = demoSandbox
+          ? await getSandboxValidationStatuses(invoices.map((invoice: any) => invoice.id)).catch(() => ({}))
+          : {}
         const normalInvoiceIds = invoices
           .filter((inv: any) => inv.zatca_invoice_type !== 'credit_note')
           .map((inv: any) => inv.id)
@@ -280,6 +298,9 @@ export default function InvoicesPage() {
             ? (isSplitPayment ? 'split' : payments[0].method)
             : null,
           zatcaStatus: inv.zatca_status as ZatcaStatus,
+          displayZatcaStatus: demoSandbox
+            ? (sandboxAttempts[inv.id]?.status ?? 'sandbox_not_validated')
+            : inv.zatca_status as ZatcaStatus,
           status:      inv.status,
           documentType: inv.zatca_invoice_type as InvoiceType,
           invoiceReference: inv.invoice_reference ?? null,
@@ -305,7 +326,7 @@ export default function InvoicesPage() {
   const filtered = rows.filter(r => {
     if (q && !r.invoiceNumber.toLowerCase().includes(q) && !(r.customerName ?? '').toLowerCase().includes(q) && !(r.invoiceReference ?? '').toLowerCase().includes(q)) return false
     if (payFilter !== 'all' && r.paymentMethod !== payFilter) return false
-    if (zatcaFilter !== 'all' && r.zatcaStatus !== zatcaFilter) return false
+    if (zatcaFilter !== 'all' && r.displayZatcaStatus !== zatcaFilter) return false
     return true
   })
 
@@ -314,7 +335,8 @@ export default function InvoicesPage() {
     revenue: filtered.reduce((s, r) => s + (r.documentType === 'credit_note' ? -r.totalAmount : r.totalAmount), 0),
     vat:     filtered.reduce((s, r) => s + (r.documentType === 'credit_note' ? -r.taxAmount : r.taxAmount), 0),
   }
-  const retryableZatcaCount = rows.filter(r => r.status !== 'cancelled' && (r.zatcaStatus === 'failed' || r.zatcaStatus === 'pending')).length
+  const demoSandbox = isPermanentDemoSandboxBranch(profile?.tenant_id, profile?.branch_id)
+  const retryableZatcaCount = demoSandbox ? 0 : rows.filter(r => r.status !== 'cancelled' && (r.zatcaStatus === 'failed' || r.zatcaStatus === 'pending')).length
 
   async function handleRetryZatca() {
     const tid = profile?.tenant_id
@@ -443,11 +465,24 @@ export default function InvoicesPage() {
           <select value={zatcaFilter} onChange={e => setZatcaFilter(e.target.value)}
             className="input py-1.5 text-xs pr-7">
             <option value="all">All ZATCA Status</option>
-            <option value="not_submitted">Not Required</option>
-            <option value="pending">Pending</option>
-            <option value="reported">Reported</option>
-            <option value="cleared">Cleared</option>
-            <option value="failed">Failed</option>
+            {demoSandbox ? (
+              <>
+                <option value="sandbox_validated">Submitted</option>
+                <option value="sandbox_validated_with_warnings">Submitted with warnings</option>
+                <option value="sandbox_validation_pending">Pending</option>
+                <option value="sandbox_validation_rejected">Rejected</option>
+                <option value="sandbox_validation_failed">Failed</option>
+                <option value="sandbox_not_validated">Not submitted</option>
+              </>
+            ) : (
+              <>
+                <option value="not_submitted">Not Required</option>
+                <option value="pending">Pending</option>
+                <option value="reported">Reported</option>
+                <option value="cleared">Cleared</option>
+                <option value="failed">Failed</option>
+              </>
+            )}
           </select>
         </div>
       </div>
@@ -484,7 +519,7 @@ export default function InvoicesPage() {
         ) : (
           <>
             {filtered.map(r => {
-              const zatca = ZATCA_BADGE[r.zatcaStatus] ?? ZATCA_BADGE.pending
+              const zatca = ZATCA_BADGE[r.displayZatcaStatus] ?? ZATCA_BADGE.pending
               const pay   = r.paymentMethod ? (PAY_BADGE[r.paymentMethod] ?? PAY_BADGE.other) : null
               const isCancelled = r.status === 'cancelled'
               const isCreditNote = r.documentType === 'credit_note'

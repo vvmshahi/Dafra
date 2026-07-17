@@ -3,7 +3,7 @@ import { Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import type { PaymentMethod, ZatcaStatus } from '@/types/database'
-import { submitInvoiceToZatcaWithRetry } from '@/lib/zatca/submission'
+import { isPermanentDemoSandboxBranch, submitInvoiceForBranch } from '@/lib/zatca/submission'
 import { useAuth } from '@/hooks/useAuth'
 import { resolveBusinessType } from '@/lib/utils/businessType'
 
@@ -210,7 +210,7 @@ export default function CreateCreditNoteModal({
   onClose,
   onCreated,
 }: CreateCreditNoteModalProps) {
-  const { tenant } = useAuth()
+  const { tenant, profile } = useAuth()
   const [selectedReason, setSelectedReason] = useState<(typeof QUICK_REASONS)[number] | ''>('')
   const [remarks, setRemarks] = useState('')
   const [originalPayments, setOriginalPayments] = useState<CreditNotePaymentRow[]>([])
@@ -396,11 +396,15 @@ export default function CreateCreditNoteModal({
         setCreating(false)
         setSubmitting(true)
         try {
-          const submitResult = await submitInvoiceToZatcaWithRetry(creditNoteId, invoice.branch_id, {
-            source: 'auto_credit_note',
-            retryDelayMs: 1500,
+          const routed = await submitInvoiceForBranch({
+            invoiceId: creditNoteId,
+            tenantId: profile?.tenant_id ?? '',
+            branchId: invoice.branch_id,
+            options: { source: 'auto_credit_note', retryDelayMs: 1500 },
           })
-          autoSubmitSucceeded = submitResult.ok
+          autoSubmitSucceeded = routed.mode === 'sandbox_validation'
+            ? routed.result.status === 'sandbox_validated' || routed.result.status === 'sandbox_validated_with_warnings'
+            : routed.result.ok
         } catch {
           autoSubmitSucceeded = false
         } finally {
@@ -423,7 +427,10 @@ export default function CreateCreditNoteModal({
       })
       onClose()
       if (autoSubmitSucceeded || zatcaStatus === 'reported' || zatcaStatus === 'cleared') {
-        toast.success(result.idempotent_replay ? 'Credit note already exists and is reported' : 'Credit note created and submitted to ZATCA')
+        const demoSubmission = isPermanentDemoSandboxBranch(profile?.tenant_id, invoice.branch_id)
+        toast.success(result.idempotent_replay ? 'Credit note already exists' : 'Credit note created and submitted to ZATCA', {
+          description: demoSubmission ? 'Successfully processed by ZATCA' : undefined,
+        })
       } else {
         toast.error('Credit note created, but ZATCA submission failed. You can retry from the credit note page.')
       }

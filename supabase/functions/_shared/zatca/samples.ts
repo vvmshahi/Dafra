@@ -84,6 +84,42 @@ interface SignedCompliancePayload {
   transformedCanonicalHash: string
 }
 
+export interface SandboxComplianceValidationInvoice {
+  documentKind: 'invoice' | 'credit_note'
+  invoiceNumber: string
+  uuid: string
+  issueDate: string
+  issueTime: string
+  seller: SampleSeller
+  subtotal: number
+  discountTotal: number
+  taxableAmount: number
+  taxAmount: number
+  totalAmount: number
+  billingReferenceId?: string
+  noteReason?: string
+  lines: Array<{
+    id: number
+    name: string
+    quantity: number
+    discountAmount: number
+    lineNetAmount: number
+    taxRate: number
+    taxAmount: number
+    lineTotal: number
+  }>
+}
+
+export interface PreparedSandboxComplianceValidation {
+  documentKind: 'invoice' | 'credit_note'
+  invoiceHash: string
+  uuid: string
+  invoice: string
+  signedXml: string
+  signatureValue?: string
+  qrCode?: string
+}
+
 class ComplianceSampleAssertionError extends Error {
   statusString: string
 
@@ -139,12 +175,11 @@ export async function submitComplianceSamples(params: SubmitComplianceSamplesPar
   const sampleTypes = requiredComplianceSamples(params.functionalityMap)
   const results: ComplianceSampleResult[] = []
 
-  for (let i = 0; i < sampleTypes.length; i++) {
-    const type = sampleTypes[i]
+  for (const [index, type] of sampleTypes.entries()) {
     let payload: SignedCompliancePayload
     try {
       logComplianceSampleStage('sample payload build started', type)
-      payload = await buildCompliancePayload(params, type, i + 1)
+      payload = await buildCompliancePayload(params, type, index + 1)
       logComplianceSampleStage('sample payload build completed', type)
       params.onTrace?.({
         stage: 'sample_payload_built',
@@ -162,35 +197,11 @@ export async function submitComplianceSamples(params: SubmitComplianceSamplesPar
         message: safeLocalDiagnosticMessage(err),
       })
       results.push(buildLocalComplianceFailure(type, statusString, err))
-      for (const remainingType of sampleTypes.slice(i + 1)) {
-        results.push({
-          type: remainingType,
-          invoiceKind: invoiceKindFor(remainingType),
-          documentKind: documentKindFor(remainingType),
-          accepted: false,
-          status: 'blocked',
-          message: 'Not submitted because a previous compliance sample failed.',
-        })
-      }
-      break
+      continue
     }
 
     const result = await submitComplianceSample(params, payload)
     results.push(result)
-
-    if (result.status !== 'accepted') {
-      for (const remainingType of sampleTypes.slice(i + 1)) {
-        results.push({
-          type: remainingType,
-          invoiceKind: invoiceKindFor(remainingType),
-          documentKind: documentKindFor(remainingType),
-          accepted: false,
-          status: 'blocked',
-          message: 'Not submitted because a previous compliance sample failed.',
-        })
-      }
-      break
-    }
   }
 
   return results
@@ -204,7 +215,7 @@ async function buildCompliancePayload(
   const privateKey = privateKeyFromPem(params.privateKeyPem)
   const data = buildSampleData(type, params.seller, sequence)
   const unsignedXml = buildInvoice(data, {
-    profileId: data.isSimplified ? 'reporting:1.0' : 'clearance:1.0',
+    profileId: 'reporting:1.0',
     typeCodeName: data.isSimplified ? '0200000' : '0100000',
     invoiceTypeCode: data.invoiceTypeCode,
     requireBuyer: !data.isSimplified,
@@ -322,6 +333,138 @@ async function buildFinalComplianceRequestBody(payload: SignedCompliancePayload)
     invoiceHash: finalInvoiceHash,
     uuid: payload.uuid,
     invoice: finalInvoice,
+  }
+}
+
+export async function prepareSandboxComplianceValidation(params: {
+  invoice: SandboxComplianceValidationInvoice
+  complianceCertificate: string
+  privateKeyPem: string
+}): Promise<PreparedSandboxComplianceValidation> {
+  const input = params.invoice
+  const data = {
+    isSimplified: true,
+    invoiceNumber: input.invoiceNumber,
+    uuid: input.uuid,
+    issueDate: input.issueDate,
+    issueTime: input.issueTime,
+    issueDateTime: `${input.issueDate}T${input.issueTime}`,
+    invoiceTypeCode: input.documentKind === 'credit_note' ? '381' : '388',
+    counterValue: 1,
+    prevInvoiceHash: FIRST_INVOICE_HASH,
+    sellerName: input.seller.name,
+    sellerVat: input.seller.vatNumber,
+    sellerCrn: input.seller.crNumber,
+    sellerAddress: {
+      street: input.seller.street,
+      buildingNo: input.seller.buildingNumber,
+      district: input.seller.district,
+      city: input.seller.city,
+      postalCode: input.seller.postalCode,
+      countryCode: input.seller.countryCode,
+    },
+    buyer: undefined,
+    billingReferenceId: input.billingReferenceId,
+    noteReason: input.noteReason,
+    subtotal: input.subtotal,
+    discountTotal: input.discountTotal,
+    taxableAmount: input.taxableAmount,
+    taxAmount: input.taxAmount,
+    totalAmount: input.totalAmount,
+    lines: input.lines.map(line => ({
+      id: line.id,
+      name: line.name,
+      qty: line.quantity,
+      discountAmt: line.discountAmount,
+      lineNetAmt: line.lineNetAmount,
+      taxRate: line.taxRate,
+      taxAmount: line.taxAmount,
+      lineTotal: line.lineTotal,
+    })),
+    taxBreakdowns: [{
+      taxableAmount: input.taxableAmount,
+      taxAmount: input.taxAmount,
+      vatCategoryCode: 'S',
+      taxRate: 0.15,
+    }],
+    qrCode: '',
+  }
+  const unsignedXml = buildInvoice(data, {
+    profileId: 'reporting:1.0',
+    typeCodeName: '0200000',
+    invoiceTypeCode: input.documentKind === 'credit_note' ? '381' : '388',
+    requireBuyer: false,
+  })
+  const signed = await signInvoice(
+    unsignedXml,
+    privateKeyFromPem(params.privateKeyPem),
+    params.complianceCertificate,
+    `${input.issueDate}T${input.issueTime}`,
+  )
+  const payload: SignedCompliancePayload = {
+    type: input.documentKind === 'credit_note' ? 'simplified_credit_note' : 'simplified_invoice',
+    uuid: input.uuid,
+    invoiceHash: signed.invoiceHash,
+    invoice: utf8ToBase64(signed.signedXml),
+    signedXml: signed.signedXml,
+    isStandard: false,
+    issueDate: input.issueDate,
+    issueTime: input.issueTime,
+    qrTimestamp: signed.qrTimestamp,
+    transformedCanonicalHash: signed.transformedCanonicalHash,
+  }
+  const finalRequest = await buildFinalComplianceRequestBody(payload)
+  return {
+    ...finalRequest,
+    documentKind: input.documentKind,
+    signedXml: signed.signedXml,
+  }
+}
+
+export async function submitSandboxComplianceValidation(params: {
+  baseUrl: string
+  complianceCsid: string
+  complianceSecret: string
+  prepared: PreparedSandboxComplianceValidation
+}): Promise<ComplianceSampleResult> {
+  const credentials = btoa(`${params.complianceCsid}:${params.complianceSecret}`)
+  try {
+    const response = await fetch(`${params.baseUrl}/compliance/invoices`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'accept-version': 'V2',
+        'accept-language': 'en',
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${credentials}`,
+      },
+      body: JSON.stringify({
+        invoiceHash: params.prepared.invoiceHash,
+        uuid: params.prepared.uuid,
+        invoice: params.prepared.invoice,
+      }),
+    })
+    return safeSummarizeComplianceResponse(
+      params.prepared.documentKind === 'credit_note' ? 'simplified_credit_note' : 'simplified_invoice',
+      response.status,
+      await safeJson(response),
+      response.headers,
+    )
+  } catch {
+    const creditNote = params.prepared.documentKind === 'credit_note'
+    return {
+      type: creditNote ? 'simplified_credit_note' : 'simplified_invoice',
+      invoiceKind: 'simplified',
+      documentKind: creditNote ? 'credit_note' : 'invoice',
+      accepted: false,
+      status: 'ambiguous_failed',
+      statusString: 'COMPLIANCE_VALIDATION_TRANSPORT_FAILED',
+      warningsCount: 0,
+      errorsCount: 0,
+      redactedWarnings: [],
+      redactedErrors: [],
+      message: 'Sandbox compliance validation did not return a definitive response.',
+    }
   }
 }
 
@@ -822,6 +965,7 @@ function buildSampleData(type: ComplianceSampleType, seller: SampleSeller, seque
     issueDate: issue.date,
     issueTime: issue.time,
     issueDateTime: issue.dateTime,
+    supplyDate: !isSimplified && noteKind === 'invoice' ? issue.date : undefined,
     invoiceTypeCode,
     counterValue: sequence,
     prevInvoiceHash: FIRST_INVOICE_HASH,
@@ -953,6 +1097,10 @@ function buildInvoice(data: any, opts: any): string {
     customer.ele(NS.cac, 'PartyLegalEntity').ele(NS.cbc, 'RegistrationName').txt(data.buyer.name)
   }
 
+  if (data.supplyDate) {
+    root.ele(NS.cac, 'Delivery').ele(NS.cbc, 'ActualDeliveryDate').txt(data.supplyDate)
+  }
+
   const paymentMeans = root.ele(NS.cac, 'PaymentMeans')
   paymentMeans.ele(NS.cbc, 'PaymentMeansCode').txt('10')
   if (data.noteReason) paymentMeans.ele(NS.cbc, 'InstructionNote').txt(data.noteReason)
@@ -991,6 +1139,12 @@ function buildInvoice(data: any, opts: any): string {
     il.ele(NS.cbc, 'ID').txt(String(line.id))
     il.ele(NS.cbc, 'InvoicedQuantity').att('unitCode', 'PCE').txt(String(line.qty))
     il.ele(NS.cbc, 'LineExtensionAmount').att('currencyID', 'SAR').txt(fmt(line.lineNetAmt))
+    if (line.discountAmt > 0) {
+      const allowance = il.ele(NS.cac, 'AllowanceCharge')
+      allowance.ele(NS.cbc, 'ChargeIndicator').txt('false')
+      allowance.ele(NS.cbc, 'AllowanceChargeReason').txt('discount')
+      allowance.ele(NS.cbc, 'Amount').att('currencyID', 'SAR').txt(fmt(line.discountAmt))
+    }
     const lineTax = il.ele(NS.cac, 'TaxTotal')
     lineTax.ele(NS.cbc, 'TaxAmount').att('currencyID', 'SAR').txt(fmt(line.taxAmount))
     lineTax.ele(NS.cbc, 'RoundingAmount').att('currencyID', 'SAR').txt(fmt(line.lineTotal))

@@ -8,6 +8,7 @@
  *
  * Edge Function endpoints:
  *   POST /functions/v1/zatca-submit       — Invoice reporting / clearance
+ *   POST /functions/v1/zatca-validate-sandbox-demo — Permanent-demo compliance validation
  *   POST /functions/v1/zatca-onboard-production — Owner-only production onboarding
  *   POST /functions/v1/zatca-disconnect-production — Owner-only local production disconnect
  */
@@ -230,6 +231,82 @@ export async function disconnectProductionZatca(params: {
   return edgePostSafe<ProductionOnboardingResponse>('zatca-disconnect-production', {
     branchId: params.branchId,
     confirmation: params.confirmation,
+  })
+}
+
+export type SandboxValidationStatus =
+  | 'sandbox_validation_pending'
+  | 'sandbox_validated'
+  | 'sandbox_validated_with_warnings'
+  | 'sandbox_validation_rejected'
+  | 'sandbox_validation_failed'
+
+export interface SandboxValidationMessage {
+  code?: string
+  message?: string
+}
+
+export interface SandboxValidationStage {
+  key: string
+  label: string
+  complete: boolean
+  at?: string | null
+}
+
+export interface SandboxValidationResponse {
+  ok: boolean
+  eligible: boolean
+  validationId: string | null
+  invoiceId: string
+  status: SandboxValidationStatus | null
+  idempotent?: boolean
+  message?: string
+  explanation: string
+  httpStatus: number | null
+  warnings: SandboxValidationMessage[]
+  errors: SandboxValidationMessage[]
+  updatedAt: string | null
+  qrCode?: string | null
+  retryAllowed?: boolean
+  stages?: SandboxValidationStage[]
+}
+
+export interface SandboxDemoConnectionStatus {
+  ok: boolean
+  branchId: string
+  environment: 'ZATCA Sandbox'
+  connection: 'Active' | 'Not active'
+  complianceChecks: string
+  productionSubmission: 'Not enabled'
+  active: boolean
+}
+
+export async function getSandboxValidationStatus(invoiceId: string): Promise<SandboxValidationResponse> {
+  return edgePostSafe<SandboxValidationResponse>('zatca-validate-sandbox-demo', {
+    action: 'status',
+    invoiceId,
+  })
+}
+
+export async function getSandboxValidationStatuses(invoiceIds: string[]): Promise<Record<string, SandboxValidationResponse>> {
+  const response = await edgePostSafe<{ ok: boolean; attempts: Record<string, SandboxValidationResponse> }>(
+    'zatca-validate-sandbox-demo',
+    { action: 'list_status', invoiceIds },
+  )
+  return response.attempts
+}
+
+export async function validateInvoiceInSandbox(invoiceId: string): Promise<SandboxValidationResponse> {
+  return edgePostSafe<SandboxValidationResponse>('zatca-validate-sandbox-demo', {
+    action: 'validate',
+    invoiceId,
+  })
+}
+
+export async function getSandboxDemoConnectionStatus(branchId: string): Promise<SandboxDemoConnectionStatus> {
+  return edgePostSafe<SandboxDemoConnectionStatus>('zatca-validate-sandbox-demo', {
+    action: 'connection_status',
+    branchId,
   })
 }
 

@@ -14,7 +14,7 @@ import { displayName as dn } from '@/lib/utils/display'
 import { buildZatcaQR } from '@/lib/zatca/qr'
 import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
 import { formatSaudiSessionDateTime } from '@/lib/registerSessions'
-import { submitInvoiceToZatcaWithRetry } from '@/lib/zatca/submission'
+import { isPermanentDemoSandboxBranch, submitInvoiceForBranch } from '@/lib/zatca/submission'
 import { toast } from 'sonner'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
@@ -410,7 +410,7 @@ function ReceiptView({ receipt, onNewSale, onOpenPrinterSettings, printMode, zat
   onNewSale: () => void
   onOpenPrinterSettings: () => void
   printMode: 'thermal' | 'pdf' | 'both'
-  zatcaStatus: 'submitted' | 'pending' | 'failed' | null
+  zatcaStatus: 'submitted' | 'pending' | 'failed' | 'sandbox_pending' | 'sandbox_validated' | 'sandbox_failed' | null
 }) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [printingReceipt, setPrintingReceipt] = useState(false)
@@ -749,6 +749,27 @@ ${lines}
             <div className="mx-6 mb-2 flex items-center gap-1.5 text-[10px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-2.5 py-1.5">
               <span>⚠</span> ZATCA submission failed — retry from Invoices
             </div>
+          )}
+          {zatcaStatus === 'sandbox_pending' && (
+            <div className="mx-6 mb-2 flex items-center gap-1.5 rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-1.5 text-[10px] text-gray-600">
+              <Loader2 size={11} className="animate-spin" /> Submission pending…
+            </div>
+          )}
+          {zatcaStatus === 'sandbox_validated' && (
+            <div className="mx-6 mb-2 rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-2 text-[10px] text-emerald-700">
+              <p className="font-bold">ZATCA submission successful</p>
+              <p className="mt-0.5">Successfully processed by ZATCA</p>
+            </div>
+          )}
+          {zatcaStatus === 'sandbox_failed' && (
+            <div className="mx-6 mb-2 flex items-center gap-1.5 rounded-lg border border-red-100 bg-red-50 px-2.5 py-1.5 text-[10px] text-red-700">
+              <span>⚠</span> ZATCA Sandbox validation failed
+            </div>
+          )}
+          {(zatcaStatus === 'sandbox_pending' || zatcaStatus === 'sandbox_validated' || zatcaStatus === 'sandbox_failed') && (
+            <p className="mx-6 mb-3 text-center text-[9px] text-gray-300">
+              Demo environment — no production tax submission was made.
+            </p>
           )}
 
           {printError && (
@@ -1599,7 +1620,7 @@ export default function POSPage() {
   const [submitting,   setSubmitting]   = useState(false)
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [showExpense,  setShowExpense]  = useState(false)
-  const [zatcaResult,  setZatcaResult]  = useState<'submitted' | 'pending' | 'failed' | null>(null)
+  const [zatcaResult,  setZatcaResult]  = useState<'submitted' | 'pending' | 'failed' | 'sandbox_pending' | 'sandbox_validated' | 'sandbox_failed' | null>(null)
   const [scrollState,  setScrollState]  = useState({
     categoryAtStart: true,
     categoryAtEnd: true,
@@ -2115,11 +2136,24 @@ export default function POSPage() {
       setSplitOpen(false)
       checkoutKeyRef.current = null
 
-      submitInvoiceToZatcaWithRetry(checkout.invoice_id, branch.id, {
-        source: 'auto_checkout',
-        retryDelayMs: 1500,
+      const demoSandboxValidation = isPermanentDemoSandboxBranch(profile?.tenant_id, branch.id)
+      if (demoSandboxValidation) setZatcaResult('sandbox_pending')
+      submitInvoiceForBranch({
+        invoiceId: checkout.invoice_id,
+        tenantId: profile?.tenant_id ?? '',
+        branchId: branch.id,
+        options: { source: 'auto_checkout', retryDelayMs: 1500 },
       })
-        .then((result) => {
+        .then((routed) => {
+          if (routed.mode === 'sandbox_validation') {
+            const validated = routed.result.status === 'sandbox_validated' ||
+              routed.result.status === 'sandbox_validated_with_warnings'
+            setZatcaResult(validated ? 'sandbox_validated' : 'sandbox_failed')
+            if (validated) toast.success('ZATCA submission successful', { description: 'Successfully processed by ZATCA', duration: 2500 })
+            else toast.error('ZATCA Sandbox validation failed')
+            return
+          }
+          const result = routed.result
           if (result.ok) {
             setZatcaResult('submitted')
             toast.success('Submitted to ZATCA', { duration: 2000 })
@@ -2132,13 +2166,18 @@ export default function POSPage() {
           }
         })
         .catch((error) => {
-          console.warn('[POSPage charge] auto ZATCA submit failed after retry', {
-            invoiceId: checkout.invoice_id,
-            branchId: branch.id,
-            message: error instanceof Error ? error.message : String(error ?? ''),
-          })
-          setZatcaResult('pending')
-          toast.warning('Invoice created. ZATCA submission is pending retry.', { duration: 3500 })
+          if (demoSandboxValidation) {
+            setZatcaResult('sandbox_failed')
+            toast.error('ZATCA Sandbox validation failed')
+          } else {
+            console.warn('[POSPage charge] automatic ZATCA action failed', {
+              invoiceId: checkout.invoice_id,
+              branchId: branch.id,
+              message: error instanceof Error ? error.message : String(error ?? ''),
+            })
+            setZatcaResult('pending')
+            toast.warning('Invoice created. ZATCA submission is pending retry.', { duration: 3500 })
+          }
         })
     } catch (err) {
       const safeMessage = safeCheckoutErrorMessage(err)
