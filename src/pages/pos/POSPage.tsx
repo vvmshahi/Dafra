@@ -2136,11 +2136,13 @@ export default function POSPage() {
       setSplitOpen(false)
       checkoutKeyRef.current = null
 
-      const demoSandboxValidation = isPermanentDemoSandboxBranch(profile?.tenant_id, branch.id)
+      // The loaded branch row is the authoritative checkout scope. Using it here
+      // avoids routing differences while an auth profile is being rehydrated.
+      const demoSandboxValidation = isPermanentDemoSandboxBranch(branch.tenant_id, branch.id)
       if (demoSandboxValidation) setZatcaResult('sandbox_pending')
       submitInvoiceForBranch({
         invoiceId: checkout.invoice_id,
-        tenantId: profile?.tenant_id ?? '',
+        tenantId: branch.tenant_id,
         branchId: branch.id,
         options: { source: 'auto_checkout', retryDelayMs: 1500 },
       })

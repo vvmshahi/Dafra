@@ -11,6 +11,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { productionStatusLabel } from '@/lib/zatca/status'
+import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
 import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
 import {
@@ -557,7 +558,10 @@ export default function BranchDashboardPage() {
   useEffect(() => { loadInvoices() }, [loadInvoices])
   useEffect(() => { loadLowStock() }, [loadLowStock])
 
-  const zatcaStatus = zatcaPhase === 2 && !productionStatusReadable
+  const demoSandbox = isPermanentDemoSandboxBranch(tid, bid)
+  const zatcaStatus = demoSandbox
+    ? { label: 'ZATCA Connected', tone: 'success' as const }
+    : zatcaPhase === 2 && !productionStatusReadable
     ? { label: 'Phase 2 status unavailable', tone: 'neutral' as const }
     : productionStatusLabel(productionStatus, hasActiveCert)
   const dashboardTitle = branchName || tenant?.name || 'My Branch'
@@ -607,8 +611,8 @@ export default function BranchDashboardPage() {
             New Sale
           </button>
           <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.065] px-3 py-1.5 text-xs font-black text-emerald-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-            <span className={`h-2.5 w-2.5 rounded-full ${zatcaPhase === 2 ? zatcaIndicatorClass[zatcaStatus.tone] : zatcaIndicatorClass.info}`} />
-            <span>{zatcaPhase === 2 ? zatcaStatus.label : 'Phase 1 — QR invoices'}</span>
+            <span className={`h-2.5 w-2.5 rounded-full ${demoSandbox || zatcaPhase === 2 ? zatcaIndicatorClass[zatcaStatus.tone] : zatcaIndicatorClass.info}`} />
+            <span>{demoSandbox || zatcaPhase === 2 ? zatcaStatus.label : 'Phase 1 — QR invoices'}</span>
           </div>
         </div>
         </div>

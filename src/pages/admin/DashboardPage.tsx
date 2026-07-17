@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase'
 import { saudiDateStr } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
 import { productionStatusLabel } from '@/lib/zatca/status'
+import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
 import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
 import {
@@ -235,7 +236,7 @@ function logDashboardRpcError(functionName: string, params: Record<string, unkno
   })
 }
 
-function BranchCard({ branch, onView }: { branch: BranchStat; onView: () => void }) {
+function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onView: () => void; demoSandbox: boolean }) {
   const zatca = productionStatusLabel(branch.productionStatus)
   const session = branch.registerSession ?? null
   const hasSession = !!session?.sessionId
@@ -245,9 +246,9 @@ function BranchCard({ branch, onView }: { branch: BranchStat; onView: () => void
   const cashFinalValue = session?.status === 'closed' && session.actualCash !== null
     ? session.cashDifference ?? 0
     : session?.expectedCash ?? 0
-  const zatcaUnavailable = branch.zatca_phase === 2 && branch.productionStatusReadable === false
-  const zatcaLabel = zatcaUnavailable ? 'Phase 2 status unavailable' : branch.zatca_phase === 2 ? zatca.label : 'Phase 1'
-  const zatcaTone = zatcaUnavailable ? 'text-gray-400' : branch.zatca_phase === 2 && zatca.tone === 'success'
+  const zatcaUnavailable = !demoSandbox && branch.zatca_phase === 2 && branch.productionStatusReadable === false
+  const zatcaLabel = demoSandbox ? 'ZATCA Connected' : zatcaUnavailable ? 'Phase 2 status unavailable' : branch.zatca_phase === 2 ? zatca.label : 'Phase 1'
+  const zatcaTone = demoSandbox ? 'text-emerald-600' : zatcaUnavailable ? 'text-gray-400' : branch.zatca_phase === 2 && zatca.tone === 'success'
     ? 'text-emerald-600'
     : branch.zatca_phase === 2
     ? 'text-amber-600'
@@ -278,7 +279,7 @@ function BranchCard({ branch, onView }: { branch: BranchStat; onView: () => void
               {branch.is_active ? 'Active' : 'Inactive'}
             </Badge>
             <span className={`inline-flex items-center gap-1 rounded-full bg-gray-50 px-2 py-0.5 text-[10px] font-semibold ring-1 ring-gray-100 ${zatcaTone}`}>
-              <ShieldCheck size={10} className={branch.zatca_phase === 2 && !zatcaUnavailable && zatca.tone === 'success' ? 'text-emerald-500' : 'text-violet-400'} />
+              <ShieldCheck size={10} className={demoSandbox || (branch.zatca_phase === 2 && !zatcaUnavailable && zatca.tone === 'success') ? 'text-emerald-500' : 'text-violet-400'} />
               {zatcaLabel}
             </span>
             {isOpen ? (
@@ -695,6 +696,7 @@ export default function DashboardPage() {
               <BranchCard
                 key={b.id}
                 branch={b}
+                demoSandbox={isPermanentDemoSandboxBranch(tid, b.id)}
                 onView={() => navigate(`/dashboard/branches/${b.id}`)}
               />
             ))}
