@@ -25,6 +25,8 @@ export interface ClosedSessionSummary {
   total_card_sales: number
   total_session_sales: number
   total_expenses: number
+  cash_expenses: number
+  total_refunds: number
   total_invoices: number
   notes: string | null
 }
@@ -65,6 +67,8 @@ function closedSummaryFromRpc(value: unknown): ClosedSessionSummary {
     total_card_sales: summary.cardTotal,
     total_session_sales: summary.totalSales,
     total_expenses: summary.expensesTotal,
+    cash_expenses: summary.cashExpenses,
+    total_refunds: summary.creditNoteTotal,
     total_invoices: summary.invoiceCount,
     notes: null,
   }

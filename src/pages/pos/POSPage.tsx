@@ -1127,18 +1127,17 @@ function CloseSessionModal({ session, onClose, onCancel }: {
   const [saving,        setSaving]        = useState(false)
   const [loadingData,   setLoadingData]   = useState(true)
   const [invoiceCount,  setInvoiceCount]  = useState(0)
-  const [grossSessionSales, setGrossSessionSales] = useState(0)
-  const [sessionCreditNotes, setSessionCreditNotes] = useState(0)
   const [totalSessionSales, setTotalSessionSales] = useState(0)
   const [cashSales,     setCashSales]     = useState(0)
+  const [cashRefunds,   setCashRefunds]   = useState(0)
   const [cardSales,     setCardSales]     = useState(0)
   const [creditRefunds, setCreditRefunds] = useState(0)
-  const [totalExpenses, setTotalExpenses] = useState(0)
   const [cashExpenses,  setCashExpenses]  = useState(0)
   const [cashSalesOk,   setCashSalesOk]   = useState(false)
   const [cardSalesOk,   setCardSalesOk]   = useState(false)
   const [expensesOk,    setExpensesOk]    = useState(false)
   const [creditRefundsOk, setCreditRefundsOk] = useState(false)
+  const [cashCountedOk, setCashCountedOk] = useState(false)
 
   const openedAt = formatSaudiSessionDateTime(session.opened_at)
   const durationMs = Date.now() - new Date(session.opened_at).getTime()
@@ -1165,31 +1164,29 @@ function CloseSessionModal({ session, onClose, onCancel }: {
       }
       const invoices = invData ?? []
       setInvoiceCount(invoices.length)
-      setGrossSessionSales(invoices
-        .filter((invoice: any) => invoiceAccountingSign(invoice) > 0)
-        .reduce((s: number, invoice: any) => s + Number(invoice.total_amount ?? 0), 0))
-      setSessionCreditNotes(invoices
-        .filter((invoice: any) => invoiceAccountingSign(invoice) < 0)
-        .reduce((s: number, invoice: any) => s + Math.abs(Number(invoice.total_amount ?? 0)), 0))
       setTotalSessionSales(invoices
         .reduce((s: number, invoice: any) => s + invoiceAccountingSign(invoice) * Number(invoice.total_amount ?? 0), 0))
       setCashSales(pmts
-        .filter((p: any) => p.method === 'cash')
-        .reduce((s: number, p: any) => s + (signByInvoiceId.get(p.invoice_id) ?? 1) * Number(p.amount ?? 0), 0))
+        .filter((p: any) => p.method === 'cash' && (signByInvoiceId.get(p.invoice_id) ?? 1) > 0)
+        .reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0))
+      setCashRefunds(pmts
+        .filter((p: any) => p.method === 'cash' && (signByInvoiceId.get(p.invoice_id) ?? 1) < 0)
+        .reduce((s: number, p: any) => s + Math.abs(Number(p.amount ?? 0)), 0))
       setCardSales(pmts
         .filter((p: any) => p.method === 'card')
         .reduce((s: number, p: any) => s + (signByInvoiceId.get(p.invoice_id) ?? 1) * Number(p.amount ?? 0), 0))
       setCreditRefunds(pmts
         .filter((p: any) => (signByInvoiceId.get(p.invoice_id) ?? 1) < 0)
         .reduce((s: number, p: any) => s + Math.abs(Number(p.amount ?? 0)), 0))
-      setTotalExpenses((expData ?? []).reduce((s: number, e: any) => s + Number(e.total_paid ?? 0), 0))
       setCashExpenses((expData ?? []).filter((e: any) => e.payment_method === 'cash').reduce((s: number, e: any) => s + Number(e.total_paid ?? 0), 0))
       setLoadingData(false)
     }
     fetchData()
   }, [session.id])
 
-  const expectedCash  = openingCash + cashSales - cashExpenses
+  // Mirrors close_register_session: opening cash + signed cash payments - cash expenses.
+  // Positive cash sales and cash refunds are separated here only for reconciliation clarity.
+  const expectedCash  = openingCash + cashSales - cashRefunds - cashExpenses
   const actualCash    = parseFloat(cashActual) || 0
   const difference    = cashActual !== '' ? actualCash - expectedCash : null
   const differenceState = difference === null
@@ -1197,13 +1194,14 @@ function CloseSessionModal({ session, onClose, onCancel }: {
     : Math.abs(difference) < 0.005
     ? { label: 'Balanced', className: 'bg-emerald-100 text-emerald-700' }
     : difference > 0
-    ? { label: `Over by SAR ${fmt(difference)}`, className: 'bg-emerald-100 text-emerald-700' }
-    : { label: `Short by SAR ${fmt(Math.abs(difference))}`, className: 'bg-red-100 text-red-700' }
+    ? { label: `Cash over by SAR ${fmt(difference)}`, className: 'bg-amber-100 text-amber-800' }
+    : { label: `Cash short by SAR ${fmt(Math.abs(difference))}`, className: 'bg-red-100 text-red-700' }
   const canClose = cashActual !== ''
     && cashSalesOk
     && cardSalesOk
     && expensesOk
     && creditRefundsOk
+    && cashCountedOk
     && !loadingData
     && !saving
 
@@ -1243,11 +1241,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
             <h3 className="font-bold text-gray-900">Close Register</h3>
             <p className="text-[10px] text-gray-400 mt-0.5">Opened {openedAt} · {duration}</p>
           </div>
-          <div className="hidden sm:block text-right">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Expected cash</p>
-            <p className="text-sm font-bold text-gray-900 tabular-nums"><Rial amount={expectedCash} /></p>
-          </div>
-          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+          <button onClick={onCancel} aria-label="Cancel closing register" className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"><X size={16} /></button>
         </div>
 
         {loadingData ? (
@@ -1255,114 +1249,81 @@ function CloseSessionModal({ session, onClose, onCancel }: {
             <Loader2 size={24} className="animate-spin text-gray-300" />
           </div>
         ) : (
-          <div className="px-5 py-4 space-y-4 overflow-y-auto">
-            <section>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Check session totals</p>
-                <p className="text-[10px] text-gray-400">{invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''}</p>
+          <div className="px-4 py-4 space-y-4 overflow-y-auto sm:px-5">
+            <section aria-labelledby="expected-cash-heading" className="rounded-2xl border border-primary-200 bg-primary-50/70 p-4 sm:p-5">
+              <p id="expected-cash-heading" className="text-xs font-bold uppercase tracking-wide text-primary-700">Expected cash in drawer</p>
+              <div className="mt-3 space-y-2 text-sm text-gray-600">
+                <div className="flex justify-between gap-4"><span>Opening cash</span><span className="tabular-nums"><Rial amount={openingCash} /></span></div>
+                <div className="flex justify-between gap-4"><span><span aria-hidden="true">+</span> Net cash sales</span><span className="tabular-nums"><Rial amount={cashSales} /></span></div>
+                <div className="flex justify-between gap-4"><span><span aria-hidden="true">−</span> POS cash expenses</span><span className="tabular-nums"><Rial amount={cashExpenses} /></span></div>
+                <div className="flex justify-between gap-4"><span><span aria-hidden="true">−</span> Cash refunds</span><span className="tabular-nums"><Rial amount={cashRefunds} /></span></div>
               </div>
-              <div className="mb-2 grid grid-cols-1 gap-2 rounded-xl border border-primary-100 bg-primary-50 px-4 py-3 sm:grid-cols-3">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-primary-700">Gross Sales</p>
-                  <p className="mt-1 text-base font-black text-primary-800 tabular-nums">
-                    <Rial amount={grossSessionSales} />
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-primary-700">Refunds / Credit Notes</p>
-                  <p className="mt-1 text-base font-black text-primary-800 tabular-nums">
-                    <Rial amount={sessionCreditNotes} />
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-primary-700">Net Sales</p>
-                  <p className="mt-1 text-lg font-black text-primary-900 tabular-nums">
-                    <Rial amount={totalSessionSales} />
-                  </p>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <label className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-xs font-medium text-gray-600">
-                  <span className="min-w-0 flex-1">Net Cash Sales</span>
-                  <span className="font-bold text-gray-900 tabular-nums"><Rial amount={cashSales} /></span>
-                  <input
-                    type="checkbox"
-                    checked={cashSalesOk}
-                    onChange={e => setCashSalesOk(e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                  />
-                </label>
-                <label className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-xs font-medium text-gray-600">
-                  <span className="min-w-0 flex-1">Net Card Sales</span>
-                  <span className="font-bold text-gray-900 tabular-nums"><Rial amount={cardSales} /></span>
-                  <input
-                    type="checkbox"
-                    checked={cardSalesOk}
-                    onChange={e => setCardSalesOk(e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                  />
-                </label>
-                <label className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-xs font-medium text-gray-600">
-                  <span className="min-w-0 flex-1">POS cash expenses</span>
-                  <span className="font-bold text-gray-900 tabular-nums"><Rial amount={cashExpenses} /></span>
-                  <input
-                    type="checkbox"
-                    checked={expensesOk}
-                    onChange={e => setExpensesOk(e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                  />
-                </label>
-                <label className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-xs font-medium text-gray-600">
-                  <span className="min-w-0 flex-1">Refunds / Credit Notes</span>
-                  <span className="font-bold text-gray-900 tabular-nums"><Rial amount={creditRefunds} /></span>
-                  <input
-                    type="checkbox"
-                    checked={creditRefundsOk}
-                    onChange={e => setCreditRefundsOk(e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                  />
-                </label>
+              <div className="mt-3 flex items-end justify-between gap-4 border-t border-primary-200 pt-3">
+                <span className="text-sm font-semibold text-primary-900">Expected cash in drawer</span>
+                <span className="text-2xl font-black text-primary-900 tabular-nums"><Rial amount={expectedCash} /></span>
               </div>
             </section>
 
-            <section>
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Cash count</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="rounded-xl bg-gray-50 border border-gray-100 px-3.5 py-3 space-y-2">
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>Opening cash</span>
-                    <span className="tabular-nums"><Rial amount={openingCash} /></span>
-                  </div>
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>Expected in drawer</span>
-                    <span className="tabular-nums"><Rial amount={expectedCash} /></span>
-                  </div>
-                  <div className="flex justify-between text-xs text-gray-400">
-                    <span>Total expenses</span>
-                    <span className="tabular-nums"><Rial amount={totalExpenses} /></span>
-                  </div>
-                </div>
-                <div className="rounded-xl bg-white border border-gray-100 px-3.5 py-3">
-                  <label className="label">Actual cash counted</label>
+            <section aria-labelledby="cash-count-heading" className="space-y-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <h4 id="cash-count-heading" className="text-sm font-bold text-gray-900">Count the drawer</h4>
+                <button
+                  type="button"
+                  onClick={() => setCashActual(expectedCash.toFixed(2))}
+                  className="rounded-xl border border-primary-200 bg-white px-3 py-2 text-xs font-semibold text-primary-700 hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  Cash matches SAR {fmt(expectedCash)}
+                </button>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <div>
+                  <label htmlFor="actual-closing-cash" className="label">Actual cash counted</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
-                    <MoneyInput
-                      value={cashActual} onValueChange={setCashActual}
-                      className="input pl-10 h-10" placeholder="0.00" autoFocus
-                    />
+                    <MoneyInput id="actual-closing-cash" value={cashActual} onValueChange={setCashActual} className="input h-11 pl-10" placeholder="0.00" autoFocus />
                   </div>
-                  <div className="mt-2 flex items-center justify-between gap-2">
-                    <span className="text-xs text-gray-400">Difference</span>
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${differenceState.className}`}>
-                      {differenceState.label}
-                    </span>
-                  </div>
+                </div>
+                <div aria-live="polite" className={`flex min-h-11 items-center justify-center rounded-xl px-4 text-sm font-bold sm:min-w-48 ${differenceState.className}`}>
+                  {differenceState.label}
                 </div>
               </div>
             </section>
 
+            <section aria-labelledby="review-heading">
+              <h4 id="review-heading" className="mb-2 text-sm font-bold text-gray-900">Review before closing</h4>
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                {[
+                  ['Net cash sales reviewed', cashSalesOk, setCashSalesOk],
+                  ['Net card sales reviewed', cardSalesOk, setCardSalesOk],
+                  ['POS cash expenses reviewed', expensesOk, setExpensesOk],
+                  ['Refunds and credit notes reviewed', creditRefundsOk, setCreditRefundsOk],
+                  ['I have counted the cash in the drawer', cashCountedOk, setCashCountedOk],
+                ].map(([label, checked, setChecked]) => (
+                  <label key={String(label)} className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                    <input type="checkbox" checked={checked as boolean} onChange={event => (setChecked as (value: boolean) => void)(event.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+                    <span>{String(label)}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+
+            <details className="group rounded-xl border border-gray-100 bg-gray-50/70">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500">
+                Session summary
+                <ChevronDown size={16} className="transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="grid grid-cols-1 gap-x-6 gap-y-2 border-t border-gray-100 px-4 py-3 text-sm sm:grid-cols-2">
+                <div className="flex justify-between"><span className="text-gray-500">Invoice count</span><span className="font-medium">{invoiceCount}</span></div>
+                <div className="flex justify-between font-bold text-gray-900"><span>Net session sales</span><span className="tabular-nums"><Rial amount={totalSessionSales} /></span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Net cash sales</span><span className="tabular-nums"><Rial amount={cashSales - cashRefunds} /></span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Net card sales</span><span className="tabular-nums"><Rial amount={cardSales} /></span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Refunds and credit notes</span><span className="tabular-nums"><Rial amount={creditRefunds} /></span></div>
+                <div className="flex justify-between"><span className="text-gray-500">POS cash expenses</span><span className="tabular-nums"><Rial amount={cashExpenses} /></span></div>
+              </div>
+            </details>
+
             <section>
-              <label className="label">Notes (optional)</label>
+              <label className="label">Closing note — Optional</label>
               <textarea
                 value={notes} onChange={e => setNotes(e.target.value)}
                 className="input resize-none min-h-0" rows={2}
@@ -1397,51 +1358,59 @@ function SessionSummaryModal({ summary, onDone, onNewSession }: {
   const openedAt = formatSaudiSessionDateTime(summary.opened_at)
   const closedAt = formatSaudiSessionDateTime(summary.closed_at)
   const diff      = Number(summary.closing_cash_difference ?? 0)
-  const diffColor = diff > 0.005 ? 'text-emerald-600' : diff < -0.005 ? 'text-red-600' : 'text-gray-700'
-
-  const rows: [string, React.ReactNode][] = [
-    ['Invoices',              summary.total_invoices],
-    ['Net Session Sales',     <Rial amount={Number(summary.total_session_sales)} />],
-    ['Cash Sales',            <Rial amount={Number(summary.total_cash_sales)} />],
-    ['Card Sales',            <Rial amount={Number(summary.total_card_sales)} />],
-    ['Expenses',              <Rial amount={Number(summary.total_expenses)} />],
-    ['Opening Cash',          <Rial amount={Number(summary.opening_cash)} />],
-    ['Expected Closing Cash', <Rial amount={Number(summary.closing_cash_expected)} />],
-    ['Actual Closing Cash',   <Rial amount={Number(summary.closing_cash_actual)} />],
-  ]
+  const isBalanced = Math.abs(diff) < 0.005
+  const differenceLabel = isBalanced
+    ? 'Balanced'
+    : diff < 0
+    ? `SAR ${fmt(Math.abs(diff))} short`
+    : `SAR ${fmt(diff)} over`
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
         <div className="bg-gradient-to-br from-[#1a3a28] to-primary-600 px-6 py-5 text-white text-center">
           <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
             <Check size={22} strokeWidth={2.5} />
           </div>
-          <h3 className="font-bold text-lg">Register Session Closed</h3>
-          <p className="text-white/70 text-xs mt-1">{openedAt}{' -> '}{closedAt}</p>
+          <h3 className="font-bold text-lg">Register Closed</h3>
+          <p className="text-white/70 text-xs mt-1">{openedAt} – {closedAt}</p>
         </div>
-        <div className="p-5">
-          <div className="space-y-2">
-            {rows.map(([label, value]) => (
-              <div key={label} className="flex justify-between text-sm text-gray-600 border-b border-gray-50 pb-1.5">
-                <span>{label}</span>
-                <span className="tabular-nums font-medium">{value}</span>
+        <div className="space-y-4 p-5">
+          <div className="rounded-xl bg-primary-50 px-4 py-3 text-center">
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Net session sales</p>
+            <p className="mt-1 text-2xl font-black text-primary-900 tabular-nums"><Rial amount={Number(summary.total_session_sales)} /></p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+            {[
+              ['Invoice count', summary.total_invoices],
+              ['Net cash sales', <Rial amount={Number(summary.total_cash_sales)} />],
+              ['Net card sales', <Rial amount={Number(summary.total_card_sales)} />],
+              ['POS cash expenses', <Rial amount={Number(summary.cash_expenses)} />],
+              ['Refunds and credit notes', <Rial amount={Number(summary.total_refunds)} />],
+              ['Opening cash', <Rial amount={Number(summary.opening_cash)} />],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="flex justify-between gap-4 border-b border-gray-50 pb-2 text-gray-600">
+                <span>{label}</span><span className="font-medium tabular-nums">{value}</span>
               </div>
             ))}
-            <div className={`flex justify-between text-sm font-bold pt-1 ${diffColor}`}>
-              <span>Cash Difference</span>
-              <span className="tabular-nums">
-                {diff >= 0.005 ? '+' : diff < -0.005 ? '' : ''}
-                <Rial amount={Math.abs(diff)} />
-                {diff < -0.005 && <span className="ml-0.5 text-xs">(short)</span>}
-              </span>
+          </div>
+
+          <div className="rounded-xl border border-gray-100 p-4">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-500">Closing cash</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div><p className="text-xs text-gray-500">Expected closing cash</p><p className="mt-1 font-bold tabular-nums"><Rial amount={Number(summary.closing_cash_expected)} /></p></div>
+              <div><p className="text-xs text-gray-500">Actual closing cash</p><p className="mt-1 font-bold tabular-nums"><Rial amount={Number(summary.closing_cash_actual)} /></p></div>
+            </div>
+            <div className={`mt-3 flex items-center justify-between rounded-lg px-3 py-2 text-sm font-bold ${isBalanced ? 'bg-gray-100 text-gray-700' : diff < 0 ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>
+              <span>Cash difference</span><span>{differenceLabel}</span>
             </div>
           </div>
         </div>
         <div className="px-5 pb-5 flex gap-2">
           <button onClick={onNewSession}
             className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-            New Register
+            Open New Register
           </button>
           <button onClick={onDone}
             className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white text-sm font-semibold hover:opacity-90 transition-opacity">
