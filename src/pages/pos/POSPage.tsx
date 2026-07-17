@@ -25,8 +25,7 @@ import type { Branch, BranchPosMode, PaymentMethod, VatTreatment } from '@/types
 import { usePosSession } from '@/hooks/usePosSession'
 import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
-import { MeemLogo } from '@/components/MeemLogo'
-import { getPrinterSettings, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
+import { getPrinterSettings, getPrinters, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { openReceiptPreview, printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { supportConfig } from '@/config/support'
 import { resolveBusinessType } from '@/lib/utils/businessType'
@@ -1621,6 +1620,7 @@ export default function POSPage() {
   const [submitting,   setSubmitting]   = useState(false)
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [showExpense,  setShowExpense]  = useState(false)
+  const [printerStatus, setPrinterStatus] = useState<'connected' | 'unconfigured' | 'error'>('unconfigured')
   const [zatcaResult,  setZatcaResult]  = useState<'submitted' | 'pending' | 'failed' | 'sandbox_pending' | 'sandbox_validated' | 'sandbox_failed' | null>(null)
   const [scrollState,  setScrollState]  = useState({
     categoryAtStart: true,
@@ -1633,6 +1633,20 @@ export default function POSPage() {
   const businessType = resolveBusinessType(tenant?.business_type)
   const savedBranchPosMode = branchPosMode(branch?.pos_mode)
   const activePosMode: PosMode = businessType === 'trading' ? savedBranchPosMode : 'touch'
+
+  useEffect(() => {
+    if (!isElectron()) return
+    let cancelled = false
+    Promise.all([getPrinterSettings(), getPrinters()])
+      .then(([settings, printers]) => {
+        if (cancelled) return
+        if (!settings.receiptPrinterName) setPrinterStatus('unconfigured')
+        else if (printers.some(printer => printer.name === settings.receiptPrinterName)) setPrinterStatus('connected')
+        else setPrinterStatus('error')
+      })
+      .catch(() => { if (!cancelled) setPrinterStatus('error') })
+    return () => { cancelled = true }
+  }, [])
 
   // ── Load data ────────────────────────────────────────────────────────────
 
@@ -2376,50 +2390,69 @@ export default function POSPage() {
       <div className="flex-1 flex flex-col min-w-0">
 
         {/* Header */}
-        <div className="bg-[#0F2419] text-white px-5 py-3.5 flex items-center gap-3 flex-shrink-0 shadow-lg">
-          <button
-            onClick={() => navigate('/branch')}
-            title="Back to Dashboard (Esc)"
-            className="flex items-center gap-1.5 text-white/50 hover:text-white border border-white/15 hover:border-white/30 px-2.5 py-1.5 rounded-lg text-xs transition-colors flex-shrink-0"
-          >
-            <ArrowLeft size={13} />
-            Dashboard
-          </button>
-          <div className="h-4 w-px bg-white/20 flex-shrink-0" />
-          <div className="flex items-center gap-2.5">
-            <MeemLogo size="sm" />
+        <div className="bg-[#0F2419] text-white px-3 sm:px-5 py-3 flex items-center gap-3 flex-shrink-0 shadow-lg">
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => navigate('/branch')}
+              title="Back to Dashboard (Esc)"
+              aria-label="Back to Dashboard"
+              className="flex items-center gap-1.5 text-white/60 hover:text-white border border-white/15 hover:border-white/30 px-2.5 py-2 rounded-lg text-xs transition-colors active:scale-[0.97]"
+            >
+              <ArrowLeft size={13} />
+              <span className="hidden sm:inline">Dashboard</span>
+            </button>
+            <button
+              onClick={() => setShowCloseSession(true)}
+              aria-label="End Register"
+              className="flex items-center gap-1.5 text-xs bg-red-500/20 border border-red-400/30 text-red-200 px-2.5 py-2 rounded-lg hover:bg-red-500/30 transition-colors active:scale-[0.97]"
+            >
+              <Lock size={12} />
+              <span>End Register</span>
+            </button>
           </div>
-          <div className="h-4 w-px bg-white/20" />
-          <span className="text-white/60 text-xs">{profile?.full_name ?? 'Cashier'}</span>
-          <span className="text-white/30 text-xs">·</span>
-          <span className="text-white/50 text-xs">{branch?.name ?? ''}</span>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-[10px] bg-white/10 border border-white/10 text-white/50 px-2 py-1 rounded-lg">
-              {vatMode === 'inclusive' ? 'VAT Incl.' : 'VAT Excl.'}
-            </span>
+
+          <div className="min-w-0 flex-1 text-center px-1">
+            <h1 className="truncate text-sm font-semibold text-white" title={branch?.name ?? 'Active branch'}>
+              {branch?.name ?? 'Active branch'}
+            </h1>
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
             {isElectron() && (
               <button
                 type="button"
                 onClick={() => navigate(DEVICE_PRINTER_PATH)}
-                title="Device Printer"
-                className="text-xs bg-white/10 border border-white/10 text-white/70 px-3 py-1.5 rounded-lg hover:bg-white/15 hover:text-white transition-colors flex items-center gap-1.5"
+                title={printerStatus === 'connected'
+                  ? 'Receipt printer connected — open printer settings'
+                  : printerStatus === 'error'
+                    ? 'Printer unavailable — open printer settings'
+                    : 'Printer not configured — open printer settings'}
+                aria-label={printerStatus === 'connected'
+                  ? 'Receipt printer connected; open printer settings'
+                  : printerStatus === 'error'
+                    ? 'Printer unavailable; open printer settings'
+                    : 'Printer not configured; open printer settings'}
+                className={`relative w-9 h-9 rounded-lg border transition-colors active:scale-[0.97] flex items-center justify-center ${
+                  printerStatus === 'connected'
+                    ? 'bg-emerald-500/20 border-emerald-400/30 text-emerald-300 hover:bg-emerald-500/30'
+                    : printerStatus === 'error'
+                      ? 'bg-red-500/20 border-red-400/30 text-red-300 hover:bg-red-500/30'
+                      : 'bg-white/10 border-white/15 text-white/60 hover:bg-white/15 hover:text-white'
+                }`}
               >
-                <Printer size={12} />
-                Printer
+                <Printer size={14} />
+                <span className={`absolute right-1 top-1 h-1.5 w-1.5 rounded-full ${
+                  printerStatus === 'connected' ? 'bg-emerald-400' : printerStatus === 'error' ? 'bg-red-400' : 'bg-white/35'
+                }`} />
               </button>
             )}
             <button
               onClick={() => setShowExpense(true)}
-              className="text-xs bg-amber-500/20 border border-amber-400/20 text-amber-300 px-3 py-1.5 rounded-lg hover:bg-amber-500/30 transition-colors flex items-center gap-1.5"
+              aria-label="Add Expense"
+              className="h-9 text-xs bg-amber-500/20 border border-amber-400/25 text-amber-200 px-2.5 sm:px-3 rounded-lg hover:bg-amber-500/30 transition-colors active:scale-[0.97] flex items-center gap-1.5"
             >
               <Zap size={12} />
-              Expense
-            </button>
-            <button
-              onClick={() => setShowCloseSession(true)}
-              className="text-xs bg-red-500/20 border border-red-400/20 text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-500/30 transition-colors"
-            >
-              Close Register
+              <span className="hidden sm:inline">Expense</span>
             </button>
           </div>
         </div>

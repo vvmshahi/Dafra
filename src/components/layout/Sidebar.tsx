@@ -14,35 +14,37 @@ interface NavItem {
   label: string
   path: string
   icon: LucideIcon
+  section?: 'Daily work' | 'Catalogue and stock' | 'Business' | 'Settings' | 'Analysis' | 'Administration'
 }
 
 const ownerNav: NavItem[] = [
-  { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-  { label: 'Branches',  path: '/branches',  icon: Building2       },
-  { label: 'ZATCA',     path: '/zatca',     icon: ShieldCheck     },
-  { label: 'Employees', path: '/employees', icon: UserSquare2     },
-  { label: 'Reports',   path: '/reports',   icon: BarChart2       },
-  { label: 'Settings',  path: '/settings',  icon: Settings        },
+  { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, section: 'Daily work' },
+  { label: 'Branches',  path: '/branches',  icon: Building2,       section: 'Administration' },
+  { label: 'Employees', path: '/employees', icon: UserSquare2,     section: 'Administration' },
+  { label: 'ZATCA',     path: '/zatca',     icon: ShieldCheck,     section: 'Settings' },
+  { label: 'Settings',  path: '/settings',  icon: Settings,        section: 'Settings' },
+  { label: 'Reports',   path: '/reports',   icon: BarChart2,       section: 'Analysis' },
 ]
 
 const branchNav: NavItem[] = [
-  { label: 'Dashboard',   path: '/branch',      icon: Store          },
-  { label: 'New Sale',    path: '/pos',          icon: Receipt        },
-  { label: 'Invoices',         path: '/invoices',          icon: FileText   },
-  { label: 'Invoice Settings', path: '/invoice-settings',  icon: Settings2  },
-  { label: 'Products',         path: '/products',          icon: Package    },
-  { label: 'Stock',       path: '/inventory',     icon: Warehouse      },
-  { label: 'Purchases',   path: '/purchases',     icon: Truck          },
-  { label: 'Customers',   path: '/customers',    icon: Users          },
-  { label: 'Expenses',    path: '/expenses',     icon: CreditCard     },
-  { label: 'Suppliers',   path: '/suppliers',    icon: Truck          },
-  { label: 'Reports',     path: '/reports',      icon: BarChart2      },
+  { label: 'Dashboard',        path: '/branch',            icon: Store,       section: 'Daily work' },
+  { label: 'New Sale',         path: '/pos',               icon: Receipt,     section: 'Daily work' },
+  { label: 'Invoices',         path: '/invoices',          icon: FileText,    section: 'Daily work' },
+  { label: 'Products',         path: '/products',          icon: Package,     section: 'Catalogue and stock' },
+  { label: 'Stock',            path: '/inventory',         icon: Warehouse,   section: 'Catalogue and stock' },
+  { label: 'Purchases',        path: '/purchases',         icon: Truck,       section: 'Catalogue and stock' },
+  { label: 'Suppliers',        path: '/suppliers',         icon: Truck,       section: 'Catalogue and stock' },
+  { label: 'Customers',        path: '/customers',         icon: Users,       section: 'Business' },
+  { label: 'Expenses',         path: '/expenses',          icon: CreditCard,  section: 'Business' },
+  { label: 'Invoice Settings', path: '/invoice-settings',  icon: Settings2,   section: 'Settings' },
+  { label: 'Reports',          path: '/reports',           icon: BarChart2,   section: 'Analysis' },
 ]
 
 const branchDevicePrinterNavItem: NavItem = {
   label: 'Device Printer',
   path: '/device-printer',
   icon: Printer,
+  section: 'Settings',
 }
 
 const superAdminNav: NavItem[] = [
@@ -56,6 +58,7 @@ const operationsNavItem: NavItem = {
   label: 'Operations',
   path: '/operations',
   icon: ShieldCheck,
+  section: 'Administration',
 }
 
 const operationsRoles = new Set(['owner', 'admin', 'super_admin'])
@@ -115,14 +118,18 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     : isBranch
       ? isElectron()
         ? [
-            branchNavigation[0],
-            branchNavigation[1],
+            ...branchNavigation.filter(item => item.section !== 'Analysis'),
             branchDevicePrinterNavItem,
-            ...branchNavigation.slice(2),
+            ...branchNavigation.filter(item => item.section === 'Analysis'),
           ]
         : branchNavigation
       : canViewOperations
-        ? [...ownerNav, operationsNavItem]
+        ? [
+            ...ownerNav.filter(item => item.section !== 'Settings' && item.section !== 'Analysis'),
+            operationsNavItem,
+            ...ownerNav.filter(item => item.section === 'Settings'),
+            ...ownerNav.filter(item => item.section === 'Analysis'),
+          ]
         : ownerNav
   const subtitle = isSuperAdmin ? 'Kubri Super Admin' : (tenant?.name ?? 'Kubri')
   const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? 'User'
@@ -182,12 +189,21 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto sidebar-scroll">
-        {navItems.map(item => {
+        {navItems.map((item, index) => {
           const isActive = isNavActive(item)
+          const showSection = item.section && item.section !== navItems[index - 1]?.section
           return (
-            <NavLink key={item.label} to={item.path} title={collapsed ? item.label : undefined}>
-              <NavItemRow item={item} isActive={isActive} collapsed={collapsed} />
-            </NavLink>
+            <div key={item.label} className={showSection && index > 0 ? 'mt-3' : undefined}>
+              {showSection && !collapsed && (
+                <p className="px-3 pb-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-sidebar-text/60">
+                  {item.section}
+                </p>
+              )}
+              {showSection && collapsed && index > 0 && <div className="mx-2 mb-2 border-t border-sidebar-border" />}
+              <NavLink to={item.path} title={collapsed ? item.label : undefined}>
+                <NavItemRow item={item} isActive={isActive} collapsed={collapsed} />
+              </NavLink>
+            </div>
           )
         })}
       </nav>
