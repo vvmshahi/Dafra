@@ -1376,7 +1376,7 @@ function SplitPaymentModal({
   const balance = round2(total - paidTotal)
   const isBalanced = Math.abs(balance) <= 0.01
   const hasNegative = cashAmount < 0 || cardAmount < 0
-  const canComplete = isBalanced && !hasNegative && cashAmount > 0 && cardAmount > 0 && !submitting
+  const canComplete = isBalanced && !hasNegative && (cashAmount > 0 || cardAmount > 0) && !submitting
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -1702,8 +1702,7 @@ export default function POSPage() {
   const splitPaidTotal = round2(splitCashAmount + splitCardAmount)
   const splitBalanced = Math.abs(splitPaidTotal - round2(totals.total)) <= 0.01
   const splitReady = splitPaymentsEnabled
-    && splitCashAmount > 0
-    && splitCardAmount > 0
+    && (splitCashAmount > 0 || splitCardAmount > 0)
     && splitCashAmount <= totals.total + 0.01
     && splitCardAmount <= totals.total + 0.01
     && splitBalanced
@@ -1925,8 +1924,12 @@ export default function POSPage() {
         }
       }
 
-      const cashTenderProvided = payMethod === 'cash' && cashReceived.trim() !== ''
-      const splitPayments = payMethod === 'split'
+      const splitUsesBothMethods = payMethod === 'split' && splitCashAmount > 0 && splitCardAmount > 0
+      const effectivePaymentMethod: PaymentMethod = payMethod === 'split'
+        ? splitCashAmount > 0 && splitCardAmount <= 0 ? 'cash' : splitCardAmount > 0 && splitCashAmount <= 0 ? 'card' : 'other'
+        : payMethod
+      const cashTenderProvided = (effectivePaymentMethod === 'cash' && payMethod === 'split') || (payMethod === 'cash' && cashReceived.trim() !== '')
+      const splitPayments = splitUsesBothMethods
         ? [
             { method: 'cash', amount: round2(splitCashAmount) },
             { method: 'card', amount: round2(splitCardAmount) },
@@ -1936,8 +1939,8 @@ export default function POSPage() {
         branch_id: branch.id,
         customer_id: customerId,
         session_id: session?.id ?? null,
-        payment_method: payMethod === 'split' ? 'other' : payMethod,
-        amount_paid: cashTenderProvided ? cashAmt : null,
+        payment_method: effectivePaymentMethod,
+        amount_paid: cashTenderProvided ? (payMethod === 'split' ? splitCashAmount : cashAmt) : null,
         ...(splitPayments ? { payments: splitPayments } : {}),
         note: note || null,
         idempotency_key: idempotencyKey,

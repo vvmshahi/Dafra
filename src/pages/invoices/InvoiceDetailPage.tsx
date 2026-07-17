@@ -1067,6 +1067,9 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
               {payment && <span><span className="font-semibold">Date:</span> {fmtDateTime(payment.paid_at).date}</span>}
               {payment?.reference && <span><span className="font-semibold">Ref:</span> {payment.reference}</span>}
             </div>
+            {invoice.payment_method === 'other' && !isSplitPayment && (
+              <p className="mt-2 text-[11px] text-amber-700">Detailed payment allocation is unavailable for this historical invoice.</p>
+            )}
           </div>
         )}
 

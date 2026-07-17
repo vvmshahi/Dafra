@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
+import { MoneyInput } from '@/components/ui/MoneyInput'
 import type { PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isPermanentDemoSandboxBranch, submitInvoiceForBranch } from '@/lib/zatca/submission'
 import { useAuth } from '@/hooks/useAuth'
@@ -38,7 +39,7 @@ interface RpcCreditNoteResult {
   total?: number
   refund_status?: string
   zatca_status?: ZatcaStatus
-  refund_method?: PaymentMethod
+  refund_method?: PaymentMethod | 'split'
   idempotent_replay?: boolean
 }
 
@@ -191,9 +192,9 @@ function resolveAutoRefundMethod(payments: CreditNotePaymentRow[]): PaymentMetho
 function refundPlanText(payments: CreditNotePaymentRow[], loading: boolean): string {
   if (loading) return 'Loading original payment details...'
   const usable = payments.filter(row => row.amount > 0)
-  if (usable.length === 0) return 'Original payment details unavailable; refund recorded as Other.'
-  if (usable.length === 1) return `Refund follows original payment: ${paymentLabel(usable[0].method)}.`
-  return `Refund preserves original split: ${usable.map(row => `${paymentLabel(row.method)} SAR ${money(row.amount)}`).join(' · ')}.`
+  if (usable.length === 0) return 'Original payment allocation is unavailable.'
+  if (usable.length === 1) return `Original payment: ${paymentLabel(usable[0].method)} SAR ${money(usable[0].amount)}.`
+  return `Original payment: ${usable.map(row => `${paymentLabel(row.method)} SAR ${money(row.amount)}`).join(' · ')}.`
 }
 
 async function fetchCreditNoteStatus(invoiceId: string): Promise<ZatcaStatus | null> {
@@ -224,6 +225,10 @@ export default function CreateCreditNoteModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [idempotencyKey, setIdempotencyKey] = useState('')
+  const [refundMode, setRefundMode] = useState<'cash' | 'card' | 'split'>('cash')
+  const [refundCash, setRefundCash] = useState('')
+  const [refundCard, setRefundCard] = useState('')
+  const [refundEdited, setRefundEdited] = useState(false)
   const businessType = resolveBusinessType(tenant?.business_type)
   const isServiceBusiness = businessType === 'service'
 
@@ -240,6 +245,10 @@ export default function CreateCreditNoteModal({
     setCreating(false)
     setSubmitting(false)
     setIdempotencyKey(newIdempotencyKey(invoice.id))
+    setRefundMode('cash')
+    setRefundCash('')
+    setRefundCard('')
+    setRefundEdited(false)
 
     let cancelled = false
 
@@ -333,6 +342,27 @@ export default function CreateCreditNoteModal({
     .filter(line => line.item.track_stock && !line.item.is_service)
     .reduce((sum, line) => sum + line.quantity, 0)
 
+  useEffect(() => {
+    if (refundEdited || totals.total <= 0 || paymentsLoading) return
+    const originalCash = originalPayments.filter(row => row.method === 'cash').reduce((sum, row) => sum + row.amount, 0)
+    const originalCard = originalPayments.filter(row => row.method === 'card').reduce((sum, row) => sum + row.amount, 0)
+    if (originalCash > 0 && originalCard > 0) {
+      const originalTotal = originalCash + originalCard
+      const cashDefault = roundMoney(totals.total * originalCash / originalTotal)
+      setRefundMode('split')
+      setRefundCash(cashDefault.toFixed(2))
+      setRefundCard(roundMoney(totals.total - cashDefault).toFixed(2))
+    } else if (originalCard > 0) {
+      setRefundMode('card')
+      setRefundCash('')
+      setRefundCard(totals.total.toFixed(2))
+    } else {
+      setRefundMode('cash')
+      setRefundCash(totals.total.toFixed(2))
+      setRefundCard('')
+    }
+  }, [originalPayments, paymentsLoading, refundEdited, totals.total])
+
   if (!open || !invoice) return null
 
   async function handleCreate() {
@@ -368,6 +398,17 @@ export default function CreateCreditNoteModal({
       return
     }
 
+    const cashRefund = refundMode === 'card' ? 0 : Number(refundCash || 0)
+    const cardRefund = refundMode === 'cash' ? 0 : Number(refundCard || 0)
+    if (cashRefund < 0 || cardRefund < 0 || cashRefund + cardRefund <= 0 || Math.abs(cashRefund + cardRefund - totals.total) > 0.01) {
+      setError('Cash and card refunds must add up to the credit total.')
+      return
+    }
+    const refundAllocations = [
+      cashRefund > 0 ? { method: 'cash', amount: roundMoney(cashRefund) } : null,
+      cardRefund > 0 ? { method: 'card', amount: roundMoney(cardRefund) } : null,
+    ].filter(Boolean)
+
     setCreating(true)
     setSubmitting(false)
     setError(null)
@@ -379,12 +420,13 @@ export default function CreateCreditNoteModal({
         // The RPC applies this only to stock-tracked, non-service products and
         // scopes every movement to the original invoice branch.
         return_stock: !isServiceBusiness,
+        refund_allocations: refundAllocations,
         items: lines.map(line => ({
           original_invoice_item_id: line.item.original_invoice_item_id,
           quantity: line.quantity,
         })),
       }
-      const { data, error: rpcError } = await (supabase as any).rpc('create_partial_credit_note', { p_payload: payload })
+      const { data, error: rpcError } = await (supabase as any).rpc('create_partial_credit_note_with_refund', { p_payload: payload })
       if (rpcError) throw rpcError
 
       const result = data as RpcCreditNoteResult
@@ -427,7 +469,7 @@ export default function CreateCreditNoteModal({
         zatcaStatus,
         idempotentReplay: Boolean(result.idempotent_replay),
         reason: finalReason,
-        refundMethod: result.refund_method ?? resolveAutoRefundMethod(originalPayments),
+        refundMethod: result.refund_method === 'split' ? 'other' : (result.refund_method ?? resolveAutoRefundMethod(originalPayments)),
         autoSubmitSucceeded,
         subtotal: totals.subtotal,
         taxAmount: totals.tax,
@@ -642,11 +684,48 @@ export default function CreateCreditNoteModal({
           </div>
 
           <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2">
-            <p className="text-xs font-semibold text-emerald-800">Refund source</p>
+            <p className="text-xs font-semibold text-emerald-800">Original payment</p>
             <p className="mt-0.5 text-[11px] leading-relaxed text-emerald-700">
               {refundPlanText(originalPayments, paymentsLoading)}
             </p>
           </div>
+
+          <fieldset className="space-y-2">
+            <legend className="text-xs font-semibold text-gray-700">Refund method</legend>
+            <div className="grid grid-cols-3 gap-2">
+              {(['cash', 'card', 'split'] as const).map(method => (
+                <button
+                  key={method}
+                  type="button"
+                  aria-pressed={refundMode === method}
+                  disabled={busy || totals.total <= 0}
+                  onClick={() => {
+                    setRefundEdited(true)
+                    setRefundMode(method)
+                    if (method === 'cash') { setRefundCash(totals.total.toFixed(2)); setRefundCard('') }
+                    if (method === 'card') { setRefundCash(''); setRefundCard(totals.total.toFixed(2)) }
+                    if (method === 'split') {
+                      const cashPart = roundMoney(totals.total / 2)
+                      setRefundCash(cashPart.toFixed(2))
+                      setRefundCard(roundMoney(totals.total - cashPart).toFixed(2))
+                    }
+                  }}
+                  className={`rounded-xl border px-3 py-2 text-xs font-semibold ${refundMode === method ? 'border-[#0F2419] bg-[#0F2419] text-white' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
+                >
+                  {method === 'cash' ? 'Cash' : method === 'card' ? 'Card' : 'Split'}
+                </button>
+              ))}
+            </div>
+            {refundMode === 'split' && (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="space-y-1"><span className="text-[11px] font-medium text-gray-600">Cash refund amount</span><MoneyInput value={refundCash} onValueChange={value => { setRefundEdited(true); setRefundCash(value) }} className="input" placeholder="0.00" /></label>
+                <label className="space-y-1"><span className="text-[11px] font-medium text-gray-600">Card refund amount</span><MoneyInput value={refundCard} onValueChange={value => { setRefundEdited(true); setRefundCard(value) }} className="input" placeholder="0.00" /></label>
+              </div>
+            )}
+            <p className="text-[11px] text-gray-500">
+              Refund allocated: Cash SAR {money(refundMode === 'card' ? 0 : Number(refundCash || 0))} · Card SAR {money(refundMode === 'cash' ? 0 : Number(refundCard || 0))}
+            </p>
+          </fieldset>
 
           <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-700">
             This will create a credit note and cannot be undone.
