@@ -15,12 +15,34 @@ export const SIMPLE_EXPENSE_VAT_OPTIONS: {
   {
     value: 'claimable',
     label: 'VAT claimable',
-    desc: 'I have a valid VAT invoice / bill',
+    desc: 'Record the supplier tax-invoice details',
   },
 ]
 
 function roundMoney(value: number) {
   return Number(value.toFixed(2))
+}
+
+export function isValidSaudiVatNumber(value: string) {
+  return /^\d{15}$/.test(value)
+}
+
+export function expenseVatConsistency(
+  totalPaidInput: number,
+  expenseBeforeVatInput: number,
+  vatAmountInput: number,
+) {
+  const totalPaid = roundMoney(totalPaidInput)
+  const expenseBeforeVat = roundMoney(expenseBeforeVatInput)
+  const vatAmount = roundMoney(vatAmountInput)
+  const difference = roundMoney(expenseBeforeVat + vatAmount - totalPaid)
+  const expectedVat = roundMoney(expenseBeforeVat * 0.15)
+
+  return {
+    consistent: Math.abs(difference) <= 0.02,
+    difference,
+    unusualRate: expenseBeforeVat > 0 && Math.abs(vatAmount - expectedVat) > 0.02,
+  }
 }
 
 export function resolveExpenseVatChoice(

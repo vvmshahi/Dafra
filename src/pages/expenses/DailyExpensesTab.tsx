@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, Pencil, Trash2, X, Receipt, Filter } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, X, Receipt, Filter, Paperclip, FileWarning } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { saudiNow } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
@@ -94,6 +94,12 @@ function ExpenseRow({ expense, onEdit, onDelete }: {
   )
   const claimableVat = vat === 'claimable' ? Number(expense.vat_amount ?? 0) : 0
   const pay       = expense.payment_method as string
+  const vatDetailsIncomplete = vat === 'claimable' && (
+    !expense.vendor_name
+    || !expense.category_id
+    || !expense.tax_invoice_number
+    || Number(expense.vat_amount ?? 0) <= 0
+  )
 
   return (
     <div className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50/70 transition-colors border-b border-gray-100 last:border-0">
@@ -111,6 +117,16 @@ function ExpenseRow({ expense, onEdit, onDelete }: {
         {expense.vendor_name && (
           <p className="text-xs text-gray-400 truncate">{expense.vendor_name}</p>
         )}
+        <div className="mt-1 flex items-center gap-2 text-[10px]">
+          {expense.receipt_url ? (
+            <span className="inline-flex items-center gap-1 text-emerald-600"><Paperclip size={10} /> Document attached</span>
+          ) : vat === 'claimable' ? (
+            <span className="inline-flex items-center gap-1 text-amber-600"><FileWarning size={10} /> No document</span>
+          ) : null}
+          {vatDetailsIncomplete && (
+            <span className="text-amber-600">Incomplete VAT details</span>
+          )}
+        </div>
       </div>
 
       {/* Date */}
@@ -261,7 +277,7 @@ export default function DailyExpensesTab() {
           'expense_date,description,vendor_name',
           'amount,vat_treatment,vat_claim_status,expense_before_vat,vat_amount,total_paid',
           'session_id',
-          'tax_invoice_number,supplier_vat_number',
+          'tax_invoice_number,supplier_vat_number,supplier_id,supplier_cr_number,supplier_contact,invoice_time',
           'payment_method,receipt_url,notes,created_at,updated_at',
           'expense_categories(name,color,icon)',
           'user_profiles!added_by(full_name)',

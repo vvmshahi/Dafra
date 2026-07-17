@@ -326,6 +326,7 @@ function QuickExpenseModal({
   const [amount, setAmount] = useState('')
   const [desc,   setDesc]   = useState('')
   const [vendor, setVendor] = useState('')
+  const [reviewVatLater, setReviewVatLater] = useState(false)
   const [saving, setSaving] = useState(false)
 
   async function save() {
@@ -344,7 +345,7 @@ function QuickExpenseModal({
         vendor_name:    vendor.trim() || null,
         amount:         totalPaid,
         vat_treatment:  'no_vat',
-        vat_claim_status: 'not_claimable',
+        vat_claim_status: reviewVatLater ? 'needs_review' : 'not_claimable',
         expense_before_vat: totalPaid,
         vat_amount:     0,
         total_paid:     totalPaid,
@@ -364,7 +365,7 @@ function QuickExpenseModal({
           <div>
             <h3 className="font-semibold text-gray-900 text-sm">Quick cash expense</h3>
             <p className="text-[10px] text-gray-400 mt-0.5">
-              VAT is not claimed here. Add VAT invoices from Expenses.
+              Keep checkout fast; full VAT details can be completed later.
             </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
@@ -386,7 +387,14 @@ function QuickExpenseModal({
               className="input" placeholder="Vendor name" />
           </div>
           <div className="rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-500">
-            This is recorded as a cash expense with no input VAT claim.
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input type="checkbox" className="mt-0.5" checked={reviewVatLater}
+                onChange={event => setReviewVatLater(event.target.checked)} />
+              <span>
+                VAT may be claimable — complete supplier invoice details later in Expenses.
+                {!reviewVatLater && ' No input VAT will be claimed.'}
+              </span>
+            </label>
           </div>
         </div>
         <div className="px-5 pb-5 flex gap-2">

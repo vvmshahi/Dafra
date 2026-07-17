@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, ImagePlus, CreditCard, Banknote, Building } from 'lucide-react'
+import { X, ImagePlus, CreditCard, Banknote, Building, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
-import type { ExpenseCategory, ExpensePaymentMethod } from '@/types'
+import type { ExpenseCategory, ExpensePaymentMethod, Supplier } from '@/types'
 import type { ExpenseRow } from './DailyExpensesTab'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import {
   SIMPLE_EXPENSE_VAT_OPTIONS,
   calculateExpenseVat,
+  expenseVatConsistency,
+  isValidSaudiVatNumber,
   resolveExpenseVatChoice,
   type SimpleExpenseVatChoice,
 } from '@/lib/utils/expenseVat'
@@ -52,6 +54,7 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
   const [error,        setError]        = useState('')
   const [imageFile,    setImageFile]    = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
 
   // Form state
   const [date,        setDate]        = useState('')
@@ -62,6 +65,13 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
   const [vatChoice,   setVatChoice]   = useState<SimpleExpenseVatChoice>('not_claimable')
   const [taxInvoiceNumber, setTaxInvoiceNumber] = useState('')
   const [supplierVatNumber, setSupplierVatNumber] = useState('')
+  const [supplierId, setSupplierId] = useState('')
+  const [supplierCrNumber, setSupplierCrNumber] = useState('')
+  const [supplierContact, setSupplierContact] = useState('')
+  const [invoiceTime, setInvoiceTime] = useState('')
+  const [taxableAmount, setTaxableAmount] = useState('')
+  const [vatAmountInput, setVatAmountInput] = useState('')
+  const [vatAmountsManual, setVatAmountsManual] = useState(false)
   const [payMethod,   setPayMethod]   = useState<ExpensePaymentMethod>('cash')
   const [notes,       setNotes]       = useState('')
 
@@ -80,6 +90,13 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
       ))
       setTaxInvoiceNumber(expense.tax_invoice_number ?? '')
       setSupplierVatNumber(expense.supplier_vat_number ?? '')
+      setSupplierId(expense.supplier_id ?? '')
+      setSupplierCrNumber(expense.supplier_cr_number ?? '')
+      setSupplierContact(expense.supplier_contact ?? '')
+      setInvoiceTime(expense.invoice_time?.slice(0, 5) ?? '')
+      setTaxableAmount(String(expense.expense_before_vat ?? expense.amount))
+      setVatAmountInput(String(expense.vat_amount ?? 0))
+      setVatAmountsManual(true)
       setPayMethod((expense.payment_method as ExpensePaymentMethod) ?? 'cash')
       setNotes(expense.notes ?? '')
       setImagePreview(expense.receipt_url)
@@ -93,6 +110,13 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
       setVatChoice('not_claimable')
       setTaxInvoiceNumber('')
       setSupplierVatNumber('')
+      setSupplierId('')
+      setSupplierCrNumber('')
+      setSupplierContact('')
+      setInvoiceTime('')
+      setTaxableAmount('')
+      setVatAmountInput('')
+      setVatAmountsManual(false)
       setPayMethod('cash')
       setNotes('')
       setImagePreview(null)
@@ -100,6 +124,18 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
     setImageFile(null)
     setError('')
   }, [open, expense])
+
+  useEffect(() => {
+    if (!open || !profile?.tenant_id || !profile?.branch_id) return
+    supabase
+      .from('suppliers')
+      .select('*')
+      .eq('tenant_id', profile.tenant_id)
+      .eq('branch_id', profile.branch_id)
+      .eq('is_active', true)
+      .order('name')
+      .then(({ data }) => setSuppliers((data ?? []) as Supplier[]))
+  }, [open, profile?.tenant_id, profile?.branch_id])
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -110,14 +146,53 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
 
   // Live VAT preview
   const amountNum = parseFloat(amount) || 0
-  const { vatAmount, totalPaid, expenseBeforeVat } = calculateExpenseVat(amountNum, vatChoice)
+  const defaultVat = calculateExpenseVat(amountNum, vatChoice)
+  const taxableAmountNum = parseFloat(taxableAmount) || 0
+  const vatAmountNum = parseFloat(vatAmountInput) || 0
+  const vatCheck = expenseVatConsistency(amountNum, taxableAmountNum, vatAmountNum)
+  const supplierVatValid = !supplierVatNumber || isValidSaudiVatNumber(supplierVatNumber)
+
+  useEffect(() => {
+    if (vatChoice !== 'claimable' || vatAmountsManual) return
+    const calculated = calculateExpenseVat(parseFloat(amount) || 0, 'claimable')
+    setTaxableAmount(calculated.expenseBeforeVat ? calculated.expenseBeforeVat.toFixed(2) : '')
+    setVatAmountInput(calculated.vatAmount ? calculated.vatAmount.toFixed(2) : '')
+  }, [amount, vatChoice, vatAmountsManual])
+
+  const selectSupplier = (id: string) => {
+    setSupplierId(id)
+    const supplier = suppliers.find(item => item.id === id)
+    if (!supplier) return
+    setVendorName(supplier.name)
+    setSupplierVatNumber(supplier.vat_number ?? '')
+    setSupplierCrNumber(supplier.cr_number ?? '')
+    setSupplierContact(supplier.contact_person || supplier.phone || supplier.email || '')
+  }
+
+  const calculateFifteenPercentVat = () => {
+    const calculated = calculateExpenseVat(amountNum, 'claimable')
+    setTaxableAmount(calculated.expenseBeforeVat.toFixed(2))
+    setVatAmountInput(calculated.vatAmount.toFixed(2))
+    setVatAmountsManual(false)
+  }
+
+  const useTaxableAndVatTotal = () => {
+    setAmount((taxableAmountNum + vatAmountNum).toFixed(2))
+    setVatAmountsManual(true)
+  }
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!description.trim()) { setError('Description is required'); return }
     if (!amount || amountNum <= 0) { setError('Enter a valid amount'); return }
-    if (vatChoice === 'claimable' && !imageFile && !imagePreview) {
-      setError('Attach a valid VAT invoice or bill before claiming VAT.')
-      return
+    if (!date) { setError('Supplier invoice / expense date is required'); return }
+    if (vatChoice === 'claimable') {
+      if (!vendorName.trim()) { setError('Supplier name is required for claimable VAT'); return }
+      if (!categoryId) { setError('Category is required for claimable VAT'); return }
+      if (!taxInvoiceNumber.trim()) { setError('Supplier tax invoice number is required for claimable VAT'); return }
+      if (taxableAmountNum < 0 || vatAmountNum <= 0) { setError('Enter valid taxable and VAT amounts'); return }
+      if (vatAmountNum > amountNum) { setError('VAT amount cannot exceed the gross amount'); return }
+      if (!vatCheck.consistent) { setError('Gross amount must equal taxable amount plus VAT'); return }
+      if (!supplierVatValid) { setError('Supplier VAT number must contain exactly 15 digits'); return }
     }
 
     setSaving(true)
@@ -144,7 +219,16 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
         receiptUrl = null
       }
 
-      const calculatedVat = calculateExpenseVat(amountNum, vatChoice)
+      const calculatedVat = vatChoice === 'claimable'
+        ? {
+            amount: Number(taxableAmountNum.toFixed(2)),
+            expenseBeforeVat: Number(taxableAmountNum.toFixed(2)),
+            vatTreatment: 'included',
+            vatClaimStatus: 'claimable',
+            vatAmount: Number(vatAmountNum.toFixed(2)),
+            totalPaid: Number(amountNum.toFixed(2)),
+          }
+        : defaultVat
 
       const payload: Record<string, unknown> = {
         tenant_id:      tid,
@@ -163,6 +247,10 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
         payment_method: payMethod,
         tax_invoice_number: vatChoice === 'claimable' ? taxInvoiceNumber.trim() || null : null,
         supplier_vat_number: vatChoice === 'claimable' ? supplierVatNumber.trim() || null : null,
+        supplier_id: vatChoice === 'claimable' ? supplierId || null : null,
+        supplier_cr_number: vatChoice === 'claimable' ? supplierCrNumber.trim() || null : null,
+        supplier_contact: vatChoice === 'claimable' ? supplierContact.trim() || null : null,
+        invoice_time: vatChoice === 'claimable' ? invoiceTime || null : null,
         receipt_url:    receiptUrl,
         notes:          notes.trim() || null,
       }
@@ -218,11 +306,13 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">Date <span className="text-red-500">*</span></label>
+                  <label className="label">Supplier invoice / expense date <span className="text-red-500">*</span></label>
                   <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
                 </div>
                 <div>
-                  <label className="label">Category</label>
+                  <label className="label">
+                    Category {vatChoice === 'claimable' && <span className="text-red-500">*</span>}
+                  </label>
                   <select className="input" value={categoryId} onChange={e => setCategoryId(e.target.value)}>
                     <option value="">— Uncategorised —</option>
                     {categories.map(c => (
@@ -239,7 +329,19 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
               </div>
 
               <div>
-                <label className="label">Vendor / Payee Name</label>
+                <label className="label">Saved supplier (optional)</label>
+                <select className="input" value={supplierId} onChange={e => selectSupplier(e.target.value)}>
+                  <option value="">Enter supplier manually</option>
+                  {suppliers.map(supplier => (
+                    <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="label">
+                  Supplier / payee name {vatChoice === 'claimable' && <span className="text-red-500">*</span>}
+                </label>
                 <input className="input" value={vendorName} onChange={e => setVendorName(e.target.value)}
                   placeholder="e.g. Al-Othaim Market" />
               </div>
@@ -286,9 +388,10 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
               </div>
 
               {vatChoice === 'claimable' && (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-3 rounded-xl border border-primary-100 bg-primary-50/30 p-3">
+                  <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="label">Tax invoice no.</label>
+                    <label className="label">Supplier tax invoice no. <span className="text-red-500">*</span></label>
                     <input
                       className="input"
                       value={taxInvoiceNumber}
@@ -301,10 +404,68 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
                     <input
                       className="input"
                       value={supplierVatNumber}
-                      onChange={e => setSupplierVatNumber(e.target.value)}
-                      placeholder="Optional VAT number"
+                      onChange={e => setSupplierVatNumber(e.target.value.replace(/\D/g, '').slice(0, 15))}
+                      inputMode="numeric"
+                      placeholder="15 digits (optional)"
                     />
+                    {supplierVatNumber && (
+                      <p className={`mt-1 text-[10px] ${supplierVatValid ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {supplierVatValid
+                          ? 'Format valid — registration not independently verified.'
+                          : 'VAT number must contain exactly 15 digits.'}
+                      </p>
+                    )}
                   </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">Supplier CR number</label>
+                      <input className="input" value={supplierCrNumber}
+                        onChange={e => setSupplierCrNumber(e.target.value)} placeholder="Optional" />
+                    </div>
+                    <div>
+                      <label className="label">Invoice time</label>
+                      <input className="input" type="time" value={invoiceTime}
+                        onChange={e => setInvoiceTime(e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="label">Supplier contact</label>
+                    <input className="input" value={supplierContact}
+                      onChange={e => setSupplierContact(e.target.value)} placeholder="Contact person, phone, or email (optional)" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">Taxable amount before VAT <span className="text-red-500">*</span></label>
+                      <MoneyInput className="input" value={taxableAmount}
+                        onValueChange={value => { setTaxableAmount(value); setVatAmountsManual(true) }} placeholder="0.00" />
+                    </div>
+                    <div>
+                      <label className="label">VAT amount <span className="text-red-500">*</span></label>
+                      <MoneyInput className="input" value={vatAmountInput}
+                        onValueChange={value => { setVatAmountInput(value); setVatAmountsManual(true) }} placeholder="0.00" />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    <button type="button" onClick={calculateFifteenPercentVat}
+                      className="text-xs font-medium text-primary-600 hover:text-primary-700">
+                      Calculate included 15% VAT from gross
+                    </button>
+                    <button type="button" onClick={useTaxableAndVatTotal}
+                      className="text-xs font-medium text-primary-600 hover:text-primary-700">
+                      Set gross from taxable + VAT
+                    </button>
+                  </div>
+                  {!vatCheck.consistent && amountNum > 0 && (
+                    <p className="flex items-center gap-1.5 text-xs text-red-600">
+                      <AlertTriangle size={13} /> Gross must equal taxable amount plus VAT.
+                    </p>
+                  )}
+                  {vatCheck.consistent && vatCheck.unusualRate && (
+                    <p className="flex items-center gap-1.5 text-xs text-amber-700">
+                      <AlertTriangle size={13} /> The VAT amount is not 15% of the taxable amount. Check the supplier invoice.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -315,23 +476,23 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
                     <>
                       <div className="flex justify-between text-gray-500">
                         <span>Expense before VAT</span>
-                        <span className="tabular-nums font-medium"><Rial amount={expenseBeforeVat} /></span>
+                        <span className="tabular-nums font-medium"><Rial amount={taxableAmountNum} /></span>
                       </div>
                       <div className="flex justify-between text-gray-500">
                         <span>Claimable VAT (15%)</span>
-                        <span className="tabular-nums font-medium"><Rial amount={vatAmount} /></span>
+                        <span className="tabular-nums font-medium"><Rial amount={vatAmountNum} /></span>
                       </div>
                     </>
                   )}
                   {vatChoice !== 'claimable' && (
                     <div className="flex justify-between text-gray-500">
                       <span>Expense amount</span>
-                      <span className="tabular-nums font-medium"><Rial amount={expenseBeforeVat} /></span>
+                      <span className="tabular-nums font-medium"><Rial amount={defaultVat.expenseBeforeVat} /></span>
                     </div>
                   )}
                   <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1.5">
                     <span>Amount paid</span>
-                    <span className="tabular-nums text-primary-600"><Rial amount={totalPaid} /></span>
+                    <span className="tabular-nums text-primary-600"><Rial amount={amountNum} /></span>
                   </div>
                 </div>
               )}
@@ -361,7 +522,8 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
 
             {/* ── Receipt upload ────────────────────────────── */}
             <div className="space-y-3">
-              <SectionLabel>{vatChoice === 'claimable' ? 'Receipt / bill required' : 'Receipt (optional)'}</SectionLabel>
+              <SectionLabel>Attach tax invoice — Optional</SectionLabel>
+              <p className="text-xs text-gray-400">Recommended for VAT records and audit support.</p>
               <input
                 ref={fileRef}
                 type="file"
@@ -384,7 +546,12 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
                       className="bg-white text-gray-700 text-xs font-medium px-3 py-1.5 rounded-lg shadow">
                       Change
                     </button>
-                    <button type="button" onClick={() => { setImageFile(null); setImagePreview(null) }}
+                    <button type="button" onClick={() => {
+                      if (window.confirm('Remove this supporting document from the expense?')) {
+                        setImageFile(null)
+                        setImagePreview(null)
+                      }
+                    }}
                       className="bg-white text-red-500 text-xs font-medium px-3 py-1.5 rounded-lg shadow">
                       Remove
                     </button>
@@ -396,6 +563,16 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
                   <ImagePlus size={20} className="text-gray-300 group-hover/up:text-primary-400" />
                   <p className="text-xs text-gray-400 group-hover/up:text-primary-500">Attach receipt photo or PDF</p>
                 </button>
+              )}
+              {vatChoice === 'claimable' && !imagePreview && !imageFile && (
+                <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  <AlertTriangle size={14} /> No supporting document attached.
+                </div>
+              )}
+              {vatChoice === 'claimable' && (imagePreview || imageFile) && (
+                <div className="flex items-center gap-2 text-xs text-emerald-600">
+                  <CheckCircle2 size={14} /> Supporting document attached.
+                </div>
               )}
             </div>
 

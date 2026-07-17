@@ -1512,6 +1512,10 @@ export interface Expense {
   session_id: string | null
   tax_invoice_number: string | null
   supplier_vat_number: string | null
+  supplier_id: string | null
+  supplier_cr_number: string | null
+  supplier_contact: string | null
+  invoice_time: string | null
   receipt_url: string | null
   notes: string | null
   created_at: string
@@ -1560,6 +1564,10 @@ export interface ExpenseInsert {
   session_id?: string | null
   tax_invoice_number?: string | null
   supplier_vat_number?: string | null
+  supplier_id?: string | null
+  supplier_cr_number?: string | null
+  supplier_contact?: string | null
+  invoice_time?: string | null
   receipt_url?: string | null
   notes?: string | null
 }
