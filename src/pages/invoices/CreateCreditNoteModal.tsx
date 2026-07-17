@@ -84,7 +84,6 @@ interface CreateCreditNoteModalProps {
   open: boolean
   invoice: CreditNoteSourceInvoice | null
   defaultRefundMethod?: PaymentMethod | null
-  defaultReturnStock?: boolean
   onClose: () => void
   onCreated: (result: CreditNoteCreatedResult) => void
 }
@@ -210,7 +209,6 @@ async function fetchCreditNoteStatus(invoiceId: string): Promise<ZatcaStatus | n
 export default function CreateCreditNoteModal({
   open,
   invoice,
-  defaultReturnStock = false,
   onClose,
   onCreated,
 }: CreateCreditNoteModalProps) {
@@ -222,7 +220,6 @@ export default function CreateCreditNoteModal({
   const [refundableItems, setRefundableItems] = useState<RefundableItem[]>([])
   const [itemsLoading, setItemsLoading] = useState(false)
   const [returnQuantities, setReturnQuantities] = useState<Record<string, string>>({})
-  const [returnStock, setReturnStock] = useState(false)
   const [creating, setCreating] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -239,7 +236,6 @@ export default function CreateCreditNoteModal({
     setReturnQuantities({})
     setPaymentsLoading(true)
     setItemsLoading(true)
-    setReturnStock(isServiceBusiness ? false : defaultReturnStock)
     setError(null)
     setCreating(false)
     setSubmitting(false)
@@ -318,7 +314,7 @@ export default function CreateCreditNoteModal({
     })()
 
     return () => { cancelled = true }
-  }, [open, invoice, defaultReturnStock, isServiceBusiness])
+  }, [open, invoice, isServiceBusiness])
 
   const linePreviews = useMemo(() => refundableItems.map(item => {
     const selectedQuantity = parseReturnQuantity(returnQuantities[item.original_invoice_item_id])
@@ -333,6 +329,9 @@ export default function CreateCreditNoteModal({
     total: acc.total + line.total,
   }), { subtotal: 0, discount: 0, tax: 0, total: 0 })
   const totalRemainingQuantity = refundableItems.reduce((sum, item) => sum + Math.max(item.remaining_quantity, 0), 0)
+  const stockReturnQuantity = selectedLines
+    .filter(line => line.item.track_stock && !line.item.is_service)
+    .reduce((sum, line) => sum + line.quantity, 0)
 
   if (!open || !invoice) return null
 
@@ -377,7 +376,9 @@ export default function CreateCreditNoteModal({
         original_invoice_id: invoice.id,
         idempotency_key: idempotencyKey || newIdempotencyKey(invoice.id),
         reason: finalReason,
-        return_stock: isServiceBusiness ? false : returnStock,
+        // The RPC applies this only to stock-tracked, non-service products and
+        // scopes every movement to the original invoice branch.
+        return_stock: !isServiceBusiness,
         items: lines.map(line => ({
           original_invoice_item_id: line.item.original_invoice_item_id,
           quantity: line.quantity,
@@ -453,7 +454,7 @@ export default function CreateCreditNoteModal({
   }
 
   const busy = creating || submitting
-  const actionLabel = submitting ? 'Submitting to ZATCA' : creating ? 'Creating Credit Note' : 'Create Credit Note'
+  const actionLabel = submitting ? 'Submitting to ZATCA' : creating ? 'Creating Credit Note' : 'Create Credit Note / Refund'
   const createDisabled = busy || itemsLoading || selectedLines.length === 0
 
   return (
@@ -487,6 +488,15 @@ export default function CreateCreditNoteModal({
             <span className="mx-2 text-gray-300">·</span>
             <span>Remaining qty {qty(totalRemainingQuantity)}</span>
           </div>
+
+          <section className="space-y-2">
+            <h3 className="text-xs font-semibold text-gray-700">Reason for credit note</h3>
+            <select value={selectedReason} onChange={event => setSelectedReason(event.target.value as (typeof QUICK_REASONS)[number] | '')} disabled={busy} className="input h-10 text-sm">
+              <option value="">Choose a reason</option>
+              {QUICK_REASONS.map(reason => <option key={reason} value={reason}>{reason}</option>)}
+            </select>
+            <textarea value={remarks} onChange={event => setRemarks(event.target.value)} rows={2} maxLength={430} className="input resize-none text-sm" placeholder="Additional details — Optional" />
+          </section>
 
           <section className="space-y-2">
             <div className="flex items-center justify-between gap-3">
@@ -603,6 +613,15 @@ export default function CreateCreditNoteModal({
             )}
           </section>
 
+          <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+            <p className="text-xs font-semibold text-gray-800">Stock impact</p>
+            <p className="mt-0.5 text-[11px] text-gray-600">
+              {stockReturnQuantity > 0
+                ? `${qty(stockReturnQuantity)} units will be returned to stock`
+                : 'No stock movement is required'}
+            </p>
+          </div>
+
           <div className="grid gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 sm:grid-cols-4">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Subtotal</p>
@@ -622,71 +641,12 @@ export default function CreateCreditNoteModal({
             </div>
           </div>
 
-          <fieldset className="block space-y-1.5">
-            <legend className="text-xs font-semibold text-gray-700">Reason</legend>
-            <div className="grid grid-cols-2 gap-2">
-              {QUICK_REASONS.map(reason => (
-                <button
-                  key={reason}
-                  type="button"
-                  onClick={() => setSelectedReason(reason)}
-                  disabled={busy}
-                  aria-pressed={selectedReason === reason}
-                  className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold transition-colors ${
-                    selectedReason === reason
-                      ? 'border-[#0F2419] bg-[#0F2419] text-white'
-                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  {reason}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-gray-700">Optional remarks</span>
-            <textarea
-              value={remarks}
-              onChange={e => setRemarks(e.target.value)}
-              rows={2}
-              maxLength={430}
-              className="w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-[#0F2419]"
-              placeholder="Add a short note if needed"
-            />
-          </label>
-
           <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2">
             <p className="text-xs font-semibold text-emerald-800">Refund source</p>
             <p className="mt-0.5 text-[11px] leading-relaxed text-emerald-700">
               {refundPlanText(originalPayments, paymentsLoading)}
             </p>
           </div>
-
-          {isServiceBusiness ? (
-            <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
-              <p className="text-xs font-semibold text-gray-700">Stock is not returned for service credit notes</p>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-gray-500">
-                This credit note reduces sales and VAT, but does not increase stock.
-              </p>
-            </div>
-          ) : (
-            <label className="flex items-start gap-3 rounded-xl border border-gray-100 px-3 py-2">
-              <input
-                type="checkbox"
-                checked={returnStock}
-                onChange={e => setReturnStock(e.target.checked)}
-                disabled={busy}
-                className="mt-1"
-              />
-              <span>
-                <span className="block text-xs font-semibold text-gray-700">Return tracked stock</span>
-                <span className="block text-[11px] leading-relaxed text-gray-500">
-                  Adds back only the selected returned quantity for stock-tracked products.
-                </span>
-              </span>
-            </label>
-          )}
 
           <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-700">
             This will create a credit note and cannot be undone.

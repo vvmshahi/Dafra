@@ -413,12 +413,11 @@ function QuickExpenseModal({
 
 // ── Receipt overlay ───────────────────────────────────────────────────────────
 
-function ReceiptView({ receipt, onNewSale, onOpenPrinterSettings, printMode, zatcaStatus }: {
+function ReceiptView({ receipt, onNewSale, onOpenPrinterSettings, printMode }: {
   receipt: ReceiptData
   onNewSale: () => void
   onOpenPrinterSettings: () => void
   printMode: 'thermal' | 'pdf' | 'both'
-  zatcaStatus: 'submitted' | 'pending' | 'failed' | 'sandbox_pending' | 'sandbox_validated' | 'sandbox_failed' | null
 }) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [printingReceipt, setPrintingReceipt] = useState(false)
@@ -694,7 +693,7 @@ ${lines}
             <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
               <Check size={32} strokeWidth={3} />
             </div>
-            <p className="text-2xl font-bold">Payment Received!</p>
+            <p className="text-2xl font-bold">Payment Received</p>
             <p className="text-emerald-100 text-sm mt-1">{receipt.invoiceNumber}</p>
           </div>
 
@@ -729,56 +728,7 @@ ${lines}
               </div>
             )}
 
-            {/* QR code */}
-            <div className="flex justify-center pt-1">
-              {qrDataUrl ? (
-                <img src={qrDataUrl} alt="ZATCA QR" className="w-24 h-24 rounded-xl border border-gray-100 p-1" />
-              ) : (
-                <div className="w-24 h-24 bg-gray-100 rounded-xl flex items-center justify-center">
-                  <Loader2 size={20} className="animate-spin text-gray-300" />
-                </div>
-              )}
-            </div>
-            <p className="text-center text-[10px] text-gray-300">ZATCA QR Code</p>
           </div>
-
-          {/* ZATCA status */}
-          {zatcaStatus === 'submitted' && (
-            <div className="mx-6 mb-2 flex items-center gap-1.5 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5">
-              <span className="text-emerald-500">✓</span> Submitted to ZATCA
-            </div>
-          )}
-          {zatcaStatus === 'pending' && (
-            <div className="mx-6 mb-2 flex items-center gap-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">
-              <span>⚠</span> ZATCA submission pending — retry from Invoices if needed
-            </div>
-          )}
-          {zatcaStatus === 'failed' && (
-            <div className="mx-6 mb-2 flex items-center gap-1.5 text-[10px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-2.5 py-1.5">
-              <span>⚠</span> ZATCA submission failed — retry from Invoices
-            </div>
-          )}
-          {zatcaStatus === 'sandbox_pending' && (
-            <div className="mx-6 mb-2 flex items-center gap-1.5 rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-1.5 text-[10px] text-gray-600">
-              <Loader2 size={11} className="animate-spin" /> Submission pending…
-            </div>
-          )}
-          {zatcaStatus === 'sandbox_validated' && (
-            <div className="mx-6 mb-2 rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-2 text-[10px] text-emerald-700">
-              <p className="font-bold">ZATCA submission successful</p>
-              <p className="mt-0.5">Successfully processed by ZATCA</p>
-            </div>
-          )}
-          {zatcaStatus === 'sandbox_failed' && (
-            <div className="mx-6 mb-2 flex items-center gap-1.5 rounded-lg border border-red-100 bg-red-50 px-2.5 py-1.5 text-[10px] text-red-700">
-              <span>⚠</span> ZATCA Sandbox validation failed
-            </div>
-          )}
-          {(zatcaStatus === 'sandbox_pending' || zatcaStatus === 'sandbox_validated' || zatcaStatus === 'sandbox_failed') && (
-            <p className="mx-6 mb-3 text-center text-[9px] text-gray-300">
-              Demo environment — no production tax submission was made.
-            </p>
-          )}
 
           {printError && (
             <div className="mx-6 mb-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5">
@@ -915,11 +865,13 @@ function formatStockQuantity(value: number | null | undefined) {
 
 function QuickBillingPanel({
   products,
+  totalProductCount,
   cart,
   query,
   onAdd,
 }: {
   products: PosProduct[]
+  totalProductCount: number
   cart: CartItem[]
   query: string
   onAdd: (product: PosProduct) => void
@@ -933,9 +885,9 @@ function QuickBillingPanel({
         </div>
         <div className="space-y-1">
           <p className="font-semibold text-gray-700 text-sm">
-            {hasQuery ? 'No matching products found.' : 'Search by product name, SKU or barcode to add an item.'}
+            {totalProductCount === 0 ? 'No products are available. Add products from the Products page.' : 'No matching products found.'}
           </p>
-          {hasQuery && query.trim().length < 2 ? (
+          {totalProductCount === 0 ? null : hasQuery && query.trim().length < 2 ? (
             <p className="text-xs text-gray-400 max-w-[240px]">
               Type at least 2 characters, or scan an exact SKU or barcode.
             </p>
@@ -951,6 +903,7 @@ function QuickBillingPanel({
 
   return (
     <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+      {!query.trim() && <div className="border-b border-gray-100 px-4 py-3"><p className="text-sm font-bold text-gray-900">Browse Products</p><p className="text-[11px] text-gray-500">Showing up to 25 active products</p></div>}
       <div className="hidden lg:grid grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_120px_110px_92px] gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[10px] font-bold uppercase text-gray-400">
         <span>Product</span>
         <span>Category</span>
@@ -1133,11 +1086,6 @@ function CloseSessionModal({ session, onClose, onCancel }: {
   const [cardSales,     setCardSales]     = useState(0)
   const [creditRefunds, setCreditRefunds] = useState(0)
   const [cashExpenses,  setCashExpenses]  = useState(0)
-  const [cashSalesOk,   setCashSalesOk]   = useState(false)
-  const [cardSalesOk,   setCardSalesOk]   = useState(false)
-  const [expensesOk,    setExpensesOk]    = useState(false)
-  const [creditRefundsOk, setCreditRefundsOk] = useState(false)
-  const [cashCountedOk, setCashCountedOk] = useState(false)
 
   const openedAt = formatSaudiSessionDateTime(session.opened_at)
   const durationMs = Date.now() - new Date(session.opened_at).getTime()
@@ -1197,11 +1145,6 @@ function CloseSessionModal({ session, onClose, onCancel }: {
     ? { label: `Cash over by SAR ${fmt(difference)}`, className: 'bg-amber-100 text-amber-800' }
     : { label: `Cash short by SAR ${fmt(Math.abs(difference))}`, className: 'bg-red-100 text-red-700' }
   const canClose = cashActual !== ''
-    && cashSalesOk
-    && cardSalesOk
-    && expensesOk
-    && creditRefundsOk
-    && cashCountedOk
     && !loadingData
     && !saving
 
@@ -1213,10 +1156,10 @@ function CloseSessionModal({ session, onClose, onCancel }: {
         closingCashActual: actualCash,
         notes,
         closingChecks: {
-          cash_sales_confirmed: cashSalesOk,
-          card_sales_confirmed: cardSalesOk,
-          cash_expenses_confirmed: expensesOk,
-          credit_refunds_confirmed: creditRefundsOk,
+          cash_sales_confirmed: false,
+          card_sales_confirmed: false,
+          cash_expenses_confirmed: false,
+          credit_refunds_confirmed: false,
           total_session_sales_preview: totalSessionSales,
           credit_refunds_preview: creditRefunds,
           expected_cash_preview: expectedCash,
@@ -1286,24 +1229,6 @@ function CloseSessionModal({ session, onClose, onCancel }: {
                 <div aria-live="polite" className={`flex min-h-11 items-center justify-center rounded-xl px-4 text-sm font-bold sm:min-w-48 ${differenceState.className}`}>
                   {differenceState.label}
                 </div>
-              </div>
-            </section>
-
-            <section aria-labelledby="review-heading">
-              <h4 id="review-heading" className="mb-2 text-sm font-bold text-gray-900">Review before closing</h4>
-              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                {[
-                  ['Net cash sales reviewed', cashSalesOk, setCashSalesOk],
-                  ['Net card sales reviewed', cardSalesOk, setCardSalesOk],
-                  ['POS cash expenses reviewed', expensesOk, setExpensesOk],
-                  ['Refunds and credit notes reviewed', creditRefundsOk, setCreditRefundsOk],
-                  ['I have counted the cash in the drawer', cashCountedOk, setCashCountedOk],
-                ].map(([label, checked, setChecked]) => (
-                  <label key={String(label)} className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                    <input type="checkbox" checked={checked as boolean} onChange={event => (setChecked as (value: boolean) => void)(event.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
-                    <span>{String(label)}</span>
-                  </label>
-                ))}
               </div>
             </section>
 
@@ -1590,7 +1515,6 @@ export default function POSPage() {
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [showExpense,  setShowExpense]  = useState(false)
   const [printerStatus, setPrinterStatus] = useState<'connected' | 'unconfigured' | 'error'>('unconfigured')
-  const [zatcaResult,  setZatcaResult]  = useState<'submitted' | 'pending' | 'failed' | 'sandbox_pending' | 'sandbox_validated' | 'sandbox_failed' | null>(null)
   const [scrollState,  setScrollState]  = useState({
     categoryAtStart: true,
     categoryAtEnd: true,
@@ -1756,17 +1680,16 @@ export default function POSPage() {
       : visible
   }, [products, activeCat, searchQ])
   const quickFiltered = useMemo(() => {
-    if (!searchQ) return []
-
-    return products
+    const visible = products
       .filter(p => {
+        if (activeCat && p.catId !== activeCat) return false
+        if (!searchQ) return true
         const exactCodeMatch = (p.sku ?? '').toLowerCase() === searchQ || (p.barcode ?? '').toLowerCase() === searchQ
         if (searchQ.length < 2) return exactCodeMatch
         return productMatchesSearch(p, searchQ)
       })
-      .sort((a, b) => productSearchRank(a, searchQ) - productSearchRank(b, searchQ))
-      .slice(0, 20)
-  }, [products, searchQ])
+    return (searchQ ? visible.sort((a, b) => productSearchRank(a, searchQ) - productSearchRank(b, searchQ)) : visible).slice(0, 25)
+  }, [products, activeCat, searchQ])
 
   const vatMode = branch?.vat_mode ?? 'exclusive'
   const totals  = computeTotals(cart, vatMode)
@@ -1986,7 +1909,6 @@ export default function POSPage() {
       return
     }
     setSubmitting(true)
-    setZatcaResult(null)
     const idempotencyKey = checkoutKeyRef.current ?? createCheckoutIdempotencyKey()
     checkoutKeyRef.current = idempotencyKey
 
@@ -2150,7 +2072,6 @@ export default function POSPage() {
       // The loaded branch row is the authoritative checkout scope. Using it here
       // avoids routing differences while an auth profile is being rehydrated.
       const demoSandboxValidation = isPermanentDemoSandboxBranch(branch.tenant_id, branch.id)
-      if (demoSandboxValidation) setZatcaResult('sandbox_pending')
       submitInvoiceForBranch({
         invoiceId: checkout.invoice_id,
         tenantId: branch.tenant_id,
@@ -2164,9 +2085,13 @@ export default function POSPage() {
             updateCachedInvoiceRows(branch.tenant_id, branch.id, cachedRows => cachedRows.map(row => row.id === checkout.invoice_id
               ? { ...row, displayZatcaStatus: routed.result.status }
               : row))
-            setZatcaResult(validated ? 'sandbox_validated' : 'sandbox_failed')
-            if (validated) toast.success('ZATCA submission successful', { description: 'Successfully processed by ZATCA', duration: 2500 })
-            else toast.error('ZATCA Sandbox validation failed')
+            if (routed.result.status === 'sandbox_validated_with_warnings') {
+              toast.warning('ZATCA submission completed with warnings', { duration: 5000 })
+            } else if (validated) {
+              toast.success('ZATCA submission successful', { duration: 2500 })
+            } else if (routed.result.status === 'sandbox_validation_rejected' || routed.result.status === 'sandbox_validation_failed') {
+              toast.error('ZATCA submission failed', { duration: Infinity, action: { label: 'View Invoice', onClick: () => navigate(`/invoices/${checkout.invoice_id}`) } })
+            }
             return
           }
           const result = routed.result
@@ -2174,29 +2099,18 @@ export default function POSPage() {
             ? { ...row, zatcaStatus: result.invoiceStatus, displayZatcaStatus: result.invoiceStatus }
             : row))
           if (result.ok) {
-            setZatcaResult('submitted')
-            toast.success('Submitted to ZATCA', { duration: 2000 })
+            toast.success('ZATCA submission successful', { duration: 2500 })
           } else if (result.invoiceStatus === 'failed') {
-            setZatcaResult('failed')
-            toast.error('ZATCA submission failed')
-          } else {
-            setZatcaResult('pending')
-            toast.warning('Invoice created. ZATCA submission is pending retry.', { duration: 3500 })
+            toast.error('ZATCA submission failed', { duration: Infinity, action: { label: 'View Invoice', onClick: () => navigate(`/invoices/${checkout.invoice_id}`) } })
           }
         })
         .catch((error) => {
-          if (demoSandboxValidation) {
-            setZatcaResult('sandbox_failed')
-            toast.error('ZATCA Sandbox validation failed')
-          } else {
-            console.warn('[POSPage charge] automatic ZATCA action failed', {
-              invoiceId: checkout.invoice_id,
-              branchId: branch.id,
-              message: error instanceof Error ? error.message : String(error ?? ''),
-            })
-            setZatcaResult('pending')
-            toast.warning('Invoice created. ZATCA submission is pending retry.', { duration: 3500 })
-          }
+          console.warn('[POSPage charge] automatic ZATCA action remains pending', {
+            invoiceId: checkout.invoice_id,
+            branchId: branch.id,
+            mode: demoSandboxValidation ? 'sandbox_validation' : 'production_submission',
+            message: error instanceof Error ? error.message : String(error ?? ''),
+          })
         })
     } catch (err) {
       const safeMessage = safeCheckoutErrorMessage(err)
@@ -2313,10 +2227,9 @@ export default function POSPage() {
       {receipt && (
         <ReceiptView
           receipt={receipt}
-          onNewSale={() => { setReceipt(null); setZatcaResult(null) }}
+          onNewSale={() => setReceipt(null)}
           onOpenPrinterSettings={() => navigate(DEVICE_PRINTER_PATH)}
           printMode={branch?.print_mode ?? 'thermal'}
-          zatcaStatus={zatcaResult}
         />
       )}
       {showExpense && branch && (
@@ -2440,25 +2353,18 @@ export default function POSPage() {
         {/* Search + category tabs */}
         <div className="px-4 py-2.5 border-b border-gray-100 bg-white flex items-center gap-3 flex-shrink-0">
           {activePosMode === 'quick' ? (
-            <div className="relative flex-1 max-w-xl min-w-[220px]">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                ref={searchRef}
-                type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search product name, SKU or barcode"
-                className="input pl-8 py-1.5 text-sm"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  <X size={13} />
-                </button>
-              )}
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="relative min-w-[220px] max-w-xl flex-1">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input ref={searchRef} type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search product name, SKU or barcode" className="input pl-8 py-1.5 text-sm" />
+                {search && <button type="button" onClick={() => setSearch('')} aria-label="Clear product search" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={13} /></button>}
+              </div>
+              <div className="hidden min-w-0 flex-1 items-center gap-1.5 overflow-x-auto md:flex">
+                <button type="button" onClick={() => setActiveCat(null)} className={`whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-medium ${!activeCat ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600'}`}>All products</button>
+                {categories.map(category => (
+                  <button key={category.id} type="button" onClick={() => setActiveCat(activeCat === category.id ? null : category.id)} className={`whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-medium ${activeCat === category.id ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600'}`}>{category.name}</button>
+                ))}
+              </div>
             </div>
           ) : (
             <>
@@ -2536,6 +2442,7 @@ export default function POSPage() {
           {activePosMode === 'quick' ? (
             <QuickBillingPanel
               products={quickFiltered}
+              totalProductCount={products.length}
               cart={cart}
               query={searchText}
               onAdd={addToCart}

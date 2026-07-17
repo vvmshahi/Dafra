@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, Printer, RefreshCw, Loader2, AlertCircle, CheckCircle2, FileText } from 'lucide-react'
+import { ArrowLeft, Printer, RefreshCw, Loader2, AlertCircle, FileText } from 'lucide-react'
 import QRCode from 'qrcode'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
@@ -13,9 +13,8 @@ import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { submitInvoiceToZatca } from '@/lib/zatca/submission'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
-import { SandboxValidationPanel } from '@/components/zatca/SandboxValidationPanel'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
-import type { SandboxValidationResponse } from '@/lib/zatca/api'
+import { getSandboxValidationStatus, type SandboxValidationResponse } from '@/lib/zatca/api'
 import { updateCachedInvoiceRows, upsertInvoiceListRow } from '@/lib/invoices/invoiceListCache'
 
 function WhatsAppIcon({ size = 13 }: { size?: number }) {
@@ -136,54 +135,6 @@ const INVOICE_DETAIL_SELECT = `
   notes, notes_ar, cancelled_at, cancellation_reason, created_at, updated_at
 `
 
-interface SafeZatcaFailureSummary {
-  statusString?: string
-  message?: string
-  httpStatus?: number
-  validationStatus?: string
-  reportingStatus?: string
-  clearanceStatus?: string
-  errorCodes?: string[]
-  errors?: Array<{ code?: string; message?: string }>
-}
-
-function safeFailureText(value: unknown, maxLength = 180): string | undefined {
-  if (typeof value !== 'string' && typeof value !== 'number') return undefined
-  const text = String(value).replace(/\s+/g, ' ').trim().slice(0, maxLength)
-  if (!text) return undefined
-  if (/private[_ -]?key|secret|token|authorization|certificate|csid|xml|signedInvoice/i.test(text)) {
-    return 'Sensitive detail redacted.'
-  }
-  return text
-}
-
-function getZatcaFailureSummary(invoice: Invoice): SafeZatcaFailureSummary | null {
-  const summary = (invoice.zatca_warnings as any)?.failureSummary
-  if (!summary || typeof summary !== 'object') return null
-
-  const errors = Array.isArray(summary.errors)
-    ? summary.errors.slice(0, 3).map((item: any) => ({
-      code: safeFailureText(item?.code, 80),
-      message: safeFailureText(item?.message, 220),
-    })).filter((item: any) => item.code || item.message)
-    : undefined
-
-  const errorCodes = Array.isArray(summary.errorCodes)
-    ? summary.errorCodes.map((code: unknown) => safeFailureText(code, 80)).filter(Boolean) as string[]
-    : undefined
-
-  return {
-    statusString: safeFailureText(summary.statusString, 120),
-    message: safeFailureText(summary.message, 220),
-    httpStatus: typeof summary.httpStatus === 'number' ? summary.httpStatus : undefined,
-    validationStatus: safeFailureText(summary.validationStatus, 80),
-    reportingStatus: safeFailureText(summary.reportingStatus, 80),
-    clearanceStatus: safeFailureText(summary.clearanceStatus, 80),
-    errorCodes,
-    errors,
-  }
-}
-
 // ── Print style injector ──────────────────────────────────────────────────────
 
 function usePrintStyle() {
@@ -239,22 +190,9 @@ export default function InvoiceDetailPage() {
   const [qrDataUrl,    setQrDataUrl]    = useState<string | null>(null)
   const [qrPayload,    setQrPayload]    = useState<string | null>(null)
   const [resubmitting, setResubmitting] = useState(false)
-  const [isPhase2,     setIsPhase2]     = useState(false)
-  const [isPrinting,   setIsPrinting]   = useState(false)
   const [thermalPrinting, setThermalPrinting] = useState(false)
   const [creditModalOpen, setCreditModalOpen] = useState(false)
   const [sandboxValidation, setSandboxValidation] = useState<SandboxValidationResponse | null>(null)
-
-  useEffect(() => {
-    const before = () => setIsPrinting(true)
-    const after  = () => setIsPrinting(false)
-    window.addEventListener('beforeprint', before)
-    window.addEventListener('afterprint',  after)
-    return () => {
-      window.removeEventListener('beforeprint', before)
-      window.removeEventListener('afterprint',  after)
-    }
-  }, [])
 
   // Load data
   useEffect(() => {
@@ -347,15 +285,6 @@ export default function InvoiceDetailPage() {
 	          })))
 	        }
 
-        const [{ data: sandboxCert }] = await Promise.all([
-          (supabase as any)
-            .from('zatca_certificates')
-            .select('id')
-            .eq('branch_id', inv.branch_id)
-            .eq('status', 'active')
-            .maybeSingle(),
-        ])
-        setIsPhase2((branchData.zatca_phase ?? 1) === 2 || !!sandboxCert || inv.zatca_status !== 'not_submitted')
       } catch (e) {
         if (!cancelled) setError('Failed to load invoice')
       } finally {
@@ -365,6 +294,15 @@ export default function InvoiceDetailPage() {
     load()
     return () => { cancelled = true }
   }, [id])
+
+  useEffect(() => {
+    if (!invoice || !isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)) return
+    let cancelled = false
+    getSandboxValidationStatus(invoice.id)
+      .then(result => { if (!cancelled) setSandboxValidation(result) })
+      .catch(() => { if (!cancelled) setSandboxValidation(null) })
+    return () => { cancelled = true }
+  }, [invoice])
 
   // Generate QR code after data loads
   useEffect(() => {
@@ -628,8 +566,6 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
     timeZone: 'Asia/Riyadh', day: '2-digit', month: 'long', year: 'numeric',
   })
   const invTime = toSaudiTime(invoice.created_at)
-  const zatcaMeta = ZATCA_STATUS[invoice.zatca_status] ?? ZATCA_STATUS.pending
-  const zatcaFailureSummary = invoice.zatca_status === 'failed' ? getZatcaFailureSummary(invoice) : null
   const payment   = payments[0] ?? null
   const isSplitPayment = isSplitPaymentRows(payments)
   const payLabel  = payments.length > 0 ? (isSplitPayment ? 'Split Payment' : paymentLabel(payment?.method)) : null
@@ -811,13 +747,6 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
           This invoice has been cancelled and is void.
         </div>
       )}
-
-      <SandboxValidationPanel
-        invoiceId={invoice.id}
-        tenantId={invoice.tenant_id}
-        branchId={invoice.branch_id}
-        onResult={setSandboxValidation}
-      />
 
       {/* ── Refund / Credit Note status ─────────────────── */}
       <div className="no-print bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
@@ -1189,83 +1118,7 @@ ${isCreditNote ? 'إجمالي الإشعار الدائن' : 'الإجمالي'
               </div>
             )}
 
-            {/* ZATCA info — screen only, not required on printed invoices */}
-            {!isPrinting && <div className="flex-1 space-y-3">
-              <div>
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1.5">ZATCA e-Invoice</p>
-                <div className="flex items-center gap-2">
-                  {demoSandbox
-                    ? sandboxValidated
-                      ? <CheckCircle2 size={16} className="text-emerald-500 flex-shrink-0" />
-                      : <span className="text-sm text-gray-400">○</span>
-                    : invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared'
-                    ? <CheckCircle2 size={16} className="text-green-500 flex-shrink-0" />
-                    : invoice.zatca_status === 'failed'
-                    ? <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
-                    : <span className={`text-sm ${zatcaMeta.color}`}>{zatcaMeta.icon}</span>
-                  }
-                  <span className={`text-sm font-semibold ${demoSandbox ? (sandboxValidated ? 'text-emerald-700' : 'text-gray-600') : zatcaMeta.color}`}>
-                    {demoSandbox ? (sandboxValidated ? 'Submitted' : 'Not submitted') : zatcaMeta.label}
-                  </span>
-                </div>
-                {demoSandbox && sandboxValidated && (
-                  <p className="mt-2 text-[11px] leading-relaxed text-gray-500">
-                    Successfully processed by ZATCA
-                  </p>
-                )}
-                {!demoSandbox && zatcaFailureSummary && (
-                  <div className="mt-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-red-400">Safe failure summary</p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-red-700">
-                      {[
-                        zatcaFailureSummary.statusString,
-                        zatcaFailureSummary.validationStatus,
-                        zatcaFailureSummary.reportingStatus,
-                        zatcaFailureSummary.clearanceStatus,
-                        zatcaFailureSummary.httpStatus ? `HTTP ${zatcaFailureSummary.httpStatus}` : undefined,
-                      ].filter(Boolean).join(' · ') || 'ZATCA rejected the submission.'}
-                    </p>
-                    {(zatcaFailureSummary.message || zatcaFailureSummary.errors?.length || zatcaFailureSummary.errorCodes?.length) && (
-                      <p className="mt-1 text-[11px] leading-relaxed text-red-600">
-                        {zatcaFailureSummary.message ??
-                          zatcaFailureSummary.errors?.map(item => [item.code, item.message].filter(Boolean).join(': ')).join('; ') ??
-                          zatcaFailureSummary.errorCodes?.join(', ')}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 text-xs text-gray-500">
-                <div>
-                  <p className="text-[9px] font-semibold text-gray-300 uppercase tracking-widest">Invoice UUID</p>
-                  <p className="font-mono text-[10px] break-all">{invoice.zatca_uuid}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-semibold text-gray-300 uppercase tracking-widest">Invoice Type</p>
-                  <p>{documentTitleEn}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-semibold text-gray-300 uppercase tracking-widest">Phase</p>
-                  <p>{demoSandbox
-                    ? 'Phase 2 — Integrated'
-                    : isPhase2 ? 'Phase 2 — Integrated' : 'Phase 1 — QR Only'}</p>
-                </div>
-                {!demoSandbox && invoice.zatca_submitted_at && (
-                  <div>
-                    <p className="text-[9px] font-semibold text-gray-300 uppercase tracking-widest">Submitted</p>
-                    <p>{fmtDateTime(invoice.zatca_submitted_at).date}</p>
-                  </div>
-                )}
-              </div>
-            </div>}
-
           </div>
-          {demoSandbox && (
-            <p className="mt-3 text-right text-[9px] text-gray-300">
-              Demo environment — no production tax submission was made.
-            </p>
-          )}
         </div>
 
         {/* Footer note */}
