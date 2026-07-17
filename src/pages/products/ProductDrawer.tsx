@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Switch } from '@/components/ui/Switch'
 import { MoneyInput } from '@/components/ui/MoneyInput'
+import { calculateVatPriceBreakdown, type BranchVatMode } from '@/lib/pricing/vat'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import type { Category, ProductSecurePayload, ProductSecureResult, ProductSecureUpdatePayload, ProductSkuSuggestionResult, VatTreatment } from '@/types'
 import type { ProductRow } from './ProductsPage'
@@ -16,7 +17,7 @@ const VAT_OPTIONS: { value: VatTreatment; label: string; desc: string }[] = [
   { value: 'inherit',   label: 'Branch Default',    desc: 'Follow branch VAT setting' },
   { value: 'exclusive', label: 'Always Exclusive',  desc: 'Price shown + VAT at checkout' },
   { value: 'inclusive', label: 'Always Inclusive',  desc: 'VAT already included in price' },
-  { value: 'exempt',    label: 'VAT Exempt',        desc: 'Zero-rated or exempt item' },
+  { value: 'exempt',    label: 'VAT Exempt',        desc: 'No VAT is charged' },
 ]
 
 // ── Accordion section ─────────────────────────────────────────────────────────
@@ -97,6 +98,9 @@ const createStockAdjustmentKey = () => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
   return `stock-adjustment-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
+
+const formatPreviewMoney = (value: number) =>
+  `SAR ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 interface ProductDraft {
   name: string
@@ -252,6 +256,16 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
   const selectedCategory = categoryId
     ? categories.find(c => c.id === categoryId)
     : null
+  const formBranchIsActive = Boolean(branch?.id && (!product || product.branch_id === branch.id))
+  const branchVatMode: BranchVatMode | null = formBranchIsActive && branch?.vat_mode === 'inclusive'
+    ? 'inclusive'
+    : formBranchIsActive && branch?.vat_mode === 'exclusive'
+      ? 'exclusive'
+      : null
+  const numericPrice = price !== '' && price !== '.' ? Number(price) : Number.NaN
+  const pricePreview = vatTreatment === 'inherit' && !branchVatMode
+    ? null
+    : calculateVatPriceBreakdown(numericPrice, vatTreatment, branchVatMode ?? 'exclusive')
 
   // Initialize once per opened product. Background auth/profile refreshes must
   // never reset an already mounted form.
@@ -747,6 +761,54 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                     </button>
                   ))}
                 </div>
+              </div>
+              <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3.5" aria-live="polite" aria-label="Price preview">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-800">Price preview</p>
+                    <p className="mt-0.5 text-[10px] leading-4 text-gray-500">How this product will be charged at checkout</p>
+                  </div>
+                  {vatTreatment === 'inherit' && branchVatMode && (
+                    <span className="rounded-full border border-primary-100 bg-primary-50 px-2 py-1 text-[10px] font-semibold text-primary-700">
+                      Using branch default: VAT {branchVatMode}
+                    </span>
+                  )}
+                </div>
+
+                {!pricePreview ? (
+                  <p className="mt-3 text-xs leading-5 text-gray-500">
+                    {vatTreatment === 'inherit' && !branchVatMode
+                      ? 'The active branch VAT setting is needed before this preview can be calculated.'
+                      : 'Enter a price to see the VAT and customer total.'}
+                  </p>
+                ) : pricePreview.effectiveTreatment === 'inclusive' ? (
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                    <dt className="text-gray-500">Customer pays</dt>
+                    <dd className="text-right font-bold tabular-nums text-gray-900">{formatPreviewMoney(pricePreview.customerTotal)}</dd>
+                    <dt className="text-gray-500">Price before VAT</dt>
+                    <dd className="text-right font-semibold tabular-nums text-gray-700">{formatPreviewMoney(pricePreview.subtotal)}</dd>
+                    <dt className="text-gray-500">Included VAT</dt>
+                    <dd className="text-right font-semibold tabular-nums text-amber-700">{formatPreviewMoney(pricePreview.vatAmount)}</dd>
+                  </dl>
+                ) : pricePreview.effectiveTreatment === 'exclusive' ? (
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                    <dt className="text-gray-500">{vatTreatment === 'inherit' ? 'Entered price' : 'Price before VAT'}</dt>
+                    <dd className="text-right font-semibold tabular-nums text-gray-700">{formatPreviewMoney(pricePreview.subtotal)}</dd>
+                    <dt className="text-gray-500">VAT 15%</dt>
+                    <dd className="text-right font-semibold tabular-nums text-amber-700">{formatPreviewMoney(pricePreview.vatAmount)}</dd>
+                    <dt className="border-t border-gray-200 pt-2 font-semibold text-gray-700">Customer pays</dt>
+                    <dd className="border-t border-gray-200 pt-2 text-right font-bold tabular-nums text-gray-900">{formatPreviewMoney(pricePreview.customerTotal)}</dd>
+                  </dl>
+                ) : (
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                    <dt className="text-gray-500">Customer pays</dt>
+                    <dd className="text-right font-bold tabular-nums text-gray-900">{formatPreviewMoney(pricePreview.customerTotal)}</dd>
+                    <dt className="text-gray-500">VAT</dt>
+                    <dd className="text-right font-semibold tabular-nums text-gray-700">{formatPreviewMoney(0)}</dd>
+                    <dt className="text-gray-500">Treatment</dt>
+                    <dd className="text-right font-semibold text-gray-700">VAT exempt</dd>
+                  </dl>
+                )}
               </div>
             </Section>
 

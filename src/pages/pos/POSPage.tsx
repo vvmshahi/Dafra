@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { MoneyInput } from '@/components/ui/MoneyInput'
+import { resolveEffectiveVatTreatment } from '@/lib/pricing/vat'
 import { updateCachedInvoiceRows, upsertInvoiceListRow } from '@/lib/invoices/invoiceListCache'
 import { displayName as dn } from '@/lib/utils/display'
 import { buildZatcaQR } from '@/lib/zatca/qr'
@@ -175,9 +176,7 @@ function resolveMode(
   treatment: VatTreatment,
   branchMode: 'exclusive' | 'inclusive',
 ): 'exclusive' | 'inclusive' | 'exempt' {
-  if (treatment === 'exempt') return 'exempt'
-  if (treatment === 'inherit') return branchMode
-  return treatment
+  return resolveEffectiveVatTreatment(treatment, branchMode)
 }
 
 function computeTotals(cart: CartItem[], vatMode: 'exclusive' | 'inclusive') {
