@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Switch } from '@/components/ui/Switch'
+import { MoneyInput } from '@/components/ui/MoneyInput'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import type { Category, ProductSecurePayload, ProductSecureResult, ProductSecureUpdatePayload, ProductSkuSuggestionResult, VatTreatment } from '@/types'
 import type { ProductRow } from './ProductsPage'
@@ -719,13 +720,10 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium pointer-events-none">
                     SAR
                   </span>
-                  <input
+                  <MoneyInput
                     className="input pl-12"
-                    type="number"
-                    step="0.01"
-                    min="0"
                     value={price}
-                    onChange={e => setPrice(e.target.value)}
+                    onValueChange={setPrice}
                     placeholder="0.00"
                   />
                 </div>

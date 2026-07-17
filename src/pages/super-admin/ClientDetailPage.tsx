@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { MoneyInput } from '@/components/ui/MoneyInput'
 import { supabase } from '@/lib/supabase'
 import type {
   BranchSetupStatus,
@@ -642,8 +643,8 @@ function MarkPaymentCard({ tenant, sub, plans, access, onSaved }: {
   const initialCount = Math.max(1, access?.paid_branch_count ?? sub?.paid_branch_count ?? tenant.max_branches ?? 1)
   const [interval, setInterval] = useState<ManualSubscriptionPlanInterval>('monthly')
   const [paidBranchCount, setPaidBranchCount] = useState(initialCount)
-  const [pricePerBranch, setPricePerBranch] = useState(100)
-  const [amount, setAmount] = useState(initialCount * 100)
+  const [pricePerBranch, setPricePerBranch] = useState('100.00')
+  const [amount, setAmount] = useState((initialCount * 100).toFixed(2))
   const [currency, setCurrency] = useState('SAR')
   const [paymentMethod, setPaymentMethod] = useState('Bank Transfer')
   const [paymentReference, setPaymentReference] = useState('')
@@ -664,15 +665,15 @@ function MarkPaymentCard({ tenant, sub, plans, access, onSaved }: {
     const start = new Date(`${coverageStart}T00:00:00`)
     const end = addMonths(start, normalized === 'yearly' ? 12 : 1)
     setInterval(normalized)
-    setPricePerBranch(nextPrice)
-    setAmount(paidBranchCount * nextPrice)
+    setPricePerBranch(nextPrice.toFixed(2))
+    setAmount((paidBranchCount * nextPrice).toFixed(2))
     setCoverageEnd(toDateInput(end))
   }
 
   function applyPaidBranchCount(value: number) {
     const nextCount = Math.max(1, value || 1)
     setPaidBranchCount(nextCount)
-    setAmount(nextCount * pricePerBranch)
+    setAmount((nextCount * Number(pricePerBranch || 0)).toFixed(2))
   }
 
   function applyCoverageStart(value: string) {
@@ -690,7 +691,7 @@ function MarkPaymentCard({ tenant, sub, plans, access, onSaved }: {
     const grace = new Date(`${graceUntilDate}T00:00:00`)
 
     if (paidBranchCount < 1) { setError('Paid branch count must be at least 1.'); return }
-    if (amount < 0) { setError('Amount cannot be negative.'); return }
+    if (Number(amount) < 0) { setError('Amount cannot be negative.'); return }
     if (!currency.trim() || currency.trim().length !== 3) { setError('Currency must be a 3-letter code.'); return }
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) { setError('Coverage dates are required.'); return }
     if (end < start) { setError('Coverage end must be on or after coverage start.'); return }
@@ -714,7 +715,7 @@ function MarkPaymentCard({ tenant, sub, plans, access, onSaved }: {
             trial_ends_at: null,
             cancelled_at: null,
             plan_interval: interval,
-            price_per_branch: pricePerBranch,
+            price_per_branch: Number(pricePerBranch),
             paid_branch_count: paidBranchCount,
             current_period_start: coverageStart,
             current_period_end: coverageEnd,
@@ -735,11 +736,11 @@ function MarkPaymentCard({ tenant, sub, plans, access, onSaved }: {
         .insert({
           tenant_id: tenant.id,
           subscription_id: subscriptionId,
-          amount,
+          amount: Number(amount),
           currency: currency.trim().toUpperCase(),
           plan_interval: interval,
           paid_branch_count: paidBranchCount,
-          price_per_branch: pricePerBranch,
+          price_per_branch: Number(pricePerBranch),
           payment_method: paymentMethod.trim() || null,
           payment_reference: paymentReference.trim() || null,
           payment_received_at: new Date(`${paymentReceivedDate}T00:00:00`).toISOString(),
@@ -762,7 +763,7 @@ function MarkPaymentCard({ tenant, sub, plans, access, onSaved }: {
           status: 'active',
           ends_at: end.toISOString(),
           plan_interval: interval,
-          price_per_branch: pricePerBranch,
+          price_per_branch: Number(pricePerBranch),
           paid_branch_count: paidBranchCount,
           current_period_start: coverageStart,
           current_period_end: coverageEnd,
@@ -820,11 +821,11 @@ function MarkPaymentCard({ tenant, sub, plans, access, onSaved }: {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1.5">Price per branch</label>
-          <input type="number" min={0} value={pricePerBranch} onChange={e => { const v = Math.max(0, Number(e.target.value)); setPricePerBranch(v); setAmount(v * paidBranchCount) }} className="input h-9 w-full text-sm" />
+          <MoneyInput value={pricePerBranch} onValueChange={(value, numeric) => { setPricePerBranch(value); if (numeric != null) setAmount((numeric * paidBranchCount).toFixed(2)) }} className="input h-9 w-full text-sm" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1.5">Amount</label>
-          <input type="number" min={0} value={amount} onChange={e => setAmount(Math.max(0, Number(e.target.value)))} className="input h-9 w-full text-sm" />
+          <MoneyInput value={amount} onValueChange={setAmount} className="input h-9 w-full text-sm" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1.5">Currency</label>

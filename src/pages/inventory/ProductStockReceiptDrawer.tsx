@@ -3,6 +3,7 @@ import { PackagePlus, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { MoneyInput } from '@/components/ui/MoneyInput'
 import { displayName as dn } from '@/lib/utils/display'
 import type { Supplier } from '@/types'
 import type { ProductStockRow } from './ProductStockTab'
@@ -227,14 +228,11 @@ export default function ProductStockReceiptDrawer({
               </div>
               <div>
                 <label className="label">Unit Purchase Cost</label>
-                <input
+                <MoneyInput
                   className="input"
-                  type="number"
-                  step="0.01"
-                  min="0"
                   value={unitCost}
-                  onChange={event => {
-                    setUnitCost(event.target.value)
+                  onValueChange={value => {
+                    setUnitCost(value)
                     clearReceiptKey()
                   }}
                   placeholder="0.00"

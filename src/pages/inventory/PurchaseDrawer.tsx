@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { MoneyInput } from '@/components/ui/MoneyInput'
 import type { Supplier, InventoryItem, Purchase, PurchaseItem } from '@/types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -694,13 +695,10 @@ export default function PurchaseDrawer({
                     {taxMode === 'excluded' ? 'Subtotal Before VAT' : 'Total Amount'}
                     <span className="text-red-500"> *</span>
                   </label>
-                  <input
+                  <MoneyInput
                     className="input"
-                    type="number"
-                    step="0.01"
-                    min="0"
                     value={simpleAmount}
-                    onChange={e => setSimpleAmount(e.target.value)}
+                    onValueChange={setSimpleAmount}
                     placeholder="0.00"
                   />
                 </div>
@@ -807,13 +805,10 @@ export default function PurchaseDrawer({
                             />
                           </div>
                           <div className="w-28">
-                            <input
+                            <MoneyInput
                               className="input text-sm"
-                              type="number"
-                              step="0.01"
-                              min="0"
                               value={line.unit_cost}
-                              onChange={e => updateLine(line.key, { unit_cost: e.target.value })}
+                              onValueChange={value => updateLine(line.key, { unit_cost: value })}
                               placeholder="Unit cost"
                             />
                           </div>

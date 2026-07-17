@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import type { ExpenseCategory, ExpensePaymentMethod } from '@/types'
 import type { ExpenseRow } from './DailyExpensesTab'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { MoneyInput } from '@/components/ui/MoneyInput'
 import {
   SIMPLE_EXPENSE_VAT_OPTIONS,
   calculateExpenseVat,
@@ -254,13 +255,10 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium pointer-events-none">
                     SAR
                   </span>
-                  <input
+                  <MoneyInput
                     className="input pl-12"
-                    type="number"
-                    step="0.01"
-                    min="0"
                     value={amount}
-                    onChange={e => setAmount(e.target.value)}
+                    onValueChange={setAmount}
                     placeholder="0.00"
                   />
                 </div>

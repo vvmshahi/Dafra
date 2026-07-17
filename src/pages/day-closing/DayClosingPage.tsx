@@ -9,6 +9,7 @@ import { saudiDateStr } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { Badge } from '@/components/ui/Badge'
+import { MoneyInput } from '@/components/ui/MoneyInput'
 
 const db = () => supabase as any
 
@@ -452,12 +453,9 @@ export default function DayClosingPage() {
                   <label className="label">Actual Cash Counted</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-mono text-sm">ê</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
+                    <MoneyInput
                       value={actualCash}
-                      onChange={e => setActualCash(e.target.value)}
+                      onValueChange={setActualCash}
                       placeholder="0.00"
                       className="input pl-8 tabular-nums"
                       disabled={!!todayClosing}

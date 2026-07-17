@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { MoneyInput } from '@/components/ui/MoneyInput'
 import type { InventoryItem, Category, Supplier } from '@/types'
 
 // ── Unit options ──────────────────────────────────────────────────────────────
@@ -210,8 +211,8 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
                 </div>
                 <div>
                   <label className="label">Unit Cost (SAR)</label>
-                  <input className="input" type="number" step="0.01" min="0"
-                    value={unitCost} onChange={e => setUnitCost(e.target.value)}
+                  <MoneyInput className="input"
+                    value={unitCost} onValueChange={setUnitCost}
                     placeholder="0.00" />
                 </div>
               </div>

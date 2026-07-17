@@ -10,6 +10,7 @@ import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { MoneyInput } from '@/components/ui/MoneyInput'
 import { displayName as dn } from '@/lib/utils/display'
 import { buildZatcaQR } from '@/lib/zatca/qr'
 import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
@@ -371,8 +372,8 @@ function QuickExpenseModal({
         <div className="p-5 space-y-3">
           <div>
             <label className="label">Amount paid (SAR)</label>
-            <input type="number" min="0" step="0.01" value={amount}
-              onChange={e => setAmount(e.target.value)} className="input" placeholder="0.00" autoFocus />
+            <MoneyInput value={amount} onValueChange={setAmount}
+              className="input" placeholder="0.00" autoFocus />
           </div>
           <div>
             <label className="label">Description</label>
@@ -1077,9 +1078,8 @@ function OpenSessionModal({
             <label className="label">Opening Cash (optional)</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
-              <input
-                type="number" min="0" step="0.01" value={cash}
-                onChange={e => setCash(e.target.value)}
+              <MoneyInput
+                value={cash} onValueChange={setCash}
                 className="input pl-10" placeholder="0.00" autoFocus
               />
             </div>
@@ -1339,9 +1339,8 @@ function CloseSessionModal({ session, onClose, onCancel }: {
                   <label className="label">Actual cash counted</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
-                    <input
-                      type="number" min="0" step="0.01" value={cashActual}
-                      onChange={e => setCashActual(e.target.value)}
+                    <MoneyInput
+                      value={cashActual} onValueChange={setCashActual}
                       className="input pl-10 h-10" placeholder="0.00" autoFocus
                     />
                   </div>
@@ -1500,12 +1499,9 @@ function SplitPaymentModal({
             <span className="text-xs font-semibold text-gray-700">Cash amount</span>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <MoneyInput
                 value={cashValue}
-                onChange={e => onCashChange(e.target.value)}
+                onValueChange={onCashChange}
                 className="input pl-10 tabular-nums"
                 autoFocus
               />
@@ -1516,12 +1512,9 @@ function SplitPaymentModal({
             <span className="text-xs font-semibold text-gray-700">Card amount</span>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <MoneyInput
                 value={cardValue}
-                onChange={e => onCardChange(e.target.value)}
+                onValueChange={onCardChange}
                 className="input pl-10 tabular-nums"
               />
             </div>
@@ -2758,10 +2751,9 @@ export default function POSPage() {
             <div className="space-y-1">
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">SAR</span>
-                <input
-                  type="number" min="0" step="1"
+                <MoneyInput
                   value={cashReceived}
-                  onChange={e => setCashReceived(e.target.value)}
+                  onValueChange={setCashReceived}
                   placeholder={fmt(Math.ceil(totals.total))}
                   className="input pl-10 py-1.5 text-sm tabular-nums"
                 />

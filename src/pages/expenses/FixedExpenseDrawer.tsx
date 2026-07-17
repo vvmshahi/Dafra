@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/Switch'
 import type { ExpenseCategory, ExpensePaymentMethod } from '@/types'
 import type { FixedExpenseRow } from './FixedExpensesTab'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { MoneyInput } from '@/components/ui/MoneyInput'
 
 // ── Payment options ───────────────────────────────────────────────────────────
 
@@ -172,13 +173,10 @@ export default function FixedExpenseDrawer({ open, item, categories, onClose, on
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium pointer-events-none">
                     SAR
                   </span>
-                  <input
+                  <MoneyInput
                     className="input pl-12"
-                    type="number"
-                    step="0.01"
-                    min="0"
                     value={amount}
-                    onChange={e => setAmount(e.target.value)}
+                    onValueChange={setAmount}
                     placeholder="0.00"
                   />
                 </div>
