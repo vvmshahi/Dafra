@@ -57,7 +57,7 @@ interface ElectronApi {
   savePrinterSettings: (settings: Partial<PrinterSettings>) => Promise<{ success?: boolean; settings?: PrinterSettings } | PrinterSettings>
   clearPrinterSettings: () => Promise<{ success?: boolean; settings?: PrinterSettings } | PrinterSettings>
   testPrint: (settings?: Partial<PrinterSettings>) => Promise<PrintResult>
-  testPrintA4: () => Promise<PrintResult>
+  testPrintA4: (settings?: Partial<PrinterSettings>) => Promise<PrintResult>
   printReceipt: (request: PrintReceiptRequest) => Promise<PrintResult>
   printA4Invoice: () => Promise<PrintResult>
   receiptReady: (payload: ReceiptReadyPayload) => void
@@ -239,11 +239,11 @@ export const testPrint = async (settings?: Partial<PrinterSettings>): Promise<Pr
   return window.electronAPI?.testPrint?.(settings) ?? { success: false, errorType: 'IPC_UNAVAILABLE', message: 'Printer bridge is unavailable.' }
 }
 
-export const testPrintA4 = async (): Promise<PrintResult> => {
+export const testPrintA4 = async (settings?: Partial<PrinterSettings>): Promise<PrintResult> => {
   if (!isElectron()) {
     return { success: false, errorType: 'NOT_ELECTRON', message: 'A4 direct printing is available in the Kubri desktop app.' }
   }
-  return window.electronAPI?.testPrintA4?.() ?? { success: false, errorType: 'IPC_UNAVAILABLE', message: 'Printer bridge is unavailable.' }
+  return window.electronAPI?.testPrintA4?.(settings) ?? { success: false, errorType: 'IPC_UNAVAILABLE', message: 'Printer bridge is unavailable.' }
 }
 
 export const printReceipt = async (request: PrintReceiptRequest): Promise<PrintResult> => {

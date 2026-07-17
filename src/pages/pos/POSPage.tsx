@@ -2403,11 +2403,11 @@ export default function POSPage() {
             </button>
             <button
               onClick={() => setShowCloseSession(true)}
-              aria-label="End Register"
+              aria-label="Close Register"
               className="flex items-center gap-1.5 text-xs bg-red-500/20 border border-red-400/30 text-red-200 px-2.5 py-2 rounded-lg hover:bg-red-500/30 transition-colors active:scale-[0.97]"
             >
               <Lock size={12} />
-              <span>End Register</span>
+              <span>Close Register</span>
             </button>
           </div>
 

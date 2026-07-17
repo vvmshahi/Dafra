@@ -886,9 +886,9 @@ function testA4Html(settings) {
 </html>`
 }
 
-async function runTestA4(sender) {
+async function runTestA4(sender, inputSettings = null) {
   try {
-    const settings = readPrinterSettings()
+    const settings = validatePrinterSettingsInput(inputSettings, readPrinterSettings())
     if (settings.a4PrinterName) {
       await assertSelectedPrinterAvailable(sender, settings.a4PrinterName)
     }
@@ -988,8 +988,8 @@ function registerPrinterIpc() {
     return printA4CurrentWindow(event.sender)
   })
 
-  ipcMain.handle('test-print-a4', async (event) => {
-    return runTestA4(event.sender)
+  ipcMain.handle('test-print-a4', async (event, settings) => {
+    return runTestA4(event.sender, settings)
   })
 }
 
