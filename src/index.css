@@ -10,10 +10,18 @@
   font-display: block;
 }
 
+@font-face {
+  font-family: 'KubriArabic';
+  src: url('/fonts/NotoNaskhArabic-Regular.ttf') format('truetype');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @layer base {
   :root {
     --font-sans:   'Inter', system-ui, sans-serif;
-    --font-arabic: 'Cairo', system-ui, sans-serif;
+    --font-arabic: 'Cairo', 'KubriArabic', 'Tahoma', 'Arial', system-ui, sans-serif;
   }
 
   html { @apply scroll-smooth; }
@@ -23,7 +31,15 @@
     font-family: var(--font-sans);
   }
 
-  [dir='rtl'] { font-family: var(--font-arabic); }
+  html[dir='rtl'] body { font-family: var(--font-arabic); }
+
+  [dir='rtl'] input[type='email'],
+  [dir='rtl'] input[type='tel'],
+  [dir='rtl'] input[inputmode='decimal'],
+  [dir='rtl'] input[inputmode='numeric'] {
+    direction: ltr;
+    text-align: start;
+  }
 
   /* Custom scrollbar */
   ::-webkit-scrollbar       { width: 6px; height: 6px; }

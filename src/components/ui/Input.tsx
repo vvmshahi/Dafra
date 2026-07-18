@@ -20,14 +20,14 @@ export const Input = forwardRef<HTMLInputElement, Props>(
         )}
         <div className="relative">
           {Icon && (
-            <div className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center">
+            <div className="pointer-events-none absolute inset-y-0 start-3.5 flex items-center">
               <Icon size={16} className="text-gray-400" />
             </div>
           )}
           <input
             ref={ref}
             id={inputId}
-            className={`input ${Icon ? 'pl-10' : ''} ${error ? 'border-red-400 focus:border-red-400 focus:ring-red-400/20' : ''} ${className}`}
+            className={`input ${Icon ? 'ps-10' : ''} ${error ? 'border-red-400 focus:border-red-400 focus:ring-red-400/20' : ''} ${className}`}
             {...props}
           />
         </div>

@@ -9,35 +9,38 @@ import { useAuth } from '@/hooks/useAuth'
 import { isElectron } from '@/lib/electron'
 import { isStockModuleVisible } from '@/lib/utils/businessType'
 import type { LucideIcon } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 
 interface NavItem {
   label: string
+  translationKey?: 'dashboard' | 'newSale' | 'invoices' | 'products' | 'customers' | 'suppliers' | 'expenses' | 'reports' | 'settings'
   path: string
   icon: LucideIcon
   section?: 'Daily work' | 'Catalogue and stock' | 'Business' | 'Settings' | 'Analysis' | 'Administration'
 }
 
 const ownerNav: NavItem[] = [
-  { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, section: 'Daily work' },
+  { label: 'Dashboard', translationKey: 'dashboard', path: '/dashboard', icon: LayoutDashboard, section: 'Daily work' },
   { label: 'Branches',  path: '/branches',  icon: Building2,       section: 'Administration' },
   { label: 'Employees', path: '/employees', icon: UserSquare2,     section: 'Administration' },
   { label: 'ZATCA',     path: '/zatca',     icon: ShieldCheck,     section: 'Settings' },
-  { label: 'Settings',  path: '/settings',  icon: Settings,        section: 'Settings' },
-  { label: 'Reports',   path: '/reports',   icon: BarChart2,       section: 'Analysis' },
+  { label: 'Settings', translationKey: 'settings', path: '/settings', icon: Settings, section: 'Settings' },
+  { label: 'Reports', translationKey: 'reports', path: '/reports', icon: BarChart2, section: 'Analysis' },
 ]
 
 const branchNav: NavItem[] = [
-  { label: 'Dashboard',        path: '/branch',            icon: Store,       section: 'Daily work' },
-  { label: 'New Sale',         path: '/pos',               icon: Receipt,     section: 'Daily work' },
-  { label: 'Invoices',         path: '/invoices',          icon: FileText,    section: 'Daily work' },
-  { label: 'Products',         path: '/products',          icon: Package,     section: 'Catalogue and stock' },
+  { label: 'Dashboard', translationKey: 'dashboard', path: '/branch', icon: Store, section: 'Daily work' },
+  { label: 'New Sale', translationKey: 'newSale', path: '/pos', icon: Receipt, section: 'Daily work' },
+  { label: 'Invoices', translationKey: 'invoices', path: '/invoices', icon: FileText, section: 'Daily work' },
+  { label: 'Products', translationKey: 'products', path: '/products', icon: Package, section: 'Catalogue and stock' },
   { label: 'Stock',            path: '/inventory',         icon: Warehouse,   section: 'Catalogue and stock' },
   { label: 'Purchases',        path: '/purchases',         icon: Truck,       section: 'Catalogue and stock' },
-  { label: 'Suppliers',        path: '/suppliers',         icon: Truck,       section: 'Catalogue and stock' },
-  { label: 'Customers',        path: '/customers',         icon: Users,       section: 'Business' },
-  { label: 'Expenses',         path: '/expenses',          icon: CreditCard,  section: 'Business' },
+  { label: 'Suppliers', translationKey: 'suppliers', path: '/suppliers', icon: Truck, section: 'Catalogue and stock' },
+  { label: 'Customers', translationKey: 'customers', path: '/customers', icon: Users, section: 'Business' },
+  { label: 'Expenses', translationKey: 'expenses', path: '/expenses', icon: CreditCard, section: 'Business' },
   { label: 'Invoice Settings', path: '/invoice-settings',  icon: Settings2,   section: 'Settings' },
-  { label: 'Reports',          path: '/reports',           icon: BarChart2,   section: 'Analysis' },
+  { label: 'Reports', translationKey: 'reports', path: '/reports', icon: BarChart2, section: 'Analysis' },
 ]
 
 const branchDevicePrinterNavItem: NavItem = {
@@ -68,11 +71,12 @@ const KUBRI_MARK_SRC = '/brand/kubiri-logo-mark.png?v=kubri-2'
 
 interface NavItemRowProps {
   item: NavItem
+  label: string
   isActive: boolean
   collapsed: boolean
 }
 
-function NavItemRow({ item, isActive, collapsed }: NavItemRowProps) {
+function NavItemRow({ item, label, isActive, collapsed }: NavItemRowProps) {
   return (
     <div className={`
       flex items-center rounded-xl text-sm font-medium
@@ -87,8 +91,8 @@ function NavItemRow({ item, isActive, collapsed }: NavItemRowProps) {
         size={17}
         className={isActive ? 'text-white' : 'text-sidebar-text group-hover:text-white'}
       />
-      {!collapsed && <span className="flex-1">{item.label}</span>}
-      {!collapsed && isActive && <ChevronRight size={14} className="text-white/60" />}
+      {!collapsed && <span className="flex-1 text-start">{label}</span>}
+      {!collapsed && isActive && <DirectionalIcon icon={ChevronRight} size={14} className="text-white/60" />}
     </div>
   )
 }
@@ -101,6 +105,7 @@ interface SidebarProps {
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { profile, tenant, branch, user, signOut } = useAuth()
   const location = useLocation()
+  const { t } = useTranslation(['navigation', 'auth'])
 
   const isSuperAdmin = profile?.role === 'super_admin'
   const isBranch     = profile?.role === 'branch'
@@ -159,23 +164,23 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               title="Expand sidebar"
               className="text-sidebar-text hover:text-white hover:bg-sidebar-hover transition-colors p-1.5 rounded-lg"
             >
-              <ChevronRight size={15} />
+              <DirectionalIcon icon={ChevronRight} size={15} />
             </button>
           </div>
         ) : (
           <div className="relative">
-            <div className="pr-8">
+            <div className="pe-8">
               <div className="flex h-14 w-[184px] max-w-full items-center overflow-visible">
-                <img src={KUBRI_WORDMARK_SRC} alt="Kubri" className="h-full w-full object-contain object-left" />
+                <img src={KUBRI_WORDMARK_SRC} alt="Kubri" className="h-full w-full object-contain object-start" />
               </div>
               <p className="mt-1 text-xs text-sidebar-text truncate" title={subtitle}>{subtitle}</p>
             </div>
             <button
               onClick={onToggle}
               title="Collapse sidebar"
-              className="absolute right-0 top-2 text-sidebar-text hover:text-white hover:bg-sidebar-hover transition-colors p-1.5 rounded-lg"
+              className="absolute end-0 top-2 text-sidebar-text hover:text-white hover:bg-sidebar-hover transition-colors p-1.5 rounded-lg"
             >
-              <ChevronLeft size={15} />
+              <DirectionalIcon icon={ChevronLeft} size={15} />
             </button>
             {isSuperAdmin && (
               <div className="mt-3 inline-flex items-center gap-1.5 bg-red-900/40 text-red-300 text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-red-700/50">
@@ -191,6 +196,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto sidebar-scroll">
         {navItems.map((item, index) => {
           const isActive = isNavActive(item)
+          const itemLabel = item.translationKey ? t(`navigation:${item.translationKey}`) : item.label
           const showSection = item.section && item.section !== navItems[index - 1]?.section
           return (
             <div key={item.label} className={showSection && index > 0 ? 'mt-3' : undefined}>
@@ -200,8 +206,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 </p>
               )}
               {showSection && collapsed && index > 0 && <div className="mx-2 mb-2 border-t border-sidebar-border" />}
-              <NavLink to={item.path} title={collapsed ? item.label : undefined}>
-                <NavItemRow item={item} isActive={isActive} collapsed={collapsed} />
+              <NavLink to={item.path} title={collapsed ? itemLabel : undefined}>
+                <NavItemRow item={item} label={itemLabel} isActive={isActive} collapsed={collapsed} />
               </NavLink>
             </div>
           )
@@ -254,7 +260,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         {/* Sign out */}
         <button
           onClick={signOut}
-          title={collapsed ? 'Sign out' : undefined}
+          title={collapsed ? t('auth:signOut') : undefined}
           className={`
             flex items-center w-full rounded-xl text-sidebar-text
             hover:bg-sidebar-hover hover:text-white text-sm font-medium
@@ -263,7 +269,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           `}
         >
           <LogOut size={16} className="group-hover:text-white" />
-          {!collapsed && 'Sign out'}
+          {!collapsed && t('auth:signOut')}
         </button>
       </div>
     </aside>

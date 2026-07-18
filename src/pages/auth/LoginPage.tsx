@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { MeemLogo } from '@/components/MeemLogo'
 import { supportConfig } from '@/config/support'
+import { useTranslation } from 'react-i18next'
+import { LanguageSelector } from '@/components/localization/LanguageSelector'
+import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 
 const WA_LINK = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
@@ -36,6 +39,7 @@ export default function LoginPage() {
   const location   = useLocation()
   const from       = (location.state as { from?: string })?.from ?? '/'
   const successMsg = (location.state as { successMsg?: string })?.successMsg ?? null
+  const { t } = useTranslation(['auth', 'common'])
 
   const [identifier, setIdentifier] = useState('')
   const [password,   setPassword]   = useState('')
@@ -93,11 +97,12 @@ export default function LoginPage() {
         <section className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#F6F2E8] px-5 py-8 text-[#10291E] sm:px-8 lg:px-10">
           <Link
             to="/"
-            className="absolute left-5 top-5 z-20 inline-flex items-center gap-2 rounded-full border border-[#D9CBAA] bg-white/70 px-3 py-2 text-sm font-black text-[#284334] shadow-[0_10px_26px_rgba(15,36,25,0.06)] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F6F2E8] sm:left-8 sm:top-8"
+            className="absolute start-5 top-5 z-20 inline-flex items-center gap-2 rounded-full border border-[#D9CBAA] bg-white/70 px-3 py-2 text-sm font-black text-[#284334] shadow-[0_10px_26px_rgba(15,36,25,0.06)] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F6F2E8] sm:start-8 sm:top-8"
           >
-            <ArrowLeft size={15} />
-            Home
+            <DirectionalIcon icon={ArrowLeft} size={15} />
+            {t('common:back')}
           </Link>
+          <LanguageSelector compact className="absolute end-5 top-5 z-20 sm:end-8 sm:top-8" />
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute right-[-14rem] top-[-16rem] h-[32rem] w-[32rem] rounded-full bg-[#D8B76A]/25 blur-3xl" />
             <div className="absolute bottom-[-18rem] left-[-12rem] h-[36rem] w-[36rem] rounded-full bg-[#0F3A2A]/15 blur-3xl" />
@@ -133,7 +138,7 @@ export default function LoginPage() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <Input
-                label="Email or username"
+                label={t('auth:emailOrUsername')}
                 type="text"
                 value={identifier}
                 onChange={e => setIdentifier(e.target.value)}
@@ -144,11 +149,11 @@ export default function LoginPage() {
                 className="h-12 rounded-2xl border-[#D8CDAE] bg-white/85 text-[#10291E] shadow-[0_10px_26px_rgba(15,36,25,0.06)] placeholder:text-[#8CA093] focus:border-[#A77F29] focus:ring-[#D8B76A]/25"
               />
               <Input
-                label="Password"
+                label={t('auth:password')}
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder="Password"
+                placeholder={t('auth:password')}
                 icon={Lock}
                 required
                 autoComplete="current-password"
@@ -161,13 +166,13 @@ export default function LoginPage() {
                   Remember me
                 </label>
                 <Link to="/forgot-password" className="font-black text-[#0F3A2A] hover:text-[#A77F29]">
-                  Forgot password?
+                  {t('auth:forgotPassword')}?
                 </Link>
               </div>
 
               <Button type="submit" loading={loading} variant="gold" className="h-12 w-full gap-2 rounded-2xl bg-[#D8B76A] text-[#10291E] shadow-[0_16px_34px_rgba(216,183,106,0.26)] hover:bg-[#E6C779] focus-visible:ring-[#D8B76A]/70">
-                Sign in
-                {!loading && <ArrowRight size={16} />}
+                {t('auth:signIn')}
+                {!loading && <DirectionalIcon icon={ArrowRight} size={16} />}
               </Button>
             </form>
 

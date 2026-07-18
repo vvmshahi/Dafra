@@ -5,12 +5,13 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import { LanguageSelector } from '@/components/localization/LanguageSelector'
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between py-3 border-b border-gray-50 last:border-0">
       <span className="text-xs font-medium text-gray-400 w-32 flex-shrink-0">{label}</span>
-      <span className="text-sm text-gray-800 text-right">{value || '—'}</span>
+      <span className="text-sm text-gray-800 text-end" dir="auto">{value || '—'}</span>
     </div>
   )
 }
@@ -88,6 +89,11 @@ export default function ProfilePage() {
         </div>
       </div>
 
+      {/* Interface language is device-local in Phase A and independent of invoice language. */}
+      <div className="card p-5">
+        <LanguageSelector />
+      </div>
+
       {/* Account info */}
       <div className="card p-5">
         <div className="flex items-center gap-2 mb-4">
@@ -112,9 +118,9 @@ export default function ProfilePage() {
           <div>
             <label className="label">Full Name</label>
             <div className="relative">
-              <User size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <User size={14} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
-                className="input pl-9"
+                className="input ps-9"
                 value={fullName}
                 onChange={e => setFullName(e.target.value)}
                 placeholder="Your full name"
@@ -124,9 +130,9 @@ export default function ProfilePage() {
           <div>
             <label className="label">Phone (optional)</label>
             <div className="relative">
-              <Phone size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Phone size={14} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
-                className="input pl-9"
+                className="input ps-9"
                 type="tel"
                 value={phone}
                 onChange={e => setPhone(e.target.value)}
@@ -170,9 +176,9 @@ export default function ProfilePage() {
           <div>
             <label className="label">New Password</label>
             <div className="relative">
-              <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Lock size={14} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
-                className="input pl-9 pr-10"
+                className="input ps-9 pe-10"
                 type={showNew ? 'text' : 'password'}
                 value={newPass}
                 onChange={e => setNewPass(e.target.value)}
@@ -181,7 +187,7 @@ export default function ProfilePage() {
               <button
                 type="button"
                 onClick={() => setShowNew(s => !s)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
               >
                 {showNew ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
@@ -190,9 +196,9 @@ export default function ProfilePage() {
           <div>
             <label className="label">Confirm New Password</label>
             <div className="relative">
-              <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Lock size={14} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
-                className="input pl-9"
+                className="input ps-9"
                 type={showOld ? 'text' : 'password'}
                 value={confirmPass}
                 onChange={e => setConfirmPass(e.target.value)}
