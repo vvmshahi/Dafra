@@ -48,6 +48,38 @@ This glossary is a localization working draft for Saudi Arabic review. The propo
 | `auth.invitation.title` | Account creation is by invitation only | إنشاء الحسابات متاح بالدعوة فقط | Invitation page | Explains the controlled onboarding model. | Native review required |
 | `dialogs.discard.title` | Discard changes? | تجاهل التغييرات؟ | Shared confirmation dialog | Used only when unsaved form state would be lost. | Native review required |
 | `validation.permissionDenied` | You do not have permission to perform this action. | ليس لديك صلاحية لتنفيذ هذا الإجراء. | Shared authorization error | Avoid exposing backend policy or role details. | Native review required |
+| `pos.title` | Point of Sale | نقطة البيع | Cashier POS page title | Use the familiar retail-system meaning. | Native review required |
+| `pos.touchPos` | Touch POS | نقطة البيع باللمس | Touch catalogue mode | Compact mode label; not a hardware certification. | Native review required |
+| `pos.quickBilling` | Quick Billing | الفوترة السريعة | Trading quick-billing mode | Refers to a faster catalogue/table workflow. | Native review required |
+| `pos.searchProducts` | Search product name, SKU, or barcode | ابحث باسم المنتج أو SKU أو الباركود | POS product search | Preserve SKU and barcode terms and directional isolation. | Native review required |
+| `pos.allProducts` | All products | كل المنتجات | POS category filter | Includes every active and available product in scope. | Native review required |
+| `pos.addToCart` | Add to cart | إضافة إلى السلة | Product action | Retail cart, not inventory movement. | Native review required |
+| `pos.currentOrder` | Current order | الطلب الحالي | POS cart heading | The in-progress sale before checkout. | Native review required |
+| `pos.walkInCustomer` | Walk-in customer | عميل نقدي | Default POS customer | Review whether “عميل بدون حساب” is clearer for non-cash payments. | Native review required |
+| `pos.netAmount` | Net amount | صافي المبلغ | POS and completion totals | Amount before VAT in the displayed calculation. | Native review required |
+| `pos.charge` | Charge | تحصيل | Primary POS payment action | Means collect the displayed amount, not a fee. | Native review required |
+| `payments.selectMethod` | Select payment method | اختر طريقة الدفع | Checkout payment controls | Method selection instruction. | Native review required |
+| `payments.cash` | Cash | نقداً | POS payment method | Keep consistent with receipt and register terminology. | Native review required |
+| `payments.card` | Card | بطاقة | POS payment method | Includes the configured card/POS terminal path. | Native review required |
+| `payments.splitPayment` | Split payment | دفع مقسّم | Cash/card payment modal | One sale allocated between cash and card. | Native review required |
+| `payments.amountDue` | Amount due | المبلغ المستحق | Checkout and sale completion | Exact amount required for the sale. | Native review required |
+| `payments.amountReceived` | Amount received | المبلغ المستلم | Cash tender input | Cash handed over by the customer. | Native review required |
+| `payments.changeDue` | Change due | الباقي للعميل | Cash sale completion | Cash to return to the customer. | Native review required |
+| `payments.paymentReceived` | Payment received | تم استلام الدفعة | Sale-completion modal | Immediate checkout success; does not imply ZATCA completion. | Native review required |
+| `register.register` | Register | صندوق المبيعات | POS register and sessions | Review whether compact screens can use “الصندوق”. | Native review required |
+| `register.open` | Open register | فتح الصندوق | Start-register action | Starts a register session; not opening a physical drawer. | Native review required |
+| `register.close` | Close register | إغلاق الصندوق | End-register action | Finalizes the current register session. | Native review required |
+| `register.expectedCashDrawer` | Expected cash in drawer | النقد المتوقع في الصندوق | Close-register reconciliation | System-calculated cash using unchanged accounting rules. | Native review required |
+| `register.actualCashCounted` | Actual cash counted | النقد الفعلي المعدود | Close-register input | Physical counted amount entered by the cashier. | Native review required |
+| `register.cashShortBy` | Cash short by {amount} | عجز نقدي بمقدار {amount} | Register variance | Negative difference; amount remains LTR. | Native review required |
+| `register.cashOverBy` | Cash over by {amount} | زيادة نقدية بمقدار {amount} | Register variance | Positive difference; amount remains LTR. | Native review required |
+| `register.sessionSummary` | Session summary | ملخص الجلسة | Close-register details | Summary for one register session. | Native review required |
+| `register.netSessionSales` | Net session sales | صافي مبيعات الجلسة | Closed-session primary KPI | Sales net of credit notes for the session. | Native review required |
+| `register.posCashExpenses` | POS cash expenses | مصروفات نقطة البيع النقدية | Close-register reconciliation | Cash expenses recorded from the POS during the session. | Native review required |
+| `register.cashRefunds` | Cash refunds | المبالغ النقدية المستردة | Close-register reconciliation | Cash portions of credit-note refunds. | Native review required |
+| `register.dayClosing` | Day closing | إقفال اليوم | Day/session closing page | Accounting close for the day, not application logout. | Native review required |
+| `pos.printer.connected` | Receipt printer connected | طابعة الإيصالات متصلة | POS printer-status control | Device status only; do not imply a successful print. | Native review required |
+| `pos.zatca.success` | ZATCA submission successful | تم إرسال الفاتورة إلى ZATCA بنجاح | Background POS notification | Preserve ZATCA brand; status comes from existing routing. | Native review required |
 
 ## Review rules
 

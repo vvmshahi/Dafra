@@ -14,5 +14,14 @@
   "saveFailed": "Changes could not be saved.",
   "networkUnavailable": "The network is unavailable. Check your connection.",
   "permissionDenied": "You do not have permission to perform this action.",
-  "allPasswordFields": "Complete all password fields."
+  "allPasswordFields": "Complete all password fields.",
+  "amountReceivedTooLow": "Amount received is less than the invoice total.",
+  "splitPaymentDisabled": "Split payment is not enabled for this branch.",
+  "splitPaymentUnbalanced": "Split payment amounts must equal the invoice total.",
+  "splitPaymentComponents": "Split payment needs both cash and card amounts.",
+  "insufficientStock": "There is not enough stock for one or more items.",
+  "unavailableItem": "One or more items are no longer available.",
+  "checkoutForbidden": "Checkout is not allowed for this branch.",
+  "checkoutFailed": "Checkout failed. Review the cart and try again.",
+  "actualCashRequired": "Enter the actual cash counted."
 }

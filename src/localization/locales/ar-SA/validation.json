@@ -14,5 +14,14 @@
   "saveFailed": "تعذّر حفظ التغييرات.",
   "networkUnavailable": "الشبكة غير متاحة. تحقق من اتصالك.",
   "permissionDenied": "ليس لديك صلاحية لتنفيذ هذا الإجراء.",
-  "allPasswordFields": "أكمل جميع حقول كلمة المرور."
+  "allPasswordFields": "أكمل جميع حقول كلمة المرور.",
+  "amountReceivedTooLow": "المبلغ المستلم أقل من إجمالي الفاتورة.",
+  "splitPaymentDisabled": "الدفع المقسّم غير مفعّل لهذا الفرع.",
+  "splitPaymentUnbalanced": "يجب أن يساوي مجموع الدفع المقسّم إجمالي الفاتورة.",
+  "splitPaymentComponents": "يتطلب الدفع المقسّم مبلغاً نقدياً ومبلغاً بالبطاقة.",
+  "insufficientStock": "المخزون غير كافٍ لمنتج واحد أو أكثر.",
+  "unavailableItem": "منتج واحد أو أكثر لم يعد متاحاً.",
+  "checkoutForbidden": "لا يمكن إتمام البيع في هذا الفرع.",
+  "checkoutFailed": "تعذر إتمام البيع. راجع السلة وحاول مرة أخرى.",
+  "actualCashRequired": "أدخل النقد الفعلي المعدود."
 }

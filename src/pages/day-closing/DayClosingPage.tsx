@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   CalendarCheck2, Printer, CheckCircle2, AlertTriangle,
   TrendingUp, CreditCard, Banknote, Receipt, FileText,
@@ -10,6 +11,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { Badge } from '@/components/ui/Badge'
 import { MoneyInput } from '@/components/ui/MoneyInput'
+import { useLocale } from '@/localization/useLocale'
 
 const db = () => supabase as any
 
@@ -61,6 +63,17 @@ function invoiceAccountingSign(invoice: { zatca_invoice_type?: string | null }):
   return invoice.zatca_invoice_type === 'credit_note' ? -1 : 1
 }
 
+function localizedName(name: string, nameAr: string, isArabic: boolean) {
+  return isArabic && nameAr.trim() ? nameAr : name
+}
+
+function paymentLabel(method: string, t: (key: string) => string) {
+  if (method === 'cash') return t('payments:cash')
+  if (method === 'card') return t('payments:card')
+  if (method === 'bank_transfer') return t('payments:bankTransfer')
+  return t('payments:other')
+}
+
 // ── KPI Card ──────────────────────────────────────────────────────────────────
 
 function KpiCard({
@@ -83,7 +96,7 @@ function KpiCard({
       </div>
       <div className="min-w-0">
         <p className="text-[11px] text-gray-400 font-medium">{label}</p>
-        <p className="text-base font-bold text-gray-900 mt-0.5">
+        <p className="text-base font-bold text-gray-900 mt-0.5" dir="ltr">
           <Rial amount={amount} />
         </p>
         {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
@@ -151,6 +164,8 @@ ${notes ? `Notes: ${notes}\n` : ''}${line}`}
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function DayClosingPage() {
+  const { t } = useTranslation(['register', 'payments'])
+  const { locale, isRtl } = useLocale()
   const { profile, user, tenant } = useAuth()
   const printRef = useRef<HTMLDivElement>(null)
 
@@ -159,7 +174,7 @@ export default function DayClosingPage() {
   const [summary,     setSummary]     = useState<DaySummary | null>(null)
   const [prevClosings,setPrevClosings]= useState<PreviousClosing[]>([])
   const [todayClosing,setTodayClosing]= useState<PreviousClosing | null>(null)
-  const [branchName,  setBranchName]  = useState('')
+  const [branchNames, setBranchNames] = useState({ name: '', nameAr: '' })
   const [actualCash,  setActualCash]  = useState('')
   const [notes,       setNotes]       = useState('')
   const [saveMsg,     setSaveMsg]     = useState<string | null>(null)
@@ -168,9 +183,14 @@ export default function DayClosingPage() {
   const branchId = profile?.branch_id
   const tenantId = profile?.tenant_id
   const todayStr = today()
-  const displayDate = new Date().toLocaleDateString('en-SA', {
+  const displayDate = new Date().toLocaleDateString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
+  const printDisplayDate = new Date().toLocaleDateString('en-SA', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  })
+  const branchName = localizedName(branchNames.name, branchNames.nameAr, isRtl)
+  const printBranchName = branchNames.nameAr.trim() || branchNames.name
 
   // ── Load data ──────────────────────────────────────────────────────────────
 
@@ -194,7 +214,7 @@ export default function DayClosingPage() {
 
     // Branch name
     const b = branchRes.data
-    setBranchName(b?.name_ar?.trim() ? b.name_ar : (b?.name ?? ''))
+    setBranchNames({ name: b?.name ?? '', nameAr: b?.name_ar ?? '' })
 
     // Check if already closed today
     const allClosings: PreviousClosing[] = closingsRes.data ?? []
@@ -264,8 +284,8 @@ export default function DayClosingPage() {
 
   async function closeDay() {
     if (!summary || !branchId || !tenantId) return
-    if (!actualCash) { setSaveErr('Please enter the actual cash counted'); return }
-    if (!confirm('Close the day? This records final figures for today.')) return
+    if (!actualCash) { setSaveErr('actualCashRequired'); return }
+    if (!confirm(t('register:confirmCloseDay'))) return
 
     setSaving(true)
     setSaveErr(null)
@@ -292,8 +312,12 @@ export default function DayClosingPage() {
     const { error } = await db().from('day_closings').upsert(payload, { onConflict: 'branch_id,closing_date' })
     setSaving(false)
 
-    if (error) { setSaveErr(error.message); return }
-    setSaveMsg('Day closed successfully')
+    if (error) {
+      console.warn('[DayClosingPage] close failed', error)
+      setSaveErr('dayCloseFailed')
+      return
+    }
+    setSaveMsg('dayClosed')
     load()
   }
 
@@ -305,6 +329,7 @@ export default function DayClosingPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // The hidden printable report remains in its pre-Phase-C document language.
   const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? 'Unknown'
   const tenantName  = tenant?.name ?? 'Kubri'
 
@@ -312,8 +337,8 @@ export default function DayClosingPage() {
     return (
       <div className="card p-12 text-center">
         <Lock size={32} className="text-gray-300 mx-auto mb-3" />
-        <p className="text-sm font-medium text-gray-500">No branch assigned</p>
-        <p className="text-xs text-gray-400 mt-1">Ask your administrator to assign a branch to your account</p>
+        <p className="text-sm font-medium text-gray-500">{t('register:noBranch')}</p>
+        <p className="text-xs text-gray-400 mt-1">{t('register:askAdministrator')}</p>
       </div>
     )
   }
@@ -324,12 +349,12 @@ export default function DayClosingPage() {
       {summary && (
         <PrintReport
           summary={summary}
-          branchName={branchName}
+          branchName={printBranchName}
           tenantName={tenantName}
           closedByName={displayName}
           actualCash={actualCashNum}
           notes={notes}
-          dateStr={displayDate}
+          dateStr={printDisplayDate}
         />
       )}
 
@@ -341,15 +366,15 @@ export default function DayClosingPage() {
           <div>
             <div className="flex items-center gap-2">
               <CalendarCheck2 size={18} className="text-primary-600" />
-              <h2 className="text-base font-semibold text-gray-900">Day Closing</h2>
+              <h2 className="text-base font-semibold text-gray-900">{t('register:dayClosing')}</h2>
             </div>
-            <p className="text-xs text-gray-400 mt-0.5">{displayDate} · {branchName}</p>
+            <p className="text-xs text-gray-400 mt-0.5" dir="auto"><bdi>{displayDate}</bdi> · <bdi>{branchName}</bdi></p>
           </div>
           <button
             onClick={handlePrint}
             className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
           >
-            <Printer size={14} /> Print Report
+            <Printer size={14} /> {t('register:printReport')}
           </button>
         </div>
 
@@ -358,11 +383,11 @@ export default function DayClosingPage() {
           <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
             <CheckCircle2 size={16} className="text-emerald-600 mt-0.5 flex-shrink-0" />
             <div>
-              <p className="text-sm font-semibold text-emerald-800">Today is already closed</p>
+              <p className="text-sm font-semibold text-emerald-800">{t('register:todayAlreadyClosed')}</p>
               <p className="text-xs text-emerald-700 mt-0.5">
-                Closed at {new Date(todayClosing.created_at).toLocaleTimeString('en-SA', { hour: '2-digit', minute: '2-digit' })} ·
-                Actual cash: <Rial amount={todayClosing.actual_cash} /> ·
-                Difference: <span className={todayClosing.cash_difference < -0.01 ? 'text-red-600' : 'text-emerald-700'}>
+                {t('register:closedAt')} <bdi dir="ltr">{new Date(todayClosing.created_at).toLocaleTimeString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', { hour: '2-digit', minute: '2-digit' })}</bdi> ·
+                {' '}{t('register:actualCash')}: <span dir="ltr"><Rial amount={todayClosing.actual_cash} /></span> ·
+                {' '}{t('register:difference')}: <span dir="ltr" className={todayClosing.cash_difference < -0.01 ? 'text-red-600' : 'text-emerald-700'}>
                   {todayClosing.cash_difference >= 0 ? '+' : ''}{sarStr(todayClosing.cash_difference)}
                 </span>
               </p>
@@ -378,25 +403,25 @@ export default function DayClosingPage() {
           <>
             {/* ── Sales summary ───────────────────────────────────── */}
             <div>
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Sales Summary</h3>
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{t('register:salesSummary')}</h3>
               <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-                <KpiCard label="Total Sales"      amount={summary.totalSales}   icon={TrendingUp} accent="green"
-                  sub={`${summary.invoiceCount} invoice${summary.invoiceCount !== 1 ? 's' : ''}`} />
-                <KpiCard label="Cash Sales"       amount={summary.cashSales}    icon={Banknote}   accent="green" />
-                <KpiCard label="Card Sales"       amount={summary.cardSales}    icon={CreditCard} accent="blue" />
-                <KpiCard label="VAT Collected"    amount={summary.totalVat}     icon={Receipt}    accent="gold" />
-                <KpiCard label="Total Invoices"   amount={summary.invoiceCount} icon={FileText}   accent="gray"
-                  sub="today" />
+                <KpiCard label={t('register:totalSales')} amount={summary.totalSales} icon={TrendingUp} accent="green"
+                  sub={t('register:invoiceCountLabel', { count: summary.invoiceCount })} />
+                <KpiCard label={t('register:cashSales')} amount={summary.cashSales} icon={Banknote} accent="green" />
+                <KpiCard label={t('register:cardSales')} amount={summary.cardSales} icon={CreditCard} accent="blue" />
+                <KpiCard label={t('register:vatCollected')} amount={summary.totalVat} icon={Receipt} accent="gold" />
+                <KpiCard label={t('register:totalInvoices')} amount={summary.invoiceCount} icon={FileText} accent="gray"
+                  sub={t('register:today')} />
               </div>
             </div>
 
             {/* ── Expenses summary ────────────────────────────────── */}
             <div>
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Expenses Today</h3>
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{t('register:expensesToday')}</h3>
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                <KpiCard label="Cash Expenses"  amount={summary.cashExpenses}   icon={Banknote}   accent="red" />
-                <KpiCard label="Card Expenses"  amount={summary.cardExpenses}   icon={CreditCard} accent="red" />
-                <KpiCard label="Total Expenses" amount={summary.totalExpenses}  icon={ShoppingBag}accent="red" />
+                <KpiCard label={t('register:cashExpenses')} amount={summary.cashExpenses} icon={Banknote} accent="red" />
+                <KpiCard label={t('register:cardExpenses')} amount={summary.cardExpenses} icon={CreditCard} accent="red" />
+                <KpiCard label={t('register:totalExpenses')} amount={summary.totalExpenses} icon={ShoppingBag} accent="red" />
               </div>
             </div>
 
@@ -404,18 +429,18 @@ export default function DayClosingPage() {
             {summary.expenses.length > 0 && (
               <div className="card overflow-hidden">
                 <div className="px-5 py-3 border-b border-gray-100">
-                  <h3 className="text-sm font-semibold text-gray-900">Expense Detail</h3>
+                  <h3 className="text-sm font-semibold text-gray-900">{t('register:expenseDetail')}</h3>
                 </div>
                 <div className="divide-y divide-gray-50">
                   {summary.expenses.map(e => (
                     <div key={e.id} className="flex items-center justify-between px-5 py-3">
                       <div>
-                        <p className="text-sm font-medium text-gray-800">{e.description}</p>
-                        {e.vendor_name && <p className="text-xs text-gray-400">{e.vendor_name}</p>}
+                        <p className="text-sm font-medium text-gray-800" dir="auto">{e.description}</p>
+                        {e.vendor_name && <p className="text-xs text-gray-400" dir="auto">{e.vendor_name}</p>}
                       </div>
                       <div className="flex items-center gap-3">
                         <Badge variant={e.payment_method === 'cash' ? 'success' : 'neutral'}>
-                          {e.payment_method}
+                          {paymentLabel(e.payment_method, t)}
                         </Badge>
                         <span className="text-sm font-semibold text-gray-900 tabular-nums">
                           <Rial amount={e.total_paid} />
@@ -425,8 +450,8 @@ export default function DayClosingPage() {
                   ))}
                 </div>
                 <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
-                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Expenses</span>
-                  <span className="text-sm font-bold text-gray-900"><Rial amount={summary.totalExpenses} /></span>
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t('register:totalExpenses')}</span>
+                  <span className="text-sm font-bold text-gray-900" dir="ltr"><Rial amount={summary.totalExpenses} /></span>
                 </div>
               </div>
             )}
@@ -435,29 +460,29 @@ export default function DayClosingPage() {
             <div className="card p-5 space-y-4">
               <div className="flex items-center gap-2 mb-1">
                 <Banknote size={16} className="text-primary-600" />
-                <h3 className="text-sm font-semibold text-gray-900">Cash Reconciliation</h3>
+                <h3 className="text-sm font-semibold text-gray-900">{t('register:cashReconciliation')}</h3>
               </div>
 
               {/* Expected */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="bg-gray-50 rounded-xl px-4 py-3">
-                  <p className="text-[11px] text-gray-400 font-medium">Expected Cash in Hand</p>
-                  <p className="text-lg font-bold text-gray-900 mt-1">
+                  <p className="text-[11px] text-gray-400 font-medium">{t('register:expectedCashInHand')}</p>
+                  <p className="text-lg font-bold text-gray-900 mt-1" dir="ltr">
                     <Rial amount={summary.expectedCash} />
                   </p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">Cash sales − cash expenses</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">{t('register:cashFormula')}</p>
                 </div>
 
                 {/* Actual */}
                 <div className="space-y-1.5">
-                  <label className="label">Actual Cash Counted</label>
+                  <label className="label">{t('register:actualCashCounted')}</label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-mono text-sm">ê</span>
+                    <span className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs" dir="ltr">SAR</span>
                     <MoneyInput
                       value={actualCash}
                       onValueChange={setActualCash}
                       placeholder="0.00"
-                      className="input pl-8 tabular-nums"
+                      className="input ps-10 tabular-nums"
                       disabled={!!todayClosing}
                     />
                   </div>
@@ -468,8 +493,8 @@ export default function DayClosingPage() {
                   <div className={`rounded-xl px-4 py-3 ${
                     isMatch ? 'bg-emerald-50' : isShort ? 'bg-red-50' : 'bg-amber-50'
                   }`}>
-                    <p className="text-[11px] font-medium text-gray-500">Difference</p>
-                    <p className={`text-lg font-bold mt-1 ${
+                    <p className="text-[11px] font-medium text-gray-500">{t('register:difference')}</p>
+                    <p dir="ltr" className={`text-lg font-bold mt-1 ${
                       isMatch ? 'text-emerald-700' : isShort ? 'text-red-600' : 'text-amber-700'
                     }`}>
                       {difference >= 0 ? '+' : ''}<Rial amount={Math.abs(difference)} />
@@ -477,7 +502,7 @@ export default function DayClosingPage() {
                     <p className={`text-[10px] mt-0.5 ${
                       isMatch ? 'text-emerald-600' : isShort ? 'text-red-500' : 'text-amber-600'
                     }`}>
-                      {isMatch ? '✓ Balanced' : isShort ? '↓ Short' : '↑ Over'}
+                      {isMatch ? `✓ ${t('register:balanced')}` : isShort ? `↓ ${t('register:short')}` : `↑ ${t('register:over')}`}
                     </p>
                   </div>
                 )}
@@ -487,12 +512,12 @@ export default function DayClosingPage() {
               {(!isMatch && actualCash !== '') && (
                 <div>
                   <label className="label">
-                    Notes <span className="text-gray-400">(explain discrepancy)</span>
+                    {t('register:notesDiscrepancy')}
                   </label>
                   <textarea
                     value={notes}
                     onChange={e => setNotes(e.target.value)}
-                    placeholder="Reason for cash difference…"
+                    placeholder={t('register:differenceReason')}
                     className="input h-20 resize-none"
                     disabled={!!todayClosing}
                   />
@@ -503,13 +528,13 @@ export default function DayClosingPage() {
               {saveErr && (
                 <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl p-3">
                   <AlertTriangle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
-                  <p className="text-xs text-red-700">{saveErr}</p>
+                  <p className="text-xs text-red-700">{t(`register:${saveErr}`)}</p>
                 </div>
               )}
               {saveMsg && (
                 <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-xl p-3">
                   <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0" />
-                  <p className="text-xs text-emerald-700">{saveMsg}</p>
+                  <p className="text-xs text-emerald-700">{t(`register:${saveMsg}`)}</p>
                 </div>
               )}
 
@@ -520,7 +545,7 @@ export default function DayClosingPage() {
                     onClick={handlePrint}
                     className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                   >
-                    <Printer size={14} /> Print Report
+                    <Printer size={14} /> {t('register:printReport')}
                   </button>
                   <button
                     onClick={closeDay}
@@ -528,8 +553,8 @@ export default function DayClosingPage() {
                     className="btn-primary flex items-center gap-2 disabled:opacity-50"
                   >
                     {saving
-                      ? <><Loader2 size={14} className="animate-spin" /> Closing…</>
-                      : <><CalendarCheck2 size={14} /> Close Day</>
+                      ? <><Loader2 size={14} className="animate-spin" /> {t('register:closing')}</>
+                      : <><CalendarCheck2 size={14} /> {t('register:closeDay')}</>
                     }
                   </button>
                 </div>
@@ -540,7 +565,7 @@ export default function DayClosingPage() {
                   onClick={handlePrint}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600 transition-colors"
                 >
-                  <Printer size={14} /> Print Closing Report
+                  <Printer size={14} /> {t('register:printClosingReport')}
                 </button>
               )}
             </div>
@@ -549,14 +574,14 @@ export default function DayClosingPage() {
             {prevClosings.length > 0 && (
               <div className="card overflow-hidden">
                 <div className="px-5 py-4 border-b border-gray-100">
-                  <h3 className="text-sm font-semibold text-gray-900">Previous Closings</h3>
+                  <h3 className="text-sm font-semibold text-gray-900">{t('register:previousClosings')}</h3>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-gray-50">
-                        {['Date', 'Invoices', 'Total Sales', 'Actual Cash', 'Difference', 'Status'].map(h => (
-                          <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
+                        {[t('register:date'), t('register:invoices'), t('register:totalSales'), t('register:actualCash'), t('register:difference'), t('register:status')].map(h => (
+                          <th key={h} className="px-5 py-3 text-start text-[11px] font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -566,8 +591,8 @@ export default function DayClosingPage() {
                         const balanced = Math.abs(diff) < 0.01
                         return (
                           <tr key={c.id} className="hover:bg-gray-50/60 transition-colors">
-                            <td className="px-5 py-3 text-sm font-medium text-gray-800">
-                              {new Date(c.closing_date + 'T00:00:00').toLocaleDateString('en-SA', {
+                            <td className="px-5 py-3 text-sm font-medium text-gray-800" dir="auto">
+                              {new Date(c.closing_date + 'T00:00:00').toLocaleDateString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', {
                                 weekday: 'short', month: 'short', day: 'numeric',
                               })}
                             </td>
@@ -585,7 +610,7 @@ export default function DayClosingPage() {
                             </td>
                             <td className="px-5 py-3">
                               <Badge variant={balanced ? 'success' : 'warning'} dot>
-                                {balanced ? 'Balanced' : diff < 0 ? 'Short' : 'Over'}
+                                {balanced ? t('register:balanced') : diff < 0 ? t('register:short') : t('register:over')}
                               </Badge>
                             </td>
                           </tr>
