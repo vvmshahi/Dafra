@@ -3,6 +3,24 @@
   "interfaceLanguage": "لغة الواجهة",
   "english": "الإنجليزية",
   "arabic": "العربية",
-  "changesApplyImmediately": "تُطبّق التغييرات فوراً"
+  "changesApplyImmediately": "تُطبّق التغييرات فوراً",
+  "profile": {
+    "accountInfo": "معلومات الحساب",
+    "role": "الدور",
+    "memberSince": "عضو منذ",
+    "edit": "تعديل الملف الشخصي",
+    "fullName": "الاسم الكامل",
+    "fullNamePlaceholder": "اسمك الكامل",
+    "phoneOptional": "رقم الهاتف (اختياري)",
+    "save": "حفظ الملف الشخصي",
+    "updated": "تم تحديث الملف الشخصي بنجاح",
+    "changePassword": "تغيير كلمة المرور",
+    "newPassword": "كلمة المرور الجديدة",
+    "confirmPassword": "تأكيد كلمة المرور الجديدة",
+    "repeatPassword": "أعد إدخال كلمة المرور الجديدة",
+    "changingPassword": "جارٍ التغيير…",
+    "passwordChanged": "تم تغيير كلمة المرور بنجاح",
+    "showPassword": "إظهار كلمة المرور",
+    "hidePassword": "إخفاء كلمة المرور"
+  }
 }
-

@@ -1,0 +1,18 @@
+{
+  "required": "هذا الحقل مطلوب.",
+  "requiredNamed": "حقل {{field}} مطلوب.",
+  "invalidEmail": "أدخل عنوان بريد إلكتروني صالحاً.",
+  "invalidPhone": "أدخل رقم هاتف صالحاً.",
+  "passwordTooShort": "يجب ألا تقل كلمة المرور عن {{min}} أحرف.",
+  "passwordsDoNotMatch": "كلمتا المرور غير متطابقتين.",
+  "invalidNumber": "أدخل رقماً صالحاً.",
+  "greaterThanZero": "يجب أن تكون القيمة أكبر من صفر.",
+  "minimumValue": "يجب ألا تقل القيمة عن {{min}}.",
+  "maximumValue": "يجب ألا تتجاوز القيمة {{max}}.",
+  "invalidDate": "أدخل تاريخاً صالحاً.",
+  "loadingFailed": "تعذّر تحميل المعلومات.",
+  "saveFailed": "تعذّر حفظ التغييرات.",
+  "networkUnavailable": "الشبكة غير متاحة. تحقق من اتصالك.",
+  "permissionDenied": "ليس لديك صلاحية لتنفيذ هذا الإجراء.",
+  "allPasswordFields": "أكمل جميع حقول كلمة المرور."
+}

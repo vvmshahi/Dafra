@@ -3,10 +3,38 @@
   "newSale": "عملية بيع جديدة",
   "invoices": "الفواتير",
   "products": "المنتجات",
+  "stock": "المخزون",
+  "purchases": "المشتريات",
   "customers": "العملاء",
   "suppliers": "المورّدون",
   "expenses": "المصروفات",
   "reports": "التقارير",
-  "settings": "الإعدادات"
+  "settings": "الإعدادات",
+  "invoiceSettings": "إعدادات الفاتورة",
+  "devicePrinter": "طابعة الجهاز",
+  "profile": "الملف الشخصي",
+  "employees": "الموظفون",
+  "branches": "الفروع",
+  "zatca": "ZATCA",
+  "overview": "نظرة عامة",
+  "clients": "العملاء التجاريون",
+  "subscriptions": "الاشتراكات",
+  "operations": "العمليات",
+  "sections": {
+    "daily": "العمل اليومي",
+    "catalogue": "المنتجات والمخزون",
+    "business": "إدارة الأعمال",
+    "settings": "الإعدادات",
+    "analysis": "التحليل",
+    "administration": "الإدارة"
+  },
+  "roles": {
+    "owner": "المالك",
+    "admin": "مسؤول",
+    "branch": "الفرع",
+    "superAdmin": "المسؤول العام",
+    "user": "مستخدم"
+  },
+  "expandSidebar": "توسيع القائمة الجانبية",
+  "collapseSidebar": "طي القائمة الجانبية"
 }
-

@@ -9,6 +9,7 @@ import { supportConfig } from '@/config/support'
 import { useTranslation } from 'react-i18next'
 import { LanguageSelector } from '@/components/localization/LanguageSelector'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
+import { authErrorKey } from '@/localization/authErrors'
 
 const WA_LINK = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
@@ -27,19 +28,15 @@ function GeometricPattern() {
   )
 }
 
-const workspaceItems = [
-  'POS and invoices',
-  'Stock and reports',
-  'Secure team access',
-]
-
 export default function LoginPage() {
   const { signIn } = useAuth()
   const navigate   = useNavigate()
   const location   = useLocation()
-  const from       = (location.state as { from?: string })?.from ?? '/'
-  const successMsg = (location.state as { successMsg?: string })?.successMsg ?? null
   const { t } = useTranslation(['auth', 'common'])
+  const from       = (location.state as { from?: string })?.from ?? '/'
+  const successKey = (location.state as { successKey?: string })?.successKey
+  const successMsg = successKey ? t(successKey) : null
+  const workspaceItems = ['pos', 'stock', 'team'] as const
 
   const [identifier, setIdentifier] = useState('')
   const [password,   setPassword]   = useState('')
@@ -53,7 +50,8 @@ export default function LoginPage() {
     const { error } = await signIn(identifier, password)
     setLoading(false)
     if (error) {
-      setError(error.message)
+      console.error('Kubri sign-in failed', error)
+      setError(t(`auth:${authErrorKey(error, 'errors.generic')}`))
     } else {
       navigate(from, { replace: true })
     }
@@ -71,26 +69,26 @@ export default function LoginPage() {
           </div>
 
           <div className="relative z-10 max-w-md">
-            <p className="mb-3 text-xs font-black uppercase tracking-[0.22em] text-[#D8B76A]">Kubri workspace</p>
+            <p className="mb-3 text-xs font-black uppercase tracking-[0.22em] text-[#D8B76A]">{t('auth:login.workspace')}</p>
             <h2 className="text-4xl font-black leading-[1.08] tracking-tight xl:text-5xl">
-              Welcome back to Kubri.
+              {t('auth:login.welcome')}
             </h2>
             <p className="mt-4 max-w-sm text-base leading-7 text-white/70">
-              Sign in to manage sales, invoices, stock, sessions, and reports.
+              {t('auth:login.description')}
             </p>
 
             <div className="mt-7 space-y-3">
               {workspaceItems.map(item => (
                 <div key={item} className="flex items-center gap-3 text-sm font-semibold text-white/82">
                   <CheckCircle2 size={16} className="flex-shrink-0 text-[#D8B76A]" />
-                  <span>{item}</span>
+                  <span>{t(`auth:login.features.${item}`)}</span>
                 </div>
               ))}
             </div>
           </div>
 
           <div className="relative z-10 max-w-md border-t border-white/[0.10] pt-4">
-            <p className="text-sm font-semibold text-white/58">Built for Saudi SMEs and growing businesses.</p>
+            <p className="text-sm font-semibold text-white/58">{t('auth:login.audience')}</p>
           </div>
         </section>
 
@@ -115,10 +113,10 @@ export default function LoginPage() {
             </div>
 
             <div className="mb-7">
-              <p className="text-sm font-black uppercase tracking-[0.2em] text-[#A77F29]">Secure access</p>
-              <h1 className="mt-3 text-3xl font-black tracking-tight text-[#10291E]">Sign in to Kubri</h1>
+              <p className="text-sm font-black uppercase tracking-[0.2em] text-[#A77F29]">{t('auth:login.secureAccess')}</p>
+              <h1 className="mt-3 text-3xl font-black tracking-tight text-[#10291E]">{t('auth:login.title')}</h1>
               <p className="mt-2 text-sm leading-6 text-[#496154]">
-                Access your POS workspace, reports, invoices, and branch operations.
+                {t('auth:login.subtitle')}
               </p>
             </div>
 
@@ -146,6 +144,7 @@ export default function LoginPage() {
                 icon={UserRound}
                 required
                 autoComplete="username"
+                dir="ltr"
                 className="h-12 rounded-2xl border-[#D8CDAE] bg-white/85 text-[#10291E] shadow-[0_10px_26px_rgba(15,36,25,0.06)] placeholder:text-[#8CA093] focus:border-[#A77F29] focus:ring-[#D8B76A]/25"
               />
               <Input
@@ -163,7 +162,7 @@ export default function LoginPage() {
               <div className="flex items-center justify-between gap-3 text-sm">
                 <label className="flex cursor-pointer select-none items-center gap-2 font-semibold text-[#496154]">
                   <input type="checkbox" className="rounded border-[#CDBF9F] text-[#A77F29] focus:ring-[#D8B76A]/40" />
-                  Remember me
+                  {t('auth:rememberMe')}
                 </label>
                 <Link to="/forgot-password" className="font-black text-[#0F3A2A] hover:text-[#A77F29]">
                   {t('auth:forgotPassword')}?
@@ -178,9 +177,9 @@ export default function LoginPage() {
 
             <div className="mt-6 border-t border-[#D9CBAA] pt-5">
               <p className="text-center text-sm text-[#496154]">
-                New to Kubri?{' '}
+                {t('auth:login.newToKubri')}{' '}
                 <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="font-black text-[#0F3A2A] hover:text-[#A77F29]">
-                  Get started
+                  {t('auth:login.getStarted')}
                 </a>
               </p>
               <div className="mt-4 flex flex-col gap-2 text-center text-sm sm:flex-row">
@@ -195,6 +194,7 @@ export default function LoginPage() {
                 </a>
                 <a
                   href={EMAIL_LINK}
+                  dir="ltr"
                   className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-[#D9CBAA] bg-white/70 px-4 py-3 font-black text-[#284334] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F6F2E8]"
                 >
                   <Mail size={15} />

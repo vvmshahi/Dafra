@@ -3,6 +3,24 @@
   "interfaceLanguage": "Interface language",
   "english": "English",
   "arabic": "Arabic",
-  "changesApplyImmediately": "Changes apply immediately"
+  "changesApplyImmediately": "Changes apply immediately",
+  "profile": {
+    "accountInfo": "Account information",
+    "role": "Role",
+    "memberSince": "Member since",
+    "edit": "Edit profile",
+    "fullName": "Full name",
+    "fullNamePlaceholder": "Your full name",
+    "phoneOptional": "Phone (optional)",
+    "save": "Save profile",
+    "updated": "Profile updated successfully",
+    "changePassword": "Change password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "repeatPassword": "Repeat the new password",
+    "changingPassword": "Changing…",
+    "passwordChanged": "Password changed successfully",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
+  }
 }
-

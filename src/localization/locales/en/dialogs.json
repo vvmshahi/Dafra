@@ -1,0 +1,37 @@
+{
+  "discard": {
+    "title": "Discard changes?",
+    "body": "Your unsaved changes will be lost.",
+    "confirm": "Discard changes"
+  },
+  "delete": {
+    "title": "Delete {{name}}?",
+    "body": "This action cannot be undone.",
+    "confirm": "Delete"
+  },
+  "cancel": {
+    "title": "Cancel this action?",
+    "body": "Any unfinished changes will be lost.",
+    "confirm": "Cancel action"
+  },
+  "restoreDefaults": {
+    "title": "Restore defaults?",
+    "body": "Your custom settings will be replaced with the defaults.",
+    "confirm": "Restore defaults"
+  },
+  "sessionTimeout": {
+    "title": "Session expired",
+    "body": "Sign in again to continue.",
+    "confirm": "Sign in"
+  },
+  "signOut": {
+    "title": "Sign out?",
+    "body": "You will need to sign in again to use Kubri.",
+    "confirm": "Sign out"
+  },
+  "retry": {
+    "title": "Try again?",
+    "body": "Kubri will repeat the last safe action.",
+    "confirm": "Retry"
+  }
+}

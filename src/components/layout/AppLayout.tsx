@@ -5,12 +5,14 @@ import Sidebar from './Sidebar'
 import { useAuth } from '@/hooks/useAuth'
 import { useSubscription } from '@/hooks/useSubscription'
 import { supportConfig } from '@/config/support'
+import { useTranslation } from 'react-i18next'
 
 const WA_LINK = supportConfig.whatsappLink
 
 function SubscriptionBanner() {
   const { profile } = useAuth()
   const sub = useSubscription()
+  const { t } = useTranslation('common')
 
   const isTenantUser = !!profile && profile.role !== 'super_admin'
   const isOwner = isTenantUser && profile.role !== 'branch'
@@ -22,7 +24,7 @@ function SubscriptionBanner() {
       <div className="flex items-center gap-3 bg-red-700 text-white px-4 py-2.5 text-sm flex-shrink-0">
         <AlertTriangle size={15} className="flex-shrink-0" />
         <span className="flex-1">
-          Account suspended. New billing and register opening are disabled. Existing invoices and reports remain available.
+          {t('subscription.suspended')}
         </span>
         <a
           href={WA_LINK}
@@ -30,7 +32,7 @@ function SubscriptionBanner() {
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
         >
-          <MessageCircle size={13} /> Contact Us
+          <MessageCircle size={13} /> {t('contactUs')}
         </a>
       </div>
     )
@@ -43,7 +45,7 @@ function SubscriptionBanner() {
       <div className="flex items-center gap-3 bg-amber-600 text-white px-4 py-2.5 text-sm flex-shrink-0">
         <AlertTriangle size={15} className="flex-shrink-0" />
         <span className="flex-1">
-          Grace period active. Billing remains available unless the account is suspended.
+          {t('subscription.gracePeriod')}
         </span>
         <a
           href={WA_LINK}
@@ -51,7 +53,7 @@ function SubscriptionBanner() {
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
         >
-          <MessageCircle size={13} /> Contact Us
+          <MessageCircle size={13} /> {t('contactUs')}
         </a>
       </div>
     )
@@ -62,7 +64,7 @@ function SubscriptionBanner() {
       <div className="flex items-center gap-3 bg-amber-500 text-white px-4 py-2.5 text-sm flex-shrink-0">
         <AlertTriangle size={15} className="flex-shrink-0" />
         <span className="flex-1">
-          Payment is due soon. Please contact Kubri support if payment is already completed.
+          {t('subscription.dueSoon')}
         </span>
         <a
           href={WA_LINK}
@@ -70,7 +72,7 @@ function SubscriptionBanner() {
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
         >
-          <MessageCircle size={13} /> Renew Now
+          <MessageCircle size={13} /> {t('renewNow')}
         </a>
       </div>
     )
@@ -81,7 +83,7 @@ function SubscriptionBanner() {
       <div className="flex items-center gap-3 bg-amber-600 text-white px-4 py-2.5 text-sm flex-shrink-0">
         <AlertTriangle size={15} className="flex-shrink-0" />
         <span className="flex-1">
-          Payment is overdue. Billing remains available during pilot unless the account is suspended.
+          {t('subscription.overdue')}
         </span>
         <a
           href={WA_LINK}
@@ -89,7 +91,7 @@ function SubscriptionBanner() {
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
         >
-          <MessageCircle size={13} /> Contact Us
+          <MessageCircle size={13} /> {t('contactUs')}
         </a>
       </div>
     )

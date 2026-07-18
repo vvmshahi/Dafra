@@ -3,10 +3,38 @@
   "newSale": "New Sale",
   "invoices": "Invoices",
   "products": "Products",
+  "stock": "Stock",
+  "purchases": "Purchases",
   "customers": "Customers",
   "suppliers": "Suppliers",
   "expenses": "Expenses",
   "reports": "Reports",
-  "settings": "Settings"
+  "settings": "Settings",
+  "invoiceSettings": "Invoice Settings",
+  "devicePrinter": "Device Printer",
+  "profile": "Profile",
+  "employees": "Employees",
+  "branches": "Branches",
+  "zatca": "ZATCA",
+  "overview": "Overview",
+  "clients": "Clients",
+  "subscriptions": "Subscriptions",
+  "operations": "Operations",
+  "sections": {
+    "daily": "Daily",
+    "catalogue": "Catalogue",
+    "business": "Business",
+    "settings": "Settings",
+    "analysis": "Analysis",
+    "administration": "Administration"
+  },
+  "roles": {
+    "owner": "Owner",
+    "admin": "Admin",
+    "branch": "Branch",
+    "superAdmin": "Super admin",
+    "user": "User"
+  },
+  "expandSidebar": "Expand sidebar",
+  "collapseSidebar": "Collapse sidebar"
 }
-

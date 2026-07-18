@@ -6,6 +6,9 @@ import { markOwnerSetupCompleteSilently } from '@/lib/ownerSetupCompletion'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { MeemLogo } from '@/components/MeemLogo'
+import { useTranslation } from 'react-i18next'
+import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
+import { authErrorKey } from '@/localization/authErrors'
 
 function GeometricPattern() {
   return (
@@ -29,6 +32,7 @@ type PageStatus = 'loading' | 'ready' | 'invalid' | 'success'
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation(['auth', 'common', 'validation'])
 
   const [status,   setStatus]   = useState<PageStatus>('loading')
   const [password, setPassword] = useState('')
@@ -68,11 +72,11 @@ export default function ResetPasswordPage() {
     setError('')
 
     if (password !== confirm) {
-      setError('Passwords do not match.')
+      setError(t('validation:passwordsDoNotMatch'))
       return
     }
     if (password.length < 8) {
-      setError('Password must be at least 8 characters.')
+      setError(t('validation:passwordTooShort', { min: 8 }))
       return
     }
 
@@ -81,7 +85,8 @@ export default function ResetPasswordPage() {
     setLoading(false)
 
     if (error) {
-      setError(error.message)
+      console.error('Kubri password update failed', error)
+      setError(t(`auth:${authErrorKey(error, 'errors.passwordUpdateFailed')}`))
       return
     }
 
@@ -91,7 +96,7 @@ export default function ResetPasswordPage() {
     await supabase.auth.signOut()
     setTimeout(() => {
       navigate('/login', {
-        state: { successMsg: 'Password updated successfully. Please sign in.' },
+        state: { successKey: 'auth:reset.updatedSignIn' },
         replace: true,
       })
     }, 1800)
@@ -114,23 +119,19 @@ export default function ResetPasswordPage() {
         {/* Center */}
         <div className="relative z-10 space-y-6">
           <div>
-            <p className="mb-4 text-xs font-bold uppercase tracking-[0.22em] text-gold-300">Kubri password setup</p>
-            <h2 className="text-5xl font-black text-white leading-tight mb-2" style={{ fontFamily: 'Cairo, sans-serif' }}>
-              كلمة مرور
-              <br />
-              <span className="text-gold-400">جديدة</span>
-            </h2>
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.22em] text-gold-300">{t('auth:reset.eyebrow')}</p>
+            <h2 className="text-5xl font-black text-white leading-tight mb-2">{t('auth:reset.heroTitle')}</h2>
             <p className="text-xl font-light text-white/80 mt-1">
-              Choose a strong password<br />to protect your account.
+              {t('auth:reset.heroSubtitle')}
             </p>
           </div>
           <p className="text-white/50 text-sm leading-relaxed max-w-xs">
-            Use at least 8 characters with a mix of letters, numbers, and symbols for the best security.
+            {t('auth:reset.heroDescription')}
           </p>
         </div>
 
         <div className="relative z-10">
-          <p className="text-white/40 text-xs">Secure password setup for Kubri users</p>
+          <p className="text-white/40 text-xs">{t('auth:reset.securityNote')}</p>
         </div>
       </div>
 
@@ -138,10 +139,10 @@ export default function ResetPasswordPage() {
       <div className="relative flex-1 flex items-center justify-center bg-white p-8">
         <Link
           to="/"
-          className="absolute left-5 top-5 inline-flex items-center gap-2 rounded-full border border-[#D9CBAA] bg-white/80 px-3 py-2 text-sm font-black text-[#284334] shadow-[0_10px_26px_rgba(15,36,25,0.06)] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-white sm:left-8 sm:top-8"
+          className="absolute start-5 top-5 inline-flex items-center gap-2 rounded-full border border-[#D9CBAA] bg-white/80 px-3 py-2 text-sm font-black text-[#284334] shadow-[0_10px_26px_rgba(15,36,25,0.06)] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-white sm:start-8 sm:top-8"
         >
-          <ArrowLeft size={15} />
-          Home
+          <DirectionalIcon icon={ArrowLeft} size={15} />
+          {t('common:home')}
         </Link>
         <div className="w-full max-w-[380px] space-y-8">
 
@@ -154,7 +155,7 @@ export default function ResetPasswordPage() {
           {status === 'loading' && (
             <div className="flex flex-col items-center gap-4 py-8 text-center">
               <Loader2 size={28} className="animate-spin text-primary-400" />
-              <p className="text-sm text-gray-500">Verifying your reset link…</p>
+              <p className="text-sm text-gray-500">{t('auth:reset.verifying')}</p>
             </div>
           )}
 
@@ -165,17 +166,17 @@ export default function ResetPasswordPage() {
                 <AlertCircle size={28} className="text-red-500" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Link expired</h1>
+                <h1 className="text-2xl font-bold text-gray-900">{t('auth:reset.expiredTitle')}</h1>
                 <p className="text-gray-500 text-sm mt-2">
-                  This password reset link has expired or is invalid. Reset links are only valid for 1 hour.
+                  {t('auth:reset.expiredBody')}
                 </p>
               </div>
               <a
                 href="/forgot-password"
                 className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0F2419] text-white text-sm font-semibold rounded-xl hover:bg-[#1a3a28] transition-colors"
               >
-                Request a new link
-                <ArrowRight size={14} />
+                {t('auth:reset.requestNewLink')}
+                <DirectionalIcon icon={ArrowRight} size={14} />
               </a>
             </div>
           )}
@@ -187,14 +188,14 @@ export default function ResetPasswordPage() {
                 <CheckCircle2 size={28} className="text-emerald-500" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Password updated!</h1>
+                <h1 className="text-2xl font-bold text-gray-900">{t('auth:reset.successTitle')}</h1>
                 <p className="text-gray-500 text-sm mt-2">
-                  Your password has been updated. Redirecting you to sign in…
+                  {t('auth:reset.successBody')}
                 </p>
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-400">
                 <Loader2 size={14} className="animate-spin" />
-                Redirecting…
+                {t('auth:reset.redirecting')}
               </div>
             </div>
           )}
@@ -203,9 +204,9 @@ export default function ResetPasswordPage() {
           {status === 'ready' && (
             <div className="space-y-8">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Set new password</h1>
+                <h1 className="text-2xl font-bold text-gray-900">{t('auth:reset.title')}</h1>
                 <p className="text-gray-500 text-sm mt-1">
-                  Choose a strong password for your account
+                  {t('auth:reset.description')}
                 </p>
               </div>
 
@@ -218,7 +219,7 @@ export default function ResetPasswordPage() {
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <Input
-                  label="New password"
+                  label={t('auth:newPassword')}
                   type="password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
@@ -226,10 +227,10 @@ export default function ResetPasswordPage() {
                   icon={Lock}
                   required
                   autoComplete="new-password"
-                  helperText="Min. 8 characters"
+                  helperText={t('auth:reset.minimumHint')}
                 />
                 <Input
-                  label="Confirm new password"
+                  label={t('auth:confirmPassword')}
                   type="password"
                   value={confirm}
                   onChange={e => setConfirm(e.target.value)}
@@ -239,8 +240,8 @@ export default function ResetPasswordPage() {
                   autoComplete="new-password"
                 />
                 <Button type="submit" loading={loading} className="w-full mt-2 gap-2">
-                  Update password
-                  {!loading && <ArrowRight size={16} />}
+                  {t('auth:reset.update')}
+                  {!loading && <DirectionalIcon icon={ArrowRight} size={16} />}
                 </Button>
               </form>
             </div>

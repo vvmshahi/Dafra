@@ -38,6 +38,16 @@ This glossary is a localization working draft for Saudi Arabic review. The propo
 | `zatca.accepted` | Accepted | مقبول | ZATCA validation status | Use only when the backend result is actually accepted. | Native review required |
 | `zatca.rejected` | Rejected | مرفوض | ZATCA validation status | Pair with safe actionable error details. | Native review required |
 | `common.retry` | Retry | إعادة المحاولة | Recoverable errors | Action label; avoid implying duplicate submission. | Native review required |
+| `navigation.sections.daily` | Daily | اليومية | Sidebar section | Groups routine branch actions; compact navigation heading. | Native review required |
+| `navigation.sections.catalogue` | Catalogue | الكتالوج | Sidebar section | Groups products, stock, purchases, and suppliers. | Native review required |
+| `navigation.sections.business` | Business | الأعمال | Sidebar section | Groups customer and expense records. | Native review required |
+| `navigation.sections.administration` | Administration | الإدارة | Owner and internal navigation | Refers to account administration, not public-sector administration. | Native review required |
+| `navigation.roles.branch` | Branch | الفرع | Account role | A branch-scoped user role; review against the preferred merchant-facing role name. | Native review required |
+| `navigation.clients` | Clients | العملاء | Internal super-admin navigation | Refers to Kubri business accounts, while `customers.customer` refers to a merchant's customer. | Native review required |
+| `auth.login.secureAccess` | Secure access | دخول آمن | Sign-in page | Short sign-in eyebrow; not a security certification claim. | Native review required |
+| `auth.invitation.title` | Account creation is by invitation only | إنشاء الحسابات متاح بالدعوة فقط | Invitation page | Explains the controlled onboarding model. | Native review required |
+| `dialogs.discard.title` | Discard changes? | تجاهل التغييرات؟ | Shared confirmation dialog | Used only when unsaved form state would be lost. | Native review required |
+| `validation.permissionDenied` | You do not have permission to perform this action. | ليس لديك صلاحية لتنفيذ هذا الإجراء. | Shared authorization error | Avoid exposing backend policy or role details. | Native review required |
 
 ## Review rules
 

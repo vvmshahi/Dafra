@@ -13,55 +13,54 @@ import { useTranslation } from 'react-i18next'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 
 interface NavItem {
-  label: string
-  translationKey?: 'dashboard' | 'newSale' | 'invoices' | 'products' | 'customers' | 'suppliers' | 'expenses' | 'reports' | 'settings'
+  labelKey: string
   path: string
   icon: LucideIcon
-  section?: 'Daily work' | 'Catalogue and stock' | 'Business' | 'Settings' | 'Analysis' | 'Administration'
+  section?: 'daily' | 'catalogue' | 'business' | 'settings' | 'analysis' | 'administration'
 }
 
 const ownerNav: NavItem[] = [
-  { label: 'Dashboard', translationKey: 'dashboard', path: '/dashboard', icon: LayoutDashboard, section: 'Daily work' },
-  { label: 'Branches',  path: '/branches',  icon: Building2,       section: 'Administration' },
-  { label: 'Employees', path: '/employees', icon: UserSquare2,     section: 'Administration' },
-  { label: 'ZATCA',     path: '/zatca',     icon: ShieldCheck,     section: 'Settings' },
-  { label: 'Settings', translationKey: 'settings', path: '/settings', icon: Settings, section: 'Settings' },
-  { label: 'Reports', translationKey: 'reports', path: '/reports', icon: BarChart2, section: 'Analysis' },
+  { labelKey: 'dashboard', path: '/dashboard', icon: LayoutDashboard, section: 'daily' },
+  { labelKey: 'branches', path: '/branches', icon: Building2, section: 'administration' },
+  { labelKey: 'employees', path: '/employees', icon: UserSquare2, section: 'administration' },
+  { labelKey: 'zatca', path: '/zatca', icon: ShieldCheck, section: 'settings' },
+  { labelKey: 'settings', path: '/settings', icon: Settings, section: 'settings' },
+  { labelKey: 'reports', path: '/reports', icon: BarChart2, section: 'analysis' },
 ]
 
 const branchNav: NavItem[] = [
-  { label: 'Dashboard', translationKey: 'dashboard', path: '/branch', icon: Store, section: 'Daily work' },
-  { label: 'New Sale', translationKey: 'newSale', path: '/pos', icon: Receipt, section: 'Daily work' },
-  { label: 'Invoices', translationKey: 'invoices', path: '/invoices', icon: FileText, section: 'Daily work' },
-  { label: 'Products', translationKey: 'products', path: '/products', icon: Package, section: 'Catalogue and stock' },
-  { label: 'Stock',            path: '/inventory',         icon: Warehouse,   section: 'Catalogue and stock' },
-  { label: 'Purchases',        path: '/purchases',         icon: Truck,       section: 'Catalogue and stock' },
-  { label: 'Suppliers', translationKey: 'suppliers', path: '/suppliers', icon: Truck, section: 'Catalogue and stock' },
-  { label: 'Customers', translationKey: 'customers', path: '/customers', icon: Users, section: 'Business' },
-  { label: 'Expenses', translationKey: 'expenses', path: '/expenses', icon: CreditCard, section: 'Business' },
-  { label: 'Invoice Settings', path: '/invoice-settings',  icon: Settings2,   section: 'Settings' },
-  { label: 'Reports', translationKey: 'reports', path: '/reports', icon: BarChart2, section: 'Analysis' },
+  { labelKey: 'dashboard', path: '/branch', icon: Store, section: 'daily' },
+  { labelKey: 'newSale', path: '/pos', icon: Receipt, section: 'daily' },
+  { labelKey: 'invoices', path: '/invoices', icon: FileText, section: 'daily' },
+  { labelKey: 'products', path: '/products', icon: Package, section: 'catalogue' },
+  { labelKey: 'stock', path: '/inventory', icon: Warehouse, section: 'catalogue' },
+  { labelKey: 'purchases', path: '/purchases', icon: Truck, section: 'catalogue' },
+  { labelKey: 'suppliers', path: '/suppliers', icon: Truck, section: 'catalogue' },
+  { labelKey: 'customers', path: '/customers', icon: Users, section: 'business' },
+  { labelKey: 'expenses', path: '/expenses', icon: CreditCard, section: 'business' },
+  { labelKey: 'invoiceSettings', path: '/invoice-settings', icon: Settings2, section: 'settings' },
+  { labelKey: 'reports', path: '/reports', icon: BarChart2, section: 'analysis' },
 ]
 
 const branchDevicePrinterNavItem: NavItem = {
-  label: 'Device Printer',
+  labelKey: 'devicePrinter',
   path: '/device-printer',
   icon: Printer,
-  section: 'Settings',
+  section: 'settings',
 }
 
 const superAdminNav: NavItem[] = [
-  { label: 'Overview',      path: '/super-admin',               icon: LayoutDashboard },
-  { label: 'Clients',       path: '/super-admin/clients',       icon: Building2       },
-  { label: 'Subscriptions', path: '/super-admin/subscriptions', icon: CreditCard      },
-  { label: 'Settings',      path: '/super-admin/settings',      icon: Settings        },
+  { labelKey: 'overview', path: '/super-admin', icon: LayoutDashboard },
+  { labelKey: 'clients', path: '/super-admin/clients', icon: Building2 },
+  { labelKey: 'subscriptions', path: '/super-admin/subscriptions', icon: CreditCard },
+  { labelKey: 'settings', path: '/super-admin/settings', icon: Settings },
 ]
 
 const operationsNavItem: NavItem = {
-  label: 'Operations',
+  labelKey: 'operations',
   path: '/operations',
   icon: ShieldCheck,
-  section: 'Administration',
+  section: 'administration',
 }
 
 const operationsRoles = new Set(['owner', 'admin', 'super_admin'])
@@ -123,22 +122,23 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     : isBranch
       ? isElectron()
         ? [
-            ...branchNavigation.filter(item => item.section !== 'Analysis'),
+            ...branchNavigation.filter(item => item.section !== 'analysis'),
             branchDevicePrinterNavItem,
-            ...branchNavigation.filter(item => item.section === 'Analysis'),
+            ...branchNavigation.filter(item => item.section === 'analysis'),
           ]
         : branchNavigation
       : canViewOperations
         ? [
-            ...ownerNav.filter(item => item.section !== 'Settings' && item.section !== 'Analysis'),
+            ...ownerNav.filter(item => item.section !== 'settings' && item.section !== 'analysis'),
             operationsNavItem,
-            ...ownerNav.filter(item => item.section === 'Settings'),
-            ...ownerNav.filter(item => item.section === 'Analysis'),
+            ...ownerNav.filter(item => item.section === 'settings'),
+            ...ownerNav.filter(item => item.section === 'analysis'),
           ]
         : ownerNav
-  const subtitle = isSuperAdmin ? 'Kubri Super Admin' : (tenant?.name ?? 'Kubri')
-  const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? 'User'
-  const roleLabel = isBranch ? 'Branch' : (profile?.role?.replace(/_/g, ' ') ?? '')
+  const subtitle = isSuperAdmin ? `Kubri ${t('navigation:roles.superAdmin')}` : (tenant?.name ?? 'Kubri')
+  const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? t('navigation:roles.user')
+  const roleKey = profile?.role === 'super_admin' ? 'superAdmin' : String(profile?.role ?? 'user')
+  const roleLabel = t(`navigation:roles.${roleKey}`)
 
   function isNavActive(item: NavItem) {
     if (item.path === '/super-admin') return location.pathname === item.path
@@ -161,7 +161,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </div>
             <button
               onClick={onToggle}
-              title="Expand sidebar"
+              title={t('navigation:expandSidebar')}
+              aria-label={t('navigation:expandSidebar')}
               className="text-sidebar-text hover:text-white hover:bg-sidebar-hover transition-colors p-1.5 rounded-lg"
             >
               <DirectionalIcon icon={ChevronRight} size={15} />
@@ -173,11 +174,12 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <div className="flex h-14 w-[184px] max-w-full items-center overflow-visible">
                 <img src={KUBRI_WORDMARK_SRC} alt="Kubri" className="h-full w-full object-contain object-start" />
               </div>
-              <p className="mt-1 text-xs text-sidebar-text truncate" title={subtitle}>{subtitle}</p>
+              <p className="mt-1 text-xs text-sidebar-text truncate" title={subtitle} dir="auto">{subtitle}</p>
             </div>
             <button
               onClick={onToggle}
-              title="Collapse sidebar"
+              title={t('navigation:collapseSidebar')}
+              aria-label={t('navigation:collapseSidebar')}
               className="absolute end-0 top-2 text-sidebar-text hover:text-white hover:bg-sidebar-hover transition-colors p-1.5 rounded-lg"
             >
               <DirectionalIcon icon={ChevronLeft} size={15} />
@@ -185,7 +187,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             {isSuperAdmin && (
               <div className="mt-3 inline-flex items-center gap-1.5 bg-red-900/40 text-red-300 text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-red-700/50">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
-                SUPER ADMIN
+                {t('navigation:roles.superAdmin')}
               </div>
             )}
           </div>
@@ -196,13 +198,13 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto sidebar-scroll">
         {navItems.map((item, index) => {
           const isActive = isNavActive(item)
-          const itemLabel = item.translationKey ? t(`navigation:${item.translationKey}`) : item.label
+          const itemLabel = t(`navigation:${item.labelKey}`)
           const showSection = item.section && item.section !== navItems[index - 1]?.section
           return (
-            <div key={item.label} className={showSection && index > 0 ? 'mt-3' : undefined}>
+            <div key={item.labelKey} className={showSection && index > 0 ? 'mt-3' : undefined}>
               {showSection && !collapsed && (
                 <p className="px-3 pb-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-sidebar-text/60">
-                  {item.section}
+                  {t(`navigation:sections.${item.section}`)}
                 </p>
               )}
               {showSection && collapsed && index > 0 && <div className="mx-2 mb-2 border-t border-sidebar-border" />}
@@ -233,14 +235,14 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               </span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-white text-xs font-semibold truncate">{displayName}</p>
+              <p className="text-white text-xs font-semibold truncate" dir="auto">{displayName}</p>
               <p className="text-sidebar-text text-[10px] capitalize">{roleLabel}</p>
             </div>
           </div>
         )}
 
         {/* Profile */}
-        <NavLink to="/profile" title={collapsed ? 'Profile' : undefined}>
+        <NavLink to="/profile" title={collapsed ? t('navigation:profile') : undefined}>
           {({ isActive }) => (
             <div className={`
               flex items-center rounded-xl text-sm font-medium
@@ -252,7 +254,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               }
             `}>
               <UserSquare2 size={16} className={isActive ? 'text-white' : 'group-hover:text-white'} />
-              {!collapsed && 'Profile'}
+              {!collapsed && t('navigation:profile')}
             </div>
           )}
         </NavLink>

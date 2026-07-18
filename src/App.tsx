@@ -5,6 +5,8 @@ import { useAuth } from '@/hooks/useAuth'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import AppLayout from '@/components/layout/AppLayout'
 import { isDesktopApp } from '@/lib/electron'
+import { useTranslation } from 'react-i18next'
+import { useLocale } from '@/localization/useLocale'
 
 // Pages
 import LoginPage           from '@/pages/auth/LoginPage'
@@ -60,12 +62,13 @@ function FullscreenSpinner() {
 }
 
 function AuthLoadError() {
+  const { t } = useTranslation(['common', 'auth'])
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-6">
       <div className="max-w-sm w-full rounded-2xl bg-white border border-gray-100 p-6 text-center shadow-sm">
-        <h1 className="text-lg font-bold text-gray-900">Account could not be loaded</h1>
+        <h1 className="text-lg font-bold text-gray-900">{t('common:errors.accountLoadTitle')}</h1>
         <p className="text-sm text-gray-500 mt-2">
-          We could not verify your account profile. Please check your connection and try again.
+          {t('common:errors.accountLoadBody')}
         </p>
         <div className="flex gap-2 justify-center mt-5">
           <button
@@ -73,10 +76,10 @@ function AuthLoadError() {
             onClick={() => window.location.reload()}
             className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700"
           >
-            Retry
+            {t('common:retry')}
           </button>
           <a href="/login" className="px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-50">
-            Sign in again
+            {t('auth:signInAgain')}
           </a>
         </div>
       </div>
@@ -85,12 +88,13 @@ function AuthLoadError() {
 }
 
 function UnauthorizedPage() {
+  const { t } = useTranslation('common')
   return (
     <div className="min-h-[60vh] flex items-center justify-center px-6">
       <div className="max-w-sm w-full rounded-2xl bg-white border border-gray-100 p-6 text-center shadow-sm">
-        <h1 className="text-lg font-bold text-gray-900">You do not have access to this page.</h1>
+        <h1 className="text-lg font-bold text-gray-900">{t('errors.accessDeniedTitle')}</h1>
         <p className="text-sm text-gray-500 mt-2">
-          Please use the pages available for your account role.
+          {t('errors.accessDeniedBody')}
         </p>
       </div>
     </div>
@@ -275,9 +279,10 @@ function ScrollToTop() {
 // ── App ───────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const { isRtl } = useLocale()
   return (
     <>
-    <Toaster position="top-center" richColors />
+    <Toaster position="top-center" richColors dir={isRtl ? 'rtl' : 'ltr'} />
     <BrowserRouter>
       <ScrollToTop />
       <Routes>

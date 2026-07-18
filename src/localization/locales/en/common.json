@@ -1,13 +1,41 @@
 {
   "save": "Save",
+  "saving": "Saving…",
   "cancel": "Cancel",
   "close": "Close",
   "back": "Back",
+  "home": "Home",
   "continue": "Continue",
   "loading": "Loading",
   "search": "Search",
   "retry": "Retry",
   "confirm": "Confirm",
-  "language": "Language"
+  "delete": "Delete",
+  "edit": "Edit",
+  "view": "View",
+  "refresh": "Refresh",
+  "previous": "Previous",
+  "next": "Next",
+  "optional": "Optional",
+  "required": "Required",
+  "language": "Language",
+  "contactUs": "Contact us",
+  "renewNow": "Renew now",
+  "errors": {
+    "accountLoadTitle": "Account could not be loaded",
+    "accountLoadBody": "We could not verify your account profile. Check your connection and try again.",
+    "accessDeniedTitle": "You do not have access to this page",
+    "accessDeniedBody": "Use the pages available for your account role.",
+    "pageNotFoundTitle": "Page not found",
+    "pageNotFoundBody": "The page you are looking for does not exist.",
+    "genericTitle": "Something went wrong",
+    "genericBody": "Try again. If the problem continues, contact Kubri support."
+  },
+  "subscription": {
+    "suspended": "Account suspended. New billing and register opening are disabled. Existing invoices and reports remain available.",
+    "gracePeriod": "Grace period active. Billing remains available unless the account is suspended.",
+    "dueSoon": "Payment is due soon. Contact Kubri support if payment is already completed.",
+    "overdue": "Payment is overdue. Billing remains available during the pilot unless the account is suspended."
+  },
+  "goToDashboard": "Go to dashboard"
 }
-

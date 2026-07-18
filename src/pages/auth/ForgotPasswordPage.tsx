@@ -5,6 +5,9 @@ import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { MeemLogo } from '@/components/MeemLogo'
+import { useTranslation } from 'react-i18next'
+import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
+import { authErrorKey } from '@/localization/authErrors'
 
 function GeometricPattern() {
   return (
@@ -25,6 +28,7 @@ function GeometricPattern() {
 }
 
 export default function ForgotPasswordPage() {
+  const { t } = useTranslation(['auth', 'common'])
   const [email,   setEmail]   = useState('')
   const [loading, setLoading] = useState(false)
   const [sent,    setSent]    = useState(false)
@@ -38,7 +42,8 @@ export default function ForgotPasswordPage() {
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo })
     setLoading(false)
     if (error) {
-      setError(error.message)
+      console.error('Kubri password reset request failed', error)
+      setError(t(`auth:${authErrorKey(error, 'errors.resetRequestFailed')}`))
     } else {
       setSent(true)
     }
@@ -61,23 +66,19 @@ export default function ForgotPasswordPage() {
         {/* Center */}
         <div className="relative z-10 space-y-6">
           <div>
-            <p className="mb-4 text-xs font-bold uppercase tracking-[0.22em] text-gold-300">Kubri account recovery</p>
-            <h2 className="text-5xl font-black text-white leading-tight mb-2" style={{ fontFamily: 'Cairo, sans-serif' }}>
-              نسيت كلمة
-              <br />
-              <span className="text-gold-400">المرور؟</span>
-            </h2>
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.22em] text-gold-300">{t('auth:recovery.eyebrow')}</p>
+            <h2 className="text-5xl font-black text-white leading-tight mb-2">{t('auth:recovery.heroTitle')}</h2>
             <p className="text-xl font-light text-white/80 mt-1">
-              No worries — we'll send you<br />a secure reset link.
+              {t('auth:recovery.heroSubtitle')}
             </p>
           </div>
           <p className="text-white/50 text-sm leading-relaxed max-w-xs">
-            Enter your account email and we'll send a password reset link within seconds.
+            {t('auth:recovery.heroDescription')}
           </p>
         </div>
 
         <div className="relative z-10">
-          <p className="text-white/40 text-xs">Secure account recovery for Kubri users</p>
+          <p className="text-white/40 text-xs">{t('auth:recovery.securityNote')}</p>
         </div>
       </div>
 
@@ -85,10 +86,10 @@ export default function ForgotPasswordPage() {
       <div className="relative flex-1 flex items-center justify-center bg-white p-8">
         <Link
           to="/"
-          className="absolute left-5 top-5 inline-flex items-center gap-2 rounded-full border border-[#D9CBAA] bg-white/80 px-3 py-2 text-sm font-black text-[#284334] shadow-[0_10px_26px_rgba(15,36,25,0.06)] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-white sm:left-8 sm:top-8"
+          className="absolute start-5 top-5 inline-flex items-center gap-2 rounded-full border border-[#D9CBAA] bg-white/80 px-3 py-2 text-sm font-black text-[#284334] shadow-[0_10px_26px_rgba(15,36,25,0.06)] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-white sm:start-8 sm:top-8"
         >
-          <ArrowLeft size={15} />
-          Home
+          <DirectionalIcon icon={ArrowLeft} size={15} />
+          {t('common:home')}
         </Link>
         <div className="w-full max-w-[380px] space-y-8">
 
@@ -104,39 +105,39 @@ export default function ForgotPasswordPage() {
                 <CheckCircle2 size={28} className="text-emerald-500" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Check your email</h1>
+                <h1 className="text-2xl font-bold text-gray-900">{t('auth:recovery.checkEmail')}</h1>
                 <p className="text-gray-500 text-sm mt-2">
-                  We sent a password reset link to{' '}
-                  <span className="font-semibold text-gray-700">{email}</span>.
-                  It expires in 1 hour.
+                  {t('auth:recovery.sentPrefix')}{' '}
+                  <bdi dir="ltr" className="font-semibold text-gray-700">{email}</bdi>.{' '}
+                  {t('auth:recovery.sentSuffix')}
                 </p>
               </div>
               <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-sm text-amber-700">
-                Didn't receive it? Check your spam folder, or{' '}
+                {t('auth:recovery.notReceived')}{' '}
                 <button onClick={() => setSent(false)} className="font-semibold underline">
-                  try again
-                </button>.
+                  {t('auth:recovery.tryAgain')}
+                </button>
               </div>
               <Link
                 to="/login"
                 className="flex items-center gap-2 text-sm font-medium text-primary-600 hover:text-primary-700"
               >
-                <ArrowLeft size={16} />
-                Back to sign in
+                <DirectionalIcon icon={ArrowLeft} size={16} />
+                {t('auth:recovery.backToSignIn')}
               </Link>
             </div>
           ) : (
             /* ── Request form ──────────────────────────────── */
             <div className="space-y-8">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Reset your password</h1>
+                <h1 className="text-2xl font-bold text-gray-900">{t('auth:recovery.title')}</h1>
                 <p className="text-gray-500 text-sm mt-1">
-                  Enter the email for an owner or admin account and we'll send a reset link.
+                  {t('auth:recovery.description')}
                 </p>
               </div>
 
               <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-sm text-indigo-700">
-                Branch/counter users with a username should ask the business owner/admin to reset their password.
+                {t('auth:recovery.branchHelp')}
               </div>
 
               {error && (
@@ -148,7 +149,7 @@ export default function ForgotPasswordPage() {
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <Input
-                  label="Email address"
+                  label={t('auth:emailAddress')}
                   type="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
@@ -156,9 +157,10 @@ export default function ForgotPasswordPage() {
                   icon={Mail}
                   required
                   autoComplete="email"
+                  dir="ltr"
                 />
                 <Button type="submit" loading={loading} className="w-full mt-2">
-                  Send reset link
+                  {t('auth:recovery.sendLink')}
                 </Button>
               </form>
 
@@ -166,8 +168,8 @@ export default function ForgotPasswordPage() {
                 to="/login"
                 className="flex items-center gap-2 text-sm font-medium text-primary-600 hover:text-primary-700"
               >
-                <ArrowLeft size={16} />
-                Back to sign in
+                <DirectionalIcon icon={ArrowLeft} size={16} />
+                {t('auth:recovery.backToSignIn')}
               </Link>
             </div>
           )}

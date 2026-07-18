@@ -1,0 +1,18 @@
+{
+  "required": "This field is required.",
+  "requiredNamed": "{{field}} is required.",
+  "invalidEmail": "Enter a valid email address.",
+  "invalidPhone": "Enter a valid phone number.",
+  "passwordTooShort": "Password must be at least {{min}} characters.",
+  "passwordsDoNotMatch": "Passwords do not match.",
+  "invalidNumber": "Enter a valid number.",
+  "greaterThanZero": "Value must be greater than zero.",
+  "minimumValue": "Value must be at least {{min}}.",
+  "maximumValue": "Value must not exceed {{max}}.",
+  "invalidDate": "Enter a valid date.",
+  "loadingFailed": "The information could not be loaded.",
+  "saveFailed": "Changes could not be saved.",
+  "networkUnavailable": "The network is unavailable. Check your connection.",
+  "permissionDenied": "You do not have permission to perform this action.",
+  "allPasswordFields": "Complete all password fields."
+}
