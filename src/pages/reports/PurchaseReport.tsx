@@ -11,6 +11,7 @@ import {
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { asArray, loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
 import { resolveBusinessType } from '@/lib/utils/businessType'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,7 @@ const EMPTY_PURCHASE_DATA: PurchData = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function PurchaseReport({ startDate, endDate, branchId }: ReportProps) {
+  const { t } = useTranslation('reports')
   const { profile, tenant } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<PurchData | null>(null)
@@ -104,8 +106,7 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
   if (noData) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <p className="text-gray-700 font-semibold">No purchase data for this period</p>
-        <p className="text-gray-400 text-sm mt-1">Try a different date range</p>
+        <p className="text-gray-700 font-semibold">{t('purchases.empty')}</p><p className="text-gray-400 text-sm mt-1">{t('common.tryRange')}</p>
       </div>
     )
   }
@@ -116,8 +117,8 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
       {/* ── Summary cards ──────────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
         <StatCard label={purchasesLabel} value={<Rial amount={data!.totalPurchased} />} primary />
-        <StatCard label="Input VAT Support" value={<Rial amount={data!.totalVat} />}      accent="amber" sub="counted purchases only" />
-        <StatCard label="Suppliers Used"   value={String(data!.supplierCount)}           sub="unique vendors" />
+        <StatCard label={t('metrics.inputVat')} value={<Rial amount={data!.totalVat} />} accent="amber" sub={t('purchases.counted')} />
+        <StatCard label={t('metrics.suppliersUsed')} value={String(data!.supplierCount)} sub={t('purchases.unique')} />
       </div>
 
       {/* ── Monthly trend chart ─────────────────────────────── */}
@@ -143,16 +144,14 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
         {/* By supplier */}
         <div className="card overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-            <SectionHeader title="Purchases by Supplier" />
+            <SectionHeader title={t('purchases.bySupplier')} />
           </div>
           {!data!.bySupplier.length ? (
-            <div className="py-10 text-center text-sm text-gray-400">No purchases</div>
+            <div className="py-10 text-center text-sm text-gray-400">{t('purchases.noPurchases')}</div>
           ) : (
             <>
               <div className="flex gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-                <div className="flex-1">Supplier</div>
-                <div className="w-14 text-right hidden sm:block">Orders</div>
-                <div className="w-24 text-right">Total</div>
+                <div className="flex-1">{t('common.supplier')}</div><div className="w-14 text-end hidden sm:block">{t('common.orders')}</div><div className="w-24 text-end">{t('common.total')}</div>
               </div>
               {data!.bySupplier.map((s, i) => (
                 <div key={i} className="flex gap-2 px-4 py-3 border-t border-gray-50 hover:bg-gray-50/50 items-center">
@@ -188,14 +187,12 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
             <SectionHeader title={topItemsTitle} sub={topItemsSub} />
           </div>
           {!data!.topItems.length ? (
-            <div className="py-10 text-center text-sm text-gray-400">No items recorded</div>
+            <div className="py-10 text-center text-sm text-gray-400">{t('purchases.noItems')}</div>
           ) : (
             <>
               <div className="flex gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
                 <div className="w-5">#</div>
-                <div className="flex-1">Item</div>
-                <div className="w-16 text-right">Qty</div>
-                <div className="w-24 text-right">Total</div>
+                <div className="flex-1">{t('common.items')}</div><div className="w-16 text-end">{t('common.quantity')}</div><div className="w-24 text-end">{t('common.total')}</div>
               </div>
               {data!.topItems.map((it, i) => (
                 <div key={i} className="flex gap-2 px-4 py-3 border-t border-gray-50 hover:bg-gray-50/50 items-center">

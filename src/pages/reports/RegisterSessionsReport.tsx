@@ -10,6 +10,7 @@ import {
   registerSessionLabel,
   registerSessionTimeRange,
 } from '@/lib/registerSessions'
+import { useTranslation } from 'react-i18next'
 
 interface ReportProps {
   branchId: string | null
@@ -27,6 +28,7 @@ function SessionAmount({ label, amount }: { label: string; amount: number }) {
 }
 
 export default function RegisterSessionsReport({ branchId, startDate, endDate }: ReportProps) {
+  const { t } = useTranslation('reports')
   const [sessions, setSessions] = useState<RegisterSessionSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -75,7 +77,7 @@ export default function RegisterSessionsReport({ branchId, startDate, endDate }:
       <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5 flex items-start gap-3">
         <AlertCircle size={18} className="text-amber-600 mt-0.5 flex-shrink-0" />
         <div className="flex-1">
-          <p className="text-sm font-semibold text-amber-900">Register Sessions could not be loaded</p>
+          <p className="text-sm font-semibold text-amber-900">{t('sessions.loadFailed')}</p>
           <p className="mt-1 text-xs text-amber-800">{error}</p>
         </div>
         <button onClick={load} className="text-xs font-semibold text-amber-900 hover:text-amber-700">
@@ -89,8 +91,7 @@ export default function RegisterSessionsReport({ branchId, startDate, endDate }:
     return (
       <div className="card p-10 text-center">
         <Clock3 size={28} className="mx-auto mb-3 text-gray-300" />
-        <p className="text-sm font-semibold text-gray-700">No Register Sessions yet</p>
-        <p className="mt-1 text-xs text-gray-400">Open Register from the POS to start session-wise reporting.</p>
+        <p className="text-sm font-semibold text-gray-700">{t('sessions.empty')}</p><p className="mt-1 text-xs text-gray-400">{t('sessions.emptyHint')}</p>
       </div>
     )
   }
@@ -99,8 +100,7 @@ export default function RegisterSessionsReport({ branchId, startDate, endDate }:
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-bold text-gray-900">Register Sessions</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Operational open-to-close reporting filtered by the selected session date range.</p>
+          <h2 className="text-sm font-bold text-gray-900">{t('sessions.title')}</h2><p className="text-xs text-gray-400 mt-0.5">{t('sessions.subtitle')}</p>
         </div>
         <button
           onClick={load}
@@ -142,18 +142,12 @@ export default function RegisterSessionsReport({ branchId, startDate, endDate }:
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-9">
-              <SessionAmount label="Gross sales" amount={grossSales} />
-              <SessionAmount label="Credit notes" amount={session.creditNoteTotal} />
-              <SessionAmount label="Net sales" amount={session.totalSales} />
+              <SessionAmount label={t('sessions.grossSales')} amount={grossSales} /><SessionAmount label={t('sessions.creditNotes')} amount={session.creditNoteTotal} /><SessionAmount label={t('sessions.netSales')} amount={session.totalSales} />
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Invoices</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t('metrics.invoices')}</p>
                 <p className="mt-1 text-sm font-bold text-gray-900 tabular-nums">{session.invoiceCount}</p>
               </div>
-              <SessionAmount label="Cash" amount={session.cashTotal} />
-              <SessionAmount label="Card" amount={session.cardTotal} />
-              <SessionAmount label="Net VAT" amount={session.vatTotal} />
-              <SessionAmount label="Expenses" amount={session.expensesTotal} />
-              <SessionAmount label="Expected cash" amount={session.expectedCash} />
+              <SessionAmount label={t('sessions.cash')} amount={session.cashTotal} /><SessionAmount label={t('sessions.card')} amount={session.cardTotal} /><SessionAmount label={t('sessions.netVat')} amount={session.vatTotal} /><SessionAmount label={t('sessions.expenses')} amount={session.expensesTotal} /><SessionAmount label={t('sessions.expectedCash')} amount={session.expectedCash} />
             </div>
 
             {session.status === 'closed' && (

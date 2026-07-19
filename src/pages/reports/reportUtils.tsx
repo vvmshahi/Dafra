@@ -1,5 +1,6 @@
 import type React from 'react'
 import { saudiNow } from '@/lib/utils/date'
+import { useTranslation } from 'react-i18next'
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 
@@ -68,11 +69,11 @@ export const REPORT_DATE_PRESETS: { id: DatePreset; label: string }[] = [
   { id: 'custom',     label: 'Custom'     },
 ]
 
-export function formatDateRangeLabel(start: string, end: string) {
+export function formatDateRangeLabel(start: string, end: string, language = 'en') {
   if (!start || !end) return ''
-  const fmtLabel = (value: string) =>
-    new Date(value).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-  return `${fmtLabel(start)} to ${fmtLabel(end)}`
+  const locale = language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-GB'
+  const fmtLabel = (value: string) => new Date(value).toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' })
+  return `${fmtLabel(start)} – ${fmtLabel(end)}`
 }
 
 export function CompactDateRangeFilter({
@@ -92,6 +93,7 @@ export function CompactDateRangeFilter({
   onStartDate: (value: string) => void
   onEndDate: (value: string) => void
 }) {
+  const { t } = useTranslation('reports')
   return (
     <>
       <div className="flex items-center gap-1 p-1 bg-white border border-gray-100 rounded-xl shadow-card flex-wrap">
@@ -106,7 +108,7 @@ export function CompactDateRangeFilter({
                 : 'text-gray-500 hover:bg-gray-50'
             }`}
           >
-            {p.label}
+            {t(`filters.${p.id === 'this_week' ? 'thisWeek' : p.id === 'this_month' ? 'thisMonth' : p.id === 'last_month' ? 'lastMonth' : p.id === 'custom' ? 'custom' : p.id}`)}
           </button>
         ))}
       </div>
@@ -239,18 +241,20 @@ export function SkeletonChart() {
 
 // ── Empty chart state ─────────────────────────────────────────────────────────
 
-export function EmptyChart({ message = 'No data for this period' }: { message?: string }) {
+export function EmptyChart({ message }: { message?: string }) {
+  const { t } = useTranslation('reports')
   return (
     <div className="h-64 flex items-center justify-center bg-gray-50 rounded-xl border border-gray-100">
-      <p className="text-sm text-gray-400">{message}</p>
+      <p className="text-sm text-gray-400">{message ?? t('common.noData')}</p>
     </div>
   )
 }
 
 export function ReportErrorState({ message }: { message: string }) {
+  const { t } = useTranslation('reports')
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-      <p className="font-semibold">Report could not be loaded</p>
+      <p className="font-semibold">{t('errors.load')}</p>
       <p className="mt-1 text-amber-800">{message}</p>
     </div>
   )

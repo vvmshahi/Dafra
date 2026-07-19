@@ -10,6 +10,7 @@ import {
 } from './reportUtils'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { asArray, loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -41,6 +42,7 @@ const PAY_LABEL: Record<string, string> = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ExpenseReport({ startDate, endDate, branchId }: ReportProps) {
+  const { t } = useTranslation('reports')
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<ExpData | null>(null)
@@ -96,14 +98,14 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
 
       {/* ── Summary cards ──────────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
-        <StatCard label="Total Expenses"    value={<Rial amount={data?.grandTotal ?? 0} />}    primary />
-        <StatCard label="Variable Expenses" value={<Rial amount={data?.totalVariable ?? 0} />} accent="red"   sub="daily/one-off" />
-        <StatCard label="Fixed Expenses"    value={<Rial amount={data?.totalFixed ?? 0} />}    accent="amber" sub="recurring monthly" />
+        <StatCard label={t('metrics.totalExpenses')} value={<Rial amount={data?.grandTotal ?? 0} />} primary />
+        <StatCard label={t('metrics.variableExpenses')} value={<Rial amount={data?.totalVariable ?? 0} />} accent="red" sub={t('expenses.daily')} />
+        <StatCard label={t('metrics.fixedExpenses')} value={<Rial amount={data?.totalFixed ?? 0} />} accent="amber" sub={t('expenses.recurring')} />
       </div>
 
       {/* ── Category bar chart ──────────────────────────────── */}
       <div className="card p-4 space-y-3">
-        <SectionHeader title="Expenses by Category" />
+        <SectionHeader title={t('expenses.byCategory')} />
         {!data?.catBars.length ? <EmptyChart /> : (
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data.catBars} layout="vertical"
@@ -129,7 +131,7 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
       {/* ── Fixed vs Variable breakdown ─────────────────────── */}
       <div className="grid grid-cols-2 gap-4">
         <div className="card p-4">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Variable</p>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">{t('expenses.variable')}</p>
           <p className="text-2xl font-bold text-red-500 mt-1"><Rial amount={data?.totalVariable ?? 0} /></p>
           <p className="text-xs text-gray-400 mt-1">{data?.log.length ?? 0} expense entries</p>
           <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -138,7 +140,7 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
           </div>
         </div>
         <div className="card p-4">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Fixed</p>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">{t('expenses.fixed')}</p>
           <p className="text-2xl font-bold text-amber-500 mt-1"><Rial amount={data?.totalFixed ?? 0} /></p>
           <p className="text-xs text-gray-400 mt-1"><Rial amount={data?.monthlyFixed ?? 0} />/mo recurring</p>
           <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -151,18 +153,14 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
       {/* ── Expense log ─────────────────────────────────────── */}
       <div className="card overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-          <SectionHeader title="Expense Log" sub={`${data?.log.length ?? 0} entries`} />
+          <SectionHeader title={t('expenses.log')} sub={t('expenses.entries', { count: data?.log.length ?? 0 })} />
         </div>
         {!data?.log.length ? (
-          <div className="py-12 text-center text-sm text-gray-400">No expenses in this period</div>
+          <div className="py-12 text-center text-sm text-gray-400">{t('expenses.empty')}</div>
         ) : (
           <>
             <div className="flex gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-              <div className="w-20">Date</div>
-              <div className="flex-1">Description</div>
-              <div className="w-28 hidden sm:block">Category</div>
-              <div className="w-16 hidden md:block">Method</div>
-              <div className="w-24 text-right">Amount</div>
+              <div className="w-20">{t('common.date')}</div><div className="flex-1">{t('common.description')}</div><div className="w-28 hidden sm:block">{t('common.category')}</div><div className="w-16 hidden md:block">{t('common.method')}</div><div className="w-24 text-end">{t('common.amount')}</div>
             </div>
             <div className="max-h-96 overflow-y-auto">
               {data.log.map((e, i) => (

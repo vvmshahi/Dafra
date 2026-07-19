@@ -12,6 +12,7 @@ import {
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { asArray, loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
 import { resolveBusinessType } from '@/lib/utils/businessType'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ const EMPTY_PL_DATA: PLData = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ProfitLossReport({ startDate, endDate, branchId }: ReportProps) {
+  const { t } = useTranslation('reports')
   const { profile, tenant } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<PLData | null>(null)
@@ -114,8 +116,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
   if (noData) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <p className="text-gray-700 font-semibold">No data for this period</p>
-        <p className="text-gray-400 text-sm mt-1">Try a different date range</p>
+        <p className="text-gray-700 font-semibold">{t('profit.empty')}</p><p className="text-gray-400 text-sm mt-1">{t('common.tryRange')}</p>
       </div>
     )
   }
@@ -149,14 +150,14 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <StatCard label="Gross Sales incl. VAT"      value={<Rial amount={data!.grossSales} />}     primary />
-        <StatCard label="Credit Notes / Returns" value={<Rial amount={data!.creditNotes} />} accent="amber" />
-        <StatCard label="Net Sales incl. VAT"        value={<Rial amount={data!.totalRevenue} />}   accent="emerald" />
+        <StatCard label={t('metrics.grossSalesVat')} value={<Rial amount={data!.grossSales} />} primary />
+        <StatCard label={t('metrics.creditNotes')} value={<Rial amount={data!.creditNotes} />} accent="amber" />
+        <StatCard label={t('metrics.netSalesVat')} value={<Rial amount={data!.totalRevenue} />} accent="emerald" />
         <StatCard label={purchaseCostLabel} value={<Rial amount={data!.totalCOGS} />}      accent="amber" sub={purchaseCostSub} />
-        <StatCard label="Estimated Gross Profit"     value={<Rial amount={data!.grossProfit} />}    accent={data!.grossProfit >= 0 ? 'emerald' : 'red'} />
-        <StatCard label="Total Expenses"   value={<Rial amount={data!.totalExpenses} />}  accent="red" />
-        <StatCard label="Net Estimate"     value={<Rial amount={data!.netProfit} />}      accent={data!.netProfit >= 0 ? 'emerald' : 'red'} sub="net sales − purchases − expenses" />
-        <StatCard label="Net Margin"       value={`${data!.margin.toFixed(1)}%`}          accent={data!.margin >= 0 ? 'emerald' : 'red'} />
+        <StatCard label={t('metrics.grossProfit')} value={<Rial amount={data!.grossProfit} />} accent={data!.grossProfit >= 0 ? 'emerald' : 'red'} />
+        <StatCard label={t('metrics.totalExpenses')} value={<Rial amount={data!.totalExpenses} />} accent="red" />
+        <StatCard label={t('metrics.netEstimate')} value={<Rial amount={data!.netProfit} />} accent={data!.netProfit >= 0 ? 'emerald' : 'red'} sub={t('profit.formula')} />
+        <StatCard label={t('metrics.netMargin')} value={`${data!.margin.toFixed(1)}%`} accent={data!.margin >= 0 ? 'emerald' : 'red'} />
       </div>
 
       {/* ── Charts row ─────────────────────────────────────── */}
@@ -183,8 +184,8 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
 
         {/* Expense breakdown donut */}
         <div className="card p-4 space-y-3">
-          <SectionHeader title="Expense Breakdown" />
-          {data!.expenseByCat.length === 0 ? <EmptyChart message="No expenses" /> : (
+          <SectionHeader title={t('profit.expenseBreakdown')} />
+          {data!.expenseByCat.length === 0 ? <EmptyChart message={t('profit.noExpenses')} /> : (
             <>
               <ResponsiveContainer width="100%" height={170}>
                 <PieChart>
@@ -247,7 +248,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
               ))}
               {/* Totals row */}
               <tr className="bg-gray-50 font-bold border-t-2 border-gray-200">
-                <td className="px-4 py-3 text-gray-700">Total</td>
+                <td className="px-4 py-3 text-gray-700">{t('common.total')}</td>
                 <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={data!.grossSales} /></td>
                 <td className="px-4 py-3 tabular-nums text-amber-700"><Rial amount={data!.creditNotes} /></td>
                 <td className="px-4 py-3 tabular-nums text-emerald-600"><Rial amount={data!.totalRevenue} /></td>

@@ -6,6 +6,7 @@ import {
 } from './reportUtils'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { asArray, loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,7 @@ const EMPTY_CUSTOMER_DATA: CustData = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CustomerReport({ startDate, endDate, branchId }: ReportProps) {
+  const { t } = useTranslation('reports')
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<CustData | null>(null)
@@ -92,10 +94,10 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
 
       {/* ── Summary cards ──────────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
-        <StatCard label="Total Customers"   value={String(data?.totalCount ?? 0)}          primary />
-        <StatCard label="New This Period"   value={String(data?.newThisPeriod ?? 0)}       accent="emerald" sub="joined during range" />
-        <StatCard label="Net Customer Revenue" value={<Rial amount={data?.totalRevenue ?? 0} />}  accent="emerald" sub="credit notes deducted" />
-        <StatCard label="Avg per Customer"  value={data?.topCustomers.length
+        <StatCard label={t('metrics.totalCustomers')} value={String(data?.totalCount ?? 0)} primary />
+        <StatCard label={t('metrics.newCustomers')} value={String(data?.newThisPeriod ?? 0)} accent="emerald" sub={t('customers.joined')} />
+        <StatCard label={t('metrics.customerRevenue')} value={<Rial amount={data?.totalRevenue ?? 0} />} accent="emerald" sub={t('customers.creditDeducted')} />
+        <StatCard label={t('metrics.avgCustomer')} value={data?.topCustomers.length
           ? <Rial amount={data.totalRevenue / Math.max(data.topCustomers.length, 1)} />
           : <Rial amount={0} />}
         />
@@ -106,7 +108,7 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
         <div className="card p-4 flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center text-xl flex-shrink-0">👤</div>
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Individual</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{t('customers.individual')}</p>
             <p className="text-2xl font-bold text-gray-900">{data?.individualCount ?? 0}</p>
             <p className="text-xs text-gray-400">
               {data?.totalCount ? ((data.individualCount / data.totalCount) * 100).toFixed(0) : 0}% of total
@@ -116,7 +118,7 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
         <div className="card p-4 flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-xl flex-shrink-0">🏢</div>
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Business</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{t('customers.business')}</p>
             <p className="text-2xl font-bold text-gray-900">{data?.businessCount ?? 0}</p>
             <p className="text-xs text-gray-400">
               {data?.totalCount ? ((data.businessCount / data.totalCount) * 100).toFixed(0) : 0}% of total
@@ -129,21 +131,17 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
       <div className="card overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
           <SectionHeader
-            title="Top Customers by Spend"
+            title={t('customers.top')}
             sub={`${data?.topCustomers.length ?? 0} customers with purchases this period`}
           />
         </div>
         {!data?.topCustomers.length ? (
-          <div className="py-12 text-center text-sm text-gray-400">No customer purchases in this period</div>
+          <div className="py-12 text-center text-sm text-gray-400">{t('customers.empty')}</div>
         ) : (
           <>
             <div className="flex gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
               <div className="w-6">#</div>
-              <div className="flex-1">Customer</div>
-              <div className="w-16 text-center hidden sm:block">Type</div>
-              <div className="w-16 text-right hidden md:block">Orders</div>
-              <div className="w-28 hidden lg:block text-right">Last Purchase</div>
-              <div className="w-28 text-right">Total Spent</div>
+              <div className="flex-1">{t('common.customer')}</div><div className="w-16 text-center hidden sm:block">{t('common.status')}</div><div className="w-16 text-end hidden md:block">{t('common.orders')}</div><div className="w-28 hidden lg:block text-end">{t('customers.lastPurchase')}</div><div className="w-28 text-end">{t('customers.totalSpent')}</div>
             </div>
             {data.topCustomers.map((c, i) => (
               <div key={c.id}

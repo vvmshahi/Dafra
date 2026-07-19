@@ -11,6 +11,7 @@ import {
 } from './reportUtils'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -114,6 +115,7 @@ function normalizeSalesSummary(summary: SalesData): SalesData {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function SalesReport({ startDate, endDate, branchId }: ReportProps) {
+  const { t } = useTranslation('reports')
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<SalesData | null>(null)
@@ -163,8 +165,8 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
   if (!data || data.invoiceCount === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <p className="text-gray-700 font-semibold">No sales data for this period</p>
-        <p className="text-gray-400 text-sm mt-1">Try a different date range</p>
+        <p className="text-gray-700 font-semibold">{t('sales.empty')}</p>
+        <p className="text-gray-400 text-sm mt-1">{t('common.tryRange')}</p>
       </div>
     )
   }
@@ -174,12 +176,12 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
 
       {/* ── Summary cards ──────────────────────────────────── */}
       <div className="flex gap-3 flex-wrap">
-        <StatCard label="Gross Sales"      value={<Rial amount={data.grossSales} />}    primary />
-        <StatCard label="Credit Notes / Returns" value={<Rial amount={data.creditNotes} />} accent="amber" />
-        <StatCard label="Net Sales"        value={<Rial amount={data.totalRevenue} />}  accent="emerald" />
-        <StatCard label="Net VAT"          value={<Rial amount={data.vatCollected} />}  accent="amber" sub={`sales ${sarStr(data.vatOnSales)} · credited ${sarStr(data.vatCredited)}`} />
-        <StatCard label="Documents"        value={String(data.invoiceCount)}            sub="non-cancelled" />
-        <StatCard label="Average Order"    value={<Rial amount={data.avgOrderValue} />} accent="emerald" />
+        <StatCard label={t('metrics.grossSales')} value={<Rial amount={data.grossSales} />} primary />
+        <StatCard label={t('metrics.creditNotes')} value={<Rial amount={data.creditNotes} />} accent="amber" />
+        <StatCard label={t('metrics.netSales')} value={<Rial amount={data.totalRevenue} />} accent="emerald" />
+        <StatCard label={t('metrics.netVat')} value={<Rial amount={data.vatCollected} />} accent="amber" sub={t('sales.vatSub', { sales: sarStr(data.vatOnSales), credited: sarStr(data.vatCredited) })} />
+        <StatCard label={t('metrics.documents')} value={String(data.invoiceCount)} sub={t('sales.nonCancelled')} />
+        <StatCard label={t('metrics.averageOrder')} value={<Rial amount={data.avgOrderValue} />} accent="emerald" />
       </div>
 
       {/* ── Charts row ─────────────────────────────────────── */}
@@ -187,7 +189,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
 
         {/* Daily sales area chart */}
         <div className="lg:col-span-2 card p-4 space-y-3">
-          <SectionHeader title="Daily Sales Trend" sub={`${data.dailySales.length} days`} />
+          <SectionHeader title={t('sales.dailyTrend')} sub={t('sales.days', { count: data.dailySales.length })} />
           {data.dailySales.length === 0 ? <EmptyChart /> : (
             <ResponsiveContainer width="100%" height={240}>
               <AreaChart data={data.dailySales} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
@@ -204,7 +206,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
                 <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} width={60}
                   tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
                 <Tooltip content={<ChartTooltip />} />
-                <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#10b981"
+                <Area type="monotone" dataKey="revenue" name={t('common.revenue')} stroke="#10b981"
                   strokeWidth={2} fill="url(#salesGrad)" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
@@ -213,8 +215,8 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
 
         {/* Payment method donut */}
         <div className="card p-4 space-y-3">
-          <SectionHeader title="By Payment Method" />
-          {data.byMethod.length === 0 ? <EmptyChart message="No payments recorded" /> : (
+          <SectionHeader title={t('sales.byPayment')} />
+          {data.byMethod.length === 0 ? <EmptyChart message={t('sales.noPayments')} /> : (
             <>
               <ResponsiveContainer width="100%" height={180}>
                 <PieChart>
@@ -259,16 +261,14 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
         {/* Top products */}
         <div className="card overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-            <SectionHeader title="Top Selling Products" sub={`by revenue`} />
+            <SectionHeader title={t('sales.topProducts')} sub={t('sales.byRevenue')} />
           </div>
           {data.topProducts.length === 0 ? (
-            <div className="py-10 text-center text-sm text-gray-400">No items sold</div>
+            <div className="py-10 text-center text-sm text-gray-400">{t('sales.noItems')}</div>
           ) : (
             <>
               <div className="flex gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-                <div className="flex-1">Product</div>
-                <div className="w-14 text-right">Qty</div>
-                <div className="w-24 text-right">Revenue</div>
+                <div className="flex-1">{t('common.product')}</div><div className="w-14 text-end">{t('common.quantity')}</div><div className="w-24 text-end">{t('common.revenue')}</div>
                 <div className="w-10 text-right">%</div>
               </div>
               {data.topProducts.map((p, i) => (
@@ -295,16 +295,14 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
         {/* Category performance */}
         <div className="card overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-            <SectionHeader title="Category Performance" />
+            <SectionHeader title={t('sales.categoryPerformance')} />
           </div>
           {data.catPerformance.length === 0 ? (
-            <div className="py-10 text-center text-sm text-gray-400">No category data</div>
+            <div className="py-10 text-center text-sm text-gray-400">{t('sales.noCategories')}</div>
           ) : (
             <>
               <div className="flex gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-                <div className="flex-1">Category</div>
-                <div className="w-14 text-right">Items</div>
-                <div className="w-24 text-right">Revenue</div>
+                <div className="flex-1">{t('common.category')}</div><div className="w-14 text-end">{t('common.items')}</div><div className="w-24 text-end">{t('common.revenue')}</div>
                 <div className="w-10 text-right">%</div>
               </div>
               {data.catPerformance.map((c, i) => (

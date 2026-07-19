@@ -1,4 +1,5 @@
 import type { Branch, Tenant, UserProfile } from '@/types'
+import i18n from '@/localization/i18n'
 import type { RegisterSessionSummary } from '@/lib/registerSessions'
 import {
   addAutoTable,
@@ -42,7 +43,7 @@ import {
 export type PhaseAReportKind = ReportPdfKind
 
 interface PhaseAReportMeta {
-  title: string
+  titleKey: string
   slug: string
 }
 
@@ -56,27 +57,27 @@ interface ExportPhaseAReportPdfInput extends ReportExportParams {
 
 const REPORT_META: Record<PhaseAReportKind, PhaseAReportMeta> = {
   sessions: {
-    title: 'Register Sessions Report',
+    titleKey: 'reports:tabs.sessions',
     slug: 'register-sessions',
   },
   sales: {
-    title: 'Sales Report',
+    titleKey: 'reports:tabs.sales',
     slug: 'sales-report',
   },
   vat: {
-    title: 'VAT Support Report',
+    titleKey: 'reports:vat.title',
     slug: 'vat-support',
   },
   pl: {
-    title: 'Profit Estimate Report',
+    titleKey: 'reports:tabs.pl',
     slug: 'profit-estimate',
   },
 }
 
 function statusLabel(session: RegisterSessionSummary): string {
-  if (session.isLongOpen) return 'Long open'
-  if (session.status === 'open') return 'Open'
-  if (session.status === 'closed') return 'Closed'
+  if (session.isLongOpen) return i18n.t('reports:status.open')
+  if (session.status === 'open') return i18n.t('reports:status.open')
+  if (session.status === 'closed') return i18n.t('reports:status.closed')
   return '-'
 }
 
@@ -100,7 +101,7 @@ function createContext(input: ExportPhaseAReportPdfInput): ReportPdfContext {
   const meta = REPORT_META[input.reportKind]
   return buildReportPdfContext({
     reportKind: input.reportKind,
-    reportTitle: meta.title,
+    reportTitle: i18n.t(meta.titleKey),
     reportSlug: meta.slug,
     startDate: input.startDate,
     endDate: input.endDate,
@@ -597,5 +598,5 @@ export function reportPdfErrorMessage(error: unknown): string {
     return 'Choose a valid date range and try again.'
   }
 
-  return 'PDF export failed. Please refresh and try again.'
+  return i18n.t('reports:export.failed')
 }

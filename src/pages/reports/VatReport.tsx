@@ -6,6 +6,7 @@ import {
 } from './reportUtils'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { asArray, loadReportSummary, reportErrorMessage, reportParams } from './reportingRpc'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ const EMPTY_VAT_DATA: VatData = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function VatReport({ startDate, endDate, branchId }: ReportProps) {
+  const { t } = useTranslation('reports')
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<VatData | null>(null)
@@ -109,31 +111,31 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
       {/* ── Summary cards ──────────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
         <StatCard
-          label="VAT on Sales"
+          label={t('metrics.vatSales')}
           value={<Rial amount={data?.vatOnSales ?? 0} />}
           sub="VAT before credit notes"
           primary
         />
         <StatCard
-          label="VAT Credited"
+          label={t('metrics.vatCredited')}
           value={<Rial amount={data?.vatCredited ?? 0} />}
           sub="VAT reduced by returns"
           accent="amber"
         />
         <StatCard
-          label="Net VAT on Sales"
+          label={t('metrics.netVat')}
           value={<Rial amount={data?.vatCollected ?? 0} />}
           sub="sales VAT minus credited VAT"
           accent="emerald"
         />
         <StatCard
-          label="Input VAT Support"
+          label={t('metrics.inputVat')}
           value={<Rial amount={data?.vatPaidTotal ?? 0} />}
           sub="claimable purchases + expenses"
           accent="amber"
         />
         <StatCard
-          label="Net VAT Support Estimate"
+          label={t('metrics.netVatEstimate')}
           value={<Rial amount={data?.netPayable ?? 0} />}
           sub="Output − Input VAT"
           accent={(data?.netPayable ?? 0) >= 0 ? 'red' : 'emerald'}
@@ -143,7 +145,7 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
       {/* ── VAT support note ──────────────────────────────────────── */}
       <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 flex gap-3">
         <div>
-          <p className="text-sm font-semibold text-amber-800">VAT Support Report</p>
+          <p className="text-sm font-semibold text-amber-800">{t('vat.title')}</p>
           <p className="text-xs text-amber-700 mt-0.5">
             This report is for business review and VAT support. Final filing should be reviewed by your accountant.
           </p>
@@ -153,7 +155,7 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
       {/* ── Monthly VAT breakdown table ─────────────────────── */}
       <div className="card overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-          <SectionHeader title="Monthly VAT Breakdown" />
+          <SectionHeader title={t('vat.monthly')} />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -193,7 +195,7 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
               {/* Totals */}
               {monthlyRows.length > 0 && (
                 <tr className="bg-gray-50 font-bold border-t-2 border-gray-200">
-                  <td className="px-4 py-3 text-gray-700">Total</td>
+                  <td className="px-4 py-3 text-gray-700">{t('common.total')}</td>
                   <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={data!.grossSales} /></td>
                   <td className="px-4 py-3 tabular-nums text-amber-700"><Rial amount={data!.creditNotes} /></td>
                   <td className="px-4 py-3 tabular-nums text-gray-700"><Rial amount={data!.salesTotal} /></td>
@@ -213,7 +215,7 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
           </table>
         </div>
         {monthlyRows.length === 0 && (
-          <div className="py-12 text-center text-sm text-gray-400">No VAT data for this period</div>
+          <div className="py-12 text-center text-sm text-gray-400">{t('vat.empty')}</div>
         )}
       </div>
     </div>

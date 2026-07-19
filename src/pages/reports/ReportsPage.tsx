@@ -19,19 +19,15 @@ import CustomerReport   from './CustomerReport'
 import PurchaseReport   from './PurchaseReport'
 import RegisterSessionsReport from './RegisterSessionsReport'
 import type { PhaseAReportKind } from './pdf/reportPdfExporters'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type TabId = 'sessions' | 'sales' | 'pl' | 'vat' | 'expenses' | 'customers' | 'purchases'
 
-const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
-  { id: 'sessions', label: 'Register Sessions', icon: Clock3 },
-  { id: 'sales',     label: 'Sales',         icon: TrendingUp  },
-  { id: 'pl',        label: 'Profit Estimate', icon: BarChart2   },
-  { id: 'vat',       label: 'VAT Support',     icon: FileText    },
-  { id: 'expenses',  label: 'Expenses',      icon: CreditCard  },
-  { id: 'customers', label: 'Customers',     icon: Users       },
-  { id: 'purchases', label: 'Purchases',     icon: ShoppingCart },
+const TABS: { id: TabId; icon: React.ElementType }[] = [
+  { id: 'sessions', icon: Clock3 }, { id: 'sales', icon: TrendingUp }, { id: 'pl', icon: BarChart2 },
+  { id: 'vat', icon: FileText }, { id: 'expenses', icon: CreditCard }, { id: 'customers', icon: Users }, { id: 'purchases', icon: ShoppingCart },
 ]
 
 const PHASE_A_EXPORTS: Partial<Record<TabId, PhaseAReportKind>> = {
@@ -45,6 +41,7 @@ const PHASE_A_EXPORTS: Partial<Record<TabId, PhaseAReportKind>> = {
 
 export default function ReportsPage() {
   const { profile, tenant, branch: authBranch } = useAuth()
+  const { t, i18n } = useTranslation('reports')
 
   const [tab,       setTab]       = useState<TabId>('sessions')
   const [preset,    setPreset]    = useState<DatePreset>('today')
@@ -93,20 +90,20 @@ export default function ReportsPage() {
       ? branches[0]
       : null
   const branchLabel = branchId
-    ? selectedBranch?.name ?? 'Selected Branch'
+    ? selectedBranch?.name ?? t('filters.selectedBranch')
     : branches.length === 1
       ? branches[0].name
-      : 'All Branches'
+      : t('filters.allBranches')
   const exportDisabled = exporting || !startDate || !endDate
 
   const handleExport = async () => {
     if (!exportKind) {
-      toast.info('PDF export for this report is coming in Phase PDF-B.')
+      toast.info(t('export.unsupported'))
       return
     }
 
     if (!startDate || !endDate) {
-      toast.error('Choose a valid date range and try again.')
+      toast.error(t('export.invalidRange'))
       return
     }
 
@@ -124,10 +121,10 @@ export default function ReportsPage() {
         profile,
         branchLabel,
       })
-      toast.success('PDF report downloaded.')
+      toast.success(t('export.success'))
     } catch (error) {
       console.error('Report PDF export failed', error)
-      toast.error(pdfModule?.reportPdfErrorMessage(error) ?? 'PDF export failed. Please refresh and try again.')
+      toast.error(pdfModule?.reportPdfErrorMessage(error) ?? t('export.failed'))
     } finally {
       setExporting(false)
     }
@@ -138,13 +135,13 @@ export default function ReportsPage() {
 
       {/* ── Page header ─────────────────────────────────────── */}
       <div className="flex items-center gap-3">
-        <h1 className="text-lg font-bold text-gray-900 flex-1">Reports</h1>
+        <h1 className="text-lg font-bold text-gray-900 flex-1">{t('title')}</h1>
         {exportSupported && (
           <button
             type="button"
             disabled={exportDisabled}
             onClick={handleExport}
-            title="Download PDF report"
+            title={t('export.download')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
               exportDisabled
                 ? 'border-gray-200 text-gray-400 cursor-not-allowed opacity-60'
@@ -152,7 +149,7 @@ export default function ReportsPage() {
             }`}
           >
             {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-            {exporting ? 'Exporting...' : 'Export PDF'}
+            {t(exporting ? 'export.exporting' : 'export.pdf')}
           </button>
         )}
       </div>
@@ -160,20 +157,20 @@ export default function ReportsPage() {
       {/* ── Tab bar ─────────────────────────────────────────── */}
       <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <div className="flex items-center bg-white border border-gray-100 rounded-2xl p-1 w-max shadow-card">
-          {TABS.map(t => {
-            const Icon = t.icon
+          {TABS.map(tabItem => {
+            const Icon = tabItem.icon
             return (
               <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
+                key={tabItem.id}
+                onClick={() => setTab(tabItem.id)}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl transition-all duration-150 whitespace-nowrap ${
-                  tab === t.id
+                  tab === tabItem.id
                     ? 'bg-primary-500 text-white shadow-sm'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
                 <Icon size={13} />
-                {t.label}
+                {t(`tabs.${tabItem.id}`)}
               </button>
             )
           })}
@@ -199,7 +196,7 @@ export default function ReportsPage() {
             value={branchId ?? ''}
             onChange={e => setBranchId(e.target.value || null)}
           >
-            <option value="">All Branches</option>
+            <option value="">{t('filters.allBranches')}</option>
             {branches.map(b => (
               <option key={b.id} value={b.id}>{b.name}</option>
             ))}
@@ -210,7 +207,7 @@ export default function ReportsPage() {
       {/* ── Date range label ─────────────────────────────────── */}
       {startDate && endDate && (
         <p className="text-xs text-gray-400">
-          Showing data from <span className="font-medium text-gray-600">{formatDateRangeLabel(startDate, endDate)}</span>
+          {t('filters.showing', { range: formatDateRangeLabel(startDate, endDate, i18n.resolvedLanguage) })}
           {branchId && branches.length > 1 && (
             <> · <span className="font-medium text-gray-600">{branches.find(b => b.id === branchId)?.name}</span></>
           )}
