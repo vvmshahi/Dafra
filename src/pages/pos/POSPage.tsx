@@ -30,6 +30,17 @@ import { supportConfig } from '@/config/support'
 import { resolveBusinessType } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
+import {
+  documentDate,
+  documentDirection,
+  documentFontFamily,
+  documentLabel,
+  documentLabelLines,
+  documentNames,
+  documentPaymentLabel,
+  normalizeDocumentLanguage,
+  type DocumentLanguage,
+} from '@/localization/documents'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -75,10 +86,12 @@ interface PosCategory {
 interface PosCustomer {
   id: string
   name: string
+  name_ar: string | null
   phone: string | null
   customer_type: string
   vat_number: string | null
   business_name: string | null
+  business_name_ar: string | null
 }
 
 interface CartItem {
@@ -102,6 +115,7 @@ interface ReceiptData {
   change: number
   cashReceived: number
   customerName: string
+  customerNameAr: string | null
   customerPhone: string | null
   isStandardInvoice: boolean
   buyerVatNumber: string | null
@@ -111,7 +125,10 @@ interface ReceiptData {
   businessNameAr: string
   businessNameEn: string
   branchName: string
+  branchNameAr: string | null
   branchAddress: string | null
+  branchAddressAr: string | null
+  documentLanguage: DocumentLanguage
   vatNumber: string
   phone: string | null
   website: string | null
@@ -451,6 +468,8 @@ function ReceiptView({ receipt, onNewSale, onOpenPrinterSettings, printMode }: {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [printingReceipt, setPrintingReceipt] = useState(false)
   const [printErrorKey, setPrintErrorKey] = useState<string | null>(null)
+  const documentLanguage = normalizeDocumentLanguage(receipt.documentLanguage)
+  const documentDir = documentDirection(documentLanguage)
 
   useEffect(() => {
     async function genQR() {
@@ -476,27 +495,26 @@ function ReceiptView({ receipt, onNewSale, onOpenPrinterSettings, printMode }: {
     if (!receipt.customerPhone) return
     const digits = receipt.customerPhone.replace(/\D/g, '')
     const wa = digits.startsWith('966') ? digits : digits.startsWith('0') ? '966' + digits.slice(1) : digits
-    const date = new Date(receipt.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    const date = documentDate(receipt.createdAt, documentLanguage, { month: '2-digit' })
     const m = (n: number) => `SAR ${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-    const lines = receipt.items.map(i => `${i.name} × ${i.qty}  ${m(i.lineTotal)}`).join('\n')
-    const msg = `فاتورتك من ${receipt.businessNameAr || receipt.businessNameEn}
+    const lines = receipt.items.map(i => `${documentNames(documentLanguage, i.name, i.nameAr).join(' / ')} × ${i.qty}  ${m(i.lineTotal)}`).join('\n')
+    const businessName = documentNames(documentLanguage, receipt.businessNameEn, receipt.businessNameAr).join(' / ')
+    const msg = `${documentLabel(documentLanguage, 'taxInvoice')} — ${businessName}
 ━━━━━━━━━━━━━━━
-رقم الفاتورة: ${receipt.invoiceNumber}
-التاريخ: ${date}
+${documentLabel(documentLanguage, 'invoiceNumber')}: ${receipt.invoiceNumber}
+${documentLabel(documentLanguage, 'date')}: ${date}
 ━━━━━━━━━━━━━━━
 ${lines}
 ━━━━━━━━━━━━━━━
-المجموع: ${m(receipt.subtotal)}
-الضريبة: ${m(receipt.taxAmount)}
-الإجمالي: ${m(receipt.total)}
+${documentLabel(documentLanguage, 'amountBeforeVat')}: ${m(receipt.subtotal)}
+${documentLabel(documentLanguage, 'vatAmount')}: ${m(receipt.taxAmount)}
+${documentLabel(documentLanguage, 'totalIncludingVat')}: ${m(receipt.total)}
 ━━━━━━━━━━━━━━━
-شكراً لزيارتكم 🌿`
+${documentLabel(documentLanguage, 'thankYou')} 🌿`
     window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank')
   }
 
-  const invDate = new Date(receipt.createdAt).toLocaleDateString('en-GB', {
-    timeZone: 'Asia/Riyadh', day: '2-digit', month: '2-digit', year: 'numeric',
-  })
+  const invDate = documentDate(receipt.createdAt, documentLanguage, { month: '2-digit' })
   const invTime = toSaudiTime(receipt.createdAt)
   const isSplitPayment = receipt.displayPaymentMethod === 'split' || isSplitPaymentRows(receipt.payments)
   const cashPayment = receipt.payments.find(payment => payment.method === 'cash')
@@ -581,52 +599,48 @@ ${lines}
   return (
     <>
       {/* A4 invoice — hidden, shown only via printPosA4() print style */}
-      <div id="pos-pdf-printable" style={{ display: 'none', fontFamily: '"Segoe UI", Arial, sans-serif', fontSize: '12px', color: '#111', lineHeight: '1.5', background: 'white' }}>
+      <div id="pos-pdf-printable" dir={documentDir} style={{ display: 'none', fontFamily: documentFontFamily(documentLanguage), fontSize: '12px', color: '#111', lineHeight: '1.5', background: 'white' }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: '20px', borderBottom: '2px solid #e5e7eb', marginBottom: '20px' }}>
           <div>
             {receipt.showLogo && receipt.logoUrl && (
               <img src={receipt.logoUrl} alt="logo" style={{ maxHeight: '60px', maxWidth: '160px', objectFit: 'contain', display: 'block', marginBottom: '10px' }} />
             )}
-            <div style={{ fontSize: '20px', fontWeight: 'bold', fontFamily: 'Cairo, "Segoe UI", sans-serif' }}>{receipt.businessNameAr}</div>
-            {receipt.businessNameEn !== receipt.businessNameAr && (
-              <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{receipt.businessNameEn}</div>
-            )}
-            {receipt.branchAddress && <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>{receipt.branchAddress}</div>}
-            <div style={{ fontSize: '11px', color: '#374151', marginTop: '6px' }}>VAT: {receipt.vatNumber}</div>
+            {documentNames(documentLanguage, receipt.businessNameEn, receipt.businessNameAr).map((name, index) => <div key={name} dir="auto" style={{ fontSize: index === 0 ? '20px' : '12px', fontWeight: index === 0 ? 'bold' : 'normal', color: index === 0 ? '#111' : '#6b7280', marginTop: index === 0 ? 0 : '2px' }}>{name}</div>)}
+            {documentNames(documentLanguage, receipt.branchAddress, receipt.branchAddressAr).map(value => <div key={value} dir="auto" style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>{value}</div>)}
+            <div style={{ fontSize: '11px', color: '#374151', marginTop: '6px' }}>{documentLabel(documentLanguage, 'vatNumber')}: <bdi dir="ltr">{receipt.vatNumber}</bdi></div>
             {receipt.showWebsite && receipt.website && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>{receipt.website}</div>}
             {receipt.showEmail && receipt.email && <div style={{ fontSize: '11px', color: '#6b7280' }}>{receipt.email}</div>}
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontFamily: 'Cairo, "Segoe UI", sans-serif', fontSize: '18px', fontWeight: 'bold', color: '#0F2419', direction: 'rtl' }}>فاتورة ضريبية مبسطة</div>
-            <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '14px' }}>Simplified Tax Invoice</div>
-            <div style={{ fontSize: '12px', marginBottom: '3px' }}>Invoice #: <strong>{receipt.invoiceNumber}</strong></div>
-            <div style={{ fontSize: '12px', marginBottom: '3px' }}>Date: {invDate}</div>
-            <div style={{ fontSize: '12px' }}>Time: {invTime}</div>
+          <div style={{ textAlign: documentDir === 'rtl' ? 'left' : 'right' }}>
+            <div style={{ marginBottom: '14px' }}>{documentLabelLines(documentLanguage, 'simplifiedTaxInvoice').map((line, index) => <div key={line} dir="auto" style={{ fontSize: index === 0 ? '18px' : '11px', fontWeight: index === 0 ? 'bold' : 'normal', color: index === 0 ? '#0F2419' : '#9ca3af' }}>{line}</div>)}</div>
+            <div style={{ fontSize: '12px', marginBottom: '3px' }}>{documentLabel(documentLanguage, 'invoiceNumber')}: <strong><bdi dir="ltr">{receipt.invoiceNumber}</bdi></strong></div>
+            <div style={{ fontSize: '12px', marginBottom: '3px' }}>{documentLabel(documentLanguage, 'date')}: <bdi dir="ltr">{invDate}</bdi></div>
+            <div style={{ fontSize: '12px' }}>{documentLabel(documentLanguage, 'time')}: <bdi dir="ltr">{invTime}</bdi></div>
           </div>
         </div>
         {/* Customer */}
         <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px' }}>
-          <div style={{ fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Bill To</div>
-          <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{receipt.customerName}</div>
+          <div style={{ fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>{documentLabel(documentLanguage, 'billTo')}</div>
+          {documentNames(documentLanguage, receipt.customerName, receipt.customerNameAr).map(name => <div key={name} dir="auto" style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{name}</div>)}
         </div>
         {/* Items */}
         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
-              <th style={{ textAlign: 'left', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase' }}>Item</th>
-              <th style={{ textAlign: 'right', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', width: '50px' }}>Qty</th>
-              <th style={{ textAlign: 'right', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', width: '100px' }}>Unit Price</th>
-              <th style={{ textAlign: 'right', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', width: '100px' }}>Total</th>
+              <th style={{ textAlign: 'start', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase' }}>{documentLabel(documentLanguage, 'item')}</th>
+              <th style={{ textAlign: 'end', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', width: '50px' }}>{documentLabel(documentLanguage, 'quantity')}</th>
+              <th style={{ textAlign: 'end', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', width: '100px' }}>{documentLabel(documentLanguage, 'unitPrice')}</th>
+              <th style={{ textAlign: 'end', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', width: '100px' }}>{documentLabel(documentLanguage, 'totalIncludingVat')}</th>
             </tr>
           </thead>
           <tbody>
             {receipt.items.map((item, i) => (
               <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                <td style={{ padding: '10px 4px', fontSize: '13px', color: '#111827' }}>{item.name}</td>
-                <td style={{ textAlign: 'right', padding: '10px 4px', fontSize: '12px', color: '#6b7280' }}>{item.qty}</td>
-                <td style={{ textAlign: 'right', padding: '10px 4px', fontSize: '12px', color: '#374151' }}><Rial amount={item.unitPrice} /></td>
-                <td style={{ textAlign: 'right', padding: '10px 4px', fontSize: '13px', fontWeight: '600', color: '#111827' }}><Rial amount={item.lineTotal} /></td>
+                <td style={{ padding: '10px 4px', fontSize: '13px', color: '#111827' }}>{documentNames(documentLanguage, item.name, item.nameAr).map(name => <div key={name} dir="auto">{name}</div>)}</td>
+                <td dir="ltr" style={{ textAlign: 'end', padding: '10px 4px', fontSize: '12px', color: '#6b7280' }}>{item.qty}</td>
+                <td dir="ltr" style={{ textAlign: 'end', padding: '10px 4px', fontSize: '12px', color: '#374151' }}><Rial amount={item.unitPrice} /></td>
+                <td dir="ltr" style={{ textAlign: 'end', padding: '10px 4px', fontSize: '13px', fontWeight: '600', color: '#111827' }}><Rial amount={item.lineTotal} /></td>
               </tr>
             ))}
           </tbody>
@@ -635,60 +649,63 @@ ${lines}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
           <div style={{ width: '240px', background: '#f9fafb', borderRadius: '8px', padding: '14px 16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>
-              <span>Subtotal</span><span><Rial amount={receipt.subtotal} /></span>
+              <span>{documentLabel(documentLanguage, 'amountBeforeVat')}</span><span dir="ltr"><Rial amount={receipt.subtotal} /></span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '600', color: '#b45309', background: '#fffbeb', padding: '4px 6px', borderRadius: '4px', marginBottom: '6px' }}>
-              <span>VAT (15%)</span><span><Rial amount={receipt.taxAmount} /></span>
+              <span>{documentLabel(documentLanguage, 'vatAmount')} (15%)</span><span dir="ltr"><Rial amount={receipt.taxAmount} /></span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 'bold', color: '#111827', borderTop: '1px solid #e5e7eb', paddingTop: '8px', marginTop: '4px' }}>
-              <span>Total</span><span><Rial amount={receipt.total} /></span>
+              <span>{documentLabel(documentLanguage, 'totalIncludingVat')}</span><span dir="ltr"><Rial amount={receipt.total} /></span>
             </div>
           </div>
         </div>
         {/* Payment */}
         <div style={{ fontSize: '12px', color: '#374151', marginBottom: '20px', padding: '10px 14px', background: '#f9fafb', borderRadius: '8px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-          <span><strong>Payment:</strong> {paymentMethodLabel(isSplitPayment ? 'split' : receipt.paymentMethod)}</span>
+          <span><strong>{documentLabel(documentLanguage, 'paymentMethod')}:</strong> {documentPaymentLabel(documentLanguage, isSplitPayment ? 'split' : receipt.paymentMethod)}</span>
           {isSplitPayment && cashPayment && (
-            <span><strong>Cash:</strong> <Rial amount={cashPayment.amount} /></span>
+            <span><strong>{documentLabel(documentLanguage, 'cashAmount')}:</strong> <span dir="ltr"><Rial amount={cashPayment.amount} /></span></span>
           )}
           {isSplitPayment && cardPayment && (
-            <span><strong>Card:</strong> <Rial amount={cardPayment.amount} /></span>
+            <span><strong>{documentLabel(documentLanguage, 'cardAmount')}:</strong> <span dir="ltr"><Rial amount={cardPayment.amount} /></span></span>
           )}
           {isSplitPayment && (
-            <span><strong>Total paid:</strong> <Rial amount={paymentRowsTotal(receipt.payments)} /></span>
+            <span><strong>{documentLabel(documentLanguage, 'totalPaid')}:</strong> <span dir="ltr"><Rial amount={paymentRowsTotal(receipt.payments)} /></span></span>
           )}
           {!isSplitPayment && receipt.paymentMethod === 'cash' && receipt.cashReceived > 0 && (
-            <span><strong>Received:</strong> <Rial amount={receipt.cashReceived} /></span>
+            <span><strong>{documentLabel(documentLanguage, 'received')}:</strong> <span dir="ltr"><Rial amount={receipt.cashReceived} /></span></span>
           )}
           {!isSplitPayment && receipt.showCashChange && receipt.paymentMethod === 'cash' && receipt.change > 0.005 && (
-            <span><strong>Change:</strong> <Rial amount={receipt.change} /></span>
+            <span><strong>{documentLabel(documentLanguage, 'change')}:</strong> <span dir="ltr"><Rial amount={receipt.change} /></span></span>
           )}
         </div>
         {/* QR + footer */}
         <div style={{ borderTop: '2px solid #e5e7eb', paddingTop: '16px', display: 'flex', alignItems: 'flex-end', gap: '16px' }}>
           {qrDataUrl && (
             <div style={{ textAlign: 'center', flexShrink: 0 }}>
-              <img src={qrDataUrl} alt="ZATCA QR" style={{ width: '100px', height: '100px', display: 'block' }} />
-              <div style={{ fontSize: '9px', color: '#d1d5db', marginTop: '4px' }}>Scan to verify invoice</div>
+              <img src={qrDataUrl} alt={documentLabel(documentLanguage, 'qrCode')} style={{ width: '100px', height: '100px', display: 'block' }} />
+              <div style={{ fontSize: '9px', color: '#d1d5db', marginTop: '4px' }}>{documentLabel(documentLanguage, 'scanToVerify')}</div>
             </div>
           )}
           <div style={{ fontSize: '9px', color: '#9ca3af' }}>
             {receipt.showFooter && receipt.receiptFooter ? (
               <div style={{ marginBottom: '4px', color: '#4b5563', fontWeight: 600 }}>{receipt.receiptFooter}</div>
             ) : null}
-            <div style={{ color: '#d1d5db' }}>This is a computer-generated invoice.</div>
+            <div style={{ color: '#d1d5db' }}>{documentLabel(documentLanguage, 'computerGeneratedInvoice')}</div>
           </div>
         </div>
       </div>
 
       {/* Hidden thermal receipt — rendered for print only */}
       <ThermalReceipt
+        documentLanguage={documentLanguage}
         businessNameAr={receipt.businessNameAr}
         businessNameEn={receipt.businessNameEn}
         logoUrl={receipt.logoUrl}
         showLogo={receipt.showLogo}
-        branchName={null}
+        branchName={receipt.branchName}
+        branchNameAr={receipt.branchNameAr}
         address={receipt.branchAddress}
+        addressAr={receipt.branchAddressAr}
         vatNumber={receipt.vatNumber}
         phone={receipt.phone}
         website={receipt.website}
@@ -709,6 +726,7 @@ ${lines}
         change={receipt.change}
         showCashChange={receipt.showCashChange}
         customerName={receipt.customerName}
+        customerNameAr={receipt.customerNameAr}
         buyerVatNumber={receipt.buyerVatNumber}
         isStandardInvoice={receipt.isStandardInvoice}
         qrDataUrl={qrDataUrl}
@@ -1609,7 +1627,7 @@ export default function POSPage() {
             .order('name', { ascending: true }),
           supabase
             .from('customers')
-            .select('id, name, phone, customer_type, vat_number, business_name')
+            .select('id, name, name_ar, phone, customer_type, vat_number, business_name, business_name_ar')
             .eq('branch_id', bid)
             .eq('is_active', true)
             .order('name', { ascending: true })
@@ -2040,6 +2058,10 @@ export default function POSPage() {
         branch.building_number ? `Building ${branch.building_number}` : null,
         branch.street, branch.district, branch.city,
       ].filter(Boolean).join(', ')
+      const branchAddrAr = [
+        branch.building_number ? `مبنى ${branch.building_number}` : null,
+        branch.street_ar, branch.district_ar, branch.city_ar,
+      ].filter(Boolean).join('، ')
 
       setReceipt({
         invoiceNumber:  checkout.invoice_number,
@@ -2053,12 +2075,16 @@ export default function POSPage() {
         customerName:      selectedCust?.customer_type === 'business' && selectedCust?.business_name
           ? selectedCust.business_name
           : (selectedCust?.name ?? 'Walk-in Customer'),
+        customerNameAr:    selectedCust?.customer_type === 'business'
+          ? (selectedCust?.business_name_ar ?? selectedCust?.name_ar)
+          : (selectedCust?.name_ar ?? null),
         customerPhone:     selectedCust?.phone ?? null,
         isStandardInvoice: isB2BInvoice,
         buyerVatNumber:    isB2BInvoice ? (selectedCust?.vat_number ?? null) : null,
         cashierName:    profile?.full_name ?? user?.email?.split('@')[0] ?? 'Cashier',
         items:          (checkout.items ?? []).map(i => ({
-          name:      i.name_ar?.trim() ? i.name_ar : i.name,
+          name:      i.name,
+          nameAr:    i.name_ar,
           qty:       num(i.quantity),
           unitPrice: num(i.unit_price),
           lineTotal: num(i.total),
@@ -2067,10 +2093,13 @@ export default function POSPage() {
           total:     num(i.total),
         })),
         createdAt,
-        businessNameAr:  branch.display_name || branch.business_name || branch.name,
-        businessNameEn:  branch.business_name || branch.name,
+        businessNameAr:  branch.business_name_ar || branch.name_ar || branch.display_name || branch.business_name || branch.name,
+        businessNameEn:  branch.display_name || branch.business_name || branch.name,
         branchName:      branch.name,
+        branchNameAr:    branch.name_ar,
         branchAddress:   branchAddr || null,
+        branchAddressAr: branchAddrAr || null,
+        documentLanguage: normalizeDocumentLanguage(branch.invoice_language),
         vatNumber:       branch.vat_number ?? '',
         phone:           branch.phone,
         website:         branch.website ?? null,

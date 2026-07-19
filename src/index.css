@@ -21,7 +21,7 @@
 @layer base {
   :root {
     --font-sans:   'Inter', system-ui, sans-serif;
-    --font-arabic: 'Cairo', 'KubriArabic', 'Tahoma', 'Arial', system-ui, sans-serif;
+    --font-arabic: 'KubriArabic', 'Noto Naskh Arabic', 'Tahoma', 'Arial', system-ui, sans-serif;
   }
 
   html { @apply scroll-smooth; }

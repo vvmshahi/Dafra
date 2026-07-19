@@ -1,0 +1,22 @@
+{
+  "refund": "Refund",
+  "history": "Refund History",
+  "originalPayment": "Original payment",
+  "refundIssued": "Refund issued",
+  "method": "Refund method",
+  "cash": "Cash",
+  "card": "Card",
+  "split": "Split",
+  "cashAmount": "Cash refund amount",
+  "cardAmount": "Card refund amount",
+  "allocated": "Refund allocated: Cash SAR {{cash}} · Card SAR {{card}}",
+  "loadingOriginal": "Loading original payment details…",
+  "allocationUnavailable": "Detailed payment allocation is unavailable for this historical invoice.",
+  "originalSingle": "Original payment: {{method}} SAR {{amount}}.",
+  "originalMultiple": "Original payment: {{details}}.",
+  "cashAndCardMismatch": "Cash and card refunds must add up to the credit total.",
+  "issuedOn": "Issued {{date}}",
+  "status": "Status",
+  "amount": "Amount",
+  "reason": "Reason"
+}

@@ -1,0 +1,22 @@
+{
+  "refund": "استرداد",
+  "history": "سجل المبالغ المستردة",
+  "originalPayment": "الدفع الأصلي",
+  "refundIssued": "المبلغ المسترد",
+  "method": "طريقة الاسترداد",
+  "cash": "نقدي",
+  "card": "بطاقة",
+  "split": "مقسّم",
+  "cashAmount": "مبلغ الاسترداد النقدي",
+  "cardAmount": "مبلغ الاسترداد إلى البطاقة",
+  "allocated": "توزيع الاسترداد: نقدي {{cash}} ر.س · بطاقة {{card}} ر.س",
+  "loadingOriginal": "جارٍ تحميل تفاصيل الدفع الأصلي…",
+  "allocationUnavailable": "تفاصيل توزيع الدفع غير متاحة لهذه الفاتورة التاريخية.",
+  "originalSingle": "الدفع الأصلي: {{method}} {{amount}} ر.س.",
+  "originalMultiple": "الدفع الأصلي: {{details}}.",
+  "cashAndCardMismatch": "يجب أن يساوي مجموع الاسترداد النقدي والبطاقة إجمالي الإشعار الدائن.",
+  "issuedOn": "تم في {{date}}",
+  "status": "الحالة",
+  "amount": "المبلغ",
+  "reason": "السبب"
+}

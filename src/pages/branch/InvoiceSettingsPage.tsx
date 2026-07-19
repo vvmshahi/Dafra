@@ -6,6 +6,9 @@ import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import type { Branch } from '@/types/database'
 import { Switch as Toggle } from '@/components/ui/Switch'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
+import { documentDirection, documentFontFamily, documentLabel, documentLabelLines, documentNames, normalizeDocumentLanguage } from '@/localization/documents'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -37,33 +40,33 @@ function normalizeWebsite(value: string) {
   return `https://${trimmed}`
 }
 
-function validateSettings(form: FormState): FieldErrors {
+function validateSettings(form: FormState, t: TFunction): FieldErrors {
   const errors: FieldErrors = {}
   const email = form.email.trim()
   const website = form.website.trim()
   const phone = form.phone.trim()
 
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    errors.email = 'Enter a valid email address.'
+    errors.email = t('settings:invoiceSettings.emailInvalid')
   }
 
   if (website) {
     try {
       const url = new URL(normalizeWebsite(website))
       if (!['http:', 'https:'].includes(url.protocol) || !url.hostname.includes('.')) {
-        errors.website = 'Enter a valid website, such as example.com.'
+        errors.website = t('settings:invoiceSettings.websiteInvalid')
       }
     } catch {
-      errors.website = 'Enter a valid website, such as example.com.'
+      errors.website = t('settings:invoiceSettings.websiteInvalid')
     }
   }
 
   if (phone && (!/^[0-9+\-() ]+$/.test(phone) || phone.length < 7 || phone.length > 50)) {
-    errors.phone = 'Use 7-50 digits or phone symbols only.'
+    errors.phone = t('settings:invoiceSettings.phoneInvalid')
   }
 
   if (form.receipt_footer.length > FOOTER_MAX_LENGTH) {
-    errors.receipt_footer = `Footer must be ${FOOTER_MAX_LENGTH} characters or fewer.`
+    errors.receipt_footer = t('settings:invoiceSettings.footerTooLong', { count: FOOTER_MAX_LENGTH })
   }
 
   return errors
@@ -83,8 +86,8 @@ function formSignature(form: FormState) {
 // ── Sample data for live preview ──────────────────────────────────────────────
 
 const PREVIEW_ITEMS: ThermalItem[] = [
-  { name: 'قهوة عربية', qty: 2, unitPrice: 18.00, lineTotal: 36.00 },
-  { name: 'كيك شوكولاتة', qty: 1, unitPrice: 22.00, lineTotal: 22.00 },
+  { name: 'Arabic coffee', nameAr: 'قهوة عربية', qty: 2, unitPrice: 18.00, lineTotal: 36.00 },
+  { name: 'Chocolate cake', nameAr: 'كيك شوكولاتة', qty: 1, unitPrice: 22.00, lineTotal: 22.00 },
 ]
 const PREVIEW_SUBTOTAL = 50.43
 const PREVIEW_TAX      = 7.57
@@ -106,8 +109,10 @@ function InfoTip({ text }: { text: string }) {
 // ── A4 Invoice Preview ────────────────────────────────────────────────────────
 
 function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | null }) {
+  const documentLanguage = normalizeDocumentLanguage(branch?.invoice_language)
+  const documentDir = documentDirection(documentLanguage)
   const brandName = form.display_name || branch?.business_name || branch?.name || 'Business Name'
-  const legalName = branch?.business_name || branch?.name || ''
+  const brandNames = documentNames(documentLanguage, brandName, branch?.business_name_ar || branch?.name_ar)
   const address = [
     branch?.building_number ? `Building ${branch.building_number}` : null,
     branch?.street,
@@ -117,7 +122,7 @@ function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | 
   ].filter(Boolean).join(', ')
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden text-[11px]">
+    <div dir={documentDir} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden text-[11px]" style={{ fontFamily: documentFontFamily(documentLanguage) }}>
 
       {/* Header */}
       <div className="px-5 py-4 border-b border-gray-100">
@@ -129,19 +134,18 @@ function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | 
               <img src={form.logo_url} alt="logo" className="w-10 h-10 rounded-lg object-contain flex-shrink-0 border border-gray-100" />
             ) : (
               <div className="w-10 h-10 rounded-lg bg-[#0F2419] flex items-center justify-center flex-shrink-0">
-                <span className="text-[#D4AF37] font-black text-base leading-none" style={{ fontFamily: 'Cairo, sans-serif' }}>د</span>
+                <span className="text-[#D4AF37] font-black text-base leading-none">د</span>
               </div>
             )}
             <div>
-              <p className="font-bold text-gray-900 text-sm" dir="auto" style={{ fontFamily: 'Cairo, sans-serif' }}>{brandName}</p>
-              {legalName !== brandName && <p className="text-gray-400 text-[10px]">{legalName}</p>}
+              {brandNames.map((name, index) => <p key={name} className={index === 0 ? 'font-bold text-gray-900 text-sm' : 'text-gray-400 text-[10px]'} dir="auto">{name}</p>)}
               {address && <p className="text-gray-400 text-[10px] mt-0.5 max-w-[180px]">{address}</p>}
               <div className="flex flex-wrap gap-2.5 mt-1.5">
                 {branch?.vat_number && (
-                  <span className="text-[10px] text-gray-500"><span className="font-semibold text-gray-600">VAT:</span> {branch.vat_number}</span>
+                  <span className="text-[10px] text-gray-500"><span className="font-semibold text-gray-600">{documentLabel(documentLanguage, 'vatNumber')}:</span> <bdi dir="ltr">{branch.vat_number}</bdi></span>
                 )}
                 {branch?.cr_number && (
-                  <span className="text-[10px] text-gray-500"><span className="font-semibold text-gray-600">CR:</span> {branch.cr_number}</span>
+                  <span className="text-[10px] text-gray-500"><span className="font-semibold text-gray-600">{documentLabel(documentLanguage, 'crNumber')}:</span> <bdi dir="ltr">{branch.cr_number}</bdi></span>
                 )}
               </div>
               {form.show_website && form.website && (
@@ -154,17 +158,16 @@ function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | 
           </div>
 
           {/* Invoice meta */}
-          <div className="text-right flex-shrink-0">
-            <p className="font-bold text-[#0F2419] text-sm" dir="rtl" style={{ fontFamily: 'Cairo, sans-serif' }}>فاتورة ضريبية مبسطة</p>
-            <p className="text-gray-400 text-[10px] mb-2">Simplified Tax Invoice</p>
+          <div className="text-end flex-shrink-0">
+            <div className="mb-2">{documentLabelLines(documentLanguage, 'simplifiedTaxInvoice').map((line, index) => <p key={line} dir="auto" className={index === 0 ? 'font-bold text-[#0F2419] text-sm' : 'text-gray-400 text-[10px]'}>{line}</p>)}</div>
             <div className="space-y-0.5">
               <div className="flex justify-end gap-3">
                 <span className="font-mono font-semibold text-gray-800">INV-0042</span>
-                <span className="text-gray-400 uppercase tracking-wide text-[9px]">Invoice #</span>
+                <span className="text-gray-400 uppercase tracking-wide text-[9px]">{documentLabel(documentLanguage, 'invoiceNumber')}</span>
               </div>
               <div className="flex justify-end gap-3">
                 <span className="text-gray-700">15 Jan 2026</span>
-                <span className="text-gray-400 uppercase tracking-wide text-[9px]">Date</span>
+                <span className="text-gray-400 uppercase tracking-wide text-[9px]">{documentLabel(documentLanguage, 'date')}</span>
               </div>
             </div>
           </div>
@@ -176,17 +179,17 @@ function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | 
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-200">
-              <th className="text-left py-1.5 text-[9px] font-semibold text-gray-400 uppercase tracking-wide">Item</th>
-              <th className="text-right py-1.5 text-[9px] font-semibold text-gray-400 uppercase tracking-wide w-10">Qty</th>
-              <th className="text-right py-1.5 text-[9px] font-semibold text-gray-400 uppercase tracking-wide w-20">Total</th>
+              <th className="text-start py-1.5 text-[9px] font-semibold text-gray-400 uppercase tracking-wide">{documentLabel(documentLanguage, 'item')}</th>
+              <th className="text-end py-1.5 text-[9px] font-semibold text-gray-400 uppercase tracking-wide w-10">{documentLabel(documentLanguage, 'quantity')}</th>
+              <th className="text-end py-1.5 text-[9px] font-semibold text-gray-400 uppercase tracking-wide w-20">{documentLabel(documentLanguage, 'totalIncludingVat')}</th>
             </tr>
           </thead>
           <tbody>
             {PREVIEW_ITEMS.map((item, i) => (
               <tr key={i} className="border-b border-gray-50">
-                <td className="py-2 text-gray-800">{item.name}</td>
-                <td className="py-2 text-right text-gray-600">{item.qty}</td>
-                <td className="py-2 text-right font-medium text-gray-900">SAR {item.lineTotal.toFixed(2)}</td>
+                <td className="py-2 text-gray-800">{documentNames(documentLanguage, item.name, item.nameAr).map(name => <span key={name} className="block" dir="auto">{name}</span>)}</td>
+                <td className="py-2 text-end text-gray-600" dir="ltr">{item.qty}</td>
+                <td className="py-2 text-end font-medium text-gray-900" dir="ltr">SAR {item.lineTotal.toFixed(2)}</td>
               </tr>
             ))}
           </tbody>
@@ -198,14 +201,14 @@ function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | 
         <div className="flex justify-end">
           <div className="w-48 space-y-1 bg-gray-50 rounded-lg px-3 py-2.5">
             <div className="flex justify-between text-gray-600">
-              <span>Subtotal</span><span>SAR {PREVIEW_SUBTOTAL.toFixed(2)}</span>
+              <span>{documentLabel(documentLanguage, 'amountBeforeVat')}</span><span dir="ltr">SAR {PREVIEW_SUBTOTAL.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">
-              <span className="font-semibold">VAT 15%</span>
-              <span className="font-semibold">SAR {PREVIEW_TAX.toFixed(2)}</span>
+              <span className="font-semibold">{documentLabel(documentLanguage, 'vatAmount')} 15%</span>
+              <span className="font-semibold" dir="ltr">SAR {PREVIEW_TAX.toFixed(2)}</span>
             </div>
             <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1">
-              <span>Total</span><span>SAR {PREVIEW_TOTAL.toFixed(2)}</span>
+              <span>{documentLabel(documentLanguage, 'totalIncludingVat')}</span><span dir="ltr">SAR {PREVIEW_TOTAL.toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -214,10 +217,10 @@ function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | 
       {/* Footer */}
       <div className="px-5 py-3 border-t border-gray-100 flex items-center gap-3">
         <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-gray-300 text-[8px] text-center leading-tight">
-          ZATCA<br/>QR
+          {documentLabel(documentLanguage, 'qrCode')}
         </div>
         <div className="text-[9px] text-gray-400 space-y-0.5">
-          <p className="font-semibold">ZATCA QR Code</p>
+          <p className="font-semibold">{documentLabel(documentLanguage, 'qrCode')}</p>
           {form.show_footer && form.receipt_footer && (
             <p className="text-gray-500">{form.receipt_footer}</p>
           )}
@@ -230,6 +233,7 @@ function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | 
 // ── InvoiceSettingsPage ───────────────────────────────────────────────────────
 
 export default function InvoiceSettingsPage() {
+  const { t } = useTranslation(['settings', 'printing'])
   const { profile, loading: authLoading } = useAuth()
 
   const [branch,       setBranch]       = useState<Branch | null>(null)
@@ -300,7 +304,7 @@ export default function InvoiceSettingsPage() {
     })
   }
 
-  const currentErrors = useMemo(() => validateSettings(form), [form])
+  const currentErrors = useMemo(() => validateSettings(form, t), [form, t])
   const hasValidationErrors = Object.keys(currentErrors).length > 0
   const hasUnsavedChanges = savedSignature !== null && formSignature(form) !== savedSignature
   const saveDisabled = saving || !hasUnsavedChanges || hasValidationErrors
@@ -311,11 +315,11 @@ export default function InvoiceSettingsPage() {
     setSaveError(null)
     setSaveOk(false)
     if (!LOGO_MIME_TYPES.includes(file.type)) {
-      setFieldErrors(prev => ({ ...prev, logo_file: 'Upload a PNG, JPG, or WebP logo.' }))
+      setFieldErrors(prev => ({ ...prev, logo_file: t('settings:invoiceSettings.logoTypeInvalid') }))
       return
     }
     if (file.size > LOGO_MAX_BYTES) {
-      setFieldErrors(prev => ({ ...prev, logo_file: 'Logo must be under 2MB.' }))
+      setFieldErrors(prev => ({ ...prev, logo_file: t('settings:invoiceSettings.logoTooLarge') }))
       return
     }
     setFieldErrors(prev => {
@@ -333,7 +337,7 @@ export default function InvoiceSettingsPage() {
       set('logo_url', urlData.publicUrl)
       setUploadedLogoPendingSave(true)
     } catch (err: any) {
-      setSaveError(err?.message ?? 'Logo upload failed')
+      setSaveError(err?.message ?? t('settings:invoiceSettings.logoUploadFailed'))
     } finally {
       setUploadingLogo(false)
     }
@@ -347,7 +351,7 @@ export default function InvoiceSettingsPage() {
     setFieldErrors({})
     setSaveOk(false)
     try {
-      const validationErrors = validateSettings(form)
+      const validationErrors = validateSettings(form, t)
       if (Object.keys(validationErrors).length > 0) {
         setFieldErrors(validationErrors)
         return
@@ -387,7 +391,7 @@ export default function InvoiceSettingsPage() {
       setSaveOk(true)
       setTimeout(() => setSaveOk(false), 3000)
     } catch (err: any) {
-      setSaveError(err?.message ?? 'Save failed')
+      setSaveError(err?.message ?? t('settings:invoiceSettings.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -414,9 +418,9 @@ export default function InvoiceSettingsPage() {
       {/* Page header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-600">Branch account</p>
-          <h1 className="mt-1 text-2xl font-bold text-gray-950">Invoice Settings</h1>
-          <p className="text-sm text-gray-500 mt-1">إعدادات الفاتورة · Configure receipt and invoice appearance</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-600">{t('settings:invoiceSettings.branchAccount')}</p>
+          <h1 className="mt-1 text-2xl font-bold text-gray-950">{t('settings:invoiceSettings.title')}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t('settings:invoiceSettings.subtitle')}</p>
         </div>
         <div className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
           hasUnsavedChanges
@@ -426,7 +430,7 @@ export default function InvoiceSettingsPage() {
             : 'bg-gray-50 text-gray-500 ring-1 ring-gray-100'
         }`}>
           <span className={`h-2 w-2 rounded-full ${hasUnsavedChanges ? 'bg-amber-500' : saveOk ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-          {hasUnsavedChanges ? 'Unsaved changes' : saveOk ? 'Settings saved' : 'Saved'}
+          {hasUnsavedChanges ? t('settings:invoiceSettings.unsavedChanges') : saveOk ? t('settings:invoiceSettings.settingsSaved') : t('settings:invoiceSettings.saved')}
         </div>
       </div>
 
@@ -440,30 +444,30 @@ export default function InvoiceSettingsPage() {
             <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
               <div className="w-7 h-7 bg-primary-50 rounded-xl flex items-center justify-center flex-shrink-0 text-primary-700 text-xs font-bold">K</div>
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">Business identity</h2>
-                <p className="text-[10px] text-gray-400">Brand name and logo used on printed documents</p>
+                <h2 className="text-sm font-semibold text-gray-900">{t('settings:invoiceSettings.businessIdentity')}</h2>
+                <p className="text-[10px] text-gray-400">{t('settings:invoiceSettings.businessIdentityHelp')}</p>
               </div>
             </div>
 
             <div>
               <label className="label flex items-center">
-                Display Name Override
-                <InfoTip text="Optional. Replaces business name on invoice headers. The legal business name is always used in the QR code." />
+                {t('settings:invoiceSettings.displayName')}
+                <InfoTip text={t('settings:invoiceSettings.displayNameHelp')} />
               </label>
               <input type="text" value={form.display_name}
                 onChange={e => set('display_name', e.target.value)}
-                className="input" placeholder="e.g. Ameen Café (optional)" />
+                className="input" placeholder={t('settings:invoiceSettings.displayNamePlaceholder')} />
             </div>
 
             {/* Logo upload */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="label mb-0 flex items-center">
-                  Logo
-                  <InfoTip text="PNG or JPG, recommended 200×200px, max 2MB" />
+                  {t('settings:invoiceSettings.logo')}
+                  <InfoTip text={t('settings:invoiceSettings.logoHelp')} />
                 </label>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-gray-500">Show</span>
+                  <span className="text-[10px] text-gray-500">{t('settings:invoiceSettings.show')}</span>
                   <Toggle checked={form.show_logo} onChange={v => set('show_logo', v)} />
                 </div>
               </div>
@@ -476,7 +480,7 @@ export default function InvoiceSettingsPage() {
                     <button
                       onClick={() => set('logo_url', null)}
                       className="absolute -top-1.5 -right-1.5 w-[18px] h-[18px] bg-red-500 text-white rounded-full flex items-center justify-center text-[9px] hover:bg-red-600 transition-colors"
-                      title="Remove logo"
+                      title={t('settings:invoiceSettings.removeLogo')}
                     >
                       ✕
                     </button>
@@ -489,14 +493,14 @@ export default function InvoiceSettingsPage() {
                   <div className="min-w-0 flex-1">
                     <label className={`cursor-pointer inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors ${uploadingLogo ? 'opacity-50 cursor-not-allowed' : ''}`}>
                       <Upload size={13} />
-                      {uploadingLogo ? 'Uploading...' : form.logo_url ? 'Replace logo' : 'Upload logo'}
+                      {uploadingLogo ? t('settings:invoiceSettings.uploading') : form.logo_url ? t('settings:invoiceSettings.replaceLogo') : t('settings:invoiceSettings.uploadLogo')}
                       <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only"
                         disabled={uploadingLogo}
                         onChange={e => { const f = e.target.files?.[0]; if (f) uploadLogo(f) }} />
                     </label>
-                    <p className="mt-2 text-[10px] leading-relaxed text-gray-400">PNG, JPG, or WebP. Max 2MB. Save settings after uploading to apply this logo.</p>
+                    <p className="mt-2 text-[10px] leading-relaxed text-gray-400">{t('settings:invoiceSettings.logoUploadHelp')}</p>
                     {uploadedLogoPendingSave && (
-                      <p className="mt-1 text-[10px] font-semibold text-amber-700">Logo uploaded. Save settings to keep it on this branch.</p>
+                      <p className="mt-1 text-[10px] font-semibold text-amber-700">{t('settings:invoiceSettings.logoPendingSave')}</p>
                     )}
                     {fieldErrors.logo_file && <p className="mt-1 text-[10px] font-semibold text-red-600">{fieldErrors.logo_file}</p>}
                   </div>
@@ -510,13 +514,13 @@ export default function InvoiceSettingsPage() {
             <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
               <div className="w-7 h-7 bg-emerald-50 rounded-xl flex items-center justify-center flex-shrink-0 text-emerald-700 text-xs font-bold">@</div>
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">Contact details</h2>
-                <p className="text-[10px] text-gray-400">Optional contact information for invoices and receipts</p>
+                <h2 className="text-sm font-semibold text-gray-900">{t('settings:invoiceSettings.contactDetails')}</h2>
+                <p className="text-[10px] text-gray-400">{t('settings:invoiceSettings.contactDetailsHelp')}</p>
               </div>
             </div>
 
             <div>
-              <label className="label">Phone Number</label>
+              <label className="label">{t('settings:invoiceSettings.phoneNumber')}</label>
               <input type="tel" value={form.phone}
                 onChange={e => set('phone', e.target.value)}
                 className={`input ${currentErrors.phone ? 'border-red-200 bg-red-50/40' : ''}`} placeholder="+966 5X XXX XXXX" />
@@ -525,8 +529,8 @@ export default function InvoiceSettingsPage() {
 
             <div>
               <label className="label flex items-center">
-                Email
-                <InfoTip text="Shown on invoices when Show Email is enabled" />
+                {t('settings:invoiceSettings.email')}
+                <InfoTip text={t('settings:invoiceSettings.emailHelp')} />
               </label>
               <input type="email" value={form.email}
                 onChange={e => set('email', e.target.value)}
@@ -536,15 +540,15 @@ export default function InvoiceSettingsPage() {
 
             <div>
               <label className="label flex items-center">
-                Website
-                <InfoTip text="Shown on invoices when Show Website is enabled. Plain domains are saved with https://" />
+                {t('settings:invoiceSettings.website')}
+                <InfoTip text={t('settings:invoiceSettings.websiteHelp')} />
               </label>
               <input type="url" value={form.website}
                 onChange={e => set('website', e.target.value)}
                 className={`input ${currentErrors.website ? 'border-red-200 bg-red-50/40' : ''}`} placeholder="example.com" />
               {currentErrors.website
                 ? <p className="mt-1 text-[10px] font-semibold text-red-600">{currentErrors.website}</p>
-                : <p className="mt-1 text-[10px] text-gray-400">You can enter example.com; it will be saved as https://example.com.</p>}
+                : <p className="mt-1 text-[10px] text-gray-400">{t('settings:invoiceSettings.websiteHint')}</p>}
             </div>
           </div>
 
@@ -553,15 +557,15 @@ export default function InvoiceSettingsPage() {
             <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
               <div className="w-7 h-7 bg-gold-50 rounded-xl flex items-center justify-center flex-shrink-0 text-gold-700 text-xs font-bold">✓</div>
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">Optional printed fields</h2>
-                <p className="text-[10px] text-gray-400">Choose which saved details appear on printed documents</p>
+                <h2 className="text-sm font-semibold text-gray-900">{t('settings:invoiceSettings.optionalFields')}</h2>
+                <p className="text-[10px] text-gray-400">{t('settings:invoiceSettings.optionalFieldsHelp')}</p>
               </div>
             </div>
 
             {([
-              { key: 'show_website'     as const, label: 'Show Website',     desc: form.website || 'No website set' },
-              { key: 'show_email'       as const, label: 'Show Email',       desc: form.email   || 'No email set'   },
-              { key: 'show_cash_change' as const, label: 'Show Cash Change', desc: 'Print change amount on cash receipts' },
+              { key: 'show_website'     as const, label: t('settings:invoiceSettings.showWebsite'),     desc: form.website || t('settings:invoiceSettings.noWebsite') },
+              { key: 'show_email'       as const, label: t('settings:invoiceSettings.showEmail'),       desc: form.email   || t('settings:invoiceSettings.noEmail')   },
+              { key: 'show_cash_change' as const, label: t('settings:invoiceSettings.showCashChange'), desc: t('settings:invoiceSettings.cashChangeHelp') },
             ]).map(({ key, label, desc }) => (
               <div key={key} className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
@@ -577,25 +581,25 @@ export default function InvoiceSettingsPage() {
           <div className="card px-5 py-4 space-y-3.5">
             <div className="flex items-center justify-between gap-3 pb-2 border-b border-gray-100">
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">Footer message</h2>
-                <p className="text-[10px] text-gray-400">Printed at the bottom of thermal and A4 documents</p>
+                <h2 className="text-sm font-semibold text-gray-900">{t('settings:invoiceSettings.footerMessage')}</h2>
+                <p className="text-[10px] text-gray-400">{t('settings:invoiceSettings.footerMessageHelp')}</p>
               </div>
               <Toggle checked={form.show_footer} onChange={v => set('show_footer', v)} />
             </div>
 
             <div>
               <label className="label flex items-center">
-                Receipt Footer Text
-                <InfoTip text="Custom message printed at the bottom when Show Footer is enabled" />
+                {t('settings:invoiceSettings.footerText')}
+                <InfoTip text={t('settings:invoiceSettings.footerTextHelp')} />
               </label>
               <textarea value={form.receipt_footer}
                 onChange={e => set('receipt_footer', e.target.value)}
                 className={`input resize-none text-xs ${currentErrors.receipt_footer ? 'border-red-200 bg-red-50/40' : ''}`} rows={3}
-                placeholder="e.g. Thank you for your business! Visit again." />
+                placeholder={t('settings:invoiceSettings.footerPlaceholder')} />
               <div className="mt-1 flex items-center justify-between gap-2">
                 {currentErrors.receipt_footer
                   ? <p className="text-[10px] font-semibold text-red-600">{currentErrors.receipt_footer}</p>
-                  : <p className="text-[10px] text-gray-400">Keep it short for thermal receipts.</p>}
+                  : <p className="text-[10px] text-gray-400">{t('settings:invoiceSettings.footerShortHint')}</p>}
                 <p className={`text-[10px] tabular-nums ${form.receipt_footer.length > FOOTER_MAX_LENGTH ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>
                   {form.receipt_footer.length}/{FOOTER_MAX_LENGTH}
                 </p>
@@ -608,20 +612,20 @@ export default function InvoiceSettingsPage() {
             <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
               <div className="w-7 h-7 bg-amber-50 rounded-xl flex items-center justify-center flex-shrink-0 text-amber-700 text-xs font-bold">⎙</div>
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">Default print action after sale</h2>
-                <p className="text-[10px] text-gray-400">Controls the buttons shown after checkout. Direct printer uses thermal receipt format.</p>
+                <h2 className="text-sm font-semibold text-gray-900">{t('settings:invoiceSettings.defaultPrintAction')}</h2>
+                <p className="text-[10px] text-gray-400">{t('settings:invoiceSettings.defaultPrintActionHelp')}</p>
               </div>
             </div>
 
             <div className="space-y-2">
               {([
-                { value: 'thermal' as const, label: 'Thermal receipt', desc: 'Show the receipt print action after sale' },
-                { value: 'pdf'     as const, label: 'A4 invoice',      desc: 'Show the A4 invoice print action after sale' },
-                { value: 'both'    as const, label: 'Both actions',    desc: 'Show receipt and A4 invoice actions' },
+                { value: 'thermal' as const, label: t('settings:invoiceSettings.thermalReceipt'), desc: t('settings:invoiceSettings.thermalReceiptHelp') },
+                { value: 'pdf'     as const, label: t('settings:invoiceSettings.a4Invoice'),      desc: t('settings:invoiceSettings.a4InvoiceHelp') },
+                { value: 'both'    as const, label: t('settings:invoiceSettings.bothActions'),    desc: t('settings:invoiceSettings.bothActionsHelp') },
               ]).map(opt => (
                 <button key={opt.value} type="button"
                   onClick={() => set('print_mode', opt.value)}
-                  className={`flex items-start gap-3 p-3 rounded-xl border w-full text-left transition-all ${
+                  className={`flex items-start gap-3 p-3 rounded-xl border w-full text-start transition-all ${
                     form.print_mode === opt.value
                       ? 'border-primary-300 bg-primary-50/60'
                       : 'border-gray-200 hover:border-gray-300'
@@ -654,10 +658,10 @@ export default function InvoiceSettingsPage() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className={`text-xs font-semibold ${hasUnsavedChanges ? 'text-amber-700' : saveOk ? 'text-emerald-700' : 'text-gray-600'}`}>
-                  {hasUnsavedChanges ? 'Unsaved changes' : saveOk ? 'Settings saved' : 'No changes to save'}
+                  {hasUnsavedChanges ? t('settings:invoiceSettings.unsavedChanges') : saveOk ? t('settings:invoiceSettings.settingsSaved') : t('settings:invoiceSettings.noChanges')}
                 </p>
                 <p className="text-[10px] text-gray-400">
-                  {hasValidationErrors ? 'Fix the highlighted fields before saving.' : 'Saved settings apply to future prints and reprints.'}
+                  {hasValidationErrors ? t('settings:invoiceSettings.fixFields') : t('settings:invoiceSettings.futurePrints')}
                 </p>
               </div>
               <button
@@ -666,11 +670,11 @@ export default function InvoiceSettingsPage() {
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? (
-                  <><Loader2 size={15} className="animate-spin" /> Saving...</>
+                  <><Loader2 size={15} className="animate-spin" /> {t('settings:invoiceSettings.saving')}</>
                 ) : saveOk ? (
-                  <><Check size={15} /> Saved</>
+                  <><Check size={15} /> {t('settings:invoiceSettings.saved')}</>
                 ) : (
-                  'Save settings'
+                  t('settings:invoiceSettings.saveSettings')
                 )}
               </button>
             </div>
@@ -681,8 +685,8 @@ export default function InvoiceSettingsPage() {
         <div className="min-w-0 space-y-3 xl:sticky xl:top-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-gray-900">Live preview</h2>
-              <p className="text-[10px] text-gray-400">Preview updates before saving.</p>
+              <h2 className="text-sm font-semibold text-gray-900">{t('settings:livePreview')}</h2>
+              <p className="text-[10px] text-gray-400">{t('settings:previewBeforeSaving')}</p>
             </div>
             <div className="flex border border-gray-200 rounded-xl overflow-hidden text-xs">
               <button
@@ -691,7 +695,7 @@ export default function InvoiceSettingsPage() {
                   previewMode === 'thermal' ? 'bg-primary-500 text-white' : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                Thermal preview
+                {t('settings:thermalPreview')}
               </button>
               <button
                 onClick={() => setPreviewMode('a4')}
@@ -699,7 +703,7 @@ export default function InvoiceSettingsPage() {
                   previewMode === 'a4' ? 'bg-primary-500 text-white' : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                A4 preview
+                {t('settings:a4Preview')}
               </button>
             </div>
           </div>
@@ -709,10 +713,13 @@ export default function InvoiceSettingsPage() {
               <div className="w-[280px]">
                 <ThermalReceipt
                   preview
-                  businessNameAr={previewBrandName}
+                  documentLanguage={normalizeDocumentLanguage(branch?.invoice_language)}
+                  businessNameAr={branch?.business_name_ar || branch?.name_ar || previewBrandName}
                   businessNameEn={previewLegalName}
-                  branchName={null}
+                  branchName={branch?.name}
+                  branchNameAr={branch?.name_ar}
                   address={previewAddress || null}
+                  addressAr={branch?.address_ar || null}
                   vatNumber={branch?.vat_number ?? undefined}
                   phone={form.phone || undefined}
                   website={form.website || undefined}
@@ -744,7 +751,7 @@ export default function InvoiceSettingsPage() {
           )}
 
           <p className="text-[10px] text-gray-400 text-center">
-            Preview is visual. Use Save settings to apply changes to printed documents.
+            {t('settings:previewSaveHint')}
           </p>
         </div>
       </div>

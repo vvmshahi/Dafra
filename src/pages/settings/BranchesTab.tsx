@@ -23,6 +23,7 @@ import {
 } from '@/lib/utils/branchUsername'
 import { branchCreationErrorMessage, branchIdFromRpcResult } from '@/lib/utils/branchCreation'
 import { resolveBusinessType } from '@/lib/utils/businessType'
+import { useTranslation } from 'react-i18next'
 
 /* ── Types ──────────────────────────────────────────────────── */
 
@@ -311,6 +312,7 @@ function BranchDrawer({
   onRefresh?: () => void
   onResetPassword?: () => void
 }) {
+  const { t } = useTranslation('settings')
   const isNew = branch === null
   const [form, setForm] = useState<BranchForm>(
     branch
@@ -865,12 +867,12 @@ function BranchDrawer({
 
                   {/* Invoice language */}
                   <div>
-                    <label className="label">Invoice Language</label>
+                    <label className="label">{t('invoiceLanguage')}</label>
                     <select value={form.invoice_language} onChange={e => set('invoice_language')(e.target.value as 'en' | 'ar' | 'both')}
                       className="input">
-                      <option value="both">Arabic + English</option>
-                      <option value="en">English only</option>
-                      <option value="ar">Arabic only</option>
+                      <option value="both">{t('documentBilingual')}</option>
+                      <option value="en">{t('documentEnglish')}</option>
+                      <option value="ar">{t('documentArabic')}</option>
                     </select>
                   </div>
                 </div>

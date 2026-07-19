@@ -1,0 +1,10 @@
+{
+  "title": "Receipt {{number}}",
+  "subtitle": "Detailed thermal receipt print view",
+  "notFound": "Receipt not found.",
+  "unavailable": "Receipt not available.",
+  "loadFailed": "Failed to load receipt.",
+  "backToPos": "Back to POS",
+  "invoiceDetails": "Invoice details",
+  "preview": "Receipt preview"
+}

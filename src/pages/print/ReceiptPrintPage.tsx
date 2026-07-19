@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Loader2, Printer, RefreshCw } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import QRCode from 'qrcode'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
@@ -9,6 +10,7 @@ import { DEFAULT_PRINTER_SETTINGS, type PrinterSettings } from '@/lib/electron'
 import { buildZatcaQR } from '@/lib/zatca/qr'
 import { toSaudiTime } from '@/lib/utils/date'
 import type { Branch, Invoice, InvoiceItem, Payment } from '@/types/database'
+import { documentDate, normalizeDocumentLanguage } from '@/localization/documents'
 
 interface Tenant {
   name: string
@@ -167,6 +169,7 @@ function useReceiptPrintStyle(profile: PrinterSettings, isElectronPrint: boolean
 }
 
 export default function ReceiptPrintPage() {
+  const { t } = useTranslation(['receipts', 'printing'])
   const { invoiceId } = useParams<{ invoiceId: string }>()
   const [params] = useSearchParams()
   const navigate = useNavigate()
@@ -207,7 +210,7 @@ export default function ReceiptPrintPage() {
         ])
 
         if (invErr || !inv) {
-          setError('Receipt not found.')
+          setError(t('receipts:notFound'))
           return
         }
         if (cancelled) return
@@ -235,7 +238,7 @@ export default function ReceiptPrintPage() {
         setTenant(tenantResult.data as Tenant)
         setCustomer((customerResult?.data ?? null) as Customer | null)
       } catch {
-        if (!cancelled) setError('Failed to load receipt.')
+        if (!cancelled) setError(t('receipts:loadFailed'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -243,7 +246,7 @@ export default function ReceiptPrintPage() {
 
     loadReceipt()
     return () => { cancelled = true }
-  }, [invoiceId])
+  }, [invoiceId, t])
 
   useEffect(() => {
     if (!invoice || !branch || !tenant) return
@@ -287,20 +290,23 @@ export default function ReceiptPrintPage() {
   const receipt = useMemo(() => {
     if (!invoice || !branch || !tenant) return null
 
-    const date = new Date(invoice.created_at).toLocaleDateString('en-GB', {
-      timeZone: 'Asia/Riyadh',
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-    })
+    const documentLanguage = normalizeDocumentLanguage(branch.invoice_language)
+    const date = documentDate(invoice.created_at, documentLanguage)
     const address = [
       branch.building_number ? `Building ${branch.building_number}` : null,
       branch.street,
       branch.district,
       branch.city,
     ].filter(Boolean).join(', ')
+    const addressAr = [
+      branch.building_number ? `مبنى ${branch.building_number}` : null,
+      branch.street_ar,
+      branch.district_ar,
+      branch.city_ar,
+    ].filter(Boolean).join('، ')
     const thermalItems: ThermalItem[] = items.map(item => ({
-      name: item.name_ar?.trim() ? item.name_ar : item.name,
+      name: item.name,
+      nameAr: item.name_ar,
       qty: Number(item.quantity),
       unitPrice: Number(item.unit_price),
       lineTotal: Number(item.total),
@@ -323,18 +329,25 @@ export default function ReceiptPrintPage() {
     return {
       date,
       time: toSaudiTime(invoice.created_at),
-      brandName: branch.display_name || branch.business_name || branch.name,
-      legalName: branch.business_name || branch.name,
+      brandNameEn: branch.display_name || branch.business_name || branch.name,
+      brandNameAr: branch.business_name_ar || branch.name_ar || branch.display_name || branch.business_name || branch.name,
+      branchNameEn: branch.name,
+      branchNameAr: branch.name_ar,
       address: address || null,
+      addressAr: addressAr || null,
       items: thermalItems,
       splitPayment,
       payment,
       cashReceived,
       changeAmount,
       customerName: customerDisplayName(customer),
+      customerNameAr: customer?.customer_type === 'business'
+        ? customer.business_name_ar ?? customer.name_ar
+        : customer?.name_ar ?? null,
       buyerVatNumber: isStandardDocument ? customer?.vat_number ?? null : null,
       isStandardDocument,
       documentType: isCreditNote ? 'credit_note' as const : 'invoice' as const,
+      documentLanguage,
     }
   }, [invoice, branch, tenant, items, payments, customer])
 
@@ -369,14 +382,14 @@ export default function ReceiptPrintPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
         <div className="max-w-sm rounded-2xl border border-gray-100 bg-white p-6 text-center shadow-sm">
-          <p className="text-sm font-semibold text-gray-900">{error ?? 'Receipt not available.'}</p>
+          <p className="text-sm font-semibold text-gray-900">{error ?? t('receipts:unavailable')}</p>
           <button
             type="button"
             onClick={() => navigate('/pos')}
             className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#0F2419] px-4 py-2 text-sm font-semibold text-white"
           >
             <ArrowLeft size={14} />
-            Back to POS
+            {t('receipts:backToPos')}
           </button>
         </div>
       </div>
@@ -388,8 +401,8 @@ export default function ReceiptPrintPage() {
       <div className="no-print sticky top-0 z-10 border-b border-gray-200 bg-white/95 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-2">
           <div>
-            <p className="text-sm font-bold text-gray-900">Receipt {invoice.invoice_number}</p>
-            <p className="text-xs text-gray-500">Detailed thermal receipt print view</p>
+            <p className="text-sm font-bold text-gray-900">{t('receipts:title', { number: invoice.invoice_number })}</p>
+            <p className="text-xs text-gray-500">{t('receipts:subtitle')}</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -398,13 +411,13 @@ export default function ReceiptPrintPage() {
               className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
             >
               <ArrowLeft size={13} />
-              Back to POS
+              {t('receipts:backToPos')}
             </button>
             <Link
               to={`/invoices/${invoice.id}`}
               className="hidden rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 sm:inline-flex"
             >
-              Invoice details
+              {t('receipts:invoiceDetails')}
             </Link>
             <button
               type="button"
@@ -413,7 +426,7 @@ export default function ReceiptPrintPage() {
               className="inline-flex items-center gap-1.5 rounded-xl bg-[#0F2419] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1a3a28] disabled:cursor-wait disabled:opacity-60"
             >
               {qrDataUrl ? <Printer size={13} /> : <RefreshCw size={13} className="animate-spin" />}
-              Print
+              {t('printing:print')}
             </button>
           </div>
         </div>
@@ -422,10 +435,13 @@ export default function ReceiptPrintPage() {
       <main id="receipt-print-page" className="mx-auto flex min-h-[calc(100vh-64px)] max-w-3xl items-start justify-center bg-white px-3 py-5 sm:my-6 sm:min-h-0 sm:rounded-2xl sm:border sm:border-gray-100 sm:shadow-sm">
         <ThermalReceipt
           preview
-          businessNameAr={receipt.brandName}
-          businessNameEn={receipt.legalName}
-          branchName={null}
+          documentLanguage={receipt.documentLanguage}
+          businessNameAr={receipt.brandNameAr}
+          businessNameEn={receipt.brandNameEn}
+          branchName={receipt.branchNameEn}
+          branchNameAr={receipt.branchNameAr}
           address={receipt.address}
+          addressAr={receipt.addressAr}
           vatNumber={branch.vat_number || tenant.vat_number || ''}
           phone={branch.phone}
           website={branch.website}
@@ -445,6 +461,7 @@ export default function ReceiptPrintPage() {
           cashReceived={receipt.cashReceived}
           change={receipt.changeAmount}
           customerName={receipt.customerName}
+          customerNameAr={receipt.customerNameAr}
           buyerVatNumber={receipt.buyerVatNumber}
           isStandardInvoice={receipt.isStandardDocument}
           documentType={receipt.documentType}

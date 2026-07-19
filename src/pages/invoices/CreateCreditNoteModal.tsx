@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { supabase } from '@/lib/supabase'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import type { PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isPermanentDemoSandboxBranch, submitInvoiceForBranch } from '@/lib/zatca/submission'
 import { useAuth } from '@/hooks/useAuth'
 import { resolveBusinessType } from '@/lib/utils/businessType'
+import { useLocale } from '@/localization/useLocale'
 
 export interface CreditNoteSourceInvoice {
   id: string
@@ -89,20 +92,20 @@ interface CreateCreditNoteModalProps {
   onCreated: (result: CreditNoteCreatedResult) => void
 }
 
-function safeCreditNoteError(error: unknown): string {
+function safeCreditNoteError(error: unknown, t: TFunction): string {
   const message = typeof (error as any)?.message === 'string' ? (error as any).message : ''
-  if (/select at least one|no items/i.test(message)) return 'Choose at least one item and enter a return quantity.'
-  if (/invalid returned quantity|quantity.*greater than zero/i.test(message)) return 'Return quantity must be greater than zero.'
-  if (/exceeds remaining|fully credited/i.test(message)) return 'One or more return quantities exceed the remaining refundable quantity.'
-  if (/does not belong/i.test(message)) return 'One returned item does not belong to this invoice.'
-  if (/duplicate/i.test(message)) return 'The same invoice line was selected more than once.'
-  if (/refunds cannot exceed|payment total/i.test(message)) return 'Refund total cannot exceed the original payment total.'
-  if (/stock return failed/i.test(message)) return 'Could not return stock for one of the selected items.'
-  if (/reported|cleared/i.test(message)) return 'Only reported or cleared invoices can be credited.'
-  if (/posted/i.test(message)) return 'Only posted invoices can be credited.'
-  if (/reason/i.test(message)) return 'A credit note reason is required.'
-  if (/forbidden|unauthorized|permission/i.test(message)) return 'You do not have permission to create this credit note.'
-  return 'Could not create the credit note. Please check the invoice status and try again.'
+  if (/select at least one|no items/i.test(message)) return t('validation:creditNoteChooseItem')
+  if (/invalid returned quantity|quantity.*greater than zero/i.test(message)) return t('validation:returnQuantityPositive')
+  if (/exceeds remaining|fully credited/i.test(message)) return t('validation:returnQuantityExceeded')
+  if (/does not belong/i.test(message)) return t('validation:returnItemMismatch')
+  if (/duplicate/i.test(message)) return t('validation:returnItemDuplicate')
+  if (/refunds cannot exceed|payment total/i.test(message)) return t('validation:refundExceedsPayment')
+  if (/stock return failed/i.test(message)) return t('validation:stockReturnFailed')
+  if (/reported|cleared/i.test(message)) return t('validation:creditInvoiceStatus')
+  if (/posted/i.test(message)) return t('validation:creditPostedOnly')
+  if (/reason/i.test(message)) return t('validation:creditReasonRequired')
+  if (/forbidden|unauthorized|permission/i.test(message)) return t('validation:creditPermissionDenied')
+  return t('validation:creditNoteFailed')
 }
 
 function newIdempotencyKey(invoiceId: string) {
@@ -116,11 +119,11 @@ const QUICK_REASONS = [
   'Billing mistake',
 ] as const
 
-function paymentLabel(method: PaymentMethod | string | null | undefined): string {
-  if (method === 'cash') return 'Cash'
-  if (method === 'card') return 'Card / POS'
-  if (method === 'bank_transfer') return 'Bank Transfer'
-  return 'Other'
+function paymentLabel(method: PaymentMethod | string | null | undefined, t: TFunction): string {
+  if (method === 'cash') return t('payments:cash')
+  if (method === 'card') return t('payments:cardPos')
+  if (method === 'bank_transfer') return t('payments:bankTransfer')
+  return t('payments:other')
 }
 
 function money(amount: number): string {
@@ -189,12 +192,12 @@ function resolveAutoRefundMethod(payments: CreditNotePaymentRow[]): PaymentMetho
   return 'other'
 }
 
-function refundPlanText(payments: CreditNotePaymentRow[], loading: boolean): string {
-  if (loading) return 'Loading original payment details...'
+function refundPlanText(payments: CreditNotePaymentRow[], loading: boolean, t: TFunction): string {
+  if (loading) return t('refunds:loadingOriginal')
   const usable = payments.filter(row => row.amount > 0)
-  if (usable.length === 0) return 'Original payment allocation is unavailable.'
-  if (usable.length === 1) return `Original payment: ${paymentLabel(usable[0].method)} SAR ${money(usable[0].amount)}.`
-  return `Original payment: ${usable.map(row => `${paymentLabel(row.method)} SAR ${money(row.amount)}`).join(' · ')}.`
+  if (usable.length === 0) return t('refunds:allocationUnavailable')
+  if (usable.length === 1) return t('refunds:originalSingle', { method: paymentLabel(usable[0].method, t), amount: money(usable[0].amount) })
+  return t('refunds:originalMultiple', { details: usable.map(row => `${paymentLabel(row.method, t)} SAR ${money(row.amount)}`).join(' · ') })
 }
 
 async function fetchCreditNoteStatus(invoiceId: string): Promise<ZatcaStatus | null> {
@@ -213,6 +216,8 @@ export default function CreateCreditNoteModal({
   onClose,
   onCreated,
 }: CreateCreditNoteModalProps) {
+  const { t } = useTranslation(['creditNotes', 'refunds', 'payments', 'invoices', 'validation', 'common'])
+  const { isRtl } = useLocale()
   const { tenant, profile } = useAuth()
   const [selectedReason, setSelectedReason] = useState<(typeof QUICK_REASONS)[number] | ''>('')
   const [remarks, setRemarks] = useState('')
@@ -314,7 +319,7 @@ export default function CreateCreditNoteModal({
       } catch (err) {
         if (!cancelled) {
           console.error('[CreateCreditNoteModal] failed to load refundable items', err)
-          setError('Could not load refundable items for this invoice.')
+          setError(t('validation:loadRefundableItemsFailed'))
           setRefundableItems([])
         }
       } finally {
@@ -369,7 +374,7 @@ export default function CreateCreditNoteModal({
     if (!invoice) return
     if (itemsLoading) return
     if (!selectedReason) {
-      setError('Choose a reason for the credit note.')
+      setError(t('validation:chooseCreditReason'))
       return
     }
 
@@ -381,27 +386,27 @@ export default function CreateCreditNoteModal({
       .filter(line => line.quantity > 0)
 
     if (lines.length === 0) {
-      setError('Enter a return quantity for at least one item.')
+      setError(t('validation:returnQuantityRequired'))
       return
     }
 
     const invalidLine = lines.find(line => line.quantity > line.item.remaining_quantity + 0.0005)
     if (invalidLine) {
-      setError(`${invalidLine.item.name} exceeds the remaining refundable quantity.`)
+      setError(t('validation:returnQuantityNamedExceeded', { name: invalidLine.item.name }))
       return
     }
 
     const trimmedRemarks = remarks.trim()
     const finalReason = trimmedRemarks ? `${selectedReason} - ${trimmedRemarks}` : selectedReason
     if (finalReason.length > 500) {
-      setError('Remarks are too long.')
+      setError(t('validation:remarksTooLong'))
       return
     }
 
     const cashRefund = refundMode === 'card' ? 0 : Number(refundCash || 0)
     const cardRefund = refundMode === 'cash' ? 0 : Number(refundCard || 0)
     if (cashRefund < 0 || cardRefund < 0 || cashRefund + cardRefund <= 0 || Math.abs(cashRefund + cardRefund - totals.total) > 0.01) {
-      setError('Cash and card refunds must add up to the credit total.')
+      setError(t('validation:refundAllocationMismatch'))
       return
     }
     const refundAllocations = [
@@ -431,7 +436,7 @@ export default function CreateCreditNoteModal({
 
       const result = data as RpcCreditNoteResult
       if (!result.credit_note_invoice_id || !result.credit_note_invoice_number) {
-        throw new Error('Credit note was not returned')
+        throw new Error(t('creditNotes:missingResult'))
       }
 
       const creditNoteId = result.credit_note_invoice_id
@@ -479,14 +484,14 @@ export default function CreateCreditNoteModal({
       onClose()
       if (autoSubmitSucceeded || zatcaStatus === 'reported' || zatcaStatus === 'cleared') {
         const demoSubmission = isPermanentDemoSandboxBranch(profile?.tenant_id, invoice.branch_id)
-        toast.success(result.idempotent_replay ? 'Credit note already exists' : 'Credit note created and submitted to ZATCA', {
-          description: demoSubmission ? 'Successfully processed by ZATCA' : undefined,
+        toast.success(result.idempotent_replay ? t('creditNotes:alreadyExists') : t('creditNotes:createdSubmitted'), {
+          description: demoSubmission ? t('creditNotes:processedByZatca') : undefined,
         })
       } else {
-        toast.error('Credit note created, but ZATCA submission failed. You can retry from the credit note page.')
+        toast.error(t('creditNotes:createdSubmissionFailed'))
       }
     } catch (err) {
-      const safeMessage = safeCreditNoteError(err)
+      const safeMessage = safeCreditNoteError(err, t)
       setError(safeMessage)
       toast.error(safeMessage)
     } finally {
@@ -496,23 +501,30 @@ export default function CreateCreditNoteModal({
   }
 
   const busy = creating || submitting
-  const actionLabel = submitting ? 'Submitting to ZATCA' : creating ? 'Creating Credit Note' : 'Create Credit Note / Refund'
+  const actionLabel = submitting ? t('creditNotes:submitting') : creating ? t('creditNotes:creating') : t('creditNotes:createRefund')
   const createDisabled = busy || itemsLoading || selectedLines.length === 0
+  const reasonLabel = (reason: (typeof QUICK_REASONS)[number]) => reason === 'Test sale'
+    ? t('creditNotes:reasonTestSale')
+    : reason === 'Customer refund'
+    ? t('creditNotes:reasonCustomerRefund')
+    : reason === 'Cancelled order'
+    ? t('creditNotes:reasonCancelledOrder')
+    : t('creditNotes:reasonBillingMistake')
 
   return (
     <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="flex max-h-[92vh] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
           <div>
-            <h2 className="text-base font-bold text-gray-900">Create Credit Note</h2>
-            <p className="text-xs text-gray-500">Return selected items from invoice {invoice.invoice_number}</p>
+            <h2 className="text-base font-bold text-gray-900">{t('creditNotes:create')}</h2>
+            <p className="text-xs text-gray-500">{t('creditNotes:returnFromInvoice', { number: invoice.invoice_number })}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
             className="rounded-full p-2 text-gray-400 hover:bg-gray-50 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-            aria-label="Close"
+            aria-label={t('common:close')}
           >
             <X size={16} />
           </button>
@@ -520,32 +532,32 @@ export default function CreateCreditNoteModal({
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
-            Choose the returned items and quantities. The original invoice remains unchanged.
+            {t('creditNotes:unchangedNotice')}
           </div>
 
           <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-700">
             <span className="font-semibold text-gray-900">{invoice.invoice_number}</span>
             <span className="mx-2 text-gray-300">·</span>
-            <span>Original total SAR {money(invoice.total_amount)}</span>
+            <span>{t('creditNotes:originalTotal')} <bdi dir="ltr">SAR {money(invoice.total_amount)}</bdi></span>
             <span className="mx-2 text-gray-300">·</span>
-            <span>Remaining qty {qty(totalRemainingQuantity)}</span>
+            <span>{t('creditNotes:remainingQuantity')} <bdi dir="ltr">{qty(totalRemainingQuantity)}</bdi></span>
           </div>
 
           <section className="space-y-2">
-            <h3 className="text-xs font-semibold text-gray-700">Reason for credit note</h3>
+            <h3 className="text-xs font-semibold text-gray-700">{t('creditNotes:reason')}</h3>
             <select value={selectedReason} onChange={event => setSelectedReason(event.target.value as (typeof QUICK_REASONS)[number] | '')} disabled={busy} className="input h-10 text-sm">
-              <option value="">Choose a reason</option>
-              {QUICK_REASONS.map(reason => <option key={reason} value={reason}>{reason}</option>)}
+              <option value="">{t('creditNotes:chooseReason')}</option>
+              {QUICK_REASONS.map(reason => <option key={reason} value={reason}>{reasonLabel(reason)}</option>)}
             </select>
-            <textarea value={remarks} onChange={event => setRemarks(event.target.value)} rows={2} maxLength={430} className="input resize-none text-sm" placeholder="Additional details — Optional" />
+            <textarea value={remarks} onChange={event => setRemarks(event.target.value)} rows={2} maxLength={430} className="input resize-none text-sm" placeholder={t('creditNotes:additionalDetails')} />
           </section>
 
           <section className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-xs font-semibold text-gray-700">Returned items</h3>
+              <h3 className="text-xs font-semibold text-gray-700">{t('creditNotes:returnedItems')}</h3>
               {selectedLines.length > 0 && (
                 <span className="rounded-full bg-[#0F2419] px-2 py-0.5 text-[10px] font-semibold text-white">
-                  {selectedLines.length} selected
+                  {t('creditNotes:selectedCount', { count: selectedLines.length })}
                 </span>
               )}
             </div>
@@ -553,11 +565,11 @@ export default function CreateCreditNoteModal({
             {itemsLoading ? (
               <div className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-4 text-xs text-gray-500">
                 <Loader2 size={14} className="animate-spin" />
-                Loading refundable items...
+                {t('creditNotes:loadingItems')}
               </div>
             ) : refundableItems.length === 0 || totalRemainingQuantity <= 0 ? (
               <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-4 text-xs leading-relaxed text-gray-500">
-                This invoice has no remaining refundable items.
+                {t('creditNotes:noRemainingItems')}
               </div>
             ) : (
               <div className="space-y-2">
@@ -578,14 +590,14 @@ export default function CreateCreditNoteModal({
                     >
                       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_170px_130px_170px] md:items-center">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
+                          <p className="truncate text-sm font-semibold text-gray-900" dir="auto">{isRtl && item.name_ar?.trim() ? item.name_ar : item.name}</p>
                           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500">
-                            <span>Original {qty(item.original_quantity)} {item.unit ?? ''}</span>
-                            <span>Credited {qty(item.credited_quantity)}</span>
+                            <span>{t('creditNotes:originalQuantity', { quantity: qty(item.original_quantity), unit: item.unit ?? '' })}</span>
+                            <span>{t('creditNotes:previouslyCredited', { quantity: qty(item.credited_quantity) })}</span>
                             <span className={item.remaining_quantity > 0 ? 'font-semibold text-emerald-700' : 'font-semibold text-gray-400'}>
-                              Remaining {qty(item.remaining_quantity)}
+                              {t('creditNotes:remainingReturnable', { quantity: qty(item.remaining_quantity) })}
                             </span>
-                            {item.track_stock && !item.is_service && <span>Stock item</span>}
+                            {item.track_stock && !item.is_service && <span>{t('creditNotes:stockItem')}</span>}
                           </div>
                         </div>
 
@@ -607,13 +619,13 @@ export default function CreateCreditNoteModal({
                             className="h-4 w-4 rounded border-gray-300 text-[#0F2419] focus:ring-[#0F2419]"
                           />
                           <span className="min-w-0">
-                            <span className="block text-xs font-bold">Return full quantity</span>
-                            <span className="block text-[10px] text-gray-500">Tap to fill {qty(item.remaining_quantity)}</span>
+                            <span className="block text-xs font-bold">{t('creditNotes:returnAll')}</span>
+                            <span className="block text-[10px] text-gray-500">{t('creditNotes:returnAllHint', { quantity: qty(item.remaining_quantity) })}</span>
                           </span>
                         </label>
 
                         <label className="space-y-1">
-                          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Return qty</span>
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t('creditNotes:returnQuantity')}</span>
                           <input
                             type="number"
                             inputMode="decimal"
@@ -633,17 +645,17 @@ export default function CreateCreditNoteModal({
                           />
                         </label>
 
-                        <div className="grid grid-cols-3 gap-2 text-right md:block md:space-y-1">
+                        <div className="grid grid-cols-3 gap-2 text-end md:block md:space-y-1">
                           <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Subtotal</p>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t('invoices:subtotal')}</p>
                             <p className="text-xs font-semibold tabular-nums text-gray-700">SAR {money(line.subtotal)}</p>
                           </div>
                           <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">VAT</p>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t('invoices:vat')}</p>
                             <p className="text-xs font-semibold tabular-nums text-amber-700">SAR {money(line.tax)}</p>
                           </div>
                           <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Total</p>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t('invoices:total')}</p>
                             <p className="text-sm font-bold tabular-nums text-[#0F2419]">SAR {money(line.total)}</p>
                           </div>
                         </div>
@@ -656,42 +668,42 @@ export default function CreateCreditNoteModal({
           </section>
 
           <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
-            <p className="text-xs font-semibold text-gray-800">Stock impact</p>
+            <p className="text-xs font-semibold text-gray-800">{t('creditNotes:stockImpact')}</p>
             <p className="mt-0.5 text-[11px] text-gray-600">
               {stockReturnQuantity > 0
-                ? `${qty(stockReturnQuantity)} units will be returned to stock`
-                : 'No stock movement is required'}
+                ? t('creditNotes:unitsReturned', { quantity: qty(stockReturnQuantity) })
+                : t('creditNotes:noStockMovement')}
             </p>
           </div>
 
           <div className="grid gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 sm:grid-cols-4">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Subtotal</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t('invoices:subtotal')}</p>
               <p className="text-sm font-bold tabular-nums text-gray-800">SAR {money(totals.subtotal)}</p>
             </div>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Discount</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t('invoices:discount')}</p>
               <p className="text-sm font-bold tabular-nums text-gray-800">SAR {money(totals.discount)}</p>
             </div>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">VAT</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t('invoices:vat')}</p>
               <p className="text-sm font-bold tabular-nums text-amber-700">SAR {money(totals.tax)}</p>
             </div>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Credit total</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t('creditNotes:creditTotal')}</p>
               <p className="text-base font-black tabular-nums text-[#0F2419]">SAR {money(totals.total)}</p>
             </div>
           </div>
 
           <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2">
-            <p className="text-xs font-semibold text-emerald-800">Original payment</p>
+            <p className="text-xs font-semibold text-emerald-800">{t('refunds:originalPayment')}</p>
             <p className="mt-0.5 text-[11px] leading-relaxed text-emerald-700">
-              {refundPlanText(originalPayments, paymentsLoading)}
+              {refundPlanText(originalPayments, paymentsLoading, t)}
             </p>
           </div>
 
           <fieldset className="space-y-2">
-            <legend className="text-xs font-semibold text-gray-700">Refund method</legend>
+            <legend className="text-xs font-semibold text-gray-700">{t('refunds:method')}</legend>
             <div className="grid grid-cols-3 gap-2">
               {(['cash', 'card', 'split'] as const).map(method => (
                 <button
@@ -712,23 +724,23 @@ export default function CreateCreditNoteModal({
                   }}
                   className={`rounded-xl border px-3 py-2 text-xs font-semibold ${refundMode === method ? 'border-[#0F2419] bg-[#0F2419] text-white' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
                 >
-                  {method === 'cash' ? 'Cash' : method === 'card' ? 'Card' : 'Split'}
+                  {t(`refunds:${method}`)}
                 </button>
               ))}
             </div>
             {refundMode === 'split' && (
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <label className="space-y-1"><span className="text-[11px] font-medium text-gray-600">Cash refund amount</span><MoneyInput value={refundCash} onValueChange={value => { setRefundEdited(true); setRefundCash(value) }} className="input" placeholder="0.00" /></label>
-                <label className="space-y-1"><span className="text-[11px] font-medium text-gray-600">Card refund amount</span><MoneyInput value={refundCard} onValueChange={value => { setRefundEdited(true); setRefundCard(value) }} className="input" placeholder="0.00" /></label>
+                <label className="space-y-1"><span className="text-[11px] font-medium text-gray-600">{t('refunds:cashAmount')}</span><MoneyInput value={refundCash} onValueChange={value => { setRefundEdited(true); setRefundCash(value) }} className="input" placeholder="0.00" /></label>
+                <label className="space-y-1"><span className="text-[11px] font-medium text-gray-600">{t('refunds:cardAmount')}</span><MoneyInput value={refundCard} onValueChange={value => { setRefundEdited(true); setRefundCard(value) }} className="input" placeholder="0.00" /></label>
               </div>
             )}
             <p className="text-[11px] text-gray-500">
-              Refund allocated: Cash SAR {money(refundMode === 'card' ? 0 : Number(refundCash || 0))} · Card SAR {money(refundMode === 'cash' ? 0 : Number(refundCard || 0))}
+              {t('refunds:allocated', { cash: money(refundMode === 'card' ? 0 : Number(refundCash || 0)), card: money(refundMode === 'cash' ? 0 : Number(refundCard || 0)) })}
             </p>
           </fieldset>
 
           <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-700">
-            This will create a credit note and cannot be undone.
+            {t('creditNotes:irreversible')}
           </div>
 
           {error && (
@@ -745,13 +757,13 @@ export default function CreateCreditNoteModal({
             disabled={busy}
             className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Cancel
+            {t('common:cancel')}
           </button>
           <button
             type="button"
             onClick={handleCreate}
             disabled={createDisabled}
-            title={selectedLines.length === 0 ? 'Enter a return quantity first' : undefined}
+            title={selectedLines.length === 0 ? t('creditNotes:enterQuantityFirst') : undefined}
             className="inline-flex items-center gap-2 rounded-xl bg-[#0F2419] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy && <Loader2 size={13} className="animate-spin" />}

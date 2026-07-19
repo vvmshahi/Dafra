@@ -710,7 +710,7 @@ function testPrintHtml(settings) {
         padding: 0;
         background: #fff;
         color: #000;
-        font-family: Arial, sans-serif;
+        font-family: KubriArabic, "Noto Naskh Arabic", Tahoma, Arial, sans-serif;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
@@ -853,7 +853,7 @@ function testA4Html(settings) {
     <title>Kubri A4 Test Print</title>
     <style>
       @page { size: A4; margin: 15mm; }
-      html, body { margin: 0; padding: 0; font-family: Arial, sans-serif; color: #111; }
+      html, body { margin: 0; padding: 0; font-family: KubriArabic, "Noto Naskh Arabic", Tahoma, Arial, sans-serif; color: #111; }
       .page { padding: 0; }
       .header { display: flex; justify-content: space-between; border-bottom: 2px solid #0F2419; padding-bottom: 14px; margin-bottom: 20px; }
       .title { color: #0F2419; font-size: 22px; font-weight: 800; }

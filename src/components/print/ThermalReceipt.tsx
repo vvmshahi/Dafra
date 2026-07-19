@@ -1,8 +1,19 @@
 import type { ReactNode } from 'react'
 import { RiyalSymbol } from '@/components/ui/RiyalSymbol'
+import {
+  documentDirection,
+  documentFontFamily,
+  documentLabel,
+  documentLabelLines,
+  documentNames,
+  documentPaymentLabel,
+  normalizeDocumentLanguage,
+  type DocumentLanguage,
+} from '@/localization/documents'
 
 export interface ThermalItem {
   name: string
+  nameAr?: string | null
   qty: number
   unitPrice: number
   lineTotal: number
@@ -23,10 +34,13 @@ export interface ThermalReceiptProps {
   // Line 2 (small, grey): legal name — only printed if different from Line 1
   businessNameAr: string   // Line 1 — brand name (could be Arabic or English)
   businessNameEn: string   // Line 2 — legal company name (shown below only if different)
+  documentLanguage?: DocumentLanguage
   logoUrl?: string | null
   showLogo?: boolean
   branchName?: string | null
+  branchNameAr?: string | null
   address?: string | null
+  addressAr?: string | null
   vatNumber?: string | null
   phone?: string | null
   website?: string | null
@@ -48,6 +62,7 @@ export interface ThermalReceiptProps {
   change?: number | null
   showCashChange?: boolean
   customerName?: string | null
+  customerNameAr?: string | null
   buyerVatNumber?: string | null
   isStandardInvoice?: boolean
   documentType?: 'invoice' | 'credit_note'
@@ -60,13 +75,13 @@ export interface ThermalReceiptProps {
 
 function Amt({ n }: { n: number }) {
   return (
-    <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+    <span dir="ltr" style={{ whiteSpace: 'nowrap', flexShrink: 0, unicodeBidi: 'isolate' }}>
       <RiyalSymbol />{' '}{n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
     </span>
   )
 }
 
-function TRow({ left, right, bold, strong }: { left: string; right: ReactNode; bold?: boolean; strong?: boolean }) {
+function TRow({ left, right, bold, strong }: { left: ReactNode; right: ReactNode; bold?: boolean; strong?: boolean }) {
   return (
     <div style={{
       display: 'flex',
@@ -80,8 +95,8 @@ function TRow({ left, right, bold, strong }: { left: string; right: ReactNode; b
       <span style={{
         minWidth: '24mm',
         flex: '1 1 auto',
-        whiteSpace: 'nowrap',
-        overflowWrap: 'normal',
+        whiteSpace: 'normal',
+        overflowWrap: 'break-word',
         wordBreak: 'normal',
       }}>{left}</span>
       <span style={{ flexShrink: 0, textAlign: 'right' }}>{right}</span>
@@ -100,14 +115,6 @@ function moneyValue(value: number | null | undefined, fallback = 0): number {
 
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100
-}
-
-function paymentLabel(method: string): string {
-  if (method === 'split') return 'Split Payment'
-  if (method === 'cash') return 'Cash'
-  if (method === 'card') return 'Card / POS'
-  if (method === 'bank_transfer') return 'Bank Transfer'
-  return 'Other'
 }
 
 export function printThermal(): void {
@@ -142,16 +149,22 @@ export default function ThermalReceipt({
   id = 'thermal-receipt',
   preview = false,
   businessNameAr, businessNameEn, logoUrl, showLogo = false, branchName, address, vatNumber, phone,
+  documentLanguage: documentLanguageValue = 'both', branchNameAr, addressAr,
   website, showWebsite, email, showEmail,
   invoiceNumber, date, time,
   items, subtotal, discountAmount = 0, taxAmount, total,
   paymentMethod, payments = [], cashReceived, change, showCashChange = true,
-  customerName, buyerVatNumber, isStandardInvoice = false,
+  customerName, customerNameAr, buyerVatNumber, isStandardInvoice = false,
   documentType = 'invoice', originalInvoiceNumber, creditReason,
   qrDataUrl, receiptFooter, showFooter = true,
 }: ThermalReceiptProps) {
-  // Line 2 (legal name) only shown if it differs from Line 1 (brand name)
-  const showLegalName = businessNameEn && businessNameEn !== businessNameAr
+  const documentLanguage = normalizeDocumentLanguage(documentLanguageValue)
+  const documentDir = documentDirection(documentLanguage)
+  const businessNames = documentNames(documentLanguage, businessNameEn, businessNameAr)
+  const branchNames = documentNames(documentLanguage, branchName, branchNameAr)
+    .filter(name => !businessNames.includes(name))
+  const addresses = documentNames(documentLanguage, address, addressAr)
+  const customerNames = documentNames(documentLanguage, customerName, customerNameAr)
   const isCreditNote = documentType === 'credit_note'
   const isSplitPayment = paymentMethod === 'split'
     || (payments.length > 1
@@ -164,19 +177,20 @@ export default function ThermalReceipt({
   const balance = roundMoney(total - displayPaidTotal)
   const hasBalance = Math.abs(balance) > 0.005
   const hasDiscount = Math.abs(moneyValue(discountAmount)) > 0.005
-  const titleAr = isCreditNote
-    ? (isStandardInvoice ? 'إشعار دائن ضريبي' : 'إشعار دائن ضريبي مبسط')
-    : (isStandardInvoice ? 'فاتورة ضريبية' : 'فاتورة ضريبية مبسطة')
-  const titleEn = isCreditNote
-    ? (isStandardInvoice ? 'Tax Credit Note' : 'Simplified Tax Credit Note')
-    : (isStandardInvoice ? 'Standard Tax Invoice' : 'Simplified Tax Invoice')
+  const titleKey = isCreditNote
+    ? (isStandardInvoice ? 'taxCreditNote' : 'simplifiedTaxCreditNote')
+    : (isStandardInvoice ? 'standardTaxInvoice' : 'simplifiedTaxInvoice')
+  const titleLines = documentLabelLines(documentLanguage, titleKey)
+  const numberLabel = documentLabel(documentLanguage, isCreditNote ? 'creditNoteNumber' : 'invoiceNumber')
 
   return (
     <div
       id={id}
+      dir={documentDir}
+      lang={documentLanguage === 'ar' ? 'ar' : documentLanguage === 'en' ? 'en' : undefined}
       style={{
         display: preview ? 'block' : 'none',
-        fontFamily: 'monospace',
+        fontFamily: documentFontFamily(documentLanguage),
         fontSize: 'var(--receipt-font-size, 11px)',
         color: '#000',
         width: '100%',
@@ -192,29 +206,21 @@ export default function ThermalReceipt({
       {/* Logo */}
       {showLogo && logoUrl && (
         <div style={{ textAlign: 'center', marginBottom: '6px' }}>
-          <img src={logoUrl} alt="logo" style={{ maxHeight: '60px', maxWidth: '80%', display: 'block', margin: '0 auto', objectFit: 'contain' }} />
+          <img src={logoUrl} alt="" style={{ maxHeight: '60px', maxWidth: '80%', display: 'block', margin: '0 auto', objectFit: 'contain' }} />
         </div>
       )}
 
       {/* Business header */}
       <div style={{ textAlign: 'center', marginBottom: '4px' }}>
-        {businessNameAr && (
-          <div style={{ fontFamily: 'Cairo, "Segoe UI", sans-serif', fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>
-            {businessNameAr}
+        {businessNames.map((name, index) => (
+          <div key={name} dir="auto" style={{ fontSize: index === 0 ? '15px' : '10px', fontWeight: index === 0 ? 'bold' : 'normal', color: index === 0 ? '#000' : '#666', marginBottom: '2px' }}>
+            {name}
           </div>
-        )}
-        {/* Legal company name — only shown when different from brand name */}
-        {showLegalName && (
-          <div style={{ fontSize: '10px', color: '#666', marginBottom: '2px' }}>{businessNameEn}</div>
-        )}
-        {branchName && branchName !== businessNameAr && branchName !== businessNameEn && (
-          <div style={{ fontSize: '10px', color: '#444' }}>{branchName}</div>
-        )}
-        {address && (
-          <div style={{ fontSize: '10px', color: '#555', marginTop: '2px', lineHeight: '1.3' }}>{address}</div>
-        )}
-        {vatNumber && <div style={{ fontSize: '10px' }}>VAT: {vatNumber}</div>}
-        {phone && <div style={{ fontSize: '10px' }}>Tel: {phone}</div>}
+        ))}
+        {branchNames.map(name => <div key={name} dir="auto" style={{ fontSize: '10px', color: '#444' }}>{name}</div>)}
+        {addresses.map(value => <div key={value} dir="auto" style={{ fontSize: '10px', color: '#555', marginTop: '2px', lineHeight: '1.3' }}>{value}</div>)}
+        {vatNumber && <div>{documentLabel(documentLanguage, 'vatNumber')}: <bdi dir="ltr">{vatNumber}</bdi></div>}
+        {phone && <div>{documentLabel(documentLanguage, 'phone')}: <bdi dir="ltr">{phone}</bdi></div>}
         {showWebsite && website && <div style={{ fontSize: '10px', color: '#555' }}>{website}</div>}
         {showEmail && email && <div style={{ fontSize: '10px', color: '#555' }}>{email}</div>}
       </div>
@@ -223,31 +229,28 @@ export default function ThermalReceipt({
 
       {/* Invoice title */}
       <div style={{ textAlign: 'center', margin: '4px 0' }}>
-        <div style={{ fontFamily: 'Cairo, "Segoe UI", sans-serif', fontSize: '13px', fontWeight: 'bold', direction: 'rtl' }}>
-          {titleAr}
-        </div>
-        <div style={{ fontSize: '10px', color: '#555' }}>
-          {titleEn}
-        </div>
+        {titleLines.map((line, index) => (
+          <div key={line} dir="auto" style={{ fontSize: index === 0 ? '13px' : '10px', fontWeight: index === 0 ? 'bold' : 'normal', color: index === 0 ? '#000' : '#555' }}>{line}</div>
+        ))}
       </div>
 
       <Dash />
 
       {/* Invoice meta */}
       <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-        <div>{isCreditNote ? 'Credit Note' : 'Invoice'}: <strong>{invoiceNumber}</strong></div>
+        <div>{numberLabel}: <strong><bdi dir="ltr">{invoiceNumber}</bdi></strong></div>
         {isCreditNote && originalInvoiceNumber && (
-          <div>Original Invoice: <strong>{originalInvoiceNumber}</strong></div>
+          <div>{documentLabel(documentLanguage, 'originalInvoice')}: <strong><bdi dir="ltr">{originalInvoiceNumber}</bdi></strong></div>
         )}
-        <div>Date: {date}</div>
-        <div>Time: {time}</div>
+        <div>{documentLabel(documentLanguage, 'date')}: <bdi dir="ltr">{date}</bdi></div>
+        <div>{documentLabel(documentLanguage, 'time')}: <bdi dir="ltr">{time}</bdi></div>
       </div>
 
       {isCreditNote && creditReason && (
         <>
           <Dash />
           <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-            <div>Reason: <strong>{creditReason}</strong></div>
+            <div>{documentLabel(documentLanguage, 'reason')}: <strong dir="auto">{creditReason}</strong></div>
           </div>
         </>
       )}
@@ -273,7 +276,7 @@ export default function ThermalReceipt({
               overflowWrap: 'break-word',
               wordBreak: 'normal',
             }}>
-              {item.name}
+              {documentNames(documentLanguage, item.name, item.nameAr).map(name => <div key={name} dir="auto">{name}</div>)}
             </div>
             <div style={{
               display: 'flex',
@@ -284,7 +287,7 @@ export default function ThermalReceipt({
               color: '#333',
             }}>
               <span style={{ minWidth: 0, overflowWrap: 'break-word', wordBreak: 'normal' }}>
-                {item.qty} x <Amt n={item.unitPrice} />
+                <bdi dir="ltr">{item.qty} ×</bdi> <Amt n={item.unitPrice} />
               </span>
               <span style={{ flexShrink: 0, textAlign: 'right', whiteSpace: 'nowrap' }}>
                 <Amt n={moneyValue(item.total, item.lineTotal)} />
@@ -298,14 +301,14 @@ export default function ThermalReceipt({
 
       {/* Totals */}
       <div style={{ fontSize: '11px', margin: '8px 0 5px' }}>
-        <TRow left="Before VAT:" right={<Amt n={subtotal} />} />
-        {hasDiscount && <TRow left="Discount:" right={<Amt n={Math.abs(moneyValue(discountAmount))} />} />}
-        <TRow left="VAT 15%:" right={<Amt n={taxAmount} />} />
+        <TRow left={documentLabel(documentLanguage, 'amountBeforeVat')} right={<Amt n={subtotal} />} />
+        {hasDiscount && <TRow left={documentLabel(documentLanguage, 'discount')} right={<Amt n={Math.abs(moneyValue(discountAmount))} />} />}
+        <TRow left={`${documentLabel(documentLanguage, 'vatAmount')} 15%`} right={<Amt n={taxAmount} />} />
         <div style={{ borderTop: '1px solid #000', margin: '5px 0' }} />
-        <TRow left={isCreditNote ? 'Credit Total:' : 'Grand Total:'} right={<Amt n={total} />} strong />
-        <TRow left={isCreditNote ? 'Refunded:' : 'Paid:'} right={<Amt n={displayPaidTotal} />} bold />
+        <TRow left={documentLabel(documentLanguage, isCreditNote ? 'creditTotal' : 'totalIncludingVat')} right={<Amt n={total} />} strong />
+        <TRow left={documentLabel(documentLanguage, isCreditNote ? 'refunded' : 'paid')} right={<Amt n={displayPaidTotal} />} bold />
         {hasBalance && !isCreditNote && (
-          <TRow left="Balance:" right={<Amt n={Math.abs(balance)} />} bold />
+          <TRow left={documentLabel(documentLanguage, 'balance')} right={<Amt n={Math.abs(balance)} />} bold />
         )}
       </div>
 
@@ -313,34 +316,32 @@ export default function ThermalReceipt({
 
       {/* Payment */}
       <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-        <div>{isCreditNote ? 'Refund' : 'Payment'}: <strong>{paymentLabel(isSplitPayment ? 'split' : paymentMethod)}</strong></div>
+        <div>{documentLabel(documentLanguage, isCreditNote ? 'refundMethod' : 'paymentMethod')}: <strong>{documentPaymentLabel(documentLanguage, isSplitPayment ? 'split' : paymentMethod)}</strong></div>
         {isSplitPayment && cashPayment && (
-          <TRow left="Cash:" right={<Amt n={Number(cashPayment.amount)} />} />
+          <TRow left={documentLabel(documentLanguage, 'cashAmount')} right={<Amt n={Number(cashPayment.amount)} />} />
         )}
         {isSplitPayment && cardPayment && (
-          <TRow left="Card:" right={<Amt n={Number(cardPayment.amount)} />} />
+          <TRow left={documentLabel(documentLanguage, 'cardAmount')} right={<Amt n={Number(cardPayment.amount)} />} />
         )}
         {isSplitPayment && (
-          <TRow left="Total paid:" right={<Amt n={paidTotal} />} />
+          <TRow left={documentLabel(documentLanguage, 'totalPaid')} right={<Amt n={paidTotal} />} />
         )}
         {!isSplitPayment && paymentMethod === 'cash' && cashReceived != null && cashReceived > 0 && (
-          <TRow left="Received:" right={<Amt n={cashReceived} />} />
+          <TRow left={documentLabel(documentLanguage, 'received')} right={<Amt n={cashReceived} />} />
         )}
         {!isSplitPayment && showCashChange && paymentMethod === 'cash' && (change ?? 0) > 0.005 && (
-          <TRow left="Change:" right={<Amt n={change ?? 0} />} />
+          <TRow left={documentLabel(documentLanguage, 'change')} right={<Amt n={change ?? 0} />} />
         )}
       </div>
 
       {/* Customer */}
-      {(customerName && customerName !== 'Walk-in Customer' || buyerVatNumber) && (
+      {(customerNames.length > 0 && customerName !== 'Walk-in Customer' || buyerVatNumber) && (
         <>
           <Dash />
           <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-            {customerName && customerName !== 'Walk-in Customer' && (
-              <div>Customer: <strong>{customerName}</strong></div>
-            )}
+            {customerNames.length > 0 && customerName !== 'Walk-in Customer' && <div>{documentLabel(documentLanguage, 'customer')}: <strong>{customerNames.map(name => <span key={name} dir="auto" style={{ display: 'block' }}>{name}</span>)}</strong></div>}
             {buyerVatNumber && (
-              <div>Buyer VAT: <strong>{buyerVatNumber}</strong></div>
+              <div>{documentLabel(documentLanguage, 'customerVatNumber')}: <strong><bdi dir="ltr">{buyerVatNumber}</bdi></strong></div>
             )}
           </div>
         </>
@@ -351,12 +352,12 @@ export default function ThermalReceipt({
       {/* QR code */}
       {qrDataUrl ? (
         <div style={{ textAlign: 'center', margin: '6px 0' }}>
-          <img src={qrDataUrl} alt="ZATCA QR" style={{ width: 'min(34mm, 70%)', height: 'auto', aspectRatio: '1 / 1', display: 'block', margin: '0 auto' }} />
-          <div style={{ fontSize: '9px', color: '#888', marginTop: '2px' }}>Scan to verify invoice</div>
+          <img src={qrDataUrl} alt="QR" dir="ltr" style={{ width: 'min(34mm, 70%)', height: 'auto', aspectRatio: '1 / 1', display: 'block', margin: '0 auto' }} />
+          <div style={{ fontSize: '9px', color: '#888', marginTop: '2px' }}>{documentLabel(documentLanguage, 'scanToVerify')}</div>
         </div>
       ) : (
         <div style={{ textAlign: 'center', fontSize: '10px', color: '#aaa', margin: '6px 0' }}>
-          [QR Code]
+          [{documentLabel(documentLanguage, 'qrCode')}]
         </div>
       )}
 
@@ -369,10 +370,7 @@ export default function ThermalReceipt({
             <div style={{ fontSize: '10px', color: '#555' }}>{receiptFooter}</div>
           ) : (
             <>
-              <div style={{ fontFamily: 'Cairo, "Segoe UI", sans-serif', fontSize: '13px', direction: 'rtl', marginBottom: '2px' }}>
-                شكراً لزيارتكم
-              </div>
-              <div style={{ fontSize: '10px' }}>Thank you!</div>
+              {documentLabelLines(documentLanguage, 'thankYou').map(line => <div key={line} dir="auto" style={{ fontSize: '11px', marginBottom: '2px' }}>{line}</div>)}
             </>
           )}
         </div>

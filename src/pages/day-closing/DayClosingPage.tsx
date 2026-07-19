@@ -12,6 +12,17 @@ import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { Badge } from '@/components/ui/Badge'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { useLocale } from '@/localization/useLocale'
+import { isRecord, normalizeRegisterSession, pick } from '@/lib/registerSessions'
+import {
+  documentDate,
+  documentDateTime,
+  documentDirection,
+  documentFontFamily,
+  documentLabel,
+  documentNames,
+  normalizeDocumentLanguage,
+  type DocumentLanguage,
+} from '@/localization/documents'
 
 const db = () => supabase as any
 
@@ -28,6 +39,15 @@ interface DaySummary {
   cardExpenses:  number
   expectedCash:  number
   expenses:      ExpenseRow[]
+}
+
+interface PrintRegisterSession {
+  status: 'open' | 'closed' | null
+  openedAt: string | null
+  openingCash: number
+  refunds: number
+  openedByName: string | null
+  openedByNameAr: string | null
 }
 
 interface ExpenseRow {
@@ -109,7 +129,7 @@ function KpiCard({
 
 function PrintReport({
   summary, branchName, tenantName, closedByName,
-  actualCash, notes, dateStr,
+  actualCash, notes, dateStr, documentLanguage, registerSession,
 }: {
   summary: DaySummary
   branchName: string
@@ -118,45 +138,75 @@ function PrintReport({
   actualCash: number
   notes: string
   dateStr: string
+  documentLanguage: DocumentLanguage
+  registerSession: PrintRegisterSession | null
 }) {
   const diff = actualCash - summary.expectedCash
-  const line = '─'.repeat(44)
-
-  const row = (label: string, value: string) => {
-    const pad = 44 - label.length - value.length
-    return `${label}${' '.repeat(Math.max(1, pad))}${value}`
-  }
+  const reportDir = documentDirection(documentLanguage)
+  const amount = (value: number, signed = false) => `${signed && value >= 0 ? '+' : ''}SAR ${fmt(value)}`
+  const Row = ({ label, value, strong = false, valueDir = 'ltr' }: { label: string; value: string; strong?: boolean; valueDir?: 'ltr' | 'auto' }) => (
+    <div className={`flex items-baseline justify-between gap-6 py-1 ${strong ? 'font-bold' : ''}`}>
+      <span>{label}</span>
+      <bdi dir={valueDir} className="shrink-0 tabular-nums">{value}</bdi>
+    </div>
+  )
+  const unavailable = documentLabel(documentLanguage, 'notAvailable')
+  const openedBy = registerSession
+    ? documentNames(documentLanguage, registerSession.openedByName, registerSession.openedByNameAr).join(' / ') || unavailable
+    : unavailable
+  const sessionLabel = registerSession
+    ? registerSession.status === 'open'
+      ? documentLabel(documentLanguage, 'currentRegisterSession')
+      : registerSession.status === 'closed'
+      ? documentLabel(documentLanguage, 'lastRegisterSession')
+      : unavailable
+    : unavailable
 
   return (
-    <div id="day-closing-print" className="hidden print:block font-mono text-[11px] text-black p-8 leading-relaxed">
-      <pre style={{ fontFamily: 'monospace', whiteSpace: 'pre' }}>
-{`${line}
-         Kubri — DAY CLOSING REPORT
-         ${tenantName}
-         ${branchName}
-         ${dateStr}
-${line}
-SALES SUMMARY
-${row('Total Invoices:', String(summary.invoiceCount))}
-${row('Total Sales:', 'SAR ' + fmt(summary.totalSales))}
-${row('  Cash Sales:', 'SAR ' + fmt(summary.cashSales))}
-${row('  Card Sales:', 'SAR ' + fmt(summary.cardSales))}
-${row('VAT Collected:', 'SAR ' + fmt(summary.totalVat))}
-${line}
-EXPENSES
-${row('Cash Expenses:', 'SAR ' + fmt(summary.cashExpenses))}
-${row('Card Expenses:', 'SAR ' + fmt(summary.cardExpenses))}
-${row('Total Expenses:', 'SAR ' + fmt(summary.totalExpenses))}
-${line}
-NET SUMMARY
-${row('Net Cash in Hand:', 'SAR ' + fmt(summary.expectedCash))}
-${row('Actual Cash Count:', 'SAR ' + fmt(actualCash))}
-${row('Difference:', (diff >= 0 ? '+' : '') + 'SAR ' + fmt(diff))}
-${line}
-Closed by: ${closedByName}
-Closing time: ${new Date().toLocaleString('en-SA')}
-${notes ? `Notes: ${notes}\n` : ''}${line}`}
-      </pre>
+    <div id="day-closing-print" dir={reportDir} className="hidden print:block text-[11px] text-black p-8 leading-relaxed" style={{ fontFamily: documentFontFamily(documentLanguage) }}>
+      <header className="border-b-2 border-black pb-4 text-center">
+        <p className="text-base font-bold">Kubri — {documentLabel(documentLanguage, 'dayClosing')}</p>
+        <p dir="auto" className="font-semibold">{tenantName}</p>
+        <p dir="auto">{branchName}</p>
+        <bdi dir="ltr">{dateStr}</bdi>
+      </header>
+      <section className="border-b border-black py-4 break-inside-avoid">
+        <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+          <p>{documentLabel(documentLanguage, 'registerSession')}: <span dir="auto" className="font-semibold">{sessionLabel}</span></p>
+          <p>{documentLabel(documentLanguage, 'openedBy')}: <span dir="auto" className="font-semibold">{openedBy}</span></p>
+          <p>{documentLabel(documentLanguage, 'openingTime')}: {registerSession?.openedAt
+            ? <bdi dir="ltr" className="font-semibold">{documentDateTime(registerSession.openedAt, documentLanguage)}</bdi>
+            : <span dir="auto" className="font-semibold">{unavailable}</span>}</p>
+        </div>
+      </section>
+      <section className="break-inside-avoid border-b border-black py-4">
+        <h2 className="mb-1 font-bold uppercase">{documentLabel(documentLanguage, 'salesSummary')}</h2>
+        <Row label={documentLabel(documentLanguage, 'invoiceCount')} value={String(summary.invoiceCount)} />
+        <Row label={documentLabel(documentLanguage, 'netSessionSales')} value={amount(summary.totalSales)} strong />
+        <Row label={documentLabel(documentLanguage, 'netCashSales')} value={amount(summary.cashSales)} />
+        <Row label={documentLabel(documentLanguage, 'netCardSales')} value={amount(summary.cardSales)} />
+        <Row label={documentLabel(documentLanguage, 'refunds')} value={registerSession ? amount(registerSession.refunds) : unavailable} valueDir={registerSession ? 'ltr' : 'auto'} />
+        <Row label={documentLabel(documentLanguage, 'vatCollected')} value={amount(summary.totalVat)} />
+      </section>
+      <section className="break-inside-avoid border-b border-black py-4">
+        <h2 className="mb-1 font-bold uppercase">{documentLabel(documentLanguage, 'expenses')}</h2>
+        <Row label={documentLabel(documentLanguage, 'cashExpenses')} value={amount(summary.cashExpenses)} />
+        <Row label={documentLabel(documentLanguage, 'cardExpenses')} value={amount(summary.cardExpenses)} />
+        <Row label={documentLabel(documentLanguage, 'totalExpenses')} value={amount(summary.totalExpenses)} strong />
+      </section>
+      <section className="break-inside-avoid border-b border-black py-4">
+        <h2 className="mb-1 font-bold uppercase">{documentLabel(documentLanguage, 'netSummary')}</h2>
+        <Row label={documentLabel(documentLanguage, 'openingCash')} value={registerSession ? amount(registerSession.openingCash) : unavailable} valueDir={registerSession ? 'ltr' : 'auto'} />
+        <Row label={documentLabel(documentLanguage, 'expectedCash')} value={amount(summary.expectedCash)} />
+        <Row label={documentLabel(documentLanguage, 'actualCash')} value={amount(actualCash)} />
+        <Row label={documentLabel(documentLanguage, 'difference')} value={amount(diff, true)} strong />
+        <Row label={documentLabel(documentLanguage, Math.abs(diff) < 0.01 ? 'balanced' : diff < 0 ? 'short' : 'over')} value="" />
+      </section>
+      <footer className="break-inside-avoid space-y-1 pt-4">
+        <p>{documentLabel(documentLanguage, 'closedBy')}: <span dir="auto">{closedByName}</span></p>
+        <p>{documentLabel(documentLanguage, 'closingTime')}: <bdi dir="ltr">{documentDateTime(new Date(), documentLanguage)}</bdi></p>
+        {notes && <p>{documentLabel(documentLanguage, 'notes')}: <span dir="auto">{notes}</span></p>}
+      </footer>
     </div>
   )
 }
@@ -174,7 +224,8 @@ export default function DayClosingPage() {
   const [summary,     setSummary]     = useState<DaySummary | null>(null)
   const [prevClosings,setPrevClosings]= useState<PreviousClosing[]>([])
   const [todayClosing,setTodayClosing]= useState<PreviousClosing | null>(null)
-  const [branchNames, setBranchNames] = useState({ name: '', nameAr: '' })
+  const [branchNames, setBranchNames] = useState({ name: '', nameAr: '', invoiceLanguage: 'both' as DocumentLanguage })
+  const [printRegisterSession, setPrintRegisterSession] = useState<PrintRegisterSession | null>(null)
   const [actualCash,  setActualCash]  = useState('')
   const [notes,       setNotes]       = useState('')
   const [saveMsg,     setSaveMsg]     = useState<string | null>(null)
@@ -186,11 +237,9 @@ export default function DayClosingPage() {
   const displayDate = new Date().toLocaleDateString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
-  const printDisplayDate = new Date().toLocaleDateString('en-SA', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-  })
+  const printDisplayDate = documentDate(new Date(), branchNames.invoiceLanguage, { weekday: 'long' })
   const branchName = localizedName(branchNames.name, branchNames.nameAr, isRtl)
-  const printBranchName = branchNames.nameAr.trim() || branchNames.name
+  const printBranchName = documentNames(branchNames.invoiceLanguage, branchNames.name, branchNames.nameAr).join(' / ')
 
   // ── Load data ──────────────────────────────────────────────────────────────
 
@@ -198,8 +247,8 @@ export default function DayClosingPage() {
     if (!branchId || !tenantId) { setLoading(false); return }
     setLoading(true)
 
-    const [branchRes, invRes, closingsRes] = await Promise.all([
-      db().from('branches').select('name, name_ar').eq('id', branchId).single(),
+    const [branchRes, invRes, closingsRes, registerRes] = await Promise.all([
+      db().from('branches').select('name, name_ar, invoice_language').eq('id', branchId).single(),
       db().from('invoices')
         .select('id, total_amount, tax_amount, zatca_invoice_type')
         .eq('branch_id', branchId)
@@ -210,11 +259,43 @@ export default function DayClosingPage() {
         .eq('branch_id', branchId)
         .order('closing_date', { ascending: false })
         .limit(11),
+      db().rpc('get_register_session_summary', { p_branch_id: branchId }),
     ])
+
+    const registerValue = isRecord(registerRes.data) ? pick(registerRes.data, 'session') : null
+    const registerSession = normalizeRegisterSession(registerValue)
+    let openedByName: string | null = null
+    let openedByNameAr: string | null = null
+
+    if (registerSession?.sessionId) {
+      const { data: sessionRow } = await db()
+        .from('pos_sessions')
+        .select('opened_by')
+        .eq('id', registerSession.sessionId)
+        .maybeSingle()
+      if (sessionRow?.opened_by) {
+        const { data: openerRow } = await db()
+          .from('user_profiles')
+          .select('full_name, full_name_ar')
+          .eq('id', sessionRow.opened_by)
+          .maybeSingle()
+        openedByName = openerRow?.full_name?.trim() || null
+        openedByNameAr = openerRow?.full_name_ar?.trim() || null
+      }
+    }
+
+    setPrintRegisterSession(registerSession ? {
+      status: registerSession.status,
+      openedAt: registerSession.openedAt,
+      openingCash: registerSession.openingCash,
+      refunds: registerSession.creditNoteTotal,
+      openedByName,
+      openedByNameAr,
+    } : null)
 
     // Branch name
     const b = branchRes.data
-    setBranchNames({ name: b?.name ?? '', nameAr: b?.name_ar ?? '' })
+    setBranchNames({ name: b?.name ?? '', nameAr: b?.name_ar ?? '', invoiceLanguage: normalizeDocumentLanguage(b?.invoice_language) })
 
     // Check if already closed today
     const allClosings: PreviousClosing[] = closingsRes.data ?? []
@@ -329,9 +410,8 @@ export default function DayClosingPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  // The hidden printable report remains in its pre-Phase-C document language.
   const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? 'Unknown'
-  const tenantName  = tenant?.name ?? 'Kubri'
+  const tenantName = documentNames(branchNames.invoiceLanguage, tenant?.name ?? 'Kubri', tenant?.name_ar).join(' / ')
 
   if (!branchId) {
     return (
@@ -355,6 +435,8 @@ export default function DayClosingPage() {
           actualCash={actualCashNum}
           notes={notes}
           dateStr={printDisplayDate}
+          documentLanguage={branchNames.invoiceLanguage}
+          registerSession={printRegisterSession}
         />
       )}
 

@@ -80,6 +80,23 @@ This glossary is a localization working draft for Saudi Arabic review. The propo
 | `register.dayClosing` | Day closing | إقفال اليوم | Day/session closing page | Accounting close for the day, not application logout. | Native review required |
 | `pos.printer.connected` | Receipt printer connected | طابعة الإيصالات متصلة | POS printer-status control | Device status only; do not imply a successful print. | Native review required |
 | `pos.zatca.success` | ZATCA submission successful | تم إرسال الفاتورة إلى ZATCA بنجاح | Background POS notification | Preserve ZATCA brand; status comes from existing routing. | Native review required |
+| `documents.taxInvoice` | Tax Invoice | فاتورة ضريبية | A4 and thermal tax documents | Regulated tax-document term; requires qualified Saudi tax-domain review. | Native review required |
+| `documents.simplifiedTaxInvoice` | Simplified Tax Invoice | فاتورة ضريبية مبسطة | B2C A4 and thermal documents | Regulated ZATCA term; do not shorten on legal documents. | Native review required |
+| `documents.taxCreditNote` | Credit Note | إشعار دائن ضريبي | Credit-note documents | Review the tax qualifier and standard/simplified variants. | Native review required |
+| `refunds.refund` | Refund | استرداد | Invoice detail and credit-note flow | Money returned to the customer. | Native review required |
+| `creditNotes.returnQuantity` | Returned Quantity | كمية الإرجاع | Credit-note line entry | Quantity selected for the current return. | Native review required |
+| `refunds.originalPayment` | Original Payment | الدفع الأصلي | Refund allocation summary | Must describe the historical tender without overwriting it. | Native review required |
+| `refunds.refundIssued` | Refund Issued | المبلغ المسترد | Credit-note/refund history | Completed refund allocation, not the original tender. | Native review required |
+| `documents.amountBeforeVat` | Amount Before VAT | المبلغ قبل الضريبة | Invoice totals | Keep distinct from taxable amount where both appear. | Native review required |
+| `documents.vatAmount` | VAT Amount | مبلغ الضريبة | Invoice totals | Monetary VAT amount, not the rate. | Native review required |
+| `documents.totalIncludingVat` | Total Including VAT | الإجمالي شامل الضريبة | Invoice totals | Final tax-inclusive document amount. | Native review required |
+| `documents.seller` | Seller | البائع | A4 and thermal documents | Legal supplier/seller party. | Native review required |
+| `documents.buyer` | Buyer | المشتري | Standard invoice documents | Legal buyer party. | Native review required |
+| `documents.invoiceNumber` | Invoice Number | رقم الفاتورة | All invoice documents | Identifier must remain LTR and unchanged. | Native review required |
+| `documents.paymentMethod` | Payment Method | طريقة الدفع | Invoice and receipt payment section | Describes the tender method. | Native review required |
+| `refunds.cashAmount` | Cash Refund | مبلغ الاسترداد النقدي | Split-refund allocation | Cash portion actually returned. | Native review required |
+| `refunds.cardAmount` | Card Refund | مبلغ الاسترداد إلى البطاقة | Split-refund allocation | Card portion actually returned. | Native review required |
+| `refunds.split` | Split Refund | استرداد مقسّم | Refund method selector | One refund allocated between cash and card. | Native review required |
 
 ## Review rules
 
