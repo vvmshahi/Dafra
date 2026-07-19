@@ -9,6 +9,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import type { Customer, CustomerType } from '@/types'
 import CustomerDrawer from './CustomerDrawer'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,9 +30,9 @@ function displayName(c: CustomerWithStats) {
   return c.name
 }
 
-function formatDate(iso: string | null) {
+function formatDate(iso: string | null, locale: string) {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-SA', {
+  return new Date(iso).toLocaleDateString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', {
     day: '2-digit', month: 'short', year: 'numeric',
   })
 }
@@ -46,6 +47,7 @@ function CustomerRow({
   onDelete: () => void
   onView: () => void
 }) {
+  const { t, i18n } = useTranslation('customers')
   const isBusiness = customer.customer_type === 'business'
   const primary    = displayName(customer)
   const secondary  = isBusiness && (customer.business_name ?? customer.company_name) ? customer.name : customer.name_ar
@@ -68,7 +70,7 @@ function CustomerRow({
 
       {/* Name */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 truncate">{primary}</p>
+        <p className="text-sm font-medium text-gray-900 truncate" dir="auto">{primary}</p>
         {secondary && (
           <p
             className="text-xs text-gray-400 truncate"
@@ -81,19 +83,19 @@ function CustomerRow({
 
       {/* Mobile */}
       <div className="w-32 flex-shrink-0 hidden sm:block">
-        <p className="text-sm text-gray-600 tabular-nums">{customer.phone ?? '—'}</p>
+        <p className="text-sm text-gray-600 tabular-nums" dir="ltr">{customer.phone ?? '—'}</p>
       </div>
 
       {/* Type */}
       <div className="w-24 flex-shrink-0 hidden md:block">
         <Badge variant={isBusiness ? 'gold' : 'neutral'}>
-          {isBusiness ? 'Business' : 'Individual'}
+          {t(isBusiness ? 'business' : 'individual')}
         </Badge>
       </div>
 
       {/* VAT */}
       <div className="w-36 flex-shrink-0 hidden lg:block">
-        <p className="text-xs text-gray-500 font-mono truncate">
+        <p className="text-xs text-gray-500 font-mono truncate" dir="ltr">
           {customer.vat_number ?? '—'}
         </p>
       </div>
@@ -105,35 +107,35 @@ function CustomerRow({
         </p>
         {customer.purchase_count > 0 && (
           <p className="text-[10px] text-gray-400">
-            {customer.purchase_count} invoice{customer.purchase_count !== 1 ? 's' : ''}
+            {t('invoiceCount', { count: customer.purchase_count })}
           </p>
         )}
       </div>
 
       {/* Last purchase */}
       <div className="w-28 flex-shrink-0 text-right hidden xl:block">
-        <p className="text-xs text-gray-500">{formatDate(customer.last_purchase_date)}</p>
+        <p className="text-xs text-gray-500" dir="ltr">{formatDate(customer.last_purchase_date, i18n.resolvedLanguage ?? 'en')}</p>
       </div>
 
       {/* Actions */}
       <div className="flex items-center gap-1 flex-shrink-0">
         <button
           onClick={onView}
-          title="View purchase history"
+          title={t('actions.view')}
           className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-primary-50 hover:text-primary-600 transition-colors"
         >
           <Eye size={14} />
         </button>
         <button
           onClick={onEdit}
-          title="Edit customer"
+          title={t('actions.edit')}
           className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
         >
           <Pencil size={14} />
         </button>
         <button
           onClick={onDelete}
-          title="Delete customer"
+          title={t('actions.delete')}
           className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
         >
           <Trash2 size={14} />
@@ -172,23 +174,24 @@ function FilterTab({
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function EmptyState({ filtered, onAdd }: { filtered: boolean; onAdd: () => void }) {
+  const { t } = useTranslation('customers')
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
       <div className="w-16 h-16 rounded-2xl bg-primary-50 flex items-center justify-center mb-4">
         <Users size={28} className="text-primary-300" />
       </div>
       <p className="text-gray-700 font-semibold">
-        {filtered ? 'No customers match your search' : 'No customers yet'}
+        {t(filtered ? 'noMatches' : 'noCustomers')}
       </p>
       <p className="text-gray-400 text-sm mt-1 max-w-xs leading-relaxed">
         {filtered
-          ? 'Try adjusting your search or filter'
-          : 'Customers are added automatically during billing or manually here'}
+          ? t('filterHint')
+          : t('emptyHint')}
       </p>
       {!filtered && (
         <Button className="mt-5" onClick={onAdd}>
           <Plus size={15} />
-          Add Customer
+          {t('add')}
         </Button>
       )}
     </div>
@@ -200,6 +203,7 @@ function EmptyState({ filtered, onAdd }: { filtered: boolean; onAdd: () => void 
 export default function CustomersPage() {
   const { profile }  = useAuth()
   const navigate     = useNavigate()
+  const { t } = useTranslation('customers')
 
   const [customers,   setCustomers]   = useState<CustomerWithStats[]>([])
   const [loading,     setLoading]     = useState(true)
@@ -261,7 +265,7 @@ export default function CustomersPage() {
   const openEdit = (c: CustomerWithStats) => { setEditing(c); setDrawerOpen(true) }
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete customer "${name}"? This cannot be undone.`)) return
+    if (!confirm(t('deleteConfirm', { name }))) return
     const q = supabase as unknown as { from: (t: string) => any }
     await q.from('customers').update({ is_active: false }).eq('id', id)
     setCustomers(prev => prev.filter(c => c.id !== id))
@@ -279,8 +283,12 @@ export default function CustomersPage() {
       || c.name.toLowerCase().includes(q)
       || (c.name_ar        ?? '').toLowerCase().includes(q)
       || (c.company_name   ?? '').toLowerCase().includes(q)
+      || (c.business_name  ?? '').toLowerCase().includes(q)
+      || (c.business_name_ar ?? '').toLowerCase().includes(q)
       || (c.phone          ?? '').includes(search)
       || (c.email          ?? '').toLowerCase().includes(q)
+      || (c.vat_number     ?? '').includes(search)
+      || (c.cr_number      ?? '').includes(search)
     const matchType = filterType === 'all' || c.customer_type === filterType
     return matchSearch && matchType
   })
@@ -293,7 +301,7 @@ export default function CustomersPage() {
       {/* ── Header ──────────────────────────────────────────── */}
       <div className="flex items-center gap-3">
         <div className="flex-1 flex items-center gap-2 min-w-0">
-          <h1 className="text-lg font-bold text-gray-900">Customers</h1>
+          <h1 className="text-lg font-bold text-gray-900">{t('title')}</h1>
           {!loading && (
             <span className="text-xs font-semibold bg-primary-50 text-primary-600 px-2 py-0.5 rounded-full">
               {customers.length}
@@ -302,15 +310,15 @@ export default function CustomersPage() {
         </div>
         <Button size="sm" onClick={openAdd}>
           <Plus size={14} />
-          Add Customer
+          {t('add')}
         </Button>
       </div>
 
       {/* ── Filter tabs ─────────────────────────────────────── */}
       <div className="flex items-center gap-2">
-        <FilterTab label="All"        count={counts.all}        active={filterType === 'all'}        onClick={() => setFilterType('all')} />
-        <FilterTab label="Individual" count={counts.individual} active={filterType === 'individual'} onClick={() => setFilterType('individual')} />
-        <FilterTab label="Business"   count={counts.business}   active={filterType === 'business'}   onClick={() => setFilterType('business')} />
+        <FilterTab label={t('all')} count={counts.all} active={filterType === 'all'} onClick={() => setFilterType('all')} />
+        <FilterTab label={t('individual')} count={counts.individual} active={filterType === 'individual'} onClick={() => setFilterType('individual')} />
+        <FilterTab label={t('business')} count={counts.business} active={filterType === 'business'} onClick={() => setFilterType('business')} />
       </div>
 
       {/* ── Search ──────────────────────────────────────────── */}
@@ -318,7 +326,7 @@ export default function CustomersPage() {
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         <input
           type="text"
-          placeholder="Search by name, mobile, or email..."
+          placeholder={t('search')}
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="input pl-9 py-2 text-sm"
@@ -345,12 +353,12 @@ export default function CustomersPage() {
           {/* Table header */}
           <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
             <div className="w-9 flex-shrink-0" />
-            <div className="flex-1">Name</div>
-            <div className="w-32 flex-shrink-0 hidden sm:block">Mobile</div>
-            <div className="w-24 flex-shrink-0 hidden md:block">Type</div>
-            <div className="w-36 flex-shrink-0 hidden lg:block">VAT Number</div>
-            <div className="w-28 flex-shrink-0 text-right hidden sm:block">Total Spent</div>
-            <div className="w-28 flex-shrink-0 text-right hidden xl:block">Last Purchase</div>
+            <div className="flex-1">{t('fields.name')}</div>
+            <div className="w-32 flex-shrink-0 hidden sm:block">{t('fields.mobile')}</div>
+            <div className="w-24 flex-shrink-0 hidden md:block">{t('fields.type')}</div>
+            <div className="w-36 flex-shrink-0 hidden lg:block">{t('fields.vatNumber')}</div>
+            <div className="w-28 flex-shrink-0 text-end hidden sm:block">{t('fields.totalSpent')}</div>
+            <div className="w-28 flex-shrink-0 text-end hidden xl:block">{t('fields.lastPurchase')}</div>
             <div className="w-24 flex-shrink-0" />
           </div>
           {filtered.map(c => (
@@ -370,14 +378,14 @@ export default function CustomersPage() {
         <div className="flex items-center gap-6 px-4 py-3 bg-white rounded-2xl border border-gray-100 shadow-card text-sm">
           <div className="flex items-center gap-2 text-gray-500">
             <User size={14} className="text-primary-400" />
-            <span><strong className="text-gray-900">{counts.individual}</strong> individual{counts.individual !== 1 ? 's' : ''}</span>
+            <span>{t('individualCount', { count: counts.individual })}</span>
           </div>
           <div className="flex items-center gap-2 text-gray-500">
             <Building2 size={14} className="text-gold-500" />
-            <span><strong className="text-gray-900">{counts.business}</strong> business{counts.business !== 1 ? 'es' : ''}</span>
+            <span>{t('businessCount', { count: counts.business })}</span>
           </div>
           <div className="ml-auto text-gray-500">
-            Total revenue from listed customers:{' '}
+            {t('listedRevenue')}:{' '}
             <strong className="text-primary-600">
               <Rial amount={customers.reduce((s, c) => s + c.total_purchases, 0)} />
             </strong>

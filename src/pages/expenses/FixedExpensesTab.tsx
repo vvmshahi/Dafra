@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/Switch'
 import type { FixedExpense, ExpenseCategory } from '@/types'
 import FixedExpenseDrawer from './FixedExpenseDrawer'
 import { Rial } from '@/components/ui/RiyalSymbol'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,9 +21,6 @@ export interface FixedExpenseRow extends FixedExpense {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const PAY_LABEL: Record<string, string> = {
-  cash: 'Cash', card: 'Card', bank_transfer: 'Bank', other: 'Other',
-}
 const PAY_BADGE: Record<string, 'success' | 'info' | 'neutral'> = {
   cash: 'success', card: 'info', bank_transfer: 'neutral', other: 'neutral',
 }
@@ -37,6 +35,7 @@ function FixedRow({
   onDelete: () => void
   onToggle: (v: boolean) => void
 }) {
+  const { t } = useTranslation('expenses')
   const catColor = item.expense_categories?.color ?? '#6b7280'
   const catIcon  = item.expense_categories?.icon  ?? '💰'
   const catName  = item.expense_categories?.name
@@ -77,14 +76,14 @@ function FixedRow({
 
       {/* Payment method */}
       <div className="w-20 flex-shrink-0 hidden sm:block">
-        <Badge variant={PAY_BADGE[pay] as any}>{PAY_LABEL[pay] ?? pay}</Badge>
+        <Badge variant={PAY_BADGE[pay] as any}>{t(`payment.${pay}`, { defaultValue: t('payment.unknown') })}</Badge>
       </div>
 
       {/* Monthly amount */}
       <div className="w-32 flex-shrink-0 text-right">
         <p className="text-sm font-bold text-gray-900 tabular-nums">
           <Rial amount={item.monthly_amount} />
-          <span className="text-[10px] font-normal text-gray-400 ml-1">/mo</span>
+          <span className="text-[10px] font-normal text-gray-400 ms-1">{t('perMonth')}</span>
         </p>
       </div>
 
@@ -94,8 +93,8 @@ function FixedRow({
           checked={item.is_active}
           onChange={onToggle}
           size="sm"
-          ariaLabel={item.is_active ? 'Deactivate fixed expense' : 'Activate fixed expense'}
-          title={item.is_active ? 'Deactivate' : 'Activate'}
+          ariaLabel={t(item.is_active ? 'actions.deactivate' : 'actions.activate')}
+          title={t(item.is_active ? 'actions.deactivate' : 'actions.activate')}
         />
       </div>
 
@@ -118,6 +117,7 @@ function FixedRow({
 
 export default function FixedExpensesTab() {
   const { profile } = useAuth()
+  const { t } = useTranslation('expenses')
 
   const [items,      setItems]      = useState<FixedExpenseRow[]>([])
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
@@ -156,7 +156,7 @@ export default function FixedExpensesTab() {
   const openEdit = (item: FixedExpenseRow) => { setEditing(item); setDrawerOpen(true) }
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete fixed expense "${name}"?`)) return
+    if (!confirm(t('deleteFixedConfirm', { name }))) return
     const q = supabase as unknown as { from: (t: string) => any }
     await q.from('fixed_expenses').delete().eq('id', id)
     setItems(prev => prev.filter(i => i.id !== id))
@@ -183,28 +183,28 @@ export default function FixedExpensesTab() {
         {/* Summary cards */}
         <div className="flex gap-3 flex-1 flex-wrap min-w-0">
           <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-primary-500 border border-primary-600 text-white shadow-card">
-            <p className="text-xs font-medium text-white/70">Monthly Fixed Cost</p>
+            <p className="text-xs font-medium text-white/70">{t('monthlyFixedCost')}</p>
             <p className="text-lg font-bold mt-0.5"><Rial amount={monthlyTotal} /></p>
             <p className="text-[10px] text-white/60 mt-0.5">
-              {activeItems.length} active expense{activeItems.length !== 1 ? 's' : ''}
+              {t('activeCount', { count: activeItems.length })}
             </p>
           </div>
           <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
-            <p className="text-xs font-medium text-gray-400">Annual Estimate</p>
+            <p className="text-xs font-medium text-gray-400">{t('annualEstimate')}</p>
             <p className="text-lg font-bold text-gray-900 mt-0.5"><Rial amount={yearlyTotal} /></p>
-            <p className="text-[10px] text-gray-400 mt-0.5">active items × 12 months</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">{t('annualHint')}</p>
           </div>
           <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
-            <p className="text-xs font-medium text-gray-400">Total Entries</p>
+            <p className="text-xs font-medium text-gray-400">{t('totalEntries')}</p>
             <p className="text-lg font-bold text-gray-900 mt-0.5">{items.length}</p>
             <p className="text-[10px] text-gray-400 mt-0.5">
-              {items.length - activeItems.length} inactive
+              {t('inactiveCount', { count: items.length - activeItems.length })}
             </p>
           </div>
         </div>
         <Button size="sm" onClick={openAdd} className="flex-shrink-0 self-start">
           <Plus size={14} />
-          Add Fixed Expense
+          {t('addFixed')}
         </Button>
       </div>
 
@@ -218,13 +218,13 @@ export default function FixedExpensesTab() {
           <div className="w-14 h-14 rounded-2xl bg-primary-50 flex items-center justify-center mb-4">
             <RefreshCw size={22} className="text-primary-300" />
           </div>
-          <p className="text-gray-700 font-semibold">No fixed expenses yet</p>
+          <p className="text-gray-700 font-semibold">{t('noFixed')}</p>
           <p className="text-gray-400 text-sm mt-1 max-w-xs">
-            Add recurring monthly expenses like rent, salaries, and subscriptions
+            {t('noFixedHint')}
           </p>
           <Button className="mt-5" onClick={openAdd}>
             <Plus size={15} />
-            Add Fixed Expense
+            {t('addFixed')}
           </Button>
         </div>
       ) : (
@@ -232,11 +232,11 @@ export default function FixedExpensesTab() {
           {/* Table header */}
           <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
             <div className="w-9 flex-shrink-0" />
-            <div className="flex-1">Name</div>
-            <div className="w-28 flex-shrink-0 hidden md:block">Category</div>
-            <div className="w-20 flex-shrink-0 hidden sm:block">Method</div>
-            <div className="w-32 flex-shrink-0 text-right">Monthly (SAR)</div>
-            <div className="w-14 flex-shrink-0 text-center">Active</div>
+            <div className="flex-1">{t('fields.name')}</div>
+            <div className="w-28 flex-shrink-0 hidden md:block">{t('fields.category')}</div>
+            <div className="w-20 flex-shrink-0 hidden sm:block">{t('fields.paymentMethod')}</div>
+            <div className="w-32 flex-shrink-0 text-end">{t('fields.monthlyAmount')}</div>
+            <div className="w-14 flex-shrink-0 text-center">{t('status.active')}</div>
             <div className="w-16 flex-shrink-0" />
           </div>
 
@@ -255,7 +255,7 @@ export default function FixedExpensesTab() {
             <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 border-t border-gray-100">
               <div className="w-9" />
               <div className="flex-1 text-xs font-semibold text-gray-500">
-                {activeItems.length} active
+                {t('activeCount', { count: activeItems.length })}
               </div>
               <div className="w-28 hidden md:block" />
               <div className="w-20 hidden sm:block" />
@@ -263,7 +263,7 @@ export default function FixedExpensesTab() {
                 <p className="text-sm font-bold text-primary-600 tabular-nums">
                   <Rial amount={monthlyTotal} />
                 </p>
-                <p className="text-[10px] text-gray-400">per month</p>
+                <p className="text-[10px] text-gray-400">{t('perMonth')}</p>
               </div>
               <div className="w-14" />
               <div className="w-16" />

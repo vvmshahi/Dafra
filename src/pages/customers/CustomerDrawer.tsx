@@ -5,17 +5,16 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import type { CustomerType } from '@/types'
 import type { CustomerWithStats } from './CustomersPage'
+import { useTranslation } from 'react-i18next'
 
 // ── Validation patterns ───────────────────────────────────────────────────────
 
 const SAUDI_MOBILE_RE = /^05[0-9]{8}$/
 const VAT_RE          = /^3\d{13}3$/
 
-function validatePhone(value: string): string | null {
+function isValidPhone(value: string): boolean {
   const clean = value.replace(/\s/g, '')
-  if (!clean) return null
-  if (!SAUDI_MOBILE_RE.test(clean)) return 'Enter a valid Saudi mobile (05XXXXXXXX)'
-  return null
+  return !clean || SAUDI_MOBILE_RE.test(clean)
 }
 
 // ── Section label ─────────────────────────────────────────────────────────────
@@ -41,6 +40,7 @@ interface Props {
 
 export default function CustomerDrawer({ open, customer, onClose, onSaved }: Props) {
   const { profile } = useAuth()
+  const { t } = useTranslation(['customers', 'common'])
 
   const [saving,        setSaving]        = useState(false)
   const [error,         setError]         = useState('')
@@ -93,12 +93,12 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
   }, [open, customer])
 
   const handlePhoneBlur = () => {
-    setPhoneError(validatePhone(phone) ?? '')
+    setPhoneError(isValidPhone(phone) ? '' : t('customers:errors.phoneInvalid'))
   }
 
   const handleVatBlur = () => {
     const v = vatNumber.trim()
-    if (v && !VAT_RE.test(v)) setVatError('VAT must be 15 digits starting and ending with 3')
+    if (v && !VAT_RE.test(v)) setVatError(t('customers:errors.vatInvalid'))
     else setVatError('')
   }
 
@@ -106,16 +106,15 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
     e.preventDefault()
 
     if (custType === 'business') {
-      if (!businessName.trim()) { setError('Business name is required'); return }
+      if (!businessName.trim()) { setError(t('customers:errors.businessNameRequired')); return }
     } else {
-      if (!name.trim()) { setError('Full name is required'); return }
+      if (!name.trim()) { setError(t('customers:errors.nameRequired')); return }
     }
     const vatTrimmed = vatNumber.trim()
     if (vatTrimmed && !VAT_RE.test(vatTrimmed)) {
-      setVatError('VAT must be 15 digits starting and ending with 3'); return
+      setVatError(t('customers:errors.vatInvalid')); return
     }
-    const phoneErr = validatePhone(phone)
-    if (phoneErr) { setPhoneError(phoneErr); return }
+    if (!isValidPhone(phone)) { setPhoneError(t('customers:errors.phoneInvalid')); return }
 
     setSaving(true)
     setError('')
@@ -141,10 +140,10 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
 
     if (customer) {
       const { error: err } = await q.from('customers').update(payload).eq('id', customer.id)
-      if (err) { setError(err.message); setSaving(false); return }
+      if (err) { console.error('Customer update failed', err); setError(t('customers:errors.saveFailed')); setSaving(false); return }
     } else {
       const { error: err } = await q.from('customers').insert(payload)
-      if (err) { setError(err.message); setSaving(false); return }
+      if (err) { console.error('Customer creation failed', err); setError(t('customers:errors.saveFailed')); setSaving(false); return }
     }
 
     setSaving(false)
@@ -169,10 +168,10 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
             <div>
               <h2 className="text-base font-bold text-gray-900">
-                {customer ? 'Edit Customer' : 'Add Customer'}
+                {t(customer ? 'customers:edit' : 'customers:add')}
               </h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                {customer ? 'Update customer information' : 'Enter the customer details below'}
+                {t(customer ? 'customers:updateHint' : 'customers:addHint')}
               </p>
             </div>
             <button
@@ -189,7 +188,7 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
 
             {/* Customer type selector */}
             <div>
-              <label className="label">Customer Type</label>
+              <label className="label">{t('customers:sections.type')}</label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -202,8 +201,8 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
                 >
                   <User size={18} className={!isBusiness ? 'text-primary-500' : 'text-gray-400'} />
                   <div className="text-left">
-                    <p className="text-sm font-semibold">Individual</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">Personal customer</p>
+                    <p className="text-sm font-semibold">{t('customers:individual')}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{t('customers:personalCustomer')}</p>
                   </div>
                 </button>
                 <button
@@ -217,8 +216,8 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
                 >
                   <Building2 size={18} className={isBusiness ? 'text-gold-600' : 'text-gray-400'} />
                   <div className="text-left">
-                    <p className="text-sm font-semibold">Business (B2B)</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">Company / entity</p>
+                    <p className="text-sm font-semibold">{t('customers:businessB2b')}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{t('customers:companyCustomer')}</p>
                   </div>
                 </button>
               </div>
@@ -226,24 +225,25 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
 
             {/* ── Identity ────────────────────────────────── */}
             <div className="space-y-4">
-              <SectionLabel>Identity</SectionLabel>
+              <SectionLabel>{t('customers:sections.personal')}</SectionLabel>
 
               <div>
                 <label className="label">
-                  {isBusiness ? 'Contact Person Name (English)' : 'Full Name (English)'}
+                  {t('customers:fields.fullName')}
                   <span className="text-red-500 ml-1">*</span>
                 </label>
                 <input
                   className="input"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder={isBusiness ? 'e.g. Mohammed Al-Otaibi' : 'e.g. Ahmed Al-Sayed'}
+                  placeholder={t('customers:placeholders.name')}
+                  dir="auto"
                 />
               </div>
 
               <div>
                 <label className="label">
-                  {isBusiness ? 'Contact Person Name (Arabic)' : 'Full Name (Arabic)'}
+                  {t('customers:fields.nameAr')}
                 </label>
                 <input
                   className="input text-right"
@@ -259,30 +259,30 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
                 <>
                   <div>
                     <label className="label">
-                      Business Name (English) <span className="text-red-500">*</span>
+                      {t('customers:fields.businessName')} <span className="text-red-500">*</span>
                     </label>
                     <input
                       className="input"
                       value={businessName}
                       onChange={e => setBusinessName(e.target.value)}
-                      placeholder="e.g. ABC Trading Company"
+                      placeholder={t('customers:placeholders.businessName')}
                     />
                   </div>
 
                   <div>
-                    <label className="label">Business Name (Arabic)</label>
+                    <label className="label">{t('customers:fields.businessNameAr')}</label>
                     <input
                       className="input text-right"
                       dir="rtl"
                       value={businessNameAr}
                       onChange={e => setBusinessNameAr(e.target.value)}
-                      placeholder="اسم الشركة بالعربية"
+                      placeholder={t('customers:placeholders.businessNameAr')}
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="label">VAT Number</label>
+                      <label className="label">{t('customers:fields.vatNumber')}</label>
                       <input
                         className={`input font-mono ${vatError ? 'border-red-300 focus:border-red-400 focus:ring-red-400/20' : ''}`}
                         value={vatNumber}
@@ -298,7 +298,7 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
                       )}
                     </div>
                     <div>
-                      <label className="label">CR Number</label>
+                      <label className="label">{t('customers:fields.crNumber')}</label>
                       <input
                         className="input font-mono"
                         value={crNumber}
@@ -313,10 +313,10 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
 
             {/* ── Contact ─────────────────────────────────── */}
             <div className="space-y-4">
-              <SectionLabel>Contact</SectionLabel>
+              <SectionLabel>{t('customers:sections.contact')}</SectionLabel>
 
               <div>
-                <label className="label">Mobile Number</label>
+                <label className="label">{t('customers:fields.mobile')}</label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium pointer-events-none">
                     🇸🇦
@@ -334,12 +334,12 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
                 {phoneError ? (
                   <p className="text-xs text-red-500 mt-1">{phoneError}</p>
                 ) : (
-                  <p className="text-xs text-gray-400 mt-1">Saudi format: 05XXXXXXXX</p>
+                  <p className="text-xs text-gray-400 mt-1" dir="ltr">{t('customers:placeholders.phoneHint')}</p>
                 )}
               </div>
 
               <div>
-                <label className="label">Email Address</label>
+                <label className="label">{t('customers:fields.email')}</label>
                 <input
                   className="input"
                   type="email"
@@ -352,26 +352,28 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
 
             {/* ── Additional ──────────────────────────────── */}
             <div className="space-y-4">
-              <SectionLabel>Additional</SectionLabel>
+              <SectionLabel>{t('customers:sections.other')}</SectionLabel>
 
               <div>
-                <label className="label">City</label>
+                <label className="label">{t('customers:fields.city')}</label>
                 <input
                   className="input"
                   value={city}
                   onChange={e => setCity(e.target.value)}
-                  placeholder="e.g. Riyadh, Jeddah, Dammam"
+                  placeholder={t('customers:placeholders.city')}
+                  dir="auto"
                 />
               </div>
 
               <div>
-                <label className="label">Notes</label>
+                <label className="label">{t('customers:fields.notes')}</label>
                 <textarea
                   className="input resize-none"
                   rows={3}
                   value={notes}
                   onChange={e => setNotes(e.target.value)}
-                  placeholder="Internal notes about this customer..."
+                  placeholder={t('customers:placeholders.notes')}
+                  dir="auto"
                 />
               </div>
             </div>
@@ -387,10 +389,10 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
           {/* ── Footer ──────────────────────────────────────── */}
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
             <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
-              Cancel
+              {t('common:cancel')}
             </Button>
             <Button type="submit" className="flex-1" loading={saving}>
-              {customer ? 'Save Changes' : 'Add Customer'}
+              {t(customer ? 'common:saveChanges' : 'customers:add')}
             </Button>
           </div>
 

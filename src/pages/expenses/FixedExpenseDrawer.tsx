@@ -8,13 +8,12 @@ import type { ExpenseCategory, ExpensePaymentMethod } from '@/types'
 import type { FixedExpenseRow } from './FixedExpensesTab'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { MoneyInput } from '@/components/ui/MoneyInput'
+import { useTranslation } from 'react-i18next'
 
 // ── Payment options ───────────────────────────────────────────────────────────
 
-const PAY_OPTIONS: { value: ExpensePaymentMethod; label: string; icon: React.ElementType }[] = [
-  { value: 'cash',          label: 'Cash',          icon: Banknote   },
-  { value: 'card',          label: 'Card',          icon: CreditCard },
-  { value: 'bank_transfer', label: 'Bank Transfer', icon: Building   },
+const PAY_OPTIONS: { value: ExpensePaymentMethod; icon: React.ElementType }[] = [
+  { value: 'cash', icon: Banknote }, { value: 'card', icon: CreditCard }, { value: 'bank_transfer', icon: Building },
 ]
 
 // ── Section label ─────────────────────────────────────────────────────────────
@@ -41,6 +40,7 @@ interface Props {
 
 export default function FixedExpenseDrawer({ open, item, categories, onClose, onSaved }: Props) {
   const { profile } = useAuth()
+  const { t } = useTranslation(['expenses', 'common'])
 
   const [saving,     setSaving]     = useState(false)
   const [error,      setError]      = useState('')
@@ -75,8 +75,8 @@ export default function FixedExpenseDrawer({ open, item, categories, onClose, on
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim())       { setError('Name is required'); return }
-    if (amountNum <= 0)     { setError('Enter a valid monthly amount'); return }
+    if (!name.trim()) { setError(t('expenses:errors.nameRequired')); return }
+    if (amountNum <= 0) { setError(t('expenses:errors.monthlyAmountInvalid')); return }
 
     setSaving(true)
     setError('')
@@ -99,10 +99,10 @@ export default function FixedExpenseDrawer({ open, item, categories, onClose, on
 
       if (item) {
         const { error: err } = await q.from('fixed_expenses').update(payload).eq('id', item.id)
-        if (err) { setError(err.message); return }
+        if (err) { console.error('Fixed expense update failed', err); setError(t('expenses:errors.saveFailed')); return }
       } else {
         const { error: err } = await q.from('fixed_expenses').insert(payload)
-        if (err) { setError(err.message); return }
+        if (err) { console.error('Fixed expense creation failed', err); setError(t('expenses:errors.saveFailed')); return }
       }
 
       onSaved()
@@ -125,9 +125,9 @@ export default function FixedExpenseDrawer({ open, item, categories, onClose, on
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
             <div>
               <h2 className="text-base font-bold text-gray-900">
-                {item ? 'Edit Fixed Expense' : 'Add Fixed Expense'}
+                {t(item ? 'expenses:editFixed' : 'expenses:addFixed')}
               </h2>
-              <p className="text-xs text-gray-400 mt-0.5">Recurring monthly expense</p>
+              <p className="text-xs text-gray-400 mt-0.5">{t('expenses:recurringMonthly')}</p>
             </div>
             <button type="button" onClick={onClose}
               className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400">
@@ -140,22 +140,22 @@ export default function FixedExpenseDrawer({ open, item, categories, onClose, on
 
             {/* ── Details ──────────────────────────────────── */}
             <div className="space-y-4">
-              <SectionLabel>Expense Details</SectionLabel>
+              <SectionLabel>{t('expenses:sections.details')}</SectionLabel>
 
               <div>
-                <label className="label">Name <span className="text-red-500">*</span></label>
+                <label className="label">{t('expenses:fields.name')} <span className="text-red-500">*</span></label>
                 <input
                   className="input"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder="e.g. Rent, Salary – Ahmed, Insurance"
+                  placeholder={t('expenses:placeholders.name')} dir="auto"
                 />
               </div>
 
               <div>
-                <label className="label">Category</label>
+                <label className="label">{t('expenses:fields.category')}</label>
                 <select className="input" value={categoryId} onChange={e => setCategoryId(e.target.value)}>
-                  <option value="">— Uncategorised —</option>
+                  <option value="">— {t('expenses:placeholders.uncategorized')} —</option>
                   {categories.map(c => (
                     <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
                   ))}
@@ -165,10 +165,10 @@ export default function FixedExpenseDrawer({ open, item, categories, onClose, on
 
             {/* ── Amount ───────────────────────────────────── */}
             <div className="space-y-4">
-              <SectionLabel>Monthly Amount</SectionLabel>
+              <SectionLabel>{t('expenses:fields.monthlyAmount')}</SectionLabel>
 
               <div>
-                <label className="label">Amount (SAR) <span className="text-red-500">*</span></label>
+                <label className="label">{t('expenses:fields.amountSar')} <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium pointer-events-none">
                     SAR
@@ -185,11 +185,11 @@ export default function FixedExpenseDrawer({ open, item, categories, onClose, on
               {amountNum > 0 && (
                 <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
                   <div className="flex justify-between text-gray-500">
-                    <span>Monthly</span>
+                    <span>{t('expenses:fields.monthlyAmount')}</span>
                     <span className="tabular-nums font-medium"><Rial amount={amountNum} /></span>
                   </div>
                   <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1.5">
-                    <span>Annual Estimate</span>
+                    <span>{t('expenses:annualEstimate')}</span>
                     <span className="tabular-nums text-primary-600"><Rial amount={amountNum * 12} /></span>
                   </div>
                 </div>
@@ -198,9 +198,9 @@ export default function FixedExpenseDrawer({ open, item, categories, onClose, on
 
             {/* ── Payment method ────────────────────────────── */}
             <div className="space-y-3">
-              <SectionLabel>Payment Method</SectionLabel>
+              <SectionLabel>{t('expenses:fields.paymentMethod')}</SectionLabel>
               <div className="flex gap-2">
-                {PAY_OPTIONS.map(({ value, label, icon: Icon }) => (
+                {PAY_OPTIONS.map(({ value, icon: Icon }) => (
                   <button
                     key={value}
                     type="button"
@@ -212,7 +212,7 @@ export default function FixedExpenseDrawer({ open, item, categories, onClose, on
                     }`}
                   >
                     <Icon size={15} />
-                    {label}
+                    {t(`expenses:payment.${value}`)}
                   </button>
                 ))}
               </div>
@@ -220,18 +220,18 @@ export default function FixedExpenseDrawer({ open, item, categories, onClose, on
 
             {/* ── Active toggle ─────────────────────────────── */}
             <div className="space-y-3">
-              <SectionLabel>Status</SectionLabel>
+              <SectionLabel>{t('expenses:fields.status')}</SectionLabel>
               <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3">
                 <div>
-                  <p className="text-sm font-medium text-gray-700">Active</p>
+                  <p className="text-sm font-medium text-gray-700">{t('expenses:status.active')}</p>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    Inactive expenses are excluded from totals
+                    {t('expenses:activeHint')}
                   </p>
                 </div>
                 <Switch
                   checked={isActive}
                   onChange={setIsActive}
-                  ariaLabel="Active fixed expense"
+                  ariaLabel={t('expenses:status.active')}
                 />
               </div>
             </div>
@@ -245,9 +245,9 @@ export default function FixedExpenseDrawer({ open, item, categories, onClose, on
 
           {/* Footer */}
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>{t('common:cancel')}</Button>
             <Button type="submit" className="flex-1" loading={saving}>
-              {item ? 'Save Changes' : 'Add Expense'}
+              {t(item ? 'expenses:actions.saveChanges' : 'expenses:add')}
             </Button>
           </div>
         </form>

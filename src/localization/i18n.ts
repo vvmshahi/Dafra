@@ -20,6 +20,8 @@ import productsEn from './locales/en/products.json'
 import inventoryEn from './locales/en/inventory.json'
 import purchasesEn from './locales/en/purchases.json'
 import suppliersEn from './locales/en/suppliers.json'
+import customersEn from './locales/en/customers.json'
+import expensesEn from './locales/en/expenses.json'
 import commonAr from './locales/ar-SA/common.json'
 import navigationAr from './locales/ar-SA/navigation.json'
 import authAr from './locales/ar-SA/auth.json'
@@ -40,6 +42,8 @@ import productsAr from './locales/ar-SA/products.json'
 import inventoryAr from './locales/ar-SA/inventory.json'
 import purchasesAr from './locales/ar-SA/purchases.json'
 import suppliersAr from './locales/ar-SA/suppliers.json'
+import customersAr from './locales/ar-SA/customers.json'
+import expensesAr from './locales/ar-SA/expenses.json'
 import { applyDocumentLocale, detectInitialLocale, normalizeLocale } from './locale'
 import type { UiLocale } from './types'
 
@@ -49,15 +53,15 @@ void i18n
   .use(initReactI18next)
   .init({
     resources: {
-      en: { common: commonEn, navigation: navigationEn, auth: authEn, settings: settingsEn, validation: validationEn, dialogs: dialogsEn, pos: posEn, payments: paymentsEn, register: registerEn, invoices: invoicesEn, creditNotes: creditNotesEn, refunds: refundsEn, receipts: receiptsEn, printing: printingEn, documents: documentsEn, dashboard: dashboardEn, products: productsEn, inventory: inventoryEn, purchases: purchasesEn, suppliers: suppliersEn },
-      'ar-SA': { common: commonAr, navigation: navigationAr, auth: authAr, settings: settingsAr, validation: validationAr, dialogs: dialogsAr, pos: posAr, payments: paymentsAr, register: registerAr, invoices: invoicesAr, creditNotes: creditNotesAr, refunds: refundsAr, receipts: receiptsAr, printing: printingAr, documents: documentsAr, dashboard: dashboardAr, products: productsAr, inventory: inventoryAr, purchases: purchasesAr, suppliers: suppliersAr },
+      en: { common: commonEn, navigation: navigationEn, auth: authEn, settings: settingsEn, validation: validationEn, dialogs: dialogsEn, pos: posEn, payments: paymentsEn, register: registerEn, invoices: invoicesEn, creditNotes: creditNotesEn, refunds: refundsEn, receipts: receiptsEn, printing: printingEn, documents: documentsEn, dashboard: dashboardEn, products: productsEn, inventory: inventoryEn, purchases: purchasesEn, suppliers: suppliersEn, customers: customersEn, expenses: expensesEn },
+      'ar-SA': { common: commonAr, navigation: navigationAr, auth: authAr, settings: settingsAr, validation: validationAr, dialogs: dialogsAr, pos: posAr, payments: paymentsAr, register: registerAr, invoices: invoicesAr, creditNotes: creditNotesAr, refunds: refundsAr, receipts: receiptsAr, printing: printingAr, documents: documentsAr, dashboard: dashboardAr, products: productsAr, inventory: inventoryAr, purchases: purchasesAr, suppliers: suppliersAr, customers: customersAr, expenses: expensesAr },
     },
     lng: initialLocale,
     supportedLngs: ['en', 'ar-SA'],
     nonExplicitSupportedLngs: false,
     fallbackLng: 'en',
     defaultNS: 'common',
-    ns: ['common', 'navigation', 'auth', 'settings', 'validation', 'dialogs', 'pos', 'payments', 'register', 'invoices', 'creditNotes', 'refunds', 'receipts', 'printing', 'documents', 'dashboard', 'products', 'inventory', 'purchases', 'suppliers'],
+    ns: ['common', 'navigation', 'auth', 'settings', 'validation', 'dialogs', 'pos', 'payments', 'register', 'invoices', 'creditNotes', 'refunds', 'receipts', 'printing', 'documents', 'dashboard', 'products', 'inventory', 'purchases', 'suppliers', 'customers', 'expenses'],
     returnEmptyString: false,
     initImmediate: false,
     react: { useSuspense: false },

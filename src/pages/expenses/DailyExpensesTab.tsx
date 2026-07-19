@@ -10,6 +10,7 @@ import type { Expense, ExpenseCategory, ExpenseVatClaimStatus } from '@/types'
 import ExpenseDrawer from './ExpenseDrawer'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { effectiveExpenseVatClaimStatus } from '@/lib/utils/expenseVat'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -23,12 +24,6 @@ export interface ExpenseRow extends Expense {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const VAT_LABEL: Record<ExpenseVatClaimStatus, string> = {
-  no_vat:        'No input VAT',
-  not_claimable: 'No input VAT',
-  claimable:     'Claimable',
-  needs_review:  'Review VAT',
-}
 const VAT_BADGE: Record<ExpenseVatClaimStatus, 'neutral' | 'info' | 'warning'> = {
   no_vat:        'neutral',
   not_claimable: 'neutral',
@@ -36,9 +31,6 @@ const VAT_BADGE: Record<ExpenseVatClaimStatus, 'neutral' | 'info' | 'warning'> =
   needs_review:  'warning',
 }
 
-const PAY_LABEL: Record<string, string> = {
-  cash: 'Cash', card: 'Card', bank_transfer: 'Bank', other: 'Other',
-}
 const PAY_BADGE: Record<string, 'success' | 'info' | 'neutral'> = {
   cash: 'success', card: 'info', bank_transfer: 'neutral', other: 'neutral',
 }
@@ -64,6 +56,7 @@ type Preset = 'today' | 'week' | 'month' | 'custom'
 function SumCard({ label, value, sub, accent }: {
   label: string; value: React.ReactNode; sub?: string; accent?: boolean
 }) {
+  const { t, i18n } = useTranslation('expenses')
   return (
     <div className={`flex-1 min-w-0 rounded-xl px-4 py-3 border ${
       accent
@@ -113,18 +106,18 @@ function ExpenseRow({ expense, onEdit, onDelete }: {
 
       {/* Description + vendor */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 truncate">{expense.description}</p>
+        <p className="text-sm font-medium text-gray-900 truncate" dir="auto">{expense.description}</p>
         {expense.vendor_name && (
-          <p className="text-xs text-gray-400 truncate">{expense.vendor_name}</p>
+          <p className="text-xs text-gray-400 truncate" dir="auto">{expense.vendor_name}</p>
         )}
         <div className="mt-1 flex items-center gap-2 text-[10px]">
           {expense.receipt_url ? (
-            <span className="inline-flex items-center gap-1 text-emerald-600"><Paperclip size={10} /> Document attached</span>
+            <span className="inline-flex items-center gap-1 text-emerald-600"><Paperclip size={10} /> {t('documentAttached')}</span>
           ) : vat === 'claimable' ? (
-            <span className="inline-flex items-center gap-1 text-amber-600"><FileWarning size={10} /> No document</span>
+            <span className="inline-flex items-center gap-1 text-amber-600"><FileWarning size={10} /> {t('noDocument')}</span>
           ) : null}
           {vatDetailsIncomplete && (
-            <span className="text-amber-600">Incomplete VAT details</span>
+            <span className="text-amber-600">{t('incompleteVat')}</span>
           )}
         </div>
       </div>
@@ -132,7 +125,7 @@ function ExpenseRow({ expense, onEdit, onDelete }: {
       {/* Date */}
       <div className="w-24 flex-shrink-0 hidden sm:block">
         <p className="text-xs text-gray-500">
-          {new Date(expense.expense_date).toLocaleDateString('en-SA', {
+          {new Date(expense.expense_date).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', {
             day: '2-digit', month: 'short',
           })}
         </p>
@@ -154,12 +147,12 @@ function ExpenseRow({ expense, onEdit, onDelete }: {
 
       {/* VAT badge */}
       <div className="w-24 flex-shrink-0 hidden lg:block">
-        <Badge variant={VAT_BADGE[vat]}>{VAT_LABEL[vat]}</Badge>
+        <Badge variant={VAT_BADGE[vat]}>{t(`vat.${vat}`)}</Badge>
       </div>
 
       {/* Payment method */}
       <div className="w-20 flex-shrink-0 hidden md:block">
-        <Badge variant={PAY_BADGE[pay] as any}>{PAY_LABEL[pay] ?? pay}</Badge>
+        <Badge variant={PAY_BADGE[pay] as any}>{t(`payment.${pay}`, { defaultValue: t('payment.unknown') })}</Badge>
       </div>
 
       {/* Amount */}
@@ -171,7 +164,7 @@ function ExpenseRow({ expense, onEdit, onDelete }: {
         </p>
         {claimableVat > 0 && (
           <p className="text-[10px] text-gray-400">
-            VAT {claimableVat.toLocaleString('en-US', {
+            {t('fields.vat')} {claimableVat.toLocaleString('en-US', {
               minimumFractionDigits: 2, maximumFractionDigits: 2,
             })}
           </p>
@@ -214,23 +207,24 @@ function ExpenseRow({ expense, onEdit, onDelete }: {
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function EmptyState({ filtered, onAdd }: { filtered: boolean; onAdd: () => void }) {
+  const { t } = useTranslation('expenses')
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="w-14 h-14 rounded-2xl bg-primary-50 flex items-center justify-center mb-4">
         <Receipt size={24} className="text-primary-300" />
       </div>
       <p className="text-gray-700 font-semibold">
-        {filtered ? 'No expenses match your filters' : 'No expenses recorded'}
+        {t(filtered ? 'noMatches' : 'noExpenses')}
       </p>
       <p className="text-gray-400 text-sm mt-1 max-w-xs">
         {filtered
-          ? 'Try adjusting the date range or category'
-          : 'Record your first daily expense below'}
+          ? t('filterHint')
+          : t('emptyHint')}
       </p>
       {!filtered && (
         <Button className="mt-5" onClick={onAdd}>
           <Plus size={15} />
-          Add Expense
+          {t('add')}
         </Button>
       )}
     </div>
@@ -241,6 +235,7 @@ function EmptyState({ filtered, onAdd }: { filtered: boolean; onAdd: () => void 
 
 export default function DailyExpensesTab() {
   const { profile } = useAuth()
+  const { t } = useTranslation('expenses')
 
   const [expenses,    setExpenses]    = useState<ExpenseRow[]>([])
   const [categories,  setCategories]  = useState<ExpenseCategory[]>([])
@@ -306,7 +301,7 @@ export default function DailyExpensesTab() {
   const openEdit = (e: ExpenseRow) => { setEditing(e); setDrawerOpen(true) }
 
   const handleDelete = async (id: string, desc: string) => {
-    if (!confirm(`Delete expense "${desc}"?`)) return
+    if (!confirm(t('deleteConfirm', { name: desc }))) return
     const q = supabase as unknown as { from: (t: string) => any }
     await q.from('expenses').delete().eq('id', id)
     setExpenses(prev => prev.filter(e => e.id !== id))
@@ -342,15 +337,14 @@ export default function DailyExpensesTab() {
       <div className="flex items-start gap-4 flex-wrap">
         {/* Summary cards */}
         <div className="flex gap-3 flex-1 flex-wrap min-w-0">
-          <SumCard label="Total Spent"  value={<Rial amount={totalPaid} />}
-            sub={`${filtered.length} expense${filtered.length !== 1 ? 's' : ''}`} accent />
-          <SumCard label="Cash"         value={<Rial amount={cashTotal} />} />
-          <SumCard label="Card"         value={<Rial amount={cardTotal} />} />
-          {vatTotal > 0 && <SumCard label="Claimable VAT" value={<Rial amount={vatTotal} />} />}
+          <SumCard label={t('fields.total')} value={<Rial amount={totalPaid} />} sub={String(filtered.length)} accent />
+          <SumCard label={t('payment.cash')} value={<Rial amount={cashTotal} />} />
+          <SumCard label={t('payment.card')} value={<Rial amount={cardTotal} />} />
+          {vatTotal > 0 && <SumCard label={t('vat.claimable')} value={<Rial amount={vatTotal} />} />}
         </div>
         <Button size="sm" onClick={openAdd} className="flex-shrink-0 self-start">
           <Plus size={14} />
-          Add Expense
+          {t('add')}
         </Button>
       </div>
 
@@ -358,10 +352,10 @@ export default function DailyExpensesTab() {
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-xl p-0.5">
           {([
-            ['today', 'Today'],
-            ['week',  'This Week'],
-            ['month', 'This Month'],
-            ['custom','Custom'],
+            ['today', t('filters.today')],
+            ['week', t('filters.week')],
+            ['month', t('filters.month')],
+            ['custom',t('filters.custom')],
           ] as [Preset, string][]).map(([p, label]) => (
             <button
               key={p}
@@ -403,7 +397,7 @@ export default function DailyExpensesTab() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search description or vendor..."
+            placeholder={t('filters.search')}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="input pl-8 py-2 text-sm"
@@ -424,7 +418,7 @@ export default function DailyExpensesTab() {
             onChange={e => setFilterCat(e.target.value)}
             className="input pl-7 py-2 text-sm w-40 appearance-none"
           >
-            <option value="">All Categories</option>
+            <option value="">{t('filters.allCategories')}</option>
             {categories.map(c => (
               <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
             ))}
@@ -437,11 +431,12 @@ export default function DailyExpensesTab() {
           onChange={e => setFilterPay(e.target.value)}
           className="input py-2 text-sm w-36 appearance-none flex-shrink-0"
         >
-          <option value="">All Methods</option>
-          <option value="cash">Cash</option>
-          <option value="card">Card</option>
-          <option value="bank_transfer">Bank Transfer</option>
-          <option value="other">Other</option>
+          <option value="">—</option>
+          <option value="">—</option>
+          <option value="cash">{t('payment.cash')}</option>
+          <option value="card">{t('payment.card')}</option>
+          <option value="bank_transfer">{t('payment.bank_transfer')}</option>
+          <option value="other">{t('payment.other')}</option>
         </select>
       </div>
 
@@ -457,13 +452,13 @@ export default function DailyExpensesTab() {
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
             <div className="w-9 flex-shrink-0" />
-            <div className="flex-1">Description</div>
-            <div className="w-24 flex-shrink-0 hidden sm:block">Date</div>
-            <div className="w-28 flex-shrink-0 hidden md:block">Category</div>
-            <div className="w-24 flex-shrink-0 hidden lg:block">VAT</div>
-            <div className="w-20 flex-shrink-0 hidden md:block">Method</div>
-            <div className="w-28 flex-shrink-0 text-right">Amount (SAR)</div>
-            <div className="w-20 flex-shrink-0 hidden xl:block text-right">By</div>
+            <div className="flex-1">{t('fields.description')}</div>
+            <div className="w-24 flex-shrink-0 hidden sm:block">{t('fields.date')}</div>
+            <div className="w-28 flex-shrink-0 hidden md:block">{t('fields.category')}</div>
+            <div className="w-24 flex-shrink-0 hidden lg:block">{t('fields.vat')}</div>
+            <div className="w-20 flex-shrink-0 hidden md:block">{t('fields.paymentMethod')}</div>
+            <div className="w-28 flex-shrink-0 text-end">{t('fields.amountSar')}</div>
+            <div className="w-20 flex-shrink-0 hidden xl:block text-end">{t('fields.addedBy')}</div>
             <div className="w-16 flex-shrink-0" />
           </div>
 

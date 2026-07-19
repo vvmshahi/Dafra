@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import type { Customer, InvoiceStatus, PaymentStatus } from '@/types'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -32,17 +33,12 @@ interface InvoiceRow {
 
 type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'gold'
 
-const STATUS_MAP: Record<InvoiceStatus, { variant: BadgeVariant; label: string }> = {
-  draft:     { variant: 'neutral', label: 'Draft' },
-  posted:    { variant: 'success', label: 'Posted' },
-  cancelled: { variant: 'danger',  label: 'Cancelled' },
+const STATUS_MAP: Record<InvoiceStatus, BadgeVariant> = {
+  draft: 'neutral', posted: 'success', cancelled: 'danger',
 }
 
-const PAYMENT_MAP: Record<PaymentStatus, { variant: BadgeVariant; label: string }> = {
-  pending:  { variant: 'warning', label: 'Pending' },
-  paid:     { variant: 'success', label: 'Paid' },
-  partial:  { variant: 'info',    label: 'Partial' },
-  refunded: { variant: 'danger',  label: 'Refunded' },
+const PAYMENT_MAP: Record<PaymentStatus, BadgeVariant> = {
+  pending: 'warning', paid: 'success', partial: 'info', refunded: 'danger',
 }
 
 // ── Info row ──────────────────────────────────────────────────────────────────
@@ -72,6 +68,7 @@ function StatCard({ label, value, sub }: { label: string; value: React.ReactNode
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CustomerDetailPage() {
+  const { t, i18n } = useTranslation(['customers', 'common'])
   const { id }   = useParams<{ id: string }>()
   const navigate = useNavigate()
 
@@ -119,11 +116,11 @@ export default function CustomerDetailPage() {
         <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
           <User size={24} className="text-gray-400" />
         </div>
-        <p className="text-gray-700 font-semibold">Customer not found</p>
-        <p className="text-gray-400 text-sm mt-1">This customer may have been deleted.</p>
+        <p className="text-gray-700 font-semibold">{t('customers:notFound')}</p>
+        <p className="text-gray-400 text-sm mt-1">{t('customers:notFoundHint')}</p>
         <Button variant="secondary" className="mt-5" onClick={() => navigate('/customers')}>
           <ArrowLeft size={15} />
-          Back to Customers
+          {t('customers:back')}
         </Button>
       </div>
     )
@@ -149,7 +146,7 @@ export default function CustomerDetailPage() {
         className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
       >
         <ArrowLeft size={15} />
-        Back to Customers
+        {t('customers:back')}
       </button>
 
       {/* ── Customer info card ───────────────────────────── */}
@@ -168,13 +165,13 @@ export default function CustomerDetailPage() {
           {/* Name + type */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-lg font-bold text-gray-900 leading-none">{displayName}</h2>
+              <h2 className="text-lg font-bold text-gray-900 leading-none" dir="auto">{displayName}</h2>
               <Badge variant={isBusiness ? 'gold' : 'neutral'}>
-                {isBusiness ? 'Business' : 'Individual'}
+                {t(isBusiness ? 'customers:business' : 'customers:individual')}
               </Badge>
             </div>
             {contactName && (
-              <p className="text-sm text-gray-500 mt-1">Contact: {contactName}</p>
+              <p className="text-sm text-gray-500 mt-1">{t('customers:fields.contact')}: <span dir="auto">{contactName}</span></p>
             )}
             {customer.name_ar && (
               <p className="text-sm text-gray-400 mt-1" dir="rtl">{customer.name_ar}</p>
@@ -211,23 +208,23 @@ export default function CustomerDetailPage() {
       {/* ── Summary stats ─────────────────────────────────── */}
       <div className="flex gap-3 flex-wrap">
         <StatCard
-          label="Total Spent"
+          label={t('customers:fields.totalSpent')}
           value={<Rial amount={totalSpent} />}
-          sub="from posted invoices"
+          sub={t('customers:postedTotal')}
         />
         <StatCard
-          label="Total VAT Paid"
+          label={t('customers:fields.totalVat')}
           value={<Rial amount={totalVat} />}
         />
         <StatCard
-          label="Invoice Count"
+          label={t('customers:fields.invoiceCount')}
           value={String(invoices.length)}
           sub={`${postedInvoices.length} posted`}
         />
         <StatCard
-          label="Last Purchase"
+          label={t('customers:fields.lastPurchase')}
           value={lastInvoiceDate
-            ? new Date(lastInvoiceDate).toLocaleDateString('en-SA', {
+            ? new Date(lastInvoiceDate).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', {
                 day: '2-digit', month: 'short', year: 'numeric',
               })
             : '—'
@@ -238,10 +235,10 @@ export default function CustomerDetailPage() {
       {/* ── Purchase history ──────────────────────────────── */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-gray-900">Purchase History</h3>
+          <h3 className="text-sm font-bold text-gray-900">{t('customers:purchaseHistory')}</h3>
           <button
             disabled
-            title="PDF export coming soon"
+            title={t('customers:exportSoon')}
             className="flex items-center gap-2 text-xs font-medium text-gray-400 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 opacity-60 cursor-not-allowed select-none"
           >
             <Download size={13} />
@@ -254,27 +251,27 @@ export default function CustomerDetailPage() {
             <div className="w-12 h-12 rounded-xl bg-gray-50 flex items-center justify-center mb-3">
               <Receipt size={20} className="text-gray-300" />
             </div>
-            <p className="text-gray-500 font-medium text-sm">No purchase history yet</p>
+            <p className="text-gray-500 font-medium text-sm">{t('customers:noHistory')}</p>
             <p className="text-gray-400 text-xs mt-1">
-              Invoices created for this customer will appear here
+              {t('customers:noHistoryHint')}
             </p>
           </div>
         ) : (
           <div className="card overflow-hidden">
             {/* Header */}
             <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-              <div className="w-36 flex-shrink-0">Invoice #</div>
-              <div className="w-28 flex-shrink-0">Date</div>
-              <div className="w-16 flex-shrink-0 text-center hidden sm:block">Items</div>
-              <div className="flex-1 text-right">Total (SAR)</div>
-              <div className="w-24 flex-shrink-0 text-right hidden md:block">VAT (SAR)</div>
-              <div className="w-20 flex-shrink-0 text-center">Status</div>
-              <div className="w-20 flex-shrink-0 text-center hidden sm:block">Payment</div>
+              <div className="w-36 flex-shrink-0">{t('customers:fields.invoiceNumber')}</div>
+              <div className="w-28 flex-shrink-0">{t('customers:fields.date')}</div>
+              <div className="w-16 flex-shrink-0 text-center hidden sm:block">{t('customers:fields.items')}</div>
+              <div className="flex-1 text-end">{t('customers:fields.totalSar')}</div>
+              <div className="w-24 flex-shrink-0 text-end hidden md:block">{t('customers:fields.vatSar')}</div>
+              <div className="w-20 flex-shrink-0 text-center">{t('customers:fields.status')}</div>
+              <div className="w-20 flex-shrink-0 text-center hidden sm:block">{t('customers:fields.payment')}</div>
             </div>
 
             {invoices.map(inv => {
-              const statusInfo  = STATUS_MAP[inv.status]   ?? { variant: 'neutral', label: inv.status }
-              const payInfo     = PAYMENT_MAP[inv.payment_status] ?? { variant: 'neutral', label: inv.payment_status }
+              const statusVariant = STATUS_MAP[inv.status] ?? 'neutral'
+              const payVariant = PAYMENT_MAP[inv.payment_status] ?? 'neutral'
               const itemCount   = Array.isArray(inv.invoice_items) ? inv.invoice_items.length : 0
 
               return (
@@ -292,7 +289,7 @@ export default function CustomerDetailPage() {
                   {/* Date */}
                   <div className="w-28 flex-shrink-0">
                     <p className="text-sm text-gray-600">
-                      {new Date(inv.invoice_date).toLocaleDateString('en-SA', {
+                      {new Date(inv.invoice_date).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', {
                         day: '2-digit', month: 'short', year: 'numeric',
                       })}
                     </p>
@@ -301,7 +298,7 @@ export default function CustomerDetailPage() {
                   {/* Item count */}
                   <div className="w-16 flex-shrink-0 text-center hidden sm:block">
                     <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                      {itemCount} item{itemCount !== 1 ? 's' : ''}
+                      {t('customers:invoiceCount', { count: itemCount })}
                     </span>
                   </div>
 
@@ -325,15 +322,15 @@ export default function CustomerDetailPage() {
 
                   {/* Invoice status */}
                   <div className="w-20 flex-shrink-0 flex justify-center">
-                    <Badge variant={statusInfo.variant as BadgeVariant}>
-                      {statusInfo.label}
+                    <Badge variant={statusVariant}>
+                      {t(`customers:status.${inv.status}`, { defaultValue: t('customers:status.unknown') })}
                     </Badge>
                   </div>
 
                   {/* Payment status */}
                   <div className="w-20 flex-shrink-0 flex justify-center hidden sm:flex">
-                    <Badge variant={payInfo.variant as BadgeVariant}>
-                      {payInfo.label}
+                    <Badge variant={payVariant}>
+                      {t(`customers:status.${inv.payment_status}`, { defaultValue: t('customers:status.unknown') })}
                     </Badge>
                   </div>
                 </div>

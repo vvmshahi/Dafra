@@ -15,13 +15,12 @@ import {
   resolveExpenseVatChoice,
   type SimpleExpenseVatChoice,
 } from '@/lib/utils/expenseVat'
+import { useTranslation } from 'react-i18next'
 
 // ── Payment method options ────────────────────────────────────────────────────
 
-const PAY_OPTIONS: { value: ExpensePaymentMethod; label: string; icon: React.ElementType }[] = [
-  { value: 'cash',          label: 'Cash',          icon: Banknote  },
-  { value: 'card',          label: 'Card',          icon: CreditCard },
-  { value: 'bank_transfer', label: 'Bank Transfer', icon: Building  },
+const PAY_OPTIONS: { value: ExpensePaymentMethod; icon: React.ElementType }[] = [
+  { value: 'cash', icon: Banknote }, { value: 'card', icon: CreditCard }, { value: 'bank_transfer', icon: Building },
 ]
 
 // ── Section label ─────────────────────────────────────────────────────────────
@@ -48,6 +47,7 @@ interface Props {
 
 export default function ExpenseDrawer({ open, expense, categories, onClose, onSaved }: Props) {
   const { profile } = useAuth()
+  const { t } = useTranslation(['expenses', 'common'])
   const fileRef     = useRef<HTMLInputElement>(null)
 
   const [saving,       setSaving]       = useState(false)
@@ -182,17 +182,17 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
   }
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!description.trim()) { setError('Description is required'); return }
-    if (!amount || amountNum <= 0) { setError('Enter a valid amount'); return }
-    if (!date) { setError('Supplier invoice / expense date is required'); return }
+    if (!description.trim()) { setError(t('expenses:errors.descriptionRequired')); return }
+    if (!amount || amountNum <= 0) { setError(t('expenses:errors.amountPositive')); return }
+    if (!date) { setError(t('expenses:errors.dateRequired')); return }
     if (vatChoice === 'claimable') {
-      if (!vendorName.trim()) { setError('Supplier name is required for claimable VAT'); return }
-      if (!categoryId) { setError('Category is required for claimable VAT'); return }
-      if (!taxInvoiceNumber.trim()) { setError('Supplier tax invoice number is required for claimable VAT'); return }
-      if (taxableAmountNum < 0 || vatAmountNum <= 0) { setError('Enter valid taxable and VAT amounts'); return }
-      if (vatAmountNum > amountNum) { setError('VAT amount cannot exceed the gross amount'); return }
-      if (!vatCheck.consistent) { setError('Gross amount must equal taxable amount plus VAT'); return }
-      if (!supplierVatValid) { setError('Supplier VAT number must contain exactly 15 digits'); return }
+      if (!vendorName.trim()) { setError(t('expenses:errors.supplierRequired')); return }
+      if (!categoryId) { setError(t('expenses:errors.categoryRequired')); return }
+      if (!taxInvoiceNumber.trim()) { setError(t('expenses:errors.invoiceRequired')); return }
+      if (taxableAmountNum < 0 || vatAmountNum <= 0) { setError(t('expenses:errors.vatAmountsInvalid')); return }
+      if (vatAmountNum > amountNum) { setError(t('expenses:errors.vatExceeds')); return }
+      if (!vatCheck.consistent) { setError(t('expenses:errors.vatMismatch')); return }
+      if (!supplierVatValid) { setError(t('expenses:errors.supplierVatInvalid')); return }
     }
 
     setSaving(true)
@@ -210,7 +210,7 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
         const { error: upErr } = await supabase.storage
           .from('expense-receipts')
           .upload(path, imageFile, { upsert: true })
-        if (upErr) { setError('Receipt upload failed: ' + upErr.message); return }
+        if (upErr) { console.error('Expense receipt upload failed', upErr); setError(t('expenses:errors.uploadFailed')); return }
         const { data: { signedUrl } } = await supabase.storage
           .from('expense-receipts')
           .createSignedUrl(path, 60 * 60 * 24 * 365)  // 1-year signed URL
@@ -259,10 +259,10 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
 
       if (expense) {
         const { error: err } = await q.from('expenses').update(payload).eq('id', expense.id)
-        if (err) { setError(err.message); return }
+        if (err) { console.error('Expense update failed', err); setError(t('expenses:errors.saveFailed')); return }
       } else {
         const { error: err } = await q.from('expenses').insert(payload)
-        if (err) { setError(err.message); return }
+        if (err) { console.error('Expense creation failed', err); setError(t('expenses:errors.saveFailed')); return }
       }
 
       onSaved()
@@ -285,10 +285,10 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
             <div>
               <h2 className="text-base font-bold text-gray-900">
-                {expense ? 'Edit Expense' : 'Add Daily Expense'}
+                {t(expense ? 'expenses:edit' : 'expenses:add')}
               </h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                Use this for VAT invoices and business expenses.
+                {t('expenses:ui.drawerHint')}
               </p>
             </div>
             <button type="button" onClick={onClose}
@@ -302,19 +302,19 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
 
             {/* ── Basic details ────────────────────────────── */}
             <div className="space-y-4">
-              <SectionLabel>Expense Details</SectionLabel>
+              <SectionLabel>{t('expenses:sections.details')}</SectionLabel>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">Supplier invoice / expense date <span className="text-red-500">*</span></label>
+                  <label className="label">{t('expenses:fields.date')} <span className="text-red-500">*</span></label>
                   <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
                 </div>
                 <div>
                   <label className="label">
-                    Category {vatChoice === 'claimable' && <span className="text-red-500">*</span>}
+                    {t('expenses:fields.category')} {vatChoice === 'claimable' && <span className="text-red-500">*</span>}
                   </label>
                   <select className="input" value={categoryId} onChange={e => setCategoryId(e.target.value)}>
-                    <option value="">— Uncategorised —</option>
+                    <option value="">— {t('expenses:placeholders.uncategorized')} —</option>
                     {categories.map(c => (
                       <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
                     ))}
@@ -323,15 +323,15 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
               </div>
 
               <div>
-                <label className="label">Description <span className="text-red-500">*</span></label>
+                <label className="label">{t('expenses:fields.description')} <span className="text-red-500">*</span></label>
                 <input className="input" value={description} onChange={e => setDescription(e.target.value)}
-                  placeholder="e.g. Office cleaning supplies" />
+                  placeholder={t('expenses:placeholders.description')} dir="auto" />
               </div>
 
               <div>
-                <label className="label">Saved supplier (optional)</label>
+                <label className="label">{t('expenses:ui.savedSupplier')}</label>
                 <select className="input" value={supplierId} onChange={e => selectSupplier(e.target.value)}>
-                  <option value="">Enter supplier manually</option>
+                  <option value="">{t('expenses:ui.manualSupplier')}</option>
                   {suppliers.map(supplier => (
                     <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
                   ))}
@@ -340,19 +340,19 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
 
               <div>
                 <label className="label">
-                  Supplier / payee name {vatChoice === 'claimable' && <span className="text-red-500">*</span>}
+                  {t('expenses:fields.vendor')} {vatChoice === 'claimable' && <span className="text-red-500">*</span>}
                 </label>
                 <input className="input" value={vendorName} onChange={e => setVendorName(e.target.value)}
-                  placeholder="e.g. Al-Othaim Market" />
+                  placeholder={t('expenses:placeholders.vendor')} dir="auto" />
               </div>
             </div>
 
             {/* ── Amount & VAT ─────────────────────────────── */}
             <div className="space-y-4">
-              <SectionLabel>Amount &amp; VAT</SectionLabel>
+              <SectionLabel>{t('expenses:sections.amountVat')}</SectionLabel>
 
               <div>
-                <label className="label">Amount paid (SAR) <span className="text-red-500">*</span></label>
+                <label className="label">{t('expenses:fields.amountSar')} <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium pointer-events-none">
                     SAR
@@ -367,7 +367,7 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
               </div>
 
               <div>
-                <label className="label">VAT claimable?</label>
+                <label className="label">{t('expenses:fields.vat')}</label>
                 <div className="grid grid-cols-2 gap-2">
                   {SIMPLE_EXPENSE_VAT_OPTIONS.map(opt => (
                     <button
@@ -380,8 +380,7 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
                           : 'border-gray-200 hover:border-gray-300 text-gray-600'
                       }`}
                     >
-                      <p className="text-xs font-semibold">{opt.label}</p>
-                      <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{opt.desc}</p>
+                      <p className="text-xs font-semibold">{t(`expenses:vat.${opt.value}`)}</p>
                     </button>
                   ))}
                 </div>
@@ -391,16 +390,16 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
                 <div className="space-y-3 rounded-xl border border-primary-100 bg-primary-50/30 p-3">
                   <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="label">Supplier tax invoice no. <span className="text-red-500">*</span></label>
+                    <label className="label">{t('expenses:fields.taxInvoice')} <span className="text-red-500">*</span></label>
                     <input
                       className="input"
                       value={taxInvoiceNumber}
                       onChange={e => setTaxInvoiceNumber(e.target.value)}
-                      placeholder="Invoice or bill no."
+                      placeholder={t('expenses:placeholders.taxInvoice')}
                     />
                   </div>
                   <div>
-                    <label className="label">Supplier VAT no.</label>
+                    <label className="label">{t('expenses:fields.supplierVat')}</label>
                     <input
                       className="input"
                       value={supplierVatNumber}
@@ -411,37 +410,37 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
                     {supplierVatNumber && (
                       <p className={`mt-1 text-[10px] ${supplierVatValid ? 'text-emerald-600' : 'text-red-600'}`}>
                         {supplierVatValid
-                          ? 'Format valid — registration not independently verified.'
-                          : 'VAT number must contain exactly 15 digits.'}
+                          ? t('expenses:ui.formatValid')
+                          : t('expenses:ui.vatFormatInvalid')}
                       </p>
                     )}
                   </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="label">Supplier CR number</label>
+                      <label className="label">{t('expenses:fields.supplierCr')}</label>
                       <input className="input" value={supplierCrNumber}
-                        onChange={e => setSupplierCrNumber(e.target.value)} placeholder="Optional" />
+                        onChange={e => setSupplierCrNumber(e.target.value)} placeholder={t('expenses:placeholders.optional')} />
                     </div>
                     <div>
-                      <label className="label">Invoice time</label>
+                      <label className="label">{t('expenses:fields.invoiceTime')}</label>
                       <input className="input" type="time" value={invoiceTime}
                         onChange={e => setInvoiceTime(e.target.value)} />
                     </div>
                   </div>
                   <div>
-                    <label className="label">Supplier contact</label>
+                    <label className="label">{t('expenses:fields.supplierContact')}</label>
                     <input className="input" value={supplierContact}
-                      onChange={e => setSupplierContact(e.target.value)} placeholder="Contact person, phone, or email (optional)" />
+                      onChange={e => setSupplierContact(e.target.value)} placeholder={t('expenses:placeholders.supplierContact')} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="label">Taxable amount before VAT <span className="text-red-500">*</span></label>
+                      <label className="label">{t('expenses:fields.taxableAmount')} <span className="text-red-500">*</span></label>
                       <MoneyInput className="input" value={taxableAmount}
                         onValueChange={value => { setTaxableAmount(value); setVatAmountsManual(true) }} placeholder="0.00" />
                     </div>
                     <div>
-                      <label className="label">VAT amount <span className="text-red-500">*</span></label>
+                      <label className="label">{t('expenses:fields.vatAmount')} <span className="text-red-500">*</span></label>
                       <MoneyInput className="input" value={vatAmountInput}
                         onValueChange={value => { setVatAmountInput(value); setVatAmountsManual(true) }} placeholder="0.00" />
                     </div>
@@ -449,21 +448,21 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
                   <div className="flex flex-wrap gap-x-4 gap-y-1">
                     <button type="button" onClick={calculateFifteenPercentVat}
                       className="text-xs font-medium text-primary-600 hover:text-primary-700">
-                      Calculate included 15% VAT from gross
+                      {t('expenses:ui.calculateIncluded')}
                     </button>
                     <button type="button" onClick={useTaxableAndVatTotal}
                       className="text-xs font-medium text-primary-600 hover:text-primary-700">
-                      Set gross from taxable + VAT
+                      {t('expenses:ui.setGross')}
                     </button>
                   </div>
                   {!vatCheck.consistent && amountNum > 0 && (
                     <p className="flex items-center gap-1.5 text-xs text-red-600">
-                      <AlertTriangle size={13} /> Gross must equal taxable amount plus VAT.
+                      <AlertTriangle size={13} /> {t('expenses:errors.vatMismatch')}
                     </p>
                   )}
                   {vatCheck.consistent && vatCheck.unusualRate && (
                     <p className="flex items-center gap-1.5 text-xs text-amber-700">
-                      <AlertTriangle size={13} /> The VAT amount is not 15% of the taxable amount. Check the supplier invoice.
+                      <AlertTriangle size={13} /> {t('expenses:ui.vatRateWarning')}
                     </p>
                   )}
                 </div>
@@ -475,23 +474,23 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
                   {vatChoice === 'claimable' && (
                     <>
                       <div className="flex justify-between text-gray-500">
-                        <span>Expense before VAT</span>
+                        <span>{t('expenses:fields.taxableAmount')}</span>
                         <span className="tabular-nums font-medium"><Rial amount={taxableAmountNum} /></span>
                       </div>
                       <div className="flex justify-between text-gray-500">
-                        <span>Claimable VAT (15%)</span>
+                        <span>{t('expenses:vat.claimable')}</span>
                         <span className="tabular-nums font-medium"><Rial amount={vatAmountNum} /></span>
                       </div>
                     </>
                   )}
                   {vatChoice !== 'claimable' && (
                     <div className="flex justify-between text-gray-500">
-                      <span>Expense amount</span>
+                      <span>{t('expenses:fields.amount')}</span>
                       <span className="tabular-nums font-medium"><Rial amount={defaultVat.expenseBeforeVat} /></span>
                     </div>
                   )}
                   <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1.5">
-                    <span>Amount paid</span>
+                    <span>{t('expenses:fields.amount')}</span>
                     <span className="tabular-nums text-primary-600"><Rial amount={amountNum} /></span>
                   </div>
                 </div>
@@ -500,9 +499,9 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
 
             {/* ── Payment method ────────────────────────────── */}
             <div className="space-y-3">
-              <SectionLabel>Payment Method</SectionLabel>
+              <SectionLabel>{t('expenses:fields.paymentMethod')}</SectionLabel>
               <div className="flex gap-2">
-                {PAY_OPTIONS.map(({ value, label, icon: Icon }) => (
+                {PAY_OPTIONS.map(({ value, icon: Icon }) => (
                   <button
                     key={value}
                     type="button"
@@ -514,7 +513,7 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
                     }`}
                   >
                     <Icon size={15} />
-                    {label}
+                    {t(`expenses:payment.${value}`)}
                   </button>
                 ))}
               </div>
@@ -522,8 +521,8 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
 
             {/* ── Receipt upload ────────────────────────────── */}
             <div className="space-y-3">
-              <SectionLabel>Attach tax invoice — Optional</SectionLabel>
-              <p className="text-xs text-gray-400">Recommended for VAT records and audit support.</p>
+              <SectionLabel>{t('expenses:sections.receipt')}</SectionLabel>
+              <p className="text-xs text-gray-400">{t('expenses:ui.receiptHint')}</p>
               <input
                 ref={fileRef}
                 type="file"
@@ -534,26 +533,26 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
               {imagePreview ? (
                 <div className="relative group/img">
                   {imagePreview.startsWith('blob:') || imagePreview.match(/\.(jpg|jpeg|png|webp|heic)/i) ? (
-                    <img src={imagePreview} alt="Receipt"
+                    <img src={imagePreview} alt={t('expenses:fields.receipt')}
                       className="w-full h-40 object-cover rounded-xl border border-gray-200" />
                   ) : (
                     <div className="w-full h-20 flex items-center justify-center bg-gray-50 rounded-xl border border-gray-200">
-                      <p className="text-sm text-gray-500">📄 Receipt attached</p>
+                      <p className="text-sm text-gray-500">📄 {t('expenses:ui.receiptAttached')}</p>
                     </div>
                   )}
                   <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 group-hover/img:opacity-100 transition-opacity bg-black/20 rounded-xl">
                     <button type="button" onClick={() => fileRef.current?.click()}
                       className="bg-white text-gray-700 text-xs font-medium px-3 py-1.5 rounded-lg shadow">
-                      Change
+                      {t('expenses:ui.change')}
                     </button>
                     <button type="button" onClick={() => {
-                      if (window.confirm('Remove this supporting document from the expense?')) {
+                      if (window.confirm(t('expenses:ui.removeConfirm'))) {
                         setImageFile(null)
                         setImagePreview(null)
                       }
                     }}
                       className="bg-white text-red-500 text-xs font-medium px-3 py-1.5 rounded-lg shadow">
-                      Remove
+                      {t('expenses:ui.remove')}
                     </button>
                   </div>
                 </div>
@@ -561,26 +560,26 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
                 <button type="button" onClick={() => fileRef.current?.click()}
                   className="w-full h-24 flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-gray-200 rounded-xl hover:border-primary-400 hover:bg-primary-50/20 transition-colors group/up">
                   <ImagePlus size={20} className="text-gray-300 group-hover/up:text-primary-400" />
-                  <p className="text-xs text-gray-400 group-hover/up:text-primary-500">Attach receipt photo or PDF</p>
+                  <p className="text-xs text-gray-400 group-hover/up:text-primary-500">{t('expenses:ui.attachReceipt')}</p>
                 </button>
               )}
               {vatChoice === 'claimable' && !imagePreview && !imageFile && (
                 <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                  <AlertTriangle size={14} /> No supporting document attached.
+                  <AlertTriangle size={14} /> {t('expenses:ui.supportMissing')}
                 </div>
               )}
               {vatChoice === 'claimable' && (imagePreview || imageFile) && (
                 <div className="flex items-center gap-2 text-xs text-emerald-600">
-                  <CheckCircle2 size={14} /> Supporting document attached.
+                  <CheckCircle2 size={14} /> {t('expenses:ui.supportAttached')}
                 </div>
               )}
             </div>
 
             {/* ── Notes ─────────────────────────────────────── */}
             <div>
-              <label className="label">Notes</label>
+              <label className="label">{t('expenses:fields.notes')}</label>
               <textarea className="input resize-none" rows={2} value={notes}
-                onChange={e => setNotes(e.target.value)} placeholder="Optional notes..." />
+                onChange={e => setNotes(e.target.value)} placeholder={t('expenses:placeholders.notes')} dir="auto" />
             </div>
 
             {error && (
@@ -592,9 +591,9 @@ export default function ExpenseDrawer({ open, expense, categories, onClose, onSa
 
           {/* Footer */}
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>{t('common:cancel')}</Button>
             <Button type="submit" className="flex-1" loading={saving}>
-              {expense ? 'Save Changes' : 'Add Expense'}
+              {t(expense ? 'expenses:actions.saveChanges' : 'expenses:add')}
             </Button>
           </div>
         </form>

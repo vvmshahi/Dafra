@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import DailyExpensesTab from './DailyExpensesTab'
 import FixedExpensesTab from './FixedExpensesTab'
+import { useTranslation } from 'react-i18next'
 
 type Tab = 'daily' | 'fixed'
 
 export default function ExpensesPage() {
+  const { t } = useTranslation('expenses')
   const [tab, setTab] = useState<Tab>('daily')
 
   return (
@@ -12,14 +14,14 @@ export default function ExpensesPage() {
 
       {/* ── Header ──────────────────────────────────────────── */}
       <div className="flex items-center gap-3">
-        <h1 className="text-lg font-bold text-gray-900 flex-1">Expenses</h1>
+        <h1 className="text-lg font-bold text-gray-900 flex-1">{t('title')}</h1>
       </div>
 
       {/* ── Tab switcher ────────────────────────────────────── */}
       <div className="flex items-center bg-white border border-gray-100 rounded-2xl p-1 w-fit shadow-card">
         {([
-          { key: 'daily',  label: 'Daily Expenses'  },
-          { key: 'fixed',  label: 'Fixed Expenses'  },
+          { key: 'daily',  label: t('daily') },
+          { key: 'fixed',  label: t('fixed') },
         ] as { key: Tab; label: string }[]).map(t => (
           <button
             key={t.key}
