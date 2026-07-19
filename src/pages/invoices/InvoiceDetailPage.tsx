@@ -25,7 +25,8 @@ import {
   documentLabelLines,
   documentNames,
   documentPaymentLabel,
-  normalizeDocumentLanguage,
+  resolveCreditNoteDocumentLanguage,
+  resolveInvoiceDocumentLanguage,
 } from '@/localization/documents'
 
 function WhatsAppIcon({ size = 13 }: { size?: number }) {
@@ -72,6 +73,7 @@ interface OriginalInvoiceLink {
   invoice_number: string
   total_amount: number
   zatca_status: ZatcaStatus
+  document_language: 'en' | 'ar' | 'both' | null
 }
 
 interface RefundableItemSummary {
@@ -106,7 +108,7 @@ function fmtQty(n: number): string {
 
 const INVOICE_DETAIL_SELECT = `
   id, tenant_id, branch_id, customer_id, created_by,
-  invoice_number, invoice_reference, original_invoice_id, credit_reason,
+  invoice_number, document_language, invoice_reference, original_invoice_id, credit_reason,
   credit_note_idempotency_key, zatca_uuid, zatca_invoice_type, zatca_type_code,
   zatca_counter_number, zatca_prev_invoice_hash, zatca_xml_hash, zatca_qr_code,
   zatca_status, zatca_submission_id, zatca_submitted_at, zatca_clearance_status,
@@ -233,7 +235,7 @@ export default function InvoiceDetailPage() {
 	          inv.original_invoice_id
 	            ? supabase
 	              .from('invoices')
-	              .select('id, invoice_number, total_amount, zatca_status')
+              .select('id, invoice_number, total_amount, zatca_status, document_language')
               .eq('id', inv.original_invoice_id)
               .maybeSingle()
             : Promise.resolve({ data: null }),
@@ -568,7 +570,9 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
   // ── Derived display values ─────────────────────────────────────────────────
 
-  const documentLanguage = normalizeDocumentLanguage(branch.invoice_language)
+  const documentLanguage = isCreditNote
+    ? resolveCreditNoteDocumentLanguage(invoice.document_language, originalInvoiceLink?.document_language, branch.invoice_language)
+    : resolveInvoiceDocumentLanguage(invoice.document_language, branch.invoice_language)
   const documentDir = documentDirection(documentLanguage)
   const invDate = documentDate(invoice.created_at, documentLanguage)
   const invTime = toSaudiTime(invoice.created_at)

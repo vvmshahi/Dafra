@@ -13,6 +13,7 @@ import { documentDirection, documentFontFamily, documentLabel, documentLabelLine
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface FormState {
+  invoice_language: 'en' | 'ar' | 'both'
   display_name: string
   phone: string
   show_logo: boolean
@@ -109,7 +110,7 @@ function InfoTip({ text }: { text: string }) {
 // ── A4 Invoice Preview ────────────────────────────────────────────────────────
 
 function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | null }) {
-  const documentLanguage = normalizeDocumentLanguage(branch?.invoice_language)
+  const documentLanguage = normalizeDocumentLanguage(form.invoice_language)
   const documentDir = documentDirection(documentLanguage)
   const brandName = form.display_name || branch?.business_name || branch?.name || 'Business Name'
   const brandNames = documentNames(documentLanguage, brandName, branch?.business_name_ar || branch?.name_ar)
@@ -243,11 +244,13 @@ export default function InvoiceSettingsPage() {
   const [saveError,    setSaveError]    = useState<string | null>(null)
   const [fieldErrors,  setFieldErrors]  = useState<FieldErrors>({})
   const [savedSignature, setSavedSignature] = useState<string | null>(null)
+  const [savedForm, setSavedForm] = useState<FormState | null>(null)
   const [uploadedLogoPendingSave, setUploadedLogoPendingSave] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [previewMode,  setPreviewMode]  = useState<'thermal' | 'a4'>('thermal')
 
   const [form, setForm] = useState<FormState>({
+    invoice_language: 'both',
     display_name:     '',
     phone:            '',
     show_logo:        true,
@@ -272,6 +275,7 @@ export default function InvoiceSettingsPage() {
         const b = data as Branch
         setBranch(b)
         const nextForm: FormState = {
+          invoice_language: normalizeDocumentLanguage(b.invoice_language),
           display_name:     b.display_name     ?? '',
           phone:            b.phone            ?? '',
           show_logo:        b.show_logo        ?? true,
@@ -286,6 +290,7 @@ export default function InvoiceSettingsPage() {
           print_mode:       (b.print_mode as 'thermal' | 'pdf' | 'both') ?? 'thermal',
         }
         setForm(nextForm)
+        setSavedForm(nextForm)
         setSavedSignature(formSignature(nextForm))
       }
       setLoading(false)
@@ -359,6 +364,7 @@ export default function InvoiceSettingsPage() {
       const normalizedWebsite = normalizeWebsite(form.website)
       const payload = {
         branch_id:         bid,
+        invoice_language: form.invoice_language,
         display_name:     form.display_name.trim()     || null,
         phone:            form.phone.trim()            || null,
         show_logo:        form.show_logo,
@@ -385,6 +391,7 @@ export default function InvoiceSettingsPage() {
         receipt_footer: form.receipt_footer.trim(),
       }
       setForm(savedForm)
+      setSavedForm(savedForm)
       setBranch(prev => prev ? { ...prev, ...payload } : prev)
       setSavedSignature(formSignature(savedForm))
       setUploadedLogoPendingSave(false)
@@ -395,6 +402,15 @@ export default function InvoiceSettingsPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  function cancelChanges() {
+    if (!savedForm || saving) return
+    setForm(savedForm)
+    setFieldErrors({})
+    setSaveError(null)
+    setSaveOk(false)
+    setUploadedLogoPendingSave(false)
   }
 
   if (loading) {
@@ -438,6 +454,30 @@ export default function InvoiceSettingsPage() {
 
         {/* ── LEFT: Form ──────────────────────── */}
         <div className="min-w-0 space-y-4">
+
+          <div className="card border-primary-100 bg-primary-50/30 px-5 py-4">
+            <h2 className="text-sm font-semibold text-gray-900">{t('settings:invoiceSettings.documentLanguage')}</h2>
+            <p className="mt-1 text-xs text-gray-500">{t('settings:invoiceSettings.documentLanguageHelp')}</p>
+            <div className="mt-3 grid grid-cols-3 gap-2" role="radiogroup" aria-label={t('settings:invoiceSettings.documentLanguage')}>
+              {([
+                { value: 'en' as const, label: 'English' },
+                { value: 'ar' as const, label: 'العربية' },
+                { value: 'both' as const, label: t('settings:invoiceSettings.bilingual') },
+              ]).map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={form.invoice_language === option.value}
+                  onClick={() => set('invoice_language', option.value)}
+                  className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition-colors ${form.invoice_language === option.value ? 'border-primary-500 bg-primary-500 text-white' : 'border-gray-200 bg-white text-gray-700 hover:border-primary-300'}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[10px] text-gray-400">{t('settings:invoiceSettings.documentLanguageHistory')}</p>
+          </div>
 
           {/* Business identity */}
           <div className="card px-5 py-4 space-y-3.5">
@@ -664,11 +704,16 @@ export default function InvoiceSettingsPage() {
                   {hasValidationErrors ? t('settings:invoiceSettings.fixFields') : t('settings:invoiceSettings.futurePrints')}
                 </p>
               </div>
-              <button
-                onClick={save}
-                disabled={saveDisabled}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <div className="flex gap-2">
+                <button type="button" onClick={cancelChanges} disabled={!hasUnsavedChanges || saving}
+                  className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50">
+                  {t('common:cancel')}
+                </button>
+                <button
+                  onClick={save}
+                  disabled={saveDisabled}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
                 {saving ? (
                   <><Loader2 size={15} className="animate-spin" /> {t('settings:invoiceSettings.saving')}</>
                 ) : saveOk ? (
@@ -676,7 +721,8 @@ export default function InvoiceSettingsPage() {
                 ) : (
                   t('settings:invoiceSettings.saveSettings')
                 )}
-              </button>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -713,7 +759,7 @@ export default function InvoiceSettingsPage() {
               <div className="w-[280px]">
                 <ThermalReceipt
                   preview
-                  documentLanguage={normalizeDocumentLanguage(branch?.invoice_language)}
+                  documentLanguage={normalizeDocumentLanguage(form.invoice_language)}
                   businessNameAr={branch?.business_name_ar || branch?.name_ar || previewBrandName}
                   businessNameEn={previewLegalName}
                   branchName={branch?.name}

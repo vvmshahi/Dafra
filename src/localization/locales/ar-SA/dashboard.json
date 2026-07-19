@@ -1,0 +1,68 @@
+{
+  "status": {
+    "posted": "مرحّلة", "draft": "مسودة", "paid": "مدفوعة", "pending": "قيد الانتظار",
+    "open": "مفتوح", "closed": "مغلق", "longOpen": "مفتوح منذ مدة", "active": "نشط", "inactive": "غير نشط",
+    "main": "رئيسي", "credit": "دائن"
+  },
+  "zatca": {
+    "connected": "متصل بهيئة الزكاة والضريبة والجمارك", "phase2Unavailable": "حالة المرحلة الثانية غير متاحة",
+    "phase1": "المرحلة الأولى", "phase1Qr": "المرحلة الأولى — فواتير برمز QR",
+    "productionConnected": "متصل ببيئة الإنتاج", "productionPending": "إعداد بيئة الإنتاج قيد الانتظار",
+    "productionFailed": "إعداد بيئة الإنتاج يحتاج إلى مراجعة", "productionUnavailable": "حالة بيئة الإنتاج غير متاحة"
+  },
+  "register": {
+    "none": "لا توجد جلسة صندوق", "noneYet": "لا توجد جلسة صندوق حتى الآن", "openPrompt": "افتح الصندوق لبدء تتبع مبيعات هذه الوردية.",
+    "current": "جلسة الصندوق الحالية", "last": "جلسة الصندوق الأخيرة", "currentShort": "الجلسة الحالية", "lastShort": "الجلسة الأخيرة",
+    "session": "الجلسة", "registerCurrent": "الصندوق الحالي", "registerClosed": "الصندوق المغلق",
+    "opened": "فُتح", "closed": "أُغلق", "earlier": "في وقت سابق", "stillOpen": "ما زال مفتوحاً",
+    "timeOpen": "فُتح {{opened}} ← ما زال مفتوحاً", "timeClosed": "فُتح {{opened}} ← أُغلق {{closed}}", "timeOpened": "فُتح {{opened}}",
+    "longOpenWarning": "جلسة الصندوق هذه مفتوحة منذ {{time}}. أغلقها قبل بدء وردية جديدة.",
+    "closeBeforeShift": "أغلق هذا الصندوق قبل بدء وردية جديدة.",
+    "openingCash": "النقد الافتتاحي", "expectedCash": "النقد المتوقع", "actualCash": "النقد الفعلي", "difference": "الفرق",
+    "expectedDrawer": "المتوقع في الصندوق", "actualVsExpected": "الفعلي مقابل المتوقع",
+    "currentCount": "{{current}} حالية · {{last}} سابقة", "retryLoad": "أعد المحاولة لتحميل جلسات الصندوق"
+  },
+  "kpi": {
+    "grossSales": "إجمالي المبيعات", "creditNotes": "الإشعارات الدائنة", "refundDocuments": "مستندات الاسترداد",
+    "netSales": "صافي المبيعات", "grossLessCredits": "الإجمالي بعد خصم الإشعارات الدائنة", "invoices": "الفواتير",
+    "sessionInvoices": "فواتير الجلسة", "sessionCash": "نقد الجلسة", "sessionCard": "بطاقات الجلسة",
+    "cash": "نقداً", "card": "بطاقة", "cashAndSplit": "النقد والمدفوعات المقسّمة نقداً", "cardAndSplit": "البطاقات والمدفوعات المقسّمة بالبطاقة",
+    "netVat": "صافي ضريبة القيمة المضافة", "sessionNetVat": "صافي ضريبة الجلسة", "registerNetVat": "صافي ضريبة جلسات الصندوق",
+    "expectedCash": "النقد المتوقع", "acrossSessions": "عبر الجلسات المعروضة", "vat": "ضريبة القيمة المضافة",
+    "expenses": "المصروفات", "creditNotesRefunds": "الإشعارات الدائنة والاستردادات",
+    "invoiceCount_one": "{{count}} فاتورة", "invoiceCount_other": "{{count}} فاتورة",
+    "sessionInvoicesLabel": "فواتير {{prefix}}", "sessionCashLabel": "نقد {{prefix}}", "sessionCardLabel": "بطاقات {{prefix}}",
+    "sessionSalesLabel": "مبيعات {{prefix}}"
+  },
+  "owner": {
+    "eyebrow": "لوحة تحكم المالك", "overview": "نظرة عامة على المنشأة",
+    "subtitle": "جلسات الصندوق وحالة الفروع والعمليات اليومية.", "manageBranches": "إدارة الفروع",
+    "branchSessions": "جلسات صناديق الفروع", "manage": "إدارة", "viewDetails": "عرض التفاصيل",
+    "welcome": "مرحباً بك في كبري!", "noBranches": "لم تضف أي فروع حتى الآن.",
+    "addFirstHelp": "أضف فرعك الأول لبدء البيع وإصدار فواتير جاهزة لهيئة الزكاة والضريبة والجمارك واستخدام نقطة البيع.",
+    "addBranch": "إضافة فرع", "branchHelp": "لكل فرع فواتيره ونقطة بيعه وبيانات اعتماد هيئة الزكاة والضريبة والجمارك الخاصة به."
+  },
+  "branch": {
+    "operations": "عمليات الفرع", "dashboard": "لوحة تحكم الفرع", "myBranch": "فرعي", "loading": "جارٍ تحميل الفرع...",
+    "newSale": "بيع جديد", "quickActions": "إجراءات سريعة", "workflow": "سير عمل الفرع اليومي",
+    "openPos": "فتح نقطة البيع", "recordCosts": "تسجيل التكاليف", "reviewReceipts": "مراجعة الإيصالات",
+    "lowStock_one": "منتج واحد منخفض المخزون", "lowStock_other": "{{count}} منتجات منخفضة المخزون"
+  },
+  "recent": {
+    "title": "أحدث الفواتير", "viewAll": "عرض الكل", "none": "لا توجد فواتير حتى الآن",
+    "startSale": "ابدأ أول عملية بيع من نقطة البيع", "invoice": "الفاتورة", "customer": "العميل",
+    "amount": "المبلغ", "status": "الحالة", "date": "التاريخ", "walkIn": "عميل نقدي"
+  },
+  "errors": {
+    "dashboardRefresh": "تحتاج بيانات لوحة التحكم إلى تحديث", "branchRefresh": "تحتاج بيانات لوحة الفرع إلى تحديث",
+    "branchesLoad": "تعذر تحميل الفروع", "branchesLoadDetail": "تعذر تحميل الفروع. حدّث الصفحة أو افتح صفحة الفروع للتحقق من الصلاحية.",
+    "metadata": "تعذر تحديث بيانات الفرع. ما زالت إجماليات جلسة الصندوق معروضة.",
+    "dashboardLoad": "تعذر تحميل بيانات جلسات الصندوق في لوحة التحكم. حدّث الصفحة وحاول مجدداً.",
+    "branchLoad": "تعذر تحميل بيانات لوحة الفرع. حدّث الصفحة وحاول مجدداً.",
+    "recentLoad": "تعذر تحميل أحدث الفواتير.", "unavailable": "غير متاح", "retry": "إعادة المحاولة",
+    "registerSchema": "خدمة جلسات الصندوق غير متاحة بعد. حدّث الصفحة بعد تحديث الخدمة.",
+    "registerPermission": "تعذر التحقق من صلاحيات جلستك. حدّث الصفحة وسجّل الدخول مجدداً عند الحاجة.",
+    "registerInvalid": "طلب جلسة الصندوق غير صالح. حدّث الصفحة وحاول مجدداً.",
+    "registerLoad": "تعذر تحميل بيانات جلسة الصندوق. يرجى تحديث الصفحة."
+  }
+}

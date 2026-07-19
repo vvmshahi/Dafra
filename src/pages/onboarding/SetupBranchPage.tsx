@@ -25,6 +25,7 @@ import {
   validateBranchUsernameInput,
 } from '@/lib/utils/branchUsername'
 import { branchCreationErrorMessage, branchIdFromRpcResult } from '@/lib/utils/branchCreation'
+import { AuthenticatedLanguageSwitch } from '@/components/localization/AuthenticatedLanguageSwitch'
 
 const VAT_RE    = /^3\d{13}3$/
 const CR_RE     = /^[a-zA-Z0-9]+$/
@@ -139,6 +140,8 @@ export default function SetupBranchPage() {
         <div className="absolute inset-x-0 top-0 h-1 bg-gold-500" />
         <div className="mx-auto flex max-w-7xl items-center justify-between">
           <MeemLogo size="lg" />
+          <div className="flex items-center gap-2">
+          <AuthenticatedLanguageSwitch inverse />
           <button
             onClick={() => supabase.auth.signOut()}
             className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white"
@@ -146,6 +149,7 @@ export default function SetupBranchPage() {
             <LogOut size={13} />
             Sign out
           </button>
+          </div>
         </div>
 
         <div className="mx-auto mt-8 grid max-w-7xl gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end">

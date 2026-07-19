@@ -97,6 +97,9 @@ This glossary is a localization working draft for Saudi Arabic review. The propo
 | `refunds.cashAmount` | Cash Refund | مبلغ الاسترداد النقدي | Split-refund allocation | Cash portion actually returned. | Native review required |
 | `refunds.cardAmount` | Card Refund | مبلغ الاسترداد إلى البطاقة | Split-refund allocation | Card portion actually returned. | Native review required |
 | `refunds.split` | Split Refund | استرداد مقسّم | Refund method selector | One refund allocated between cash and card. | Native review required |
+| `settings.invoiceSettings.documentLanguage` | Invoice document language | لغة مستندات الفواتير | Branch Invoice Settings | Independent from the authenticated interface language. | Native review required |
+| `settings.invoiceSettings.bilingual` | Bilingual | ثنائي اللغة | Invoice language selector | Prints English and Arabic on the same document. | Native review required |
+| `navigation.interfaceLanguage` | Interface language | لغة الواجهة | Authenticated sidebar | Changes Kubri UI only; never changes issued-document language. | Native review required |
 
 ## Review rules
 

@@ -8,6 +8,8 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { saudiDateStr } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
+import { useLocale } from '@/localization/useLocale'
+import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/Badge'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { productionStatusLabel } from '@/lib/zatca/status'
@@ -16,21 +18,17 @@ import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
 import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
 import {
   type RegisterSessionSummary,
-  formatSaudiSessionDateTime,
   logRegisterSessionRpcError,
   normalizeRegisterSession,
-  registerSessionLabel,
-  registerSessionRpcErrorMessage,
-  registerSessionTimeRange,
 } from '@/lib/registerSessions'
 
 const db = () => supabase as any
 
 const statusConfig = {
-  posted:  { variant: 'success' as const, label: 'Posted',  icon: CheckCircle2 },
-  draft:   { variant: 'neutral' as const, label: 'Draft',   icon: AlertCircle },
-  paid:    { variant: 'success' as const, label: 'Paid',    icon: CheckCircle2 },
-  pending: { variant: 'warning' as const, label: 'Pending', icon: Clock },
+  posted:  { variant: 'success' as const, labelKey: 'status.posted',  icon: CheckCircle2 },
+  draft:   { variant: 'neutral' as const, labelKey: 'status.draft',   icon: AlertCircle },
+  paid:    { variant: 'success' as const, labelKey: 'status.paid',    icon: CheckCircle2 },
+  pending: { variant: 'warning' as const, labelKey: 'status.pending', icon: Clock },
 }
 
 const zatcaIndicatorClass = {
@@ -107,7 +105,7 @@ function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
           <p className="text-xs font-semibold uppercase tracking-wide text-white/70">{label}</p>
           {loading
             ? <div className="mt-1.5 h-7 w-24 bg-white/20 rounded animate-pulse" />
-            : <p className="mt-2 text-2xl font-black text-white tracking-tight tabular-nums">{value}</p>
+            : <p dir="ltr" className="mt-2 text-2xl font-black text-white tracking-tight tabular-nums">{value}</p>
           }
           <p className="mt-2 text-xs leading-5 text-white/65">{sub}</p>
         </div>
@@ -126,11 +124,12 @@ function RegisterSessionPanel({ session, loading, error, children }: {
   error: string
   children?: React.ReactNode
 }) {
-  const title = registerSessionLabel(session)
+  const { t, i18n } = useTranslation('dashboard')
+  const title = session?.sessionId ? session.status === 'open' ? t('register.current') : t('register.last') : t('register.none')
   const hasSession = !!session?.sessionId
   const isOpen = session?.status === 'open'
-  const labelPrefix = isOpen ? 'Session' : 'Last Session'
-  const cashFinalLabel = session?.status === 'closed' && session.actualCash !== null ? 'Difference' : 'Expected Cash'
+  const labelPrefix = isOpen ? t('register.session') : t('register.lastShort')
+  const cashFinalLabel = session?.status === 'closed' && session.actualCash !== null ? t('register.difference') : t('register.expectedCash')
   const cashFinalValue = session?.status === 'closed' && session.actualCash !== null
     ? session.cashDifference ?? 0
     : session?.expectedCash ?? 0
@@ -151,8 +150,8 @@ function RegisterSessionPanel({ session, loading, error, children }: {
       ) : !hasSession ? (
         <div className="grid gap-4 lg:grid-cols-[3fr_1fr]">
           <div className="rounded-2xl border border-gray-100 bg-white px-5 py-6 shadow-sm">
-            <h2 className="text-sm font-bold text-gray-900">No Register Session</h2>
-            <p className="mt-1 text-sm text-gray-500">Open a register to start tracking sales for this shift.</p>
+            <h2 className="text-sm font-bold text-gray-900">{t('register.none')}</h2>
+            <p className="mt-1 text-sm text-gray-500">{t('register.openPrompt')}</p>
           </div>
           {children}
         </div>
@@ -160,58 +159,58 @@ function RegisterSessionPanel({ session, loading, error, children }: {
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             <StatCard
-              label="Gross Sales"
+              label={t('kpi.grossSales')}
               value={<Rial amount={grossSales} />}
-              sub={`${session.invoiceCount} invoice${session.invoiceCount !== 1 ? 's' : ''}`}
+              sub={t('kpi.invoiceCount', { count: session.invoiceCount })}
               icon={TrendingUp}
               gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28]"
             />
             <StatCard
-              label="Credit Notes"
+              label={t('kpi.creditNotes')}
               value={<Rial amount={session.creditNoteTotal} />}
-              sub="Refund documents"
+              sub={t('kpi.refundDocuments')}
               icon={Receipt}
               gradient="bg-gradient-to-br from-[#64748b] to-[#334155]"
             />
             <StatCard
-              label="Net Sales"
+              label={t('kpi.netSales')}
               value={<Rial amount={session.totalSales} />}
-              sub="Gross less credit notes"
+              sub={t('kpi.grossLessCredits')}
               icon={TrendingUp}
               gradient="bg-gradient-to-br from-[#0e6f53] to-[#0F4A28]"
             />
             <StatCard
-              label={`${labelPrefix} Invoices`}
+              label={t('kpi.sessionInvoicesLabel', { prefix: labelPrefix })}
               value={String(session.invoiceCount)}
-              sub={isOpen ? 'Current register' : 'Closed register'}
+              sub={isOpen ? t('register.registerCurrent') : t('register.registerClosed')}
               icon={FileText}
               gradient="bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]"
             />
             <StatCard
-              label={`${labelPrefix} Cash`}
+              label={t('kpi.sessionCashLabel', { prefix: labelPrefix })}
               value={<Rial amount={session.cashTotal} />}
-              sub="Cash and split cash"
+              sub={t('kpi.cashAndSplit')}
               icon={Banknote}
               gradient="bg-gradient-to-br from-[#059669] to-[#047857]"
             />
             <StatCard
-              label={`${labelPrefix} Card`}
+              label={t('kpi.sessionCardLabel', { prefix: labelPrefix })}
               value={<Rial amount={session.cardTotal} />}
-              sub="Card and split card"
+              sub={t('kpi.cardAndSplit')}
               icon={CreditCard}
               gradient="bg-gradient-to-br from-[#0891b2] to-[#0e7490]"
             />
             <StatCard
-              label="Net VAT"
+              label={t('kpi.netVat')}
               value={<Rial amount={session.vatTotal} />}
-              sub="Session net VAT"
+              sub={t('kpi.sessionNetVat')}
               icon={BadgePercent}
               gradient="bg-gradient-to-br from-[#b45309] to-[#92400e]"
             />
             <StatCard
               label={cashFinalLabel}
               value={<Rial amount={cashFinalValue} />}
-              sub={session.status === 'closed' && session.actualCash !== null ? 'Actual vs expected' : 'Expected in drawer'}
+              sub={session.status === 'closed' && session.actualCash !== null ? t('register.actualVsExpected') : t('register.expectedDrawer')}
               icon={Receipt}
               gradient="bg-gradient-to-br from-[#4f46e5] to-[#3730a3]"
             />
@@ -222,9 +221,15 @@ function RegisterSessionPanel({ session, loading, error, children }: {
               <div className="border-b border-gray-100 bg-gradient-to-r from-[#F7FAF6] to-white px-5 py-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary-600">Current Register Session</p>
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary-600">{t('register.current')}</p>
                     <h2 className="mt-1 text-lg font-black text-gray-950">{title}</h2>
-                    <p className="mt-1 text-xs text-gray-500">{registerSessionTimeRange(session)}</p>
+                    <p className="mt-1 text-xs text-gray-500">{session.openedAt
+                      ? session.status === 'open'
+                        ? t('register.timeOpen', { opened: new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) })
+                        : session.closedAt
+                        ? t('register.timeClosed', { opened: new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }), closed: new Date(session.closedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) })
+                        : t('register.timeOpened', { opened: new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) })
+                      : t('register.noneYet')}</p>
                   </div>
                   <span className={`rounded-full px-3 py-1.5 text-[10px] font-black ${
                     session.isLongOpen
@@ -233,7 +238,7 @@ function RegisterSessionPanel({ session, loading, error, children }: {
                       ? 'bg-emerald-100 text-emerald-700'
                       : 'bg-gray-100 text-gray-600'
                   }`}>
-                    {session.isLongOpen ? 'Long open' : session.status === 'open' ? 'Open' : 'Closed'}
+                    {session.isLongOpen ? t('status.longOpen') : session.status === 'open' ? t('status.open') : t('status.closed')}
                   </span>
                 </div>
               </div>
@@ -241,19 +246,19 @@ function RegisterSessionPanel({ session, loading, error, children }: {
               <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
                 {(session.status === 'open'
                   ? [
-                    { label: 'Opened', value: session.openedAt ? formatSaudiSessionDateTime(session.openedAt) : 'Earlier' },
-                    { label: 'Opening cash', value: <Rial amount={session.openingCash} /> },
-                    { label: 'Expected cash', value: <Rial amount={session.expectedCash} />, emphasis: true },
-                    { label: 'Credit notes/refunds', value: <Rial amount={session.creditNoteTotal} /> },
-                    { label: 'Expenses', value: <Rial amount={session.expensesTotal} /> },
+                    { label: t('register.opened'), value: session.openedAt ? new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : t('register.earlier') },
+                    { label: t('register.openingCash'), value: <Rial amount={session.openingCash} /> },
+                    { label: t('register.expectedCash'), value: <Rial amount={session.expectedCash} />, emphasis: true },
+                    { label: t('kpi.creditNotesRefunds'), value: <Rial amount={session.creditNoteTotal} /> },
+                    { label: t('kpi.expenses'), value: <Rial amount={session.expensesTotal} /> },
                   ]
                   : [
-                    { label: 'Closed', value: session.closedAt ? formatSaudiSessionDateTime(session.closedAt) : 'Closed register' },
-                    { label: 'Opening cash', value: <Rial amount={session.openingCash} /> },
-                    { label: 'Actual cash', value: <Rial amount={session.actualCash ?? 0} /> },
-                    { label: 'Difference', value: <Rial amount={session.cashDifference ?? 0} />, emphasis: true },
-                    { label: 'Credit notes/refunds', value: <Rial amount={session.creditNoteTotal} /> },
-                    { label: 'Expenses', value: <Rial amount={session.expensesTotal} /> },
+                    { label: t('register.closed'), value: session.closedAt ? new Date(session.closedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : t('register.registerClosed') },
+                    { label: t('register.openingCash'), value: <Rial amount={session.openingCash} /> },
+                    { label: t('register.actualCash'), value: <Rial amount={session.actualCash ?? 0} /> },
+                    { label: t('register.difference'), value: <Rial amount={session.cashDifference ?? 0} />, emphasis: true },
+                    { label: t('kpi.creditNotesRefunds'), value: <Rial amount={session.creditNoteTotal} /> },
+                    { label: t('kpi.expenses'), value: <Rial amount={session.expensesTotal} /> },
                   ]).map(item => (
                   <div key={item.label} className={`rounded-2xl border px-4 py-3 ${
                     item.emphasis
@@ -261,7 +266,7 @@ function RegisterSessionPanel({ session, loading, error, children }: {
                       : 'border-gray-100 bg-gray-50/70'
                   }`}>
                     <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{item.label}</p>
-                    <p className={`mt-1 text-sm font-black tabular-nums ${item.emphasis ? 'text-primary-700' : 'text-gray-900'}`}>
+                    <p dir="ltr" className={`mt-1 text-sm font-black tabular-nums ${item.emphasis ? 'text-primary-700' : 'text-gray-900'}`}>
                       {item.value}
                     </p>
                   </div>
@@ -272,7 +277,7 @@ function RegisterSessionPanel({ session, loading, error, children }: {
                 <div className="mx-5 mb-5 flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
                   <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-amber-600" />
                   <p className="text-xs text-amber-800">
-                    This register session has been open since {session.openedAt ? formatSaudiSessionDateTime(session.openedAt) : 'earlier'}. Close it before starting a new shift.
+                    {t('register.longOpenWarning', { time: session.openedAt ? new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : t('register.earlier') })}
                   </p>
                 </div>
               )}
@@ -290,17 +295,18 @@ function QuickActionsPanel({ onNavigate, lowStock, lowStockLoading }: {
   lowStock: Array<{ name: string }>
   lowStockLoading: boolean
 }) {
+  const { t } = useTranslation('dashboard')
   const actions = [
-    { label: 'New Sale', desc: 'Open POS', icon: Receipt, path: '/pos', primary: true },
-    { label: 'Expenses', desc: 'Record costs', icon: CreditCard, path: '/expenses', primary: false },
-    { label: 'Invoices', desc: 'Review receipts', icon: FileText, path: '/invoices', primary: false },
+    { label: t('branch.newSale'), desc: t('branch.openPos'), icon: Receipt, path: '/pos', primary: true },
+    { label: t('kpi.expenses'), desc: t('branch.recordCosts'), icon: CreditCard, path: '/expenses', primary: false },
+    { label: t('kpi.invoices'), desc: t('branch.reviewReceipts'), icon: FileText, path: '/invoices', primary: false },
   ]
 
   return (
     <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
       <div className="mb-4">
-        <h2 className="text-sm font-black text-gray-900">Quick Actions</h2>
-        <p className="mt-0.5 text-xs text-gray-400">Daily branch workflow</p>
+        <h2 className="text-sm font-black text-gray-900">{t('branch.quickActions')}</h2>
+        <p className="mt-0.5 text-xs text-gray-400">{t('branch.workflow')}</p>
       </div>
 
       <div className="grid gap-2.5">
@@ -333,7 +339,7 @@ function QuickActionsPanel({ onNavigate, lowStock, lowStockLoading }: {
         <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-amber-100 bg-amber-50 px-3.5 py-3">
           <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-amber-500" />
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-amber-800">{lowStock.length} product{lowStock.length !== 1 ? 's' : ''} low on stock</p>
+            <p className="text-xs font-semibold text-amber-800">{t('branch.lowStock', { count: lowStock.length })}</p>
             <p className="mt-0.5 truncate text-[11px] text-amber-600">
               {lowStock.map(p => p.name).join(', ')}
             </p>
@@ -429,7 +435,17 @@ function logBranchDashboardFailure(name: string, params: Record<string, unknown>
   })
 }
 
+function registerSessionErrorKey(error: unknown): string {
+  const combined = Object.values(rpcErrorDebug(error)).filter(value => typeof value === 'string').join(' ')
+  if (/PGRST202|schema cache|could not find the function|function .* not found/i.test(combined)) return 'errors.registerSchema'
+  if (/permission|42501|unauthorized|jwt|session/i.test(combined)) return 'errors.registerPermission'
+  if (/22023|invalid/i.test(combined)) return 'errors.registerInvalid'
+  return 'errors.registerLoad'
+}
+
 export default function BranchDashboardPage() {
+  const { locale } = useLocale()
+  const { t } = useTranslation('dashboard')
   const navigate = useNavigate()
   const { profile, tenant } = useAuth()
 
@@ -470,7 +486,7 @@ export default function BranchDashboardPage() {
       if (registerRes.error) {
         logRegisterSessionRpcError('get_register_session_summary', { p_branch_id: bid }, registerRes.error)
         setRegisterSession(null)
-        setRegisterSessionError(registerSessionRpcErrorMessage(registerRes.error))
+        setRegisterSessionError(registerSessionErrorKey(registerRes.error))
       } else {
         const sessionValue = isRecord(registerRes.data)
           ? pick(registerRes.data, 'session')
@@ -499,13 +515,13 @@ export default function BranchDashboardPage() {
           : true)
       } catch (summaryError) {
         logBranchDashboardFailure('get_dashboard_summary', summaryParams, summaryError)
-        setStatsError('Branch metadata could not be refreshed. Register Session totals are still shown.')
+        setStatsError('errors.metadata')
         setProductionStatus(null)
         setProductionStatusReadable(branchZatcaPhase !== 2)
       }
     } catch (error) {
       logBranchDashboardFailure('branch_register_session_load', { p_branch_id: bid }, error)
-      setStatsError('Branch dashboard data could not be loaded. Refresh and try again.')
+      setStatsError('errors.branchLoad')
       setRegisterSession(null)
       try {
         const { data } = await db().from('branches').select('name, zatca_phase').eq('id', bid).maybeSingle()
@@ -528,7 +544,7 @@ export default function BranchDashboardPage() {
       setRecentInvs(asArray<RecentInvoiceRow>(data))
     } catch (error) {
       logBranchDashboardFailure('get_branch_dashboard_recent_invoices', params, error)
-      setInvoiceError('Recent invoices could not be loaded.')
+      setInvoiceError('errors.recentLoad')
       setRecentInvs([])
     } finally {
       setInvLoading(false)
@@ -559,16 +575,21 @@ export default function BranchDashboardPage() {
   useEffect(() => { loadLowStock() }, [loadLowStock])
 
   const demoSandbox = isPermanentDemoSandboxBranch(tid, bid)
+  const productionKey = productionStatus?.onboardingStatus === 'production_connected'
+    ? 'zatca.productionConnected'
+    : productionStatus?.onboardingStatus === 'compliance_failed' || productionStatus?.onboardingStatus === 'failed'
+    ? 'zatca.productionFailed'
+    : productionStatus ? 'zatca.productionPending' : 'zatca.productionUnavailable'
   const zatcaStatus = demoSandbox
-    ? { label: 'ZATCA Connected', tone: 'success' as const }
+    ? { label: t('zatca.connected'), tone: 'success' as const }
     : zatcaPhase === 2 && !productionStatusReadable
-    ? { label: 'Phase 2 status unavailable', tone: 'neutral' as const }
-    : productionStatusLabel(productionStatus, hasActiveCert)
-  const dashboardTitle = branchName || tenant?.name || 'My Branch'
+    ? { label: t('zatca.phase2Unavailable'), tone: 'neutral' as const }
+    : { ...productionStatusLabel(productionStatus, hasActiveCert), label: t(productionKey) }
+  const dashboardTitle = branchName || tenant?.name || t('branch.myBranch')
   const dashboardSubtitle = tenant?.name && branchName && tenant.name !== branchName
     ? tenant.name
-    : tenant?.name_ar || 'Branch dashboard'
-  const dashboardDate = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+    : tenant?.name_ar || t('branch.dashboard')
+  const dashboardDate = new Date().toLocaleDateString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 
   useEffect(() => {
     if (!bid) return
@@ -590,9 +611,9 @@ export default function BranchDashboardPage() {
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold-300/45 to-transparent" />
         <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative z-10 min-w-0">
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-gold-300">Branch operations</p>
+          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-gold-300">{t('branch.operations')}</p>
           <h1 className="mt-1 truncate text-2xl font-black tracking-tight text-white sm:text-3xl">
-            {statsLoading ? 'Loading branch...' : dashboardTitle}
+            {statsLoading ? t('branch.loading') : dashboardTitle}
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/80">
             <span className="font-semibold text-white/90" dir={tenant?.name_ar && dashboardSubtitle === tenant.name_ar ? 'rtl' : 'ltr'}>
@@ -608,11 +629,11 @@ export default function BranchDashboardPage() {
             className="flex items-center gap-2 px-4 py-2.5 bg-gold-500 text-[#0F2419] text-sm font-black rounded-xl hover:bg-gold-400 transition-colors shadow-lg shadow-gold-950/20"
           >
             <Receipt size={15} />
-            New Sale
+            {t('branch.newSale')}
           </button>
           <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.065] px-3 py-1.5 text-xs font-black text-emerald-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
             <span className={`h-2.5 w-2.5 rounded-full ${demoSandbox || zatcaPhase === 2 ? zatcaIndicatorClass[zatcaStatus.tone] : zatcaIndicatorClass.info}`} />
-            <span>{demoSandbox || zatcaPhase === 2 ? zatcaStatus.label : 'Phase 1 — QR invoices'}</span>
+            <span>{demoSandbox || zatcaPhase === 2 ? zatcaStatus.label : t('zatca.phase1Qr')}</span>
           </div>
         </div>
         </div>
@@ -624,15 +645,15 @@ export default function BranchDashboardPage() {
           <div className="flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
             <AlertCircle size={16} className="text-amber-600 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
-              <p className="text-sm font-semibold text-amber-900">Branch dashboard data needs a refresh</p>
-              <p className="text-xs text-amber-800 mt-0.5">{statsError || invoiceError}</p>
+              <p className="text-sm font-semibold text-amber-900">{t('errors.branchRefresh')}</p>
+              <p className="text-xs text-amber-800 mt-0.5">{t(statsError || invoiceError)}</p>
             </div>
             <button
               type="button"
               onClick={() => { loadStats(); loadInvoices() }}
               className="text-xs font-semibold text-amber-900 hover:text-amber-700"
             >
-              Retry
+              {t('errors.retry')}
             </button>
           </div>
         )}
@@ -640,7 +661,7 @@ export default function BranchDashboardPage() {
         <RegisterSessionPanel
           session={registerSession}
           loading={statsLoading && !registerSession}
-          error={registerSessionError}
+          error={registerSessionError ? t(registerSessionError) : ''}
         >
           <QuickActionsPanel
             onNavigate={navigate}
@@ -652,10 +673,10 @@ export default function BranchDashboardPage() {
         {/* Recent invoices */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-900">Recent Invoices</h2>
+            <h2 className="text-sm font-semibold text-gray-900">{t('recent.title')}</h2>
             <button onClick={() => navigate('/invoices')}
               className="text-xs text-primary-600 font-medium hover:text-primary-700 flex items-center gap-1">
-              View all <ArrowRight size={12} />
+              {t('recent.viewAll')} <ArrowRight size={12} />
             </button>
           </div>
 
@@ -672,20 +693,20 @@ export default function BranchDashboardPage() {
           ) : invoiceError ? (
             <div className="py-10 text-center">
               <AlertCircle size={28} className="text-amber-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-500">{invoiceError}</p>
+              <p className="text-sm text-gray-500">{t(invoiceError)}</p>
               <button onClick={loadInvoices}
                 className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold rounded-xl transition-colors">
-                Retry
+                {t('errors.retry')}
               </button>
             </div>
           ) : recentInvs.length === 0 ? (
             <div className="py-10 text-center">
               <Package size={28} className="text-gray-200 mx-auto mb-2" />
-              <p className="text-sm text-gray-500">No invoices yet</p>
-              <p className="text-xs text-gray-400 mt-1">Start your first sale from the POS</p>
+              <p className="text-sm text-gray-500">{t('recent.none')}</p>
+              <p className="text-xs text-gray-400 mt-1">{t('recent.startSale')}</p>
               <button onClick={() => navigate('/pos')}
                 className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold rounded-xl transition-colors">
-                <Receipt size={14} /> Open POS
+                <Receipt size={14} /> {t('branch.openPos')}
               </button>
             </div>
           ) : (
@@ -693,7 +714,7 @@ export default function BranchDashboardPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-50">
-                    {['Invoice', 'Customer', 'Amount', 'Status', 'Date'].map((h, i) => (
+                    {[t('recent.invoice'), t('recent.customer'), t('recent.amount'), t('recent.status'), t('recent.date')].map((h, i) => (
                       <th key={h} className={`px-6 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wide ${
                         i === 2 ? 'text-right' : 'text-left'
                       }`}>{h}</th>
@@ -704,7 +725,7 @@ export default function BranchDashboardPage() {
                   {recentInvs.map(inv => {
                     const cfg = statusConfig[inv.status as keyof typeof statusConfig] ?? statusConfig.draft
                     const invoiceNumber = inv.invoiceNumber ?? inv.invoice_number ?? ''
-                    const customerName = inv.customerName ?? inv.customer_name ?? 'Walk-in Customer'
+                    const customerName = inv.customerName ?? inv.customer_name ?? t('recent.walkIn')
                     const amount = numberOrZero(inv.displayTotal ?? inv.display_total ?? inv.totalAmount ?? inv.total_amount)
                     const invoiceDate = inv.invoiceDate ?? inv.invoice_date ?? ''
                     const documentType = inv.documentType ?? inv.zatca_invoice_type ?? 'simplified'
@@ -712,24 +733,24 @@ export default function BranchDashboardPage() {
                       <tr key={inv.id}
                         onClick={() => navigate(`/invoices/${inv.id}`)}
                         className="hover:bg-gray-50/60 transition-colors cursor-pointer">
-                        <td className="px-6 py-3.5 text-xs font-mono font-semibold text-primary-600">
+                        <td dir="ltr" className="px-6 py-3.5 text-xs font-mono font-semibold text-primary-600">
                           {invoiceNumber}
                           {documentType === 'credit_note' && (
                             <span className="ml-2 rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
-                              CREDIT
+                              {t('status.credit')}
                             </span>
                           )}
                         </td>
                         <td className="px-6 py-3.5 text-sm text-gray-700">
                           {customerName}
                         </td>
-                        <td className="px-6 py-3.5 text-sm font-semibold text-gray-900 text-right tabular-nums">
+                        <td dir="ltr" className="px-6 py-3.5 text-sm font-semibold text-gray-900 text-right tabular-nums">
                           <Rial amount={amount} />
                         </td>
                         <td className="px-6 py-3.5">
-                          <Badge variant={cfg.variant} dot>{cfg.label}</Badge>
+                          <Badge variant={cfg.variant} dot>{t(cfg.labelKey)}</Badge>
                         </td>
-                        <td className="px-6 py-3.5 text-xs text-gray-400">{invoiceDate}</td>
+                        <td dir="ltr" className="px-6 py-3.5 text-xs text-gray-400">{invoiceDate}</td>
                       </tr>
                     )
                   })}

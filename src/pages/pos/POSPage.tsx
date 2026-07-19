@@ -30,6 +30,7 @@ import { supportConfig } from '@/config/support'
 import { resolveBusinessType } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
+import { AuthenticatedLanguageSwitch } from '@/components/localization/AuthenticatedLanguageSwitch'
 import {
   documentDate,
   documentDirection,
@@ -164,6 +165,7 @@ interface PosCheckoutItemResult {
 interface PosCheckoutResult {
   invoice_id: string
   invoice_number: string
+  document_language?: 'en' | 'ar' | 'both' | null
   created_at: string
   subtotal: number | string
   tax_amount: number | string
@@ -2099,7 +2101,7 @@ export default function POSPage() {
         branchNameAr:    branch.name_ar,
         branchAddress:   branchAddr || null,
         branchAddressAr: branchAddrAr || null,
-        documentLanguage: normalizeDocumentLanguage(branch.invoice_language),
+        documentLanguage: normalizeDocumentLanguage(checkout.document_language ?? branch.invoice_language),
         vatNumber:       branch.vat_number ?? '',
         phone:           branch.phone,
         website:         branch.website ?? null,
@@ -2303,7 +2305,7 @@ export default function POSPage() {
       : !(payMethod === 'cash' && cashReceived !== '' && cashAmt < totals.total - 0.001))
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen bg-gray-50 overflow-hidden" dir="ltr">
 
       {/* Modals */}
       {receipt && (
@@ -2351,7 +2353,7 @@ export default function POSPage() {
       {custOpen && <div className="fixed inset-0 z-10" onClick={() => setCustOpen(false)} />}
 
       {/* ── Left: product panel ─────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0" dir={isRtl ? 'rtl' : 'ltr'}>
 
         {/* Header */}
         <div className="bg-[#0F2419] text-white px-3 sm:px-5 py-3 flex items-center gap-3 flex-shrink-0 shadow-lg">
@@ -2383,6 +2385,7 @@ export default function POSPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
+            <AuthenticatedLanguageSwitch inverse className="h-9" />
             {isElectron() && (
               <button
                 type="button"
@@ -2606,7 +2609,7 @@ export default function POSPage() {
       </div>
 
       {/* ── Right: cart panel ───────────────────────────────── */}
-      <div className="w-[340px] bg-white border-s border-gray-100 flex flex-col flex-shrink-0 shadow-xl">
+      <div className="w-[340px] bg-white border-s border-gray-100 flex flex-col flex-shrink-0 shadow-xl" dir={isRtl ? 'rtl' : 'ltr'}>
 
         {/* Cart header */}
         <div className="px-4 py-3.5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">

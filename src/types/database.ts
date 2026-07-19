@@ -1157,6 +1157,7 @@ export interface Invoice {
   customer_id: string | null
   created_by: string | null
   invoice_number: string
+  document_language: 'en' | 'ar' | 'both' | null
   invoice_reference: string | null
   original_invoice_id: string | null
   credit_reason: string | null

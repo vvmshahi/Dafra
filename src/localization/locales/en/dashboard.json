@@ -1,0 +1,68 @@
+{
+  "status": {
+    "posted": "Posted", "draft": "Draft", "paid": "Paid", "pending": "Pending",
+    "open": "Open", "closed": "Closed", "longOpen": "Long open", "active": "Active", "inactive": "Inactive",
+    "main": "MAIN", "credit": "CREDIT"
+  },
+  "zatca": {
+    "connected": "ZATCA Connected", "phase2Unavailable": "Phase 2 status unavailable",
+    "phase1": "Phase 1", "phase1Qr": "Phase 1 — QR invoices",
+    "productionConnected": "Production connected", "productionPending": "Production setup pending",
+    "productionFailed": "Production setup needs attention", "productionUnavailable": "Production status unavailable"
+  },
+  "register": {
+    "none": "No Register Session", "noneYet": "No register session yet", "openPrompt": "Open a register to start tracking sales for this shift.",
+    "current": "Current Register Session", "last": "Last Register Session", "currentShort": "Current Session", "lastShort": "Last Session",
+    "session": "Session", "registerCurrent": "Current register", "registerClosed": "Closed register",
+    "opened": "Opened", "closed": "Closed", "earlier": "Earlier", "stillOpen": "Still open",
+    "timeOpen": "Opened {{opened}} → Still open", "timeClosed": "Opened {{opened}} → Closed {{closed}}", "timeOpened": "Opened {{opened}}",
+    "longOpenWarning": "This register session has been open since {{time}}. Close it before starting a new shift.",
+    "closeBeforeShift": "Close this register before starting a new shift.",
+    "openingCash": "Opening cash", "expectedCash": "Expected cash", "actualCash": "Actual cash", "difference": "Difference",
+    "expectedDrawer": "Expected in drawer", "actualVsExpected": "Actual vs expected",
+    "currentCount": "{{current}} current · {{last}} last", "retryLoad": "Retry to load register sessions"
+  },
+  "kpi": {
+    "grossSales": "Gross Sales", "creditNotes": "Credit Notes", "refundDocuments": "Refund documents",
+    "netSales": "Net Sales", "grossLessCredits": "Gross less credit notes", "invoices": "Invoices",
+    "sessionInvoices": "Session Invoices", "sessionCash": "Session Cash", "sessionCard": "Session Card",
+    "cash": "Cash", "card": "Card", "cashAndSplit": "Cash and split cash", "cardAndSplit": "Card and split card",
+    "netVat": "Net VAT", "sessionNetVat": "Session net VAT", "registerNetVat": "Register-session net VAT",
+    "expectedCash": "Expected Cash", "acrossSessions": "Across shown sessions", "vat": "VAT",
+    "expenses": "Expenses", "creditNotesRefunds": "Credit notes/refunds",
+    "invoiceCount_one": "{{count}} invoice", "invoiceCount_other": "{{count}} invoices",
+    "sessionInvoicesLabel": "{{prefix}} Invoices", "sessionCashLabel": "{{prefix}} Cash", "sessionCardLabel": "{{prefix}} Card",
+    "sessionSalesLabel": "{{prefix}} sales"
+  },
+  "owner": {
+    "eyebrow": "Owner dashboard", "overview": "Business overview",
+    "subtitle": "Register sessions, branch status, and daily operations.", "manageBranches": "Manage branches",
+    "branchSessions": "Branch Register Sessions", "manage": "Manage", "viewDetails": "View Details",
+    "welcome": "Welcome to Kubri!", "noBranches": "You have not added any branches yet.",
+    "addFirstHelp": "Add your first branch to start selling, generate ZATCA-ready invoices, and use the POS.",
+    "addBranch": "Add Branch", "branchHelp": "Each branch gets its own invoices, POS terminal, and ZATCA credentials."
+  },
+  "branch": {
+    "operations": "Branch operations", "dashboard": "Branch dashboard", "myBranch": "My Branch", "loading": "Loading branch...",
+    "newSale": "New Sale", "quickActions": "Quick Actions", "workflow": "Daily branch workflow",
+    "openPos": "Open POS", "recordCosts": "Record costs", "reviewReceipts": "Review receipts",
+    "lowStock_one": "{{count}} product low on stock", "lowStock_other": "{{count}} products low on stock"
+  },
+  "recent": {
+    "title": "Recent Invoices", "viewAll": "View all", "none": "No invoices yet",
+    "startSale": "Start your first sale from the POS", "invoice": "Invoice", "customer": "Customer",
+    "amount": "Amount", "status": "Status", "date": "Date", "walkIn": "Walk-in Customer"
+  },
+  "errors": {
+    "dashboardRefresh": "Dashboard data needs a refresh", "branchRefresh": "Branch dashboard data needs a refresh",
+    "branchesLoad": "Branches could not be loaded", "branchesLoadDetail": "Branches could not be loaded. Refresh the page or open Branches to verify access.",
+    "metadata": "Branch metadata could not be refreshed. Register Session totals are still shown.",
+    "dashboardLoad": "Dashboard register session data could not be loaded. Refresh and try again.",
+    "branchLoad": "Branch dashboard data could not be loaded. Refresh and try again.",
+    "recentLoad": "Recent invoices could not be loaded.", "unavailable": "Unavailable", "retry": "Retry",
+    "registerSchema": "Register Session service is not available yet. Refresh after the service is updated.",
+    "registerPermission": "Your session permissions could not be verified. Refresh and sign in again if needed.",
+    "registerInvalid": "Register session request was invalid. Refresh and try again.",
+    "registerLoad": "Register session data could not be loaded. Please refresh."
+  }
+}

@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useSubscription } from '@/hooks/useSubscription'
 import { supportConfig } from '@/config/support'
 import { useTranslation } from 'react-i18next'
+import { useLocale } from '@/localization/useLocale'
 
 const WA_LINK = supportConfig.whatsappLink
 
@@ -109,6 +110,7 @@ function getInitialCollapsed(): boolean {
 }
 
 export default function AppLayout() {
+  const { isRtl } = useLocale()
   const [collapsed, setCollapsed] = useState(getInitialCollapsed)
   const location = useLocation()
   const flushContent = location.pathname === '/branch'
@@ -122,9 +124,9 @@ export default function AppLayout() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen bg-gray-50 overflow-hidden" dir="ltr">
       <Sidebar collapsed={collapsed} onToggle={toggle} />
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0" dir={isRtl ? 'rtl' : 'ltr'}>
         <SubscriptionBanner />
         <main className={`flex-1 overflow-y-auto ${flushContent ? 'p-0' : 'p-6'}`}>
           <Outlet />

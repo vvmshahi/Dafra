@@ -8,6 +8,18 @@ export function normalizeDocumentLanguage(value: unknown): DocumentLanguage {
   return value === 'en' || value === 'ar' || value === 'both' ? value : 'both'
 }
 
+export function parseDocumentLanguage(value: unknown): DocumentLanguage | null {
+  return value === 'en' || value === 'ar' || value === 'both' ? value : null
+}
+
+export function resolveInvoiceDocumentLanguage(invoiceValue: unknown, branchValue: unknown): DocumentLanguage {
+  return parseDocumentLanguage(invoiceValue) ?? parseDocumentLanguage(branchValue) ?? 'both'
+}
+
+export function resolveCreditNoteDocumentLanguage(creditNoteValue: unknown, originalInvoiceValue: unknown, branchValue: unknown): DocumentLanguage {
+  return parseDocumentLanguage(creditNoteValue) ?? parseDocumentLanguage(originalInvoiceValue) ?? parseDocumentLanguage(branchValue) ?? 'both'
+}
+
 export function documentDirection(language: DocumentLanguage): 'ltr' | 'rtl' {
   return language === 'ar' ? 'rtl' : 'ltr'
 }

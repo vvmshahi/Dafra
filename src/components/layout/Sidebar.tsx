@@ -11,6 +11,8 @@ import { isStockModuleVisible } from '@/lib/utils/businessType'
 import type { LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
+import { useLocale } from '@/localization/useLocale'
+import { AuthenticatedLanguageSwitch } from '@/components/localization/AuthenticatedLanguageSwitch'
 
 interface NavItem {
   labelKey: string
@@ -105,6 +107,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { profile, tenant, branch, user, signOut } = useAuth()
   const location = useLocation()
   const { t } = useTranslation(['navigation', 'auth'])
+  const { isRtl } = useLocale()
 
   const isSuperAdmin = profile?.role === 'super_admin'
   const isBranch     = profile?.role === 'branch'
@@ -146,7 +149,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   }
 
   return (
-    <aside className={`
+    <aside dir={isRtl ? 'rtl' : 'ltr'} className={`
       flex-shrink-0 bg-sidebar flex flex-col h-full shadow-sidebar
       transition-all duration-200 ease-in-out
       ${collapsed ? 'w-16' : 'w-[240px]'}
@@ -258,6 +261,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </div>
           )}
         </NavLink>
+
+        <AuthenticatedLanguageSwitch inverse className={`w-full border-sidebar-border hover:bg-sidebar-hover ${collapsed ? 'px-1 text-[10px]' : ''}`} />
 
         {/* Sign out */}
         <button

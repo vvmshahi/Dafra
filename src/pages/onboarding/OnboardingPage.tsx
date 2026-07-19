@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { MeemLogo } from '@/components/MeemLogo'
+import { AuthenticatedLanguageSwitch } from '@/components/localization/AuthenticatedLanguageSwitch'
 import type { SubscriptionPlan } from '@/types'
 
 /* ── Types ──────────────────────────────────────────────────── */
@@ -334,7 +335,8 @@ export default function OnboardingPage() {
     <div className="min-h-screen bg-gray-50 flex flex-col">
 
       {/* Dark green header */}
-      <div className="bg-[#0F2419] px-6 py-8">
+      <div className="relative bg-[#0F2419] px-6 py-8">
+        <AuthenticatedLanguageSwitch inverse className="absolute end-6 top-6" />
         <div className="flex justify-center mb-8">
           <MeemLogo size="lg" />
         </div>

@@ -10,7 +10,7 @@ import { DEFAULT_PRINTER_SETTINGS, type PrinterSettings } from '@/lib/electron'
 import { buildZatcaQR } from '@/lib/zatca/qr'
 import { toSaudiTime } from '@/lib/utils/date'
 import type { Branch, Invoice, InvoiceItem, Payment } from '@/types/database'
-import { documentDate, normalizeDocumentLanguage } from '@/localization/documents'
+import { documentDate, resolveCreditNoteDocumentLanguage, resolveInvoiceDocumentLanguage } from '@/localization/documents'
 
 interface Tenant {
   name: string
@@ -33,7 +33,7 @@ interface Customer {
 
 const INVOICE_PRINT_SELECT = `
   id, tenant_id, branch_id, customer_id,
-  invoice_number, invoice_reference, original_invoice_id, credit_reason,
+  invoice_number, document_language, invoice_reference, original_invoice_id, credit_reason,
   zatca_invoice_type, zatca_qr_code,
   subtotal, discount_amount, tax_amount, total_amount,
   status, payment_status, created_at
@@ -192,6 +192,7 @@ export default function ReceiptPrintPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [originalDocumentLanguage, setOriginalDocumentLanguage] = useState<string | null>(null)
 
   useReceiptPrintStyle(receiptProfile, electronPrint)
 
@@ -228,7 +229,17 @@ export default function ReceiptPrintPage() {
           )
         }
 
-        const [branchResult, tenantResult, customerResult] = await Promise.all(fetches)
+        const customerFetch = inv.customer_id
+          ? fetches[2]
+          : Promise.resolve({ data: null })
+        const [branchResult, tenantResult, customerResult, originalResult] = await Promise.all([
+          fetches[0],
+          fetches[1],
+          customerFetch,
+          inv.original_invoice_id
+            ? supabase.from('invoices').select('document_language').eq('id', inv.original_invoice_id).maybeSingle()
+            : Promise.resolve({ data: null }),
+        ])
         if (cancelled) return
 
         setInvoice(inv as Invoice)
@@ -237,6 +248,7 @@ export default function ReceiptPrintPage() {
         setBranch(branchResult.data as Branch)
         setTenant(tenantResult.data as Tenant)
         setCustomer((customerResult?.data ?? null) as Customer | null)
+        setOriginalDocumentLanguage((originalResult?.data as { document_language?: string | null } | null)?.document_language ?? null)
       } catch {
         if (!cancelled) setError(t('receipts:loadFailed'))
       } finally {
@@ -290,7 +302,9 @@ export default function ReceiptPrintPage() {
   const receipt = useMemo(() => {
     if (!invoice || !branch || !tenant) return null
 
-    const documentLanguage = normalizeDocumentLanguage(branch.invoice_language)
+    const documentLanguage = invoice.zatca_invoice_type === 'credit_note'
+      ? resolveCreditNoteDocumentLanguage(invoice.document_language, originalDocumentLanguage, branch.invoice_language)
+      : resolveInvoiceDocumentLanguage(invoice.document_language, branch.invoice_language)
     const date = documentDate(invoice.created_at, documentLanguage)
     const address = [
       branch.building_number ? `Building ${branch.building_number}` : null,
@@ -349,7 +363,7 @@ export default function ReceiptPrintPage() {
       documentType: isCreditNote ? 'credit_note' as const : 'invoice' as const,
       documentLanguage,
     }
-  }, [invoice, branch, tenant, items, payments, customer])
+  }, [invoice, branch, tenant, items, payments, customer, originalDocumentLanguage])
 
   useEffect(() => {
     if (!electronPrint || electronReadyRef.current || loading || error || !invoice || !branch || !tenant || !receipt || !qrDataUrl) return
