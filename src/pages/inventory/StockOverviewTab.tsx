@@ -8,11 +8,12 @@ import { Rial } from '@/components/ui/RiyalSymbol'
 import { displayName as dn } from '@/lib/utils/display'
 import type { InventoryItem, Category, Supplier } from '@/types'
 import StockItemDrawer from './StockItemDrawer'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface CategorySnap { name: string; color: string | null; icon: string | null }
-interface SupplierSnap  { name: string }
+interface CategorySnap { name: string; name_ar: string | null; color: string | null; icon: string | null }
+interface SupplierSnap  { name: string; name_ar: string | null }
 
 interface ItemRow extends InventoryItem {
   categories: CategorySnap | null
@@ -59,6 +60,7 @@ function SumCard({ label, value, sub, accent }: {
 
 export default function StockOverviewTab() {
   const { profile } = useAuth()
+  const { t, i18n } = useTranslation('inventory')
 
   const [items,       setItems]       = useState<ItemRow[]>([])
   const [categories,  setCategories]  = useState<Category[]>([])
@@ -75,7 +77,7 @@ export default function StockOverviewTab() {
     const [{ data: itemData }, { data: catData }, { data: supData }] = await Promise.all([
       supabase
         .from('inventory_items')
-        .select('*, categories(name,color,icon), suppliers(name)')
+        .select('*, categories(name,name_ar,color,icon), suppliers(name,name_ar)')
         .eq('branch_id', bid)
         .order('name'),
       supabase
@@ -116,14 +118,14 @@ export default function StockOverviewTab() {
       {/* ── Header row ──────────────────────────────────────── */}
       <div className="flex items-start gap-4 flex-wrap">
         <div className="flex gap-3 flex-1 flex-wrap min-w-0">
-          <SumCard label="Total Items"      value={String(items.length)}            sub="in stock list"            />
-          <SumCard label="Total Stock Value" value={<Rial amount={totalValue} />}   sub="at current cost"         accent="green" />
-          <SumCard label="Low / Out of Stock" value={String(lowStock)}             sub="need restocking"         accent={lowStock > 0 ? 'amber' : undefined} />
-          <SumCard label="Added This Month"  value={String(addedThisMonth)}        sub="new items"                />
+          <SumCard label={t('materialMetrics.totalItems')} value={String(items.length)} sub={t('materialMetrics.inList')} />
+          <SumCard label={t('metrics.totalValue')} value={<Rial amount={totalValue} />} sub={t('materialMetrics.currentCost')} accent="green" />
+          <SumCard label={t('materialMetrics.lowOut')} value={String(lowStock)} sub={t('materialMetrics.restocking')} accent={lowStock > 0 ? 'amber' : undefined} />
+          <SumCard label={t('materialMetrics.addedMonth')} value={String(addedThisMonth)} sub={t('materialMetrics.newItems')} />
         </div>
         <Button size="sm" onClick={openAdd} className="flex-shrink-0 self-start">
           <Plus size={14} />
-          Add Item
+          {t('addItem')}
         </Button>
       </div>
 
@@ -135,25 +137,25 @@ export default function StockOverviewTab() {
           <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center mb-4">
             <Package size={22} className="text-emerald-300" />
           </div>
-          <p className="text-gray-700 font-semibold">No stock items yet</p>
+          <p className="text-gray-700 font-semibold">{t('emptyItems')}</p>
           <p className="text-gray-400 text-sm mt-1 max-w-xs">
-            Add your raw materials, supplies, and ingredients to track stock
+            {t('emptyItemsHint')}
           </p>
           <Button className="mt-5" onClick={openAdd}>
             <Plus size={15} />
-            Add Item
+            {t('addItem')}
           </Button>
         </div>
       ) : (
         <div className="card overflow-hidden">
           {/* Table header */}
           <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-            <div className="flex-1">Item</div>
-            <div className="w-28 hidden md:block">Category</div>
-            <div className="w-28 text-right">Quantity</div>
-            <div className="w-28 hidden sm:block text-right">Unit Cost</div>
-            <div className="w-28 text-right">Total Value</div>
-            <div className="w-32 hidden lg:block">Last Updated</div>
+            <div className="flex-1">{t('columns.item')}</div>
+            <div className="w-28 hidden md:block">{t('columns.category')}</div>
+            <div className="w-28 text-end">{t('columns.quantity')}</div>
+            <div className="w-28 hidden sm:block text-end">{t('columns.unitCost')}</div>
+            <div className="w-28 text-end">{t('columns.totalValue')}</div>
+            <div className="w-32 hidden lg:block">{t('columns.lastUpdated')}</div>
             <div className="w-10 flex-shrink-0" />
           </div>
 
@@ -161,7 +163,7 @@ export default function StockOverviewTab() {
             const status   = stockStatus(item)
             const catColor = item.categories?.color ?? '#6b7280'
             const catIcon  = item.categories?.icon  ?? ''
-            const catName  = item.categories?.name
+            const catName  = item.categories ? dn(item.categories.name, item.categories.name_ar) : null
 
             return (
               <div key={item.id}
@@ -180,9 +182,9 @@ export default function StockOverviewTab() {
                     {catIcon}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{dn(item.name, item.name_ar)}</p>
+                    <p className="text-sm font-semibold text-gray-900 truncate" dir="auto">{dn(item.name, item.name_ar)}</p>
                     {item.suppliers?.name && (
-                      <p className="text-[10px] text-gray-400">{item.suppliers.name}</p>
+                      <p className="text-[10px] text-gray-400" dir="auto">{dn(item.suppliers.name, item.suppliers.name_ar)}</p>
                     )}
                   </div>
                 </div>
@@ -221,11 +223,11 @@ export default function StockOverviewTab() {
                     </p>
                   </div>
                   {status === 'out' && (
-                    <p className="text-[10px] text-red-500 font-medium text-right">Out of stock</p>
+                    <p className="text-[10px] text-red-500 font-medium text-end">{t('status.outOfStock')}</p>
                   )}
                   {status === 'low' && (
                     <p className="text-[10px] text-amber-600 text-right">
-                      Min: {item.minimum_quantity} {UNIT_LABEL[item.unit_type]}
+                      {t('minimum', { value: `${item.minimum_quantity} ${UNIT_LABEL[item.unit_type]}` })}
                     </p>
                   )}
                 </div>
@@ -246,7 +248,7 @@ export default function StockOverviewTab() {
                 {/* Last updated */}
                 <div className="w-32 hidden lg:block">
                   <p className="text-xs text-gray-400">
-                    {new Date(item.updated_at).toLocaleDateString('en-GB', {
+                    {new Date(item.updated_at).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-GB', {
                       day: '2-digit', month: 'short', year: '2-digit',
                     })}
                   </p>
@@ -266,7 +268,7 @@ export default function StockOverviewTab() {
           {/* Footer total */}
           <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 border-t border-gray-100">
             <div className="flex-1 text-xs font-semibold text-gray-500">
-              {items.length} items total · {lowStock} need attention
+              {t('itemsSummary', { count: items.length, attention: lowStock })}
             </div>
             <div className="w-28 hidden md:block" />
             <div className="w-28 text-right" />
@@ -275,7 +277,7 @@ export default function StockOverviewTab() {
               <p className="text-sm font-bold text-emerald-600 tabular-nums">
                 <Rial amount={totalValue} />
               </p>
-              <p className="text-[10px] text-gray-400">total value</p>
+              <p className="text-[10px] text-gray-400">{t('columns.totalValue')}</p>
             </div>
             <div className="w-32 hidden lg:block" />
             <div className="w-10" />

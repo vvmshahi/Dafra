@@ -6,19 +6,11 @@ import { Button } from '@/components/ui/Button'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import type { InventoryItem, Category, Supplier } from '@/types'
+import { useTranslation } from 'react-i18next'
 
 // ── Unit options ──────────────────────────────────────────────────────────────
 
-const UNIT_OPTIONS = [
-  { value: 'pieces', label: 'Pieces' },
-  { value: 'kg',     label: 'Kilograms (kg)' },
-  { value: 'grams',  label: 'Grams' },
-  { value: 'liters', label: 'Liters' },
-  { value: 'ml',     label: 'Milliliters (ml)' },
-  { value: 'boxes',  label: 'Boxes' },
-  { value: 'bags',   label: 'Bags' },
-  { value: 'other',  label: 'Other' },
-]
+const UNIT_OPTIONS = ['pieces', 'kg', 'grams', 'liters', 'ml', 'boxes', 'bags', 'other'] as const
 
 // ── Section label ─────────────────────────────────────────────────────────────
 
@@ -45,6 +37,7 @@ interface Props {
 
 export default function StockItemDrawer({ open, item, categories, suppliers, onClose, onSaved }: Props) {
   const { profile } = useAuth()
+  const { t } = useTranslation(['inventory', 'common'])
 
   const [saving,    setSaving]    = useState(false)
   const [error,     setError]     = useState('')
@@ -80,9 +73,9 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim()) { setError('Item name is required'); return }
+    if (!name.trim()) { setError(t('inventory:errors.itemNameRequired')); return }
     const cost = parseFloat(unitCost)
-    if (isNaN(cost) || cost < 0) { setError('Enter a valid unit cost'); return }
+    if (isNaN(cost) || cost < 0) { setError(t('inventory:errors.unitCostInvalid')); return }
 
     setSaving(true)
     setError('')
@@ -106,10 +99,10 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
 
       if (item) {
         const { error: err } = await q.from('inventory_items').update(payload).eq('id', item.id)
-        if (err) { setError(err.message); return }
+        if (err) { console.error('[StockItemDrawer] update failed', err); setError(t('inventory:errors.saveFailed')); return }
       } else {
         const { error: err } = await q.from('inventory_items').insert(payload)
-        if (err) { setError(err.message); return }
+        if (err) { console.error('[StockItemDrawer] insert failed', err); setError(t('inventory:errors.saveFailed')); return }
       }
 
       onSaved()
@@ -132,9 +125,9 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
             <div>
               <h2 className="text-base font-bold text-gray-900">
-                {item ? 'Edit Stock Item' : 'Add Stock Item'}
+                {t(item ? 'inventory:editItem' : 'inventory:addItem')}
               </h2>
-              <p className="text-xs text-gray-400 mt-0.5">Stock item record</p>
+              <p className="text-xs text-gray-400 mt-0.5">{t('inventory:item.record')}</p>
             </div>
             <button type="button" onClick={onClose}
               className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400">
@@ -147,44 +140,44 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
 
             {/* ── Item Details ──────────────────────────────── */}
             <div className="space-y-4">
-              <SectionLabel>Item Details</SectionLabel>
+              <SectionLabel>{t('inventory:item.details')}</SectionLabel>
 
               <div>
-                <label className="label">Item Name <span className="text-red-500">*</span></label>
+                <label className="label">{t('inventory:item.name')} <span className="text-red-500">*</span></label>
                 <input className="input" value={name} onChange={e => setName(e.target.value)}
-                  placeholder="e.g. Chicken Breast, Olive Oil" />
+                  placeholder={t('inventory:item.namePlaceholder')} dir="auto" />
               </div>
 
               <div>
-                <label className="label">Item Name (Arabic)</label>
+                <label className="label">{t('inventory:item.nameAr')}</label>
                 <input className="input" value={nameAr} onChange={e => setNameAr(e.target.value)}
                   placeholder="اسم الصنف بالعربية" dir="rtl" />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">Category</label>
+                  <label className="label">{t('inventory:item.category')}</label>
                   <select className="input" value={categoryId} onChange={e => setCategoryId(e.target.value)}>
-                    <option value="">— Uncategorised —</option>
+                    <option value="">— {t('inventory:item.uncategorized')} —</option>
                     {categories.map(c => (
                       <option key={c.id} value={c.id}>{c.icon ?? ''} {c.name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="label">Unit Type</label>
+                  <label className="label">{t('inventory:item.unit')}</label>
                   <select className="input" value={unitType} onChange={e => setUnitType(e.target.value)}>
-                    {UNIT_OPTIONS.map(u => (
-                      <option key={u.value} value={u.value}>{u.label}</option>
+                    {UNIT_OPTIONS.map(unitValue => (
+                      <option key={unitValue} value={unitValue}>{t(`inventory:units.${unitValue}`)}</option>
                     ))}
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="label">Default Supplier</label>
+                <label className="label">{t('inventory:item.defaultSupplier')}</label>
                 <select className="input" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
-                  <option value="">— None —</option>
+                  <option value="">— {t('inventory:item.none')} —</option>
                   {suppliers.map(s => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
@@ -194,23 +187,23 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
 
             {/* ── Quantity & Cost ───────────────────────────── */}
             <div className="space-y-4">
-              <SectionLabel>Quantity &amp; Cost</SectionLabel>
+              <SectionLabel>{t('inventory:item.quantityCost')}</SectionLabel>
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="label">Current Qty</label>
+                  <label className="label">{t('inventory:item.currentQty')}</label>
                   <input className="input" type="number" step="0.001" min="0"
                     value={currentQty} onChange={e => setCurrentQty(e.target.value)}
                     placeholder="0" />
                 </div>
                 <div>
-                  <label className="label">Min Qty Alert</label>
+                  <label className="label">{t('inventory:item.minimumQty')}</label>
                   <input className="input" type="number" step="0.001" min="0"
                     value={minQty} onChange={e => setMinQty(e.target.value)}
                     placeholder="0" />
                 </div>
                 <div>
-                  <label className="label">Unit Cost (SAR)</label>
+                  <label className="label">{t('inventory:item.unitCostSar')}</label>
                   <MoneyInput className="input"
                     value={unitCost} onValueChange={setUnitCost}
                     placeholder="0.00" />
@@ -219,7 +212,7 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
 
               {parseFloat(unitCost) > 0 && parseFloat(currentQty) > 0 && (
                 <div className="bg-emerald-50 rounded-xl px-4 py-3 flex justify-between items-center">
-                  <span className="text-sm text-emerald-700 font-medium">Total Stock Value</span>
+                  <span className="text-sm text-emerald-700 font-medium">{t('inventory:item.totalValue')}</span>
                   <span className="text-sm font-bold text-emerald-700 tabular-nums">
                     <Rial amount={parseFloat(currentQty) * parseFloat(unitCost)} />
                   </span>
@@ -229,9 +222,9 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
 
             {/* ── Notes ─────────────────────────────────────── */}
             <div>
-              <label className="label">Notes</label>
+              <label className="label">{t('inventory:item.notes')}</label>
               <textarea className="input resize-none" rows={2} value={notes}
-                onChange={e => setNotes(e.target.value)} placeholder="Optional notes..." />
+                onChange={e => setNotes(e.target.value)} placeholder={t('inventory:item.notesPlaceholder')} dir="auto" />
             </div>
 
             {error && (
@@ -243,9 +236,9 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
 
           {/* Footer */}
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>{t('common:cancel')}</Button>
             <Button type="submit" className="flex-1" loading={saving}>
-              {item ? 'Save Changes' : 'Add Item'}
+              {t(item ? 'common:saveChanges' : 'inventory:addItem')}
             </Button>
           </div>
         </form>

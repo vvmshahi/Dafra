@@ -10,6 +10,7 @@ import type { Category, Supplier } from '@/types'
 import type { ProductRow } from '@/pages/products/ProductsPage'
 import ProductDrawer from '@/pages/products/ProductDrawer'
 import ProductStockReceiptDrawer from './ProductStockReceiptDrawer'
+import { useTranslation } from 'react-i18next'
 
 interface CategorySnap {
   name: string
@@ -56,9 +57,9 @@ const formatStockQuantity = (value: number | null | undefined) => {
 function productStatus(product: ProductStockRow) {
   const quantity = Number(product.stock_quantity ?? 0)
   const minimum = Number(product.min_stock_alert ?? 0)
-  if (quantity <= 0) return { label: 'Out of stock', accent: 'red' as const }
-  if (minimum > 0 && quantity <= minimum) return { label: 'Low stock', accent: 'amber' as const }
-  return { label: 'In stock', accent: 'green' as const }
+  if (quantity <= 0) return { key: 'status.outOfStock', accent: 'red' as const }
+  if (minimum > 0 && quantity <= minimum) return { key: 'status.lowStock', accent: 'amber' as const }
+  return { key: 'status.inStock', accent: 'green' as const }
 }
 
 interface ProductStockTabProps {
@@ -71,6 +72,7 @@ export default function ProductStockTab({
   onInitialReceiptHandled,
 }: ProductStockTabProps) {
   const { profile } = useAuth()
+  const { t } = useTranslation(['inventory', 'common'])
 
   const [products, setProducts] = useState<ProductStockRow[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -167,15 +169,15 @@ export default function ProductStockTab({
     <div className="space-y-4">
       <div className="flex flex-wrap items-start gap-4">
         <div className="flex min-w-0 flex-1 flex-wrap gap-3">
-          <SumCard label="Total Products" value={String(products.length)} sub="tracked products" />
-          <SumCard label="Total Units" value={formatStockQuantity(metrics.totalUnits)} sub="available now" />
-          <SumCard label="Total Stock Value" value={<Rial amount={metrics.totalValue} />} sub="at latest cost" accent="green" />
-          <SumCard label="Low Stock" value={String(metrics.lowStock)} sub="above zero" accent={metrics.lowStock > 0 ? 'amber' : undefined} />
-          <SumCard label="Out of Stock" value={String(metrics.outOfStock)} sub="needs receiving" accent={metrics.outOfStock > 0 ? 'red' : undefined} />
+          <SumCard label={t('inventory:metrics.totalProducts')} value={String(products.length)} sub={t('inventory:metrics.trackedProducts')} />
+          <SumCard label={t('inventory:metrics.totalUnits')} value={formatStockQuantity(metrics.totalUnits)} sub={t('inventory:metrics.availableNow')} />
+          <SumCard label={t('inventory:metrics.totalValue')} value={<Rial amount={metrics.totalValue} />} sub={t('inventory:metrics.latestCost')} accent="green" />
+          <SumCard label={t('inventory:metrics.lowStock')} value={String(metrics.lowStock)} sub={t('inventory:metrics.aboveZero')} accent={metrics.lowStock > 0 ? 'amber' : undefined} />
+          <SumCard label={t('inventory:metrics.outOfStock')} value={String(metrics.outOfStock)} sub={t('inventory:metrics.needsReceiving')} accent={metrics.outOfStock > 0 ? 'red' : undefined} />
         </div>
         <Button size="sm" onClick={() => openReceipt()} className="flex-shrink-0">
           <PackagePlus size={14} />
-          Add Stock
+          {t('inventory:actions.addStock')}
         </Button>
       </div>
 
@@ -186,21 +188,21 @@ export default function ProductStockTab({
           <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50">
             <Package size={22} className="text-emerald-300" />
           </div>
-          <p className="font-semibold text-gray-700">No tracked products yet</p>
+          <p className="font-semibold text-gray-700">{t('inventory:emptyTracked')}</p>
           <p className="mt-1 max-w-sm text-sm text-gray-400">
-            Enable inventory tracking from Products, then receive stock here.
+            {t('inventory:emptyTrackedHint')}
           </p>
         </div>
       ) : (
         <div className="card overflow-hidden">
           <div className="flex items-center gap-3 border-b border-gray-100 bg-gray-50 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-            <div className="flex-1">Product</div>
-            <div className="hidden w-28 md:block">Category</div>
-            <div className="hidden w-28 lg:block">SKU / Barcode</div>
-            <div className="w-24 text-right">Stock</div>
-            <div className="hidden w-28 text-right sm:block">Latest Cost</div>
-            <div className="w-28 text-right">Stock Value</div>
-            <div className="w-40 flex-shrink-0 text-right">Actions</div>
+            <div className="flex-1">{t('inventory:columns.product')}</div>
+            <div className="hidden w-28 md:block">{t('inventory:columns.category')}</div>
+            <div className="hidden w-28 lg:block">{t('inventory:columns.skuBarcode')}</div>
+            <div className="w-24 text-end">{t('inventory:columns.stock')}</div>
+            <div className="hidden w-28 text-end sm:block">{t('inventory:columns.latestCost')}</div>
+            <div className="w-28 text-end">{t('inventory:columns.stockValue')}</div>
+            <div className="w-40 flex-shrink-0 text-end">{t('inventory:columns.actions')}</div>
           </div>
 
           {products.map(product => {
@@ -227,7 +229,7 @@ export default function ProductStockTab({
                     {categoryIcon}
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-gray-900">{dn(product.name, product.name_ar)}</p>
+                    <p className="truncate text-sm font-semibold text-gray-900" dir="auto">{dn(product.name, product.name_ar)}</p>
                     {product.name_ar && <p className="truncate text-[10px] text-gray-400" dir="rtl">{product.name_ar}</p>}
                   </div>
                 </div>
@@ -238,7 +240,7 @@ export default function ProductStockTab({
                       className="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
                       style={{ backgroundColor: `${categoryColor}22`, color: categoryColor }}
                     >
-                      {product.categories.name}
+                      <span dir="auto">{dn(product.categories.name, product.categories.name_ar)}</span>
                     </span>
                   ) : (
                     <span className="text-xs text-gray-300">—</span>
@@ -246,8 +248,8 @@ export default function ProductStockTab({
                 </div>
 
                 <div className="hidden w-28 lg:block">
-                  <p className="truncate text-xs text-gray-700">{product.sku || 'No SKU'}</p>
-                  <p className="truncate text-[10px] text-gray-400">{product.barcode || 'No barcode'}</p>
+                  <p className="truncate text-xs text-gray-700" dir="ltr">{product.sku || t('inventory:noSku')}</p>
+                  <p className="truncate text-[10px] text-gray-400" dir="ltr">{product.barcode || t('inventory:noBarcode')}</p>
                 </div>
 
                 <div className="w-24 text-right">
@@ -271,7 +273,7 @@ export default function ProductStockTab({
                     status.accent === 'amber' ? 'text-amber-600' :
                     'text-gray-400'
                   }`}>
-                    {status.label}
+                    {t(`inventory:${status.key}`)}
                   </p>
                 </div>
 
@@ -287,11 +289,11 @@ export default function ProductStockTab({
 
                 <div className="flex w-40 flex-shrink-0 justify-end gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openReceipt(product)}>
-                    Add
+                    {t('inventory:actions.addStock')}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => setAdjustProduct(product)}>
                     <SlidersHorizontal size={13} />
-                    Adjust
+                    {t('inventory:actions.adjust')}
                   </Button>
                 </div>
               </div>

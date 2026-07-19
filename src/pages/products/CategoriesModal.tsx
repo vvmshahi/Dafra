@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import type { Category } from '@/types'
 import type { ProductRow } from './ProductsPage'
 import { CategoryEmojiPicker } from '@/components/ui/CategoryEmojiPicker'
+import { useTranslation } from 'react-i18next'
 
 // ── Palette & defaults ────────────────────────────────────────────────────────
 
@@ -45,6 +46,7 @@ const blank = (): FormState => ({
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CategoriesModal({ open, categories, products, onClose, onChanged }: Props) {
+  const { t } = useTranslation(['products', 'common'])
   const [form,      setForm]      = useState<FormState>(blank())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showForm,  setShowForm]  = useState(false)
@@ -104,17 +106,17 @@ export default function CategoriesModal({ open, categories, products, onClose, o
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!editingId) { setError('Choose a category to edit'); return }
+    if (!editingId) { setError(t('products:category.chooseToEdit')); return }
     const normalizedName = form.name.trim().toLowerCase()
-    if (!normalizedName) { setError('Category name is required'); return }
+    if (!normalizedName) { setError(t('products:category.nameRequired')); return }
 
     const cleanIcon = normalizeIcon(form.icon)
-    if (isIconTooLong(cleanIcon)) { setError('Icon must be 10 characters or fewer.'); return }
+    if (isIconTooLong(cleanIcon)) { setError(t('products:category.iconTooLong')); return }
 
     const duplicate = categories.some(cat =>
       cat.id !== editingId && cat.name.trim().toLowerCase() === normalizedName
     )
-    if (duplicate) { setError('A category with this name already exists'); return }
+    if (duplicate) { setError(t('products:category.duplicate')); return }
 
     setSaving(true)
     setError('')
@@ -132,10 +134,10 @@ export default function CategoriesModal({ open, categories, products, onClose, o
     const q = supabase as unknown as { from: (t: string) => any }
 
     const { error: err } = await q.from('categories').update(payload).eq('id', editingId)
-    if (err) { setError(err.message); setSaving(false); return }
+    if (err) { console.error('[CategoriesModal] update failed', err); setError(t('products:errors.saveFailed')); setSaving(false); return }
 
     setSaving(false)
-    const successMessage = editingId ? 'Category changes saved.' : 'Category added.'
+    const successMessage = t('products:category.saved')
     cancelForm(false)
     setNotice(successMessage)
     onChanged()
@@ -144,19 +146,20 @@ export default function CategoriesModal({ open, categories, products, onClose, o
   const handleDelete = async (id: string, name: string) => {
     const productCount = products.filter(p => p.category_id === id).length
     const warning = productCount > 0
-      ? `This category is used by ${productCount} ${productCount === 1 ? 'product' : 'products'}. Deleting it will remove the category from those products.`
-      : 'Deleting this category may uncategorize existing products.'
-    if (!confirm(`Delete category "${name}"?\n\n${warning}`)) return
+      ? t('products:category.deleteUsed', { count: productCount })
+      : t('products:category.deleteUnused')
+    if (!confirm(`${t('products:category.deleteConfirm', { name })}\n\n${warning}`)) return
 
     setError('')
     setNotice('')
     const q = supabase as unknown as { from: (t: string) => any }
     const { error: err } = await q.from('categories').delete().eq('id', id)
     if (err) {
-      setError(err.message)
+      console.error('[CategoriesModal] delete failed', err)
+      setError(t('products:errors.saveFailed'))
       return
     }
-    setNotice('Category deleted.')
+    setNotice(t('products:category.deleted'))
     onChanged()
   }
 
@@ -177,13 +180,14 @@ export default function CategoriesModal({ open, categories, products, onClose, o
     )
     const failed = results.find(result => result.error)
     if (failed?.error) {
-      setError(failed.error.message)
+      console.error('[CategoriesModal] reorder failed', failed.error)
+      setError(t('products:errors.saveFailed'))
       setLocalCategories(previousOrder)
       setReorderingId(null)
       return
     }
 
-    setNotice('Category order saved.')
+    setNotice(t('products:category.orderSaved'))
     setReorderingId(null)
     onChanged()
   }
@@ -222,12 +226,12 @@ export default function CategoriesModal({ open, categories, products, onClose, o
           {/* ── Header ──────────────────────────────────────── */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
             <div>
-              <h2 className="text-base font-bold text-gray-900">Manage Categories</h2>
+              <h2 className="text-base font-bold text-gray-900">{t('products:category.manage')}</h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                {categories.length} {categories.length === 1 ? 'category' : 'categories'} · Changes are saved immediately.
+                {t('products:category.count', { count: categories.length })} · {t('products:category.savedImmediately')}
               </p>
               <p className="text-xs text-gray-500 mt-1">
-                Drag categories to set the order shown from left to right in POS.
+                {t('products:category.orderHint')}
               </p>
             </div>
             <button
@@ -259,25 +263,25 @@ export default function CategoriesModal({ open, categories, products, onClose, o
                 className="border border-primary-200 bg-primary-50/20 rounded-xl p-4 space-y-3"
               >
                 <p className="text-sm font-semibold text-gray-800">
-                  Edit Category
+                  {t('products:category.edit')}
                 </p>
                 <p className="text-xs text-gray-500">
-                  Saving updates applies them right away.
+                  {t('products:category.saveHint')}
                 </p>
 
                 {/* Names */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="label text-xs">Name (English) *</label>
+                    <label className="label text-xs">{t('products:category.name')} *</label>
                     <input
                       className="input py-2 text-sm"
                       value={form.name}
                       onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                      placeholder="e.g. Beverages"
+                      placeholder={t('products:placeholders.category')}
                     />
                   </div>
                   <div>
-                    <label className="label text-xs">Name (Arabic)</label>
+                    <label className="label text-xs">{t('products:category.nameAr')}</label>
                     <input
                       className="input py-2 text-sm text-right"
                       dir="rtl"
@@ -290,18 +294,18 @@ export default function CategoriesModal({ open, categories, products, onClose, o
 
                 {/* Description */}
                 <div>
-                  <label className="label text-xs">Description</label>
+                  <label className="label text-xs">{t('products:category.description')}</label>
                   <input
                     className="input py-2 text-sm"
                     value={form.description}
                     onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                    placeholder="Optional"
+                    placeholder={t('common:optional')}
                   />
                 </div>
 
                 {/* Color swatches */}
                 <div>
-                  <label className="label text-xs">Color</label>
+                  <label className="label text-xs">{t('products:category.color')}</label>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {COLOR_PALETTE.map(c => (
                       <button
@@ -319,14 +323,14 @@ export default function CategoriesModal({ open, categories, products, onClose, o
 
                 {/* Searchable category emoji */}
                 <div>
-                  <label className="label text-xs">Category icon</label>
+                  <label className="label text-xs">{t('products:category.icon')}</label>
                   <CategoryEmojiPicker value={form.icon} categoryName={form.name}
                     onChange={icon => setForm(current => ({ ...current, icon }))} />
                 </div>
 
                 {/* Sort order */}
                 <div className="w-32">
-                  <label className="label text-xs">Sort Order</label>
+                  <label className="label text-xs">{t('products:category.sortOrder')}</label>
                   <input
                     className="input py-2 text-sm"
                     type="number"
@@ -340,10 +344,10 @@ export default function CategoriesModal({ open, categories, products, onClose, o
 
                 <div className="flex gap-2 pt-1">
                   <Button type="button" variant="ghost" size="sm" onClick={cancelForm}>
-                    Cancel
+                    {t('common:cancel')}
                   </Button>
                   <Button type="submit" size="sm" loading={saving}>
-                    Save Changes
+                    {t('common:save')}
                   </Button>
                 </div>
               </form>
@@ -352,7 +356,7 @@ export default function CategoriesModal({ open, categories, products, onClose, o
             {/* ── Category grid ──────────────────────────────── */}
             {categories.length === 0 ? (
               <div className="text-center py-8 text-gray-400 text-sm">
-                No categories yet. Use Add Category on the products page to create one.
+                {t('products:category.empty')}
               </div>
             ) : (
               <div className="space-y-2">
@@ -407,7 +411,7 @@ export default function CategoriesModal({ open, categories, products, onClose, o
                           reorderingId === null ? 'cursor-grab active:cursor-grabbing' : 'cursor-wait'
                         }`}
                         aria-label={`Drag to reorder ${cat.name}`}
-                        title="Drag to reorder"
+                        title={t('products:category.drag')}
                         tabIndex={0}
                       >
                         <GripVertical size={16} />
@@ -427,7 +431,7 @@ export default function CategoriesModal({ open, categories, products, onClose, o
                         {cat.name_ar && (
                           <p className="text-xs text-gray-400 truncate" dir="rtl">{cat.name_ar}</p>
                         )}
-                        <p className="text-[11px] text-gray-400 mt-0.5">Priority {index + 1}</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">{t('products:category.priority', { number: index + 1 })}</p>
                       </div>
 
                       {/* Color dot */}

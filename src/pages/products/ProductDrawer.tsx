@@ -10,15 +10,11 @@ import { calculateVatPriceBreakdown, type BranchVatMode } from '@/lib/pricing/va
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import type { Category, ProductSecurePayload, ProductSecureResult, ProductSecureUpdatePayload, ProductSkuSuggestionResult, VatTreatment } from '@/types'
 import type { ProductRow } from './ProductsPage'
+import { useTranslation } from 'react-i18next'
 
 // ── VAT options ───────────────────────────────────────────────────────────────
 
-const VAT_OPTIONS: { value: VatTreatment; label: string; desc: string }[] = [
-  { value: 'inherit',   label: 'Branch Default',    desc: 'Follow branch VAT setting' },
-  { value: 'exclusive', label: 'Always Exclusive',  desc: 'Price shown + VAT at checkout' },
-  { value: 'inclusive', label: 'Always Inclusive',  desc: 'VAT already included in price' },
-  { value: 'exempt',    label: 'VAT Exempt',        desc: 'No VAT is charged' },
-]
+const VAT_OPTIONS: VatTreatment[] = ['inherit', 'exclusive', 'inclusive', 'exempt']
 
 // ── Accordion section ─────────────────────────────────────────────────────────
 
@@ -58,34 +54,6 @@ interface Props {
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
-
-const productErrorMessage = (message: string) => {
-  if (/unsupported product field/i.test(message)) {
-    return 'Product could not be updated because one of the fields is not supported. Please refresh and try again.'
-  }
-  if (message.includes('Product category does not belong')) {
-    return 'Selected category does not match this branch. Refresh the page and select a category from this branch.'
-  }
-  if (/sku already exists/i.test(message)) {
-    return 'SKU already exists for another product in this business.'
-  }
-  if (/sku cannot|sku must|sku may|invalid sku|repeated separators/i.test(message)) {
-    return message
-  }
-  return message
-}
-
-const stockErrorMessage = (message: string) => {
-  if (/stock module is disabled/i.test(message)) return 'Stock tracking is disabled for this branch.'
-  if (/service products cannot track stock/i.test(message)) return 'Service products cannot track stock.'
-  if (/service businesses/i.test(message)) return 'Stock tracking is not available for service businesses.'
-  if (/opening stock/i.test(message)) return message
-  if (/adjustment would make stock negative/i.test(message)) return 'This adjustment would make stock negative.'
-  if (/product belongs to another branch/i.test(message)) return 'This product belongs to another branch.'
-  if (/permission|forbidden|unauthorized/i.test(message)) return 'You do not have permission to update product stock.'
-  if (/unsupported stock|invalid stock|adjust stock before/i.test(message)) return message
-  return 'Stock settings could not be saved. Check the stock values and try again.'
-}
 
 const formatStockQuantity = (value: number | null | undefined) => {
   const numeric = Number(value ?? 0)
@@ -130,6 +98,7 @@ function readProductDraft(key: string): ProductDraft | null {
 
 export default function ProductDrawer({ open, product, categories, onClose, onSaved }: Props) {
   const { profile, tenant, branch } = useAuth()
+  const { t } = useTranslation(['products', 'inventory', 'common'])
   const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement>(null)
   const initializedFormKey = useRef<string | null>(null)
@@ -399,13 +368,13 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
     if (!file) return
 
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      setError('Upload a JPEG, PNG, WebP, or GIF image.')
+      setError(t('products:image.invalidType'))
       e.target.value = ''
       return
     }
 
     if (file.size > MAX_IMAGE_BYTES) {
-      setError('Image must be 5 MB or smaller.')
+      setError(t('products:image.tooLarge'))
       e.target.value = ''
       return
     }
@@ -417,7 +386,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
   }
 
   const requestClose = () => {
-    if (hasUnsavedChanges && !confirm('Discard unsaved product changes?')) return
+    if (hasUnsavedChanges && !confirm(t('products:actions.discard'))) return
     if (imagePreview?.startsWith('blob:')) URL.revokeObjectURL(imagePreview)
     clearDraft()
     onClose()
@@ -425,24 +394,24 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim()) { setError('Product name is required'); return }
+    if (!name.trim()) { setError(t('products:errors.nameRequired')); return }
     const numericPrice = Number(price)
-    if (!price || isNaN(numericPrice)) { setError('A valid price is required'); return }
-    if (numericPrice < 0) { setError('Price must be zero or higher'); return }
+    if (!price || isNaN(numericPrice)) { setError(t('products:errors.priceRequired')); return }
+    if (numericPrice < 0) { setError(t('products:errors.priceNegative')); return }
     if (!resolvedTenantId || !resolvedBranchId) {
-      setError('Branch context is required before saving products.')
+      setError(t('products:errors.branchRequired'))
       return
     }
     if (categoryId && !selectedCategory) {
-      setError('Select a valid category for this branch.')
+      setError(t('products:errors.categoryInvalid'))
       return
     }
     if (selectedCategory?.tenant_id !== undefined && selectedCategory.tenant_id !== resolvedTenantId) {
-      setError('This category is not valid for this business.')
+      setError(t('products:errors.categoryBusinessInvalid'))
       return
     }
     if (selectedCategory?.branch_id !== undefined && selectedCategory.branch_id !== resolvedBranchId) {
-      setError('This category belongs to another branch. Select a category for this branch.')
+      setError(t('products:errors.categoryBranchInvalid'))
       return
     }
 
@@ -451,11 +420,11 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
     if (stockControlsAllowed && product && adjustmentQuantity.trim() !== '') {
       adjustmentDelta = Number(adjustmentQuantity)
       if (!Number.isFinite(adjustmentDelta) || adjustmentDelta === 0) {
-        setError('Enter a non-zero stock adjustment.')
+        setError(t('products:errors.adjustmentZero'))
         return
       }
       if (currentStockQuantity + adjustmentDelta < 0) {
-        setError('This adjustment would make stock negative.')
+        setError(t('products:errors.stockNegative'))
         return
       }
       manualAdjustmentKey = adjustmentIdempotencyKey ?? createStockAdjustmentKey()
@@ -463,7 +432,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
     }
 
     if (stockControlsAllowed && product && productWasTracked && !trackStock) {
-      const confirmed = confirm('Disable stock tracking for this product? The current stock quantity and stock history will be preserved, but POS sales will stop checking stock.')
+      const confirmed = confirm(t('products:inventory.disableConfirm'))
       if (!confirmed) return
     }
 
@@ -481,7 +450,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
         const { error: upErr } = await supabase.storage
           .from('product-images')
           .upload(path, imageFile, { upsert: true })
-        if (upErr) { setError('Image upload failed: ' + upErr.message); return }
+        if (upErr) { console.error('[ProductDrawer] image upload failed', upErr); setError(t('products:image.uploadFailed')); return }
         const { data: { publicUrl } } = supabase.storage
           .from('product-images')
           .getPublicUrl(path)
@@ -510,7 +479,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
 
       if (product || createdProductId) {
         if (!savedProductId) {
-          setError('Product id is required before saving changes.')
+          setError(t('products:errors.idRequired'))
           return
         }
         const updatePayload: ProductSecureUpdatePayload = {
@@ -522,7 +491,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
         })
         if (err) {
           console.error('Product update failed', { code: err.code, message: err.message })
-          setError(productErrorMessage(err.message))
+          setError(t('products:errors.saveFailed'))
           return
         }
         const result = data as ProductSecureResult | null
@@ -534,7 +503,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
             branch_id: resolvedBranchId,
           },
         })
-        if (err) { setError(productErrorMessage(err.message)); return }
+        if (err) { console.error('[ProductDrawer] create failed', err); setError(t('products:errors.saveFailed')); return }
         const result = data as ProductSecureResult | null
         savedProductId = result?.product_id ?? null
         if (result?.sku) setSku(result.sku)
@@ -569,7 +538,8 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
             const prefix = product
               ? 'Product details were saved, but stock settings were not updated: '
               : 'Product was created, but stock setup was not completed: '
-            setError(prefix + stockErrorMessage(stockErr.message))
+            console.error('[ProductDrawer] stock settings failed', { prefix, error: stockErr })
+            setError(t('products:errors.saveFailed'))
             return
           }
         }
@@ -599,9 +569,9 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
         <div className="fixed inset-y-0 right-0 w-full max-w-[480px] bg-white shadow-2xl z-50 flex flex-col">
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
             <div>
-              <h2 className="text-base font-bold text-gray-900">Product created successfully.</h2>
+              <h2 className="text-base font-bold text-gray-900">{t('products:created')}</h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                Add quantity, supplier, and purchase cost from Product Stock.
+                {t('products:createdHint')}
               </p>
             </div>
             <button type="button" onClick={onClose}
@@ -614,14 +584,14 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
             <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
               <p className="text-sm font-semibold text-gray-900">{createdTrackedProduct.name}</p>
               <p className="mt-1 text-xs leading-5 text-gray-500">
-                Inventory tracking is enabled with zero stock. Use Add Opening Stock to receive the first quantity with its cost and supplier details.
+                {t('products:openingStockHint')}
               </p>
             </div>
           </div>
 
           <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
             <Button type="button" variant="secondary" onClick={onClose}>
-              Done
+              {t('products:done')}
             </Button>
             <Button
               type="button"
@@ -635,7 +605,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                 })
               }}
             >
-              Add Opening Stock
+              {t('products:addOpeningStock')}
             </Button>
           </div>
         </div>
@@ -656,10 +626,10 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
             <div>
               <h2 className="text-base font-bold text-gray-900">
-                {product ? 'Edit Product' : 'Add Product'}
+                {product ? t('products:edit') : t('products:add')}
               </h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                {product ? 'Update product details below' : 'Fill in the details for your new product'}
+                {product ? t('products:editHint') : t('products:addHint')}
               </p>
             </div>
             <button
@@ -675,20 +645,20 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
           <div className="flex-1 overflow-y-auto p-6 space-y-3">
 
             {/* Basic Info */}
-            <Section title="Basic Information" open={s0} onToggle={() => setS0(v => !v)}>
+            <Section title={t('products:sections.basic')} open={s0} onToggle={() => setS0(v => !v)}>
               <div>
                 <label className="label">
-                  Product Name (English) <span className="text-red-500">*</span>
+                  {t('products:fields.name')} <span className="text-red-500">*</span>
                 </label>
                 <input
                   className="input"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder="e.g. Chicken Shawarma"
+                  placeholder={t('products:placeholders.name')}
                 />
               </div>
               <div>
-                <label className="label">Product Name (Arabic)</label>
+                <label className="label">{t('products:fields.nameAr')}</label>
                 <input
                   className="input text-right"
                   dir="rtl"
@@ -698,34 +668,34 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                 />
               </div>
               <div>
-                <label className="label">Category</label>
+                <label className="label">{t('products:fields.category')}</label>
                 <select
                   className="input"
                   value={categoryId}
                   onChange={e => setCategoryId(e.target.value)}
                 >
-                  <option value="">— No Category —</option>
+                  <option value="">— {t('products:category.none')} —</option>
                   {categories.map(c => (
                     <option key={c.id} value={c.id}>
-                      {c.icon ? `${c.icon} ${c.name}` : c.name}
+                      {c.icon ? `${c.icon} ${c.name_ar || c.name}` : (c.name_ar || c.name)}
                     </option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="label">Description</label>
+                <label className="label">{t('products:fields.description')}</label>
                 <textarea
                   className="input resize-none"
                   rows={2}
                   value={description}
                   onChange={e => setDescription(e.target.value)}
-                  placeholder="Optional product description"
+                  placeholder={t('products:placeholders.description')}
                 />
               </div>
             </Section>
 
             {/* Pricing & VAT */}
-            <Section title="Pricing & VAT" open={s1} onToggle={() => setS1(v => !v)}>
+            <Section title={t('products:sections.pricing')} open={s1} onToggle={() => setS1(v => !v)}>
               <div>
                 <label className="label">
                   Price (SAR) <span className="text-red-500">*</span>
@@ -743,30 +713,30 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                 </div>
               </div>
               <div>
-                <label className="label">VAT Treatment</label>
+                <label className="label">{t('products:fields.vatTreatment')}</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {VAT_OPTIONS.map(opt => (
+                  {VAT_OPTIONS.map(value => (
                     <button
-                      key={opt.value}
+                      key={value}
                       type="button"
-                      onClick={() => setVatTreatment(opt.value)}
+                      onClick={() => setVatTreatment(value)}
                       className={`text-left px-3 py-2.5 rounded-xl border transition-all ${
-                        vatTreatment === opt.value
+                        vatTreatment === value
                           ? 'border-primary-500 bg-primary-50 text-primary-700'
                           : 'border-gray-200 hover:border-gray-300 text-gray-600'
                       }`}
                     >
-                      <p className="text-xs font-semibold">{opt.label}</p>
-                      <p className="text-[10px] text-gray-400 mt-0.5">{opt.desc}</p>
+                      <p className="text-xs font-semibold">{t(`products:pricing.${value === 'exempt' ? 'exemptOption' : value}`)}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">{t(`products:pricing.${value}Desc`)}</p>
                     </button>
                   ))}
                 </div>
               </div>
-              <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3.5" aria-live="polite" aria-label="Price preview">
+              <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3.5" aria-live="polite" aria-label={t('products:pricing.preview')}>
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <p className="text-xs font-semibold text-gray-800">Price preview</p>
-                    <p className="mt-0.5 text-[10px] leading-4 text-gray-500">How this product will be charged at checkout</p>
+                    <p className="text-xs font-semibold text-gray-800">{t('products:pricing.preview')}</p>
+                    <p className="mt-0.5 text-[10px] leading-4 text-gray-500">{t('products:pricing.previewHint')}</p>
                   </div>
                   {vatTreatment === 'inherit' && branchVatMode && (
                     <span className="rounded-full border border-primary-100 bg-primary-50 px-2 py-1 text-[10px] font-semibold text-primary-700">
@@ -783,37 +753,37 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                   </p>
                 ) : pricePreview.effectiveTreatment === 'inclusive' ? (
                   <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                    <dt className="text-gray-500">Customer pays</dt>
+                    <dt className="text-gray-500">{t('products:pricing.customerPays')}</dt>
                     <dd className="text-right font-bold tabular-nums text-gray-900">{formatPreviewMoney(pricePreview.customerTotal)}</dd>
-                    <dt className="text-gray-500">Price before VAT</dt>
+                    <dt className="text-gray-500">{t('products:pricing.beforeVat')}</dt>
                     <dd className="text-right font-semibold tabular-nums text-gray-700">{formatPreviewMoney(pricePreview.subtotal)}</dd>
-                    <dt className="text-gray-500">Included VAT</dt>
+                    <dt className="text-gray-500">{t('products:pricing.includedVat')}</dt>
                     <dd className="text-right font-semibold tabular-nums text-amber-700">{formatPreviewMoney(pricePreview.vatAmount)}</dd>
                   </dl>
                 ) : pricePreview.effectiveTreatment === 'exclusive' ? (
                   <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                    <dt className="text-gray-500">{vatTreatment === 'inherit' ? 'Entered price' : 'Price before VAT'}</dt>
+                    <dt className="text-gray-500">{t(vatTreatment === 'inherit' ? 'products:pricing.enteredPrice' : 'products:pricing.beforeVat')}</dt>
                     <dd className="text-right font-semibold tabular-nums text-gray-700">{formatPreviewMoney(pricePreview.subtotal)}</dd>
-                    <dt className="text-gray-500">VAT 15%</dt>
+                    <dt className="text-gray-500">{t('products:pricing.vat15')}</dt>
                     <dd className="text-right font-semibold tabular-nums text-amber-700">{formatPreviewMoney(pricePreview.vatAmount)}</dd>
-                    <dt className="border-t border-gray-200 pt-2 font-semibold text-gray-700">Customer pays</dt>
+                    <dt className="border-t border-gray-200 pt-2 font-semibold text-gray-700">{t('products:pricing.customerPays')}</dt>
                     <dd className="border-t border-gray-200 pt-2 text-right font-bold tabular-nums text-gray-900">{formatPreviewMoney(pricePreview.customerTotal)}</dd>
                   </dl>
                 ) : (
                   <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                    <dt className="text-gray-500">Customer pays</dt>
+                    <dt className="text-gray-500">{t('products:pricing.customerPays')}</dt>
                     <dd className="text-right font-bold tabular-nums text-gray-900">{formatPreviewMoney(pricePreview.customerTotal)}</dd>
-                    <dt className="text-gray-500">VAT</dt>
+                    <dt className="text-gray-500">{t('products:pricing.vat')}</dt>
                     <dd className="text-right font-semibold tabular-nums text-gray-700">{formatPreviewMoney(0)}</dd>
-                    <dt className="text-gray-500">Treatment</dt>
-                    <dd className="text-right font-semibold text-gray-700">VAT exempt</dd>
+                    <dt className="text-gray-500">{t('products:pricing.treatment')}</dt>
+                    <dd className="text-end font-semibold text-gray-700">{t('products:pricing.exempt')}</dd>
                   </dl>
                 )}
               </div>
             </Section>
 
             {/* Product Image */}
-            <Section title="Product Image" open={s2} onToggle={() => setS2(v => !v)}>
+            <Section title={t('products:sections.image')} open={s2} onToggle={() => setS2(v => !v)}>
               <input
                 ref={fileRef}
                 type="file"
@@ -825,7 +795,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                 <div className="relative group/img">
                   <img
                     src={imagePreview}
-                    alt="Preview"
+                    alt={t('products:image.preview')}
                     className="w-full h-44 object-cover rounded-xl border border-gray-200"
                   />
                   <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 group-hover/img:opacity-100 transition-opacity bg-black/20 rounded-xl">
@@ -834,7 +804,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                       onClick={() => fileRef.current?.click()}
                       className="bg-white text-gray-700 text-xs font-medium px-3 py-1.5 rounded-lg shadow hover:bg-gray-50"
                     >
-                      Change
+                      {t('products:image.change')}
                     </button>
                     <button
                       type="button"
@@ -845,7 +815,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                       }}
                       className="bg-white text-red-500 text-xs font-medium px-3 py-1.5 rounded-lg shadow hover:bg-red-50"
                     >
-                      Remove
+                      {t('products:image.remove')}
                     </button>
                   </div>
                 </div>
@@ -857,20 +827,20 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                 >
                   <ImagePlus size={24} className="text-gray-300 group-hover/upload:text-primary-400 transition-colors" />
                   <p className="text-xs text-gray-400 group-hover/upload:text-primary-500 transition-colors">
-                    Click to upload image
+                    {t('products:image.upload')}
                   </p>
-                  <p className="text-[10px] text-gray-300">JPEG, PNG, WebP or GIF · max 5 MB</p>
+                  <p className="text-[10px] text-gray-300">{t('products:image.formats')}</p>
                 </button>
               )}
             </Section>
 
             {/* Settings */}
-            <Section title="Settings" open={s3} onToggle={() => setS3(v => !v)}>
+            <Section title={t('products:sections.settings')} open={s3} onToggle={() => setS3(v => !v)}>
               {/* Show in POS toggle */}
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-700">Show in POS</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Product appears during billing/checkout</p>
+                  <p className="text-sm font-medium text-gray-700">{t('products:inventory.showInPos')}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{t('products:inventory.showInPosHint')}</p>
                 </div>
                 <Switch
                   checked={isAvailable}
@@ -887,7 +857,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                         <PackageCheck size={16} />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-gray-800">Track inventory</p>
+                        <p className="text-sm font-semibold text-gray-800">{t('products:inventory.track')}</p>
                         <p className="mt-0.5 text-xs leading-5 text-gray-500">
                           {product
                             ? 'Sales reduce tracked stock automatically. Use Adjust Stock for audited quantity changes.'
@@ -912,15 +882,15 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                   {product && (
                     <div className="grid grid-cols-2 gap-2 rounded-lg bg-white/80 p-2.5 text-xs">
                       <div>
-                        <p className="text-gray-400">Current stock</p>
+                        <p className="text-gray-400">{t('products:inventory.current')}</p>
                         <p className={`mt-0.5 font-semibold ${productWasTracked ? 'text-gray-800' : 'text-gray-500'}`}>
-                          {productWasTracked ? formatStockQuantity(product.stock_quantity) : 'Not tracked'}
+                          {productWasTracked ? formatStockQuantity(product.stock_quantity) : t('products:status.notTracked')}
                         </p>
                       </div>
                       <div>
-                        <p className="text-gray-400">Tracking status</p>
+                        <p className="text-gray-400">{t('products:inventory.trackingStatus')}</p>
                         <p className={`mt-0.5 font-semibold ${trackStock ? 'text-emerald-700' : 'text-gray-500'}`}>
-                          {trackStock ? 'Tracked' : 'Not tracked'}
+                          {t(trackStock ? 'products:status.tracked' : 'products:status.notTracked')}
                         </p>
                       </div>
                     </div>
@@ -934,12 +904,12 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                         className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"
                       >
                         <SlidersHorizontal size={13} />
-                        Adjust Stock
+                        {t('inventory:actions.adjust')}
                       </button>
 
                       {showAdjustment && (
                         <div className="rounded-lg border border-emerald-100 bg-white p-3">
-                          <label className="label">Adjustment quantity</label>
+                          <label className="label">{t('products:fields.adjustmentQuantity')}</label>
                           <input
                             className="input"
                             type="number"
@@ -949,7 +919,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                               setAdjustmentQuantity(e.target.value)
                               setAdjustmentIdempotencyKey(null)
                             }}
-                            placeholder="e.g. 5 or -2"
+                            placeholder={t('products:placeholders.adjustment')}
                           />
                           <p className="mt-1 text-xs leading-5 text-gray-400">
                             Use a positive number to add stock or a negative number to reduce it. The final stock cannot go below zero.
@@ -973,7 +943,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
               ) : null}
 
               <div>
-                <label className="label">SKU / Item Code</label>
+                <label className="label">{t('products:fields.sku')}</label>
                 <input
                   className="input"
                   value={sku}
@@ -982,7 +952,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                     setSkuManuallyEdited(e.target.value.trim() !== '')
                     if (e.target.value.trim() === '') setSuggestedSku(null)
                   }}
-                  placeholder="e.g. PROD-001 (optional)"
+                  placeholder={t('products:placeholders.sku')}
                 />
                 <p className="text-xs text-gray-400 mt-1">
                   {skuSuggesting
@@ -996,7 +966,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
               </div>
 
               <div>
-                <label className="label">Sort Order</label>
+                <label className="label">{t('products:fields.sortOrder')}</label>
                 <input
                   className="input"
                   type="number"
@@ -1005,17 +975,17 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
                   onChange={e => setSortOrder(e.target.value)}
                   placeholder="0"
                 />
-                <p className="text-xs text-gray-400 mt-1">Lower numbers appear first in the POS grid</p>
+                <p className="text-xs text-gray-400 mt-1">{t('products:inventory.lowerFirst')}</p>
               </div>
 
               <div>
-                <label className="label">Notes / Kitchen Instructions</label>
+                <label className="label">{t('products:fields.notes')}</label>
                 <textarea
                   className="input resize-none"
                   rows={2}
                   value={notes}
                   onChange={e => setNotes(e.target.value)}
-                  placeholder="e.g. allergens, preparation notes, modifiers..."
+                  placeholder={t('products:placeholders.notes')}
                 />
               </div>
             </Section>
@@ -1031,10 +1001,10 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
           {/* ── Footer ──────────────────────────────────────── */}
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
             <Button type="button" variant="secondary" className="flex-1" onClick={requestClose}>
-              Cancel
+              {t('common:cancel')}
             </Button>
             <Button type="submit" className="flex-1" loading={saving}>
-              {product ? 'Save Changes' : 'Add Product'}
+              {product ? t('products:actions.update') : t('products:actions.save')}
             </Button>
           </div>
 

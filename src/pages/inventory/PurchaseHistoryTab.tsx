@@ -15,10 +15,12 @@ import {
   formatDateRangeLabel,
   getDateRange,
 } from '../reports/reportUtils'
+import { useTranslation } from 'react-i18next'
+import { displayName as dn } from '@/lib/utils/display'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface SupplierSnap { name: string }
+interface SupplierSnap { name: string; name_ar: string | null }
 
 interface PurchaseRow extends Purchase {
   suppliers:      SupplierSnap | null
@@ -31,28 +33,6 @@ const EDIT_WINDOW_DAYS = 45
 
 const PAY_BADGE: Record<string, 'success' | 'info' | 'neutral'> = {
   cash: 'success', card: 'info', bank_transfer: 'neutral',
-}
-const PAY_LABEL: Record<string, string> = {
-  cash: 'Cash', card: 'Card', bank_transfer: 'Bank',
-}
-const MODE_LABEL: Record<string, string> = {
-  simple_bill: 'Bill',
-  detailed_receiving: 'Stock',
-  receive_stock: 'Stock',
-}
-const PAYMENT_STATUS_LABEL: Record<string, string> = {
-  paid: 'Paid',
-  unpaid: 'Unpaid',
-  partial: 'Partial',
-}
-const RECEIVING_LABEL: Record<string, string> = {
-  not_applicable: 'Bill',
-  draft: 'Pending',
-  pending_confirmation: 'Pending',
-  confirmed: 'Stock Added',
-  cancelled: 'Deleted',
-  reversed: 'Deleted',
-  confirmed_legacy: 'Stock Added',
 }
 const fmt = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -68,7 +48,8 @@ function PurchaseDetailModal({
   onClose:    () => void
   onOpenBill: (purchase: PurchaseRow) => void
 }) {
-  const supplierName = purchase.suppliers?.name ?? '—'
+  const { t, i18n } = useTranslation(['purchases', 'common'])
+  const supplierName = purchase.suppliers ? dn(purchase.suppliers.name, purchase.suppliers.name_ar) : '—'
   const pay          = purchase.payment_method
   const mode         = purchase.purchase_mode ?? 'detailed_receiving'
   const receiving    = purchase.receiving_status ?? 'not_applicable'
@@ -82,9 +63,9 @@ function PurchaseDetailModal({
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
             <div>
-              <h3 className="text-base font-bold text-gray-900">Purchase Details</h3>
+              <h3 className="text-base font-bold text-gray-900">{t('purchases:details')}</h3>
               <p className="text-xs text-gray-400 mt-0.5">
-                {new Date(purchase.purchase_date).toLocaleDateString('en-GB', {
+                {new Date(purchase.purchase_date).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-GB', {
                   day: '2-digit', month: 'long', year: 'numeric',
                 })}
                 {supplierName !== '—' && ` · ${supplierName}`}
@@ -101,31 +82,31 @@ function PurchaseDetailModal({
             {/* Meta */}
             <div className="flex gap-3 text-sm">
               <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2">
-                <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Supplier</p>
+                <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">{t('purchases:fields.supplier')}</p>
                 <p className="font-medium text-gray-800 mt-0.5">{supplierName}</p>
               </div>
               <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2">
-                <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Type</p>
-                <p className="font-medium text-gray-800 mt-0.5">{MODE_LABEL[mode] ?? mode}</p>
+                <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">{t('purchases:fields.type')}</p>
+                <p className="font-medium text-gray-800 mt-0.5">{mode === 'simple_bill' ? t('purchases:mode.bill') : t('purchases:mode.stock')}</p>
               </div>
               {['detailed_receiving', 'receive_stock'].includes(mode) && (
                 <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2">
-                  <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Status</p>
-                  <p className="font-medium text-gray-800 mt-0.5">{RECEIVING_LABEL[receiving] ?? receiving}</p>
+                  <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">{t('purchases:fields.status')}</p>
+                  <p className="font-medium text-gray-800 mt-0.5">{receiving === 'confirmed' || receiving === 'confirmed_legacy' ? t('purchases:status.stockAdded') : receiving === 'cancelled' || receiving === 'reversed' ? t('purchases:status.deleted') : t('purchases:status.pending')}</p>
                 </div>
               )}
               <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2">
-                <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Payment</p>
+                <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">{t('purchases:sections.payment')}</p>
                 <p className="font-medium text-gray-800 mt-0.5">
-                  {PAY_LABEL[pay] ?? pay}
-                  {purchase.payment_status ? ` · ${PAYMENT_STATUS_LABEL[purchase.payment_status] ?? purchase.payment_status}` : ''}
+                  {t(`purchases:paymentMethod.${pay}`, { defaultValue: t('purchases:paymentMethod.unknown') })}
+                  {purchase.payment_status ? ` · ${t(`purchases:status.${purchase.payment_status}`, { defaultValue: t('purchases:status.unknown') })}` : ''}
                 </p>
               </div>
             </div>
 
             {purchase.bill_number && (
               <div className="bg-gray-50 rounded-xl px-3 py-2">
-                <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Bill Number</p>
+                <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">{t('purchases:fields.billNumber')}</p>
                 <p className="font-medium text-gray-800 mt-0.5">{purchase.bill_number}</p>
               </div>
             )}
@@ -135,25 +116,25 @@ function PurchaseDetailModal({
               <button type="button" onClick={() => onOpenBill(purchase)}
                 className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 text-sm text-amber-700 hover:bg-amber-100 transition-colors">
                 <Paperclip size={14} />
-                <span className="font-medium">View attached bill / invoice</span>
+                <span className="font-medium">{t('purchases:viewBill')}</span>
               </button>
             )}
 
             {/* Line items */}
             <div>
-              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Items</p>
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">{t('purchases:sections.items')}</p>
               {loading ? (
                 <div className="flex justify-center py-6"><LoadingSpinner /></div>
               ) : items.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">No items recorded</p>
+                <p className="text-sm text-gray-400 text-center py-4">{t('purchases:noItems')}</p>
               ) : (
                 <div className="space-y-1.5">
                   {/* Header */}
                   <div className="flex gap-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-2">
-                    <div className="flex-1">Item</div>
-                    <div className="w-16 text-right">Qty</div>
-                    <div className="w-24 text-right">Unit Cost</div>
-                    <div className="w-24 text-right">Total</div>
+                    <div className="flex-1">{t('purchases:fields.item')}</div>
+                    <div className="w-16 text-end">{t('purchases:fields.quantity')}</div>
+                    <div className="w-24 text-end">{t('purchases:fields.unitCost')}</div>
+                    <div className="w-24 text-end">{t('purchases:fields.total')}</div>
                   </div>
                   {items.map(item => (
                     <div key={item.id}
@@ -177,24 +158,24 @@ function PurchaseDetailModal({
             {/* Totals */}
             <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
               <div className="flex justify-between text-gray-600">
-                <span>Subtotal</span>
+                <span>{t('purchases:fields.subtotal')}</span>
                 <span className="tabular-nums"><Rial amount={purchase.subtotal} /></span>
               </div>
               {purchase.vat_amount > 0 && (
                 <div className="flex justify-between text-gray-600">
-                  <span>VAT (15%)</span>
+                  <span>{t('purchases:fields.vat')} (15%)</span>
                   <span className="tabular-nums"><Rial amount={purchase.vat_amount} /></span>
                 </div>
               )}
               <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1.5">
-                <span>Total Paid</span>
+                <span>{t('purchases:fields.totalPaid')}</span>
                 <span className="tabular-nums text-emerald-600"><Rial amount={purchase.total_amount} /></span>
               </div>
             </div>
 
             {purchase.notes && (
               <div className="bg-gray-50 rounded-xl px-4 py-3">
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Notes</p>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{t('purchases:fields.notes')}</p>
                 <p className="text-sm text-gray-600">{purchase.notes}</p>
               </div>
             )}
@@ -202,7 +183,7 @@ function PurchaseDetailModal({
 
           {/* Footer */}
           <div className="px-6 py-4 border-t border-gray-100">
-            <Button variant="secondary" className="w-full" onClick={onClose}>Close</Button>
+            <Button variant="secondary" className="w-full" onClick={onClose}>{t('common:close')}</Button>
           </div>
         </div>
       </div>
@@ -221,7 +202,8 @@ function DeletePurchaseModal({
   onClose: () => void
   onDelete: () => void
 }) {
-  const supplierName = purchase.suppliers?.name ?? 'No supplier'
+  const { t, i18n } = useTranslation(['purchases', 'common'])
+  const supplierName = purchase.suppliers ? dn(purchase.suppliers.name, purchase.suppliers.name_ar) : t('purchases:noSupplierLower')
 
   return (
     <>
@@ -233,9 +215,9 @@ function DeletePurchaseModal({
               <AlertTriangle size={18} />
             </div>
             <div className="min-w-0">
-              <h3 className="text-base font-bold text-gray-900">Delete Purchase</h3>
+              <h3 className="text-base font-bold text-gray-900">{t('purchases:delete')}</h3>
               <p className="text-sm text-gray-500 mt-1">
-                This will remove this purchase from totals. If stock was added, stock will be reduced safely.
+                {t('purchases:deleteHint')}
               </p>
             </div>
           </div>
@@ -243,16 +225,16 @@ function DeletePurchaseModal({
           <div className="px-6 py-5 space-y-4">
             <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm">
               <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Supplier</span>
+                <span className="text-gray-500">{t('purchases:fields.supplier')}</span>
                 <span className="font-medium text-gray-700 truncate">{supplierName}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Total</span>
+                <span className="text-gray-500">{t('purchases:fields.total')}</span>
                 <span className="font-semibold text-gray-900"><Rial amount={purchase.total_amount} /></span>
               </div>
               <div className="flex justify-between gap-3 mt-1">
-                <span className="text-gray-500">Date</span>
-                <span className="font-medium text-gray-700">{new Date(purchase.purchase_date).toLocaleDateString('en-GB')}</span>
+                <span className="text-gray-500">{t('purchases:fields.date')}</span>
+                <span className="font-medium text-gray-700">{new Date(purchase.purchase_date).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-GB')}</span>
               </div>
             </div>
 
@@ -264,7 +246,7 @@ function DeletePurchaseModal({
                 className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
               />
               <span className="text-sm text-gray-600">
-                I understand this purchase will be removed from totals. Attached files are not deleted in this phase.
+                {t('purchases:deleteAcknowledge')}
               </span>
             </label>
 
@@ -276,7 +258,7 @@ function DeletePurchaseModal({
           </div>
 
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>{t('common:cancel')}</Button>
             <Button
               type="button"
               variant="danger"
@@ -285,7 +267,7 @@ function DeletePurchaseModal({
               disabled={!confirmed}
               onClick={onDelete}
             >
-              Delete
+              {t('common:delete')}
             </Button>
           </div>
         </div>
@@ -305,7 +287,8 @@ function ConfirmStockModal({
   onClose: () => void
   onConfirm: () => void
 }) {
-  const supplierName = purchase.suppliers?.name ?? 'No supplier'
+  const { t, i18n } = useTranslation(['purchases', 'common'])
+  const supplierName = purchase.suppliers ? dn(purchase.suppliers.name, purchase.suppliers.name_ar) : t('purchases:noSupplierLower')
 
   return (
     <>
@@ -317,9 +300,9 @@ function ConfirmStockModal({
               <CheckCircle2 size={18} />
             </div>
             <div className="min-w-0">
-              <h3 className="text-base font-bold text-gray-900">Confirm Stock</h3>
+              <h3 className="text-base font-bold text-gray-900">{t('purchases:receive')}</h3>
               <p className="text-sm text-gray-500 mt-1">
-                This adds stock for linked items. Lines without a stock item stay as bill details.
+                {t('purchases:confirmStockHint')}
               </p>
             </div>
           </div>
@@ -327,16 +310,16 @@ function ConfirmStockModal({
           <div className="px-6 py-5 space-y-4">
             <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm">
               <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Supplier</span>
+                <span className="text-gray-500">{t('purchases:fields.supplier')}</span>
                 <span className="font-medium text-gray-700 truncate">{supplierName}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Total</span>
+                <span className="text-gray-500">{t('purchases:fields.total')}</span>
                 <span className="font-semibold text-gray-900"><Rial amount={purchase.total_amount} /></span>
               </div>
               <div className="flex justify-between gap-3 mt-1">
-                <span className="text-gray-500">Date</span>
-                <span className="font-medium text-gray-700">{new Date(purchase.purchase_date).toLocaleDateString('en-GB')}</span>
+                <span className="text-gray-500">{t('purchases:fields.date')}</span>
+                <span className="font-medium text-gray-700">{new Date(purchase.purchase_date).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-GB')}</span>
               </div>
             </div>
 
@@ -348,7 +331,7 @@ function ConfirmStockModal({
                 className="mt-0.5 h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
               />
               <span className="text-sm text-gray-600">
-                I confirm the linked stock quantities are correct.
+                {t('purchases:confirmStockAcknowledge')}
               </span>
             </label>
 
@@ -360,7 +343,7 @@ function ConfirmStockModal({
           </div>
 
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>{t('common:cancel')}</Button>
             <Button
               type="button"
               className="flex-1"
@@ -368,7 +351,7 @@ function ConfirmStockModal({
               disabled={!confirmed}
               onClick={onConfirm}
             >
-              Confirm
+              {t('common:confirm')}
             </Button>
           </div>
         </div>
@@ -381,6 +364,7 @@ function ConfirmStockModal({
 
 export default function PurchaseHistoryTab() {
   const { profile } = useAuth()
+  const { t, i18n } = useTranslation(['purchases', 'common'])
   const initialDateRange = getDateRange('today')
 
   const [purchases,       setPurchases]       = useState<PurchaseRow[]>([])
@@ -432,7 +416,7 @@ export default function PurchaseHistoryTab() {
     const [{ data: purData }, { data: supData }, { data: invData }] = await Promise.all([
       supabase
         .from('purchases')
-        .select('*, suppliers(name), purchase_items(id)')
+        .select('*, suppliers(name,name_ar), purchase_items(id)')
         .eq('branch_id', bid)
         .gte('purchase_date', startDate)
         .lte('purchase_date', endDate)
@@ -552,10 +536,10 @@ export default function PurchaseHistoryTab() {
   }
 
   const purchaseStatusLabel = (purchase: PurchaseRow) => {
-    if (isDeletedPurchase(purchase)) return 'Deleted'
-    if (purchaseMode(purchase) === 'simple_bill') return 'Bill'
-    if (['confirmed', 'confirmed_legacy'].includes(receivingStatus(purchase))) return 'Stock Added'
-    return 'Pending'
+    if (isDeletedPurchase(purchase)) return 'deleted'
+    if (purchaseMode(purchase) === 'simple_bill') return 'bill'
+    if (['confirmed', 'confirmed_legacy'].includes(receivingStatus(purchase))) return 'stockAdded'
+    return 'pending'
   }
 
   const purchaseStatusVariant = (purchase: PurchaseRow): 'success' | 'warning' | 'danger' | 'neutral' => {
@@ -617,15 +601,8 @@ export default function PurchaseHistoryTab() {
     })
 
     if (error) {
-      const rawMessage = error.message ?? ''
-      const message = /permission|forbidden|unauthorized/i.test(rawMessage)
-        ? 'You do not have permission to delete this purchase.'
-        : /45 days|older/i.test(rawMessage)
-        ? 'Purchases older than 45 days can only be viewed.'
-        : /stock is lower|current stock/i.test(rawMessage)
-        ? 'This purchase cannot be deleted because current stock is lower than the received quantity.'
-        : rawMessage || 'Delete failed'
-      setDeleteError(message)
+      console.error('[PurchaseHistoryTab] delete failed', error)
+      setDeleteError(t('purchases:errors.saveFailed'))
       setDeleting(false)
       return
     }
@@ -634,28 +611,6 @@ export default function PurchaseHistoryTab() {
     setDeleteTarget(null)
     setDeleteConfirmed(false)
     await load()
-  }
-
-  const friendlyConfirmError = (rawMessage: string) => {
-    if (/permission|forbidden|unauthorized/i.test(rawMessage)) {
-      return 'You do not have permission to confirm this purchase.'
-    }
-    if (/already.*confirmed/i.test(rawMessage)) {
-      return 'Stock has already been added for this purchase.'
-    }
-    if (/already.*reversed|already.*cancelled/i.test(rawMessage)) {
-      return 'This purchase is already deleted.'
-    }
-    if (/lower than the received quantity|current stock/i.test(rawMessage)) {
-      return 'This purchase cannot be updated because current stock is lower than the received quantity.'
-    }
-    if (/linked stock|At least one|item lines/i.test(rawMessage)) {
-      return 'Link at least one stock item line before confirming receiving.'
-    }
-    if (/pending receiving|not pending/i.test(rawMessage)) {
-      return 'This purchase is not pending stock confirmation.'
-    }
-    return rawMessage || 'Receiving update failed'
   }
 
   const confirmStock = async () => {
@@ -669,7 +624,8 @@ export default function PurchaseHistoryTab() {
     })
 
     if (error) {
-      setConfirmError(friendlyConfirmError(error.message ?? ''))
+      console.error('[PurchaseHistoryTab] receiving confirmation failed', error)
+      setConfirmError(t('purchases:errors.receiveFailed'))
       setConfirming(false)
       return
     }
@@ -708,7 +664,8 @@ export default function PurchaseHistoryTab() {
       }
     } catch (err) {
       if (opened) opened.close()
-      alert(err instanceof Error ? err.message : 'Unable to open bill attachment')
+      console.error('[PurchaseHistoryTab] unable to open bill attachment', err)
+      alert(t('purchases:unableOpenBill'))
     }
   }
 
@@ -724,26 +681,26 @@ export default function PurchaseHistoryTab() {
       <div className="flex items-start gap-4 flex-wrap">
         <div className="flex gap-3 flex-1 flex-wrap min-w-0">
           <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-primary-500 border border-primary-600 text-white shadow-card">
-            <p className="text-xs font-medium text-white/70">Total Purchased</p>
+            <p className="text-xs font-medium text-white/70">{t('purchases:totalPurchased')}</p>
             <p className="text-lg font-bold mt-0.5"><Rial amount={totalSpent} /></p>
-            <p className="text-[10px] text-white/60 mt-0.5">{purchases.length} purchase{purchases.length !== 1 ? 's' : ''}</p>
+            <p className="text-[10px] text-white/60 mt-0.5">{t('purchases:purchaseCount', { count: purchases.length })}</p>
           </div>
           <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
-            <p className="text-xs font-medium text-gray-400">VAT Paid</p>
+            <p className="text-xs font-medium text-gray-400">{t('purchases:vatPaid')}</p>
             <p className="text-lg font-bold text-amber-600 mt-0.5"><Rial amount={totalVat} /></p>
-            <p className="text-[10px] text-gray-400 mt-0.5">on all purchases</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">{t('purchases:allPurchases')}</p>
           </div>
           <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
-            <p className="text-xs font-medium text-gray-400">Suppliers Used</p>
+            <p className="text-xs font-medium text-gray-400">{t('purchases:suppliersUsed')}</p>
             <p className="text-lg font-bold text-gray-900 mt-0.5">
               {new Set(purchases.map(p => p.supplier_id).filter(Boolean)).size}
             </p>
-            <p className="text-[10px] text-gray-400 mt-0.5">unique vendors</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">{t('purchases:uniqueVendors')}</p>
           </div>
         </div>
         <Button size="sm" onClick={openAdd} className="flex-shrink-0 self-start">
           <Plus size={14} />
-          Add Purchase
+          {t('purchases:new')}
         </Button>
       </div>
 
@@ -759,7 +716,7 @@ export default function PurchaseHistoryTab() {
         />
         {startDate && endDate && (
           <p className="text-xs text-gray-400">
-            Showing purchases from <span className="font-medium text-gray-600">{formatDateRangeLabel(startDate, endDate)}</span>
+            {t('purchases:showingRange', { range: formatDateRangeLabel(startDate, endDate) })}
           </p>
         )}
       </div>
@@ -772,26 +729,26 @@ export default function PurchaseHistoryTab() {
           <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center mb-4">
             <ShoppingCart size={22} className="text-emerald-300" />
           </div>
-          <p className="text-gray-700 font-semibold">No purchases in this date range</p>
+          <p className="text-gray-700 font-semibold">{t('purchases:noneRange')}</p>
           <p className="text-gray-400 text-sm mt-1 max-w-xs">
-            Choose another date range or record a purchase for this period
+            {t('purchases:noneRangeHint')}
           </p>
           <Button className="mt-5" onClick={openAdd}>
             <Plus size={15} />
-            Add Purchase
+            {t('purchases:new')}
           </Button>
         </div>
       ) : (
         <div className="card overflow-hidden">
           {/* Table header */}
           <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-            <div className="w-24 flex-shrink-0">Date</div>
-            <div className="flex-1">Supplier</div>
-            <div className="w-16 text-center hidden sm:block">Items</div>
-            <div className="w-20 hidden lg:block">Method</div>
-            <div className="w-24 hidden md:block text-right">VAT</div>
-            <div className="w-32 text-right">Total</div>
-            <div className="w-20 flex-shrink-0 text-center">Bill</div>
+            <div className="w-24 flex-shrink-0">{t('purchases:fields.date')}</div>
+            <div className="flex-1">{t('purchases:fields.supplier')}</div>
+            <div className="w-16 text-center hidden sm:block">{t('purchases:fields.item')}</div>
+            <div className="w-20 hidden lg:block">{t('purchases:fields.method')}</div>
+            <div className="w-24 hidden md:block text-end">{t('purchases:fields.vat')}</div>
+            <div className="w-32 text-end">{t('purchases:fields.total')}</div>
+            <div className="w-20 flex-shrink-0 text-center">{t('purchases:fields.bill')}</div>
             <div className="w-36 flex-shrink-0 text-center" />
           </div>
 
@@ -802,7 +759,7 @@ export default function PurchaseHistoryTab() {
               {/* Date */}
               <div className="w-24 flex-shrink-0">
                 <p className="text-sm font-medium text-gray-900">
-                  {new Date(p.purchase_date).toLocaleDateString('en-GB', {
+                  {new Date(p.purchase_date).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-GB', {
                     day: '2-digit', month: 'short',
                   })}
                 </p>
@@ -814,16 +771,16 @@ export default function PurchaseHistoryTab() {
               {/* Supplier */}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-gray-900 truncate">
-                  {p.suppliers?.name ?? <span className="text-gray-400 font-normal">No supplier</span>}
+                  {p.suppliers ? dn(p.suppliers.name, p.suppliers.name_ar) : <span className="text-gray-400 font-normal">{t('purchases:noSupplierLower')}</span>}
                 </p>
                 <p className="text-xs text-gray-400 truncate">
-                  {MODE_LABEL[purchaseMode(p)] ?? 'Purchase'}
+                  {purchaseMode(p) === 'simple_bill' ? t('purchases:mode.bill') : t('purchases:mode.stock')}
                   {p.bill_number ? ` · Bill ${p.bill_number}` : ''}
                   {p.notes ? ` · ${p.notes}` : ''}
                 </p>
                 <div className="mt-1">
                   <Badge variant={purchaseStatusVariant(p)} dot>
-                    {purchaseStatusLabel(p)}
+                    {t(`purchases:status.${purchaseStatusLabel(p)}`, { defaultValue: t('purchases:status.unknown') })}
                   </Badge>
                 </div>
               </div>
@@ -832,15 +789,15 @@ export default function PurchaseHistoryTab() {
               <div className="w-16 text-center hidden sm:block">
                 <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
                   {purchaseMode(p) === 'simple_bill'
-                    ? 'Bill'
-                    : `${p.purchase_items.length} item${p.purchase_items.length !== 1 ? 's' : ''}`}
+                    ? t('purchases:mode.bill')
+                    : t('purchases:itemCount', { count: p.purchase_items.length })}
                 </span>
               </div>
 
               {/* Payment method */}
               <div className="w-20 hidden lg:block">
                 <Badge variant={PAY_BADGE[p.payment_method] ?? 'neutral'}>
-                  {PAY_LABEL[p.payment_method] ?? p.payment_method}
+                  {t(`purchases:paymentMethod.${p.payment_method}`, { defaultValue: t('purchases:paymentMethod.unknown') })}
                 </Badge>
               </div>
 
@@ -865,7 +822,7 @@ export default function PurchaseHistoryTab() {
                     onClick={e => { e.stopPropagation(); openBillAttachment(p) }}
                     className="flex items-center gap-1 text-[10px] font-medium text-amber-600 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-lg transition-colors">
                     <Paperclip size={10} />
-                    Bill
+                    {t('purchases:fields.bill')}
                   </button>
                 ) : (
                   <span className="text-gray-300 text-xs">—</span>
@@ -877,7 +834,7 @@ export default function PurchaseHistoryTab() {
                 <button
                   onClick={() => viewDetails(p)}
                   className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-                  title="View details"
+                  title={t('purchases:actions.view')}
                 >
                   <Eye size={14} />
                 </button>
@@ -885,7 +842,7 @@ export default function PurchaseHistoryTab() {
                   <button
                     onClick={() => openEdit(p)}
                     className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-                    title="Edit"
+                    title={t('purchases:actions.edit')}
                   >
                     <Pencil size={14} />
                   </button>
@@ -894,7 +851,7 @@ export default function PurchaseHistoryTab() {
                   <button
                     onClick={() => openDelete(p)}
                     className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-                    title="Delete"
+                    title={t('purchases:actions.delete')}
                   >
                     <Trash2 size={14} />
                   </button>
@@ -903,7 +860,7 @@ export default function PurchaseHistoryTab() {
                   <button
                     onClick={() => { setConfirmTarget(p); setConfirmChecked(false); setConfirmError('') }}
                     className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
-                    title="Confirm Stock"
+                    title={t('purchases:actions.confirmStock')}
                   >
                     <CheckCircle2 size={14} />
                   </button>
@@ -915,7 +872,7 @@ export default function PurchaseHistoryTab() {
           {/* Footer total */}
           <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 border-t border-gray-100">
             <div className="w-24 flex-shrink-0 text-xs font-semibold text-gray-500">
-              {purchases.length} purchases
+              {t('purchases:purchaseCount', { count: purchases.length })}
             </div>
             <div className="flex-1" />
             <div className="w-16 hidden sm:block" />
@@ -925,7 +882,7 @@ export default function PurchaseHistoryTab() {
             </div>
             <div className="w-32 text-right">
               <p className="text-sm font-bold text-primary-600 tabular-nums"><Rial amount={totalSpent} /></p>
-              <p className="text-[10px] text-gray-400">total spent</p>
+              <p className="text-[10px] text-gray-400">{t('purchases:totalSpent')}</p>
             </div>
             <div className="w-20" />
             <div className="w-36" />

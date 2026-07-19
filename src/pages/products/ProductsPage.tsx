@@ -13,6 +13,7 @@ import type { Category, VatTreatment } from '@/types'
 import ProductDrawer from './ProductDrawer'
 import CategoriesModal from './CategoriesModal'
 import { CategoryEmojiPicker } from '@/components/ui/CategoryEmojiPicker'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -48,13 +49,6 @@ export interface ProductRow {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const VAT_LABELS: Record<VatTreatment, string> = {
-  inherit:   'Branch Default',
-  exclusive: 'Excl. VAT',
-  inclusive: 'Incl. VAT',
-  exempt:    'VAT Exempt',
-}
-
 const VAT_BADGE: Record<VatTreatment, 'neutral' | 'info' | 'gold'> = {
   inherit:   'neutral',
   exclusive: 'neutral',
@@ -72,7 +66,7 @@ const formatStockQuantity = (value: number | null | undefined) => {
 const stockStatus = (product: ProductRow) => {
   if (!product.track_stock) {
     return {
-      label: 'Not tracked',
+      key: 'status.notTracked',
       className: 'bg-gray-100 text-gray-500',
     }
   }
@@ -80,13 +74,14 @@ const stockStatus = (product: ProductRow) => {
   const quantity = Number(product.stock_quantity ?? 0)
   if (quantity <= 0) {
     return {
-      label: 'Out of stock',
+      key: 'status.outOfStock',
       className: 'bg-red-50 text-red-600',
     }
   }
 
   return {
-    label: `Stock: ${formatStockQuantity(quantity)}`,
+    key: 'status.stockCount',
+    count: formatStockQuantity(quantity),
     className: 'bg-emerald-50 text-emerald-700',
   }
 }
@@ -127,6 +122,7 @@ function ProductCard({
   onDelete: () => void
   onToggle: (v: boolean) => void
 }) {
+  const { t } = useTranslation('products')
   const color = product.categories?.color ?? '#6b7280'
   const icon  = product.categories?.icon  ?? ''
   const vat   = product.vat_treatment ?? 'inherit'
@@ -153,7 +149,7 @@ function ProductCard({
         {/* Availability status */}
         <button
           onClick={() => onToggle(!product.is_available)}
-          title="Toggle POS availability"
+          title={t('actions.toggleAvailability')}
           aria-label={`Mark ${product.name} as ${product.is_available ? 'unavailable' : 'available'}`}
           className={`absolute top-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full border shadow-sm transition-colors ${
             product.is_available
@@ -161,7 +157,7 @@ function ProductCard({
               : 'bg-white/90 text-gray-600 border-gray-200 hover:bg-gray-50'
           }`}
         >
-          {product.is_available ? 'Available' : 'Unavailable'}
+          {product.is_available ? t('status.available') : t('status.unavailable')}
         </button>
 
         {/* Touch-friendly action buttons */}
@@ -195,9 +191,9 @@ function ProductCard({
               {dn(product.categories.name, product.categories.name_ar)}
             </span>
           )}
-          <Badge variant={VAT_BADGE[vat]}>{VAT_LABELS[vat]}</Badge>
+          <Badge variant={VAT_BADGE[vat]}>{t(`pricing.${vat === 'exempt' ? 'exemptOption' : vat}`)}</Badge>
           <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${stock.className}`}>
-            {stock.label}
+            {t(stock.key, { count: 'count' in stock ? stock.count : undefined })}
           </span>
         </div>
         <p className="text-base font-bold text-primary-600 mt-auto pt-2">
@@ -218,6 +214,7 @@ function ProductListRow({
   onDelete: () => void
   onToggle: (v: boolean) => void
 }) {
+  const { t } = useTranslation('products')
   const color = product.categories?.color ?? '#6b7280'
   const icon  = product.categories?.icon  ?? ''
   const vat   = product.vat_treatment ?? 'inherit'
@@ -248,7 +245,7 @@ function ProductListRow({
           </p>
         )}
         <p className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold lg:hidden ${stock.className}`}>
-          {stock.label}
+          {t(stock.key, { count: 'count' in stock ? stock.count : undefined })}
         </p>
       </div>
 
@@ -268,13 +265,13 @@ function ProductListRow({
 
       {/* VAT */}
       <div className="w-28 flex-shrink-0 hidden md:block">
-        <Badge variant={VAT_BADGE[vat]}>{VAT_LABELS[vat]}</Badge>
+        <Badge variant={VAT_BADGE[vat]}>{t(`pricing.${vat === 'exempt' ? 'exemptOption' : vat}`)}</Badge>
       </div>
 
       {/* Stock */}
       <div className="w-28 flex-shrink-0 hidden lg:block">
         <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${stock.className}`}>
-          {stock.label}
+          {t(stock.key, { count: 'count' in stock ? stock.count : undefined })}
         </span>
       </div>
 
@@ -292,7 +289,7 @@ function ProductListRow({
             : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
         }`}
       >
-        {product.is_available ? 'Available' : 'Unavailable'}
+        {product.is_available ? t('status.available') : t('status.unavailable')}
       </button>
 
       {/* Actions */}
@@ -323,28 +320,29 @@ function EmptyState({
   onAdd: () => void
   onClear: () => void
 }) {
+  const { t } = useTranslation(['products', 'common'])
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
       <div className="w-16 h-16 rounded-2xl bg-primary-50 flex items-center justify-center mb-4">
         <Package size={28} className="text-primary-300" />
       </div>
       <p className="text-gray-700 font-semibold">
-        {filtered ? 'No products match your filters' : 'No products yet'}
+        {filtered ? t('products:noResults') : t('products:noProducts')}
       </p>
       <p className="text-gray-400 text-sm mt-1 max-w-xs">
         {filtered
-          ? 'Try adjusting the search or category filter'
-          : 'Add your first product to start selling on the POS'}
+          ? t('products:noResultsHint')
+          : t('products:emptyHint')}
       </p>
       {!filtered && (
         <Button className="mt-5" onClick={onAdd}>
           <Plus size={15} />
-          Add Product
+          {t('products:add')}
         </Button>
       )}
       {filtered && (
         <Button variant="secondary" className="mt-5" onClick={onClear}>
-          Clear filters
+          {t('products:actions.clearFilters')}
         </Button>
       )}
     </div>
@@ -360,6 +358,7 @@ function AddCategoryDialog({
   onCreated: () => void
 }) {
   const { profile } = useAuth()
+  const { t } = useTranslation(['products', 'common'])
   const [name, setName] = useState('')
   const [icon, setIcon] = useState('📦')
   const [saving, setSaving] = useState(false)
@@ -404,18 +403,18 @@ function AddCategoryDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const cleanName = name.trim()
-    if (!cleanName) { setError('Category name is required'); return }
+    if (!cleanName) { setError(t('products:category.nameRequired')); return }
     const tid = profile?.tenant_id
     const bid = profile?.branch_id
-    if (!tid || !bid) { setError('Branch context is required before adding categories.'); return }
+    if (!tid || !bid) { setError(t('products:errors.branchRequired')); return }
 
     const cleanIcon = normalizeIcon(icon)
-    if (isIconTooLong(cleanIcon)) { setError('Icon must be 10 characters or fewer.'); return }
+    if (isIconTooLong(cleanIcon)) { setError(t('products:category.iconTooLong')); return }
 
     const duplicate = categories.some(cat =>
       cat.name.trim().toLowerCase() === cleanName.toLowerCase()
     )
-    if (duplicate) { setError('Category already exists.'); return }
+    if (duplicate) { setError(t('products:category.duplicate')); return }
 
     setSaving(true)
     setError('')
@@ -434,7 +433,8 @@ function AddCategoryDialog({
     })
 
     if (err) {
-      setError(err.message)
+      console.error('[AddCategoryDialog] insert failed', err)
+      setError(t('products:errors.saveFailed'))
       setSaving(false)
       return
     }
@@ -456,9 +456,9 @@ function AddCategoryDialog({
         >
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
             <div>
-              <h2 className="text-base font-bold text-gray-900">Add Category</h2>
+              <h2 className="text-base font-bold text-gray-900">{t('products:category.add')}</h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                Create a new product category for this branch.
+                {t('products:categoryCreateHint')}
               </p>
             </div>
             <button
@@ -473,25 +473,25 @@ function AddCategoryDialog({
           <div className="px-6 py-5 space-y-4 overflow-y-auto">
             <div>
               <div>
-                <label className="label">Category name</label>
+                <label className="label">{t('products:category.name')}</label>
                 <input
                   className="input"
                   value={name}
                   onChange={e => { setName(e.target.value); setError('') }}
-                  placeholder="e.g. Beverages"
+                  placeholder={t('products:placeholders.category')}
                   autoFocus
                 />
               </div>
             </div>
 
             <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3">
-              <label className="label text-xs">Category icon</label>
+              <label className="label text-xs">{t('products:category.icon')}</label>
               <CategoryEmojiPicker value={icon} categoryName={name}
                 onChange={value => { setIcon(value); setError('') }} />
             </div>
 
             <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-2.5 text-xs text-gray-500">
-              New categories are added to the end of your category order.
+              {t('products:categoryCreatedAtEnd')}
             </div>
 
             {error && (
@@ -503,10 +503,10 @@ function AddCategoryDialog({
 
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
             <Button type="button" variant="secondary" className="flex-1" onClick={closeDialog}>
-              Cancel
+              {t('common:cancel')}
             </Button>
             <Button type="submit" className="flex-1" loading={saving}>
-              Add Category
+              {t('products:category.add')}
             </Button>
           </div>
         </form>
@@ -519,6 +519,7 @@ function AddCategoryDialog({
 
 export default function ProductsPage() {
   const { profile } = useAuth()
+  const { t } = useTranslation('products')
   const uiStateRestored = useRef(false)
 
   const [products,   setProducts]   = useState<ProductRow[]>([])
@@ -612,7 +613,7 @@ export default function ProductsPage() {
   const openEdit = (p: ProductRow) => { setEditing(p); setDrawerOpen(true) }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this product? This cannot be undone.')) return
+    if (!confirm(t('errors.deleteConfirm'))) return
     const q = supabase as unknown as { from: (t: string) => any }
     await q.from('products').update({ is_active: false }).eq('id', id)
     setProducts(prev => prev.filter(p => p.id !== id))
@@ -644,7 +645,7 @@ export default function ProductsPage() {
       {/* ── Header ──────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex-1 flex items-center gap-2 min-w-0">
-          <h1 className="text-lg font-bold text-gray-900">Products</h1>
+          <h1 className="text-lg font-bold text-gray-900">{t('title')}</h1>
           {!loading && (
             <span className="text-xs font-semibold bg-primary-50 text-primary-600 px-2 py-0.5 rounded-full">
               {products.length}
@@ -653,15 +654,15 @@ export default function ProductsPage() {
         </div>
         <Button variant="secondary" size="sm" onClick={() => setCatsOpen(true)}>
           <Tag size={14} />
-          Manage Categories
+          {t('category.manage')}
         </Button>
         <Button variant="secondary" size="sm" onClick={() => setAddCatOpen(true)}>
           <FolderPlus size={14} />
-          Add Category
+          {t('category.add')}
         </Button>
         <Button size="sm" onClick={openAdd}>
           <Plus size={14} />
-          Add Product
+          {t('add')}
         </Button>
       </div>
 
@@ -669,14 +670,14 @@ export default function ProductsPage() {
       {categories.length > 0 && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           <CategoryTab
-            label="All"
+            label={t('all')}
             active={activeCat === 'all'}
             onClick={() => setActiveCat('all')}
           />
           {categories.map(c => (
             <CategoryTab
               key={c.id}
-              label={c.icon ? `${c.icon} ${c.name}` : c.name}
+              label={c.icon ? `${c.icon} ${dn(c.name, c.name_ar)}` : dn(c.name, c.name_ar)}
               active={activeCat === c.id}
               color={c.color}
               onClick={() => setActiveCat(c.id)}
@@ -691,7 +692,7 @@ export default function ProductsPage() {
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search by name, Arabic name, SKU, or barcode..."
+            placeholder={t('searchPlaceholder')}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="input pl-9 py-2 text-sm"
@@ -755,12 +756,12 @@ export default function ProductsPage() {
           {/* List header */}
           <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
             <div className="w-10 flex-shrink-0" />
-            <div className="flex-1">Product</div>
-            <div className="w-28 flex-shrink-0 hidden sm:block">Category</div>
-            <div className="w-28 flex-shrink-0 hidden md:block">VAT</div>
-            <div className="w-28 flex-shrink-0 hidden lg:block">Stock</div>
-            <div className="w-24 flex-shrink-0 text-right">Price</div>
-            <div className="w-24 flex-shrink-0 text-center">Status</div>
+            <div className="flex-1">{t('columns.product')}</div>
+            <div className="w-28 flex-shrink-0 hidden sm:block">{t('columns.category')}</div>
+            <div className="w-28 flex-shrink-0 hidden md:block">{t('columns.vat')}</div>
+            <div className="w-28 flex-shrink-0 hidden lg:block">{t('columns.stock')}</div>
+            <div className="w-24 flex-shrink-0 text-end">{t('columns.price')}</div>
+            <div className="w-24 flex-shrink-0 text-center">{t('columns.status')}</div>
             <div className="w-16 flex-shrink-0" />
           </div>
           {filtered.map(p => (

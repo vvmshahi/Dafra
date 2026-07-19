@@ -4,6 +4,7 @@ import ProductStockTab from './ProductStockTab'
 import StockOverviewTab from './StockOverviewTab'
 import { useAuth } from '@/hooks/useAuth'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
+import { useTranslation } from 'react-i18next'
 
 interface InventoryRouteState {
   stockTab?: 'product' | 'materials'
@@ -12,6 +13,7 @@ interface InventoryRouteState {
 
 export default function InventoryPage() {
   const { tenant, branch } = useAuth()
+  const { t } = useTranslation('inventory')
   const location = useLocation()
   const navigate = useNavigate()
   const routeState = location.state as InventoryRouteState | null
@@ -45,24 +47,24 @@ export default function InventoryPage() {
     return (
       <div className="space-y-5">
         <div>
-          <h1 className="text-lg font-bold text-gray-900">Stock</h1>
+          <h1 className="text-lg font-bold text-gray-900">{t('title')}</h1>
           <p className="mt-1 text-xs text-gray-400">
-            Track physical inventory items and current quantities.
+            {t('subtitleOther')}
           </p>
         </div>
 
         <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-5 shadow-card">
           <p className="text-sm font-semibold text-amber-900">
-            Stock is disabled for this branch.
+            {t('disabled')}
           </p>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-amber-700">
-            Purchases are still available for supplier bills and materials.
+            {t('disabledHint')}
           </p>
           <Link
             to="/purchases"
             className="mt-4 inline-flex items-center rounded-xl bg-primary-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-600"
           >
-            Go to Purchases
+            {t('goToPurchases')}
           </Link>
         </div>
       </div>
@@ -73,20 +75,20 @@ export default function InventoryPage() {
     <div className="space-y-5">
 
       <div className="flex items-center gap-3">
-        <h1 className="text-lg font-bold text-gray-900 flex-1">Stock</h1>
+        <h1 className="text-lg font-bold text-gray-900 flex-1">{t('title')}</h1>
       </div>
       <p className="text-xs text-gray-400 -mt-3">
         {isTrading
-          ? 'Manage stock for saleable products and keep raw materials separate.'
-          : 'Track physical inventory items and current quantities.'}
+          ? t('subtitleTrading')
+          : t('subtitleOther')}
       </p>
 
       {isTrading ? (
         <>
           <div className="inline-flex rounded-xl border border-gray-100 bg-white p-1 shadow-card">
             {[
-              { key: 'product' as const, label: 'Product Stock' },
-              { key: 'materials' as const, label: 'Raw Materials' },
+              { key: 'product' as const, label: t('tabs.products') },
+              { key: 'materials' as const, label: t('tabs.materials') },
             ].map(tab => (
               <button
                 key={tab.key}

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import type { Supplier, InventoryItem, Purchase, PurchaseItem } from '@/types'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -84,16 +85,12 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 // ── Payment options ───────────────────────────────────────────────────────────
 
 const PAY_OPTIONS = [
-  { value: 'cash',          label: 'Cash',          icon: Banknote   },
-  { value: 'card',          label: 'Card',          icon: CreditCard },
-  { value: 'bank_transfer', label: 'Bank Transfer', icon: Building   },
+  { value: 'cash',          icon: Banknote   },
+  { value: 'card',          icon: CreditCard },
+  { value: 'bank_transfer', icon: Building   },
 ] as const
 
-const PAYMENT_STATUS_OPTIONS: { value: PaymentStatus; label: string }[] = [
-  { value: 'paid',    label: 'Paid' },
-  { value: 'unpaid',  label: 'Unpaid' },
-  { value: 'partial', label: 'Partial' },
-]
+const PAYMENT_STATUS_OPTIONS: PaymentStatus[] = ['paid', 'unpaid', 'partial']
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -123,6 +120,7 @@ export default function PurchaseDrawer({
   onSaved,
 }: Props) {
   const { profile } = useAuth()
+  const { t } = useTranslation(['purchases', 'common'])
   const fileRef     = useRef<HTMLInputElement>(null)
   const isEditing   = Boolean(editingPurchase)
 
@@ -389,23 +387,23 @@ export default function PurchaseDrawer({
       ? branchSuppliers.find(supplier => supplier.id === supplierId) ?? null
       : null
     if (!date) {
-      setError('Purchase date is required')
+      setError(t('purchases:errors.dateRequired'))
       return
     }
     if (mode === 'simple_bill' && !supplierId) {
-      setError('Supplier is required for simple bill entry')
+      setError(t('purchases:errors.supplierRequired'))
       return
     }
     if (supplierId && !selectedSupplier) {
-      setError('Select a valid supplier for this branch.')
+      setError(t('purchases:errors.supplierInvalid'))
       return
     }
     if (mode === 'simple_bill' && simpleTotals.total <= 0) {
-      setError('Enter a bill amount greater than zero')
+      setError(t('purchases:errors.amountPositive'))
       return
     }
     if (mode === 'detailed_receiving' && validLines.length === 0) {
-      setError('Add at least one item with a name and quantity')
+      setError(t('purchases:errors.itemRequired'))
       return
     }
 
@@ -416,15 +414,15 @@ export default function PurchaseDrawer({
       const tid = resolvedTenantId
       const bid = resolvedBranchId
       if (!tid || !bid) {
-        setError('Branch profile is required before saving purchases')
+        setError(t('purchases:errors.branchRequired'))
         return
       }
       if (selectedSupplier && selectedSupplier.tenant_id !== tid) {
-        setError('This supplier is not valid for this business.')
+        setError(t('purchases:errors.supplierBusinessInvalid'))
         return
       }
       if (selectedSupplier && selectedSupplier.branch_id !== bid) {
-        setError('This supplier belongs to another branch. Select a supplier for this branch.')
+        setError(t('purchases:errors.supplierBranchInvalid'))
         return
       }
 
@@ -485,7 +483,7 @@ export default function PurchaseDrawer({
           p_payload: payload,
         })
 
-        if (editErr) { setError(editErr.message); return }
+        if (editErr) { console.error('[PurchaseDrawer] update failed', editErr); setError(t('purchases:errors.saveFailed')); return }
 
         await setPurchaseAttachment(editingPurchase.id, billPath)
         await rememberSelectedMatches(validLines).catch(err => console.warn('Remembering supplier item mapping failed', err))
@@ -538,7 +536,8 @@ export default function PurchaseDrawer({
       )
 
       if (itemsErr) {
-        setError(itemsErr.message)
+        console.error('[PurchaseDrawer] item insert failed', itemsErr)
+        setError(t('purchases:errors.saveFailed'))
         return
       }
 
@@ -548,7 +547,8 @@ export default function PurchaseDrawer({
       onSaved()
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Purchase save failed')
+      console.error('[PurchaseDrawer] save failed', err)
+      setError(t('purchases:errors.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -572,9 +572,9 @@ export default function PurchaseDrawer({
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
             <div>
-              <h2 className="text-base font-bold text-gray-900">{isEditing ? 'Edit Purchase' : 'Add Purchase'}</h2>
+              <h2 className="text-base font-bold text-gray-900">{t(isEditing ? 'purchases:edit' : 'purchases:new')}</h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                {mode === 'simple_bill' ? 'Record a supplier bill' : 'Record stock from supplier'}
+                {t(mode === 'simple_bill' ? 'purchases:mode.simpleHint' : 'purchases:mode.receivingHint')}
               </p>
             </div>
             <button type="button" onClick={onClose}
@@ -589,8 +589,8 @@ export default function PurchaseDrawer({
             {/* ── Mode selector ─────────────────────────────── */}
             <div className="grid grid-cols-2 gap-2">
               {([
-                { value: 'simple_bill', label: 'Simple Bill', desc: 'No stock update' },
-                { value: 'detailed_receiving', label: 'Receive Stock', desc: 'Confirm before stock updates' },
+                { value: 'simple_bill', label: t('purchases:mode.simple'), desc: t('purchases:mode.simpleHint') },
+                { value: 'detailed_receiving', label: t('purchases:mode.receiving'), desc: t('purchases:mode.receivingHint') },
               ] as { value: PurchaseMode; label: string; desc: string }[]).map(opt => (
                 <button
                   key={opt.value}
@@ -611,39 +611,39 @@ export default function PurchaseDrawer({
 
             {/* ── Header info ───────────────────────────────── */}
             <div className="space-y-4">
-              <SectionLabel>Purchase Details</SectionLabel>
+              <SectionLabel>{t('purchases:sections.details')}</SectionLabel>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">Date <span className="text-red-500">*</span></label>
+                  <label className="label">{t('purchases:fields.date')} <span className="text-red-500">*</span></label>
                   <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
                 </div>
                 <div>
-                  <label className="label">Supplier {mode === 'simple_bill' && <span className="text-red-500">*</span>}</label>
+                  <label className="label">{t('purchases:fields.supplier')} {mode === 'simple_bill' && <span className="text-red-500">*</span>}</label>
                   <select className="input" value={supplierId} onChange={e => handleSupplierChange(e.target.value)}>
-                    <option value="">— No Supplier —</option>
+                    <option value="">— {t('purchases:noSupplier')} —</option>
                     {branchSuppliers.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
+                      <option key={s.id} value={s.id}>{s.name_ar || s.name}</option>
                     ))}
                   </select>
                   {branchSuppliers.length === 0 && (
                     <p className="mt-1.5 text-[11px] leading-relaxed text-amber-600">
-                      No suppliers found for this branch. Add a supplier first.
+                      {t('purchases:supplierEmpty')}
                     </p>
                   )}
                   {supplierId && !selectedSupplier && (
                     <p className="mt-1.5 text-[11px] leading-relaxed text-red-600">
-                      Select a valid supplier for this branch.
+                      {t('purchases:errors.supplierInvalid')}
                     </p>
                   )}
                 </div>
                 <div className="col-span-2">
-                  <label className="label">Bill / Invoice Number</label>
+                  <label className="label">{t('purchases:fields.billNumber')}</label>
                   <input
                     className="input"
                     value={billNumber}
                     onChange={e => setBillNumber(e.target.value)}
-                    placeholder="Optional supplier bill number"
+                    placeholder={t('purchases:placeholders.billNumber')}
                   />
                 </div>
               </div>
@@ -651,9 +651,9 @@ export default function PurchaseDrawer({
 
             {/* ── Payment method ────────────────────────────── */}
             <div className="space-y-3">
-              <SectionLabel>Payment</SectionLabel>
+              <SectionLabel>{t('purchases:sections.payment')}</SectionLabel>
               <div className="flex gap-2">
-                {PAY_OPTIONS.map(({ value, label, icon: Icon }) => (
+                {PAY_OPTIONS.map(({ value, icon: Icon }) => (
                   <button
                     key={value}
                     type="button"
@@ -665,23 +665,23 @@ export default function PurchaseDrawer({
                     }`}
                   >
                     <Icon size={15} />
-                    {label}
+                    {t(`purchases:paymentMethod.${value}`)}
                   </button>
                 ))}
               </div>
               <div className="grid grid-cols-3 gap-2">
-                {PAYMENT_STATUS_OPTIONS.map(opt => (
+                {PAYMENT_STATUS_OPTIONS.map(value => (
                   <button
-                    key={opt.value}
+                    key={value}
                     type="button"
-                    onClick={() => setPaymentStatus(opt.value)}
+                    onClick={() => setPaymentStatus(value)}
                     className={`py-2 rounded-xl border text-sm font-medium transition-all ${
-                      paymentStatus === opt.value
+                      paymentStatus === value
                         ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
                         : 'border-gray-200 text-gray-500 hover:border-gray-300'
                     }`}
                   >
-                    {opt.label}
+                    {t(`purchases:status.${value}`)}
                   </button>
                 ))}
               </div>
@@ -689,10 +689,10 @@ export default function PurchaseDrawer({
 
             {mode === 'simple_bill' && (
               <div className="space-y-4">
-                <SectionLabel>Bill Amount</SectionLabel>
+                <SectionLabel>{t('purchases:sections.billAmount')}</SectionLabel>
                 <div>
                   <label className="label">
-                    {taxMode === 'excluded' ? 'Subtotal Before VAT' : 'Total Amount'}
+                    {t(taxMode === 'excluded' ? 'purchases:fields.subtotalBeforeVat' : 'purchases:fields.totalAmount')}
                     <span className="text-red-500"> *</span>
                   </label>
                   <MoneyInput
@@ -718,7 +718,7 @@ export default function PurchaseDrawer({
                           : 'border-gray-200 text-gray-500 hover:border-gray-300'
                       }`}
                     >
-                      {opt.label}
+                      {t(`purchases:taxMode.${opt.value}`)}
                     </button>
                   ))}
                 </div>
@@ -726,15 +726,15 @@ export default function PurchaseDrawer({
                 {simpleTotals.total > 0 && (
                   <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2">
                     <div className="flex justify-between text-sm text-gray-600">
-                      <span>Subtotal</span>
+                      <span>{t('purchases:fields.subtotal')}</span>
                       <span className="tabular-nums font-medium"><Rial amount={simpleTotals.subtotal} /></span>
                     </div>
                     <div className="flex justify-between text-sm text-gray-600">
-                      <span>VAT</span>
+                      <span>{t('purchases:fields.vat')}</span>
                       <span className="tabular-nums font-medium"><Rial amount={simpleTotals.vat} /></span>
                     </div>
                     <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-2">
-                      <span>Total</span>
+                      <span>{t('purchases:fields.total')}</span>
                       <span className="tabular-nums text-emerald-600"><Rial amount={simpleTotals.total} /></span>
                     </div>
                   </div>
@@ -746,9 +746,9 @@ export default function PurchaseDrawer({
               <>
                 {/* ── Line items ────────────────────────────────── */}
                 <div className="space-y-3">
-                  <SectionLabel>Items Purchased</SectionLabel>
+                  <SectionLabel>{t('purchases:sections.items')}</SectionLabel>
                   <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                    Lines are saved for review. Linked stock increases only after Confirm Receiving.
+                    {t('purchases:receivingReviewHint')}
                   </div>
 
                   <div className="space-y-2">
@@ -761,7 +761,7 @@ export default function PurchaseDrawer({
                             value={line.inventory_item_id}
                             onChange={e => selectItem(line.key, e.target.value)}
                           >
-                            <option value="">— Select stock item (optional) —</option>
+                            <option value="">— {t('purchases:placeholders.selectItem')} —</option>
                             {inventoryItems.map(i => (
                               <option key={i.id} value={i.id}>{i.name}</option>
                             ))}
@@ -779,7 +779,7 @@ export default function PurchaseDrawer({
                         {line.match_source === 'mapping' && line.suggestion_label && (
                           <div className="pl-7">
                             <span className="inline-flex items-center rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700">
-                              Suggested: {line.suggestion_label}
+                              {t('purchases:suggested', { name: line.suggestion_label })}
                             </span>
                           </div>
                         )}
@@ -790,7 +790,7 @@ export default function PurchaseDrawer({
                               className="input text-sm"
                               value={line.supplier_item_name}
                               onChange={e => updateSupplierItemName(line.key, e.target.value)}
-                              placeholder="Supplier item name *"
+                              placeholder={`${t('purchases:placeholders.itemName')} *`}
                             />
                           </div>
                           <div className="w-24">
@@ -801,7 +801,7 @@ export default function PurchaseDrawer({
                               min="0"
                               value={line.quantity}
                               onChange={e => updateLine(line.key, { quantity: e.target.value })}
-                              placeholder="Qty *"
+                              placeholder={`${t('purchases:placeholders.quantity')} *`}
                             />
                           </div>
                           <div className="w-28">
@@ -809,7 +809,7 @@ export default function PurchaseDrawer({
                               className="input text-sm"
                               value={line.unit_cost}
                               onValueChange={value => updateLine(line.key, { unit_cost: value })}
-                              placeholder="Unit cost"
+                              placeholder={t('purchases:placeholders.unitCost')}
                             />
                           </div>
                           <div className="w-28 flex items-center justify-end">
@@ -827,7 +827,7 @@ export default function PurchaseDrawer({
                               onChange={e => updateLine(line.key, { remember_match: e.target.checked })}
                               className="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                             />
-                            Remember this match for this supplier
+                            {t('purchases:rememberMatch')}
                           </label>
                         )}
                       </div>
@@ -840,13 +840,13 @@ export default function PurchaseDrawer({
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-gray-200 text-sm text-gray-400 hover:border-primary-400 hover:text-primary-500 transition-colors"
                   >
                     <Plus size={15} />
-                    Add another item
+                    {t('purchases:addAnotherItem')}
                   </button>
                 </div>
 
                 {/* ── VAT mode ──────────────────────────────────── */}
                 <div className="space-y-2">
-                  <SectionLabel>VAT</SectionLabel>
+                  <SectionLabel>{t('purchases:sections.vat')}</SectionLabel>
                   <div className="grid grid-cols-2 gap-2">
                     {([
                       { value: 'included', label: 'VAT Included' },
@@ -862,7 +862,7 @@ export default function PurchaseDrawer({
                             : 'border-gray-200 text-gray-500 hover:border-gray-300'
                         }`}
                       >
-                        {opt.label}
+                        {t(`purchases:taxMode.${opt.value}`)}
                       </button>
                     ))}
                   </div>
@@ -872,15 +872,15 @@ export default function PurchaseDrawer({
                 {rawLineAmount > 0 && (
                   <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2">
                     <div className="flex justify-between text-sm text-gray-600">
-                      <span>Subtotal</span>
+                      <span>{t('purchases:fields.subtotal')}</span>
                       <span className="tabular-nums font-medium"><Rial amount={detailedTotals.subtotal} /></span>
                     </div>
                     <div className="flex justify-between text-sm text-gray-600">
-                      <span>VAT (15%)</span>
+                      <span>{t('purchases:fields.vat')} (15%)</span>
                       <span className="tabular-nums font-medium"><Rial amount={detailedTotals.vat} /></span>
                     </div>
                     <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-2">
-                      <span>Total</span>
+                      <span>{t('purchases:fields.total')}</span>
                       <span className="tabular-nums text-emerald-600"><Rial amount={detailedTotals.total} /></span>
                     </div>
                   </div>
@@ -890,7 +890,7 @@ export default function PurchaseDrawer({
 
             {/* ── Bill upload ───────────────────────────────── */}
             <div className="space-y-3">
-              <SectionLabel>Bill / Invoice (optional)</SectionLabel>
+              <SectionLabel>{t('purchases:sections.attachment')}</SectionLabel>
               <input
                 ref={fileRef}
                 type="file"
@@ -905,17 +905,17 @@ export default function PurchaseDrawer({
                       className="w-full h-36 object-cover rounded-xl border border-gray-200" />
                   ) : (
                     <div className="w-full h-16 flex items-center justify-center bg-gray-50 rounded-xl border border-gray-200">
-                      <p className="text-sm text-gray-500">Bill attached</p>
+                      <p className="text-sm text-gray-500">{t('purchases:billAttached')}</p>
                     </div>
                   )}
                   <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 group-hover/img:opacity-100 transition-opacity bg-black/20 rounded-xl">
                     <button type="button" onClick={() => fileRef.current?.click()}
                       className="bg-white text-gray-700 text-xs font-medium px-3 py-1.5 rounded-lg shadow">
-                      Change
+                      {t('purchases:change')}
                     </button>
                     <button type="button" onClick={() => { setBillFile(null); setBillPreview(null); setBillChanged(true) }}
                       className="bg-white text-red-500 text-xs font-medium px-3 py-1.5 rounded-lg shadow">
-                      Remove
+                      {t('purchases:remove')}
                     </button>
                   </div>
                 </div>
@@ -923,16 +923,16 @@ export default function PurchaseDrawer({
                 <button type="button" onClick={() => fileRef.current?.click()}
                   className="w-full h-20 flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-gray-200 rounded-xl hover:border-primary-400 hover:bg-primary-50/20 transition-colors group/up">
                   <ImagePlus size={18} className="text-gray-300 group-hover/up:text-primary-400" />
-                  <p className="text-xs text-gray-400 group-hover/up:text-primary-500">Attach bill photo or PDF</p>
+                  <p className="text-xs text-gray-400 group-hover/up:text-primary-500">{t('purchases:attachBill')}</p>
                 </button>
               )}
             </div>
 
             {/* ── Notes ─────────────────────────────────────── */}
             <div>
-              <label className="label">Notes</label>
+              <label className="label">{t('purchases:fields.notes')}</label>
               <textarea className="input resize-none" rows={2} value={notes}
-                onChange={e => setNotes(e.target.value)} placeholder="Optional notes..." />
+                onChange={e => setNotes(e.target.value)} placeholder={t('purchases:placeholders.notes')} dir="auto" />
             </div>
 
             {error && (
@@ -944,9 +944,9 @@ export default function PurchaseDrawer({
 
           {/* Footer */}
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>{t('common:cancel')}</Button>
             <Button type="submit" className="flex-1" loading={saving} disabled={saving || !simpleBillCanSubmit}>
-              {isEditing ? 'Save Changes' : mode === 'simple_bill' ? 'Record Bill' : 'Save for Confirmation'}
+              {isEditing ? t('purchases:actions.saveChanges') : mode === 'simple_bill' ? t('purchases:actions.recordBill') : t('purchases:actions.saveConfirmation')}
             </Button>
           </div>
         </form>

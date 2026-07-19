@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import type { Supplier } from '@/types'
+import { useTranslation } from 'react-i18next'
 
 // ── Section label ─────────────────────────────────────────────────────────────
 
@@ -28,6 +29,7 @@ interface Props {
 
 export default function SupplierDrawer({ open, supplier, onClose, onSaved }: Props) {
   const { profile } = useAuth()
+  const { t } = useTranslation(['suppliers', 'common'])
 
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
@@ -67,7 +69,7 @@ export default function SupplierDrawer({ open, supplier, onClose, onSaved }: Pro
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim()) { setError('Supplier name is required'); return }
+    if (!name.trim()) { setError(t('suppliers:errors.nameRequired')); return }
 
     setSaving(true)
     setError('')
@@ -93,10 +95,10 @@ export default function SupplierDrawer({ open, supplier, onClose, onSaved }: Pro
 
       if (supplier) {
         const { error: err } = await q.from('suppliers').update(payload).eq('id', supplier.id)
-        if (err) { setError(err.message); return }
+        if (err) { console.error('[SupplierDrawer] update failed', err); setError(t('suppliers:errors.saveFailed')); return }
       } else {
         const { error: err } = await q.from('suppliers').insert(payload)
-        if (err) { setError(err.message); return }
+        if (err) { console.error('[SupplierDrawer] insert failed', err); setError(t('suppliers:errors.saveFailed')); return }
       }
 
       onSaved()
@@ -123,9 +125,9 @@ export default function SupplierDrawer({ open, supplier, onClose, onSaved }: Pro
               </div>
               <div>
                 <h2 className="text-base font-bold text-gray-900">
-                  {supplier ? 'Edit Supplier' : 'Add Supplier'}
+                  {supplier ? t('suppliers:edit') : t('suppliers:add')}
                 </h2>
-                <p className="text-xs text-gray-400 mt-0.5">Supplier master record</p>
+                <p className="text-xs text-gray-400 mt-0.5">{t('suppliers:record')}</p>
               </div>
             </div>
             <button type="button" onClick={onClose}
@@ -139,28 +141,28 @@ export default function SupplierDrawer({ open, supplier, onClose, onSaved }: Pro
 
             {/* ── Business Info ─────────────────────────────── */}
             <div className="space-y-4">
-              <SectionLabel>Business Information</SectionLabel>
+              <SectionLabel>{t('suppliers:sections.business')}</SectionLabel>
 
               <div>
-                <label className="label">Supplier Name (English) <span className="text-red-500">*</span></label>
+                <label className="label">{t('suppliers:fields.nameEn')} <span className="text-red-500">*</span></label>
                 <input className="input" value={name} onChange={e => setName(e.target.value)}
-                  placeholder="e.g. Al-Watania Chicken" />
+                  placeholder={t('suppliers:placeholders.name')} dir="auto" />
               </div>
 
               <div>
-                <label className="label">Supplier Name (Arabic)</label>
+                <label className="label">{t('suppliers:fields.nameAr')}</label>
                 <input className="input" value={nameAr} onChange={e => setNameAr(e.target.value)}
-                  placeholder="اسم المورد بالعربية" dir="rtl" />
+                  placeholder={t('suppliers:placeholders.nameAr')} dir="rtl" />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">VAT Number</label>
+                  <label className="label">{t('suppliers:fields.vatNumber')}</label>
                   <input className="input" value={vatNumber} onChange={e => setVatNumber(e.target.value)}
                     placeholder="300xxxxxxxxx" maxLength={15} />
                 </div>
                 <div>
-                  <label className="label">CR Number</label>
+                  <label className="label">{t('suppliers:fields.crNumber')}</label>
                   <input className="input" value={crNumber} onChange={e => setCrNumber(e.target.value)}
                     placeholder="10xxxxxxxx" />
                 </div>
@@ -169,22 +171,22 @@ export default function SupplierDrawer({ open, supplier, onClose, onSaved }: Pro
 
             {/* ── Contact Info ──────────────────────────────── */}
             <div className="space-y-4">
-              <SectionLabel>Contact Information</SectionLabel>
+              <SectionLabel>{t('suppliers:sections.contact')}</SectionLabel>
 
               <div>
-                <label className="label">Contact Person</label>
+                <label className="label">{t('suppliers:fields.contactPerson')}</label>
                 <input className="input" value={contactPerson} onChange={e => setContactPerson(e.target.value)}
-                  placeholder="e.g. Ahmed Al-Qahtani" />
+                  placeholder={t('suppliers:placeholders.contact')} dir="auto" />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">Phone</label>
+                  <label className="label">{t('suppliers:fields.phone')}</label>
                   <input className="input" type="tel" value={phone} onChange={e => setPhone(e.target.value)}
                     placeholder="05xxxxxxxx" />
                 </div>
                 <div>
-                  <label className="label">Email</label>
+                  <label className="label">{t('suppliers:fields.email')}</label>
                   <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)}
                     placeholder="supplier@example.com" />
                 </div>
@@ -192,32 +194,32 @@ export default function SupplierDrawer({ open, supplier, onClose, onSaved }: Pro
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">City</label>
+                  <label className="label">{t('suppliers:fields.city')}</label>
                   <input className="input" value={city} onChange={e => setCity(e.target.value)}
-                    placeholder="e.g. Riyadh" />
+                    placeholder={t('suppliers:placeholders.city')} dir="auto" />
                 </div>
                 <div>
-                  <label className="label">Payment Terms</label>
+                  <label className="label">{t('suppliers:fields.paymentTerms')}</label>
                   <select className="input" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)}>
-                    <option value="cash">Cash</option>
-                    <option value="credit_30">Credit 30 Days</option>
-                    <option value="credit_60">Credit 60 Days</option>
+                    <option value="cash">{t('suppliers:terms.cash')}</option>
+                    <option value="credit_30">{t('suppliers:terms.credit30')}</option>
+                    <option value="credit_60">{t('suppliers:terms.credit60')}</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="label">Address</label>
+                <label className="label">{t('suppliers:fields.address')}</label>
                 <textarea className="input resize-none" rows={2} value={address}
-                  onChange={e => setAddress(e.target.value)} placeholder="Full address..." />
+                  onChange={e => setAddress(e.target.value)} placeholder={t('suppliers:placeholders.address')} dir="auto" />
               </div>
             </div>
 
             {/* ── Notes ─────────────────────────────────────── */}
             <div>
-              <label className="label">Notes</label>
+              <label className="label">{t('suppliers:fields.notes')}</label>
               <textarea className="input resize-none" rows={2} value={notes}
-                onChange={e => setNotes(e.target.value)} placeholder="Optional notes..." />
+                onChange={e => setNotes(e.target.value)} placeholder={t('suppliers:placeholders.notes')} dir="auto" />
             </div>
 
             {error && (
@@ -229,9 +231,9 @@ export default function SupplierDrawer({ open, supplier, onClose, onSaved }: Pro
 
           {/* Footer */}
           <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>{t('common:cancel')}</Button>
             <Button type="submit" className="flex-1" loading={saving}>
-              {supplier ? 'Save Changes' : 'Add Supplier'}
+              {supplier ? t('suppliers:actions.saveChanges') : t('suppliers:add')}
             </Button>
           </div>
         </form>

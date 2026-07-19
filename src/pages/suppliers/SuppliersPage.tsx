@@ -8,6 +8,7 @@ import { Rial } from '@/components/ui/RiyalSymbol'
 import { displayName as dn } from '@/lib/utils/display'
 import type { Supplier } from '@/types'
 import SupplierDrawer from './SupplierDrawer'
+import { useTranslation } from 'react-i18next'
 import {
   CompactDateRangeFilter,
   type DatePreset,
@@ -26,10 +27,6 @@ interface SupplierWithStats extends Supplier {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const TERMS_LABEL: Record<string, string> = {
-  cash: 'Cash', credit_30: 'Net 30', credit_60: 'Net 60',
-}
-
 const fmt = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -46,6 +43,7 @@ function stringOrNull(value: unknown): string | null {
 
 export default function SuppliersPage() {
   const { profile } = useAuth()
+  const { t, i18n } = useTranslation('suppliers')
 
   const [suppliers,   setSuppliers]   = useState<SupplierWithStats[]>([])
   const [loading,     setLoading]     = useState(true)
@@ -128,9 +126,10 @@ export default function SuppliersPage() {
   const openEdit = (s: Supplier) => { setEditing(s); setDrawerOpen(true) }
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete supplier "${name}"?`)) return
+    if (!confirm(t('deleteConfirm', { name }))) return
     const q = supabase as unknown as { from: (t: string) => any }
-    await q.from('suppliers').update({ is_active: false }).eq('id', id)
+    const { error } = await q.from('suppliers').update({ is_active: false }).eq('id', id)
+    if (error) { console.error('[SuppliersPage] delete failed', error); return }
     setSuppliers(prev => prev.filter(s => s.id !== id))
   }
 
@@ -140,6 +139,7 @@ export default function SuppliersPage() {
       s.name.toLowerCase().includes(q) ||
       (s.name_ar ?? '').includes(q) ||
       (s.vat_number ?? '').includes(q) ||
+      (s.cr_number ?? '').includes(q) ||
       (s.contact_person ?? '').toLowerCase().includes(q) ||
       (s.phone ?? '').includes(q)
     )
@@ -155,33 +155,33 @@ export default function SuppliersPage() {
       {/* ── Header ──────────────────────────────────────────── */}
       <div className="flex items-center gap-3">
         <div className="flex-1">
-          <h1 className="text-lg font-bold text-gray-900">Suppliers</h1>
+          <h1 className="text-lg font-bold text-gray-900">{t('title')}</h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            Manage your supply chain and purchase relationships
+            {t('subtitle')}
           </p>
         </div>
         <Button size="sm" onClick={openAdd}>
           <Plus size={14} />
-          Add Supplier
+          {t('add')}
         </Button>
       </div>
 
       {/* ── Summary cards ───────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
-          <p className="text-xs font-medium text-gray-400">Total Suppliers</p>
+          <p className="text-xs font-medium text-gray-400">{t('totalSuppliers')}</p>
           <p className="text-xl font-bold text-gray-900 mt-0.5">{suppliers.length}</p>
-          <p className="text-[10px] text-gray-400 mt-0.5">active vendors</p>
+          <p className="text-[10px] text-gray-400 mt-0.5">{t('activeVendors')}</p>
         </div>
         <div className="rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
-          <p className="text-xs font-medium text-gray-400">Total Purchased</p>
+          <p className="text-xs font-medium text-gray-400">{t('totalPurchased')}</p>
           <p className="text-xl font-bold text-emerald-600 mt-0.5"><Rial amount={totalPurchased} /></p>
-          <p className="text-[10px] text-gray-400 mt-0.5">{rangeLabel || 'selected range'}</p>
+          <p className="text-[10px] text-gray-400 mt-0.5">{rangeLabel || t('selectedRange')}</p>
         </div>
         <div className="rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
-          <p className="text-xs font-medium text-gray-400">On Credit Terms</p>
+          <p className="text-xs font-medium text-gray-400">{t('creditTermsCount')}</p>
           <p className="text-xl font-bold text-amber-600 mt-0.5">{creditCount}</p>
-          <p className="text-[10px] text-gray-400 mt-0.5">Net 30 / Net 60</p>
+          <p className="text-[10px] text-gray-400 mt-0.5">{t('creditTermsSummary')}</p>
         </div>
       </div>
 
@@ -198,7 +198,7 @@ export default function SuppliersPage() {
           />
           {rangeLabel && (
             <p className="text-xs text-gray-400">
-              Purchases from <span className="font-medium text-gray-600">{rangeLabel}</span>
+              {t('purchasesFrom', { range: rangeLabel })}
             </p>
           )}
         </div>
@@ -206,7 +206,7 @@ export default function SuppliersPage() {
           <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
             className="input pl-9"
-            placeholder="Search by name, VAT number, contact person..."
+            placeholder={t('searchPlaceholder')}
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -222,17 +222,17 @@ export default function SuppliersPage() {
             <Building2 size={22} className="text-emerald-300" />
           </div>
           <p className="text-gray-700 font-semibold">
-            {search ? 'No suppliers found' : 'No suppliers yet'}
+            {search ? t('noneFound') : t('noneYet')}
           </p>
           <p className="text-gray-400 text-sm mt-1 max-w-xs">
             {search
-              ? 'Try a different search term'
-              : 'Add your first supplier to track purchases and stock'}
+              ? t('trySearch')
+              : t('emptyHint')}
           </p>
           {!search && (
             <Button className="mt-5" onClick={openAdd}>
               <Plus size={15} />
-              Add Supplier
+              {t('add')}
             </Button>
           )}
         </div>
@@ -240,11 +240,11 @@ export default function SuppliersPage() {
         <div className="card overflow-hidden">
           {/* Table header */}
           <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-            <div className="flex-1">Supplier</div>
-            <div className="w-36 hidden md:block">Contact</div>
-            <div className="w-24 hidden sm:block">City</div>
-            <div className="w-24 hidden lg:block">Terms</div>
-            <div className="w-40 text-right">Purchased in Range</div>
+            <div className="flex-1">{t('columns.supplier')}</div>
+            <div className="w-36 hidden md:block">{t('columns.contact')}</div>
+            <div className="w-24 hidden sm:block">{t('columns.city')}</div>
+            <div className="w-24 hidden lg:block">{t('columns.terms')}</div>
+            <div className="w-40 text-end">{t('columns.purchased')}</div>
             <div className="w-16 flex-shrink-0" />
           </div>
 
@@ -258,9 +258,9 @@ export default function SuppliersPage() {
                   <Building2 size={15} className="text-emerald-600" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{dn(supplier.name, supplier.name_ar)}</p>
+                  <p className="text-sm font-semibold text-gray-900 truncate" dir="auto">{dn(supplier.name, supplier.name_ar)}</p>
                   {supplier.vat_number && (
-                    <p className="text-[10px] text-gray-400">VAT: {supplier.vat_number}</p>
+                    <p className="text-[10px] text-gray-400">{t('vatShort')}: <bdi dir="ltr">{supplier.vat_number}</bdi></p>
                   )}
                 </div>
               </div>
@@ -270,13 +270,13 @@ export default function SuppliersPage() {
                 {supplier.contact_person && (
                   <p className="text-xs text-gray-700 flex items-center gap-1 truncate">
                     <User size={10} className="text-gray-400 flex-shrink-0" />
-                    {supplier.contact_person}
+                    <span dir="auto">{supplier.contact_person}</span>
                   </p>
                 )}
                 {supplier.phone && (
                   <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
                     <Phone size={10} className="text-gray-400 flex-shrink-0" />
-                    {supplier.phone}
+                    <bdi dir="ltr">{supplier.phone}</bdi>
                   </p>
                 )}
               </div>
@@ -286,7 +286,7 @@ export default function SuppliersPage() {
                 {supplier.city && (
                   <p className="text-xs text-gray-600 flex items-center gap-1">
                     <MapPin size={10} className="text-gray-400 flex-shrink-0" />
-                    {supplier.city}
+                    <span dir="auto">{supplier.city}</span>
                   </p>
                 )}
               </div>
@@ -298,23 +298,23 @@ export default function SuppliersPage() {
                     ? 'bg-emerald-50 text-emerald-700'
                     : 'bg-amber-50 text-amber-700'
                 }`}>
-                  {TERMS_LABEL[supplier.payment_terms] ?? supplier.payment_terms}
+                  {supplier.payment_terms === 'cash' ? t('terms.cash') : supplier.payment_terms === 'credit_30' ? t('terms.net30') : supplier.payment_terms === 'credit_60' ? t('terms.net60') : t('terms.unknown')}
                 </span>
               </div>
 
               {/* Total purchases */}
-              <div className="w-40 text-right">
+              <div className="w-40 text-end">
                 <p className="text-sm font-bold text-gray-900 tabular-nums">
                   <Rial amount={supplier.total_purchases} />
                 </p>
                 {supplier.last_purchase_date ? (
                   <p className="text-[10px] text-gray-400">
-                    {supplier.purchase_count} purchase{supplier.purchase_count === 1 ? '' : 's'} · Last: {new Date(supplier.last_purchase_date).toLocaleDateString('en-GB', {
+                    {t('purchaseCount', { count: supplier.purchase_count })} · {t('lastPurchase', { date: new Date(supplier.last_purchase_date).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-GB', {
                       day: '2-digit', month: 'short', year: '2-digit',
-                    })}
+                    }) })}
                   </p>
                 ) : (
-                  <p className="text-[10px] text-gray-300">No purchases yet</p>
+                  <p className="text-[10px] text-gray-300">{t('noPurchases')}</p>
                 )}
               </div>
 

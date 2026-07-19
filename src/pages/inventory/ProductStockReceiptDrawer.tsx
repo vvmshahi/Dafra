@@ -7,6 +7,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { displayName as dn } from '@/lib/utils/display'
 import type { Supplier } from '@/types'
 import type { ProductStockRow } from './ProductStockTab'
+import { useTranslation, type TFunction } from 'react-i18next'
 
 interface Props {
   open: boolean
@@ -37,6 +38,7 @@ export default function ProductStockReceiptDrawer({
   onClose,
   onSaved,
 }: Props) {
+  const { t } = useTranslation(['inventory', 'common'])
   const [productId, setProductId] = useState('')
   const [supplierId, setSupplierId] = useState('')
   const [quantity, setQuantity] = useState('')
@@ -74,15 +76,15 @@ export default function ProductStockReceiptDrawer({
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!selectedProduct) {
-      setError('Select a tracked product.')
+      setError(t('inventory:errors.selectTracked'))
       return
     }
     if (!Number.isFinite(quantityNumber) || quantityNumber <= 0) {
-      setError('Quantity received must be greater than zero.')
+      setError(t('inventory:errors.quantityPositive'))
       return
     }
     if (!Number.isFinite(unitCostNumber) || unitCostNumber < 0) {
-      setError('Unit purchase cost must be zero or higher.')
+      setError(t('inventory:errors.costNonNegative'))
       return
     }
 
@@ -106,7 +108,8 @@ export default function ProductStockReceiptDrawer({
       })
 
       if (rpcError) {
-        setError(stockReceiptError(rpcError.message ?? ''))
+        console.error('[ProductStockReceiptDrawer] receive failed', rpcError)
+        setError(stockReceiptError(rpcError.message ?? '', t))
         return
       }
 
@@ -132,8 +135,8 @@ export default function ProductStockReceiptDrawer({
                 <PackagePlus size={18} />
               </div>
               <div>
-                <h2 className="text-base font-bold text-gray-900">Add Stock</h2>
-                <p className="mt-0.5 text-xs text-gray-400">Receive stock for an existing product</p>
+                <h2 className="text-base font-bold text-gray-900">{t('inventory:receipt.title')}</h2>
+                <p className="mt-0.5 text-xs text-gray-400">{t('inventory:receipt.subtitle')}</p>
               </div>
             </div>
             <button
@@ -148,7 +151,7 @@ export default function ProductStockReceiptDrawer({
 
           <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
             <div>
-              <label className="label">Product</label>
+              <label className="label">{t('inventory:receipt.product')}</label>
               <select
                 className="input"
                 value={productId}
@@ -157,7 +160,7 @@ export default function ProductStockReceiptDrawer({
                   clearReceiptKey()
                 }}
               >
-                <option value="">Select product</option>
+                <option value="">{t('inventory:receipt.selectProduct')}</option>
                 {products.map(product => (
                   <option key={product.id} value={product.id}>
                     {dn(product.name, product.name_ar)}
@@ -168,25 +171,25 @@ export default function ProductStockReceiptDrawer({
 
             {selectedProduct && (
               <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-                <p className="text-sm font-semibold text-gray-900">{dn(selectedProduct.name, selectedProduct.name_ar)}</p>
+                <p className="text-sm font-semibold text-gray-900" dir="auto">{dn(selectedProduct.name, selectedProduct.name_ar)}</p>
                 {selectedProduct.name_ar && (
                   <p className="mt-0.5 text-xs text-gray-500" dir="rtl">{selectedProduct.name_ar}</p>
                 )}
                 <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <p className="text-gray-400">Category</p>
-                    <p className="mt-0.5 font-medium text-gray-700">{selectedProduct.categories?.name ?? 'Uncategorised'}</p>
+                    <p className="text-gray-400">{t('inventory:columns.category')}</p>
+                    <p className="mt-0.5 font-medium text-gray-700" dir="auto">{selectedProduct.categories ? dn(selectedProduct.categories.name, selectedProduct.categories.name_ar) : t('inventory:item.uncategorized')}</p>
                   </div>
                   <div>
-                    <p className="text-gray-400">Current Stock</p>
+                    <p className="text-gray-400">{t('inventory:item.currentQty')}</p>
                     <p className="mt-0.5 font-semibold text-gray-900">{formatStockQuantity(selectedProduct.stock_quantity)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-400">SKU</p>
+                    <p className="text-gray-400">{t('products:fields.sku')}</p>
                     <p className="mt-0.5 font-medium text-gray-700">{selectedProduct.sku || '—'}</p>
                   </div>
                   <div>
-                    <p className="text-gray-400">Barcode</p>
+                    <p className="text-gray-400">{t('products:fields.barcode')}</p>
                     <p className="mt-0.5 font-medium text-gray-700">{selectedProduct.barcode || '—'}</p>
                   </div>
                 </div>
@@ -194,7 +197,7 @@ export default function ProductStockReceiptDrawer({
             )}
 
             <div>
-              <label className="label">Supplier (Optional)</label>
+              <label className="label">{t('inventory:receipt.supplierOptional')}</label>
               <select
                 className="input"
                 value={supplierId}
@@ -203,16 +206,16 @@ export default function ProductStockReceiptDrawer({
                   clearReceiptKey()
                 }}
               >
-                <option value="">No supplier</option>
+                <option value="">{t('inventory:receipt.noSupplier')}</option>
                 {suppliers.map(supplier => (
-                  <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
+                  <option key={supplier.id} value={supplier.id}>{dn(supplier.name, supplier.name_ar)}</option>
                 ))}
               </select>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="label">Quantity Received</label>
+                <label className="label">{t('inventory:receipt.quantityReceived')}</label>
                 <input
                   className="input"
                   type="number"
@@ -227,7 +230,7 @@ export default function ProductStockReceiptDrawer({
                 />
               </div>
               <div>
-                <label className="label">Unit Purchase Cost</label>
+                <label className="label">{t('inventory:receipt.unitCost')}</label>
                 <MoneyInput
                   className="input"
                   value={unitCost}
@@ -241,14 +244,14 @@ export default function ProductStockReceiptDrawer({
             </div>
 
             <div className="flex items-center justify-between rounded-xl bg-emerald-50 px-4 py-3">
-              <span className="text-sm font-semibold text-emerald-800">Total Purchase Cost</span>
+              <span className="text-sm font-semibold text-emerald-800">{t('inventory:receipt.totalCost')}</span>
               <span className="text-sm font-bold tabular-nums text-emerald-700">
                 <Rial amount={totalCost} />
               </span>
             </div>
 
             <div>
-              <label className="label">Reference</label>
+              <label className="label">{t('inventory:receipt.reference')}</label>
               <input
                 className="input"
                 value={reference}
@@ -256,12 +259,13 @@ export default function ProductStockReceiptDrawer({
                   setReference(event.target.value)
                   clearReceiptKey()
                 }}
-                placeholder="Bill number or receipt reference"
+                placeholder={t('inventory:receipt.referencePlaceholder')}
+                dir="auto"
               />
             </div>
 
             <div>
-              <label className="label">Note</label>
+              <label className="label">{t('inventory:receipt.note')}</label>
               <textarea
                 className="input resize-none"
                 rows={3}
@@ -270,7 +274,8 @@ export default function ProductStockReceiptDrawer({
                   setNote(event.target.value)
                   clearReceiptKey()
                 }}
-                placeholder="Optional note"
+                placeholder={t('inventory:receipt.notePlaceholder')}
+                dir="auto"
               />
             </div>
 
@@ -283,10 +288,10 @@ export default function ProductStockReceiptDrawer({
 
           <div className="flex flex-shrink-0 justify-end gap-3 border-t border-gray-100 px-6 py-4">
             <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>
-              Cancel
+              {t('common:cancel')}
             </Button>
             <Button type="submit" loading={saving}>
-              Add Stock
+              {t('inventory:actions.addStock')}
             </Button>
           </div>
         </form>
@@ -295,13 +300,13 @@ export default function ProductStockReceiptDrawer({
   )
 }
 
-function stockReceiptError(message: string) {
-  if (/stock module is disabled/i.test(message)) return 'Stock is disabled for this branch.'
-  if (/service product|service businesses/i.test(message)) return 'Stock receiving is not available for service products.'
-  if (/track stock|must track stock/i.test(message)) return 'Enable stock tracking for this product before receiving stock.'
-  if (/supplier belongs|supplier not found/i.test(message)) return 'Selected supplier does not match this branch.'
-  if (/permission|forbidden|unauthorized/i.test(message)) return 'You do not have permission to receive stock.'
-  if (/quantity/i.test(message)) return 'Enter a valid quantity received.'
-  if (/unit purchase cost|unit_cost/i.test(message)) return 'Enter a valid unit purchase cost.'
-  return message || 'Stock could not be received. Check the values and try again.'
+function stockReceiptError(message: string, t: TFunction) {
+  if (/stock module is disabled/i.test(message)) return t('inventory:errors.disabled')
+  if (/service product|service businesses/i.test(message)) return t('inventory:errors.serviceUnavailable')
+  if (/track stock|must track stock/i.test(message)) return t('inventory:errors.trackingRequired')
+  if (/supplier belongs|supplier not found/i.test(message)) return t('inventory:errors.supplierMismatch')
+  if (/permission|forbidden|unauthorized/i.test(message)) return t('inventory:errors.forbidden')
+  if (/quantity/i.test(message)) return t('inventory:errors.quantityInvalid')
+  if (/unit purchase cost|unit_cost/i.test(message)) return t('inventory:errors.purchaseCostInvalid')
+  return t('inventory:errors.receiveFailed')
 }
