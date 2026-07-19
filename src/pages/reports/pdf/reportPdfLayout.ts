@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf'
+import i18n from '@/localization/i18n'
 import autoTable, { type UserOptions } from 'jspdf-autotable'
 import {
   hasArabicText,
@@ -114,6 +115,7 @@ function currentContentTop(doc: jsPDF): number {
 }
 
 function kpiIcon(label: string): string {
+  if (i18n.resolvedLanguage === 'ar-SA') return '◆'
   const normalized = label.toLowerCase()
   if (/vat|tax|provision/.test(normalized)) return 'VAT'
   if (/invoice|document|credit note|session/.test(normalized)) return '#'
@@ -127,7 +129,8 @@ function kpiIcon(label: string): string {
 }
 
 function rightText(doc: jsPDF, text: string, x: number, y: number) {
-  doc.text(text, x, y, { align: 'right' })
+  setPdfFontForText(doc, text)
+  doc.text(pdfDrawableText(text, ''), x, y, { align: 'right' })
 }
 
 function splitMixedTextRuns(text: string): PdfTextRun[] {
@@ -287,12 +290,12 @@ function drawReportHeaderBar(doc: jsPDF, context: ReportPdfContext) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(16)
   setTextColor(doc, PDF_THEME.colors.white)
-  doc.text(context.reportTitle, left, 24.1)
+  drawSmartText(doc, context.reportTitle, left, 24.1, { maxWidth: 105 }, 'bold')
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.2)
   setTextColor(doc, PDF_THEME.colors.whiteMuted)
-  rightText(doc, 'DATE RANGE', right, 10.5)
+  rightText(doc, i18n.t('reports:pdf.layout.dateRange'), right, 10.5)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8.3)
   setTextColor(doc, PDF_THEME.colors.white)
@@ -300,7 +303,7 @@ function drawReportHeaderBar(doc: jsPDF, context: ReportPdfContext) {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.2)
   setTextColor(doc, PDF_THEME.colors.whiteMuted)
-  rightText(doc, `Generated ${context.generatedAtLabel}`, right, 21.2)
+  rightText(doc, `${i18n.t('reports:pdf.layout.generated')} ${context.generatedAtLabel}`, right, 21.2)
 }
 
 function drawFirstPageIdentity(doc: jsPDF, context: ReportPdfContext) {
@@ -327,19 +330,19 @@ function drawFirstPageIdentity(doc: jsPDF, context: ReportPdfContext) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(6.5)
   setTextColor(doc, PDF_THEME.colors.gold)
-  doc.text('BUSINESS PROFILE', left + 4, boxY + 6)
+  drawSmartText(doc, i18n.t('reports:pdf.layout.businessProfile'), left + 4, boxY + 6, {}, 'bold')
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(6.5)
   setTextColor(doc, PDF_THEME.colors.muted)
 
   const leftLines = [
-    { label: 'Branch', value: context.branchName },
+    { label: i18n.t('reports:pdf.layout.branch'), value: context.branchName },
     context.vatNumber ? { label: 'VAT', value: context.vatNumber } : null,
     context.crNumber ? { label: 'CR', value: context.crNumber } : null,
-    context.address ? { label: 'Address', value: context.address } : null,
-    context.phone ? { label: 'Phone', value: context.phone } : null,
-    context.email ? { label: 'Email', value: context.email } : null,
+    context.address ? { label: i18n.t('reports:pdf.layout.address'), value: context.address } : null,
+    context.phone ? { label: i18n.t('reports:pdf.layout.phone'), value: context.phone } : null,
+    context.email ? { label: i18n.t('reports:pdf.layout.email'), value: context.email } : null,
   ].filter((line): line is { label: string; value: string } => !!line)
 
   leftLines.slice(0, 6).forEach((line, index) => {
@@ -349,7 +352,7 @@ function drawFirstPageIdentity(doc: jsPDF, context: ReportPdfContext) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(12)
   setTextColor(doc, PDF_THEME.colors.text)
-  const companyLines = splitSmartTextToSize(doc, context.companyName, centerWidth, 'bold', 'Business').slice(0, 2)
+  const companyLines = splitSmartTextToSize(doc, context.companyName, centerWidth, 'bold', i18n.t('reports:pdf.layout.business')).slice(0, 2)
   companyLines.forEach((line, index) => {
     drawSmartText(
       doc,
@@ -358,7 +361,7 @@ function drawFirstPageIdentity(doc: jsPDF, context: ReportPdfContext) {
       boxY + 10 + index * 4.7,
       { align: 'center', maxWidth: centerWidth },
       'bold',
-      'Business',
+      i18n.t('reports:pdf.layout.business'),
     )
   })
 
@@ -381,7 +384,7 @@ function drawFirstPageIdentity(doc: jsPDF, context: ReportPdfContext) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(6.5)
   setTextColor(doc, PDF_THEME.colors.gold)
-  rightText(doc, 'PREPARED BY', right - 4, boxY + 6)
+  rightText(doc, i18n.t('reports:pdf.layout.preparedBy'), right - 4, boxY + 6)
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.2)
@@ -392,7 +395,7 @@ function drawFirstPageIdentity(doc: jsPDF, context: ReportPdfContext) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(6.5)
   setTextColor(doc, PDF_THEME.colors.text)
-  rightText(doc, 'Generated', right - 4, boxY + 22)
+  rightText(doc, i18n.t('reports:pdf.layout.generated'), right - 4, boxY + 22)
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(6.7)
@@ -423,8 +426,8 @@ export function addFooter(doc: jsPDF, context: ReportPdfContext) {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(7.5)
     setTextColor(doc, PDF_THEME.colors.muted)
-    doc.text(`Generated by Kubri | www.kubri.shop | ${context.generatedAtLabel}`, left, y)
-    rightText(doc, `Page ${page} of ${totalPages}`, right, y)
+    drawSmartText(doc, `${i18n.t('reports:pdf.layout.generated')}: Kubri | www.kubri.shop | ${context.generatedAtLabel}`, left, y)
+    rightText(doc, i18n.t('reports:pdf.layout.page', { current: page, total: totalPages }), right, y)
   }
 }
 
@@ -570,7 +573,7 @@ export function addFinalNotes(doc: jsPDF, context: ReportPdfContext, y: number, 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7.2)
   setTextColor(doc, PDF_THEME.colors.text)
-  doc.text('Report notes', left + 4, nextY + 5)
+  drawSmartText(doc, i18n.t('reports:pdf.layout.notes'), left + 4, nextY + 5, {}, 'bold')
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)

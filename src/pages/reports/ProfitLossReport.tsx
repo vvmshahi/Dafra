@@ -89,7 +89,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
         console.error('Unable to load profit summary', error)
         if (!cancelled) {
           setData(null)
-          setError(reportErrorMessage(error))
+          setError(t('reports:errors.load'))
         }
       } finally {
         if (!cancelled) setLoading(false)

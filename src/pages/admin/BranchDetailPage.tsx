@@ -16,6 +16,7 @@ import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { getCachedProductionStatus, productionStatusLabel, readCachedProductionStatus } from '@/lib/zatca/status'
 import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
 import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
+import { useTranslation } from 'react-i18next'
 
 const db = () => supabase as any
 
@@ -56,11 +57,11 @@ function ChartTooltip({ active, payload, label }: any) {
 }
 
 const statusConfig = {
-  posted:    { variant: 'success' as const, label: 'Posted',    icon: CheckCircle2 },
-  draft:     { variant: 'neutral' as const, label: 'Draft',     icon: AlertCircle },
-  paid:      { variant: 'success' as const, label: 'Paid',      icon: CheckCircle2 },
-  pending:   { variant: 'warning' as const, label: 'Pending',   icon: Clock },
-  cancelled: { variant: 'danger'  as const, label: 'Cancelled', icon: AlertCircle },
+  posted:    { variant: 'success' as const, icon: CheckCircle2 },
+  draft:     { variant: 'neutral' as const, icon: AlertCircle },
+  paid:      { variant: 'success' as const, icon: CheckCircle2 },
+  pending:   { variant: 'warning' as const, icon: Clock },
+  cancelled: { variant: 'danger'  as const, icon: AlertCircle },
 }
 
 interface DashboardDailySale {
@@ -93,6 +94,7 @@ const EMPTY_DASHBOARD_SUMMARY: DashboardSummary = {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function BranchDetailPage() {
+  const { t, i18n } = useTranslation('branches')
   const { branchId } = useParams<{ branchId: string }>()
   const navigate = useNavigate()
   const { profile } = useAuth()
@@ -295,7 +297,7 @@ export default function BranchDetailPage() {
           onClick={() => navigate('/dashboard')}
           className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 mb-4 transition-colors"
         >
-          <ArrowLeft size={13} /> Back to Dashboard
+          <ArrowLeft size={13} /> {t('detail.back')}
         </button>
 
         {branchLoading ? (
@@ -316,40 +318,40 @@ export default function BranchDetailPage() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-lg font-bold text-gray-900">{branch.name}</h1>
+                <h1 className="text-lg font-bold text-gray-900" dir="auto">{branch.name}</h1>
                 {branch.is_main_branch && (
                   <span className="text-[9px] font-bold bg-gold-500/10 text-gold-700 px-1.5 py-0.5 rounded-full ring-1 ring-gold-500/20">
-                    MAIN
+                    {t('detail.main')}
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-3 mt-1 flex-wrap">
                 <Badge variant={branch.is_active ? 'success' : 'neutral'} dot className="text-[11px]">
-                  {branch.is_active ? 'Active' : 'Inactive'}
+                  {t(`status.${branch.is_active ? 'active' : 'inactive'}`)}
                 </Badge>
                 <span className="flex items-center gap-1 text-[11px] text-gray-400">
                   <ShieldCheck size={11} className={(branch.zatca_phase ?? 1) === 2 && zatcaStatus.tone === 'success' ? 'text-emerald-500' : 'text-violet-400'} />
-                  {(branch.zatca_phase ?? 1) === 2 ? zatcaStatus.label : 'ZATCA Phase 1'}
+                  {(branch.zatca_phase ?? 1) === 2 ? zatcaStatus.label : t('detail.zatcaPhase1')}
                 </span>
                 {branch.city && (
-                  <span className="text-[11px] text-gray-400">{branch.city}</span>
+                  <span className="text-[11px] text-gray-400" dir="auto">{branch.city}</span>
                 )}
                 {branch.phone && (
-                  <span className="text-[11px] text-gray-400">{branch.phone}</span>
+                  <span className="text-[11px] text-gray-400" dir="ltr">{branch.phone}</span>
                 )}
               </div>
             </div>
             <div className="text-right hidden sm:block">
               <p className="text-xs text-gray-400">
-                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                {new Date().toLocaleDateString(i18n.resolvedLanguage?.startsWith('ar') ? 'ar-SA' : 'en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
               </p>
-              <p className="text-[11px] text-gray-300 mt-0.5">Read-only view</p>
+              <p className="text-[11px] text-gray-300 mt-0.5">{t('detail.readOnly')}</p>
             </div>
           </div>
         ) : (
           <div className="flex items-center gap-2 text-gray-400">
             <AlertCircle size={16} />
-            <span className="text-sm">Branch not found</span>
+            <span className="text-sm">{t('detail.notFound')}</span>
           </div>
         )}
       </div>
@@ -357,45 +359,45 @@ export default function BranchDetailPage() {
       {/* ── 6 KPI cards ─────────────────────────────────────────── */}
       <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
         <KpiCard
-          label="Today's Sales" icon={TrendingUp}
+          label={t('detail.todaySales')} icon={TrendingUp}
           gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28]"
           value={<Rial amount={todaySales} />}
-          sub={`${todayCount} invoice${todayCount !== 1 ? 's' : ''}`}
+          sub={t('detail.invoiceCount', { count: todayCount })}
           loading={statsLoading}
         />
         <KpiCard
-          label="Invoices Today" icon={FileText}
+          label={t('detail.invoicesToday')} icon={FileText}
           gradient="bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]"
           value={String(todayCount)}
-          sub="Posted this session"
+          sub={t('detail.postedSession')}
           loading={statsLoading}
         />
         <KpiCard
-          label="Cash Today" icon={Banknote}
+          label={t('detail.cashToday')} icon={Banknote}
           gradient="bg-gradient-to-br from-[#059669] to-[#047857]"
           value={<Rial amount={todayCash} />}
-          sub="Cash payments"
+          sub={t('detail.cashPayments')}
           loading={statsLoading}
         />
         <KpiCard
-          label="Card Today" icon={CreditCard}
+          label={t('detail.cardToday')} icon={CreditCard}
           gradient="bg-gradient-to-br from-[#7c3aed] to-[#5b21b6]"
           value={<Rial amount={todayCard} />}
-          sub="Card payments"
+          sub={t('detail.cardPayments')}
           loading={statsLoading}
         />
         <KpiCard
-          label="VAT Collected" icon={ShieldCheck}
+          label={t('detail.vatCollected')} icon={ShieldCheck}
           gradient="bg-gradient-to-br from-[#d97706] to-[#b45309]"
           value={<Rial amount={todayVat} />}
-          sub="15% VAT today"
+          sub={t('detail.vatToday')}
           loading={statsLoading}
         />
         <KpiCard
-          label="Expenses Today" icon={Receipt}
+          label={t('detail.expensesToday')} icon={Receipt}
           gradient="bg-gradient-to-br from-[#dc2626] to-[#b91c1c]"
           value={<Rial amount={todayExpenses} />}
-          sub="Recorded today"
+          sub={t('detail.recordedToday')}
           loading={statsLoading}
         />
       </div>
@@ -406,8 +408,8 @@ export default function BranchDetailPage() {
         {/* Sales chart */}
         <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <div className="mb-4">
-            <h2 className="text-sm font-semibold text-gray-900">Sales — Last 7 Days</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Daily revenue for this branch</p>
+            <h2 className="text-sm font-semibold text-gray-900">{t('detail.sales7Days')}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{t('detail.dailyRevenue')}</p>
           </div>
           {chartLoading ? (
             <div className="h-[200px] flex items-center justify-center">
@@ -416,7 +418,7 @@ export default function BranchDetailPage() {
           ) : salesData.every(d => d.sales === 0) ? (
             <div className="h-[200px] flex flex-col items-center justify-center text-gray-300">
               <ShoppingBag size={28} className="mb-2" />
-              <p className="text-sm">No sales this week</p>
+              <p className="text-sm">{t('detail.noSales')}</p>
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
@@ -442,7 +444,7 @@ export default function BranchDetailPage() {
 
         {/* Low stock alerts */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-gray-900 mb-1">Low Stock Alerts</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-1">{t('detail.lowStock')}</h2>
           {lowStockLoading ? (
             <div className="space-y-2">
               {[1, 2, 3].map(i => (
@@ -452,7 +454,7 @@ export default function BranchDetailPage() {
           ) : lowStock.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-300 py-8">
               <Package size={26} className="mb-2" />
-              <p className="text-xs text-center">All products are well-stocked</p>
+              <p className="text-xs text-center">{t('detail.wellStocked')}</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -462,7 +464,7 @@ export default function BranchDetailPage() {
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold text-amber-800 truncate">{p.name}</p>
                     <p className="text-[10px] text-amber-600">
-                      {p.stock_quantity} left (min {p.min_stock_level})
+                      {t('detail.stockLeft', { count: p.stock_quantity, min: p.min_stock_level })}
                     </p>
                   </div>
                 </div>
@@ -475,8 +477,8 @@ export default function BranchDetailPage() {
       {/* ── Recent invoices ──────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Recent Invoices</h2>
-          <span className="text-xs text-gray-400">Last 10</span>
+          <h2 className="text-sm font-semibold text-gray-900">{t('detail.recentInvoices')}</h2>
+          <span className="text-xs text-gray-400">{t('detail.last10')}</span>
         </div>
 
         {invLoading ? (
@@ -493,17 +495,17 @@ export default function BranchDetailPage() {
         ) : recentInvs.length === 0 ? (
           <div className="py-10 text-center">
             <FileText size={28} className="text-gray-200 mx-auto mb-2" />
-            <p className="text-sm text-gray-400">No invoices for this branch</p>
+            <p className="text-sm text-gray-400">{t('detail.noInvoices')}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-50">
-                  {['Invoice', 'Customer', 'Amount', 'Method', 'Status', 'Date'].map((h, i) => (
+                  {(['invoice', 'customer', 'amount', 'method', 'statusLabel', 'date'] as const).map((h, i) => (
                     <th key={h} className={`px-6 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wide ${
                       i === 2 ? 'text-right' : 'text-left'
-                    }`}>{h}</th>
+                    }`}>{t(`detail.${h}`)}</th>
                   ))}
                 </tr>
               </thead>
@@ -523,7 +525,7 @@ export default function BranchDetailPage() {
                         {inv.invoice_number}
                       </td>
                       <td className="px-6 py-3.5 text-sm text-gray-700 max-w-[160px] truncate">
-                        {inv.customers?.name ?? 'Walk-in Customer'}
+                        <span dir="auto">{inv.customers?.name ?? t('detail.walkIn')}</span>
                       </td>
                       <td className="px-6 py-3.5 text-sm font-semibold text-gray-900 text-right tabular-nums">
                         <Rial amount={Number(inv.total_amount)} />
@@ -539,17 +541,17 @@ export default function BranchDetailPage() {
                             : 'bg-gray-50 text-gray-600'
                         }`}>
                           {displayPaymentMethod === 'cash'
-                            ? <><Banknote size={10} /> Cash</>
+                            ? <><Banknote size={10} /> {t('detail.cash')}</>
                             : displayPaymentMethod === 'card'
-                            ? <><CreditCard size={10} /> Card</>
+                            ? <><CreditCard size={10} /> {t('detail.card')}</>
                             : displayPaymentMethod === 'split'
-                            ? <><CreditCard size={10} /> Split</>
+                            ? <><CreditCard size={10} /> {t('detail.split')}</>
                             : displayPaymentMethod ?? '—'
                           }
                         </span>
                       </td>
                       <td className="px-6 py-3.5">
-                        <Badge variant={cfg.variant} dot>{cfg.label}</Badge>
+                        <Badge variant={cfg.variant} dot>{t(`detail.invoiceStatus.${inv.status}`, { defaultValue: t('unknown') })}</Badge>
                       </td>
                       <td className="px-6 py-3.5 text-xs text-gray-400">{inv.invoice_date}</td>
                     </tr>
@@ -564,10 +566,10 @@ export default function BranchDetailPage() {
       {/* ── Expense summary ──────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Today's Expenses</h2>
+          <h2 className="text-sm font-semibold text-gray-900">{t('detail.expensesToday')}</h2>
           {!expLoading && recentExps.length > 0 && (
             <span className="text-xs font-medium text-gray-500">
-              <Rial amount={todayExpenses} /> total
+              <Rial amount={todayExpenses} /> {t('detail.total')}
             </span>
           )}
         </div>
@@ -583,7 +585,7 @@ export default function BranchDetailPage() {
           </div>
         ) : recentExps.length === 0 ? (
           <div className="py-8 text-center">
-            <p className="text-sm text-gray-400">No expenses recorded today</p>
+            <p className="text-sm text-gray-400">{t('detail.noExpenses')}</p>
           </div>
         ) : (
           <div className="divide-y divide-gray-50">
@@ -591,7 +593,7 @@ export default function BranchDetailPage() {
               <div key={exp.id} className="px-6 py-3.5 flex items-center justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-gray-700 truncate">
-                    {exp.description || exp.expense_categories?.name || 'Expense'}
+                    <span dir="auto">{exp.description || exp.expense_categories?.name || t('detail.expense')}</span>
                   </p>
                   {exp.expense_categories?.name && exp.description && (
                     <p className="text-[11px] text-gray-400 mt-0.5">{exp.expense_categories.name}</p>
@@ -605,7 +607,7 @@ export default function BranchDetailPage() {
                       ? 'bg-blue-50 text-blue-700'
                       : 'bg-gray-50 text-gray-600'
                   }`}>
-                    {exp.payment_method === 'cash' ? 'Cash' : exp.payment_method === 'card' ? 'Card' : exp.payment_method ?? '—'}
+                    {exp.payment_method === 'cash' ? t('detail.cash') : exp.payment_method === 'card' ? t('detail.card') : exp.payment_method ?? '—'}
                   </span>
                   <span className="text-sm font-semibold text-gray-900 tabular-nums">
                     <Rial amount={Number(exp.total_paid ?? 0)} />

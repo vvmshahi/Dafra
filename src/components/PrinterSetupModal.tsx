@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react'
 import { Printer, Check, X, Loader2 } from 'lucide-react'
 import { getPrinters, getDefaultPrinter, savePrinter, clearPrinter } from '@/lib/electron'
 import { Button } from '@/components/ui/Button'
+import { useTranslation } from 'react-i18next'
 
 interface Props {
   onClose: () => void
 }
 
 export function PrinterSetupModal({ onClose }: Props) {
+  const { t } = useTranslation('printing')
   const [printers,  setPrinters]  = useState<any[]>([])
   const [selected,  setSelected]  = useState<string | null>(null)
   const [current,   setCurrent]   = useState<string | null>(null)
@@ -51,12 +53,13 @@ export function PrinterSetupModal({ onClose }: Props) {
               <Printer size={16} className="text-primary-600" />
             </div>
             <div>
-              <p className="text-sm font-bold text-gray-900">Select Default Printer</p>
-              <p className="text-xs text-gray-400">Choose your thermal printer for automatic printing</p>
+              <p className="text-sm font-bold text-gray-900">{t('defaultPrinterTitle')}</p>
+              <p className="text-xs text-gray-400">{t('defaultPrinterHelp')}</p>
             </div>
           </div>
           <button
             onClick={onClose}
+            aria-label={t('closePrinterSetup')}
             className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X size={16} />
@@ -68,11 +71,11 @@ export function PrinterSetupModal({ onClose }: Props) {
           {loading ? (
             <div className="flex items-center justify-center py-10 text-gray-400">
               <Loader2 size={20} className="animate-spin mr-2" />
-              <span className="text-sm">Loading printers…</span>
+              <span className="text-sm">{t('loadingPrinters')}</span>
             </div>
           ) : printers.length === 0 ? (
             <div className="text-center py-10 text-sm text-gray-400">
-              No printers found on this device.
+              {t('noPrintersFound')}
             </div>
           ) : (
             printers.map((p) => {
@@ -95,11 +98,11 @@ export function PrinterSetupModal({ onClose }: Props) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 truncate">{p.name}</p>
-                    <p className="text-xs text-gray-400">{p.status === 0 ? 'Ready' : 'Offline'}</p>
+                    <p className="text-xs text-gray-400">{p.status === 0 ? t('ready') : t('offline')}</p>
                   </div>
                   {isCurrent && (
                     <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-100 px-2 py-0.5 rounded-full font-semibold flex-shrink-0">
-                      Default
+                      {t('default')}
                     </span>
                   )}
                 </button>
@@ -116,13 +119,13 @@ export function PrinterSetupModal({ onClose }: Props) {
                 onClick={handleClear}
                 className="text-xs text-red-500 hover:text-red-700 transition-colors"
               >
-                Clear default
+                {t('clearDefault')}
               </button>
             )}
           </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" onClick={onClose} disabled={saving}>
-              Skip
+              {t('skip')}
             </Button>
             <Button
               onClick={handleSave}
@@ -131,9 +134,9 @@ export function PrinterSetupModal({ onClose }: Props) {
               className="gap-1.5"
             >
               {saved ? (
-                <><Check size={14} /> Saved</>
+                <><Check size={14} /> {t('saved')}</>
               ) : (
-                'Set as Default'
+                t('setAsDefault')
               )}
             </Button>
           </div>

@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
 import { Switch } from '@/components/ui/Switch'
 import type { Employee, Branch } from '@/types/database'
+import { useTranslation } from 'react-i18next'
 
 const db = () => supabase as any
 
@@ -22,6 +23,7 @@ interface DrawerProps {
 }
 
 function EmployeeDrawer({ employee, branches, tenantId, onSave, onClose }: DrawerProps) {
+  const { t } = useTranslation('employees')
   const isEdit = !!employee
   const [form, setForm] = useState({
     full_name:    employee?.full_name    ?? '',
@@ -39,8 +41,8 @@ function EmployeeDrawer({ employee, branches, tenantId, onSave, onClose }: Drawe
   const set = (k: string, v: string | boolean) => setForm(f => ({ ...f, [k]: v }))
 
   async function save() {
-    if (!form.full_name.trim()) { setError('Full name is required'); return }
-    if (!form.branch_id)        { setError('Branch is required'); return }
+    if (!form.full_name.trim()) { setError(t('errors.name')); return }
+    if (!form.branch_id) { setError(t('errors.branch')); return }
     setSaving(true)
     setError(null)
     const payload = {
@@ -58,7 +60,7 @@ function EmployeeDrawer({ employee, branches, tenantId, onSave, onClose }: Drawe
       ? await db().from('employees').update(payload).eq('id', employee!.id)
       : await db().from('employees').insert(payload)
     setSaving(false)
-    if (dbErr) { setError(dbErr.message); return }
+    if (dbErr) { console.error('Employee save failed', dbErr); setError(t('errors.save')); return }
     onSave()
   }
 
@@ -68,7 +70,7 @@ function EmployeeDrawer({ employee, branches, tenantId, onSave, onClose }: Drawe
       <aside className="w-full max-w-md bg-white h-full flex flex-col shadow-2xl overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-sm font-semibold text-gray-900">
-            {isEdit ? 'Edit Employee' : 'Add Employee'}
+            {t(isEdit ? 'edit' : 'add')}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X size={18} />
@@ -85,42 +87,42 @@ function EmployeeDrawer({ employee, branches, tenantId, onSave, onClose }: Drawe
 
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="label">Full Name <span className="text-red-400">*</span></label>
+              <label className="label">{t('fields.fullName')} <span className="text-red-400">*</span></label>
               <input className="input" value={form.full_name}
-                onChange={e => set('full_name', e.target.value)} placeholder="Ahmed Al-Rashid" />
+                onChange={e => set('full_name', e.target.value)} placeholder={t('placeholders.name')} dir="auto" />
             </div>
             <div className="col-span-2">
-              <label className="label">Full Name (Arabic)</label>
+              <label className="label">{t('fields.fullNameAr')}</label>
               <input className="input" dir="rtl" value={form.full_name_ar}
                 onChange={e => set('full_name_ar', e.target.value)} placeholder="أحمد الراشد" />
             </div>
             <div className="col-span-2">
-              <label className="label">Branch <span className="text-red-400">*</span></label>
+              <label className="label">{t('fields.branch')} <span className="text-red-400">*</span></label>
               <select className="input" value={form.branch_id}
                 onChange={e => set('branch_id', e.target.value)}>
-                <option value="">Select branch…</option>
+                <option value="">{t('placeholders.branch')}</option>
                 {branches.map(b => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="label">Job Title</label>
+              <label className="label">{t('fields.jobTitle')}</label>
               <input className="input" value={form.position}
-                onChange={e => set('position', e.target.value)} placeholder="Cashier" />
+                onChange={e => set('position', e.target.value)} placeholder={t('placeholders.job')} dir="auto" />
             </div>
             <div>
-              <label className="label">Phone</label>
+              <label className="label">{t('fields.phone')}</label>
               <input className="input" type="tel" value={form.phone}
                 onChange={e => set('phone', e.target.value)} placeholder="+966 50 000 0000" />
             </div>
             <div>
-              <label className="label">Email</label>
+              <label className="label">{t('fields.email')}</label>
               <input className="input" type="email" value={form.email}
-                onChange={e => set('email', e.target.value)} placeholder="ahmed@company.com" />
+                onChange={e => set('email', e.target.value)} placeholder={t('placeholders.email')} dir="ltr" />
             </div>
             <div>
-              <label className="label">Hire Date</label>
+              <label className="label">{t('fields.hireDate')}</label>
               <input className="input" type="date" value={form.hire_date}
                 onChange={e => set('hire_date', e.target.value)} />
             </div>
@@ -129,9 +131,9 @@ function EmployeeDrawer({ employee, branches, tenantId, onSave, onClose }: Drawe
                 checked={form.is_active}
                 onChange={value => set('is_active', value)}
                 size="sm"
-                ariaLabel="Active employee"
+                ariaLabel={t('status.active')}
               />
-              <span className="text-sm text-gray-700">Active employee</span>
+              <span className="text-sm text-gray-700">{t('status.active')}</span>
             </div>
           </div>
         </div>
@@ -139,12 +141,12 @@ function EmployeeDrawer({ employee, branches, tenantId, onSave, onClose }: Drawe
         <div className="px-6 pb-6 flex gap-3 border-t border-gray-100 pt-4">
           <button onClick={onClose}
             className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-            Cancel
+            {t('actions.cancel')}
           </button>
           <button onClick={save} disabled={saving}
             className="flex-1 py-2.5 rounded-xl bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {saving && <Loader2 size={14} className="animate-spin" />}
-            {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Add Employee'}
+            {t(saving ? 'actions.saving' : isEdit ? 'actions.save' : 'actions.add')}
           </button>
         </div>
       </aside>
@@ -162,6 +164,7 @@ function EmployeeRow({
   onEdit: () => void
   onDelete: () => void
 }) {
+  const { t } = useTranslation('employees')
   const initials = emp.full_name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase()
   return (
     <tr className="hover:bg-gray-50/60 transition-colors">
@@ -195,7 +198,7 @@ function EmployeeRow({
       </td>
       <td className="px-6 py-4">
         <Badge variant={emp.is_active ? 'success' : 'neutral'} dot>
-          {emp.is_active ? 'Active' : 'Inactive'}
+          {t(emp.is_active ? 'status.active' : 'status.inactive')}
         </Badge>
       </td>
       <td className="px-6 py-4">
@@ -218,6 +221,7 @@ function EmployeeRow({
 
 export default function EmployeesPage() {
   const { profile } = useAuth()
+  const { t } = useTranslation('employees')
   const [employees, setEmployees] = useState<Employee[]>([])
   const [branches,  setBranches]  = useState<Branch[]>([])
   const [loading,   setLoading]   = useState(true)
@@ -241,7 +245,7 @@ export default function EmployeesPage() {
   useEffect(() => { load() }, [load])
 
   async function deleteEmployee(id: string) {
-    if (!confirm('Delete this employee? This cannot be undone.')) return
+    if (!confirm(t('deleteConfirm'))) return
     await db().from('employees').delete().eq('id', id)
     setEmployees(prev => prev.filter(e => e.id !== id))
   }
@@ -269,16 +273,16 @@ export default function EmployeesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-gray-900">Employees</h2>
+          <h2 className="text-base font-semibold text-gray-900">{t('title')}</h2>
           <p className="text-xs text-gray-400 mt-0.5">
-            {employees.length} total · {activeCount} active · {inactiveCount} inactive
+            {t('total', { count: employees.length, active: activeCount, inactive: inactiveCount })}
           </p>
         </div>
         <button
           onClick={() => setDrawer('add')}
           className="btn-primary flex items-center gap-2"
         >
-          <Plus size={15} /> Add Employee
+          <Plus size={15} /> {t('add')}
         </button>
       </div>
 
@@ -292,7 +296,7 @@ export default function EmployeesPage() {
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
-          All Branches ({employees.length})
+          {t('allBranches', { count: employees.length })}
         </button>
         {branches.map(b => {
           const count = employees.filter(e => e.branch_id === b.id).length
@@ -318,7 +322,7 @@ export default function EmployeesPage() {
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search by name, title, phone…"
+          placeholder={t('search')}
           className="input pl-9 w-full"
         />
       </div>
@@ -342,16 +346,14 @@ export default function EmployeesPage() {
             <Users size={40} className="text-gray-200 mx-auto mb-3" />
             {search || branchFilter !== 'all' ? (
               <>
-                <p className="text-sm font-medium text-gray-500">No employees match your search</p>
-                <p className="text-xs text-gray-400 mt-1">Try adjusting your filters</p>
+                <p className="text-sm font-medium text-gray-500">{t('noMatch')}</p><p className="text-xs text-gray-400 mt-1">{t('adjust')}</p>
               </>
             ) : (
               <>
-                <p className="text-sm font-medium text-gray-500">No employees yet</p>
-                <p className="text-xs text-gray-400 mt-1">Add your first employee to get started</p>
+                <p className="text-sm font-medium text-gray-500">{t('empty')}</p><p className="text-xs text-gray-400 mt-1">{t('emptyHint')}</p>
                 <button onClick={() => setDrawer('add')}
                   className="btn-primary mt-4 flex items-center gap-2 mx-auto">
-                  <Plus size={14} /> Add Employee
+                  <Plus size={14} /> {t('add')}
                 </button>
               </>
             )}
@@ -361,7 +363,7 @@ export default function EmployeesPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100">
-                  {['Employee', 'Branch', 'Phone', 'Hire Date', 'Status', ''].map(h => (
+                  {[t('fields.employee'), t('fields.branch'), t('fields.phone'), t('fields.hireDate'), t('fields.status'), ''].map(h => (
                     <th key={h} className={`px-6 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wide ${
                       h === '' ? 'text-right' : 'text-left'
                     }`}>
@@ -390,9 +392,9 @@ export default function EmployeesPage() {
       {employees.length > 0 && (
         <div className="grid grid-cols-3 gap-3">
           {[
-            { label: 'Total Employees', value: employees.length, icon: Users,     color: 'text-primary-600 bg-primary-50' },
-            { label: 'Active',          value: activeCount,      icon: UserCheck, color: 'text-emerald-600 bg-emerald-50' },
-            { label: 'Inactive',        value: inactiveCount,    icon: UserX,     color: 'text-gray-500 bg-gray-100' },
+            { label: t('stats.total'), value: employees.length, icon: Users, color: 'text-primary-600 bg-primary-50' },
+            { label: t('stats.active'), value: activeCount, icon: UserCheck, color: 'text-emerald-600 bg-emerald-50' },
+            { label: t('stats.inactive'), value: inactiveCount, icon: UserX, color: 'text-gray-500 bg-gray-100' },
           ].map(({ label, value, icon: Icon, color }) => (
             <div key={label} className="card p-4 flex items-center gap-3">
               <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${color}`}>

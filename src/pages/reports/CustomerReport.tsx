@@ -68,7 +68,7 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
         console.error('Unable to load customer report summary', error)
         if (!cancelled) {
           setData(null)
-          setError(reportErrorMessage(error))
+          setError(t('reports:errors.load'))
         }
       } finally {
         if (!cancelled) setLoading(false)

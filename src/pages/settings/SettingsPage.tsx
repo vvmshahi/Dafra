@@ -6,19 +6,19 @@ import AccountTab      from './AccountTab'
 import PrinterTab      from './PrinterTab'
 import { isElectron }  from '@/lib/electron'
 import { useAuth } from '@/hooks/useAuth'
-import { businessTypeDescription, businessTypeLabel, resolveBusinessType } from '@/lib/utils/businessType'
+import { resolveBusinessType } from '@/lib/utils/businessType'
+import { useTranslation } from 'react-i18next'
 
 /* ── Tab config ─────────────────────────────────────────────── */
 
 type TabId = 'subscription' | 'account' | 'printer'
 
-const BASE_TABS: { id: TabId; label: string; icon: React.ElementType; desc: string }[] = [
-  { id: 'subscription', label: 'Subscription', icon: CreditCard,  desc: 'Plan, billing & usage limits'             },
-  { id: 'account',      label: 'Account',      icon: UserCircle,  desc: 'Profile, name, phone & password'          },
+const BASE_TABS: { id: TabId; icon: React.ElementType }[] = [
+  { id: 'subscription', icon: CreditCard }, { id: 'account', icon: UserCircle },
 ]
 
-const ELECTRON_TABS: { id: TabId; label: string; icon: React.ElementType; desc: string }[] = [
-  { id: 'printer', label: 'Printer', icon: Printer, desc: 'Default receipt printer for silent printing' },
+const ELECTRON_TABS: { id: TabId; icon: React.ElementType }[] = [
+  { id: 'printer', icon: Printer },
 ]
 
 const TABS = isElectron() ? [...BASE_TABS, ...ELECTRON_TABS] : BASE_TABS
@@ -26,6 +26,7 @@ const TABS = isElectron() ? [...BASE_TABS, ...ELECTRON_TABS] : BASE_TABS
 /* ── Page ───────────────────────────────────────────────────── */
 
 export default function SettingsPage() {
+  const { t } = useTranslation('settings')
   const { profile, tenant } = useAuth()
   const [params] = useSearchParams()
   const requestedTab = params.get('tab')
@@ -65,7 +66,7 @@ export default function SettingsPage() {
               }`}
             >
               <Icon size={15} />
-              <span>{tab.label}</span>
+              <span>{t(`tabs.${tab.id}.label`)}</span>
             </button>
           )
         })}
@@ -77,20 +78,20 @@ export default function SettingsPage() {
           <current.icon size={16} className="text-primary-600" />
         </div>
         <div>
-          <h2 className="text-sm font-bold text-gray-900">{current.label}</h2>
-          <p className="text-xs text-gray-400">{current.desc}</p>
+          <h2 className="text-sm font-bold text-gray-900">{t(`tabs.${current.id}.label`)}</h2>
+          <p className="text-xs text-gray-400">{t(`tabs.${current.id}.description`)}</p>
         </div>
       </div>
 
       {canViewBusinessType && tenant && (
         <div className="card p-4 flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Business Type</p>
-            <p className="text-sm font-bold text-gray-900 mt-1">{businessTypeLabel(tenantBusinessType)}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{businessTypeDescription(tenantBusinessType)}</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{t('businessType.title')}</p>
+            <p className="text-sm font-bold text-gray-900 mt-1">{t(`businessType.${tenantBusinessType}.label`)}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{t(`businessType.${tenantBusinessType}.description`)}</p>
           </div>
           <span className="rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-semibold text-gray-500">
-            Read only
+            {t('businessType.readOnly')}
           </span>
         </div>
       )}

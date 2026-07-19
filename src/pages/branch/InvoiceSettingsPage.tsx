@@ -342,7 +342,8 @@ export default function InvoiceSettingsPage() {
       set('logo_url', urlData.publicUrl)
       setUploadedLogoPendingSave(true)
     } catch (err: any) {
-      setSaveError(err?.message ?? t('settings:invoiceSettings.logoUploadFailed'))
+      console.error('Logo upload failed:', err)
+      setSaveError(t('settings:invoiceSettings.logoUploadFailed'))
     } finally {
       setUploadingLogo(false)
     }
@@ -398,7 +399,8 @@ export default function InvoiceSettingsPage() {
       setSaveOk(true)
       setTimeout(() => setSaveOk(false), 3000)
     } catch (err: any) {
-      setSaveError(err?.message ?? t('settings:invoiceSettings.saveFailed'))
+      console.error('Invoice settings save failed:', err)
+      setSaveError(t('settings:invoiceSettings.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -460,8 +462,8 @@ export default function InvoiceSettingsPage() {
             <p className="mt-1 text-xs text-gray-500">{t('settings:invoiceSettings.documentLanguageHelp')}</p>
             <div className="mt-3 grid grid-cols-3 gap-2" role="radiogroup" aria-label={t('settings:invoiceSettings.documentLanguage')}>
               {([
-                { value: 'en' as const, label: 'English' },
-                { value: 'ar' as const, label: 'العربية' },
+                { value: 'en' as const, label: t('settings:english') },
+                { value: 'ar' as const, label: t('settings:arabic') },
                 { value: 'both' as const, label: t('settings:invoiceSettings.bilingual') },
               ]).map(option => (
                 <button

@@ -15,15 +15,13 @@ import { Badge } from '@/components/ui/Badge'
 import type { Branch, BranchLoginUsername, BranchPosMode, TenantBranchUsage } from '@/types'
 import { supportConfig } from '@/config/support'
 import {
-  BRANCH_USERNAME_HELPER_TEXT,
-  branchUsernameCreateErrorMessage,
   isInternalBranchAuthEmail,
   normalizeBranchUsernameInput,
   validateBranchUsernameInput,
 } from '@/lib/utils/branchUsername'
-import { branchCreationErrorMessage, branchIdFromRpcResult } from '@/lib/utils/branchCreation'
+import { branchIdFromRpcResult } from '@/lib/utils/branchCreation'
 import { resolveBusinessType } from '@/lib/utils/businessType'
-import { useTranslation } from 'react-i18next'
+import { useTranslation, type TFunction } from 'react-i18next'
 
 /* ── Types ──────────────────────────────────────────────────── */
 
@@ -74,19 +72,10 @@ type StockModuleSetting = 'default' | 'enabled' | 'disabled'
 
 const POS_MODE_OPTIONS: Array<{
   value: BranchPosMode
-  label: string
-  description: string
+  key: 'touch' | 'quick'
 }> = [
-  {
-    value: 'touch',
-    label: 'Touch POS',
-    description: 'Best for cafes, restaurants, service counters, and businesses using visual product cards.',
-  },
-  {
-    value: 'quick',
-    label: 'Quick Billing',
-    description: 'Best for trading, wholesale, retail, warehouses, and businesses that search products by name, SKU, or barcode.',
-  },
+  { value: 'touch', key: 'touch' },
+  { value: 'quick', key: 'quick' },
 ]
 
 const EMPTY_FORM: BranchForm = {
@@ -129,12 +118,12 @@ function branchLegacyEmail(branch: BranchWithLogin): string | null {
   return email
 }
 
-function branchLoginCredential(branch: BranchWithLogin): { label: string; value: string; kind: 'username' | 'email' } | null {
+function branchLoginCredential(branch: BranchWithLogin): { labelKey: 'branchUsername' | 'legacyEmail'; value: string; kind: 'username' | 'email' } | null {
   const username = branchUsername(branch)
-  if (username) return { label: 'Branch username', value: username, kind: 'username' }
+  if (username) return { labelKey: 'branchUsername', value: username, kind: 'username' }
 
   const legacyEmail = branchLegacyEmail(branch)
-  if (legacyEmail) return { label: 'Legacy branch email', value: legacyEmail, kind: 'email' }
+  if (legacyEmail) return { labelKey: 'legacyEmail', value: legacyEmail, kind: 'email' }
 
   return null
 }
@@ -155,12 +144,12 @@ function stockModuleValue(setting: StockModuleSetting): boolean | null {
   return null
 }
 
-function stockModuleHint(setting: boolean | null, tenantBusinessType: string | null | undefined) {
-  if (setting === true) return 'Stock will be visible in the branch sidebar.'
-  if (setting === false) return 'Stock will be hidden from the branch sidebar.'
+function stockModuleHintKey(setting: boolean | null, tenantBusinessType: string | null | undefined) {
+  if (setting === true) return 'stock.visible'
+  if (setting === false) return 'stock.hidden'
   return resolveBusinessType(tenantBusinessType) === 'service'
-    ? 'Default for service businesses: Stock is hidden.'
-    : 'Default for trading businesses: Stock is visible.'
+    ? 'stock.serviceDefault'
+    : 'stock.tradingDefault'
 }
 
 function SectionHeader({
@@ -191,6 +180,7 @@ function LogoUploader({
 }: {
   currentUrl: string | null; previewUrl: string | null; onFile: (f: File) => void
 }) {
+  const { t } = useTranslation('branches')
   const ref = useRef<HTMLInputElement>(null)
   const display = previewUrl ?? currentUrl
 
@@ -203,10 +193,10 @@ function LogoUploader({
         }
       </div>
       <div className="flex-1">
-        <p className="text-xs font-medium text-gray-700">Branch Logo</p>
-        <p className="text-[11px] text-gray-400 mt-0.5 mb-2">PNG, JPG, WebP · max 5 MB · shown on invoices</p>
+        <p className="text-xs font-medium text-gray-700">{t('editor.logo')}</p>
+        <p className="text-[11px] text-gray-400 mt-0.5 mb-2">{t('editor.logoHelp')}</p>
         <Button type="button" variant="secondary" size="sm" onClick={() => ref.current?.click()}>
-          <Upload size={13} /> Upload logo
+          <Upload size={13} /> {t('editor.uploadLogo')}
         </Button>
         <input
           ref={ref} type="file"
@@ -226,21 +216,21 @@ function useSection(initial = true) {
   return { open, toggle: () => setOpen(v => !v) }
 }
 
-function branchPosSettingsErrorMessage(error: unknown): string {
+function branchPosSettingsErrorMessage(error: unknown, t: TFunction): string {
   const message = error && typeof error === 'object' && 'message' in error
     ? String((error as { message?: unknown }).message ?? '')
     : String(error ?? '')
 
   if (/permission|forbidden|unauthorized|42501/i.test(message)) {
-    return 'You do not have permission to update POS checkout settings for this branch.'
+    return t('branches:errors.posPermission')
   }
   if (/function .*update_branch_pos_settings|could not find the function|PGRST202|schema cache/i.test(message)) {
-    return 'The POS settings update is not available yet. Apply the latest SQL hotfix, then refresh and try again.'
+    return t('branches:errors.posUnavailable')
   }
   if (/allow_split_payments|show_pos_scroll_buttons|pos_mode|unsupported POS setting|invalid POS settings/i.test(message)) {
-    return 'The POS checkout settings payload was rejected. Refresh and try again.'
+    return t('branches:errors.posRejected')
   }
-  return message || 'Failed to save POS checkout settings.'
+  return t('branches:errors.posSaveFailed')
 }
 
 function branchPosSettingsErrorDebug(error: unknown) {
@@ -263,18 +253,18 @@ function branchPosSettingsErrorDebug(error: unknown) {
   }
 }
 
-function branchModuleSettingsErrorMessage(error: unknown): string {
+function branchModuleSettingsErrorMessage(error: unknown, t: TFunction): string {
   const message = error && typeof error === 'object' && 'message' in error
     ? String((error as { message?: unknown }).message ?? '')
     : String(error ?? '')
 
   if (/permission|forbidden|unauthorized|42501/i.test(message)) {
-    return 'You do not have permission to update module settings for this branch.'
+    return t('branches:errors.modulePermission')
   }
   if (/function .*update_branch_module_settings|could not find the function|PGRST202|schema cache/i.test(message)) {
-    return 'The Stock module setting is not available yet. Apply the Stock module SQL migration, then refresh and try again.'
+    return t('branches:errors.moduleUnavailable')
   }
-  return message || 'Failed to save module settings.'
+  return t('branches:errors.moduleSaveFailed')
 }
 
 function branchModuleSettingsErrorDebug(error: unknown) {
@@ -312,7 +302,7 @@ function BranchDrawer({
   onRefresh?: () => void
   onResetPassword?: () => void
 }) {
-  const { t } = useTranslation('settings')
+  const { t } = useTranslation(['settings', 'branches'])
   const isNew = branch === null
   const [form, setForm] = useState<BranchForm>(
     branch
@@ -361,6 +351,14 @@ function BranchDrawer({
   const CR_RE     = /^[a-zA-Z0-9]+$/
   const BLDG_RE   = /^\d{4}$/
   const POSTAL_RE = /^\d{5}$/
+  const usernameValidation = isNew ? validateBranchUsernameInput(form.login_username) : null
+  const localizedUsernameValidation = !usernameValidation
+    ? null
+    : /required/i.test(usernameValidation)
+      ? t('branches:validation.usernameRequired')
+      : /reserved/i.test(usernameValidation)
+        ? t('branches:validation.usernameReserved')
+        : t('branches:validation.usernameInvalid')
 
   // Pre-touch all fields when editing so errors show immediately
   const [touched, setTouched] = useState<Set<string>>(
@@ -371,19 +369,19 @@ function BranchDrawer({
   const touch = (k: string) => setTouched(prev => { const s = new Set(prev); s.add(k); return s })
 
   const errs: Record<string, string | null> = {
-    vat_number:      !form.vat_number.trim() ? 'Required' : !VAT_RE.test(form.vat_number.trim()) ? 'Must be 15 digits, starting and ending with 3' : null,
-    cr_number:       !form.cr_number.trim() ? 'Required' : !CR_RE.test(form.cr_number.trim()) ? 'Alphanumeric characters only' : null,
-    building_number: !form.building_number.trim() ? 'Required' : !BLDG_RE.test(form.building_number.trim()) ? 'Exactly 4 digits (use leading zeros e.g. 0056)' : null,
-    postal_code:     !form.postal_code.trim() ? 'Required' : !POSTAL_RE.test(form.postal_code.trim()) ? 'Exactly 5 digits' : null,
-    street:          !form.street.trim() ? 'Required' : null,
-    city:            !form.city.trim() ? 'Required' : null,
-    district:        !form.district.trim() ? 'Required' : null,
+    vat_number:      !form.vat_number.trim() ? t('branches:validation.required') : !VAT_RE.test(form.vat_number.trim()) ? t('branches:validation.vat') : null,
+    cr_number:       !form.cr_number.trim() ? t('branches:validation.required') : !CR_RE.test(form.cr_number.trim()) ? t('branches:validation.alphanumeric') : null,
+    building_number: !form.building_number.trim() ? t('branches:validation.required') : !BLDG_RE.test(form.building_number.trim()) ? t('branches:validation.building') : null,
+    postal_code:     !form.postal_code.trim() ? t('branches:validation.required') : !POSTAL_RE.test(form.postal_code.trim()) ? t('branches:validation.postal') : null,
+    street:          !form.street.trim() ? t('branches:validation.required') : null,
+    city:            !form.city.trim() ? t('branches:validation.required') : null,
+    district:        !form.district.trim() ? t('branches:validation.required') : null,
     ...(isNew ? {
-      login_username:         validateBranchUsernameInput(form.login_username),
-      login_password:         !form.login_password ? 'Password is required'
-                              : form.login_password.length < 8 ? 'Must be at least 8 characters' : null,
-      login_confirm_password: !form.login_confirm_password ? 'Please confirm the password'
-                              : form.login_confirm_password !== form.login_password ? 'Passwords do not match' : null,
+      login_username:         localizedUsernameValidation,
+      login_password:         !form.login_password ? t('branches:validation.passwordRequired')
+                              : form.login_password.length < 8 ? t('branches:editor.passwordTooShort') : null,
+      login_confirm_password: !form.login_confirm_password ? t('branches:validation.confirmPassword')
+                              : form.login_confirm_password !== form.login_password ? t('branches:editor.passwordMismatch') : null,
     } : {}),
   }
   const hasErrors = Object.values(errs).some(Boolean)
@@ -440,7 +438,7 @@ function BranchDrawer({
         params,
         ...branchPosSettingsErrorDebug(error),
       })
-      throw new Error(branchPosSettingsErrorMessage(error))
+      throw new Error(branchPosSettingsErrorMessage(error, t))
     }
   }
 
@@ -456,7 +454,7 @@ function BranchDrawer({
         params,
         ...branchModuleSettingsErrorDebug(error),
       })
-      throw new Error(branchModuleSettingsErrorMessage(error))
+      throw new Error(branchModuleSettingsErrorMessage(error, t))
     }
   }
 
@@ -524,7 +522,8 @@ function BranchDrawer({
         })
         const fnErrMsg = fnErr?.message ?? (fnData as any)?.error ?? null
         if (fnErrMsg) {
-          setError(`Branch created, but login setup failed: ${branchUsernameCreateErrorMessage(fnErrMsg)} Click Cancel to close.`)
+          console.error('Branch login setup failed', fnErrMsg)
+          setError(t('branches:errors.loginSetupFailed'))
           return  // Keep drawer open so owner sees the error; list already refreshed above
         }
       } else {
@@ -546,7 +545,8 @@ function BranchDrawer({
 
       onSaved()
     } catch (err: any) {
-      setError(isNew ? branchCreationErrorMessage(err?.message) : (err?.message ?? 'Failed to save branch'))
+      console.error('Failed to save branch', err)
+      setError(t('branches:editor.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -571,10 +571,10 @@ function BranchDrawer({
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
           <div>
             <h2 className="text-base font-bold text-gray-900">
-              {isNew ? 'Add Branch' : 'Edit Branch'}
+              {t(isNew ? 'branches:editor.add' : 'branches:editor.edit')}
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              {isNew ? 'Configure invoice and ZATCA settings for this location' : branch!.name}
+              {isNew ? t('branches:editor.drawerHelp') : <span dir="auto">{branch!.name}</span>}
             </p>
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
@@ -595,36 +595,36 @@ function BranchDrawer({
 
           {/* ── BRANCH IDENTITY ───────────────────────── */}
           <div className={sectionClass(identity.open)}>
-            <SectionHeader icon={Building2} title="Branch Identity" open={identity.open} toggle={identity.toggle} />
+            <SectionHeader icon={Building2} title={t('branches:editor.identity')} open={identity.open} toggle={identity.toggle} />
             {identity.open && (
               <div className="px-5 py-4 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
-                  <Input label="Branch Name (English)" value={form.name} onChange={e => set('name')(e.target.value)} placeholder="Main Branch" required />
-                  <Input label="Branch Name (Arabic)" value={form.name_ar} onChange={e => set('name_ar')(e.target.value)} placeholder="الفرع الرئيسي" />
+                  <Input label={t('branches:editor.nameEn')} value={form.name} onChange={e => set('name')(e.target.value)} placeholder={t('branches:editor.nameEnPlaceholder')} required />
+                  <Input label={t('branches:editor.nameAr')} value={form.name_ar} onChange={e => set('name_ar')(e.target.value)} placeholder={t('branches:editor.nameArPlaceholder')} />
                 </div>
                 <Input
-                  label="Company Name (Seller Name)"
+                  label={t('branches:editor.companyName')}
                   value={form.business_name}
                   onChange={e => set('business_name')(e.target.value)}
-                  helperText="Your registered business name. This appears on ZATCA invoices and certificates."
+                  helperText={t('branches:editor.companyNameHelp')}
                 />
                 <div className="grid grid-cols-2 gap-3">
                   <div onBlur={() => touch('vat_number')}>
                     <Input
-                      label="VAT Registration Number"
+                      label={t('branches:editor.vatNumber')}
                       value={form.vat_number}
                       onChange={e => set('vat_number')(e.target.value)}
                       maxLength={15}
-                      helperText="From your VAT Registration Certificate. Must be 15 digits starting and ending with 3."
+                      helperText={t('branches:editor.vatHelp')}
                     />
                     {fieldErr('vat_number') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('vat_number')}</p>}
                   </div>
                   <div onBlur={() => touch('cr_number')}>
                     <Input
-                      label="CR / License Number"
+                      label={t('branches:editor.crNumber')}
                       value={form.cr_number}
                       onChange={e => set('cr_number')(e.target.value)}
-                      helperText="Commercial Registration number for this specific branch. Each branch has its own CR."
+                      helperText={t('branches:editor.crHelp')}
                     />
                     {fieldErr('cr_number') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('cr_number')}</p>}
                   </div>
@@ -636,12 +636,12 @@ function BranchDrawer({
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input type="checkbox" checked={form.is_main_branch} onChange={e => set('is_main_branch')(e.target.checked)}
                       className="rounded border-gray-300 text-primary-500 focus:ring-primary-500" />
-                    <span className="text-sm text-gray-700">Main branch</span>
+                    <span className="text-sm text-gray-700">{t('branches:editor.mainBranch')}</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input type="checkbox" checked={form.is_active} onChange={e => set('is_active')(e.target.checked)}
                       className="rounded border-gray-300 text-primary-500 focus:ring-primary-500" />
-                    <span className="text-sm text-gray-700">Active</span>
+                    <span className="text-sm text-gray-700">{t('branches:status.active')}</span>
                   </label>
                 </div>
               </div>
@@ -650,14 +650,14 @@ function BranchDrawer({
 
           {/* ── ADDRESS ───────────────────────────────── */}
           <div className={sectionClass(address.open)}>
-            <SectionHeader icon={MapPin} title="Branch Address (ZATCA Mandatory)" open={address.open} toggle={address.toggle}
+            <SectionHeader icon={MapPin} title={t('branches:editor.address')} open={address.open} toggle={address.toggle}
               color="text-blue-600" bg="bg-blue-50" />
             {address.open && (
               <div className="px-5 py-4 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div onBlur={() => touch('building_number')}>
                     <Input
-                      label="Building Number"
+                      label={t('branches:editor.buildingNumber')}
                       value={form.building_number}
                       onChange={e => set('building_number')(e.target.value)}
                       helperText="4-digit building number from your Saudi National Address (العنوان الوطني). Use leading zeros e.g. 0056"
@@ -665,44 +665,44 @@ function BranchDrawer({
                     {fieldErr('building_number') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('building_number')}</p>}
                   </div>
                   <div onBlur={() => touch('street')}>
-                    <Input label="Street Name" value={form.street} onChange={e => set('street')(e.target.value)} placeholder="King Fahd Road" />
+                    <Input label={t('branches:editor.street')} value={form.street} onChange={e => set('street')(e.target.value)} placeholder={t('branches:editor.streetPlaceholder')} />
                     {fieldErr('street') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('street')}</p>}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div onBlur={() => touch('district')}>
                     <Input
-                      label="District"
+                      label={t('branches:editor.district')}
                       value={form.district}
                       onChange={e => set('district')(e.target.value)}
-                      helperText="Neighbourhood or district name as in your registered address."
+                      helperText={t('branches:editor.districtHelp')}
                     />
                     {fieldErr('district') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('district')}</p>}
                   </div>
                   <div onBlur={() => touch('city')}>
-                    <Input label="City" value={form.city} onChange={e => set('city')(e.target.value)} placeholder="Riyadh" />
+                    <Input label={t('branches:editor.city')} value={form.city} onChange={e => set('city')(e.target.value)} placeholder={t('branches:editor.cityPlaceholder')} />
                     {fieldErr('city') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('city')}</p>}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="w-full">
-                    <label className="label">Country</label>
+                    <label className="label">{t('branches:editor.country')}</label>
                     <select value={form.country} onChange={e => set('country')(e.target.value)}
                       className="input">
-                      <option value="SA">Saudi Arabia</option>
-                      <option value="AE">UAE</option>
-                      <option value="BH">Bahrain</option>
-                      <option value="KW">Kuwait</option>
-                      <option value="OM">Oman</option>
-                      <option value="QA">Qatar</option>
+                      <option value="SA">{t('branches:countries.SA')}</option>
+                      <option value="AE">{t('branches:countries.AE')}</option>
+                      <option value="BH">{t('branches:countries.BH')}</option>
+                      <option value="KW">{t('branches:countries.KW')}</option>
+                      <option value="OM">{t('branches:countries.OM')}</option>
+                      <option value="QA">{t('branches:countries.QA')}</option>
                     </select>
                   </div>
                   <div onBlur={() => touch('postal_code')}>
                     <Input
-                      label="Postal Code"
+                      label={t('branches:editor.postalCode')}
                       value={form.postal_code}
                       onChange={e => set('postal_code')(e.target.value)}
-                      helperText="5-digit postal code from your Saudi National Address document."
+                      helperText={t('branches:editor.postalHelp')}
                     />
                     {fieldErr('postal_code') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('postal_code')}</p>}
                   </div>
@@ -713,27 +713,27 @@ function BranchDrawer({
 
           {/* ── CONTACT ───────────────────────────────── */}
           <div className={sectionClass(contact.open)}>
-            <SectionHeader icon={Phone} title="Branch Contact" open={contact.open} toggle={contact.toggle}
+            <SectionHeader icon={Phone} title={t('branches:editor.contact')} open={contact.open} toggle={contact.toggle}
               color="text-emerald-600" bg="bg-emerald-50" />
             {contact.open && (
               <div className="px-5 py-4 space-y-3">
-                <Input label="Phone Number" icon={Phone} type="tel" value={form.phone} onChange={e => set('phone')(e.target.value)} placeholder="+966 5x xxx xxxx" />
-                <Input label="Email (optional)" icon={Mail} type="email" value={form.email} onChange={e => set('email')(e.target.value)} placeholder="branch@company.com" />
-                <Input label="Website (optional)" icon={Globe} type="url" value={form.website} onChange={e => set('website')(e.target.value)} placeholder="https://company.com" />
+                <Input label={t('branches:editor.phone')} icon={Phone} type="tel" value={form.phone} onChange={e => set('phone')(e.target.value)} placeholder="+966 5x xxx xxxx" />
+                <Input label={t('branches:editor.email')} icon={Mail} type="email" value={form.email} onChange={e => set('email')(e.target.value)} placeholder="branch@company.com" />
+                <Input label={t('branches:editor.website')} icon={Globe} type="url" value={form.website} onChange={e => set('website')(e.target.value)} placeholder="https://company.com" />
               </div>
             )}
           </div>
 
           {/* ── POS CHECKOUT ─────────────────────────── */}
           <div className={sectionClass(checkout.open)}>
-            <SectionHeader icon={CreditCard} title="POS Checkout" open={checkout.open} toggle={checkout.toggle}
+            <SectionHeader icon={CreditCard} title={t('branches:editor.posCheckout')} open={checkout.open} toggle={checkout.toggle}
               color="text-indigo-600" bg="bg-indigo-50" />
             {checkout.open && (
               <div className="px-5 py-4 space-y-3">
                 <div className="rounded-xl bg-gray-50 border border-gray-100 p-3">
                   <div className="mb-3">
-                    <p className="text-sm font-medium text-gray-800">Billing Interface</p>
-                    <p className="text-[11px] text-gray-400">Choose the POS screen this branch opens by default.</p>
+                    <p className="text-sm font-medium text-gray-800">{t('branches:pos.title')}</p>
+                    <p className="text-[11px] text-gray-400">{t('branches:pos.help')}</p>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {POS_MODE_OPTIONS.map(option => {
@@ -750,8 +750,8 @@ function BranchDrawer({
                               : 'border-gray-100 bg-white/70 text-gray-600 hover:border-gray-200 hover:bg-white'
                           }`}
                         >
-                          <span className="block text-sm font-semibold text-gray-900">{option.label}</span>
-                          <span className="mt-1 block text-[11px] leading-4 text-gray-400">{option.description}</span>
+                          <span className="block text-sm font-semibold text-gray-900">{t(`branches:pos.${option.key}.label`)}</span>
+                          <span className="mt-1 block text-[11px] leading-4 text-gray-400">{t(`branches:pos.${option.key}.description`)}</span>
                         </button>
                       )
                     })}
@@ -765,8 +765,8 @@ function BranchDrawer({
                     className="rounded border-gray-300 text-primary-500 focus:ring-primary-500 flex-shrink-0"
                   />
                   <div>
-                    <p className="text-sm font-medium text-gray-800">Allow Split Payment</p>
-                    <p className="text-[11px] text-gray-400">Cashiers can split one invoice between cash and card.</p>
+                    <p className="text-sm font-medium text-gray-800">{t('branches:pos.split')}</p>
+                    <p className="text-[11px] text-gray-400">{t('branches:pos.splitHelp')}</p>
                   </div>
                 </label>
                 <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-xl bg-gray-50 border border-gray-100">
@@ -777,8 +777,8 @@ function BranchDrawer({
                     className="rounded border-gray-300 text-primary-500 focus:ring-primary-500 flex-shrink-0"
                   />
                   <div>
-                    <p className="text-sm font-medium text-gray-800">Show POS arrow buttons</p>
-                    <p className="text-[11px] text-gray-400">Adds large arrow buttons for category and product navigation on touch screens.</p>
+                    <p className="text-sm font-medium text-gray-800">{t('branches:pos.arrows')}</p>
+                    <p className="text-[11px] text-gray-400">{t('branches:pos.arrowsHelp')}</p>
                   </div>
                 </label>
               </div>
@@ -787,23 +787,21 @@ function BranchDrawer({
 
           {canEditModuleSettings && (
             <div className={sectionClass(modules.open)}>
-              <SectionHeader icon={Warehouse} title="Branch Modules" open={modules.open} toggle={modules.toggle}
+              <SectionHeader icon={Warehouse} title={t('branches:editor.modules')} open={modules.open} toggle={modules.toggle}
                 color="text-teal-600" bg="bg-teal-50" />
               {modules.open && (
                 <div className="px-5 py-4 space-y-3">
                   <div>
-                    <p className="text-sm font-medium text-gray-800">Stock module</p>
+                    <p className="text-sm font-medium text-gray-800">{t('branches:stock.title')}</p>
                     <p className="text-[11px] text-gray-400 mt-0.5">
-                      Use Stock if this branch tracks physical stock items such as packaged goods, accessories, or resale items.
+                      {t('branches:stock.help')}
                     </p>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2">
                     {([
-                      { key: 'default', label: 'Default', desc: 'Follow business type default' },
-                      { key: 'enabled', label: 'Enabled', desc: 'Show Stock for this branch' },
-                      { key: 'disabled', label: 'Disabled', desc: 'Hide Stock for this branch' },
-                    ] as { key: StockModuleSetting; label: string; desc: string }[]).map(option => {
+                      { key: 'default' }, { key: 'enabled' }, { key: 'disabled' },
+                    ] as { key: StockModuleSetting }[]).map(option => {
                       const selected = stockModuleSetting(form.stock_enabled) === option.key
                       return (
                         <button
@@ -816,8 +814,8 @@ function BranchDrawer({
                               : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
-                          <p className="text-sm font-semibold text-gray-800">{option.label}</p>
-                          <p className="mt-0.5 text-[11px] leading-4 text-gray-400">{option.desc}</p>
+                          <p className="text-sm font-semibold text-gray-800">{t(`branches:stock.${option.key}.label`)}</p>
+                          <p className="mt-0.5 text-[11px] leading-4 text-gray-400">{t(`branches:stock.${option.key}.description`)}</p>
                         </button>
                       )
                     })}
@@ -825,10 +823,10 @@ function BranchDrawer({
 
                   <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5">
                     <p className="text-[11px] font-medium text-gray-600">
-                      {stockModuleHint(form.stock_enabled, tenantBusinessType)}
+                      {t(`branches:${stockModuleHintKey(form.stock_enabled, tenantBusinessType)}`)}
                     </p>
                     <p className="mt-0.5 text-[11px] text-gray-400">
-                      Stock controls the branch Stock page visibility. Purchases remain available for supplier bills and materials.
+                      {t('branches:stock.scopeHelp')}
                     </p>
                   </div>
                 </div>
@@ -838,13 +836,13 @@ function BranchDrawer({
 
           {/* ── INVOICE SETTINGS ──────────────────────── */}
           <div className={sectionClass(invoice.open)}>
-            <SectionHeader icon={ReceiptText} title="Invoice Settings" open={invoice.open} toggle={invoice.toggle}
+            <SectionHeader icon={ReceiptText} title={t('branches:editor.invoiceSettings')} open={invoice.open} toggle={invoice.toggle}
               color="text-gold-600" bg="bg-amber-50" />
             {invoice.open && (
               <div className="px-5 py-4 space-y-4">
                 {/* VAT mode */}
                 <div>
-                  <label className="label">VAT Mode</label>
+                  <label className="label">{t('branches:invoice.vatMode')}</label>
                   <div className="grid grid-cols-2 gap-2">
                     {(['exclusive', 'inclusive'] as const).map(mode => (
                       <button key={mode} type="button" onClick={() => set('vat_mode')(mode)}
@@ -853,9 +851,9 @@ function BranchDrawer({
                             ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500'
                             : 'border-gray-200 hover:border-gray-300'
                         }`}>
-                        <p className="text-sm font-semibold text-gray-800 capitalize">{mode}</p>
+                        <p className="text-sm font-semibold text-gray-800">{t(`branches:invoice.${mode}`)}</p>
                         <p className="text-[11px] text-gray-400 mt-0.5">
-                          {mode === 'exclusive' ? 'VAT added on top of price' : 'VAT included in price'}
+                          {t(`branches:invoice.${mode}Help`)}
                         </p>
                       </button>
                     ))}
@@ -863,7 +861,7 @@ function BranchDrawer({
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <Input label="Invoice Prefix" value={form.invoice_prefix} onChange={e => set('invoice_prefix')(e.target.value.toUpperCase())} placeholder="INV" maxLength={10} helperText="e.g. INV, FAT, ORD" />
+                  <Input label={t('branches:invoice.prefix')} value={form.invoice_prefix} onChange={e => set('invoice_prefix')(e.target.value.toUpperCase())} placeholder="INV" maxLength={10} helperText={t('branches:invoice.prefixHelp')} />
 
                   {/* Invoice language */}
                   <div>
@@ -879,12 +877,12 @@ function BranchDrawer({
 
                 {/* Receipt footer */}
                 <div>
-                  <label className="label">Receipt Footer Message</label>
+                  <label className="label">{t('branches:invoice.footer')}</label>
                   <textarea
                     value={form.receipt_footer}
                     onChange={e => set('receipt_footer')(e.target.value)}
                     rows={3}
-                    placeholder="Thank you for your purchase! · شكراً لتسوقكم معنا"
+                    placeholder={t('branches:invoice.footerPlaceholder')}
                     className="input resize-none"
                   />
                 </div>
@@ -894,8 +892,8 @@ function BranchDrawer({
                   <input type="checkbox" checked={form.show_logo} onChange={e => set('show_logo')(e.target.checked)}
                     className="rounded border-gray-300 text-primary-500 focus:ring-primary-500 flex-shrink-0" />
                   <div>
-                    <p className="text-sm font-medium text-gray-800">Show logo on invoice</p>
-                    <p className="text-[11px] text-gray-400">Displays the branch logo at the top of every invoice</p>
+                    <p className="text-sm font-medium text-gray-800">{t('branches:invoice.showLogo')}</p>
+                    <p className="text-[11px] text-gray-400">{t('branches:invoice.showLogoHelp')}</p>
                   </div>
                 </label>
               </div>
@@ -904,7 +902,7 @@ function BranchDrawer({
 
           {/* ── ZATCA SETTINGS ────────────────────────── */}
           <div className={sectionClass(zatca.open)}>
-            <SectionHeader icon={ShieldCheck} title="ZATCA Settings" open={zatca.open} toggle={zatca.toggle}
+            <SectionHeader icon={ShieldCheck} title={t('branches:editor.zatcaSettings')} open={zatca.open} toggle={zatca.toggle}
               color="text-violet-600" bg="bg-violet-50" />
             {zatca.open && (
               <div className="px-5 py-4 space-y-4">
@@ -913,14 +911,14 @@ function BranchDrawer({
                   <div>
                     <p className="text-xs font-semibold text-gray-700">
                       {isNew
-                        ? `New branch will be ${isPhase2 ? 'Phase 2' : 'Phase 1'}`
-                        : `Phase ${form.zatca_phase}`
+                        ? t('branches:zatca.newPhase', { phase: isPhase2 ? 2 : 1 })
+                        : t('branches:zatca.phase', { phase: form.zatca_phase })
                       }
                     </p>
                     <p className="text-[11px] text-gray-400 mt-0.5">
                       {(isNew ? isPhase2 : form.zatca_phase === 2)
-                        ? 'UBL 2.1 e-invoice + ZATCA clearance — set by your plan'
-                        : 'QR Code (TLV) generation — set by your plan'}
+                        ? t('branches:zatca.phase2Help')
+                        : t('branches:zatca.phase1Help')}
                     </p>
                   </div>
                   <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
@@ -928,7 +926,7 @@ function BranchDrawer({
                       ? 'bg-violet-100 text-violet-700'
                       : 'bg-gray-100 text-gray-500'
                   }`}>
-                    Phase {isNew ? (isPhase2 ? 2 : 1) : form.zatca_phase}
+                    {t('branches:zatca.phase', { phase: isNew ? (isPhase2 ? 2 : 1) : form.zatca_phase })}
                   </span>
                 </div>
 
@@ -936,9 +934,9 @@ function BranchDrawer({
                   <div className="flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-xl p-4">
                     <FileText size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="text-xs font-semibold text-gray-700">Certificate Status</p>
+                      <p className="text-xs font-semibold text-gray-700">{t('branches:zatca.certificate')}</p>
                       <p className="text-[11px] text-gray-400 mt-1">
-                        Managed from ZATCA in the owner sidebar after saving branch details.
+                        {t('branches:zatca.certificateHelp')}
                       </p>
                     </div>
                   </div>
@@ -950,13 +948,13 @@ function BranchDrawer({
           {/* ── BRANCH LOGIN (existing branch — read-only + reset) ─ */}
           {!isNew && (
             <div className={sectionClass(true)}>
-              <SectionHeader icon={KeyRound} title="Branch Login" open={true} toggle={() => {}}
+              <SectionHeader icon={KeyRound} title={t('branches:editor.login')} open={true} toggle={() => {}}
                 color="text-indigo-600" bg="bg-indigo-50" />
               <div className="px-5 py-4 space-y-3">
                 {branch && branchLoginCredential(branch) ? (
                   <>
                     <div>
-                      <label className="label">{branchLoginCredential(branch)!.label}</label>
+                      <label className="label">{t(`branches:editor.${branchLoginCredential(branch)!.labelKey}`)}</label>
                       <input
                         readOnly
                         value={branchLoginCredential(branch)!.value}
@@ -964,8 +962,8 @@ function BranchDrawer({
                       />
                       <p className="text-[11px] text-gray-400 mt-1">
                         {branchLoginCredential(branch)!.kind === 'username'
-                          ? 'Username for POS and branch dashboard access'
-                          : 'Legacy email login for POS and branch dashboard access'}
+                          ? t('branches:editor.usernameHelp')
+                          : t('branches:editor.legacyEmailHelp')}
                       </p>
                     </div>
                     <button
@@ -973,13 +971,13 @@ function BranchDrawer({
                       onClick={() => { onClose(); onResetPassword?.() }}
                       className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
                     >
-                      <KeyRound size={14} /> Reset Password
+                      <KeyRound size={14} /> {t('branches:editor.resetPassword')}
                     </button>
                   </>
                 ) : (
                   <div className="flex items-start gap-2 text-xs text-gray-400">
                     <LogIn size={14} className="flex-shrink-0 mt-0.5" />
-                    <p>Username not set for this branch.</p>
+                    <p>{t('branches:editor.usernameNotSetBranch')}</p>
                   </div>
                 )}
               </div>
@@ -989,21 +987,21 @@ function BranchDrawer({
           {/* ── BRANCH LOGIN (new branch — set credentials) ──────── */}
           {isNew && (
             <div className={sectionClass(true)}>
-              <SectionHeader icon={KeyRound} title="Branch Login" open={true} toggle={() => {}}
+              <SectionHeader icon={KeyRound} title={t('branches:editor.login')} open={true} toggle={() => {}}
                 color="text-indigo-600" bg="bg-indigo-50" />
               <div className="px-5 py-4 space-y-3">
                 <p className="text-xs text-gray-400">
-                  Set username credentials for this branch's POS terminal. No email is sent - share these directly with your staff.
+                  {t('branches:editor.credentialsHelp')}
                 </p>
                 <div onBlur={() => touch('login_username')}>
                   <Input
-                    label="Branch username"
+                    label={t('branches:editor.branchUsername')}
                     icon={LogIn}
                     type="text"
                     value={form.login_username}
                     onChange={e => set('login_username')(normalizeBranchUsernameInput(e.target.value))}
                     placeholder="main_counter"
-                    helperText={BRANCH_USERNAME_HELPER_TEXT}
+                    helperText={t('branches:editor.usernameFormatHelp')}
                     required
                     autoComplete="username"
                   />
@@ -1011,13 +1009,13 @@ function BranchDrawer({
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div onBlur={() => touch('login_password')}>
-                    <Input label="Password" icon={KeyRound} type="password" value={form.login_password}
-                      onChange={e => set('login_password')(e.target.value)} placeholder="Min. 8 characters" required />
+                    <Input label={t('branches:editor.password')} icon={KeyRound} type="password" value={form.login_password}
+                      onChange={e => set('login_password')(e.target.value)} placeholder={t('branches:editor.passwordPlaceholder')} required />
                     {fieldErr('login_password') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('login_password')}</p>}
                   </div>
                   <div onBlur={() => touch('login_confirm_password')}>
-                    <Input label="Confirm Password" icon={KeyRound} type="password" value={form.login_confirm_password}
-                      onChange={e => set('login_confirm_password')(e.target.value)} placeholder="Repeat password" required />
+                    <Input label={t('branches:editor.confirmPassword')} icon={KeyRound} type="password" value={form.login_confirm_password}
+                      onChange={e => set('login_confirm_password')(e.target.value)} placeholder={t('branches:editor.repeatPassword')} required />
                     {fieldErr('login_confirm_password') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('login_confirm_password')}</p>}
                   </div>
                 </div>
@@ -1035,9 +1033,9 @@ function BranchDrawer({
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 flex-shrink-0 bg-gray-50">
-          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>{t('branches:editor.cancel')}</Button>
           <Button type="submit" loading={saving} disabled={hasErrors || saving} onClick={handleSubmit as any}>
-            {isNew ? 'Create Branch' : 'Save Changes'}
+            {t(isNew ? 'branches:editor.create' : 'branches:editor.saveChanges')}
           </Button>
         </div>
       </div>
@@ -1048,6 +1046,7 @@ function BranchDrawer({
 /* ── Reset password modal ────────────────────────────────────── */
 
 function ResetPasswordModal({ branch, onClose }: { branch: BranchWithLogin; onClose: () => void }) {
+  const { t } = useTranslation('branches')
   const [newPwd,     setNewPwd]     = useState('')
   const [confirmPwd, setConfirmPwd] = useState('')
   const [saving,     setSaving]     = useState(false)
@@ -1056,8 +1055,8 @@ function ResetPasswordModal({ branch, onClose }: { branch: BranchWithLogin; onCl
 
   async function handleSave() {
     setError('')
-    if (newPwd.length < 8)      { setError('Password must be at least 8 characters'); return }
-    if (newPwd !== confirmPwd)  { setError('Passwords do not match'); return }
+    if (newPwd.length < 8)      { setError(t('editor.passwordTooShort')); return }
+    if (newPwd !== confirmPwd)  { setError(t('editor.passwordMismatch')); return }
     setSaving(true)
     try {
       const { data, error: fnErr } = await supabase.functions.invoke('reset-branch-password', {
@@ -1067,7 +1066,8 @@ function ResetPasswordModal({ branch, onClose }: { branch: BranchWithLogin; onCl
       if (errMsg) throw new Error(errMsg)
       setDone(true)
     } catch (err: any) {
-      setError(err.message ?? 'Failed to reset password')
+      console.error('Failed to reset branch password', err)
+      setError(t('editor.resetFailed'))
     } finally {
       setSaving(false)
     }
@@ -1078,7 +1078,7 @@ function ResetPasswordModal({ branch, onClose }: { branch: BranchWithLogin; onCl
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">Reset Branch Password</h2>
+            <h2 className="text-base font-semibold text-gray-900">{t('editor.resetPassword')}</h2>
             <p className="text-xs text-gray-400 mt-0.5">{branch.name}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
@@ -1089,25 +1089,25 @@ function ResetPasswordModal({ branch, onClose }: { branch: BranchWithLogin; onCl
         {done ? (
           <div className="text-center py-4">
             <CheckCircle2 size={36} className="text-emerald-500 mx-auto mb-3" />
-            <p className="text-sm font-semibold text-gray-900">Password reset successfully</p>
-            <p className="text-xs text-gray-400 mt-1">The branch can now log in with the new password.</p>
-            <Button className="w-full justify-center mt-4" onClick={onClose}>Close</Button>
+            <p className="text-sm font-semibold text-gray-900">{t('editor.resetSuccess')}</p>
+            <p className="text-xs text-gray-400 mt-1">{t('editor.resetSuccessBody')}</p>
+            <Button className="w-full justify-center mt-4" onClick={onClose}>{t('editor.close')}</Button>
           </div>
         ) : (
           <div className="space-y-3">
             {branchLoginCredential(branch) && (
               <div className="bg-gray-50 rounded-xl px-3 py-2.5">
-                <p className="text-[11px] text-gray-400 font-medium">{branchLoginCredential(branch)!.label}</p>
+                <p className="text-[11px] text-gray-400 font-medium">{t(`editor.${branchLoginCredential(branch)!.labelKey}`)}</p>
                 <p className="text-sm text-gray-700 mt-0.5">{branchLoginCredential(branch)!.value}</p>
               </div>
             )}
-            <Input label="New Password" type="password" value={newPwd}
-              onChange={e => setNewPwd(e.target.value)} placeholder="Min. 8 characters" />
-            <Input label="Confirm Password" type="password" value={confirmPwd}
-              onChange={e => setConfirmPwd(e.target.value)} placeholder="Repeat password" />
+            <Input label={t('editor.newPassword')} type="password" value={newPwd}
+              onChange={e => setNewPwd(e.target.value)} placeholder={t('editor.passwordPlaceholder')} />
+            <Input label={t('editor.confirmPassword')} type="password" value={confirmPwd}
+              onChange={e => setConfirmPwd(e.target.value)} placeholder={t('editor.repeatPassword')} />
             {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
             <div className="flex justify-end gap-2 pt-1">
-              <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+              <Button type="button" variant="ghost" onClick={onClose}>{t('editor.cancel')}</Button>
               <Button type="button" loading={saving} disabled={saving} onClick={handleSave}>
                 Save Password
               </Button>
@@ -1128,12 +1128,13 @@ function BranchCard({
 }: {
   branch: BranchWithLogin; onEdit: () => void; onResetPassword: () => void
 }) {
+  const { t } = useTranslation('branches')
   const loginCredential = branchLoginCredential(branch)
   const contactItems = [
-    branch.city ? { icon: MapPin, label: 'City', value: branch.city } : null,
-    branch.phone ? { icon: Phone, label: 'Phone', value: branch.phone } : null,
-    branch.email ? { icon: Mail, label: 'Email', value: branch.email } : null,
-    branch.vat_number ? { icon: FileText, label: 'VAT', value: branch.vat_number } : null,
+    branch.city ? { icon: MapPin, label: t('card.city'), value: branch.city } : null,
+    branch.phone ? { icon: Phone, label: t('card.phone'), value: branch.phone } : null,
+    branch.email ? { icon: Mail, label: t('card.email'), value: branch.email } : null,
+    branch.vat_number ? { icon: FileText, label: t('card.vat'), value: branch.vat_number } : null,
   ].filter(Boolean) as Array<{ icon: React.ElementType; label: string; value: string }>
 
   return (
@@ -1148,17 +1149,17 @@ function BranchCard({
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-black text-gray-950 text-base truncate">{branch.name}</span>
-              {branch.name_ar && <span className="text-gray-500 text-sm leading-5" style={{ fontFamily: 'Cairo' }}>{branch.name_ar}</span>}
+              <span className="font-black text-gray-950 text-base truncate" dir="auto">{branch.name}</span>
+              {branch.name_ar && <span className="text-gray-500 text-sm leading-5" dir="auto" style={{ fontFamily: 'Cairo' }}>{branch.name_ar}</span>}
               {branch.is_main_branch && (
                 <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-gold-500/10 text-gold-700 px-2 py-0.5 rounded-full ring-1 ring-gold-500/20">
-                  <Star size={9} /> MAIN
+                  <Star size={9} /> {t('detail.main')}
                 </span>
               )}
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
               <Badge variant={branch.is_active ? 'success' : 'neutral'} dot>
-                {branch.is_active ? 'Active' : 'Inactive'}
+                {t(`status.${branch.is_active ? 'active' : 'inactive'}`)}
               </Badge>
               <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-primary-700 ring-1 ring-primary-100">
                 <ShieldCheck size={11} />
@@ -1175,7 +1176,7 @@ function BranchCard({
 
         <button onClick={onEdit}
           className="w-9 h-9 flex items-center justify-center rounded-xl text-gray-400 hover:bg-white hover:text-primary-700 active:scale-[0.97] transition-all"
-          title="Edit branch">
+          title={t('editor.edit')}>
           <Pencil size={15} />
         </button>
       </div>
@@ -1187,17 +1188,17 @@ function BranchCard({
               <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-400">
                 <item.icon size={11} /> {item.label}
               </p>
-              <p className="mt-1 truncate text-sm font-semibold text-gray-800">{item.value}</p>
+              <p className="mt-1 truncate text-sm font-semibold text-gray-800" dir="auto">{item.value}</p>
             </div>
           )) : (
             <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-3 py-2.5 text-sm text-gray-400">
-              Contact details are not set.
+              {t('card.noContact')}
             </div>
           )}
         </div>
 
         <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Branch login</p>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">{t('editor.login')}</p>
           {loginCredential ? (
             <div className="mt-2 space-y-2">
               <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-indigo-600">
@@ -1208,20 +1209,20 @@ function BranchCard({
                 onClick={e => { e.stopPropagation(); onResetPassword() }}
                 className="text-xs font-semibold text-gray-500 hover:text-primary-700 transition-colors"
               >
-                Reset password
+                {t('editor.resetPassword')}
               </button>
             </div>
           ) : (
-            <p className="mt-2 flex items-center gap-1 text-sm text-gray-300 italic"><LogIn size={12} /> Username not set</p>
+            <p className="mt-2 flex items-center gap-1 text-sm text-gray-300 italic"><LogIn size={12} /> {t('card.usernameNotSet')}</p>
           )}
           <a
             href={WA_LINK}
             target="_blank"
             rel="noopener noreferrer"
             className="mt-3 inline-flex text-xs font-semibold text-gray-400 hover:text-primary-600 transition-colors"
-            title="Contact Kubri support to delete this branch."
+            title={t('card.deleteHelp')}
           >
-            Contact support
+            {t('card.contactSupport')}
           </a>
         </div>
       </div>
@@ -1232,6 +1233,7 @@ function BranchCard({
 /* ── Main tab ─────────────────────────────────────────────────── */
 
 export default function BranchesTab() {
+  const { t } = useTranslation('branches')
   const { profile, tenant } = useAuth()
   const sub = useSubscription()
   const [branches, setBranches]     = useState<BranchWithLogin[]>([])
@@ -1255,7 +1257,8 @@ export default function BranchesTab() {
       .order('is_main_branch', { ascending: false })
       .order('created_at', { ascending: true })
     if (error) {
-      setLoadError(error.message)
+      console.error('Failed to load branches', error)
+      setLoadError(t('list.loadFailed'))
       setLoading(false)
       return
     }
@@ -1327,18 +1330,18 @@ export default function BranchesTab() {
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="text-base font-black text-gray-950">Branch directory</h3>
+          <h3 className="text-base font-black text-gray-950">{t('list.directory')}</h3>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
-            <span><span className="font-medium text-gray-600">{activeBranchCount}</span> / {maxBranches} active branches used</span>
-            <span>Total branches: <span className="font-medium text-gray-600">{totalBranchCount}</span></span>
-            <span>Remaining branch slots: <span className="font-medium text-gray-600">{remainingBranches}</span></span>
-            {branchUsageError && <span className="text-amber-600">Using local count</span>}
+            <span>{t('list.usage', { active: activeBranchCount, max: maxBranches })}</span>
+            <span>{t('list.total', { count: totalBranchCount })}</span>
+            <span>{t('list.remaining', { count: remainingBranches })}</span>
+            {branchUsageError && <span className="text-amber-600">{t('list.localCount')}</span>}
           </div>
         </div>
         {!canCreateActiveBranch ? (
           <div className="text-right">
             <p className="text-xs text-red-600 font-medium">
-              {sub.status === 'suspended' ? 'Account suspended' : 'Branch limit reached'}
+              {t(sub.status === 'suspended' ? 'list.accountSuspended' : 'list.limitReached')}
             </p>
             <a
               href={WA_LINK}
@@ -1368,15 +1371,14 @@ export default function BranchesTab() {
         </div>
       ) : loadError ? (
         <div className="card p-8 text-center">
-          <p className="text-sm text-red-600 mb-1">Failed to load branches</p>
-          <p className="text-xs text-gray-400 mb-4">{loadError}</p>
-          <Button size="sm" variant="secondary" onClick={load}>Retry</Button>
+          <p className="text-sm text-red-600 mb-1">{t('list.loadFailed')}</p>
+          <Button size="sm" variant="secondary" onClick={load}>{t('list.retry')}</Button>
         </div>
       ) : branches.length === 0 ? (
         <div className="card p-12 text-center">
           <Building2 size={36} className="text-gray-200 mx-auto mb-3" />
-          <p className="text-sm font-medium text-gray-500">No branches yet</p>
-          <p className="text-xs text-gray-400 mt-1 mb-4">Add your first branch to start generating ZATCA-ready invoices</p>
+          <p className="text-sm font-medium text-gray-500">{t('list.empty')}</p>
+          <p className="text-xs text-gray-400 mt-1 mb-4">{t('list.emptyBody')}</p>
           <Button size="sm" onClick={() => setDrawer('new')} disabled={!canCreateActiveBranch}>
             <Plus size={13} /> Add your first branch
           </Button>

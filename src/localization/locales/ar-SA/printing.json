@@ -1,4 +1,9 @@
 {
+  "back": "رجوع",
+  "devicePrinter": "طابعة الجهاز",
+  "desktopOnly": "تتوفر طباعة الإيصالات المباشرة في تطبيق كبري لسطح المكتب.",
+  "savedOnDevice": "تُحفظ إعدادات الطابعة هذه على هذا الجهاز.",
+  "installedPrintersHint": "تظهر طابعات USB والشبكة وBluetooth هنا بعد تثبيتها في Windows أو macOS.",
   "print": "طباعة",
   "printing": "جارٍ الطباعة…",
   "printReceipt": "طباعة الإيصال",
@@ -87,5 +92,6 @@
   "testReceiptSent": "تم إرسال إيصال الاختبار إلى الطابعة.",
   "testA4Sent": "تم إرسال صفحة اختبار A4 إلى الطابعة.",
   "testPrintFailed": "تعذرت طباعة الاختبار.",
-  "changesCancelled": "تم إلغاء التغييرات غير المحفوظة."
+  "changesCancelled": "تم إلغاء التغييرات غير المحفوظة.",
+  "defaultPrinterTitle": "اختيار الطابعة الافتراضية", "defaultPrinterHelp": "اختر طابعة الإيصالات الحرارية للطباعة التلقائية", "closePrinterSetup": "إغلاق إعداد الطابعة", "noPrintersFound": "لم يُعثر على طابعات في هذا الجهاز.", "ready": "جاهزة", "offline": "غير متصلة", "default": "افتراضية", "clearDefault": "مسح الافتراضية", "skip": "تخطي", "saved": "تم الحفظ", "setAsDefault": "تعيين كافتراضية"
 }

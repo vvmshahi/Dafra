@@ -98,7 +98,8 @@ export default function PrinterTab() {
       setSaved(settings)
       setPrinters(list)
     } catch (error) {
-      setStatus({ type: 'error', text: error instanceof Error ? error.message : t('printing:unableToLoadPrinters') })
+      console.error('Unable to load printers', error)
+      setStatus({ type: 'error', text: t('printing:unableToLoadPrinters') })
     } finally {
       setLoading(false)
     }
@@ -111,7 +112,8 @@ export default function PrinterTab() {
       setPrinters(await getPrinters())
       setStatus({ type: 'info', text: t('printing:printerListRefreshed') })
     } catch (error) {
-      setStatus({ type: 'error', text: error instanceof Error ? error.message : t('printing:unableToRefreshPrinters') })
+      console.error('Unable to refresh printers', error)
+      setStatus({ type: 'error', text: t('printing:unableToRefreshPrinters') })
     } finally {
       setLoading(false)
     }
@@ -144,7 +146,8 @@ export default function PrinterTab() {
       setSaved(next)
       setStatus({ type: 'success', text: t('printing:settingsSaved') })
     } catch (error) {
-      setStatus({ type: 'error', text: error instanceof Error ? error.message : t('printing:unableToSaveSettings') })
+      console.error('Unable to save printer settings', error)
+      setStatus({ type: 'error', text: t('printing:unableToSaveSettings') })
     } finally {
       setSaving(false)
     }
@@ -162,9 +165,10 @@ export default function PrinterTab() {
       const result = activeView === 'thermal' ? await testPrint(form) : await testPrintA4(form)
       setStatus(result.success
         ? { type: 'success', text: activeView === 'thermal' ? t('printing:testReceiptSent') : t('printing:testA4Sent') }
-        : { type: 'error', text: result.message || result.errorType || t('printing:testPrintFailed') })
+        : (console.error('Test print failed:', result), { type: 'error', text: t('printing:testPrintFailed') }))
     } catch (error) {
-      setStatus({ type: 'error', text: error instanceof Error ? error.message : t('printing:testPrintFailed') })
+      console.error('Test print failed', error)
+      setStatus({ type: 'error', text: t('printing:testPrintFailed') })
     } finally {
       setTesting(false)
     }

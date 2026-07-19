@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   Search, Building2, UserX, UserCheck, ChevronDown, ChevronUp,
   ChevronRight, Plus, MapPin, Loader2, Copy, CheckCircle2,
@@ -75,37 +76,37 @@ function getStatus(c: ClientRow): ComputedStatus {
   return 'inactive'
 }
 
-const STATUS_META: Record<ComputedStatus, { label: string; variant: 'success' | 'warning' | 'danger' | 'neutral' }> = {
-  active:        { label: 'Active',        variant: 'success'  },
-  lifetime_free: { label: 'Lifetime Free', variant: 'success'  },
-  grace_period:  { label: 'Grace Period',  variant: 'warning'  },
-  payment_due:   { label: 'Payment Due',   variant: 'danger'   },
-  suspended:     { label: 'Suspended',     variant: 'danger'   },
-  cancelled:     { label: 'Cancelled',     variant: 'danger'   },
-  inactive:      { label: 'Inactive',      variant: 'neutral'  },
+const STATUS_META: Record<ComputedStatus, { variant: 'success' | 'warning' | 'danger' | 'neutral' }> = {
+  active:        { variant: 'success'  },
+  lifetime_free: { variant: 'success'  },
+  grace_period:  { variant: 'warning'  },
+  payment_due:   { variant: 'danger'   },
+  suspended:     { variant: 'danger'   },
+  cancelled:     { variant: 'danger'   },
+  inactive:      { variant: 'neutral'  },
 }
 
 function formatDate(value: string | null) {
   return value ? value.slice(0, 10) : '—'
 }
 
-function getBillingSignal(c: ClientRow): { label: string; className: string } {
-  if (c.billingSignal === 'suspended') return { label: 'Suspended', className: 'bg-red-50 text-red-700 ring-red-200' }
-  if (c.billingSignal === 'overdue') return { label: 'Overdue', className: 'bg-red-50 text-red-700 ring-red-200' }
-  if (c.billingSignal === 'in_grace') return { label: 'In grace', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
-  if (c.billingSignal === 'due_soon') return { label: 'Due soon', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
-  if (c.billingSignal === 'paid') return { label: 'Paid', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
+function getBillingSignal(c: ClientRow): { key: string; className: string } {
+  if (c.billingSignal === 'suspended') return { key: 'status.suspended', className: 'bg-red-50 text-red-700 ring-red-200' }
+  if (c.billingSignal === 'overdue') return { key: 'status.overdue', className: 'bg-red-50 text-red-700 ring-red-200' }
+  if (c.billingSignal === 'in_grace') return { key: 'clients.inGrace', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
+  if (c.billingSignal === 'due_soon') return { key: 'clients.dueSoon', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
+  if (c.billingSignal === 'paid') return { key: 'status.paid', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
   const status = getStatus(c)
-  if (status === 'suspended') return { label: 'Suspended', className: 'bg-red-50 text-red-700 ring-red-200' }
-  if (status === 'payment_due') return { label: 'Overdue', className: 'bg-red-50 text-red-700 ring-red-200' }
-  if (status === 'grace_period') return { label: 'In grace', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
-  if (status === 'lifetime_free') return { label: 'Lifetime', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
+  if (status === 'suspended') return { key: 'status.suspended', className: 'bg-red-50 text-red-700 ring-red-200' }
+  if (status === 'payment_due') return { key: 'status.overdue', className: 'bg-red-50 text-red-700 ring-red-200' }
+  if (status === 'grace_period') return { key: 'clients.inGrace', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
+  if (status === 'lifetime_free') return { key: 'clients.lifetime', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
   if (c.nextDueDate) {
     const days = Math.ceil((new Date(c.nextDueDate).getTime() - Date.now()) / GRACE_MS)
-    if (days >= 0 && days <= 7) return { label: 'Due soon', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
+    if (days >= 0 && days <= 7) return { key: 'clients.dueSoon', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
   }
-  if (c.manualPaymentStatus === 'manual_verified') return { label: 'Paid', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
-  return { label: 'Unpaid', className: 'bg-gray-50 text-gray-600 ring-gray-200' }
+  if (c.manualPaymentStatus === 'manual_verified') return { key: 'status.paid', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
+  return { key: 'status.unpaid', className: 'bg-gray-50 text-gray-600 ring-gray-200' }
 }
 
 function PlanBadge({ plan }: { plan: string | null }) {
@@ -127,29 +128,30 @@ function SuspendModal({ client, reason, onReasonChange, onConfirm, onCancel, act
   client: ClientRow; reason: string; onReasonChange: (v: string) => void
   onConfirm: () => void; onCancel: () => void; acting: boolean
 }) {
+  const { t } = useTranslation('admin')
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-1">Suspend Client</h2>
+        <h2 className="text-base font-semibold text-gray-900 mb-1">{t('clients.suspendTitle')}</h2>
         <p className="text-sm text-gray-500 mb-4">
-          Suspending <strong>{client.name}</strong> blocks new billing, register opening, and branch creation. Existing records remain available.
+          {t('clients.suspendHelp', { name: client.name })}
         </p>
-        <label className="block text-xs font-medium text-gray-700 mb-1.5">Reason (optional)</label>
+        <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('clients.reasonOptional')}</label>
         <input
           value={reason}
           onChange={e => onReasonChange(e.target.value)}
           className="input w-full text-sm h-9 mb-5"
-          placeholder="e.g. Payment overdue"
+          placeholder={t('clients.reasonPlaceholder')}
           autoFocus
         />
         <div className="flex justify-end gap-2">
-          <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">Cancel</button>
+          <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">{t('actions.cancel')}</button>
           <button
             onClick={onConfirm}
             disabled={acting}
             className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 disabled:opacity-50 transition-colors"
           >
-            Suspend
+            {t('actions.suspend')}
           </button>
         </div>
       </div>
@@ -160,21 +162,22 @@ function SuspendModal({ client, reason, onReasonChange, onConfirm, onCancel, act
 function RestoreModal({ client, onConfirm, onCancel, acting }: {
   client: ClientRow; onConfirm: () => void; onCancel: () => void; acting: boolean
 }) {
+  const { t } = useTranslation('admin')
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-1">Restore Client Access</h2>
+        <h2 className="text-base font-semibold text-gray-900 mb-1">{t('clients.restoreTitle')}</h2>
         <p className="text-sm text-gray-500 mb-5">
-          Restore access for <strong>{client.name}</strong>? Their users will be able to log in again.
+          {t('clients.restoreHelp', { name: client.name })}
         </p>
         <div className="flex justify-end gap-2">
-          <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">Cancel</button>
+          <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">{t('actions.cancel')}</button>
           <button
             onClick={onConfirm}
             disabled={acting}
             className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors"
           >
-            Restore Access
+            {t('clients.restoreAccess')}
           </button>
         </div>
       </div>
@@ -196,35 +199,32 @@ interface CreateOwnerAccountResponse {
 }
 
 const DURATIONS = [
-  { label: '1 Month',        months: 1  },
-  { label: '2 Months',       months: 2  },
-  { label: '3 Months',       months: 3  },
-  { label: '6 Months',       months: 6  },
-  { label: '1 Year',         months: 12 },
-  { label: '3 Years',        months: 36 },
-  { label: '5 Years',        months: 60 },
-  { label: 'Lifetime Free',  months: 0  },
+  { key: 'oneMonth',         months: 1  },
+  { key: 'twoMonths',        months: 2  },
+  { key: 'threeMonths',      months: 3  },
+  { key: 'sixMonths',        months: 6  },
+  { key: 'oneYear',          months: 12 },
+  { key: 'threeYears',       months: 36 },
+  { key: 'fiveYears',        months: 60 },
+  { key: 'lifetimeFree',     months: 0  },
 ]
 
 type PaymentType = 'lifetime_free' | 'one_time' | 'recurring'
 
-const PAYMENT_TYPE_OPTIONS: { type: PaymentType; label: string; sub: string; color: string }[] = [
+const PAYMENT_TYPE_OPTIONS: { type: PaymentType; labelKey: string; subKey: string; color: string }[] = [
   {
     type:  'lifetime_free',
-    label: 'No Payment — Lifetime Free',
-    sub:   'Full access, no fees, not counted in MRR',
+    labelKey: 'create.lifetimePayment', subKey: 'create.lifetimePaymentHelp',
     color: 'border-emerald-500 bg-emerald-50 ring-emerald-500/20',
   },
   {
     type:  'one_time',
-    label: 'One-time Payment',
-    sub:   'Client pays once for a fixed period',
+    labelKey: 'create.oneTimePayment', subKey: 'create.oneTimePaymentHelp',
     color: 'border-primary-500 bg-primary-50 ring-primary-500/20',
   },
   {
     type:  'recurring',
-    label: 'Recurring (Manual)',
-    sub:   'Monthly/yearly, renewed manually each period',
+    labelKey: 'create.recurringManual', subKey: 'create.recurringManualHelp',
     color: 'border-primary-500 bg-primary-50 ring-primary-500/20',
   },
 ]
@@ -235,6 +235,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
   onCreated: () => void
   onCancel:  () => void
 }) {
+  const { t, i18n } = useTranslation('admin')
   const [plans,   setPlans]   = useState<PlanOption[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -287,9 +288,9 @@ function CreateAccountModal({ onCreated, onCancel }: {
   async function handleCreate() {
     setError('')
     setWarning('')
-    if (!companyName.trim()) { setError('Business name is required'); return }
-    if (!email.trim())       { setError('Owner email is required');   return }
-    if (!planId)             { setError('Select a plan');             return }
+    if (!companyName.trim()) { setError(t('validation.companyRequired')); return }
+    if (!email.trim())       { setError(t('validation.ownerEmailRequired')); return }
+    if (!planId)             { setError(t('validation.planRequired')); return }
 
     setSaving(true)
     try {
@@ -319,7 +320,8 @@ function CreateAccountModal({ onCreated, onCancel }: {
       setCreated(result)
       setWarning(result.warning ?? '')
     } catch (err: any) {
-      setError(err.message ?? 'Failed to create account')
+      console.error('Failed to create client account:', err)
+      setError(t('validation.createFailed'))
     } finally {
       setSaving(false)
     }
@@ -332,7 +334,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
       await navigator.clipboard.writeText(created.setup_link)
       setCopied(true)
     } catch {
-      setError('Copy failed. Select the setup link and copy it manually.')
+      setError(t('validation.copyFailed'))
     }
   }
 
@@ -340,8 +342,8 @@ function CreateAccountModal({ onCreated, onCancel }: {
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-auto">
         <div className="px-6 py-5 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-900">Create New Client Account</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Creates the owner user, tenant, and subscription in one step.</p>
+          <h2 className="text-base font-semibold text-gray-900">{t('create.title')}</h2>
+          <p className="text-xs text-gray-400 mt-0.5">{t('create.subtitle')}</p>
         </div>
 
         {created ? (
@@ -349,21 +351,19 @@ function CreateAccountModal({ onCreated, onCancel }: {
             <div className="flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
               <CheckCircle2 size={18} className="text-emerald-600 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="text-sm font-semibold text-emerald-900">Client account created</p>
-                <p className="text-xs text-emerald-700 mt-0.5">
-                  Send the setup link to the owner manually. It may expire, so regenerate if needed.
-                </p>
+                <p className="text-sm font-semibold text-emerald-900">{t('create.created')}</p>
+                <p className="text-xs text-emerald-700 mt-0.5">{t('create.createdHelp')}</p>
               </div>
             </div>
 
             <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Owner email</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t('create.ownerEmail')}</p>
               <p className="text-sm font-semibold text-gray-800 mt-1">{created.email ?? email.trim().toLowerCase()}</p>
             </div>
 
             {created.setup_link ? (
               <div className="space-y-2">
-                <label className="block text-xs font-semibold text-gray-700">Owner setup link</label>
+                <label className="block text-xs font-semibold text-gray-700">{t('create.ownerSetupLink')}</label>
                 <textarea
                   readOnly
                   value={created.setup_link}
@@ -377,12 +377,12 @@ function CreateAccountModal({ onCreated, onCancel }: {
                   className="inline-flex items-center gap-1.5 rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700"
                 >
                   <Copy size={14} />
-                  {copied ? 'Copied' : 'Copy setup link'}
+                  {copied ? t('create.copied') : t('create.copySetupLink')}
                 </button>
               </div>
             ) : (
               <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-                Setup link was not returned. Send a password reset manually from Supabase Auth, then ask the owner to set their password.
+                {t('create.setupLinkMissing')}
               </div>
             )}
 
@@ -401,31 +401,31 @@ function CreateAccountModal({ onCreated, onCancel }: {
 
             {/* Business info */}
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Business Information</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">{t('create.businessInfo')}</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Business Name (English) *</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('create.businessNameEn')} *</label>
                   <input value={companyName} onChange={e => setCompanyName(e.target.value)}
                     className="input w-full text-sm h-9" placeholder="Al-Faris Trading Co." />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Business Name (Arabic)</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('create.businessNameAr')}</label>
                   <input value={companyNameAr} onChange={e => setCompanyNameAr(e.target.value)}
                     className="input w-full text-sm h-9" dir="rtl" placeholder="شركة الفارس" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">City</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('clients.city')}</label>
                   <input value={city} onChange={e => setCity(e.target.value)}
                     className="input w-full text-sm h-9" placeholder="Riyadh" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Phone</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('clients.phone')}</label>
                   <input value={phone} onChange={e => setPhone(e.target.value)}
                     className="input w-full text-sm h-9" placeholder="+966 5x xxx xxxx" />
                 </div>
               </div>
               <div className="mt-3">
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">Business Type</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('clients.businessType')}</label>
                 <div className="grid grid-cols-2 gap-2">
                   {BUSINESS_TYPE_OPTIONS.map(option => (
                     <button
@@ -438,8 +438,8 @@ function CreateAccountModal({ onCreated, onCancel }: {
                           : 'border-gray-200 text-gray-600 hover:border-gray-300'
                       }`}
                     >
-                      <p className="text-xs font-semibold">{option.shortLabel}</p>
-                      <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{option.description}</p>
+                      <p className="text-xs font-semibold">{t(`businessTypes.${option.value}.short`)}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{t(`businessTypes.${option.value}.description`)}</p>
                     </button>
                   ))}
                 </div>
@@ -448,33 +448,32 @@ function CreateAccountModal({ onCreated, onCancel }: {
 
             {/* Owner login */}
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Owner Login</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">{t('create.ownerLogin')}</p>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">Email *</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('clients.email')} *</label>
                 <input value={email} onChange={e => setEmail(e.target.value)} type="email"
                   className="input w-full text-sm h-9" placeholder="owner@company.com" />
               </div>
               <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 mt-3">
                 <span className="text-blue-500 text-sm flex-shrink-0">✉</span>
                 <p className="text-xs text-blue-700">
-                  A setup link will be generated for manual sending.
-                  Copy it after creation and send it to the owner directly.
+                  {t('create.setupLinkGuidance')}
                 </p>
               </div>
             </div>
 
             {/* Plan + branches */}
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Subscription</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">{t('clients.subscription')}</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Plan *</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('clients.plan')} *</label>
                   <select value={planId} onChange={e => setPlanId(e.target.value)} className="input w-full text-sm h-9">
                     {plans.map(p => <option key={p.id} value={p.id}>{p.name} — SAR {p.price_monthly}/branch/mo</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Number of Branches Allowed</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('create.branchesAllowed')}</label>
                   <input
                     type="number" min={1} value={branchCount}
                     onChange={e => setBranchCount(Math.max(1, Number(e.target.value)))}
@@ -486,7 +485,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
 
             {/* Payment type */}
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Payment Type</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">{t('create.paymentType')}</p>
               <div className="grid grid-cols-3 gap-2">
                 {PAYMENT_TYPE_OPTIONS.map(opt => (
                   <button
@@ -499,8 +498,8 @@ function CreateAccountModal({ onCreated, onCancel }: {
                         : 'border-gray-200 hover:border-gray-300 bg-white'
                     }`}
                   >
-                    <p className="text-xs font-semibold text-gray-900 leading-tight">{opt.label}</p>
-                    <p className="text-[10px] text-gray-500 mt-1 leading-tight">{opt.sub}</p>
+                    <p className="text-xs font-semibold text-gray-900 leading-tight">{t(opt.labelKey)}</p>
+                    <p className="text-[10px] text-gray-500 mt-1 leading-tight">{t(opt.subKey)}</p>
                   </button>
                 ))}
               </div>
@@ -511,21 +510,21 @@ function CreateAccountModal({ onCreated, onCancel }: {
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Duration *</label>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('create.duration')} *</label>
                     <select value={duration} onChange={e => setDuration(Number(e.target.value))} className="input w-full text-sm h-9">
-                      {PAID_DURATIONS.map(d => <option key={d.months} value={d.months}>{d.label}</option>)}
+                      {PAID_DURATIONS.map(d => <option key={d.months} value={d.months}>{t(`durations.${d.key}`)}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Payment Method</label>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('payment.method')}</label>
                     <select value={payMethod} onChange={e => setPayMethod(e.target.value)} className="input w-full text-sm h-9">
-                      {['Manual', 'Bank Transfer', 'Cash'].map(m => <option key={m} value={m}>{m}</option>)}
+                      {['Manual', 'Bank Transfer', 'Cash'].map(m => <option key={m} value={m}>{t(`payment.${m === 'Manual' ? 'manual' : m === 'Cash' ? 'cash' : 'bank_transfer'}`)}</option>)}
                     </select>
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Payment Reference</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('payment.reference')}</label>
                   <input value={payRef} onChange={e => setPayRef(e.target.value)}
                     className="input w-full text-sm h-9" placeholder="e.g. TXN123456" />
                 </div>
@@ -538,9 +537,9 @@ function CreateAccountModal({ onCreated, onCancel }: {
                     <span className="font-bold text-gray-900">= SAR {totalAmount.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center text-xs text-gray-400 border-t border-gray-200 pt-1.5">
-                    <span>Expiry date</span>
+                    <span>{t('billing.endDate')}</span>
                     <span className="font-semibold text-gray-700">
-                      {(() => { const d = new Date(); d.setMonth(d.getMonth() + duration); return d.toLocaleDateString('en-SA') })()}
+                      {(() => { const d = new Date(); d.setMonth(d.getMonth() + duration); return d.toLocaleDateString(i18n.language) })()}
                     </span>
                   </div>
                 </div>
@@ -549,15 +548,15 @@ function CreateAccountModal({ onCreated, onCancel }: {
 
             {isLifetime && (
               <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 text-sm text-emerald-700 font-medium">
-                Lifetime Free — no expiry, no charge, not counted in MRR
+                {t('create.lifetimeSummary')}
               </div>
             )}
 
             {/* Notes */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">Internal Notes</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('clients.internalNotes')}</label>
               <input value={notes} onChange={e => setNotes(e.target.value)}
-                className="input w-full text-sm h-9" placeholder="Anything to remember about this client…" />
+                className="input w-full text-sm h-9" placeholder={t('create.notesPlaceholder')} dir="auto" />
             </div>
 
             {error && (
@@ -571,7 +570,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
             onClick={created ? onCreated : onCancel}
             className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium"
           >
-            {created ? 'Close and view client list' : 'Cancel'}
+            {created ? t('create.closeAndView') : t('actions.cancel')}
           </button>
           {!created && (
             <button
@@ -580,7 +579,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
               className="flex items-center gap-1.5 px-5 py-2 text-sm font-medium text-white bg-primary-600 rounded-xl hover:bg-primary-700 disabled:opacity-50 transition-colors"
             >
               {saving && <Loader2 size={14} className="animate-spin" />}
-              {saving ? 'Creating…' : 'Create Account'}
+              {saving ? t('create.creating') : t('clients.createAccount')}
             </button>
           )}
         </div>
@@ -593,6 +592,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
 
 export default function ClientsPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation('admin')
 
   const [clients,  setClients]  = useState<ClientRow[]>([])
   const [loading,  setLoading]  = useState(true)
@@ -698,11 +698,11 @@ export default function ClientsPage() {
 
     const rows = await fetchClientsFallback()
     setClients(rows)
-    setBillingSummaryWarning('Billing summary RPC is unavailable, so the list is showing fallback tenant data.')
+    setBillingSummaryWarning(t('clients.fallbackWarning'))
     setLoading(false)
   }
 
-  useEffect(() => { fetchClients() }, [])
+  useEffect(() => { fetchClients() }, [t])
 
   async function toggleExpand(e: React.MouseEvent, id: string) {
     e.stopPropagation()
@@ -774,12 +774,12 @@ export default function ClientsPage() {
   }), [clients])
 
   const TABS: { key: StatusFilter; label: string }[] = [
-    { key: 'all',          label: `All (${counts.all})` },
-    { key: 'active',       label: `Active (${counts.active})` },
-    { key: 'grace_period', label: `Grace Period (${counts.grace_period})` },
-    { key: 'lifetime_free',label: `Lifetime (${counts.lifetime_free})` },
-    { key: 'suspended',    label: `Suspended (${counts.suspended})` },
-    { key: 'payment_due',  label: `Payment Due (${counts.payment_due})` },
+    { key: 'all',          label: t('clients.filter', { status: t('clients.all'), count: counts.all }) },
+    { key: 'active',       label: t('clients.filter', { status: t('status.active'), count: counts.active }) },
+    { key: 'grace_period', label: t('clients.filter', { status: t('status.grace_period'), count: counts.grace_period }) },
+    { key: 'lifetime_free',label: t('clients.filter', { status: t('clients.lifetime'), count: counts.lifetime_free }) },
+    { key: 'suspended',    label: t('clients.filter', { status: t('status.suspended'), count: counts.suspended }) },
+    { key: 'payment_due',  label: t('clients.filter', { status: t('status.payment_due'), count: counts.payment_due }) },
   ]
 
   return (
@@ -814,16 +814,16 @@ export default function ClientsPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Clients</h1>
+          <h1 className="text-xl font-bold text-gray-900">{t('clients.title')}</h1>
           <p className="text-sm text-gray-400 mt-0.5">
-            {clients.length} registered tenants
+            {t('clients.registered', { count: clients.length })}
           </p>
         </div>
         <button
           onClick={() => setShowCreate(true)}
           className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl bg-primary-600 text-white hover:bg-primary-700 transition-colors"
         >
-          <Plus size={15} /> Create Account
+          <Plus size={15} /> {t('clients.createAccount')}
         </button>
       </div>
 
@@ -840,8 +840,8 @@ export default function ClientsPage() {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search name, VAT…"
-            className="input pl-9 text-sm h-9 w-full"
+            placeholder={t('clients.searchNameVat')}
+            className="input ltr:pl-9 rtl:pr-9 text-sm h-9 w-full"
           />
         </div>
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1 flex-wrap">
@@ -870,7 +870,7 @@ export default function ClientsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100">
-                  {['', 'Business', 'City', 'Plan', 'Billing', 'Branches', 'Users', 'Joined', 'Status', ''].map((h, i) => (
+                  {['', t('clients.business'), t('clients.city'), t('clients.plan'), t('clients.billing'), t('clients.branches'), t('clients.users'), t('clients.joined'), t('clients.status'), ''].map((h, i) => (
                     <th key={i} className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">
                       {h}
                     </th>
@@ -931,17 +931,17 @@ export default function ClientsPage() {
                         <td className="px-4 py-3.5 min-w-[180px]">
                           <div className="flex flex-col gap-1.5">
                             <span className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${signal.className}`}>
-                              {signal.label}
+                              {t(signal.key)}
                             </span>
                             <span className="text-[10px] text-gray-400">
-                              {c.suspended_at ? 'Enforcement active' : 'Visibility only'}
+                              {c.suspended_at ? t('clients.enforcementActive') : t('clients.visibilityOnly')}
                             </span>
                             <div className="text-[11px] leading-4 text-gray-500">
                               <span className="font-medium text-gray-700">{c.manualPaymentStatus.replace(/_/g, ' ')}</span>
                               <span className="text-gray-300"> · </span>
-                              Due {formatDate(c.nextDueDate)}
+                              {t('clients.due', { date: formatDate(c.nextDueDate) })}
                               {c.graceUntilDate && (
-                                <span className="block text-gray-400">Grace until {formatDate(c.graceUntilDate)}</span>
+                                <span className="block text-gray-400">{t('clients.graceUntil', { date: formatDate(c.graceUntilDate) })}</span>
                               )}
                             </div>
                           </div>
@@ -949,17 +949,17 @@ export default function ClientsPage() {
                         <td className="px-4 py-3.5 text-sm text-gray-600 tabular-nums">
                           <div className={branchWarning ? 'text-amber-700' : ''}>
                             <span className="font-semibold">{c.activeBranchCount}</span>
-                            <span className="text-gray-400">/{c.paidBranchCount} paid</span>
+                            <span className="text-gray-400">/{t('clients.paidCount', { count: c.paidBranchCount })}</span>
                           </div>
                           <p className="text-[11px] text-gray-400">
-                            {c.totalBranchCount} total · max {c.maxBranches}
-                            {c.branchUsageError ? ' · fallback' : ''}
+                            {t('clients.branchTotals', { total: c.totalBranchCount, max: c.maxBranches })}
+                            {c.branchUsageError ? ` · ${t('clients.fallback')}` : ''}
                           </p>
                         </td>
                         <td className="px-4 py-3.5 text-sm text-gray-600 tabular-nums">{c.userCount}</td>
                         <td className="px-4 py-3.5 text-xs text-gray-400 whitespace-nowrap">{c.created_at.slice(0, 10)}</td>
                         <td className="px-4 py-3.5">
-                          <Badge variant={st.variant} dot>{st.label}</Badge>
+                          <Badge variant={st.variant} dot>{t(`status.${getStatus(c)}`)}</Badge>
                         </td>
                         <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1.5">
@@ -972,7 +972,7 @@ export default function ClientsPage() {
                               }`}
                             >
                               {c.suspended_at ? <UserCheck size={11} /> : <UserX size={11} />}
-                              {c.suspended_at ? 'Restore' : 'Suspend'}
+                              {c.suspended_at ? t('clients.restore') : t('actions.suspend')}
                             </button>
                             <button
                               onClick={() => navigate(`/super-admin/clients/${c.id}`)}
@@ -990,10 +990,10 @@ export default function ClientsPage() {
                           <td colSpan={10} className="px-8 py-3">
                             {isBranchLoading || !clientBranches ? (
                               <div className="flex items-center gap-2 text-xs text-gray-400">
-                                <Loader2 size={12} className="animate-spin" /> Loading branches…
+                                <Loader2 size={12} className="animate-spin" /> {t('clients.loadingBranches')}
                               </div>
                             ) : clientBranches.length === 0 ? (
-                              <p className="text-xs text-gray-400 italic">No branches</p>
+                              <p className="text-xs text-gray-400 italic">{t('clients.noBranches')}</p>
                             ) : (
                               <div className="flex flex-wrap gap-3">
                                 {clientBranches.map(b => (
@@ -1002,8 +1002,8 @@ export default function ClientsPage() {
                                     <div>
                                       <p className="font-medium text-gray-800">{b.name}</p>
                                       <p className="text-gray-400 mt-0.5">
-                                        {b.city ? `${b.city} · ` : ''}{b.invoice_counter} invoices
-                                        {!b.is_active && <span className="text-red-400 ml-1">· Inactive</span>}
+                                        {b.city ? `${b.city} · ` : ''}{t('clients.invoiceCount', { count: b.invoice_counter })}
+                                        {!b.is_active && <span className="text-red-400 ms-1">· {t('status.inactive')}</span>}
                                       </p>
                                     </div>
                                   </div>
@@ -1020,7 +1020,7 @@ export default function ClientsPage() {
                   <tr>
                     <td colSpan={10} className="px-5 py-10 text-center">
                       <Building2 size={28} className="text-gray-200 mx-auto mb-2" />
-                      <p className="text-sm text-gray-400">No clients found</p>
+                      <p className="text-sm text-gray-400">{t('clients.noClients')}</p>
                     </td>
                   </tr>
                 )}

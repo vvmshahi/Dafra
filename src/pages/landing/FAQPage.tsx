@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, ChevronDown, Mail, MessageCircle } from 'lucide-react'
 import { MeemLogo } from '@/components/MeemLogo'
@@ -83,7 +84,9 @@ function Pattern() {
 }
 
 export default function FAQPage() {
+  const { t } = useTranslation('public')
   const [openItem, setOpenItem] = useState('')
+  const groups = t('faq.groups', { returnObjects: true }) as typeof FAQ_GROUPS
   const actionBaseClass = 'group relative isolate inline-flex h-10 items-center justify-center overflow-hidden rounded-full px-4 text-sm font-black transition-[background,border-color,box-shadow,transform] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] active:scale-[0.98]'
 
   return (
@@ -93,26 +96,26 @@ export default function FAQPage() {
         <div className="relative z-10 mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link to="/"><MeemLogo size="sm" /></Link>
           <div className="flex items-center gap-2">
-            <Link to="/pricing" className="hidden rounded-full px-3 py-2 text-sm font-semibold text-white/78 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] sm:inline">Pricing</Link>
+            <Link to="/pricing" className="hidden rounded-full px-3 py-2 text-sm font-semibold text-white/78 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] sm:inline">{t('nav.pricing')}</Link>
             <Link to="/login" className={`${actionBaseClass} border border-white/[0.10] bg-white/[0.06] text-white/[0.90] hover:border-white/[0.18] hover:bg-white/[0.10] hover:text-white`}>
               <span className="absolute inset-0 -z-10 translate-x-[-105%] rounded-full bg-white/[0.08] opacity-0 transition-[opacity,transform] duration-300 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
-              <span className="relative transition-transform duration-200 group-hover:-translate-x-1.5">Sign in</span>
+              <span className="relative transition-transform duration-200 group-hover:-translate-x-1.5">{t('nav.signIn')}</span>
               <ArrowRight size={14} className="absolute right-3 translate-x-2 opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
             </Link>
           </div>
         </div>
         <div className="relative z-10 mx-auto max-w-7xl px-4 pb-6 pt-4 sm:px-6 lg:px-8">
           <Link to="/" className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-white/60 hover:text-white">
-            <ArrowLeft size={15} /> Home
+            <ArrowLeft size={15} /> {t('nav.home')}
           </Link>
           <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
             <div>
-              <h1 className="text-3xl font-black leading-tight sm:text-5xl">Clear answers before you start.</h1>
-              <p className="mt-3 max-w-xl text-base leading-7 text-white/70">Everything important about Kubri, ZATCA Phase 2 workflows, desktop app use, pricing, and support.</p>
+              <h1 className="text-3xl font-black leading-tight sm:text-5xl">{t('faq.heroTitle')}</h1>
+              <p className="mt-3 max-w-xl text-base leading-7 text-white/70">{t('faq.heroText')}</p>
             </div>
             <div className="flex flex-col gap-2 rounded-2xl border border-[#D8B76A]/20 bg-[#D8B76A]/10 px-4 py-3 text-sm text-[#F1DFA8] lg:ml-auto">
               <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 font-bold hover:text-white">
-                <MessageCircle size={15} /> WhatsApp support
+                <MessageCircle size={15} /> {t('support.whatsapp')}
               </a>
               <a href={EMAIL_LINK} className="inline-flex items-center gap-2 font-bold hover:text-white">
                 <Mail size={15} /> support@kubri.shop
@@ -131,27 +134,28 @@ export default function FAQPage() {
 
         <section className="relative z-10 mx-auto max-w-6xl">
           <div className="mx-auto max-w-3xl text-center">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-[#A77F29]">FAQ</p>
-            <h2 className="mt-2 text-2xl font-black leading-tight text-[#10291E] sm:text-3xl">Short answers, ready for setup.</h2>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-[#A77F29]">{t('nav.faq')}</p>
+            <h2 className="mt-2 text-2xl font-black leading-tight text-[#10291E] sm:text-3xl">{t('faq.heading')}</h2>
             <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-[#496154]">
-              Tap a question to expand it. The essentials stay compact, readable, and easy to scan before you start.
+              {t('faq.intro')}
             </p>
           </div>
 
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
-            {FAQ_GROUPS.map(group => (
-              <section key={group.title} className="rounded-[26px] border border-[#D9CBAA] bg-[#FFFDF7] p-4 shadow-[0_22px_68px_rgba(15,36,25,0.13)] sm:p-5">
+            {groups.map((group, groupIndex) => (
+              <section key={groupIndex} className="rounded-[26px] border border-[#D9CBAA] bg-[#FFFDF7] p-4 shadow-[0_22px_68px_rgba(15,36,25,0.13)] sm:p-5">
                 <h3 className="px-1 text-sm font-black uppercase tracking-[0.16em] text-[#A77F29]">{group.title}</h3>
                 <div className="mt-3 space-y-2.5">
-                  {group.items.map(item => {
-                    const isOpen = openItem === item.q
-                    const panelId = `faq-panel-${item.q.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+                  {group.items.map((item, itemIndex) => {
+                    const itemKey = `${groupIndex}-${itemIndex}`
+                    const isOpen = openItem === itemKey
+                    const panelId = `faq-panel-${itemKey}`
 
                     return (
-                      <div key={item.q} className={`rounded-2xl border bg-[#FBF7EB] transition-[border-color,box-shadow] duration-200 ${isOpen ? 'border-[#C8A96E] shadow-[0_12px_30px_rgba(15,36,25,0.08)]' : 'border-[#E1D7BC] hover:border-[#C8A96E]/70'}`}>
+                      <div key={itemKey} className={`rounded-2xl border bg-[#FBF7EB] transition-[border-color,box-shadow] duration-200 ${isOpen ? 'border-[#C8A96E] shadow-[0_12px_30px_rgba(15,36,25,0.08)]' : 'border-[#E1D7BC] hover:border-[#C8A96E]/70'}`}>
                         <button
                           type="button"
-                          onClick={() => setOpenItem(isOpen ? '' : item.q)}
+                          onClick={() => setOpenItem(isOpen ? '' : itemKey)}
                           aria-expanded={isOpen}
                           aria-controls={panelId}
                           className="flex w-full items-start justify-between gap-3 rounded-2xl px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-[#FFFDF7]"

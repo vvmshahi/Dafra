@@ -7,6 +7,7 @@ import {
   Package, Receipt, ShieldCheck, ShoppingCart, X,
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 const WA_LINK = supportConfig.whatsappLink
 const WA_NUMBER = supportConfig.whatsappNumber
@@ -35,21 +36,17 @@ function Pattern() {
 }
 
 function ProductMockup() {
-  const products = [
-    ['Retail item', '45.00'],
-    ['Repair service', '80.00'],
-    ['Coffee order', '18.00'],
-    ['Gift box', '35.00'],
-    ['Rice 5kg', '28.00'],
-    ['Water pack', '12.00'],
-  ]
+  const { t } = useTranslation('public')
+  const productNames = t('mockup.products', { returnObjects: true }) as string[]
+  const categories = t('mockup.categories', { returnObjects: true }) as string[]
+  const products = productNames.map((name, index) => [name, ['45.00', '80.00', '18.00', '35.00', '28.00', '12.00'][index]])
 
   return (
     <div className="relative mx-auto w-full max-w-[560px]">
       <div className="absolute -inset-8 rounded-[32px] bg-gold-500/10 blur-3xl" />
       <div className="absolute -right-4 top-10 hidden rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-white shadow-2xl shadow-black/20 backdrop-blur-xl md:block">
-        <p className="text-[11px] font-semibold text-gold-200">Owner dashboard</p>
-        <p className="mt-1 text-xs text-white/70">3 branches in view</p>
+        <p className="text-[11px] font-semibold text-gold-200">{t('mockup.owner')}</p>
+        <p className="mt-1 text-xs text-white/70">{t('mockup.branches')}</p>
       </div>
       <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#071510] shadow-[0_32px_120px_rgba(0,0,0,0.46)] ring-1 ring-white/[0.04]">
         <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.04] px-4 py-3">
@@ -65,15 +62,15 @@ function ProductMockup() {
           <div className="p-4">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/40">Register session open</p>
-                <p className="mt-1 text-sm font-bold text-white">Main counter</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/40">{t('mockup.session')}</p>
+                <p className="mt-1 text-sm font-bold text-white">{t('mockup.counter')}</p>
               </div>
               <span className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-[10px] font-bold text-emerald-200">
-                ZATCA Phase 2 ready
+                {t('mockup.ready')}
               </span>
             </div>
             <div className="mb-4 grid grid-cols-4 gap-2">
-              {['All', 'Retail', 'Food', 'Service'].map((cat, index) => (
+              {categories.map((cat, index) => (
                 <span key={cat} className={`rounded-xl px-2 py-2 text-center text-[10px] font-semibold ${
                   index === 0 ? 'bg-gold-500 text-[#0F2419]' : 'bg-white/[0.06] text-white/60'
                 }`}>
@@ -95,12 +92,10 @@ function ProductMockup() {
           </div>
 
           <div className="flex flex-col border-l border-white/10 bg-[#0F2419]/90 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/40">Current order</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/40">{t('mockup.order')}</p>
             <div className="mt-3 flex-1 space-y-2">
               {[
-                ['Repair service', '1', '80.00'],
-                ['Retail item', '2', '90.00'],
-                ['Coffee order', '1', '18.00'],
+                [productNames[1], '1', '80.00'], [productNames[0], '2', '90.00'], [productNames[2], '1', '18.00'],
               ].map(([name, qty, price]) => (
                 <div key={name} className="rounded-xl bg-white/[0.055] p-2">
                   <p className="truncate text-[10px] font-semibold text-white/80">{name}</p>
@@ -116,11 +111,11 @@ function ProductMockup() {
                 <span>VAT</span><span>SAR 24.52</span>
               </div>
               <div className="flex justify-between text-xs font-black text-white">
-                <span>Total</span><span className="text-gold-300">SAR 188.00</span>
+                <span>{t('mockup.total')}</span><span className="text-gold-300">SAR 188.00</span>
               </div>
             </div>
             <button className="mt-3 rounded-xl bg-gold-500 py-2 text-[11px] font-black text-[#0F2419] shadow-lg shadow-black/20">
-              Complete sale
+              {t('mockup.complete')}
             </button>
           </div>
         </div>
@@ -130,6 +125,7 @@ function ProductMockup() {
 }
 
 function Header() {
+  const { t } = useTranslation('public')
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const navigate = useNavigate()
@@ -141,11 +137,11 @@ function Header() {
   }, [])
 
   const navLinks = [
-    { label: 'Features', type: 'section', target: 'features' },
-    { label: 'Pricing', type: 'route', target: '/pricing' },
-    { label: 'Download App', type: 'section', target: 'windows' },
-    { label: 'FAQ', type: 'route', target: '/faq' },
-    { label: 'Contact', type: 'section', target: 'contact' },
+    { label: t('nav.features'), type: 'section', target: 'features' },
+    { label: t('nav.pricing'), type: 'route', target: '/pricing' },
+    { label: t('nav.download'), type: 'section', target: 'windows' },
+    { label: t('nav.faq'), type: 'route', target: '/faq' },
+    { label: t('nav.contact'), type: 'section', target: 'contact' },
   ] as const
 
   const navItemClass = 'group relative isolate overflow-hidden rounded-2xl px-3.5 py-2 text-sm font-semibold text-white/[0.74] transition-[color,background,transform] duration-200 before:absolute before:inset-x-2 before:top-0 before:h-px before:scale-x-0 before:bg-gold-300/80 before:opacity-0 before:blur-[1px] before:transition-[transform,opacity] before:duration-200 after:absolute after:inset-0 after:-z-10 after:rounded-2xl after:bg-[radial-gradient(circle_at_50%_0%,rgba(200,169,110,0.28),transparent_54%)] after:opacity-0 after:transition-opacity after:duration-200 hover:bg-white/[0.055] hover:text-white hover:before:scale-x-100 hover:before:opacity-100 hover:after:opacity-100 active:scale-[0.98]'
@@ -178,18 +174,18 @@ function Header() {
           <div className="hidden items-center gap-1.5 rounded-full border border-white/[0.12] bg-[#06120D]/[0.66] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_62px_rgba(0,0,0,0.24)] ring-1 ring-white/[0.035] backdrop-blur-2xl md:absolute md:right-0 md:flex">
             <Link to="/login" className={`${actionBaseClass} border border-white/[0.10] bg-white/[0.06] text-white/[0.90] hover:border-white/[0.18] hover:bg-white/[0.10] hover:text-white`}>
               <span className="absolute inset-0 -z-10 translate-x-[-105%] rounded-full bg-white/[0.08] opacity-0 transition-[opacity,transform] duration-300 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
-              <span className="relative pr-0 transition-transform duration-200 group-hover:-translate-x-1.5">Sign in</span>
+              <span className="relative pr-0 transition-transform duration-200 group-hover:-translate-x-1.5">{t('nav.signIn')}</span>
               <ArrowRight size={14} className="absolute right-3 translate-x-2 opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
             </Link>
             <a href={WA_LINK} target="_blank" rel="noopener noreferrer"
               className={`${actionBaseClass} border border-gold-200/60 bg-gold-500 pl-5 pr-5 text-[#071510] shadow-[0_10px_30px_rgba(200,169,110,0.26)] hover:-translate-y-0.5 hover:border-gold-100 hover:shadow-[0_18px_48px_rgba(200,169,110,0.34)]`}>
               <span className="absolute inset-0 -z-10 translate-x-[-105%] rounded-full bg-[#0F2419] opacity-0 transition-[opacity,transform] duration-300 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
-              <span className="relative transition-[color,transform] duration-200 group-hover:-translate-x-1.5 group-hover:text-white group-focus-visible:text-white">Get Started</span>
+              <span className="relative transition-[color,transform] duration-200 group-hover:-translate-x-1.5 group-hover:text-white group-focus-visible:text-white">{t('nav.getStarted')}</span>
               <ArrowRight size={14} className="absolute right-3 translate-x-2 text-white opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
             </a>
           </div>
 
-          <button onClick={() => setOpen(v => !v)} className="ml-auto rounded-[18px] border border-white/[0.10] bg-[#06120D]/[0.58] p-3 text-white/75 shadow-[0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-2xl transition-colors hover:bg-white/[0.07] md:hidden">
+          <button onClick={() => setOpen(v => !v)} aria-label={open ? t('nav.closeMenu') : t('nav.menu')} className="ml-auto rounded-[18px] border border-white/[0.10] bg-[#06120D]/[0.58] p-3 text-white/75 shadow-[0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-2xl transition-colors hover:bg-white/[0.07] md:hidden">
             {open ? <X size={21} /> : <Menu size={21} />}
           </button>
         </nav>
@@ -210,8 +206,8 @@ function Header() {
             )
           ))}
           <div className="mt-2 grid grid-cols-2 gap-2 border-t border-white/10 pt-3">
-            <button onClick={() => navigate('/login')} className="rounded-xl border border-white/10 px-3 py-2.5 text-sm font-semibold text-white/80">Sign in</button>
-            <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="rounded-xl bg-gold-500 px-3 py-2.5 text-center text-sm font-black text-[#0F2419]">Get Started</a>
+            <button onClick={() => navigate('/login')} className="rounded-xl border border-white/10 px-3 py-2.5 text-sm font-semibold text-white/80">{t('nav.signIn')}</button>
+            <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="rounded-xl bg-gold-500 px-3 py-2.5 text-center text-sm font-black text-[#0F2419]">{t('nav.getStarted')}</a>
           </div>
         </div>
       )}
@@ -276,6 +272,8 @@ function FeatureCard({ feature, featured = false }: {
   feature: typeof FEATURES[number]
   featured?: boolean
 }) {
+  const { t } = useTranslation('public')
+  const featureIndex = FEATURES.indexOf(feature)
   return (
     <article
       className={`group relative isolate flex min-h-[260px] overflow-hidden rounded-[28px] border border-[#D9E4DA] bg-gradient-to-br from-white via-[#FBFAF5] to-[#EEF7F1] p-6 shadow-[0_18px_60px_rgba(7,21,16,0.08)] ring-1 ring-white transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-1 hover:border-gold-300 hover:shadow-[0_26px_80px_rgba(7,21,16,0.13)] ${
@@ -295,8 +293,8 @@ function FeatureCard({ feature, featured = false }: {
         </div>
 
         <div className="mt-8">
-          <h3 className="text-xl font-black leading-tight text-[#071510]">{feature.title}</h3>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-[#52665A]">{feature.desc}</p>
+          <h3 className="text-xl font-black leading-tight text-[#071510]">{t(`features.items.${featureIndex}.title`)}</h3>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-[#52665A]">{t(`features.items.${featureIndex}.description`)}</p>
         </div>
 
         <div className="mt-auto pt-8">
@@ -311,6 +309,8 @@ function FeatureCard({ feature, featured = false }: {
 }
 
 function Hero() {
+  const { t } = useTranslation('public')
+  const heroItems = t('hero.items', { returnObjects: true }) as string[]
   return (
     <section className="relative overflow-hidden border-b border-[#D9E1D8] bg-[#071510] pt-28">
       <Pattern />
@@ -319,18 +319,13 @@ function Hero() {
       <div className="relative z-10 mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl grid-cols-1 items-center gap-14 px-4 pb-24 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:px-8">
         <div>
           <h1 className="max-w-3xl text-4xl font-black leading-[1.04] tracking-tight text-white sm:text-6xl lg:text-7xl">
-            Your simple bridge to ZATCA Phase 2 invoicing.
+            {t('hero.title')}
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-white/80 sm:text-xl">
-            Run POS sales, payments, stock, register sessions, and VAT reports from one simple platform built for Saudi businesses.
+            {t('hero.subtitle')}
           </p>
           <div className="mt-8 grid max-w-xl grid-cols-1 gap-3 text-sm font-semibold text-white/[0.82] sm:grid-cols-2">
-            {[
-              'ZATCA Phase 2 workflows',
-              'Cash, card, and split payments',
-              'Register session closing',
-              'Multi-branch dashboards',
-            ].map(item => (
+            {heroItems.map(item => (
               <div key={item} className="flex items-center gap-2">
                 <CheckCircle2 size={16} className="flex-shrink-0 text-gold-300" />
                 <span>{item}</span>
@@ -340,10 +335,10 @@ function Hero() {
           <div className="mt-9 flex flex-col gap-3 sm:flex-row">
             <a href={WA_LINK} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gold-500 px-6 py-4 text-sm font-black text-[#0F2419] shadow-xl shadow-gold-500/25 transition-[background,transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:bg-gold-400 hover:shadow-gold-500/30 active:translate-y-0 active:scale-[0.98]">
-              Get Started <ArrowRight size={17} />
+              {t('nav.getStarted')} <ArrowRight size={17} />
             </a>
             <Link to="/pricing" className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-4 text-sm font-bold text-white transition-[background,border-color,transform] duration-150 hover:border-white/30 hover:bg-white/[0.08] active:scale-[0.98]">
-              View Pricing
+              {t('hero.viewPricing')}
             </Link>
           </div>
         </div>
@@ -354,6 +349,7 @@ function Hero() {
 }
 
 function Features() {
+  const { t } = useTranslation('public')
   return (
     <section id="features" className="relative scroll-mt-28 overflow-hidden bg-[#F7F5EF] py-28">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(200,169,110,0.13),transparent_30%),linear-gradient(180deg,#F7F5EF_0%,#FFFFFF_45%,#F7F5EF_100%)]" />
@@ -362,14 +358,14 @@ function Features() {
           <div>
             <div className="mb-4 flex items-center gap-3">
               <span className="h-px w-10 bg-gradient-to-r from-primary-600/50 to-gold-400/70" aria-hidden="true" />
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-primary-700/70">Daily operations</p>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-primary-700/70">{t('features.eyebrow')}</p>
             </div>
             <h2 className="max-w-3xl text-3xl font-black leading-tight text-[#071510] sm:text-5xl">
-              Built for the daily rhythm of Saudi businesses.
+              {t('features.title')}
             </h2>
           </div>
           <p className="max-w-2xl text-base leading-7 text-[#385246] lg:ml-auto">
-            From counter sales to owner dashboards, Kubri keeps invoices, stock, sessions, purchases, expenses, and reports connected.
+            {t('features.subtitle')}
           </p>
         </div>
         <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
@@ -418,6 +414,7 @@ function PricingGlowAnchor({ href, children }: {
 }
 
 function PricingTeaser() {
+  const { t } = useTranslation('public')
   return (
     <section className="relative overflow-hidden border-y border-white/10 bg-[#071510] px-4 py-20 sm:px-6 lg:px-8">
       <Pattern />
@@ -427,16 +424,16 @@ function PricingTeaser() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(200,169,110,0.16),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.09),rgba(255,255,255,0.025))]" aria-hidden="true" />
         <div className="relative grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
           <div>
-            <p className="text-sm font-black text-gold-300">Flat SAR 100/month</p>
-            <h2 className="mt-3 text-3xl font-black text-white">One simple price for your business.</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65">Yearly option available. Includes a 7-day money-back guarantee.</p>
+            <p className="text-sm font-black text-gold-300">{t('pricingTeaser.price')}</p>
+            <h2 className="mt-3 text-3xl font-black text-white">{t('pricingTeaser.title')}</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65">{t('pricingTeaser.subtitle')}</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
             <PricingGlowLink to="/pricing" primary>
-              View Pricing
+              {t('hero.viewPricing')}
             </PricingGlowLink>
             <PricingGlowAnchor href={WA_LINK}>
-              Get Started
+              {t('nav.getStarted')}
             </PricingGlowAnchor>
           </div>
         </div>
@@ -454,6 +451,8 @@ function WhatsAppIcon({ className = '' }: { className?: string }) {
 }
 
 function WindowsSection() {
+  const { t } = useTranslation('public')
+  const benefits = t('desktop.benefits', { returnObjects: true }) as string[]
   const downloadButtonClass = 'group relative isolate flex min-h-[108px] flex-col items-start justify-between gap-3 overflow-hidden rounded-2xl border border-[#D8E2D8] bg-white/80 px-5 py-4 text-left text-[#071510] shadow-[0_14px_36px_rgba(7,21,16,0.08)] transition-[border-color,box-shadow,transform] duration-200 before:absolute before:inset-[-1px] before:-z-20 before:rounded-2xl before:bg-gradient-to-r before:from-primary-300/70 before:via-gold-300/80 before:to-primary-500/60 before:opacity-0 before:blur-md before:transition-opacity before:duration-200 after:absolute after:inset-[1px] after:-z-10 after:rounded-[15px] after:bg-gradient-to-br after:from-white after:to-[#F7F5EF] after:transition-colors after:duration-200 hover:-translate-y-0.5 hover:border-gold-300 hover:shadow-[0_20px_54px_rgba(7,21,16,0.12)] hover:before:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F7F5EF] active:translate-y-0 active:scale-[0.98]'
 
   return (
@@ -461,37 +460,37 @@ function WindowsSection() {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_16%,rgba(200,169,110,0.14),transparent_31%),radial-gradient(circle_at_86%_70%,rgba(27,107,58,0.10),transparent_34%),linear-gradient(180deg,#F7F5EF_0%,#FFFFFF_42%,#F7F5EF_100%)]" />
       <div className="relative mx-auto grid max-w-7xl gap-6 lg:grid-cols-[1fr_0.78fr] lg:items-center">
         <div className="rounded-[30px] border border-[#DDE6DD] bg-white/78 p-7 shadow-[0_22px_70px_rgba(7,21,16,0.10)] ring-1 ring-white backdrop-blur sm:p-8">
-          <h2 className="text-3xl font-black text-[#071510] sm:text-4xl">Kubri Desktop</h2>
+          <h2 className="text-3xl font-black text-[#071510] sm:text-4xl">{t('desktop.title')}</h2>
           <p className="mt-4 max-w-2xl text-base leading-7 text-[#52665A]">
-            Use Kubri with direct receipt printing and dedicated desktop printer settings.
+            {t('desktop.subtitle')}
           </p>
           <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <a href={KUBRI_MAC_APPLE_SILICON_DOWNLOAD_URL} className={downloadButtonClass}>
               <span className="flex items-center gap-2 text-sm font-black">
-                <Apple size={17} /> Download for Apple Silicon
+                <Apple size={17} /> {t('desktop.apple')}
               </span>
-              <span className="text-xs font-semibold leading-5 text-[#65766B]">For Mac computers with M1, M2, M3 or M4 chips</span>
+              <span className="text-xs font-semibold leading-5 text-[#65766B]">{t('desktop.appleHelp')}</span>
             </a>
             <a href={KUBRI_MAC_INTEL_DOWNLOAD_URL} className={downloadButtonClass}>
               <span className="flex items-center gap-2 text-sm font-black">
-                <Apple size={17} /> Download for Intel Mac
+                <Apple size={17} /> {t('desktop.intel')}
               </span>
-              <span className="text-xs font-semibold leading-5 text-[#65766B]">For Intel-based Mac computers</span>
+              <span className="text-xs font-semibold leading-5 text-[#65766B]">{t('desktop.intelHelp')}</span>
             </a>
             <a href={KUBRI_WINDOWS_DOWNLOAD_URL} className={downloadButtonClass}>
               <span className="flex items-center gap-2 text-sm font-black">
-                <Download size={17} /> Download for Windows
+                <Download size={17} /> {t('desktop.windows')}
               </span>
-              <span className="text-xs font-semibold leading-5 text-[#65766B]">For 64-bit Windows computers</span>
+              <span className="text-xs font-semibold leading-5 text-[#65766B]">{t('desktop.windowsHelp')}</span>
             </a>
           </div>
           <div className="mt-4 flex flex-col gap-1 text-xs font-semibold leading-5 text-[#5D6C62] sm:flex-row sm:items-center sm:justify-between">
-            <span>Printer support and silent direct printing are available in Kubri Desktop.</span>
-            <span className="shrink-0 text-[#0F2419]">Version 1.0.2</span>
+            <span>{t('desktop.printer')}</span>
+            <span className="shrink-0 text-[#0F2419]">{t('desktop.version')}</span>
           </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-          {['Touch-friendly POS', 'Fast invoice flow', 'Branch-ready settings'].map(item => (
+          {benefits.map(item => (
             <div key={item} className="rounded-2xl border border-primary-500/10 bg-white/82 px-5 py-4 text-sm font-black text-[#0F2419] shadow-[0_14px_40px_rgba(7,21,16,0.07)] backdrop-blur">
               {item}
             </div>
@@ -504,23 +503,24 @@ function WindowsSection() {
 }
 
 function ContactSection() {
+  const { t } = useTranslation('public')
   return (
     <section id="contact" className="relative overflow-hidden border-y border-white/10 bg-[#071510] px-4 py-24 sm:px-6 lg:px-8">
       <Pattern />
       <div className="absolute left-1/2 top-12 h-72 w-72 -translate-x-1/2 rounded-full bg-gold-500/10 blur-3xl" />
       <div className="relative mx-auto max-w-4xl rounded-[32px] border border-white/10 bg-white/[0.045] px-6 py-12 text-center shadow-[0_28px_100px_rgba(0,0,0,0.24)] ring-1 ring-white/[0.04] backdrop-blur sm:px-10">
-        <h2 className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-2 text-3xl font-black text-white sm:gap-x-2 sm:text-5xl" aria-label="Bring Kubri to your business.">
-          <span aria-hidden="true">Bring</span>
+        <h2 className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-2 text-3xl font-black text-white sm:gap-x-2 sm:text-5xl" aria-label={t('contact.aria')}>
+          <span aria-hidden="true">{t('contact.before')}</span>
           <img
             src={KUBRI_WORDMARK_SRC}
             alt=""
             aria-hidden="true"
             className="inline-block h-[0.98em] w-auto -translate-y-[0.08em] object-contain sm:h-[1.04em]"
           />
-          <span aria-hidden="true">to your business.</span>
+          <span aria-hidden="true">{t('contact.after')}</span>
         </h2>
         <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-white/70">
-          Talk to us and get your business ready for ZATCA Phase 2 workflows.
+          {t('contact.text')}
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <a href={WA_LINK} target="_blank" rel="noopener noreferrer"
@@ -538,6 +538,7 @@ function ContactSection() {
 }
 
 function Footer() {
+  const { t } = useTranslation('public')
   return (
     <footer className="relative overflow-hidden border-t border-gold-400/15 bg-[#050F0B] px-4 py-14 text-white/65 sm:px-6 lg:px-8">
       <Pattern />
@@ -546,27 +547,27 @@ function Footer() {
         <div className="grid gap-10 md:grid-cols-[1.4fr_0.8fr_0.8fr]">
           <div>
             <MeemLogo size="md" />
-            <p className="mt-4 max-w-sm text-sm leading-6">Kubri for Saudi businesses that need sales, ZATCA Phase 2 workflows, stock, sessions, VAT reports, and branch visibility.</p>
+            <p className="mt-4 max-w-sm text-sm leading-6">{t('footer.description')}</p>
             <p className="mt-3 text-sm font-black text-gold-300">kubri.shop</p>
           </div>
           <div className="space-y-3">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-white">Product</p>
-            <button onClick={() => scrollTo('features')} className="block text-sm font-semibold text-white/70 hover:text-gold-200">Features</button>
-            <Link to="/pricing" className="block text-sm font-semibold text-white/70 hover:text-gold-200">Pricing</Link>
-            <button onClick={() => scrollTo('windows')} className="block text-sm font-semibold text-white/70 hover:text-gold-200">Download App</button>
-            <Link to="/faq" className="block text-sm font-semibold text-white/70 hover:text-gold-200">FAQ</Link>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-white">{t('footer.product')}</p>
+            <button onClick={() => scrollTo('features')} className="block text-sm font-semibold text-white/70 hover:text-gold-200">{t('nav.features')}</button>
+            <Link to="/pricing" className="block text-sm font-semibold text-white/70 hover:text-gold-200">{t('nav.pricing')}</Link>
+            <button onClick={() => scrollTo('windows')} className="block text-sm font-semibold text-white/70 hover:text-gold-200">{t('nav.download')}</button>
+            <Link to="/faq" className="block text-sm font-semibold text-white/70 hover:text-gold-200">{t('nav.faq')}</Link>
           </div>
           <div className="space-y-3">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-white">Contact</p>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-white">{t('footer.contact')}</p>
             <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="block text-sm font-semibold text-white/70 hover:text-gold-200">WhatsApp {WA_NUMBER}</a>
             <a href={EMAIL_LINK} className="block text-sm font-semibold text-white/70 hover:text-gold-200">support@kubri.shop</a>
-            <Link to="/terms" className="block text-sm font-semibold text-white/70 hover:text-gold-200">Terms</Link>
-            <Link to="/privacy" className="block text-sm font-semibold text-white/70 hover:text-gold-200">Privacy</Link>
+            <Link to="/terms" className="block text-sm font-semibold text-white/70 hover:text-gold-200">{t('footer.terms')}</Link>
+            <Link to="/privacy" className="block text-sm font-semibold text-white/70 hover:text-gold-200">{t('footer.privacy')}</Link>
           </div>
         </div>
         <div className="mt-10 flex flex-col gap-3 border-t border-white/10 pt-6 text-xs font-semibold text-white/55 sm:flex-row sm:items-center sm:justify-between">
-          <p>© 2026 Kubri. All rights reserved.</p>
-          <p>Built for Saudi businesses.</p>
+          <p>{t('footer.rights')}</p>
+          <p>{t('footer.built')}</p>
         </div>
       </div>
     </footer>

@@ -71,7 +71,7 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
         console.error('Unable to load expense report summary', error)
         if (!cancelled) {
           setData(null)
-          setError(reportErrorMessage(error))
+          setError(t('reports:errors.load'))
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -142,7 +142,7 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
         <div className="card p-4">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">{t('expenses.fixed')}</p>
           <p className="text-2xl font-bold text-amber-500 mt-1"><Rial amount={data?.totalFixed ?? 0} /></p>
-          <p className="text-xs text-gray-400 mt-1"><Rial amount={data?.monthlyFixed ?? 0} />/mo recurring</p>
+          <p className="text-xs text-gray-400 mt-1"><Rial amount={data?.monthlyFixed ?? 0} /> {t('expenses:perMonth')} {t('expenses:recurringMonthly')}</p>
           <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
             <div className="h-full bg-amber-400 rounded-full transition-all"
               style={{ width: `${data?.grandTotal ? (data.totalFixed / data.grandTotal) * 100 : 0}%` }} />

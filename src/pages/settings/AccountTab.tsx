@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import { useTranslation } from 'react-i18next'
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -17,6 +18,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 export default function AccountTab() {
   const { profile, user, refreshProfile } = useAuth()
+  const { t, i18n } = useTranslation(['settings', 'common', 'validation'])
   const db = supabase as any
 
   const [fullName, setFullName]    = useState(profile?.full_name ?? '')
@@ -34,29 +36,29 @@ export default function AccountTab() {
   const [pwErr,       setPwErr]       = useState<string | null>(null)
 
   async function saveProfile() {
-    if (!fullName.trim()) { setSaveErr('Full name is required'); return }
+    if (!fullName.trim()) { setSaveErr(t('validation:required')); return }
     setSaving(true); setSaveMsg(null); setSaveErr(null)
     const { error } = await db
       .from('user_profiles')
       .update({ full_name: fullName.trim(), phone: phone.trim() || null })
       .eq('id', user!.id)
     setSaving(false)
-    if (error) { setSaveErr(error.message); return }
+    if (error) { console.error('Profile update failed', error); setSaveErr(t('validation:saveFailed')); return }
     await refreshProfile()
-    setSaveMsg('Profile updated successfully')
+    setSaveMsg(t('settings:profile.updated'))
     setTimeout(() => setSaveMsg(null), 3000)
   }
 
   async function changePassword() {
     setPwErr(null); setPwMsg(null)
-    if (!newPass || !confirmPass) { setPwErr('Please fill in all password fields'); return }
-    if (newPass.length < 8) { setPwErr('Password must be at least 8 characters'); return }
-    if (newPass !== confirmPass) { setPwErr('Passwords do not match'); return }
+    if (!newPass || !confirmPass) { setPwErr(t('validation:allPasswordFields')); return }
+    if (newPass.length < 8) { setPwErr(t('validation:passwordTooShort')); return }
+    if (newPass !== confirmPass) { setPwErr(t('validation:passwordsDoNotMatch')); return }
     setPwSaving(true)
     const { error } = await supabase.auth.updateUser({ password: newPass })
     setPwSaving(false)
-    if (error) { setPwErr(error.message); return }
-    setPwMsg('Password changed successfully')
+    if (error) { console.error('Password update failed', error); setPwErr(t('validation:saveFailed')); return }
+    setPwMsg(t('settings:profile.passwordChanged'))
     setNewPass(''); setConfirmPass('')
     setTimeout(() => setPwMsg(null), 3000)
   }
@@ -85,13 +87,13 @@ export default function AccountTab() {
       <div className="card p-5">
         <div className="flex items-center gap-2 mb-3">
           <User size={15} className="text-primary-500" />
-          <h3 className="text-sm font-semibold text-gray-900">Account Info</h3>
+          <h3 className="text-sm font-semibold text-gray-900">{t('settings:profile.accountInfo')}</h3>
         </div>
         <InfoRow label="Login Email"  value={user?.email ?? ''} />
-        <InfoRow label="Role"         value={roleLabel} />
-        <InfoRow label="Member Since" value={
+        <InfoRow label={t('settings:profile.role')} value={roleLabel} />
+        <InfoRow label={t('settings:profile.memberSince')} value={
           profile?.created_at
-            ? new Date(profile.created_at).toLocaleDateString('en-SA', { year: 'numeric', month: 'long', day: 'numeric' })
+            ? new Date(profile.created_at).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', { year: 'numeric', month: 'long', day: 'numeric' })
             : ''
         } />
         {desktopBuild && <InfoRow label="Application" value={`Kubri Desktop ${__APP_VERSION__}`} />}
@@ -102,19 +104,19 @@ export default function AccountTab() {
       <div className="card p-5">
         <div className="flex items-center gap-2 mb-4">
           <Pencil size={15} className="text-primary-500" />
-          <h3 className="text-sm font-semibold text-gray-900">Edit Profile</h3>
+          <h3 className="text-sm font-semibold text-gray-900">{t('settings:profile.edit')}</h3>
         </div>
         <div className="space-y-3">
           <div>
-            <label className="label">Full Name <span className="text-red-400">*</span></label>
+            <label className="label">{t('settings:profile.fullName')} <span className="text-red-400">*</span></label>
             <div className="relative">
               <User size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input className="input pl-9" value={fullName}
-                onChange={e => setFullName(e.target.value)} placeholder="Your full name" />
+                onChange={e => setFullName(e.target.value)} placeholder={t('settings:profile.fullNamePlaceholder')} dir="auto" />
             </div>
           </div>
           <div>
-            <label className="label">Phone (optional)</label>
+            <label className="label">{t('settings:profile.phoneOptional')}</label>
             <div className="relative">
               <Phone size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input className="input pl-9" type="tel" value={phone}
@@ -136,7 +138,7 @@ export default function AccountTab() {
           <button onClick={saveProfile} disabled={saving}
             className="btn-primary flex items-center gap-2 disabled:opacity-50">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            {saving ? 'Saving…' : 'Save Profile'}
+            {saving ? t('common:saving') : t('settings:profile.save')}
           </button>
         </div>
       </div>
@@ -145,16 +147,16 @@ export default function AccountTab() {
       <div className="card p-5">
         <div className="flex items-center gap-2 mb-4">
           <Lock size={15} className="text-primary-500" />
-          <h3 className="text-sm font-semibold text-gray-900">Change Password</h3>
+          <h3 className="text-sm font-semibold text-gray-900">{t('settings:profile.changePassword')}</h3>
         </div>
         <div className="space-y-3">
           <div>
-            <label className="label">New Password</label>
+            <label className="label">{t('settings:profile.newPassword')}</label>
             <div className="relative">
               <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input className="input pl-9 pr-10" type={showNew ? 'text' : 'password'}
                 value={newPass} onChange={e => setNewPass(e.target.value)}
-                placeholder="At least 8 characters" />
+                placeholder={t('validation:passwordTooShort')} />
               <button type="button" onClick={() => setShowNew(s => !s)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                 {showNew ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -162,12 +164,12 @@ export default function AccountTab() {
             </div>
           </div>
           <div>
-            <label className="label">Confirm New Password</label>
+            <label className="label">{t('settings:profile.confirmPassword')}</label>
             <div className="relative">
               <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input className="input pl-9 pr-10" type={showConfirm ? 'text' : 'password'}
                 value={confirmPass} onChange={e => setConfirmPass(e.target.value)}
-                placeholder="Repeat new password" />
+                placeholder={t('settings:profile.repeatPassword')} />
               <button type="button" onClick={() => setShowConfirm(s => !s)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                 {showConfirm ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -189,7 +191,7 @@ export default function AccountTab() {
           <button onClick={changePassword} disabled={pwSaving}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gray-900 text-white text-sm font-semibold hover:bg-gray-700 transition-colors disabled:opacity-50">
             {pwSaving ? <Loader2 size={14} className="animate-spin" /> : <Shield size={14} />}
-            {pwSaving ? 'Changing…' : 'Change Password'}
+            {pwSaving ? t('settings:profile.changingPassword') : t('settings:profile.changePassword')}
           </button>
         </div>
       </div>

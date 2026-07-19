@@ -364,7 +364,8 @@ export default function InvoiceDetailPage() {
 
     const result = await printA4Invoice()
     if (!result.success) {
-      toast.error(result.message || result.errorType || t('printing:a4Failed'))
+      console.error('A4 invoice print failed:', result)
+      toast.error(t('printing:a4Failed'))
     }
   }
 
@@ -382,10 +383,12 @@ export default function InvoiceDetailPage() {
       if (result.success) {
         toast.success(t('printing:receiptSent'), { duration: 1800 })
       } else {
-        toast.error(result.message || result.errorType || t('printing:receiptFailed'))
+        console.error('Thermal receipt print failed:', result)
+        toast.error(t('printing:receiptFailed'))
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t('printing:receiptFailed'))
+      console.error('Thermal receipt print failed:', error)
+      toast.error(t('printing:receiptFailed'))
     } finally {
       setThermalPrinting(false)
     }

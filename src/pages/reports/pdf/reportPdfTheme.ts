@@ -1,4 +1,5 @@
 import type { Branch, Tenant, UserProfile } from '@/types'
+import i18n from '@/localization/i18n'
 
 export type ReportPdfKind = 'sessions' | 'sales' | 'vat' | 'pl'
 
@@ -159,7 +160,7 @@ export function formatDatePdf(value: string | null | undefined): string {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleDateString('en-GB', {
+  return date.toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-GB', {
     timeZone: 'Asia/Riyadh',
     day: '2-digit',
     month: 'short',
@@ -171,7 +172,7 @@ export function formatDateTimePdf(value: string | null | undefined): string {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleString('en-GB', {
+  return date.toLocaleString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-GB', {
     timeZone: 'Asia/Riyadh',
     day: '2-digit',
     month: 'short',
@@ -183,14 +184,14 @@ export function formatDateTimePdf(value: string | null | undefined): string {
 }
 
 export function formatDateRangePdf(startDate: string, endDate: string): string {
-  return `${formatDatePdf(`${startDate}T00:00:00+03:00`)} to ${formatDatePdf(`${endDate}T00:00:00+03:00`)}`
+  return `${formatDatePdf(`${startDate}T00:00:00+03:00`)} – ${formatDatePdf(`${endDate}T00:00:00+03:00`)}`
 }
 
 export function formatMonthPdf(value: string | null | undefined): string {
   if (!value) return '-'
   const [year, month] = value.split('-').map(part => Number(part))
   if (!year || !month) return safeText(value, '-')
-  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', {
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', {
     month: 'long',
     year: 'numeric',
   })
@@ -201,10 +202,10 @@ export function buildReportPdfContext(input: BuildReportPdfContextInput): Report
   const tenant = input.tenant
   const companyName = cleanPdfIdentityLine(
     branch?.display_name || branch?.business_name || branch?.name || tenant?.name,
-    'Business',
+    i18n.t('reports:pdf.layout.business'),
   )
   const legalName = optionalPdfText(branch?.business_name || tenant?.name)
-  const branchName = cleanPdfIdentityLine(input.branchLabel || branch?.name, branch ? 'Branch' : 'All Branches')
+  const branchName = cleanPdfIdentityLine(input.branchLabel || branch?.name, branch ? i18n.t('reports:pdf.layout.branch') : i18n.t('reports:pdf.layout.allBranches'))
   const generatedAt = new Date()
 
   const address = optionalPdfText(

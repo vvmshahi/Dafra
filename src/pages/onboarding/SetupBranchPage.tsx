@@ -19,13 +19,12 @@ import {
   UserRound,
 } from 'lucide-react'
 import {
-  BRANCH_USERNAME_HELPER_TEXT,
-  branchUsernameCreateErrorMessage,
   normalizeBranchUsernameInput,
   validateBranchUsernameInput,
 } from '@/lib/utils/branchUsername'
-import { branchCreationErrorMessage, branchIdFromRpcResult } from '@/lib/utils/branchCreation'
+import { branchIdFromRpcResult } from '@/lib/utils/branchCreation'
 import { AuthenticatedLanguageSwitch } from '@/components/localization/AuthenticatedLanguageSwitch'
+import { useTranslation } from 'react-i18next'
 
 const VAT_RE    = /^3\d{13}3$/
 const CR_RE     = /^[a-zA-Z0-9]+$/
@@ -33,6 +32,7 @@ const BLDG_RE   = /^\d{4}$/
 const POSTAL_RE = /^\d{5}$/
 
 export default function SetupBranchPage() {
+  const { t } = useTranslation('onboarding')
   const navigate = useNavigate()
   const { profile, refreshBranchCount } = useAuth()
   const { isPhase2 } = useSubscription()
@@ -55,24 +55,29 @@ export default function SetupBranchPage() {
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState('')
 
+  const usernameValidation = validateBranchUsernameInput(loginUsername)
+  const localizedUsernameValidation = !usernameValidation ? null
+    : /required/i.test(usernameValidation) ? t('validation.usernameRequired')
+    : /reserved/i.test(usernameValidation) ? t('validation.usernameReserved')
+    : t('validation.usernameInvalid')
   const errs = {
-    name:     !name.trim()     ? 'Branch name is required' : null,
-    vat:      !vat.trim()      ? 'VAT number is required'
-              : !VAT_RE.test(vat.trim()) ? 'Must be 15 digits, starting and ending with 3' : null,
-    cr:       !cr.trim()       ? 'CR number is required'
-              : !CR_RE.test(cr.trim()) ? 'Alphanumeric characters only' : null,
-    bldg:     !bldg.trim()     ? 'Building number is required'
-              : !BLDG_RE.test(bldg.trim()) ? 'Exactly 4 digits (use leading zeros e.g. 0056)' : null,
-    postal:   !postal.trim()   ? 'Postal code is required'
-              : !POSTAL_RE.test(postal.trim()) ? 'Exactly 5 digits' : null,
-    street:   !street.trim()   ? 'Street name is required' : null,
-    district: !district.trim() ? 'District is required' : null,
-    city:     !city.trim()     ? 'City is required' : null,
-    loginUsername: validateBranchUsernameInput(loginUsername),
-    loginPwd:     !loginPwd             ? 'Password is required'
-                  : loginPwd.length < 8 ? 'Must be at least 8 characters' : null,
-    loginConfirm: !loginConfirm         ? 'Confirm your password'
-                  : loginConfirm !== loginPwd ? 'Passwords do not match' : null,
+    name:     !name.trim()     ? t('validation.branchName') : null,
+    vat:      !vat.trim()      ? t('validation.vatRequired')
+              : !VAT_RE.test(vat.trim()) ? t('validation.vatInvalid') : null,
+    cr:       !cr.trim()       ? t('validation.crRequired')
+              : !CR_RE.test(cr.trim()) ? t('validation.alphanumeric') : null,
+    bldg:     !bldg.trim()     ? t('validation.buildingRequired')
+              : !BLDG_RE.test(bldg.trim()) ? t('validation.buildingInvalid') : null,
+    postal:   !postal.trim()   ? t('validation.postalRequired')
+              : !POSTAL_RE.test(postal.trim()) ? t('validation.postalInvalid') : null,
+    street:   !street.trim()   ? t('validation.street') : null,
+    district: !district.trim() ? t('validation.district') : null,
+    city:     !city.trim()     ? t('validation.city') : null,
+    loginUsername: localizedUsernameValidation,
+    loginPwd:     !loginPwd             ? t('validation.passwordRequired')
+                  : loginPwd.length < 8 ? t('validation.passwordLength') : null,
+    loginConfirm: !loginConfirm         ? t('validation.confirmPassword')
+                  : loginConfirm !== loginPwd ? t('validation.passwordMismatch') : null,
   }
   const hasErrors = Object.values(errs).some(Boolean)
   const fieldErr = (k: keyof typeof errs) => (touched ? errs[k] : null)
@@ -123,12 +128,20 @@ export default function SetupBranchPage() {
       })
 
       const fnErrMsg = fnErr?.message ?? (fnData as any)?.error ?? null
-      if (fnErrMsg) throw new Error(`Branch created but login setup failed: ${branchUsernameCreateErrorMessage(fnErrMsg)}`)
+      if (fnErrMsg) {
+        console.error('Branch login setup failed', fnErrMsg)
+        throw new Error('BRANCH_LOGIN_SETUP_FAILED')
+      }
 
       await refreshBranchCount()
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
-      setError(branchCreationErrorMessage(err?.message))
+      console.error('Failed to create initial branch', err)
+      const message = String(err?.message ?? '')
+      setError(message === 'BRANCH_LOGIN_SETUP_FAILED' ? t('errors.loginSetup')
+        : /jwt|session|auth/i.test(message) ? t('errors.sessionExpired')
+        : /permission|forbidden|42501/i.test(message) ? t('errors.permissionDenied')
+        : t('errors.createBranch'))
     } finally {
       setSaving(false)
     }
@@ -147,22 +160,22 @@ export default function SetupBranchPage() {
             className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white"
           >
             <LogOut size={13} />
-            Sign out
+            {t('actions.signOut')}
           </button>
           </div>
         </div>
 
         <div className="mx-auto mt-8 grid max-w-7xl gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-gold-300">First branch setup</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-gold-300">{t('branch.eyebrow')}</p>
             <h1 className="mt-2 max-w-3xl text-3xl font-black tracking-tight text-white sm:text-4xl">
-              Create your first branch
+              {t('branch.title')}
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-primary-100/80">
-              This branch will be used for POS, invoices, and ZATCA device setup. You can add more branches later from your owner workspace.
+              {t('branch.subtitle')}
             </p>
             {profile?.full_name && (
-              <p className="mt-3 text-sm font-medium text-white/55">Welcome, {profile.full_name}</p>
+              <p className="mt-3 text-sm font-medium text-white/55" dir="auto">{t('branch.welcome', { name: profile.full_name })}</p>
             )}
           </div>
 
@@ -172,17 +185,17 @@ export default function SetupBranchPage() {
                 <ShieldCheck size={17} />
               </div>
               <div>
-                <p className="text-sm font-bold text-white">Owner-controlled setup</p>
+                <p className="text-sm font-bold text-white">{t('branch.ownerTitle')}</p>
                 <p className="mt-1 text-xs leading-5 text-white/60">
-                  Create the branch record and its POS login in one step. No email is sent to staff.
+                  {t('branch.ownerHelp')}
                 </p>
               </div>
             </div>
             <div className="mt-4 grid gap-2">
-              {['Branch identity', 'National address', 'Branch username'].map(item => (
+              {['checkIdentity', 'checkAddress', 'checkUsername'].map(item => (
                 <div key={item} className="flex items-center gap-2 text-xs font-semibold text-white/70">
                   <CheckCircle2 size={13} className="text-gold-300" />
-                  {item}
+                  {t(`branch.${item}`)}
                 </div>
               ))}
             </div>
@@ -204,35 +217,35 @@ export default function SetupBranchPage() {
                       <Building2 size={16} />
                     </div>
                     <div>
-                      <h3 className="text-sm font-black text-gray-950">Branch identity</h3>
-                      <p className="text-xs text-gray-500">Registered branch and tax details.</p>
+                      <h3 className="text-sm font-black text-gray-950">{t('branch.identity')}</h3>
+                      <p className="text-xs text-gray-500">{t('branch.identityHelp')}</p>
                     </div>
                   </div>
                   <div className="grid gap-3">
                     <Input
-                      label="Branch Name"
+                      label={t('branch.name')}
                       value={name}
                       onChange={e => setName(e.target.value)}
                       error={fieldErr('name') || undefined}
-                      required
+                      required dir="auto"
                     />
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Input
-                        label="VAT Registration Number"
+                        label={t('branch.vat')}
                         value={vat}
                         onChange={e => setVat(e.target.value)}
                         maxLength={15}
-                        helperText="From your VAT Registration Certificate. Must be 15 digits starting and ending with 3."
+                        helperText={t('branch.vatHelp')}
                         error={fieldErr('vat') || undefined}
-                        required
+                        required dir="ltr"
                       />
                       <Input
-                        label="CR / License Number"
+                        label={t('branch.cr')}
                         value={cr}
                         onChange={e => setCr(e.target.value)}
-                        helperText="Commercial Registration number for this specific branch."
+                        helperText={t('branch.crHelp')}
                         error={fieldErr('cr') || undefined}
-                        required
+                        required dir="ltr"
                       />
                     </div>
                   </div>
@@ -244,51 +257,51 @@ export default function SetupBranchPage() {
                       <MapPin size={16} />
                     </div>
                     <div>
-                      <h3 className="text-sm font-black text-gray-950">Branch address</h3>
-                      <p className="text-xs text-gray-500">Required for ZATCA invoicing.</p>
+                      <h3 className="text-sm font-black text-gray-950">{t('branch.address')}</h3>
+                      <p className="text-xs text-gray-500">{t('branch.addressHelp')}</p>
                     </div>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Input
-                      label="Building Number"
+                      label={t('branch.building')}
                       value={bldg}
                       onChange={e => setBldg(e.target.value)}
-                      helperText="4-digit building number from your Saudi National Address. Use leading zeros e.g. 0056."
+                      helperText={t('branch.buildingHelp')}
                       error={fieldErr('bldg') || undefined}
                     />
                     <Input
-                      label="Street Name"
+                      label={t('branch.street')}
                       value={street}
                       onChange={e => setStreet(e.target.value)}
-                      error={fieldErr('street') || undefined}
+                      error={fieldErr('street') || undefined} dir="auto"
                     />
                     <Input
-                      label="District"
+                      label={t('branch.district')}
                       value={district}
                       onChange={e => setDistrict(e.target.value)}
-                      helperText="Neighbourhood or district name as in your registered address."
-                      error={fieldErr('district') || undefined}
+                      helperText={t('branch.districtHelp')}
+                      error={fieldErr('district') || undefined} dir="auto"
                     />
                     <Input
-                      label="City"
+                      label={t('branch.city')}
                       value={city}
                       onChange={e => setCity(e.target.value)}
-                      error={fieldErr('city') || undefined}
+                      error={fieldErr('city') || undefined} dir="auto"
                     />
                     <Input
-                      label="Postal Code"
+                      label={t('branch.postal')}
                       value={postal}
                       onChange={e => setPostal(e.target.value)}
-                      helperText="5-digit postal code from your Saudi National Address document."
+                      helperText={t('branch.postalHelp')}
                       error={fieldErr('postal') || undefined}
                     />
                     <Input
-                      label="Phone Number"
+                      label={t('branch.phone')}
                       type="tel"
                       value={phone}
                       onChange={e => setPhone(e.target.value)}
                       placeholder="+966 5x xxx xxxx"
-                      icon={Phone}
+                      icon={Phone} dir="ltr"
                     />
                   </div>
                 </section>
@@ -299,41 +312,41 @@ export default function SetupBranchPage() {
                       <KeyRound size={16} />
                     </div>
                     <div>
-                      <h3 className="text-sm font-black text-gray-950">Branch login</h3>
+                      <h3 className="text-sm font-black text-gray-950">{t('branch.login')}</h3>
                       <p className="text-xs text-gray-500">
-                        Create the login for this branch&apos;s POS terminal. Share these credentials directly with your staff.
+                        {t('branch.loginHelp')}
                       </p>
                     </div>
                   </div>
                   <div className="grid gap-3">
                     <Input
-                      label="Branch username"
+                      label={t('branch.username')}
                       type="text"
                       value={loginUsername}
                       onChange={e => setLoginUsername(normalizeBranchUsernameInput(e.target.value))}
                       placeholder="main_counter"
-                      helperText={BRANCH_USERNAME_HELPER_TEXT}
+                      helperText={t('branch.usernameHelp')}
                       autoComplete="username"
                       icon={UserRound}
                       error={fieldErr('loginUsername') || undefined}
-                      required
+                      required dir="ltr"
                     />
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Input
-                        label="Password"
+                        label={t('branch.password')}
                         type="password"
                         value={loginPwd}
                         onChange={e => setLoginPwd(e.target.value)}
-                        placeholder="Min. 8 characters"
+                        placeholder={t('branch.passwordPlaceholder')}
                         error={fieldErr('loginPwd') || undefined}
                         required
                       />
                       <Input
-                        label="Confirm Password"
+                        label={t('branch.confirmPassword')}
                         type="password"
                         value={loginConfirm}
                         onChange={e => setLoginConfirm(e.target.value)}
-                        placeholder="Repeat password"
+                        placeholder={t('branch.repeatPassword')}
                         error={fieldErr('loginConfirm') || undefined}
                         required
                       />
@@ -351,10 +364,10 @@ export default function SetupBranchPage() {
 
               <div className="mt-8 flex flex-col gap-3 border-t border-gray-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs leading-5 text-gray-500">
-                  You can edit branch details and add more branches later.
+                  {t('branch.editLater')}
                 </p>
                 <Button type="submit" variant="gold" loading={saving} disabled={saving} className="justify-center px-5">
-                  Create Branch &amp; Get Started
+                  {t('actions.createBranch')}
                   {!saving && <ArrowRight size={15} />}
                 </Button>
               </div>
@@ -365,14 +378,14 @@ export default function SetupBranchPage() {
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0F2419] text-gold-300">
               <Building2 size={20} />
             </div>
-            <h2 className="mt-5 text-lg font-black text-[#10291E]">Branch details</h2>
+            <h2 className="mt-5 text-lg font-black text-[#10291E]">{t('branch.details')}</h2>
             <p className="mt-2 text-sm leading-6 text-[#4D5B50]">
-              Use the registered branch information from your VAT certificate, commercial registration, and Saudi National Address.
+              {t('branch.detailsHelp')}
             </p>
             <div className="mt-6 rounded-2xl border border-[#E3D5B8] bg-white/60 p-4">
-              <p className="text-xs font-bold text-[#10291E]">Good to know</p>
+              <p className="text-xs font-bold text-[#10291E]">{t('branch.goodToKnow')}</p>
               <p className="mt-1 text-[11px] leading-5 text-[#5B6259]">
-                Each branch needs its own CR number and address. The branch login is for POS staff access.
+                {t('branch.goodToKnowHelp')}
               </p>
             </div>
           </aside>

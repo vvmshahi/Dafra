@@ -335,7 +335,8 @@ export default function InvoicesPage() {
         setRows(processed)
         setCachedInvoiceRows(activeScope, processed)
       } catch (error) {
-        if (!cancelled) setLoadError(error instanceof Error ? error.message : t('invoices:loadFailed'))
+        console.error('Failed to load invoices:', error)
+        if (!cancelled) setLoadError(t('invoices:loadFailed'))
       } finally {
         if (!cancelled) { setLoading(false); setRefreshing(false) }
       }
@@ -394,7 +395,8 @@ export default function InvoicesPage() {
       }
       setRefreshKey(key => key + 1)
     } catch (err: any) {
-      toast.error(err?.message ?? t('invoices:retryFailed'))
+      console.error('Failed to retry ZATCA submissions:', err)
+      toast.error(t('invoices:retryFailed'))
     } finally {
       setRetryingZatca(false)
     }

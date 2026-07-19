@@ -1,4 +1,6 @@
 {
+  "tabs": { "subscription": { "label": "Subscription", "description": "Plan, billing, and usage limits" }, "account": { "label": "Account", "description": "Profile, name, phone, and password" }, "printer": { "label": "Printer", "description": "Default receipt printer for silent printing" } },
+  "businessType": { "title": "Business Type", "readOnly": "Read only", "trading": { "label": "Trading business", "description": "Products, stock, and purchase tracking." }, "service": { "label": "Service business", "description": "Services, produced items, materials, and simple profit estimates." } },
   "language": "Language",
   "interfaceLanguage": "Interface language",
   "english": "English",
@@ -81,6 +83,15 @@
     "documentLanguageHelp": "Choose the language used on new invoices, receipts, and credit notes. The preview updates immediately; save to apply it.",
     "documentLanguageHistory": "Previously issued documents keep their saved language. Older documents without a saved language follow the current branch setting.",
     "bilingual": "Bilingual"
+  },
+  "subscription": {
+    "active": "Subscription Active", "lifetimeFree": "Lifetime Free Account", "lifetimeFreeBody": "Your account has full access with no subscription fees.",
+    "activationRequired": "Subscription Activation Required", "gracePeriod": "Grace Period Active", "paymentOverdue": "Payment Overdue", "suspended": "Subscription Suspended",
+    "activationBody": "This workspace needs manual subscription activation. Billing remains available unless the account is suspended.", "graceBody": "Grace period active. Billing remains available unless the account is suspended.", "overdueBody": "Payment is overdue. Billing remains available during pilot unless the account is suspended.", "suspendedBody": "Account suspended. New billing and register opening are disabled. Existing records remain available.",
+    "paymentDueSoon": "Payment Due Soon", "paymentDueBody": "Payment is due soon. Please contact Kubri support if payment is already completed.",
+    "branches": "Branches", "branchUsage": "{{active}} / {{max}} active branches used", "totalBranches": "{{count}} total branches", "plan": "Plan: {{plan}}", "nextDue": "Next due: {{date}}", "graceUntil": "Grace until: {{date}}", "daysOverdue_one": "{{count}} day overdue", "daysOverdue_other": "{{count}} days overdue", "dueDate": "Due date: {{date}}", "renewsExpires": "Renews / Expires: {{date}}",
+    "contactActivate": "Contact Us to Activate", "contact": "Contact Us", "renewNow": "Renew Now", "whatsapp": "WhatsApp Us", "email": "Email Us", "renewUpgrade": "To renew or upgrade, contact us:", "updateTiming": "We'll update your subscription within a few hours.",
+    "status": { "active": "Active", "trial": "Trial", "grace_period": "Grace Period", "expired": "Expired", "cancelled": "Cancelled", "suspended": "Suspended", "lifetime_free": "Lifetime Free", "payment_due": "Payment Due" }
   },
   "profile": {
     "accountInfo": "Account information",

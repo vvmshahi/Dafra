@@ -346,7 +346,7 @@ export default function CustomerDetailPage() {
                 <p className="text-sm font-bold text-primary-600 tabular-nums">
                   <Rial amount={totalSpent} />
                 </p>
-                <p className="text-[10px] text-gray-400">posted invoices total</p>
+                <p className="text-[10px] text-gray-400">{t('customers:postedTotal')}</p>
               </div>
               <div className="w-24 flex-shrink-0 text-right hidden md:block">
                 <p className="text-sm font-semibold text-gray-600 tabular-nums">

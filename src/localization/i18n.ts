@@ -23,6 +23,14 @@ import suppliersEn from './locales/en/suppliers.json'
 import customersEn from './locales/en/customers.json'
 import expensesEn from './locales/en/expenses.json'
 import reportsEn from './locales/en/reports.json'
+import employeesEn from './locales/en/employees.json'
+import branchesEn from './locales/en/branches.json'
+import zatcaEn from './locales/en/zatca.json'
+import operationsEn from './locales/en/operations.json'
+import onboardingEn from './locales/en/onboarding.json'
+import adminEn from './locales/en/admin.json'
+import publicEn from './locales/en/public.json'
+import legalEn from './locales/en/legal.json'
 import commonAr from './locales/ar-SA/common.json'
 import navigationAr from './locales/ar-SA/navigation.json'
 import authAr from './locales/ar-SA/auth.json'
@@ -46,6 +54,14 @@ import suppliersAr from './locales/ar-SA/suppliers.json'
 import customersAr from './locales/ar-SA/customers.json'
 import expensesAr from './locales/ar-SA/expenses.json'
 import reportsAr from './locales/ar-SA/reports.json'
+import employeesAr from './locales/ar-SA/employees.json'
+import branchesAr from './locales/ar-SA/branches.json'
+import zatcaAr from './locales/ar-SA/zatca.json'
+import operationsAr from './locales/ar-SA/operations.json'
+import onboardingAr from './locales/ar-SA/onboarding.json'
+import adminAr from './locales/ar-SA/admin.json'
+import publicAr from './locales/ar-SA/public.json'
+import legalAr from './locales/ar-SA/legal.json'
 import { applyDocumentLocale, detectInitialLocale, normalizeLocale } from './locale'
 import type { UiLocale } from './types'
 
@@ -55,15 +71,15 @@ void i18n
   .use(initReactI18next)
   .init({
     resources: {
-      en: { common: commonEn, navigation: navigationEn, auth: authEn, settings: settingsEn, validation: validationEn, dialogs: dialogsEn, pos: posEn, payments: paymentsEn, register: registerEn, invoices: invoicesEn, creditNotes: creditNotesEn, refunds: refundsEn, receipts: receiptsEn, printing: printingEn, documents: documentsEn, dashboard: dashboardEn, products: productsEn, inventory: inventoryEn, purchases: purchasesEn, suppliers: suppliersEn, customers: customersEn, expenses: expensesEn, reports: reportsEn },
-      'ar-SA': { common: commonAr, navigation: navigationAr, auth: authAr, settings: settingsAr, validation: validationAr, dialogs: dialogsAr, pos: posAr, payments: paymentsAr, register: registerAr, invoices: invoicesAr, creditNotes: creditNotesAr, refunds: refundsAr, receipts: receiptsAr, printing: printingAr, documents: documentsAr, dashboard: dashboardAr, products: productsAr, inventory: inventoryAr, purchases: purchasesAr, suppliers: suppliersAr, customers: customersAr, expenses: expensesAr, reports: reportsAr },
+      en: { common: commonEn, navigation: navigationEn, auth: authEn, settings: settingsEn, validation: validationEn, dialogs: dialogsEn, pos: posEn, payments: paymentsEn, register: registerEn, invoices: invoicesEn, creditNotes: creditNotesEn, refunds: refundsEn, receipts: receiptsEn, printing: printingEn, documents: documentsEn, dashboard: dashboardEn, products: productsEn, inventory: inventoryEn, purchases: purchasesEn, suppliers: suppliersEn, customers: customersEn, expenses: expensesEn, reports: reportsEn, employees: employeesEn, branches: branchesEn, zatca: zatcaEn, operations: operationsEn, onboarding: onboardingEn, admin: adminEn, public: publicEn, legal: legalEn },
+      'ar-SA': { common: commonAr, navigation: navigationAr, auth: authAr, settings: settingsAr, validation: validationAr, dialogs: dialogsAr, pos: posAr, payments: paymentsAr, register: registerAr, invoices: invoicesAr, creditNotes: creditNotesAr, refunds: refundsAr, receipts: receiptsAr, printing: printingAr, documents: documentsAr, dashboard: dashboardAr, products: productsAr, inventory: inventoryAr, purchases: purchasesAr, suppliers: suppliersAr, customers: customersAr, expenses: expensesAr, reports: reportsAr, employees: employeesAr, branches: branchesAr, zatca: zatcaAr, operations: operationsAr, onboarding: onboardingAr, admin: adminAr, public: publicAr, legal: legalAr },
     },
     lng: initialLocale,
     supportedLngs: ['en', 'ar-SA'],
     nonExplicitSupportedLngs: false,
     fallbackLng: 'en',
     defaultNS: 'common',
-    ns: ['common', 'navigation', 'auth', 'settings', 'validation', 'dialogs', 'pos', 'payments', 'register', 'invoices', 'creditNotes', 'refunds', 'receipts', 'printing', 'documents', 'dashboard', 'products', 'inventory', 'purchases', 'suppliers', 'customers', 'expenses', 'reports'],
+    ns: ['common', 'navigation', 'auth', 'settings', 'validation', 'dialogs', 'pos', 'payments', 'register', 'invoices', 'creditNotes', 'refunds', 'receipts', 'printing', 'documents', 'dashboard', 'products', 'inventory', 'purchases', 'suppliers', 'customers', 'expenses', 'reports', 'employees', 'branches', 'zatca', 'operations', 'onboarding', 'admin', 'public', 'legal'],
     returnEmptyString: false,
     initImmediate: false,
     react: { useSuspense: false },

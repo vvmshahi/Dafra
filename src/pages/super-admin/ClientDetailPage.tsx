@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   ArrowLeft, Building2, Users, FileText, CreditCard,
   UserX, UserCheck, Trash2, MapPin, Phone, Mail,
@@ -174,14 +175,10 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 // ── Subscription modal ────────────────────────────────────────────────────────
 
 const DURATIONS = [
-  { label: '1 Month',   months: 1  },
-  { label: '2 Months',  months: 2  },
-  { label: '3 Months',  months: 3  },
-  { label: '6 Months',  months: 6  },
-  { label: '1 Year',    months: 12 },
-  { label: '3 Years',   months: 36 },
-  { label: '5 Years',   months: 60 },
-  { label: 'Lifetime Free', months: 0 },
+  { key: 'oneMonth', months: 1 }, { key: 'twoMonths', months: 2 },
+  { key: 'threeMonths', months: 3 }, { key: 'sixMonths', months: 6 },
+  { key: 'oneYear', months: 12 }, { key: 'threeYears', months: 36 },
+  { key: 'fiveYears', months: 60 }, { key: 'lifetimeFree', months: 0 },
 ]
 
 const PHASE_PRICES: Record<string, number> = {
@@ -280,6 +277,7 @@ function ManageSubscriptionModal({ tenantId, existingSub, plans, onSaved, onCanc
   onSaved:     () => void
   onCancel:    () => void
 }) {
+  const { t, i18n } = useTranslation('admin')
   const [planId,     setPlanId]     = useState(existingSub?.plan_id ?? plans[0]?.id ?? '')
   const [branches,   setBranches]   = useState(1)
   const [duration,   setDuration]   = useState(1)
@@ -300,7 +298,7 @@ function ManageSubscriptionModal({ tenantId, existingSub, plans, onSaved, onCanc
   const total = isLifetime ? 0 : pricePerBranch * branches * duration
 
   async function handleSave() {
-    if (!planId) { setError('Select a plan'); return }
+    if (!planId) { setError(t('validation.planRequired')); return }
     setSaving(true)
     setError('')
     try {
@@ -344,7 +342,8 @@ function ManageSubscriptionModal({ tenantId, existingSub, plans, onSaved, onCanc
 
       onSaved()
     } catch (err: any) {
-      setError(err.message ?? 'Failed to save subscription')
+      console.error('Failed to save subscription:', err)
+      setError(t('validation.subscriptionSaveFailed'))
     } finally {
       setSaving(false)
     }
@@ -353,11 +352,11 @@ function ManageSubscriptionModal({ tenantId, existingSub, plans, onSaved, onCanc
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-5">
-        <h2 className="text-base font-semibold text-gray-900">Manage Subscription</h2>
+        <h2 className="text-base font-semibold text-gray-900">{t('billing.manageSubscription')}</h2>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1.5">Plan</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('clients.plan')}</label>
             <select
               value={planId}
               onChange={e => setPlanId(e.target.value)}
@@ -369,7 +368,7 @@ function ManageSubscriptionModal({ tenantId, existingSub, plans, onSaved, onCanc
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1.5">Number of branches</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('payment.paidBranches')}</label>
             <input
               type="number"
               min={1}
@@ -381,14 +380,14 @@ function ManageSubscriptionModal({ tenantId, existingSub, plans, onSaved, onCanc
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Duration</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('create.duration')}</label>
           <select
             value={duration}
             onChange={e => setDuration(Number(e.target.value))}
             className="input w-full text-sm h-9"
           >
             {DURATIONS.map(d => (
-              <option key={d.months} value={d.months}>{d.label}</option>
+              <option key={d.months} value={d.months}>{t(`durations.${d.key}`)}</option>
             ))}
           </select>
         </div>
@@ -396,13 +395,13 @@ function ManageSubscriptionModal({ tenantId, existingSub, plans, onSaved, onCanc
         {!isLifetime && expiryDate && (
           <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm">
             <div className="flex justify-between items-center">
-              <span className="text-gray-500">Expiry date</span>
-              <span className="font-semibold text-gray-900">{expiryDate.toLocaleDateString('en-SA')}</span>
+              <span className="text-gray-500">{t('billing.endDate')}</span>
+              <span className="font-semibold text-gray-900">{expiryDate.toLocaleDateString(i18n.language)}</span>
             </div>
             {total > 0 && (
               <div className="flex justify-between items-center mt-1.5 pt-1.5 border-t border-gray-200">
                 <span className="text-gray-500">
-                  Total: SAR {pricePerBranch} × {branches} branch{branches !== 1 ? 'es' : ''} × {selectedDur.label}
+                  {t('billing.total')}: SAR {pricePerBranch} × {branches} × {t(`durations.${selectedDur.key}`)}
                 </span>
                 <span className="font-bold text-gray-900">SAR {total.toLocaleString()}</span>
               </div>
@@ -412,7 +411,7 @@ function ManageSubscriptionModal({ tenantId, existingSub, plans, onSaved, onCanc
 
         {isLifetime && (
           <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 text-sm text-emerald-700 font-medium">
-            This will set a Lifetime Free subscription (no expiry).
+            {t('billing.lifetimeWarning')}
           </div>
         )}
 
@@ -420,14 +419,14 @@ function ManageSubscriptionModal({ tenantId, existingSub, plans, onSaved, onCanc
 
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">
-            Cancel
+            {t('actions.cancel')}
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
             className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-xl hover:bg-primary-700 disabled:opacity-50 transition-colors"
           >
-            {saving ? 'Saving…' : 'Save Subscription'}
+            {saving ? t('clients.saving') : t('billing.saveSubscription')}
           </button>
         </div>
       </div>
@@ -441,31 +440,32 @@ function SuspendModal({ name, reason, onReasonChange, onConfirm, onCancel, actin
   name: string; reason: string; onReasonChange: (v: string) => void
   onConfirm: () => void; onCancel: () => void; acting: boolean
 }) {
+  const { t } = useTranslation('admin')
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-1">Suspend Client</h2>
+        <h2 className="text-base font-semibold text-gray-900 mb-1">{t('clients.suspendTitle')}</h2>
         <p className="text-sm text-gray-500 mb-4">
-          Suspending <strong>{name}</strong> blocks new billing, register opening, and branch creation. Existing records remain available.
+          {t('clients.suspendHelp', { name })}
         </p>
-        <label className="block text-xs font-medium text-gray-700 mb-1.5">Reason (optional)</label>
+        <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('clients.reasonOptional')}</label>
         <input
           value={reason}
           onChange={e => onReasonChange(e.target.value)}
           className="input w-full text-sm h-9 mb-5"
-          placeholder="e.g. Payment overdue"
+          placeholder={t('clients.reasonPlaceholder')}
           autoFocus
         />
         <div className="flex justify-end gap-2">
           <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">
-            Cancel
+            {t('actions.cancel')}
           </button>
           <button
             onClick={onConfirm}
             disabled={acting}
             className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 disabled:opacity-50 transition-colors"
           >
-            Suspend
+            {acting ? t('common.processing') : t('actions.suspend')}
           </button>
         </div>
       </div>
@@ -476,24 +476,24 @@ function SuspendModal({ name, reason, onReasonChange, onConfirm, onCancel, actin
 function RestoreModal({ name, onConfirm, onCancel, acting }: {
   name: string; onConfirm: () => void; onCancel: () => void; acting: boolean
 }) {
+  const { t } = useTranslation('admin')
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-1">Restore Client Access</h2>
+        <h2 className="text-base font-semibold text-gray-900 mb-1">{t('clients.restoreTitle')}</h2>
         <p className="text-sm text-gray-500 mb-5">
-          Are you sure you want to restore access for <strong>{name}</strong>?
-          Their users will be able to log in again.
+          {t('clients.restoreHelp', { name })}
         </p>
         <div className="flex justify-end gap-2">
           <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">
-            Cancel
+            {t('actions.cancel')}
           </button>
           <button
             onClick={onConfirm}
             disabled={acting}
             className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors"
           >
-            Restore Access
+            {acting ? t('common.processing') : t('clients.restoreAccess')}
           </button>
         </div>
       </div>
@@ -505,19 +505,19 @@ function DeleteModal({ name, confirmName, onConfirmNameChange, onConfirm, onCanc
   name: string; confirmName: string; onConfirmNameChange: (v: string) => void
   onConfirm: () => void; onCancel: () => void; acting: boolean; error: string | null
 }) {
+  const { t } = useTranslation('admin')
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-3">Delete Client</h2>
+        <h2 className="text-base font-semibold text-gray-900 mb-3">{t('destructive.deleteClient')}</h2>
         <div className="flex items-start gap-2 bg-red-50 rounded-xl p-3 mb-4">
           <AlertTriangle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
           <p className="text-xs text-red-700">
-            This action cannot be undone. All data for this client including branches,
-            users, invoices, and expenses will be permanently deleted.
+            {t('destructive.deleteWarning')}
           </p>
         </div>
         <label className="block text-xs font-medium text-gray-700 mb-1.5">
-          Type <strong>{name}</strong> to confirm
+          {t('destructive.typeToConfirm', { name })}
         </label>
         <input
           value={confirmName}
@@ -529,14 +529,14 @@ function DeleteModal({ name, confirmName, onConfirmNameChange, onConfirm, onCanc
         {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
         <div className="flex justify-end gap-2 mt-4">
           <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">
-            Cancel
+            {t('actions.cancel')}
           </button>
           <button
             onClick={onConfirm}
             disabled={acting || confirmName !== name}
             className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {acting ? 'Deleting…' : 'Delete'}
+            {acting ? t('destructive.deleting') : t('destructive.permanentDelete')}
           </button>
         </div>
       </div>
@@ -549,6 +549,7 @@ function SubscriptionOpsCard({ sub, access, usage }: {
   access: SubscriptionAccess | null
   usage: BranchUsage | null
 }) {
+  const { t } = useTranslation('admin')
   const lifecycle = access?.lifecycle_status ?? sub?.subscription_lifecycle_status ?? sub?.status ?? 'not_found'
   const payment = access?.manual_payment_status ?? sub?.manual_payment_status ?? 'unpaid'
   const activeBranches = usage?.active_branch_count ?? 0
@@ -562,25 +563,25 @@ function SubscriptionOpsCard({ sub, access, usage }: {
     <div className="card p-6">
       <div className="flex items-center justify-between gap-3 mb-4">
         <div>
-          <h2 className="text-sm font-semibold text-gray-900">Billing access snapshot</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Visibility only. POS enforcement is not wired in this phase.</p>
+          <h2 className="text-sm font-semibold text-gray-900">{t('snapshot.title')}</h2>
+          <p className="text-xs text-gray-400 mt-0.5">{t('snapshot.visibility')}</p>
         </div>
         <Badge variant={accessBadgeVariant(lifecycle)} dot>{humanize(lifecycle)}</Badge>
       </div>
 
       {!access && (
         <div className="mb-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          Access helper is unavailable or returned no row. Showing stored subscription fields where possible.
+          {t('snapshot.unavailable')}
         </div>
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         {[
-          { label: 'Payment', value: humanize(payment), badge: true },
-          { label: 'Next due', value: formatDate(access?.next_due_date ?? sub?.next_due_date) },
-          { label: 'Grace until', value: formatDate(access?.grace_until_date ?? sub?.grace_until_date) },
+          { label: t('snapshot.payment'), value: t(`status.${payment}`, { defaultValue: t('unknown') }), badge: true },
+          { label: t('snapshot.nextDue'), value: formatDate(access?.next_due_date ?? sub?.next_due_date) },
+          { label: t('snapshot.graceUntil'), value: formatDate(access?.grace_until_date ?? sub?.grace_until_date) },
           {
-            label: access?.days_overdue && access.days_overdue > 0 ? 'Days overdue' : 'Days until due',
+            label: access?.days_overdue && access.days_overdue > 0 ? t('snapshot.daysOverdue') : t('snapshot.daysUntilDue'),
             value: access?.days_overdue && access.days_overdue > 0 ? access.days_overdue : access?.days_until_due ?? '—',
           },
         ].map(item => (
@@ -595,10 +596,10 @@ function SubscriptionOpsCard({ sub, access, usage }: {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Paid branches', value: paidBranches },
-          { label: 'Max branches', value: usage?.max_branches ?? access?.max_branches ?? '—' },
-          { label: 'Active branches', value: activeBranches },
-          { label: 'Total branches', value: totalBranches },
+          { label: t('payment.paidBranches'), value: paidBranches },
+          { label: t('snapshot.maxBranches'), value: usage?.max_branches ?? access?.max_branches ?? '—' },
+          { label: t('snapshot.activeBranches'), value: activeBranches },
+          { label: t('snapshot.totalBranches'), value: totalBranches },
         ].map(item => (
           <div key={item.label} className="rounded-xl border border-gray-100 px-3 py-3">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{item.label}</p>
@@ -609,12 +610,12 @@ function SubscriptionOpsCard({ sub, access, usage }: {
 
       <div className="mt-4 flex flex-wrap gap-2">
         <Badge variant={isSuspensionEnforced ? 'danger' : wouldBlockIfEnabled ? 'warning' : 'success'} dot>
-          {isSuspensionEnforced ? 'Enforced: suspended' : wouldBlockIfEnabled ? 'Would block if enabled' : 'POS allowed now'}
+          {isSuspensionEnforced ? t('snapshot.enforced') : wouldBlockIfEnabled ? t('snapshot.wouldBlock') : t('snapshot.posAllowed')}
         </Badge>
         <Badge variant={usage?.can_create_branch === false ? 'warning' : 'success'} dot>
-          {usage?.can_create_branch === false ? 'Branch limit reached' : 'Can create branch'}
+          {usage?.can_create_branch === false ? t('snapshot.limitReached') : t('snapshot.canCreateBranch')}
         </Badge>
-        {exceedsPaid && <Badge variant="warning" dot>Usage exceeds paid count</Badge>}
+        {exceedsPaid && <Badge variant="warning" dot>{t('snapshot.exceedsPaid')}</Badge>}
       </div>
 
       {(isSuspensionEnforced || wouldBlockIfEnabled) && (
@@ -624,8 +625,7 @@ function SubscriptionOpsCard({ sub, access, usage }: {
             : 'border-amber-100 bg-amber-50 text-amber-800'
         }`}>
           {isSuspensionEnforced
-            ? 'Manual suspension blocks new POS checkout, register opening, and branch creation.'
-            : 'Payment status is visibility-only. This tenant would be blocked only if automatic payment enforcement is enabled later.'}
+            ? t('snapshot.suspensionEffect') : t('snapshot.paymentVisibility')}
         </p>
       )}
       {access?.reason && <p className="mt-3 text-xs text-gray-400">Reason: {humanize(access.reason)}</p>}
@@ -640,6 +640,7 @@ function MarkPaymentCard({ tenant, sub, plans, access, onSaved }: {
   access: SubscriptionAccess | null
   onSaved: () => void
 }) {
+  const { t } = useTranslation('admin')
   const initialCount = Math.max(1, access?.paid_branch_count ?? sub?.paid_branch_count ?? tenant.max_branches ?? 1)
   const [interval, setInterval] = useState<ManualSubscriptionPlanInterval>('monthly')
   const [paidBranchCount, setPaidBranchCount] = useState(initialCount)
@@ -690,12 +691,12 @@ function MarkPaymentCard({ tenant, sub, plans, access, onSaved }: {
     const end = new Date(`${coverageEnd}T00:00:00`)
     const grace = new Date(`${graceUntilDate}T00:00:00`)
 
-    if (paidBranchCount < 1) { setError('Paid branch count must be at least 1.'); return }
-    if (Number(amount) < 0) { setError('Amount cannot be negative.'); return }
-    if (!currency.trim() || currency.trim().length !== 3) { setError('Currency must be a 3-letter code.'); return }
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) { setError('Coverage dates are required.'); return }
-    if (end < start) { setError('Coverage end must be on or after coverage start.'); return }
-    if (graceUntilDate !== toDateInput(addDays(end, 7))) { setError('Grace date must be exactly 7 days after next due date.'); return }
+    if (paidBranchCount < 1) { setError(t('validation.paidBranches')); return }
+    if (Number(amount) < 0) { setError(t('validation.amountInvalid')); return }
+    if (!currency.trim() || currency.trim().length !== 3) { setError(t('validation.currency')); return }
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) { setError(t('validation.coverageRequired')); return }
+    if (end < start) { setError(t('validation.coverageOrder')); return }
+    if (graceUntilDate !== toDateInput(addDays(end, 7))) { setError(t('validation.graceDate')); return }
 
     setSaving(true)
     try {
@@ -787,14 +788,14 @@ function MarkPaymentCard({ tenant, sub, plans, access, onSaved }: {
         if (tenantError) throw tenantError
       }
 
-      toast.success('Payment recorded')
+      toast.success(t('payment.recorded'))
       setPaymentReference('')
       setNotes('')
       onSaved()
     } catch (err: any) {
-      const message = err?.message ?? 'Failed to record payment'
-      setError(message)
-      toast.error(message)
+      console.error('Failed to record payment:', err)
+      setError(t('payment.recordFailed'))
+      toast.error(t('payment.recordFailed'))
     } finally {
       setSaving(false)
     }
@@ -804,77 +805,76 @@ function MarkPaymentCard({ tenant, sub, plans, access, onSaved }: {
     <div className="card p-6">
       <div className="flex items-center gap-2 mb-4">
         <ReceiptText size={16} className="text-primary-600" />
-        <h2 className="text-sm font-semibold text-gray-900">Mark payment received</h2>
+        <h2 className="text-sm font-semibold text-gray-900">{t('payment.recordPayment')}</h2>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Interval</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('payment.interval')}</label>
           <select value={interval} onChange={e => applyInterval(e.target.value as ManualSubscriptionPlanInterval)} className="input h-9 w-full text-sm">
-            <option value="monthly">Monthly</option>
-            <option value="yearly">Yearly</option>
+            <option value="monthly">{t('billing.monthly')}</option><option value="yearly">{t('billing.yearly')}</option>
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Paid branch count</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('payment.paidBranches')}</label>
           <input type="number" min={1} value={paidBranchCount} onChange={e => applyPaidBranchCount(Number(e.target.value))} className="input h-9 w-full text-sm" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Price per branch</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('payment.pricePerBranch')}</label>
           <MoneyInput value={pricePerBranch} onValueChange={(value, numeric) => { setPricePerBranch(value); if (numeric != null) setAmount((numeric * paidBranchCount).toFixed(2)) }} className="input h-9 w-full text-sm" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Amount</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('billing.amount')}</label>
           <MoneyInput value={amount} onValueChange={setAmount} className="input h-9 w-full text-sm" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Currency</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('payment.currency')}</label>
           <input value={currency} onChange={e => setCurrency(e.target.value.toUpperCase())} className="input h-9 w-full text-sm uppercase" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Received date</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('payment.receivedDate')}</label>
           <input type="date" value={paymentReceivedDate} onChange={e => setPaymentReceivedDate(e.target.value)} className="input h-9 w-full text-sm" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Coverage start</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('payment.coverageStart')}</label>
           <input type="date" value={coverageStart} onChange={e => applyCoverageStart(e.target.value)} className="input h-9 w-full text-sm" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Coverage end / next due</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('payment.coverageEnd')}</label>
           <input type="date" value={coverageEnd} onChange={e => setCoverageEnd(e.target.value)} className="input h-9 w-full text-sm" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Grace until</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('snapshot.graceUntil')}</label>
           <input type="date" value={graceUntilDate} readOnly className="input h-9 w-full text-sm bg-gray-50 text-gray-500" />
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Payment method</label>
-          <input value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="input h-9 w-full text-sm" placeholder="Bank transfer, cash, STC Pay..." />
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('payment.method')}</label>
+          <input value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="input h-9 w-full text-sm" placeholder={t('payment.methodPlaceholder')} dir="auto" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Payment reference</label>
-          <input value={paymentReference} onChange={e => setPaymentReference(e.target.value)} className="input h-9 w-full text-sm" placeholder="Transfer id or receipt reference" />
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('payment.reference')}</label>
+          <input value={paymentReference} onChange={e => setPaymentReference(e.target.value)} className="input h-9 w-full text-sm" placeholder={t('payment.referencePlaceholder')} dir="ltr" />
         </div>
       </div>
 
       <div className="mt-3">
-        <label className="block text-xs font-medium text-gray-700 mb-1.5">Notes</label>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} className="input w-full resize-none text-sm" placeholder="Internal payment notes" />
+        <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('clients.notes')}</label>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} className="input w-full resize-none text-sm" placeholder={t('payment.notesPlaceholder')} dir="auto" />
       </div>
 
       <label className="mt-3 flex items-center gap-2 text-xs font-medium text-gray-600">
         <input type="checkbox" checked={alignMaxBranches} onChange={e => setAlignMaxBranches(e.target.checked)} className="rounded border-gray-300" />
-        Align tenant max branches to paid branch count
+        {t('payment.alignBranches')}
       </label>
 
       {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
 
       <div className="mt-4 flex justify-end">
         <button onClick={submitPayment} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">
-          {saving ? 'Recording...' : 'Record payment'}
+          {saving ? t('payment.recording') : t('payment.recordPayment')}
         </button>
       </div>
     </div>
@@ -882,20 +882,21 @@ function MarkPaymentCard({ tenant, sub, plans, access, onSaved }: {
 }
 
 function PaymentHistoryCard({ payments }: { payments: ManualPaymentRow[] }) {
+  const { t } = useTranslation('admin')
   return (
     <div className="card">
       <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
         <CalendarDays size={16} className="text-primary-600" />
-        <h2 className="text-sm font-semibold text-gray-900">Payment history</h2>
+        <h2 className="text-sm font-semibold text-gray-900">{t('payment.history')}</h2>
       </div>
       {payments.length === 0 ? (
-        <div className="px-6 py-8 text-center text-sm text-gray-400">No manual payments recorded yet.</div>
+        <div className="px-6 py-8 text-center text-sm text-gray-400">{t('payment.none')}</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-50">
-                {['Received', 'Amount', 'Interval', 'Branches', 'Coverage', 'Next due', 'Method / reference', 'Verified by', 'Notes'].map(h => (
+                {[t('payment.receivedDate'), t('billing.amount'), t('payment.interval'), t('clients.branches'), t('payment.coverage'), t('snapshot.nextDue'), t('payment.methodReference'), t('payment.verifiedBy'), t('clients.notes')].map(h => (
                   <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -905,10 +906,10 @@ function PaymentHistoryCard({ payments }: { payments: ManualPaymentRow[] }) {
                 <tr key={p.id} className="hover:bg-gray-50/50">
                   <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">{formatDate(p.payment_received_at)}</td>
                   <td className="px-5 py-3 text-sm font-semibold text-gray-900 whitespace-nowrap">{p.currency} {Number(p.amount).toLocaleString()}</td>
-                  <td className="px-5 py-3 text-xs text-gray-500 capitalize">{p.plan_interval}</td>
+                  <td className="px-5 py-3 text-xs text-gray-500">{t(`billing.${p.plan_interval}`, { defaultValue: t('unknown') })}</td>
                   <td className="px-5 py-3 text-sm text-gray-700 tabular-nums">{p.paid_branch_count}</td>
-                  <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">{formatDate(p.coverage_start_date)} to {formatDate(p.coverage_end_date)}</td>
-                  <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">{formatDate(p.next_due_date)}<br /><span className="text-gray-400">Grace {formatDate(p.grace_until_date)}</span></td>
+                  <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">{t('clients.dateRange', { start: formatDate(p.coverage_start_date), end: formatDate(p.coverage_end_date) })}</td>
+                  <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">{formatDate(p.next_due_date)}<br /><span className="text-gray-400">{t('snapshot.graceUntil')} {formatDate(p.grace_until_date)}</span></td>
                   <td className="px-5 py-3 text-xs text-gray-500 max-w-[180px]">
                     <p>{p.payment_method ?? '—'}</p>
                     {p.payment_reference && <p className="font-mono text-gray-700 break-all">{p.payment_reference}</p>}
@@ -930,6 +931,7 @@ function OnboardingCard({ tenantId, row, onSaved }: {
   row: OnboardingRow | null
   onSaved: () => void
 }) {
+  const { t } = useTranslation('admin')
   const [onboardingStatus, setOnboardingStatus] = useState<TenantOnboardingStatusValue>(row?.onboarding_status ?? 'owner_invited')
   const [ownerSetupStatus, setOwnerSetupStatus] = useState<OwnerSetupStatus>(row?.owner_setup_status ?? 'owner_invited')
   const [branchSetupStatus, setBranchSetupStatus] = useState<BranchSetupStatus>(row?.branch_setup_status ?? 'branch_setup_pending')
@@ -969,10 +971,10 @@ function OnboardingCard({ tenantId, row, onSaved }: {
         : (supabase as any).from('tenant_onboarding_status').insert(payload)
       const { error } = await query
       if (error) throw error
-      toast.success(row ? 'Onboarding updated' : 'Onboarding tracking created')
+      toast.success(row ? t('onboarding.updated') : t('onboarding.created'))
       onSaved()
     } catch (err: any) {
-      toast.error(err?.message ?? 'Failed to save onboarding status')
+      console.error('Failed to save onboarding status:', err); toast.error(t('onboarding.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -985,65 +987,65 @@ function OnboardingCard({ tenantId, row, onSaved }: {
       <div className="flex items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
           <ClipboardCheck size={16} className="text-primary-600" />
-          <h2 className="text-sm font-semibold text-gray-900">Onboarding checklist</h2>
+          <h2 className="text-sm font-semibold text-gray-900">{t('onboarding.title')}</h2>
         </div>
         <button onClick={save} disabled={saving} className="rounded-xl bg-primary-50 px-3 py-1.5 text-xs font-semibold text-primary-700 hover:bg-primary-100 disabled:opacity-50">
-          {saving ? 'Saving...' : row ? 'Save checklist' : 'Create tracking'}
+          {saving ? t('clients.saving') : row ? t('onboarding.save') : t('onboarding.create')}
         </button>
       </div>
 
       {!row && (
         <div className="mb-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          No onboarding row exists yet. Saving this checklist will create one for the tenant.
+          {t('onboarding.emptyHelp')}
         </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Onboarding status</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('onboarding.status')}</label>
           <select value={onboardingStatus} onChange={e => setOnboardingStatus(e.target.value as TenantOnboardingStatusValue)} className={selectClass}>
-            {ONBOARDING_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {ONBOARDING_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{t(`onboarding.values.${o.value}`)}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Owner setup status</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('onboarding.ownerStatus')}</label>
           <select value={ownerSetupStatus} onChange={e => setOwnerSetupStatus(e.target.value as OwnerSetupStatus)} className={selectClass}>
-            {OWNER_SETUP_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {OWNER_SETUP_OPTIONS.map(o => <option key={o.value} value={o.value}>{t(`onboarding.values.${o.value}`)}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Branch setup status</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('onboarding.branchStatus')}</label>
           <select value={branchSetupStatus} onChange={e => setBranchSetupStatus(e.target.value as BranchSetupStatus)} className={selectClass}>
-            {BRANCH_SETUP_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {BRANCH_SETUP_OPTIONS.map(o => <option key={o.value} value={o.value}>{t(`onboarding.values.${o.value}`)}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">ZATCA setup status</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('onboarding.zatcaStatus')}</label>
           <select value={zatcaSetupStatus} onChange={e => setZatcaSetupStatus(e.target.value as ZatcaSetupStatus)} className={selectClass}>
-            {ZATCA_SETUP_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {ZATCA_SETUP_OPTIONS.map(o => <option key={o.value} value={o.value}>{t(`onboarding.values.${o.value}`)}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">Owner setup link sent</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('onboarding.linkSent')}</label>
           <input type="datetime-local" value={ownerSetupLinkSentAt} onChange={e => setOwnerSetupLinkSentAt(e.target.value)} className={selectClass} />
         </div>
         <div className="flex items-end pb-2">
           <label className="flex items-center gap-2 text-xs font-medium text-gray-700">
             <input type="checkbox" checked={readyForBilling} onChange={e => setReadyForBilling(e.target.checked)} className="rounded border-gray-300" />
-            Ready for billing
+            {t('onboarding.readyBilling')}
           </label>
         </div>
       </div>
 
       <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <InfoRow label="Owner completed" value={formatDate(row?.owner_setup_completed_at)} />
-        <InfoRow label="First branch" value={formatDate(row?.first_branch_created_at)} />
-        <InfoRow label="First invoice" value={formatDate(row?.first_invoice_created_at)} />
+        <InfoRow label={t('onboarding.ownerCompleted')} value={formatDate(row?.owner_setup_completed_at)} />
+        <InfoRow label={t('onboarding.firstBranch')} value={formatDate(row?.first_branch_created_at)} />
+        <InfoRow label={t('onboarding.firstInvoice')} value={formatDate(row?.first_invoice_created_at)} />
       </div>
 
       <div className="mt-3">
-        <label className="block text-xs font-medium text-gray-700 mb-1.5">Onboarding notes</label>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} className="input w-full resize-none text-sm" placeholder="Setup tracking notes" />
+        <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('onboarding.notes')}</label>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} className="input w-full resize-none text-sm" placeholder={t('onboarding.notesPlaceholder')} dir="auto" />
       </div>
     </div>
   )
@@ -1055,6 +1057,7 @@ function OwnerSetupLinkCard({ tenantId, owner, row, onSaved }: {
   row: OnboardingRow | null
   onSaved: () => void
 }) {
+  const { t } = useTranslation('admin')
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
   const [result, setResult] = useState<ResendOwnerSetupResponse | null>(null)
@@ -1075,10 +1078,10 @@ function OwnerSetupLinkCard({ tenantId, owner, row, onSaved }: {
       if (errMsg) throw new Error(errMsg)
       if (!payload.setupLink) throw new Error('Setup link was not returned')
       setResult(payload)
-      toast.success('Owner setup link generated')
+      toast.success(t('setup.generated'))
       onSaved()
     } catch (err: any) {
-      toast.error(err?.message ?? 'Failed to resend owner setup link')
+      console.error('Failed to generate owner setup link:', err); toast.error(t('setup.generateFailed'))
     } finally {
       setSending(false)
     }
@@ -1090,9 +1093,9 @@ function OwnerSetupLinkCard({ tenantId, owner, row, onSaved }: {
     try {
       await navigator.clipboard.writeText(result.setupLink)
       setCopied(true)
-      toast.success('Setup link copied')
+      toast.success(t('setup.copied'))
     } catch {
-      toast.error('Copy failed. Select the link and copy it manually.')
+      toast.error(t('validation.copyFailed'))
     }
   }
 
@@ -1104,12 +1107,12 @@ function OwnerSetupLinkCard({ tenantId, owner, row, onSaved }: {
             <Link2 size={16} className="text-primary-600" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">Owner setup link</h2>
+            <h2 className="text-sm font-semibold text-gray-900">{t('create.ownerSetupLink')}</h2>
             <p className="text-xs text-gray-500 mt-1 max-w-xl">
-              Generate a fresh setup link for the owner. Send this link manually by WhatsApp or email.
+              {t('setup.help')}
             </p>
             <p className="text-xs text-gray-400 mt-1">
-              This does not change the owner account unless they open the link and set a new password.
+              {t('setup.security')}
             </p>
           </div>
         </div>
@@ -1118,34 +1121,34 @@ function OwnerSetupLinkCard({ tenantId, owner, row, onSaved }: {
           disabled={sending || !owner}
           className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
         >
-          {sending ? 'Generating...' : 'Resend owner setup link'}
+          {sending ? t('setup.generating') : t('setup.regenerate')}
         </button>
       </div>
 
       {!owner && (
         <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          No active owner profile was found for this tenant.
+          {t('setup.noOwner')}
         </div>
       )}
 
       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-        <InfoRow label="Owner email" value={ownerEmail ?? '—'} />
-        <InfoRow label="Owner user" value={owner?.full_name ?? result?.ownerName ?? '—'} />
-        <InfoRow label="Setup status" value={humanize(row?.owner_setup_status ?? 'owner_invited')} />
-        <InfoRow label="Last setup link sent" value={formatDate(lastSentAt)} />
-        <InfoRow label="Owner completed" value={formatDate(row?.owner_setup_completed_at)} />
-        <InfoRow label="Completion tracking" value={row?.owner_setup_completed_at ? 'Recorded automatically' : 'Waiting for owner password setup/login'} />
+        <InfoRow label={t('create.ownerEmail')} value={ownerEmail ?? '—'} />
+        <InfoRow label={t('setup.ownerUser')} value={owner?.full_name ?? result?.ownerName ?? '—'} />
+        <InfoRow label={t('setup.status')} value={t(`onboarding.values.${row?.owner_setup_status ?? 'owner_invited'}`)} />
+        <InfoRow label={t('setup.lastSent')} value={formatDate(lastSentAt)} />
+        <InfoRow label={t('onboarding.ownerCompleted')} value={formatDate(row?.owner_setup_completed_at)} />
+        <InfoRow label={t('setup.completion')} value={row?.owner_setup_completed_at ? t('setup.automatic') : t('setup.waiting')} />
       </div>
 
       {result?.setupLink && (
         <div className="mt-4 rounded-xl border border-primary-100 bg-primary-50 px-4 py-3">
           <div className="flex items-center justify-between gap-3 mb-2">
-            <label className="text-xs font-semibold text-primary-800">Fresh setup link</label>
+            <label className="text-xs font-semibold text-primary-800">{t('setup.freshLink')}</label>
             <button
               onClick={copyLink}
               className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-primary-700 ring-1 ring-primary-100 hover:bg-primary-50"
             >
-              <Copy size={12} /> {copied ? 'Copied' : 'Copy setup link'}
+              <Copy size={12} /> {copied ? t('create.copied') : t('create.copySetupLink')}
             </button>
           </div>
           <textarea
@@ -1156,7 +1159,7 @@ function OwnerSetupLinkCard({ tenantId, owner, row, onSaved }: {
             onFocus={e => e.currentTarget.select()}
           />
           <p className="text-[11px] text-primary-700 mt-2">
-            {result.expiresNote ?? 'This setup link uses Supabase recovery link expiry settings.'}
+            {result.expiresNote ?? t('setup.expiryHelp')}
           </p>
         </div>
       )}
@@ -1169,13 +1172,14 @@ function SupportNotesCard({ tenantId, notes, onSaved }: {
   notes: SupportNoteRow[]
   onSaved: () => void
 }) {
+  const { t } = useTranslation('admin')
   const [note, setNote] = useState('')
   const [noteType, setNoteType] = useState<TenantSupportNoteType>('general')
   const [saving, setSaving] = useState(false)
 
   async function addNote() {
     if (!note.trim()) {
-      toast.error('Note cannot be empty')
+      toast.error(t('support.noteRequired'))
       return
     }
     setSaving(true)
@@ -1189,10 +1193,10 @@ function SupportNotesCard({ tenantId, notes, onSaved }: {
       })
       if (error) throw error
       setNote('')
-      toast.success('Support note added')
+      toast.success(t('support.added'))
       onSaved()
     } catch (err: any) {
-      toast.error(err?.message ?? 'Failed to add support note')
+      console.error('Failed to add support note:', err); toast.error(t('support.addFailed'))
     } finally {
       setSaving(false)
     }
@@ -1202,22 +1206,22 @@ function SupportNotesCard({ tenantId, notes, onSaved }: {
     <div className="card p-6">
       <div className="flex items-center gap-2 mb-4">
         <NotebookPen size={16} className="text-primary-600" />
-        <h2 className="text-sm font-semibold text-gray-900">Internal support notes</h2>
+        <h2 className="text-sm font-semibold text-gray-900">{t('support.title')}</h2>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[180px_1fr_auto] gap-3">
         <select value={noteType} onChange={e => setNoteType(e.target.value as TenantSupportNoteType)} className="input h-9 text-sm">
-          {SUPPORT_NOTE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          {SUPPORT_NOTE_TYPES.map(o => <option key={o.value} value={o.value}>{t(`support.types.${o.value}`)}</option>)}
         </select>
-        <input value={note} onChange={e => setNote(e.target.value)} className="input h-9 text-sm" placeholder="Add an internal note" />
+        <input value={note} onChange={e => setNote(e.target.value)} className="input h-9 text-sm" placeholder={t('support.placeholder')} dir="auto" />
         <button onClick={addNote} disabled={saving} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">
-          <Plus size={14} /> Add
+          <Plus size={14} /> {t('support.add')}
         </button>
       </div>
 
       <div className="mt-5 space-y-3">
         {notes.length === 0 ? (
-          <p className="py-4 text-center text-sm text-gray-400">No support notes yet.</p>
+          <p className="py-4 text-center text-sm text-gray-400">{t('support.none')}</p>
         ) : notes.map(n => (
           <div key={n.id} className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
@@ -1239,6 +1243,7 @@ function SupportNotesCard({ tenantId, notes, onSaved }: {
 export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { t } = useTranslation('admin')
 
   const [tenant,     setTenant]     = useState<TenantDetail | null>(null)
   const [sub,        setSub]        = useState<SubscriptionDetail | null>(null)
@@ -1362,7 +1367,8 @@ export default function ClientDetailPage() {
     if (paymentsResult.error) nextWarnings.push('payment history')
     if (onboardingResult.error) nextWarnings.push('onboarding status')
     if (supportNotesResult.error) nextWarnings.push('support notes')
-    setPhase4bWarning(nextWarnings.length ? `Some Phase 4B data could not load: ${nextWarnings.join(', ')}.` : '')
+    if (nextWarnings.length) console.error('Some client administration data could not load:', nextWarnings)
+    setPhase4bWarning(nextWarnings.length ? t('clients.partialLoadWarning') : '')
     setAccess(Array.isArray(accessResult.data) ? accessResult.data[0] ?? null : accessResult.data ?? null)
     setBranchUsage(Array.isArray(usageResult.data) ? usageResult.data[0] ?? null : usageResult.data ?? null)
     setPayments((paymentsResult.data as ManualPaymentRow[] | null) ?? [])
@@ -1382,7 +1388,7 @@ export default function ClientDetailPage() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [id])
+  useEffect(() => { load() }, [id, t])
 
   async function saveBusinessType() {
     if (!id) return
@@ -1421,7 +1427,7 @@ export default function ClientDetailPage() {
   }
 
   async function confirmLifetimeFree() {
-    if (!id || !confirm('Set this account as Lifetime Free? This gives permanent access with no expiry.')) return
+    if (!id || !confirm(t('clients.lifetimeConfirm'))) return
     setActing(true)
     const planId = plans[plans.length - 1]?.id ?? plans[0]?.id
     if (!planId) { setActing(false); return }
@@ -1476,13 +1482,15 @@ export default function ClientDetailPage() {
       )
       const json = await res.json()
       if (!res.ok) {
-        setDeleteError(json.error ?? 'Failed to delete client')
+        console.error('Failed to delete client:', json.error)
+        setDeleteError(t('clients.deleteFailed'))
         setActing(false)
         return
       }
       navigate('/super-admin/clients')
     } catch (err: any) {
-      setDeleteError(err.message ?? 'Failed to delete client')
+      console.error('Failed to delete client:', err)
+      setDeleteError(t('clients.deleteFailed'))
       setActing(false)
     }
   }
@@ -1498,9 +1506,9 @@ export default function ClientDetailPage() {
   if (!tenant) {
     return (
       <div className="card p-8 text-center">
-        <p className="text-gray-400 text-sm">Client not found.</p>
+        <p className="text-gray-400 text-sm">{t('clients.notFound')}</p>
         <button onClick={() => navigate('/super-admin/clients')} className="mt-4 text-primary-600 text-sm font-medium">
-          ← Back to Clients
+          ← {t('clients.back')}
         </button>
       </div>
     )
@@ -1558,7 +1566,7 @@ export default function ClientDetailPage() {
           onClick={() => navigate('/super-admin/clients')}
           className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 font-medium"
         >
-          <ArrowLeft size={15} /> All Clients
+          <ArrowLeft size={15} /> {t('clients.allClients')}
         </button>
 
         <div className="flex items-center gap-2">
@@ -1572,14 +1580,14 @@ export default function ClientDetailPage() {
             }`}
           >
             {isSuspended ? <UserCheck size={14} /> : <UserX size={14} />}
-            {isSuspended ? 'Restore Access' : 'Suspend Client'}
+            {isSuspended ? t('clients.restoreAccess') : t('clients.suspendTitle')}
           </button>
           <button
             onClick={() => { setDeleteConfirm(''); setDeleteError(null); setShowDelete(true) }}
             disabled={acting}
             className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-xl bg-red-600 text-white hover:bg-red-700 transition-colors"
           >
-            <Trash2 size={14} /> Delete
+            <Trash2 size={14} /> {t('clients.delete')}
           </button>
         </div>
       </div>
@@ -1589,13 +1597,13 @@ export default function ClientDetailPage() {
         <div className="flex items-start gap-3 bg-red-50 border border-red-100 rounded-xl p-4">
           <AlertTriangle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-red-700">Account suspended</p>
+            <p className="text-sm font-semibold text-red-700">{t('clients.accountSuspended')}</p>
             <p className="text-xs text-red-600 mt-0.5">
-              Since {tenant.suspended_at!.slice(0, 10)}
+              {t('clients.since', { date: tenant.suspended_at!.slice(0, 10) })}
               {tenant.suspended_reason ? ` · ${tenant.suspended_reason}` : ''}
             </p>
             <p className="text-xs text-red-600 mt-1">
-              New billing, register opening, and branch creation are disabled. Existing records remain available.
+              {t('clients.suspendedEffect')}
             </p>
           </div>
         </div>
@@ -1619,20 +1627,20 @@ export default function ClientDetailPage() {
               <h1 className="text-xl font-bold text-gray-900">{tenant.name}</h1>
               {tenant.name_ar && <span className="text-sm text-gray-400" dir="rtl">{tenant.name_ar}</span>}
               <Badge variant={isSuspended ? 'danger' : tenant.is_active ? 'success' : 'neutral'} dot>
-                {isSuspended ? 'Suspended' : tenant.is_active ? 'Active' : 'Inactive'}
+                {t(`status.${isSuspended ? 'suspended' : tenant.is_active ? 'active' : 'inactive'}`)}
               </Badge>
             </div>
-            <p className="text-xs text-gray-400 mt-1">Client since {tenant.created_at.slice(0, 10)}</p>
+            <p className="text-xs text-gray-400 mt-1">{t('clients.clientSince', { date: tenant.created_at.slice(0, 10) })}</p>
           </div>
         </div>
 
         {/* Quick stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-gray-100">
           {[
-            { label: 'Active / total branches', value: branchUsage ? `${branchUsage.active_branch_count}/${branchUsage.total_branch_count}` : branches.length, icon: Building2 },
-            { label: 'Users',    value: users.length,    icon: Users },
-            { label: 'Invoices', value: stats?.total ?? 0, icon: FileText },
-            { label: 'Revenue',  value: <Rial amount={stats?.revenue ?? 0} />, icon: CreditCard },
+            { label: t('clients.activeTotalBranches'), value: branchUsage ? `${branchUsage.active_branch_count}/${branchUsage.total_branch_count}` : branches.length, icon: Building2 },
+            { label: t('clients.users'), value: users.length, icon: Users },
+            { label: t('clients.invoices'), value: stats?.total ?? 0, icon: FileText },
+            { label: t('clients.revenue'), value: <Rial amount={stats?.revenue ?? 0} />, icon: CreditCard },
           ].map(({ label, value, icon: Icon }) => (
             <div key={label} className="text-center">
               <Icon size={18} className="text-gray-300 mx-auto mb-1" />
@@ -1648,9 +1656,9 @@ export default function ClientDetailPage() {
 
         {/* Company info */}
         <div className="card p-6">
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Company Information</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('clients.companyInfo')}</h2>
           <div className="py-2.5 border-b border-gray-50">
-            <span className="block text-xs text-gray-400 mb-1.5">Business Type</span>
+            <span className="block text-xs text-gray-400 mb-1.5">{t('clients.businessType')}</span>
             <div className="flex items-center gap-2">
               <select
                 value={businessType}
@@ -1666,105 +1674,105 @@ export default function ClientDetailPage() {
                 disabled={savingBusinessType || businessType === resolveBusinessType(tenant.business_type)}
                 className="px-3 py-2 rounded-xl bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700 disabled:opacity-50"
               >
-                {savingBusinessType ? 'Saving...' : 'Save'}
+                {savingBusinessType ? t('clients.saving') : t('actions.save')}
               </button>
             </div>
             <p className="text-[10px] text-gray-400 mt-1">
-              {businessTypeSaved ? 'Saved.' : businessTypeLabel(businessType)}
+              {businessTypeSaved ? t('clients.saved') : businessTypeLabel(businessType)}
             </p>
           </div>
-          <InfoRow label="VAT Number"  value={tenant.vat_number} />
-          <InfoRow label="CR Number"   value={tenant.cr_number} />
-          <InfoRow label="Email"       value={tenant.email
+          <InfoRow label={t('clients.vatNumber')} value={tenant.vat_number} />
+          <InfoRow label={t('clients.crNumber')} value={tenant.cr_number} />
+          <InfoRow label={t('clients.email')} value={tenant.email
             ? <a href={`mailto:${tenant.email}`} className="text-primary-600 hover:underline flex items-center gap-1"><Mail size={12} />{tenant.email}</a>
             : null} />
-          <InfoRow label="Phone"       value={tenant.phone
+          <InfoRow label={t('clients.phone')} value={tenant.phone
             ? <span className="flex items-center gap-1"><Phone size={12} />{tenant.phone}</span>
             : null} />
-          <InfoRow label="City"        value={tenant.city
+          <InfoRow label={t('clients.city')} value={tenant.city
             ? <span className="flex items-center gap-1"><MapPin size={12} />{tenant.city}</span>
             : null} />
-          <InfoRow label="Country"     value={tenant.country} />
-          {tenant.address && <InfoRow label="Legacy address / notes" value={tenant.address} />}
-          <InfoRow label="Last Active" value={tenant.last_active_at
+          <InfoRow label={t('clients.country')} value={tenant.country} />
+          {tenant.address && <InfoRow label={t('clients.legacyAddress')} value={<span dir="auto">{tenant.address}</span>} />}
+          <InfoRow label={t('clients.lastActive')} value={tenant.last_active_at
             ? <span className="flex items-center gap-1"><CheckCircle2 size={12} className="text-emerald-500" />{tenant.last_active_at.slice(0, 10)}</span>
-            : 'No activity yet'} />
+            : t('clients.noActivity')} />
         </div>
 
         {/* Subscription */}
         <div className="card p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-900">Subscription</h2>
+            <h2 className="text-sm font-semibold text-gray-900">{t('clients.subscription')}</h2>
             <div className="flex items-center gap-2">
               <button
                 onClick={confirmLifetimeFree}
                 disabled={acting}
-                title="Mark Lifetime Free"
+                title={t('clients.markLifetime')}
                 className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
               >
-                <Star size={12} /> Lifetime Free
+                <Star size={12} /> {t('status.lifetime_free')}
               </button>
               <button
                 onClick={() => setShowManageSub(true)}
                 className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-xl bg-primary-50 text-primary-700 hover:bg-primary-100 transition-colors"
               >
-                <Settings size={12} /> Manage
+                <Settings size={12} /> {t('clients.manage')}
               </button>
             </div>
           </div>
           {sub ? (
             <>
-              <InfoRow label="Plan"      value={
+              <InfoRow label={t('clients.plan')} value={
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary-50 text-primary-700">
                   {sub.plan?.name ?? '—'}
                 </span>
               } />
-              <InfoRow label="Status"    value={
+              <InfoRow label={t('clients.status')} value={
                 <Badge variant={
                   sub.status === 'active' ? 'success'
                   : sub.status === 'trial' ? 'warning'
                   : 'danger'
-                } dot>{sub.status}</Badge>
+                } dot>{t(`status.${sub.status}`, { defaultValue: t('unknown') })}</Badge>
               } />
-              <InfoRow label="Lifecycle" value={
+              <InfoRow label={t('clients.lifecycle')} value={
                 <Badge variant={accessBadgeVariant(access?.lifecycle_status ?? sub.subscription_lifecycle_status)} dot>
-                  {humanize(access?.lifecycle_status ?? sub.subscription_lifecycle_status)}
+                  {t(`status.${access?.lifecycle_status ?? sub.subscription_lifecycle_status}`, { defaultValue: t('unknown') })}
                 </Badge>
               } />
-              <InfoRow label="Payment status" value={
+              <InfoRow label={t('clients.paymentStatus')} value={
                 <Badge variant={accessBadgeVariant(access?.manual_payment_status ?? sub.manual_payment_status)} dot>
-                  {humanize(access?.manual_payment_status ?? sub.manual_payment_status)}
+                  {t(`status.${access?.manual_payment_status ?? sub.manual_payment_status}`, { defaultValue: t('unknown') })}
                 </Badge>
               } />
-              <InfoRow label="Started"   value={sub.starts_at.slice(0, 10)} />
-              <InfoRow label="Current period" value={
+              <InfoRow label={t('subscriptions.started')} value={sub.starts_at.slice(0, 10)} />
+              <InfoRow label={t('clients.currentPeriod')} value={
                 sub.current_period_start || sub.current_period_end
-                  ? `${formatDate(sub.current_period_start)} to ${formatDate(sub.current_period_end)}`
+                  ? t('clients.dateRange', { start: formatDate(sub.current_period_start), end: formatDate(sub.current_period_end) })
                   : '—'
               } />
-              <InfoRow label="Expires"   value={
+              <InfoRow label={t('subscriptions.expires')} value={
                 sub.ends_at
                   ? sub.ends_at.slice(0, 10)
-                  : <span className="text-emerald-600 font-medium">Lifetime Free</span>
+                  : <span className="text-emerald-600 font-medium">{t('status.lifetime_free')}</span>
               } />
-              <InfoRow label="Next due" value={formatDate(access?.next_due_date ?? sub.next_due_date)} />
-              <InfoRow label="Grace until" value={formatDate(access?.grace_until_date ?? sub.grace_until_date)} />
-              <InfoRow label="Paid branches" value={access?.paid_branch_count ?? sub.paid_branch_count} />
-              <InfoRow label="Max branches" value={branchUsage?.max_branches ?? tenant.max_branches ?? sub.plan?.max_branches} />
+              <InfoRow label={t('snapshot.nextDue')} value={formatDate(access?.next_due_date ?? sub.next_due_date)} />
+              <InfoRow label={t('snapshot.graceUntil')} value={formatDate(access?.grace_until_date ?? sub.grace_until_date)} />
+              <InfoRow label={t('payment.paidBranches')} value={access?.paid_branch_count ?? sub.paid_branch_count} />
+              <InfoRow label={t('snapshot.maxBranches')} value={branchUsage?.max_branches ?? tenant.max_branches ?? sub.plan?.max_branches} />
               {sub.payment_info && (
-                <InfoRow label="Legacy payment info" value={
+                <InfoRow label={t('clients.legacyPayment')} value={
                   <span className="text-xs font-mono text-gray-600 break-all">{sub.payment_info}</span>
                 } />
               )}
             </>
           ) : (
             <div className="py-4 text-center">
-              <p className="text-sm text-gray-400 mb-3">No subscription found</p>
+              <p className="text-sm text-gray-400 mb-3">{t('clients.noSubscription')}</p>
               <button
                 onClick={() => setShowManageSub(true)}
                 className="text-xs font-medium text-primary-600 hover:underline"
               >
-                Add subscription
+                {t('clients.addSubscription')}
               </button>
             </div>
           )}
@@ -1808,13 +1816,13 @@ export default function ClientDetailPage() {
       {/* Branches */}
       <div className="card">
         <div className="px-6 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Branches ({branches.length})</h2>
+          <h2 className="text-sm font-semibold text-gray-900">{t('clients.branchesCount', { count: branches.length })}</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-50">
-                {['Branch Name', 'City', 'Invoices', 'Main', 'Status'].map(h => (
+                {[t('clients.branchName'), t('clients.city'), t('clients.invoices'), t('clients.main'), t('clients.status')].map(h => (
                   <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
@@ -1829,17 +1837,17 @@ export default function ClientDetailPage() {
                   <td className="px-5 py-3.5 text-sm text-gray-500">{b.city ?? '—'}</td>
                   <td className="px-5 py-3.5 text-sm text-gray-600 tabular-nums">{b.invoice_counter}</td>
                   <td className="px-5 py-3.5 text-xs text-gray-400">
-                    {b.is_main_branch ? <Badge variant="neutral">Main</Badge> : ''}
+                    {b.is_main_branch ? <Badge variant="neutral">{t('clients.main')}</Badge> : ''}
                   </td>
                   <td className="px-5 py-3.5">
                     <Badge variant={b.is_active ? 'success' : 'default'} dot>
-                      {b.is_active ? 'Active' : 'Inactive'}
+                      {t(`status.${b.is_active ? 'active' : 'inactive'}`)}
                     </Badge>
                   </td>
                 </tr>
               ))}
               {branches.length === 0 && (
-                <tr><td colSpan={5} className="px-5 py-6 text-center text-sm text-gray-400">No branches</td></tr>
+                <tr><td colSpan={5} className="px-5 py-6 text-center text-sm text-gray-400">{t('clients.noBranches')}</td></tr>
               )}
             </tbody>
           </table>
@@ -1849,13 +1857,13 @@ export default function ClientDetailPage() {
       {/* Users */}
       <div className="card">
         <div className="px-6 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Users ({users.length})</h2>
+          <h2 className="text-sm font-semibold text-gray-900">{t('clients.usersCount', { count: users.length })}</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-50">
-                {['Name', 'Role', 'Joined', 'Status'].map(h => (
+                {[t('clients.name'), t('clients.role'), t('clients.joined'), t('clients.status')].map(h => (
                   <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
@@ -1864,7 +1872,7 @@ export default function ClientDetailPage() {
               {users.map(u => (
                 <tr key={u.id} className="hover:bg-gray-50/50 transition-colors">
                   <td className="px-5 py-3.5 text-sm font-medium text-gray-900">
-                    {u.full_name ?? <span className="text-gray-400 italic">Unnamed</span>}
+                    {u.full_name ?? <span className="text-gray-400 italic">{t('clients.unnamed')}</span>}
                   </td>
                   <td className="px-5 py-3.5">
                     <span className="text-xs font-medium capitalize text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
@@ -1874,13 +1882,13 @@ export default function ClientDetailPage() {
                   <td className="px-5 py-3.5 text-xs text-gray-400">{u.created_at.slice(0, 10)}</td>
                   <td className="px-5 py-3.5">
                     <Badge variant={u.is_active ? 'success' : 'default'} dot>
-                      {u.is_active ? 'Active' : 'Inactive'}
+                      {t(`status.${u.is_active ? 'active' : 'inactive'}`)}
                     </Badge>
                   </td>
                 </tr>
               ))}
               {users.length === 0 && (
-                <tr><td colSpan={4} className="px-5 py-6 text-center text-sm text-gray-400">No users</td></tr>
+                <tr><td colSpan={4} className="px-5 py-6 text-center text-sm text-gray-400">{t('clients.noUsers')}</td></tr>
               )}
             </tbody>
           </table>

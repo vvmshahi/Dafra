@@ -73,7 +73,7 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
         console.error('Unable to load purchase report summary', error)
         if (!cancelled) {
           setData(null)
-          setError(reportErrorMessage(error))
+          setError(t('reports:errors.load'))
         }
       } finally {
         if (!cancelled) setLoading(false)

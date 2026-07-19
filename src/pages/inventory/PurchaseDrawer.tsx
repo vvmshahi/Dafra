@@ -501,10 +501,10 @@ export default function PurchaseDrawer({
         .single()
 
       if (purErr) {
-        const mappedUiError = /Purchase supplier does not belong/i.test(purErr.message)
-          ? 'Selected supplier does not match this branch. Refresh the page and select a supplier from this branch.'
-          : purErr.message
-        setError(mappedUiError)
+        console.error('[PurchaseDrawer] purchase insert failed', purErr)
+        setError(/Purchase supplier does not belong/i.test(purErr.message)
+          ? t('purchases:errors.supplierBranchInvalid')
+          : t('purchases:errors.saveFailed'))
         return
       }
 
@@ -705,8 +705,8 @@ export default function PurchaseDrawer({
 
                 <div className="grid grid-cols-2 gap-2">
                   {([
-                    { value: 'included', label: 'VAT Included' },
-                    { value: 'excluded', label: 'VAT Excluded' },
+                    { value: 'included', label: t('purchases:vatIncluded') },
+                    { value: 'excluded', label: t('purchases:vatExcluded') },
                   ] as { value: TaxInputMode; label: string }[]).map(opt => (
                     <button
                       key={opt.value}
@@ -849,8 +849,8 @@ export default function PurchaseDrawer({
                   <SectionLabel>{t('purchases:sections.vat')}</SectionLabel>
                   <div className="grid grid-cols-2 gap-2">
                     {([
-                      { value: 'included', label: 'VAT Included' },
-                      { value: 'excluded', label: 'VAT Excluded' },
+                      { value: 'included', label: t('purchases:vatIncluded') },
+                      { value: 'excluded', label: t('purchases:vatExcluded') },
                     ] as { value: TaxInputMode; label: string }[]).map(opt => (
                       <button
                         key={opt.value}

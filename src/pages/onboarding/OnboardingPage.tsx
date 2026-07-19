@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/Input'
 import { MeemLogo } from '@/components/MeemLogo'
 import { AuthenticatedLanguageSwitch } from '@/components/localization/AuthenticatedLanguageSwitch'
 import type { SubscriptionPlan } from '@/types'
+import { useTranslation } from 'react-i18next'
 
 /* ── Types ──────────────────────────────────────────────────── */
 
@@ -28,11 +29,12 @@ const INITIAL: OnboardingData = {
 /* ── Step indicator ─────────────────────────────────────────── */
 
 const STEPS = [
-  { n: 1, label: 'Business', icon: Building2 },
-  { n: 2, label: 'Plan',     icon: CreditCard },
+  { n: 1, key: 'business', icon: Building2 },
+  { n: 2, key: 'plan',     icon: CreditCard },
 ]
 
 function StepIndicator({ current }: { current: number }) {
+  const { t } = useTranslation('onboarding')
   return (
     <div className="flex items-center justify-center gap-0">
       {STEPS.map((step, i) => {
@@ -55,7 +57,7 @@ function StepIndicator({ current }: { current: number }) {
               <span className={`text-[10px] font-semibold tracking-wide ${
                 active ? 'text-white' : done ? 'text-gold-400' : 'text-white/30'
               }`}>
-                {step.label}
+                {t(`steps.${step.key}`)}
               </span>
             </div>
             {i < STEPS.length - 1 && (
@@ -86,24 +88,25 @@ function Step1({
   data: OnboardingData
   onChange: (k: keyof OnboardingData, v: string) => void
 }) {
+  const { t } = useTranslation('onboarding')
   const set = (k: keyof OnboardingData) => (e: React.ChangeEvent<HTMLInputElement>) =>
     onChange(k, e.target.value)
 
   return (
     <div>
-      <SectionLabel>Business identity</SectionLabel>
-      <Input label="Business / Company Name" value={data.company_name} onChange={set('company_name')}
-        placeholder="Al-Faris Trading Co." required />
+      <SectionLabel>{t('company.identity')}</SectionLabel>
+      <Input label={t('company.name')} value={data.company_name} onChange={set('company_name')}
+        placeholder={t('company.namePlaceholder')} required dir="auto" />
 
-      <SectionLabel>Location &amp; contact</SectionLabel>
+      <SectionLabel>{t('company.locationContact')}</SectionLabel>
       <div className="grid grid-cols-2 gap-3">
-        <Input label="City" value={data.city} onChange={set('city')} placeholder="Riyadh" required />
-        <Input label="Phone" type="tel" value={data.phone} onChange={set('phone')}
-          placeholder="+966 5x xxx xxxx" required />
+        <Input label={t('company.city')} value={data.city} onChange={set('city')} placeholder={t('company.cityPlaceholder')} required dir="auto" />
+        <Input label={t('company.phone')} type="tel" value={data.phone} onChange={set('phone')}
+          placeholder="+966 5x xxx xxxx" required dir="ltr" />
       </div>
       <div className="mt-3">
-        <Input label="Website (optional)" type="url" value={data.website} onChange={set('website')}
-          placeholder="https://company.com" />
+        <Input label={t('company.website')} type="url" value={data.website} onChange={set('website')}
+          placeholder="https://company.com" dir="ltr" />
       </div>
     </div>
   )
@@ -113,32 +116,14 @@ function Step1({
 
 const PLAN_DISPLAY = [
   {
-    title:    'Phase 1',
-    subtitle: 'ZATCA QR Code Invoicing',
+    key:      'phase1',
     price:    50,
-    badge:    null as string | null,
-    features: [
-      'ZATCA Phase 1 QR Code',
-      'POS Billing Terminal',
-      'Invoice Management',
-      'Expense Tracking',
-      'Sales Reports',
-      '1 Branch included',
-    ],
+    badge:    false,
   },
   {
-    title:    'Phase 2',
-    subtitle: 'ZATCA Phase 2 workflows',
+    key:      'phase2',
     price:    100,
-    badge:    'Most Popular',
-    features: [
-      'Everything in Phase 1',
-      'ZATCA Phase 2 Digital Signing',
-      'Automatic ZATCA Reporting',
-      'XML Invoice Generation',
-      'Phase 2 QR Code',
-      '1 Branch included',
-    ],
+    badge:    true,
   },
 ]
 
@@ -150,12 +135,13 @@ function Step2({
   plans: SubscriptionPlan[]
   loadingPlans: boolean
 }) {
+  const { t } = useTranslation('onboarding')
   const planIds = [plans[0]?.id ?? '', plans[1]?.id ?? '']
 
   return (
     <div className="space-y-5">
       <p className="text-sm text-gray-500 leading-relaxed">
-        Choose the plan that fits your ZATCA compliance needs.
+        {t('plan.guidance')}
       </p>
 
       {loadingPlans ? (
@@ -170,7 +156,7 @@ function Step2({
 
             return (
               <button
-                key={plan.title}
+                key={plan.key}
                 type="button"
                 onClick={() => planId && onChange('plan_id', planId)}
                 className={`relative text-left rounded-2xl border-2 p-5 transition-all flex flex-col gap-4 ${
@@ -181,14 +167,14 @@ function Step2({
               >
                 {plan.badge && (
                   <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gold-500 text-[#0F2419] text-[10px] font-black px-3 py-1 rounded-full whitespace-nowrap shadow-sm">
-                    {plan.badge}
+                    {t(`plan.${plan.key}.badge`)}
                   </span>
                 )}
 
                 <div className="flex items-start justify-between mt-1">
                   <div>
-                    <p className="font-black text-gray-900 text-base">{plan.title}</p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">{plan.subtitle}</p>
+                    <p className="font-black text-gray-900 text-base">{t(`plan.${plan.key}.title`)}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{t(`plan.${plan.key}.subtitle`)}</p>
                   </div>
                   <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
                     selected ? 'bg-primary-500 border-primary-500' : 'border-gray-300'
@@ -199,16 +185,16 @@ function Step2({
 
                 <div>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-black text-gray-900">SAR {plan.price}</span>
-                    <span className="text-xs text-gray-400">/ branch / month</span>
+                    <span className="text-3xl font-black text-gray-900" dir="ltr">{t('plan.price', { price: plan.price })}</span>
+                    <span className="text-xs text-gray-400">{t('plan.period')}</span>
                   </div>
                 </div>
 
                 <ul className="space-y-2 border-t border-gray-100 pt-3 flex-1">
-                  {plan.features.map(f => (
-                    <li key={f} className="flex items-start gap-2 text-[12px] text-gray-600">
+                  {[1, 2, 3, 4, 5, 6].map(feature => (
+                    <li key={feature} className="flex items-start gap-2 text-[12px] text-gray-600">
                       <CheckCircle2 size={13} className="text-emerald-500 flex-shrink-0 mt-0.5" />
-                      {f}
+                      {t(`plan.${plan.key}.feature${feature}`)}
                     </li>
                   ))}
                 </ul>
@@ -216,7 +202,7 @@ function Step2({
                 <div className={`rounded-xl py-2 text-center text-sm font-semibold transition-all ${
                   selected ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}>
-                  {selected ? 'Selected' : 'Select'}
+                  {t(selected ? 'plan.selected' : 'plan.select')}
                 </div>
               </button>
             )
@@ -227,7 +213,7 @@ function Step2({
       <div className="flex items-center gap-2.5 bg-[#0F2419]/5 border border-[#0F2419]/10 rounded-xl px-4 py-3">
         <span className="text-base">ℹ️</span>
         <p className="text-xs text-gray-600">
-          Your account will be activated once our team confirms your setup. Additional branches billed at the same rate per branch.
+          {t('plan.activationHelp')}
         </p>
       </div>
     </div>
@@ -239,6 +225,7 @@ function Step2({
 const STORAGE_KEY = (userId: string) => `meem_onboarding_${userId}`
 
 export default function OnboardingPage() {
+  const { t } = useTranslation('onboarding')
   const navigate = useNavigate()
   const { user, refreshProfile } = useAuth()
 
@@ -276,14 +263,18 @@ export default function OnboardingPage() {
       .select('*')
       .eq('is_active', true)
       .order('price_monthly')
-      .then(({ data: rows }) => {
+      .then(({ data: rows, error: plansError }) => {
+        if (plansError) {
+          console.error('Failed to load onboarding plans', plansError)
+          setError(t('errors.planLoad'))
+        }
         const list = (rows as SubscriptionPlan[]) ?? []
         setPlans(list)
         const defaultPlan = list[1] ?? list[0]
         if (defaultPlan) setData(prev => ({ ...prev, plan_id: prev.plan_id || defaultPlan.id }))
         setLoadingPlans(false)
       })
-  }, [])
+  }, [t])
 
   const onChange = (k: keyof OnboardingData, v: string) =>
     setData(prev => ({ ...prev, [k]: v }))
@@ -318,16 +309,20 @@ export default function OnboardingPage() {
       await refreshProfile()
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
-      const msg = err?.message ?? 'Setup failed. Please try again.'
-      setError(msg.startsWith('ALREADY_ONBOARDED') ? 'Your account is already set up.' : msg)
+      console.error('Failed to complete onboarding', err)
+      const msg = String(err?.message ?? '')
+      setError(msg.startsWith('ALREADY_ONBOARDED') ? t('errors.alreadySetup')
+        : /jwt|session|auth/i.test(msg) ? t('errors.sessionExpired')
+        : /permission|forbidden|42501/i.test(msg) ? t('errors.permissionDenied')
+        : t('errors.setupFailed'))
     } finally {
       setSubmitting(false)
     }
   }
 
   const stepTitles = [
-    { heading: 'Tell us about your business', sub: 'This information appears on every invoice you generate.' },
-    { heading: 'Choose your plan',            sub: 'Select the ZATCA compliance level for your business.'   },
+    { heading: t('company.heading'), sub: t('company.subtitle') },
+    { heading: t('plan.heading'), sub: t('plan.subtitle') },
   ]
   const { heading, sub } = stepTitles[step - 1]
 
@@ -347,7 +342,7 @@ export default function OnboardingPage() {
           <h1 className="text-2xl font-black text-white">{heading}</h1>
           <p className="text-white/50 text-sm mt-1.5">{sub}</p>
           {user?.email && (
-            <p className="text-white/30 text-xs mt-2">Signed in as {user.email}</p>
+            <p className="text-white/30 text-xs mt-2">{t('company.signedInAs', { email: user.email })}</p>
           )}
         </div>
       </div>
@@ -371,20 +366,20 @@ export default function OnboardingPage() {
             <div>
               {step > 1 && (
                 <Button variant="ghost" onClick={() => setStep(s => s - 1)} disabled={submitting}>
-                  <ArrowLeft size={15} /> Back
+                  <ArrowLeft size={15} /> {t('actions.back')}
                 </Button>
               )}
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="text-xs text-gray-400">Step {step} of {STEPS.length}</span>
+              <span className="text-xs text-gray-400" dir="ltr">{t('steps.stepOf', { current: step, total: STEPS.length })}</span>
               {step < 2 ? (
                 <Button onClick={() => setStep(s => s + 1)} disabled={!canContinue()}>
-                  Continue <ArrowRight size={15} />
+                  {t('actions.continue')} <ArrowRight size={15} />
                 </Button>
               ) : (
                 <Button onClick={handleComplete} loading={submitting} disabled={!canContinue()}>
-                  Launch my account <ArrowRight size={15} />
+                  {t('actions.launch')} <ArrowRight size={15} />
                 </Button>
               )}
             </div>

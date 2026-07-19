@@ -80,7 +80,7 @@ export default function VatReport({ startDate, endDate, branchId }: ReportProps)
         console.error('Unable to load VAT support summary', error)
         if (!cancelled) {
           setData(null)
-          setError(reportErrorMessage(error))
+          setError(t('reports:errors.load'))
         }
       } finally {
         if (!cancelled) setLoading(false)

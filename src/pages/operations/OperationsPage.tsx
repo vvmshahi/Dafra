@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import { useTranslation, type TFunction } from 'react-i18next'
 
 type ZatcaDocumentType = 'standard' | 'simplified' | 'credit_note' | 'debit_note'
 type ZatcaDocumentStatus = 'not_submitted' | 'pending' | 'reported' | 'cleared' | 'failed'
@@ -53,9 +54,9 @@ type HealthTone = 'success' | 'warning' | 'danger' | 'neutral'
 
 const ALLOWED_ROLES = new Set(['owner', 'admin', 'super_admin'])
 
-function fmtDateTime(value: string | null): string {
-  if (!value) return 'None yet'
-  return new Date(value).toLocaleString('en-GB', {
+function fmtDateTime(value: string | null, locale: string, t: TFunction): string {
+  if (!value) return t('noneYet')
+  return new Date(value).toLocaleString(locale, {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -64,20 +65,18 @@ function fmtDateTime(value: string | null): string {
   })
 }
 
-function docLabel(value: ZatcaDocumentType): string {
-  if (value === 'credit_note') return 'Credit note'
-  if (value === 'debit_note') return 'Debit note'
-  return 'Invoice'
+function docLabel(value: ZatcaDocumentType, t: TFunction): string {
+  return t(`documents.${value}`, { defaultValue: t('documents.invoice') })
 }
 
-function statusBadge(health: BranchHealth): { label: string; detail: string; tone: HealthTone; icon: typeof CheckCircle2 } {
+function statusBadge(health: BranchHealth, t: TFunction): { label: string; detail: string; tone: HealthTone; icon: typeof CheckCircle2 } {
   const phase = health.branch.zatca_phase ?? 1
   const productionStatus = health.productionStatus?.onboarding_status ?? null
 
   if (phase >= 2 && health.productionStatusReadable && productionStatus !== 'production_connected') {
     return {
-      label: productionStatus === 'disconnected' ? 'Disconnected' : 'Not connected',
-      detail: 'Open ZATCA',
+      label: productionStatus === 'disconnected' ? t('status.disconnected') : t('status.notConnected'),
+      detail: t('openZatca'),
       tone: 'neutral',
       icon: ShieldAlert,
     }
@@ -85,8 +84,8 @@ function statusBadge(health: BranchHealth): { label: string; detail: string; ton
 
   if (health.failed.length > 0) {
     return {
-      label: 'Needs attention',
-      detail: 'Some invoices failed',
+      label: t('status.needsAttention'),
+      detail: t('someInvoicesFailed'),
       tone: 'danger',
       icon: AlertTriangle,
     }
@@ -94,16 +93,16 @@ function statusBadge(health: BranchHealth): { label: string; detail: string; ton
 
   if (health.pending.length > 0) {
     return {
-      label: 'Pending reports',
-      detail: 'Open invoices to retry',
+      label: t('status.pendingReports'),
+      detail: t('openInvoicesToRetry'),
       tone: 'warning',
       icon: Clock,
     }
   }
 
   return {
-    label: 'Healthy',
-    detail: 'All good',
+    label: t('status.healthy'),
+    detail: t('allGood'),
     tone: 'success',
     icon: CheckCircle2,
   }
@@ -121,6 +120,7 @@ function countCreditNotes(rows: InvoiceHealthRow[]): number {
 }
 
 export default function OperationsPage() {
+  const { t } = useTranslation('operations')
   const { profile } = useAuth()
   const role = String(profile?.role ?? '')
   const canView = ALLOWED_ROLES.has(role)
@@ -183,7 +183,8 @@ export default function OperationsPage() {
           setProductionStatusReadable(true)
         }
       } catch (err: any) {
-        if (!cancelled) setLoadError(err?.message ?? 'Unable to load operations health')
+        console.error('Unable to load operations health', err)
+        if (!cancelled) setLoadError(t('loadError'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -191,7 +192,7 @@ export default function OperationsPage() {
 
     load()
     return () => { cancelled = true }
-  }, [canView, tenantId])
+  }, [canView, tenantId, t])
 
   const healthRows = useMemo<BranchHealth[]>(() => {
     const productionByBranch = new Map(productionRows.map(row => [row.branch_id, row]))
@@ -238,11 +239,11 @@ export default function OperationsPage() {
   if (role === 'super_admin' && !tenantId) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-bold text-gray-900">Operations</h1>
+        <h1 className="text-xl font-bold text-gray-900">{t('title')}</h1>
         <div className="card p-6">
-          <p className="text-sm font-semibold text-gray-800">Tenant-scoped health only</p>
+          <p className="text-sm font-semibold text-gray-800">{t('tenantOnly')}</p>
           <p className="text-sm text-gray-500 mt-1">
-            This pilot page does not include a cross-tenant super-admin console. Open a tenant context before reviewing branch ZATCA health.
+            {t('tenantOnlyBody')}
           </p>
         </div>
       </div>
@@ -253,39 +254,38 @@ export default function OperationsPage() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Operations</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Pilot ZATCA health by branch</p>
+          <h1 className="text-xl font-bold text-gray-900">{t('title')}</h1>
+          <p className="text-sm text-gray-400 mt-0.5">{t('subtitle')}</p>
         </div>
         <Link
           to="/zatca"
           className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50"
         >
           <Settings size={14} />
-          Go to ZATCA
+          {t('goToZatca')}
         </Link>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <SummaryCard label="Failed reports" value={totals.failed} tone={totals.failed > 0 ? 'danger' : 'success'} />
-        <SummaryCard label="Pending reports" value={totals.pending} tone={totals.pending > 0 ? 'warning' : 'success'} />
-        <SummaryCard label="Needs connection" value={totals.needsConnection} tone={totals.needsConnection > 0 ? 'neutral' : 'success'} />
+        <SummaryCard label={t('failedReports')} value={totals.failed} tone={totals.failed > 0 ? 'danger' : 'success'} />
+        <SummaryCard label={t('pendingReports')} value={totals.pending} tone={totals.pending > 0 ? 'warning' : 'success'} />
+        <SummaryCard label={t('needsConnection')} value={totals.needsConnection} tone={totals.needsConnection > 0 ? 'neutral' : 'success'} />
       </div>
 
       {!productionStatusReadable && (
         <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Production connection metadata is not readable from the browser in this environment. Invoice health is still shown from existing invoice records.
+          {t('metadataUnavailable')}
         </div>
       )}
 
       <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-        If repeated failures continue, contact support with the branch name and invoice number.
+        {t('supportGuidance')}
       </div>
 
       {loadError ? (
         <div className="card p-6 text-center">
           <AlertTriangle size={28} className="text-red-400 mx-auto mb-2" />
-          <p className="text-sm font-semibold text-gray-800">Unable to load operations health</p>
-          <p className="text-sm text-gray-500 mt-1">{loadError}</p>
+          <p className="text-sm font-semibold text-gray-800">{t('loadError')}</p>
         </div>
       ) : loading ? (
         <div className="space-y-3">
@@ -294,7 +294,7 @@ export default function OperationsPage() {
       ) : healthRows.length === 0 ? (
         <div className="card p-10 text-center">
           <FileText size={32} className="text-gray-200 mx-auto mb-3" />
-          <p className="text-sm font-medium text-gray-500">No branches found</p>
+          <p className="text-sm font-medium text-gray-500">{t('noBranches')}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -315,35 +315,37 @@ function SummaryCard({ label, value, tone }: { label: string; value: number; ton
 }
 
 function BranchHealthCard({ health }: { health: BranchHealth }) {
-  const badge = statusBadge(health)
+  const { t, i18n } = useTranslation('operations')
+  const badge = statusBadge(health, t)
+  const locale = i18n.resolvedLanguage?.startsWith('ar') ? 'ar-SA' : 'en-GB'
   const Icon = badge.icon
   const failedCreditNotes = countCreditNotes(health.failed)
   const pendingCreditNotes = countCreditNotes(health.pending)
   const phase = health.branch.zatca_phase ?? 1
   const productionStatus = health.productionStatus?.onboarding_status ?? 'not_started'
   const productionLabel = phase >= 2 && !health.productionStatusReadable
-    ? 'not readable'
+    ? t('status.notReadable')
     : phase >= 2
-      ? productionStatus.replace(/_/g, ' ')
-      : 'not required'
+      ? t(`production.${productionStatus}`, { defaultValue: t('unknown') })
+      : t('status.notRequired')
 
   return (
     <div className="card p-5 space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-bold text-gray-900">{health.branch.name}</h2>
+            <h2 className="text-base font-bold text-gray-900" dir="auto">{health.branch.name}</h2>
             {!health.branch.is_active && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Inactive</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{t('status.inactive')}</span>
             )}
-            {health.branch.city && <span className="text-xs text-gray-400">{health.branch.city}</span>}
+            {health.branch.city && <span className="text-xs text-gray-400" dir="auto">{health.branch.city}</span>}
           </div>
           <p className="text-xs text-gray-400 mt-1">
             {phase >= 2 && !health.productionStatusReadable
-              ? 'Phase 2 · Production status not readable'
+              ? t('phase2Unreadable')
               : phase >= 2
-              ? `Phase 2 · ${productionStatus === 'production_connected' ? 'Production connected' : 'Production not connected'}`
-              : 'Phase 1 · QR invoices only'}
+              ? t(productionStatus === 'production_connected' ? 'phase2Connected' : 'phase2NotConnected')
+              : t('phase1QrOnly')}
           </p>
         </div>
 
@@ -357,20 +359,20 @@ function BranchHealthCard({ health }: { health: BranchHealth }) {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-        <Metric label="Failed" value={health.failed.length} sub={`${failedCreditNotes} credit note${failedCreditNotes !== 1 ? 's' : ''}`} tone={health.failed.length > 0 ? 'danger' : 'success'} />
-        <Metric label="Pending" value={health.pending.length} sub={`${pendingCreditNotes} credit note${pendingCreditNotes !== 1 ? 's' : ''}`} tone={health.pending.length > 0 ? 'warning' : 'success'} />
-        <Metric label="Last successful report" value={fmtDateTime(health.lastSuccessfulAt)} small />
-        <Metric label="Production" value={productionLabel} small />
+        <Metric label={t('status.failed')} value={health.failed.length} sub={t('creditNotes', { count: failedCreditNotes })} tone={health.failed.length > 0 ? 'danger' : 'success'} />
+        <Metric label={t('status.pending')} value={health.pending.length} sub={t('creditNotes', { count: pendingCreditNotes })} tone={health.pending.length > 0 ? 'warning' : 'success'} />
+        <Metric label={t('lastSuccessful')} value={fmtDateTime(health.lastSuccessfulAt, locale, t)} small />
+        <Metric label={t('productionLabel')} value={productionLabel} small />
       </div>
 
       {health.oldestUnresolved ? (
         <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs font-semibold text-gray-800">
-              Oldest unresolved: {health.oldestUnresolved.invoice_number}
+              {t('oldestUnresolved', { number: health.oldestUnresolved.invoice_number })}
             </p>
             <p className="text-xs text-gray-500 mt-0.5">
-              {docLabel(health.oldestUnresolved.zatca_invoice_type)} · {health.oldestUnresolved.zatca_status} · {fmtDateTime(health.oldestUnresolved.created_at)}
+              {docLabel(health.oldestUnresolved.zatca_invoice_type, t)} · {t(`status.${health.oldestUnresolved.zatca_status}`, { defaultValue: t('unknown') })} · {fmtDateTime(health.oldestUnresolved.created_at, locale, t)}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -379,21 +381,21 @@ function BranchHealthCard({ health }: { health: BranchHealth }) {
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50"
             >
               <ExternalLink size={12} />
-              Open invoice
+              {t('openInvoice')}
             </Link>
             <Link
               to="/invoices"
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50"
             >
               <RefreshCw size={12} />
-              View affected invoices
+              {t('viewAffected')}
             </Link>
           </div>
         </div>
       ) : (
         <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 flex items-center gap-2">
           <ShieldCheck size={14} className="text-emerald-600" />
-          <p className="text-xs font-semibold text-emerald-800">All good</p>
+          <p className="text-xs font-semibold text-emerald-800">{t('allGood')}</p>
         </div>
       )}
     </div>

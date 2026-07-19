@@ -7,20 +7,21 @@ import {
   type SandboxValidationResponse,
 } from '@/lib/zatca/api'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
+import { useTranslation, type TFunction } from 'react-i18next'
 
-function statusLabel(status: SandboxValidationResponse['status']): string {
+function statusLabel(status: SandboxValidationResponse['status'], t: TFunction): string {
   switch (status) {
-    case 'sandbox_validated': return 'Submitted'
-    case 'sandbox_validated_with_warnings': return 'Submitted with warnings'
-    case 'sandbox_validation_pending': return 'Submission pending'
-    case 'sandbox_validation_rejected': return 'ZATCA submission rejected'
-    case 'sandbox_validation_failed': return 'ZATCA submission failed'
-    default: return 'Not submitted'
+    case 'sandbox_validated': return t('sandbox.status.submitted')
+    case 'sandbox_validated_with_warnings': return t('sandbox.status.warnings')
+    case 'sandbox_validation_pending': return t('sandbox.status.pending')
+    case 'sandbox_validation_rejected': return t('sandbox.status.rejected')
+    case 'sandbox_validation_failed': return t('sandbox.status.failed')
+    default: return t('sandbox.status.notSubmitted')
   }
 }
 
-function safeMessage(item: SandboxValidationMessage): string {
-  return [item.code, item.message].filter(Boolean).join(': ') || 'Validation message available.'
+function safeMessage(item: SandboxValidationMessage, fallback: string): string {
+  return [item.code, item.message].filter(Boolean).join(': ') || fallback
 }
 
 export function SandboxValidationPanel({
@@ -34,6 +35,7 @@ export function SandboxValidationPanel({
   branchId: string
   onResult?: (result: SandboxValidationResponse) => void
 }) {
+  const { t } = useTranslation('zatca')
   const inDemoScope = isPermanentDemoSandboxBranch(tenantId, branchId)
   const [result, setResult] = useState<SandboxValidationResponse | null>(null)
   const [loading, setLoading] = useState(inDemoScope)
@@ -46,12 +48,13 @@ export function SandboxValidationPanel({
     setError(null)
     try {
       setResult(await getSandboxValidationStatus(invoiceId))
-    } catch {
-      setError('Unable to load ZATCA submission status.')
+    } catch (error) {
+      console.error('Unable to load ZATCA submission status', error)
+      setError(t('sandbox.loadFailed'))
     } finally {
       setLoading(false)
     }
-  }, [inDemoScope, invoiceId])
+  }, [inDemoScope, invoiceId, t])
 
   useEffect(() => { void loadStatus() }, [loadStatus])
   useEffect(() => { if (result) onResult?.(result) }, [result, onResult])
@@ -65,9 +68,10 @@ export function SandboxValidationPanel({
     setResult(previous => previous ? { ...previous, status: 'sandbox_validation_pending' } : previous)
     try {
       setResult(await validateInvoiceInSandbox(invoiceId))
-    } catch {
+    } catch (error) {
+      console.error('ZATCA sandbox submission failed', error)
       await loadStatus()
-      setError('ZATCA submission failed.')
+      setError(t('sandbox.submitFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -86,12 +90,12 @@ export function SandboxValidationPanel({
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-bold text-gray-950">ZATCA E-Invoice</h2>
+              <h2 className="text-sm font-bold text-gray-950">{t('sandbox.title')}</h2>
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${succeeded ? 'bg-emerald-50 text-emerald-700' : pending ? 'bg-gray-100 text-gray-600' : 'bg-gray-50 text-gray-500'}`}>
-                {statusLabel(result?.status ?? null)}
+                {statusLabel(result?.status ?? null, t)}
               </span>
             </div>
-            {succeeded && <p className="mt-1 text-xs font-medium text-gray-600">Successfully processed by ZATCA</p>}
+            {succeeded && <p className="mt-1 text-xs font-medium text-gray-600">{t('sandbox.processed')}</p>}
           </div>
         </div>
 
@@ -103,7 +107,7 @@ export function SandboxValidationPanel({
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-4 py-2.5 text-xs font-bold text-white transition-colors hover:bg-[#1a3a28] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-            {pending ? 'Submitting…' : result?.retryAllowed ? 'Retry submission' : 'Submit to ZATCA'}
+            {pending ? t('sandbox.submitting') : result?.retryAllowed ? t('sandbox.retry') : t('sandbox.submit')}
           </button>
         )}
       </div>
@@ -111,33 +115,33 @@ export function SandboxValidationPanel({
       <div className="border-t border-gray-100 px-5 py-4">
         {loading ? (
           <div className="flex items-center gap-2 text-xs text-gray-500">
-            <Loader2 size={14} className="animate-spin" /> Loading submission status…
+            <Loader2 size={14} className="animate-spin" /> {t('sandbox.loading')}
           </div>
         ) : succeeded ? (
           <div className="flex items-start gap-3 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3">
             <CheckCircle2 size={17} className="mt-0.5 flex-shrink-0 text-emerald-600" />
             <div>
-              <p className="text-sm font-bold text-emerald-900">ZATCA submission successful</p>
-              <p className="mt-0.5 text-xs text-emerald-700">Successfully processed by ZATCA</p>
+              <p className="text-sm font-bold text-emerald-900">{t('sandbox.success')}</p>
+              <p className="mt-0.5 text-xs text-emerald-700">{t('sandbox.processed')}</p>
             </div>
           </div>
         ) : result?.status && result.status !== 'sandbox_validation_pending' ? (
           <div className="flex items-start gap-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
             <AlertTriangle size={17} className="mt-0.5 flex-shrink-0 text-amber-600" />
             <div>
-              <p className="text-sm font-bold text-amber-900">{statusLabel(result.status)}</p>
-              <p className="mt-0.5 text-xs text-amber-700">Review the submission messages below.</p>
+              <p className="text-sm font-bold text-amber-900">{statusLabel(result.status, t)}</p>
+              <p className="mt-0.5 text-xs text-amber-700">{t('sandbox.review')}</p>
             </div>
           </div>
         ) : pending ? (
           <div className="flex items-center gap-2 text-xs text-gray-600">
-            <Loader2 size={14} className="animate-spin" /> Submission is in progress. Repeat submission is disabled.
+            <Loader2 size={14} className="animate-spin" /> {t('sandbox.inProgress')}
           </div>
         ) : (
           <p className="text-xs text-gray-500">
             {result?.eligible
-              ? 'This invoice is ready to submit to ZATCA.'
-              : 'This invoice is not eligible for ZATCA submission.'}
+              ? t('sandbox.eligible')
+              : t('sandbox.ineligible')}
           </p>
         )}
 
@@ -149,19 +153,19 @@ export function SandboxValidationPanel({
 
         {!!result?.warnings.length && (
           <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2.5">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">Warnings</p>
-            {result.warnings.map((warning, index) => <p key={index} className="mt-1 text-xs text-amber-800">{safeMessage(warning)}</p>)}
+            <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">{t('sandbox.warnings')}</p>
+            {result.warnings.map((warning, index) => <p key={index} className="mt-1 text-xs text-amber-800">{safeMessage(warning, t('sandbox.validationMessage'))}</p>)}
           </div>
         )}
         {!!result?.errors.length && (
           <div className="mt-3 rounded-xl border border-red-100 bg-red-50/60 px-3 py-2.5">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-red-700">Errors</p>
-            {result.errors.map((item, index) => <p key={index} className="mt-1 text-xs text-red-800">{safeMessage(item)}</p>)}
+            <p className="text-[10px] font-bold uppercase tracking-wide text-red-700">{t('sandbox.errors')}</p>
+            {result.errors.map((item, index) => <p key={index} className="mt-1 text-xs text-red-800">{safeMessage(item, t('sandbox.validationMessage'))}</p>)}
           </div>
         )}
 
         <p className="mt-4 border-t border-gray-100 pt-3 text-[10px] text-gray-400">
-          Demo environment — no production tax submission was made.
+          {t('sandbox.demoNotice')}
         </p>
       </div>
     </section>

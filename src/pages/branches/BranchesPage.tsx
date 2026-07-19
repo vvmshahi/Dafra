@@ -1,7 +1,9 @@
 import BranchesTab from '@/pages/settings/BranchesTab'
 import { Building2, ShieldCheck } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 export default function BranchesPage() {
+  const { t } = useTranslation('branches')
   return (
     <div className="max-w-6xl space-y-6">
       <div className="relative overflow-hidden rounded-3xl bg-[#0F2419] px-5 py-6 shadow-card-lg sm:px-7">
@@ -11,10 +13,10 @@ export default function BranchesPage() {
             <Building2 size={20} className="text-gold-300" />
           </div>
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-gold-300">Owner workspace</p>
-            <h1 className="mt-2 text-2xl font-black tracking-tight text-white">Branches</h1>
+            <p className="text-xs font-bold uppercase tracking-wide text-gold-300">{t('workspace')}</p>
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-white">{t('title')}</h1>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-primary-100/80">
-              Manage branch profiles, POS access, invoice settings, and module visibility across every location.
+              {t('subtitle')}
             </p>
           </div>
         </div>
@@ -25,9 +27,9 @@ export default function BranchesPage() {
           <ShieldCheck size={15} />
         </div>
         <div>
-          <p className="text-sm font-bold text-primary-900">Branch ZATCA setup is separate for each location</p>
+          <p className="text-sm font-bold text-primary-900">{t('zatcaNoticeTitle')}</p>
           <p className="mt-0.5 text-xs leading-5 text-primary-800/75">
-            Each branch needs its own Phase 2 onboarding and certificate setup. After adding or updating a branch, continue in ZATCA from the sidebar.
+            {t('zatcaNoticeBody')}
           </p>
         </div>
       </div>

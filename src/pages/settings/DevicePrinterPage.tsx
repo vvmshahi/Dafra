@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { isElectron } from '@/lib/electron'
 import PrinterTab from './PrinterTab'
+import { useTranslation } from 'react-i18next'
 
 export default function DevicePrinterPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation('printing')
 
   if (!isElectron()) {
     return (
@@ -16,7 +18,7 @@ export default function DevicePrinterPage() {
           className="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-gray-800"
         >
           <ArrowLeft size={16} />
-          Back
+          {t('back')}
         </button>
 
         <div className="card p-6">
@@ -25,9 +27,9 @@ export default function DevicePrinterPage() {
               <Printer size={17} className="text-gray-500" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-gray-900">Device Printer</h1>
+              <h1 className="text-base font-bold text-gray-900">{t('devicePrinter')}</h1>
               <p className="mt-1 text-sm text-gray-500">
-                Direct receipt printing is available in the Kubri desktop app.
+                {t('desktopOnly')}
               </p>
             </div>
           </div>
@@ -44,19 +46,19 @@ export default function DevicePrinterPage() {
             <Printer size={18} className="text-primary-600" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-gray-900">Device Printer</h1>
-            <p className="text-xs text-gray-400">These printer settings are saved on this device.</p>
+            <h1 className="text-lg font-bold text-gray-900">{t('devicePrinter')}</h1>
+            <p className="text-xs text-gray-400">{t('savedOnDevice')}</p>
           </div>
         </div>
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-2">
           <ArrowLeft size={14} />
-          Back
+          {t('back')}
         </Button>
       </div>
 
       <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
         <p className="text-xs leading-relaxed text-blue-700">
-          USB, network, and Bluetooth printers appear here after they are installed in Windows or macOS.
+          {t('installedPrintersHint')}
         </p>
       </div>
 

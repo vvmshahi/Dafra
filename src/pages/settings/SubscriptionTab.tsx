@@ -4,11 +4,13 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { useSubscription } from '@/hooks/useSubscription'
 import { supportConfig } from '@/config/support'
+import { useTranslation } from 'react-i18next'
 
 const WA_LINK    = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
 
-function ContactButtons({ label = 'Contact Us to Renew' }: { label?: string }) {
+function ContactButtons({ label }: { label?: string }) {
+  const { t } = useTranslation('settings')
   return (
     <div className="flex flex-col sm:flex-row gap-3 mt-5">
       <a
@@ -17,19 +19,20 @@ function ContactButtons({ label = 'Contact Us to Renew' }: { label?: string }) {
         rel="noopener noreferrer"
         className="flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm"
       >
-        <MessageCircle size={16} /> WhatsApp Us
+        <MessageCircle size={16} /> {t('subscription.whatsapp')}
       </a>
       <a
         href={EMAIL_LINK}
         className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm"
       >
-        <Mail size={16} /> Email Us
+        <Mail size={16} /> {t('subscription.email')}
       </a>
     </div>
   )
 }
 
 export default function SubscriptionTab() {
+  const { t, i18n } = useTranslation('settings')
   const { profile } = useAuth()
   const sub = useSubscription()
 
@@ -62,11 +65,12 @@ export default function SubscriptionTab() {
     })()
   }, [profile?.tenant_id])
 
-  const branchUsageLine = `${activeBranches} / ${sub.maxBranches} active branches used`
+  const branchUsageLine = t('subscription.branchUsage', { active: activeBranches, max: sub.maxBranches })
   const branchTotalLine = totalBranches === activeBranches
     ? null
-    : `${totalBranches} total branches`
+    : t('subscription.totalBranches', { count: totalBranches })
   const nextBillingDate = sub.nextDueDate ?? endsAt
+  const dateLocale = i18n.resolvedLanguage?.startsWith('ar') ? 'ar-SA' : 'en-SA'
 
   if (loading || sub.status === 'loading') {
     return (
@@ -86,17 +90,17 @@ export default function SubscriptionTab() {
             <CheckCircle2 size={24} className="text-emerald-600" />
           </div>
           <div>
-            <p className="text-base font-bold text-emerald-800">Lifetime Free Account</p>
+            <p className="text-base font-bold text-emerald-800">{t('subscription.lifetimeFree')}</p>
             <p className="text-sm text-emerald-700 mt-1">
-              Your account has full access with no subscription fees.
+              {t('subscription.lifetimeFreeBody')}
             </p>
-            {planName && <p className="text-xs text-emerald-600 mt-2">Plan: {planName}</p>}
+            {planName && <p className="text-xs text-emerald-600 mt-2">{t('subscription.plan', { plan: planName })}</p>}
           </div>
         </div>
         <div className="card p-5 flex gap-4">
           <CreditCard size={18} className="text-gray-300 mt-0.5 flex-shrink-0" />
           <div className="text-sm text-gray-500">
-            <p className="font-medium text-gray-700">Branches</p>
+            <p className="font-medium text-gray-700">{t('subscription.branches')}</p>
             <p>{branchUsageLine}</p>
             {branchTotalLine && <p className="text-xs text-gray-400 mt-0.5">{branchTotalLine}</p>}
           </div>
@@ -121,36 +125,36 @@ export default function SubscriptionTab() {
           <div>
             <p className={`text-base font-bold ${tone === 'red' ? 'text-red-800' : 'text-amber-800'}`}>
               {needsActivation
-                ? 'Subscription Activation Required'
+                ? t('subscription.activationRequired')
                 : inGrace
-                ? 'Grace Period Active'
+                ? t('subscription.gracePeriod')
                 : isOverdue
-                ? 'Payment Overdue'
-                : 'Subscription Suspended'}
+                ? t('subscription.paymentOverdue')
+                : t('subscription.suspended')}
             </p>
             <p className={`text-sm mt-1 ${tone === 'red' ? 'text-red-700' : 'text-amber-700'}`}>
               {needsActivation
-                ? 'This workspace needs manual subscription activation. Billing remains available unless the account is suspended.'
+                ? t('subscription.activationBody')
                 : inGrace
-                ? 'Grace period active. Billing remains available unless the account is suspended.'
+                ? t('subscription.graceBody')
                 : isOverdue
-                ? 'Payment is overdue. Billing remains available during pilot unless the account is suspended.'
-                : 'Account suspended. New billing and register opening are disabled. Existing records remain available.'}
+                ? t('subscription.overdueBody')
+                : t('subscription.suspendedBody')}
             </p>
             {(sub.nextDueDate || sub.graceUntilDate || sub.daysOverdue > 0) && (
               <p className={`text-xs mt-2 ${tone === 'red' ? 'text-red-600' : 'text-amber-700'}`}>
-                {sub.nextDueDate && <>Next due: {new Date(sub.nextDueDate).toLocaleDateString('en-SA')}</>}
-                {sub.graceUntilDate && <> · Grace until: {new Date(sub.graceUntilDate).toLocaleDateString('en-SA')}</>}
-                {sub.daysOverdue > 0 && <> · {sub.daysOverdue} day{sub.daysOverdue !== 1 ? 's' : ''} overdue</>}
+                {sub.nextDueDate && <>{t('subscription.nextDue', { date: new Date(sub.nextDueDate).toLocaleDateString(dateLocale) })}</>}
+                {sub.graceUntilDate && <> · {t('subscription.graceUntil', { date: new Date(sub.graceUntilDate).toLocaleDateString(dateLocale) })}</>}
+                {sub.daysOverdue > 0 && <> · {t('subscription.daysOverdue', { count: sub.daysOverdue })}</>}
               </p>
             )}
-            <ContactButtons label={needsActivation ? 'Contact Us to Activate' : isSuspended ? 'Contact Us' : 'Renew Now'} />
+            <ContactButtons label={needsActivation ? t('subscription.contactActivate') : isSuspended ? t('subscription.contact') : t('subscription.renewNow')} />
           </div>
         </div>
         <div className="card p-5 flex gap-4">
           <CreditCard size={18} className="text-gray-300 mt-0.5 flex-shrink-0" />
           <div className="text-sm text-gray-500">
-            <p className="font-medium text-gray-700">Branches</p>
+            <p className="font-medium text-gray-700">{t('subscription.branches')}</p>
             <p>{branchUsageLine}</p>
             {branchTotalLine && <p className="text-xs text-gray-400 mt-0.5">{branchTotalLine}</p>}
           </div>
@@ -169,24 +173,24 @@ export default function SubscriptionTab() {
           </div>
           <div>
             <p className="text-base font-bold text-amber-800">
-              Payment Due Soon
+              {t('subscription.paymentDueSoon')}
             </p>
             <p className="text-sm text-amber-700 mt-1">
-              Payment is due soon. Please contact Kubri support if payment is already completed.
+              {t('subscription.paymentDueBody')}
             </p>
             {sub.nextDueDate && (
               <p className="text-sm text-amber-700 mt-1">
-                Due date: {new Date(sub.nextDueDate).toLocaleDateString('en-SA')}
+                {t('subscription.dueDate', { date: new Date(sub.nextDueDate).toLocaleDateString(dateLocale) })}
               </p>
             )}
-            {planName && <p className="text-xs text-amber-600 mt-1">Plan: {planName}</p>}
+            {planName && <p className="text-xs text-amber-600 mt-1">{t('subscription.plan', { plan: planName })}</p>}
             <ContactButtons />
           </div>
         </div>
         <div className="card p-5 flex gap-4">
           <CreditCard size={18} className="text-gray-300 mt-0.5 flex-shrink-0" />
           <div className="text-sm text-gray-500">
-            <p className="font-medium text-gray-700">Branches</p>
+            <p className="font-medium text-gray-700">{t('subscription.branches')}</p>
             <p>{branchUsageLine}</p>
             {branchTotalLine && <p className="text-xs text-gray-400 mt-0.5">{branchTotalLine}</p>}
           </div>
@@ -203,11 +207,11 @@ export default function SubscriptionTab() {
           <CheckCircle2 size={24} className="text-emerald-600" />
         </div>
         <div>
-          <p className="text-base font-bold text-emerald-800">Subscription Active</p>
-          {planName && <p className="text-sm text-emerald-700 mt-0.5">Plan: {planName}</p>}
+          <p className="text-base font-bold text-emerald-800">{t('subscription.active')}</p>
+          {planName && <p className="text-sm text-emerald-700 mt-0.5">{t('subscription.plan', { plan: planName })}</p>}
           {nextBillingDate && (
             <p className="text-sm text-emerald-700 mt-0.5">
-              Renews / Expires: {new Date(nextBillingDate).toLocaleDateString('en-SA')}
+              {t('subscription.renewsExpires', { date: new Date(nextBillingDate).toLocaleDateString(dateLocale) })}
             </p>
           )}
         </div>
@@ -216,15 +220,15 @@ export default function SubscriptionTab() {
       <div className="card p-5 flex gap-4">
         <CreditCard size={18} className="text-gray-300 mt-0.5 flex-shrink-0" />
         <div className="text-sm text-gray-500">
-          <p className="font-medium text-gray-700">Branches</p>
+          <p className="font-medium text-gray-700">{t('subscription.branches')}</p>
           <p>{branchUsageLine}</p>
           {branchTotalLine && <p className="text-xs text-gray-400 mt-0.5">{branchTotalLine}</p>}
         </div>
       </div>
 
       <div className="card p-6">
-        <p className="text-sm font-semibold text-gray-900 mb-1">To renew or upgrade, contact us:</p>
-        <p className="text-xs text-gray-400 mb-4">We'll update your subscription within a few hours.</p>
+        <p className="text-sm font-semibold text-gray-900 mb-1">{t('subscription.renewUpgrade')}</p>
+        <p className="text-xs text-gray-400 mb-4">{t('subscription.updateTiming')}</p>
         <ContactButtons />
       </div>
     </div>

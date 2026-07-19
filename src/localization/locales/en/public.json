@@ -1,0 +1,38 @@
+{
+  "nav": { "home": "Home", "features": "Features", "pricing": "Pricing", "download": "Download App", "faq": "FAQ", "contact": "Contact", "signIn": "Sign in", "getStarted": "Get Started", "menu": "Menu", "closeMenu": "Close Menu" },
+  "hero": { "title": "Your simple bridge to ZATCA Phase 2 invoicing.", "subtitle": "Run POS sales, payments, stock, register sessions, and VAT reports from one simple platform built for Saudi businesses.", "items": ["ZATCA Phase 2 workflows", "Cash, card, and split payments", "Register session closing", "Multi-branch dashboards"], "viewPricing": "View Pricing" },
+  "features": { "eyebrow": "Daily operations", "title": "Built for the daily rhythm of Saudi businesses.", "subtitle": "From counter sales to owner dashboards, Kubri keeps invoices, stock, sessions, purchases, expenses, and reports connected.", "items": [
+    { "title": "Fast POS checkout", "description": "A focused counter workflow for sales, receipts, customers, and branch controls." },
+    { "title": "ZATCA Phase 2 invoicing", "description": "ZATCA-ready workflows for Saudi e-invoicing with safe business setup." },
+    { "title": "Payments and split payments", "description": "Track cash, card, and split tenders cleanly across every invoice." },
+    { "title": "Stock and purchases", "description": "Products, suppliers, purchase receiving, and branch inventory in one place." },
+    { "title": "Register session closing", "description": "Open shifts, close registers, review totals, and keep cash checks organized." },
+    { "title": "VAT support reports", "description": "Sales, purchases, expenses, and VAT summaries prepared for owner review." },
+    { "title": "Multi-branch dashboard", "description": "See every branch from one owner dashboard with sales, sessions, reports, and settings in one place." }
+  ] },
+  "pricingTeaser": { "price": "Flat SAR 100/month", "title": "One simple price for your business.", "subtitle": "Yearly option available. Includes a 7-day money-back guarantee." },
+  "desktop": { "title": "Kubri Desktop", "subtitle": "Use Kubri with direct receipt printing and dedicated desktop printer settings.", "apple": "Download for Apple Silicon", "appleHelp": "For Mac computers with M1, M2, M3 or M4 chips", "intel": "Download for Intel Mac", "intelHelp": "For Intel-based Mac computers", "windows": "Download for Windows", "windowsHelp": "For 64-bit Windows computers", "printer": "Printer support and silent direct printing are available in Kubri Desktop.", "version": "Version 1.0.2", "benefits": ["Touch-friendly POS", "Fast invoice flow", "Branch-ready settings"] },
+  "footer": { "description": "Kubri for Saudi businesses that need sales, ZATCA Phase 2 workflows, stock, sessions, VAT reports, and branch visibility.", "product": "Product", "contact": "Contact", "terms": "Terms", "privacy": "Privacy", "rights": "© 2026 Kubri. All rights reserved.", "built": "Built for Saudi businesses." },
+  "pricing": { "title": "Simple pricing for every branch.", "subtitle": "Start with one branch and add more as your business grows.", "eyebrow": "Kubri pricing", "heading": "One clear price per active branch.", "description": "Choose monthly or yearly billing. Owner dashboard is included, and every branch gets the same core POS, invoicing, stock, reporting, and app access.", "monthly": "Monthly", "yearly": "Yearly", "monthPeriod": "SAR / branch / month", "yearPeriod": "SAR / branch / year", "monthHelp": "Pay month to month.", "yearHelp": "Pay yearly and save.", "saving": "Save 17% yearly", "ownerIncluded": "Owner dashboard included. Pricing is based on active branches.", "guarantee": "Includes a 7-day money-back guarantee.", "included": "Included", "includedTitle": "Everything a branch needs to run.", "billingTitle": "Simple branch-based billing", "billingText": "Add or reduce branches as your operations change. Each active branch uses the same pricing and product access.", "features": ["ZATCA Phase 2 workflows", "QR invoices", "POS checkout", "Cash, card, and split payments", "Stock and purchases", "Register session closing", "VAT support reports", "Multi-branch dashboard", "Windows app", "Mac app", "Owner dashboard included", "Branch user access"] },
+  "faq": { "heroTitle": "Clear answers before you start.", "heroText": "Everything important about Kubri, ZATCA Phase 2 workflows, desktop app use, pricing, and support.", "heading": "Short answers, ready for setup.", "intro": "Tap a question to expand it. The essentials stay compact, readable, and easy to scan before you start.", "groups": [
+    { "title": "Product, setup, and pricing", "items": [
+      { "q": "What is Kubri?", "a": "Kubri is a POS and invoicing platform for Saudi businesses that need sales, payments, stock, sessions, purchases, expenses, VAT reports, and branch visibility in one system." },
+      { "q": "How does pricing work?", "a": "Kubri is priced per active branch: SAR 100/month or SAR 1,000/year per branch. Owner dashboard access is included." },
+      { "q": "Is there a money-back guarantee?", "a": "Yes. Kubri includes a 7-day money-back guarantee for new customers." },
+      { "q": "How do I get started?", "a": "Contact Kubri through WhatsApp or email. The team will help with account setup, branch setup, invoice settings, and onboarding." },
+      { "q": "Can I add more branches later?", "a": "Yes. You can add branches as your business grows, subject to your active branch limit and subscription." },
+      { "q": "Does Kubri replace my accountant?", "a": "No. Kubri helps organize sales, VAT-support reports, purchases, and expenses, but business owners remain responsible for correct setup, review, and professional advice where needed." }
+    ] },
+    { "title": "ZATCA, devices, and operations", "items": [
+      { "q": "Does Kubri support ZATCA Phase 2 workflows?", "a": "Yes. Kubri supports ZATCA Phase 2 invoicing workflows when business setup, account activation, and required ZATCA onboarding steps are completed correctly." },
+      { "q": "Can I use Kubri on Windows or Mac?", "a": "Yes. Kubri supports desktop app workflows for Windows and Mac, along with browser access where applicable." },
+      { "q": "Can branch users manage day-to-day operations?", "a": "Yes. Branch users can manage branch operations such as POS sales, invoices, products, inventory, customers, suppliers, purchases, expenses, reports, and day closing according to their branch access." },
+      { "q": "Can owners view all branch activity?", "a": "Yes. Owners can view branch sales, sessions, reports, stock, purchases, expenses, and operational visibility from the owner dashboard." },
+      { "q": "Is internet required?", "a": "Kubri is designed as a connected cloud platform, so a stable internet connection is required for normal use, syncing, and ZATCA-related workflows." },
+      { "q": "How do I get support?", "a": "Contact WhatsApp support or email support@kubri.shop." }
+    ] }
+  ] },
+  "mockup": { "owner": "Owner dashboard", "branches": "3 branches in view", "session": "Register session open", "counter": "Main counter", "ready": "ZATCA Phase 2 ready", "categories": ["All", "Retail", "Food", "Service"], "products": ["Retail item", "Repair service", "Coffee order", "Gift box", "Rice 5kg", "Water pack"], "order": "Current order", "total": "Total", "complete": "Complete sale" },
+  "contact": { "aria": "Bring Kubri to your business.", "before": "Bring", "after": "to your business.", "text": "Talk to us and get your business ready for ZATCA Phase 2 workflows." },
+  "support": { "whatsapp": "WhatsApp support" }
+}

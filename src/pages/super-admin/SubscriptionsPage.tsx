@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { supabase } from '@/lib/supabase'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -41,31 +42,35 @@ function computeStatus(rawStatus: string, ends_at: string | null, suspended: boo
   return 'expired'
 }
 
-const STATUS_META: Record<ComputedStatus, { label: string; variant: 'success' | 'warning' | 'danger' | 'default' }> = {
-  active:        { label: 'Active',        variant: 'success'  },
-  lifetime_free: { label: 'Lifetime Free', variant: 'success'  },
-  grace_period:  { label: 'Grace Period',  variant: 'warning'  },
-  expired:       { label: 'Expired',       variant: 'danger'   },
-  cancelled:     { label: 'Cancelled',     variant: 'default'  },
-  suspended:     { label: 'Suspended',     variant: 'danger'   },
+const STATUS_VARIANT: Record<ComputedStatus, 'success' | 'warning' | 'danger' | 'default'> = {
+  active:'success', lifetime_free:'success', grace_period:'warning', expired:'danger', cancelled:'default', suspended:'danger',
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SubscriptionsPage() {
+  const { t } = useTranslation('admin')
   const [rows,    setRows]    = useState<SubRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
     let cancelled = false
 
     async function load() {
-      const { data } = await (supabase as any)
+      setLoadError(false)
+      const { data, error } = await (supabase as any)
         .from('tenant_subscriptions')
         .select('id, status, starts_at, ends_at, subscription_plans(name, price_monthly), tenants(name, suspended_at)')
         .order('created_at', { ascending: false })
 
       if (cancelled) return
+      if (error) {
+        console.error('Unable to load subscriptions', error)
+        setLoadError(true)
+        setLoading(false)
+        return
+      }
 
       const list: SubRow[] = (data ?? []).map((s: any) => {
         const planName    = s.subscription_plans?.name ?? null
@@ -81,7 +86,7 @@ export default function SubscriptionsPage() {
 
         return {
           id:             s.id,
-          tenantName:     s.tenants?.name ?? 'Unknown',
+          tenantName:     s.tenants?.name ?? t('unknown'),
           plan:           planName,
           priceMonthly:   price,
           starts_at:      s.starts_at,
@@ -99,7 +104,7 @@ export default function SubscriptionsPage() {
 
     load()
     return () => { cancelled = true }
-  }, [])
+  }, [t])
 
   // Derived stats
   const totalMrr   = rows.reduce((s, r) => s + r.mrr, 0)
@@ -128,9 +133,15 @@ export default function SubscriptionsPage() {
 
       {/* Header */}
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Subscriptions</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Revenue and plan overview</p>
+        <h1 className="text-xl font-bold text-gray-900">{t('subscriptions.title')}</h1>
+        <p className="text-sm text-gray-400 mt-0.5">{t('subscriptions.subtitle')}</p>
       </div>
+
+      {loadError && (
+        <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {t('subscriptions.loadFailed')}
+        </div>
+      )}
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -139,9 +150,9 @@ export default function SubscriptionsPage() {
             <TrendingUp size={18} className="text-emerald-600" />
           </div>
           <div>
-            <p className="text-xs text-gray-400 font-medium">Total MRR</p>
+            <p className="text-xs text-gray-400 font-medium">{t('subscriptions.totalMrr')}</p>
             <p className="text-xl font-bold text-gray-900"><Rial amount={totalMrr} /></p>
-            <p className="text-xs text-gray-400 mt-0.5">{rows.filter(r => r.computedStatus === 'active').length} paying</p>
+            <p className="text-xs text-gray-400 mt-0.5">{t('subscriptions.paying', { count: rows.filter(r => r.computedStatus === 'active').length })}</p>
           </div>
         </div>
 
@@ -150,9 +161,9 @@ export default function SubscriptionsPage() {
             <CreditCard size={18} className="text-amber-600" />
           </div>
           <div>
-            <p className="text-xs text-gray-400 font-medium">Phase 1</p>
-            <p className="text-xl font-bold text-gray-900">{phase1.filter(r => r.computedStatus === 'active').length} active</p>
-            <p className="text-xs text-gray-400 mt-0.5"><Rial amount={phase1.reduce((s, r) => s + r.mrr, 0)} /> MRR</p>
+            <p className="text-xs text-gray-400 font-medium">{t('subscriptions.phase1')}</p>
+            <p className="text-xl font-bold text-gray-900">{t('subscriptions.active', { count: phase1.filter(r => r.computedStatus === 'active').length })}</p>
+            <p className="text-xs text-gray-400 mt-0.5"><Rial amount={phase1.reduce((s, r) => s + r.mrr, 0)} /> {t('subscriptions.mrr')}</p>
           </div>
         </div>
 
@@ -161,9 +172,9 @@ export default function SubscriptionsPage() {
             <CreditCard size={18} className="text-primary-600" />
           </div>
           <div>
-            <p className="text-xs text-gray-400 font-medium">Phase 2</p>
-            <p className="text-xl font-bold text-gray-900">{phase2.filter(r => r.computedStatus === 'active').length} active</p>
-            <p className="text-xs text-gray-400 mt-0.5"><Rial amount={phase2.reduce((s, r) => s + r.mrr, 0)} /> MRR</p>
+            <p className="text-xs text-gray-400 font-medium">{t('subscriptions.phase2')}</p>
+            <p className="text-xl font-bold text-gray-900">{t('subscriptions.active', { count: phase2.filter(r => r.computedStatus === 'active').length })}</p>
+            <p className="text-xs text-gray-400 mt-0.5"><Rial amount={phase2.reduce((s, r) => s + r.mrr, 0)} /> {t('subscriptions.mrr')}</p>
           </div>
         </div>
 
@@ -172,9 +183,9 @@ export default function SubscriptionsPage() {
             <Star size={18} className="text-purple-600" />
           </div>
           <div>
-            <p className="text-xs text-gray-400 font-medium">Lifetime Free</p>
+            <p className="text-xs text-gray-400 font-medium">{t('subscriptions.lifetimeFree')}</p>
             <p className="text-xl font-bold text-gray-900">{lifetime.length}</p>
-            <p className="text-xs text-gray-400 mt-0.5">no expiry</p>
+            <p className="text-xs text-gray-400 mt-0.5">{t('subscriptions.noExpiry')}</p>
           </div>
         </div>
       </div>
@@ -186,7 +197,7 @@ export default function SubscriptionsPage() {
             <div className="flex items-start gap-3 bg-red-50 border border-red-100 rounded-xl p-4">
               <AlertCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-semibold text-red-700">{grace.length} in grace period — action needed</p>
+                <p className="text-sm font-semibold text-red-700">{t('subscriptions.graceAlert', { count: grace.length })}</p>
                 <p className="text-xs text-red-600 mt-0.5">{grace.map(r => r.tenantName).join(', ')}</p>
               </div>
             </div>
@@ -195,7 +206,7 @@ export default function SubscriptionsPage() {
             <div className="flex items-start gap-3 bg-amber-50 border border-amber-100 rounded-xl p-4">
               <Clock size={15} className="text-amber-500 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-semibold text-amber-700">{expiring.length} expiring this month</p>
+                <p className="text-sm font-semibold text-amber-700">{t('subscriptions.expiring', { count: expiring.length })}</p>
                 <p className="text-xs text-amber-600 mt-0.5">{expiring.map(r => r.tenantName).join(', ')}</p>
               </div>
             </div>
@@ -206,25 +217,25 @@ export default function SubscriptionsPage() {
       {/* All subscriptions table */}
       <div className="card">
         <div className="px-6 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">All Subscriptions ({rows.length})</h2>
+          <h2 className="text-sm font-semibold text-gray-900">{t('subscriptions.all', { count: rows.length })}</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-50">
-                {['Client', 'Plan', 'MRR', 'Started', 'Expires', 'Status'].map(h => (
+                {['client', 'plan', 'mrr', 'started', 'expires', 'status'].map(h => (
                   <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">
-                    {h}
+                    {t(`subscriptions.${h}`)}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {rows.map(r => {
-                const meta = STATUS_META[r.computedStatus]
+                const variant = STATUS_VARIANT[r.computedStatus]
                 return (
                   <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-5 py-3.5 text-sm font-medium text-gray-900">{r.tenantName}</td>
+                    <td className="px-5 py-3.5 text-sm font-medium text-gray-900" dir="auto">{r.tenantName}</td>
                     <td className="px-5 py-3.5">
                       {r.plan ? (
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
@@ -238,7 +249,7 @@ export default function SubscriptionsPage() {
                     <td className="px-5 py-3.5 text-xs text-gray-400">{r.starts_at.slice(0, 10)}</td>
                     <td className="px-5 py-3.5 text-xs">
                       {r.computedStatus === 'lifetime_free' ? (
-                        <span className="text-emerald-600 font-medium">Lifetime Free</span>
+                        <span className="text-emerald-600 font-medium">{t('status.lifetime_free')}</span>
                       ) : r.ends_at ? (
                         <span className={
                           r.computedStatus === 'grace_period' ? 'text-red-600 font-semibold'
@@ -247,13 +258,13 @@ export default function SubscriptionsPage() {
                         }>
                           {r.ends_at.slice(0, 10)}
                           {r.daysLeft !== null && r.daysLeft > 0 && r.daysLeft <= 30 && (
-                            <span className="text-amber-600 ml-1">({r.daysLeft}d)</span>
+                            <span className="text-amber-600 ms-1">{t('subscriptions.days', { count: r.daysLeft })}</span>
                           )}
                         </span>
                       ) : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-5 py-3.5">
-                      <Badge variant={meta.variant} dot>{meta.label}</Badge>
+                      <Badge variant={variant} dot>{t(`status.${r.computedStatus}`, { defaultValue: t('unknown') })}</Badge>
                     </td>
                   </tr>
                 )
@@ -262,7 +273,7 @@ export default function SubscriptionsPage() {
                 <tr>
                   <td colSpan={6} className="px-5 py-10 text-center">
                     <AlertCircle size={24} className="text-gray-200 mx-auto mb-2" />
-                    <p className="text-sm text-gray-400">No subscriptions yet</p>
+                    <p className="text-sm text-gray-400">{t('subscriptions.none')}</p>
                   </td>
                 </tr>
               )}

@@ -1,5 +1,6 @@
 import { ArrowLeft, ArrowRight, Mail, MessageCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { MeemLogo } from '@/components/MeemLogo'
 import { supportConfig } from '@/config/support'
 
@@ -52,6 +53,8 @@ function Pattern() {
 }
 
 export default function TermsPage() {
+  const { t, i18n } = useTranslation('legal')
+  const isArabic = i18n.language.startsWith('ar')
   const actionBaseClass = 'group relative isolate inline-flex h-10 items-center justify-center overflow-hidden rounded-full px-4 text-sm font-black transition-[background,border-color,box-shadow,transform] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] active:scale-[0.98]'
 
   return (
@@ -61,10 +64,10 @@ export default function TermsPage() {
         <div className="relative z-10 mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link to="/"><MeemLogo size="sm" /></Link>
           <div className="flex items-center gap-2">
-            <Link to="/privacy" className="hidden rounded-full px-3 py-2 text-sm font-semibold text-white/78 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] sm:inline">Privacy</Link>
+            <Link to="/privacy" className="hidden rounded-full px-3 py-2 text-sm font-semibold text-white/78 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] sm:inline">{t('privacy')}</Link>
             <Link to="/login" className={`${actionBaseClass} border border-white/[0.10] bg-white/[0.06] text-white/[0.90] hover:border-white/[0.18] hover:bg-white/[0.10] hover:text-white`}>
               <span className="absolute inset-0 -z-10 translate-x-[-105%] rounded-full bg-white/[0.08] opacity-0 transition-[opacity,transform] duration-300 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
-              <span className="relative transition-transform duration-200 group-hover:-translate-x-1.5">Sign in</span>
+              <span className="relative transition-transform duration-200 group-hover:-translate-x-1.5">{t('signIn')}</span>
               <ArrowRight size={14} className="absolute right-3 translate-x-2 opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
             </Link>
           </div>
@@ -72,19 +75,19 @@ export default function TermsPage() {
 
         <div className="relative z-10 mx-auto max-w-7xl px-4 pb-6 pt-4 sm:px-6 lg:px-8">
           <Link to="/" className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-white/60 hover:text-white">
-            <ArrowLeft size={15} /> Home
+            <ArrowLeft size={15} /> {t('home')}
           </Link>
           <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr] lg:items-end">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-[#D8B76A]">Legal</p>
-              <h1 className="mt-2 text-3xl font-black leading-tight sm:text-5xl">Terms and Conditions</h1>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-[#D8B76A]">{t('legal')}</p>
+              <h1 className="mt-2 text-3xl font-black leading-tight sm:text-5xl">{t('termsTitle')}</h1>
               <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">
-                Practical terms for using Kubri during pilot launch and ongoing business operations.
+                {t('termsIntro')}
               </p>
             </div>
             <div className="flex flex-col gap-2 rounded-2xl border border-[#D8B76A]/20 bg-[#D8B76A]/10 px-4 py-3 text-sm text-[#F1DFA8] lg:ml-auto">
               <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 font-bold hover:text-white">
-                <MessageCircle size={15} /> WhatsApp support
+                <MessageCircle size={15} /> {t('support')}
               </a>
               <a href={EMAIL_LINK} className="inline-flex items-center gap-2 font-bold hover:text-white">
                 <Mail size={15} /> {supportConfig.email}
@@ -100,8 +103,9 @@ export default function TermsPage() {
         </div>
 
         <section className="relative z-10 mx-auto max-w-4xl">
+          {isArabic && <p className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-900">{t('arabicUnavailable')}</p>}
           <div className="rounded-[26px] border border-[#D9CBAA] bg-[#FFFDF7] p-4 shadow-[0_22px_68px_rgba(15,36,25,0.13)] sm:p-6">
-            <div className="space-y-3">
+            <div className="space-y-3" dir="ltr" lang="en">
               {sections.map(section => (
                 <section key={section.title} className="rounded-2xl border border-[#E1D7BC] bg-[#FBF7EB] p-4">
                   <h2 className="text-sm font-black uppercase tracking-[0.16em] text-[#A77F29]">{section.title}</h2>
@@ -111,7 +115,7 @@ export default function TermsPage() {
             </div>
 
             <div className="mt-4 rounded-2xl border border-[#D9CBAA] bg-gradient-to-br from-[#F8F2E3] to-[#EEF5EA] p-4 text-sm leading-6 text-[#496154]">
-              Questions about these terms: <a href={EMAIL_LINK} className="font-black text-[#0F3A2A] hover:text-[#A77F29]">{supportConfig.email}</a>
+              {t('termsQuestions')} <a href={EMAIL_LINK} className="font-black text-[#0F3A2A] hover:text-[#A77F29]" dir="ltr">{supportConfig.email}</a>
             </div>
           </div>
         </section>

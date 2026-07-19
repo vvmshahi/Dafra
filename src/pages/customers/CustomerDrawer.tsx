@@ -294,7 +294,7 @@ export default function CustomerDrawer({ open, customer, onClose, onSaved }: Pro
                       {vatError ? (
                         <p className="text-xs text-red-500 mt-1">{vatError}</p>
                       ) : (
-                        <p className="text-[10px] text-gray-400 mt-1">15-digit ZATCA VAT (3…3)</p>
+                        <p className="text-[10px] text-gray-400 mt-1">{t('customers:vatHint')}</p>
                       )}
                     </div>
                     <div>

@@ -1,4 +1,6 @@
 {
+  "tabs": { "subscription": { "label": "الاشتراك", "description": "الخطة والفوترة وحدود الاستخدام" }, "account": { "label": "الحساب", "description": "الملف الشخصي والاسم والهاتف وكلمة المرور" }, "printer": { "label": "الطابعة", "description": "طابعة الإيصالات الافتراضية للطباعة الصامتة" } },
+  "businessType": { "title": "نوع النشاط", "readOnly": "للقراءة فقط", "trading": { "label": "نشاط تجاري", "description": "المنتجات والمخزون وتتبع المشتريات." }, "service": { "label": "نشاط خدمي", "description": "الخدمات والأصناف المنتجة والمواد وتقديرات الربح المبسطة." } },
   "language": "اللغة",
   "interfaceLanguage": "لغة الواجهة",
   "english": "الإنجليزية",
@@ -81,6 +83,15 @@
     "documentLanguageHelp": "اختر لغة الفواتير والإيصالات والإشعارات الدائنة الجديدة. تتحدث المعاينة فوراً، واحفظ لتطبيق الاختيار.",
     "documentLanguageHistory": "تحتفظ المستندات الصادرة سابقاً بلغتها المحفوظة. أما المستندات القديمة بلا لغة محفوظة فتتبع إعداد الفرع الحالي.",
     "bilingual": "ثنائي اللغة"
+  },
+  "subscription": {
+    "active": "الاشتراك نشط", "lifetimeFree": "حساب مجاني مدى الحياة", "lifetimeFreeBody": "يتمتع حسابك بوصول كامل دون رسوم اشتراك.",
+    "activationRequired": "يلزم تفعيل الاشتراك", "gracePeriod": "فترة السماح نشطة", "paymentOverdue": "الدفعة متأخرة", "suspended": "الاشتراك معلّق",
+    "activationBody": "تحتاج مساحة العمل هذه إلى تفعيل يدوي للاشتراك. تظل الفوترة متاحة ما لم يُعلّق الحساب.", "graceBody": "فترة السماح نشطة. تظل الفوترة متاحة ما لم يُعلّق الحساب.", "overdueBody": "الدفعة متأخرة. تظل الفوترة متاحة خلال الفترة التجريبية ما لم يُعلّق الحساب.", "suspendedBody": "الحساب معلّق. تم تعطيل الفوترة الجديدة وفتح الصندوق، وتظل السجلات الحالية متاحة.",
+    "paymentDueSoon": "موعد الدفع قريب", "paymentDueBody": "موعد الدفع قريب. تواصل مع دعم كبري إذا كانت الدفعة قد اكتملت.",
+    "branches": "الفروع", "branchUsage": "{{active}} / {{max}} من الفروع النشطة مستخدمة", "totalBranches": "إجمالي الفروع: {{count}}", "plan": "الخطة: {{plan}}", "nextDue": "الاستحقاق التالي: {{date}}", "graceUntil": "فترة السماح حتى: {{date}}", "daysOverdue_zero": "متأخر {{count}} يوم", "daysOverdue_one": "متأخر يوم واحد", "daysOverdue_two": "متأخر يومين", "daysOverdue_few": "متأخر {{count}} أيام", "daysOverdue_many": "متأخر {{count}} يومًا", "daysOverdue_other": "متأخر {{count}} يوم", "dueDate": "تاريخ الاستحقاق: {{date}}", "renewsExpires": "التجديد / الانتهاء: {{date}}",
+    "contactActivate": "تواصل معنا للتفعيل", "contact": "تواصل معنا", "renewNow": "جدّد الآن", "whatsapp": "تواصل عبر واتساب", "email": "راسلنا بالبريد", "renewUpgrade": "للتجديد أو الترقية، تواصل معنا:", "updateTiming": "سنحدّث اشتراكك خلال بضع ساعات.",
+    "status": { "active": "نشط", "trial": "تجريبي", "grace_period": "فترة سماح", "expired": "منتهي", "cancelled": "ملغى", "suspended": "معلّق", "lifetime_free": "مجاني مدى الحياة", "payment_due": "دفعة مستحقة" }
   },
   "profile": {
     "accountInfo": "معلومات الحساب",

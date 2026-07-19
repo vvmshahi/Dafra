@@ -1,4 +1,9 @@
 {
+  "back": "Back",
+  "devicePrinter": "Device Printer",
+  "desktopOnly": "Direct receipt printing is available in the Kubri desktop app.",
+  "savedOnDevice": "These printer settings are saved on this device.",
+  "installedPrintersHint": "USB, network, and Bluetooth printers appear here after they are installed in Windows or macOS.",
   "print": "Print",
   "printing": "Printing…",
   "printReceipt": "Print Receipt",
@@ -87,5 +92,6 @@
   "testReceiptSent": "Test receipt sent to printer.",
   "testA4Sent": "A4 test page sent to printer.",
   "testPrintFailed": "Test print failed.",
-  "changesCancelled": "Unsaved changes were cancelled."
+  "changesCancelled": "Unsaved changes were cancelled.",
+  "defaultPrinterTitle": "Select Default Printer", "defaultPrinterHelp": "Choose your thermal printer for automatic printing", "closePrinterSetup": "Close printer setup", "noPrintersFound": "No printers found on this device.", "ready": "Ready", "offline": "Offline", "default": "Default", "clearDefault": "Clear default", "skip": "Skip", "saved": "Saved", "setAsDefault": "Set as Default"
 }

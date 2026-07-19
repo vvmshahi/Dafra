@@ -1,57 +1,40 @@
 import { CheckCircle2, MessageCircle, Mail, Package } from 'lucide-react'
 import { supportConfig } from '@/config/support'
+import { useTranslation } from 'react-i18next'
 
 const WA_LINK    = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
 
 const PLANS = [
   {
-    name:     'Phase 1',
-    subtitle: 'ZATCA QR Code Invoicing',
+    key:      'phase1',
     price:    50,
-    features: [
-      'ZATCA Phase 1 QR Code',
-      'POS Billing Terminal',
-      'Invoice Management',
-      'Expense Tracking',
-      'Sales Reports',
-      '1 Branch included',
-    ],
   },
   {
-    name:     'Phase 2',
-    subtitle: 'ZATCA Phase 2 workflows',
+    key:      'phase2',
     price:    100,
-    features: [
-      'Everything in Phase 1',
-      'ZATCA Phase 2 Digital Signing',
-      'Automatic ZATCA Reporting',
-      'XML Invoice Generation',
-      'Phase 2 QR Code',
-      '1 Branch included',
-    ],
   },
 ]
 
 export default function SuperAdminSettingsPage() {
+  const { t } = useTranslation('admin')
   return (
     <div className="space-y-8 max-w-3xl">
 
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Platform Settings</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Subscription plan reference and support contacts</p>
+        <h1 className="text-xl font-bold text-gray-900">{t('settings.title')}</h1>
+        <p className="text-sm text-gray-400 mt-0.5">{t('settings.subtitle')}</p>
       </div>
 
       {/* Plan reference — read only */}
       <section>
-        <h2 className="text-sm font-semibold text-gray-900 mb-1">Subscription Plans</h2>
+        <h2 className="text-sm font-semibold text-gray-900 mb-1">{t('settings.plans')}</h2>
         <p className="text-xs text-gray-400 mb-4">
-          Pricing and limits are managed in the database (subscription_plans table).
-          Contact the developer to update them.
+          {t('settings.plansHelp')}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {PLANS.map((plan, idx) => (
-            <div key={plan.name} className="card p-5">
+            <div key={plan.key} className="card p-5">
               <div className="flex items-center gap-2.5 mb-3">
                 <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
                   idx === 0 ? 'bg-amber-50' : 'bg-primary-50'
@@ -59,19 +42,19 @@ export default function SuperAdminSettingsPage() {
                   <Package size={16} className={idx === 0 ? 'text-amber-600' : 'text-primary-600'} />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-gray-900">{plan.name}</p>
-                  <p className="text-[11px] text-gray-400">{plan.subtitle}</p>
+                  <p className="text-sm font-bold text-gray-900">{t(`plans.${plan.key}.name`)}</p>
+                  <p className="text-[11px] text-gray-400">{t(`plans.${plan.key}.subtitle`)}</p>
                 </div>
               </div>
               <p className="text-2xl font-black text-gray-900 mb-3">
-                SAR {plan.price}
-                <span className="text-xs font-normal text-gray-400"> / branch / month</span>
+                <span dir="ltr">{t('settings.price', { price: plan.price })}</span>
+                <span className="text-xs font-normal text-gray-400">{t('settings.period')}</span>
               </p>
               <ul className="space-y-1.5 border-t border-gray-100 pt-3">
-                {plan.features.map(f => (
-                  <li key={f} className="flex items-center gap-2 text-xs text-gray-600">
+                {[1,2,3,4,5,6].map(feature => (
+                  <li key={feature} className="flex items-center gap-2 text-xs text-gray-600">
                     <CheckCircle2 size={11} className="text-emerald-500 flex-shrink-0" />
-                    {f}
+                    {t(`plans.${plan.key}.f${feature}`)}
                   </li>
                 ))}
               </ul>
@@ -82,10 +65,10 @@ export default function SuperAdminSettingsPage() {
 
       {/* Support contact */}
       <section>
-        <h2 className="text-sm font-semibold text-gray-900 mb-4">Support Contact</h2>
+        <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('settings.support')}</h2>
         <div className="card p-5">
           <p className="text-xs text-gray-500 mb-4">
-            For technical issues, database changes, or billing support:
+            {t('settings.supportHelp')}
           </p>
           <div className="flex flex-col sm:flex-row gap-3">
             <a
@@ -94,7 +77,7 @@ export default function SuperAdminSettingsPage() {
               rel="noopener noreferrer"
               className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm"
             >
-              <MessageCircle size={15} /> WhatsApp Support
+              <MessageCircle size={15} /> {t('settings.whatsapp')}
             </a>
             <a
               href={EMAIL_LINK}

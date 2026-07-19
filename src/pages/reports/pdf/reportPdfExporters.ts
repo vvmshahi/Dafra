@@ -41,6 +41,7 @@ import {
 } from './reportExportData'
 
 export type PhaseAReportKind = ReportPdfKind
+const pt = (key: string, options?: Record<string, unknown>) => i18n.t(`reports:pdf.${key}`, options)
 
 interface PhaseAReportMeta {
   titleKey: string
@@ -57,19 +58,19 @@ interface ExportPhaseAReportPdfInput extends ReportExportParams {
 
 const REPORT_META: Record<PhaseAReportKind, PhaseAReportMeta> = {
   sessions: {
-    titleKey: 'reports:tabs.sessions',
+    titleKey: 'reports:pdf.sessions.title',
     slug: 'register-sessions',
   },
   sales: {
-    titleKey: 'reports:tabs.sales',
+    titleKey: 'reports:pdf.sales.title',
     slug: 'sales-report',
   },
   vat: {
-    titleKey: 'reports:vat.title',
+    titleKey: 'reports:pdf.vat.title',
     slug: 'vat-support',
   },
   pl: {
-    titleKey: 'reports:tabs.pl',
+    titleKey: 'reports:pdf.profit.title',
     slug: 'profit-estimate',
   },
 }
@@ -90,11 +91,11 @@ function paymentValue(data: SalesExportData, label: string): number {
 }
 
 function vatImpactLabel(value: number): string {
-  return value >= 0 ? 'Net VAT Payable Estimate' : 'Net VAT Credit Estimate'
+  return pt(value >= 0 ? 'vat.payableEstimate' : 'vat.creditEstimate')
 }
 
 function vatImpactSub(value: number): string {
-  return value >= 0 ? 'separate VAT provision' : 'credit/refund estimate'
+  return pt(value >= 0 ? 'vat.payableSub' : 'vat.creditSub')
 }
 
 function createContext(input: ExportPhaseAReportPdfInput): ReportPdfContext {
@@ -118,56 +119,44 @@ async function exportRegisterSessionsPdf(context: ReportPdfContext, sessions: Re
   const hasActualCash = actualCashCount > 0
 
   const kpis: PdfKpi[] = [
-    { label: 'Total sessions', value: formatNumberPdf(sessions.length), tone: 'green' },
-    { label: 'Total sales', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'totalSales')), tone: 'gold' },
-    { label: 'Invoices', value: formatNumberPdf(sumRegisterSessionField(sessions, 'invoiceCount')), tone: 'blue' },
-    { label: 'Cash', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'cashTotal')), tone: 'teal' },
-    { label: 'Card', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'cardTotal')), tone: 'slate' },
-    { label: 'VAT', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'vatTotal')), tone: 'amber' },
-    { label: 'Credit notes', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'creditNoteTotal')), tone: 'slate' },
-    { label: 'Expenses', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'expensesTotal')), tone: 'amber' },
-    { label: 'Expected cash', value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'expectedCash')), tone: 'green' },
+    { label: pt('sessions.totalSessions'), value: formatNumberPdf(sessions.length), tone: 'green' },
+    { label: pt('sessions.totalSales'), value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'totalSales')), tone: 'gold' },
+    { label: pt('common.invoices'), value: formatNumberPdf(sumRegisterSessionField(sessions, 'invoiceCount')), tone: 'blue' },
+    { label: pt('common.cash'), value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'cashTotal')), tone: 'teal' },
+    { label: pt('common.card'), value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'cardTotal')), tone: 'slate' },
+    { label: pt('common.vat'), value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'vatTotal')), tone: 'amber' },
+    { label: pt('sessions.creditNotes'), value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'creditNoteTotal')), tone: 'slate' },
+    { label: pt('common.expenses'), value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'expensesTotal')), tone: 'amber' },
+    { label: pt('sessions.expectedCash'), value: formatCurrencyPdf(sumRegisterSessionField(sessions, 'expectedCash')), tone: 'green' },
     {
-      label: 'Actual cash',
+      label: pt('sessions.actualCash'),
       value: hasActualCash ? formatCurrencyPdf(sumRegisterSessionField(sessions, 'actualCash')) : '-',
       sub: hasActualCash ? `${actualCashCount} closed sessions` : 'closed sessions only',
       tone: 'teal',
     },
     {
-      label: 'Cash difference',
+      label: pt('sessions.cashDifference'),
       value: hasActualCash ? formatCurrencyPdf(sumRegisterSessionField(sessions, 'cashDifference')) : '-',
       sub: 'actual minus expected',
       tone: 'blue',
     },
   ]
 
-  let nextY = addSectionTitle(doc, context, y, 'Summary')
+  let nextY = addSectionTitle(doc, context, y, pt('common.summary'))
   nextY = addKpiGrid(doc, context, nextY, kpis)
 
   if (sessions.length === 0) {
-    addCompactMessage(doc, context, nextY, 'No register sessions found for this period.')
+    addCompactMessage(doc, context, nextY, pt('sessions.noData'))
     saveReportDoc(doc, context)
     return
   }
 
-  nextY = addSectionTitle(doc, context, nextY, 'Sessions', 'Amounts in SAR.')
+  nextY = addSectionTitle(doc, context, nextY, pt('sessions.sessions'), pt('common.amountsSar'))
   nextY = addAutoTable(doc, context, {
     startY: nextY,
     fontSize: 6.1,
     head: [
-      'Status',
-      'Opened',
-      'Closed',
-      'Sales',
-      'Inv.',
-      'Cash',
-      'Card',
-      'VAT',
-      'Credit',
-      'Exp.',
-      'Expected',
-      'Actual',
-      'Diff.',
+      pt('common.status'), pt('sessions.opened'), pt('sessions.closed'), pt('common.sales'), pt('common.invoices'), pt('common.cash'), pt('common.card'), pt('common.vat'), pt('sessions.credit'), pt('common.expenses'), pt('common.expected'), pt('common.actual'), pt('common.difference'),
     ],
     body: sessions.map(session => [
       statusLabel(session),
@@ -185,7 +174,7 @@ async function exportRegisterSessionsPdf(context: ReportPdfContext, sessions: Re
       session.cashDifference === null ? '-' : amountCell(session.cashDifference),
     ]),
     foot: [
-      'Total',
+      pt('common.total'),
       '',
       '',
       amountCell(sumRegisterSessionField(sessions, 'totalSales')),
@@ -217,7 +206,7 @@ async function exportRegisterSessionsPdf(context: ReportPdfContext, sessions: Re
   })
 
   addFinalNotes(doc, context, nextY, [
-    'Register session totals use the current backend session summary data for the selected period.',
+    pt('sessions.note'),
   ])
   saveReportDoc(doc, context)
 }
@@ -228,10 +217,10 @@ async function exportVatSupportPdf(context: ReportPdfContext, data: VatSupportEx
   const expenseInputVat = data.monthlyRows.reduce((sum, row) => sum + numberOrZero(row.vatPaidExp), 0)
 
   const kpis: PdfKpi[] = [
-    { label: 'Output VAT', value: formatCurrencyPdf(data.vatOnSales), sub: 'VAT before credit notes', tone: 'green' },
-    { label: 'VAT credited', value: formatCurrencyPdf(data.vatCredited), sub: 'VAT reduced by returns', tone: 'slate' },
-    { label: 'Net VAT on sales', value: formatCurrencyPdf(data.vatCollected), sub: 'output minus credited VAT', tone: 'teal' },
-    { label: 'Input VAT support', value: formatCurrencyPdf(data.vatPaidTotal), sub: 'claimable purchases + expenses', tone: 'blue' },
+    { label: pt('vat.output'), value: formatCurrencyPdf(data.vatOnSales), sub: pt('vat.beforeCredits'), tone: 'green' },
+    { label: pt('vat.credited'), value: formatCurrencyPdf(data.vatCredited), sub: pt('vat.reducedReturns'), tone: 'slate' },
+    { label: pt('vat.netSales'), value: formatCurrencyPdf(data.vatCollected), sub: pt('vat.outputMinus'), tone: 'teal' },
+    { label: pt('vat.input'), value: formatCurrencyPdf(data.vatPaidTotal), sub: pt('vat.claimable'), tone: 'blue' },
     {
       label: vatImpactLabel(data.netPayable),
       value: formatCurrencyPdf(Math.abs(data.netPayable)),
@@ -240,30 +229,24 @@ async function exportVatSupportPdf(context: ReportPdfContext, data: VatSupportEx
     },
   ]
 
-  let nextY = addSectionTitle(doc, context, y, 'Summary')
+  let nextY = addSectionTitle(doc, context, y, pt('common.summary'))
   nextY = addKpiGrid(doc, context, nextY, kpis)
 
   if (data.monthlyRows.length === 0) {
-    nextY = addCompactMessage(doc, context, nextY, 'No VAT rows found for this period.')
+    nextY = addCompactMessage(doc, context, nextY, pt('vat.noData'))
     addFinalNotes(doc, context, nextY, [
-      'This report is for VAT support and accountant review. Please verify before filing.',
+      pt('vat.reviewNote'),
     ])
     saveReportDoc(doc, context)
     return
   }
 
-  nextY = addSectionTitle(doc, context, nextY, 'Monthly VAT Breakdown', 'Amounts in SAR.')
+  nextY = addSectionTitle(doc, context, nextY, pt('vat.monthly'), pt('common.amountsSar'))
   nextY = addAutoTable(doc, context, {
     startY: nextY,
     fontSize: 6.8,
     head: [
-      'Month',
-      'Sales',
-      'Output VAT',
-      'VAT credited',
-      'Purchase input',
-      'Expense input',
-      'Net VAT est.',
+      pt('common.month'), pt('common.sales'), pt('vat.output'), pt('vat.credited'), pt('vat.purchaseInput'), pt('vat.expenseInput'), pt('vat.netEstimate'),
     ],
     body: data.monthlyRows.map(row => [
       formatMonthPdf(row.month),
@@ -275,7 +258,7 @@ async function exportVatSupportPdf(context: ReportPdfContext, data: VatSupportEx
       formatSignedImpactPdf(row.netPayable),
     ]),
     foot: [
-      'Total',
+      pt('common.total'),
       amountCell(data.salesTotal),
       amountCell(data.vatOnSales),
       amountCell(data.vatCredited),
@@ -294,7 +277,7 @@ async function exportVatSupportPdf(context: ReportPdfContext, data: VatSupportEx
   })
 
   addFinalNotes(doc, context, nextY, [
-    'This report is for VAT support and accountant review. Please verify before filing.',
+    pt('vat.reviewNote'),
   ])
   saveReportDoc(doc, context)
 }
@@ -306,32 +289,32 @@ async function exportSalesPdf(context: ReportPdfContext, data: SalesExportData) 
     .reduce((sum, row) => sum + numberOrZero(row.value), 0)
 
   const kpis: PdfKpi[] = [
-    { label: 'Gross Sales', value: formatCurrencyPdf(data.grossSales), tone: 'green' },
-    { label: 'Credit Notes', value: formatCurrencyPdf(data.creditNotes), tone: 'slate' },
-    { label: 'Net Sales', value: formatCurrencyPdf(data.totalRevenue), tone: 'gold' },
-    { label: 'VAT', value: formatCurrencyPdf(data.vatCollected), sub: `sales ${formatCurrencyPdf(data.vatOnSales)} | credited ${formatCurrencyPdf(data.vatCredited)}`, tone: 'amber' },
-    { label: 'Documents', value: formatNumberPdf(data.invoiceCount), sub: 'non-cancelled', tone: 'blue' },
-    { label: 'Average Sale', value: formatCurrencyPdf(data.avgOrderValue), tone: 'teal' },
-    { label: 'Cash', value: formatCurrencyPdf(paymentValue(data, 'Cash')), tone: 'green' },
-    { label: 'Card', value: formatCurrencyPdf(paymentValue(data, 'Card')), tone: 'blue' },
-    { label: 'Other payments', value: formatCurrencyPdf(otherPayments), tone: 'slate' },
+    { label: pt('sales.grossSales'), value: formatCurrencyPdf(data.grossSales), tone: 'green' },
+    { label: pt('sales.creditNotes'), value: formatCurrencyPdf(data.creditNotes), tone: 'slate' },
+    { label: pt('sales.netSales'), value: formatCurrencyPdf(data.totalRevenue), tone: 'gold' },
+    { label: pt('common.vat'), value: formatCurrencyPdf(data.vatCollected), sub: pt('sales.vatSub', { sales: formatCurrencyPdf(data.vatOnSales), credited: formatCurrencyPdf(data.vatCredited) }), tone: 'amber' },
+    { label: pt('sales.documents'), value: formatNumberPdf(data.invoiceCount), sub: pt('sales.nonCancelled'), tone: 'blue' },
+    { label: pt('sales.averageSale'), value: formatCurrencyPdf(data.avgOrderValue), tone: 'teal' },
+    { label: pt('common.cash'), value: formatCurrencyPdf(paymentValue(data, 'Cash')), tone: 'green' },
+    { label: pt('common.card'), value: formatCurrencyPdf(paymentValue(data, 'Card')), tone: 'blue' },
+    { label: pt('sales.otherPayments'), value: formatCurrencyPdf(otherPayments), tone: 'slate' },
   ]
 
-  let nextY = addSectionTitle(doc, context, y, 'Summary')
+  let nextY = addSectionTitle(doc, context, y, pt('common.summary'))
   nextY = addKpiGrid(doc, context, nextY, kpis)
 
   if (data.dailySales.length > 0) {
-    nextY = addSectionTitle(doc, context, nextY, 'Daily Sales', 'Amounts in SAR.')
+    nextY = addSectionTitle(doc, context, nextY, pt('sales.daily'), pt('common.amountsSar'))
     nextY = addAutoTable(doc, context, {
       startY: nextY,
-      head: ['Date', 'Revenue', 'Invoices'],
+      head: [pt('common.date'), pt('common.revenue'), pt('common.invoices')],
       body: data.dailySales.map(row => [
         formatDatePdf(`${row.date}T00:00:00+03:00`),
         amountCell(row.revenue),
         formatNumberPdf(row.invoices),
       ]),
       foot: [
-        'Total',
+        pt('common.total'),
         amountCell(data.dailySales.reduce((sum, row) => sum + numberOrZero(row.revenue), 0)),
         formatNumberPdf(data.dailySales.reduce((sum, row) => sum + numberOrZero(row.invoices), 0)),
       ],
@@ -343,13 +326,13 @@ async function exportSalesPdf(context: ReportPdfContext, data: SalesExportData) 
   }
 
   if (data.byMethod.length > 0) {
-    nextY = addSectionTitle(doc, context, nextY, 'Payment Method Breakdown', 'Amounts in SAR.')
+    nextY = addSectionTitle(doc, context, nextY, pt('sales.payments'), pt('common.amountsSar'))
     const totalPayments = data.byMethod.reduce((sum, row) => sum + numberOrZero(row.value), 0)
     nextY = addAutoTable(doc, context, {
       startY: nextY,
-      head: ['Method', 'Amount', 'Share'],
+      head: [pt('common.method'), pt('common.amount'), pt('common.share')],
       body: data.byMethod.map(row => [
-        safePdfText(row.name, 'Other'),
+        safePdfText(i18n.t(`reports:status.${row.name.toLowerCase().replaceAll(' ', '_')}`, { defaultValue: row.name || pt('common.other') }), pt('common.other')),
         amountCell(row.value),
         formatPercentPdf(totalPayments !== 0 ? (numberOrZero(row.value) / totalPayments) * 100 : 0),
       ]),
@@ -361,12 +344,12 @@ async function exportSalesPdf(context: ReportPdfContext, data: SalesExportData) 
   }
 
   if (data.topProducts.length > 0) {
-    nextY = addSectionTitle(doc, context, nextY, 'Top Products', 'By revenue. Amounts in SAR.')
+    nextY = addSectionTitle(doc, context, nextY, pt('sales.topProducts'), pt('sales.byRevenue'))
     nextY = addAutoTable(doc, context, {
       startY: nextY,
-      head: ['Product', 'Qty', 'Revenue', 'Share'],
+      head: [pt('common.product'), pt('common.quantity'), pt('common.revenue'), pt('common.share')],
       body: data.topProducts.map(row => [
-        safePdfText(row.name, 'Product'),
+        safePdfText(row.name, pt('common.product')),
         formatNumberPdf(row.quantity, 2),
         amountCell(row.revenue),
         formatPercentPdf(row.pct),
@@ -380,12 +363,12 @@ async function exportSalesPdf(context: ReportPdfContext, data: SalesExportData) 
   }
 
   if (data.catPerformance.length > 0) {
-    nextY = addSectionTitle(doc, context, nextY, 'Category Performance', 'Amounts in SAR.')
+    nextY = addSectionTitle(doc, context, nextY, pt('sales.categoryPerformance'), pt('common.amountsSar'))
     nextY = addAutoTable(doc, context, {
       startY: nextY,
-      head: ['Category', 'Items', 'Revenue', 'Share'],
+      head: [pt('common.category'), pt('common.items'), pt('common.revenue'), pt('common.share')],
       body: data.catPerformance.map(row => [
-        safePdfText(row.name, 'Category'),
+        safePdfText(row.name, pt('common.category')),
         formatNumberPdf(row.items, 2),
         amountCell(row.revenue),
         formatPercentPdf(row.pct),
@@ -404,12 +387,11 @@ async function exportSalesPdf(context: ReportPdfContext, data: SalesExportData) 
     && data.topProducts.length === 0
     && data.catPerformance.length === 0
   ) {
-    nextY = addCompactMessage(doc, context, nextY, 'No sales details found for this period.')
+    nextY = addCompactMessage(doc, context, nextY, pt('sales.noData'))
   }
 
   addFinalNotes(doc, context, nextY, [
-    'Sales totals use posted, counted invoice documents from the existing reporting summary.',
-    'Credit notes reduce net sales and VAT according to the backend reporting rules.',
+    pt('sales.noteTotals'), pt('sales.noteCredits'),
   ])
   saveReportDoc(doc, context)
 }
@@ -428,22 +410,22 @@ async function exportProfitEstimatePdf(context: ReportPdfContext, data: ProfitEs
   const cashAfterVatProvision = estimatedBusinessProfit - netVatEstimate
 
   const salesKpis: PdfKpi[] = [
-    { label: 'Net sales incl. VAT', value: formatCurrencyPdf(data.totalRevenue), tone: 'green' },
-    { label: 'Net VAT on sales', value: formatCurrencyPdf(vatData.vatCollected), tone: 'amber' },
-    { label: 'Estimated sales excl. VAT', value: formatCurrencyPdf(estimatedSalesExVat), tone: 'gold' },
+    { label: pt('profit.netSalesVat'), value: formatCurrencyPdf(data.totalRevenue), tone: 'green' },
+    { label: pt('profit.netVatSales'), value: formatCurrencyPdf(vatData.vatCollected), tone: 'amber' },
+    { label: pt('profit.salesExVat'), value: formatCurrencyPdf(estimatedSalesExVat), tone: 'gold' },
   ]
   const costKpis: PdfKpi[] = [
-    { label: 'Purchases / materials excl. VAT', value: formatCurrencyPdf(data.totalCOGS), tone: 'teal' },
-    { label: 'Expenses excl. VAT', value: formatCurrencyPdf(data.totalExpenses), tone: 'slate' },
-    { label: 'Total operating costs excl. VAT', value: formatCurrencyPdf(totalOperatingCosts), tone: 'amber' },
+    { label: pt('profit.purchasesExVat'), value: formatCurrencyPdf(data.totalCOGS), tone: 'teal' },
+    { label: pt('profit.expensesExVat'), value: formatCurrencyPdf(data.totalExpenses), tone: 'slate' },
+    { label: pt('profit.operatingCosts'), value: formatCurrencyPdf(totalOperatingCosts), tone: 'amber' },
   ]
   const profitKpis: PdfKpi[] = [
-    { label: 'Estimated Business Profit', value: formatCurrencyPdf(estimatedBusinessProfit), tone: 'green' },
-    { label: 'Estimated Margin', value: formatPercentPdf(estimatedMargin), tone: 'blue' },
+    { label: pt('profit.businessProfit'), value: formatCurrencyPdf(estimatedBusinessProfit), tone: 'green' },
+    { label: pt('profit.margin'), value: formatPercentPdf(estimatedMargin), tone: 'blue' },
   ]
   const vatKpis: PdfKpi[] = [
-    { label: 'Output VAT', value: formatCurrencyPdf(vatData.vatOnSales), tone: 'amber' },
-    { label: 'Input VAT Support', value: formatCurrencyPdf(vatData.vatPaidTotal), tone: 'teal' },
+    { label: pt('vat.output'), value: formatCurrencyPdf(vatData.vatOnSales), tone: 'amber' },
+    { label: pt('vat.input'), value: formatCurrencyPdf(vatData.vatPaidTotal), tone: 'teal' },
     {
       label: vatImpactLabel(netVatEstimate),
       value: formatCurrencyPdf(Math.abs(netVatEstimate)),
@@ -453,29 +435,28 @@ async function exportProfitEstimatePdf(context: ReportPdfContext, data: ProfitEs
   ]
   const ownerKpis: PdfKpi[] = [
     {
-      label: 'Estimated Cash After VAT Provision',
+      label: pt('profit.cashAfterVat'),
       value: formatCurrencyPdf(cashAfterVatProvision),
       sub: netVatEstimate >= 0 ? 'business profit minus VAT payable' : 'business profit plus VAT credit',
       tone: 'gold',
     },
   ]
 
-  let nextY = addSectionTitle(doc, context, y, 'Sales & VAT Summary')
+  let nextY = addSectionTitle(doc, context, y, pt('profit.salesVatSummary'))
   nextY = addKpiGrid(doc, context, nextY, salesKpis)
-  nextY = addSectionTitle(doc, context, nextY, 'Cost Summary')
+  nextY = addSectionTitle(doc, context, nextY, pt('profit.costSummary'))
   nextY = addKpiGrid(doc, context, nextY, costKpis)
-  nextY = addSectionTitle(doc, context, nextY, 'Business Profit Estimate')
+  nextY = addSectionTitle(doc, context, nextY, pt('profit.profitEstimate'))
   nextY = addKpiGrid(doc, context, nextY, profitKpis)
-  nextY = addSectionTitle(doc, context, nextY, 'VAT Provision')
+  nextY = addSectionTitle(doc, context, nextY, pt('profit.vatProvision'))
   nextY = addKpiGrid(doc, context, nextY, vatKpis)
-  nextY = addSectionTitle(doc, context, nextY, 'Owner Cash View')
+  nextY = addSectionTitle(doc, context, nextY, pt('profit.ownerCash'))
   nextY = addKpiGrid(doc, context, nextY, ownerKpis)
 
   if (data.monthlyRows.length === 0) {
-    nextY = addCompactMessage(doc, context, nextY, 'No profit estimate rows found for this period.')
+    nextY = addCompactMessage(doc, context, nextY, pt('profit.noData'))
     addFinalNotes(doc, context, nextY, [
-      'This is a management estimate based on current reporting data. It is not an audited Profit & Loss statement.',
-      'VAT payable is shown separately as a provision, not as a normal operating expense.',
+      pt('profit.disclaimer'), pt('profit.vatDisclaimer'),
     ])
     saveReportDoc(doc, context)
     return
@@ -483,19 +464,12 @@ async function exportProfitEstimatePdf(context: ReportPdfContext, data: ProfitEs
 
   const vatRowsByMonth = monthlyVatByMonth(vatData)
 
-  nextY = addSectionTitle(doc, context, nextY, 'Monthly Owner View', 'Amounts in SAR. VAT provision uses matching monthly VAT support rows when available.')
+  nextY = addSectionTitle(doc, context, nextY, pt('profit.monthlyOwner'), pt('profit.monthlyHint'))
   nextY = addAutoTable(doc, context, {
     startY: nextY,
     fontSize: 6.2,
     head: [
-      'Month',
-      'Sales incl. VAT',
-      'Est. sales excl. VAT',
-      'Purchases',
-      'Expenses',
-      'Est. business profit',
-      'VAT provision',
-      'Est. cash after VAT',
+      pt('common.month'), pt('profit.salesVat'), pt('profit.salesExVat'), pt('profit.purchases'), pt('profit.expenses'), pt('profit.profit'), pt('profit.vatProvision'), pt('profit.cashAfter'),
     ],
     body: data.monthlyRows.map(row => {
       const vatRow = vatRowsByMonth.get(row.month)
@@ -516,7 +490,7 @@ async function exportProfitEstimatePdf(context: ReportPdfContext, data: ProfitEs
       ]
     }),
     foot: [
-      'Total',
+      pt('common.total'),
       amountCell(data.totalRevenue),
       amountCell(estimatedSalesExVat),
       amountCell(data.totalCOGS),
@@ -537,9 +511,7 @@ async function exportProfitEstimatePdf(context: ReportPdfContext, data: ProfitEs
   })
 
   addFinalNotes(doc, context, nextY, [
-    'This is a management estimate based on current reporting data. It is not an audited Profit & Loss statement.',
-    'VAT payable is shown separately as a provision, not as a normal operating expense.',
-    'Sales figures include VAT unless explicitly shown as estimated sales excluding VAT.',
+    pt('profit.disclaimer'), pt('profit.vatDisclaimer'), pt('profit.salesDisclaimer'),
   ])
   saveReportDoc(doc, context)
 }
@@ -587,15 +559,15 @@ export function reportPdfErrorMessage(error: unknown): string {
   const combined = errorFields(error)
 
   if (/PGRST202|PGRST204|schema cache|could not find the function|function .* not found/i.test(combined)) {
-    return 'Report export is not ready. Please refresh after the latest database update.'
+    return pt('errors.notReady')
   }
 
   if (/unauthorized|permission|42501|jwt|session/i.test(combined)) {
-    return 'Your session or report permissions could not be verified. Refresh or sign in again.'
+    return pt('errors.permission')
   }
 
   if (/22023|invalid report date range|invalid/i.test(combined)) {
-    return 'Choose a valid date range and try again.'
+    return pt('errors.range')
   }
 
   return i18n.t('reports:export.failed')

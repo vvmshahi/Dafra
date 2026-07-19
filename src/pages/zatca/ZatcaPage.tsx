@@ -1,7 +1,9 @@
 import ZatcaTab from '@/pages/settings/ZatcaTab'
 import { ShieldCheck } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 export default function ZatcaPage() {
+  const { t } = useTranslation('zatca')
   return (
     <div className="max-w-6xl space-y-6">
       <div className="relative overflow-hidden rounded-3xl bg-[#0F2419] px-5 py-6 shadow-card-lg sm:px-7">
@@ -11,10 +13,10 @@ export default function ZatcaPage() {
             <ShieldCheck size={20} className="text-gold-300" />
           </div>
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-gold-300">Production Phase 2</p>
-            <h1 className="mt-2 text-2xl font-black tracking-tight text-white">ZATCA setup</h1>
+            <p className="text-xs font-bold uppercase tracking-wide text-gold-300">{t('productionPhase2')}</p>
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-white">{t('setup')}</h1>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-primary-100/80">
-              Connect each branch to your ZATCA account with a Fatoora OTP and monitor live production status from one owner workspace.
+              {t('subtitle')}
             </p>
           </div>
         </div>

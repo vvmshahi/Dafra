@@ -11,6 +11,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from 'recharts'
+import { useTranslation, type TFunction } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -79,15 +80,16 @@ const PLAN_COLORS: Record<string, string> = {
   'Phase 2': '#0F2419',
 }
 
-function tenantStatus(t: RecentTenant): { label: string; variant: 'success' | 'warning' | 'danger' | 'default' } {
-  if (t.suspended_at)                          return { label: 'Suspended', variant: 'danger'  }
-  if (t.is_active && t.subStatus === 'active') return { label: 'Active',    variant: 'success' }
-  return { label: 'Inactive', variant: 'default' }
+function tenantStatus(tenant: RecentTenant, t: TFunction): { label: string; variant: 'success' | 'warning' | 'danger' | 'default' } {
+  if (tenant.suspended_at) return { label: t('status.suspended'), variant: 'danger' }
+  if (tenant.is_active && tenant.subStatus === 'active') return { label: t('status.active'), variant: 'success' }
+  return { label: t('status.inactive'), variant: 'default' }
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SuperAdminDashboard() {
+  const { t, i18n } = useTranslation('admin')
   const navigate = useNavigate()
   const [stats,   setStats]   = useState<DashboardStats | null>(null)
   const [recent,  setRecent]  = useState<RecentTenant[]>([])
@@ -194,17 +196,17 @@ export default function SuperAdminDashboard() {
       for (let i = 5; i >= 0; i--) {
         const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i)
         const key = d.toISOString().slice(0, 7)
-        points.push({ month: d.toLocaleString('en', { month: 'short' }), mrr: Math.round(byMonth[key] ?? 0) })
+        points.push({ month: d.toLocaleString(i18n.resolvedLanguage?.startsWith('ar') ? 'ar-SA' : 'en', { month: 'short' }), mrr: Math.round(byMonth[key] ?? 0) })
       }
       setMrrData(points)
 
       if (!silent) setLoading(false)
     } catch (err: any) {
       console.error('[SuperAdmin] dashboard load failed:', err)
-      setError('Failed to load dashboard data. Please refresh.')
+      setError(t('dashboard.loadFailed'))
       if (!silent) setLoading(false)
     }
-  }, [])
+  }, [i18n.resolvedLanguage, t])
 
   useEffect(() => { loadStats() }, [loadStats])
 
@@ -234,9 +236,9 @@ export default function SuperAdminDashboard() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1">
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Kubri Super Admin</p>
-        <h1 className="text-2xl font-black tracking-tight text-gray-900">Platform overview</h1>
-        <p className="text-sm text-gray-500">Clients, branches, subscriptions, and revenue signals.</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{t('superAdmin')}</p>
+        <h1 className="text-2xl font-black tracking-tight text-gray-900">{t('dashboard.title')}</h1>
+        <p className="text-sm text-gray-500">{t('dashboard.subtitle')}</p>
       </div>
 
       {/* Error banner */}
@@ -244,40 +246,40 @@ export default function SuperAdminDashboard() {
         <div className="flex items-center gap-3 bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-700">
           <AlertTriangle size={15} className="flex-shrink-0 text-red-500" />
           {error}
-          <button onClick={() => loadStats()} className="ml-auto text-xs font-medium underline hover:no-underline">Retry</button>
+          <button onClick={() => loadStats()} className="ms-auto text-xs font-medium underline hover:no-underline">{t('actions.retry')}</button>
         </div>
       )}
 
       {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
         <StatCard
-          label="Total Clients"
+          label={t('dashboard.totalClients')}
           value={s.totalTenants.toString()}
-          sub={`${s.activeTenants} active · ${s.newThisMonth} new this month`}
+          sub={t('dashboard.clientSummary', { active: s.activeTenants, new: s.newThisMonth })}
           icon={Building2} iconClass="text-primary-600" bgClass="bg-primary-50"
         />
         <StatCard
-          label="MRR"
+          label={t('dashboard.mrr')}
           value={<Rial amount={s.mrr} />}
-          sub={`${s.activeTenants - s.lifetimeFree} paying clients`}
+          sub={t('dashboard.payingClients', { count: s.activeTenants - s.lifetimeFree })}
           icon={TrendingUp} iconClass="text-emerald-600" bgClass="bg-emerald-50"
         />
         <StatCard
-          label="Total Branches"
+          label={t('dashboard.totalBranches')}
           value={s.totalBranches.toString()}
-          sub="across all clients"
+          sub={t('dashboard.allClients')}
           icon={Building2} iconClass="text-gold-600" bgClass="bg-gold-50"
         />
         <StatCard
-          label="Total Users"
+          label={t('dashboard.totalUsers')}
           value={s.totalUsers.toString()}
-          sub="active accounts"
+          sub={t('dashboard.activeAccounts')}
           icon={Users} iconClass="text-violet-600" bgClass="bg-violet-50"
         />
         <StatCard
-          label="Lifetime Free"
+          label={t('dashboard.lifetimeFree')}
           value={s.lifetimeFree.toString()}
-          sub="not counted in MRR"
+          sub={t('dashboard.notInMrr')}
           icon={Star} iconClass="text-purple-600" bgClass="bg-purple-50"
         />
       </div>
@@ -288,8 +290,8 @@ export default function SuperAdminDashboard() {
         {/* Revenue trend */}
         <div className="xl:col-span-2 card p-6">
           <div className="mb-6">
-            <h2 className="text-sm font-semibold text-gray-900">Revenue Trend (last 6 months)</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Total invoice amounts from posted invoices</p>
+            <h2 className="text-sm font-semibold text-gray-900">{t('dashboard.revenueTrend')}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{t('dashboard.invoiceRevenue')}</p>
           </div>
           <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={mrrData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
@@ -315,8 +317,8 @@ export default function SuperAdminDashboard() {
         {/* Plan distribution */}
         <div className="card p-6 flex flex-col">
           <div className="mb-4">
-            <h2 className="text-sm font-semibold text-gray-900">Plan Distribution</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Active subscriptions by plan</p>
+            <h2 className="text-sm font-semibold text-gray-900">{t('dashboard.planDistribution')}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{t('dashboard.activeByPlan')}</p>
           </div>
           {planData.length > 0 ? (
             <ResponsiveContainer width="100%" height={190}>
@@ -334,7 +336,7 @@ export default function SuperAdminDashboard() {
             </ResponsiveContainer>
           ) : (
             <div className="flex-1 flex items-center justify-center">
-              <p className="text-xs text-gray-400">No active subscriptions</p>
+              <p className="text-xs text-gray-400">{t('dashboard.noActiveSubscriptions')}</p>
             </div>
           )}
         </div>
@@ -344,9 +346,9 @@ export default function SuperAdminDashboard() {
       <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-100 rounded-xl p-4">
         <AlertTriangle size={15} className="text-amber-500 flex-shrink-0 mt-0.5" />
         <div>
-          <p className="text-xs font-semibold text-amber-800">Production readiness reminder</p>
+          <p className="text-xs font-semibold text-amber-800">{t('dashboard.readiness')}</p>
           <p className="text-[11px] text-amber-700 mt-0.5">
-            Review subscriptions, branch status, and ZATCA setup before enabling live operations for a client.
+            {t('dashboard.readinessHelp')}
           </p>
         </div>
       </div>
@@ -354,41 +356,41 @@ export default function SuperAdminDashboard() {
       {/* Recent clients table */}
       <div className="card">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Recent Clients</h2>
+          <h2 className="text-sm font-semibold text-gray-900">{t('dashboard.recentClients')}</h2>
           <button
             onClick={() => navigate('/super-admin/clients')}
             className="text-xs text-primary-600 font-medium hover:text-primary-700 flex items-center gap-1"
           >
-            View all <ArrowRight size={12} />
+            {t('actions.viewAll')} <ArrowRight size={12} />
           </button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-50">
-                {['Business Name', 'Plan', 'Joined', 'Status'].map(h => (
-                  <th key={h} className="px-6 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
+                {['businessName', 'plan', 'joined', 'status'].map(h => (
+                  <th key={h} className="px-6 py-3 text-start text-[11px] font-semibold text-gray-400 uppercase tracking-wide">{t(`dashboard.${h}`)}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {recent.map(t => {
-                const st = tenantStatus(t)
+              {recent.map(tenant => {
+                const st = tenantStatus(tenant, t)
                 return (
                   <tr
-                    key={t.id}
+                    key={tenant.id}
                     className="hover:bg-gray-50/60 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/super-admin/clients/${t.id}`)}
+                    onClick={() => navigate(`/super-admin/clients/${tenant.id}`)}
                   >
-                    <td className="px-6 py-3.5 text-sm font-medium text-gray-800">{t.name}</td>
+                    <td className="px-6 py-3.5 text-sm font-medium text-gray-800" dir="auto">{tenant.name}</td>
                     <td className="px-6 py-3.5">
-                      {t.plan ? (
+                      {tenant.plan ? (
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                          t.plan === 'Phase 2' ? 'bg-primary-50 text-primary-700' : 'bg-amber-50 text-amber-700'
-                        }`}>{t.plan}</span>
+                          tenant.plan === 'Phase 2' ? 'bg-primary-50 text-primary-700' : 'bg-amber-50 text-amber-700'
+                        }`}>{tenant.plan}</span>
                       ) : <span className="text-xs text-gray-400">—</span>}
                     </td>
-                    <td className="px-6 py-3.5 text-xs text-gray-400">{t.created_at.slice(0, 10)}</td>
+                    <td className="px-6 py-3.5 text-xs text-gray-400" dir="ltr">{tenant.created_at.slice(0, 10)}</td>
                     <td className="px-6 py-3.5">
                       <Badge variant={st.variant} dot>{st.label}</Badge>
                     </td>
@@ -396,7 +398,7 @@ export default function SuperAdminDashboard() {
                 )
               })}
               {recent.length === 0 && (
-                <tr><td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-400">No clients yet</td></tr>
+                <tr><td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-400">{t('dashboard.noClients')}</td></tr>
               )}
             </tbody>
           </table>

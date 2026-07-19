@@ -1,4 +1,5 @@
 {
+  "vatIncluded":"VAT Included","vatExcluded":"VAT Excluded",
   "title": "Purchases",
   "subtitle": "Manage supplier bills, purchased items, and stock receiving",
   "subtitleService": "Record supplier bills and materials for reports and VAT.",

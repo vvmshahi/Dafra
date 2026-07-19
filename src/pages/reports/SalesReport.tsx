@@ -140,7 +140,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
         console.error('Unable to load sales report summary', error)
         if (!cancelled) {
           setData(null)
-          setError(reportErrorMessage(error))
+          setError(t('reports:errors.load'))
         }
       } finally {
         if (!cancelled) setLoading(false)
