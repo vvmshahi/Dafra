@@ -570,6 +570,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
   // ── Derived display values ─────────────────────────────────────────────────
 
+  const isCreditNote = invoice.zatca_invoice_type === 'credit_note'
   const documentLanguage = isCreditNote
     ? resolveCreditNoteDocumentLanguage(invoice.document_language, originalInvoiceLink?.document_language, branch.invoice_language)
     : resolveInvoiceDocumentLanguage(invoice.document_language, branch.invoice_language)
@@ -587,7 +588,6 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     ? Number(payment.change_amount ?? 0)
     : null
   const isCancelled = invoice.status === 'cancelled'
-  const isCreditNote = invoice.zatca_invoice_type === 'credit_note'
   const hasRefunds = refunds.length > 0
   const latestCreditNote = linkedCreditNotes[0] ?? null
   const totalOriginalQuantity = refundableItems.reduce((sum, item) => sum + Number(item.original_quantity ?? 0), 0)
