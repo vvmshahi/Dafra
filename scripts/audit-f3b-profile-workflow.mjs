@@ -12,7 +12,7 @@ assert.match(migration,/compliance_identity_mode TEXT NOT NULL DEFAULT 'legacy'/
 assert.match(api,/PGRST202|42883/)
 assert.match(page,/complianceCapability/)
 assert.match(page,/registeredSellerNameAr/)
-assert.match(page,/dir=\{k==='vatNumber'/)
+assert.match(page,/field\.ltr \? 'ltr' : 'auto'/)
 assert.match(production,/protectedMode[\s\S]*branch_compliance_profiles/)
 assert.doesNotMatch(migration,/UPDATE\s+public\.invoices\s+SET\s+(zatca_|identity_snapshot)/i)
 console.log('F3B official seller workflow protection assertions passed.')

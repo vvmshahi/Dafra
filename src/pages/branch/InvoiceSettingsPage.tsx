@@ -457,7 +457,7 @@ export default function InvoiceSettingsPage() {
 
         {/* ── LEFT: Form ──────────────────────── */}
         <div className="min-w-0 space-y-4">
-          <ComplianceReadinessCard branchId={profile?.branch_id} manage={profile?.role === 'owner'} />
+          <ComplianceReadinessCard branchId={profile?.branch_id} manage={profile?.role === 'owner'} invoiceGuidance />
 
           <div className="card border-primary-100 bg-primary-50/30 px-5 py-4">
             <p className="mb-3 rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-medium text-emerald-800">{t('settings:invoiceSettings.displayDoesNotChangeZatca')}</p>
