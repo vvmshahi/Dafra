@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+
+const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
+const model = read('src/lib/invoices/documentViewModel.ts')
+const adapters = read('src/lib/invoices/documentViewAdapters.ts')
+const fixture = read('src/lib/invoices/documentPreviewFixture.ts')
+const thermal = read('src/lib/invoices/documentThermalProps.ts')
+const preview = read('src/components/print/DocumentPreview.tsx')
+
+for (const field of ['kind:', 'invoiceType:', 'number:', 'uuid:', 'issueTimestamp:', 'language:', 'direction:', 'snapshotVersion:', 'legacy:', 'fidelity:', 'registeredName:', 'vatNumber:', 'registeredAddress:', 'thermal:', 'items:', 'totals:', 'payments:', 'originalDocument:', 'creditReason:', 'requestedId:', 'resolvedId:', 'fallbackReason:', 'quantityMaximumFractionDigits:']) assert.ok(model.includes(field), `missing model field ${field}`)
+for (const adapter of ['documentFromStoredInvoiceV2', 'documentFromStoredInvoiceV1', 'documentFromLegacyInvoice', 'documentFromFullCreditNote', 'documentFromPartialCreditNote', 'documentFromPreviewDraft', 'documentFromPreviewCreditNoteDraft']) assert.match(adapters, new RegExp(`function ${adapter}`))
+assert.match(adapters, /snapshot\.version === 2/); assert.match(adapters, /identity_snapshot\?\.version === 1/)
+assert.match(adapters, /base\(input, 'legacy', null, true\)/); assert.match(adapters, /fidelity: legacy \? 'best_effort' : 'exact_snapshot'/)
+assert.match(adapters, /source: 'preview'/); assert.match(fixture, /sample-qr-marker/); assert.match(fixture, /sample-credit-qr-marker/); assert.match(fixture, /Dafra Sample Roastery/)
+assert.match(fixture, /method: 'cash', amount: 30/); assert.match(fixture, /method: 'card', amount: 28/)
+assert.match(model, /Object\.freeze/); assert.match(model, /resolveHistoricalA4Template/)
+assert.match(thermal, /thermalReceiptPropsFromDocument/); assert.match(thermal, /model\.presentation\.thermal/)
+assert.match(preview, /DocumentViewModel/); assert.match(preview, /formatDocumentMoney/); assert.doesNotMatch(preview, /50\.43|7\.57|58\.00/)
+for (const secret of ['password', 'access_token', 'service_role', 'private_key', 'certificate', 'csid', 'otp']) assert.doesNotMatch(model + adapters, new RegExp(secret, 'i'))
+console.log('Phase 4D DocumentViewModel contract assertions passed (snapshot v2/v1, legacy, credit-note, preview, formatting, template and secrecy contracts).')

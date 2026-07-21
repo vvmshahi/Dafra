@@ -4,14 +4,13 @@ import { ArrowLeft, Loader2, Printer, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import QRCode from 'qrcode'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
-import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import { supabase } from '@/lib/supabase'
 import { DEFAULT_PRINTER_SETTINGS, type PrinterSettings } from '@/lib/electron'
 import { buildZatcaQR } from '@/lib/zatca/qr'
-import { toSaudiTime } from '@/lib/utils/date'
 import type { Branch, Invoice, InvoiceItem, Payment } from '@/types/database'
-import { documentDate, resolveCreditNoteDocumentLanguage, resolveInvoiceDocumentLanguage } from '@/localization/documents'
 import { documentIdentity } from '@/lib/invoices/documentIdentity'
+import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
+import { thermalReceiptPropsFromDocument } from '@/lib/invoices/documentThermalProps'
 
 interface Tenant {
   name: string
@@ -193,7 +192,6 @@ export default function ReceiptPrintPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
-  const [originalDocumentLanguage, setOriginalDocumentLanguage] = useState<string | null>(null)
 
   useReceiptPrintStyle(receiptProfile, electronPrint)
 
@@ -233,13 +231,10 @@ export default function ReceiptPrintPage() {
         const customerFetch = inv.customer_id
           ? fetches[2]
           : Promise.resolve({ data: null })
-        const [branchResult, tenantResult, customerResult, originalResult] = await Promise.all([
+        const [branchResult, tenantResult, customerResult] = await Promise.all([
           fetches[0],
           fetches[1],
           customerFetch,
-          inv.original_invoice_id
-            ? supabase.from('invoices').select('document_language').eq('id', inv.original_invoice_id).maybeSingle()
-            : Promise.resolve({ data: null }),
         ])
         if (cancelled) return
 
@@ -249,7 +244,6 @@ export default function ReceiptPrintPage() {
         setBranch(branchResult.data as Branch)
         setTenant(tenantResult.data as Tenant)
         setCustomer((customerResult?.data ?? null) as Customer | null)
-        setOriginalDocumentLanguage((originalResult?.data as { document_language?: string | null } | null)?.document_language ?? null)
       } catch {
         if (!cancelled) setError(t('receipts:loadFailed'))
       } finally {
@@ -304,71 +298,8 @@ export default function ReceiptPrintPage() {
 
   const receipt = useMemo(() => {
     if (!invoice || !branch || !tenant) return null
-    const identity = documentIdentity(invoice.identity_snapshot, branch)
-
-    const documentLanguage = invoice.zatca_invoice_type === 'credit_note'
-      ? resolveCreditNoteDocumentLanguage(invoice.document_language, originalDocumentLanguage, branch.invoice_language)
-      : resolveInvoiceDocumentLanguage(invoice.document_language, branch.invoice_language)
-    const date = documentDate(invoice.created_at, documentLanguage)
-    const address = [
-      branch.building_number ? `Building ${branch.building_number}` : null,
-      branch.street,
-      branch.district,
-      branch.city,
-    ].filter(Boolean).join(', ')
-    const addressAr = [
-      branch.building_number ? `مبنى ${branch.building_number}` : null,
-      branch.street_ar,
-      branch.district_ar,
-      branch.city_ar,
-    ].filter(Boolean).join('، ')
-    const thermalItems: ThermalItem[] = items.map(item => ({
-      name: item.name,
-      nameAr: item.name_ar,
-      qty: Number(item.quantity),
-      unitPrice: Number(item.unit_price),
-      lineTotal: Number(item.total),
-      subtotal: Number(item.subtotal),
-      taxAmount: Number(item.tax_amount),
-      total: Number(item.total),
-    }))
-    const splitPayment = isSplitPaymentRows(payments)
-    const payment = payments[0] ?? null
-    const cashReceived = !splitPayment && payment?.method === 'cash'
-      ? Number(payment.amount_received ?? payment.amount ?? invoice.total_amount)
-      : null
-    const changeAmount = !splitPayment && payment?.method === 'cash'
-      ? Number(payment.change_amount ?? 0)
-      : null
-    const isCreditNote = invoice.zatca_invoice_type === 'credit_note'
-    const isStandardDocument = invoice.zatca_invoice_type === 'standard'
-      || (isCreditNote && customer?.customer_type === 'business' && !!customer?.vat_number)
-
-    return {
-      date,
-      time: toSaudiTime(invoice.created_at),
-      brandNameEn: identity.heading ?? identity.registeredSellerName,
-      brandNameAr: identity.subheading ?? identity.registeredSellerNameAr ?? '',
-      branchNameEn: identity.branchName,
-      branchNameAr: identity.branchNameAr,
-      address: identity.snapshotBacked ? identity.address : address || null,
-      addressAr: addressAr || null,
-      items: thermalItems,
-      splitPayment,
-      payment,
-      cashReceived,
-      changeAmount,
-      customerName: customerDisplayName(customer),
-      customerNameAr: customer?.customer_type === 'business'
-        ? customer.business_name_ar ?? customer.name_ar
-        : customer?.name_ar ?? null,
-      buyerVatNumber: isStandardDocument ? customer?.vat_number ?? null : null,
-      isStandardDocument,
-      documentType: isCreditNote ? 'credit_note' as const : 'invoice' as const,
-      documentLanguage,
-      identity,
-    }
-  }, [invoice, branch, tenant, items, payments, customer, originalDocumentLanguage])
+    return documentFromStoredInvoice({ invoice, branch, items, payments, customer: customer ? { name: customerDisplayName(customer), nameAr: customer.customer_type === 'business' ? customer.business_name_ar ?? customer.name_ar : customer.name_ar, vatNumber: customer.vat_number, type: customer.customer_type } : null })
+  }, [invoice, branch, tenant, items, payments, customer])
 
   useEffect(() => {
     if (!electronPrint || electronReadyRef.current || loading || error || !invoice || !branch || !tenant || !receipt || !qrDataUrl) return
@@ -454,44 +385,8 @@ export default function ReceiptPrintPage() {
       <main id="receipt-print-page" className="mx-auto flex min-h-[calc(100vh-64px)] max-w-3xl items-start justify-center bg-white px-3 py-5 sm:my-6 sm:min-h-0 sm:rounded-2xl sm:border sm:border-gray-100 sm:shadow-sm">
         <ThermalReceipt
           preview
-          documentLanguage={receipt.documentLanguage}
-          businessNameAr={receipt.brandNameAr}
-          businessNameEn={receipt.brandNameEn}
-          branchName={receipt.branchNameEn}
-          branchNameAr={receipt.branchNameAr}
-          address={receipt.address}
-          addressAr={receipt.addressAr}
-          vatNumber={receipt.identity.vatNumber}
-          phone={receipt.identity.phone}
-          website={receipt.identity.website}
-          showWebsite={receipt.identity.showWebsite}
-          email={receipt.identity.email}
-          showEmail={receipt.identity.showEmail}
-          invoiceNumber={invoice.invoice_number}
-          date={receipt.date}
-          time={receipt.time}
-          items={receipt.items}
-          subtotal={Number(invoice.subtotal)}
-          discountAmount={Number(invoice.discount_amount ?? 0)}
-          taxAmount={Number(invoice.tax_amount)}
-          total={Number(invoice.total_amount)}
-          paymentMethod={receipt.splitPayment ? 'split' : (receipt.payment?.method ?? 'card')}
-          payments={payments.map(payment => ({ method: payment.method, amount: Number(payment.amount) }))}
-          cashReceived={receipt.cashReceived}
-          change={receipt.changeAmount}
-          customerName={receipt.customerName}
-          customerNameAr={receipt.customerNameAr}
-          buyerVatNumber={receipt.buyerVatNumber}
-          isStandardInvoice={receipt.isStandardDocument}
-          documentType={receipt.documentType}
-          originalInvoiceNumber={invoice.invoice_reference ?? null}
-          creditReason={invoice.credit_reason}
-          logoUrl={receipt.identity.logoUrl}
-          showLogo={receipt.identity.showLogo}
+          {...thermalReceiptPropsFromDocument(receipt)}
           qrDataUrl={qrDataUrl}
-          receiptFooter={receipt.identity.footer}
-          showFooter={receipt.identity.showFooter}
-          showCashChange={identity.showCashChange}
         />
       </main>
     </div>

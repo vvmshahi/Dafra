@@ -29,6 +29,8 @@ import {
   resolveInvoiceDocumentLanguage,
 } from '@/localization/documents'
 import { documentIdentity } from '@/lib/invoices/documentIdentity'
+import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
+import { thermalReceiptPropsFromDocument } from '@/lib/invoices/documentThermalProps'
 
 function WhatsAppIcon({ size = 13 }: { size?: number }) {
   return (
@@ -641,6 +643,16 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     || (isCreditNote && invoice.zatca_status === 'pending')
 
   const identity = documentIdentity(invoice.identity_snapshot, branch)
+  const thermalDocument = documentFromStoredInvoice({
+    invoice, branch, items, payments,
+    customer: customer ? {
+      name: customer.customer_type === 'business' && (customer.business_name ?? customer.company_name) ? (customer.business_name ?? customer.company_name) : customer.name,
+      nameAr: customer.customer_type === 'business' ? (customer.business_name_ar ?? customer.name_ar) : customer.name_ar,
+      vatNumber: customer.vat_number,
+      type: customer.customer_type,
+    } : null,
+    originalInvoiceNumber: originalInvoiceLink?.invoice_number ?? null,
+  })
   const brandNameEn = identity.heading ?? identity.registeredSellerName
   const brandNameAr = identity.subheading ?? identity.registeredSellerNameAr ?? ''
   const sellerNames = documentNames(documentLanguage, brandNameEn, brandNameAr)
@@ -694,52 +706,8 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
       {/* ── Hidden thermal receipt (for print) ──────────── */}
       <ThermalReceipt
-        documentLanguage={documentLanguage}
-        businessNameAr={brandNameAr}
-        businessNameEn={brandNameEn}
-        branchName={identity.branchName}
-        branchNameAr={identity.branchNameAr}
-        address={identity.snapshotBacked ? identity.address : thermalAddress || null}
-        addressAr={thermalAddressAr || null}
-        vatNumber={vatNumber}
-        phone={identity.phone}
-        website={identity.website}
-        showWebsite={identity.showWebsite}
-        email={identity.email}
-        showEmail={identity.showEmail}
-        invoiceNumber={invoice.invoice_number}
-        date={invDate}
-        time={invTime}
-        items={thermalItems}
-        subtotal={Number(invoice.subtotal)}
-        discountAmount={Number(invoice.discount_amount)}
-        taxAmount={Number(invoice.tax_amount)}
-        total={Number(invoice.total_amount)}
-        paymentMethod={isSplitPayment ? 'split' : (payment?.method ?? 'card')}
-        payments={payments.map(p => ({ method: p.method, amount: Number(p.amount) }))}
-        cashReceived={cashReceived}
-        change={changeAmount}
-        customerName={
-          customer?.customer_type === 'business' && (customer.business_name ?? customer.company_name)
-            ? (customer.business_name ?? customer.company_name)
-            : (customer?.name ?? null)
-        }
-        customerNameAr={
-          customer?.customer_type === 'business'
-            ? (customer.business_name_ar ?? customer.name_ar)
-            : (customer?.name_ar ?? null)
-        }
-        buyerVatNumber={isStandardDocument ? (customer?.vat_number ?? null) : null}
-        isStandardInvoice={isStandardDocument}
-        documentType={isCreditNote ? 'credit_note' : 'invoice'}
-        originalInvoiceNumber={invoice.invoice_reference ?? originalInvoiceLink?.invoice_number ?? null}
-        creditReason={invoice.credit_reason}
-        logoUrl={identity.logoUrl}
-        showLogo={identity.showLogo}
+        {...thermalReceiptPropsFromDocument(thermalDocument)}
         qrDataUrl={qrDataUrl}
-        receiptFooter={identity.footer}
-        showFooter={identity.showFooter}
-        showCashChange={identity.showCashChange}
       />
 
       {/* ── Action bar (screen only) ─────────────────────── */}
