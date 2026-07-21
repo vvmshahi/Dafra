@@ -25,7 +25,8 @@
     "audit:f3b-profile": "node scripts/audit-f3b-profile-workflow.mjs",
     "audit:phase1-official-seller": "node scripts/audit-phase1-official-seller-ui.mjs",
     "audit:phase2-seller-flow": "node scripts/audit-phase2-simplified-seller-flow.mjs",
-    "audit:phase3b-local-baseline": "node scripts/audit-phase3b-local-baseline.mjs"
+    "audit:phase3b-local-baseline": "node scripts/audit-phase3b-local-baseline.mjs",
+    "test:phase3c-official-seller": "node scripts/test-phase3c-official-seller-runtime.mjs"
   },
   "build": {
     "appId": "com.kubri.pos",
