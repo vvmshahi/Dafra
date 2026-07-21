@@ -34,6 +34,7 @@ import SuperAdminSettingsPage  from '@/pages/super-admin/SuperAdminSettingsPage'
 import POSPage             from '@/pages/pos/POSPage'
 import SettingsPage        from '@/pages/settings/SettingsPage'
 import DevicePrinterPage   from '@/pages/settings/DevicePrinterPage'
+import OfficialSellerProfilePage from '@/pages/settings/OfficialSellerProfilePage'
 import InvoicesPage        from '@/pages/invoices/InvoicesPage'
 import InvoiceDetailPage   from '@/pages/invoices/InvoiceDetailPage'
 import EmployeesPage        from '@/pages/employees/EmployeesPage'
@@ -347,6 +348,7 @@ export default function App() {
               <Route path="/zatca"      element={<ZatcaPage />} />
               <Route path="/employees"   element={<EmployeesPage />} />
               <Route path="/settings"  element={<SettingsPage />} />
+              <Route path="/settings/official-seller" element={<OfficialSellerProfilePage />} />
             </Route>
 
             {/* Tenant operational routes: owner/admin and branch users; RLS/RPCs own row scope */}

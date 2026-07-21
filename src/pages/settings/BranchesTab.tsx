@@ -598,6 +598,7 @@ function BranchDrawer({
             <SectionHeader icon={Building2} title={t('branches:editor.identity')} open={identity.open} toggle={identity.toggle} />
             {identity.open && (
               <div className="px-5 py-4 space-y-4">
+                <p className="rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">{t('settings:officialSeller.legacyFieldWarning')}</p>
                 <div className="grid grid-cols-2 gap-3">
                   <Input label={t('branches:editor.nameEn')} value={form.name} onChange={e => set('name')(e.target.value)} placeholder={t('branches:editor.nameEnPlaceholder')} required />
                   <Input label={t('branches:editor.nameAr')} value={form.name_ar} onChange={e => set('name_ar')(e.target.value)} placeholder={t('branches:editor.nameArPlaceholder')} />

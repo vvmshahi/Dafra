@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS public.branch_compliance_profiles (
   tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE RESTRICT,
   registered_seller_name TEXT,
   registered_seller_name_ar TEXT,
-  vat_number TEXT CHECK (vat_number IS NULL OR vat_number ~ '^3[0-9]{13}3$'),
+  vat_number TEXT,
   registration_scheme TEXT NOT NULL DEFAULT 'CRN' CHECK (registration_scheme IN ('CRN','MOM','MLS','SAG','OTH')),
   registration_identifier TEXT,
   building_number TEXT,
@@ -174,12 +174,12 @@ $$;
 REVOKE ALL ON FUNCTION public.update_branch_compliance_profile(UUID,JSONB,TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.update_branch_compliance_profile(UUID,JSONB,TEXT) TO authenticated;
 
-CREATE OR REPLACE FUNCTION public.activate_branch_compliance_identity(p_branch_id UUID, p_reason TEXT)
+CREATE OR REPLACE FUNCTION public.activate_branch_compliance_identity(p_branch_id UUID, p_reason TEXT, p_confirmation BOOLEAN)
 RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path=public SET row_security=off AS $$
 DECLARE v_uid UUID:=auth.uid(); v_profile RECORD; v_branch RECORD; v_compliance RECORD;
 BEGIN
   SELECT id,tenant_id,role::TEXT role,is_active INTO v_profile FROM public.user_profiles WHERE id=v_uid;
-  IF NOT FOUND OR NOT v_profile.is_active OR v_profile.role <> 'owner' THEN RAISE EXCEPTION 'Owner permission required' USING ERRCODE='42501'; END IF;
+  IF NOT FOUND OR NOT v_profile.is_active OR v_profile.role <> 'owner' OR p_confirmation IS NOT TRUE THEN RAISE EXCEPTION 'Explicit owner confirmation required' USING ERRCODE='42501'; END IF;
   IF NULLIF(btrim(p_reason),'') IS NULL THEN RAISE EXCEPTION 'Activation reason is required' USING ERRCODE='22023'; END IF;
   SELECT id,tenant_id,compliance_identity_mode INTO v_branch FROM public.branches WHERE id=p_branch_id AND tenant_id=v_profile.tenant_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Branch not found' USING ERRCODE='42501'; END IF;
@@ -197,7 +197,116 @@ BEGIN
   RETURN jsonb_build_object('ok',true,'branch_id',p_branch_id,'compliance_identity_mode','protected');
 END;
 $$;
-REVOKE ALL ON FUNCTION public.activate_branch_compliance_identity(UUID,TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.activate_branch_compliance_identity(UUID,TEXT) TO authenticated;
+REVOKE ALL ON FUNCTION public.activate_branch_compliance_identity(UUID,TEXT,BOOLEAN) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.activate_branch_compliance_identity(UUID,TEXT,BOOLEAN) TO authenticated;
+
+ALTER TABLE public.branch_compliance_profiles ADD COLUMN IF NOT EXISTS evidence_reference TEXT;
+
+CREATE OR REPLACE FUNCTION public.get_compliance_identity_capability()
+RETURNS JSONB LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$
+  SELECT jsonb_build_object('available',true,'schema_version',1);
+$$;
+REVOKE ALL ON FUNCTION public.get_compliance_identity_capability() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_compliance_identity_capability() TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.get_branch_compliance_readiness(p_branch_id UUID)
+RETURNS JSONB LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=public SET row_security=off AS $$
+DECLARE v_uid UUID:=auth.uid(); v_user RECORD; v_branch RECORD; v_profile RECORD;
+BEGIN
+  SELECT tenant_id,branch_id,role::TEXT role,is_active INTO v_user FROM public.user_profiles WHERE id=v_uid;
+  IF NOT FOUND OR NOT v_user.is_active THEN RAISE EXCEPTION 'Unauthorized' USING ERRCODE='42501'; END IF;
+  SELECT id,tenant_id,compliance_identity_mode INTO v_branch FROM public.branches WHERE id=p_branch_id AND tenant_id=v_user.tenant_id;
+  IF NOT FOUND OR (v_user.role NOT IN ('owner','admin') AND v_user.branch_id IS DISTINCT FROM p_branch_id) THEN RAISE EXCEPTION 'Forbidden' USING ERRCODE='42501'; END IF;
+  SELECT * INTO v_profile FROM public.branch_compliance_profiles WHERE branch_id=p_branch_id AND tenant_id=v_branch.tenant_id;
+  RETURN jsonb_build_object('available',true,'branchId',p_branch_id,'mode',v_branch.compliance_identity_mode,
+    'status',COALESCE(v_profile.validation_status,'missing'),'profile',CASE WHEN v_profile.branch_id IS NULL THEN NULL ELSE jsonb_build_object(
+      'branchId',v_profile.branch_id,'registeredSellerName',v_profile.registered_seller_name,'registeredSellerNameAr',v_profile.registered_seller_name_ar,
+      'vatNumber',v_profile.vat_number,'registrationScheme',v_profile.registration_scheme,'registrationIdentifier',v_profile.registration_identifier,
+      'buildingNumber',v_profile.building_number,'street',v_profile.street,'district',v_profile.district,'city',v_profile.city,
+      'postalCode',v_profile.postal_code,'country',v_profile.country,'status',v_profile.validation_status,
+      'evidenceReference',v_profile.evidence_reference,'verifiedAt',v_profile.verified_at,'verifiedBy',v_profile.verified_by,'updatedAt',v_profile.updated_at) END);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.get_branch_compliance_readiness(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_branch_compliance_readiness(UUID) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.save_branch_compliance_draft(p_branch_id UUID,p_payload JSONB,p_reason TEXT)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path=public SET row_security=off AS $$
+DECLARE v_uid UUID:=auth.uid(); v_user RECORD; v_branch RECORD; v_old_status TEXT; v_new_status TEXT; v_changed TEXT[];
+BEGIN
+  SELECT tenant_id,role::TEXT role,is_active INTO v_user FROM public.user_profiles WHERE id=v_uid;
+  IF NOT FOUND OR NOT v_user.is_active OR v_user.role<>'owner' THEN RAISE EXCEPTION 'Owner permission required' USING ERRCODE='42501'; END IF;
+  SELECT id,tenant_id INTO v_branch FROM public.branches WHERE id=p_branch_id AND tenant_id=v_user.tenant_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Branch not found' USING ERRCODE='42501'; END IF;
+  SELECT validation_status INTO v_old_status FROM public.branch_compliance_profiles WHERE branch_id=p_branch_id;
+  v_new_status:=CASE WHEN v_old_status='verified' THEN 'revalidation_required' ELSE 'draft' END;
+  INSERT INTO public.branch_compliance_profiles(branch_id,tenant_id,registered_seller_name,registered_seller_name_ar,vat_number,registration_scheme,registration_identifier,building_number,street,district,city,postal_code,country,validation_status,evidence_reference,verified_at,verified_by)
+  VALUES(p_branch_id,v_branch.tenant_id,NULLIF(btrim(p_payload->>'registeredSellerName'),''),NULLIF(btrim(p_payload->>'registeredSellerNameAr'),''),NULLIF(btrim(p_payload->>'vatNumber'),''),COALESCE(NULLIF(btrim(p_payload->>'registrationScheme'),''),'CRN'),NULLIF(btrim(p_payload->>'registrationIdentifier'),''),NULLIF(btrim(p_payload->>'buildingNumber'),''),NULLIF(btrim(p_payload->>'street'),''),NULLIF(btrim(p_payload->>'district'),''),NULLIF(btrim(p_payload->>'city'),''),NULLIF(btrim(p_payload->>'postalCode'),''),COALESCE(NULLIF(btrim(p_payload->>'country'),''),'SA'),v_new_status,NULLIF(btrim(p_payload->>'evidenceReference'),''),NULL,NULL)
+  ON CONFLICT(branch_id) DO UPDATE SET registered_seller_name=EXCLUDED.registered_seller_name,registered_seller_name_ar=EXCLUDED.registered_seller_name_ar,vat_number=EXCLUDED.vat_number,registration_scheme=EXCLUDED.registration_scheme,registration_identifier=EXCLUDED.registration_identifier,building_number=EXCLUDED.building_number,street=EXCLUDED.street,district=EXCLUDED.district,city=EXCLUDED.city,postal_code=EXCLUDED.postal_code,country=EXCLUDED.country,evidence_reference=EXCLUDED.evidence_reference,validation_status=v_new_status,verified_at=NULL,verified_by=NULL,updated_at=NOW();
+  v_changed:=ARRAY['registered_seller_name','registered_seller_name_ar','vat_number','registration_scheme','registration_identifier','registered_address','evidence_reference'];
+  PERFORM public.record_audit_event('branch_compliance_draft_saved',v_branch.tenant_id,p_branch_id,v_uid,v_user.role,'branch',p_branch_id,'warning','succeeded',jsonb_build_object('changed_fields',v_changed,'previous_status',COALESCE(v_old_status,'missing'),'new_status',v_new_status,'reason',NULLIF(btrim(p_reason),''),'credential_impact',CASE WHEN v_old_status='verified' THEN 'revalidation_required' ELSE 'not_evaluated' END),NULL,NULL);
+  RETURN jsonb_build_object('ok',true,'status',v_new_status);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.submit_branch_compliance_profile(p_branch_id UUID,p_reason TEXT)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path=public SET row_security=off AS $$
+DECLARE v_uid UUID:=auth.uid(); v_user RECORD; v RECORD;
+BEGIN
+  SELECT tenant_id,role::TEXT role,is_active INTO v_user FROM public.user_profiles WHERE id=v_uid;
+  IF NOT FOUND OR NOT v_user.is_active OR v_user.role<>'owner' THEN RAISE EXCEPTION 'Owner permission required' USING ERRCODE='42501'; END IF;
+  SELECT * INTO v FROM public.branch_compliance_profiles WHERE branch_id=p_branch_id AND tenant_id=v_user.tenant_id FOR UPDATE;
+  IF NOT FOUND OR v.validation_status NOT IN ('draft','revalidation_required') THEN RAISE EXCEPTION 'Profile is not ready for submission' USING ERRCODE='23514'; END IF;
+  IF NULLIF(btrim(v.registered_seller_name),'') IS NULL OR COALESCE(v.vat_number,'') !~ '^3[0-9]{13}3$' OR NULLIF(btrim(v.registration_identifier),'') IS NULL OR NULLIF(btrim(v.building_number),'') IS NULL OR NULLIF(btrim(v.street),'') IS NULL OR NULLIF(btrim(v.district),'') IS NULL OR NULLIF(btrim(v.city),'') IS NULL OR COALESCE(v.postal_code,'') !~ '^[0-9]{5}$' OR v.registration_scheme NOT IN ('CRN','MOM','MLS','SAG','OTH') THEN RAISE EXCEPTION 'Official seller profile is incomplete' USING ERRCODE='23514'; END IF;
+  UPDATE public.branch_compliance_profiles SET validation_status='needs_review',updated_at=NOW() WHERE branch_id=p_branch_id;
+  PERFORM public.record_audit_event('branch_compliance_submitted',v.tenant_id,p_branch_id,v_uid,v_user.role,'branch',p_branch_id,'warning','succeeded',jsonb_build_object('previous_status',v.validation_status,'new_status','needs_review','reason',btrim(p_reason)),NULL,NULL);
+  RETURN jsonb_build_object('ok',true,'status','needs_review');
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.review_branch_compliance_profile(p_branch_id UUID,p_decision TEXT,p_reason TEXT,p_confirmation BOOLEAN)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path=public SET row_security=off AS $$
+DECLARE v_uid UUID:=auth.uid(); v_user RECORD; v RECORD; v_status TEXT;
+BEGIN
+  SELECT tenant_id,role::TEXT role,is_active INTO v_user FROM public.user_profiles WHERE id=v_uid;
+  IF NOT FOUND OR NOT v_user.is_active OR v_user.role<>'owner' OR p_confirmation IS NOT TRUE THEN RAISE EXCEPTION 'Explicit owner confirmation required' USING ERRCODE='42501'; END IF;
+  IF p_decision NOT IN ('verify','reject') OR NULLIF(btrim(p_reason),'') IS NULL THEN RAISE EXCEPTION 'Decision and reason are required' USING ERRCODE='22023'; END IF;
+  SELECT * INTO v FROM public.branch_compliance_profiles WHERE branch_id=p_branch_id AND tenant_id=v_user.tenant_id FOR UPDATE;
+  IF NOT FOUND OR v.validation_status<>'needs_review' THEN RAISE EXCEPTION 'Profile is not awaiting review' USING ERRCODE='23514'; END IF;
+  v_status:=CASE WHEN p_decision='verify' THEN 'verified' ELSE 'rejected' END;
+  UPDATE public.branch_compliance_profiles SET validation_status=v_status,verified_at=CASE WHEN v_status='verified' THEN NOW() ELSE NULL END,verified_by=CASE WHEN v_status='verified' THEN v_uid ELSE NULL END,updated_at=NOW() WHERE branch_id=p_branch_id;
+  PERFORM public.record_audit_event('branch_compliance_'||v_status,v.tenant_id,p_branch_id,v_uid,v_user.role,'branch',p_branch_id,'warning','succeeded',jsonb_build_object('previous_status','needs_review','new_status',v_status,'reason',btrim(p_reason),'independent_reviewer',false),NULL,NULL);
+  RETURN jsonb_build_object('ok',true,'status',v_status);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.deactivate_protected_identity_mode(p_branch_id UUID,p_reason TEXT,p_confirmation BOOLEAN)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path=public SET row_security=off AS $$
+DECLARE v_uid UUID:=auth.uid(); v_user RECORD; v_branch RECORD;
+BEGIN
+  SELECT tenant_id,role::TEXT role,is_active INTO v_user FROM public.user_profiles WHERE id=v_uid;
+  IF NOT FOUND OR NOT v_user.is_active OR v_user.role<>'owner' OR p_confirmation IS NOT TRUE OR NULLIF(btrim(p_reason),'') IS NULL THEN RAISE EXCEPTION 'Explicit owner confirmation and reason required' USING ERRCODE='42501'; END IF;
+  SELECT id,tenant_id,compliance_identity_mode INTO v_branch FROM public.branches WHERE id=p_branch_id AND tenant_id=v_user.tenant_id FOR UPDATE;
+  IF NOT FOUND OR v_branch.compliance_identity_mode<>'protected' THEN RAISE EXCEPTION 'Branch is not in protected mode' USING ERRCODE='23514'; END IF;
+  UPDATE public.branches SET compliance_identity_mode='legacy',updated_at=NOW() WHERE id=p_branch_id;
+  PERFORM public.record_audit_event('branch_compliance_identity_recovery',v_branch.tenant_id,p_branch_id,v_uid,v_user.role,'branch',p_branch_id,'critical','succeeded',jsonb_build_object('previous_mode','protected','new_mode','legacy','reason',btrim(p_reason),'issued_artifacts_changed',false),NULL,NULL);
+  RETURN jsonb_build_object('ok',true,'mode','legacy');
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_branch_compliance_audit(p_branch_id UUID)
+RETURNS SETOF public.audit_events LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public SET row_security=off AS $$
+  SELECT a.* FROM public.audit_events a JOIN public.user_profiles u ON u.id=auth.uid()
+  WHERE a.branch_id=p_branch_id AND a.tenant_id=u.tenant_id AND u.is_active
+    AND (u.role::TEXT IN ('owner','admin') OR u.branch_id=p_branch_id)
+    AND a.action LIKE 'branch_compliance_%' ORDER BY a.created_at DESC LIMIT 100;
+$$;
+
+DO $$ DECLARE f TEXT; BEGIN
+  FOREACH f IN ARRAY ARRAY['save_branch_compliance_draft(uuid,jsonb,text)','submit_branch_compliance_profile(uuid,text)','review_branch_compliance_profile(uuid,text,text,boolean)','deactivate_protected_identity_mode(uuid,text,boolean)','get_branch_compliance_audit(uuid)'] LOOP
+    EXECUTE 'REVOKE ALL ON FUNCTION public.'||f||' FROM PUBLIC';
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public.'||f||' TO authenticated';
+  END LOOP;
+END $$;
 
 COMMIT;

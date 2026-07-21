@@ -8,6 +8,7 @@ import { isElectron }  from '@/lib/electron'
 import { useAuth } from '@/hooks/useAuth'
 import { resolveBusinessType } from '@/lib/utils/businessType'
 import { useTranslation } from 'react-i18next'
+import ComplianceReadinessCard from '@/components/compliance/ComplianceReadinessCard'
 
 /* ── Tab config ─────────────────────────────────────────────── */
 
@@ -95,6 +96,7 @@ export default function SettingsPage() {
           </span>
         </div>
       )}
+      {canViewBusinessType && <ComplianceReadinessCard manage />}
 
       {/* Tab content */}
       {active === 'subscription' && <SubscriptionTab />}
