@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+const read=p=>readFileSync(new URL(`../${p}`,import.meta.url),'utf8')
+const migration=read('supabase/phase6a-compliance-presentation-identity-foundation.sql'), api=read('src/lib/complianceIdentity.ts'), page=read('src/pages/settings/OfficialSellerProfilePage.tsx'), settings=read('supabase/phase5x-document-language-snapshot.sql'), production=read('supabase/functions/zatca-submit/index.ts')
+assert.doesNotMatch(settings,/registered_seller_name|branch_compliance_profiles/)
+for(const name of ['save_branch_compliance_draft','submit_branch_compliance_profile','review_branch_compliance_profile','activate_branch_compliance_identity','deactivate_protected_identity_mode'])assert.match(migration,new RegExp(name))
+assert.match(migration,/validation_status='verified'/)
+assert.match(migration,/p_reason TEXT/)
+assert.match(migration,/branch_compliance_identity_recovery/)
+assert.match(migration,/issued_artifacts_changed','false|issued_artifacts_changed',false/)
+assert.match(migration,/compliance_identity_mode TEXT NOT NULL DEFAULT 'legacy'/)
+assert.match(api,/PGRST202|42883/)
+assert.match(page,/complianceCapability/)
+assert.match(page,/registeredSellerNameAr/)
+assert.match(page,/field\.ltr \? 'ltr' : 'auto'/)
+assert.match(production,/protectedMode[\s\S]*branch_compliance_profiles/)
+assert.doesNotMatch(migration,/UPDATE\s+public\.invoices\s+SET\s+(zatca_|identity_snapshot)/i)
+console.log('F3B official seller workflow protection assertions passed.')

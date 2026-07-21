@@ -835,6 +835,16 @@ export interface Branch {
   show_footer: boolean
   show_cash_change: boolean
   print_mode: 'thermal' | 'pdf' | 'both'
+  invoice_display_heading: string | null
+  invoice_display_subheading: string | null
+  show_company_display_name: boolean
+  show_branch_display_name: boolean
+  thermal_density: 'compact' | 'standard' | 'detailed'
+  a4_template_id: string
+  document_template_version: number
+  logo_asset_version: number
+  presentation_settings: InvoicePresentationSettings | null
+  compliance_identity_mode: 'legacy' | 'protected'
   allow_split_payments: boolean
   show_pos_scroll_buttons: boolean
   pos_mode: BranchPosMode
@@ -1158,6 +1168,7 @@ export interface Invoice {
   created_by: string | null
   invoice_number: string
   document_language: 'en' | 'ar' | 'both' | null
+  identity_snapshot: InvoiceIdentitySnapshot | null
   invoice_reference: string | null
   original_invoice_id: string | null
   credit_reason: string | null
@@ -1199,6 +1210,54 @@ export interface Invoice {
   created_at: string
   updated_at: string
 }
+
+export interface InvoiceIdentitySnapshotV1 {
+  version: 1
+  legacy: false
+  compliance: {
+    registeredSellerName: string
+    registeredSellerNameAr: string | null
+    vatNumber: string
+    registrationScheme: string
+    registrationIdentifier: string
+    address: { buildingNumber: string; street: string; district: string; city: string; postalCode: string; country: string }
+  }
+  presentation: {
+    displayHeading: string | null; displaySubheading: string | null
+    showCompanyDisplayName: boolean; showBranchDisplayName: boolean
+    companyDisplayName: string | null; branchDisplayName: string | null; branchDisplayNameAr: string | null
+    logoUrl: string | null; logoAssetVersion: number; showLogo: boolean; phone: string | null; email: string | null; website: string | null
+    showEmail: boolean; showWebsite: boolean; footer: string | null; showFooter: boolean; showCashChange: boolean
+  }
+  document: { language: 'en' | 'ar' | 'both'; thermalDensity: string; printMode: 'thermal' | 'pdf' | 'both'; a4TemplateId: string; templateVersion: number }
+}
+
+export type LogoAssetSize = 'small' | 'medium' | 'large'
+export type ThermalWidth = '58mm' | '80mm'
+export type ThermalDensity = 'compact' | 'standard' | 'detailed'
+export type QrSize = 'small' | 'standard' | 'large'
+export type A4TemplateId = 'classic' | 'modern_split' | 'minimal_professional'
+export type A4HeaderStyle = 'standard' | 'compact' | 'branded'
+
+export interface InvoicePresentationSettings {
+  schema_version: 1
+  identity: { display_heading: string | null; display_subheading: string | null; custom_display_name: string | null; show_company_name: boolean; show_branch_name: boolean }
+  contact: { phone: string | null; email: string | null; website: string | null; show_phone: boolean; show_email: boolean; show_website: boolean; show_address: boolean }
+  footer: { thank_you_message: string | null; footer_note: string | null; refund_note: string | null; show_thank_you: boolean; show_footer: boolean; show_refund_note: boolean }
+  logo: { visible: boolean; asset_path: string | null; asset_version: number; size: LogoAssetSize }
+  thermal: { width: ThermalWidth; density: ThermalDensity; qr_size: QrSize; wrap_item_names: boolean; show_cash_change: boolean }
+  a4: { template_id: A4TemplateId; template_version: 1; header_style: A4HeaderStyle }
+}
+
+export interface InvoiceIdentitySnapshotV2 {
+  version: 2
+  legacy: false
+  compliance: InvoiceIdentitySnapshotV1['compliance']
+  presentationSettings: InvoicePresentationSettings
+  document: { language: 'en' | 'ar' | 'both'; printMode: 'thermal' | 'pdf' | 'both' }
+}
+
+export type InvoiceIdentitySnapshot = InvoiceIdentitySnapshotV1 | InvoiceIdentitySnapshotV2
 
 export interface InvoiceItem {
   id: string
@@ -1343,6 +1402,16 @@ export interface BranchInsert {
   show_footer?: boolean
   show_cash_change?: boolean
   print_mode?: string | null
+  invoice_display_heading?: string | null
+  invoice_display_subheading?: string | null
+  show_company_display_name?: boolean
+  show_branch_display_name?: boolean
+  thermal_density?: string | null
+  a4_template_id?: string | null
+  document_template_version?: number
+  logo_asset_version?: number
+  presentation_settings?: InvoicePresentationSettings | null
+  compliance_identity_mode?: string | null
   allow_split_payments?: boolean
   show_pos_scroll_buttons?: boolean
   pos_mode?: string | null

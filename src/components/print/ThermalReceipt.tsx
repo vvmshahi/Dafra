@@ -1,380 +1,91 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { RiyalSymbol } from '@/components/ui/RiyalSymbol'
-import {
-  documentDirection,
-  documentFontFamily,
-  documentLabel,
-  documentLabelLines,
-  documentNames,
-  documentPaymentLabel,
-  normalizeDocumentLanguage,
-  type DocumentLanguage,
-} from '@/localization/documents'
+import { documentFontFamily, documentLabel, documentLabelLines, documentNames, documentPaymentLabel } from '@/localization/documents'
+import { formatDocumentMoney, formatDocumentQuantity, type DocumentViewModel } from '@/lib/invoices/documentViewModel'
 
-export interface ThermalItem {
-  name: string
-  nameAr?: string | null
-  qty: number
-  unitPrice: number
-  lineTotal: number
-  subtotal?: number
-  taxAmount?: number
-  total?: number
+export interface ThermalRenderOptions {
+  /** An already-rendered image of the model's stored/sample QR reference. Never a payload to regenerate here. */
+  readonly qrImageUrl?: string | null
+  readonly id?: string
+  readonly preview?: boolean
+  readonly sampleLabel?: string | null
 }
 
-export interface ThermalPayment {
-  method: string
-  amount: number
+export interface ThermalReceiptProps { readonly model: DocumentViewModel; readonly options?: ThermalRenderOptions }
+
+const density = {
+  compact: { font: '9.5px', small: '8px', gap: '3px', padding: '3mm', line: 1.25 },
+  standard: { font: '10.5px', small: '8.8px', gap: '5px', padding: '3.5mm', line: 1.38 },
+  detailed: { font: '11px', small: '9.2px', gap: '7px', padding: '4mm', line: 1.48 },
+} as const
+
+function Money({ value, model }: { value: number; model: DocumentViewModel }) {
+  return <bdi className="thermal-money" dir="ltr"><RiyalSymbol /> {formatDocumentMoney(value, model)}</bdi>
 }
 
-export interface ThermalReceiptProps {
-  id?: string
-  preview?: boolean
-  // Line 1 (large, bold): brand/display name
-  // Line 2 (small, grey): legal name — only printed if different from Line 1
-  businessNameAr: string   // Line 1 — brand name (could be Arabic or English)
-  businessNameEn: string   // Line 2 — legal company name (shown below only if different)
-  documentLanguage?: DocumentLanguage
-  logoUrl?: string | null
-  showLogo?: boolean
-  branchName?: string | null
-  branchNameAr?: string | null
-  address?: string | null
-  addressAr?: string | null
-  vatNumber?: string | null
-  phone?: string | null
-  website?: string | null
-  showWebsite?: boolean
-  email?: string | null
-  showEmail?: boolean
-  invoiceNumber: string
-  date: string
-  time: string
-  cashierName?: string | null  // kept for API compat but no longer rendered
-  items: ThermalItem[]
-  subtotal: number
-  discountAmount?: number
-  taxAmount: number
-  total: number
-  paymentMethod: string
-  payments?: ThermalPayment[]
-  cashReceived?: number | null
-  change?: number | null
-  showCashChange?: boolean
-  customerName?: string | null
-  customerNameAr?: string | null
-  buyerVatNumber?: string | null
-  isStandardInvoice?: boolean
-  documentType?: 'invoice' | 'credit_note'
-  originalInvoiceNumber?: string | null
-  creditReason?: string | null
-  qrDataUrl?: string | null
-  receiptFooter?: string | null
-  showFooter?: boolean
+function Row({ label, children, strong = false }: { label: ReactNode; children: ReactNode; strong?: boolean }) {
+  return <div className={`thermal-row ${strong ? 'thermal-row-strong' : ''}`}><span>{label}</span><span className="thermal-value">{children}</span></div>
 }
 
-function Amt({ n }: { n: number }) {
-  return (
-    <span dir="ltr" style={{ whiteSpace: 'nowrap', flexShrink: 0, unicodeBidi: 'isolate' }}>
-      <RiyalSymbol />{' '}{n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-    </span>
-  )
+function Rule() { return <div className="thermal-rule" aria-hidden="true" /> }
+
+function names(model: DocumentViewModel, en: string | null, ar: string | null) {
+  return documentNames(model.identity.language, en, ar)
 }
 
-function TRow({ left, right, bold, strong }: { left: ReactNode; right: ReactNode; bold?: boolean; strong?: boolean }) {
-  return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'baseline',
-      gap: '8px',
-      fontWeight: bold || strong ? 'bold' : 'normal',
-      fontSize: strong ? '13px' : bold ? '12px' : '11px',
-      marginBottom: strong ? '4px' : '3px',
-    }}>
-      <span style={{
-        minWidth: '24mm',
-        flex: '1 1 auto',
-        whiteSpace: 'normal',
-        overflowWrap: 'break-word',
-        wordBreak: 'normal',
-      }}>{left}</span>
-      <span style={{ flexShrink: 0, textAlign: 'right' }}>{right}</span>
-    </div>
-  )
+export function thermalPrintCss(width: '58mm' | '80mm') {
+  const content = width === '58mm' ? '52mm' : '72mm'
+  return `@media print { @page { size: ${width} auto; margin: 0; } html, body { width: ${width}; margin: 0 !important; padding: 0 !important; } body > * { visibility: hidden !important; } .thermal-receipt, .thermal-receipt * { visibility: visible !important; } .thermal-receipt { position: absolute !important; inset: 0 auto auto 0 !important; width: ${width} !important; max-width: ${width} !important; min-height: 0 !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; } .thermal-receipt__paper { width: ${content} !important; max-width: ${content} !important; } }`
 }
 
-const Dash = () => (
-  <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
-)
+/** Single snapshot-driven thermal renderer for preview, browser and Electron print paths. */
+export default function ThermalReceipt({ model, options = {} }: ThermalReceiptProps) {
+  const { presentation, identity, seller, buyer, totals, payments } = model
+  const layout = density[presentation.thermal.density] ?? density.standard
+  const is58 = presentation.thermal.width === '58mm'
+  const isDetailed = presentation.thermal.density === 'detailed'
+  const isCompact = presentation.thermal.density === 'compact'
+  const isCredit = identity.kind === 'credit_note'
+  const isStandard = identity.invoiceType === 'standard' || (isCredit && buyer.type === 'business' && !!buyer.vatNumber)
+  const title = isCredit ? (isStandard ? 'taxCreditNote' : 'simplifiedTaxCreditNote') : (isStandard ? 'standardTaxInvoice' : 'simplifiedTaxInvoice')
+  const paymentKind = payments.length > 1 ? 'split' : payments[0]?.method ?? 'other'
+  const mandatoryBuyer = isStandard || !!buyer.vatNumber
+  const logoUrl = presentation.logo.previewUrl ?? presentation.logo.assetPath
+  const qrMm = presentation.thermal.qrSize === 'small' ? 22 : presentation.thermal.qrSize === 'large' ? 31 : 26
+  const logoMm = presentation.logo.size === 'small' ? 9 : presentation.logo.size === 'large' ? 18 : 14
+  const contentMm = is58 ? 52 : 72
+  const optionalFooter = [presentation.footer.thankYouVisible ? presentation.footer.thankYou : null, presentation.footer.footerVisible ? presentation.footer.footer : null, presentation.footer.refundVisible ? presentation.footer.refund : null].filter(Boolean)
+  const time = new Intl.DateTimeFormat('en-SA', { timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(identity.issueTimestamp))
+  const date = new Intl.DateTimeFormat(model.format.dateLocale, { timeZone: 'Asia/Riyadh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(identity.issueTimestamp))
 
-function moneyValue(value: number | null | undefined, fallback = 0): number {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? numeric : fallback
-}
-
-function roundMoney(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100
-}
-
-export function printThermal(): void {
-  const existing = document.getElementById('thermal-print-style')
-  existing?.remove()
-  const s = document.createElement('style')
-  s.id = 'thermal-print-style'
-  s.textContent = `
-    @media print {
-      @page { size: 80mm auto; margin: 0 3mm; }
-      body { visibility: hidden !important; }
-      #invoice-printable { display: none !important; visibility: hidden !important; }
-      #thermal-receipt {
-        display: block !important;
-        visibility: visible !important;
-        position: fixed !important;
-        top: 0 !important; left: 0 !important;
-        width: 100% !important;
-        background: white !important;
-        z-index: 999999 !important;
-        padding: 4px !important;
-      }
-      #thermal-receipt * { visibility: visible !important; }
-    }
-  `
-  document.head.appendChild(s)
-  window.print()
-  s.remove()
-}
-
-export default function ThermalReceipt({
-  id = 'thermal-receipt',
-  preview = false,
-  businessNameAr, businessNameEn, logoUrl, showLogo = false, branchName, address, vatNumber, phone,
-  documentLanguage: documentLanguageValue = 'both', branchNameAr, addressAr,
-  website, showWebsite, email, showEmail,
-  invoiceNumber, date, time,
-  items, subtotal, discountAmount = 0, taxAmount, total,
-  paymentMethod, payments = [], cashReceived, change, showCashChange = true,
-  customerName, customerNameAr, buyerVatNumber, isStandardInvoice = false,
-  documentType = 'invoice', originalInvoiceNumber, creditReason,
-  qrDataUrl, receiptFooter, showFooter = true,
-}: ThermalReceiptProps) {
-  const documentLanguage = normalizeDocumentLanguage(documentLanguageValue)
-  const documentDir = documentDirection(documentLanguage)
-  const businessNames = documentNames(documentLanguage, businessNameEn, businessNameAr)
-  const branchNames = documentNames(documentLanguage, branchName, branchNameAr)
-    .filter(name => !businessNames.includes(name))
-  const addresses = documentNames(documentLanguage, address, addressAr)
-  const customerNames = documentNames(documentLanguage, customerName, customerNameAr)
-  const isCreditNote = documentType === 'credit_note'
-  const isSplitPayment = paymentMethod === 'split'
-    || (payments.length > 1
-      && payments.some(payment => payment.method === 'cash' && Number(payment.amount) > 0)
-      && payments.some(payment => payment.method === 'card' && Number(payment.amount) > 0))
-  const cashPayment = payments.find(payment => payment.method === 'cash')
-  const cardPayment = payments.find(payment => payment.method === 'card')
-  const paidTotal = payments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0)
-  const displayPaidTotal = payments.length > 0 ? paidTotal : total
-  const balance = roundMoney(total - displayPaidTotal)
-  const hasBalance = Math.abs(balance) > 0.005
-  const hasDiscount = Math.abs(moneyValue(discountAmount)) > 0.005
-  const titleKey = isCreditNote
-    ? (isStandardInvoice ? 'taxCreditNote' : 'simplifiedTaxCreditNote')
-    : (isStandardInvoice ? 'standardTaxInvoice' : 'simplifiedTaxInvoice')
-  const titleLines = documentLabelLines(documentLanguage, titleKey)
-  const numberLabel = documentLabel(documentLanguage, isCreditNote ? 'creditNoteNumber' : 'invoiceNumber')
-
-  return (
-    <div
-      id={id}
-      dir={documentDir}
-      lang={documentLanguage === 'ar' ? 'ar' : documentLanguage === 'en' ? 'en' : undefined}
-      style={{
-        display: preview ? 'block' : 'none',
-        fontFamily: documentFontFamily(documentLanguage),
-        fontSize: 'var(--receipt-font-size, 11px)',
-        color: '#000',
-        width: '100%',
-        maxWidth: 'var(--receipt-content-width, 72mm)',
-        margin: '0 auto',
-        padding: '6px',
-        boxSizing: 'border-box' as const,
-        lineHeight: 'var(--receipt-line-height, 1.4)',
-        background: 'white',
-        overflow: 'visible',
-      }}
-    >
-      {/* Logo */}
-      {showLogo && logoUrl && (
-        <div style={{ textAlign: 'center', marginBottom: '6px' }}>
-          <img src={logoUrl} alt="" style={{ maxHeight: '60px', maxWidth: '80%', display: 'block', margin: '0 auto', objectFit: 'contain' }} />
-        </div>
-      )}
-
-      {/* Business header */}
-      <div style={{ textAlign: 'center', marginBottom: '4px' }}>
-        {businessNames.map((name, index) => (
-          <div key={name} dir="auto" style={{ fontSize: index === 0 ? '15px' : '10px', fontWeight: index === 0 ? 'bold' : 'normal', color: index === 0 ? '#000' : '#666', marginBottom: '2px' }}>
-            {name}
-          </div>
-        ))}
-        {branchNames.map(name => <div key={name} dir="auto" style={{ fontSize: '10px', color: '#444' }}>{name}</div>)}
-        {addresses.map(value => <div key={value} dir="auto" style={{ fontSize: '10px', color: '#555', marginTop: '2px', lineHeight: '1.3' }}>{value}</div>)}
-        {vatNumber && <div>{documentLabel(documentLanguage, 'vatNumber')}: <bdi dir="ltr">{vatNumber}</bdi></div>}
-        {phone && <div>{documentLabel(documentLanguage, 'phone')}: <bdi dir="ltr">{phone}</bdi></div>}
-        {showWebsite && website && <div style={{ fontSize: '10px', color: '#555' }}>{website}</div>}
-        {showEmail && email && <div style={{ fontSize: '10px', color: '#555' }}>{email}</div>}
-      </div>
-
-      <Dash />
-
-      {/* Invoice title */}
-      <div style={{ textAlign: 'center', margin: '4px 0' }}>
-        {titleLines.map((line, index) => (
-          <div key={line} dir="auto" style={{ fontSize: index === 0 ? '13px' : '10px', fontWeight: index === 0 ? 'bold' : 'normal', color: index === 0 ? '#000' : '#555' }}>{line}</div>
-        ))}
-      </div>
-
-      <Dash />
-
-      {/* Invoice meta */}
-      <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-        <div>{numberLabel}: <strong><bdi dir="ltr">{invoiceNumber}</bdi></strong></div>
-        {isCreditNote && originalInvoiceNumber && (
-          <div>{documentLabel(documentLanguage, 'originalInvoice')}: <strong><bdi dir="ltr">{originalInvoiceNumber}</bdi></strong></div>
-        )}
-        <div>{documentLabel(documentLanguage, 'date')}: <bdi dir="ltr">{date}</bdi></div>
-        <div>{documentLabel(documentLanguage, 'time')}: <bdi dir="ltr">{time}</bdi></div>
-      </div>
-
-      {isCreditNote && creditReason && (
-        <>
-          <Dash />
-          <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-            <div>{documentLabel(documentLanguage, 'reason')}: <strong dir="auto">{creditReason}</strong></div>
-          </div>
-        </>
-      )}
-
-      <Dash />
-
-      {/* Line items */}
-      <div style={{ marginBottom: '6px' }}>
-        {items.map((item, i) => (
-          <div
-            key={i}
-            style={{
-              marginBottom: i === items.length - 1 ? '0' : '6px',
-              paddingBottom: i === items.length - 1 ? '0' : '4px',
-              borderBottom: i === items.length - 1 ? '0' : '1px dotted #bbb',
-            }}
-          >
-            <div style={{
-              fontSize: '11px',
-              fontWeight: 700,
-              lineHeight: 1.35,
-              marginBottom: '2px',
-              overflowWrap: 'break-word',
-              wordBreak: 'normal',
-            }}>
-              {documentNames(documentLanguage, item.name, item.nameAr).map(name => <div key={name} dir="auto">{name}</div>)}
-            </div>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'baseline',
-              gap: '8px',
-              fontSize: '10px',
-              color: '#333',
-            }}>
-              <span style={{ minWidth: 0, overflowWrap: 'break-word', wordBreak: 'normal' }}>
-                <bdi dir="ltr">{item.qty} ×</bdi> <Amt n={item.unitPrice} />
-              </span>
-              <span style={{ flexShrink: 0, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                <Amt n={moneyValue(item.total, item.lineTotal)} />
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <Dash />
-
-      {/* Totals */}
-      <div style={{ fontSize: '11px', margin: '8px 0 5px' }}>
-        <TRow left={documentLabel(documentLanguage, 'amountBeforeVat')} right={<Amt n={subtotal} />} />
-        {hasDiscount && <TRow left={documentLabel(documentLanguage, 'discount')} right={<Amt n={Math.abs(moneyValue(discountAmount))} />} />}
-        <TRow left={`${documentLabel(documentLanguage, 'vatAmount')} 15%`} right={<Amt n={taxAmount} />} />
-        <div style={{ borderTop: '1px solid #000', margin: '5px 0' }} />
-        <TRow left={documentLabel(documentLanguage, isCreditNote ? 'creditTotal' : 'totalIncludingVat')} right={<Amt n={total} />} strong />
-        <TRow left={documentLabel(documentLanguage, isCreditNote ? 'refunded' : 'paid')} right={<Amt n={displayPaidTotal} />} bold />
-        {hasBalance && !isCreditNote && (
-          <TRow left={documentLabel(documentLanguage, 'balance')} right={<Amt n={Math.abs(balance)} />} bold />
-        )}
-      </div>
-
-      <Dash />
-
-      {/* Payment */}
-      <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-        <div>{documentLabel(documentLanguage, isCreditNote ? 'refundMethod' : 'paymentMethod')}: <strong>{documentPaymentLabel(documentLanguage, isSplitPayment ? 'split' : paymentMethod)}</strong></div>
-        {isSplitPayment && cashPayment && (
-          <TRow left={documentLabel(documentLanguage, 'cashAmount')} right={<Amt n={Number(cashPayment.amount)} />} />
-        )}
-        {isSplitPayment && cardPayment && (
-          <TRow left={documentLabel(documentLanguage, 'cardAmount')} right={<Amt n={Number(cardPayment.amount)} />} />
-        )}
-        {isSplitPayment && (
-          <TRow left={documentLabel(documentLanguage, 'totalPaid')} right={<Amt n={paidTotal} />} />
-        )}
-        {!isSplitPayment && paymentMethod === 'cash' && cashReceived != null && cashReceived > 0 && (
-          <TRow left={documentLabel(documentLanguage, 'received')} right={<Amt n={cashReceived} />} />
-        )}
-        {!isSplitPayment && showCashChange && paymentMethod === 'cash' && (change ?? 0) > 0.005 && (
-          <TRow left={documentLabel(documentLanguage, 'change')} right={<Amt n={change ?? 0} />} />
-        )}
-      </div>
-
-      {/* Customer */}
-      {(customerNames.length > 0 && customerName !== 'Walk-in Customer' || buyerVatNumber) && (
-        <>
-          <Dash />
-          <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-            {customerNames.length > 0 && customerName !== 'Walk-in Customer' && <div>{documentLabel(documentLanguage, 'customer')}: <strong>{customerNames.map(name => <span key={name} dir="auto" style={{ display: 'block' }}>{name}</span>)}</strong></div>}
-            {buyerVatNumber && (
-              <div>{documentLabel(documentLanguage, 'customerVatNumber')}: <strong><bdi dir="ltr">{buyerVatNumber}</bdi></strong></div>
-            )}
-          </div>
-        </>
-      )}
-
-      <Dash />
-
-      {/* QR code */}
-      {qrDataUrl ? (
-        <div style={{ textAlign: 'center', margin: '6px 0' }}>
-          <img src={qrDataUrl} alt="QR" dir="ltr" style={{ width: 'min(34mm, 70%)', height: 'auto', aspectRatio: '1 / 1', display: 'block', margin: '0 auto' }} />
-          <div style={{ fontSize: '9px', color: '#888', marginTop: '2px' }}>{documentLabel(documentLanguage, 'scanToVerify')}</div>
-        </div>
-      ) : (
-        <div style={{ textAlign: 'center', fontSize: '10px', color: '#aaa', margin: '6px 0' }}>
-          [{documentLabel(documentLanguage, 'qrCode')}]
-        </div>
-      )}
-
-      <Dash />
-
-      {/* Footer */}
-      {showFooter && (
-        <div style={{ textAlign: 'center', fontSize: '11px', paddingBottom: '8px' }}>
-          {receiptFooter ? (
-            <div style={{ fontSize: '10px', color: '#555' }}>{receiptFooter}</div>
-          ) : (
-            <>
-              {documentLabelLines(documentLanguage, 'thankYou').map(line => <div key={line} dir="auto" style={{ fontSize: '11px', marginBottom: '2px' }}>{line}</div>)}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  )
+  return <div id={options.id ?? 'thermal-receipt'} className={`thermal-receipt thermal-receipt--${presentation.thermal.width} thermal-receipt--${presentation.thermal.density}`} dir={identity.direction} lang={identity.language === 'both' ? undefined : identity.language} style={{ display: options.preview ? 'block' : 'none', '--thermal-paper-width': presentation.thermal.width, '--thermal-content-width': `${contentMm}mm`, '--thermal-font': layout.font, '--thermal-small': layout.small, '--thermal-gap': layout.gap, '--thermal-padding': layout.padding, '--thermal-line': layout.line } as CSSProperties}>
+    <style>{thermalPrintCss(presentation.thermal.width)}</style>
+    <article className="thermal-receipt__paper" style={{ fontFamily: documentFontFamily(identity.language) }}>
+      {options.sampleLabel && <div className="thermal-sample">{options.sampleLabel}</div>}
+      {presentation.logo.visible && logoUrl && <div className="thermal-logo" style={{ '--thermal-logo-height': `${logoMm}mm` } as CSSProperties}><img src={logoUrl} alt="" onError={event => { event.currentTarget.style.display = 'none' }} /></div>}
+      <header className="thermal-header">
+        {seller.displayHeading && <div className="thermal-heading" dir="auto">{seller.displayHeading}</div>}
+        {seller.displaySubheading && <div className="thermal-subheading" dir="auto">{seller.displaySubheading}</div>}
+        {names(model, seller.registeredName, seller.registeredNameAr).map((name, index) => <div key={`${name}-${index}`} className="thermal-legal-name" dir="auto">{name}</div>)}
+        {!isCompact && seller.branch.visible && names(model, seller.branch.name, seller.branch.nameAr).map((name, index) => <div key={`${name}-${index}`} className="thermal-branch" dir="auto">{name}</div>)}
+        {seller.registrationNumber && <div>{seller.registrationType ?? 'CR'}: <bdi dir="ltr">{seller.registrationNumber}</bdi></div>}
+        <div>{documentLabel(identity.language, 'vatNumber')}: <bdi dir="ltr">{seller.vatNumber}</bdi></div>
+        {seller.registeredAddress && <div className="thermal-address" dir="auto">{seller.registeredAddress}</div>}
+        {!isCompact && presentation.contact.phoneVisible && presentation.contact.phone && <div>{documentLabel(identity.language, 'phone')}: <bdi dir="ltr">{presentation.contact.phone}</bdi></div>}
+        {isDetailed && presentation.contact.websiteVisible && presentation.contact.website && <div><bdi dir="ltr">{presentation.contact.website}</bdi></div>}
+        {isDetailed && presentation.contact.emailVisible && presentation.contact.email && <div><bdi dir="ltr">{presentation.contact.email}</bdi></div>}
+      </header>
+      <Rule />
+      <section className="thermal-title">{documentLabelLines(identity.language, title).map((line, index) => <div key={`${line}-${index}`} className={index === 0 ? 'thermal-title-main' : 'thermal-title-sub'} dir="auto">{line}</div>)}</section>
+      <section className="thermal-meta"><div>{documentLabel(identity.language, isCredit ? 'creditNoteNumber' : 'invoiceNumber')}: <bdi dir="ltr">{identity.number}</bdi></div><div>{documentLabel(identity.language, 'date')}: <bdi dir="ltr">{date}</bdi></div><div>{documentLabel(identity.language, 'time')}: <bdi dir="ltr">{time}</bdi></div>{isCredit && model.compliance.originalDocument.number && <div>{documentLabel(identity.language, 'originalInvoice')}: <bdi dir="ltr">{model.compliance.originalDocument.number}</bdi></div>}{isCredit && model.compliance.creditReason && <div>{documentLabel(identity.language, 'reason')}: <span dir="auto">{model.compliance.creditReason}</span></div>}</section>
+      {(mandatoryBuyer || (!isCompact && buyer.name)) && <><Rule /><section className="thermal-buyer"><div className="thermal-section-label">{documentLabel(identity.language, 'customer')}</div>{names(model, buyer.name, buyer.nameAr).map((name, index) => <div key={`${name}-${index}`} dir="auto">{name}</div>)}{buyer.vatNumber && <div>{documentLabel(identity.language, 'customerVatNumber')}: <bdi dir="ltr">{buyer.vatNumber}</bdi></div>}{isDetailed && buyer.address && <div dir="auto">{buyer.address}</div>}</section></>}
+      <Rule />
+      <section className={`thermal-items ${is58 ? 'thermal-items--stacked' : 'thermal-items--wide'}`}>{model.items.map((item, index) => <article className="thermal-item" key={`${item.description}-${index}`}><div className={`thermal-item-name ${presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>{names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}</div><div className="thermal-item-values"><span><bdi dir="ltr">{formatDocumentQuantity(item.quantity, model)} ×</bdi> <Money value={item.unitPrice} model={model} /></span><span><Money value={item.lineTotal} model={model} /></span></div>{(isDetailed || isCredit || item.discount > 0) && <div className="thermal-item-detail"><span>{documentLabel(identity.language, 'vatAmount')} <bdi dir="ltr">{formatDocumentQuantity(item.vatRate, model)}%</bdi></span>{item.discount > 0 && <span>{documentLabel(identity.language, 'discount')}: <Money value={item.discount} model={model} /></span>}{isCredit && item.creditedQuantity != null && <span>{documentLabel(identity.language, 'quantity')}: <bdi dir="ltr">{formatDocumentQuantity(item.creditedQuantity, model)}</bdi></span>}</div>}</article>)}</section>
+      <Rule />
+      <section className="thermal-totals"><Row label={documentLabel(identity.language, 'amountBeforeVat')}><Money value={totals.subtotal} model={model} /></Row>{totals.discount > 0 && <Row label={documentLabel(identity.language, 'discount')}><Money value={totals.discount} model={model} /></Row>}<Row label={documentLabel(identity.language, 'taxableAmount')}><Money value={totals.taxableAmount} model={model} /></Row><Row label={documentLabel(identity.language, 'vatAmount')}><Money value={totals.vat} model={model} /></Row><Row label={documentLabel(identity.language, isCredit ? 'creditTotal' : 'totalIncludingVat')} strong><Money value={totals.total} model={model} /></Row>{!isCredit && totals.paid > 0 && <Row label={documentLabel(identity.language, 'paid')}><Money value={totals.paid} model={model} /></Row>}{isCredit && totals.refunded > 0 && <Row label={documentLabel(identity.language, 'refunded')}><Money value={totals.refunded} model={model} /></Row>}{!isCredit && totals.balance != null && Math.abs(totals.balance) > 0.005 && <Row label={documentLabel(identity.language, 'balance')}><Money value={Math.abs(totals.balance)} model={model} /></Row>}</section>
+      {(isDetailed || payments.length > 0) && <><Rule /><section className="thermal-payments"><div>{documentLabel(identity.language, isCredit ? 'refundMethod' : 'paymentMethod')}: <strong>{documentPaymentLabel(identity.language, paymentKind)}</strong></div>{(isDetailed || payments.length > 1) && payments.map((payment, index) => <Row key={`${payment.method}-${index}`} label={documentPaymentLabel(identity.language, payment.method)}><Money value={payment.amount} model={model} /></Row>)}{presentation.thermal.showCashChange && payments.length === 1 && payments[0]?.cashTendered != null && <Row label={documentLabel(identity.language, 'received')}><Money value={payments[0].cashTendered} model={model} /></Row>}{presentation.thermal.showCashChange && payments.length === 1 && (payments[0]?.change ?? 0) > 0 && <Row label={documentLabel(identity.language, 'change')}><Money value={payments[0].change ?? 0} model={model} /></Row>}</section></>}
+      <Rule />
+      <footer className="thermal-footer"><div className="thermal-qr" style={{ width: `${qrMm}mm` }}>{options.qrImageUrl ? <img src={options.qrImageUrl} alt={documentLabel(identity.language, 'qrCode')} dir="ltr" /> : <div className="thermal-qr-placeholder">{documentLabel(identity.language, 'qrCode')}</div>}<div>{documentLabel(identity.language, 'scanToVerify')}</div></div><div className="thermal-footer-copy">{optionalFooter.map((line, index) => <div key={`${line}-${index}`} dir="auto">{line}</div>)}<div>{documentLabel(identity.language, isCredit ? 'computerGeneratedCreditNote' : 'computerGeneratedInvoice')}</div></div></footer><div className="thermal-cut" aria-hidden="true" />
+    </article>
+  </div>
 }

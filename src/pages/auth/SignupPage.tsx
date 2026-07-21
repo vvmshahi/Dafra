@@ -4,6 +4,7 @@ import { MeemLogo } from '@/components/MeemLogo'
 import { supportConfig } from '@/config/support'
 import { useTranslation } from 'react-i18next'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
+import { CompactLanguageSelector } from '@/components/localization/CompactLanguageSelector'
 
 const WA_LINK    = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
@@ -51,6 +52,7 @@ export default function SignupPage() {
 
       {/* Right panel */}
       <div className="relative flex-1 flex items-center justify-center bg-white p-8">
+        <CompactLanguageSelector className="absolute end-5 top-5 z-20 sm:end-8 sm:top-8" />
         <Link
           to="/"
           className="absolute start-5 top-5 inline-flex items-center gap-2 rounded-full border border-[#D9CBAA] bg-white/80 px-3 py-2 text-sm font-black text-[#284334] shadow-[0_10px_26px_rgba(15,36,25,0.06)] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-white sm:start-8 sm:top-8"

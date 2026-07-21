@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CompactLanguageSelector } from '@/components/localization/CompactLanguageSelector'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, ChevronDown, Mail, MessageCircle } from 'lucide-react'
 import { MeemLogo } from '@/components/MeemLogo'
@@ -94,7 +95,7 @@ export default function FAQPage() {
       <header className="relative overflow-hidden border-b border-white/10 bg-[#0F2419]">
         <Pattern />
         <div className="relative z-10 mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <Link to="/"><MeemLogo size="sm" /></Link>
+          <div className="flex items-center gap-4"><Link to="/"><MeemLogo size="sm" /></Link><CompactLanguageSelector inverse /></div>
           <div className="flex items-center gap-2">
             <Link to="/pricing" className="hidden rounded-full px-3 py-2 text-sm font-semibold text-white/78 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071510] sm:inline">{t('nav.pricing')}</Link>
             <Link to="/login" className={`${actionBaseClass} border border-white/[0.10] bg-white/[0.06] text-white/[0.90] hover:border-white/[0.18] hover:bg-white/[0.10] hover:text-white`}>

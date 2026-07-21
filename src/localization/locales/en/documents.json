@@ -58,6 +58,7 @@
   "exempt": "Exempt",
   "computerGeneratedInvoice": "This is a computer-generated invoice.",
   "computerGeneratedCreditNote": "This is a computer-generated credit note.",
+  "legacyBestEffort": "Historical document: presentation is reconstructed from legacy data and may not exactly match the original printout.",
   "scanToVerify": "Scan to verify invoice",
   "qrCode": "QR Code",
   "thankYou": "Thank you!",

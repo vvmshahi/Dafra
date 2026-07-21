@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+
+const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
+const registry = read('src/lib/invoices/a4TemplateRegistry.ts')
+const renderer = read('src/components/print/A4Document.tsx')
+const css = read('src/index.css')
+const adapters = read('src/lib/invoices/documentViewAdapters.ts')
+const fixture = read('src/lib/invoices/documentPreviewFixture.ts')
+
+for (const entry of ['classic_v1', 'modern_split_v1', 'minimal_professional_v1', 'unknown_historical_template']) assert.match(registry, new RegExp(entry))
+assert.match(renderer, /interface A4RenderOptions/); assert.match(renderer, /readonly model: DocumentViewModel/); assert.match(renderer, /a4-document-frame--print-only/); assert.doesNotMatch(renderer, /display: options\.preview \? 'block' : 'none'/); assert.doesNotMatch(renderer, /businessNameEn|invoiceNumber: string|subtotal: number|buildZatcaQR|QRCode|\*\s*0\.15/)
+for (const component of ['ClassicV1', 'ModernSplitV1', 'MinimalProfessionalV1', 'Seller', 'Buyer', 'ItemTable', 'Totals', 'Payment', 'Footer']) assert.match(renderer, new RegExp(`function ${component}`))
+for (const field of ['seller\.registeredName', 'seller\.vatNumber', 'seller\.registeredAddress', 'model\.items', 'model\.totals\.taxableAmount', 'model\.totals\.vat', 'model\.totals\.total', 'creditedQuantity', 'creditReason', 'model\.identity\.legacy', 'legacyBestEffort']) assert.match(renderer, new RegExp(field))
+assert.match(css, /@page \{ size: A4/); assert.match(css, /a4-document-frame,.a4-document-frame--print-only \{ display: block !important;/); assert.match(css, /table-header-group/); assert.match(css, /page-break-inside: avoid/); assert.match(css, /a4-document--modern_split/); assert.match(css, /a4-document--minimal_professional/)
+assert.match(adapters, /documentFromStoredInvoiceV2/); assert.match(adapters, /documentFromStoredInvoiceV1/); assert.match(adapters, /documentFromLegacyInvoice/)
+assert.match(fixture, /قهوة إثيوبية/); assert.match(fixture, /sample-credit-qr-marker/)
+console.log('Phase 4F A4 template contract assertions passed (three templates, invoice/credit note, snapshots, pagination CSS, RTL/bilingual fixture, logo/QR and deterministic fallback contracts).')

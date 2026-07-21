@@ -480,7 +480,7 @@ function buildInvoice(data: any, opts: any): string {
 
   const supplier = root.ele(NS.cac, 'AccountingSupplierParty').ele(NS.cac, 'Party')
   supplier.ele(NS.cac, 'PartyIdentification').ele(NS.cbc, 'ID')
-    .att('schemeID', 'CRN').txt(data.sellerCrn || '0000000000')
+    .att('schemeID', data.sellerRegistrationScheme).txt(data.sellerCrn)
   const sellerAddr = supplier.ele(NS.cac, 'PostalAddress')
   sellerAddr.ele(NS.cbc, 'StreetName').txt(data.sellerAddress.street)
   sellerAddr.ele(NS.cbc, 'BuildingNumber').txt(data.sellerAddress.buildingNo)
@@ -593,15 +593,16 @@ function buildInvoiceXMLData(
     issueTime,
     counterValue:    inv.zatca_counter_number ?? 1,
     prevInvoiceHash: inv.zatca_prev_invoice_hash ?? FIRST_INVOICE_HASH,
-    sellerName:      branch.business_name || branch.name || '',
-    sellerNameAr:    branch.business_name_ar ?? branch.business_name ?? branch.name ?? '',
+    sellerName:      branch.registered_seller_name || '',
+    sellerNameAr:    branch.registered_seller_name_ar ?? branch.registered_seller_name ?? '',
     sellerVat:       branch.vat_number ?? '',
-    sellerCrn:       branch.cr_number ?? undefined,
+    sellerRegistrationScheme: branch.registration_scheme,
+    sellerCrn:       branch.registration_identifier ?? undefined,
     sellerAddress: {
       street:      branch.street ?? '',
-      buildingNo:  branch.building_number ?? '0000',
+      buildingNo:  branch.building_number,
       city:        branch.city ?? '',
-      postalCode:  branch.postal_code ?? '00000',
+      postalCode:  branch.postal_code,
       district:    branch.district ?? '',
       countryCode: branch.country || 'SA',
     },
@@ -1070,7 +1071,11 @@ async function processInvoice(db:any, invoiceId:string, tenantId:string, interna
   const q=await db.from('invoices').select('id,invoice_number,invoice_reference,original_invoice_id,credit_reason,zatca_uuid,zatca_invoice_type,zatca_type_code,created_at,zatca_status,subtotal,discount_amount,taxable_amount,tax_amount,total_amount,branch_id,tenant_id,invoice_items(id,name,quantity,unit_price,discount_amount,subtotal,tax_rate,tax_amount,total),customers(name,vat_number)').eq('id',invoiceId).eq('tenant_id',tenantId).single()
   const inv=q.data; if(q.error||!inv) throw new Error('Invoice not found')
   const tq=await db.from('tenants').select('id').eq('id',tenantId).eq('is_demo',true).eq('is_active',true).single()
-  const bq=await db.from('branches').select('id,tenant_id,name,business_name,business_name_ar,vat_number,cr_number,building_number,street,district,city,postal_code,country').eq('id',inv.branch_id).eq('tenant_id',tenantId).eq('zatca_environment','sandbox').eq('is_active',true).single()
+  const legacyBranch=await db.from('branches').select('id,tenant_id,compliance_identity_mode,name,business_name,business_name_ar,vat_number,cr_number,building_number,street,district,city,postal_code,country,zatca_environment,is_active').eq('id',inv.branch_id).eq('tenant_id',tenantId).eq('zatca_environment','sandbox').eq('is_active',true).single()
+  const protectedMode=legacyBranch.data?.compliance_identity_mode==='protected'
+  const bq=protectedMode
+    ? await db.from('branch_compliance_profiles').select('branch_id,tenant_id,registered_seller_name,registered_seller_name_ar,vat_number,registration_scheme,registration_identifier,building_number,street,district,city,postal_code,country,validation_status').eq('branch_id',inv.branch_id).eq('tenant_id',tenantId).eq('validation_status','verified').single()
+    : {data:legacyBranch.data?{...legacyBranch.data,registered_seller_name:legacyBranch.data.business_name||legacyBranch.data.name,registered_seller_name_ar:legacyBranch.data.business_name_ar,registration_scheme:'CRN',registration_identifier:legacyBranch.data.cr_number}:null,error:legacyBranch.error}
   if(tq.error||bq.error||!tq.data||!bq.data) throw new Error('Invoice is outside the authorized Sandbox demo scope')
   if(['reported','cleared'].includes(inv.zatca_status)) return {invoiceStatus:inv.zatca_status}
   if(inv.zatca_invoice_type==='standard') return {invoiceStatus:'not_submitted',error:'Standard invoice clearance is not supported in the Sandbox demo yet.'}

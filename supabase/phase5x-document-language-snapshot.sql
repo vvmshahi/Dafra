@@ -138,11 +138,11 @@ BEGIN
     RAISE EXCEPTION 'Branch not found or inactive' USING ERRCODE = '42501';
   END IF;
 
-  IF v_profile.role IN ('owner', 'admin') THEN
+  IF v_profile.role = 'owner' THEN
     IF v_profile.tenant_id IS DISTINCT FROM v_branch.tenant_id THEN
       RAISE EXCEPTION 'Forbidden' USING ERRCODE = '42501';
     END IF;
-  ELSIF v_profile.role IN ('branch', 'manager') THEN
+  ELSIF v_profile.role = 'branch' THEN
     IF v_profile.tenant_id IS DISTINCT FROM v_branch.tenant_id
        OR v_profile.branch_id IS DISTINCT FROM v_branch.id THEN
       RAISE EXCEPTION 'Forbidden' USING ERRCODE = '42501';

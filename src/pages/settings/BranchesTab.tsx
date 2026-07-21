@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Plus, Pencil, Building2, CheckCircle2, X,
-  Upload, Globe, Phone, Mail, MapPin, FileText,
+  Globe, Phone, Mail, MapPin, FileText,
   ReceiptText, ShieldCheck, ChevronDown, ChevronRight,
   Star, KeyRound, LogIn,
   CreditCard, Warehouse,
@@ -173,42 +173,6 @@ function SectionHeader({
   )
 }
 
-/* ── Logo uploader ───────────────────────────────────────────── */
-
-function LogoUploader({
-  currentUrl, previewUrl, onFile,
-}: {
-  currentUrl: string | null; previewUrl: string | null; onFile: (f: File) => void
-}) {
-  const { t } = useTranslation('branches')
-  const ref = useRef<HTMLInputElement>(null)
-  const display = previewUrl ?? currentUrl
-
-  return (
-    <div className="flex items-center gap-4">
-      <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center flex-shrink-0 overflow-hidden">
-        {display
-          ? <img src={display} alt="logo" className="w-full h-full object-cover" />
-          : <Building2 size={24} className="text-gray-300" />
-        }
-      </div>
-      <div className="flex-1">
-        <p className="text-xs font-medium text-gray-700">{t('editor.logo')}</p>
-        <p className="text-[11px] text-gray-400 mt-0.5 mb-2">{t('editor.logoHelp')}</p>
-        <Button type="button" variant="secondary" size="sm" onClick={() => ref.current?.click()}>
-          <Upload size={13} /> {t('editor.uploadLogo')}
-        </Button>
-        <input
-          ref={ref} type="file"
-          accept="image/png,image/jpeg,image/webp,image/svg+xml"
-          className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f) }}
-        />
-      </div>
-    </div>
-  )
-}
-
 /* ── Form section: toggle helper ─────────────────────────────── */
 
 function useSection(initial = true) {
@@ -341,8 +305,6 @@ function BranchDrawer({
       : { ...EMPTY_FORM },
   )
 
-  const [logoFile, setLogoFile]   = useState<File | null>(null)
-  const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
 
@@ -397,21 +359,6 @@ function BranchDrawer({
 
   const set = (k: keyof BranchForm) => (v: string | boolean | number | null) =>
     setForm(prev => ({ ...prev, [k]: v }))
-
-  const handleLogoFile = (f: File) => {
-    setLogoFile(f)
-    setLogoPreview(URL.createObjectURL(f))
-  }
-
-  const uploadLogo = async (branchId: string): Promise<string | null> => {
-    if (!logoFile) return branch?.logo_url ?? null
-    const ext  = logoFile.name.split('.').pop()
-    const path = `${tenantId}/${branchId}/logo.${ext}`
-    const { error } = await supabase.storage.from('branch-assets').upload(path, logoFile, { upsert: true })
-    if (error) { console.error('logo upload:', error); return null }
-    const { data } = supabase.storage.from('branch-assets').getPublicUrl(path)
-    return data.publicUrl
-  }
 
   const savePosSettings = async (branchId: string) => {
     const currentPosMode = branch ? branchPosMode(branch.pos_mode) : 'touch'
@@ -500,8 +447,6 @@ function BranchDrawer({
         })
         if (error) throw error
         const branchId = branchIdFromRpcResult(data)
-        const logoUrl = await uploadLogo(branchId)
-        if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', branchId)
         if (form.allow_split_payments || form.show_pos_scroll_buttons || form.pos_mode !== 'touch') {
           await savePosSettings(branchId)
         }
@@ -529,8 +474,6 @@ function BranchDrawer({
       } else {
         const { error } = await q.from('branches').update(branchPayload).eq('id', branch!.id)
         if (error) throw error
-        const logoUrl = await uploadLogo(branch!.id)
-        if (logoUrl) await q.from('branches').update({ logo_url: logoUrl }).eq('id', branch!.id)
         if (
           form.allow_split_payments !== (branch!.allow_split_payments ?? false) ||
           form.show_pos_scroll_buttons !== (branch!.show_pos_scroll_buttons ?? false) ||
@@ -598,6 +541,7 @@ function BranchDrawer({
             <SectionHeader icon={Building2} title={t('branches:editor.identity')} open={identity.open} toggle={identity.toggle} />
             {identity.open && (
               <div className="px-5 py-4 space-y-4">
+                <p className="rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">{t('settings:officialSeller.legacyFieldWarning')}</p>
                 <div className="grid grid-cols-2 gap-3">
                   <Input label={t('branches:editor.nameEn')} value={form.name} onChange={e => set('name')(e.target.value)} placeholder={t('branches:editor.nameEnPlaceholder')} required />
                   <Input label={t('branches:editor.nameAr')} value={form.name_ar} onChange={e => set('name_ar')(e.target.value)} placeholder={t('branches:editor.nameArPlaceholder')} />
@@ -629,8 +573,6 @@ function BranchDrawer({
                     {fieldErr('cr_number') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('cr_number')}</p>}
                   </div>
                 </div>
-                <LogoUploader currentUrl={branch?.logo_url ?? null} previewUrl={logoPreview} onFile={handleLogoFile} />
-
                 {/* Flags */}
                 <div className="flex gap-6 pt-1">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
