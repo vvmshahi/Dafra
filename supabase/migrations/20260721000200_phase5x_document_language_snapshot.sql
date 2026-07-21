@@ -1,3 +1,5 @@
+-- Canonicalized from:
+-- supabase/phase5x-document-language-snapshot.sql
 -- Phase 5X: issued-document language snapshots
 -- Apply manually after Phase 5W. This migration is additive and does not backfill history.
 -- Ordinary invoices and credit notes share public.invoices in Kubri. The

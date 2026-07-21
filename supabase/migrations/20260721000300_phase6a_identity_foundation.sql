@@ -1,3 +1,5 @@
+-- Canonicalized from:
+-- supabase/phase6a-compliance-presentation-identity-foundation.sql
 -- Phase 6A: separate protected ZATCA identity, presentation settings, and issued snapshots.
 -- ADDITIVE ONLY. Do not backfill branch_compliance_profiles from ambiguous legacy columns.
 -- ROLLOUT: every deployed branch starts in explicit legacy mode. This migration alone

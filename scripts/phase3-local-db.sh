@@ -21,7 +21,7 @@ case "${1:-check}" in
     exec supabase start -x storage-api,imgproxy,supavisor
     ;;
   reset)
-    if [[ ! -f "$project_root/supabase/migrations/PHASE3_BASELINE_READY" ]]; then
+    if [[ ! -f "$project_root/supabase/PHASE3_BASELINE_READY" ]]; then
       echo "Refusing reset: the reviewed baseline-ready marker does not exist." >&2
       exit 65
     fi
