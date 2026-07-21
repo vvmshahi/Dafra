@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CompactLanguageSelector } from '@/components/localization/CompactLanguageSelector'
 
 const WA_LINK = supportConfig.whatsappLink
 const WA_NUMBER = supportConfig.whatsappNumber
@@ -154,6 +155,7 @@ function Header() {
           <Link to="/" className="z-10 flex-shrink-0 transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.98] md:absolute md:left-0">
             <MeemLogo size="md" />
           </Link>
+          <CompactLanguageSelector inverse className="hidden md:absolute md:left-28 md:inline-flex" />
 
           <div className="hidden items-center justify-center rounded-[26px] border border-white/[0.13] bg-[#06120D]/[0.72] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_24px_80px_rgba(0,0,0,0.30)] ring-1 ring-white/[0.035] backdrop-blur-2xl md:flex">
             {navLinks.map(link => (
@@ -192,6 +194,7 @@ function Header() {
       </div>
       {open && (
         <div className="mx-4 mt-2 rounded-[22px] border border-white/10 bg-[#071510]/95 p-3 shadow-2xl shadow-black/30 backdrop-blur-2xl md:hidden">
+          <CompactLanguageSelector inverse className="mb-2 px-1" />
           {navLinks.map(link => (
             link.type === 'section' ? (
               <button key={link.label} onClick={() => { setOpen(false); scrollTo(link.target) }}

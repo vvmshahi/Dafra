@@ -143,6 +143,7 @@ interface ReceiptData {
   showLogo: boolean
   payments: ReceiptPayment[]
   displayPaymentMethod: string
+  complianceSellerName: string | null
 }
 
 function branchPosMode(value: string | null | undefined): PosMode {
@@ -476,8 +477,9 @@ function ReceiptView({ receipt, onNewSale, onOpenPrinterSettings, printMode }: {
   useEffect(() => {
     async function genQR() {
       try {
+        if (!receipt.complianceSellerName || !receipt.vatNumber) return
         const payload = buildZatcaQR({
-          sellerName:  receipt.businessNameAr || receipt.businessNameEn,
+          sellerName:  receipt.complianceSellerName,
           vatNumber:   receipt.vatNumber,
           timestamp:   receipt.createdAt,
           totalAmount: receipt.total,
@@ -1559,6 +1561,8 @@ export default function POSPage() {
   const [sessionSummary,   setSessionSummary]   = useState<ClosedSessionSummary | null>(null)
 
   const [branch,     setBranch]     = useState<Branch | null>(null)
+  const [complianceSellerName, setComplianceSellerName] = useState<string | null>(null)
+  const [complianceVatNumber, setComplianceVatNumber] = useState<string | null>(null)
   const [products,   setProducts]   = useState<PosProduct[]>([])
   const [categories, setCategories] = useState<PosCategory[]>([])
   const [customers,  setCustomers]  = useState<PosCustomer[]>([])
@@ -1617,7 +1621,7 @@ export default function POSPage() {
       if (!tid || !bid) { setLoading(false); return }
       setLoading(true)
       try {
-        const [{ data: branchData }, { data: prodData }, { data: custData }] = await Promise.all([
+        const [{ data: branchData }, { data: prodData }, { data: custData }, { data: complianceData }] = await Promise.all([
           supabase.from('branches').select('*').eq('id', bid).single(),
           supabase
             .from('products')
@@ -1634,10 +1638,20 @@ export default function POSPage() {
             .eq('is_active', true)
             .order('name', { ascending: true })
             .limit(200),
+          (supabase as any).from('branch_compliance_profiles')
+            .select('registered_seller_name,vat_number,validation_status')
+            .eq('branch_id', bid).eq('tenant_id', tid).eq('validation_status', 'verified').maybeSingle(),
         ])
         if (cancelled) return
 
         setBranch(branchData as Branch)
+        const protectedMode = branchData?.compliance_identity_mode === 'protected'
+        setComplianceSellerName(protectedMode
+          ? complianceData?.registered_seller_name ?? null
+          : branchData?.business_name || branchData?.name || null)
+        setComplianceVatNumber(protectedMode
+          ? complianceData?.vat_number ?? null
+          : branchData?.vat_number ?? null)
 
         const prods: PosProduct[] = (prodData ?? []).map((p: any) => ({
           id:            p.id,
@@ -2102,7 +2116,7 @@ export default function POSPage() {
         branchAddress:   branchAddr || null,
         branchAddressAr: branchAddrAr || null,
         documentLanguage: normalizeDocumentLanguage(checkout.document_language ?? branch.invoice_language),
-        vatNumber:       branch.vat_number ?? '',
+        vatNumber:       complianceVatNumber ?? '',
         phone:           branch.phone,
         website:         branch.website ?? null,
         email:           branch.email ?? null,
@@ -2115,6 +2129,7 @@ export default function POSPage() {
         showLogo:        branch.show_logo ?? true,
         payments:        receiptPayments,
         displayPaymentMethod,
+        complianceSellerName,
       })
       upsertInvoiceListRow(branch.tenant_id, {
         id: checkout.invoice_id,

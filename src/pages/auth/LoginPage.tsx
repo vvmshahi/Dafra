@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/Input'
 import { MeemLogo } from '@/components/MeemLogo'
 import { supportConfig } from '@/config/support'
 import { useTranslation } from 'react-i18next'
-import { LanguageSelector } from '@/components/localization/LanguageSelector'
+import { CompactLanguageSelector } from '@/components/localization/CompactLanguageSelector'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 import { authErrorKey } from '@/localization/authErrors'
 
@@ -100,7 +100,7 @@ export default function LoginPage() {
             <DirectionalIcon icon={ArrowLeft} size={15} />
             {t('common:back')}
           </Link>
-          <LanguageSelector compact className="absolute end-5 top-5 z-20 sm:end-8 sm:top-8" />
+          <CompactLanguageSelector className="absolute end-5 top-5 z-20 sm:end-8 sm:top-8" />
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute right-[-14rem] top-[-16rem] h-[32rem] w-[32rem] rounded-full bg-[#D8B76A]/25 blur-3xl" />
             <div className="absolute bottom-[-18rem] left-[-12rem] h-[36rem] w-[36rem] rounded-full bg-[#0F3A2A]/15 blur-3xl" />

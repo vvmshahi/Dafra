@@ -93,6 +93,7 @@ const PREVIEW_ITEMS: ThermalItem[] = [
 const PREVIEW_SUBTOTAL = 50.43
 const PREVIEW_TAX      = 7.57
 const PREVIEW_TOTAL    = 58.00
+const SAMPLE_QR_DATA_URL = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120"><rect width="120" height="120" fill="white"/><rect x="8" y="8" width="32" height="32" fill="#111"/><rect x="80" y="8" width="32" height="32" fill="#111"/><rect x="8" y="80" width="32" height="32" fill="#111"/><path d="M50 50h10v10H50zm20 0h10v20H70zM50 70h20v10H50zm30 10h30v10H80zM50 90h10v20H50zm20 10h40v10H70z" fill="#111"/><text x="60" y="67" font-size="8" text-anchor="middle" fill="#666">SAMPLE</text></svg>')}`
 
 // ── InfoTip ───────────────────────────────────────────────────────────────────
 
@@ -112,8 +113,8 @@ function InfoTip({ text }: { text: string }) {
 function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | null }) {
   const documentLanguage = normalizeDocumentLanguage(form.invoice_language)
   const documentDir = documentDirection(documentLanguage)
-  const brandName = form.display_name || branch?.business_name || branch?.name || 'Business Name'
-  const brandNames = documentNames(documentLanguage, brandName, branch?.business_name_ar || branch?.name_ar)
+  const brandName = form.display_name
+  const brandNames = documentNames(documentLanguage, brandName, null)
   const address = [
     branch?.building_number ? `Building ${branch.building_number}` : null,
     branch?.street,
@@ -423,8 +424,7 @@ export default function InvoiceSettingsPage() {
     )
   }
 
-  const previewBrandName = form.display_name || branch?.business_name || branch?.name || ''
-  const previewLegalName = branch?.business_name || branch?.name || ''
+  const previewBrandName = form.display_name
   const previewAddress = [
     branch?.building_number ? `Building ${branch.building_number}` : null,
     branch?.street, branch?.district, branch?.city,
@@ -458,6 +458,7 @@ export default function InvoiceSettingsPage() {
         <div className="min-w-0 space-y-4">
 
           <div className="card border-primary-100 bg-primary-50/30 px-5 py-4">
+            <p className="mb-3 rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-medium text-emerald-800">{t('settings:invoiceSettings.displayDoesNotChangeZatca')}</p>
             <h2 className="text-sm font-semibold text-gray-900">{t('settings:invoiceSettings.documentLanguage')}</h2>
             <p className="mt-1 text-xs text-gray-500">{t('settings:invoiceSettings.documentLanguageHelp')}</p>
             <div className="mt-3 grid grid-cols-3 gap-2" role="radiogroup" aria-label={t('settings:invoiceSettings.documentLanguage')}>
@@ -762,10 +763,10 @@ export default function InvoiceSettingsPage() {
                 <ThermalReceipt
                   preview
                   documentLanguage={normalizeDocumentLanguage(form.invoice_language)}
-                  businessNameAr={branch?.business_name_ar || branch?.name_ar || previewBrandName}
-                  businessNameEn={previewLegalName}
-                  branchName={branch?.name}
-                  branchNameAr={branch?.name_ar}
+                  businessNameAr=""
+                  businessNameEn={previewBrandName}
+                  branchName={null}
+                  branchNameAr={null}
                   address={previewAddress || null}
                   addressAr={branch?.address_ar || null}
                   vatNumber={branch?.vat_number ?? undefined}
@@ -791,6 +792,7 @@ export default function InvoiceSettingsPage() {
                   showLogo={form.show_logo}
                   receiptFooter={form.receipt_footer || null}
                   showFooter={form.show_footer}
+                  qrDataUrl={SAMPLE_QR_DATA_URL}
                 />
               </div>
             </div>
@@ -799,7 +801,7 @@ export default function InvoiceSettingsPage() {
           )}
 
           <p className="text-[10px] text-gray-400 text-center">
-            {t('settings:previewSaveHint')}
+            {t('settings:previewSaveHint')} {t('settings:invoiceSettings.previewQrSampleOnly')}
           </p>
         </div>
       </div>

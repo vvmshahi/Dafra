@@ -11,6 +11,7 @@ import { buildZatcaQR } from '@/lib/zatca/qr'
 import { toSaudiTime } from '@/lib/utils/date'
 import type { Branch, Invoice, InvoiceItem, Payment } from '@/types/database'
 import { documentDate, resolveCreditNoteDocumentLanguage, resolveInvoiceDocumentLanguage } from '@/localization/documents'
+import { documentIdentity } from '@/lib/invoices/documentIdentity'
 
 interface Tenant {
   name: string
@@ -33,7 +34,7 @@ interface Customer {
 
 const INVOICE_PRINT_SELECT = `
   id, tenant_id, branch_id, customer_id,
-  invoice_number, document_language, invoice_reference, original_invoice_id, credit_reason,
+  invoice_number, document_language, identity_snapshot, invoice_reference, original_invoice_id, credit_reason,
   zatca_invoice_type, zatca_qr_code,
   subtotal, discount_amount, tax_amount, total_amount,
   status, payment_status, created_at
@@ -265,13 +266,15 @@ export default function ReceiptPrintPage() {
     let cancelled = false
 
     async function generateQR() {
-      const payload = invoice!.zatca_qr_code ?? buildZatcaQR({
-        sellerName: branch!.business_name || branch!.name,
-        vatNumber: branch!.vat_number || tenant!.vat_number || '',
+      const identity = documentIdentity(invoice!.identity_snapshot, branch!)
+      const payload = invoice!.zatca_qr_code ?? (identity.snapshotBacked ? buildZatcaQR({
+        sellerName: identity.registeredSellerName,
+        vatNumber: identity.vatNumber,
         timestamp: invoice!.created_at,
         totalAmount: Number(invoice!.total_amount),
         vatAmount: Number(invoice!.tax_amount),
-      })
+      }) : null)
+      if (!payload) return
 
       try {
         const url = await QRCode.toDataURL(payload, {
@@ -301,6 +304,7 @@ export default function ReceiptPrintPage() {
 
   const receipt = useMemo(() => {
     if (!invoice || !branch || !tenant) return null
+    const identity = documentIdentity(invoice.identity_snapshot, branch)
 
     const documentLanguage = invoice.zatca_invoice_type === 'credit_note'
       ? resolveCreditNoteDocumentLanguage(invoice.document_language, originalDocumentLanguage, branch.invoice_language)
@@ -343,11 +347,11 @@ export default function ReceiptPrintPage() {
     return {
       date,
       time: toSaudiTime(invoice.created_at),
-      brandNameEn: branch.display_name || branch.business_name || branch.name,
-      brandNameAr: branch.business_name_ar || branch.name_ar || branch.display_name || branch.business_name || branch.name,
-      branchNameEn: branch.name,
-      branchNameAr: branch.name_ar,
-      address: address || null,
+      brandNameEn: identity.heading ?? identity.registeredSellerName,
+      brandNameAr: identity.subheading ?? identity.registeredSellerNameAr ?? '',
+      branchNameEn: identity.branchName,
+      branchNameAr: identity.branchNameAr,
+      address: identity.snapshotBacked ? identity.address : address || null,
       addressAr: addressAr || null,
       items: thermalItems,
       splitPayment,
@@ -362,6 +366,7 @@ export default function ReceiptPrintPage() {
       isStandardDocument,
       documentType: isCreditNote ? 'credit_note' as const : 'invoice' as const,
       documentLanguage,
+      identity,
     }
   }, [invoice, branch, tenant, items, payments, customer, originalDocumentLanguage])
 
@@ -456,12 +461,12 @@ export default function ReceiptPrintPage() {
           branchNameAr={receipt.branchNameAr}
           address={receipt.address}
           addressAr={receipt.addressAr}
-          vatNumber={branch.vat_number || tenant.vat_number || ''}
-          phone={branch.phone}
-          website={branch.website}
-          showWebsite={branch.show_website ?? false}
-          email={branch.email}
-          showEmail={branch.show_email ?? false}
+          vatNumber={receipt.identity.vatNumber}
+          phone={receipt.identity.phone}
+          website={receipt.identity.website}
+          showWebsite={receipt.identity.showWebsite}
+          email={receipt.identity.email}
+          showEmail={receipt.identity.showEmail}
           invoiceNumber={invoice.invoice_number}
           date={receipt.date}
           time={receipt.time}
@@ -481,11 +486,11 @@ export default function ReceiptPrintPage() {
           documentType={receipt.documentType}
           originalInvoiceNumber={invoice.invoice_reference ?? null}
           creditReason={invoice.credit_reason}
-          logoUrl={branch.logo_url}
-          showLogo={branch.show_logo ?? true}
+          logoUrl={receipt.identity.logoUrl}
+          showLogo={receipt.identity.showLogo}
           qrDataUrl={qrDataUrl}
-          receiptFooter={branch.receipt_footer}
-          showFooter={branch.show_footer ?? true}
+          receiptFooter={receipt.identity.footer}
+          showFooter={receipt.identity.showFooter}
           showCashChange={branch.show_cash_change ?? true}
         />
       </main>

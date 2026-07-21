@@ -6,6 +6,9 @@
   "english": "English",
   "arabic": "Arabic",
   "changesApplyImmediately": "Changes apply immediately",
+  "switchToEnglish": "Switch language to English",
+  "switchToArabic": "Switch language to Arabic",
+  "currentLanguage": "Current language",
   "invoiceLanguage": "Invoice language",
   "documentEnglish": "English only",
   "documentArabic": "Arabic only",
@@ -82,7 +85,15 @@
     "documentLanguage": "Invoice document language",
     "documentLanguageHelp": "Choose the language used on new invoices, receipts, and credit notes. The preview updates immediately; save to apply it.",
     "documentLanguageHistory": "Previously issued documents keep their saved language. Older documents without a saved language follow the current branch setting.",
-    "bilingual": "Bilingual"
+    "bilingual": "Bilingual",
+    "officialSellerProfileIncomplete": "Official seller profile is incomplete.",
+    "vatInformationIncomplete": "VAT information is incomplete.",
+    "registeredAddressIncomplete": "The registered address is incomplete.",
+    "complianceIdentityVerificationRequired": "The compliance identity must be verified.",
+    "issuanceBlockedIncompleteIdentity": "An invoice cannot be issued until the official information is complete.",
+    "displayDoesNotChangeZatca": "Display settings do not change your ZATCA, XML, or QR identity.",
+    "previewQrSampleOnly": "The preview QR is sample-only.",
+    "legacyDocumentRendering": "This legacy document uses the legacy rendering path."
   },
   "subscription": {
     "active": "Subscription Active", "lifetimeFree": "Lifetime Free Account", "lifetimeFreeBody": "Your account has full access with no subscription fees.",

@@ -28,6 +28,7 @@ import {
   resolveCreditNoteDocumentLanguage,
   resolveInvoiceDocumentLanguage,
 } from '@/localization/documents'
+import { documentIdentity } from '@/lib/invoices/documentIdentity'
 
 function WhatsAppIcon({ size = 13 }: { size?: number }) {
   return (
@@ -108,7 +109,7 @@ function fmtQty(n: number): string {
 
 const INVOICE_DETAIL_SELECT = `
   id, tenant_id, branch_id, customer_id, created_by,
-  invoice_number, document_language, invoice_reference, original_invoice_id, credit_reason,
+  invoice_number, document_language, identity_snapshot, invoice_reference, original_invoice_id, credit_reason,
   credit_note_idempotency_key, zatca_uuid, zatca_invoice_type, zatca_type_code,
   zatca_counter_number, zatca_prev_invoice_hash, zatca_xml_hash, zatca_qr_code,
   zatca_status, zatca_submission_id, zatca_submitted_at, zatca_clearance_status,
@@ -307,14 +308,15 @@ export default function InvoiceDetailPage() {
       // the exact same payload that was encoded into the QR at creation time.
       const storedPayload = sandboxValidation?.qrCode ?? invoice!.zatca_qr_code
 
-      const payload = storedPayload ?? buildZatcaQR({
-        // QR tag 1: always use legal business_name, never display_name (ZATCA requirement)
-        sellerName:  branch!.business_name || branch!.name,
-        vatNumber:   branch!.vat_number || tenant!.vat_number || '',
+      const identity = documentIdentity(invoice!.identity_snapshot, branch!)
+      const payload = storedPayload ?? (identity.snapshotBacked ? buildZatcaQR({
+        sellerName:  identity.registeredSellerName,
+        vatNumber:   identity.vatNumber,
         timestamp:   invoice!.created_at,
         totalAmount: Number(invoice!.total_amount),
         vatAmount:   Number(invoice!.tax_amount),
-      })
+      }) : null)
+      if (!payload) return
 
       if (!cancelled) setQrPayload(payload)
 
@@ -638,11 +640,12 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
   const canSubmitCurrentDocument = invoice.zatca_status === 'failed'
     || (isCreditNote && invoice.zatca_status === 'pending')
 
-  const brandNameEn = branch.display_name || branch.business_name || branch.name
-  const brandNameAr = branch.business_name_ar || branch.name_ar || brandNameEn
+  const identity = documentIdentity(invoice.identity_snapshot, branch)
+  const brandNameEn = identity.heading ?? identity.registeredSellerName
+  const brandNameAr = identity.subheading ?? identity.registeredSellerNameAr ?? ''
   const sellerNames = documentNames(documentLanguage, brandNameEn, brandNameAr)
-  const vatNumber    = branch.vat_number || tenant?.vat_number || '—'
-  const crNumber     = branch.cr_number  || tenant?.cr_number  || '—'
+  const vatNumber    = identity.vatNumber || '—'
+  const crNumber     = identity.registrationIdentifier || '—'
 
   const addressParts = [
     branch.building_number ? `Building ${branch.building_number}` : null,
@@ -660,7 +663,9 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     branch.country,
     branch.postal_code,
   ].filter(Boolean).join('، ')
-  const sellerAddresses = documentNames(documentLanguage, addressParts, addressPartsAr)
+  const sellerAddresses = identity.snapshotBacked
+    ? documentNames(documentLanguage, identity.address, null)
+    : documentNames(documentLanguage, addressParts, addressPartsAr)
 
   // ── Build thermal receipt data ────────────────────────────────────────────
 
@@ -692,16 +697,16 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
         documentLanguage={documentLanguage}
         businessNameAr={brandNameAr}
         businessNameEn={brandNameEn}
-        branchName={branch.name}
-        branchNameAr={branch.name_ar}
-        address={thermalAddress || null}
+        branchName={identity.branchName}
+        branchNameAr={identity.branchNameAr}
+        address={identity.snapshotBacked ? identity.address : thermalAddress || null}
         addressAr={thermalAddressAr || null}
         vatNumber={vatNumber}
-        phone={branch.phone}
-        website={branch.website}
-        showWebsite={branch.show_website ?? false}
-        email={branch.email}
-        showEmail={branch.show_email ?? false}
+        phone={identity.phone}
+        website={identity.website}
+        showWebsite={identity.showWebsite}
+        email={identity.email}
+        showEmail={identity.showEmail}
         invoiceNumber={invoice.invoice_number}
         date={invDate}
         time={invTime}
@@ -729,11 +734,11 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
         documentType={isCreditNote ? 'credit_note' : 'invoice'}
         originalInvoiceNumber={invoice.invoice_reference ?? originalInvoiceLink?.invoice_number ?? null}
         creditReason={invoice.credit_reason}
-        logoUrl={branch.logo_url}
-        showLogo={branch.show_logo ?? true}
+        logoUrl={identity.logoUrl}
+        showLogo={identity.showLogo}
         qrDataUrl={qrDataUrl}
-        receiptFooter={branch.receipt_footer}
-        showFooter={branch.show_footer ?? true}
+        receiptFooter={identity.footer}
+        showFooter={identity.showFooter}
         showCashChange={branch.show_cash_change ?? true}
       />
 
@@ -899,8 +904,8 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
             {/* Seller info (left) */}
             <div className="flex items-start gap-4 flex-1">
-              {branch.logo_url && (branch.show_logo ?? true) ? (
-                <img src={branch.logo_url} alt="logo" className="w-14 h-14 object-contain rounded-xl flex-shrink-0" />
+              {identity.logoUrl && identity.showLogo ? (
+                <img src={identity.logoUrl} alt="logo" className="w-14 h-14 object-contain rounded-xl flex-shrink-0" />
               ) : (
                 <div className="w-14 h-14 rounded-xl bg-[#0F2419] flex items-center justify-center flex-shrink-0">
                   <span className="text-gold-400 font-black text-2xl leading-none">د</span>
@@ -919,11 +924,11 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                     <span className="font-semibold text-gray-700">{documentLabel(documentLanguage, 'crNumber')}:</span> <bdi dir="ltr">{crNumber}</bdi>
                   </span>
                 </div>
-                {(branch.show_website ?? false) && branch.website && (
-                  <p className="text-[10px] text-gray-400 mt-0.5">{branch.website}</p>
+                {identity.showWebsite && identity.website && (
+                  <p className="text-[10px] text-gray-400 mt-0.5">{identity.website}</p>
                 )}
-                {(branch.show_email ?? false) && branch.email && (
-                  <p className="text-[10px] text-gray-400">{branch.email}</p>
+                {identity.showEmail && identity.email && (
+                  <p className="text-[10px] text-gray-400">{identity.email}</p>
                 )}
               </div>
             </div>
@@ -1154,9 +1159,9 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
               </p>
             </div>
 
-            {(branch.show_footer ?? true) && branch.receipt_footer && (
+            {identity.showFooter && identity.footer && (
               <div className="flex-1 rounded-xl bg-gray-50 px-4 py-3 text-xs font-medium text-gray-600">
-                {branch.receipt_footer}
+                {identity.footer}
               </div>
             )}
 

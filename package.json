@@ -19,7 +19,9 @@
     "desktop:build:all": "npm run build && electron-builder --win nsis --x64 --mac dmg zip --x64 --arm64",
     "zatca:validate-sample": "node scripts/validate-zatca-compliance-sample.mjs",
     "zatca:export-real-invoice": "node scripts/export-zatca-real-invoice-xml.mjs",
-    "zatca:validate-real-invoice": "node scripts/export-zatca-real-invoice-xml.mjs --validate"
+    "zatca:validate-real-invoice": "node scripts/export-zatca-real-invoice-xml.mjs --validate",
+    "audit:f3-identity": "node scripts/audit-f3-identity-separation.mjs",
+    "audit:f3a-migration": "node scripts/audit-f3a-migration.mjs"
   },
   "build": {
     "appId": "com.kubri.pos",

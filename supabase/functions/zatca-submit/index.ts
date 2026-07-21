@@ -568,7 +568,7 @@ function buildInvoice(data: any, opts: any): string {
 
   const supplier = root.ele(NS.cac, 'AccountingSupplierParty').ele(NS.cac, 'Party')
   supplier.ele(NS.cac, 'PartyIdentification').ele(NS.cbc, 'ID')
-    .att('schemeID', 'CRN').txt(data.sellerCrn || '0000000000')
+    .att('schemeID', data.sellerRegistrationScheme).txt(data.sellerCrn)
   const sellerAddr = supplier.ele(NS.cac, 'PostalAddress')
   sellerAddr.ele(NS.cbc, 'StreetName').txt(data.sellerAddress.street)
   sellerAddr.ele(NS.cbc, 'BuildingNumber').txt(data.sellerAddress.buildingNo)
@@ -681,15 +681,16 @@ function buildInvoiceXMLData(
     issueTime,
     counterValue:    inv.zatca_counter_number ?? 1,
     prevInvoiceHash: inv.zatca_prev_invoice_hash ?? FIRST_INVOICE_HASH,
-    sellerName:      branch.business_name || branch.name || '',
-    sellerNameAr:    branch.business_name_ar ?? branch.business_name ?? branch.name ?? '',
+    sellerName:      branch.registered_seller_name,
+    sellerNameAr:    branch.registered_seller_name_ar ?? branch.registered_seller_name,
     sellerVat:       branch.vat_number ?? '',
-    sellerCrn:       branch.cr_number ?? undefined,
+    sellerRegistrationScheme: branch.registration_scheme,
+    sellerCrn:       branch.registration_identifier,
     sellerAddress: {
       street:      branch.street ?? '',
-      buildingNo:  branch.building_number ?? '0000',
+      buildingNo:  branch.building_number,
       city:        branch.city ?? '',
-      postalCode:  branch.postal_code ?? '00000',
+      postalCode:  branch.postal_code,
       district:    branch.district ?? '',
       countryCode: branch.country || 'SA',
     },
@@ -1479,27 +1480,26 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     originalInvoice = original
   }
 
-  const { data: branch } = await db
-    .from('branches')
-    .select(`
-      id, name, business_name, display_name,
-      vat_number, cr_number, building_number,
-      street, district, city, postal_code, country,
-      phone, zatca_phase, show_logo, logo_url,
-      receipt_footer, show_footer, show_cash_change,
-      print_mode, show_website, website,
-      show_email, email
-    `)
-    .eq('id', inv.branch_id)
-    .eq('tenant_id', callerTenantId)
-    .single()
+  const { data: branchScope } = await db.from('branches')
+    .select('id,tenant_id,compliance_identity_mode,name,business_name,business_name_ar,vat_number,cr_number,building_number,street,district,city,postal_code,country')
+    .eq('id',inv.branch_id).eq('tenant_id',callerTenantId).single()
+  const protectedMode = branchScope?.compliance_identity_mode === 'protected'
+  const branchResult = protectedMode
+    ? await db.from('branch_compliance_profiles').select('branch_id,tenant_id,registered_seller_name,registered_seller_name_ar,vat_number,registration_scheme,registration_identifier,building_number,street,district,city,postal_code,country,validation_status').eq('branch_id',inv.branch_id).eq('tenant_id',callerTenantId).eq('validation_status','verified').single()
+    : { data: branchScope ? {
+        ...branchScope,
+        registered_seller_name: branchScope.business_name || branchScope.name,
+        registered_seller_name_ar: branchScope.business_name_ar,
+        registration_scheme: 'CRN', registration_identifier: branchScope.cr_number,
+      } : null }
+  const branch = branchResult.data
 
   if (!branch) {
     console.error('[zatca-submit] branch not found:', inv.branch_id)
     return { invoiceStatus: 'error' }
   }
 
-  const sellerName = branch.business_name || branch.name || ''
+  const sellerName = branch.registered_seller_name || ''
   if (!sellerName) {
     console.error('[zatca-submit] no seller name for branch:', inv.branch_id)
     await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
