@@ -280,6 +280,66 @@ BEGIN
 END;
 $$;
 
+-- SME-facing confirmation orchestration. PostgreSQL executes one RPC call in one
+-- transaction, so draft/submission/verification/activation either all commit or
+-- all roll back. The existing guarded transition functions remain authoritative.
+CREATE OR REPLACE FUNCTION public.confirm_branch_official_seller_information(
+  p_branch_id UUID,
+  p_payload JSONB,
+  p_reason TEXT,
+  p_confirmation BOOLEAN
+)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path=public SET row_security=off AS $$
+DECLARE v_uid UUID:=auth.uid(); v_user RECORD; v_branch RECORD; v_profile RECORD;
+BEGIN
+  SELECT tenant_id,role::TEXT role,is_active INTO v_user
+  FROM public.user_profiles WHERE id=v_uid;
+  IF NOT FOUND OR NOT v_user.is_active OR v_user.role<>'owner' OR p_confirmation IS NOT TRUE THEN
+    RAISE EXCEPTION 'Explicit owner confirmation required' USING ERRCODE='42501';
+  END IF;
+  IF NULLIF(btrim(p_reason),'') IS NULL THEN
+    RAISE EXCEPTION 'Confirmation reason is required' USING ERRCODE='22023';
+  END IF;
+
+  SELECT id,tenant_id,compliance_identity_mode INTO v_branch
+  FROM public.branches
+  WHERE id=p_branch_id AND tenant_id=v_user.tenant_id
+  FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Branch not found' USING ERRCODE='42501'; END IF;
+
+  SELECT * INTO v_profile FROM public.branch_compliance_profiles
+  WHERE branch_id=p_branch_id AND tenant_id=v_branch.tenant_id
+  FOR UPDATE;
+
+  -- A repeated request with the same already-confirmed values is a no-op. This
+  -- also makes simultaneous confirmations safe after the branch row lock waits.
+  IF FOUND AND v_branch.compliance_identity_mode='protected' AND v_profile.validation_status='verified'
+     AND v_profile.registered_seller_name IS NOT DISTINCT FROM NULLIF(btrim(p_payload->>'registeredSellerName'),'')
+     AND v_profile.registered_seller_name_ar IS NOT DISTINCT FROM NULLIF(btrim(p_payload->>'registeredSellerNameAr'),'')
+     AND v_profile.vat_number IS NOT DISTINCT FROM NULLIF(btrim(p_payload->>'vatNumber'),'')
+     AND v_profile.registration_scheme IS NOT DISTINCT FROM COALESCE(NULLIF(btrim(p_payload->>'registrationScheme'),''),'CRN')
+     AND v_profile.registration_identifier IS NOT DISTINCT FROM NULLIF(btrim(p_payload->>'registrationIdentifier'),'')
+     AND v_profile.building_number IS NOT DISTINCT FROM NULLIF(btrim(p_payload->>'buildingNumber'),'')
+     AND v_profile.street IS NOT DISTINCT FROM NULLIF(btrim(p_payload->>'street'),'')
+     AND v_profile.district IS NOT DISTINCT FROM NULLIF(btrim(p_payload->>'district'),'')
+     AND v_profile.city IS NOT DISTINCT FROM NULLIF(btrim(p_payload->>'city'),'')
+     AND v_profile.postal_code IS NOT DISTINCT FROM NULLIF(btrim(p_payload->>'postalCode'),'')
+     AND v_profile.country IS NOT DISTINCT FROM COALESCE(NULLIF(btrim(p_payload->>'country'),''),'SA')
+     AND v_profile.evidence_reference IS NOT DISTINCT FROM NULLIF(btrim(p_payload->>'evidenceReference'),'') THEN
+    RETURN jsonb_build_object('ok',true,'status','verified','mode','protected','idempotent',true);
+  END IF;
+
+  PERFORM public.save_branch_compliance_draft(p_branch_id,p_payload,p_reason);
+  PERFORM public.submit_branch_compliance_profile(p_branch_id,p_reason);
+  PERFORM public.record_audit_event('branch_compliance_owner_confirmed',v_branch.tenant_id,p_branch_id,v_uid,v_user.role,'branch',p_branch_id,'warning','succeeded',jsonb_build_object('reason',btrim(p_reason),'explicit_confirmation',true,'independent_reviewer',false),NULL,NULL);
+  PERFORM public.review_branch_compliance_profile(p_branch_id,'verify',p_reason,true);
+  IF v_branch.compliance_identity_mode<>'protected' THEN
+    PERFORM public.activate_branch_compliance_identity(p_branch_id,p_reason,true);
+  END IF;
+  RETURN jsonb_build_object('ok',true,'status','verified','mode','protected','idempotent',false);
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.deactivate_protected_identity_mode(p_branch_id UUID,p_reason TEXT,p_confirmation BOOLEAN)
 RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path=public SET row_security=off AS $$
 DECLARE v_uid UUID:=auth.uid(); v_user RECORD; v_branch RECORD;
@@ -303,7 +363,7 @@ RETURNS SETOF public.audit_events LANGUAGE sql STABLE SECURITY DEFINER SET searc
 $$;
 
 DO $$ DECLARE f TEXT; BEGIN
-  FOREACH f IN ARRAY ARRAY['save_branch_compliance_draft(uuid,jsonb,text)','submit_branch_compliance_profile(uuid,text)','review_branch_compliance_profile(uuid,text,text,boolean)','deactivate_protected_identity_mode(uuid,text,boolean)','get_branch_compliance_audit(uuid)'] LOOP
+  FOREACH f IN ARRAY ARRAY['save_branch_compliance_draft(uuid,jsonb,text)','submit_branch_compliance_profile(uuid,text)','review_branch_compliance_profile(uuid,text,text,boolean)','confirm_branch_official_seller_information(uuid,jsonb,text,boolean)','deactivate_protected_identity_mode(uuid,text,boolean)','get_branch_compliance_audit(uuid)'] LOOP
     EXECUTE 'REVOKE ALL ON FUNCTION public.'||f||' FROM PUBLIC';
     EXECUTE 'GRANT EXECUTE ON FUNCTION public.'||f||' TO authenticated';
   END LOOP;

@@ -3,14 +3,7 @@ import { AlertTriangle, CheckCircle2, Loader2, ShieldCheck, X } from 'lucide-rea
 import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
-import {
-  activateCompliance,
-  complianceCapability,
-  getComplianceReadiness,
-  reviewCompliance,
-  saveComplianceDraft,
-  submitComplianceReview,
-} from '@/lib/complianceIdentity'
+import { complianceCapability, confirmOfficialSellerInformation, getComplianceReadiness, saveComplianceDraft } from '@/lib/complianceIdentity'
 import type { BranchComplianceProfile, ComplianceReadiness, DraftProfilePayload } from '@/types/complianceIdentity'
 
 const EMPTY: DraftProfilePayload = {
@@ -32,8 +25,9 @@ function fromProfile(p: BranchComplianceProfile | null): DraftProfilePayload {
 type PublicState = 'incomplete' | 'confirmed' | 'reconfirm'
 function publicState(readiness: ComplianceReadiness | null): PublicState {
   if (!readiness) return 'incomplete'
+  if (readiness.status === 'verified' && readiness.mode === 'protected') return 'confirmed'
   if (readiness.status === 'revalidation_required') return 'reconfirm'
-  if (readiness.status === 'verified') return 'confirmed'
+  if (readiness.status === 'verified' || readiness.mode === 'protected') return 'reconfirm'
   return 'incomplete'
 }
 
@@ -51,7 +45,7 @@ export default function OfficialSellerProfilePage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [acknowledged, setAcknowledged] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(false)
   const dialogTitleRef = useRef<HTMLHeadingElement>(null)
 
   const state = publicState(readiness)
@@ -85,25 +79,30 @@ export default function OfficialSellerProfilePage() {
         if (rows[0]) setBranchId(rows[0].id)
       } catch (e: any) {
         console.error('[OfficialSellerInformation] capability/load failed', e)
-        if (!stopped) { setEnabled(false); setError(t('officialSeller.actionFailed')) }
+        if (!stopped) { setEnabled(false); setError(true) }
       }
     })()
     return () => { stopped = true }
-  }, [t])
+  }, [])
 
   useEffect(() => { if (enabled && branchId) load(branchId).catch(handleTechnicalError) }, [enabled, branchId])
   useEffect(() => { if (confirmOpen) dialogTitleRef.current?.focus() }, [confirmOpen])
+  useEffect(() => {
+    if (readiness && ((readiness.status === 'verified' && readiness.mode !== 'protected') || (readiness.mode === 'protected' && readiness.status !== 'verified' && readiness.status !== 'revalidation_required'))) {
+      console.warn('[OfficialSellerInformation] inconsistent readiness state', { branchId: readiness.branchId, status: readiness.status, mode: readiness.mode })
+    }
+  }, [readiness])
 
   function handleTechnicalError(e: any) {
     console.error('[OfficialSellerInformation]', e)
-    setError(t('officialSeller.actionFailed'))
+    setError(true)
   }
   const set = (key: keyof DraftProfilePayload) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setForm(value => ({ ...value, [key]: e.target.value })); setError('')
+    setForm(value => ({ ...value, [key]: e.target.value })); setError(false)
   }
 
   async function save() {
-    setBusy(true); setError('')
+    setBusy(true); setError(false)
     try {
       await saveComplianceDraft(branchId, form, 'Owner saved official seller information')
       await load()
@@ -112,20 +111,16 @@ export default function OfficialSellerProfilePage() {
 
   async function confirmOfficialInformation() {
     if (!acknowledged || !complete) return
-    setBusy(true); setError('')
+    setBusy(true); setError(false)
     try {
       const reason = 'Owner confirmed official seller information against official registration'
-      await saveComplianceDraft(branchId, form, reason)
-      await submitComplianceReview(branchId, reason)
-      await reviewCompliance({ branchId, decision: 'verify', reason, confirmation: true })
-      const current = await getComplianceReadiness(branchId)
-      if (current.mode === 'legacy') await activateCompliance({ branchId, reason })
+      await confirmOfficialSellerInformation({ branchId, payload: form, reason, confirmation: true })
       setConfirmOpen(false); setAcknowledged(false)
       await load()
     } catch (e) { handleTechnicalError(e) } finally { setBusy(false) }
   }
 
-  function cancelEdit() { setForm(persisted); setEditing(false); setError('') }
+  function cancelEdit() { setForm(persisted); setEditing(false); setError(false) }
 
   if (enabled === null) return <div className="flex h-40 items-center justify-center"><Loader2 className="animate-spin text-primary-600" /></div>
   if (!enabled) return <div className="card p-6"><h1 className="text-lg font-bold text-gray-950">{t('officialSeller.simpleTitle')}</h1><p className="mt-2 text-sm text-gray-500">{t('officialSeller.notEnabled')}</p></div>
@@ -150,7 +145,7 @@ export default function OfficialSellerProfilePage() {
       {group === 'identity' && <div><label className="label" htmlFor="registrationScheme">{t('officialSeller.fields.registrationScheme')}</label><select id="registrationScheme" className="input" dir="ltr" disabled={disabled} value={form.registrationScheme} onChange={set('registrationScheme')}>{['CRN','MOM','MLS','SAG','OTH'].map(value => <option key={value}>{value}</option>)}</select></div>}
       {fields.filter(field => field.group === group).map(field => <div key={field.key} className={field.key === 'evidenceReference' ? 'sm:col-span-2' : ''}><label className="label" htmlFor={field.key}>{t(`officialSeller.fields.${field.key}`)}</label><input id={field.key} className="input" dir={field.ltr ? 'ltr' : 'auto'} disabled={disabled} value={form[field.key]} onChange={set(field.key)} aria-invalid={(field.key === 'vatNumber' && Boolean(form.vatNumber) && !/^3\d{13}3$/.test(form.vatNumber)) || (field.key === 'postalCode' && Boolean(form.postalCode) && !/^\d{5}$/.test(form.postalCode))}/>{field.key === 'vatNumber' && form.vatNumber && !/^3\d{13}3$/.test(form.vatNumber) && <p className="mt-1 text-xs text-red-600">{t('officialSeller.validation.vat')}</p>}{field.key === 'postalCode' && form.postalCode && !/^\d{5}$/.test(form.postalCode) && <p className="mt-1 text-xs text-red-600">{t('officialSeller.validation.postal')}</p>}</div>)}
     </div></section>)}
-    {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+    {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{t('officialSeller.actionFailed')}</p>}
     {owner && <div className="sticky bottom-3 flex flex-wrap justify-end gap-2 rounded-2xl border border-gray-100 bg-white/95 p-3 shadow-lg backdrop-blur">{!editing && state === 'confirmed' ? <button className="btn-secondary" onClick={() => setEditing(true)}>{t('officialSeller.actions.edit')}</button> : <><button className="btn-secondary" disabled={busy} onClick={cancelEdit}>{t('officialSeller.actions.cancel')}</button><button className="btn-secondary" disabled={busy} onClick={save}>{busy ? t('officialSeller.actions.saving') : t('officialSeller.actions.save')}</button><button className="btn-primary" disabled={busy || !complete} onClick={() => setConfirmOpen(true)}><ShieldCheck size={15}/>{t('officialSeller.actions.confirm')}</button></>}</div>}
     {confirmOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="official-confirm-title"><div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><div className="flex items-start justify-between gap-4"><h2 id="official-confirm-title" ref={dialogTitleRef} tabIndex={-1} className="text-lg font-bold text-gray-950">{t('officialSeller.confirmDialog.title')}</h2><button aria-label={t('officialSeller.actions.goBack')} onClick={() => setConfirmOpen(false)}><X size={18}/></button></div><p className="mt-3 text-sm leading-6 text-gray-600">{t('officialSeller.confirmDialog.message')}</p><label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl bg-gray-50 p-3 text-sm text-gray-700"><input className="mt-0.5" type="checkbox" checked={acknowledged} onChange={e => setAcknowledged(e.target.checked)}/><span>{t('officialSeller.confirmDialog.acknowledgement')}</span></label><div className="mt-5 flex justify-end gap-2"><button className="btn-secondary" onClick={() => setConfirmOpen(false)}>{t('officialSeller.actions.goBack')}</button><button className="btn-primary" disabled={!acknowledged || busy} onClick={confirmOfficialInformation}>{busy ? t('officialSeller.actions.confirming') : t('officialSeller.actions.confirm')}</button></div></div></div>}
   </div>

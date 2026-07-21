@@ -9,7 +9,7 @@ const branchSettings = read('src/pages/settings/BranchesTab.tsx')
 const en = JSON.parse(read('src/localization/locales/en/settings.json')).officialSeller
 const ar = JSON.parse(read('src/localization/locales/ar-SA/settings.json')).officialSeller
 
-assert.match(page, /saveComplianceDraft[\s\S]*submitComplianceReview[\s\S]*reviewCompliance[\s\S]*activateCompliance/)
+assert.match(page, /confirmOfficialSellerInformation/)
 assert.match(page, /confirmation: true/)
 assert.match(page, /profile\?\.role === 'owner'/)
 assert.match(page, /type="checkbox"/)

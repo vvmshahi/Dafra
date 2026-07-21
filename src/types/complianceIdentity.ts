@@ -6,4 +6,5 @@ export interface ComplianceAuditItem { id:string; action:string; actor_user_id:s
 export interface DraftProfilePayload { registeredSellerName:string; registeredSellerNameAr:string; vatNumber:string; registrationScheme:string; registrationIdentifier:string; buildingNumber:string; street:string; district:string; city:string; postalCode:string; country:string; evidenceReference:string }
 export interface ReviewTransitionPayload { branchId:string; decision:'verify'|'reject'; reason:string; confirmation:boolean }
 export interface ActivationPayload { branchId:string; reason:string }
+export interface OfficialSellerConfirmationPayload { branchId:string; payload:DraftProfilePayload; reason:string; confirmation:boolean }
 export interface RecoveryPayload { branchId:string; reason:string; confirmation:boolean }

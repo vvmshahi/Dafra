@@ -9,8 +9,9 @@ import type { ComplianceReadiness } from '@/types/complianceIdentity'
 type PublicState = 'incomplete' | 'confirmed' | 'reconfirm'
 function publicState(data: ComplianceReadiness | null): PublicState {
   if (!data) return 'incomplete'
+  if (data.status === 'verified' && data.mode === 'protected') return 'confirmed'
   if (data.status === 'revalidation_required') return 'reconfirm'
-  if (data.status === 'verified') return 'confirmed'
+  if (data.status === 'verified' || data.mode === 'protected') return 'reconfirm'
   return 'incomplete'
 }
 
@@ -40,6 +41,11 @@ export default function ComplianceReadinessCard({ branchId, manage = false, invo
     })()
     return () => { stopped = true }
   }, [branchId])
+  useEffect(() => {
+    if (data && ((data.status === 'verified' && data.mode !== 'protected') || (data.mode === 'protected' && data.status !== 'verified' && data.status !== 'revalidation_required'))) {
+      console.warn('[ComplianceReadinessCard] inconsistent readiness state', { branchId: data.branchId, status: data.status, mode: data.mode })
+    }
+  }, [data])
   if (enabled === null) return null
   const state = publicState(data)
   const Icon = state === 'confirmed' ? CheckCircle2 : state === 'reconfirm' ? AlertTriangle : ShieldCheck
