@@ -19,6 +19,7 @@ import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
 import { isPermanentDemoSandboxBranch, submitInvoiceForBranch } from '@/lib/zatca/submission'
 import { toast } from 'sonner'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
+import A4Document from '@/components/print/A4Document'
 import type { Branch, BranchPosMode, Invoice, InvoiceItem, Payment, PaymentMethod, VatTreatment } from '@/types/database'
 import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
 import type { DocumentViewModel } from '@/lib/invoices/documentViewModel'
@@ -605,101 +606,8 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
   return (
     <>
       {/* A4 invoice — hidden, shown only via printPosA4() print style */}
-      <div id="pos-pdf-printable" dir={documentDir} style={{ display: 'none', fontFamily: documentFontFamily(documentLanguage), fontSize: '12px', color: '#111', lineHeight: '1.5', background: 'white' }}>
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: '20px', borderBottom: '2px solid #e5e7eb', marginBottom: '20px' }}>
-          <div>
-            {receipt.showLogo && receipt.logoUrl && (
-              <img src={receipt.logoUrl} alt="logo" style={{ maxHeight: '60px', maxWidth: '160px', objectFit: 'contain', display: 'block', marginBottom: '10px' }} />
-            )}
-            {documentNames(documentLanguage, receipt.businessNameEn, receipt.businessNameAr).map((name, index) => <div key={name} dir="auto" style={{ fontSize: index === 0 ? '20px' : '12px', fontWeight: index === 0 ? 'bold' : 'normal', color: index === 0 ? '#111' : '#6b7280', marginTop: index === 0 ? 0 : '2px' }}>{name}</div>)}
-            {documentNames(documentLanguage, receipt.branchAddress, receipt.branchAddressAr).map(value => <div key={value} dir="auto" style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>{value}</div>)}
-            <div style={{ fontSize: '11px', color: '#374151', marginTop: '6px' }}>{documentLabel(documentLanguage, 'vatNumber')}: <bdi dir="ltr">{receipt.vatNumber}</bdi></div>
-            {receipt.showWebsite && receipt.website && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>{receipt.website}</div>}
-            {receipt.showEmail && receipt.email && <div style={{ fontSize: '11px', color: '#6b7280' }}>{receipt.email}</div>}
-          </div>
-          <div style={{ textAlign: documentDir === 'rtl' ? 'left' : 'right' }}>
-            <div style={{ marginBottom: '14px' }}>{documentLabelLines(documentLanguage, 'simplifiedTaxInvoice').map((line, index) => <div key={line} dir="auto" style={{ fontSize: index === 0 ? '18px' : '11px', fontWeight: index === 0 ? 'bold' : 'normal', color: index === 0 ? '#0F2419' : '#9ca3af' }}>{line}</div>)}</div>
-            <div style={{ fontSize: '12px', marginBottom: '3px' }}>{documentLabel(documentLanguage, 'invoiceNumber')}: <strong><bdi dir="ltr">{receipt.invoiceNumber}</bdi></strong></div>
-            <div style={{ fontSize: '12px', marginBottom: '3px' }}>{documentLabel(documentLanguage, 'date')}: <bdi dir="ltr">{invDate}</bdi></div>
-            <div style={{ fontSize: '12px' }}>{documentLabel(documentLanguage, 'time')}: <bdi dir="ltr">{invTime}</bdi></div>
-          </div>
-        </div>
-        {/* Customer */}
-        <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px' }}>
-          <div style={{ fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>{documentLabel(documentLanguage, 'billTo')}</div>
-          {documentNames(documentLanguage, receipt.customerName, receipt.customerNameAr).map(name => <div key={name} dir="auto" style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{name}</div>)}
-        </div>
-        {/* Items */}
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
-              <th style={{ textAlign: 'start', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase' }}>{documentLabel(documentLanguage, 'item')}</th>
-              <th style={{ textAlign: 'end', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', width: '50px' }}>{documentLabel(documentLanguage, 'quantity')}</th>
-              <th style={{ textAlign: 'end', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', width: '100px' }}>{documentLabel(documentLanguage, 'unitPrice')}</th>
-              <th style={{ textAlign: 'end', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', width: '100px' }}>{documentLabel(documentLanguage, 'totalIncludingVat')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {receipt.items.map((item, i) => (
-              <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                <td style={{ padding: '10px 4px', fontSize: '13px', color: '#111827' }}>{documentNames(documentLanguage, item.name, item.nameAr).map(name => <div key={name} dir="auto">{name}</div>)}</td>
-                <td dir="ltr" style={{ textAlign: 'end', padding: '10px 4px', fontSize: '12px', color: '#6b7280' }}>{item.qty}</td>
-                <td dir="ltr" style={{ textAlign: 'end', padding: '10px 4px', fontSize: '12px', color: '#374151' }}><Rial amount={item.unitPrice} /></td>
-                <td dir="ltr" style={{ textAlign: 'end', padding: '10px 4px', fontSize: '13px', fontWeight: '600', color: '#111827' }}><Rial amount={item.lineTotal} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {/* Totals */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
-          <div style={{ width: '240px', background: '#f9fafb', borderRadius: '8px', padding: '14px 16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>
-              <span>{documentLabel(documentLanguage, 'amountBeforeVat')}</span><span dir="ltr"><Rial amount={receipt.subtotal} /></span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '600', color: '#b45309', background: '#fffbeb', padding: '4px 6px', borderRadius: '4px', marginBottom: '6px' }}>
-              <span>{documentLabel(documentLanguage, 'vatAmount')} (15%)</span><span dir="ltr"><Rial amount={receipt.taxAmount} /></span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 'bold', color: '#111827', borderTop: '1px solid #e5e7eb', paddingTop: '8px', marginTop: '4px' }}>
-              <span>{documentLabel(documentLanguage, 'totalIncludingVat')}</span><span dir="ltr"><Rial amount={receipt.total} /></span>
-            </div>
-          </div>
-        </div>
-        {/* Payment */}
-        <div style={{ fontSize: '12px', color: '#374151', marginBottom: '20px', padding: '10px 14px', background: '#f9fafb', borderRadius: '8px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-          <span><strong>{documentLabel(documentLanguage, 'paymentMethod')}:</strong> {documentPaymentLabel(documentLanguage, isSplitPayment ? 'split' : receipt.paymentMethod)}</span>
-          {isSplitPayment && cashPayment && (
-            <span><strong>{documentLabel(documentLanguage, 'cashAmount')}:</strong> <span dir="ltr"><Rial amount={cashPayment.amount} /></span></span>
-          )}
-          {isSplitPayment && cardPayment && (
-            <span><strong>{documentLabel(documentLanguage, 'cardAmount')}:</strong> <span dir="ltr"><Rial amount={cardPayment.amount} /></span></span>
-          )}
-          {isSplitPayment && (
-            <span><strong>{documentLabel(documentLanguage, 'totalPaid')}:</strong> <span dir="ltr"><Rial amount={paymentRowsTotal(receipt.payments)} /></span></span>
-          )}
-          {!isSplitPayment && receipt.paymentMethod === 'cash' && receipt.cashReceived > 0 && (
-            <span><strong>{documentLabel(documentLanguage, 'received')}:</strong> <span dir="ltr"><Rial amount={receipt.cashReceived} /></span></span>
-          )}
-          {!isSplitPayment && receipt.showCashChange && receipt.paymentMethod === 'cash' && receipt.change > 0.005 && (
-            <span><strong>{documentLabel(documentLanguage, 'change')}:</strong> <span dir="ltr"><Rial amount={receipt.change} /></span></span>
-          )}
-        </div>
-        {/* QR + footer */}
-        <div style={{ borderTop: '2px solid #e5e7eb', paddingTop: '16px', display: 'flex', alignItems: 'flex-end', gap: '16px' }}>
-          {qrDataUrl && (
-            <div style={{ textAlign: 'center', flexShrink: 0 }}>
-              <img src={qrDataUrl} alt={documentLabel(documentLanguage, 'qrCode')} style={{ width: '100px', height: '100px', display: 'block' }} />
-              <div style={{ fontSize: '9px', color: '#d1d5db', marginTop: '4px' }}>{documentLabel(documentLanguage, 'scanToVerify')}</div>
-            </div>
-          )}
-          <div style={{ fontSize: '9px', color: '#9ca3af' }}>
-            {receipt.showFooter && receipt.receiptFooter ? (
-              <div style={{ marginBottom: '4px', color: '#4b5563', fontWeight: 600 }}>{receipt.receiptFooter}</div>
-            ) : null}
-            <div style={{ color: '#d1d5db' }}>{documentLabel(documentLanguage, 'computerGeneratedInvoice')}</div>
-          </div>
-        </div>
-      </div>
+      <A4Document model={receipt.document} options={{ id: 'pos-pdf-printable', pdfMode: true, qrImageUrl: qrDataUrl, pageNumbers: true }} />
+      {/* A4 output is rendered only by A4Document above. */}
 
       {/* Hidden thermal receipt — rendered for print only */}
       <ThermalReceipt

@@ -34,7 +34,9 @@
     "test:phase4d-document-view-model": "node scripts/test-phase4d-document-view-model.mjs",
     "audit:phase4d-document-view-model": "node scripts/audit-phase4d-document-view-model.mjs",
     "test:phase4e-thermal-receipts": "node scripts/test-phase4e-thermal-receipts.mjs",
-    "audit:phase4e-thermal-receipts": "node scripts/audit-phase4e-thermal-receipts.mjs"
+    "audit:phase4e-thermal-receipts": "node scripts/audit-phase4e-thermal-receipts.mjs",
+    "test:phase4f-a4-templates": "node scripts/test-phase4f-a4-templates.mjs",
+    "audit:phase4f-a4-templates": "node scripts/audit-phase4f-a4-templates.mjs"
   },
   "build": {
     "appId": "com.kubri.pos",
