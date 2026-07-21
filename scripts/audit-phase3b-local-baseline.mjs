@@ -10,12 +10,14 @@ assert.deepEqual(files, [
   '20260721000100_dafra_current_schema_and_security.sql',
   '20260721000200_phase5x_document_language_snapshot.sql',
   '20260721000300_phase6a_identity_foundation.sql',
+  '20260721000400_invoice_presentation_settings.sql',
 ])
-const [baselineName, phase5xName, phase6aName] = files
+const [baselineName, phase5xName, phase6aName, phase4bName] = files
 const baseline = readFileSync(resolve(migrationDir, baselineName), 'utf8')
 const phase5x = readFileSync(resolve(migrationDir, phase5xName), 'utf8')
 const phase6a = readFileSync(resolve(migrationDir, phase6aName), 'utf8')
-const all = [baseline, phase5x, phase6a].join('\n')
+const phase4b = readFileSync(resolve(migrationDir, phase4bName), 'utf8')
+const all = [baseline, phase5x, phase6a, phase4b].join('\n')
 
 assert.match(baseline, /CREATE TYPE "public"\."user_role" AS ENUM \(\s*'super_admin',\s*'owner',\s*'branch'\s*\)/)
 assert.doesNotMatch(all, /get_my_role\(\)[^;\n]*admin|role\s+(?:NOT\s+)?IN\s*\([^)]*'admin'/i)
@@ -29,6 +31,7 @@ assert.match(phase6a, /branch_compliance_profiles/)
 assert.match(phase6a, /confirm_branch_official_seller_information/)
 assert.match(phase6a, /FOR UPDATE/)
 assert.match(phase6a, /p_confirmation IS NOT TRUE/)
+assert.match(phase4b, /presentation_settings/)
 
 const sourceFiles = readdirSync(resolve(root, 'src'), { recursive: true })
   .filter(name => /\.(?:ts|tsx)$/.test(name))

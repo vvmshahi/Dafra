@@ -25,6 +25,23 @@ export interface DocumentIdentityViewModel {
 }
 
 export function documentIdentity(snapshot: InvoiceIdentitySnapshot | null, branch: Branch): DocumentIdentityViewModel {
+  if (snapshot?.version === 2 && snapshot.legacy === false) {
+    const c = snapshot.compliance
+    const p = snapshot.presentationSettings
+    const address = [c.address.buildingNumber, c.address.street, c.address.district, c.address.city, c.address.country, c.address.postalCode].filter(Boolean).join(', ')
+    return {
+      snapshotBacked: true, heading: p.identity.display_heading, subheading: p.identity.display_subheading,
+      branchName: p.identity.show_branch_name ? p.identity.custom_display_name : null, branchNameAr: null,
+      registeredSellerName: c.registeredSellerName, registeredSellerNameAr: c.registeredSellerNameAr,
+      vatNumber: c.vatNumber, registrationIdentifier: c.registrationIdentifier,
+      address: p.contact.show_address ? address || null : null,
+      logoUrl: p.logo.asset_path, showLogo: p.logo.visible, phone: p.contact.phone,
+      email: p.contact.email, website: p.contact.website, showEmail: p.contact.show_email,
+      showWebsite: p.contact.show_website, footer: p.footer.footer_note,
+      showFooter: p.footer.show_footer, showCashChange: p.thermal.show_cash_change,
+      logoAssetVersion: p.logo.asset_version,
+    }
+  }
   if (snapshot?.version === 1 && snapshot.legacy === false) {
     const c = snapshot.compliance
     const p = snapshot.presentation

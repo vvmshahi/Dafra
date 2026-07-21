@@ -843,6 +843,7 @@ export interface Branch {
   a4_template_id: string
   document_template_version: number
   logo_asset_version: number
+  presentation_settings: InvoicePresentationSettings | null
   compliance_identity_mode: 'legacy' | 'protected'
   allow_split_payments: boolean
   show_pos_scroll_buttons: boolean
@@ -1210,7 +1211,7 @@ export interface Invoice {
   updated_at: string
 }
 
-export interface InvoiceIdentitySnapshot {
+export interface InvoiceIdentitySnapshotV1 {
   version: 1
   legacy: false
   compliance: {
@@ -1230,6 +1231,33 @@ export interface InvoiceIdentitySnapshot {
   }
   document: { language: 'en' | 'ar' | 'both'; thermalDensity: string; printMode: 'thermal' | 'pdf' | 'both'; a4TemplateId: string; templateVersion: number }
 }
+
+export type LogoAssetSize = 'small' | 'medium' | 'large'
+export type ThermalWidth = '58mm' | '80mm'
+export type ThermalDensity = 'compact' | 'standard' | 'detailed'
+export type QrSize = 'small' | 'standard' | 'large'
+export type A4TemplateId = 'classic' | 'modern_split' | 'minimal_professional'
+export type A4HeaderStyle = 'standard' | 'compact' | 'branded'
+
+export interface InvoicePresentationSettings {
+  schema_version: 1
+  identity: { display_heading: string | null; display_subheading: string | null; custom_display_name: string | null; show_company_name: boolean; show_branch_name: boolean }
+  contact: { phone: string | null; email: string | null; website: string | null; show_phone: boolean; show_email: boolean; show_website: boolean; show_address: boolean }
+  footer: { thank_you_message: string | null; footer_note: string | null; refund_note: string | null; show_thank_you: boolean; show_footer: boolean; show_refund_note: boolean }
+  logo: { visible: boolean; asset_path: string | null; asset_version: number; size: LogoAssetSize }
+  thermal: { width: ThermalWidth; density: ThermalDensity; qr_size: QrSize; wrap_item_names: boolean; show_cash_change: boolean }
+  a4: { template_id: A4TemplateId; template_version: 1; header_style: A4HeaderStyle }
+}
+
+export interface InvoiceIdentitySnapshotV2 {
+  version: 2
+  legacy: false
+  compliance: InvoiceIdentitySnapshotV1['compliance']
+  presentationSettings: InvoicePresentationSettings
+  document: { language: 'en' | 'ar' | 'both'; printMode: 'thermal' | 'pdf' | 'both' }
+}
+
+export type InvoiceIdentitySnapshot = InvoiceIdentitySnapshotV1 | InvoiceIdentitySnapshotV2
 
 export interface InvoiceItem {
   id: string
@@ -1382,6 +1410,7 @@ export interface BranchInsert {
   a4_template_id?: string | null
   document_template_version?: number
   logo_asset_version?: number
+  presentation_settings?: InvoicePresentationSettings | null
   compliance_identity_mode?: string | null
   allow_split_payments?: boolean
   show_pos_scroll_buttons?: boolean

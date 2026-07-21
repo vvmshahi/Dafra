@@ -19,6 +19,7 @@ const oldOfficial = { registeredSellerName: 'Phase 3D Historical Seller One', re
 const newOfficial = { ...oldOfficial, registeredSellerName: 'Phase 3D Historical Seller Two', vatNumber: '300000000000013', buildingNumber: '5678', street: 'New Synthetic Street', postalCode: '54321' }
 const oldPresentation = { invoice_display_heading: 'Old Synthetic Heading', invoice_display_subheading: 'Old Synthetic Subheading', display_name: 'Old Synthetic Company', name: 'Old Synthetic Branch', receipt_footer: 'Old synthetic footer', phone: '+966500000001', email: 'old@example.test', website: 'https://old.example.test', logo_url: 'https://assets.example.test/logo-v1.svg', show_logo: true, show_email: true, show_website: true, show_footer: true, show_cash_change: true, show_company_display_name: true, show_branch_display_name: true, invoice_language: 'both', thermal_density: 'compact', print_mode: 'both', a4_template_id: 'classic', document_template_version: 1 }
 const newPresentation = { invoice_display_heading: 'New Synthetic Heading', invoice_display_subheading: 'New Synthetic Subheading', display_name: 'New Synthetic Company', name: 'New Synthetic Branch', receipt_footer: 'New synthetic footer', phone: '+966500000002', email: 'new@example.test', website: 'https://new.example.test', logo_url: 'https://assets.example.test/logo-v2.svg', invoice_language: 'ar', thermal_density: 'detailed', print_mode: 'pdf', a4_template_id: 'modern', document_template_version: 2 }
+const phase4Settings = (p, tenant, branch, version, template = 'classic') => ({ schema_version: 1, identity: { display_heading: p.invoice_display_heading, display_subheading: p.invoice_display_subheading, custom_display_name: p.display_name, show_company_name: true, show_branch_name: true }, contact: { phone: p.phone, email: p.email, website: p.website, show_phone: true, show_email: true, show_website: true, show_address: true }, footer: { thank_you_message: 'Synthetic thanks', footer_note: p.receipt_footer, refund_note: 'Synthetic refund note', show_thank_you: true, show_footer: true, show_refund_note: true }, logo: { visible: true, asset_path: `invoice-branding/${tenant}/${branch}/${version}/logo.webp`, asset_version: version, size: 'medium' }, thermal: { width: '80mm', density: p.thermal_density, qr_size: 'standard', wrap_item_names: true, show_cash_change: true }, a4: { template_id: template, template_version: 1, header_style: 'standard' } })
 
 async function ok(result, label) { if (result.error) throw new Error(`${label}: ${result.error.code ?? ''} ${result.error.message}`); return result.data }
 async function denied(promise, label) { const result = await promise; assert.ok(result.error, `${label} unexpectedly succeeded`) }
@@ -36,6 +37,16 @@ function assertSnapshot(snapshot, official, presentation) {
   assert.equal(snapshot.compliance.registeredSellerName, official.registeredSellerName)
   assert.equal(snapshot.compliance.vatNumber, official.vatNumber)
   assert.equal(snapshot.compliance.address.street, official.street)
+  if (snapshot.version === 2) {
+    const p = snapshot.presentationSettings
+    assert.equal(p.identity.display_heading, presentation.invoice_display_heading)
+    assert.equal(p.footer.footer_note, presentation.receipt_footer)
+    assert.ok(p.logo.asset_path.startsWith('invoice-branding/'))
+    assert.ok(p.logo.asset_version >= 1)
+    assert.equal(snapshot.document.language, presentation.invoice_language)
+    assert.equal(p.thermal.density, presentation.thermal_density)
+    return
+  }
   assert.equal(snapshot.presentation.displayHeading, presentation.invoice_display_heading)
   assert.equal(snapshot.presentation.footer, presentation.receipt_footer)
   assert.equal(snapshot.presentation.logoUrl, presentation.logo_url)
@@ -61,7 +72,7 @@ try {
   const branchUserId = await createUser('branch.phase3d@example.test', 'branch')
   const otherOwnerId = await createUser('other-owner.phase3d@example.test', 'owner')
   await ok(await service.from('tenants').insert([{ id: ids.tenantA, name: 'Phase 3D Synthetic Tenant A', vat_number: '300000000000023', cr_number: '1010999902', city: 'Riyadh' }, { id: ids.tenantB, name: 'Phase 3D Synthetic Tenant B', vat_number: '300000000000033', cr_number: '1010999903', city: 'Jeddah' }]), 'tenants')
-  await ok(await service.from('branches').insert([{ id: ids.branchA, tenant_id: ids.tenantA, branch_code: 'P3DA', is_main_branch: true, ...oldPresentation }, { id: ids.branchB, tenant_id: ids.tenantB, branch_code: 'P3DB', is_main_branch: true, ...oldPresentation, name: 'Unrelated Synthetic Branch' }]), 'branches')
+  await ok(await service.from('branches').insert([{ id: ids.branchA, tenant_id: ids.tenantA, branch_code: 'P3DA', is_main_branch: true, ...oldPresentation, presentation_settings: phase4Settings(oldPresentation, ids.tenantA, ids.branchA, 1) }, { id: ids.branchB, tenant_id: ids.tenantB, branch_code: 'P3DB', is_main_branch: true, ...oldPresentation, name: 'Unrelated Synthetic Branch' }]), 'branches')
   await ok(await service.from('user_profiles').upsert([{ id: ownerId, tenant_id: ids.tenantA, role: 'owner', email: 'owner.phase3d@example.test', full_name: 'Synthetic Owner', is_active: true }, { id: branchUserId, tenant_id: ids.tenantA, branch_id: ids.branchA, role: 'branch', email: 'branch.phase3d@example.test', full_name: 'Synthetic Branch User', is_active: true }, { id: otherOwnerId, tenant_id: ids.tenantB, role: 'owner', email: 'other-owner.phase3d@example.test', full_name: 'Synthetic Other Owner', is_active: true }]), 'profiles')
   const owner = await login('owner.phase3d@example.test'); const branchUser = await login('branch.phase3d@example.test'); const otherOwner = await login('other-owner.phase3d@example.test')
   await rpc(owner, 'save_branch_compliance_draft', { p_branch_id: ids.branchA, p_payload: oldOfficial, p_reason: 'Synthetic initial profile' })
@@ -74,8 +85,8 @@ try {
   await ok(await service.from('invoices').update({ zatca_qr_code: syntheticQrSource }).eq('id', checkoutA.invoice_id), 'seed synthetic stored QR source')
   const a1 = await document(checkoutA.invoice_id); assertSnapshot(a1.invoice.identity_snapshot, oldOfficial, oldPresentation); assert.equal(a1.invoice.document_language, 'both'); assert.equal(a1.invoice.zatca_qr_code, syntheticQrSource); assert.equal(a1.invoice.zatca_xml_hash, null); assert.ok(!syntheticQrSource.includes(oldPresentation.invoice_display_heading))
   const frozenA = JSON.stringify(a1.render); const frozenSnapshotA = JSON.stringify(a1.invoice.identity_snapshot)
-  await ok(await service.from('branches').update(newPresentation).eq('id', ids.branchA), 'new presentation')
-  const a2 = await document(checkoutA.invoice_id); assert.equal(JSON.stringify(a2.render), frozenA); assert.equal(a2.invoice.identity_snapshot.presentation.logoAssetVersion, a1.invoice.identity_snapshot.presentation.logoAssetVersion)
+  await ok(await service.from('branches').update({ ...newPresentation, a4_template_id: 'modern_split', document_template_version: 1, presentation_settings: phase4Settings(newPresentation, ids.tenantA, ids.branchA, 2, 'modern_split') }).eq('id', ids.branchA), 'new presentation')
+  const a2 = await document(checkoutA.invoice_id); assert.equal(JSON.stringify(a2.render), frozenA)
   await rpc(owner, 'save_branch_compliance_draft', { p_branch_id: ids.branchA, p_payload: newOfficial, p_reason: 'Synthetic identity update' }); let ready = await rpc(owner, 'get_branch_compliance_readiness', { p_branch_id: ids.branchA }); assert.equal(ready.status, 'revalidation_required')
   await rpc(owner, 'confirm_branch_official_seller_information', { p_branch_id: ids.branchA, p_payload: newOfficial, p_reason: 'Synthetic reconfirmation', p_confirmation: true })
   const a3 = await document(checkoutA.invoice_id); assert.equal(JSON.stringify(a3.render), frozenA); assert.equal(JSON.stringify(a3.invoice.identity_snapshot), frozenSnapshotA)

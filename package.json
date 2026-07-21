@@ -27,7 +27,9 @@
     "audit:phase2-seller-flow": "node scripts/audit-phase2-simplified-seller-flow.mjs",
     "audit:phase3b-local-baseline": "node scripts/audit-phase3b-local-baseline.mjs",
     "test:phase3c-official-seller": "node scripts/test-phase3c-official-seller-runtime.mjs",
-    "test:phase3d-invoice-snapshot": "node scripts/test-phase3d-invoice-snapshot-runtime.mjs"
+    "test:phase3d-invoice-snapshot": "node scripts/test-phase3d-invoice-snapshot-runtime.mjs",
+    "audit:phase4b-invoice-settings": "node scripts/audit-phase4b-invoice-settings.mjs",
+    "test:phase4b-invoice-settings": "node scripts/test-phase4b-invoice-settings-runtime.mjs"
   },
   "build": {
     "appId": "com.kubri.pos",
