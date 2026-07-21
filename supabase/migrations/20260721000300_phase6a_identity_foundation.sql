@@ -47,7 +47,21 @@ ALTER TABLE public.branches
   ADD COLUMN IF NOT EXISTS show_branch_display_name BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS thermal_density TEXT NOT NULL DEFAULT 'standard',
   ADD COLUMN IF NOT EXISTS a4_template_id TEXT NOT NULL DEFAULT 'classic',
-  ADD COLUMN IF NOT EXISTS document_template_version INTEGER NOT NULL DEFAULT 1;
+  ADD COLUMN IF NOT EXISTS document_template_version INTEGER NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS logo_asset_version INTEGER NOT NULL DEFAULT 1;
+
+CREATE OR REPLACE FUNCTION public.bump_branch_logo_asset_version()
+RETURNS trigger LANGUAGE plpgsql SET search_path = public AS $$
+BEGIN
+  IF NEW.logo_url IS DISTINCT FROM OLD.logo_url THEN
+    NEW.logo_asset_version := OLD.logo_asset_version + 1;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS branches_bump_logo_asset_version ON public.branches;
+CREATE TRIGGER branches_bump_logo_asset_version BEFORE UPDATE OF logo_url ON public.branches
+FOR EACH ROW EXECUTE FUNCTION public.bump_branch_logo_asset_version();
 
 ALTER TABLE public.branches
   ADD COLUMN IF NOT EXISTS compliance_identity_mode TEXT NOT NULL DEFAULT 'legacy';
@@ -109,14 +123,17 @@ BEGIN
       'branchDisplayName', CASE WHEN v_branch.show_branch_display_name THEN v_branch.name ELSE NULL END,
       'branchDisplayNameAr', CASE WHEN v_branch.show_branch_display_name THEN v_branch.name_ar ELSE NULL END,
       'logoUrl', CASE WHEN v_branch.show_logo THEN v_branch.logo_url ELSE NULL END,
+      'logoAssetVersion', v_branch.logo_asset_version,
       'showLogo', v_branch.show_logo,
       'phone', v_branch.phone, 'email', v_branch.email, 'website', v_branch.website,
       'showEmail', v_branch.show_email, 'showWebsite', v_branch.show_website,
-      'footer', v_branch.receipt_footer, 'showFooter', v_branch.show_footer
+      'footer', v_branch.receipt_footer, 'showFooter', v_branch.show_footer,
+      'showCashChange', v_branch.show_cash_change
     ),
     'document', jsonb_build_object(
       'language', COALESCE(NEW.document_language, v_branch.invoice_language, 'both'),
       'thermalDensity', v_branch.thermal_density,
+      'printMode', v_branch.print_mode,
       'a4TemplateId', v_branch.a4_template_id,
       'templateVersion', v_branch.document_template_version
     )

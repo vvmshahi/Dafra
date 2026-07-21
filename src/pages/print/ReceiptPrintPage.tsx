@@ -491,7 +491,7 @@ export default function ReceiptPrintPage() {
           qrDataUrl={qrDataUrl}
           receiptFooter={receipt.identity.footer}
           showFooter={receipt.identity.showFooter}
-          showCashChange={branch.show_cash_change ?? true}
+          showCashChange={identity.showCashChange}
         />
       </main>
     </div>

@@ -20,6 +20,8 @@ export interface DocumentIdentityViewModel {
   showWebsite: boolean
   footer: string | null
   showFooter: boolean
+  showCashChange: boolean
+  logoAssetVersion: number | null
 }
 
 export function documentIdentity(snapshot: InvoiceIdentitySnapshot | null, branch: Branch): DocumentIdentityViewModel {
@@ -35,6 +37,7 @@ export function documentIdentity(snapshot: InvoiceIdentitySnapshot | null, branc
       vatNumber: c.vatNumber, registrationIdentifier: c.registrationIdentifier, address: address || null,
       logoUrl: p.logoUrl, showLogo: p.showLogo, phone: p.phone, email: p.email, website: p.website,
       showEmail: p.showEmail, showWebsite: p.showWebsite, footer: p.footer, showFooter: p.showFooter,
+      showCashChange: p.showCashChange, logoAssetVersion: p.logoAssetVersion,
     }
   }
   const address = [branch.building_number, branch.street, branch.district, branch.city, branch.country, branch.postal_code].filter(Boolean).join(', ')
@@ -47,5 +50,6 @@ export function documentIdentity(snapshot: InvoiceIdentitySnapshot | null, branc
     logoUrl: branch.logo_url, showLogo: branch.show_logo, phone: branch.phone, email: branch.email,
     website: branch.website, showEmail: branch.show_email, showWebsite: branch.show_website,
     footer: branch.receipt_footer, showFooter: branch.show_footer,
+    showCashChange: branch.show_cash_change, logoAssetVersion: null,
   }
 }

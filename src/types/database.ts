@@ -842,6 +842,7 @@ export interface Branch {
   thermal_density: 'compact' | 'standard' | 'detailed'
   a4_template_id: string
   document_template_version: number
+  logo_asset_version: number
   compliance_identity_mode: 'legacy' | 'protected'
   allow_split_payments: boolean
   show_pos_scroll_buttons: boolean
@@ -1224,10 +1225,10 @@ export interface InvoiceIdentitySnapshot {
     displayHeading: string | null; displaySubheading: string | null
     showCompanyDisplayName: boolean; showBranchDisplayName: boolean
     companyDisplayName: string | null; branchDisplayName: string | null; branchDisplayNameAr: string | null
-    logoUrl: string | null; showLogo: boolean; phone: string | null; email: string | null; website: string | null
-    showEmail: boolean; showWebsite: boolean; footer: string | null; showFooter: boolean
+    logoUrl: string | null; logoAssetVersion: number; showLogo: boolean; phone: string | null; email: string | null; website: string | null
+    showEmail: boolean; showWebsite: boolean; footer: string | null; showFooter: boolean; showCashChange: boolean
   }
-  document: { language: 'en' | 'ar' | 'both'; thermalDensity: string; a4TemplateId: string; templateVersion: number }
+  document: { language: 'en' | 'ar' | 'both'; thermalDensity: string; printMode: 'thermal' | 'pdf' | 'both'; a4TemplateId: string; templateVersion: number }
 }
 
 export interface InvoiceItem {
@@ -1380,6 +1381,7 @@ export interface BranchInsert {
   thermal_density?: string | null
   a4_template_id?: string | null
   document_template_version?: number
+  logo_asset_version?: number
   compliance_identity_mode?: string | null
   allow_split_payments?: boolean
   show_pos_scroll_buttons?: boolean

@@ -739,7 +739,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
         qrDataUrl={qrDataUrl}
         receiptFooter={identity.footer}
         showFooter={identity.showFooter}
-        showCashChange={branch.show_cash_change ?? true}
+        showCashChange={identity.showCashChange}
       />
 
       {/* ── Action bar (screen only) ─────────────────────── */}
