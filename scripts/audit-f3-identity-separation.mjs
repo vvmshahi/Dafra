@@ -26,8 +26,10 @@ assert.doesNotMatch(production, /sellerName:\s+branch\.(display_name|business_na
 assert.doesNotMatch(sandbox, /sellerName:\s+branch\.(display_name|business_name|name)/)
 assert.match(pos, /sellerName:\s+receipt\.complianceSellerName/)
 assert.doesNotMatch(pos, /sellerName:\s+receipt\.businessName/)
-assert.match(preview, /businessNameEn=\{previewBrandName\}/)
-assert.match(preview, /qrDataUrl=\{SAMPLE_QR_DATA_URL\}/)
+assert.match(preview, /function SamplePreview/)
+assert.match(preview, /aria-label=\{copy\.qr\}/)
+assert.match(preview, /presentation_settings: normalized\.presentation/)
+assert.doesNotMatch(preview, /presentation_settings:[\s\S]{0,500}(registeredSellerName|vatNumber|registrationIdentifier|compliance)/)
 assert.match(receipt, /invoice!\.zatca_qr_code \?\? \(identity\.snapshotBacked/)
 
 console.log('F3 identity separation static assertions passed.')

@@ -1,812 +1,236 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Upload, Check, Loader2, Info, AlertCircle } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AlertCircle, Check, ChevronDown, Eye, FileText, Loader2, RotateCcw, ShieldCheck, Upload } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
-import ThermalReceipt from '@/components/print/ThermalReceipt'
-import type { ThermalItem } from '@/components/print/ThermalReceipt'
-import type { Branch } from '@/types/database'
+import { getComplianceReadiness } from '@/lib/complianceIdentity'
+import { canonicalPresentationDefaults, immutableLogoObjectPath, resolveHistoricalA4Template } from '@/lib/invoices/presentationSettings'
 import { Switch as Toggle } from '@/components/ui/Switch'
-import { useTranslation } from 'react-i18next'
-import type { TFunction } from 'i18next'
-import { documentDirection, documentFontFamily, documentLabel, documentLabelLines, documentNames, normalizeDocumentLanguage } from '@/localization/documents'
-import ComplianceReadinessCard from '@/components/compliance/ComplianceReadinessCard'
+import type { ComplianceReadiness } from '@/types/complianceIdentity'
+import type { InvoicePresentationSettings } from '@/types/database'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+type DocumentLanguage = 'en' | 'ar' | 'both'
+type PrintMode = 'thermal' | 'pdf' | 'both'
+type PreviewMode = 'thermal' | 'a4'
+type RpcInvoker = (name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string; code?: string } | null }>
 
-interface FormState {
-  invoice_language: 'en' | 'ar' | 'both'
-  display_name: string
-  phone: string
-  show_logo: boolean
-  logo_url: string | null
-  website: string
-  email: string
-  show_website: boolean
-  show_email: boolean
-  receipt_footer: string
-  show_footer: boolean
-  show_cash_change: boolean
-  print_mode: 'thermal' | 'pdf' | 'both'
+interface SettingsResponse {
+  branch_id: string
+  presentation_settings: InvoicePresentationSettings
+  invoice_language: DocumentLanguage
+  print_mode: PrintMode
+  can_edit: boolean
+  role: string
 }
 
-type FieldErrors = Partial<Record<keyof FormState | 'logo_file', string>>
+interface InvoicePresentationDraft {
+  presentation: InvoicePresentationSettings
+  invoiceLanguage: DocumentLanguage
+  printMode: PrintMode
+}
 
-const FOOTER_MAX_LENGTH = 500
+type DraftPath =
+  | keyof InvoicePresentationSettings['identity'] | keyof InvoicePresentationSettings['contact']
+  | keyof InvoicePresentationSettings['footer'] | keyof InvoicePresentationSettings['logo']
+  | keyof InvoicePresentationSettings['thermal'] | keyof InvoicePresentationSettings['a4']
+type FieldErrors = Partial<Record<DraftPath | 'logo_file', string>>
+
+const rpc = supabase.rpc.bind(supabase) as unknown as RpcInvoker
 const LOGO_MAX_BYTES = 2 * 1024 * 1024
 const LOGO_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+const MAX_SHORT = 160
+const MAX_FOOTER = 500
 
-function normalizeWebsite(value: string) {
-  const trimmed = value.trim()
-  if (!trimmed) return ''
-  if (/^https?:\/\//i.test(trimmed)) return trimmed
-  return `https://${trimmed}`
+function normalizeDraft(value: InvoicePresentationDraft): InvoicePresentationDraft {
+  const clean = (text: string | null) => text?.trim() || null
+  return {
+    invoiceLanguage: value.invoiceLanguage,
+    printMode: value.printMode,
+    presentation: {
+      ...value.presentation,
+      identity: {
+        ...value.presentation.identity,
+        display_heading: clean(value.presentation.identity.display_heading),
+        display_subheading: clean(value.presentation.identity.display_subheading),
+        custom_display_name: clean(value.presentation.identity.custom_display_name),
+      },
+      contact: {
+        ...value.presentation.contact,
+        phone: clean(value.presentation.contact.phone), email: clean(value.presentation.contact.email),
+        website: clean(value.presentation.contact.website),
+      },
+      footer: {
+        ...value.presentation.footer,
+        thank_you_message: clean(value.presentation.footer.thank_you_message),
+        footer_note: clean(value.presentation.footer.footer_note), refund_note: clean(value.presentation.footer.refund_note),
+      },
+    },
+  }
+}
+const signature = (value: InvoicePresentationDraft) => JSON.stringify(normalizeDraft(value))
+const fromResponse = (value: SettingsResponse): InvoicePresentationDraft => normalizeDraft({ presentation: value.presentation_settings, invoiceLanguage: value.invoice_language, printMode: value.print_mode })
+
+function Section({ title, help, children }: { title: string; help: string; children: React.ReactNode }) {
+  return <section className="border-b border-gray-200 pb-7 last:border-0"><div className="mb-5"><h2 className="text-base font-bold text-gray-950">{title}</h2><p className="mt-1 text-xs leading-5 text-gray-500">{help}</p></div><div className="space-y-4">{children}</div></section>
+}
+function Field({ id, label, error, hint, children }: { id: string; label: string; error?: string; hint?: string; children: React.ReactNode }) {
+  const description = error ? `${id}-error` : hint ? `${id}-hint` : undefined
+  return <div><label htmlFor={id} className="label">{label}</label>{children}{error ? <p id={`${id}-error`} className="mt-1 text-[11px] font-medium text-red-600">{error}</p> : hint ? <p id={`${id}-hint`} className="mt-1 text-[11px] text-gray-400">{hint}</p> : null}<span className="sr-only" aria-live="polite">{description ? error : ''}</span></div>
+}
+function Choice<T extends string>({ legend, value, options, onChange, disabled = false }: { legend: string; value: T; options: { value: T; label: string; description?: string }[]; onChange: (value: T) => void; disabled?: boolean }) {
+  return <fieldset disabled={disabled}><legend className="label">{legend}</legend><div className={`grid gap-2 ${options.length === 2 ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-3'}`}>{options.map(option => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} onClick={() => onChange(option.value)} className={`rounded-xl border px-3 py-3 text-start outline-none transition focus-visible:ring-2 focus-visible:ring-primary-500 ${value === option.value ? 'border-primary-500 bg-primary-50 text-primary-900' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'} disabled:cursor-not-allowed disabled:opacity-60`}><span className="block text-xs font-semibold">{option.label}</span>{option.description && <span className="mt-1 block text-[10px] leading-4 text-gray-500">{option.description}</span>}</button>)}</div></fieldset>
+}
+function ToggleRow({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
+  return <div className="flex items-center justify-between gap-4 rounded-xl border border-gray-100 bg-gray-50/60 px-3 py-2.5"><span className="text-xs font-medium text-gray-700">{label}</span><Toggle checked={checked} onChange={onChange} disabled={disabled} /></div>
 }
 
-function validateSettings(form: FormState, t: TFunction): FieldErrors {
-  const errors: FieldErrors = {}
-  const email = form.email.trim()
-  const website = form.website.trim()
-  const phone = form.phone.trim()
-
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    errors.email = t('settings:invoiceSettings.emailInvalid')
-  }
-
-  if (website) {
-    try {
-      const url = new URL(normalizeWebsite(website))
-      if (!['http:', 'https:'].includes(url.protocol) || !url.hostname.includes('.')) {
-        errors.website = t('settings:invoiceSettings.websiteInvalid')
-      }
-    } catch {
-      errors.website = t('settings:invoiceSettings.websiteInvalid')
-    }
-  }
-
-  if (phone && (!/^[0-9+\-() ]+$/.test(phone) || phone.length < 7 || phone.length > 50)) {
-    errors.phone = t('settings:invoiceSettings.phoneInvalid')
-  }
-
-  if (form.receipt_footer.length > FOOTER_MAX_LENGTH) {
-    errors.receipt_footer = t('settings:invoiceSettings.footerTooLong', { count: FOOTER_MAX_LENGTH })
-  }
-
-  return errors
-}
-
-function formSignature(form: FormState) {
-  return JSON.stringify({
-    ...form,
-    display_name: form.display_name.trim(),
-    phone: form.phone.trim(),
-    website: form.website.trim(),
-    email: form.email.trim(),
-    receipt_footer: form.receipt_footer.trim(),
-  })
-}
-
-// ── Sample data for live preview ──────────────────────────────────────────────
-
-const PREVIEW_ITEMS: ThermalItem[] = [
-  { name: 'Arabic coffee', nameAr: 'قهوة عربية', qty: 2, unitPrice: 18.00, lineTotal: 36.00 },
-  { name: 'Chocolate cake', nameAr: 'كيك شوكولاتة', qty: 1, unitPrice: 22.00, lineTotal: 22.00 },
-]
-const PREVIEW_SUBTOTAL = 50.43
-const PREVIEW_TAX      = 7.57
-const PREVIEW_TOTAL    = 58.00
-const SAMPLE_QR_DATA_URL = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120"><rect width="120" height="120" fill="white"/><rect x="8" y="8" width="32" height="32" fill="#111"/><rect x="80" y="8" width="32" height="32" fill="#111"/><rect x="8" y="80" width="32" height="32" fill="#111"/><path d="M50 50h10v10H50zm20 0h10v20H70zM50 70h20v10H50zm30 10h30v10H80zM50 90h10v20H50zm20 10h40v10H70z" fill="#111"/><text x="60" y="67" font-size="8" text-anchor="middle" fill="#666">SAMPLE</text></svg>')}`
-
-// ── InfoTip ───────────────────────────────────────────────────────────────────
-
-function InfoTip({ text }: { text: string }) {
-  return (
-    <span
-      title={text}
-      className="ml-1.5 text-gray-400 hover:text-gray-600 cursor-help inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-gray-100 hover:bg-gray-200 flex-shrink-0"
-    >
-      <Info size={8} />
-    </span>
-  )
-}
-
-// ── A4 Invoice Preview ────────────────────────────────────────────────────────
-
-function A4InvoicePreview({ form, branch }: { form: FormState; branch: Branch | null }) {
-  const documentLanguage = normalizeDocumentLanguage(form.invoice_language)
-  const documentDir = documentDirection(documentLanguage)
-  const brandName = form.display_name
-  const brandNames = documentNames(documentLanguage, brandName, null)
-  const address = [
-    branch?.building_number ? `Building ${branch.building_number}` : null,
-    branch?.street,
-    branch?.district,
-    branch?.city,
-    branch?.postal_code || null,
-  ].filter(Boolean).join(', ')
-
-  return (
-    <div dir={documentDir} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden text-[11px]" style={{ fontFamily: documentFontFamily(documentLanguage) }}>
-
-      {/* Header */}
-      <div className="px-5 py-4 border-b border-gray-100">
-        <div className="flex items-start justify-between gap-4">
-
-          {/* Seller info */}
-          <div className="flex items-start gap-3">
-            {form.logo_url && form.show_logo ? (
-              <img src={form.logo_url} alt="logo" className="w-10 h-10 rounded-lg object-contain flex-shrink-0 border border-gray-100" />
-            ) : (
-              <div className="w-10 h-10 rounded-lg bg-[#0F2419] flex items-center justify-center flex-shrink-0">
-                <span className="text-[#D4AF37] font-black text-base leading-none">د</span>
-              </div>
-            )}
-            <div>
-              {brandNames.map((name, index) => <p key={name} className={index === 0 ? 'font-bold text-gray-900 text-sm' : 'text-gray-400 text-[10px]'} dir="auto">{name}</p>)}
-              {address && <p className="text-gray-400 text-[10px] mt-0.5 max-w-[180px]">{address}</p>}
-              <div className="flex flex-wrap gap-2.5 mt-1.5">
-                {branch?.vat_number && (
-                  <span className="text-[10px] text-gray-500"><span className="font-semibold text-gray-600">{documentLabel(documentLanguage, 'vatNumber')}:</span> <bdi dir="ltr">{branch.vat_number}</bdi></span>
-                )}
-                {branch?.cr_number && (
-                  <span className="text-[10px] text-gray-500"><span className="font-semibold text-gray-600">{documentLabel(documentLanguage, 'crNumber')}:</span> <bdi dir="ltr">{branch.cr_number}</bdi></span>
-                )}
-              </div>
-              {form.show_website && form.website && (
-                <p className="text-[10px] text-gray-400 mt-0.5">{form.website}</p>
-              )}
-              {form.show_email && form.email && (
-                <p className="text-[10px] text-gray-400">{form.email}</p>
-              )}
-            </div>
-          </div>
-
-          {/* Invoice meta */}
-          <div className="text-end flex-shrink-0">
-            <div className="mb-2">{documentLabelLines(documentLanguage, 'simplifiedTaxInvoice').map((line, index) => <p key={line} dir="auto" className={index === 0 ? 'font-bold text-[#0F2419] text-sm' : 'text-gray-400 text-[10px]'}>{line}</p>)}</div>
-            <div className="space-y-0.5">
-              <div className="flex justify-end gap-3">
-                <span className="font-mono font-semibold text-gray-800">INV-0042</span>
-                <span className="text-gray-400 uppercase tracking-wide text-[9px]">{documentLabel(documentLanguage, 'invoiceNumber')}</span>
-              </div>
-              <div className="flex justify-end gap-3">
-                <span className="text-gray-700">15 Jan 2026</span>
-                <span className="text-gray-400 uppercase tracking-wide text-[9px]">{documentLabel(documentLanguage, 'date')}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+function SamplePreview({ draft, mode, logoSrc, copy }: { draft: InvoicePresentationDraft; mode: PreviewMode; logoSrc: string | null; copy: Record<string, string> }) {
+  const p = draft.presentation
+  const rtl = draft.invoiceLanguage === 'ar'
+  const names = draft.invoiceLanguage === 'both' ? [copy.companyEn, copy.companyAr] : rtl ? [copy.companyAr] : [copy.companyEn]
+  const width = mode === 'thermal' ? (p.thermal.width === '58mm' ? 'max-w-[250px]' : 'max-w-[330px]') : 'max-w-[620px]'
+  return <div className={`mx-auto ${width} bg-white text-gray-900 shadow-[0_18px_50px_rgba(15,36,25,0.12)] ring-1 ring-gray-200`} dir={rtl ? 'rtl' : 'ltr'}>
+    <div className={`${mode === 'thermal' ? p.thermal.density === 'compact' ? 'p-4' : 'p-5' : 'p-7'} border-b border-dashed border-gray-200`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">{p.logo.visible && logoSrc && <img src={logoSrc} alt="" className={`${p.logo.size === 'small' ? 'h-8' : p.logo.size === 'large' ? 'h-16' : 'h-11'} mb-3 max-w-32 object-contain`} />}{p.identity.display_heading && <p className="text-base font-black text-[#0F2419]">{p.identity.display_heading}</p>}{p.identity.display_subheading && <p className="mt-0.5 text-[10px] text-gray-500">{p.identity.display_subheading}</p>}{p.identity.show_company_name && names.map(name => <p key={name} className="mt-1 text-xs font-semibold" dir="auto">{name}</p>)}{p.identity.show_branch_name && <p className="mt-1 text-[10px] text-gray-500">{p.identity.custom_display_name || copy.branch}</p>}</div>
+        <div className="text-end"><p className="text-xs font-bold">{copy.invoiceTitle}</p><p className="mt-1 font-mono text-[10px] text-gray-500" dir="ltr">INV-0042</p></div>
       </div>
-
-      {/* Items */}
-      <div className="px-5 py-3">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-200">
-              <th className="text-start py-1.5 text-[9px] font-semibold text-gray-400 uppercase tracking-wide">{documentLabel(documentLanguage, 'item')}</th>
-              <th className="text-end py-1.5 text-[9px] font-semibold text-gray-400 uppercase tracking-wide w-10">{documentLabel(documentLanguage, 'quantity')}</th>
-              <th className="text-end py-1.5 text-[9px] font-semibold text-gray-400 uppercase tracking-wide w-20">{documentLabel(documentLanguage, 'totalIncludingVat')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {PREVIEW_ITEMS.map((item, i) => (
-              <tr key={i} className="border-b border-gray-50">
-                <td className="py-2 text-gray-800">{documentNames(documentLanguage, item.name, item.nameAr).map(name => <span key={name} className="block" dir="auto">{name}</span>)}</td>
-                <td className="py-2 text-end text-gray-600" dir="ltr">{item.qty}</td>
-                <td className="py-2 text-end font-medium text-gray-900" dir="ltr">SAR {item.lineTotal.toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Totals */}
-      <div className="px-5 pb-4">
-        <div className="flex justify-end">
-          <div className="w-48 space-y-1 bg-gray-50 rounded-lg px-3 py-2.5">
-            <div className="flex justify-between text-gray-600">
-              <span>{documentLabel(documentLanguage, 'amountBeforeVat')}</span><span dir="ltr">SAR {PREVIEW_SUBTOTAL.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">
-              <span className="font-semibold">{documentLabel(documentLanguage, 'vatAmount')} 15%</span>
-              <span className="font-semibold" dir="ltr">SAR {PREVIEW_TAX.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1">
-              <span>{documentLabel(documentLanguage, 'totalIncludingVat')}</span><span dir="ltr">SAR {PREVIEW_TOTAL.toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="px-5 py-3 border-t border-gray-100 flex items-center gap-3">
-        <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-gray-300 text-[8px] text-center leading-tight">
-          {documentLabel(documentLanguage, 'qrCode')}
-        </div>
-        <div className="text-[9px] text-gray-400 space-y-0.5">
-          <p className="font-semibold">{documentLabel(documentLanguage, 'qrCode')}</p>
-          {form.show_footer && form.receipt_footer && (
-            <p className="text-gray-500">{form.receipt_footer}</p>
-          )}
-        </div>
-      </div>
+      <div className="mt-3 space-y-0.5 text-[9px] text-gray-500">{p.contact.show_phone && p.contact.phone && <p dir="ltr">{p.contact.phone}</p>}{p.contact.show_email && p.contact.email && <p dir="ltr">{p.contact.email}</p>}{p.contact.show_website && p.contact.website && <p dir="ltr">{p.contact.website}</p>}{p.contact.show_address && <p>{copy.address}</p>}</div>
     </div>
-  )
+    <div className={mode === 'thermal' ? 'p-4' : 'p-7'}><div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-gray-200 pb-2 text-[9px] font-semibold text-gray-500"><span>{copy.item}</span><span>{copy.quantity}</span><span>{copy.total}</span></div>{[[copy.coffee,'2','36.00'],[copy.cake,'1','22.00']].map(row => <div key={row[0]} className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-gray-100 py-2 text-[10px]"><span className={p.thermal.wrap_item_names ? '' : 'truncate'}>{row[0]}</span><span dir="ltr">{row[1]}</span><span dir="ltr">SAR {row[2]}</span></div>)}<div className="ms-auto mt-4 w-44 space-y-1 text-[10px]"><div className="flex justify-between"><span>{copy.subtotal}</span><span dir="ltr">SAR 50.43</span></div><div className="flex justify-between"><span>{copy.vat}</span><span dir="ltr">SAR 7.57</span></div><div className="flex justify-between border-t pt-1 text-xs font-bold"><span>{copy.total}</span><span dir="ltr">SAR 58.00</span></div></div>
+      <div className="mt-5 flex items-end justify-between gap-4"><div className="space-y-1 text-[9px] text-gray-500">{p.footer.show_thank_you && p.footer.thank_you_message && <p>{p.footer.thank_you_message}</p>}{p.footer.show_footer && p.footer.footer_note && <p>{p.footer.footer_note}</p>}{p.footer.show_refund_note && p.footer.refund_note && <p>{p.footer.refund_note}</p>}</div><div aria-label={copy.qr} className={`${p.thermal.qr_size === 'small' ? 'h-10 w-10' : p.thermal.qr_size === 'large' ? 'h-16 w-16' : 'h-12 w-12'} grid place-items-center bg-gray-100 text-[7px] text-gray-400`}>{copy.qr}</div></div>
+    </div>
+  </div>
 }
-
-// ── InvoiceSettingsPage ───────────────────────────────────────────────────────
 
 export default function InvoiceSettingsPage() {
-  const { t } = useTranslation(['settings', 'printing'])
+  const { t, i18n } = useTranslation(['settings', 'common'])
   const { profile, loading: authLoading } = useAuth()
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [draft, setDraft] = useState<InvoicePresentationDraft | null>(null)
+  const [saved, setSaved] = useState<InvoicePresentationDraft | null>(null)
+  const [defaults, setDefaults] = useState<InvoicePresentationDraft | null>(null)
+  const [canEdit, setCanEdit] = useState(false)
+  const [readiness, setReadiness] = useState<ComplianceReadiness | null>(null)
+  const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [uploading, setUploading] = useState(false)
+  const [saveOk, setSaveOk] = useState(false), [saveError, setSaveError] = useState<string | null>(null)
+  const [errors, setErrors] = useState<FieldErrors>({}), [previewMode, setPreviewMode] = useState<PreviewMode>('thermal')
+  const [pendingLogoPreview, setPendingLogoPreview] = useState<string | null>(null), [resetOpen, setResetOpen] = useState(false)
+  const logoInput = useRef<HTMLInputElement>(null)
+  const isDirty = !!draft && !!saved && signature(draft) !== signature(saved)
 
-  const [branch,       setBranch]       = useState<Branch | null>(null)
-  const [loading,      setLoading]      = useState(true)
-  const [saving,       setSaving]       = useState(false)
-  const [saveOk,       setSaveOk]       = useState(false)
-  const [saveError,    setSaveError]    = useState<string | null>(null)
-  const [fieldErrors,  setFieldErrors]  = useState<FieldErrors>({})
-  const [savedSignature, setSavedSignature] = useState<string | null>(null)
-  const [savedForm, setSavedForm] = useState<FormState | null>(null)
-  const [uploadedLogoPendingSave, setUploadedLogoPendingSave] = useState(false)
-  const [uploadingLogo, setUploadingLogo] = useState(false)
-  const [previewMode,  setPreviewMode]  = useState<'thermal' | 'a4'>('thermal')
-
-  const [form, setForm] = useState<FormState>({
-    invoice_language: 'both',
-    display_name:     '',
-    phone:            '',
-    show_logo:        true,
-    logo_url:         null,
-    website:          '',
-    email:            '',
-    show_website:     false,
-    show_email:       false,
-    receipt_footer:   '',
-    show_footer:      true,
-    show_cash_change: true,
-    print_mode:       'thermal',
-  })
-
+  useEffect(() => { if (!authLoading) void loadBranches() }, [authLoading, profile?.branch_id, profile?.tenant_id])
+  async function loadBranches() {
+    if (profile?.branch_id) { setBranches([{ id: profile.branch_id, name: t('settings:invoiceSettings.assignedBranch') }]); setBranchId(profile.branch_id); return }
+    if (!profile?.tenant_id) { setLoading(false); return }
+    const { data } = await supabase.from('branches').select('id,name').eq('tenant_id', profile.tenant_id).eq('is_active', true).order('is_main_branch', { ascending: false }).order('name')
+    const list = (data ?? []) as { id: string; name: string }[]; setBranches(list); setBranchId(current => current && list.some(item => item.id === current) ? current : list[0]?.id ?? null)
+  }
+  useEffect(() => { if (branchId) void loadSettings(branchId) }, [branchId])
+  async function loadSettings(id: string) {
+    setLoading(true); setSaveError(null)
+    try {
+      const [{ data, error }, official] = await Promise.all([rpc('get_branch_invoice_settings', { p_branch_id: id }), getComplianceReadiness(id).catch(() => null)])
+      if (error) throw error
+      const response = data as SettingsResponse, next = fromResponse(response)
+      setDraft(next); setSaved(next); setDefaults({ ...next, presentation: canonicalPresentationDefaults(next.presentation) }); setCanEdit(response.can_edit); setReadiness(official); setPendingLogoPreview(null)
+    } catch (error) { setSaveError(error instanceof Error ? error.message : t('settings:invoiceSettings.loadFailed')) }
+    finally { setLoading(false) }
+  }
   useEffect(() => {
-    if (authLoading) return  // wait for auth before deciding
-    const bid = profile?.branch_id
-    if (!bid) { setLoading(false); return }
-    supabase.from('branches').select('*').eq('id', bid).single().then(({ data, error }) => {
-      if (error) { console.error('[InvoiceSettings] branch fetch:', error.message) }
-      if (data) {
-        const b = data as Branch
-        setBranch(b)
-        const nextForm: FormState = {
-          invoice_language: normalizeDocumentLanguage(b.invoice_language),
-          display_name:     b.display_name     ?? '',
-          phone:            b.phone            ?? '',
-          show_logo:        b.show_logo        ?? true,
-          logo_url:         b.logo_url         ?? null,
-          website:          b.website          ?? '',
-          email:            b.email            ?? '',
-          show_website:     b.show_website     ?? false,
-          show_email:       b.show_email       ?? false,
-          receipt_footer:   b.receipt_footer   ?? '',
-          show_footer:      b.show_footer      ?? true,
-          show_cash_change: b.show_cash_change ?? true,
-          print_mode:       (b.print_mode as 'thermal' | 'pdf' | 'both') ?? 'thermal',
-        }
-        setForm(nextForm)
-        setSavedForm(nextForm)
-        setSavedSignature(formSignature(nextForm))
-      }
-      setLoading(false)
-    })
-  }, [profile?.branch_id, authLoading])
+    const beforeUnload = (event: BeforeUnloadEvent) => { if (isDirty) { event.preventDefault(); event.returnValue = '' } }
+    const routeGuard = (event: MouseEvent) => { const anchor = (event.target as HTMLElement).closest('a'); if (isDirty && anchor && !window.confirm(t('settings:invoiceSettings.leaveWarning'))) { event.preventDefault(); event.stopPropagation() } }
+    window.addEventListener('beforeunload', beforeUnload); document.addEventListener('click', routeGuard, true)
+    return () => { window.removeEventListener('beforeunload', beforeUnload); document.removeEventListener('click', routeGuard, true) }
+  }, [isDirty, t])
+  useEffect(() => () => { if (pendingLogoPreview) URL.revokeObjectURL(pendingLogoPreview) }, [pendingLogoPreview])
 
-  function set<K extends keyof FormState>(key: K, val: FormState[K]) {
-    setForm(prev => ({ ...prev, [key]: val }))
-    setSaveOk(false)
-    setSaveError(null)
-    setFieldErrors(prev => {
-      if (!prev[key]) return prev
-      const next = { ...prev }
-      delete next[key]
-      return next
-    })
+  function updateSection<S extends keyof InvoicePresentationSettings, K extends keyof InvoicePresentationSettings[S]>(section: S, key: K, value: InvoicePresentationSettings[S][K]) { setDraft(current => current ? { ...current, presentation: { ...current.presentation, [section]: { ...current.presentation[section], [key]: value } } } : current); setSaveOk(false); setErrors(current => { const next = { ...current }; delete next[key as DraftPath]; return next }) }
+  function validate(value: InvoicePresentationDraft) {
+    const next: FieldErrors = {}, p = value.presentation
+    for (const [key, text] of Object.entries(p.identity) as [keyof typeof p.identity, string | boolean | null][]) if (typeof text === 'string' && text.length > MAX_SHORT) next[key] = t('settings:invoiceSettings.tooLong', { count: MAX_SHORT })
+    if (p.contact.phone && (!/^[0-9+\-() ]{7,50}$/.test(p.contact.phone))) next.phone = t('settings:invoiceSettings.phoneInvalid')
+    if (p.contact.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.contact.email)) next.email = t('settings:invoiceSettings.emailInvalid')
+    if (p.contact.website && !/^https:\/\/[^\s]+$/i.test(p.contact.website)) next.website = t('settings:invoiceSettings.websiteInvalidHttps')
+    for (const [key, text] of Object.entries(p.footer) as [keyof typeof p.footer, string | boolean | null][]) if (typeof text === 'string' && text.length > MAX_FOOTER) next[key] = t('settings:invoiceSettings.footerTooLong', { count: MAX_FOOTER })
+    return next
   }
-
-  const currentErrors = useMemo(() => validateSettings(form, t), [form, t])
-  const hasValidationErrors = Object.keys(currentErrors).length > 0
-  const hasUnsavedChanges = savedSignature !== null && formSignature(form) !== savedSignature
-  const saveDisabled = saving || !hasUnsavedChanges || hasValidationErrors
-
+  async function saveChanges() {
+    if (!draft || !branchId || !canEdit || saving) return
+    const normalized = normalizeDraft(draft), nextErrors = validate(normalized); setErrors(nextErrors)
+    if (Object.keys(nextErrors).length) return
+    setSaving(true); setSaveError(null); setSaveOk(false)
+    const { data, error } = await rpc('update_branch_invoice_settings', { p_payload: { branch_id: branchId, invoice_language: normalized.invoiceLanguage, print_mode: normalized.printMode, presentation_settings: normalized.presentation } })
+    if (error) { setSaveError(error.message); setSaving(false); return }
+    const result = fromResponse(data as SettingsResponse); setDraft(result); setSaved(result); setDefaults(current => current ?? result); setPendingLogoPreview(null); setSaveOk(true); setSaving(false)
+  }
+  function cancelChanges() { if (!saved) return; setDraft(saved); setErrors({}); setSaveError(null); setPendingLogoPreview(null); setResetOpen(false) }
+  function resetChanges() { if (!defaults) return; setDraft(defaults); setErrors({}); setResetOpen(false) }
+  function chooseBranch(next: string) { if (next === branchId) return; if (isDirty && !window.confirm(t('settings:invoiceSettings.leaveWarning'))) return; setBranchId(next) }
   async function uploadLogo(file: File) {
-    const bid = profile?.branch_id
-    if (!bid) return
-    setSaveError(null)
-    setSaveOk(false)
-    if (!LOGO_MIME_TYPES.includes(file.type)) {
-      setFieldErrors(prev => ({ ...prev, logo_file: t('settings:invoiceSettings.logoTypeInvalid') }))
-      return
-    }
-    if (file.size > LOGO_MAX_BYTES) {
-      setFieldErrors(prev => ({ ...prev, logo_file: t('settings:invoiceSettings.logoTooLarge') }))
-      return
-    }
-    setFieldErrors(prev => {
-      const next = { ...prev }
-      delete next.logo_file
-      return next
-    })
-    setUploadingLogo(true)
+    if (!draft || !branchId || !profile?.tenant_id || !canEdit) return
+    if (!LOGO_MIME_TYPES.includes(file.type)) { setErrors(current => ({ ...current, logo_file: t('settings:invoiceSettings.logoTypeInvalid') })); return }
+    if (file.size > LOGO_MAX_BYTES) { setErrors(current => ({ ...current, logo_file: t('settings:invoiceSettings.logoTooLarge') })); return }
+    setUploading(true); setSaveError(null)
     try {
-      const ext  = file.name.split('.').pop() ?? 'png'
-      const path = `${bid}/logo.${ext}`
-      const { error } = await supabase.storage.from('branch-assets').upload(path, file, { upsert: true })
-      if (error) throw error
-      const { data: urlData } = supabase.storage.from('branch-assets').getPublicUrl(path)
-      set('logo_url', urlData.publicUrl)
-      setUploadedLogoPendingSave(true)
-    } catch (err: any) {
-      console.error('Logo upload failed:', err)
-      setSaveError(t('settings:invoiceSettings.logoUploadFailed'))
-    } finally {
-      setUploadingLogo(false)
-    }
+      const extension = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png'
+      const version = draft.presentation.logo.asset_version + 1, path = immutableLogoObjectPath(profile.tenant_id, branchId, version, extension)
+      const { error } = await supabase.storage.from('branch-assets').upload(path, file, { upsert: false }); if (error) throw error
+      if (pendingLogoPreview) URL.revokeObjectURL(pendingLogoPreview); setPendingLogoPreview(URL.createObjectURL(file))
+      setDraft(current => current ? { ...current, presentation: { ...current.presentation, logo: { ...current.presentation.logo, asset_path: path, asset_version: version, visible: true } } } : current)
+    } catch (error) { setSaveError(error instanceof Error ? error.message : t('settings:invoiceSettings.logoUploadFailed')) }
+    finally { setUploading(false) }
   }
 
-  async function save() {
-    const bid = profile?.branch_id
-    if (!bid) return
-    setSaving(true)
-    setSaveError(null)
-    setFieldErrors({})
-    setSaveOk(false)
-    try {
-      const validationErrors = validateSettings(form, t)
-      if (Object.keys(validationErrors).length > 0) {
-        setFieldErrors(validationErrors)
-        return
-      }
-      const normalizedWebsite = normalizeWebsite(form.website)
-      const payload = {
-        branch_id:         bid,
-        invoice_language: form.invoice_language,
-        display_name:     form.display_name.trim()     || null,
-        phone:            form.phone.trim()            || null,
-        show_logo:        form.show_logo,
-        logo_url:         form.logo_url,
-        website:          normalizedWebsite             || null,
-        email:            form.email.trim()             || null,
-        show_website:     form.show_website,
-        show_email:       form.show_email,
-        receipt_footer:   form.receipt_footer.trim()   || null,
-        show_footer:      form.show_footer,
-        show_cash_change: form.show_cash_change,
-        print_mode:       form.print_mode,
-      }
-      const { error } = await (supabase as any).rpc('update_branch_invoice_settings', {
-        p_payload: payload,
-      })
-      if (error) throw error
-      const savedForm: FormState = {
-        ...form,
-        display_name: form.display_name.trim(),
-        phone: form.phone.trim(),
-        website: normalizedWebsite,
-        email: form.email.trim(),
-        receipt_footer: form.receipt_footer.trim(),
-      }
-      setForm(savedForm)
-      setSavedForm(savedForm)
-      setBranch(prev => prev ? { ...prev, ...payload } : prev)
-      setSavedSignature(formSignature(savedForm))
-      setUploadedLogoPendingSave(false)
-      setSaveOk(true)
-      setTimeout(() => setSaveOk(false), 3000)
-    } catch (err: any) {
-      console.error('Invoice settings save failed:', err)
-      setSaveError(t('settings:invoiceSettings.saveFailed'))
-    } finally {
-      setSaving(false)
-    }
-  }
+  if (authLoading || loading || !draft) return <div className="grid h-64 place-items-center"><Loader2 className="animate-spin text-primary-600" /></div>
+  const p = draft.presentation, template = resolveHistoricalA4Template(p.a4.template_id, p.a4.template_version)
+  const logoSrc = pendingLogoPreview || (p.logo.asset_path ? supabase.storage.from('branch-assets').getPublicUrl(p.logo.asset_path).data.publicUrl : null)
+  const previewCopy = Object.fromEntries(['companyEn','companyAr','branch','invoiceTitle','address','item','quantity','total','coffee','cake','subtotal','vat','qr'].map(key => [key, t(`settings:invoiceSettings.preview.${key}`)]))
+  const input = (id: DraftPath, value: string | null, section: 'identity' | 'contact' | 'footer', placeholder = '') => <input id={id} value={value ?? ''} disabled={!canEdit} aria-invalid={!!errors[id]} aria-describedby={errors[id] ? `${id}-error` : undefined} onChange={event => updateSection(section, id as never, event.target.value as never)} placeholder={placeholder} className="input disabled:bg-gray-50 disabled:text-gray-500" />
+  const official = readiness?.profile, officialAddress = official ? [official.buildingNumber, official.street, official.district, official.city, official.postalCode, official.country].filter(Boolean).join(', ') : '—'
 
-  function cancelChanges() {
-    if (!savedForm || saving) return
-    setForm(savedForm)
-    setFieldErrors({})
-    setSaveError(null)
-    setSaveOk(false)
-    setUploadedLogoPendingSave(false)
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
-  }
-
-  const previewBrandName = form.display_name
-  const previewAddress = [
-    branch?.building_number ? `Building ${branch.building_number}` : null,
-    branch?.street, branch?.district, branch?.city,
-  ].filter(Boolean).join(', ')
-
-  return (
-    <div className="space-y-5">
-
-      {/* Page header */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-600">{t('settings:invoiceSettings.branchAccount')}</p>
-          <h1 className="mt-1 text-2xl font-bold text-gray-950">{t('settings:invoiceSettings.title')}</h1>
-          <p className="text-sm text-gray-500 mt-1">{t('settings:invoiceSettings.subtitle')}</p>
-        </div>
-        <div className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
-          hasUnsavedChanges
-            ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
-            : saveOk
-            ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
-            : 'bg-gray-50 text-gray-500 ring-1 ring-gray-100'
-        }`}>
-          <span className={`h-2 w-2 rounded-full ${hasUnsavedChanges ? 'bg-amber-500' : saveOk ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-          {hasUnsavedChanges ? t('settings:invoiceSettings.unsavedChanges') : saveOk ? t('settings:invoiceSettings.settingsSaved') : t('settings:invoiceSettings.saved')}
-        </div>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,520px)_minmax(420px,1fr)] xl:items-start">
-
-        {/* ── LEFT: Form ──────────────────────── */}
-        <div className="min-w-0 space-y-4">
-          <ComplianceReadinessCard branchId={profile?.branch_id} manage={profile?.role === 'owner'} invoiceGuidance />
-
-          <div className="card border-primary-100 bg-primary-50/30 px-5 py-4">
-            <p className="mb-3 rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-medium text-emerald-800">{t('settings:invoiceSettings.displayDoesNotChangeZatca')}</p>
-            <h2 className="text-sm font-semibold text-gray-900">{t('settings:invoiceSettings.documentLanguage')}</h2>
-            <p className="mt-1 text-xs text-gray-500">{t('settings:invoiceSettings.documentLanguageHelp')}</p>
-            <div className="mt-3 grid grid-cols-3 gap-2" role="radiogroup" aria-label={t('settings:invoiceSettings.documentLanguage')}>
-              {([
-                { value: 'en' as const, label: t('settings:english') },
-                { value: 'ar' as const, label: t('settings:arabic') },
-                { value: 'both' as const, label: t('settings:invoiceSettings.bilingual') },
-              ]).map(option => (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={form.invoice_language === option.value}
-                  onClick={() => set('invoice_language', option.value)}
-                  className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition-colors ${form.invoice_language === option.value ? 'border-primary-500 bg-primary-500 text-white' : 'border-gray-200 bg-white text-gray-700 hover:border-primary-300'}`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            <p className="mt-2 text-[10px] text-gray-400">{t('settings:invoiceSettings.documentLanguageHistory')}</p>
-          </div>
-
-          {/* Business identity */}
-          <div className="card px-5 py-4 space-y-3.5">
-            <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
-              <div className="w-7 h-7 bg-primary-50 rounded-xl flex items-center justify-center flex-shrink-0 text-primary-700 text-xs font-bold">K</div>
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900">{t('settings:invoiceSettings.businessIdentity')}</h2>
-                <p className="text-[10px] text-gray-400">{t('settings:invoiceSettings.businessIdentityHelp')}</p>
-              </div>
-            </div>
-
-            <div>
-              <label className="label flex items-center">
-                {t('settings:invoiceSettings.displayName')}
-                <InfoTip text={t('settings:invoiceSettings.displayNameHelp')} />
-              </label>
-              <input type="text" value={form.display_name}
-                onChange={e => set('display_name', e.target.value)}
-                className="input" placeholder={t('settings:invoiceSettings.displayNamePlaceholder')} />
-            </div>
-
-            {/* Logo upload */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="label mb-0 flex items-center">
-                  {t('settings:invoiceSettings.logo')}
-                  <InfoTip text={t('settings:invoiceSettings.logoHelp')} />
-                </label>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-gray-500">{t('settings:invoiceSettings.show')}</span>
-                  <Toggle checked={form.show_logo} onChange={v => set('show_logo', v)} />
-                </div>
-              </div>
-              <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/70 p-3">
-                <div className="flex items-center gap-3">
-                {form.logo_url ? (
-                  <div className="relative flex-shrink-0">
-                    <img src={form.logo_url} alt="logo"
-                      className="w-16 h-16 object-contain rounded-xl border border-gray-200 bg-white" />
-                    <button
-                      onClick={() => set('logo_url', null)}
-                      className="absolute -top-1.5 -right-1.5 w-[18px] h-[18px] bg-red-500 text-white rounded-full flex items-center justify-center text-[9px] hover:bg-red-600 transition-colors"
-                      title={t('settings:invoiceSettings.removeLogo')}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ) : (
-                  <div className="w-16 h-16 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center bg-white flex-shrink-0">
-                    <span className="text-gray-300 text-xl leading-none">+</span>
-                  </div>
-                )}
-                  <div className="min-w-0 flex-1">
-                    <label className={`cursor-pointer inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors ${uploadingLogo ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                      <Upload size={13} />
-                      {uploadingLogo ? t('settings:invoiceSettings.uploading') : form.logo_url ? t('settings:invoiceSettings.replaceLogo') : t('settings:invoiceSettings.uploadLogo')}
-                      <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only"
-                        disabled={uploadingLogo}
-                        onChange={e => { const f = e.target.files?.[0]; if (f) uploadLogo(f) }} />
-                    </label>
-                    <p className="mt-2 text-[10px] leading-relaxed text-gray-400">{t('settings:invoiceSettings.logoUploadHelp')}</p>
-                    {uploadedLogoPendingSave && (
-                      <p className="mt-1 text-[10px] font-semibold text-amber-700">{t('settings:invoiceSettings.logoPendingSave')}</p>
-                    )}
-                    {fieldErrors.logo_file && <p className="mt-1 text-[10px] font-semibold text-red-600">{fieldErrors.logo_file}</p>}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Contact details */}
-          <div className="card px-5 py-4 space-y-3.5">
-            <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
-              <div className="w-7 h-7 bg-emerald-50 rounded-xl flex items-center justify-center flex-shrink-0 text-emerald-700 text-xs font-bold">@</div>
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900">{t('settings:invoiceSettings.contactDetails')}</h2>
-                <p className="text-[10px] text-gray-400">{t('settings:invoiceSettings.contactDetailsHelp')}</p>
-              </div>
-            </div>
-
-            <div>
-              <label className="label">{t('settings:invoiceSettings.phoneNumber')}</label>
-              <input type="tel" value={form.phone}
-                onChange={e => set('phone', e.target.value)}
-                className={`input ${currentErrors.phone ? 'border-red-200 bg-red-50/40' : ''}`} placeholder="+966 5X XXX XXXX" />
-              {currentErrors.phone && <p className="mt-1 text-[10px] font-semibold text-red-600">{currentErrors.phone}</p>}
-            </div>
-
-            <div>
-              <label className="label flex items-center">
-                {t('settings:invoiceSettings.email')}
-                <InfoTip text={t('settings:invoiceSettings.emailHelp')} />
-              </label>
-              <input type="email" value={form.email}
-                onChange={e => set('email', e.target.value)}
-                className={`input ${currentErrors.email ? 'border-red-200 bg-red-50/40' : ''}`} placeholder="info@example.com" />
-              {currentErrors.email && <p className="mt-1 text-[10px] font-semibold text-red-600">{currentErrors.email}</p>}
-            </div>
-
-            <div>
-              <label className="label flex items-center">
-                {t('settings:invoiceSettings.website')}
-                <InfoTip text={t('settings:invoiceSettings.websiteHelp')} />
-              </label>
-              <input type="url" value={form.website}
-                onChange={e => set('website', e.target.value)}
-                className={`input ${currentErrors.website ? 'border-red-200 bg-red-50/40' : ''}`} placeholder="example.com" />
-              {currentErrors.website
-                ? <p className="mt-1 text-[10px] font-semibold text-red-600">{currentErrors.website}</p>
-                : <p className="mt-1 text-[10px] text-gray-400">{t('settings:invoiceSettings.websiteHint')}</p>}
-            </div>
-          </div>
-
-          {/* Optional printed fields */}
-          <div className="card px-5 py-4 space-y-3.5">
-            <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
-              <div className="w-7 h-7 bg-gold-50 rounded-xl flex items-center justify-center flex-shrink-0 text-gold-700 text-xs font-bold">✓</div>
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900">{t('settings:invoiceSettings.optionalFields')}</h2>
-                <p className="text-[10px] text-gray-400">{t('settings:invoiceSettings.optionalFieldsHelp')}</p>
-              </div>
-            </div>
-
-            {([
-              { key: 'show_website'     as const, label: t('settings:invoiceSettings.showWebsite'),     desc: form.website || t('settings:invoiceSettings.noWebsite') },
-              { key: 'show_email'       as const, label: t('settings:invoiceSettings.showEmail'),       desc: form.email   || t('settings:invoiceSettings.noEmail')   },
-              { key: 'show_cash_change' as const, label: t('settings:invoiceSettings.showCashChange'), desc: t('settings:invoiceSettings.cashChangeHelp') },
-            ]).map(({ key, label, desc }) => (
-              <div key={key} className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-gray-800">{label}</p>
-                  <p className="text-[10px] text-gray-400 truncate">{desc}</p>
-                </div>
-                <Toggle checked={form[key] as boolean} onChange={v => set(key, v)} />
-              </div>
-            ))}
-          </div>
-
-          {/* Footer message */}
-          <div className="card px-5 py-4 space-y-3.5">
-            <div className="flex items-center justify-between gap-3 pb-2 border-b border-gray-100">
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900">{t('settings:invoiceSettings.footerMessage')}</h2>
-                <p className="text-[10px] text-gray-400">{t('settings:invoiceSettings.footerMessageHelp')}</p>
-              </div>
-              <Toggle checked={form.show_footer} onChange={v => set('show_footer', v)} />
-            </div>
-
-            <div>
-              <label className="label flex items-center">
-                {t('settings:invoiceSettings.footerText')}
-                <InfoTip text={t('settings:invoiceSettings.footerTextHelp')} />
-              </label>
-              <textarea value={form.receipt_footer}
-                onChange={e => set('receipt_footer', e.target.value)}
-                className={`input resize-none text-xs ${currentErrors.receipt_footer ? 'border-red-200 bg-red-50/40' : ''}`} rows={3}
-                placeholder={t('settings:invoiceSettings.footerPlaceholder')} />
-              <div className="mt-1 flex items-center justify-between gap-2">
-                {currentErrors.receipt_footer
-                  ? <p className="text-[10px] font-semibold text-red-600">{currentErrors.receipt_footer}</p>
-                  : <p className="text-[10px] text-gray-400">{t('settings:invoiceSettings.footerShortHint')}</p>}
-                <p className={`text-[10px] tabular-nums ${form.receipt_footer.length > FOOTER_MAX_LENGTH ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>
-                  {form.receipt_footer.length}/{FOOTER_MAX_LENGTH}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Print behavior */}
-          <div className="card px-5 py-4 space-y-3.5">
-            <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
-              <div className="w-7 h-7 bg-amber-50 rounded-xl flex items-center justify-center flex-shrink-0 text-amber-700 text-xs font-bold">⎙</div>
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900">{t('settings:invoiceSettings.defaultPrintAction')}</h2>
-                <p className="text-[10px] text-gray-400">{t('settings:invoiceSettings.defaultPrintActionHelp')}</p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              {([
-                { value: 'thermal' as const, label: t('settings:invoiceSettings.thermalReceipt'), desc: t('settings:invoiceSettings.thermalReceiptHelp') },
-                { value: 'pdf'     as const, label: t('settings:invoiceSettings.a4Invoice'),      desc: t('settings:invoiceSettings.a4InvoiceHelp') },
-                { value: 'both'    as const, label: t('settings:invoiceSettings.bothActions'),    desc: t('settings:invoiceSettings.bothActionsHelp') },
-              ]).map(opt => (
-                <button key={opt.value} type="button"
-                  onClick={() => set('print_mode', opt.value)}
-                  className={`flex items-start gap-3 p-3 rounded-xl border w-full text-start transition-all ${
-                    form.print_mode === opt.value
-                      ? 'border-primary-300 bg-primary-50/60'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 mt-0.5 flex items-center justify-center transition-colors ${
-                    form.print_mode === opt.value ? 'border-primary-500' : 'border-gray-300'
-                  }`}>
-                    {form.print_mode === opt.value && (
-                      <div className="w-2 h-2 bg-primary-500 rounded-full" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-gray-800">{opt.label}</p>
-                    <p className="text-[10px] text-gray-400">{opt.desc}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Sticky save */}
-          <div className="sticky bottom-3 z-10 rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-lg backdrop-blur">
-            {saveError && (
-              <div className="mb-2 flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
-                <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
-                <span>{saveError}</span>
-              </div>
-            )}
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className={`text-xs font-semibold ${hasUnsavedChanges ? 'text-amber-700' : saveOk ? 'text-emerald-700' : 'text-gray-600'}`}>
-                  {hasUnsavedChanges ? t('settings:invoiceSettings.unsavedChanges') : saveOk ? t('settings:invoiceSettings.settingsSaved') : t('settings:invoiceSettings.noChanges')}
-                </p>
-                <p className="text-[10px] text-gray-400">
-                  {hasValidationErrors ? t('settings:invoiceSettings.fixFields') : t('settings:invoiceSettings.futurePrints')}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button type="button" onClick={cancelChanges} disabled={!hasUnsavedChanges || saving}
-                  className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50">
-                  {t('common:cancel')}
-                </button>
-                <button
-                  onClick={save}
-                  disabled={saveDisabled}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                {saving ? (
-                  <><Loader2 size={15} className="animate-spin" /> {t('settings:invoiceSettings.saving')}</>
-                ) : saveOk ? (
-                  <><Check size={15} /> {t('settings:invoiceSettings.saved')}</>
-                ) : (
-                  t('settings:invoiceSettings.saveSettings')
-                )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── RIGHT: Live Preview ───────────────────────────── */}
-        <div className="min-w-0 space-y-3 xl:sticky xl:top-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold text-gray-900">{t('settings:livePreview')}</h2>
-              <p className="text-[10px] text-gray-400">{t('settings:previewBeforeSaving')}</p>
-            </div>
-            <div className="flex border border-gray-200 rounded-xl overflow-hidden text-xs">
-              <button
-                onClick={() => setPreviewMode('thermal')}
-                className={`px-3 py-1.5 transition-colors font-medium ${
-                  previewMode === 'thermal' ? 'bg-primary-500 text-white' : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                {t('settings:thermalPreview')}
-              </button>
-              <button
-                onClick={() => setPreviewMode('a4')}
-                className={`px-3 py-1.5 transition-colors font-medium ${
-                  previewMode === 'a4' ? 'bg-primary-500 text-white' : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                {t('settings:a4Preview')}
-              </button>
-            </div>
-          </div>
-
-          {previewMode === 'thermal' ? (
-            <div className="flex justify-center bg-gray-100 rounded-2xl p-6">
-              <div className="w-[280px]">
-                <ThermalReceipt
-                  preview
-                  documentLanguage={normalizeDocumentLanguage(form.invoice_language)}
-                  businessNameAr=""
-                  businessNameEn={previewBrandName}
-                  branchName={null}
-                  branchNameAr={null}
-                  address={previewAddress || null}
-                  addressAr={branch?.address_ar || null}
-                  vatNumber={branch?.vat_number ?? undefined}
-                  phone={form.phone || undefined}
-                  website={form.website || undefined}
-                  showWebsite={form.show_website}
-                  email={form.email || undefined}
-                  showEmail={form.show_email}
-                  invoiceNumber="INV-0042"
-                  date="15/01/2026"
-                  time="02:30 PM"
-                  cashierName="Ahmed"
-                  items={PREVIEW_ITEMS}
-                  subtotal={PREVIEW_SUBTOTAL}
-                  taxAmount={PREVIEW_TAX}
-                  total={PREVIEW_TOTAL}
-                  paymentMethod="cash"
-                  cashReceived={60}
-                  change={2.00}
-                  showCashChange={form.show_cash_change}
-                  customerName="Walk-in Customer"
-                  logoUrl={form.logo_url}
-                  showLogo={form.show_logo}
-                  receiptFooter={form.receipt_footer || null}
-                  showFooter={form.show_footer}
-                  qrDataUrl={SAMPLE_QR_DATA_URL}
-                />
-              </div>
-            </div>
-          ) : (
-            <A4InvoicePreview form={form} branch={branch} />
-          )}
-
-          <p className="text-[10px] text-gray-400 text-center">
-            {t('settings:previewSaveHint')} {t('settings:invoiceSettings.previewQrSampleOnly')}
-          </p>
-        </div>
-      </div>
+  return <div className="mx-auto max-w-[1440px] space-y-5 pb-28">
+    <header className="flex flex-col gap-4 border-b border-gray-200 pb-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-semibold text-primary-700">{t('settings:invoiceSettings.branchAccount')}</p><h1 className="mt-1 text-2xl font-bold text-gray-950">{t('settings:invoiceSettings.title')}</h1><p className="mt-1 max-w-2xl text-sm text-gray-500">{t('settings:invoiceSettings.customerAppearanceHelp')}</p></div>{branches.length > 1 && <label className="text-xs font-semibold text-gray-600">{t('settings:invoiceSettings.branch')}<span className="relative mt-1 block"><select value={branchId ?? ''} onChange={event => chooseBranch(event.target.value)} className="input min-w-52 appearance-none pe-9">{branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select><ChevronDown className="pointer-events-none absolute end-3 top-3 text-gray-400" size={14} /></span></label>}</header>
+    {!canEdit && <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{t('settings:invoiceSettings.readOnlyMessage')}</div>}
+    <div className="grid items-start gap-7 xl:grid-cols-[minmax(0,540px)_minmax(420px,1fr)]">
+      <main className="rounded-2xl border border-gray-200 bg-white px-5 py-6 shadow-sm sm:px-7"><div className="space-y-7">
+        <Section title={t('settings:invoiceSettings.sections.branding')} help={t('settings:invoiceSettings.sections.brandingHelp')}>
+          <Field id="display_heading" label={t('settings:invoiceSettings.fields.displayHeading')} error={errors.display_heading}>{input('display_heading',p.identity.display_heading,'identity')}</Field>
+          <Field id="display_subheading" label={t('settings:invoiceSettings.fields.displaySubheading')} error={errors.display_subheading}>{input('display_subheading',p.identity.display_subheading,'identity')}</Field>
+          <Field id="custom_display_name" label={t('settings:invoiceSettings.fields.customDisplayName')} error={errors.custom_display_name}>{input('custom_display_name',p.identity.custom_display_name,'identity')}</Field>
+          <div className="grid gap-2 sm:grid-cols-2"><ToggleRow label={t('settings:invoiceSettings.fields.showCompany')} checked={p.identity.show_company_name} disabled={!canEdit} onChange={value => updateSection('identity','show_company_name',value)} /><ToggleRow label={t('settings:invoiceSettings.fields.showBranch')} checked={p.identity.show_branch_name} disabled={!canEdit} onChange={value => updateSection('identity','show_branch_name',value)} /></div>
+          <div className="rounded-xl border border-dashed border-gray-300 p-4"><div className="flex flex-col gap-4 sm:flex-row sm:items-center"><div className="grid h-20 w-24 place-items-center overflow-hidden rounded-xl bg-gray-50">{logoSrc ? <img src={logoSrc} alt={t('settings:invoiceSettings.logo')} className="h-full w-full object-contain" /> : <FileText className="text-gray-300" />}</div><div className="min-w-0 flex-1"><ToggleRow label={t('settings:invoiceSettings.fields.showLogo')} checked={p.logo.visible} disabled={!canEdit} onChange={value => updateSection('logo','visible',value)} /><button type="button" disabled={!canEdit || uploading} onClick={() => logoInput.current?.click()} className="mt-3 inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 outline-none hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-primary-500 disabled:opacity-50">{uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}{t('settings:invoiceSettings.replaceLogo')}</button><input ref={logoInput} type="file" className="sr-only" accept={LOGO_MIME_TYPES.join(',')} onChange={event => { const file=event.target.files?.[0]; if(file) void uploadLogo(file); event.target.value='' }} /></div></div>{errors.logo_file && <p className="mt-2 text-[11px] text-red-600">{errors.logo_file}</p>}</div>
+          <Choice legend={t('settings:invoiceSettings.fields.logoSize')} value={p.logo.size} disabled={!canEdit} onChange={value => updateSection('logo','size',value)} options={(['small','medium','large'] as const).map(value => ({ value, label:t(`settings:invoiceSettings.options.${value}`) }))} />
+        </Section>
+        <Section title={t('settings:invoiceSettings.sections.contact')} help={t('settings:invoiceSettings.sections.contactHelp')}>
+          <Field id="phone" label={t('settings:invoiceSettings.phoneNumber')} error={errors.phone}>{input('phone',p.contact.phone,'contact','+966 5X XXX XXXX')}</Field><ToggleRow label={t('settings:invoiceSettings.fields.showPhone')} checked={p.contact.show_phone} disabled={!canEdit || !p.contact.phone} onChange={value => updateSection('contact','show_phone',value)} />
+          <Field id="email" label={t('settings:invoiceSettings.email')} error={errors.email}>{input('email',p.contact.email,'contact','hello@example.com')}</Field><ToggleRow label={t('settings:invoiceSettings.showEmail')} checked={p.contact.show_email} disabled={!canEdit || !p.contact.email} onChange={value => updateSection('contact','show_email',value)} />
+          <Field id="website" label={t('settings:invoiceSettings.website')} error={errors.website} hint={t('settings:invoiceSettings.websiteHttpsHint')}>{input('website',p.contact.website,'contact','https://example.com')}</Field><ToggleRow label={t('settings:invoiceSettings.showWebsite')} checked={p.contact.show_website} disabled={!canEdit || !p.contact.website} onChange={value => updateSection('contact','show_website',value)} /><ToggleRow label={t('settings:invoiceSettings.fields.showAddress')} checked={p.contact.show_address} disabled={!canEdit} onChange={value => updateSection('contact','show_address',value)} />
+        </Section>
+        <Section title={t('settings:invoiceSettings.sections.footer')} help={t('settings:invoiceSettings.sections.footerHelp')}>
+          <Field id="thank_you_message" label={t('settings:invoiceSettings.fields.thankYou')} error={errors.thank_you_message}>{input('thank_you_message',p.footer.thank_you_message,'footer')}</Field><ToggleRow label={t('settings:invoiceSettings.fields.showThankYou')} checked={p.footer.show_thank_you} disabled={!canEdit || !p.footer.thank_you_message} onChange={value => updateSection('footer','show_thank_you',value)} />
+          <Field id="footer_note" label={t('settings:invoiceSettings.fields.footerNote')} error={errors.footer_note}>{input('footer_note',p.footer.footer_note,'footer')}</Field><ToggleRow label={t('settings:invoiceSettings.fields.showFooterNote')} checked={p.footer.show_footer} disabled={!canEdit || !p.footer.footer_note} onChange={value => updateSection('footer','show_footer',value)} />
+          <Field id="refund_note" label={t('settings:invoiceSettings.fields.refundNote')} error={errors.refund_note}>{input('refund_note',p.footer.refund_note,'footer')}</Field><ToggleRow label={t('settings:invoiceSettings.fields.showRefundNote')} checked={p.footer.show_refund_note} disabled={!canEdit || !p.footer.refund_note} onChange={value => updateSection('footer','show_refund_note',value)} />
+        </Section>
+        <Section title={t('settings:invoiceSettings.sections.language')} help={t('settings:invoiceSettings.sections.languageHelp')}><Choice legend={t('settings:invoiceSettings.documentLanguage')} value={draft.invoiceLanguage} disabled={!canEdit} onChange={value => setDraft(current => current ? {...current,invoiceLanguage:value}:current)} options={[{value:'en',label:t('settings:english')},{value:'ar',label:t('settings:arabic')},{value:'both',label:t('settings:invoiceSettings.bilingual')}]} /></Section>
+        <Section title={t('settings:invoiceSettings.sections.thermal')} help={t('settings:invoiceSettings.sections.thermalHelp')}>
+          <Choice legend={t('settings:invoiceSettings.fields.receiptWidth')} value={p.thermal.width} disabled={!canEdit} onChange={value => updateSection('thermal','width',value)} options={(['58mm','80mm'] as const).map(value=>({value,label:value.replace('mm',' mm')}))} />
+          <Choice legend={t('settings:invoiceSettings.fields.density')} value={p.thermal.density} disabled={!canEdit} onChange={value => updateSection('thermal','density',value)} options={(['compact','standard','detailed'] as const).map(value=>({value,label:t(`settings:invoiceSettings.options.${value}`)}))} />
+          <Choice legend={t('settings:invoiceSettings.fields.qrSize')} value={p.thermal.qr_size} disabled={!canEdit} onChange={value => updateSection('thermal','qr_size',value)} options={(['small','standard','large'] as const).map(value=>({value,label:t(`settings:invoiceSettings.options.${value}`)}))} />
+          <ToggleRow label={t('settings:invoiceSettings.fields.wrapItems')} checked={p.thermal.wrap_item_names} disabled={!canEdit} onChange={value => updateSection('thermal','wrap_item_names',value)} /><ToggleRow label={t('settings:invoiceSettings.fields.showCash')} checked={p.thermal.show_cash_change} disabled={!canEdit} onChange={value => updateSection('thermal','show_cash_change',value)} />
+        </Section>
+        <Section title={t('settings:invoiceSettings.sections.a4')} help={t('settings:invoiceSettings.sections.a4Help')}>
+          <Choice legend={t('settings:invoiceSettings.fields.template')} value={template.resolvedId} disabled={!canEdit} onChange={value => updateSection('a4','template_id',value)} options={(['classic','modern_split','minimal_professional'] as const).map(value=>({value,label:t(`settings:invoiceSettings.templates.${value}.name`),description:t(`settings:invoiceSettings.templates.${value}.description`)}))} />
+          <Choice legend={t('settings:invoiceSettings.fields.headerStyle')} value={p.a4.header_style} disabled={!canEdit} onChange={value => updateSection('a4','header_style',value)} options={(['standard','compact','branded'] as const).map(value=>({value,label:t(`settings:invoiceSettings.options.${value}`)}))} />
+          <Choice legend={t('settings:invoiceSettings.defaultPrintAction')} value={draft.printMode} disabled={!canEdit} onChange={value => setDraft(current=>current?{...current,printMode:value}:current)} options={(['thermal','pdf','both'] as const).map(value=>({value,label:t(`settings:invoiceSettings.printModes.${value}`)}))} />
+        </Section>
+        <Section title={t('settings:invoiceSettings.sections.official')} help={t('settings:invoiceSettings.sections.officialHelp')}><div className="rounded-xl bg-gray-50 p-4"><div className="grid gap-3 sm:grid-cols-2">{[[t('settings:officialSeller.fields.registeredSellerName'),official?.registeredSellerName],[t('settings:officialSeller.fields.registeredSellerNameAr'),official?.registeredSellerNameAr],[t('settings:officialSeller.fields.vatNumber'),official?.vatNumber],[t('settings:officialSeller.fields.registrationIdentifier'),official?.registrationIdentifier],[t('settings:officialSeller.groups.address'),officialAddress],[t('settings:invoiceSettings.fields.confirmationStatus'),readiness ? t(`settings:officialSeller.status.${readiness.status}`) : '—']].map(([label,value])=><div key={label}><p className="text-[10px] text-gray-400">{label}</p><p className="mt-0.5 text-xs font-semibold text-gray-800" dir="auto">{value||'—'}</p></div>)}</div><div className="mt-4 flex items-start gap-2 border-t border-gray-200 pt-4"><ShieldCheck size={16} className="mt-0.5 text-primary-700"/><div><p className="text-xs text-gray-600">{t('settings:invoiceSettings.officialSeparate')}</p>{profile?.role==='owner'&&<Link to="/settings/official-seller" className="mt-2 inline-flex text-xs font-semibold text-primary-700 hover:underline">{t('settings:invoiceSettings.manageOfficial')}</Link>}</div></div></div></Section>
+      </div></main>
+      <aside className="xl:sticky xl:top-5"><div className="rounded-2xl border border-gray-200 bg-[#f4f6f4] p-4 sm:p-6"><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><div className="flex items-center gap-2"><Eye size={15} className="text-primary-700"/><h2 className="text-sm font-bold text-gray-900">{t('settings:livePreview')}</h2></div><p className="mt-1 text-[10px] text-gray-500">{t('settings:invoiceSettings.samplePreview')}</p></div><div className="flex rounded-xl bg-white p-1 ring-1 ring-gray-200">{(['thermal','a4'] as const).map(mode=><button key={mode} onClick={()=>setPreviewMode(mode)} className={`rounded-lg px-3 py-1.5 text-[11px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${previewMode===mode?'bg-primary-700 text-white':'text-gray-500'}`}>{mode==='thermal'?t('settings:thermalPreview'):t('settings:a4Preview')}</button>)}</div></div><SamplePreview draft={draft} mode={previewMode} logoSrc={logoSrc} copy={previewCopy}/><p className="mt-5 text-center text-[10px] leading-4 text-gray-500">{t('settings:invoiceSettings.newDocumentsOnly')}</p></div></aside>
     </div>
-  )
+    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white/95 px-4 py-3 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur"><div className="mx-auto flex max-w-[1440px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-h-5">{saveError?<p className="flex items-center gap-2 text-xs text-red-700"><AlertCircle size={14}/>{saveError}</p>:saveOk?<p className="flex items-center gap-2 text-xs text-emerald-700"><Check size={14}/>{t('settings:invoiceSettings.settingsSaved')}</p>:<p className="text-xs text-gray-500">{isDirty?t('settings:invoiceSettings.unsavedChanges'):t('settings:invoiceSettings.saved')}</p>}</div>{canEdit&&<div className="grid grid-cols-3 gap-2 sm:flex"><button type="button" onClick={()=>setResetOpen(true)} disabled={saving} className="btn-secondary gap-1.5"><RotateCcw size={14}/>{t('settings:invoiceSettings.reset')}</button><button type="button" onClick={cancelChanges} disabled={!isDirty||saving} className="btn-secondary">{t('common:cancel')}</button><button type="button" onClick={()=>void saveChanges()} disabled={!isDirty||saving||Object.keys(validate(draft)).length>0} className="btn-primary gap-1.5">{saving&&<Loader2 size={14} className="animate-spin"/>}{t('settings:invoiceSettings.saveSettings')}</button></div>}</div></div>
+    {resetOpen&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setResetOpen(false)}}><div role="dialog" aria-modal="true" aria-labelledby="reset-title" aria-describedby="reset-description" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"><h2 id="reset-title" className="text-lg font-bold text-gray-950">{t('settings:invoiceSettings.resetTitle')}</h2><p id="reset-description" className="mt-2 text-sm leading-6 text-gray-500">{t('settings:invoiceSettings.resetDescription')}</p><div className="mt-6 flex justify-end gap-2"><button className="btn-secondary" onClick={()=>setResetOpen(false)}>{t('common:cancel')}</button><button className="btn-primary" onClick={resetChanges}>{t('settings:invoiceSettings.resetDraft')}</button></div></div></div>}
+  </div>
 }

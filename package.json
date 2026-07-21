@@ -29,7 +29,8 @@
     "test:phase3c-official-seller": "node scripts/test-phase3c-official-seller-runtime.mjs",
     "test:phase3d-invoice-snapshot": "node scripts/test-phase3d-invoice-snapshot-runtime.mjs",
     "audit:phase4b-invoice-settings": "node scripts/audit-phase4b-invoice-settings.mjs",
-    "test:phase4b-invoice-settings": "node scripts/test-phase4b-invoice-settings-runtime.mjs"
+    "test:phase4b-invoice-settings": "node scripts/test-phase4b-invoice-settings-runtime.mjs",
+    "audit:phase4c-invoice-settings-ui": "node scripts/audit-phase4c-invoice-settings-ui.mjs"
   },
   "build": {
     "appId": "com.kubri.pos",
