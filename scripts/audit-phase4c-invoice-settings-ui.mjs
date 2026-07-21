@@ -19,4 +19,6 @@ for (const locale of [settings(en), settings(ar)]) {
   for (const key of ['sections', 'fields', 'options', 'templates', 'printModes', 'preview', 'readOnlyMessage', 'resetTitle', 'leaveWarning', 'newDocumentsOnly']) assert.ok(locale[key], `missing translation ${key}`)
 }
 assert.match(page, /resolveHistoricalA4Template/)
+assert.match(page, /documentFromPreviewDraft/)
+assert.match(page, /<A4Document/)
 console.log('Phase 4C Invoice Settings UI static assertions passed.')

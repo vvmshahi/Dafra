@@ -15,8 +15,10 @@ import {
 import { Button } from '@/components/ui/Button'
 import { Switch as Toggle } from '@/components/ui/Switch'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
+import { documentFromPreviewDraft } from '@/lib/invoices/documentViewAdapters'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
+import type { InvoicePresentationDraft } from '@/lib/invoices/documentViewAdapters'
 
 type PrinterView = 'thermal' | 'a4'
 type Status = { type: 'success' | 'error' | 'info'; text: string } | null
@@ -69,7 +71,9 @@ function SettingToggle({ title, help, checked, onChange }: {
   )
 }
 
-const SAMPLE_ITEMS = [{ name: 'Kubri sample item', nameAr: 'صنف تجريبي من كُبري', qty: 2, unitPrice: 10, lineTotal: 20 }]
+function printerPreviewDraft(width: '58mm' | '80mm', density: 'compact' | 'standard' | 'detailed'): InvoicePresentationDraft {
+  return { invoiceLanguage: 'both', printMode: 'thermal', presentation: { schema_version: 1, identity: { display_heading: null, display_subheading: null, custom_display_name: null, show_company_name: true, show_branch_name: true }, contact: { phone: '+966 50 000 0000', email: null, website: null, show_phone: true, show_email: false, show_website: false, show_address: true }, footer: { thank_you_message: null, footer_note: 'Printer preview only', refund_note: null, show_thank_you: false, show_footer: true, show_refund_note: false }, logo: { visible: false, asset_path: null, asset_version: 0, size: 'medium' }, thermal: { width, density, qr_size: 'standard', wrap_item_names: true, show_cash_change: true }, a4: { template_id: 'classic', template_version: 1, header_style: 'standard' } } }
+}
 
 export default function PrinterTab() {
   const { t } = useTranslation(['printing', 'common'])
@@ -84,6 +88,7 @@ export default function PrinterTab() {
 
   const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(saved), [form, saved])
   const thermalStatus = printerStatus(form.receiptPrinterName, printers, t)
+  const thermalPreview = useMemo(() => documentFromPreviewDraft(printerPreviewDraft(form.receiptPaperPreset === '58mm' ? '58mm' : '80mm', form.receiptDensity === 'compact' ? 'compact' : form.receiptDensity === 'spacious' ? 'detailed' : 'standard')), [form.receiptPaperPreset, form.receiptDensity])
   const a4Status = form.a4PrinterName
     ? printerStatus(form.a4PrinterName, printers, t)
     : { label: t('printing:systemDefault'), tone: 'neutral' as const }
@@ -258,9 +263,7 @@ export default function PrinterTab() {
               </div>
 
               <aside className="rounded-2xl border border-gray-200 bg-gray-100 p-4"><div className="mb-3 flex items-center justify-between"><div><p className="text-xs font-bold text-gray-800">{t('printing:liveReceiptPreview')}</p><p className="text-[10px] text-gray-400">{t('printing:sharedReceiptTemplate')}</p></div><span className="text-[10px] font-semibold text-gray-500">{form.receiptPaperWidthMm} mm</span></div>
-                <div className="mx-auto overflow-hidden rounded-lg bg-white py-3 shadow-sm" style={{ width: form.receiptPaperPreset === '58mm' ? '210px' : '280px', maxWidth: '100%', ['--receipt-content-width' as string]: `${form.receiptPrintableWidthMm}mm`, ['--receipt-font-size' as string]: form.receiptFontSize === 'small' ? '10px' : form.receiptFontSize === 'large' ? '12px' : '11px', ['--receipt-line-height' as string]: form.receiptDensity === 'compact' ? '1.25' : form.receiptDensity === 'spacious' ? '1.55' : '1.4' }}>
-                  <ThermalReceipt preview id="printer-settings-preview" businessNameAr="متجر كُبري التجريبي" businessNameEn="Kubri Sample Store" branchName="Sample Branch" branchNameAr="فرع تجريبي" address="Riyadh, Saudi Arabia" addressAr="الرياض، المملكة العربية السعودية" vatNumber="300000000000003" invoiceNumber="TEST-001" date="01/01/2026" time="10:30" items={SAMPLE_ITEMS} subtotal={17.39} taxAmount={2.61} total={20} paymentMethod="cash" cashReceived={20} change={0} customerName="Sample customer" customerNameAr="عميل تجريبي" qrDataUrl={null} receiptFooter="Printer preview only" />
-                </div>
+                <div className="mx-auto overflow-hidden rounded-lg bg-white py-3 shadow-sm" style={{ width: form.receiptPaperPreset === '58mm' ? '210px' : '280px', maxWidth: '100%' }}><ThermalReceipt model={thermalPreview} options={{ preview: true, id: "printer-settings-preview", sampleLabel: t('printing:liveReceiptPreview') }} /></div>
               </aside>
             </div>
           ) : (

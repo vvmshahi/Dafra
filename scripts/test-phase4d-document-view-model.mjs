@@ -15,7 +15,7 @@ assert.match(adapters, /base\(input, 'legacy', null, true\)/); assert.match(adap
 assert.match(adapters, /source: 'preview'/); assert.match(fixture, /sample-qr-marker/); assert.match(fixture, /sample-credit-qr-marker/); assert.match(fixture, /Dafra Sample Roastery/)
 assert.match(fixture, /method: 'cash', amount: 30/); assert.match(fixture, /method: 'card', amount: 28/)
 assert.match(model, /Object\.freeze/); assert.match(model, /resolveHistoricalA4Template/)
-assert.match(thermal, /thermalReceiptPropsFromDocument/); assert.match(thermal, /model\.presentation\.thermal/)
+assert.match(thermal, /thermalRenderOptions/); assert.doesNotMatch(thermal, /businessNameEn|vatNumber|subtotal/)
 assert.match(preview, /DocumentViewModel/); assert.match(preview, /formatDocumentMoney/); assert.doesNotMatch(preview, /50\.43|7\.57|58\.00/)
 for (const secret of ['password', 'access_token', 'service_role', 'private_key', 'certificate', 'csid', 'otp']) assert.doesNotMatch(model + adapters, new RegExp(secret, 'i'))
 console.log('Phase 4D DocumentViewModel contract assertions passed (snapshot v2/v1, legacy, credit-note, preview, formatting, template and secrecy contracts).')

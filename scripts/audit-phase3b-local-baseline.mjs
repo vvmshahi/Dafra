@@ -6,12 +6,13 @@ const root = resolve(new URL('..', import.meta.url).pathname)
 const migrationDir = resolve(root, 'supabase/migrations')
 assert.ok(existsSync(migrationDir), 'migration directory is required')
 const files = readdirSync(migrationDir).filter(name => /^\d{14}_.+\.sql$/.test(name)).sort()
-assert.deepEqual(files, [
+assert.deepEqual(files.slice(0, 4), [
   '20260721000100_dafra_current_schema_and_security.sql',
   '20260721000200_phase5x_document_language_snapshot.sql',
   '20260721000300_phase6a_identity_foundation.sql',
   '20260721000400_invoice_presentation_settings.sql',
 ])
+assert.ok(files.every((name, index) => index < 4 || name > '20260721000400_invoice_presentation_settings.sql'), 'additive migrations must follow the canonical baseline')
 const [baselineName, phase5xName, phase6aName, phase4bName] = files
 const baseline = readFileSync(resolve(migrationDir, baselineName), 'utf8')
 const phase5x = readFileSync(resolve(migrationDir, phase5xName), 'utf8')

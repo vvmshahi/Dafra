@@ -113,7 +113,7 @@ port = 54324
 # sender_name = "Admin"
 
 [storage]
-enabled = false
+enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
 file_size_limit = "50MiB"
 
@@ -128,9 +128,9 @@ file_size_limit = "50MiB"
 [storage.s3_protocol]
 enabled = true
 
-# Image transformation API is available to Supabase Pro plan.
-# [storage.image_transformation]
-# enabled = true
+# Local image transformation service for immutable invoice-branding previews.
+[storage.image_transformation]
+enabled = true
 
 # Store analytical data in S3 for running ETL jobs over Iceberg Catalog
 # This feature is only available on the hosted platform.

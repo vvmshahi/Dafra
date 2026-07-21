@@ -181,6 +181,11 @@ BEGIN
 END; $$;
 
 -- Immutable path contract. Uploads use INSERT only; replacement uses a new version.
+INSERT INTO storage.buckets (id,name,public,file_size_limit,allowed_mime_types)
+VALUES ('branch-assets','branch-assets',TRUE,2097152,ARRAY['image/jpeg','image/png','image/webp']::TEXT[])
+ON CONFLICT (id) DO UPDATE
+SET public=EXCLUDED.public,file_size_limit=EXCLUDED.file_size_limit,allowed_mime_types=EXCLUDED.allowed_mime_types;
+
 CREATE OR REPLACE FUNCTION public.invoice_branding_asset_path(p_tenant_id UUID,p_branch_id UUID,p_asset_version INTEGER,p_extension TEXT)
 RETURNS TEXT LANGUAGE plpgsql IMMUTABLE SET search_path=public AS $$
 DECLARE ext TEXT:=lower(p_extension);
