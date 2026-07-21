@@ -30,7 +30,6 @@ import {
 } from '@/localization/documents'
 import { documentIdentity } from '@/lib/invoices/documentIdentity'
 import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
-import { thermalReceiptPropsFromDocument } from '@/lib/invoices/documentThermalProps'
 
 function WhatsAppIcon({ size = 13 }: { size?: number }) {
   return (
@@ -706,8 +705,8 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
       {/* ── Hidden thermal receipt (for print) ──────────── */}
       <ThermalReceipt
-        {...thermalReceiptPropsFromDocument(thermalDocument)}
-        qrDataUrl={qrDataUrl}
+        model={thermalDocument}
+        options={{ qrImageUrl: qrDataUrl }}
       />
 
       {/* ── Action bar (screen only) ─────────────────────── */}

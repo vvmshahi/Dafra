@@ -19,8 +19,9 @@ import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
 import { isPermanentDemoSandboxBranch, submitInvoiceForBranch } from '@/lib/zatca/submission'
 import { toast } from 'sonner'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
-import type { ThermalItem } from '@/components/print/ThermalReceipt'
-import type { Branch, BranchPosMode, PaymentMethod, VatTreatment } from '@/types/database'
+import type { Branch, BranchPosMode, Invoice, InvoiceItem, Payment, PaymentMethod, VatTreatment } from '@/types/database'
+import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
+import type { DocumentViewModel } from '@/lib/invoices/documentViewModel'
 import { usePosSession } from '@/hooks/usePosSession'
 import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
@@ -107,6 +108,7 @@ interface CartItem {
 }
 
 interface ReceiptData {
+  document: DocumentViewModel
   invoiceNumber: string
   invoiceId: string
   total: number
@@ -121,7 +123,7 @@ interface ReceiptData {
   isStandardInvoice: boolean
   buyerVatNumber: string | null
   cashierName: string
-  items: ThermalItem[]
+  items: Array<{ name: string; nameAr?: string | null; qty: number; unitPrice: number; lineTotal: number; subtotal?: number; taxAmount?: number; total?: number }>
   createdAt: string
   businessNameAr: string
   businessNameEn: string
@@ -701,41 +703,8 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
       {/* Hidden thermal receipt — rendered for print only */}
       <ThermalReceipt
-        documentLanguage={documentLanguage}
-        businessNameAr={receipt.businessNameAr}
-        businessNameEn={receipt.businessNameEn}
-        logoUrl={receipt.logoUrl}
-        showLogo={receipt.showLogo}
-        branchName={receipt.branchName}
-        branchNameAr={receipt.branchNameAr}
-        address={receipt.branchAddress}
-        addressAr={receipt.branchAddressAr}
-        vatNumber={receipt.vatNumber}
-        phone={receipt.phone}
-        website={receipt.website}
-        showWebsite={receipt.showWebsite}
-        email={receipt.email}
-        showEmail={receipt.showEmail}
-        invoiceNumber={receipt.invoiceNumber}
-        date={invDate}
-        time={invTime}
-        cashierName={receipt.cashierName}
-        items={receipt.items}
-        subtotal={receipt.subtotal}
-        taxAmount={receipt.taxAmount}
-        total={receipt.total}
-        paymentMethod={isSplitPayment ? 'split' : receipt.paymentMethod}
-        payments={receipt.payments}
-        cashReceived={receipt.cashReceived}
-        change={receipt.change}
-        showCashChange={receipt.showCashChange}
-        customerName={receipt.customerName}
-        customerNameAr={receipt.customerNameAr}
-        buyerVatNumber={receipt.buyerVatNumber}
-        isStandardInvoice={receipt.isStandardInvoice}
-        qrDataUrl={qrDataUrl}
-        receiptFooter={receipt.receiptFooter}
-        showFooter={receipt.showFooter}
+        model={receipt.document}
+        options={{ qrImageUrl: qrDataUrl }}
       />
 
       {/* Success overlay */}
@@ -2078,8 +2047,22 @@ export default function POSPage() {
         branch.building_number ? `مبنى ${branch.building_number}` : null,
         branch.street_ar, branch.district_ar, branch.city_ar,
       ].filter(Boolean).join('، ')
+      const [issuedInvoiceResult, issuedItemsResult, issuedPaymentsResult] = await Promise.all([
+        supabase.from('invoices').select('*').eq('id', checkout.invoice_id).single(),
+        supabase.from('invoice_items').select('*').eq('invoice_id', checkout.invoice_id).order('sort_order'),
+        supabase.from('payments').select('*').eq('invoice_id', checkout.invoice_id).order('paid_at', { ascending: true }),
+      ])
+      if (issuedInvoiceResult.error || !issuedInvoiceResult.data || issuedItemsResult.error || issuedPaymentsResult.error) throw new Error('Issued receipt snapshot could not be loaded')
+      const thermalDocument = documentFromStoredInvoice({
+        invoice: issuedInvoiceResult.data as Invoice,
+        branch,
+        items: (issuedItemsResult.data ?? []) as InvoiceItem[],
+        payments: (issuedPaymentsResult.data ?? []) as Payment[],
+        customer: selectedCust ? { name: selectedCust.customer_type === 'business' && selectedCust.business_name ? selectedCust.business_name : selectedCust.name, nameAr: selectedCust.customer_type === 'business' ? selectedCust.business_name_ar ?? selectedCust.name_ar : selectedCust.name_ar, vatNumber: selectedCust.vat_number, type: selectedCust.customer_type } : null,
+      })
 
       setReceipt({
+        document: thermalDocument,
         invoiceNumber:  checkout.invoice_number,
         invoiceId:      checkout.invoice_id,
         total:          serverTotal,

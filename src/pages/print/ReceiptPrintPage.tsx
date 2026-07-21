@@ -10,7 +10,6 @@ import { buildZatcaQR } from '@/lib/zatca/qr'
 import type { Branch, Invoice, InvoiceItem, Payment } from '@/types/database'
 import { documentIdentity } from '@/lib/invoices/documentIdentity'
 import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
-import { thermalReceiptPropsFromDocument } from '@/lib/invoices/documentThermalProps'
 
 interface Tenant {
   name: string
@@ -384,9 +383,8 @@ export default function ReceiptPrintPage() {
 
       <main id="receipt-print-page" className="mx-auto flex min-h-[calc(100vh-64px)] max-w-3xl items-start justify-center bg-white px-3 py-5 sm:my-6 sm:min-h-0 sm:rounded-2xl sm:border sm:border-gray-100 sm:shadow-sm">
         <ThermalReceipt
-          preview
-          {...thermalReceiptPropsFromDocument(receipt)}
-          qrDataUrl={qrDataUrl}
+          model={receipt}
+          options={{ preview: true, qrImageUrl: qrDataUrl }}
         />
       </main>
     </div>
