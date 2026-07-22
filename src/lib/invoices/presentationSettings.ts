@@ -32,6 +32,7 @@ export interface NormalizedInvoiceSettings {
   presentation: InvoicePresentationSettings
   invoiceLanguage: 'en' | 'ar' | 'both'
   printMode: 'thermal' | 'pdf' | 'both'
+  afterSaleAction: 'ask' | 'receipt' | 'a4' | 'none'
 }
 
 export const THERMAL_WIDTHS: readonly ThermalWidth[] = ['58mm', '80mm']
@@ -94,6 +95,7 @@ export function normalizeInvoiceSettings(rawSettings: unknown, branch: InvoiceSe
   const branchHeading = branch.display_name ?? branch.invoice_display_heading ?? companyName
   const language = oneOf(raw.invoice_language ?? source.invoice_language ?? branch.invoice_language, ['en', 'ar', 'both'] as const, 'both')
   const printMode = oneOf(raw.print_mode ?? source.print_mode ?? branch.print_mode, ['thermal', 'pdf', 'both'] as const, 'thermal')
+  const afterSaleAction = oneOf(source.after_sale_action ?? raw.after_sale_action, ['ask', 'receipt', 'a4', 'none'] as const, printMode === 'pdf' ? 'a4' : 'receipt')
   const thermalDensity = oneOf(branch.thermal_density, THERMAL_DENSITIES, 'standard')
   const templateId = oneOf(branch.a4_template_id, Object.keys(A4_TEMPLATE_REGISTRY) as A4TemplateId[], 'classic')
 
@@ -116,7 +118,7 @@ export function normalizeInvoiceSettings(rawSettings: unknown, branch: InvoiceSe
         show_phone: bool(contact.show_phone, !!branch.phone),
         show_email: bool(contact.show_email, branch.show_email ?? !!branch.email),
         show_website: bool(contact.show_website, branch.show_website ?? !!branch.website),
-        show_address: bool(contact.show_address, true),
+        address_override: text(contact.address_override, null), show_address: bool(contact.show_address, true),
       },
       footer: {
         thank_you_message: text(footer.thank_you_message, null),
@@ -144,7 +146,7 @@ export function normalizeInvoiceSettings(rawSettings: unknown, branch: InvoiceSe
         template_version: 1,
         header_style: oneOf(a4.header_style, ['standard', 'compact', 'branded'] as const, 'standard'),
       },
-    },
+    }, afterSaleAction,
   }
 }
 

@@ -692,7 +692,6 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
             {receipt.showFooter && receipt.receiptFooter ? (
               <div style={{ marginBottom: '4px', color: '#4b5563', fontWeight: 600 }}>{receipt.receiptFooter}</div>
             ) : null}
-            <div style={{ color: '#d1d5db' }}>{documentLabel(documentLanguage, 'computerGeneratedInvoice')}</div>
           </div>
         </div>
       </div>
@@ -700,6 +699,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
       {/* Hidden thermal receipt — rendered for print only */}
       <ThermalReceipt
         documentLanguage={documentLanguage}
+        printMode={printMode}
         businessNameAr={receipt.businessNameAr}
         businessNameEn={receipt.businessNameEn}
         logoUrl={receipt.logoUrl}
@@ -717,6 +717,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
         invoiceNumber={receipt.invoiceNumber}
         date={invDate}
         time={invTime}
+        issueTimestamp={receipt.createdAt}
         cashierName={receipt.cashierName}
         items={receipt.items}
         subtotal={receipt.subtotal}

@@ -450,6 +450,7 @@ export default function ReceiptPrintPage() {
         <ThermalReceipt
           preview
           documentLanguage={receipt.documentLanguage}
+          printMode={branch.print_mode ?? 'thermal'}
           businessNameAr={receipt.brandNameAr}
           businessNameEn={receipt.brandNameEn}
           branchName={receipt.branchNameEn}
@@ -465,6 +466,7 @@ export default function ReceiptPrintPage() {
           invoiceNumber={invoice.invoice_number}
           date={receipt.date}
           time={receipt.time}
+          issueTimestamp={invoice.created_at}
           items={receipt.items}
           subtotal={Number(invoice.subtotal)}
           discountAmount={Number(invoice.discount_amount ?? 0)}

@@ -4,7 +4,8 @@ import { DOCUMENT_PREVIEW_FIXTURE } from './documentPreviewFixture'
 
 export interface DocumentCustomerInput { readonly name: string | null; readonly nameAr: string | null; readonly vatNumber: string | null; readonly address?: string | null; readonly type?: string | null }
 export interface StoredDocumentInput { readonly invoice: Invoice; readonly branch: Branch; readonly items: readonly InvoiceItem[]; readonly payments: readonly Payment[]; readonly customer?: DocumentCustomerInput | null; readonly originalInvoiceNumber?: string | null }
-export interface InvoicePresentationDraft { readonly presentation: InvoicePresentationSettings; readonly invoiceLanguage: 'en' | 'ar' | 'both'; readonly printMode: 'thermal' | 'pdf' | 'both' }
+export interface InvoicePresentationDraft { readonly presentation: InvoicePresentationSettings; readonly invoiceLanguage: 'en' | 'ar' | 'both'; readonly printMode: 'thermal' | 'pdf' | 'both'; readonly afterSaleAction?: 'ask' | 'receipt' | 'a4' | 'none' }
+export interface PreviewSellerOverrides { readonly registeredName?: string; readonly registeredNameAr?: string | null; readonly vatNumber?: string; readonly registeredAddress?: string | null; readonly branchName?: string | null; readonly branchNameAr?: string | null }
 
 const address = (value: { buildingNumber?: string | null; street?: string | null; district?: string | null; city?: string | null; country?: string | null; postalCode?: string | null }) => [value.buildingNumber, value.street, value.district, value.city, value.country, value.postalCode].filter(Boolean).join(', ') || null
 const n = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0
@@ -27,12 +28,12 @@ function base(input: StoredDocumentInput, source: DocumentViewModel['source'], s
 function fromSnapshot(input: StoredDocumentInput, snapshot: InvoiceIdentitySnapshot): DocumentViewModel {
   const b = base(input, snapshot.version === 2 ? 'snapshot_v2' : 'snapshot_v1', snapshot.version, false)
   const compliance = snapshot.compliance
-  if (snapshot.version === 2) return buildPresentationDocument({ settings: snapshot.presentationSettings, language: snapshot.document.language, printMode: snapshot.document.printMode, registeredName: compliance.registeredSellerName, registeredNameAr: compliance.registeredSellerNameAr, vatNumber: compliance.vatNumber, registrationType: compliance.registrationScheme, registrationNumber: compliance.registrationIdentifier, registeredAddress: address(compliance.address), branchName: null, branchNameAr: null }, b)
+  if (snapshot.version === 2) return buildPresentationDocument({ settings: snapshot.presentationSettings, language: snapshot.document.language, printMode: snapshot.document.printMode, registeredName: compliance.registeredSellerName, registeredNameAr: compliance.registeredSellerNameAr, vatNumber: compliance.vatNumber, registrationType: compliance.registrationScheme, registrationNumber: compliance.registrationIdentifier, registeredAddress: snapshot.presentationSettings.contact.address_override || address(compliance.address), branchName: null, branchNameAr: null }, b)
   const p = snapshot.presentation
   const settings: InvoicePresentationSettings = {
     schema_version: 1,
     identity: { display_heading: p.displayHeading, display_subheading: p.displaySubheading, custom_display_name: p.branchDisplayName, show_company_name: p.showCompanyDisplayName, show_branch_name: p.showBranchDisplayName },
-    contact: { phone: p.phone, email: p.email, website: p.website, show_phone: !!p.phone, show_email: p.showEmail, show_website: p.showWebsite, show_address: true },
+    contact: { phone: p.phone, email: p.email, website: p.website, address_override: null, show_phone: !!p.phone, show_email: p.showEmail, show_website: p.showWebsite, show_address: true },
     footer: { thank_you_message: null, footer_note: p.footer, refund_note: null, show_thank_you: false, show_footer: p.showFooter, show_refund_note: false },
     logo: { visible: p.showLogo, asset_path: p.logoUrl, asset_version: p.logoAssetVersion, size: 'medium' },
     thermal: { width: '80mm', density: snapshot.document.thermalDensity === 'compact' || snapshot.document.thermalDensity === 'detailed' ? snapshot.document.thermalDensity : 'standard', qr_size: 'standard', wrap_item_names: true, show_cash_change: p.showCashChange },
@@ -52,16 +53,17 @@ export function documentFromStoredInvoice(input: StoredDocumentInput): DocumentV
 export function documentFromFullCreditNote(input: StoredDocumentInput): DocumentViewModel { return documentFromStoredInvoice(input) }
 export function documentFromPartialCreditNote(input: StoredDocumentInput): DocumentViewModel { return documentFromStoredInvoice(input) }
 
-export function documentFromPreviewDraft(draft: InvoicePresentationDraft, logoPreviewUrl: string | null = null): DocumentViewModel {
-  return previewDocument(draft, logoPreviewUrl, 'invoice')
+export function documentFromPreviewDraft(draft: InvoicePresentationDraft, logoPreviewUrl: string | null = null, sellerOverrides?: PreviewSellerOverrides): DocumentViewModel {
+  return previewDocument(draft, logoPreviewUrl, 'invoice', sellerOverrides)
 }
 
-export function documentFromPreviewCreditNoteDraft(draft: InvoicePresentationDraft, logoPreviewUrl: string | null = null): DocumentViewModel { return previewDocument(draft, logoPreviewUrl, 'credit_note') }
+export function documentFromPreviewCreditNoteDraft(draft: InvoicePresentationDraft, logoPreviewUrl: string | null = null, sellerOverrides?: PreviewSellerOverrides): DocumentViewModel { return previewDocument(draft, logoPreviewUrl, 'credit_note', sellerOverrides) }
 
-function previewDocument(draft: InvoicePresentationDraft, logoPreviewUrl: string | null, kind: 'invoice' | 'credit_note'): DocumentViewModel {
-  const { seller, buyer, invoice, creditNote, items, payments } = DOCUMENT_PREVIEW_FIXTURE
+function previewDocument(draft: InvoicePresentationDraft, logoPreviewUrl: string | null, kind: 'invoice' | 'credit_note', sellerOverrides?: PreviewSellerOverrides): DocumentViewModel {
+  const { seller: fixtureSeller, buyer, invoice, creditNote, items, payments } = DOCUMENT_PREVIEW_FIXTURE
+  const seller = { ...fixtureSeller, ...sellerOverrides }
   const isCredit = kind === 'credit_note'
-  return buildPresentationDocument({ settings: draft.presentation, language: draft.invoiceLanguage, printMode: draft.printMode, registeredName: seller.registeredName, registeredNameAr: seller.registeredNameAr, vatNumber: seller.vatNumber, registrationType: seller.registrationType, registrationNumber: seller.registrationNumber, registeredAddress: seller.address, branchName: seller.branchName, branchNameAr: seller.branchNameAr, logoPreviewUrl }, {
+  return buildPresentationDocument({ settings: draft.presentation, language: draft.invoiceLanguage, printMode: draft.printMode, registeredName: seller.registeredName, registeredNameAr: seller.registeredNameAr, vatNumber: seller.vatNumber, registrationType: seller.registrationType, registrationNumber: seller.registrationNumber, registeredAddress: draft.presentation.contact.address_override || seller.address, branchName: seller.branchName, branchNameAr: seller.branchNameAr, logoPreviewUrl }, {
     source: 'preview', identity: { kind, invoiceType: isCredit ? 'credit_note' : 'simplified', number: isCredit ? creditNote.number : invoice.number, uuid: null, issueTimestamp: isCredit ? creditNote.issueTimestamp : invoice.issueTimestamp, language: draft.invoiceLanguage, direction: draft.invoiceLanguage === 'ar' ? 'rtl' : 'ltr', snapshotVersion: null, legacy: false, fidelity: 'sample' },
     buyer: { name: buyer.name, nameAr: buyer.nameAr, vatNumber: null, address: null, type: 'individual' },
     items: items.map(item => ({ ...item, creditedQuantity: isCredit ? item.quantity : null })),

@@ -690,6 +690,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
       {/* ── Hidden thermal receipt (for print) ──────────── */}
       <ThermalReceipt
         documentLanguage={documentLanguage}
+        printMode={branch.print_mode ?? 'thermal'}
         businessNameAr={brandNameAr}
         businessNameEn={brandNameEn}
         branchName={branch.name}
@@ -705,6 +706,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
         invoiceNumber={invoice.invoice_number}
         date={invDate}
         time={invTime}
+        issueTimestamp={invoice.created_at}
         items={thermalItems}
         subtotal={Number(invoice.subtotal)}
         discountAmount={Number(invoice.discount_amount)}
@@ -1166,7 +1168,6 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
         {/* Footer note */}
         <div className="px-8 pb-6 text-center">
           <p className="text-[9px] text-gray-300">
-            {documentLabel(documentLanguage, isCreditNote ? 'computerGeneratedCreditNote' : 'computerGeneratedInvoice')}
           </p>
         </div>
       </div>
