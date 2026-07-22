@@ -1,0 +1,4 @@
+SELECT 'invoice_count' check, CASE WHEN (SELECT count(*) FROM public.invoices)>=2496 THEN 'PASS' ELSE 'REVIEW' END status
+UNION ALL SELECT 'phase6a_absent', CASE WHEN NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='invoices' AND column_name='identity_snapshot') AND to_regclass('public.branch_compliance_profiles') IS NULL THEN 'PASS' ELSE 'REVIEW' END
+UNION ALL SELECT 'presentation', CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='branches' AND column_name='presentation_settings') AND to_regprocedure('public.get_branch_invoice_settings(uuid)') IS NOT NULL THEN 'PASS' ELSE 'REVIEW' END
+UNION ALL SELECT 'storage_unchanged', CASE WHEN EXISTS (SELECT 1 FROM storage.buckets WHERE id='branch-assets' AND public AND file_size_limit=5242880) AND (SELECT count(*) FROM storage.objects WHERE bucket_id='branch-assets')=5 THEN 'PASS' ELSE 'REVIEW' END;

@@ -111,7 +111,7 @@ function fmtQty(n: number): string {
 
 const INVOICE_DETAIL_SELECT = `
   id, tenant_id, branch_id, customer_id, created_by,
-  invoice_number, document_language, identity_snapshot, invoice_reference, original_invoice_id, credit_reason,
+  invoice_number, document_language, invoice_reference, original_invoice_id, credit_reason,
   credit_note_idempotency_key, zatca_uuid, zatca_invoice_type, zatca_type_code,
   zatca_counter_number, zatca_prev_invoice_hash, zatca_xml_hash, zatca_qr_code,
   zatca_status, zatca_submission_id, zatca_submitted_at, zatca_clearance_status,
@@ -310,7 +310,7 @@ export default function InvoiceDetailPage() {
       // the exact same payload that was encoded into the QR at creation time.
       const storedPayload = sandboxValidation?.qrCode ?? invoice!.zatca_qr_code
 
-      const identity = documentIdentity(invoice!.identity_snapshot, branch!)
+      const identity = documentIdentity(null, branch!)
       const payload = storedPayload ?? (identity.snapshotBacked ? buildZatcaQR({
         sellerName:  identity.registeredSellerName,
         vatNumber:   identity.vatNumber,
@@ -642,7 +642,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
   const canSubmitCurrentDocument = invoice.zatca_status === 'failed'
     || (isCreditNote && invoice.zatca_status === 'pending')
 
-  const identity = documentIdentity(invoice.identity_snapshot, branch)
+  const identity = documentIdentity(null, branch)
   const thermalDocument = documentFromStoredInvoice({
     invoice, branch, items, payments,
     customer: customer ? {

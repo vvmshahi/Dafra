@@ -17,6 +17,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import ComplianceReadinessCard from '@/components/compliance/ComplianceReadinessCard'
+import { ENABLE_OFFICIAL_SELLER_IDENTITY } from '@/lib/releaseFlags'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/Badge'
 import {
@@ -1040,7 +1041,7 @@ export default function ZatcaTab() {
       )}
 
       {/* Official seller readiness */}
-      {data.map(branch => <ComplianceReadinessCard key={`identity-${branch.id}`} branchId={branch.id} manage={profile?.role === 'owner'} />)}
+      {ENABLE_OFFICIAL_SELLER_IDENTITY && data.map(branch => <ComplianceReadinessCard key={`identity-${branch.id}`} branchId={branch.id} manage={profile?.role === 'owner'} />)}
 
       {/* Branch list */}
       {loading ? (

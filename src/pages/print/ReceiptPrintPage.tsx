@@ -32,7 +32,7 @@ interface Customer {
 
 const INVOICE_PRINT_SELECT = `
   id, tenant_id, branch_id, customer_id,
-  invoice_number, document_language, identity_snapshot, invoice_reference, original_invoice_id, credit_reason,
+  invoice_number, document_language, invoice_reference, original_invoice_id, credit_reason,
   zatca_invoice_type, zatca_qr_code,
   subtotal, discount_amount, tax_amount, total_amount,
   status, payment_status, created_at
@@ -259,7 +259,7 @@ export default function ReceiptPrintPage() {
     let cancelled = false
 
     async function generateQR() {
-      const identity = documentIdentity(invoice!.identity_snapshot, branch!)
+      const identity = documentIdentity(null, branch!)
       const payload = invoice!.zatca_qr_code ?? (identity.snapshotBacked ? buildZatcaQR({
         sellerName: identity.registeredSellerName,
         vatNumber: identity.vatNumber,
