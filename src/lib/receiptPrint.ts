@@ -7,8 +7,15 @@ export function receiptPreviewUrl(invoiceId: string, autoPrint = true) {
 }
 
 export function openReceiptPreview(invoiceId: string, autoPrint = true) {
-  const opened = window.open(receiptPreviewUrl(invoiceId, autoPrint), '_blank', 'noopener,noreferrer')
-  return !!opened
+  const opened = window.open('about:blank', '_blank')
+  if (!opened) return false
+  try {
+    opened.location.replace(receiptPreviewUrl(invoiceId, autoPrint))
+    return true
+  } catch {
+    opened.close()
+    return false
+  }
 }
 
 export async function printReceiptInHiddenFrame(invoiceId: string): Promise<void> {

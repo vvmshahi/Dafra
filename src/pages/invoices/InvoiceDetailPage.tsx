@@ -371,12 +371,19 @@ export default function InvoiceDetailPage() {
   // ── Actions ────────────────────────────────────────────────────────────────
 
   async function handlePrintA4() {
+    const styleId = 'invoice-detail-a4-print-style'
+    document.getElementById(styleId)?.remove()
+    const style = document.createElement('style')
+    style.id = styleId
+    style.textContent = `@media print { @page { size: A4; margin: 15mm; } body { visibility:hidden !important; } #invoice-printable { display:block !important; visibility:visible !important; position:fixed !important; inset:0 !important; width:100% !important; background:white !important; padding:10mm !important; box-sizing:border-box !important; } #invoice-printable * { visibility:visible !important; } }`
+    document.head.appendChild(style)
     if (!isElectron()) {
-      window.print()
+      try { window.print() } finally { style.remove() }
       return
     }
 
     const result = await printA4Invoice()
+    style.remove()
     if (!result.success) {
       console.error('A4 invoice print failed:', result)
       toast.error(t('printing:a4Failed'))
@@ -765,11 +772,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
       )}
 
       {/* ── Invoice detail (screen layout; PDF configuration is reserved for printing) ── */}
-      <section className="overflow-auto rounded-2xl border border-gray-200 bg-gray-100 p-3 sm:p-5">
-        <div className="mx-auto w-fit min-w-full origin-top">
-          <A4Document model={thermalDocument} options={{ id: 'invoice-printable', qrImageUrl: qrDataUrl, pageNumbers: true, preview: true }} />
-        </div>
-      </section>
+      <A4Document model={thermalDocument} options={{ id: 'invoice-printable', pdfMode: true, qrImageUrl: qrDataUrl, pageNumbers: true }} />
 
       {/* ── Refund / Credit Note status ─────────────────── */}
       <div className="no-print bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
