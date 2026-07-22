@@ -195,20 +195,25 @@ export default function ReceiptPrintPage() {
   useReceiptPrintStyle(receiptProfile, electronPrint)
 
   useEffect(() => {
-    if (!invoiceId) return
+    if (!invoiceId) {
+      setError(t('receipts:notFound'))
+      setLoading(false)
+      return
+    }
     let cancelled = false
 
     async function loadReceipt() {
       setLoading(true)
       setError(null)
       try {
-        const [{ data: inv, error: invErr }, { data: itemData }, { data: paymentData }] = await Promise.all([
+        const [{ data: inv, error: invErr }, { data: itemData, error: itemsErr }, { data: paymentData, error: paymentsErr }] = await Promise.all([
           supabase.from('invoices').select(INVOICE_PRINT_SELECT).eq('id', invoiceId).single(),
           supabase.from('invoice_items').select('*').eq('invoice_id', invoiceId).order('sort_order'),
           supabase.from('payments').select('*').eq('invoice_id', invoiceId).order('paid_at', { ascending: true }).order('created_at', { ascending: true }),
         ])
 
-        if (invErr || !inv) {
+        if (invErr || !inv || itemsErr || paymentsErr) {
+          console.error('[ReceiptPrintPage] invoice load failed', invErr ?? itemsErr ?? paymentsErr)
           setError(t('receipts:notFound'))
           return
         }
@@ -237,6 +242,11 @@ export default function ReceiptPrintPage() {
         ])
         if (cancelled) return
 
+        if (branchResult.error || tenantResult.error || !branchResult.data || !tenantResult.data) {
+          console.error('[ReceiptPrintPage] branch or tenant load failed', branchResult.error ?? tenantResult.error)
+          setError(t('receipts:loadFailed'))
+          return
+        }
         setInvoice(inv as Invoice)
         setItems((itemData ?? []) as InvoiceItem[])
         setPayments((paymentData ?? []) as Payment[])
