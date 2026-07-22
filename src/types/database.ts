@@ -1236,6 +1236,7 @@ export type LogoAssetSize = 'small' | 'medium' | 'large'
 export type ThermalWidth = '58mm' | '80mm'
 export type ThermalDensity = 'compact' | 'standard' | 'detailed'
 export type QrSize = 'small' | 'standard' | 'large'
+export type QrAlignment = 'left' | 'center' | 'right'
 export type A4TemplateId = 'classic' | 'modern_split' | 'minimal_professional'
 export type A4HeaderStyle = 'standard' | 'compact' | 'branded'
 
@@ -1245,7 +1246,7 @@ export interface InvoicePresentationSettings {
   contact: { phone: string | null; email: string | null; website: string | null; address_override?: string | null; show_phone: boolean; show_email: boolean; show_website: boolean; show_address: boolean }
   footer: { thank_you_message: string | null; footer_note: string | null; refund_note: string | null; show_thank_you: boolean; show_footer: boolean; show_refund_note: boolean }
   logo: { visible: boolean; asset_path: string | null; asset_version: number; size: LogoAssetSize }
-  thermal: { width: ThermalWidth; density: ThermalDensity; qr_size: QrSize; wrap_item_names: boolean; show_cash_change: boolean }
+  thermal: { width: ThermalWidth; density: ThermalDensity; qr_size: QrSize; qr_alignment: QrAlignment; wrap_item_names: boolean; show_cash_change: boolean }
   a4: { template_id: A4TemplateId; template_version: 1; header_style: A4HeaderStyle }
   after_sale_action?: 'ask' | 'receipt' | 'a4' | 'none'
 }

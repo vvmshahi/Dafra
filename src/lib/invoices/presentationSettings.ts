@@ -1,6 +1,6 @@
 import type {
   A4TemplateId, InvoiceIdentitySnapshot, InvoicePresentationSettings,
-  LogoAssetSize, QrSize, ThermalDensity, ThermalWidth,
+  LogoAssetSize, QrSize, QrAlignment, ThermalDensity, ThermalWidth,
 } from '@/types/database'
 
 export interface InvoiceSettingsBranchDefaults {
@@ -38,6 +38,7 @@ export interface NormalizedInvoiceSettings {
 export const THERMAL_WIDTHS: readonly ThermalWidth[] = ['58mm', '80mm']
 export const THERMAL_DENSITIES: readonly ThermalDensity[] = ['compact', 'standard', 'detailed']
 export const QR_SIZES: readonly QrSize[] = ['small', 'standard', 'large']
+export const QR_ALIGNMENTS: readonly QrAlignment[] = ['left', 'center', 'right']
 export const LOGO_SIZES: readonly LogoAssetSize[] = ['small', 'medium', 'large']
 export const A4_TEMPLATE_REGISTRY = {
   classic: { versions: [1], fallback: 'classic' },
@@ -95,7 +96,9 @@ export function normalizeInvoiceSettings(rawSettings: unknown, branch: InvoiceSe
   const branchHeading = branch.display_name ?? branch.invoice_display_heading ?? companyName
   const language = oneOf(raw.invoice_language ?? source.invoice_language ?? branch.invoice_language, ['en', 'ar', 'both'] as const, 'both')
   const printMode = oneOf(raw.print_mode ?? source.print_mode ?? branch.print_mode, ['thermal', 'pdf', 'both'] as const, 'thermal')
-  const afterSaleAction = oneOf(source.after_sale_action ?? raw.after_sale_action, ['ask', 'receipt', 'a4', 'none'] as const, printMode === 'pdf' ? 'a4' : 'receipt')
+  const actionValue = source.after_sale_action ?? raw.after_sale_action
+  const actionAlias = actionValue === 'thermal' ? 'receipt' : actionValue === 'pdf' ? 'a4' : actionValue === 'both' ? 'ask' : actionValue
+  const afterSaleAction = oneOf(actionAlias, ['ask', 'receipt', 'a4', 'none'] as const, printMode === 'pdf' ? 'a4' : 'receipt')
   const thermalDensity = oneOf(branch.thermal_density, THERMAL_DENSITIES, 'standard')
   const templateId = oneOf(branch.a4_template_id, Object.keys(A4_TEMPLATE_REGISTRY) as A4TemplateId[], 'classic')
 
@@ -137,7 +140,7 @@ export function normalizeInvoiceSettings(rawSettings: unknown, branch: InvoiceSe
       thermal: {
         width: oneOf(thermal.width, THERMAL_WIDTHS, '80mm'),
         density: oneOf(thermal.density, THERMAL_DENSITIES, thermalDensity),
-        qr_size: oneOf(thermal.qr_size, QR_SIZES, 'standard'),
+        qr_size: oneOf(thermal.qr_size, QR_SIZES, 'standard'), qr_alignment: oneOf(thermal.qr_alignment, QR_ALIGNMENTS, 'center'),
         wrap_item_names: bool(thermal.wrap_item_names, true),
         show_cash_change: bool(thermal.show_cash_change, branch.show_cash_change ?? true),
       },
