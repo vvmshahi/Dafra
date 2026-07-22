@@ -764,6 +764,13 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
         </div>
       )}
 
+      {/* ── Invoice detail (screen layout; PDF configuration is reserved for printing) ── */}
+      <section className="overflow-auto rounded-2xl border border-gray-200 bg-gray-100 p-3 sm:p-5">
+        <div className="mx-auto w-fit min-w-full origin-top">
+          <A4Document model={thermalDocument} options={{ id: 'invoice-printable', qrImageUrl: qrDataUrl, pageNumbers: true, preview: true }} />
+        </div>
+      </section>
+
       {/* ── Refund / Credit Note status ─────────────────── */}
       <div className="no-print bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -864,12 +871,6 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 	          <p className="mt-3 text-[11px] text-gray-400">{creditDisabledReason}</p>
 	        )}
 	      </div>
-
-      {/* ══════════════════════════════════════════════════ */}
-      {/* PRINTABLE INVOICE AREA                            */}
-      {/* ══════════════════════════════════════════════════ */}
-      <A4Document model={thermalDocument} options={{ id: 'invoice-printable', pdfMode: true, qrImageUrl: qrDataUrl, pageNumbers: true }} />
-      {/* A4 output is rendered only by A4Document above. */}
 
       <CreateCreditNoteModal
         open={creditModalOpen}

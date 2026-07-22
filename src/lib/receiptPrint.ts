@@ -3,7 +3,7 @@ const HIDDEN_RECEIPT_PRINT_TIMEOUT_MS = 20_000
 let activeHiddenReceiptPrint: Promise<void> | null = null
 
 export function receiptPreviewUrl(invoiceId: string, autoPrint = true) {
-  return `/print/receipt/${encodeURIComponent(invoiceId)}${autoPrint ? '?auto=1' : ''}`
+  return `/print/receipt/${encodeURIComponent(invoiceId)}${autoPrint ? '?autoprint=1' : ''}`
 }
 
 export function openReceiptPreview(invoiceId: string, autoPrint = true) {

@@ -172,7 +172,7 @@ export default function ReceiptPrintPage() {
   const { invoiceId } = useParams<{ invoiceId: string }>()
   const [params] = useSearchParams()
   const navigate = useNavigate()
-  const autoPrint = params.get('auto') === '1'
+  const autoPrint = params.get('autoprint') === '1'
   const electronPrint = params.get('electronPrint') === '1'
   const printJobId = params.get('printJobId')
   const receiptProfile = useMemo(
