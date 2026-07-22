@@ -12,7 +12,7 @@ import ThermalReceipt from '@/components/print/ThermalReceipt'
 import A4Document from '@/components/print/A4Document'
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
-import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
+import { openReceiptPreview } from '@/lib/receiptPrint'
 import { submitInvoiceToZatca } from '@/lib/zatca/submission'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
@@ -224,6 +224,19 @@ export default function InvoiceDetailPage() {
         const branchData = results[0].data as Branch
         const tenantData = results[1].data as Tenant
         const custData   = results[2]?.data as Customer | null ?? null
+        if (results[0].error || results[1].error || !branchData || !tenantData) {
+          console.error('[InvoiceDetailPage] core identity load failed', results[0].error ?? results[1].error)
+          setError(t('validation:loadingFailed'))
+          return
+        }
+
+        // Core document data must render even when optional credit/refund enrichment fails.
+        setInvoice(inv as Invoice)
+        setItems((itemData ?? []) as InvoiceItem[])
+        setPayments((pmtData ?? []) as Payment[])
+        setBranch(branchData)
+        setTenant(tenantData)
+        setCustomer(custData)
 
 	        const [creditNoteResult, originalInvoiceResult, refundResult, refundableResult, originalPaymentsResult] = await Promise.all([
 	          inv.zatca_invoice_type === 'credit_note'
@@ -256,9 +269,6 @@ export default function InvoiceDetailPage() {
 	            : Promise.resolve({ data: [] }),
 	        ])
 
-        setInvoice(inv as Invoice)
-        setItems((itemData ?? []) as InvoiceItem[])
-        setPayments((pmtData ?? []) as Payment[])
         setOriginalPayments((originalPaymentsResult.data ?? []) as Payment[])
         setRefunds((refundResult.data ?? []) as PaymentRefund[])
         setBranch(branchData)
@@ -379,7 +389,7 @@ export default function InvoiceDetailPage() {
     setThermalPrinting(true)
     try {
       if (!isElectron()) {
-        await printReceiptInHiddenFrame(invoice.id)
+        if (!openReceiptPreview(invoice.id, false)) throw new Error('Receipt preview was blocked')
         return
       }
 

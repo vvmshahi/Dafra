@@ -568,7 +568,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     setPrintingReceipt(true)
     try {
       if (!isElectron()) {
-        await printReceiptInHiddenFrame(receipt.invoiceId)
+        if (!openReceiptPreview(receipt.invoiceId, false)) throw new Error('Receipt preview was blocked')
         return
       }
 
