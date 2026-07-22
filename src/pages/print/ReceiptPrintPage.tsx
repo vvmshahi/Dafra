@@ -4,12 +4,13 @@ import { ArrowLeft, Loader2, Printer, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import QRCode from 'qrcode'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
+import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import { supabase } from '@/lib/supabase'
 import { DEFAULT_PRINTER_SETTINGS, type PrinterSettings } from '@/lib/electron'
 import { buildZatcaQR } from '@/lib/zatca/qr'
+import { toSaudiTime } from '@/lib/utils/date'
 import type { Branch, Invoice, InvoiceItem, Payment } from '@/types/database'
-import { documentIdentity } from '@/lib/invoices/documentIdentity'
-import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
+import { documentDate, resolveCreditNoteDocumentLanguage, resolveInvoiceDocumentLanguage } from '@/localization/documents'
 
 interface Tenant {
   name: string
@@ -172,7 +173,7 @@ export default function ReceiptPrintPage() {
   const { invoiceId } = useParams<{ invoiceId: string }>()
   const [params] = useSearchParams()
   const navigate = useNavigate()
-  const autoPrint = params.get('autoprint') === '1'
+  const autoPrint = params.get('auto') === '1'
   const electronPrint = params.get('electronPrint') === '1'
   const printJobId = params.get('printJobId')
   const receiptProfile = useMemo(
@@ -191,43 +192,25 @@ export default function ReceiptPrintPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
-  const [printing, setPrinting] = useState(false)
+  const [originalDocumentLanguage, setOriginalDocumentLanguage] = useState<string | null>(null)
 
   useReceiptPrintStyle(receiptProfile, electronPrint)
 
-  const handlePrint = () => {
-    if (!qrDataUrl || printing) return
-    setPrinting(true)
-    try {
-      window.print()
-    } catch (printError) {
-      console.error('[ReceiptPrintPage] browser print failed', printError)
-      setError(t('receipts:loadFailed'))
-    } finally {
-      setPrinting(false)
-    }
-  }
-
   useEffect(() => {
-    if (!invoiceId) {
-      setError(t('receipts:notFound'))
-      setLoading(false)
-      return
-    }
+    if (!invoiceId) return
     let cancelled = false
 
     async function loadReceipt() {
       setLoading(true)
       setError(null)
       try {
-        const [{ data: inv, error: invErr }, { data: itemData, error: itemsErr }, { data: paymentData, error: paymentsErr }] = await Promise.all([
+        const [{ data: inv, error: invErr }, { data: itemData }, { data: paymentData }] = await Promise.all([
           supabase.from('invoices').select(INVOICE_PRINT_SELECT).eq('id', invoiceId).single(),
           supabase.from('invoice_items').select('*').eq('invoice_id', invoiceId).order('sort_order'),
           supabase.from('payments').select('*').eq('invoice_id', invoiceId).order('paid_at', { ascending: true }).order('created_at', { ascending: true }),
         ])
 
-        if (invErr || !inv || itemsErr || paymentsErr) {
-          console.error('[ReceiptPrintPage] invoice load failed', invErr ?? itemsErr ?? paymentsErr)
+        if (invErr || !inv) {
           setError(t('receipts:notFound'))
           return
         }
@@ -249,24 +232,23 @@ export default function ReceiptPrintPage() {
         const customerFetch = inv.customer_id
           ? fetches[2]
           : Promise.resolve({ data: null })
-        const [branchResult, tenantResult, customerResult] = await Promise.all([
+        const [branchResult, tenantResult, customerResult, originalResult] = await Promise.all([
           fetches[0],
           fetches[1],
           customerFetch,
+          inv.original_invoice_id
+            ? supabase.from('invoices').select('document_language').eq('id', inv.original_invoice_id).maybeSingle()
+            : Promise.resolve({ data: null }),
         ])
         if (cancelled) return
 
-        if (branchResult.error || tenantResult.error || !branchResult.data || !tenantResult.data) {
-          console.error('[ReceiptPrintPage] branch or tenant load failed', branchResult.error ?? tenantResult.error)
-          setError(t('receipts:loadFailed'))
-          return
-        }
         setInvoice(inv as Invoice)
         setItems((itemData ?? []) as InvoiceItem[])
         setPayments((paymentData ?? []) as Payment[])
         setBranch(branchResult.data as Branch)
         setTenant(tenantResult.data as Tenant)
         setCustomer((customerResult?.data ?? null) as Customer | null)
+        setOriginalDocumentLanguage((originalResult?.data as { document_language?: string | null } | null)?.document_language ?? null)
       } catch {
         if (!cancelled) setError(t('receipts:loadFailed'))
       } finally {
@@ -283,15 +265,13 @@ export default function ReceiptPrintPage() {
     let cancelled = false
 
     async function generateQR() {
-      const identity = documentIdentity(null, branch!)
-      const payload = invoice!.zatca_qr_code ?? (identity.snapshotBacked ? buildZatcaQR({
-        sellerName: identity.registeredSellerName,
-        vatNumber: identity.vatNumber,
+      const payload = invoice!.zatca_qr_code ?? buildZatcaQR({
+        sellerName: branch!.business_name || branch!.name,
+        vatNumber: branch!.vat_number || tenant!.vat_number || '',
         timestamp: invoice!.created_at,
         totalAmount: Number(invoice!.total_amount),
         vatAmount: Number(invoice!.tax_amount),
-      }) : null)
-      if (!payload) return
+      })
 
       try {
         const url = await QRCode.toDataURL(payload, {
@@ -321,8 +301,69 @@ export default function ReceiptPrintPage() {
 
   const receipt = useMemo(() => {
     if (!invoice || !branch || !tenant) return null
-    return documentFromStoredInvoice({ invoice, branch, items, payments, customer: customer ? { name: customerDisplayName(customer), nameAr: customer.customer_type === 'business' ? customer.business_name_ar ?? customer.name_ar : customer.name_ar, vatNumber: customer.vat_number, type: customer.customer_type } : null })
-  }, [invoice, branch, tenant, items, payments, customer])
+
+    const documentLanguage = invoice.zatca_invoice_type === 'credit_note'
+      ? resolveCreditNoteDocumentLanguage(invoice.document_language, originalDocumentLanguage, branch.invoice_language)
+      : resolveInvoiceDocumentLanguage(invoice.document_language, branch.invoice_language)
+    const date = documentDate(invoice.created_at, documentLanguage)
+    const address = [
+      branch.building_number ? `Building ${branch.building_number}` : null,
+      branch.street,
+      branch.district,
+      branch.city,
+    ].filter(Boolean).join(', ')
+    const addressAr = [
+      branch.building_number ? `مبنى ${branch.building_number}` : null,
+      branch.street_ar,
+      branch.district_ar,
+      branch.city_ar,
+    ].filter(Boolean).join('، ')
+    const thermalItems: ThermalItem[] = items.map(item => ({
+      name: item.name,
+      nameAr: item.name_ar,
+      qty: Number(item.quantity),
+      unitPrice: Number(item.unit_price),
+      lineTotal: Number(item.total),
+      subtotal: Number(item.subtotal),
+      taxAmount: Number(item.tax_amount),
+      total: Number(item.total),
+    }))
+    const splitPayment = isSplitPaymentRows(payments)
+    const payment = payments[0] ?? null
+    const cashReceived = !splitPayment && payment?.method === 'cash'
+      ? Number(payment.amount_received ?? payment.amount ?? invoice.total_amount)
+      : null
+    const changeAmount = !splitPayment && payment?.method === 'cash'
+      ? Number(payment.change_amount ?? 0)
+      : null
+    const isCreditNote = invoice.zatca_invoice_type === 'credit_note'
+    const isStandardDocument = invoice.zatca_invoice_type === 'standard'
+      || (isCreditNote && customer?.customer_type === 'business' && !!customer?.vat_number)
+
+    return {
+      date,
+      time: toSaudiTime(invoice.created_at),
+      brandNameEn: branch.display_name || branch.business_name || branch.name,
+      brandNameAr: branch.business_name_ar || branch.name_ar || branch.display_name || branch.business_name || branch.name,
+      branchNameEn: branch.name,
+      branchNameAr: branch.name_ar,
+      address: address || null,
+      addressAr: addressAr || null,
+      items: thermalItems,
+      splitPayment,
+      payment,
+      cashReceived,
+      changeAmount,
+      customerName: customerDisplayName(customer),
+      customerNameAr: customer?.customer_type === 'business'
+        ? customer.business_name_ar ?? customer.name_ar
+        : customer?.name_ar ?? null,
+      buyerVatNumber: isStandardDocument ? customer?.vat_number ?? null : null,
+      isStandardDocument,
+      documentType: isCreditNote ? 'credit_note' as const : 'invoice' as const,
+      documentLanguage,
+    }
+  }, [invoice, branch, tenant, items, payments, customer, originalDocumentLanguage])
 
   useEffect(() => {
     if (!electronPrint || electronReadyRef.current || loading || error || !invoice || !branch || !tenant || !receipt || !qrDataUrl) return
@@ -394,12 +435,12 @@ export default function ReceiptPrintPage() {
             </Link>
             <button
               type="button"
-              onClick={handlePrint}
-              disabled={!qrDataUrl || printing}
+              onClick={() => window.print()}
+              disabled={!qrDataUrl}
               className="inline-flex items-center gap-1.5 rounded-xl bg-[#0F2419] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1a3a28] disabled:cursor-wait disabled:opacity-60"
             >
-              {qrDataUrl && !printing ? <Printer size={13} /> : <RefreshCw size={13} className="animate-spin" />}
-              {printing ? t('printing:printing') : t('printing:print')}
+              {qrDataUrl ? <Printer size={13} /> : <RefreshCw size={13} className="animate-spin" />}
+              {t('printing:print')}
             </button>
           </div>
         </div>
@@ -407,8 +448,45 @@ export default function ReceiptPrintPage() {
 
       <main id="receipt-print-page" className="mx-auto flex min-h-[calc(100vh-64px)] max-w-3xl items-start justify-center bg-white px-3 py-5 sm:my-6 sm:min-h-0 sm:rounded-2xl sm:border sm:border-gray-100 sm:shadow-sm">
         <ThermalReceipt
-          model={receipt}
-          options={{ preview: true, qrImageUrl: qrDataUrl }}
+          preview
+          documentLanguage={receipt.documentLanguage}
+          businessNameAr={receipt.brandNameAr}
+          businessNameEn={receipt.brandNameEn}
+          branchName={receipt.branchNameEn}
+          branchNameAr={receipt.branchNameAr}
+          address={receipt.address}
+          addressAr={receipt.addressAr}
+          vatNumber={branch.vat_number || tenant.vat_number || ''}
+          phone={branch.phone}
+          website={branch.website}
+          showWebsite={branch.show_website ?? false}
+          email={branch.email}
+          showEmail={branch.show_email ?? false}
+          invoiceNumber={invoice.invoice_number}
+          date={receipt.date}
+          time={receipt.time}
+          items={receipt.items}
+          subtotal={Number(invoice.subtotal)}
+          discountAmount={Number(invoice.discount_amount ?? 0)}
+          taxAmount={Number(invoice.tax_amount)}
+          total={Number(invoice.total_amount)}
+          paymentMethod={receipt.splitPayment ? 'split' : (receipt.payment?.method ?? 'card')}
+          payments={payments.map(payment => ({ method: payment.method, amount: Number(payment.amount) }))}
+          cashReceived={receipt.cashReceived}
+          change={receipt.changeAmount}
+          customerName={receipt.customerName}
+          customerNameAr={receipt.customerNameAr}
+          buyerVatNumber={receipt.buyerVatNumber}
+          isStandardInvoice={receipt.isStandardDocument}
+          documentType={receipt.documentType}
+          originalInvoiceNumber={invoice.invoice_reference ?? null}
+          creditReason={invoice.credit_reason}
+          logoUrl={branch.logo_url}
+          showLogo={branch.show_logo ?? true}
+          qrDataUrl={qrDataUrl}
+          receiptFooter={branch.receipt_footer}
+          showFooter={branch.show_footer ?? true}
+          showCashChange={branch.show_cash_change ?? true}
         />
       </main>
     </div>

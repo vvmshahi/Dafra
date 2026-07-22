@@ -9,10 +9,9 @@ import { Rial } from '@/components/ui/RiyalSymbol'
 import { buildZatcaQR } from '@/lib/zatca/qr'
 import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
-import A4Document from '@/components/print/A4Document'
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
-import { openReceiptPreview } from '@/lib/receiptPrint'
+import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { submitInvoiceToZatca } from '@/lib/zatca/submission'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
@@ -29,8 +28,6 @@ import {
   resolveCreditNoteDocumentLanguage,
   resolveInvoiceDocumentLanguage,
 } from '@/localization/documents'
-import { documentIdentity } from '@/lib/invoices/documentIdentity'
-import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
 
 function WhatsAppIcon({ size = 13 }: { size?: number }) {
   return (
@@ -224,19 +221,6 @@ export default function InvoiceDetailPage() {
         const branchData = results[0].data as Branch
         const tenantData = results[1].data as Tenant
         const custData   = results[2]?.data as Customer | null ?? null
-        if (results[0].error || results[1].error || !branchData || !tenantData) {
-          console.error('[InvoiceDetailPage] core identity load failed', results[0].error ?? results[1].error)
-          setError(t('validation:loadingFailed'))
-          return
-        }
-
-        // Core document data must render even when optional credit/refund enrichment fails.
-        setInvoice(inv as Invoice)
-        setItems((itemData ?? []) as InvoiceItem[])
-        setPayments((pmtData ?? []) as Payment[])
-        setBranch(branchData)
-        setTenant(tenantData)
-        setCustomer(custData)
 
 	        const [creditNoteResult, originalInvoiceResult, refundResult, refundableResult, originalPaymentsResult] = await Promise.all([
 	          inv.zatca_invoice_type === 'credit_note'
@@ -269,6 +253,9 @@ export default function InvoiceDetailPage() {
 	            : Promise.resolve({ data: [] }),
 	        ])
 
+        setInvoice(inv as Invoice)
+        setItems((itemData ?? []) as InvoiceItem[])
+        setPayments((pmtData ?? []) as Payment[])
         setOriginalPayments((originalPaymentsResult.data ?? []) as Payment[])
         setRefunds((refundResult.data ?? []) as PaymentRefund[])
         setBranch(branchData)
@@ -320,15 +307,14 @@ export default function InvoiceDetailPage() {
       // the exact same payload that was encoded into the QR at creation time.
       const storedPayload = sandboxValidation?.qrCode ?? invoice!.zatca_qr_code
 
-      const identity = documentIdentity(null, branch!)
-      const payload = storedPayload ?? (identity.snapshotBacked ? buildZatcaQR({
-        sellerName:  identity.registeredSellerName,
-        vatNumber:   identity.vatNumber,
+      const payload = storedPayload ?? buildZatcaQR({
+        // QR tag 1: always use legal business_name, never display_name (ZATCA requirement)
+        sellerName:  branch!.business_name || branch!.name,
+        vatNumber:   branch!.vat_number || tenant!.vat_number || '',
         timestamp:   invoice!.created_at,
         totalAmount: Number(invoice!.total_amount),
         vatAmount:   Number(invoice!.tax_amount),
-      }) : null)
-      if (!payload) return
+      })
 
       if (!cancelled) setQrPayload(payload)
 
@@ -371,19 +357,12 @@ export default function InvoiceDetailPage() {
   // ── Actions ────────────────────────────────────────────────────────────────
 
   async function handlePrintA4() {
-    const styleId = 'invoice-detail-a4-print-style'
-    document.getElementById(styleId)?.remove()
-    const style = document.createElement('style')
-    style.id = styleId
-    style.textContent = `@media print { @page { size: A4; margin: 15mm; } body { visibility:hidden !important; } #invoice-printable { display:block !important; visibility:visible !important; position:fixed !important; inset:0 !important; width:100% !important; background:white !important; padding:10mm !important; box-sizing:border-box !important; } #invoice-printable * { visibility:visible !important; } }`
-    document.head.appendChild(style)
     if (!isElectron()) {
-      try { window.print() } finally { style.remove() }
+      window.print()
       return
     }
 
     const result = await printA4Invoice()
-    style.remove()
     if (!result.success) {
       console.error('A4 invoice print failed:', result)
       toast.error(t('printing:a4Failed'))
@@ -396,7 +375,7 @@ export default function InvoiceDetailPage() {
     setThermalPrinting(true)
     try {
       if (!isElectron()) {
-        if (!openReceiptPreview(invoice.id, false)) throw new Error('Receipt preview was blocked')
+        await printReceiptInHiddenFrame(invoice.id)
         return
       }
 
@@ -659,22 +638,11 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
   const canSubmitCurrentDocument = invoice.zatca_status === 'failed'
     || (isCreditNote && invoice.zatca_status === 'pending')
 
-  const identity = documentIdentity(null, branch)
-  const thermalDocument = documentFromStoredInvoice({
-    invoice, branch, items, payments,
-    customer: customer ? {
-      name: customer.customer_type === 'business' && (customer.business_name ?? customer.company_name) ? (customer.business_name ?? customer.company_name) : customer.name,
-      nameAr: customer.customer_type === 'business' ? (customer.business_name_ar ?? customer.name_ar) : customer.name_ar,
-      vatNumber: customer.vat_number,
-      type: customer.customer_type,
-    } : null,
-    originalInvoiceNumber: originalInvoiceLink?.invoice_number ?? null,
-  })
-  const brandNameEn = identity.heading ?? identity.registeredSellerName
-  const brandNameAr = identity.subheading ?? identity.registeredSellerNameAr ?? ''
+  const brandNameEn = branch.display_name || branch.business_name || branch.name
+  const brandNameAr = branch.business_name_ar || branch.name_ar || brandNameEn
   const sellerNames = documentNames(documentLanguage, brandNameEn, brandNameAr)
-  const vatNumber    = identity.vatNumber || '—'
-  const crNumber     = identity.registrationIdentifier || '—'
+  const vatNumber    = branch.vat_number || tenant?.vat_number || '—'
+  const crNumber     = branch.cr_number  || tenant?.cr_number  || '—'
 
   const addressParts = [
     branch.building_number ? `Building ${branch.building_number}` : null,
@@ -692,9 +660,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     branch.country,
     branch.postal_code,
   ].filter(Boolean).join('، ')
-  const sellerAddresses = identity.snapshotBacked
-    ? documentNames(documentLanguage, identity.address, null)
-    : documentNames(documentLanguage, addressParts, addressPartsAr)
+  const sellerAddresses = documentNames(documentLanguage, addressParts, addressPartsAr)
 
   // ── Build thermal receipt data ────────────────────────────────────────────
 
@@ -723,8 +689,52 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
       {/* ── Hidden thermal receipt (for print) ──────────── */}
       <ThermalReceipt
-        model={thermalDocument}
-        options={{ qrImageUrl: qrDataUrl }}
+        documentLanguage={documentLanguage}
+        businessNameAr={brandNameAr}
+        businessNameEn={brandNameEn}
+        branchName={branch.name}
+        branchNameAr={branch.name_ar}
+        address={thermalAddress || null}
+        addressAr={thermalAddressAr || null}
+        vatNumber={vatNumber}
+        phone={branch.phone}
+        website={branch.website}
+        showWebsite={branch.show_website ?? false}
+        email={branch.email}
+        showEmail={branch.show_email ?? false}
+        invoiceNumber={invoice.invoice_number}
+        date={invDate}
+        time={invTime}
+        items={thermalItems}
+        subtotal={Number(invoice.subtotal)}
+        discountAmount={Number(invoice.discount_amount)}
+        taxAmount={Number(invoice.tax_amount)}
+        total={Number(invoice.total_amount)}
+        paymentMethod={isSplitPayment ? 'split' : (payment?.method ?? 'card')}
+        payments={payments.map(p => ({ method: p.method, amount: Number(p.amount) }))}
+        cashReceived={cashReceived}
+        change={changeAmount}
+        customerName={
+          customer?.customer_type === 'business' && (customer.business_name ?? customer.company_name)
+            ? (customer.business_name ?? customer.company_name)
+            : (customer?.name ?? null)
+        }
+        customerNameAr={
+          customer?.customer_type === 'business'
+            ? (customer.business_name_ar ?? customer.name_ar)
+            : (customer?.name_ar ?? null)
+        }
+        buyerVatNumber={isStandardDocument ? (customer?.vat_number ?? null) : null}
+        isStandardInvoice={isStandardDocument}
+        documentType={isCreditNote ? 'credit_note' : 'invoice'}
+        originalInvoiceNumber={invoice.invoice_reference ?? originalInvoiceLink?.invoice_number ?? null}
+        creditReason={invoice.credit_reason}
+        logoUrl={branch.logo_url}
+        showLogo={branch.show_logo ?? true}
+        qrDataUrl={qrDataUrl}
+        receiptFooter={branch.receipt_footer}
+        showFooter={branch.show_footer ?? true}
+        showCashChange={branch.show_cash_change ?? true}
       />
 
       {/* ── Action bar (screen only) ─────────────────────── */}
@@ -770,9 +780,6 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
           {t('invoices:cancelled')}
         </div>
       )}
-
-      {/* ── Invoice detail (screen layout; PDF configuration is reserved for printing) ── */}
-      <A4Document model={thermalDocument} options={{ id: 'invoice-printable', pdfMode: true, qrImageUrl: qrDataUrl, pageNumbers: true }} />
 
       {/* ── Refund / Credit Note status ─────────────────── */}
       <div className="no-print bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
@@ -874,6 +881,295 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 	          <p className="mt-3 text-[11px] text-gray-400">{creditDisabledReason}</p>
 	        )}
 	      </div>
+
+      {/* ══════════════════════════════════════════════════ */}
+      {/* PRINTABLE INVOICE AREA                            */}
+      {/* ══════════════════════════════════════════════════ */}
+      <div
+        id="invoice-printable"
+        dir={documentDir}
+        lang={documentLanguage === 'ar' ? 'ar' : documentLanguage === 'en' ? 'en' : undefined}
+        className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
+        style={{ fontFamily: documentFontFamily(documentLanguage) }}
+      >
+
+        {/* ── Invoice header ─────────────────────────────── */}
+        <div className="px-8 pt-8 pb-6 border-b border-gray-100">
+          <div className="flex items-start justify-between gap-6">
+
+            {/* Seller info (left) */}
+            <div className="flex items-start gap-4 flex-1">
+              {branch.logo_url && (branch.show_logo ?? true) ? (
+                <img src={branch.logo_url} alt="logo" className="w-14 h-14 object-contain rounded-xl flex-shrink-0" />
+              ) : (
+                <div className="w-14 h-14 rounded-xl bg-[#0F2419] flex items-center justify-center flex-shrink-0">
+                  <span className="text-gold-400 font-black text-2xl leading-none">د</span>
+                </div>
+              )}
+              <div>
+                {sellerNames.map((name, index) => (
+                  <p key={name} className={index === 0 ? 'text-xl font-bold text-gray-900' : 'text-sm text-gray-400 font-medium'} dir="auto">{name}</p>
+                ))}
+                {sellerAddresses.map(value => <p key={value} className="text-xs text-gray-400 mt-1 max-w-xs" dir="auto">{value}</p>)}
+                <div className="flex flex-wrap gap-3 mt-2">
+                  <span className="text-[10px] text-gray-500">
+                    <span className="font-semibold text-gray-700">{documentLabel(documentLanguage, 'vatNumber')}:</span> <bdi dir="ltr">{vatNumber}</bdi>
+                  </span>
+                  <span className="text-[10px] text-gray-500">
+                    <span className="font-semibold text-gray-700">{documentLabel(documentLanguage, 'crNumber')}:</span> <bdi dir="ltr">{crNumber}</bdi>
+                  </span>
+                </div>
+                {(branch.show_website ?? false) && branch.website && (
+                  <p className="text-[10px] text-gray-400 mt-0.5">{branch.website}</p>
+                )}
+                {(branch.show_email ?? false) && branch.email && (
+                  <p className="text-[10px] text-gray-400">{branch.email}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Invoice info + QR (right) */}
+            <div className="text-end flex-shrink-0">
+              <div className="mb-3">
+                {documentTitleLines.map((line, index) => <p key={line} dir="auto" className={index === 0 ? 'text-lg font-bold text-[#0F2419]' : 'text-xs text-gray-400'}>{line}</p>)}
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-end gap-3">
+                  <span className="text-xs font-semibold text-gray-800 font-mono" dir="ltr">{invoice.invoice_number}</span>
+                  <span className="text-[10px] text-gray-400 uppercase tracking-wide">{documentNumberLabel}</span>
+                </div>
+                {isCreditNote && (invoice.invoice_reference || originalInvoiceLink?.invoice_number) && (
+                  <div className="flex items-center justify-end gap-3">
+                    <span className="text-xs text-gray-700" dir="ltr">{invoice.invoice_reference ?? originalInvoiceLink?.invoice_number}</span>
+                    <span className="text-[10px] text-gray-400 uppercase tracking-wide">{documentLabel(documentLanguage, 'originalInvoice')}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-end gap-3">
+                  <span className="text-xs text-gray-700" dir="ltr">{invDate}</span>
+                  <span className="text-[10px] text-gray-400 uppercase tracking-wide">{documentLabel(documentLanguage, 'date')}</span>
+                </div>
+                <div className="flex items-center justify-end gap-3">
+                  <span className="text-xs text-gray-700" dir="ltr">{invTime}</span>
+                  <span className="text-[10px] text-gray-400 uppercase tracking-wide">{documentLabel(documentLanguage, 'time')}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Customer section ────────────────────────────── */}
+        <div className="px-8 py-5 border-b border-gray-100 bg-gray-50/50">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1">{documentLabel(documentLanguage, 'billTo')}</p>
+          {customer ? (
+            <>
+              {customer.customer_type === 'business' && (customer.business_name ?? customer.company_name) ? (
+                <>
+                  {documentNames(documentLanguage, customer.business_name ?? customer.company_name, customer.business_name_ar).map((name, index) => <p key={name} className={index === 0 ? 'text-sm font-semibold text-gray-900' : 'text-xs text-gray-400'} dir="auto">{name}</p>)}
+                  <p className="text-xs text-gray-500 mt-0.5">{documentLabel(documentLanguage, 'contact')}: <span dir="auto">{customer.name}</span></p>
+                </>
+              ) : (
+                <>
+                  {documentNames(documentLanguage, customer.name, customer.name_ar).map((name, index) => <p key={name} className={index === 0 ? 'text-sm font-semibold text-gray-900' : 'text-xs text-gray-400'} dir="auto">{name}</p>)}
+                </>
+              )}
+              {customer.vat_number && (
+                <p className="text-xs text-gray-500 mt-0.5">
+                  <span className="font-semibold">{documentLabel(documentLanguage, 'customerVatNumber')}:</span> <bdi dir="ltr">{customer.vat_number}</bdi>
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-gray-600">{documentLanguage === 'ar' ? 'عميل نقدي' : documentLanguage === 'both' ? 'Walk-in Customer / عميل نقدي' : 'Walk-in Customer'}</p>
+          )}
+        </div>
+
+        {isCreditNote && (
+          <div className="px-8 py-4 border-b border-gray-100 bg-amber-50/40">
+            <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-widest mb-2">{documentLabel(documentLanguage, 'creditNoteReference')}</p>
+            <div className="grid gap-2 text-xs text-gray-700 sm:grid-cols-2">
+              <span><span className="font-semibold">{documentLabel(documentLanguage, 'originalInvoice')}:</span> <bdi dir="ltr">{invoice.invoice_reference ?? originalInvoiceLink?.invoice_number ?? '—'}</bdi></span>
+              <span><span className="font-semibold">{documentLabel(documentLanguage, 'creditAmount')}:</span> <span dir="ltr"><Rial amount={Number(invoice.total_amount)} /></span></span>
+              {invoice.credit_reason && (
+                <span className="sm:col-span-2"><span className="font-semibold">{documentLabel(documentLanguage, 'reason')}:</span> {invoice.credit_reason}</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Line items table ─────────────────────────────── */}
+        <div className="px-8 py-4">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-gray-200">
+                <th className="text-start py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-6">#</th>
+                <th className="text-start py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{documentLabel(documentLanguage, 'item')}</th>
+                <th className="text-end py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-16">{documentLabel(documentLanguage, 'unit')}</th>
+                <th className="text-end py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-12">{documentLabel(documentLanguage, 'quantity')}</th>
+                <th className="text-end py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-28">{documentLabel(documentLanguage, 'unitPrice')}</th>
+                <th className="text-end py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-16">{documentLabel(documentLanguage, 'vatAmount')} %</th>
+                <th className="text-end py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-28">{documentLabel(documentLanguage, 'totalIncludingVat')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item, i) => (
+                <tr key={item.id} className="border-b border-gray-50">
+                  <td className="py-3 text-[10px] text-gray-300">{i + 1}</td>
+                  <td className="py-3">
+                    {documentNames(documentLanguage, item.name, item.name_ar).map((name, index) => <p key={name} className={index === 0 ? 'text-sm font-medium text-gray-900' : 'text-[10px] text-gray-400'} dir="auto">{name}</p>)}
+                  </td>
+                  <td className="py-3 text-end text-xs text-gray-500">{item.unit ?? '—'}</td>
+                  <td className="py-3 text-end text-xs text-gray-800 tabular-nums font-medium" dir="ltr">{Number(item.quantity)}</td>
+                  <td className="py-3 text-end text-xs text-gray-700 tabular-nums" dir="ltr"><Rial amount={Number(item.unit_price)} /></td>
+                  <td className="py-3 text-end text-xs text-gray-500" dir="ltr">
+                    {item.tax_rate > 0 ? `${(Number(item.tax_rate) * 100).toFixed(0)}%` : documentLabel(documentLanguage, 'exempt')}
+                  </td>
+                  <td className="py-3 text-end text-sm font-semibold text-gray-900 tabular-nums" dir="ltr">
+                    <Rial amount={Number(item.total)} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ── Totals block ─────────────────────────────────── */}
+        <div className="px-8 pb-6">
+          <div className="flex justify-end">
+            <div className="invoice-totals w-72 space-y-2 bg-gray-50 rounded-xl px-5 py-4">
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>{documentLabel(documentLanguage, 'amountBeforeVat')}</span>
+                <span className="tabular-nums font-medium" dir="ltr"><Rial amount={Number(invoice.subtotal)} /></span>
+              </div>
+              {Number(invoice.discount_amount) > 0 && (
+                <div className="flex justify-between text-xs text-red-500">
+                  <span>{documentLabel(documentLanguage, 'discount')}</span>
+                  <span className="tabular-nums" dir="ltr">− <Rial amount={Number(invoice.discount_amount)} /></span>
+                </div>
+              )}
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>{documentLabel(documentLanguage, 'taxableAmount')}</span>
+                <span className="tabular-nums" dir="ltr"><Rial amount={Number(invoice.taxable_amount)} /></span>
+              </div>
+              <div className="flex justify-between text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded-lg">
+                <span className="font-semibold">{documentLabel(documentLanguage, 'vatAmount')} (15%)</span>
+                <span className="tabular-nums font-semibold" dir="ltr"><Rial amount={Number(invoice.tax_amount)} /></span>
+              </div>
+              <div className="flex justify-between font-bold text-gray-900 text-base pt-1.5 border-t border-gray-200">
+                <span>{documentLabel(documentLanguage, isCreditNote ? 'creditTotal' : 'totalIncludingVat')}</span>
+                <span className="tabular-nums text-[#0F2419]" dir="ltr"><Rial amount={Number(invoice.total_amount)} /></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Original payment remains separate from the refund allocation ── */}
+        {isCreditNote && (
+          <div className="px-8 py-4 border-t border-gray-100 bg-gray-50/40">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">{documentLabel(documentLanguage, 'originalPayment')}</p>
+            {originalPayments.length > 0 ? (
+              <div className="flex flex-wrap gap-6 text-xs text-gray-700">
+                {originalPayments.map(originalPayment => (
+                  <span key={originalPayment.id}>
+                    <span className="font-semibold">{documentPaymentLabel(documentLanguage, originalPayment.method)}:</span>{' '}
+                    <span dir="ltr"><Rial amount={Number(originalPayment.amount)} /></span>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-amber-700">{documentLabel(documentLanguage, 'allocationUnavailable')}</p>
+            )}
+          </div>
+        )}
+
+        {/* ── Payment / refund issued info ─────────────────── */}
+        {payments.length > 0 && (
+          <div className="px-8 py-4 border-t border-gray-100 bg-gray-50/40">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">{documentLabel(documentLanguage, isCreditNote ? 'refundIssued' : 'paymentMethod')}</p>
+            <div className="flex flex-wrap gap-6 text-xs text-gray-700">
+              <span><span className="font-semibold">{documentLabel(documentLanguage, isCreditNote ? 'refundMethod' : 'paymentMethod')}:</span> {documentPaymentLabel(documentLanguage, isSplitPayment ? 'split' : payment?.method ?? 'other')}</span>
+              {isSplitPayment ? (
+                <>
+                  {cashPayment && <span><span className="font-semibold">{documentLabel(documentLanguage, 'cashAmount')}:</span> <span dir="ltr"><Rial amount={Number(cashPayment.amount)} /></span></span>}
+                  {cardPayment && <span><span className="font-semibold">{documentLabel(documentLanguage, 'cardAmount')}:</span> <span dir="ltr"><Rial amount={Number(cardPayment.amount)} /></span></span>}
+                  <span><span className="font-semibold">{documentLabel(documentLanguage, 'totalPaid')}:</span> <span dir="ltr"><Rial amount={paymentRowsTotal(payments)} /></span></span>
+                </>
+              ) : (
+                <span><span className="font-semibold">{documentLabel(documentLanguage, 'amount')}:</span> <span dir="ltr"><Rial amount={Number(payment?.amount ?? 0)} /></span></span>
+              )}
+              {!isSplitPayment && payment?.method === 'cash' && cashReceived !== null && (
+                <span><span className="font-semibold">{documentLabel(documentLanguage, 'received')}:</span> <span dir="ltr"><Rial amount={cashReceived} /></span></span>
+              )}
+              {!isSplitPayment && (branch.show_cash_change ?? true) && payment?.method === 'cash' && (changeAmount ?? 0) > 0.005 && (
+                <span><span className="font-semibold">{documentLabel(documentLanguage, 'change')}:</span> <span dir="ltr"><Rial amount={changeAmount ?? 0} /></span></span>
+              )}
+              {payment && <span><span className="font-semibold">{documentLabel(documentLanguage, 'date')}:</span> <bdi dir="ltr">{documentDate(payment.paid_at, documentLanguage)}</bdi></span>}
+              {payment?.reference && <span><span className="font-semibold">{documentLabel(documentLanguage, 'reference')}:</span> <bdi dir="ltr">{payment.reference}</bdi></span>}
+            </div>
+            {invoice.payment_method === 'other' && !isSplitPayment && (
+              <p className="mt-2 text-[11px] text-amber-700">{documentLabel(documentLanguage, 'allocationUnavailable')}</p>
+            )}
+          </div>
+        )}
+
+        {isCreditNote && hasRefunds && payments.length === 0 && (
+          <div className="px-8 py-4 border-t border-gray-100 bg-gray-50/40">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">{documentLabel(documentLanguage, 'refundIssued')}</p>
+            <div className="space-y-1.5 text-xs text-gray-700">
+              {refunds.map(refund => (
+                <div key={refund.id} className="flex flex-wrap gap-6">
+                  <span><span className="font-semibold">{documentLabel(documentLanguage, 'refundMethod')}:</span> {documentPaymentLabel(documentLanguage, refund.method)}</span>
+                  <span><span className="font-semibold">{documentLabel(documentLanguage, 'amount')}:</span> <span dir="ltr"><Rial amount={Number(refund.amount)} /></span></span>
+                  <span><span className="font-semibold">{documentLabel(documentLanguage, 'status')}:</span> {refund.status}</span>
+                  <span><span className="font-semibold">{documentLabel(documentLanguage, 'date')}:</span> <bdi dir="ltr">{documentDate(refund.created_at, documentLanguage)}</bdi></span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Notes ────────────────────────────────────────── */}
+        {invoice.notes && (
+          <div className="px-8 py-3 border-t border-gray-100">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1">{documentLabel(documentLanguage, 'notes')}</p>
+            <p className="text-xs text-gray-600">{invoice.notes}</p>
+          </div>
+        )}
+
+        {/* ── ZATCA + QR footer ────────────────────────────── */}
+        <div className="px-8 py-6 border-t-2 border-gray-100">
+          <div className="flex items-start gap-8">
+
+            {/* QR code */}
+            <div className="flex-shrink-0 text-center">
+              {qrDataUrl ? (
+                <img src={qrDataUrl} alt={documentLabel(documentLanguage, 'qrCode')} className="w-28 h-28 border border-gray-100 rounded-xl p-1" />
+              ) : (
+                <div className="w-28 h-28 border border-gray-100 rounded-xl flex items-center justify-center bg-gray-50">
+                  <Loader2 size={20} className="animate-spin text-gray-300" />
+                </div>
+              )}
+              <p className="text-[9px] text-gray-400 mt-1.5">
+                {documentLabel(documentLanguage, 'scanToVerify')}
+              </p>
+            </div>
+
+            {(branch.show_footer ?? true) && branch.receipt_footer && (
+              <div className="flex-1 rounded-xl bg-gray-50 px-4 py-3 text-xs font-medium text-gray-600">
+                {branch.receipt_footer}
+              </div>
+            )}
+
+          </div>
+        </div>
+
+        {/* Footer note */}
+        <div className="px-8 pb-6 text-center">
+          <p className="text-[9px] text-gray-300">
+            {documentLabel(documentLanguage, isCreditNote ? 'computerGeneratedCreditNote' : 'computerGeneratedInvoice')}
+          </p>
+        </div>
+      </div>
 
       <CreateCreditNoteModal
         open={creditModalOpen}

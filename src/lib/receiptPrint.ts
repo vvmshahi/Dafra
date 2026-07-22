@@ -3,19 +3,12 @@ const HIDDEN_RECEIPT_PRINT_TIMEOUT_MS = 20_000
 let activeHiddenReceiptPrint: Promise<void> | null = null
 
 export function receiptPreviewUrl(invoiceId: string, autoPrint = true) {
-  return `/print/receipt/${encodeURIComponent(invoiceId)}${autoPrint ? '?autoprint=1' : ''}`
+  return `/print/receipt/${encodeURIComponent(invoiceId)}${autoPrint ? '?auto=1' : ''}`
 }
 
 export function openReceiptPreview(invoiceId: string, autoPrint = true) {
-  const opened = window.open('about:blank', '_blank')
-  if (!opened) return false
-  try {
-    opened.location.replace(receiptPreviewUrl(invoiceId, autoPrint))
-    return true
-  } catch {
-    opened.close()
-    return false
-  }
+  const opened = window.open(receiptPreviewUrl(invoiceId, autoPrint), '_blank', 'noopener,noreferrer')
+  return !!opened
 }
 
 export async function printReceiptInHiddenFrame(invoiceId: string): Promise<void> {
