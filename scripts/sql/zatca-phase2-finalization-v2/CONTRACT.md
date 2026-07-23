@@ -212,10 +212,17 @@ backoffs after the first three failures; a fourth transient failure blocks as
 4xx responses, and ambiguous post-send outcomes block immediately. Ambiguous
 outcomes also set the invoice to `reconciliation_required`.
 
-The global `drain_outbox` action requires the exact configured service-role
-JWT in both `Authorization` and `apikey`, plus a `role=service_role` JWT claim.
-It rejects all caller-provided tenant, branch, and invoice scope, clamps each
-batch to ten, and returns aggregate counts only.
+The global `drain_outbox` action keeps the gateway-accepted legacy JWT in both
+`Authorization` and `apikey`. After gateway signature verification, Edge
+requires `role=service_role`, project ref `bkbphkpqcxuejozayrsy`, matching
+Authorization/apikey JWTs, and a timing-safe match between
+`X-Zatca-Dispatch-Token` and Edge secret `ZATCA_OUTBOX_DISPATCH_TOKEN`. The
+legacy JWT is deliberately not byte-compared with
+`SUPABASE_SERVICE_ROLE_KEY`, which may be a newer `sb_secret` credential. The
+matching dispatcher token is stored in Vault as
+`zatca_outbox_dispatch_token`. Caller-provided tenant, branch, and invoice
+scope is rejected, each batch is clamped to ten, and responses contain
+aggregate counts only.
 
 Manual retry for `simplified_final` only requeues that exact stored artifact.
 Blocked records cannot be requeued through ordinary retry.

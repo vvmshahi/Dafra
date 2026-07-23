@@ -139,11 +139,15 @@ After step 11 and while all flags remain false, review and explicitly execute
 `operator/install_reporting_outbox_dispatch.sql` only when the required Vault
 URL and service-role secrets have been installed. That separate step creates
 the recurring server-side outbox consumer. It does not enqueue historical
-invoices and is not part of recovery execution. The Vault service-role JWT is
-sent as both `Authorization: Bearer ...` and `apikey`; the Edge route verifies
-exact token equality and the `service_role` claim before any global claim.
-Transient reporting is limited to four attempts with 60/120/240-second
-backoff. Definite rejections and ambiguous outcomes block without replay.
+invoices and is not part of recovery execution. The Vault legacy service-role
+JWT is sent as both `Authorization: Bearer ...` and `apikey`; Vault secret
+`zatca_outbox_dispatch_token` is sent as `X-Zatca-Dispatch-Token`. Edge checks
+the gateway-validated JWT for `role=service_role` and project ref
+`bkbphkpqcxuejozayrsy`, requires matching JWT headers, and timing-safely
+compares the dispatcher header with `ZATCA_OUTBOX_DISPATCH_TOKEN`. It never
+compares the legacy JWT with runtime `SUPABASE_SERVICE_ROLE_KEY`. Transient
+reporting is limited to four attempts with 60/120/240-second backoff. Definite
+rejections and ambiguous outcomes block without replay.
 
 `04a` runs **before `05`**. It depends on the complete invoice-column shape
 created by `01`–`04`, but not on the capability/status functions in `05`.

@@ -51,6 +51,7 @@ const FINALIZATION_SCHEMA_VERSION = 2
 const FINALIZATION_EDGE_VERSION = '2.1.0'
 const FINALIZATION_CLIENT_VERSION = '2.1.0'
 const OUTPUT_STATE_READ_CLIENT_VERSIONS = new Set(['2.0.0', FINALIZATION_CLIENT_VERSION])
+const ZATCA_OUTBOX_PROJECT_REF = 'bkbphkpqcxuejozayrsy'
 const RECOVERY_BRANCH_ID = '371dee75-6e46-496e-89e7-1a7492b51a3c'
 const IMMUTABLE_RECOVERY_TARGETS = Object.freeze([
   {
@@ -3170,6 +3171,7 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    const outboxDispatchToken = Deno.env.get('ZATCA_OUTBOX_DISPATCH_TOKEN')
 
     if (!anonKey || !serviceRoleKey) {
       return jsonResponse({ error: 'Server configuration error' }, 500)
@@ -3179,24 +3181,25 @@ Deno.serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     })
     const callerJWT = bearerToken(req)
-    if (!callerJWT) {
-      return jsonResponse({ error: 'Unauthorized' }, 401)
-    }
-
     const earlyPostBody = req.method === 'POST'
       ? rpcObject(await req.clone().json().catch(() => ({})))
       : {}
-    const drainAuthorization = authorizeDrainRequest({
+    const drainAuthorization = await authorizeDrainRequest({
       body: earlyPostBody,
       callerJWT,
       apiKey: req.headers.get('apikey'),
-      serviceRoleKey,
+      dispatchToken: req.headers.get('x-zatca-dispatch-token'),
+      expectedDispatchToken: outboxDispatchToken,
+      expectedProjectRef: ZATCA_OUTBOX_PROJECT_REF,
     })
     const requestsGlobalDrain = drainAuthorization.isDrain
 
     // This is the only route handled before normal user/invoice authorization.
-    // It requires the exact configured service-role JWT in both gateway
-    // headers and verifies that the JWT itself carries role=service_role.
+    // Supabase's gateway validates the legacy JWT signature. This route then
+    // requires matching Authorization/apikey JWTs scoped to this project plus
+    // a timing-safe match on the dedicated dispatcher capability token. It
+    // deliberately does not compare that JWT with SUPABASE_SERVICE_ROLE_KEY,
+    // which may be an unrelated sb_secret runtime credential.
     if (requestsGlobalDrain) {
       if (!drainAuthorization.allowed) {
         return jsonResponse({
@@ -3228,8 +3231,8 @@ Deno.serve(async (req: Request) => {
         summary,
       })
     }
-    if (callerJWT === serviceRoleKey || req.headers.get('apikey') === serviceRoleKey) {
-      return jsonResponse({ error: 'Unsupported internal action' }, 400)
+    if (!callerJWT) {
+      return jsonResponse({ error: 'Unauthorized' }, 401)
     }
 
     const authClient = createClient(supabaseUrl, anonKey, {

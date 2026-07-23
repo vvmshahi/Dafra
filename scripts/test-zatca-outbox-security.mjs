@@ -13,6 +13,7 @@ import {
   authorizeDrainRequest,
   hasServiceRoleDrainCredentials,
   isStrictDrainBody,
+  timingSafeEqualText,
 } from '../supabase/functions/_shared/zatca/internal_drain_auth.mjs'
 
 const root = process.cwd()
@@ -20,11 +21,13 @@ const read = path => readFileSync(join(root, path), 'utf8')
 const migration = read('scripts/sql/zatca-phase2-finalization-v2/11_durable_simplified_reporting_outbox.sql')
 const cron = read('scripts/sql/zatca-phase2-finalization-v2/operator/install_reporting_outbox_dispatch.sql')
 const edge = read('supabase/functions/zatca-submit/index.ts')
+const drainAuthSource = read('supabase/functions/_shared/zatca/internal_drain_auth.mjs')
+const supabaseConfig = read('supabase/config.toml')
 
 const tests = []
+const pendingTests = []
 const test = (name, fn) => {
-  fn()
-  tests.push(name)
+  pendingTests.push(Promise.resolve().then(fn).then(() => tests.push(name)))
 }
 
 test('HTTP 200 plus REPORTED is accepted', () => {
@@ -128,25 +131,31 @@ test('an earlier blocked counter prevents every later counter in the branch', ()
   assert.match(migration, /earlier\.status <> 'accepted'/)
 })
 
-function jwt(role) {
+const EXPECTED_PROJECT_REF = 'bkbphkpqcxuejozayrsy'
+const DISPATCH_TOKEN = 'random-dispatch-token-for-local-tests-only'
+
+function jwt(role, ref = EXPECTED_PROJECT_REF) {
   const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url')
-  return `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ role })}.signature`
+  return `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ role, ref })}.signature`
 }
 
-test('global drain rejects anon and every ordinary user role', () => {
-  const serviceRoleKey = jwt('service_role')
+test('global drain rejects anon and every ordinary user role', async () => {
   for (const role of ['anon', 'authenticated', 'cashier', 'manager', 'owner', 'admin']) {
     const token = jwt(role)
-    assert.equal(hasServiceRoleDrainCredentials({
+    assert.equal(await hasServiceRoleDrainCredentials({
       callerJWT: token,
       apiKey: token,
-      serviceRoleKey,
+      dispatchToken: DISPATCH_TOKEN,
+      expectedDispatchToken: DISPATCH_TOKEN,
+      expectedProjectRef: EXPECTED_PROJECT_REF,
     }), false, role)
-    assert.deepEqual(authorizeDrainRequest({
+    assert.deepEqual(await authorizeDrainRequest({
       body: { action: 'drain_outbox' },
       callerJWT: token,
       apiKey: token,
-      serviceRoleKey,
+      dispatchToken: DISPATCH_TOKEN,
+      expectedDispatchToken: DISPATCH_TOKEN,
+      expectedProjectRef: EXPECTED_PROJECT_REF,
     }), {
       isDrain: true,
       allowed: false,
@@ -154,46 +163,102 @@ test('global drain rejects anon and every ordinary user role', () => {
       code: 'SERVICE_ROLE_REQUIRED',
     }, role)
   }
-  assert.equal(hasServiceRoleDrainCredentials({
-    callerJWT: serviceRoleKey,
-    apiKey: 'missing-or-wrong',
-    serviceRoleKey,
+  const serviceRoleJwt = jwt('service_role')
+  assert.equal(await hasServiceRoleDrainCredentials({
+    callerJWT: serviceRoleJwt,
+    apiKey: null,
+    dispatchToken: DISPATCH_TOKEN,
+    expectedDispatchToken: DISPATCH_TOKEN,
+    expectedProjectRef: EXPECTED_PROJECT_REF,
   }), false)
-  const forgedServiceRoleJwt = serviceRoleKey.replace(/signature$/, 'forged-signature')
-  assert.equal(hasServiceRoleDrainCredentials({
+  assert.equal((await authorizeDrainRequest({
+    body: { action: 'drain_outbox' },
+    callerJWT: '',
+    apiKey: serviceRoleJwt,
+    dispatchToken: DISPATCH_TOKEN,
+    expectedDispatchToken: DISPATCH_TOKEN,
+    expectedProjectRef: EXPECTED_PROJECT_REF,
+  })).status, 403)
+  assert.equal((await authorizeDrainRequest({
+    body: { action: 'drain_outbox' },
+    callerJWT: serviceRoleJwt,
+    apiKey: serviceRoleJwt,
+    dispatchToken: 'wrong-token',
+    expectedDispatchToken: DISPATCH_TOKEN,
+    expectedProjectRef: EXPECTED_PROJECT_REF,
+  })).status, 403)
+  assert.equal((await authorizeDrainRequest({
+    body: { action: 'drain_outbox' },
+    callerJWT: serviceRoleJwt,
+    apiKey: serviceRoleJwt,
+    dispatchToken: null,
+    expectedDispatchToken: DISPATCH_TOKEN,
+    expectedProjectRef: EXPECTED_PROJECT_REF,
+  })).status, 403)
+  const forgedServiceRoleJwt = serviceRoleJwt.replace(/signature$/, 'forged-signature')
+  assert.equal(await hasServiceRoleDrainCredentials({
     callerJWT: forgedServiceRoleJwt,
-    apiKey: forgedServiceRoleJwt,
-    serviceRoleKey,
+    apiKey: serviceRoleJwt,
+    dispatchToken: DISPATCH_TOKEN,
+    expectedDispatchToken: DISPATCH_TOKEN,
+    expectedProjectRef: EXPECTED_PROJECT_REF,
   }), false)
   assert.match(edge, /SERVICE_ROLE_REQUIRED/)
 })
 
-test('only the exact service-role JWT in both headers authorizes drain', () => {
-  const serviceRoleKey = jwt('service_role')
-  assert.equal(hasServiceRoleDrainCredentials({
-    callerJWT: serviceRoleKey,
-    apiKey: serviceRoleKey,
-    serviceRoleKey,
+test('valid project service-role JWT and dispatcher token authorize drain', async () => {
+  const serviceRoleJwt = jwt('service_role')
+  assert.equal(await hasServiceRoleDrainCredentials({
+    callerJWT: serviceRoleJwt,
+    apiKey: serviceRoleJwt,
+    dispatchToken: DISPATCH_TOKEN,
+    expectedDispatchToken: DISPATCH_TOKEN,
+    expectedProjectRef: EXPECTED_PROJECT_REF,
   }), true)
-  assert.deepEqual(authorizeDrainRequest({
+  assert.equal(await timingSafeEqualText(DISPATCH_TOKEN, DISPATCH_TOKEN), true)
+  assert.equal(await timingSafeEqualText(DISPATCH_TOKEN, 'wrong-dispatch-token-same-size'), false)
+  assert.deepEqual(await authorizeDrainRequest({
     body: { action: 'drain_outbox', batchSize: 10 },
-    callerJWT: serviceRoleKey,
-    apiKey: serviceRoleKey,
-    serviceRoleKey,
+    callerJWT: serviceRoleJwt,
+    apiKey: serviceRoleJwt,
+    dispatchToken: DISPATCH_TOKEN,
+    expectedDispatchToken: DISPATCH_TOKEN,
+    expectedProjectRef: EXPECTED_PROJECT_REF,
   }), {
     isDrain: true,
     allowed: true,
     status: 200,
     code: null,
   })
-  assert.match(edge, /const drainAuthorization = authorizeDrainRequest/)
+  assert.match(edge, /const drainAuthorization = await authorizeDrainRequest/)
+  assert.match(supabaseConfig, /\[functions\.zatca-submit\][\s\S]*verify_jwt = true/)
+  assert.match(edge, /ZATCA_OUTBOX_DISPATCH_TOKEN/)
+  assert.match(edge, /x-zatca-dispatch-token/)
+  assert.doesNotMatch(edge, /callerJWT === serviceRoleKey|apiKey === serviceRoleKey/)
+  assert.match(drainAuthSource, /crypto\.subtle\.digest\('SHA-256'/)
+  assert.match(drainAuthSource, /mismatch \|=/)
+  assert.doesNotMatch(drainAuthSource, /serviceRoleKey|SUPABASE_SERVICE_ROLE_KEY/)
   assert.match(cron, /'Authorization', 'Bearer ' \|\|/)
   assert.match(cron, /'apikey', \(/)
+  assert.match(cron, /'X-Zatca-Dispatch-Token', \(/)
+  assert.match(cron, /zatca_outbox_dispatch_token/)
   assert.doesNotMatch(cron, /RAISE NOTICE|RAISE LOG|SELECT\s+decrypted_secret\s*;/i)
 })
 
-test('drain scope is fixed globally and batch size is clamped', () => {
-  const serviceRoleKey = jwt('service_role')
+test('wrong project-ref service-role JWT is forbidden', async () => {
+  const wrongProjectJwt = jwt('service_role', 'wrong-project-ref')
+  assert.equal((await authorizeDrainRequest({
+    body: { action: 'drain_outbox' },
+    callerJWT: wrongProjectJwt,
+    apiKey: wrongProjectJwt,
+    dispatchToken: DISPATCH_TOKEN,
+    expectedDispatchToken: DISPATCH_TOKEN,
+    expectedProjectRef: EXPECTED_PROJECT_REF,
+  })).status, 403)
+})
+
+test('drain scope is fixed globally and batch size is clamped', async () => {
+  const serviceRoleJwt = jwt('service_role')
   assert.equal(REPORTING_MAX_BATCH_SIZE, 10)
   assert.equal(clampReportingBatchSize(0), 1)
   assert.equal(clampReportingBatchSize(7), 7)
@@ -206,12 +271,14 @@ test('drain scope is fixed globally and batch size is clamped', () => {
     { action: 'drain_outbox', invoiceId: 'invoice' },
   ]) {
     assert.equal(isStrictDrainBody(scoped), false)
-    assert.equal(authorizeDrainRequest({
+    assert.equal((await authorizeDrainRequest({
       body: scoped,
-      callerJWT: serviceRoleKey,
-      apiKey: serviceRoleKey,
-      serviceRoleKey,
-    }).status, 400)
+      callerJWT: serviceRoleJwt,
+      apiKey: serviceRoleJwt,
+      dispatchToken: DISPATCH_TOKEN,
+      expectedDispatchToken: DISPATCH_TOKEN,
+      expectedProjectRef: EXPECTED_PROJECT_REF,
+    })).status, 400)
   }
   assert.match(edge, /DRAIN_SCOPE_NOT_ALLOWED/)
 })
@@ -224,6 +291,15 @@ test('internal response is aggregate-only and post-fetch uses outbox persistence
   assert.match(internalRoute, /summary/)
   assert.doesNotMatch(internalRoute, /results,\s*\n/)
   assert.doesNotMatch(internalRoute, /zatca_simplified_xml|productionSecret|privateKey|safe_response/)
+  const aggregateResponse = internalRoute.match(
+    /return jsonResponse\(\{\n\s+ok: true,[\s\S]*?\n\s+\}\)/,
+  )?.[0] ?? ''
+  assert.ok(aggregateResponse)
+  assert.doesNotMatch(aggregateResponse, /dispatchToken|outboxDispatchToken|callerJWT|apiKey/)
+  assert.doesNotMatch(
+    edge,
+    /console\.(?:log|info|warn|error)\([^\n]*(?:dispatchToken|outboxDispatchToken|ZATCA_OUTBOX_DISPATCH_TOKEN)/,
+  )
 
   const postFetch = edge.slice(
     edge.indexOf('const response = await fetch', edge.indexOf('async function processReportingOutboxV2')),
@@ -253,5 +329,6 @@ test('classified persistence cannot mutate immutable artifact identity', () => {
   ]) assert.doesNotMatch(outcomePersistence, new RegExp(immutableWrite))
 })
 
+await Promise.all(pendingTests)
 console.log(`ZATCA outbox security/retry: ${tests.length} deterministic checks passed`)
 for (const name of tests) console.log(`PASS ${name}`)

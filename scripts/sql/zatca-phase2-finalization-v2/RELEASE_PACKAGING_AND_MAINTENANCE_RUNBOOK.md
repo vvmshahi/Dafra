@@ -10,11 +10,16 @@ table/functions, then separately review
 `operator/install_reporting_outbox_dispatch.sql`. The dispatch installer
 requires reviewed Vault secrets and installs the recurring server-side
 consumer; it is never run by this repository audit. Verify that the cron sends
-the same Vault service-role JWT in both `Authorization` and `apikey`, and that
-anon plus every ordinary authenticated role receives `403` for
-`action=drain_outbox`. The maximum batch is ten. The retry ceiling is four
-transient attempts with 60, 120, and 240 second backoffs; deterministic
-rejections and ambiguous outcomes must remain blocked.
+the same gateway-accepted legacy service-role JWT in both `Authorization` and
+`apikey`, plus Vault `zatca_outbox_dispatch_token` in
+`X-Zatca-Dispatch-Token`. Edge must use the matching
+`ZATCA_OUTBOX_DISPATCH_TOKEN`, require project ref
+`bkbphkpqcxuejozayrsy`, and must not compare the legacy JWT with runtime
+`SUPABASE_SERVICE_ROLE_KEY`. Anon, ordinary authenticated roles, missing
+headers, incorrect dispatcher tokens, and wrong-project service JWTs must
+receive `403`. The maximum batch is ten. The retry ceiling is four transient
+attempts with 60, 120, and 240 second backoffs; deterministic rejections and
+ambiguous outcomes must remain blocked.
 
 ## 1. Completion classification
 

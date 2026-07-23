@@ -1,26 +1,60 @@
-export function jwtRole(token) {
+export function jwtClaims(token) {
   const parts = typeof token === 'string' ? token.split('.') : []
   if (parts.length !== 3) return null
   try {
     const encoded = parts[1].replace(/-/g, '+').replace(/_/g, '/')
     const padded = encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '=')
     const payload = JSON.parse(atob(padded))
-    return typeof payload?.role === 'string' ? payload.role : null
+    return {
+      role: typeof payload?.role === 'string' ? payload.role : null,
+      ref: typeof payload?.ref === 'string' ? payload.ref : null,
+    }
   } catch {
     return null
   }
 }
 
-export function hasServiceRoleDrainCredentials({
+export async function timingSafeEqualText(left, right) {
+  if (typeof left !== 'string' || typeof right !== 'string') return false
+  const encoder = new TextEncoder()
+  const leftEncoded = encoder.encode(left)
+  const rightEncoded = encoder.encode(right)
+  const [leftDigest, rightDigest] = await Promise.all([
+    crypto.subtle.digest('SHA-256', leftEncoded),
+    crypto.subtle.digest('SHA-256', rightEncoded),
+  ])
+  const leftBytes = new Uint8Array(leftDigest)
+  const rightBytes = new Uint8Array(rightDigest)
+  let mismatch = leftEncoded.length ^ rightEncoded.length
+  for (let index = 0; index < leftBytes.length; index += 1) {
+    mismatch |= leftBytes[index] ^ rightBytes[index]
+  }
+  return mismatch === 0
+}
+
+export async function hasServiceRoleDrainCredentials({
   callerJWT,
   apiKey,
-  serviceRoleKey,
+  dispatchToken,
+  expectedDispatchToken,
+  expectedProjectRef,
 }) {
-  return typeof serviceRoleKey === 'string'
-    && serviceRoleKey.length > 0
-    && callerJWT === serviceRoleKey
-    && apiKey === serviceRoleKey
-    && jwtRole(callerJWT) === 'service_role'
+  if (
+    typeof callerJWT !== 'string' || !callerJWT
+    || typeof apiKey !== 'string' || !apiKey
+    || typeof dispatchToken !== 'string' || !dispatchToken
+    || typeof expectedDispatchToken !== 'string' || !expectedDispatchToken
+    || typeof expectedProjectRef !== 'string' || !expectedProjectRef
+  ) return false
+
+  const claims = jwtClaims(callerJWT)
+  if (claims?.role !== 'service_role' || claims.ref !== expectedProjectRef) return false
+
+  const [matchingGatewayJwt, matchingDispatchToken] = await Promise.all([
+    timingSafeEqualText(callerJWT, apiKey),
+    timingSafeEqualText(dispatchToken, expectedDispatchToken),
+  ])
+  return matchingGatewayJwt && matchingDispatchToken
 }
 
 export function isStrictDrainBody(body) {
@@ -30,16 +64,24 @@ export function isStrictDrainBody(body) {
     && Object.keys(body).every(key => allowed.has(key))
 }
 
-export function authorizeDrainRequest({
+export async function authorizeDrainRequest({
   body,
   callerJWT,
   apiKey,
-  serviceRoleKey,
+  dispatchToken,
+  expectedDispatchToken,
+  expectedProjectRef,
 }) {
   if (body?.action !== 'drain_outbox') {
     return { isDrain: false, allowed: false, status: null, code: null }
   }
-  if (!hasServiceRoleDrainCredentials({ callerJWT, apiKey, serviceRoleKey })) {
+  if (!await hasServiceRoleDrainCredentials({
+    callerJWT,
+    apiKey,
+    dispatchToken,
+    expectedDispatchToken,
+    expectedProjectRef,
+  })) {
     return {
       isDrain: true,
       allowed: false,
