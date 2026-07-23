@@ -385,7 +385,7 @@ export default function InvoiceDetailPage() {
 
   // Auto-print when ?print=1 is in the URL
   useEffect(() => {
-    if (!autoPrint || autoPrintRef.current || loading || !invoice || !branch || !printReady || qrStatus === 'loading') return
+    if (!autoPrint || autoPrintRef.current || loading || !invoice || !branch || !printReady) return
     autoPrintRef.current = true
     const t = setTimeout(() => {
       if (isElectron()) {
@@ -395,7 +395,7 @@ export default function InvoiceDetailPage() {
       }
     }, 500)
     return () => clearTimeout(t)
-  }, [autoPrint, loading, invoice, branch, printReady, qrStatus])
+  }, [autoPrint, loading, invoice, branch, printReady])
 
   // ── Actions ────────────────────────────────────────────────────────────────
 

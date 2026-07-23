@@ -20,5 +20,8 @@ assert.match(fixture, /قهوة إثيوبية/); assert.match(fixture, /sample-
 assert.match(invoiceDetail, /selectStoredOutputStateQr/); assert.match(invoiceDetail, /renderStoredQrDataUrl/)
 assert.match(invoiceDetail, /async function handlePrintA4\(\)[\s\S]*?window\.print\(\)/)
 assert.match(invoiceDetail, /disabled=\{!printReady\}/); assert.match(invoiceDetail, /qrUnavailable/)
+const invoiceAutoPrint = invoiceDetail.slice(invoiceDetail.indexOf('// Auto-print when ?print=1'), invoiceDetail.indexOf('// ── Actions'))
+assert.match(invoiceAutoPrint, /window\.print\(\)/)
+assert.doesNotMatch(invoiceAutoPrint, /qrStatus|qrDataUrl|QR_(?:RENDER|DISPLAY)_TIMEOUT/)
 assert.doesNotMatch(invoiceDetail, /if \(!outputReady\) return/)
 console.log('Phase 4F A4 template contract assertions passed (three templates, invoice/credit note, snapshots, pagination CSS, RTL/bilingual fixture, logo/QR and deterministic fallback contracts).')

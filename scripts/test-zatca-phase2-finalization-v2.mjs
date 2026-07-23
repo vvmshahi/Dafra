@@ -432,12 +432,36 @@ await test('stored output-state QR contract supports legacy and v2 invoice reads
 })
 await test('stored QR rendering succeeds, fails closed, and has a bounded wait', async () => {
   let renderedPayload = null
-  const ready = await renderStoredQrDataUrl('FINAL-STORED-QR', async payload => {
-    renderedPayload = payload
-    return 'data:image/png;base64,stored'
-  })
-  assert.equal(renderedPayload, 'FINAL-STORED-QR')
-  assert.deepEqual(ready, { status: 'ready', dataUrl: 'data:image/png;base64,stored' })
+  const nativeSetTimeout = globalThis.setTimeout
+  const nativeClearTimeout = globalThis.clearTimeout
+  let fallbackTimerCleared = false
+  let fallbackTimerDelay = null
+  try {
+    globalThis.setTimeout = (_callback, delay) => {
+      fallbackTimerDelay = delay
+      return 12345
+    }
+    globalThis.clearTimeout = timer => {
+      if (timer === 12345) fallbackTimerCleared = true
+    }
+    const ready = await Promise.race([
+      renderStoredQrDataUrl('FINAL-STORED-QR', async payload => {
+        renderedPayload = payload
+        return 'data:image/png;base64,stored'
+      }),
+      new Promise((_, reject) => nativeSetTimeout(
+        () => reject(new Error('Valid stored QR waited for the fallback timeout.')),
+        100,
+      )),
+    ])
+    assert.equal(renderedPayload, 'FINAL-STORED-QR')
+    assert.deepEqual(ready, { status: 'ready', dataUrl: 'data:image/png;base64,stored' })
+  } finally {
+    globalThis.setTimeout = nativeSetTimeout
+    globalThis.clearTimeout = nativeClearTimeout
+  }
+  assert.equal(fallbackTimerDelay, 5_000)
+  assert.equal(fallbackTimerCleared, true)
 
   let missingRendererCalled = false
   const missing = await renderStoredQrDataUrl(null, async () => {
@@ -462,7 +486,22 @@ await test('thermal and A4 printing are independent from QR image success', () =
   assert.match(invoiceDetail, /disabled=\{thermalPrinting \|\| !printReady\}/)
   assert.match(invoiceDetail, /disabled=\{!printReady\}/)
   assert.match(receiptPrint, /function handlePrint\(\)[\s\S]*?window\.print\(\)/)
-  assert.match(receiptPrint, /qrStatus === 'loading'/)
+  const invoiceAutoPrint = invoiceDetail.slice(
+    invoiceDetail.indexOf('// Auto-print when ?print=1'),
+    invoiceDetail.indexOf('// ── Actions'),
+  )
+  const receiptAutoPrint = receiptPrint.slice(
+    receiptPrint.indexOf("if (!autoPrint || electronPrint"),
+    receiptPrint.indexOf('const receipt = useMemo'),
+  )
+  const electronReceiptReady = receiptPrint.slice(
+    receiptPrint.indexOf("if (!electronPrint || electronReadyRef.current || loading"),
+    receiptPrint.indexOf("if (!electronPrint || electronReadyRef.current || !error"),
+  )
+  for (const printReadiness of [invoiceAutoPrint, receiptAutoPrint, electronReceiptReady]) {
+    assert.match(printReadiness, /printReady/)
+    assert.doesNotMatch(printReadiness, /qrStatus|qrDataUrl|QR_(?:RENDER|DISPLAY)_TIMEOUT/)
+  }
   for (const page of [invoiceDetail, receiptPrint]) {
     assert.match(page, /QR_DISPLAY_TIMEOUT_MS/)
     assert.match(page, /current === 'loading' \? 'failed' : current/)

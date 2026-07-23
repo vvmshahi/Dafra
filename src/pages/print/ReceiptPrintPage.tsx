@@ -361,13 +361,13 @@ export default function ReceiptPrintPage() {
   }, [invoice, branch, tenant, sandboxValidation?.invoiceId, selectedQrPayload, outputStateMatchesInvoice])
 
   useEffect(() => {
-    if (!autoPrint || electronPrint || printedRef.current || loading || error || !invoice || !branch || !printReady || qrStatus === 'loading') return
+    if (!autoPrint || electronPrint || printedRef.current || loading || error || !invoice || !branch || !printReady) return
     printedRef.current = true
     const timer = window.setTimeout(() => {
       window.print()
     }, 350)
     return () => window.clearTimeout(timer)
-  }, [autoPrint, electronPrint, loading, error, invoice, branch, printReady, qrStatus])
+  }, [autoPrint, electronPrint, loading, error, invoice, branch, printReady])
 
   const receipt = useMemo(() => {
     if (!invoice || !branch || !tenant) return null
@@ -448,13 +448,13 @@ export default function ReceiptPrintPage() {
   }, [invoice, branch, tenant, items, payments, customer])
 
   useEffect(() => {
-    if (!electronPrint || electronReadyRef.current || loading || error || !invoice || !branch || !tenant || !receipt || !printReady || qrStatus === 'loading') return
+    if (!electronPrint || electronReadyRef.current || loading || error || !invoice || !branch || !tenant || !receipt || !printReady) return
     electronReadyRef.current = true
     window.electronAPI?.receiptReady?.({
       invoiceId: invoice.id,
       jobId: printJobId,
     })
-  }, [electronPrint, loading, error, invoice, branch, tenant, receipt, printReady, qrStatus, printJobId])
+  }, [electronPrint, loading, error, invoice, branch, tenant, receipt, printReady, printJobId])
 
   useEffect(() => {
     if (!electronPrint || electronReadyRef.current || !error || !invoiceId) return
