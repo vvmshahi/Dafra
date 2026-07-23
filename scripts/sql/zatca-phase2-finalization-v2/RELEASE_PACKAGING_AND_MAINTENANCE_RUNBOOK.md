@@ -4,6 +4,18 @@ Status: prepared, not executed. This package installs disabled infrastructure
 only. It does not authorize a hosted SQL change, Edge deployment, frontend
 promotion, feature enablement, commit, push, or merge.
 
+Durable simplified reporting is installed as the additive post-v2 step:
+`operator/run_sql_step.sh 11`. Keep every feature flag false, verify the new
+table/functions, then separately review
+`operator/install_reporting_outbox_dispatch.sql`. The dispatch installer
+requires reviewed Vault secrets and installs the recurring server-side
+consumer; it is never run by this repository audit. Verify that the cron sends
+the same Vault service-role JWT in both `Authorization` and `apikey`, and that
+anon plus every ordinary authenticated role receives `403` for
+`action=drain_outbox`. The maximum batch is ten. The retry ceiling is four
+transient attempts with 60, 120, and 240 second backoffs; deterministic
+rejections and ambiguous outcomes must remain blocked.
+
 ## 1. Completion classification
 
 **A. Release package and maintenance runbook are ready.**

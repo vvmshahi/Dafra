@@ -265,6 +265,37 @@ export async function getInvoiceZatcaOutputState(params: {
   }
 }
 
+export async function retryStoredSimplifiedArtifact(params: {
+  invoiceId: string
+  branchId: string
+  source?: 'manual_retry' | 'bulk_retry'
+}): Promise<ZatcaSubmitResult> {
+  const { data, error } = await supabase.functions.invoke('zatca-submit', {
+    body: {
+      invoiceId: params.invoiceId,
+      branchId: params.branchId,
+      source: params.source ?? 'manual_retry',
+      action: 'retry',
+      clientVersion: ZATCA_FINALIZATION_CLIENT_VERSION,
+    },
+  })
+  if (error) throw new Error(error.message)
+  const invoiceStatus = String(data?.invoiceStatus ?? 'pending')
+  return {
+    ok: invoiceStatus === 'reported',
+    invoiceStatus,
+    retryable: data?.retryAvailable === true,
+    contractMode: 'v2',
+    legacyCompatible: false,
+    finalizationStatus: String(data?.finalizationStatus ?? 'locally_finalized'),
+    artifactStage: String(data?.artifactStage ?? 'simplified_final'),
+    documentKind: data?.documentKind === 'simplified' ? 'simplified' : null,
+    canPrint: data?.canPrint === true,
+    canShare: data?.canShare === true,
+    qrCode: data?.canPrint === true && typeof data?.qrCode === 'string' ? data.qrCode : null,
+  }
+}
+
 export async function submitInvoiceForBranch(params: {
   invoiceId: string
   tenantId: string
@@ -286,6 +317,16 @@ export async function submitInvoiceToZatcaDetailed(
   options: ZatcaSubmitOptions = {},
 ): Promise<ZatcaSubmitResult> {
   const source = options.source ?? 'manual_retry'
+  if (!options.contractMode && (source === 'manual_retry' || source === 'bulk_retry')) {
+    const output = await getInvoiceZatcaOutputState({ invoiceId, branchId })
+    if (
+      output.contractMode === 'v2'
+      && output.documentKind === 'simplified'
+      && output.artifactStage === 'simplified_final'
+    ) {
+      return retryStoredSimplifiedArtifact({ invoiceId, branchId, source })
+    }
+  }
   const contractMode = options.contractMode
     ?? (await requireZatcaFinalizationCapability(branchId)).checkoutMode
   const { data, error } = await supabase.functions.invoke('zatca-submit', {
@@ -333,7 +374,15 @@ export async function submitInvoiceToZatcaWithRetry(
 ): Promise<ZatcaSubmitResult> {
   try {
     const first = await submitInvoiceToZatcaDetailed(invoiceId, branchId, options)
-    if (first.ok || !first.retryable) return first
+    if (
+      first.ok
+      || !first.retryable
+      || (
+        first.contractMode === 'v2'
+        && first.documentKind === 'simplified'
+        && first.artifactStage === 'simplified_final'
+      )
+    ) return first
   } catch (error) {
     console.warn('[zatca submission] first attempt failed', {
       invoiceId,

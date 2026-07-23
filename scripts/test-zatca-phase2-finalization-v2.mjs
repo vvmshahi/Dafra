@@ -18,7 +18,8 @@ const files = [
   '04a_safe_invoice_read_surface.sql',
   '05_capabilities_and_status.sql', '06_verification.sql',
   '07_rollback_plan.md', '09_branch_readiness_gate.sql',
-  '10_branch_readiness_verification.sql', 'CONTRACT.md',
+  '10_branch_readiness_verification.sql',
+  '11_durable_simplified_reporting_outbox.sql', 'CONTRACT.md',
 ]
 const source = Object.fromEntries(files.map(name => [name, readFileSync(join(pkg, name), 'utf8')]))
 const edge = readFileSync(join(root, 'supabase/functions/zatca-submit/index.ts'), 'utf8')
@@ -533,7 +534,7 @@ await test('thermal and A4 printing require the finalized rendered QR', () => {
     invoiceDetail.indexOf('// ── Actions'),
   )
   const receiptAutoPrint = receiptPrint.slice(
-    receiptPrint.indexOf("if (!autoPrint || electronPrint"),
+    receiptPrint.indexOf("if (!autoPrint || embeddedPrint || electronPrint"),
     receiptPrint.indexOf('const receipt = useMemo'),
   )
   const electronReceiptReady = receiptPrint.slice(
@@ -557,8 +558,8 @@ await test('thermal and A4 printing require the finalized rendered QR', () => {
   assert.doesNotMatch(receiptPrint, /outputReady/)
 })
 await test('package shape and protected scope', () => {
-  assert.equal(files.length, 12)
-  const mutating = ['01_artifact_lifecycle.sql', '02_chain_allocator.sql', '03_claims_and_idempotency.sql', '04_lock_compliance_fields.sql', '04a_safe_invoice_read_surface.sql', '05_capabilities_and_status.sql', '09_branch_readiness_gate.sql'].map(name => source[name]).join('\n')
+  assert.equal(files.length, 13)
+  const mutating = ['01_artifact_lifecycle.sql', '02_chain_allocator.sql', '03_claims_and_idempotency.sql', '04_lock_compliance_fields.sql', '04a_safe_invoice_read_surface.sql', '05_capabilities_and_status.sql', '09_branch_readiness_gate.sql', '11_durable_simplified_reporting_outbox.sql'].map(name => source[name]).join('\n')
   assert.doesNotMatch(mutating, /storage\.|phase6a|snapshot_invoice_document_language\s*\(/i)
   assert.doesNotMatch(mutating, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.pos_checkout/i)
   assert.match(oldMarker, /Do not execute/i)

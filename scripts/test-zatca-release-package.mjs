@@ -21,7 +21,7 @@ for (const script of [
   assert.equal(checked.status, 0, `${script}: ${checked.stderr}`)
 }
 
-for (const step of ['00', '01', '02', '03', '04', '04a', '05', '06', '09', '10']) {
+for (const step of ['00', '01', '02', '03', '04', '04a', '05', '06', '09', '10', '11']) {
   assert.match(stepScript, new RegExp(`\\b${step.replace('04a', '04a')}\\)`))
   assert.match(runbook, new RegExp(`run_sql_step\\.sh ${step}\\b`))
 }
@@ -49,7 +49,9 @@ assert.match(verifier, /v_total <> 59/)
 assert.match(verifier, /v_pass <> 54/)
 assert.match(verifier, /v_review <> 5/)
 assert.match(verifier, /v_fail <> 0/)
-assert.match(branchVerifier, /BEGIN TRANSACTION READ ONLY/)
+assert.match(branchVerifier, /^BEGIN;$/m)
+assert.match(branchVerifier, /CREATE TEMP TABLE/)
+assert.match(branchVerifier, /ROLLBACK;/)
 assert.match(branchVerifier, /v_total <> 15/)
 assert.match(branchVerifier, /v_pass <> 15/)
 assert.match(branchVerifier, /v_fail <> 0/)

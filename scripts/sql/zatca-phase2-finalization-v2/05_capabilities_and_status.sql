@@ -201,8 +201,15 @@ BEGIN
     'artifactStage', v_invoice.zatca_artifact_stage,
     'documentKind', v_invoice.zatca_document_kind,
     'canPrint', v_can_output, 'canShare', v_can_output,
-    'retryAvailable', v_invoice.zatca_lifecycle_state IN (
-      'not_started', 'finalization_failed', 'reporting_failed', 'clearance_failed', 'retrying'
+    'retryAvailable', (
+      v_invoice.zatca_lifecycle_state IN (
+        'not_started', 'finalization_failed', 'reporting_failed', 'clearance_failed', 'retrying'
+      )
+      OR (
+        v_invoice.zatca_document_kind = 'simplified'
+        AND v_invoice.zatca_artifact_stage = 'simplified_final'
+        AND v_invoice.zatca_lifecycle_state IN ('locally_finalized', 'reporting_pending')
+      )
     ),
     'reconciliationRequired', v_invoice.zatca_lifecycle_state = 'reconciliation_required',
     'qrCode', CASE WHEN v_can_output THEN v_qr ELSE NULL END,

@@ -20,6 +20,7 @@ import {
   getInvoiceZatcaOutputState,
   isPermanentDemoSandboxBranch,
   requireZatcaFinalizationCapability,
+  retryStoredSimplifiedArtifact,
   submitInvoiceForBranch,
   type ZatcaCheckoutMode,
 } from '@/lib/zatca/submission'
@@ -2232,50 +2233,6 @@ export default function POSPage() {
         })
       }
 
-      // The loaded branch row is the authoritative checkout scope. Using it here
-      // avoids routing differences while an auth profile is being rehydrated.
-      const demoSandboxValidation = isPermanentDemoSandboxBranch(branch.tenant_id, branch.id)
-      if (!preOutputSubmission && !finalizationError) submitInvoiceForBranch({
-        invoiceId: checkout.invoice_id,
-        tenantId: branch.tenant_id,
-        branchId: branch.id,
-        options: { source: 'auto_checkout', retryDelayMs: 1500 },
-      })
-        .then((routed) => {
-          if (routed.mode === 'sandbox_validation') {
-            const validated = routed.result.status === 'sandbox_validated' ||
-              routed.result.status === 'sandbox_validated_with_warnings'
-            updateCachedInvoiceRows(branch.tenant_id, branch.id, cachedRows => cachedRows.map(row => row.id === checkout.invoice_id
-              ? { ...row, displayZatcaStatus: routed.result.status }
-              : row))
-            if (routed.result.status === 'sandbox_validated_with_warnings') {
-              toast.warning(t('pos:zatca.warning'), { duration: 5000 })
-            } else if (validated) {
-              toast.success(t('pos:zatca.success'), { duration: 2500 })
-            } else if (routed.result.status === 'sandbox_validation_rejected' || routed.result.status === 'sandbox_validation_failed') {
-              toast.error(t('pos:zatca.failed'), { duration: Infinity, action: { label: t('pos:zatca.viewInvoice'), onClick: () => navigate(`/invoices/${checkout.invoice_id}`) } })
-            }
-            return
-          }
-          const result = routed.result
-          updateCachedInvoiceRows(branch.tenant_id, branch.id, cachedRows => cachedRows.map(row => row.id === checkout.invoice_id
-            ? { ...row, zatcaStatus: result.invoiceStatus, displayZatcaStatus: result.invoiceStatus }
-            : row))
-          if (result.ok) {
-            toast.success(t('pos:zatca.success'), { duration: 2500 })
-          } else if (result.invoiceStatus === 'failed') {
-            toast.error(t('pos:zatca.failed'), { duration: Infinity, action: { label: t('pos:zatca.viewInvoice'), onClick: () => navigate(`/invoices/${checkout.invoice_id}`) } })
-          }
-        })
-        .catch((error) => {
-          console.warn('[POSPage charge] automatic ZATCA action remains pending', {
-            invoiceId: checkout.invoice_id,
-            branchId: branch.id,
-            mode: demoSandboxValidation ? 'sandbox_validation' : 'production_submission',
-            message: error instanceof Error ? error.message : String(error ?? ''),
-          })
-        })
-
       if (preOutputSubmission) {
         if (preOutputSubmission.mode === 'sandbox_validation') {
           const sandboxResult = preOutputSubmission.result
@@ -2411,39 +2368,55 @@ export default function POSPage() {
   async function retryReceiptFinalization() {
     if (!receipt || !branch) return
     try {
-      const capability = await requireZatcaFinalizationCapability(branch.id)
-      if (capability.checkoutMode === 'legacy') {
-        const routed = await submitInvoiceForBranch({
+      const currentOutput = await getInvoiceZatcaOutputState({
+        invoiceId: receipt.invoiceId,
+        branchId: branch.id,
+      })
+      if (
+        currentOutput.contractMode === 'v2'
+        && currentOutput.documentKind === 'simplified'
+        && currentOutput.artifactStage === 'simplified_final'
+      ) {
+        await retryStoredSimplifiedArtifact({
           invoiceId: receipt.invoiceId,
-          tenantId: branch.tenant_id,
           branchId: branch.id,
-          options: {
-            source: 'manual_retry',
-            retryDelayMs: 1500,
-            contractMode: 'legacy',
-          },
+          source: 'manual_retry',
         })
-        if (routed.mode !== 'production_submission' || !routed.result.ok) {
-          throw new Error('Legacy ZATCA submission is still pending.')
-        }
       } else {
-        const finalized = await finalizeInvoiceForZatca({
-          invoiceId: receipt.invoiceId,
-          branchId: branch.id,
-          options: { source: 'manual_retry' },
-        })
-        if (!finalized.ok) throw new Error(finalized.error ?? 'Invoice finalization is still pending.')
-        if (finalized.documentKind === 'standard') {
-          await submitInvoiceForBranch({
+        const capability = await requireZatcaFinalizationCapability(branch.id)
+        if (capability.checkoutMode === 'legacy') {
+          const routed = await submitInvoiceForBranch({
             invoiceId: receipt.invoiceId,
             tenantId: branch.tenant_id,
             branchId: branch.id,
             options: {
               source: 'manual_retry',
               retryDelayMs: 1500,
-              contractMode: 'v2',
+              contractMode: 'legacy',
             },
           })
+          if (routed.mode !== 'production_submission' || !routed.result.ok) {
+            throw new Error('Legacy ZATCA submission is still pending.')
+          }
+        } else {
+          const finalized = await finalizeInvoiceForZatca({
+            invoiceId: receipt.invoiceId,
+            branchId: branch.id,
+            options: { source: 'manual_retry' },
+          })
+          if (!finalized.ok) throw new Error(finalized.error ?? 'Invoice finalization is still pending.')
+          if (finalized.documentKind === 'standard') {
+            await submitInvoiceForBranch({
+              invoiceId: receipt.invoiceId,
+              tenantId: branch.tenant_id,
+              branchId: branch.id,
+              options: {
+                source: 'manual_retry',
+                retryDelayMs: 1500,
+                contractMode: 'v2',
+              },
+            })
+          }
         }
       }
       const output = await getInvoiceZatcaOutputState({ invoiceId: receipt.invoiceId, branchId: branch.id })

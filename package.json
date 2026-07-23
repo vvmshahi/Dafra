@@ -46,6 +46,8 @@
     "test:zatca-release-package": "node scripts/test-zatca-release-package.mjs",
     "test:zatca-phase2-qr": "node scripts/test-zatca-phase2-qr.mjs",
     "test:zatca-invoice-read-surface": "node scripts/test-zatca-invoice-read-surface.mjs",
+    "test:zatca-durable-reporting-recovery": "node scripts/test-zatca-durable-reporting-recovery.mjs",
+    "test:zatca-outbox-security": "node scripts/test-zatca-outbox-security.mjs",
     "test:dashboard-product-schema-compat": "node scripts/test-dashboard-product-schema-compat.mjs"
   },
   "build": {

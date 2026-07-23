@@ -19,6 +19,7 @@ import {
   type QrDisplayStatus,
 } from '@/lib/zatca/qrDisplay.mjs'
 import { getInvoiceZatcaOutputState, isPermanentDemoSandboxBranch, type ZatcaOutputState } from '@/lib/zatca/submission'
+import { RECEIPT_FRAME_FAILED, RECEIPT_FRAME_READY } from '@/lib/receiptPrint'
 import { toSaudiTime } from '@/lib/utils/date'
 import type { Branch, Invoice, InvoiceItem, Payment } from '@/types/database'
 import { documentDate, resolveCreditNoteDocumentLanguage, resolveInvoiceDocumentLanguage } from '@/localization/documents'
@@ -181,6 +182,7 @@ export default function ReceiptPrintPage() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const autoPrint = params.get('auto') === '1'
+  const embeddedPrint = params.get('embedded') === '1'
   const electronPrint = params.get('electronPrint') === '1'
   const printJobId = params.get('printJobId')
   const receiptProfile = useMemo(
@@ -363,13 +365,50 @@ export default function ReceiptPrintPage() {
   }, [invoice, branch, tenant, sandboxValidation?.invoiceId, selectedQrPayload, outputStateMatchesInvoice])
 
   useEffect(() => {
-    if (!autoPrint || electronPrint || printedRef.current || loading || error || !invoice || !branch || !printReady) return
+    if (!autoPrint || embeddedPrint || electronPrint || printedRef.current || loading || error || !invoice || !branch || !printReady) return
     printedRef.current = true
     const timer = window.setTimeout(() => {
       window.print()
     }, 350)
     return () => window.clearTimeout(timer)
-  }, [autoPrint, electronPrint, loading, error, invoice, branch, printReady])
+  }, [autoPrint, embeddedPrint, electronPrint, loading, error, invoice, branch, printReady])
+
+  useEffect(() => {
+    if (!embeddedPrint || loading || !invoiceId) return
+    if (error) {
+      window.parent.postMessage({
+        type: RECEIPT_FRAME_FAILED,
+        invoiceId,
+        error,
+      }, window.location.origin)
+      return
+    }
+    if (invoice && branch && tenant && printReady) {
+      window.parent.postMessage({
+        type: RECEIPT_FRAME_READY,
+        invoiceId,
+      }, window.location.origin)
+      return
+    }
+    if (qrStatus === 'missing' || qrStatus === 'failed') {
+      window.parent.postMessage({
+        type: RECEIPT_FRAME_FAILED,
+        invoiceId,
+        error: t('printing:qrUnavailable'),
+      }, window.location.origin)
+    }
+  }, [
+    embeddedPrint,
+    loading,
+    error,
+    invoiceId,
+    invoice,
+    branch,
+    tenant,
+    printReady,
+    qrStatus,
+    t,
+  ])
 
   const receipt = useMemo(() => {
     if (!invoice || !branch || !tenant) return null

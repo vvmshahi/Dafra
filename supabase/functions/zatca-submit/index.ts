@@ -21,6 +21,14 @@ import { extractEcPrivateKeyScalar, signZatcaInvoiceHash } from '../_shared/zatc
 import { buildZatcaPhase2Qr } from '../_shared/zatca/phase2_qr.mjs'
 import { parseZatcaClearedInvoice } from '../_shared/zatca/cleared_artifact.mjs'
 import { selectZatcaBranchCheckoutMode } from '../_shared/zatca/branch_readiness.mjs'
+import {
+  REPORTING_OUTCOMES,
+  clampReportingBatchSize,
+  classifyReportingHttpOutcome,
+} from '../_shared/zatca/reporting_outcome.mjs'
+import {
+  authorizeDrainRequest,
+} from '../_shared/zatca/internal_drain_auth.mjs'
 import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -43,6 +51,23 @@ const FINALIZATION_SCHEMA_VERSION = 2
 const FINALIZATION_EDGE_VERSION = '2.1.0'
 const FINALIZATION_CLIENT_VERSION = '2.1.0'
 const OUTPUT_STATE_READ_CLIENT_VERSIONS = new Set(['2.0.0', FINALIZATION_CLIENT_VERSION])
+const RECOVERY_BRANCH_ID = '371dee75-6e46-496e-89e7-1a7492b51a3c'
+const IMMUTABLE_RECOVERY_TARGETS = Object.freeze([
+  {
+    invoiceId: '0121e5c8-14bf-45ec-bf29-3b0466a18bab',
+    invoiceNumber: 'INV-0826',
+    counterNumber: 865,
+    previousHash: 't3CZaYvRmwniI6rCyL+OfITTxHJQ5BdA1CjvdgVN1cY=',
+    artifactHash: 'Fcs7MaZh3flIRjoAtZUW3nd3mS1PqqOxsIlJMkhAu48=',
+  },
+  {
+    invoiceId: '3ae21515-0807-463e-919d-19f40eb5b406',
+    invoiceNumber: 'INV-0827',
+    counterNumber: 866,
+    previousHash: 'Fcs7MaZh3flIRjoAtZUW3nd3mS1PqqOxsIlJMkhAu48=',
+    artifactHash: '1sjvDue9saSjyaN4Dh0RfVwgYt3J75zSHOxdd3wmjvY=',
+  },
+])
 
 interface SubmissionCredentials {
   environment: 'sandbox' | 'production'
@@ -117,7 +142,13 @@ interface AuthorizedTarget {
 const TENANT_SUBMIT_ROLES = new Set(['owner', 'admin'])
 const AUTO_SUBMIT_SOURCES = new Set(['auto_checkout', 'auto_credit_note'])
 const SUBMIT_SOURCES = new Set(['auto_checkout', 'auto_credit_note', 'manual_retry', 'bulk_retry'])
-type SubmitAction = 'submit' | 'finalize' | 'status' | 'capabilities'
+type SubmitAction =
+  | 'submit'
+  | 'finalize'
+  | 'status'
+  | 'capabilities'
+  | 'retry'
+  | 'recover_immutable_pair'
 
 function jsonResponse(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -171,7 +202,13 @@ function normalizeSubmitSource(value: unknown): string {
 
 function normalizeSubmitAction(value: unknown): SubmitAction {
   if (value === 'capability') return 'capabilities'
-  return value === 'finalize' || value === 'status' || value === 'capabilities' ? value : 'submit'
+  return value === 'finalize'
+    || value === 'status'
+    || value === 'capabilities'
+    || value === 'retry'
+    || value === 'recover_immutable_pair'
+    ? value
+    : 'submit'
 }
 
 async function loadCallerProfile(db: any, userId: string): Promise<CallerProfile | null> {
@@ -2617,6 +2654,16 @@ async function processInvoiceV2(
     if (action === 'finalize') {
       return { ...(await loadOutputStateV2(db, invoiceId, callerTenantId)), diagnostics }
     }
+    if (isSimplified) {
+      // Simplified reporting is owned exclusively by the durable server
+      // outbox. A browser-requested submit may observe/trigger the server
+      // drain, but it never performs the ZATCA network request itself.
+      return {
+        ...(await loadOutputStateV2(db, invoiceId, callerTenantId)),
+        reportingDispatch: 'durably_queued',
+        diagnostics,
+      }
+    }
 
     const networkClaimResult = await db.rpc('claim_zatca_network_v2', {
       p_invoice_id: invoiceId,
@@ -2724,6 +2771,394 @@ async function processInvoiceV2(
   }
 }
 
+interface ReportingOutboxDispatchResult {
+  status: 'no_work' | 'accepted' | 'retryable' | 'blocked' | 'in_progress'
+  invoiceId?: string
+  outboxId?: string
+  error?: string
+}
+
+async function processReportingOutboxV2(
+  db: any,
+  claimedBy: string,
+  invoiceId: string | null = null,
+): Promise<ReportingOutboxDispatchResult> {
+  const claimResult = await db.rpc('claim_zatca_reporting_outbox_v2', {
+    p_claimed_by: claimedBy,
+    p_lease_seconds: 120,
+    p_invoice_id: invoiceId,
+  })
+  if (claimResult.error) {
+    throw new Error(safeZatcaText(claimResult.error.message, 180) ?? 'Unable to claim reporting outbox')
+  }
+  const claim = rpcObject(claimResult.data)
+  if (claim.status === 'no_work' || claim.status === 'already_accepted') {
+    return {
+      status: claim.status === 'already_accepted' ? 'accepted' : 'no_work',
+      invoiceId: typeof claim.invoiceId === 'string' ? claim.invoiceId : undefined,
+      outboxId: typeof claim.outboxId === 'string' ? claim.outboxId : undefined,
+    }
+  }
+  if (claim.status === 'blocked') {
+    return {
+      status: 'blocked',
+      invoiceId: String(claim.invoiceId ?? ''),
+      outboxId: String(claim.outboxId ?? ''),
+      error: safeZatcaText(claim.error, 180) ?? 'Reporting outbox is blocked',
+    }
+  }
+  if (claim.status !== 'claimed') throw new Error('Reporting outbox claim was not granted')
+
+  const outboxId = String(claim.outboxId)
+  const outboxToken = String(claim.outboxToken)
+  const claimedInvoiceId = String(claim.invoiceId)
+  let networkToken: string | null = null
+  let requestStarted = false
+
+  try {
+    const { data: invoice, error: invoiceError } = await db.from('invoices')
+      .select(`id, tenant_id, branch_id, invoice_number, zatca_uuid, zatca_status,
+        zatca_finalization_version, zatca_artifact_provenance, zatca_document_kind,
+        zatca_lifecycle_state, zatca_artifact_stage, zatca_counter_number,
+        zatca_prev_invoice_hash, zatca_simplified_xml, zatca_simplified_xml_hash`)
+      .eq('id', claimedInvoiceId)
+      .single()
+    if (invoiceError || !invoice) throw new Error('Claimed outbox invoice is unavailable')
+    if (invoice.zatca_finalization_version !== 2
+        || invoice.zatca_artifact_provenance !== 'server_v2'
+        || invoice.zatca_document_kind !== 'simplified'
+        || invoice.zatca_artifact_stage !== 'simplified_final'
+        || typeof invoice.zatca_simplified_xml !== 'string'
+        || typeof invoice.zatca_simplified_xml_hash !== 'string'
+        || invoice.zatca_simplified_xml_hash !== claim.artifactHash) {
+      throw new ZatcaSubmitAssertionError(
+        'COMMITTED_ARTIFACT_IDENTITY_MISMATCH',
+        'Stored simplified artifact does not match its durable outbox identity.',
+        { invoiceId: claimedInvoiceId },
+      )
+    }
+
+    // This is a verification of the immutable stored request, not a rebuild.
+    // No XML builder, counter allocator, QR generator, or signing function is
+    // reachable from this worker path.
+    const recomputedHash = await computeInvoiceHash(invoice.zatca_simplified_xml)
+    if (recomputedHash !== invoice.zatca_simplified_xml_hash) {
+      throw new ZatcaSubmitAssertionError(
+        'STORED_SIMPLIFIED_XML_HASH_MISMATCH',
+        'Stored simplified XML no longer matches its immutable hash.',
+        { invoiceId: claimedInvoiceId, storedHashMatches: false },
+      )
+    }
+
+    const credentials = await loadSubmissionCredentials(db, invoice.branch_id, invoice.tenant_id)
+    if (!credentials) throw new Error('Active Phase 2 credentials are unavailable')
+
+    const networkClaimResult = await db.rpc('claim_zatca_network_v2', {
+      p_invoice_id: claimedInvoiceId,
+      p_claimed_by: claimedBy,
+      p_lease_seconds: 120,
+    })
+    if (networkClaimResult.error) throw new Error('Unable to acquire reporting network lease')
+    const networkClaim = rpcObject(networkClaimResult.data)
+    if (networkClaim.status === 'already_complete') {
+      const reconciled = await db.rpc('enqueue_zatca_reporting_outbox_v2', {
+        p_invoice_id: claimedInvoiceId,
+        p_source: 'already_reported_reconciliation',
+      })
+      if (reconciled.error || rpcObject(reconciled.data).status !== 'accepted') {
+        throw new Error('Unable to reconcile already-reported outbox state')
+      }
+      return { status: 'accepted', invoiceId: claimedInvoiceId, outboxId }
+    }
+    if (networkClaim.status === 'in_progress') {
+      await db.rpc('fail_zatca_reporting_outbox_attempt_v2', {
+        p_outbox_id: outboxId,
+        p_outbox_token: outboxToken,
+        p_outcome: REPORTING_OUTCOMES.transientFailure,
+        p_safe_reason: 'Reporting request already in progress',
+      })
+      return { status: 'in_progress', invoiceId: claimedInvoiceId, outboxId }
+    }
+    if (networkClaim.status === 'reconciliation_required') {
+      await db.rpc('fail_zatca_reporting_outbox_attempt_v2', {
+        p_outbox_id: outboxId,
+        p_outbox_token: outboxToken,
+        p_outcome: REPORTING_OUTCOMES.ambiguousOutcome,
+        p_safe_reason: 'Remote reporting outcome requires reconciliation',
+      })
+      return {
+        status: 'blocked',
+        invoiceId: claimedInvoiceId,
+        outboxId,
+        error: 'Remote reporting outcome requires reconciliation',
+      }
+    }
+    if (networkClaim.status !== 'claimed' || networkClaim.operation !== 'report') {
+      throw new Error('Reporting network lease was not granted')
+    }
+    networkToken = String(networkClaim.networkToken)
+    if (networkClaim.artifactHash !== invoice.zatca_simplified_xml_hash) {
+      throw new ZatcaSubmitAssertionError(
+        'NETWORK_ARTIFACT_IDENTITY_MISMATCH',
+        'Network lease does not identify the stored simplified artifact.',
+        { invoiceId: claimedInvoiceId, storedHashMatches: false },
+      )
+    }
+
+    const started = await db.rpc('mark_zatca_network_request_started_v2', {
+      p_invoice_id: claimedInvoiceId,
+      p_network_token: networkToken,
+    })
+    if (started.error) throw new Error('Unable to durably mark reporting request start')
+    requestStarted = true
+
+    const endpoint = `${ZATCA_URLS[credentials.environment]}/invoices/reporting/single`
+    const authorization = btoa(`${credentials.productionCsid}:${credentials.productionSecret}`)
+    const xmlB64 = btoa(unescape(encodeURIComponent(invoice.zatca_simplified_xml)))
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'accept-version': 'V2',
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${authorization}`,
+      },
+      body: JSON.stringify({
+        invoiceHash: invoice.zatca_simplified_xml_hash,
+        uuid: invoice.zatca_uuid,
+        invoice: xmlB64,
+      }),
+    })
+    const responseText = await response.text()
+    const body = (() => { try { return JSON.parse(responseText) } catch { return {} } })()
+    const diagnostics: SubmitDiagnostics = {
+      source: claimedBy,
+      environment: credentials.environment,
+      invoiceId: claimedInvoiceId,
+      branchId: invoice.branch_id,
+      invoiceType: 'simplified',
+      endpointKind: 'reporting',
+      httpStatus: response.status,
+      reportingStatus: typeof body?.reportingStatus === 'string' ? body.reportingStatus : undefined,
+      validationStatus: typeof body?.validationResults?.status === 'string'
+        ? body.validationResults.status
+        : undefined,
+      errorCodes: zatcaMessageCodes(body, 'error'),
+      warningCodes: zatcaMessageCodes(body, 'warning'),
+      invoiceHash: invoice.zatca_simplified_xml_hash,
+      finalXmlHash: recomputedHash,
+      storedHashMatches: recomputedHash === invoice.zatca_simplified_xml_hash,
+      zatcaCounterNumber: Number(invoice.zatca_counter_number),
+      storedPreviousHash: invoice.zatca_prev_invoice_hash,
+    }
+    const validationErrorCodes = arrayValue(body?.validationResults?.errorMessages)
+      .map((message: any) => typeof message?.code === 'string' ? message.code : undefined)
+      .filter((code: string | undefined): code is string => !!code)
+      .slice(0, 10)
+    const outcome = classifyReportingHttpOutcome({
+      httpStatus: response.status,
+      reportingStatus: diagnostics.reportingStatus,
+      validationStatus: diagnostics.validationStatus,
+      errorCodes: validationErrorCodes,
+    }) as 'accepted' | 'transient_failure' | 'definite_rejection' | 'ambiguous_outcome'
+    const safeResponse = summarizeZatcaResponse(body)
+    const safeReason = outcome === REPORTING_OUTCOMES.accepted
+      ? null
+      : outcome === REPORTING_OUTCOMES.transientFailure
+      ? `TRANSIENT_HTTP_${response.status}`
+      : outcome === REPORTING_OUTCOMES.ambiguousOutcome
+      ? `AMBIGUOUS_HTTP_${response.status}`
+      : (diagnostics.errorCodes ?? []).length > 0
+      ? `ZATCA_VALIDATION_REJECTED:${(diagnostics.errorCodes ?? []).slice(0, 8).join(',')}`
+      : diagnostics.validationStatus
+        && ['ERROR', 'FAILED', 'INVALID', 'NOT_VALID'].includes(diagnostics.validationStatus.toUpperCase())
+      ? `ZATCA_VALIDATION_REJECTED:${diagnostics.validationStatus.toUpperCase()}`
+      : `DEFINITE_HTTP_${response.status}_NOT_REPORTED`
+    const safeWarnings = buildSafeZatcaRecord(
+      body,
+      diagnostics,
+      outcome === REPORTING_OUTCOMES.accepted ? 'reported' : 'failed',
+    )
+    const persisted = await db.rpc('persist_zatca_reporting_outbox_result_v2', {
+      p_outbox_id: outboxId,
+      p_outbox_token: outboxToken,
+      p_network_token: networkToken,
+      p_outcome: outcome,
+      p_safe_response: safeResponse,
+      p_safe_warnings: safeWarnings,
+      p_safe_reason: safeReason,
+    })
+    if (persisted.error) throw new Error('ZATCA response received but outbox persistence failed')
+    const persistedOutcome = rpcObject(persisted.data)
+    networkToken = null
+    requestStarted = false
+    return {
+      status: persistedOutcome.status === 'accepted'
+        ? 'accepted'
+        : persistedOutcome.status === 'retryable'
+        ? 'retryable'
+        : 'blocked',
+      invoiceId: claimedInvoiceId,
+      outboxId,
+      error: outcome === REPORTING_OUTCOMES.accepted
+        ? undefined
+        : safeReason ?? 'Stored simplified artifact was not reported',
+    }
+  } catch (error) {
+    const assertion = isZatcaSubmitAssertionError(error)
+    const reason = assertion
+      ? error.statusString
+      : safeZatcaText(error instanceof Error ? error.message : error, 220) ?? 'Reporting attempt failed'
+    if (networkToken) {
+      const outcome = requestStarted
+        ? REPORTING_OUTCOMES.ambiguousOutcome
+        : assertion
+        ? REPORTING_OUTCOMES.definiteRejection
+        : REPORTING_OUTCOMES.transientFailure
+      const persisted = await db.rpc('persist_zatca_reporting_outbox_result_v2', {
+        p_outbox_id: outboxId,
+        p_outbox_token: outboxToken,
+        p_network_token: networkToken,
+        p_outcome: outcome,
+        p_safe_response: null,
+        p_safe_warnings: null,
+        p_safe_reason: reason,
+      })
+      if (persisted.error) {
+        console.error(
+          '[zatca-outbox] unable to persist classified network outcome:',
+          safeZatcaText(persisted.error.message, 160),
+        )
+      }
+      const result = rpcObject(persisted.data)
+      return {
+        status: result.status === 'retryable' ? 'retryable' : 'blocked',
+        invoiceId: claimedInvoiceId,
+        outboxId,
+        error: reason,
+      }
+    }
+    const outcome = assertion
+      ? REPORTING_OUTCOMES.definiteRejection
+      : REPORTING_OUTCOMES.transientFailure
+    const outboxFailure = await db.rpc('fail_zatca_reporting_outbox_attempt_v2', {
+      p_outbox_id: outboxId,
+      p_outbox_token: outboxToken,
+      p_outcome: outcome,
+      p_safe_reason: reason,
+    })
+    if (outboxFailure.error) {
+      console.error(
+        '[zatca-outbox] unable to persist classified preflight outcome:',
+        safeZatcaText(outboxFailure.error.message, 160),
+      )
+    }
+    const result = rpcObject(outboxFailure.data)
+    return {
+      status: result.status === 'retryable' ? 'retryable' : 'blocked',
+      invoiceId: claimedInvoiceId,
+      outboxId,
+      error: reason,
+    }
+  }
+}
+
+async function drainReportingOutboxV2(
+  db: any,
+  batchSize: number,
+): Promise<ReportingOutboxDispatchResult[]> {
+  const results: ReportingOutboxDispatchResult[] = []
+  for (let index = 0; index < batchSize; index += 1) {
+    const result = await processReportingOutboxV2(db, `edge-worker:${FINALIZATION_EDGE_VERSION}`)
+    if (result.status === 'no_work') break
+    results.push(result)
+  }
+  return results
+}
+
+function scheduleReportingOutboxDrain(db: any, invoiceId: string): void {
+  const dispatch = processReportingOutboxV2(
+    db,
+    `edge-background:${FINALIZATION_EDGE_VERSION}`,
+    invoiceId,
+  ).catch(error => {
+    console.error(
+      '[zatca-outbox] background dispatch failed:',
+      safeZatcaText(error instanceof Error ? error.message : error, 180),
+    )
+  })
+  const edgeRuntime = (globalThis as any).EdgeRuntime
+  if (edgeRuntime && typeof edgeRuntime.waitUntil === 'function') {
+    edgeRuntime.waitUntil(dispatch)
+  }
+  // Without EdgeRuntime (for example local unit execution), the durable cron
+  // consumer remains authoritative. The promise above is never a browser task.
+}
+
+async function validateImmutableRecoveryTarget(
+  db: any,
+  invoiceId: string,
+): Promise<{ alreadyReported: boolean; target: typeof IMMUTABLE_RECOVERY_TARGETS[number] }> {
+  const targetIndex = IMMUTABLE_RECOVERY_TARGETS.findIndex(item => item.invoiceId === invoiceId)
+  if (targetIndex < 0) throw new Error('RECOVERY_TARGET_NOT_ALLOWED')
+  const target = IMMUTABLE_RECOVERY_TARGETS[targetIndex]
+  const { data: invoice, error: invoiceError } = await db.from('invoices')
+    .select(`id, invoice_number, branch_id, zatca_status, zatca_finalization_version,
+      zatca_artifact_provenance, zatca_document_kind, zatca_lifecycle_state,
+      zatca_artifact_stage, zatca_counter_number, zatca_prev_invoice_hash,
+      zatca_simplified_xml, zatca_simplified_xml_hash`)
+    .eq('id', invoiceId)
+    .single()
+  if (invoiceError || !invoice) throw new Error('RECOVERY_INVOICE_NOT_FOUND')
+  const { data: reservation, error: reservationError } = await db
+    .from('zatca_chain_reservations_v2')
+    .select('invoice_id, counter_number, previous_hash, committed_artifact_hash, state')
+    .eq('invoice_id', invoiceId)
+    .single()
+  if (reservationError || !reservation) throw new Error('RECOVERY_RESERVATION_NOT_FOUND')
+
+  if (invoice.id !== target.invoiceId
+      || invoice.invoice_number !== target.invoiceNumber
+      || invoice.branch_id !== RECOVERY_BRANCH_ID
+      || invoice.zatca_finalization_version !== 2
+      || invoice.zatca_artifact_provenance !== 'server_v2'
+      || invoice.zatca_document_kind !== 'simplified'
+      || invoice.zatca_artifact_stage !== 'simplified_final'
+      || Number(invoice.zatca_counter_number) !== target.counterNumber
+      || invoice.zatca_prev_invoice_hash !== target.previousHash
+      || invoice.zatca_simplified_xml_hash !== target.artifactHash
+      || typeof invoice.zatca_simplified_xml !== 'string'
+      || reservation.state !== 'committed'
+      || Number(reservation.counter_number) !== target.counterNumber
+      || reservation.previous_hash !== target.previousHash
+      || reservation.committed_artifact_hash !== target.artifactHash) {
+    throw new Error('RECOVERY_IMMUTABLE_IDENTITY_MISMATCH')
+  }
+  const recomputedHash = await computeInvoiceHash(invoice.zatca_simplified_xml)
+  if (recomputedHash !== target.artifactHash) {
+    throw new Error('RECOVERY_STORED_XML_HASH_MISMATCH')
+  }
+
+  if (targetIndex > 0) {
+    const predecessor = IMMUTABLE_RECOVERY_TARGETS[targetIndex - 1]
+    const { data: previous } = await db.from('invoices')
+      .select('id, zatca_status, zatca_lifecycle_state, zatca_network_response_v2')
+      .eq('id', predecessor.invoiceId)
+      .single()
+    if (!previous
+        || previous.zatca_status !== 'reported'
+        || previous.zatca_lifecycle_state !== 'reported'
+        || previous.zatca_network_response_v2 == null) {
+      throw new Error('RECOVERY_PREDECESSOR_NOT_REPORTED')
+    }
+  }
+  return {
+    alreadyReported: invoice.zatca_status === 'reported'
+      && invoice.zatca_lifecycle_state === 'reported',
+    target,
+  }
+}
+
 // ── HTTP handler ──────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -2740,9 +3175,61 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'Server configuration error' }, 500)
     }
 
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
     const callerJWT = bearerToken(req)
     if (!callerJWT) {
       return jsonResponse({ error: 'Unauthorized' }, 401)
+    }
+
+    const earlyPostBody = req.method === 'POST'
+      ? rpcObject(await req.clone().json().catch(() => ({})))
+      : {}
+    const drainAuthorization = authorizeDrainRequest({
+      body: earlyPostBody,
+      callerJWT,
+      apiKey: req.headers.get('apikey'),
+      serviceRoleKey,
+    })
+    const requestsGlobalDrain = drainAuthorization.isDrain
+
+    // This is the only route handled before normal user/invoice authorization.
+    // It requires the exact configured service-role JWT in both gateway
+    // headers and verifies that the JWT itself carries role=service_role.
+    if (requestsGlobalDrain) {
+      if (!drainAuthorization.allowed) {
+        return jsonResponse({
+          error: drainAuthorization.code === 'DRAIN_SCOPE_NOT_ALLOWED'
+            ? 'Global drain does not accept caller scope'
+            : 'Service-role authorization required',
+          code: drainAuthorization.code ?? 'SERVICE_ROLE_REQUIRED',
+        }, drainAuthorization.status ?? 403)
+      }
+      const batchSize = clampReportingBatchSize(earlyPostBody.batchSize)
+      const results = await drainReportingOutboxV2(supabase as any, batchSize)
+      const summary = {
+        accepted: 0,
+        retryable: 0,
+        blocked: 0,
+        inProgress: 0,
+      }
+      for (const result of results) {
+        if (result.status === 'accepted') summary.accepted += 1
+        else if (result.status === 'retryable') summary.retryable += 1
+        else if (result.status === 'blocked') summary.blocked += 1
+        else if (result.status === 'in_progress') summary.inProgress += 1
+      }
+      return jsonResponse({
+        ok: true,
+        action: 'drain_outbox',
+        processed: results.length,
+        batchSize,
+        summary,
+      })
+    }
+    if (callerJWT === serviceRoleKey || req.headers.get('apikey') === serviceRoleKey) {
+      return jsonResponse({ error: 'Unsupported internal action' }, 400)
     }
 
     const authClient = createClient(supabaseUrl, anonKey, {
@@ -2759,10 +3246,6 @@ Deno.serve(async (req: Request) => {
     if (!callerProfile) {
       return jsonResponse({ error: 'Caller profile not found' }, 403)
     }
-
-    const supabase = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    })
 
     // ── GET /debug?branchId=... — sandbox-only cert digest diagnostics ──
     if (req.method === 'GET' && url.searchParams.has('branchId')) {
@@ -2813,11 +3296,19 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const body = await req.json().catch(() => ({}))
+    const body = earlyPostBody
     const invoiceId = body?.invoiceId as string | undefined
     const source = normalizeSubmitSource(body?.source)
     const rawAction = typeof body?.action === 'string' ? body.action : null
-    if (rawAction !== null && !['submit', 'finalize', 'status', 'capability', 'capabilities'].includes(rawAction)) {
+    if (rawAction !== null && ![
+      'submit',
+      'finalize',
+      'status',
+      'capability',
+      'capabilities',
+      'retry',
+      'recover_immutable_pair',
+    ].includes(rawAction)) {
       return jsonResponse({
         error: 'Unsupported ZATCA submit action',
         code: 'UNSUPPORTED_SUBMIT_ACTION',
@@ -2877,8 +3368,12 @@ Deno.serve(async (req: Request) => {
     const compatibleStatusRequest = action === 'status'
       && clientVersion !== null
       && OUTPUT_STATE_READ_CLIENT_VERSIONS.has(clientVersion)
+    const compatibleStoredArtifactRequest = (
+      action === 'retry' || action === 'recover_immutable_pair'
+    ) && clientVersion === FINALIZATION_CLIENT_VERSION
     if (!actionlessLegacyRequest
         && !compatibleStatusRequest
+        && !compatibleStoredArtifactRequest
         && (!capabilities.compatible || clientVersion !== FINALIZATION_CLIENT_VERSION)) {
       return jsonResponse({
         error: 'ZATCA finalization client/schema/Edge version mismatch',
@@ -2902,7 +3397,7 @@ Deno.serve(async (req: Request) => {
     // writer. New rows cannot receive that stamp unless this same branch gate
     // and acknowledgement passed in the database insert trigger.
     if (
-      action !== 'status'
+      !['status', 'retry', 'recover_immutable_pair'].includes(action)
       && invoiceAuth.target.v2Invoice === true
       && checkoutMode !== 'v2'
     ) {
@@ -2955,9 +3450,12 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === 'status') {
-      const state = !capabilities.compatible
-        ? await loadLegacyOutputState(supabase as any, invoiceId, invoiceAuth.target.tenantId)
-        : await loadOutputStateV2(supabase as any, invoiceId, invoiceAuth.target.tenantId)
+      // Historical output follows the invoice's immutable provenance, not the
+      // current rollout flags or checkout mode. A rolled-back server_v2 row
+      // must still expose its stored simplified/cleared artifact.
+      const state = invoiceAuth.target.v2Invoice === true
+        ? await loadOutputStateV2(supabase as any, invoiceId, invoiceAuth.target.tenantId)
+        : await loadLegacyOutputState(supabase as any, invoiceId, invoiceAuth.target.tenantId)
       await auditEvent(supabase as any, {
         ...auditBase,
         action: 'zatca_output_state_read',
@@ -2975,6 +3473,135 @@ Deno.serve(async (req: Request) => {
         legacySubmitAvailable: capabilities.legacySubmitAvailable,
         branchV2Ready: checkoutMode === 'v2',
         checkoutMode,
+      })
+    }
+
+    if (action === 'retry') {
+      if (invoiceAuth.target.v2Invoice !== true) {
+        return jsonResponse({
+          error: 'Legacy invoices use the unchanged legacy retry contract',
+          code: 'LEGACY_RETRY_CONTRACT_REQUIRED',
+        }, 409)
+      }
+      const state = await loadOutputStateV2(
+        supabase as any,
+        invoiceId,
+        invoiceAuth.target.tenantId,
+      )
+      if (state.documentKind !== 'simplified' || state.artifactStage !== 'simplified_final') {
+        return jsonResponse({
+          error: 'Only an immutable simplified_final artifact can use durable reporting retry',
+          code: 'STORED_SIMPLIFIED_ARTIFACT_REQUIRED',
+        }, 409)
+      }
+      const queued = await supabase.rpc('enqueue_zatca_reporting_outbox_v2', {
+        p_invoice_id: invoiceId,
+        p_source: source,
+      })
+      if (queued.error) {
+        return jsonResponse({
+          error: safeZatcaText(queued.error.message, 180) ?? 'Unable to queue reporting retry',
+          code: 'DURABLE_REPORTING_RETRY_FAILED',
+        }, 409)
+      }
+      const queuedState = rpcObject(queued.data)
+      if (queuedState.status === 'blocked') {
+        return jsonResponse({
+          ...state,
+          error: safeZatcaText(queuedState.error, 180) ?? 'Reporting is blocked for operator review',
+          code: 'REPORTING_OUTBOX_BLOCKED',
+          reportingDispatch: 'blocked',
+          durable: true,
+        }, 409)
+      }
+      scheduleReportingOutboxDrain(supabase as any, invoiceId)
+      await auditEvent(supabase as any, {
+        ...auditBase,
+        action: 'zatca_reporting_retry_queued',
+        status: 'succeeded',
+        metadata: { source, operation: action, dispatch: queuedState.status },
+      })
+      return jsonResponse({
+        ...state,
+        reportingDispatch: queuedState.status,
+        durable: true,
+      })
+    }
+
+    if (action === 'recover_immutable_pair') {
+      if (!TENANT_SUBMIT_ROLES.has(callerProfile.role)) {
+        return jsonResponse({
+          error: 'Recovery requires an authenticated owner or admin',
+          code: 'RECOVERY_OPERATOR_REQUIRED',
+        }, 403)
+      }
+      if (invoiceAuth.target.branchId !== RECOVERY_BRANCH_ID
+          || body?.confirmation !== `recover:${RECOVERY_BRANCH_ID}:865-866`) {
+        return jsonResponse({
+          error: 'Recovery scope or confirmation does not match the immutable incident pair',
+          code: 'RECOVERY_SCOPE_MISMATCH',
+        }, 409)
+      }
+      const recovery = await validateImmutableRecoveryTarget(supabase as any, invoiceId)
+      let queuedRecovery: Record<string, any> | null = null
+      if (!recovery.alreadyReported) {
+        const queued = await supabase.rpc('enqueue_zatca_reporting_outbox_v2', {
+          p_invoice_id: invoiceId,
+          p_source: 'authenticated_operator_recovery',
+        })
+        if (queued.error) {
+          return jsonResponse({
+            error: safeZatcaText(queued.error.message, 180) ?? 'Unable to queue recovery target',
+            code: 'RECOVERY_OUTBOX_FAILED',
+          }, 409)
+        }
+        queuedRecovery = rpcObject(queued.data)
+      }
+      const dispatch = recovery.alreadyReported
+        ? { status: 'accepted' as const, invoiceId }
+        : queuedRecovery?.status === 'blocked'
+        ? {
+            status: 'blocked' as const,
+            invoiceId,
+            error: safeZatcaText(queuedRecovery.error, 180)
+              ?? 'Reporting is blocked for operator review',
+          }
+        : await processReportingOutboxV2(
+          supabase as any,
+          `operator-recovery:${user.id}`,
+          invoiceId,
+        )
+      const state = await loadOutputStateV2(
+        supabase as any,
+        invoiceId,
+        invoiceAuth.target.tenantId,
+      )
+      const accepted = dispatch.status === 'accepted'
+        && state.invoiceStatus === 'reported'
+        && state.finalizationStatus === 'reported'
+      await auditEvent(supabase as any, {
+        ...auditBase,
+        action: 'zatca_immutable_pair_recovery',
+        severity: accepted ? 'info' : 'warning',
+        status: accepted ? 'succeeded' : 'failed',
+        metadata: {
+          source,
+          operation: action,
+          invoiceNumber: recovery.target.invoiceNumber,
+          counterNumber: recovery.target.counterNumber,
+          dispatchStatus: dispatch.status,
+        },
+      })
+      return jsonResponse({
+        ...state,
+        recovery: {
+          accepted,
+          dispatchStatus: dispatch.status,
+          invoiceNumber: recovery.target.invoiceNumber,
+          counterNumber: recovery.target.counterNumber,
+          stopped: !accepted,
+          error: dispatch.error ?? null,
+        },
       })
     }
 
@@ -2996,6 +3623,8 @@ Deno.serve(async (req: Request) => {
       ? ['reported', 'cleared'].includes(result.invoiceStatus)
       : action === 'finalize'
       ? ['locally_finalized', 'provisional_signed', 'cleared_final'].includes(result.finalizationStatus)
+      : result.documentKind === 'simplified' && result.artifactStage === 'simplified_final'
+      ? true
       : ['reported', 'cleared'].includes(result.invoiceStatus)
     await auditEvent(supabase as any, {
       ...auditBase,
@@ -3009,6 +3638,9 @@ Deno.serve(async (req: Request) => {
         diagnostics: result.diagnostics ? safeSubmitDiagnosticSummary(result.diagnostics) : undefined,
       },
     })
+    if (result.documentKind === 'simplified' && result.artifactStage === 'simplified_final') {
+      scheduleReportingOutboxDrain(supabase as any, invoiceId)
+    }
     return jsonResponse(result)
 
   } catch (err: any) {

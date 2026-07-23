@@ -7,6 +7,11 @@ export interface StoredOutputStateQr {
   contractMode?: 'legacy' | 'v2' | null
   legacyCompatible?: boolean
   compatible?: boolean
+  invoiceStatus?: string | null
+  finalizationStatus?: string | null
+  artifactStage?: string | null
+  documentKind?: 'simplified' | 'standard' | null
+  reconciliationRequired?: boolean
   canPrint?: boolean
   qrCode?: string | null
 }
@@ -21,8 +26,10 @@ export function selectStoredOutputStateQr(
 ): string | null
 
 export function canOpenStoredInvoicePrint(
-  invoiceStatus: string | null | undefined,
   outputStateCanPrint: boolean,
+  storedQrPayload: string | null | undefined,
+  qrStatus: QrDisplayStatus,
+  qrDataUrl: string | null | undefined,
 ): boolean
 
 export function renderStoredQrDataUrl(

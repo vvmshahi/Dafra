@@ -188,6 +188,39 @@ historical branches require controlled reconciliation.
 
 Standard routing remains separate and clearance-gated. A false standard flag
 selects legacy standard clearance while simplified-ready branches can use v2.
+
+## Durable simplified reporting
+
+`11_durable_simplified_reporting_outbox.sql` replaces only the simplified
+artifact persistence function. The chain commit, immutable simplified
+XML/hash/signature/QR update, and one `zatca_reporting_outbox_v2` insert commit
+in the same PostgreSQL transaction. No historical row is auto-enqueued.
+
+The Edge response returns the stored QR after that commit and starts a
+server-side `EdgeRuntime.waitUntil` drain. A Vault-authenticated `pg_cron` /
+`pg_net` invocation is the durable consumer and retry backstop. Browser code
+does not start reporting. The worker verifies the stored XML against
+`zatca_simplified_xml_hash`, the outbox artifact hash, and the committed chain
+reservation before dispatch, and it has no XML-build, allocation, signing, or
+QR-generation path.
+
+Every remote result is classified as `accepted`, `transient_failure`,
+`definite_rejection`, or `ambiguous_outcome`. Only transient failures may
+retry. The database permits four total attempts, with 60, 120, and 240 second
+backoffs after the first three failures; a fourth transient failure blocks as
+`MAX_TRANSIENT_ATTEMPTS_REACHED`. Explicit validation errors, deterministic
+4xx responses, and ambiguous post-send outcomes block immediately. Ambiguous
+outcomes also set the invoice to `reconciliation_required`.
+
+The global `drain_outbox` action requires the exact configured service-role
+JWT in both `Authorization` and `apikey`, plus a `role=service_role` JWT claim.
+It rejects all caller-provided tenant, branch, and invoice scope, clamps each
+batch to ten, and returns aggregate counts only.
+
+Manual retry for `simplified_final` only requeues that exact stored artifact.
+Blocked records cannot be requeued through ordinary retry.
+Legacy and standard submission/clearance behavior remains on its existing
+paths.
 9. Run real service-role, browser-denial, two-session concurrency, stale-lease,
    and protected-hash fixtures.
 10. Reopen browser traffic only after authenticated safe reads, denied raw and

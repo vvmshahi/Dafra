@@ -110,8 +110,8 @@ assert.match(edge, /operation === 'clear'[\s\S]*'Clearance-Status': '1'/)
 assert.match(edge, /adopt_zatca_cleared_artifact_v2/)
 assert.match(activation, /standard_enabled = false/)
 
-assert.match(seed, /860/)
-assert.match(seed, /0rt4rBEZvug668xBtEWMyKjvip70PJip0H9Fq2TkQSo=/)
+assert.match(seed, /864/)
+assert.match(seed, /t3CZaYvRmwniI6rCyL\+OfITTxHJQ5BdA1CjvdgVN1cY=/)
 assert.match(seed, /block_zatca_branch_v2/)
 assert.match(seed, /b2b4fd13-b6db-4baa-b353-4eaab842ed50/)
 assert.match(cleanup, /WHERE expires_at <= clock_timestamp\(\)/)
@@ -123,9 +123,16 @@ assert.match(verification, /BEGIN;/)
 assert.match(verification, /CREATE TEMP TABLE zatca_branch_gate_results/)
 assert.match(verification, /ROLLBACK;/)
 
-for (const runtimeFile of [edge, client, pos]) {
+for (const runtimeFile of [client, pos]) {
   assert.doesNotMatch(runtimeFile, /371dee75-6e46-496e-89e7-1a7492b51a3c/)
   assert.doesNotMatch(runtimeFile, /b2b4fd13-b6db-4baa-b353-4eaab842ed50/)
 }
+assert.equal(
+  (edge.match(/371dee75-6e46-496e-89e7-1a7492b51a3c/g) ?? []).length,
+  1,
+  'the incident branch id may appear only in the isolated recovery allowlist',
+)
+assert.match(edge, /const RECOVERY_BRANCH_ID = '371dee75-6e46-496e-89e7-1a7492b51a3c'/)
+assert.doesNotMatch(edge, /b2b4fd13-b6db-4baa-b353-4eaab842ed50/)
 
 console.log('ZATCA branch readiness v2: 9 routing scenarios and server-gate contracts passed')

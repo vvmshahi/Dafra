@@ -32,9 +32,9 @@ BEGIN
     FROM public.zatca_chain_heads_v2 h
     JOIN public.zatca_branch_readiness_v2 r USING (tenant_id, branch_id)
     WHERE h.branch_id = '371dee75-6e46-496e-89e7-1a7492b51a3c'::uuid
-      AND h.last_committed_counter = 860
+      AND h.last_committed_counter = 864
       AND h.last_committed_hash =
-        '0rt4rBEZvug668xBtEWMyKjvip70PJip0H9Fq2TkQSo='
+        't3CZaYvRmwniI6rCyL+OfITTxHJQ5BdA1CjvdgVN1cY='
       AND r.readiness_status = 'ready'
   ) THEN RAISE EXCEPTION 'BRANCH_1_REVIEWED_READINESS_MISSING'; END IF;
   IF EXISTS (

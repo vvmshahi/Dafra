@@ -18,11 +18,13 @@ const legacy = edge.slice(legacyStart, legacyEnd)
 assert.match(edge, /const legacySubmitAvailable = runtime\.error == null \|\| runtimeSchemaMissing/)
 assert.match(edge, /databaseFeatureEnabled, legacySubmitAvailable: true/)
 assert.match(edge, /const actionlessLegacyRequest = rawAction === null && clientVersion === null/)
-assert.match(edge, /rawAction !== null && !\['submit', 'finalize', 'status', 'capability', 'capabilities'\]\.includes\(rawAction\)/)
+for (const action of ['submit', 'finalize', 'status', 'capability', 'capabilities', 'retry', 'recover_immutable_pair']) {
+  assert.match(edge, new RegExp(`'${action}'`))
+}
 assert.match(edge, /!actionlessLegacyRequest[\s\S]*FINALIZATION_VERSION_MISMATCH/)
 assert.match(edge, /const readiness = await loadBranchReadinessV2/)
 assert.match(edge, /const useLegacyProcessor = invoiceAuth\.target\.v2Invoice !== true[\s\S]*checkoutMode === 'legacy'/)
-assert.match(edge, /const state = !capabilities\.compatible[\s\S]*loadLegacyOutputState/)
+assert.match(edge, /const state = invoiceAuth\.target\.v2Invoice === true[\s\S]*loadOutputStateV2[\s\S]*loadLegacyOutputState/)
 assert.match(edge, /processLegacyInvoiceDisabledMode/)
 assert.match(edge, /SUPERSEDED_V1_FINALIZATION_PATH_DISABLED/)
 
@@ -73,12 +75,21 @@ const route = ({
   acknowledged = false,
   edgeEnabled = false,
 }) => {
-  if (rawAction !== null && !['submit', 'finalize', 'status', 'capability', 'capabilities'].includes(rawAction)) return '400'
+  if (rawAction !== null && ![
+    'submit', 'finalize', 'status', 'capability', 'capabilities',
+    'retry', 'recover_immutable_pair',
+  ].includes(rawAction)) return '400'
   if (rawAction === 'capability' || rawAction === 'capabilities') return 'capability'
   const actionlessLegacy = rawAction === null && clientVersion === null
   const compatibleStatus = rawAction === 'status' && ['2.0.0', '2.1.0'].includes(clientVersion)
-  if (!actionlessLegacy && !compatibleStatus && (!schemaCompatible || clientVersion !== '2.1.0')) return '426'
+  const compatibleStoredArtifact = ['retry', 'recover_immutable_pair'].includes(rawAction)
+    && clientVersion === '2.1.0'
+  if (!actionlessLegacy && !compatibleStatus && !compatibleStoredArtifact
+      && (!schemaCompatible || clientVersion !== '2.1.0')) return '426'
   if (rawAction === 'status') return schemaCompatible ? 'status' : 'legacy-status'
+  if (rawAction === 'retry' || rawAction === 'recover_immutable_pair') {
+    return schemaCompatible ? rawAction : 'schema-error'
+  }
   if (actionlessLegacy) return 'legacy-submit'
   if (!databaseEnabled || !branchReady || !acknowledged || !edgeEnabled) return 'legacy-submit'
   return rawAction ?? 'submit'
@@ -92,7 +103,8 @@ assert.equal(route({ databaseEnabled: false, rawAction: 'status', clientVersion:
 assert.equal(route({ databaseEnabled: false, rawAction: 'finalize', clientVersion: '2.0.0', schemaCompatible: false }), '426')
 assert.equal(route({ databaseEnabled: false, rawAction: 'finalize', clientVersion: '2.1.0', schemaCompatible: false }), '426')
 assert.equal(route({ databaseEnabled: false, rawAction: 'submit', clientVersion: '2.1.0', schemaCompatible: true }), 'legacy-submit')
-assert.equal(route({ databaseEnabled: false, rawAction: 'retry', clientVersion: null, schemaCompatible: false }), '400')
+assert.equal(route({ databaseEnabled: false, rawAction: 'retry', clientVersion: null, schemaCompatible: false }), '426')
+assert.equal(route({ databaseEnabled: false, rawAction: 'retry', clientVersion: '2.1.0', schemaCompatible: true }), 'retry')
 assert.equal(route({ databaseEnabled: false, rawAction: 'report', clientVersion: null, schemaCompatible: false }), '400')
 assert.equal(route({ databaseEnabled: false, rawAction: 'clear', clientVersion: null, schemaCompatible: false }), '400')
 assert.equal(route({ databaseEnabled: true, rawAction: null, clientVersion: null, schemaCompatible: true }), 'legacy-submit')

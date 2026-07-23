@@ -31,9 +31,9 @@ BEGIN
   ORDER BY zatca_counter_number DESC, zatca_submitted_at DESC NULLS LAST
   LIMIT 1;
 
-  IF v_latest.zatca_counter_number IS DISTINCT FROM 860
+  IF v_latest.zatca_counter_number IS DISTINCT FROM 864
      OR v_latest.zatca_xml_hash IS DISTINCT FROM
-       '0rt4rBEZvug668xBtEWMyKjvip70PJip0H9Fq2TkQSo=' THEN
+       't3CZaYvRmwniI6rCyL+OfITTxHJQ5BdA1CjvdgVN1cY=' THEN
     RAISE EXCEPTION 'REVIEWED_BRANCH_1_TAIL_CHANGED';
   END IF;
 
@@ -83,15 +83,15 @@ $guard$;
 
 SELECT public.seed_zatca_chain_head_v2(
   '371dee75-6e46-496e-89e7-1a7492b51a3c'::uuid,
-  860,
-  '0rt4rBEZvug668xBtEWMyKjvip70PJip0H9Fq2TkQSo=',
-  'Reviewed coherent accepted tail through counter 860; operator approval required.'
+  864,
+  't3CZaYvRmwniI6rCyL+OfITTxHJQ5BdA1CjvdgVN1cY=',
+  'Reviewed coherent accepted tail through counter 864; operator approval required.'
 );
 
 SELECT public.approve_zatca_branch_readiness_v2(
   '371dee75-6e46-496e-89e7-1a7492b51a3c'::uuid,
   'controlled_reconciliation',
-  'Reviewed coherent accepted tail through counter 860.',
+  'Reviewed coherent accepted tail through counter 864.',
   NULL
 );
 
@@ -108,9 +108,9 @@ BEGIN
     FROM public.zatca_chain_heads_v2 h
     JOIN public.zatca_branch_readiness_v2 r USING (tenant_id, branch_id)
     WHERE h.branch_id = '371dee75-6e46-496e-89e7-1a7492b51a3c'::uuid
-      AND h.last_committed_counter = 860
+      AND h.last_committed_counter = 864
       AND h.last_committed_hash =
-        '0rt4rBEZvug668xBtEWMyKjvip70PJip0H9Fq2TkQSo='
+        't3CZaYvRmwniI6rCyL+OfITTxHJQ5BdA1CjvdgVN1cY='
       AND r.readiness_status = 'ready'
   ) THEN RAISE EXCEPTION 'BRANCH_1_SEED_POSTCONDITION_FAILED'; END IF;
   IF NOT EXISTS (
