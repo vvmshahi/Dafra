@@ -11,6 +11,7 @@ export type ExpensePaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'other'
 export type InvoiceType = 'standard' | 'simplified' | 'credit_note' | 'debit_note'
 export type InvoiceStatus = 'draft' | 'posted' | 'cancelled'
 export type ZatcaStatus = 'not_submitted' | 'pending' | 'reported' | 'cleared' | 'failed'
+export type ZatcaFinalizationStatus = 'not_started' | 'finalizing' | 'finalized' | 'failed'
 export type PaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'other'
 export type PaymentStatus = 'pending' | 'paid' | 'partial' | 'refunded'
 export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'cancelled'
@@ -476,6 +477,7 @@ export interface Database {
       invoice_type: InvoiceType
       invoice_status: InvoiceStatus
       zatca_status: ZatcaStatus
+      zatca_finalization_status: ZatcaFinalizationStatus
       payment_method: PaymentMethod
       payment_status: PaymentStatus
       subscription_status: SubscriptionStatus
@@ -1182,6 +1184,16 @@ export interface Invoice {
   zatca_xml_hash: string | null
   zatca_signature: string | null
   zatca_qr_code: string | null
+  zatca_finalization_status?: ZatcaFinalizationStatus
+  zatca_finalized_at?: string | null
+  zatca_finalization_error?: Record<string, unknown> | null
+  zatca_finalization_version: number | null
+  zatca_artifact_provenance?: string | null
+  zatca_document_kind?: 'simplified' | 'standard' | null
+  zatca_lifecycle_state?: string | null
+  zatca_artifact_stage?: string | null
+  zatca_simplified_qr?: string | null
+  zatca_cleared_qr?: string | null
   zatca_status: ZatcaStatus
   zatca_submission_id: string | null
   zatca_submitted_at: string | null

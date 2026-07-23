@@ -18,6 +18,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { create as xmlCreate } from 'https://esm.sh/xmlbuilder2@4.0.3'
 import { secp256k1 } from 'https://esm.sh/@noble/curves@2.2.0/secp256k1.js'
 import { extractEcPrivateKeyScalar, signZatcaInvoiceHash } from '../_shared/zatca/signing_core.mjs'
+import { parseZatcaClearedInvoice } from '../_shared/zatca/cleared_artifact.mjs'
 import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -35,6 +36,10 @@ const corsHeaders = {
 
 const FIRST_INVOICE_HASH =
   'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ=='
+
+const FINALIZATION_SCHEMA_VERSION = 2
+const FINALIZATION_EDGE_VERSION = '2.0.0'
+const FINALIZATION_CLIENT_VERSION = '2.0.0'
 
 interface SubmissionCredentials {
   environment: 'sandbox' | 'production'
@@ -108,6 +113,7 @@ interface AuthorizedTarget {
 const TENANT_SUBMIT_ROLES = new Set(['owner', 'admin'])
 const AUTO_SUBMIT_SOURCES = new Set(['auto_checkout', 'auto_credit_note'])
 const SUBMIT_SOURCES = new Set(['auto_checkout', 'auto_credit_note', 'manual_retry', 'bulk_retry'])
+type SubmitAction = 'submit' | 'finalize' | 'status' | 'capabilities'
 
 function jsonResponse(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -157,6 +163,11 @@ function logSubmitAuthorization(params: {
 
 function normalizeSubmitSource(value: unknown): string {
   return typeof value === 'string' && SUBMIT_SOURCES.has(value) ? value : 'manual_retry'
+}
+
+function normalizeSubmitAction(value: unknown): SubmitAction {
+  if (value === 'capability') return 'capabilities'
+  return value === 'finalize' || value === 'status' || value === 'capabilities' ? value : 'submit'
 }
 
 async function loadCallerProfile(db: any, userId: string): Promise<CallerProfile | null> {
@@ -1393,19 +1404,473 @@ function buildSafeFailureResponse(
   }
 }
 
+type FinalizedDocument = {
+  signedXml: string
+  invoiceHash: string
+  signatureValue: string
+  qrCode: string
+}
+
+function hasCompleteFinalizedDocument(invoice: any): invoice is any & FinalizedDocument {
+  return invoice?.zatca_finalization_status === 'finalized'
+    && typeof invoice?.zatca_xml === 'string' && invoice.zatca_xml.trim().length > 0
+    && typeof invoice?.zatca_xml_hash === 'string' && invoice.zatca_xml_hash.trim().length > 0
+    && typeof invoice?.zatca_signature === 'string' && invoice.zatca_signature.trim().length > 0
+    && typeof invoice?.zatca_qr_code === 'string' && invoice.zatca_qr_code.trim().length > 0
+}
+
+function finalizationResponse(invoice: any, qrCode?: string | null, error?: string | null): Record<string, unknown> {
+  const finalized = hasCompleteFinalizedDocument(invoice) || typeof qrCode === 'string' && qrCode.trim().length > 0
+  const isStandard = invoice?.zatca_invoice_type === 'standard' || invoice?.resolved_standard === true
+  const cleared = invoice?.zatca_status === 'cleared'
+  return {
+    invoiceStatus: String(invoice?.zatca_status ?? 'pending'),
+    finalizationStatus: finalized ? 'finalized' : String(invoice?.zatca_finalization_status ?? 'not_started'),
+    canPrint: finalized && (!isStandard || cleared),
+    canShare: finalized && (!isStandard || cleared),
+    retryAvailable: finalized || invoice?.zatca_finalization_status === 'failed',
+    qrCode: qrCode ?? (hasCompleteFinalizedDocument(invoice) ? invoice.zatca_qr_code : null),
+    error: error ?? null,
+  }
+}
+
+async function loadOutputState(db: any, invoiceId: string, tenantId: string): Promise<Record<string, unknown>> {
+  const { data, error } = await db.from('invoices')
+    .select('id, zatca_invoice_type, original_invoice_id, zatca_status, zatca_finalization_status, zatca_qr_code, zatca_xml, zatca_xml_hash, zatca_signature, zatca_finalization_error')
+    .eq('id', invoiceId)
+    .eq('tenant_id', tenantId)
+    .single()
+  if (error || !data) throw new Error('Invoice not found')
+  if (data.original_invoice_id && (data.zatca_invoice_type === 'credit_note' || data.zatca_invoice_type === 'debit_note')) {
+    const { data: original } = await db.from('invoices')
+      .select('zatca_invoice_type')
+      .eq('id', data.original_invoice_id)
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
+    data.resolved_standard = original?.zatca_invoice_type === 'standard'
+  }
+  const safeError = data.zatca_finalization_error && typeof data.zatca_finalization_error === 'object'
+    ? (data.zatca_finalization_error as any)?.failureSummary?.message ?? null
+    : null
+  return finalizationResponse(data, null, typeof safeError === 'string' ? safeError : null)
+}
+
+async function claimFinalization(db: any, invoiceId: string): Promise<'claimed' | 'already_finalized' | 'in_progress' | 'unavailable'> {
+  const { data, error } = await db
+    .from('invoices')
+    .update({ zatca_finalization_status: 'finalizing', zatca_finalization_error: null })
+    .eq('id', invoiceId)
+    .in('zatca_finalization_status', ['not_started', 'failed'])
+    .select('id')
+    .maybeSingle()
+
+  if (error) {
+    console.error('[zatca-submit] finalization claim failed:', error.message)
+    return 'unavailable'
+  }
+  if (data?.id) return 'claimed'
+
+  const { data: current } = await db
+    .from('invoices')
+    .select('zatca_finalization_status, zatca_xml, zatca_xml_hash, zatca_signature, zatca_qr_code')
+    .eq('id', invoiceId)
+    .maybeSingle()
+  if (current?.zatca_finalization_status === 'finalized'
+      && typeof current.zatca_xml === 'string'
+      && typeof current.zatca_xml_hash === 'string'
+      && typeof current.zatca_signature === 'string'
+      && typeof current.zatca_qr_code === 'string') return 'already_finalized'
+  if (current?.zatca_finalization_status === 'finalizing') return 'in_progress'
+  return 'unavailable'
+}
+
 // ── Main invoice processor ────────────────────────────────────────────────────
 
-async function processInvoice(db: any, invoiceId: string, callerTenantId: string, source: string): Promise<{
+function legacyOutputFields(
+  invoiceStatus: string,
+  invoiceType: string | null | undefined,
+  qrCode: string | null | undefined,
+): Record<string, unknown> {
+  const printable = ['reported', 'cleared'].includes(invoiceStatus)
+    && typeof qrCode === 'string'
+    && qrCode.trim().length > 0
+  return {
+    contractMode: 'legacy',
+    legacyCompatible: true,
+    finalizationStatus: `legacy_${invoiceStatus}`,
+    artifactStage: printable ? 'legacy_final' : 'legacy_pending',
+    documentKind: invoiceType === 'simplified' || invoiceType === 'standard' ? invoiceType : null,
+    canPrint: printable,
+    canShare: printable,
+    retryAvailable: ['pending', 'failed', 'error'].includes(invoiceStatus),
+    reconciliationRequired: false,
+    qrCode: printable ? qrCode : null,
+    error: null,
+  }
+}
+
+/**
+ * Exact disabled-mode compatibility contract for actionless production
+ * requests deployed before immutable finalization v2. This intentionally uses
+ * only columns present in the reviewed hosted schema and preserves the legacy
+ * build/sign/report-or-clear behavior. The HTTP router makes this unreachable
+ * as soon as the database master flag is enabled.
+ */
+async function processLegacyInvoiceDisabledMode(db: any, invoiceId: string, callerTenantId: string, source: string): Promise<{
   invoiceStatus: string
   diagnostics?: SubmitDiagnostics
+  [key: string]: unknown
 }> {
+  console.info('[zatca-submit] legacy disabled-mode processInvoice:', { invoiceId, source })
+
+  const { data: inv, error: invErr } = await db
+    .from('invoices')
+    .select(`id, invoice_number, invoice_reference, original_invoice_id, credit_reason,
+      zatca_uuid, zatca_invoice_type, zatca_type_code, invoice_date, created_at,
+      zatca_counter_number, zatca_prev_invoice_hash, zatca_xml_hash, zatca_qr_code, zatca_status,
+      subtotal, discount_amount, taxable_amount, tax_amount, total_amount,
+      branch_id, tenant_id, customer_id,
+      invoice_items(id, name, quantity, unit_price, discount_amount, subtotal, tax_rate, tax_amount, total),
+      customers(name, vat_number)`)
+    .eq('id', invoiceId).eq('tenant_id', callerTenantId).single()
+
+  if (invErr || !inv) {
+    console.error('[zatca-submit] legacy invoice fetch failed:', invErr?.message)
+    return { invoiceStatus: 'error', ...legacyOutputFields('error', null, null) }
+  }
+
+  if (['reported', 'cleared'].includes(inv.zatca_status)) {
+    console.info('[zatca-submit] legacy invoice already submitted:', {
+      invoiceId,
+      invoiceStatus: inv.zatca_status,
+    })
+    return {
+      invoiceStatus: inv.zatca_status,
+      ...legacyOutputFields(inv.zatca_status, inv.zatca_invoice_type, inv.zatca_qr_code),
+    }
+  }
+
+  const isCreditNote = inv.zatca_invoice_type === 'credit_note'
+  let originalInvoice: any = null
+
+  if (isCreditNote) {
+    if (!inv.original_invoice_id) {
+      console.error('[zatca-submit] credit note missing original invoice:', { invoiceId })
+      await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+      return { invoiceStatus: 'failed', ...legacyOutputFields('failed', null, null) }
+    }
+
+    const { data: original, error: originalErr } = await db
+      .from('invoices')
+      .select('id, invoice_number, zatca_invoice_type, zatca_status')
+      .eq('id', inv.original_invoice_id)
+      .eq('tenant_id', callerTenantId)
+      .maybeSingle()
+
+    if (originalErr || !original?.id) {
+      console.error('[zatca-submit] credit note original invoice lookup failed:', safeZatcaText(originalErr?.message ?? 'missing original', 180))
+      await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+      return { invoiceStatus: 'failed', ...legacyOutputFields('failed', null, null) }
+    }
+
+    if (!['simplified', 'standard'].includes(original.zatca_invoice_type)) {
+      console.error('[zatca-submit] unsupported credit note original type:', {
+        invoiceId,
+        originalInvoiceId: original.id,
+        originalType: original.zatca_invoice_type,
+      })
+      await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+      return { invoiceStatus: 'failed', ...legacyOutputFields('failed', null, null) }
+    }
+
+    if (!['reported', 'cleared'].includes(original.zatca_status)) {
+      console.error('[zatca-submit] credit note original invoice is not reported or cleared:', {
+        invoiceId,
+        originalInvoiceId: original.id,
+        originalStatus: original.zatca_status,
+      })
+      await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+      return { invoiceStatus: 'failed', ...legacyOutputFields('failed', null, null) }
+    }
+
+    if ((inv.zatca_type_code ?? '') !== '381') {
+      console.error('[zatca-submit] credit note has invalid ZATCA type code:', { invoiceId })
+      await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+      return { invoiceStatus: 'failed', ...legacyOutputFields('failed', null, null) }
+    }
+
+    if (!String(inv.credit_reason ?? '').trim()) {
+      console.error('[zatca-submit] credit note missing reason:', { invoiceId })
+      await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+      return { invoiceStatus: 'failed', ...legacyOutputFields('failed', null, null) }
+    }
+
+    originalInvoice = original
+  }
+
+  const { data: branchScope } = await db.from('branches')
+    .select('id,tenant_id,compliance_identity_mode,name,business_name,business_name_ar,vat_number,cr_number,building_number,street,district,city,postal_code,country')
+    .eq('id',inv.branch_id).eq('tenant_id',callerTenantId).single()
+  const protectedMode = branchScope?.compliance_identity_mode === 'protected'
+  const branchResult = protectedMode
+    ? await db.from('branch_compliance_profiles').select('branch_id,tenant_id,registered_seller_name,registered_seller_name_ar,vat_number,registration_scheme,registration_identifier,building_number,street,district,city,postal_code,country,validation_status').eq('branch_id',inv.branch_id).eq('tenant_id',callerTenantId).eq('validation_status','verified').single()
+    : { data: branchScope ? {
+        ...branchScope,
+        registered_seller_name: branchScope.business_name || branchScope.name,
+        registered_seller_name_ar: branchScope.business_name_ar,
+        registration_scheme: 'CRN', registration_identifier: branchScope.cr_number,
+      } : null }
+  const branch = branchResult.data
+
+  if (!branch) {
+    console.error('[zatca-submit] branch not found:', inv.branch_id)
+    return { invoiceStatus: 'error', ...legacyOutputFields('error', null, null) }
+  }
+
+  const sellerName = branch.registered_seller_name || ''
+  if (!sellerName) {
+    console.error('[zatca-submit] no seller name for branch:', inv.branch_id)
+    await db.from('invoices').update({ zatca_status: 'failed' }).eq('id', invoiceId)
+    await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, 'missing seller name')
+    return { invoiceStatus: 'failed', ...legacyOutputFields('failed', null, null) }
+  }
+
+  let credentials: SubmissionCredentials | null
+  try {
+    credentials = await loadSubmissionCredentials(db, inv.branch_id, inv.tenant_id)
+  } catch (err: any) {
+    console.warn('[zatca-submit] credentials unavailable:', safeZatcaText(err.message, 180))
+    await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, safeZatcaText(err.message, 180) ?? 'credentials unavailable')
+    return { invoiceStatus: 'pending', ...legacyOutputFields('pending', null, null) }
+  }
+
+  if (!credentials) {
+    console.info('[zatca-submit] no active Phase 2 credentials:', { invoiceId, branchId: inv.branch_id })
+    await db.from('invoices').update({ zatca_status: 'not_submitted' }).eq('id', invoiceId)
+    return { invoiceStatus: 'not_submitted', ...legacyOutputFields('not_submitted', null, null) }
+  }
+
+  let diagnostics: SubmitDiagnostics = {
+    source,
+    invoiceId,
+    branchId: inv.branch_id,
+    environment: credentials.environment,
+    invoiceType: inv.zatca_invoice_type,
+  }
+
+  try {
+    await db.from('invoices').update({ zatca_status: 'pending' }).eq('id', invoiceId)
+
+    const secretKey = credentials.privateKey
+    const isSimplified = inv.zatca_invoice_type === 'simplified'
+      || (isCreditNote && originalInvoice?.zatca_invoice_type === 'simplified')
+    console.info('[zatca-submit] building legacy XML:', {
+      invoiceId,
+      branchId: inv.branch_id,
+      isSimplified,
+      isCreditNote,
+    })
+    const previous = await resolvePreviousInvoiceHash(db, inv)
+    const zatcaCounterNumber = await resolveZatcaCounterNumber(db, inv)
+    diagnostics = {
+      ...diagnostics,
+      resolvedPreviousHash: previous.previousHash,
+      previousHashSource: previous.source,
+      storedPreviousHash: inv.zatca_prev_invoice_hash ?? null,
+      zatcaCounterNumber,
+    }
+    const invoiceForXml = {
+      ...inv,
+      zatca_prev_invoice_hash: previous.previousHash,
+      zatca_counter_number: zatcaCounterNumber,
+    }
+    const xmlData = buildInvoiceXMLData(
+      invoiceForXml,
+      branch,
+      inv.invoice_items ?? [],
+      inv.customers ?? null,
+      isSimplified,
+      isCreditNote
+        ? {
+          billingReferenceId: inv.invoice_reference || originalInvoice?.invoice_number,
+          reason: String(inv.credit_reason ?? '').trim(),
+        }
+        : undefined,
+    )
+    const unsignedXml = buildInvoice(xmlData, {
+      profileId:        isSimplified ? 'reporting:1.0' : 'clearance:1.0',
+      typeCodeName:     isSimplified ? '0200000' : '0100000',
+      invoiceTypeCode:   inv.zatca_type_code ?? '388',
+      includeSignature: true,
+      requireBuyer:     !isSimplified,
+    })
+
+    console.info('[zatca-submit] signing legacy XML:', { invoiceId, environment: credentials.environment })
+    const {
+      signedXml,
+      invoiceHash,
+      qrCode,
+      signatureValue,
+      diagnostics: signingDiagnostics,
+    } = await signInvoice(unsignedXml, secretKey, credentials.productionCsid)
+    diagnostics = {
+      ...diagnostics,
+      ...signingDiagnostics,
+      storedHashMatches: !inv.zatca_xml_hash || inv.zatca_xml_hash === invoiceHash,
+    }
+    console.info('[zatca-submit] signed legacy invoice:', { invoiceId, environment: credentials.environment })
+
+    const env       = credentials.environment
+    const baseUrl   = ZATCA_URLS[env]
+    const endpoint  = isSimplified ? `${baseUrl}/invoices/reporting/single` : `${baseUrl}/invoices/clearance/single`
+    diagnostics.endpointKind = isSimplified ? 'reporting' : 'clearance'
+    const creds     = btoa(`${credentials.productionCsid}:${credentials.productionSecret}`)
+    const xmlB64    = btoa(unescape(encodeURIComponent(signedXml)))
+
+    console.info('[zatca-submit] submitting legacy invoice to ZATCA:', {
+      invoiceId,
+      branchId: inv.branch_id,
+      environment: env,
+      endpointKind: diagnostics.endpointKind,
+    })
+    const zatcaRes  = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json', 'accept-version': 'V2', 'Content-Type': 'application/json',
+        'Authorization': `Basic ${creds}`,
+        ...(isSimplified ? {} : { 'Clearance-Status': '1' }),
+      },
+      body: JSON.stringify({ invoiceHash, uuid: inv.zatca_uuid, invoice: xmlB64 }),
+    })
+
+    const responseText = await zatcaRes.text()
+    console.info('[zatca-submit] legacy ZATCA status:', { invoiceId, httpStatus: zatcaRes.status })
+    const zatcaBody = (() => { try { return JSON.parse(responseText) } catch { return {} } })()
+    console.info('[zatca-submit] legacy ZATCA response summary:', JSON.stringify({
+      invoiceId,
+      ...summarizeZatcaResponse(zatcaBody),
+    }))
+
+    const reportingStatus = zatcaBody?.reportingStatus as string | undefined
+    const clearanceStatus = zatcaBody?.clearanceStatus as string | undefined
+    diagnostics = {
+      ...diagnostics,
+      httpStatus: zatcaRes.status,
+      validationStatus: typeof zatcaBody?.validationResults?.status === 'string'
+        ? zatcaBody.validationResults.status
+        : undefined,
+      reportingStatus,
+      clearanceStatus,
+      errorCodes: zatcaMessageCodes(zatcaBody, 'error'),
+      warningCodes: zatcaMessageCodes(zatcaBody, 'warning'),
+    }
+    let newStatus: string
+    if (isSimplified) {
+      newStatus = reportingStatus === 'REPORTED' ? 'reported' : 'failed'
+    } else {
+      newStatus = clearanceStatus === 'CLEARED' ? 'cleared' : 'failed'
+    }
+    if ((diagnostics.errorCodes ?? []).length > 0) newStatus = 'failed'
+    console.info('[zatca-submit] legacy final status:', { invoiceId, invoiceStatus: newStatus })
+
+    await db.from('invoices').update({
+      zatca_status:             newStatus,
+      zatca_xml:                signedXml,
+      zatca_xml_hash:           invoiceHash,
+      zatca_signature:          signatureValue,
+      ...(newStatus === 'reported' || newStatus === 'cleared' ? { zatca_qr_code: qrCode } : {}),
+      zatca_submitted_at:       new Date().toISOString(),
+      zatca_clearance_status:   clearanceStatus ?? null,
+      zatca_clearance_response: isSimplified ? null : (zatcaBody ?? null),
+      zatca_reporting_response: isSimplified ? (zatcaBody ?? null) : null,
+      zatca_warnings:           buildSafeZatcaRecord(zatcaBody, diagnostics, newStatus),
+      zatca_prev_invoice_hash:  previous.previousHash,
+      zatca_counter_number:     zatcaCounterNumber,
+    }).eq('id', invoiceId)
+
+    if (credentials.environment === 'sandbox' && credentials.legacyCertId) {
+      await db.from('zatca_certificates')
+        .update({ last_invoice_hash: invoiceHash, invoice_counter: (credentials.legacyInvoiceCounter ?? 0) + 1 })
+        .eq('id', credentials.legacyCertId)
+    }
+
+    if (newStatus === 'failed') {
+      await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, (diagnostics.errorCodes ?? []).join(',') || 'zatca rejected invoice')
+    }
+
+    return {
+      invoiceStatus: newStatus,
+      ...legacyOutputFields(newStatus, isSimplified ? 'simplified' : 'standard', qrCode),
+    }
+  } catch (err: any) {
+    if (isZatcaSubmitAssertionError(err)) {
+      diagnostics = { ...diagnostics, ...err.diagnostics }
+      console.error('[zatca-submit] legacy local validation failed:', JSON.stringify({
+        statusString: err.statusString,
+        ...safeSubmitDiagnosticSummary(diagnostics),
+      }))
+      await db.from('invoices').update({
+        zatca_status: 'failed',
+        zatca_reporting_response: buildSafeFailureResponse(err.statusString, err.message, diagnostics),
+        zatca_warnings: {
+          failureSummary: {
+            statusString: err.statusString,
+            message: safeZatcaText(err.message, 240),
+            diagnostics: safeSubmitDiagnosticSummary(diagnostics),
+          },
+        },
+      }).eq('id', invoiceId)
+      return { invoiceStatus: 'failed', ...legacyOutputFields('failed', null, null) }
+    }
+
+    console.error('[zatca-submit] legacy error:', safeZatcaText(err.message ?? 'unknown', 240))
+    const isRetryableAutoSubmit = AUTO_SUBMIT_SOURCES.has(source)
+    const retryStatus = isRetryableAutoSubmit ? 'pending' : 'failed'
+    await db.from('invoices').update({
+      zatca_status: retryStatus,
+      zatca_reporting_response: buildSafeFailureResponse('SUBMISSION_EXCEPTION', err.message ?? 'unknown', diagnostics),
+      zatca_warnings: {
+        failureSummary: {
+          statusString: 'SUBMISSION_EXCEPTION',
+          message: safeZatcaText(err.message ?? 'unknown', 240),
+          retryable: isRetryableAutoSubmit,
+          diagnostics: safeSubmitDiagnosticSummary(diagnostics),
+        },
+      },
+    }).eq('id', invoiceId)
+    await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, safeZatcaText(err.message, 180) ?? 'submission exception')
+    return {
+      invoiceStatus: retryStatus,
+      diagnostics,
+      ...legacyOutputFields(retryStatus, null, null),
+    }
+  }
+}
+
+async function processInvoiceV1SupersededDoNotCall(db: any, invoiceId: string, callerTenantId: string, source: string, action: SubmitAction): Promise<{
+  invoiceStatus: string
+  diagnostics?: SubmitDiagnostics
+  finalizationStatus?: string
+  canPrint?: boolean
+  canShare?: boolean
+  retryAvailable?: boolean
+  qrCode?: string | null
+  error?: string | null
+}> {
+  // Retained temporarily only to keep the pre-existing diff reviewable. The
+  // HTTP handler has no call path to this function, and this unconditional
+  // guard prevents accidental reuse of the unsafe generic-artifact contract.
+  throw new Error('SUPERSEDED_V1_FINALIZATION_PATH_DISABLED')
+  /* c8 ignore start */
   console.info('[zatca-submit] processInvoice:', { invoiceId, source })
 
   const { data: inv, error: invErr } = await db
     .from('invoices')
     .select(`id, invoice_number, invoice_reference, original_invoice_id, credit_reason,
       zatca_uuid, zatca_invoice_type, zatca_type_code, invoice_date, created_at,
-      zatca_counter_number, zatca_prev_invoice_hash, zatca_xml_hash, zatca_status,
+      zatca_counter_number, zatca_prev_invoice_hash, zatca_xml, zatca_xml_hash,
+      zatca_signature, zatca_qr_code, zatca_status,
+      zatca_finalization_status, zatca_finalized_at, zatca_finalization_error,
       subtotal, discount_amount, taxable_amount, tax_amount, total_amount,
       branch_id, tenant_id, customer_id,
       invoice_items(id, name, quantity, unit_price, discount_amount, subtotal, tax_rate, tax_amount, total),
@@ -1419,7 +1884,22 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
 
   if (['reported', 'cleared'].includes(inv.zatca_status)) {
     console.info('[zatca-submit] already submitted:', { invoiceId, invoiceStatus: inv.zatca_status })
-    return { invoiceStatus: inv.zatca_status }
+    return {
+      invoiceStatus: inv.zatca_status,
+      ...finalizationResponse(inv),
+    } as any
+  }
+
+  if (action === 'finalize' && inv.zatca_finalization_status === 'finalizing') {
+    return {
+      invoiceStatus: inv.zatca_status ?? 'pending',
+      finalizationStatus: 'finalizing',
+      canPrint: false,
+      canShare: false,
+      retryAvailable: false,
+      qrCode: null,
+      error: null,
+    }
   }
 
   const isCreditNote = inv.zatca_invoice_type === 'credit_note'
@@ -1530,68 +2010,145 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     invoiceType: inv.zatca_invoice_type,
   }
 
+  const isSimplifiedDocument = inv.zatca_invoice_type === 'simplified'
+    || (isCreditNote && originalInvoice?.zatca_invoice_type === 'simplified')
+  let finalizationCompleted = hasCompleteFinalizedDocument(inv)
+
   try {
+    const isSimplified = isSimplifiedDocument
     await db.from('invoices').update({ zatca_status: 'pending' }).eq('id', invoiceId)
 
-    const secretKey = credentials.privateKey
+    let signedXml: string
+    let invoiceHash: string
+    let qrCode: string
+    let signatureValue: string
+    let previousHash = inv.zatca_prev_invoice_hash ?? ''
+    let zatcaCounterNumber = Number(inv.zatca_counter_number ?? 0)
 
-    const isSimplified = inv.zatca_invoice_type === 'simplified'
-      || (isCreditNote && originalInvoice?.zatca_invoice_type === 'simplified')
-    console.info('[zatca-submit] building XML:', {
-      invoiceId,
-      branchId: inv.branch_id,
-      isSimplified,
-      isCreditNote,
-    })
-    const previous = await resolvePreviousInvoiceHash(db, inv)
-    const zatcaCounterNumber = await resolveZatcaCounterNumber(db, inv)
-    diagnostics = {
-      ...diagnostics,
-      resolvedPreviousHash: previous.previousHash,
-      previousHashSource: previous.source,
-      storedPreviousHash: inv.zatca_prev_invoice_hash ?? null,
-      zatcaCounterNumber,
-    }
-    const invoiceForXml = {
-      ...inv,
-      zatca_prev_invoice_hash: previous.previousHash,
-      zatca_counter_number: zatcaCounterNumber,
-    }
-    const xmlData = buildInvoiceXMLData(
-      invoiceForXml,
-      branch,
-      inv.invoice_items ?? [],
-      inv.customers ?? null,
-      isSimplified,
-      isCreditNote
-        ? {
-          billingReferenceId: inv.invoice_reference || originalInvoice?.invoice_number,
-          reason: String(inv.credit_reason ?? '').trim(),
+    if (finalizationCompleted) {
+      // Retries and re-submissions use the immutable stored document. They do
+      // not rebuild XML, recalculate the hash-chain input, or resign.
+      signedXml = inv.zatca_xml
+      invoiceHash = inv.zatca_xml_hash
+      signatureValue = inv.zatca_signature
+      qrCode = inv.zatca_qr_code
+      diagnostics = {
+        ...diagnostics,
+        invoiceHash,
+        storedHashMatches: true,
+        storedPreviousHash: previousHash || null,
+        zatcaCounterNumber: zatcaCounterNumber || undefined,
+      }
+      console.info('[zatca-submit] reusing finalized invoice:', { invoiceId })
+    } else {
+      const claim = await claimFinalization(db, invoiceId)
+      if (claim === 'already_finalized') {
+        const { data: refreshed } = await db.from('invoices')
+          .select('zatca_xml, zatca_xml_hash, zatca_signature, zatca_qr_code, zatca_finalization_status, zatca_status')
+          .eq('id', invoiceId).single()
+        if (refreshed && hasCompleteFinalizedDocument(refreshed)) {
+          signedXml = refreshed.zatca_xml
+          invoiceHash = refreshed.zatca_xml_hash
+          signatureValue = refreshed.zatca_signature
+          qrCode = refreshed.zatca_qr_code
+          finalizationCompleted = true
+        } else {
+          return { invoiceStatus: 'pending', finalizationStatus: 'finalizing', canPrint: false, canShare: false, retryAvailable: false, qrCode: null }
         }
-        : undefined,
-    )
-    const unsignedXml = buildInvoice(xmlData, {
-      profileId:        isSimplified ? 'reporting:1.0' : 'clearance:1.0',
-      typeCodeName:     isSimplified ? '0200000' : '0100000',
-      invoiceTypeCode:   inv.zatca_type_code ?? '388',
-      includeSignature: true,
-      requireBuyer:     !isSimplified,
-    })
+      } else if (claim !== 'claimed') {
+        return { invoiceStatus: 'pending', finalizationStatus: 'finalizing', canPrint: false, canShare: false, retryAvailable: false, qrCode: null }
+      } else {
+        const secretKey = credentials.privateKey
+        console.info('[zatca-submit] building XML:', {
+          invoiceId,
+          branchId: inv.branch_id,
+          isSimplified,
+          isCreditNote,
+        })
+        const previous = await resolvePreviousInvoiceHash(db, inv)
+        zatcaCounterNumber = await resolveZatcaCounterNumber(db, inv)
+        previousHash = previous.previousHash
+        diagnostics = {
+          ...diagnostics,
+          resolvedPreviousHash: previous.previousHash,
+          previousHashSource: previous.source,
+          storedPreviousHash: inv.zatca_prev_invoice_hash ?? null,
+          zatcaCounterNumber,
+        }
+        const invoiceForXml = {
+          ...inv,
+          zatca_prev_invoice_hash: previous.previousHash,
+          zatca_counter_number: zatcaCounterNumber,
+        }
+        const xmlData = buildInvoiceXMLData(
+          invoiceForXml,
+          branch,
+          inv.invoice_items ?? [],
+          inv.customers ?? null,
+          isSimplified,
+          isCreditNote
+            ? {
+              billingReferenceId: inv.invoice_reference || originalInvoice?.invoice_number,
+              reason: String(inv.credit_reason ?? '').trim(),
+            }
+            : undefined,
+        )
+        const unsignedXml = buildInvoice(xmlData, {
+          profileId:        isSimplified ? 'reporting:1.0' : 'clearance:1.0',
+          typeCodeName:     isSimplified ? '0200000' : '0100000',
+          invoiceTypeCode:   inv.zatca_type_code ?? '388',
+          includeSignature: true,
+          requireBuyer:     !isSimplified,
+        })
 
-    console.info('[zatca-submit] signing XML:', { invoiceId, environment: credentials.environment })
-    const {
-      signedXml,
-      invoiceHash,
-      qrCode,
-      signatureValue,
-      diagnostics: signingDiagnostics,
-    } = await signInvoice(unsignedXml, secretKey, credentials.productionCsid)
-    diagnostics = {
-      ...diagnostics,
-      ...signingDiagnostics,
-      storedHashMatches: !inv.zatca_xml_hash || inv.zatca_xml_hash === invoiceHash,
+        console.info('[zatca-submit] signing invoice:', { invoiceId, environment: credentials.environment })
+        const signed = await signInvoice(unsignedXml, secretKey, credentials.productionCsid)
+        signedXml = signed.signedXml
+        invoiceHash = signed.invoiceHash
+        qrCode = signed.qrCode
+        signatureValue = signed.signatureValue
+        diagnostics = {
+          ...diagnostics,
+          ...signed.diagnostics,
+          storedHashMatches: !inv.zatca_xml_hash || inv.zatca_xml_hash === invoiceHash,
+        }
+
+        const { data: persisted, error: persistError } = await db.from('invoices').update({
+          zatca_xml: signedXml,
+          zatca_xml_hash: invoiceHash,
+          zatca_signature: signatureValue,
+          zatca_qr_code: qrCode,
+          zatca_prev_invoice_hash: previousHash,
+          zatca_counter_number: zatcaCounterNumber,
+          zatca_finalization_status: 'finalized',
+          zatca_finalized_at: new Date().toISOString(),
+          zatca_finalization_error: null,
+        }).eq('id', invoiceId).eq('zatca_finalization_status', 'finalizing').select('id').maybeSingle()
+        if (persistError || !persisted?.id) {
+          const { data: committed } = await db.from('invoices')
+            .select('zatca_finalization_status, zatca_xml, zatca_xml_hash, zatca_signature, zatca_qr_code')
+            .eq('id', invoiceId).maybeSingle()
+          if (!committed || !hasCompleteFinalizedDocument(committed)) {
+            throw new Error('Unable to persist immutable ZATCA finalization')
+          }
+        }
+        finalizationCompleted = true
+        console.info('[zatca-submit] finalized invoice locally:', { invoiceId })
+      }
     }
-    console.info('[zatca-submit] signed invoice:', { invoiceId, environment: credentials.environment })
+
+    if (action === 'finalize') {
+      return {
+        invoiceStatus: inv.zatca_status ?? 'pending',
+        finalizationStatus: 'finalized',
+        canPrint: isSimplified,
+        canShare: isSimplified,
+        retryAvailable: true,
+        qrCode,
+        error: null,
+        diagnostics,
+      }
+    }
 
     const env       = credentials.environment
     const baseUrl   = ZATCA_URLS[env]
@@ -1648,17 +2205,11 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
 
     await db.from('invoices').update({
       zatca_status:             newStatus,
-      zatca_xml:                signedXml,
-      zatca_xml_hash:           invoiceHash,
-      zatca_signature:           signatureValue,
-      ...(newStatus === 'reported' || newStatus === 'cleared' ? { zatca_qr_code: qrCode } : {}),
       zatca_submitted_at:       new Date().toISOString(),
       zatca_clearance_status:   clearanceStatus ?? null,
       zatca_clearance_response: isSimplified ? null : (zatcaBody ?? null),
       zatca_reporting_response: isSimplified ? (zatcaBody ?? null) : null,
       zatca_warnings:           buildSafeZatcaRecord(zatcaBody, diagnostics, newStatus),
-      zatca_prev_invoice_hash:  previous.previousHash,
-      zatca_counter_number:     zatcaCounterNumber,
     }).eq('id', invoiceId)
 
     if (credentials.environment === 'sandbox' && credentials.legacyCertId) {
@@ -1671,7 +2222,15 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
       await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, (diagnostics.errorCodes ?? []).join(',') || 'zatca rejected invoice')
     }
 
-    return { invoiceStatus: newStatus }
+    return {
+      invoiceStatus: newStatus,
+      finalizationStatus: 'finalized',
+      canPrint: isSimplified || newStatus === 'cleared',
+      canShare: isSimplified || newStatus === 'cleared',
+      retryAvailable: true,
+      qrCode,
+      diagnostics,
+    }
 
   } catch (err: any) {
     if (isZatcaSubmitAssertionError(err)) {
@@ -1682,6 +2241,10 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
       }))
       await db.from('invoices').update({
         zatca_status: 'failed',
+        ...(finalizationCompleted ? {} : {
+          zatca_finalization_status: 'failed',
+          zatca_finalization_error: buildSafeFailureResponse(err.statusString, err.message, diagnostics),
+        }),
         zatca_reporting_response: buildSafeFailureResponse(err.statusString, err.message, diagnostics),
         zatca_warnings: {
           failureSummary: {
@@ -1691,7 +2254,7 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
           },
         },
       }).eq('id', invoiceId)
-      return { invoiceStatus: 'failed' }
+      return { invoiceStatus: 'failed', finalizationStatus: finalizationCompleted ? 'finalized' : 'failed', canPrint: false, canShare: false, retryAvailable: !finalizationCompleted, qrCode: null }
     }
 
     console.error('[zatca-submit] error:', safeZatcaText(err.message ?? 'unknown', 240))
@@ -1699,6 +2262,15 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
     const retryStatus = isRetryableAutoSubmit ? 'pending' : 'failed'
     await db.from('invoices').update({
       zatca_status: retryStatus,
+      ...(finalizationCompleted ? {} : {
+        zatca_finalization_status: 'failed',
+        zatca_finalization_error: {
+          failureSummary: {
+            statusString: 'FINALIZATION_EXCEPTION',
+            message: safeZatcaText(err.message ?? 'unknown', 240),
+          },
+        },
+      }),
       zatca_reporting_response: buildSafeFailureResponse('SUBMISSION_EXCEPTION', err.message ?? 'unknown', diagnostics),
       zatca_warnings: {
         failureSummary: {
@@ -1710,7 +2282,400 @@ async function processInvoice(db: any, invoiceId: string, callerTenantId: string
       },
     }).eq('id', invoiceId)
     await queueForRetry(db, invoiceId, inv.branch_id, inv.tenant_id, safeZatcaText(err.message, 180) ?? 'submission exception')
-    return { invoiceStatus: retryStatus, diagnostics }
+    return {
+      invoiceStatus: retryStatus,
+      finalizationStatus: finalizationCompleted ? 'finalized' : 'failed',
+      canPrint: finalizationCompleted && isSimplifiedDocument,
+      canShare: finalizationCompleted && isSimplifiedDocument,
+      retryAvailable: true,
+      qrCode: finalizationCompleted ? (inv.zatca_qr_code ?? null) : null,
+      diagnostics,
+    }
+  }
+}
+
+// ── Immutable finalization v2 ────────────────────────────────────────────────
+
+interface FinalizationCapabilitiesV2 {
+  schemaVersion: number | null
+  edgeFunctionVersion: string
+  minimumClientVersion: string
+  immutableFinalizationEnabled: boolean
+  databaseFeatureEnabled: boolean
+  legacySubmitAvailable: boolean
+  edgeKillSwitchEnabled: boolean
+  simplifiedEnabled: boolean
+  standardEnabled: boolean
+  supportsLocalSimplifiedFinalization: boolean
+  supportsStandardClearanceGating: boolean
+  supportsLeasedClaims: boolean
+  supportsSerializedChainAllocator: boolean
+  compatible: boolean
+}
+
+function rpcObject(value: any): Record<string, any> {
+  if (Array.isArray(value)) return value[0] ?? {}
+  return value && typeof value === 'object' ? value : {}
+}
+
+async function loadFinalizationCapabilitiesV2(db: any): Promise<FinalizationCapabilitiesV2> {
+  const edgeKillSwitchEnabled = Deno.env.get('ZATCA_IMMUTABLE_FINALIZATION_ENABLED') === 'true'
+  const { data, error } = await db.rpc('get_zatca_finalization_capabilities_v2')
+  if (error) {
+    console.warn('[zatca-submit] finalization v2 schema unavailable:', safeZatcaText(error.message, 160))
+    const runtime = await db.from('zatca_finalization_runtime')
+      .select('immutable_finalization_enabled')
+      .eq('singleton', true)
+      .maybeSingle()
+    const runtimeSchemaMissing = runtime.error != null && (
+      runtime.error.code === '42P01'
+      || runtime.error.code === 'PGRST205'
+      || /does not exist|could not find the table/i.test(String(runtime.error.message ?? ''))
+    )
+    const databaseFeatureEnabled = runtime.data?.immutable_finalization_enabled === true
+    const legacySubmitAvailable = runtime.error == null
+      ? !databaseFeatureEnabled
+      : runtimeSchemaMissing
+    return {
+      schemaVersion: null, edgeFunctionVersion: FINALIZATION_EDGE_VERSION,
+      minimumClientVersion: FINALIZATION_CLIENT_VERSION,
+      immutableFinalizationEnabled: false, databaseFeatureEnabled,
+      legacySubmitAvailable,
+      edgeKillSwitchEnabled, simplifiedEnabled: false, standardEnabled: false,
+      supportsLocalSimplifiedFinalization: false,
+      supportsStandardClearanceGating: false, supportsLeasedClaims: false,
+      supportsSerializedChainAllocator: false, compatible: false,
+    }
+  }
+  const capability = rpcObject(data)
+  const schemaVersion = Number(capability.schemaVersion ?? 0)
+  const databaseFeatureEnabled = capability.immutableFinalizationEnabled === true
+  const compatible = schemaVersion === FINALIZATION_SCHEMA_VERSION
+    && String(capability.minimumEdgeVersion ?? '') === FINALIZATION_EDGE_VERSION
+    && String(capability.minimumClientVersion ?? '') === FINALIZATION_CLIENT_VERSION
+  return {
+    schemaVersion, edgeFunctionVersion: FINALIZATION_EDGE_VERSION,
+    minimumClientVersion: String(capability.minimumClientVersion ?? FINALIZATION_CLIENT_VERSION),
+    immutableFinalizationEnabled: compatible && databaseFeatureEnabled && edgeKillSwitchEnabled,
+    databaseFeatureEnabled, legacySubmitAvailable: !databaseFeatureEnabled, edgeKillSwitchEnabled,
+    simplifiedEnabled: compatible && capability.simplifiedEnabled === true,
+    standardEnabled: compatible && capability.standardEnabled === true,
+    supportsLocalSimplifiedFinalization: compatible && capability.supportsLocalSimplifiedFinalization === true,
+    supportsStandardClearanceGating: compatible && capability.supportsStandardClearanceGating === true,
+    supportsLeasedClaims: compatible && capability.supportsLeasedClaims === true,
+    supportsSerializedChainAllocator: compatible && capability.supportsSerializedChainAllocator === true,
+    compatible,
+  }
+}
+
+async function loadLegacyOutputState(
+  db: any,
+  invoiceId: string,
+  tenantId: string,
+): Promise<Record<string, unknown>> {
+  const { data, error } = await db.from('invoices')
+    .select('id, zatca_invoice_type, zatca_status, zatca_qr_code')
+    .eq('id', invoiceId)
+    .eq('tenant_id', tenantId)
+    .maybeSingle()
+  if (error || !data?.id) throw new Error('Unable to load legacy invoice output state')
+  return {
+    invoiceId: data.id,
+    invoiceStatus: String(data.zatca_status ?? 'not_submitted'),
+    ...legacyOutputFields(
+      String(data.zatca_status ?? 'not_submitted'),
+      data.zatca_invoice_type,
+      data.zatca_qr_code,
+    ),
+  }
+}
+
+async function loadOutputStateV2(db: any, invoiceId: string, tenantId: string): Promise<Record<string, any>> {
+  const { data, error } = await db.rpc('get_zatca_output_state_v2', {
+    p_invoice_id: invoiceId, p_tenant_id: tenantId,
+  })
+  if (error) throw new Error('Unable to load authoritative invoice output state')
+  return rpcObject(data)
+}
+
+async function parseClearedArtifactV2(params: {
+  body: any
+  expectedUuid: string
+  expectedInvoiceNumber: string
+  provisionalHash: string
+}): Promise<{ xml: string; hash: string; signature: string; qr: string; metadata: Record<string, unknown> }> {
+  const parsed = await parseZatcaClearedInvoice({
+    clearedInvoice: params.body?.clearedInvoice,
+    expectedUuid: params.expectedUuid,
+    expectedInvoiceNumber: params.expectedInvoiceNumber,
+    provisionalHash: params.provisionalHash,
+    computeHash: computeInvoiceHash,
+  })
+  return {
+    ...parsed,
+    metadata: {
+      ...parsed.metadata,
+      clearanceStatus: safeZatcaText(params.body?.clearanceStatus, 40),
+      validationStatus: safeZatcaText(params.body?.validationResults?.status, 40),
+    },
+  }
+}
+
+async function allocateChainV2WithWait(db: any, invoiceId: string, claimToken: string): Promise<Record<string, any>> {
+  // A predecessor hash cannot be invented before the predecessor is signed.
+  // Concurrent Edge requests therefore wait on the serialized branch head and
+  // retry the same token/reservation request; they never use MAX()+1.
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const result = await db.rpc('allocate_zatca_chain_v2', {
+      p_invoice_id: invoiceId, p_claim_token: claimToken,
+    })
+    if (!result.error) return rpcObject(result.data)
+    if (!String(result.error.message ?? '').includes('CHAIN_PREDECESSOR_PENDING')) {
+      throw new Error(safeZatcaText(result.error.message, 160) ?? 'Unable to allocate invoice chain')
+    }
+    await new Promise(resolve => setTimeout(resolve, 250))
+  }
+  throw new Error('CHAIN_PREDECESSOR_PENDING')
+}
+
+async function processInvoiceV2(
+  db: any,
+  invoiceId: string,
+  callerTenantId: string,
+  source: string,
+  action: 'submit' | 'finalize',
+): Promise<Record<string, any>> {
+  let finalizationToken: string | null = null
+  let networkToken: string | null = null
+  let requestStarted = false
+
+  const selectInvoice = async () => {
+    const { data, error } = await db.from('invoices').select(`id, invoice_number, invoice_reference,
+      original_invoice_id, credit_reason, zatca_uuid, zatca_invoice_type, zatca_type_code,
+      invoice_date, created_at, zatca_counter_number, zatca_prev_invoice_hash, zatca_status,
+      zatca_finalization_version, zatca_artifact_provenance, zatca_document_kind,
+      zatca_lifecycle_state, zatca_artifact_stage, zatca_finalization_error_v2,
+      zatca_simplified_xml, zatca_simplified_xml_hash, zatca_simplified_signature, zatca_simplified_qr,
+      zatca_provisional_xml, zatca_provisional_xml_hash, zatca_provisional_signature, zatca_provisional_qr,
+      zatca_cleared_xml, zatca_cleared_xml_hash, zatca_cleared_signature, zatca_cleared_qr,
+      subtotal, discount_amount, taxable_amount, tax_amount, total_amount,
+      branch_id, tenant_id, customer_id,
+      invoice_items(id, name, quantity, unit_price, discount_amount, subtotal, tax_rate, tax_amount, total),
+      customers(name, vat_number)`)
+      .eq('id', invoiceId).eq('tenant_id', callerTenantId).single()
+    if (error || !data) throw new Error('Invoice not found')
+    return data
+  }
+
+  let inv = await selectInvoice()
+  if (inv.zatca_finalization_version !== 2 || inv.zatca_artifact_provenance !== 'server_v2') {
+    throw new Error('Legacy invoice is not eligible for v2 finalization')
+  }
+
+  const isCreditNote = inv.zatca_invoice_type === 'credit_note'
+  let originalInvoice: any = null
+  if (isCreditNote) {
+    if (!inv.original_invoice_id || !String(inv.credit_reason ?? '').trim() || inv.zatca_type_code !== '381') {
+      throw new Error('Credit note is missing its required original invoice, type, or reason')
+    }
+    const originalResult = await db.from('invoices')
+      .select('id, invoice_number, zatca_invoice_type, zatca_status')
+      .eq('id', inv.original_invoice_id).eq('tenant_id', callerTenantId).single()
+    if (originalResult.error || !originalResult.data
+        || !['simplified', 'standard'].includes(originalResult.data.zatca_invoice_type)
+        || !['reported', 'cleared'].includes(originalResult.data.zatca_status)) {
+      throw new Error('Credit note original invoice is not eligible')
+    }
+    originalInvoice = originalResult.data
+  }
+  const isSimplified = inv.zatca_invoice_type === 'simplified'
+    || (isCreditNote && originalInvoice?.zatca_invoice_type === 'simplified')
+  const expectedKind = isSimplified ? 'simplified' : 'standard'
+  if (inv.zatca_document_kind !== expectedKind) throw new Error('Invoice document-kind contract mismatch')
+
+  const { data: branchScope } = await db.from('branches')
+    .select('id,tenant_id,compliance_identity_mode,name,business_name,business_name_ar,vat_number,cr_number,building_number,street,district,city,postal_code,country')
+    .eq('id', inv.branch_id).eq('tenant_id', callerTenantId).single()
+  const branchResult = branchScope?.compliance_identity_mode === 'protected'
+    ? await db.from('branch_compliance_profiles').select('branch_id,tenant_id,registered_seller_name,registered_seller_name_ar,vat_number,registration_scheme,registration_identifier,building_number,street,district,city,postal_code,country,validation_status').eq('branch_id', inv.branch_id).eq('tenant_id', callerTenantId).eq('validation_status', 'verified').single()
+    : { data: branchScope ? {
+        ...branchScope,
+        registered_seller_name: branchScope.business_name || branchScope.name,
+        registered_seller_name_ar: branchScope.business_name_ar,
+        registration_scheme: 'CRN', registration_identifier: branchScope.cr_number,
+      } : null }
+  const branch = branchResult.data
+  if (!branch?.registered_seller_name) throw new Error('Verified seller identity is unavailable')
+
+  const credentials = await loadSubmissionCredentials(db, inv.branch_id, inv.tenant_id)
+  if (!credentials) throw new Error('Active Phase 2 credentials are unavailable')
+  let diagnostics: SubmitDiagnostics = {
+    source, invoiceId, branchId: inv.branch_id,
+    environment: credentials.environment, invoiceType: inv.zatca_invoice_type,
+  }
+
+  try {
+    if (inv.zatca_artifact_stage === 'none') {
+      const claimResult = await db.rpc('claim_zatca_finalization_v2', {
+        p_invoice_id: invoiceId,
+        p_claimed_by: `${FINALIZATION_EDGE_VERSION}:${source}`,
+        p_lease_seconds: 90,
+      })
+      if (claimResult.error) throw new Error('Unable to acquire finalization lease')
+      const claim = rpcObject(claimResult.data)
+      if (claim.status === 'in_progress') return await loadOutputStateV2(db, invoiceId, callerTenantId)
+      if (claim.status !== 'claimed') {
+        inv = await selectInvoice()
+      } else {
+        finalizationToken = String(claim.claimToken)
+        const allocation = await allocateChainV2WithWait(db, invoiceId, finalizationToken)
+        const counter = Number(allocation.counter_number)
+        const previousHash = String(allocation.previous_hash ?? '')
+        if (!Number.isInteger(counter) || counter < 1 || !previousHash) {
+          throw new Error('Invalid chain allocation response')
+        }
+
+        const xmlData = buildInvoiceXMLData(
+          { ...inv, zatca_prev_invoice_hash: previousHash, zatca_counter_number: counter },
+          branch, inv.invoice_items ?? [], inv.customers ?? null, isSimplified,
+          isCreditNote ? {
+            billingReferenceId: inv.invoice_reference || originalInvoice?.invoice_number,
+            reason: String(inv.credit_reason ?? '').trim(),
+          } : undefined,
+        )
+        const unsignedXml = buildInvoice(xmlData, {
+          profileId: isSimplified ? 'reporting:1.0' : 'clearance:1.0',
+          typeCodeName: isSimplified ? '0200000' : '0100000',
+          invoiceTypeCode: inv.zatca_type_code ?? '388',
+          includeSignature: true,
+          requireBuyer: !isSimplified,
+        })
+        const signed = await signInvoice(unsignedXml, credentials.privateKey, credentials.productionCsid)
+        diagnostics = { ...diagnostics, ...signed.diagnostics, invoiceHash: signed.invoiceHash, zatcaCounterNumber: counter }
+        const persisted = isSimplified
+          ? await db.rpc('persist_zatca_simplified_final_v2', {
+              p_invoice_id: invoiceId, p_claim_token: finalizationToken,
+              p_signed_xml: signed.signedXml, p_xml_hash: signed.invoiceHash,
+              p_signature: signed.signatureValue, p_qr: signed.qrCode,
+            })
+          : await db.rpc('persist_zatca_standard_provisional_v2', {
+              p_invoice_id: invoiceId, p_claim_token: finalizationToken,
+              p_signed_xml: signed.signedXml, p_xml_hash: signed.invoiceHash,
+              p_signature: signed.signatureValue, p_qr: signed.qrCode,
+            })
+        if (persisted.error) throw new Error('Unable to atomically persist the finalized artifact')
+        finalizationToken = null
+        inv = await selectInvoice()
+      }
+    }
+
+    if (action === 'finalize') {
+      return { ...(await loadOutputStateV2(db, invoiceId, callerTenantId)), diagnostics }
+    }
+
+    const networkClaimResult = await db.rpc('claim_zatca_network_v2', {
+      p_invoice_id: invoiceId,
+      p_claimed_by: `${FINALIZATION_EDGE_VERSION}:${source}`,
+      p_lease_seconds: 120,
+    })
+    if (networkClaimResult.error) throw new Error('Unable to acquire network submission lease')
+    const networkClaim = rpcObject(networkClaimResult.data)
+    if (['in_progress', 'already_complete', 'reconciliation_required'].includes(String(networkClaim.status))) {
+      return await loadOutputStateV2(db, invoiceId, callerTenantId)
+    }
+    if (networkClaim.status !== 'claimed') throw new Error('Network submission lease was not granted')
+    networkToken = String(networkClaim.networkToken)
+    const operation = String(networkClaim.operation)
+    const signedXml = operation === 'report' ? inv.zatca_simplified_xml : inv.zatca_provisional_xml
+    const invoiceHash = operation === 'report' ? inv.zatca_simplified_xml_hash : inv.zatca_provisional_xml_hash
+    if (!signedXml || !invoiceHash || invoiceHash !== networkClaim.artifactHash) {
+      throw new Error('Stored submission artifact does not match its durable request identity')
+    }
+
+    const started = await db.rpc('mark_zatca_network_request_started_v2', {
+      p_invoice_id: invoiceId, p_network_token: networkToken,
+    })
+    if (started.error) throw new Error('Unable to durably mark network request start')
+    requestStarted = true
+
+    const baseUrl = ZATCA_URLS[credentials.environment]
+    const endpoint = operation === 'report'
+      ? `${baseUrl}/invoices/reporting/single`
+      : `${baseUrl}/invoices/clearance/single`
+    diagnostics.endpointKind = operation === 'report' ? 'reporting' : 'clearance'
+    const authorization = btoa(`${credentials.productionCsid}:${credentials.productionSecret}`)
+    const xmlB64 = btoa(unescape(encodeURIComponent(signedXml)))
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json', 'accept-version': 'V2', 'Content-Type': 'application/json',
+        Authorization: `Basic ${authorization}`,
+        ...(operation === 'clear' ? { 'Clearance-Status': '1' } : {}),
+      },
+      body: JSON.stringify({ invoiceHash, uuid: inv.zatca_uuid, invoice: xmlB64 }),
+    })
+    const responseText = await response.text()
+    const body = (() => { try { return JSON.parse(responseText) } catch { return {} } })()
+    diagnostics = {
+      ...diagnostics, httpStatus: response.status,
+      reportingStatus: typeof body?.reportingStatus === 'string' ? body.reportingStatus : undefined,
+      clearanceStatus: typeof body?.clearanceStatus === 'string' ? body.clearanceStatus : undefined,
+      validationStatus: typeof body?.validationResults?.status === 'string' ? body.validationResults.status : undefined,
+      errorCodes: zatcaMessageCodes(body, 'error'), warningCodes: zatcaMessageCodes(body, 'warning'),
+    }
+    const safeResponse = summarizeZatcaResponse(body)
+    const safeWarnings = buildSafeZatcaRecord(body, diagnostics, response.ok ? 'accepted' : 'failed')
+    const accepted = response.ok && (diagnostics.errorCodes ?? []).length === 0
+
+    if (operation === 'report') {
+      const reported = accepted && body?.reportingStatus === 'REPORTED'
+      const persisted = await db.rpc('persist_zatca_reporting_result_v2', {
+        p_invoice_id: invoiceId, p_network_token: networkToken, p_reported: reported,
+        p_safe_response: safeResponse, p_safe_warnings: safeWarnings,
+      })
+      if (persisted.error) throw new Error('ZATCA response received but database persistence failed')
+      networkToken = null
+    } else if (accepted && body?.clearanceStatus === 'CLEARED') {
+      const cleared = await parseClearedArtifactV2({
+        body, expectedUuid: String(inv.zatca_uuid), expectedInvoiceNumber: String(inv.invoice_number),
+        provisionalHash: String(inv.zatca_provisional_xml_hash),
+      })
+      const persisted = await db.rpc('adopt_zatca_cleared_artifact_v2', {
+        p_invoice_id: invoiceId, p_network_token: networkToken,
+        p_cleared_xml: cleared.xml, p_cleared_xml_hash: cleared.hash,
+        p_cleared_signature: cleared.signature, p_cleared_qr: cleared.qr,
+        p_clearance_metadata: cleared.metadata, p_safe_response: safeResponse,
+        p_safe_warnings: safeWarnings,
+      })
+      if (persisted.error) throw new Error('Cleared artifact received but atomic persistence failed')
+      networkToken = null
+    } else {
+      const failed = await db.rpc('fail_zatca_network_v2', {
+        p_invoice_id: invoiceId, p_network_token: networkToken, p_ambiguous: false,
+        p_safe_reason: 'ZATCA rejected the stored artifact', p_safe_response: safeResponse,
+      })
+      if (failed.error) throw new Error('ZATCA rejection received but database persistence failed')
+      networkToken = null
+    }
+    return { ...(await loadOutputStateV2(db, invoiceId, callerTenantId)), diagnostics }
+  } catch (error) {
+    const message = safeZatcaText(error instanceof Error ? error.message : error, 220) ?? 'Finalization failed'
+    if (networkToken) {
+      const marked = await db.rpc('fail_zatca_network_v2', {
+        p_invoice_id: invoiceId, p_network_token: networkToken,
+        p_ambiguous: requestStarted, p_safe_reason: message, p_safe_response: null,
+      })
+      if (marked.error) console.error('[zatca-submit] unable to persist reconciliation state:', safeZatcaText(marked.error.message, 160))
+    } else if (finalizationToken) {
+      const failed = await db.rpc('fail_zatca_finalization_v2', {
+        p_invoice_id: invoiceId, p_claim_token: finalizationToken,
+        p_safe_error: { code: 'FINALIZATION_FAILED', message },
+      })
+      if (failed.error) console.error('[zatca-submit] unable to persist finalization failure:', safeZatcaText(failed.error.message, 160))
+    }
+    const state = await loadOutputStateV2(db, invoiceId, callerTenantId).catch(() => null)
+    if (state) return { ...state, error: message, diagnostics }
+    throw new Error(message)
   }
 }
 
@@ -1806,8 +2771,66 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}))
     const invoiceId = body?.invoiceId as string | undefined
     const source = normalizeSubmitSource(body?.source)
+    const rawAction = typeof body?.action === 'string' ? body.action : null
+    if (rawAction !== null && !['submit', 'finalize', 'status', 'capability', 'capabilities'].includes(rawAction)) {
+      return jsonResponse({
+        error: 'Unsupported ZATCA submit action',
+        code: 'UNSUPPORTED_SUBMIT_ACTION',
+      }, 400)
+    }
+    const action = normalizeSubmitAction(body?.action)
+
+    const capabilities = await loadFinalizationCapabilitiesV2(supabase as any)
+    const clientVersion = typeof body?.clientVersion === 'string' ? body.clientVersion : null
+    const legacyActionlessSubmit = rawAction === null
+      && clientVersion === null
+      && capabilities.legacySubmitAvailable
+    const legacyStatusRequest = action === 'status'
+      && clientVersion === FINALIZATION_CLIENT_VERSION
+      && capabilities.legacySubmitAvailable
+
+    if (action === 'capabilities') {
+      const branchId = typeof body?.branchId === 'string' ? body.branchId : null
+      if (!branchId) return jsonResponse({ error: 'Missing required field: branchId' }, 400)
+      const branchAuth = await authorizeBranchAccess(supabase as any, branchId, callerProfile)
+      if (!branchAuth.ok) return branchAuth.response
+
+      let acknowledged = false
+      if (capabilities.compatible && clientVersion === FINALIZATION_CLIENT_VERSION) {
+        const acknowledgement = await supabase.rpc('acknowledge_zatca_client_capability_v2', {
+          p_user_id: user.id,
+          p_branch_id: branchId,
+          p_client_version: clientVersion,
+          p_edge_version: FINALIZATION_EDGE_VERSION,
+          p_ttl_seconds: 300,
+        })
+        acknowledged = !acknowledgement.error
+      }
+      return jsonResponse({ ...capabilities, acknowledged })
+    }
+
     if (!invoiceId) {
       return jsonResponse({ error: 'Missing required field: invoiceId' }, 400)
+    }
+
+    if (!legacyActionlessSubmit
+        && !legacyStatusRequest
+        && (!capabilities.compatible || clientVersion !== FINALIZATION_CLIENT_VERSION)) {
+      return jsonResponse({
+        error: 'ZATCA finalization client/schema/Edge version mismatch',
+        code: 'FINALIZATION_VERSION_MISMATCH',
+        ...capabilities,
+      }, 426)
+    }
+
+    if (!legacyActionlessSubmit
+        && action !== 'status'
+        && !capabilities.immutableFinalizationEnabled) {
+      return jsonResponse({
+        error: 'Immutable ZATCA finalization is disabled',
+        code: 'IMMUTABLE_FINALIZATION_DISABLED',
+        ...capabilities,
+      }, 409)
     }
 
     const invoiceAuth = await authorizeInvoiceSubmission(supabase as any, invoiceId, callerProfile)
@@ -1830,7 +2853,7 @@ Deno.serve(async (req: Request) => {
       ...auditBase,
       action: 'zatca_submit_attempted',
       status: 'attempted',
-      metadata: { source },
+      metadata: { source, operation: action },
     })
 
     const rate = await enforceRateLimit(supabase as any, {
@@ -1840,7 +2863,7 @@ Deno.serve(async (req: Request) => {
       scopeId: invoiceId,
       maxAttempts: 8,
       windowSeconds: 600,
-      metadata: { source },
+      metadata: { source, operation: action },
     })
 
     if (!rate.allowed) {
@@ -1854,8 +2877,45 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(rateLimitBody(rate), 429)
     }
 
-    const result = await processInvoice(supabase as any, invoiceId, invoiceAuth.target.tenantId, source)
-    const succeeded = ['reported', 'cleared'].includes(result.invoiceStatus)
+    if (action === 'status') {
+      const state = legacyStatusRequest && !capabilities.compatible
+        ? await loadLegacyOutputState(supabase as any, invoiceId, invoiceAuth.target.tenantId)
+        : await loadOutputStateV2(supabase as any, invoiceId, invoiceAuth.target.tenantId)
+      await auditEvent(supabase as any, {
+        ...auditBase,
+        action: 'zatca_output_state_read',
+        status: 'succeeded',
+        metadata: { operation: action },
+      })
+      return jsonResponse({
+        ...state,
+        schemaVersion: capabilities.schemaVersion,
+        edgeFunctionVersion: capabilities.edgeFunctionVersion,
+        minimumClientVersion: capabilities.minimumClientVersion,
+        compatible: capabilities.compatible,
+        immutableFinalizationEnabled: capabilities.immutableFinalizationEnabled,
+        databaseFeatureEnabled: capabilities.databaseFeatureEnabled,
+        legacySubmitAvailable: capabilities.legacySubmitAvailable,
+      })
+    }
+
+    const result = legacyActionlessSubmit
+      ? await processLegacyInvoiceDisabledMode(
+        supabase as any,
+        invoiceId,
+        invoiceAuth.target.tenantId,
+        source,
+      )
+      : await processInvoiceV2(
+        supabase as any,
+        invoiceId,
+        invoiceAuth.target.tenantId,
+        source,
+        action,
+      )
+    const succeeded = action === 'finalize'
+      ? ['locally_finalized', 'provisional_signed', 'cleared_final'].includes(result.finalizationStatus)
+      : ['reported', 'cleared'].includes(result.invoiceStatus)
     await auditEvent(supabase as any, {
       ...auditBase,
       action: succeeded ? 'zatca_submit_succeeded' : 'zatca_submit_failed',
@@ -1863,6 +2923,7 @@ Deno.serve(async (req: Request) => {
       status: succeeded ? 'succeeded' : 'failed',
       metadata: {
         source,
+        operation: action,
         invoiceStatus: result.invoiceStatus,
         diagnostics: result.diagnostics ? safeSubmitDiagnosticSummary(result.diagnostics) : undefined,
       },
