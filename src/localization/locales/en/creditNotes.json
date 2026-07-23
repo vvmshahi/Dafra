@@ -34,6 +34,7 @@
   "irreversible": "This will create a credit note and cannot be undone.",
   "enterQuantityFirst": "Enter a return quantity first",
   "alreadyExists": "Credit note already exists",
+  "createdReportingPending": "Credit note created. ZATCA reporting pending.",
   "createdSubmitted": "Credit note created and submitted to ZATCA",
   "createdSubmissionFailed": "Credit note created, but ZATCA submission failed. You can retry from the credit note page.",
   "missingResult": "The credit note result was unavailable.",

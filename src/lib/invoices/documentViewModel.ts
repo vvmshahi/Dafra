@@ -6,7 +6,7 @@ export type DocumentKind = 'invoice' | 'credit_note' | 'debit_note'
 export type DocumentFidelity = 'exact_snapshot' | 'best_effort' | 'sample'
 
 export interface DocumentViewModel {
-  readonly source: 'snapshot_v2' | 'snapshot_v1' | 'legacy' | 'preview'
+  readonly source: 'snapshot_v2' | 'snapshot_v1' | 'atomic_receipt' | 'legacy' | 'preview'
   readonly identity: Readonly<{
     kind: DocumentKind
     invoiceType: string

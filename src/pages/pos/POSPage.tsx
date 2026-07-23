@@ -46,7 +46,8 @@ import type { Branch, BranchPosMode, PaymentMethod, VatTreatment } from '@/types
 import { usePosSession } from '@/hooks/usePosSession'
 import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
-import { getPrinterSettings, getPrinters, isElectron, printA4Invoice, printCurrentReceipt, printReceipt } from '@/lib/electron'
+import { getPrinterSettings, getPrinters, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
+import { printAtomicReceiptSnapshot } from '@/lib/atomicReceiptPrint'
 import { openReceiptPreview, printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { supportConfig } from '@/config/support'
 import { resolveBusinessType } from '@/lib/utils/businessType'
@@ -546,52 +547,17 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
     return () => window.cancelAnimationFrame(frame)
   }, [receipt.invoiceId, receipt.reportingDisplayState])
 
-  function installThermalSnapshotPrintStyle(): () => void {
-    const existing = document.getElementById('pos-thermal-snapshot-print-style')
-    existing?.remove()
-    const style = document.createElement('style')
-    style.id = 'pos-thermal-snapshot-print-style'
-    style.textContent = `
-      @media print {
-        @page { size: 80mm auto; margin: 0; }
-        html, body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        body * { visibility: hidden !important; }
-        #thermal-receipt, #thermal-receipt * { visibility: visible !important; }
-        #thermal-receipt {
-          display: block !important;
-          position: absolute !important;
-          inset: 0 auto auto 0 !important;
-          margin: 0 !important;
-          background: white !important;
-        }
-      }
-    `
-    document.head.appendChild(style)
-    return () => style.remove()
-  }
-
   async function printRenderedReceiptSnapshot(): Promise<boolean> {
-    console.info('[zatca-timing]', {
-      event: 'print_requested',
+    const result = await printAtomicReceiptSnapshot({
       invoiceId: receipt.invoiceId,
-      source: receipt.atomicSnapshot ? 'atomic_checkout_snapshot' : 'pos_snapshot',
+      receiptElementId: 'thermal-receipt',
+      source: 'atomic_checkout_snapshot',
     })
-    const removeStyle = installThermalSnapshotPrintStyle()
-    try {
-      const result = await printCurrentReceipt()
-      if (result.success) {
-        console.info('[zatca-timing]', {
-          event: 'printer_started',
-          invoiceId: receipt.invoiceId,
-          source: receipt.atomicSnapshot ? 'atomic_checkout_snapshot' : 'pos_snapshot',
-        })
-        return true
-      }
-      console.warn('[ReceiptView] receipt snapshot print failed', result.errorType)
-      return false
-    } finally {
-      removeStyle()
+    if (result.success) {
+      return true
     }
+    console.warn('[ReceiptView] receipt snapshot print failed', result.errorType)
+    return false
   }
 
   useEffect(() => {
@@ -1590,10 +1556,18 @@ export default function POSPage() {
   const searchRef = useRef<HTMLInputElement>(null)
   const categoryScrollRef = useRef<HTMLDivElement>(null)
   const productScrollRef = useRef<HTMLDivElement>(null)
+  const checkoutInFlightRef = useRef(false)
   const sub       = useSubscription()
 
   // Session management
-  const { session, loading: sessionLoading, openSession, closeSession } = usePosSession(
+  const {
+    session,
+    loading: sessionLoading,
+    error: sessionLoadError,
+    openSession,
+    closeSession,
+    fetchActiveSession,
+  } = usePosSession(
     profile?.branch_id,
     profile?.tenant_id,
     profile?.id,
@@ -2020,22 +1994,24 @@ export default function POSPage() {
 
   async function charge() {
     const tid = profile?.tenant_id
-    if (!tid || !branch || cart.length === 0 || submitting) return
+    if (!tid || !branch || cart.length === 0 || submitting || checkoutInFlightRef.current) return
     if (isAccountSuspended) {
       toast.error(t('pos:accountSuspendedFull'))
       return
     }
+    checkoutInFlightRef.current = true
     setSubmitting(true)
-    const persistedAtomicCheckout = readPendingAtomicCheckout(branch.id)
-    const persistedInvoiceCheckout = persistedAtomicCheckout?.documentType === 'invoice'
-      ? persistedAtomicCheckout
-      : null
-    const idempotencyKey = persistedInvoiceCheckout?.idempotencyKey
-      ?? checkoutKeyRef.current
-      ?? createCheckoutIdempotencyKey()
-    checkoutKeyRef.current = idempotencyKey
 
     try {
+      const persistedAtomicCheckout = readPendingAtomicCheckout(branch.id)
+      const persistedInvoiceCheckout = persistedAtomicCheckout?.documentType === 'invoice'
+        ? persistedAtomicCheckout
+        : null
+      const idempotencyKey = persistedInvoiceCheckout?.idempotencyKey
+        ?? checkoutKeyRef.current
+        ?? createCheckoutIdempotencyKey()
+      checkoutKeyRef.current = idempotencyKey
+
       if (payMethod === 'split') {
         if (!splitPaymentsEnabled) {
           toast.error(t('validation:splitPaymentDisabled'))
@@ -2457,6 +2433,7 @@ export default function POSPage() {
       console.warn('[POSPage charge] checkout failed', err)
       toast.error(t(safeKey))
     } finally {
+      checkoutInFlightRef.current = false
       setSubmitting(false)
     }
   }
@@ -2478,6 +2455,35 @@ export default function POSPage() {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50">
         <p className="text-gray-500 text-sm">{t('pos:noBranch')}</p>
+      </div>
+    )
+  }
+
+  if (sessionLoadError) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#0F2419]">
+        <div className="mx-4 w-full max-w-sm rounded-2xl bg-white p-8 text-center shadow-2xl">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50">
+            <AlertCircle size={28} className="text-red-500" />
+          </div>
+          <h2 className="mb-2 text-xl font-bold text-gray-900">{t('register:loadFailed')}</h2>
+          <p className="mb-6 text-sm text-gray-500">{t('register:loadFailedPrompt')}</p>
+          <button
+            type="button"
+            onClick={() => void fetchActiveSession()}
+            className="w-full rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 py-3 font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            {t('common:retry')}
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/branch')}
+            className="mt-3 w-full text-sm text-gray-400 transition-colors hover:text-gray-600"
+          >
+            <DirectionalIcon icon={ArrowLeft} size={13} className="me-1 inline-block" />
+            {t('pos:backToDashboard')}
+          </button>
+        </div>
       </div>
     )
   }

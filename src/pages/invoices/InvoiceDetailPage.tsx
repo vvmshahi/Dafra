@@ -22,6 +22,8 @@ import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { getInvoiceZatcaOutputState, submitInvoiceToZatca, type ZatcaOutputState } from '@/lib/zatca/submission'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
+import AtomicCreditNoteReceiptView from './AtomicCreditNoteReceiptView'
+import type { AtomicReceiptPayload } from '@/lib/zatca/atomicCheckout'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import { getSandboxValidationStatus, type SandboxValidationResponse } from '@/lib/zatca/api'
 import { updateCachedInvoiceRows, upsertInvoiceListRow } from '@/lib/invoices/invoiceListCache'
@@ -181,6 +183,7 @@ export default function InvoiceDetailPage() {
   const [resubmitting, setResubmitting] = useState(false)
   const [thermalPrinting, setThermalPrinting] = useState(false)
   const [creditModalOpen, setCreditModalOpen] = useState(false)
+  const [atomicCreditReceipt, setAtomicCreditReceipt] = useState<AtomicReceiptPayload | null>(null)
   const [sandboxValidation, setSandboxValidation] = useState<SandboxValidationResponse | null>(null)
   const [outputState, setOutputState] = useState<ZatcaOutputState | null>(null)
 
@@ -549,6 +552,11 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
       created_by: null,
       created_at: result.createdAt,
     }, ...prev])
+
+    if (result.atomicReceipt) {
+      setAtomicCreditReceipt(result.atomicReceipt)
+      return
+    }
 
     void (async () => {
       const [creditNoteResult, refundResult, refundableResult] = await Promise.all([
@@ -1193,6 +1201,16 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
         onClose={() => setCreditModalOpen(false)}
         onCreated={handleCreditNoteCreated}
       />
+      {atomicCreditReceipt && (
+        <AtomicCreditNoteReceiptView
+          receipt={atomicCreditReceipt}
+          onOpenPrinterSettings={() => navigate('/device-printer')}
+          onClose={() => {
+            setAtomicCreditReceipt(null)
+            setLoadAttempt(attempt => attempt + 1)
+          }}
+        />
+      )}
     </div>
   )
 }

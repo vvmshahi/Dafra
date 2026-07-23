@@ -513,7 +513,7 @@ export default function CreateCreditNoteModal({
 
       const creditNoteId = result.credit_note_invoice_id
       let zatcaStatus = result.zatca_status ?? 'pending'
-      let autoSubmitSucceeded = usedAtomicSimplifiedCredit
+      let autoSubmitSucceeded = false
       const shouldAutoSubmit = !usedAtomicSimplifiedCredit
         && zatcaStatus !== 'reported'
         && zatcaStatus !== 'cleared'
@@ -557,7 +557,9 @@ export default function CreateCreditNoteModal({
         atomicReceipt,
       })
       onClose()
-      if (autoSubmitSucceeded || zatcaStatus === 'reported' || zatcaStatus === 'cleared') {
+      if (usedAtomicSimplifiedCredit && zatcaStatus === 'pending') {
+        toast.success(t('creditNotes:createdReportingPending'))
+      } else if (autoSubmitSucceeded || zatcaStatus === 'reported' || zatcaStatus === 'cleared') {
         const demoSubmission = isPermanentDemoSandboxBranch(profile?.tenant_id, invoice.branch_id)
         toast.success(result.idempotent_replay ? t('creditNotes:alreadyExists') : t('creditNotes:createdSubmitted'), {
           description: demoSubmission ? t('creditNotes:processedByZatca') : undefined,

@@ -14,7 +14,11 @@ const packageSql = read('scripts/sql/zatca-phase2-finalization-v2/12_atomic_simp
 const edge = read('supabase/functions/zatca-submit/index.ts')
 const pos = read('src/pages/pos/POSPage.tsx')
 const credit = read('src/pages/invoices/CreateCreditNoteModal.tsx')
+const creditReceipt = read('src/pages/invoices/AtomicCreditNoteReceiptView.tsx')
+const invoiceDetail = read('src/pages/invoices/InvoiceDetailPage.tsx')
+const invoiceList = read('src/pages/invoices/InvoicesPage.tsx')
 const atomicClient = read('src/lib/zatca/atomicCheckout.ts')
+const atomicPrint = read('src/lib/atomicReceiptPrint.ts')
 const electronMain = read('electron/main.cjs')
 const electronPreload = read('electron/preload.cjs')
 const outputClient = read('src/lib/zatca/submission.ts')
@@ -432,9 +436,61 @@ await test('POS first print uses returned snapshot with no invoice refetch or st
   assert.doesNotMatch(atomicPath, /getInvoiceZatcaOutputState|finalizeInvoiceForZatca|submitInvoiceForBranch/)
   assert.match(pos, /atomicSnapshot: Boolean\(atomicCheckoutResult\)/)
   assert.match(pos, /printRenderedReceiptSnapshot/)
-  assert.match(pos, /printCurrentReceipt\(\)/)
+  assert.match(pos, /printAtomicReceiptSnapshot/)
+  assert.match(atomicPrint, /printCurrentReceipt\(\)/)
   assert.match(electronMain, /async function printCurrentReceiptSnapshot\(sender\)/)
   assert.match(electronPreload, /printCurrentReceipt/)
+})
+
+await test('rapid POS clicks are synchronously coalesced before a second renderer request', async () => {
+  const chargeStart = pos.indexOf('async function charge()')
+  const atomicRequest = pos.indexOf('await checkoutSimplifiedAtomically', chargeStart)
+  const guardedPath = pos.slice(chargeStart, atomicRequest)
+  assert.match(guardedPath, /checkoutInFlightRef\.current\) return/)
+  assert.match(guardedPath, /checkoutInFlightRef\.current = true/)
+  assert.ok(
+    pos.indexOf('checkoutInFlightRef.current = true', chargeStart) < atomicRequest,
+  )
+  assert.ok(
+    pos.indexOf('try {', chargeStart) <
+      pos.indexOf('readPendingAtomicCheckout', chargeStart),
+  )
+  const finallyBlock = pos.slice(pos.indexOf('} finally {', atomicRequest), pos.indexOf('// ── Render', atomicRequest))
+  assert.match(finallyBlock, /checkoutInFlightRef\.current = false/)
+  assert.match(finallyBlock, /setSubmitting\(false\)/)
+
+  let inFlight = false
+  let requestCount = 0
+  const failureToasts = []
+  let releaseFirst
+  const request = () => new Promise(resolve => { releaseFirst = resolve })
+  const charge = async operation => {
+    if (inFlight) return
+    inFlight = true
+    try {
+      requestCount += 1
+      await operation()
+    } catch (error) {
+      failureToasts.push(error)
+    } finally {
+      inFlight = false
+    }
+  }
+
+  const firstClick = charge(request)
+  const secondClick = charge(async () => {})
+  assert.equal(requestCount, 1)
+  assert.equal(failureToasts.length, 0)
+  await secondClick
+  releaseFirst()
+  await firstClick
+
+  await charge(async () => {})
+  assert.equal(requestCount, 2, 'guard did not reset after success')
+  await charge(async () => { throw new Error('expected local failure') })
+  await charge(async () => {})
+  assert.equal(requestCount, 4, 'guard did not reset after failure')
+  assert.equal(failureToasts.length, 1)
 })
 
 await test('rollout fallback is write-free and committed replay wins even after flag rollback', () => {
@@ -495,8 +551,33 @@ await test('simplified credit-note UI uses the same atomic action and exact repl
   assert.match(atomicClient, /checkout_simplified_credit_note/)
 })
 
+await test('atomic credit-note first print renders only the returned receipt snapshot', () => {
+  assert.match(creditReceipt, /documentFromAtomicReceipt\(receipt\)/)
+  assert.match(creditReceipt, /printAtomicReceiptSnapshot/)
+  assert.match(creditReceipt, /source: 'atomic_credit_note_snapshot'/)
+  assert.match(creditReceipt, /automaticPrintRef\.current = true/)
+  assert.match(creditReceipt, /!printAttemptedRef\.current/)
+  assert.match(creditReceipt, /printInFlightRef\.current/)
+  assert.doesNotMatch(creditReceipt, /supabase|getInvoiceZatcaOutputState|printReceipt\(\s*\{\s*invoiceId/)
+  assert.match(invoiceDetail, /if \(result\.atomicReceipt\) \{[\s\S]*setAtomicCreditReceipt\(result\.atomicReceipt\)[\s\S]*return/)
+  assert.match(invoiceList, /if \(result\.atomicReceipt\) \{[\s\S]*setAtomicCreditReceipt\(result\.atomicReceipt\)/)
+  assert.match(invoiceDetail, /<AtomicCreditNoteReceiptView/)
+  assert.match(invoiceList, /<AtomicCreditNoteReceiptView/)
+})
+
+await test('atomic credit-note messaging distinguishes local commit from ZATCA reporting', () => {
+  assert.match(credit, /let autoSubmitSucceeded = false/)
+  assert.match(credit, /usedAtomicSimplifiedCredit && zatcaStatus === 'pending'/)
+  assert.match(credit, /createdReportingPending/)
+  const pendingBranch = credit.slice(
+    credit.indexOf("if (usedAtomicSimplifiedCredit && zatcaStatus === 'pending')"),
+    credit.indexOf('} else if', credit.indexOf("if (usedAtomicSimplifiedCredit && zatcaStatus === 'pending')")),
+  )
+  assert.doesNotMatch(pendingBranch, /createdSubmitted/)
+})
+
 await test('all required sanitized timing events are present', () => {
-  const sources = `${edge}\n${pos}`
+  const sources = `${edge}\n${pos}\n${creditReceipt}\n${atomicPrint}`
   for (const event of [
     'checkout_request_started',
     'intent_prepared',

@@ -50,6 +50,9 @@ const ids = {
   branchA: randomUUID(),
   branchA2: randomUUID(),
   branchB: randomUUID(),
+  posSessionA: randomUUID(),
+  posSessionA2: randomUUID(),
+  posSessionB: randomUUID(),
   product: randomUUID(),
   serviceProduct: randomUUID(),
   individualCustomer: randomUUID(),
@@ -349,6 +352,83 @@ await ok(service.from('user_profiles').upsert([
     is_active: true,
   },
 ]), 'insert profiles')
+
+await ok(service.from('pos_sessions').insert([
+  {
+    id: ids.posSessionA,
+    tenant_id: ids.tenantA,
+    branch_id: ids.branchA,
+    opened_by: branchUserId,
+    opening_cash: 100,
+    status: 'open',
+  },
+  {
+    id: ids.posSessionA2,
+    tenant_id: ids.tenantA,
+    branch_id: ids.branchA2,
+    opened_by: ownerAId,
+    opening_cash: 200,
+    status: 'open',
+  },
+  {
+    id: ids.posSessionB,
+    tenant_id: ids.tenantB,
+    branch_id: ids.branchB,
+    opened_by: ownerBId,
+    opening_cash: 300,
+    status: 'open',
+  },
+]), 'insert POS session RLS fixtures')
+
+await expectError(
+  anon.from('pos_sessions').select('id,tenant_id,branch_id'),
+  /permission denied|42501|401|403/i,
+  'anon POS session read',
+)
+const branchVisibleSessions = await ok(
+  branchUser.from('pos_sessions').select('id,tenant_id,branch_id').order('id'),
+  'branch user permitted POS session read',
+)
+assert.deepEqual(branchVisibleSessions, [{
+  id: ids.posSessionA,
+  tenant_id: ids.tenantA,
+  branch_id: ids.branchA,
+}])
+const branchCrossBranchSessions = await ok(
+  branchUser
+    .from('pos_sessions')
+    .select('id')
+    .eq('branch_id', ids.branchA2),
+  'branch user cross-branch POS session read',
+)
+assert.deepEqual(branchCrossBranchSessions, [])
+const branchCrossTenantSessions = await ok(
+  branchUser
+    .from('pos_sessions')
+    .select('id')
+    .eq('tenant_id', ids.tenantB),
+  'branch user cross-tenant POS session read',
+)
+assert.deepEqual(branchCrossTenantSessions, [])
+const ownerVisibleSessions = await ok(
+  ownerA.from('pos_sessions').select('id,tenant_id,branch_id').order('branch_id'),
+  'owner same-tenant POS session read',
+)
+assert.equal(ownerVisibleSessions.length, 2)
+assert.deepEqual(
+  new Set(ownerVisibleSessions.map(row => row.id)),
+  new Set([ids.posSessionA, ids.posSessionA2]),
+)
+assert.ok(ownerVisibleSessions.every(row => row.tenant_id === ids.tenantA))
+const otherOwnerVisibleSessions = await ok(
+  ownerB.from('pos_sessions').select('id,tenant_id,branch_id'),
+  'other tenant owner POS session read',
+)
+assert.deepEqual(otherOwnerVisibleSessions, [{
+  id: ids.posSessionB,
+  tenant_id: ids.tenantB,
+  branch_id: ids.branchB,
+}])
 
 const officialSeller = {
   registeredSellerName: 'Atomic Disposable Seller',
@@ -1128,6 +1208,7 @@ console.log(JSON.stringify({
     creditNoteCommit: true,
     standardPathUnchanged: true,
     actualRoleSecurity: true,
+    posSessionRls: true,
     flagsRestoredFalse: true,
   },
 }))

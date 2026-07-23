@@ -1,4 +1,5 @@
 import type { Branch, Invoice, InvoiceIdentitySnapshot, InvoiceItem, InvoicePresentationSettings, Payment } from '@/types/database'
+import type { AtomicReceiptPayload } from '@/lib/zatca/atomicCheckout'
 import { buildPresentationDocument, documentLanguage, type DocumentViewModel } from './documentViewModel'
 import { DOCUMENT_PREVIEW_FIXTURE } from './documentPreviewFixture'
 import { resolveRuntimeInvoicePresentation, type RuntimePresentationBranch } from './runtimePresentation'
@@ -9,6 +10,143 @@ export interface StoredDocumentInput { readonly invoice: Invoice; readonly branc
 export interface InvoicePresentationDraft { readonly presentation: InvoicePresentationSettings; readonly invoiceLanguage: 'en' | 'ar' | 'both'; readonly printMode: 'thermal' | 'pdf' | 'both'; readonly afterSaleAction?: 'receipt' | 'a4' | 'both'; readonly preservedSettings?: Record<string, unknown> }
 export interface PreviewSellerOverrides { readonly registeredName?: string; readonly registeredNameAr?: string | null; readonly vatNumber?: string; readonly registeredAddress?: string | null; readonly branchName?: string | null; readonly branchNameAr?: string | null }
 export interface PosReceiptDocumentInput { readonly invoiceNumber: string; readonly createdAt: string; readonly documentLanguage: 'en' | 'ar' | 'both'; readonly businessNameEn: string; readonly businessNameAr: string | null; readonly branchName: string; readonly branchNameAr: string | null; readonly branchAddress: string | null; readonly vatNumber: string; readonly logoUrl: string | null; readonly showLogo: boolean; readonly phone: string | null; readonly email: string | null; readonly website: string | null; readonly showEmail: boolean; readonly showWebsite: boolean; readonly receiptFooter: string | null; readonly showFooter: boolean; readonly showCashChange: boolean; readonly subtotal: number; readonly taxAmount: number; readonly total: number; readonly discountAmount?: number; readonly paymentMethod: string; readonly payments: readonly { method: string; amount: number; amountReceived?: number | null; changeAmount?: number | null }[]; readonly cashReceived?: number | null; readonly change?: number | null; readonly customerName: string | null; readonly customerNameAr: string | null; readonly customerAddress?: string | null; readonly customerAddressAr?: string | null; readonly buyerVatNumber: string | null; readonly buyerIdentifierType?: string | null; readonly buyerIdentifierValue?: string | null; readonly isStandardInvoice: boolean; readonly zatcaQrCode?: string | null; readonly items: readonly { name: string; nameAr?: string | null; qty: number; unitPrice: number; lineTotal: number; subtotal?: number; taxAmount?: number; taxRate?: number; taxCategory?: string | null }[]; readonly presentationSettings?: unknown; readonly branchDefaults?: RuntimePresentationBranch }
+
+const atomicText = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim() ? value : null
+
+export function documentFromAtomicReceipt(receipt: AtomicReceiptPayload): DocumentViewModel {
+  const seller = receipt.seller ?? {}
+  const customer = receipt.customer ?? {}
+  const language = documentLanguage(
+    receipt.document_language ?? atomicText(seller.invoice_language),
+  )
+  const branch: RuntimePresentationBranch = {
+    display_name: atomicText(seller.display_name),
+    business_name: atomicText(seller.business_name),
+    business_name_ar: atomicText(seller.business_name_ar),
+    name: atomicText(seller.branch_name),
+    name_ar: atomicText(seller.branch_name_ar),
+    phone: atomicText(seller.phone),
+    email: atomicText(seller.email),
+    website: atomicText(seller.website),
+    show_website: seller.show_website === true,
+    show_email: seller.show_email === true,
+    receipt_footer: atomicText(seller.receipt_footer),
+    show_footer: seller.show_footer !== false,
+    show_cash_change: seller.show_cash_change !== false,
+    show_logo: seller.show_logo !== false,
+    logo_url: atomicText(seller.logo_url),
+    invoice_language: language,
+    print_mode: 'thermal',
+    presentation_settings: seller.presentation_settings,
+  }
+  const resolved = resolveRuntimeInvoicePresentation({
+    branch,
+    savedSettings: seller.presentation_settings,
+  })
+  const isCredit = receipt.zatca_invoice_type === 'credit_note'
+  const payments = receipt.payments.map(payment => ({
+    method: payment.method,
+    amount: n(payment.amount),
+    cashTendered: payment.method === 'cash' && payment.amount_received != null
+      ? n(payment.amount_received)
+      : null,
+    change: payment.method === 'cash' && payment.change_amount != null
+      ? n(payment.change_amount)
+      : null,
+    reference: null,
+  }))
+  const paid = payments.reduce((sum, payment) => sum + payment.amount, 0)
+  const registeredName = atomicText(seller.business_name)
+    ?? atomicText(seller.tenant_name)
+    ?? atomicText(seller.branch_name)
+    ?? 'Seller'
+  const registeredNameAr = atomicText(seller.business_name_ar)
+    ?? atomicText(seller.tenant_name_ar)
+    ?? atomicText(seller.branch_name_ar)
+  const registeredAddress = address({
+    buildingNumber: atomicText(seller.building_number),
+    street: atomicText(seller.street),
+    district: atomicText(seller.district),
+    city: atomicText(seller.city),
+    country: atomicText(seller.country),
+    postalCode: atomicText(seller.postal_code),
+  })
+
+  return buildPresentationDocument({
+    settings: resolved.presentation,
+    language,
+    printMode: resolved.printMode,
+    registeredName,
+    registeredNameAr,
+    vatNumber: atomicText(seller.vat_number) ?? '',
+    registrationType: atomicText(seller.cr_number) ? 'CR' : null,
+    registrationNumber: atomicText(seller.cr_number),
+    registeredAddress,
+    branchName: atomicText(seller.branch_name),
+    branchNameAr: atomicText(seller.branch_name_ar),
+    logoPreviewUrl: resolved.logoUrl,
+  }, {
+    source: 'atomic_receipt',
+    identity: {
+      kind: isCredit ? 'credit_note' : 'invoice',
+      invoiceType: isCredit ? 'credit_note' : 'simplified',
+      number: receipt.invoice_number,
+      uuid: receipt.invoice_uuid,
+      issueTimestamp: receipt.created_at,
+      supplyDate: null,
+      language,
+      direction: language === 'ar' ? 'rtl' : 'ltr',
+      snapshotVersion: 2,
+      legacy: false,
+      fidelity: 'exact_snapshot',
+    },
+    buyer: {
+      name: atomicText(customer.business_name) ?? atomicText(customer.name),
+      nameAr: atomicText(customer.business_name_ar) ?? atomicText(customer.name_ar),
+      vatNumber: atomicText(customer.vat_number),
+      address: atomicText(customer.address),
+      addressAr: atomicText(customer.address_ar),
+      identifierType: atomicText(customer.cr_number) ? 'CR' : null,
+      identifierValue: atomicText(customer.cr_number),
+      type: atomicText(customer.customer_type),
+    },
+    items: receipt.items.map(item => ({
+      description: item.name,
+      descriptionAr: item.name_ar,
+      quantity: n(item.quantity),
+      unitPrice: n(item.unit_price),
+      discount: n(item.discount_amount),
+      taxableAmount: n(item.subtotal),
+      vatRate: rate(item.tax_rate),
+      vatAmount: n(item.tax_amount),
+      vatCategory: item.tax_category,
+      lineTotal: n(item.total),
+      creditedQuantity: isCredit ? n(item.quantity) : null,
+    })),
+    totals: {
+      currency: 'SAR',
+      subtotal: n(receipt.subtotal),
+      discount: n(receipt.discount_amount),
+      taxableAmount: n(receipt.taxable_amount),
+      vat: n(receipt.tax_amount),
+      total: n(receipt.total),
+      paid: isCredit ? 0 : paid,
+      refunded: isCredit ? paid : 0,
+      balance: isCredit ? null : n(receipt.total) - paid,
+    },
+    payments,
+    compliance: {
+      qr: { source: 'stored_reference', reference: receipt.qr_code },
+      xmlState: 'available',
+      originalDocument: {
+        id: receipt.original_invoice_id ?? null,
+        number: receipt.invoice_reference ?? null,
+      },
+      creditReason: receipt.credit_reason ?? null,
+    },
+  })
+}
 
 export function documentFromPosReceipt(input: PosReceiptDocumentInput): DocumentViewModel {
   const branch = input.branchDefaults ?? { name: input.branchName, name_ar: input.branchNameAr, business_name: input.businessNameEn, business_name_ar: input.businessNameAr, phone: input.phone, email: input.email, website: input.website, address: input.branchAddress, show_email: input.showEmail, show_website: input.showWebsite, receipt_footer: input.receiptFooter, show_footer: input.showFooter, show_cash_change: input.showCashChange, show_logo: input.showLogo, logo_url: input.logoUrl, invoice_language: input.documentLanguage, print_mode: 'thermal' }

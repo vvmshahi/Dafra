@@ -81,17 +81,29 @@ export function usePosSession(
 ) {
   const [session, setSession] = useState<PosSession | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<unknown | null>(null)
 
   const fetchActiveSession = useCallback(async () => {
-    if (!branchId) { setLoading(false); return }
+    if (!branchId) {
+      setSession(null)
+      setError(null)
+      setLoading(false)
+      return
+    }
     setLoading(true)
+    setError(null)
     try {
-      const { data } = await q().from('pos_sessions')
+      const { data, error: queryError } = await q().from('pos_sessions')
         .select('*')
         .eq('branch_id', branchId)
         .eq('status', 'open')
         .order('opened_at', { ascending: false })
         .limit(1)
+      if (queryError) {
+        console.error('[usePosSession] active session query failed', queryError)
+        setError(queryError)
+        return
+      }
       setSession((data ?? [])[0] ?? null)
     } finally {
       setLoading(false)
@@ -149,5 +161,5 @@ export function usePosSession(
     return closedSummaryFromRpc(data)
   }, [session])
 
-  return { session, loading, openSession, closeSession, fetchActiveSession }
+  return { session, loading, error, openSession, closeSession, fetchActiveSession }
 }
