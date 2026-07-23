@@ -92,7 +92,7 @@ BEGIN
   ) OR EXISTS (
     SELECT 1
     FROM pg_attribute a
-    CROSS JOIN LATERAL aclexplode(COALESCE(a.attacl, ARRAY[]::aclitem[])) acl
+    CROSS JOIN LATERAL aclexplode(a.attacl) acl
     WHERE a.attrelid = 'public.invoices'::regclass
       AND a.attnum > 0
       AND NOT a.attisdropped
