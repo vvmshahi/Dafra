@@ -713,6 +713,9 @@ export default function InvoicesPage() {
           branch_id: creditModalRow.branchId,
           invoice_number: creditModalRow.invoiceNumber,
           total_amount: creditModalRow.totalAmount,
+          zatca_document_kind: creditModalRow.documentType === 'standard'
+            ? 'standard'
+            : 'simplified',
         } : null}
         defaultRefundMethod={(creditModalRow?.paymentMethod === 'split' ? 'other' : (creditModalRow?.paymentMethod ?? 'cash')) as PaymentMethod}
         onClose={() => setCreditModalRow(null)}

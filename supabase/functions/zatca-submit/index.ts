@@ -150,6 +150,8 @@ type SubmitAction =
   | 'capabilities'
   | 'retry'
   | 'recover_immutable_pair'
+  | 'checkout_simplified'
+  | 'checkout_simplified_credit_note'
 
 function jsonResponse(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -208,8 +210,45 @@ function normalizeSubmitAction(value: unknown): SubmitAction {
     || value === 'capabilities'
     || value === 'retry'
     || value === 'recover_immutable_pair'
+    || value === 'checkout_simplified'
+    || value === 'checkout_simplified_credit_note'
     ? value
     : 'submit'
+}
+
+function stableJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableJsonValue)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, stableJsonValue(entry)]),
+    )
+  }
+  return value
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(stableJsonValue(value))
+}
+
+async function sha256HexText(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(digest))
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+function logPipelineTiming(
+  event: string,
+  startedAt: number,
+  fields: Record<string, unknown> = {},
+): void {
+  console.info('[zatca-timing]', {
+    event,
+    elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+    ...fields,
+  })
 }
 
 async function loadCallerProfile(db: any, userId: string): Promise<CallerProfile | null> {
@@ -1211,6 +1250,32 @@ async function loadSubmissionCredentials(db: any, branchId: string, tenantId: st
     legacyCertId: cert.id,
     legacyInvoiceCounter: cert.invoice_counter ?? 0,
   }
+}
+
+async function loadAtomicCheckoutSigningCredentials(
+  db: any,
+  branchId: string,
+  tenantId: string,
+): Promise<Pick<SubmissionCredentials, 'environment' | 'privateKey' | 'productionCsid'> | null> {
+  const { data, error } = await db
+    .from('zatca_production_credentials')
+    .select('encrypted_private_key, encrypted_production_csid, onboarding_status')
+    .eq('branch_id', branchId)
+    .eq('tenant_id', tenantId)
+    .eq('environment', 'production')
+    .maybeSingle()
+  if (error) throw new Error('Unable to load production ZATCA signing credentials')
+  if (!data || data.onboarding_status !== 'production_connected') return null
+  if (!data.encrypted_private_key || !data.encrypted_production_csid) {
+    throw new Error('Production ZATCA signing credentials are incomplete')
+  }
+  const encryptionSecret = Deno.env.get('ZATCA_SERVER_ENCRYPTION_KEY')
+  if (!encryptionSecret) throw new Error('ZATCA_SERVER_ENCRYPTION_KEY is not configured')
+  const [privateKey, productionCsid] = await Promise.all([
+    decryptProductionPrivateKey(data.encrypted_private_key, encryptionSecret),
+    decryptProductionText(data.encrypted_production_csid, encryptionSecret),
+  ])
+  return { environment: 'production', privateKey, productionCsid }
 }
 
 function summarizeZatcaMessages(messages: unknown): Array<Record<string, unknown>> {
@@ -2518,6 +2583,267 @@ async function allocateChainV2WithWait(db: any, invoiceId: string, claimToken: s
   throw new Error('CHAIN_PREDECESSOR_PENDING')
 }
 
+function assertAtomicPreparedArtifactIdentity(
+  snapshot: Record<string, any>,
+  signed: { signedXml: string; invoiceHash: string; qrCode: string; signatureValue: string },
+): void {
+  const invoiceNumber = String(snapshot.invoice_number ?? '')
+  const invoiceUuid = String(snapshot.invoice_uuid ?? '')
+  const counter = Number(snapshot.zatca_counter_number)
+  const previousHash = String(snapshot.previous_hash ?? '')
+  if (!invoiceNumber || !invoiceUuid || !Number.isInteger(counter) || counter < 1 || !previousHash) {
+    throw new Error('Prepared atomic checkout identity is incomplete')
+  }
+  const hasCounter = new RegExp(
+    `<cbc:ID>ICV<\\/cbc:ID>[\\s\\S]*?<cbc:UUID>${counter}<\\/cbc:UUID>`,
+  ).test(signed.signedXml)
+  const hasPreviousHash = new RegExp(
+    `<cbc:ID>PIH<\\/cbc:ID>[\\s\\S]*?<cbc:EmbeddedDocumentBinaryObject\\b[^>]*>${previousHash.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/cbc:EmbeddedDocumentBinaryObject>`,
+  ).test(signed.signedXml)
+  if (!signed.signedXml.includes(`<cbc:ID>${escText(invoiceNumber)}</cbc:ID>`)
+      || !signed.signedXml.includes(`<cbc:UUID>${escText(invoiceUuid)}</cbc:UUID>`)
+      || !hasCounter
+      || !hasPreviousHash
+      || !signed.invoiceHash
+      || !signed.signatureValue
+      || !signed.qrCode) {
+    throw new Error('Signed artifact does not match the prepared checkout identity')
+  }
+}
+
+async function processAtomicSimplifiedCheckoutV2(params: {
+  serviceDb: any
+  callerDb: any
+  caller: CallerProfile
+  branchId: string
+  checkoutPayload: Record<string, unknown>
+  cartFingerprint: string
+  documentType: 'invoice' | 'credit_note'
+  requestStartedAt: number
+}): Promise<Record<string, any>> {
+  const {
+    serviceDb,
+    callerDb,
+    caller,
+    branchId,
+    checkoutPayload,
+    cartFingerprint,
+    documentType,
+    requestStartedAt,
+  } = params
+  const expectedFingerprint = await sha256HexText(stableJson(checkoutPayload))
+  if (cartFingerprint !== expectedFingerprint) {
+    throw new ZatcaSubmitAssertionError(
+      'CHECKOUT_FINGERPRINT_MISMATCH',
+      'Checkout payload does not match its cart fingerprint.',
+      {},
+    )
+  }
+
+  const preparedResult = await serviceDb.rpc('prepare_zatca_atomic_checkout_v2', {
+    p_actor_user_id: caller.id,
+    p_document_type: documentType,
+    p_payload: checkoutPayload,
+    p_cart_fingerprint: cartFingerprint,
+    p_ttl_seconds: 120,
+  })
+  if (preparedResult.error) {
+    throw new Error(
+      safeZatcaText(preparedResult.error.message, 220)
+        ?? 'Unable to prepare atomic simplified checkout',
+    )
+  }
+  const prepared = rpcObject(preparedResult.data)
+  if (prepared.status === 'committed') {
+    logPipelineTiming('receipt_payload_returned', requestStartedAt, {
+      invoiceId: prepared.invoiceId,
+      idempotentReplay: true,
+    })
+    return {
+      status: 'committed',
+      invoiceStatus: 'pending',
+      finalizationStatus: 'locally_finalized',
+      artifactStage: 'simplified_final',
+      documentKind: 'simplified',
+      reportingDisplayState: prepared.receipt?.reporting_display_state ?? 'reporting_pending',
+      canPrint: true,
+      receipt: prepared.receipt,
+      idempotentReplay: true,
+    }
+  }
+  if (prepared.status !== 'prepared') throw new Error('Atomic simplified checkout was not prepared')
+
+  const intentId = String(prepared.intentId ?? '')
+  const claimToken = String(prepared.claimToken ?? '')
+  const snapshotHash = String(prepared.snapshotHash ?? '')
+  const snapshot = rpcObject(prepared.snapshot)
+  if (!intentId || !claimToken || !snapshotHash || !snapshot.invoice_id) {
+    throw new Error('Atomic simplified checkout preparation is incomplete')
+  }
+  const preparedSeller = rpcObject(snapshot.seller)
+  if (String(preparedSeller.branch_id ?? '') !== branchId) {
+    throw new ZatcaSubmitAssertionError(
+      'ATOMIC_CHECKOUT_BRANCH_MISMATCH',
+      'Prepared checkout branch does not match the authorized checkout branch.',
+      {},
+    )
+  }
+  logPipelineTiming('intent_prepared', requestStartedAt, {
+    intentId,
+    invoiceId: snapshot.invoice_id,
+    idempotentReplay: prepared.idempotentReplay === true,
+  })
+
+  if (prepared.artifactReady !== true) {
+    let signingToken = ''
+    let artifactReady = false
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const signingClaimResult = await serviceDb.rpc('claim_zatca_atomic_checkout_signing_v2', {
+        p_intent_id: intentId,
+        p_claim_token: claimToken,
+        p_lease_seconds: 45,
+      })
+      if (signingClaimResult.error) {
+        throw new Error(
+          safeZatcaText(signingClaimResult.error.message, 180)
+            ?? 'Unable to claim atomic checkout signing',
+        )
+      }
+      const signingClaim = rpcObject(signingClaimResult.data)
+      if (signingClaim.status === 'artifact_ready') {
+        artifactReady = true
+        break
+      }
+      if (signingClaim.status === 'claimed') {
+        signingToken = String(signingClaim.signingToken ?? '')
+        break
+      }
+      if (signingClaim.status !== 'in_progress') {
+        throw new Error('Atomic checkout signing claim was not granted')
+      }
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    if (!artifactReady) {
+      if (!signingToken) throw new Error('Atomic checkout signing is still in progress')
+      const credentials = await loadAtomicCheckoutSigningCredentials(
+        serviceDb,
+        branchId,
+        String(caller.tenant_id ?? ''),
+      )
+      if (!credentials) throw new Error('Active production ZATCA signing credentials are unavailable')
+      const seller = preparedSeller
+      const inv = {
+        invoice_number: snapshot.invoice_number,
+        zatca_uuid: snapshot.invoice_uuid,
+        zatca_type_code: snapshot.zatca_type_code,
+        created_at: snapshot.created_at,
+        zatca_counter_number: snapshot.zatca_counter_number,
+        zatca_prev_invoice_hash: snapshot.previous_hash,
+        subtotal: snapshot.subtotal,
+        discount_amount: snapshot.discount_amount,
+        taxable_amount: snapshot.taxable_amount,
+        tax_amount: snapshot.tax_amount,
+        total_amount: snapshot.total,
+      }
+      const branch = {
+        ...seller,
+        registered_seller_name: seller.business_name || seller.display_name || seller.branch_name,
+        registered_seller_name_ar: seller.business_name_ar || seller.branch_name_ar,
+        registration_scheme: 'CRN',
+        registration_identifier: seller.cr_number,
+      }
+      const creditNote = documentType === 'credit_note'
+        ? {
+            billingReferenceId: String(snapshot.invoice_reference ?? ''),
+            reason: String(snapshot.credit_reason ?? ''),
+          }
+        : undefined
+      const xmlData = buildInvoiceXMLData(
+        inv,
+        branch,
+        Array.isArray(snapshot.items) ? snapshot.items : [],
+        null,
+        true,
+        creditNote,
+      )
+      const unsignedXml = buildInvoice(xmlData, {
+        profileId: 'reporting:1.0',
+        typeCodeName: '0200000',
+        invoiceTypeCode: documentType === 'credit_note' ? '381' : '388',
+        includeSignature: true,
+        requireBuyer: false,
+      })
+      const signed = await signInvoice(unsignedXml, credentials.privateKey, credentials.productionCsid)
+      assertAtomicPreparedArtifactIdentity(snapshot, signed)
+      const verifiedHash = await computeInvoiceHash(signed.signedXml)
+      if (verifiedHash !== signed.invoiceHash) {
+        throw new Error('Atomic checkout signed XML hash verification failed')
+      }
+      logPipelineTiming('artifact_signed', requestStartedAt, {
+        intentId,
+        invoiceId: snapshot.invoice_id,
+      })
+
+      const stored = await serviceDb.rpc('store_zatca_atomic_checkout_artifact_v2', {
+        p_intent_id: intentId,
+        p_claim_token: claimToken,
+        p_signing_token: signingToken,
+        p_snapshot_hash: snapshotHash,
+        p_signed_xml: signed.signedXml,
+        p_xml_hash: signed.invoiceHash,
+        p_signature: signed.signatureValue,
+        p_qr: signed.qrCode,
+      })
+      if (stored.error) {
+        throw new Error(
+          safeZatcaText(stored.error.message, 220)
+            ?? 'Unable to store the prepared atomic checkout artifact',
+        )
+      }
+    }
+  }
+
+  const committedResult = await callerDb.rpc('commit_zatca_atomic_checkout_v2', {
+    p_intent_id: intentId,
+    p_claim_token: claimToken,
+  })
+  if (committedResult.error) {
+    throw new Error(
+      safeZatcaText(committedResult.error.message, 220)
+        ?? 'Unable to commit atomic simplified checkout',
+    )
+  }
+  const committed = rpcObject(committedResult.data)
+  const receipt = rpcObject(committed.receipt)
+  if (committed.status !== 'committed'
+      || !receipt.invoice_id
+      || !receipt.qr_code
+      || receipt.can_print !== true) {
+    throw new Error('Atomic simplified checkout did not return a printable receipt')
+  }
+  logPipelineTiming('final_transaction_committed', requestStartedAt, {
+    intentId,
+    invoiceId: receipt.invoice_id,
+    idempotentReplay: committed.idempotentReplay === true,
+  })
+  scheduleReportingOutboxDrain(serviceDb, String(receipt.invoice_id))
+  logPipelineTiming('receipt_payload_returned', requestStartedAt, {
+    invoiceId: receipt.invoice_id,
+    idempotentReplay: committed.idempotentReplay === true,
+  })
+  return {
+    status: 'committed',
+    invoiceStatus: 'pending',
+    finalizationStatus: 'locally_finalized',
+    artifactStage: 'simplified_final',
+    documentKind: 'simplified',
+    reportingDisplayState: receipt.reporting_display_state ?? 'reporting_pending',
+    canPrint: true,
+    receipt,
+    idempotentReplay: committed.idempotentReplay === true,
+  }
+}
+
 async function processInvoiceV2(
   db: any,
   invoiceId: string,
@@ -2815,6 +3141,13 @@ async function processReportingOutboxV2(
   const claimedInvoiceId = String(claim.invoiceId)
   let networkToken: string | null = null
   let requestStarted = false
+  let responseReceived = false
+  let responseEvidenceId: string | null = null
+  const dispatchStartedAt = performance.now()
+  logPipelineTiming('outbox_claimed', dispatchStartedAt, {
+    invoiceId: claimedInvoiceId,
+    outboxId,
+  })
 
   try {
     const { data: invoice, error: invoiceError } = await db.from('invoices')
@@ -2931,6 +3264,7 @@ async function processReportingOutboxV2(
       }),
     })
     const responseText = await response.text()
+    responseReceived = true
     const body = (() => { try { return JSON.parse(responseText) } catch { return {} } })()
     const diagnostics: SubmitDiagnostics = {
       source: claimedBy,
@@ -2980,17 +3314,50 @@ async function processReportingOutboxV2(
       diagnostics,
       outcome === REPORTING_OUTCOMES.accepted ? 'reported' : 'failed',
     )
-    const persisted = await db.rpc('persist_zatca_reporting_outbox_result_v2', {
+    logPipelineTiming('zatca_response_received', dispatchStartedAt, {
+      invoiceId: claimedInvoiceId,
+      outboxId,
+      httpStatus: response.status,
+      outcome,
+      warningCount: diagnostics.warningCodes?.length ?? 0,
+      errorCount: diagnostics.errorCodes?.length ?? 0,
+    })
+    const evidence = await db.rpc('append_zatca_reporting_response_evidence_v2', {
       p_outbox_id: outboxId,
       p_outbox_token: outboxToken,
       p_network_token: networkToken,
+      p_http_status: response.status,
+      p_reporting_status: diagnostics.reportingStatus ?? null,
+      p_validation_status: diagnostics.validationStatus ?? null,
+      p_warning_codes: diagnostics.warningCodes ?? [],
+      p_error_codes: diagnostics.errorCodes ?? [],
       p_outcome: outcome,
       p_safe_response: safeResponse,
       p_safe_warnings: safeWarnings,
       p_safe_reason: safeReason,
     })
-    if (persisted.error) throw new Error('ZATCA response received but outbox persistence failed')
+    if (evidence.error) {
+      throw new Error('ZATCA response received but durable response evidence persistence failed')
+    }
+    responseEvidenceId = String(rpcObject(evidence.data).evidenceId ?? '')
+    if (!responseEvidenceId) throw new Error('ZATCA response evidence identity is missing')
+
+    const persisted = await db.rpc('apply_zatca_reporting_response_evidence_v2', {
+      p_outbox_id: outboxId,
+      p_outbox_token: outboxToken,
+      p_network_token: networkToken,
+      p_evidence_id: responseEvidenceId,
+    })
+    if (persisted.error) {
+      throw new Error('ZATCA response evidence recorded but outbox result persistence failed')
+    }
     const persistedOutcome = rpcObject(persisted.data)
+    logPipelineTiming('result_persisted', dispatchStartedAt, {
+      invoiceId: claimedInvoiceId,
+      outboxId,
+      evidenceId: responseEvidenceId,
+      status: persistedOutcome.status,
+    })
     networkToken = null
     requestStarted = false
     return {
@@ -3010,6 +3377,27 @@ async function processReportingOutboxV2(
     const reason = assertion
       ? error.statusString
       : safeZatcaText(error instanceof Error ? error.message : error, 220) ?? 'Reporting attempt failed'
+    if (responseReceived) {
+      // Once a response exists, never overwrite its evidence with a fabricated
+      // null response or automatically retry an outcome that may be accepted.
+      // A recorded evidence row remains available even when state application
+      // failed; a request-start marker without evidence remains safely
+      // reconciliation-required after lease expiry.
+      console.error('[zatca-outbox] response result requires reconciliation:', {
+        invoiceId: claimedInvoiceId,
+        outboxId,
+        evidenceRecorded: Boolean(responseEvidenceId),
+        reason,
+      })
+      return {
+        status: 'blocked',
+        invoiceId: claimedInvoiceId,
+        outboxId,
+        error: responseEvidenceId
+          ? 'ZATCA response evidence recorded; result persistence requires reconciliation'
+          : 'ZATCA response received; durable evidence persistence requires reconciliation',
+      }
+    }
     if (networkToken) {
       const outcome = requestStarted
         ? REPORTING_OUTCOMES.ambiguousOutcome
@@ -3096,6 +3484,16 @@ function scheduleReportingOutboxDrain(db: any, invoiceId: string): void {
   // consumer remains authoritative. The promise above is never a browser task.
 }
 
+function scheduleEdgeBackgroundTask(task: Promise<unknown>, label: string): void {
+  const guarded = task.catch(error => {
+    console.error(label, safeZatcaText(error instanceof Error ? error.message : error, 160))
+  })
+  const edgeRuntime = (globalThis as any).EdgeRuntime
+  if (edgeRuntime && typeof edgeRuntime.waitUntil === 'function') {
+    edgeRuntime.waitUntil(guarded)
+  }
+}
+
 async function validateImmutableRecoveryTarget(
   db: any,
   invoiceId: string,
@@ -3166,6 +3564,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { status: 200, headers: corsHeaders })
 
   const url = new URL(req.url)
+  const requestStartedAt = performance.now()
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
@@ -3311,6 +3710,8 @@ Deno.serve(async (req: Request) => {
       'capabilities',
       'retry',
       'recover_immutable_pair',
+      'checkout_simplified',
+      'checkout_simplified_credit_note',
     ].includes(rawAction)) {
       return jsonResponse({
         error: 'Unsupported ZATCA submit action',
@@ -3361,6 +3762,223 @@ Deno.serve(async (req: Request) => {
         simplifiedCheckoutMode,
         standardCheckoutMode,
       })
+    }
+
+    if (action === 'checkout_simplified' || action === 'checkout_simplified_credit_note') {
+      logPipelineTiming('checkout_request_started', requestStartedAt, {
+        action,
+        actorUserId: user.id,
+      })
+      if (!capabilities.compatible
+          || clientVersion !== FINALIZATION_CLIENT_VERSION) {
+        return jsonResponse({
+          error: 'Atomic simplified checkout is unavailable or version-incompatible',
+          code: 'ATOMIC_SIMPLIFIED_CHECKOUT_UNAVAILABLE',
+        }, 409)
+      }
+      const branchId = typeof body?.branchId === 'string' ? body.branchId : null
+      const checkoutPayload = rpcObject(body?.checkout)
+      const cartFingerprint = typeof body?.cartFingerprint === 'string'
+        ? body.cartFingerprint.trim().toLowerCase()
+        : ''
+      if (!branchId || Object.keys(checkoutPayload).length === 0
+          || !/^[a-f0-9]{64}$/.test(cartFingerprint)) {
+        return jsonResponse({
+          error: 'Atomic simplified checkout request is incomplete',
+          code: 'INVALID_ATOMIC_CHECKOUT_REQUEST',
+        }, 400)
+      }
+      const branchAuth = await authorizeBranchAccess(supabase as any, branchId, callerProfile)
+      if (!branchAuth.ok) return branchAuth.response
+
+      const checkoutIdempotencyKey = typeof checkoutPayload.idempotency_key === 'string'
+        ? checkoutPayload.idempotency_key.trim()
+        : ''
+      if (checkoutIdempotencyKey) {
+        const existingResult = await supabase.rpc('get_zatca_atomic_checkout_result_v2', {
+          p_actor_user_id: user.id,
+          p_branch_id: branchId,
+          p_idempotency_key: checkoutIdempotencyKey,
+          p_cart_fingerprint: cartFingerprint,
+        })
+        const resultSchemaMissing = existingResult.error != null && (
+          existingResult.error.code === '42883'
+          || existingResult.error.code === 'PGRST202'
+          || /does not exist|could not find the function/i.test(String(existingResult.error.message ?? ''))
+        )
+        if (existingResult.error && !resultSchemaMissing) {
+          return jsonResponse({
+            error: safeZatcaText(existingResult.error.message, 180)
+              ?? 'Atomic checkout idempotency lookup failed',
+            code: 'ATOMIC_CHECKOUT_IDEMPOTENCY_CONFLICT',
+          }, 409)
+        }
+        const existing = rpcObject(existingResult.data)
+        if (!existingResult.error && existing.status === 'committed' && existing.receipt) {
+          logPipelineTiming('receipt_payload_returned', requestStartedAt, {
+            invoiceId: existing.invoiceId,
+            idempotentReplay: true,
+          })
+          return jsonResponse({
+            status: 'committed',
+            invoiceStatus: 'pending',
+            finalizationStatus: 'locally_finalized',
+            artifactStage: 'simplified_final',
+            documentKind: 'simplified',
+            reportingDisplayState: existing.receipt.reporting_display_state ?? 'reporting_pending',
+            canPrint: true,
+            receipt: existing.receipt,
+            idempotentReplay: true,
+          })
+        }
+        if (!existingResult.error && existing.status !== 'not_found') {
+          return jsonResponse({
+            error: 'An atomic checkout with this idempotency key is not committed yet',
+            code: 'ATOMIC_CHECKOUT_IDEMPOTENCY_IN_PROGRESS',
+          }, 409)
+        }
+
+        const legacyIdempotencyColumn = action === 'checkout_simplified_credit_note'
+          ? 'credit_note_idempotency_key'
+          : 'checkout_idempotency_key'
+        const existingLegacyInvoice = await supabase.from('invoices')
+          .select('id')
+          .eq('tenant_id', branchAuth.target.tenantId)
+          .eq('branch_id', branchId)
+          .eq(legacyIdempotencyColumn, checkoutIdempotencyKey)
+          .maybeSingle()
+        if (existingLegacyInvoice.error) {
+          return jsonResponse({
+            error: 'Unable to verify checkout idempotency compatibility',
+            code: 'ATOMIC_CHECKOUT_IDEMPOTENCY_LOOKUP_FAILED',
+          }, 409)
+        }
+        if (existingLegacyInvoice.data?.id) {
+          return jsonResponse({
+            status: 'legacy_required',
+            reason: 'existing_legacy_idempotency',
+          })
+        }
+      }
+
+      const [atomicRuntimeResult, atomicBranchGateResult] = await Promise.all([
+        supabase.from('zatca_finalization_runtime')
+          .select('atomic_simplified_checkout_enabled')
+          .eq('singleton', true)
+          .maybeSingle(),
+        supabase.from('zatca_atomic_checkout_branch_gates_v2')
+          .select('enabled')
+          .eq('tenant_id', branchAuth.target.tenantId)
+          .eq('branch_id', branchId)
+          .maybeSingle(),
+      ])
+      const atomicRolloutEnabled = atomicRuntimeResult.error == null
+        && atomicBranchGateResult.error == null
+        && atomicRuntimeResult.data?.atomic_simplified_checkout_enabled === true
+        && atomicBranchGateResult.data?.enabled === true
+      if (!capabilities.databaseFeatureEnabled
+          || !capabilities.immutableFinalizationEnabled
+          || !capabilities.simplifiedEnabled
+          || !atomicRolloutEnabled) {
+        return jsonResponse({
+          status: 'legacy_required',
+          reason: 'atomic_rollout_disabled',
+        })
+      }
+
+      let readiness = await loadBranchReadinessV2(supabase as any, branchId, user.id)
+      if (readiness.structurallyReady && !readiness.clientAcknowledged) {
+        const acknowledgement = await supabase.rpc('acknowledge_zatca_client_capability_v2', {
+          p_user_id: user.id,
+          p_branch_id: branchId,
+          p_client_version: clientVersion,
+          p_edge_version: FINALIZATION_EDGE_VERSION,
+          p_ttl_seconds: 300,
+        })
+        if (!acknowledgement.error && rpcObject(acknowledgement.data).acknowledged === true) {
+          readiness = await loadBranchReadinessV2(supabase as any, branchId, user.id)
+        }
+      }
+      if (!readiness.structurallyReady || !readiness.clientAcknowledged
+          || readiness.branchBlocked || !readiness.productionConnected) {
+        return jsonResponse({
+          status: 'legacy_required',
+          reason: 'atomic_branch_not_ready',
+        })
+      }
+
+      const reqId = requestId(req)
+      const ipHash = await hashRequestIp(req)
+      const auditBase = {
+        tenantId: branchAuth.target.tenantId,
+        branchId,
+        actorUserId: user.id,
+        actorRole: callerProfile.role,
+        targetType: 'branch',
+        targetId: branchId,
+        ipHash,
+        requestId: reqId,
+      }
+      const rate = await enforceRateLimit(supabase as any, {
+        ...auditBase,
+        action: 'zatca_atomic_simplified_checkout',
+        scope: 'branch',
+        scopeId: branchId,
+        maxAttempts: 20,
+        windowSeconds: 60,
+        metadata: { operation: action },
+      })
+      if (!rate.allowed) return jsonResponse(rateLimitBody(rate), 429)
+
+      await auditEvent(supabase as any, {
+        ...auditBase,
+        action: 'zatca_atomic_checkout_attempted',
+        status: 'attempted',
+        metadata: {
+          operation: action,
+          idempotencyKeyPresent: typeof checkoutPayload.idempotency_key === 'string',
+        },
+      })
+      try {
+        const result = await processAtomicSimplifiedCheckoutV2({
+          serviceDb: supabase as any,
+          callerDb: authClient as any,
+          caller: callerProfile,
+          branchId,
+          checkoutPayload,
+          cartFingerprint,
+          documentType: action === 'checkout_simplified_credit_note' ? 'credit_note' : 'invoice',
+          requestStartedAt,
+        })
+        scheduleEdgeBackgroundTask(auditEvent(supabase as any, {
+          ...auditBase,
+          action: 'zatca_atomic_checkout_committed',
+          status: 'succeeded',
+          targetType: 'invoice',
+          targetId: String(result.receipt?.invoice_id ?? ''),
+          metadata: {
+            operation: action,
+            idempotentReplay: result.idempotentReplay === true,
+          },
+        }), '[zatca-audit] unable to persist atomic checkout success audit:')
+        return jsonResponse(result)
+      } catch (error) {
+        const message = safeZatcaText(error instanceof Error ? error.message : error, 220)
+          ?? 'Atomic simplified checkout failed'
+        await auditEvent(supabase as any, {
+          ...auditBase,
+          action: 'zatca_atomic_checkout_failed',
+          severity: 'warning',
+          status: 'failed',
+          metadata: { operation: action, reason: message },
+        })
+        return jsonResponse({
+          error: message,
+          code: error instanceof ZatcaSubmitAssertionError
+            ? error.statusString
+            : 'ATOMIC_SIMPLIFIED_CHECKOUT_FAILED',
+        }, 409)
+      }
     }
 
     if (!invoiceId) {

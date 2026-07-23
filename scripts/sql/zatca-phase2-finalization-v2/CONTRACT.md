@@ -118,10 +118,14 @@ Table-wide browser UPDATE or broader protected-column grants are a hard stop.
 No unrelated invoice privilege is revoked.
 
 Before `04a`, preflight must show the effective table/column privileges for
-anon, authenticated, and service_role. After `04a`, verification must show no
-browser table-wide SELECT, all 32 authenticated safe columns readable, all 52
-server-only columns unreadable by browser roles, no anon invoice read, and full
-service-role access.
+anon, authenticated, and service_role. The migration accepts only the reviewed
+table-wide legacy state, the already-complete safe allowlist, or the canonical
+snapshot state: `document_language` is the sole missing safe grant and the
+eleven named legacy ZATCA metadata grants are the exact unsafe set that `04a`
+revokes. Any other privilege drift fails closed. After `04a`, verification must
+show no browser table-wide SELECT, all 32 authenticated safe columns readable,
+all 52 server-only columns unreadable by browser roles, no anon invoice read,
+and full service-role access.
 
 ## Release and compatibility
 
@@ -228,6 +232,35 @@ Manual retry for `simplified_final` only requeues that exact stored artifact.
 Blocked records cannot be requeued through ordinary retry.
 Legacy and standard submission/clearance behavior remains on its existing
 paths.
+
+## Atomic simplified checkout extension
+
+`12_atomic_simplified_checkout_v2.sql` installs the disabled-by-default atomic
+simplified invoice and simplified credit-note path. A private short-lived
+intent reserves the branch chain position and captures an authoritative
+commercial preview inside a deliberately rolled-back savepoint. Edge signs
+that exact snapshot once. The final authenticated RPC re-runs the commercial
+validation and commits the invoice/items/payments/stock or refund, immutable
+artifact, chain reservation/head, durable outbox, and immutable receipt in one
+transaction.
+
+There is at most one active intent per branch. Existing chain allocation cannot
+overtake it. Idempotency, invoice, UUID, invoice-number, and chain-position
+uniqueness prevent duplicate commercial or compliance identities. The same
+key/fingerprint returns the stored receipt, including when rollout flags were
+paused after commit. A non-committed intent is never diverted into a second
+legacy checkout.
+
+The global `atomic_simplified_checkout_enabled` switch and explicit branch gate
+both default false. Outside a canary the new Edge action returns a write-free
+rollout decision and the existing frontend path remains available. Standard
+documents and notes remain clearance-gated.
+
+Every received ZATCA response is first inserted into the append-only sanitized
+`zatca_reporting_response_evidence_v2` table, then applied to outbox/invoice
+state. Evidence remains available if result application fails. See
+`ATOMIC_SIMPLIFIED_CHECKOUT_ROLLOUT.md` for the sequence, failure matrix, and
+coordinated enable/rollback procedure.
 9. Run real service-role, browser-denial, two-session concurrency, stale-lease,
    and protected-hash fixtures.
 10. Reopen browser traffic only after authenticated safe reads, denied raw and

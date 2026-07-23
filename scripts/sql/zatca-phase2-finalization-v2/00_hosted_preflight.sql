@@ -154,7 +154,7 @@ ORDER BY t.tgname;
 -- Protected definitions must match the reviewed release values before any DDL.
 WITH expected(signature, expected_hash) AS (
   VALUES
-    ('public.pos_checkout(jsonb)', 'bdc4ee5a02be05aa8b1d7378ebb84c0f'),
+    ('public.pos_checkout(jsonb)', 'b810798d8d9b64248f06ae67c6d95f90'),
     ('public.snapshot_invoice_document_language()', '7f9b093d4a68d315868dadc9ce1f2c58')
 )
 SELECT

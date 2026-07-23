@@ -499,7 +499,7 @@ BEGIN
   -- Protected hosted definitions.
   FOR v_function IN
     SELECT * FROM (VALUES
-      ('pos_checkout_hash', 'public.pos_checkout(jsonb)', 'bdc4ee5a02be05aa8b1d7378ebb84c0f'),
+      ('pos_checkout_hash', 'public.pos_checkout(jsonb)', 'b810798d8d9b64248f06ae67c6d95f90'),
       ('snapshot_language_hash', 'public.snapshot_invoice_document_language()', '7f9b093d4a68d315868dadc9ce1f2c58')
     ) AS expected(check_name, signature, expected_hash)
   LOOP

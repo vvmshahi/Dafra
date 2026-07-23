@@ -374,7 +374,9 @@ BEGIN
   END IF;
   UPDATE public.invoices SET
     zatca_lifecycle_state = CASE WHEN p_reported THEN 'reported' ELSE 'reporting_failed' END,
-    zatca_status = CASE WHEN p_reported THEN 'reported' ELSE 'failed' END,
+    zatca_status = (
+      CASE WHEN p_reported THEN 'reported' ELSE 'failed' END
+    )::public.zatca_status,
     zatca_submitted_at = clock_timestamp(),
     zatca_network_response_v2 = COALESCE(p_safe_response, '{}'::jsonb),
     zatca_reporting_response = COALESCE(p_safe_response, '{}'::jsonb),

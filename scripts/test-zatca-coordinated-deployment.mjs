@@ -18,7 +18,10 @@ const legacy = edge.slice(legacyStart, legacyEnd)
 assert.match(edge, /const legacySubmitAvailable = runtime\.error == null \|\| runtimeSchemaMissing/)
 assert.match(edge, /databaseFeatureEnabled, legacySubmitAvailable: true/)
 assert.match(edge, /const actionlessLegacyRequest = rawAction === null && clientVersion === null/)
-for (const action of ['submit', 'finalize', 'status', 'capability', 'capabilities', 'retry', 'recover_immutable_pair']) {
+for (const action of [
+  'submit', 'finalize', 'status', 'capability', 'capabilities', 'retry',
+  'recover_immutable_pair', 'checkout_simplified', 'checkout_simplified_credit_note',
+]) {
   assert.match(edge, new RegExp(`'${action}'`))
 }
 assert.match(edge, /!actionlessLegacyRequest[\s\S]*FINALIZATION_VERSION_MISMATCH/)
@@ -77,7 +80,8 @@ const route = ({
 }) => {
   if (rawAction !== null && ![
     'submit', 'finalize', 'status', 'capability', 'capabilities',
-    'retry', 'recover_immutable_pair',
+    'retry', 'recover_immutable_pair', 'checkout_simplified',
+    'checkout_simplified_credit_note',
   ].includes(rawAction)) return '400'
   if (rawAction === 'capability' || rawAction === 'capabilities') return 'capability'
   const actionlessLegacy = rawAction === null && clientVersion === null

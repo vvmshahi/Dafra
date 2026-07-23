@@ -93,6 +93,7 @@ export interface ZatcaOutputState {
   finalizationStatus: string
   artifactStage: string
   documentKind: 'simplified' | 'standard' | null
+  reportingDisplayState: string
   canPrint: boolean
   canShare: boolean
   retryAvailable: boolean
@@ -256,6 +257,9 @@ export async function getInvoiceZatcaOutputState(params: {
     finalizationStatus,
     artifactStage: String(data?.artifactStage ?? 'none'),
     documentKind: data?.documentKind === 'simplified' || data?.documentKind === 'standard' ? data.documentKind : null,
+    reportingDisplayState: typeof data?.reportingDisplayState === 'string'
+      ? data.reportingDisplayState
+      : 'reporting_pending',
     canPrint,
     canShare: data?.canShare === true,
     retryAvailable: data?.retryAvailable === true,

@@ -12,6 +12,7 @@ DECLARE
   v_master boolean;
   v_simplified boolean;
   v_standard boolean;
+  v_atomic boolean := false;
 BEGIN
   IF to_regclass('public.zatca_finalization_runtime') IS NULL THEN
     RAISE EXCEPTION 'ZATCA_RUNTIME_TABLE_MISSING';
@@ -26,6 +27,20 @@ BEGIN
   INTO v_total, v_singleton, v_master, v_simplified, v_standard
   FROM public.zatca_finalization_runtime;
 
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'zatca_finalization_runtime'
+      AND column_name = 'atomic_simplified_checkout_enabled'
+  ) THEN
+    EXECUTE
+      'SELECT bool_or(atomic_simplified_checkout_enabled)
+       FROM public.zatca_finalization_runtime
+       WHERE singleton = true'
+      INTO v_atomic;
+  END IF;
+
   IF v_total <> 1 OR v_singleton <> 1 THEN
     RAISE EXCEPTION
       'ZATCA_RUNTIME_SINGLETON_INVALID:total=%,singleton=%',
@@ -34,10 +49,11 @@ BEGIN
 
   IF COALESCE(v_master, true)
      OR COALESCE(v_simplified, true)
-     OR COALESCE(v_standard, true) THEN
+     OR COALESCE(v_standard, true)
+     OR COALESCE(v_atomic, true) THEN
     RAISE EXCEPTION
-      'ZATCA_FLAGS_NOT_FALSE:master=%,simplified=%,standard=%',
-      v_master, v_simplified, v_standard;
+      'ZATCA_FLAGS_NOT_FALSE:master=%,simplified=%,standard=%,atomic_simplified_checkout=%',
+      v_master, v_simplified, v_standard, v_atomic;
   END IF;
 END
 $guard$;

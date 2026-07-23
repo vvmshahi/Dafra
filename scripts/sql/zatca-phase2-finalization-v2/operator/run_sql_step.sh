@@ -19,8 +19,9 @@ case "${step}" in
   09) sql_file="${package_dir}/09_branch_readiness_gate.sql" ;;
   10) sql_file="${package_dir}/10_branch_readiness_verification.sql" ;;
   11) sql_file="${package_dir}/11_durable_simplified_reporting_outbox.sql" ;;
+  12) sql_file="${package_dir}/12_atomic_simplified_checkout_v2.sql" ;;
   *)
-    echo "Usage: $0 {00|01|02|03|04|04a|05|06|09|10|11}" >&2
+    echo "Usage: $0 {00|01|02|03|04|04a|05|06|09|10|11|12}" >&2
     exit 64
     ;;
 esac

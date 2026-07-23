@@ -38,6 +38,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   printReceipt: (request) =>
     ipcRenderer.invoke('print-receipt', request),
 
+  printCurrentReceipt: () =>
+    ipcRenderer.invoke('print-current-receipt'),
+
   printA4Invoice: () =>
     ipcRenderer.invoke('print-a4-invoice'),
 

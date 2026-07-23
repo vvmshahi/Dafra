@@ -2,7 +2,7 @@ export const QR_RENDER_TIMEOUT_MS = 5_000
 export const QR_DISPLAY_TIMEOUT_MS = 8_000
 
 function hasFinalStoredOutput(outputState) {
-  if (!outputState || outputState.canPrint !== true || outputState.reconciliationRequired === true) {
+  if (!outputState || outputState.canPrint !== true) {
     return false
   }
 

@@ -12,6 +12,7 @@ const baselineScript = read(`${base}/operator/capture_protected_baseline.sh`)
 const flagGuard = read(`${base}/operator/verify_flags_false.sql`)
 const verifier = read(`${base}/06_verification.sql`)
 const branchVerifier = read(`${base}/10_branch_readiness_verification.sql`)
+const atomicRollout = read(`${base}/ATOMIC_SIMPLIFIED_CHECKOUT_ROLLOUT.md`)
 
 for (const script of [
   `${base}/operator/run_sql_step.sh`,
@@ -21,7 +22,7 @@ for (const script of [
   assert.equal(checked.status, 0, `${script}: ${checked.stderr}`)
 }
 
-for (const step of ['00', '01', '02', '03', '04', '04a', '05', '06', '09', '10', '11']) {
+for (const step of ['00', '01', '02', '03', '04', '04a', '05', '06', '09', '10', '11', '12']) {
   assert.match(stepScript, new RegExp(`\\b${step.replace('04a', '04a')}\\)`))
   assert.match(runbook, new RegExp(`run_sql_step\\.sh ${step}\\b`))
 }
@@ -44,6 +45,7 @@ assert.match(flagGuard, /ZATCA_FLAGS_NOT_FALSE/)
 assert.match(flagGuard, /immutable_finalization_enabled/)
 assert.match(flagGuard, /simplified_enabled/)
 assert.match(flagGuard, /standard_enabled/)
+assert.match(flagGuard, /atomic_simplified_checkout_enabled/)
 
 assert.match(verifier, /v_total <> 59/)
 assert.match(verifier, /v_pass <> 54/)
@@ -77,5 +79,9 @@ assert.match(runbook, /A\. Release package and maintenance runbook are ready/)
 assert.match(runbook, /Do not stage or commit/)
 assert.match(runbook, /Authenticated table-wide SELECT[^]*not a normal\s+rollback/)
 assert.match(runbook, /43 recorded decisions\/checks/)
+assert.match(atomicRollout, /atomic_simplified_checkout_enabled/)
+assert.match(atomicRollout, /one explicitly approved branch/)
+assert.match(atomicRollout, /Rollback is flag-only/)
+assert.match(atomicRollout, /INV-0826 and INV-0827 remain historical reconciliation incidents/)
 
 console.log('ZATCA release package: operator scripts, 59-row gate, runbook, and safety invariants passed')

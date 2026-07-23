@@ -154,7 +154,7 @@ function usePrintStyle() {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function InvoiceDetailPage() {
-  const { t } = useTranslation(['invoices', 'creditNotes', 'refunds', 'printing', 'payments', 'documents', 'validation', 'common'])
+  const { t } = useTranslation(['invoices', 'creditNotes', 'refunds', 'printing', 'payments', 'documents', 'validation', 'common', 'pos'])
   const { id }     = useParams<{ id: string }>()
   const navigate   = useNavigate()
   const location   = useLocation()
@@ -696,8 +696,12 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     : creditStatus === 'full' || totalRemainingQuantity <= 0.0005
     ? t('invoices:fullyCreditedReason')
     : null
-  const canSubmitCurrentDocument = invoice.zatca_status === 'failed'
-    || (isCreditNote && invoice.zatca_status === 'pending')
+  const canSubmitCurrentDocument = outputStateMatchesInvoice
+    && outputState?.documentKind === 'simplified'
+    && outputState.artifactStage === 'simplified_final'
+    ? outputState.retryAvailable
+    : invoice.zatca_status === 'failed'
+      || (isCreditNote && invoice.zatca_status === 'pending')
 
   const brandNameEn = branch.display_name || branch.business_name || branch.name
   const brandNameAr = branch.business_name_ar || branch.name_ar || brandNameEn
@@ -739,6 +743,11 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
         </button>
 
         <div className="flex items-center gap-2">
+          {outputStateMatchesInvoice && outputState?.documentKind === 'simplified' && (
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600">
+              {t(`pos:zatca.${outputState.reportingDisplayState}`)}
+            </span>
+          )}
           {canSubmitCurrentDocument && !demoSandbox && (
             <button onClick={handleResend} disabled={resubmitting}
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-600 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 transition-colors disabled:opacity-50">
@@ -1175,6 +1184,10 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
           branch_id: invoice.branch_id,
           invoice_number: invoice.invoice_number,
           total_amount: Number(invoice.total_amount),
+          zatca_document_kind: outputState?.documentKind === 'standard'
+            || invoice.zatca_invoice_type === 'standard'
+            ? 'standard'
+            : 'simplified',
         }}
         defaultRefundMethod={(isSplitPayment ? 'other' : (payment?.method ?? invoice.payment_method ?? 'cash')) as PaymentMethod}
         onClose={() => setCreditModalOpen(false)}

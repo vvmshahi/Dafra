@@ -43,7 +43,14 @@ DECLARE
     'zatca_network_request_hash_v2', 'zatca_network_request_started_at_v2',
     'zatca_network_ack_state_v2', 'zatca_reconciliation_reason_v2'
   ];
+  v_reviewed_legacy_columns constant text[] := ARRAY[
+    'checkout_idempotency_key', 'credit_note_idempotency_key',
+    'zatca_clearance_status', 'zatca_counter_number',
+    'zatca_prev_invoice_hash', 'zatca_qr_code', 'zatca_submission_id',
+    'zatca_type_code', 'zatca_uuid', 'zatca_warnings', 'zatca_xml_hash'
+  ];
   v_missing text[];
+  v_unsafe_grants text[];
   v_count bigint;
   v_table_select boolean;
   v_column_list text;
@@ -121,25 +128,29 @@ BEGIN
 
   SELECT has_table_privilege('authenticated', 'public.invoices', 'SELECT') INTO v_table_select;
   IF NOT v_table_select THEN
-    SELECT count(*) INTO v_count
+    SELECT array_agg(required.column_name ORDER BY required.column_name)
+    INTO v_missing
     FROM unnest(v_safe_columns) required(column_name)
     WHERE NOT has_column_privilege(
       'authenticated', 'public.invoices', required.column_name, 'SELECT'
     );
-    IF v_count <> 0 THEN
-      RAISE EXCEPTION 'UNEXPECTED_AUTHENTICATED_INVOICE_SELECT_STATE:safe_missing=%', v_count
-        USING HINT = 'Expected either the reviewed table-wide legacy grant or the complete 04a allowlist.';
+    IF COALESCE(cardinality(v_missing), 0) <> 0
+       AND v_missing IS DISTINCT FROM ARRAY['document_language']::text[] THEN
+      RAISE EXCEPTION 'UNEXPECTED_AUTHENTICATED_INVOICE_SELECT_STATE:safe_missing=%', v_missing
+        USING HINT = 'Expected table-wide legacy access, the complete 04a allowlist, or the reviewed pre-04a allowlist missing only document_language.';
     END IF;
 
-    SELECT count(*) INTO v_count
+    SELECT array_agg(a.attname ORDER BY a.attname)
+    INTO v_unsafe_grants
     FROM pg_attribute a
     WHERE a.attrelid = 'public.invoices'::regclass
       AND a.attnum > 0 AND NOT a.attisdropped
       AND NOT (a.attname = ANY(v_safe_columns))
       AND has_column_privilege('authenticated', 'public.invoices', a.attname, 'SELECT');
-    IF v_count <> 0 THEN
-      RAISE EXCEPTION 'UNEXPECTED_AUTHENTICATED_UNSAFE_COLUMN_GRANTS:%', v_count
-        USING HINT = 'Stop. Resolve column-privilege drift explicitly.';
+    IF COALESCE(cardinality(v_unsafe_grants), 0) <> 0
+       AND v_unsafe_grants IS DISTINCT FROM v_reviewed_legacy_columns THEN
+      RAISE EXCEPTION 'UNEXPECTED_AUTHENTICATED_UNSAFE_COLUMN_GRANTS:%', v_unsafe_grants
+        USING HINT = 'Expected no unsafe column grants or the exact reviewed legacy set that this migration revokes.';
     END IF;
   END IF;
 

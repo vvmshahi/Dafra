@@ -24,6 +24,14 @@ import {
   submitInvoiceForBranch,
   type ZatcaCheckoutMode,
 } from '@/lib/zatca/submission'
+import {
+  atomicCheckoutFingerprint,
+  checkoutSimplifiedAtomically,
+  clearPendingAtomicCheckout,
+  persistPendingAtomicCheckout,
+  readPendingAtomicCheckout,
+  type AtomicCheckoutResult,
+} from '@/lib/zatca/atomicCheckout'
 import { selectStoredInvoiceQr } from '@/lib/zatca/qrSelector'
 import {
   renderStoredQrDataUrl,
@@ -38,7 +46,7 @@ import type { Branch, BranchPosMode, PaymentMethod, VatTreatment } from '@/types
 import { usePosSession } from '@/hooks/usePosSession'
 import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
-import { getPrinterSettings, getPrinters, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
+import { getPrinterSettings, getPrinters, isElectron, printA4Invoice, printCurrentReceipt, printReceipt } from '@/lib/electron'
 import { openReceiptPreview, printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { supportConfig } from '@/config/support'
 import { resolveBusinessType } from '@/lib/utils/businessType'
@@ -170,6 +178,8 @@ interface ReceiptData {
   documentKind: 'simplified' | 'standard' | null
   finalizationError: string | null
   sandboxGenerated: boolean
+  reportingDisplayState: string
+  atomicSnapshot: boolean
 }
 
 function branchPosMode(value: string | null | undefined): PosMode {
@@ -504,6 +514,7 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
   const [printingReceipt, setPrintingReceipt] = useState(false)
   const [printErrorKey, setPrintErrorKey] = useState<string | null>(null)
   const [retryingFinalization, setRetryingFinalization] = useState(false)
+  const automaticSnapshotPrintRef = useRef(false)
   const documentLanguage = normalizeDocumentLanguage(receipt.documentLanguage)
   const documentViewModel = useMemo(() => documentFromPosReceipt({ ...receipt, zatcaQrCode: receipt.zatcaQrCode, presentationSettings: branch?.presentation_settings, branchDefaults: branch ?? undefined, items: receipt.items.map(item => ({ name: item.name, nameAr: item.nameAr, qty: item.qty, unitPrice: item.unitPrice, lineTotal: item.lineTotal, subtotal: item.subtotal, taxAmount: item.taxAmount, taxRate: item.taxRate, taxCategory: item.taxCategory })), payments: receipt.payments.map(payment => ({ method: payment.method, amount: payment.amount, amountReceived: payment.amountReceived, changeAmount: payment.changeAmount })) }), [receipt, branch])
   const printReady = receipt.canPrint && qrStatus === 'ready' && Boolean(qrDataUrl)
@@ -523,6 +534,74 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
     }
     void genQR()
   }, [receipt.zatcaQrCode])
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      console.info('[zatca-timing]', {
+        event: 'receipt_rendered',
+        invoiceId: receipt.invoiceId,
+        reportingDisplayState: receipt.reportingDisplayState,
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [receipt.invoiceId, receipt.reportingDisplayState])
+
+  function installThermalSnapshotPrintStyle(): () => void {
+    const existing = document.getElementById('pos-thermal-snapshot-print-style')
+    existing?.remove()
+    const style = document.createElement('style')
+    style.id = 'pos-thermal-snapshot-print-style'
+    style.textContent = `
+      @media print {
+        @page { size: 80mm auto; margin: 0; }
+        html, body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body * { visibility: hidden !important; }
+        #thermal-receipt, #thermal-receipt * { visibility: visible !important; }
+        #thermal-receipt {
+          display: block !important;
+          position: absolute !important;
+          inset: 0 auto auto 0 !important;
+          margin: 0 !important;
+          background: white !important;
+        }
+      }
+    `
+    document.head.appendChild(style)
+    return () => style.remove()
+  }
+
+  async function printRenderedReceiptSnapshot(): Promise<boolean> {
+    console.info('[zatca-timing]', {
+      event: 'print_requested',
+      invoiceId: receipt.invoiceId,
+      source: receipt.atomicSnapshot ? 'atomic_checkout_snapshot' : 'pos_snapshot',
+    })
+    const removeStyle = installThermalSnapshotPrintStyle()
+    try {
+      const result = await printCurrentReceipt()
+      if (result.success) {
+        console.info('[zatca-timing]', {
+          event: 'printer_started',
+          invoiceId: receipt.invoiceId,
+          source: receipt.atomicSnapshot ? 'atomic_checkout_snapshot' : 'pos_snapshot',
+        })
+        return true
+      }
+      console.warn('[ReceiptView] receipt snapshot print failed', result.errorType)
+      return false
+    } finally {
+      removeStyle()
+    }
+  }
+
+  useEffect(() => {
+    if (!receipt.atomicSnapshot || !printReady || automaticSnapshotPrintRef.current) return
+    automaticSnapshotPrintRef.current = true
+    void getPrinterSettings().then(settings => {
+      if (!settings.autoPrintReceiptAfterSale) return
+      void openReceiptPrintPage()
+    })
+  }, [receipt.atomicSnapshot, receipt.invoiceId, printReady])
 
   function shareWhatsApp() {
     if (!printReady) {
@@ -556,6 +635,11 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
       toast.error(t('printing:qrUnavailable'))
       return
     }
+    console.info('[zatca-timing]', {
+      event: 'print_requested',
+      invoiceId: receipt.invoiceId,
+      source: receipt.atomicSnapshot ? 'atomic_checkout_a4_snapshot' : 'pos_a4_snapshot',
+    })
     const existing = document.getElementById('pos-pdf-print-style')
     existing?.remove()
     const s = document.createElement('style')
@@ -585,6 +669,12 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     if (!result.success) {
       console.warn('[ReceiptView] A4 print failed', result.errorType)
       toast.error(t('pos:printer.a4Failed'))
+    } else {
+      console.info('[zatca-timing]', {
+        event: 'printer_started',
+        invoiceId: receipt.invoiceId,
+        source: receipt.atomicSnapshot ? 'atomic_checkout_a4_snapshot' : 'pos_a4_snapshot',
+      })
     }
     s.remove()
   }
@@ -599,6 +689,14 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
     setPrintingReceipt(true)
     try {
+      if (receipt.atomicSnapshot) {
+        const printed = await printRenderedReceiptSnapshot()
+        if (printed) {
+          toast.success(t('pos:printer.receiptSent'), { duration: 1800 })
+          return
+        }
+        throw new Error('Rendered receipt snapshot could not be printed')
+      }
       if (!isElectron()) {
         await printReceiptInHiddenFrame(receipt.invoiceId)
         return
@@ -656,6 +754,14 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
           {/* Summary */}
           <div className="p-6 space-y-3">
+            {!receipt.isStandardInvoice && (
+              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs">
+                <span className="text-slate-500">ZATCA</span>
+                <span className="font-semibold text-slate-700">
+                  {t(`pos:zatca.${receipt.reportingDisplayState}`)}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">{t('payments:customer')}</span>
               <span className="font-medium text-gray-800" dir="auto">{receipt.customerName}</span>
@@ -1920,7 +2026,13 @@ export default function POSPage() {
       return
     }
     setSubmitting(true)
-    const idempotencyKey = checkoutKeyRef.current ?? createCheckoutIdempotencyKey()
+    const persistedAtomicCheckout = readPendingAtomicCheckout(branch.id)
+    const persistedInvoiceCheckout = persistedAtomicCheckout?.documentType === 'invoice'
+      ? persistedAtomicCheckout
+      : null
+    const idempotencyKey = persistedInvoiceCheckout?.idempotencyKey
+      ?? checkoutKeyRef.current
+      ?? createCheckoutIdempotencyKey()
     checkoutKeyRef.current = idempotencyKey
 
     try {
@@ -1947,7 +2059,7 @@ export default function POSPage() {
             { method: 'card', amount: round2(splitCardAmount) },
           ]
         : null
-      const payload = {
+      let payload: Record<string, unknown> = {
         branch_id: branch.id,
         customer_id: customerId,
         session_id: session?.id ?? null,
@@ -1963,25 +2075,76 @@ export default function POSPage() {
       }
 
       const demoSandbox = isPermanentDemoSandboxBranch(branch.tenant_id, branch.id)
+      const standardRequested = selectedCust?.customer_type === 'business'
+        && /^3[0-9]{13}3$/.test(selectedCust.vat_number ?? '')
       let productionCheckoutMode: ZatcaCheckoutMode = 'legacy'
-      if (!demoSandbox) {
-        // This mirrors pos_checkout's existing document-kind predicate. The
-        // server capability response owns each document kind's routing mode.
-        const standardRequested = selectedCust?.customer_type === 'business'
-          && /^3[0-9]{13}3$/.test(selectedCust.vat_number ?? '')
-        // Capability acknowledgement is intentionally completed before
-        // pos_checkout so mixed deployments cannot record a payment first.
-        const capability = await requireZatcaFinalizationCapability(
-          branch.id,
-          standardRequested ? 'standard' : 'simplified',
-        )
-        productionCheckoutMode = capability.checkoutMode
+      let atomicCheckoutResult: AtomicCheckoutResult | null = null
+      let atomicFingerprint: string | null = null
+      let checkout: PosCheckoutResult | null = null
+      if (!demoSandbox && !standardRequested) {
+        if (persistedInvoiceCheckout) payload = persistedInvoiceCheckout.checkout
+        atomicFingerprint = await atomicCheckoutFingerprint(payload)
+        if (persistedInvoiceCheckout
+            && persistedInvoiceCheckout.cartFingerprint !== atomicFingerprint) {
+          throw new Error('Persisted checkout fingerprint does not match its request payload')
+        }
+        persistPendingAtomicCheckout(branch.id, {
+          idempotencyKey,
+          cartFingerprint: atomicFingerprint,
+          documentType: 'invoice',
+          checkout: payload,
+        })
+        const atomicAttempt = await checkoutSimplifiedAtomically({
+          branchId: branch.id,
+          checkout: payload,
+          cartFingerprint: atomicFingerprint,
+        })
+        if (atomicAttempt.status === 'committed') {
+          atomicCheckoutResult = atomicAttempt
+          const atomicReceipt = atomicCheckoutResult.receipt
+          const atomicPayments = Array.isArray(atomicReceipt.payments) ? atomicReceipt.payments : []
+          const firstAtomicPayment = atomicPayments[0]
+          checkout = {
+            invoice_id: atomicReceipt.invoice_id,
+            invoice_number: atomicReceipt.invoice_number,
+            created_at: atomicReceipt.created_at,
+            subtotal: atomicReceipt.subtotal,
+            tax_amount: atomicReceipt.tax_amount,
+            total: atomicReceipt.total,
+            payment_method: atomicReceipt.payment_method as PaymentMethod,
+            display_payment_method: atomicPayments.length > 1 ? 'split' : atomicReceipt.payment_method,
+            payment_status: atomicReceipt.payment_status,
+            amount_received: firstAtomicPayment?.amount_received ?? atomicReceipt.total,
+            change_amount: firstAtomicPayment?.change_amount ?? 0,
+            payments: atomicPayments.map(payment => ({
+              method: payment.method as PaymentMethod,
+              amount: payment.amount,
+              amount_received: payment.amount_received,
+              change_amount: payment.change_amount,
+            })),
+            zatca_invoice_type: 'simplified',
+            items: atomicReceipt.items,
+            document_language: atomicReceipt.document_language ?? undefined,
+            idempotent_replay: atomicCheckoutResult.idempotentReplay,
+          } as PosCheckoutResult
+        }
       }
-
-      const { data, error } = await (supabase as any).rpc('pos_checkout', { p_payload: payload })
-      if (error) throw error
-
-      const checkout = data as PosCheckoutResult
+      if (!checkout) {
+        if (!demoSandbox) {
+          // Outside the controlled atomic canary, preserve the existing
+          // document-kind routing until that branch is explicitly enabled.
+          // No commercial write occurred in the atomic rollout probe.
+          const capability = await requireZatcaFinalizationCapability(
+            branch.id,
+            standardRequested ? 'standard' : 'simplified',
+          )
+          productionCheckoutMode = capability.checkoutMode
+        }
+        const { data, error } = await (supabase as any).rpc('pos_checkout', { p_payload: payload })
+        if (error) throw error
+        checkout = data as PosCheckoutResult
+      }
+      if (!checkout) throw new Error('Checkout did not return an invoice')
       const serverTotal = num(checkout.total)
       const serverTax = num(checkout.tax_amount)
       const serverSubtotal = num(checkout.subtotal)
@@ -2022,7 +2185,13 @@ export default function POSPage() {
       let finalizationError: string | null = null
 
       try {
-        if (demoSandbox) {
+        if (atomicCheckoutResult) {
+          finalizationStatus = atomicCheckoutResult.finalizationStatus
+          artifactStage = atomicCheckoutResult.artifactStage
+          documentKind = atomicCheckoutResult.documentKind
+          finalQrCode = atomicCheckoutResult.receipt.qr_code
+          canPrintCustomerCopy = atomicCheckoutResult.receipt.can_print === true
+        } else if (demoSandbox) {
           preOutputSubmission = await submitInvoiceForBranch({
             invoiceId: checkout.invoice_id,
             tenantId: branch.tenant_id,
@@ -2122,6 +2291,9 @@ export default function POSPage() {
         branch.building_number ? `مبنى ${branch.building_number}` : null,
         branch.street_ar, branch.district_ar, branch.city_ar,
       ].filter(Boolean).join('، ')
+      const atomicReceipt = atomicCheckoutResult?.receipt ?? null
+      const atomicSeller = atomicReceipt?.seller ?? null
+      const atomicCustomer = atomicReceipt?.customer ?? null
 
       setReceipt({
         invoiceNumber:  checkout.invoice_number,
@@ -2132,17 +2304,25 @@ export default function POSPage() {
         paymentMethod:  receiptPaymentMethod,
         change:         receiptChange,
         cashReceived:   receiptCashReceived,
-        customerName:      selectedCust?.customer_type === 'business' && selectedCust?.business_name
+        customerName:      typeof atomicCustomer?.business_name === 'string' && atomicCustomer.business_name
+          ? atomicCustomer.business_name
+          : typeof atomicCustomer?.name === 'string' && atomicCustomer.name
+          ? atomicCustomer.name
+          : selectedCust?.customer_type === 'business' && selectedCust?.business_name
           ? selectedCust.business_name
           : (selectedCust?.name ?? 'Walk-in Customer'),
-        customerNameAr:    selectedCust?.customer_type === 'business'
+        customerNameAr:    typeof atomicCustomer?.business_name_ar === 'string'
+          ? atomicCustomer.business_name_ar
+          : typeof atomicCustomer?.name_ar === 'string'
+          ? atomicCustomer.name_ar
+          : selectedCust?.customer_type === 'business'
           ? (selectedCust?.business_name_ar ?? selectedCust?.name_ar)
           : (selectedCust?.name_ar ?? null),
-        customerAddress: selectedCust?.address ?? null,
-        customerAddressAr: selectedCust?.address_ar ?? null,
-        buyerIdentifierType: selectedCust?.cr_number ? 'CR' : null,
-        buyerIdentifierValue: selectedCust?.cr_number ?? null,
-        customerPhone:     selectedCust?.phone ?? null,
+        customerAddress: typeof atomicCustomer?.address === 'string' ? atomicCustomer.address : (selectedCust?.address ?? null),
+        customerAddressAr: typeof atomicCustomer?.address_ar === 'string' ? atomicCustomer.address_ar : (selectedCust?.address_ar ?? null),
+        buyerIdentifierType: atomicCustomer?.cr_number || selectedCust?.cr_number ? 'CR' : null,
+        buyerIdentifierValue: typeof atomicCustomer?.cr_number === 'string' ? atomicCustomer.cr_number : (selectedCust?.cr_number ?? null),
+        customerPhone: typeof atomicCustomer?.phone === 'string' ? atomicCustomer.phone : (selectedCust?.phone ?? null),
         isStandardInvoice: isB2BInvoice,
         buyerVatNumber:    isB2BInvoice ? (selectedCust?.vat_number ?? null) : null,
         cashierName:    profile?.full_name ?? user?.email?.split('@')[0] ?? 'Cashier',
@@ -2159,24 +2339,28 @@ export default function POSPage() {
           total:     num(i.total),
         })),
         createdAt,
-        businessNameAr:  branch.business_name_ar || branch.name_ar || branch.display_name || branch.business_name || branch.name,
-        businessNameEn:  branch.display_name || branch.business_name || branch.name,
-        branchName:      branch.name,
-        branchNameAr:    branch.name_ar,
+        businessNameAr:  (typeof atomicSeller?.business_name_ar === 'string' ? atomicSeller.business_name_ar : null)
+          || (typeof atomicSeller?.branch_name_ar === 'string' ? atomicSeller.branch_name_ar : null)
+          || branch.business_name_ar || branch.name_ar || branch.display_name || branch.business_name || branch.name,
+        businessNameEn:  (typeof atomicSeller?.display_name === 'string' ? atomicSeller.display_name : null)
+          || (typeof atomicSeller?.business_name === 'string' ? atomicSeller.business_name : null)
+          || branch.display_name || branch.business_name || branch.name,
+        branchName:      typeof atomicSeller?.branch_name === 'string' ? atomicSeller.branch_name : branch.name,
+        branchNameAr:    typeof atomicSeller?.branch_name_ar === 'string' ? atomicSeller.branch_name_ar : branch.name_ar,
         branchAddress:   branchAddr || null,
         branchAddressAr: branchAddrAr || null,
         documentLanguage: normalizeDocumentLanguage(checkout.document_language ?? branch.invoice_language),
-        vatNumber:       branch.vat_number ?? '',
-        phone:           branch.phone,
-        website:         branch.website ?? null,
-        email:           branch.email ?? null,
-        showWebsite:     branch.show_website ?? false,
-        showEmail:       branch.show_email ?? false,
-        receiptFooter:   branch.receipt_footer,
-        showFooter:      branch.show_footer ?? true,
-        showCashChange:  branch.show_cash_change ?? true,
-        logoUrl:         branch.logo_url ?? null,
-        showLogo:        branch.show_logo ?? true,
+        vatNumber:       typeof atomicSeller?.vat_number === 'string' ? atomicSeller.vat_number : (branch.vat_number ?? ''),
+        phone:           typeof atomicSeller?.phone === 'string' ? atomicSeller.phone : branch.phone,
+        website:         typeof atomicSeller?.website === 'string' ? atomicSeller.website : (branch.website ?? null),
+        email:           typeof atomicSeller?.email === 'string' ? atomicSeller.email : (branch.email ?? null),
+        showWebsite:     typeof atomicSeller?.show_website === 'boolean' ? atomicSeller.show_website : (branch.show_website ?? false),
+        showEmail:       typeof atomicSeller?.show_email === 'boolean' ? atomicSeller.show_email : (branch.show_email ?? false),
+        receiptFooter:   typeof atomicSeller?.receipt_footer === 'string' ? atomicSeller.receipt_footer : branch.receipt_footer,
+        showFooter:      typeof atomicSeller?.show_footer === 'boolean' ? atomicSeller.show_footer : (branch.show_footer ?? true),
+        showCashChange:  typeof atomicSeller?.show_cash_change === 'boolean' ? atomicSeller.show_cash_change : (branch.show_cash_change ?? true),
+        logoUrl:         typeof atomicSeller?.logo_url === 'string' ? atomicSeller.logo_url : (branch.logo_url ?? null),
+        showLogo:        typeof atomicSeller?.show_logo === 'boolean' ? atomicSeller.show_logo : (branch.show_logo ?? true),
         payments:        receiptPayments,
         displayPaymentMethod,
         zatcaQrCode:    finalQrCode ?? '',
@@ -2186,6 +2370,9 @@ export default function POSPage() {
         documentKind,
         finalizationError,
         sandboxGenerated: demoSandbox,
+        reportingDisplayState: atomicCheckoutResult?.reportingDisplayState
+          ?? (isB2BInvoice ? 'clearance_pending' : 'reporting_pending'),
+        atomicSnapshot: Boolean(atomicCheckoutResult),
       })
       upsertInvoiceListRow(branch.tenant_id, {
         id: checkout.invoice_id,
@@ -2214,7 +2401,7 @@ export default function POSPage() {
         creditStatus: 'none',
         remainingRefundableQuantity: (checkout.items ?? []).reduce((sum, item) => sum + num(item.quantity), 0),
       })
-      if (canPrintCustomerCopy && !isB2BInvoice) {
+      if (canPrintCustomerCopy && !isB2BInvoice && !atomicCheckoutResult) {
         void maybeAutoPrintReceiptAfterSale(checkout.invoice_id)
       }
       setCart([])
@@ -2224,6 +2411,9 @@ export default function POSPage() {
       setSplitCash('')
       setSplitCard('')
       setSplitOpen(false)
+      if (atomicFingerprint) {
+        clearPendingAtomicCheckout(branch.id, idempotencyKey, atomicFingerprint)
+      }
       checkoutKeyRef.current = null
 
       if (finalizationError) {

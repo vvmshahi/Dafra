@@ -7,6 +7,14 @@ import { supabase } from '@/lib/supabase'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import type { PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isPermanentDemoSandboxBranch, submitInvoiceForBranch } from '@/lib/zatca/submission'
+import {
+  atomicCheckoutFingerprint,
+  checkoutSimplifiedAtomically,
+  clearPendingAtomicCheckout,
+  persistPendingAtomicCheckout,
+  readPendingAtomicCheckout,
+  type AtomicReceiptPayload,
+} from '@/lib/zatca/atomicCheckout'
 import { useAuth } from '@/hooks/useAuth'
 import { resolveBusinessType } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
@@ -16,6 +24,7 @@ export interface CreditNoteSourceInvoice {
   branch_id: string
   invoice_number: string
   total_amount: number
+  zatca_document_kind: 'simplified' | 'standard'
 }
 
 export interface CreditNoteCreatedResult {
@@ -33,6 +42,7 @@ export interface CreditNoteCreatedResult {
   taxAmount: number
   itemsCount: number
   originalInvoiceId: string
+  atomicReceipt?: AtomicReceiptPayload
 }
 
 interface RpcCreditNoteResult {
@@ -249,7 +259,10 @@ export default function CreateCreditNoteModal({
     setError(null)
     setCreating(false)
     setSubmitting(false)
-    setIdempotencyKey(newIdempotencyKey(invoice.id))
+    setIdempotencyKey(
+      readPendingAtomicCheckout(invoice.branch_id, 'credit_note')?.idempotencyKey
+        ?? newIdempotencyKey(invoice.id),
+    )
     setRefundMode('cash')
     setRefundCash('')
     setRefundCard('')
@@ -431,18 +444,79 @@ export default function CreateCreditNoteModal({
           quantity: line.quantity,
         })),
       }
-      const { data, error: rpcError } = await (supabase as any).rpc('create_partial_credit_note_with_refund', { p_payload: payload })
-      if (rpcError) throw rpcError
-
-      const result = data as RpcCreditNoteResult
+      const demoSandbox = isPermanentDemoSandboxBranch(profile?.tenant_id, invoice.branch_id)
+      const atomicSimplifiedCreditEligible = !demoSandbox
+        && invoice.zatca_document_kind === 'simplified'
+      let usedAtomicSimplifiedCredit = false
+      let atomicReceipt: AtomicReceiptPayload | undefined
+      let result: RpcCreditNoteResult | null = null
+      if (atomicSimplifiedCreditEligible) {
+        const pending = readPendingAtomicCheckout(invoice.branch_id, 'credit_note')
+        const atomicPayload = pending?.checkout ?? payload
+        const fingerprint = await atomicCheckoutFingerprint(atomicPayload)
+        if (pending && pending.cartFingerprint !== fingerprint) {
+          throw new Error('Persisted credit-note fingerprint does not match its request payload')
+        }
+        persistPendingAtomicCheckout(invoice.branch_id, {
+          idempotencyKey: String(atomicPayload.idempotency_key),
+          cartFingerprint: fingerprint,
+          documentType: 'credit_note',
+          checkout: atomicPayload,
+        })
+        const atomic = await checkoutSimplifiedAtomically({
+          branchId: invoice.branch_id,
+          checkout: atomicPayload,
+          cartFingerprint: fingerprint,
+          documentType: 'credit_note',
+        })
+        if (atomic.status === 'committed') {
+          usedAtomicSimplifiedCredit = true
+          atomicReceipt = atomic.receipt
+          result = {
+            credit_note_invoice_id: atomic.receipt.invoice_id,
+            credit_note_invoice_number: atomic.receipt.invoice_number,
+            created_at: atomic.receipt.created_at,
+            total: Number(atomic.receipt.total),
+            refund_status: 'completed',
+            zatca_status: 'pending',
+            refund_method: atomic.receipt.payments.length > 1
+              ? 'split'
+              : atomic.receipt.payment_method as PaymentMethod,
+            idempotent_replay: atomic.idempotentReplay,
+          }
+          clearPendingAtomicCheckout(
+            invoice.branch_id,
+            String(atomicPayload.idempotency_key),
+            fingerprint,
+            'credit_note',
+          )
+        } else {
+          clearPendingAtomicCheckout(
+            invoice.branch_id,
+            String(atomicPayload.idempotency_key),
+            fingerprint,
+            'credit_note',
+          )
+        }
+      }
+      if (!result) {
+        const { data, error: rpcError } = await (supabase as any).rpc(
+          'create_partial_credit_note_with_refund',
+          { p_payload: payload },
+        )
+        if (rpcError) throw rpcError
+        result = data as RpcCreditNoteResult
+      }
       if (!result.credit_note_invoice_id || !result.credit_note_invoice_number) {
         throw new Error(t('creditNotes:missingResult'))
       }
 
       const creditNoteId = result.credit_note_invoice_id
       let zatcaStatus = result.zatca_status ?? 'pending'
-      let autoSubmitSucceeded = false
-      const shouldAutoSubmit = zatcaStatus !== 'reported' && zatcaStatus !== 'cleared'
+      let autoSubmitSucceeded = usedAtomicSimplifiedCredit
+      const shouldAutoSubmit = !usedAtomicSimplifiedCredit
+        && zatcaStatus !== 'reported'
+        && zatcaStatus !== 'cleared'
 
       if (shouldAutoSubmit) {
         setCreating(false)
@@ -480,6 +554,7 @@ export default function CreateCreditNoteModal({
         taxAmount: totals.tax,
         itemsCount: lines.length,
         originalInvoiceId: invoice.id,
+        atomicReceipt,
       })
       onClose()
       if (autoSubmitSucceeded || zatcaStatus === 'reported' || zatcaStatus === 'cleared') {

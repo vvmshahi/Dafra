@@ -21,6 +21,12 @@ receive `403`. The maximum batch is ten. The retry ceiling is four transient
 attempts with 60, 120, and 240 second backoffs; deterministic rejections and
 ambiguous outcomes must remain blocked.
 
+Atomic simplified checkout is the subsequent disabled additive step:
+`operator/run_sql_step.sh 12`. Apply it only after step `11`, with every
+existing and new atomic flag false. Its Edge, frontend, single-canary, latency,
+and flag-only rollback sequence is defined in
+`ATOMIC_SIMPLIFIED_CHECKOUT_ROLLOUT.md`.
+
 ## 1. Completion classification
 
 **A. Release package and maintenance runbook are ready.**
@@ -862,3 +868,18 @@ Step `10` is read-only and requires 15 PASS / 0 FAIL. Continue with the exact
 seed, activation, and rollback sequence in
 `BRANCH_READINESS_DEPLOYMENT.md`; do not reuse the original global activation
 assumptions.
+
+### Durable reporting and atomic checkout addendum
+
+After the base and readiness packages pass, install the two disabled additive
+steps in order:
+
+```bash
+scripts/sql/zatca-phase2-finalization-v2/operator/run_sql_step.sh 11
+scripts/sql/zatca-phase2-finalization-v2/operator/run_sql_step.sh 12
+```
+
+Step `12` must leave `atomic_simplified_checkout_enabled=false` and every row
+in `zatca_atomic_checkout_branch_gates_v2` disabled or absent. It does not
+authorize a canary. Follow `ATOMIC_SIMPLIFIED_CHECKOUT_ROLLOUT.md` only in a
+separately approved coordinated release.
