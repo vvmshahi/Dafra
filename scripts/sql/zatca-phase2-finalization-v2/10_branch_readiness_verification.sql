@@ -2,7 +2,7 @@
 -- 10_branch_readiness_verification.sql
 -- READ/PROBE ONLY. Verifies the per-branch gate before reviewed seeding.
 
-BEGIN TRANSACTION READ ONLY;
+BEGIN;
 
 CREATE TEMP TABLE zatca_branch_gate_results (
   check_name text PRIMARY KEY,
