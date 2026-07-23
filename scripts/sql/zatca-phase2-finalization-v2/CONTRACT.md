@@ -170,6 +170,24 @@ returned-artifact sandbox proof.
 7. Run `06`; all 59 mandatory rows must be present: 54 `PASS`, 5 `REVIEW`, and
    0 `FAIL`. Discharge each `REVIEW` with its named external test before release.
 8. Review and explicitly seed each pre-existing branch chain head.
+
+## Per-branch readiness extension
+
+`09_branch_readiness_gate.sql` makes the reviewed chain head necessary but not
+sufficient. A branch must also have an explicit `ready` record, connected
+production onboarding, a current client acknowledgement, compatible `2.1.0`
+Edge/client versions, enabled global simplified flags, and an enabled Edge
+execution switch. Any missing condition selects the legacy contract before the
+invoice insert can be marked `server_v2`.
+
+The insert trigger and the claim/allocation wrappers independently enforce the
+database-owned portion of that gate. Global flags therefore cannot turn an
+unseeded or blocked branch into v2. New compliance units receive the repository
+first PIH and counter zero only through approved production onboarding;
+historical branches require controlled reconciliation.
+
+Standard routing remains separate and clearance-gated. A false standard flag
+selects legacy standard clearance while simplified-ready branches can use v2.
 9. Run real service-role, browser-denial, two-session concurrency, stale-lease,
    and protected-hash fixtures.
 10. Reopen browser traffic only after authenticated safe reads, denied raw and

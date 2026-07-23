@@ -829,3 +829,19 @@ Decision:
   baseline approval and all prerequisites above.**
 - **Not ready for zero-downtime `04a`, schema-only deployment, stale-client
   admission, broad grant restoration, or v2 feature enablement.**
+
+### Per-branch readiness addendum
+
+The subsequent per-branch gate is applied only after the original `01`–`06`
+package passes with all flags false:
+
+```bash
+scripts/sql/zatca-phase2-finalization-v2/operator/run_sql_step.sh 09
+scripts/sql/zatca-phase2-finalization-v2/operator/run_sql_step.sh 10
+```
+
+Step `09` installs the server-authoritative branch gate and version `2.1.0`.
+Step `10` is read-only and requires 15 PASS / 0 FAIL. Continue with the exact
+seed, activation, and rollback sequence in
+`BRANCH_READINESS_DEPLOYMENT.md`; do not reuse the original global activation
+assumptions.

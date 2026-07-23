@@ -17,7 +17,8 @@ const files = [
   '03_claims_and_idempotency.sql', '04_lock_compliance_fields.sql',
   '04a_safe_invoice_read_surface.sql',
   '05_capabilities_and_status.sql', '06_verification.sql',
-  '07_rollback_plan.md', 'CONTRACT.md',
+  '07_rollback_plan.md', '09_branch_readiness_gate.sql',
+  '10_branch_readiness_verification.sql', 'CONTRACT.md',
 ]
 const source = Object.fromEntries(files.map(name => [name, readFileSync(join(pkg, name), 'utf8')]))
 const edge = readFileSync(join(root, 'supabase/functions/zatca-submit/index.ts'), 'utf8')
@@ -240,7 +241,7 @@ await test('18 disabled flag blocks unsafe output', () => {
   assert.match(source['01_artifact_lifecycle.sql'], /immutable_finalization_enabled boolean NOT NULL DEFAULT false/); assert.match(submission, /immutableFinalizationEnabled/)
 })
 await test('19 mismatch fails before checkout', () => {
-  const capability = pos.indexOf('await requireZatcaFinalizationCapability(branch.id)'); const checkout = pos.indexOf("rpc('pos_checkout'"); assert.ok(capability > 0 && capability < checkout); assert.match(edge, /FINALIZATION_VERSION_MISMATCH/)
+  const capability = pos.indexOf('await requireZatcaFinalizationCapability('); const checkout = pos.indexOf("rpc('pos_checkout'"); assert.ok(capability > 0 && capability < checkout); assert.match(edge, /FINALIZATION_VERSION_MISMATCH/)
 })
 await test('20 historical rows are not auto-finalized', () => {
   assert.doesNotMatch(source['01_artifact_lifecycle.sql'], /UPDATE\s+public\.invoices/i); assert.match(source['01_artifact_lifecycle.sql'], /legacy\/unclassified/)
@@ -511,8 +512,8 @@ await test('thermal and A4 printing are independent from QR image success', () =
   assert.doesNotMatch(receiptPrint, /outputReady/)
 })
 await test('package shape and protected scope', () => {
-  assert.equal(files.length, 10)
-  const mutating = ['01_artifact_lifecycle.sql', '02_chain_allocator.sql', '03_claims_and_idempotency.sql', '04_lock_compliance_fields.sql', '04a_safe_invoice_read_surface.sql', '05_capabilities_and_status.sql'].map(name => source[name]).join('\n')
+  assert.equal(files.length, 12)
+  const mutating = ['01_artifact_lifecycle.sql', '02_chain_allocator.sql', '03_claims_and_idempotency.sql', '04_lock_compliance_fields.sql', '04a_safe_invoice_read_surface.sql', '05_capabilities_and_status.sql', '09_branch_readiness_gate.sql'].map(name => source[name]).join('\n')
   assert.doesNotMatch(mutating, /storage\.|phase6a|snapshot_invoice_document_language\s*\(/i)
   assert.doesNotMatch(mutating, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.pos_checkout/i)
   assert.match(oldMarker, /Do not execute/i)

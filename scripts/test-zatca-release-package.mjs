@@ -11,6 +11,7 @@ const stepScript = read(`${base}/operator/run_sql_step.sh`)
 const baselineScript = read(`${base}/operator/capture_protected_baseline.sh`)
 const flagGuard = read(`${base}/operator/verify_flags_false.sql`)
 const verifier = read(`${base}/06_verification.sql`)
+const branchVerifier = read(`${base}/10_branch_readiness_verification.sql`)
 
 for (const script of [
   `${base}/operator/run_sql_step.sh`,
@@ -20,7 +21,7 @@ for (const script of [
   assert.equal(checked.status, 0, `${script}: ${checked.stderr}`)
 }
 
-for (const step of ['00', '01', '02', '03', '04', '04a', '05', '06']) {
+for (const step of ['00', '01', '02', '03', '04', '04a', '05', '06', '09', '10']) {
   assert.match(stepScript, new RegExp(`\\b${step.replace('04a', '04a')}\\)`))
   assert.match(runbook, new RegExp(`run_sql_step\\.sh ${step}\\b`))
 }
@@ -48,6 +49,10 @@ assert.match(verifier, /v_total <> 59/)
 assert.match(verifier, /v_pass <> 54/)
 assert.match(verifier, /v_review <> 5/)
 assert.match(verifier, /v_fail <> 0/)
+assert.match(branchVerifier, /BEGIN TRANSACTION READ ONLY/)
+assert.match(branchVerifier, /v_total <> 15/)
+assert.match(branchVerifier, /v_pass <> 15/)
+assert.match(branchVerifier, /v_fail <> 0/)
 
 for (const capture of [
   'git_commit.txt',

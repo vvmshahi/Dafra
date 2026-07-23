@@ -1953,17 +1953,17 @@ export default function POSPage() {
       const demoSandbox = isPermanentDemoSandboxBranch(branch.tenant_id, branch.id)
       let productionCheckoutMode: ZatcaCheckoutMode = 'legacy'
       if (!demoSandbox) {
-        // Capability acknowledgement is intentionally completed before
-        // pos_checkout so mixed deployments cannot record a payment first.
-        const capability = await requireZatcaFinalizationCapability(branch.id)
-        productionCheckoutMode = capability.checkoutMode
-        // Read-only preflight mirrors pos_checkout's existing document-kind
-        // predicate; the RPC remains the authoritative business calculation.
+        // This mirrors pos_checkout's existing document-kind predicate. The
+        // server capability response owns each document kind's routing mode.
         const standardRequested = selectedCust?.customer_type === 'business'
           && /^3[0-9]{13}3$/.test(selectedCust.vat_number ?? '')
-        if (productionCheckoutMode === 'v2' && standardRequested && !capability.standardEnabled) {
-          throw new Error('Standard ZATCA clearance is not enabled. No payment was recorded.')
-        }
+        // Capability acknowledgement is intentionally completed before
+        // pos_checkout so mixed deployments cannot record a payment first.
+        const capability = await requireZatcaFinalizationCapability(
+          branch.id,
+          standardRequested ? 'standard' : 'simplified',
+        )
+        productionCheckoutMode = capability.checkoutMode
       }
 
       const { data, error } = await (supabase as any).rpc('pos_checkout', { p_payload: payload })

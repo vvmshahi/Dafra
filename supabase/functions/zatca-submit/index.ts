@@ -20,6 +20,7 @@ import { secp256k1 } from 'https://esm.sh/@noble/curves@2.2.0/secp256k1.js'
 import { extractEcPrivateKeyScalar, signZatcaInvoiceHash } from '../_shared/zatca/signing_core.mjs'
 import { buildZatcaPhase2Qr } from '../_shared/zatca/phase2_qr.mjs'
 import { parseZatcaClearedInvoice } from '../_shared/zatca/cleared_artifact.mjs'
+import { selectZatcaBranchCheckoutMode } from '../_shared/zatca/branch_readiness.mjs'
 import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -39,8 +40,8 @@ const FIRST_INVOICE_HASH =
   'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ=='
 
 const FINALIZATION_SCHEMA_VERSION = 2
-const FINALIZATION_EDGE_VERSION = '2.0.0'
-const FINALIZATION_CLIENT_VERSION = '2.0.0'
+const FINALIZATION_EDGE_VERSION = '2.1.0'
+const FINALIZATION_CLIENT_VERSION = '2.1.0'
 
 interface SubmissionCredentials {
   environment: 'sandbox' | 'production'
@@ -109,6 +110,7 @@ interface CallerProfile {
 interface AuthorizedTarget {
   tenantId: string
   branchId: string
+  v2Invoice?: boolean
 }
 
 const TENANT_SUBMIT_ROLES = new Set(['owner', 'admin'])
@@ -201,7 +203,7 @@ async function authorizeInvoiceSubmission(
 ): Promise<{ ok: true; target: AuthorizedTarget } | { ok: false; response: Response }> {
   const { data: invoice, error } = await db
     .from('invoices')
-    .select('id, tenant_id, branch_id')
+    .select('id, tenant_id, branch_id, zatca_finalization_version, zatca_artifact_provenance')
     .eq('id', invoiceId)
     .maybeSingle()
 
@@ -222,6 +224,8 @@ async function authorizeInvoiceSubmission(
   const target = {
     tenantId: invoice.tenant_id as string,
     branchId: invoice.branch_id as string,
+    v2Invoice: invoice.zatca_finalization_version === 2
+      && invoice.zatca_artifact_provenance === 'server_v2',
   }
   const allowed = canSubmitForTarget(caller, target)
 
@@ -2286,6 +2290,17 @@ interface FinalizationCapabilitiesV2 {
   compatible: boolean
 }
 
+interface BranchReadinessV2 {
+  branchId: string
+  branchReady: boolean
+  branchBlocked: boolean
+  readinessStatus: 'ready' | 'blocked' | 'missing'
+  chainHeadExists: boolean
+  productionConnected: boolean
+  clientAcknowledged: boolean
+  structurallyReady: boolean
+}
+
 function rpcObject(value: any): Record<string, any> {
   if (Array.isArray(value)) return value[0] ?? {}
   return value && typeof value === 'object' ? value : {}
@@ -2306,9 +2321,7 @@ async function loadFinalizationCapabilitiesV2(db: any): Promise<FinalizationCapa
       || /does not exist|could not find the table/i.test(String(runtime.error.message ?? ''))
     )
     const databaseFeatureEnabled = runtime.data?.immutable_finalization_enabled === true
-    const legacySubmitAvailable = runtime.error == null
-      ? !databaseFeatureEnabled
-      : runtimeSchemaMissing
+    const legacySubmitAvailable = runtime.error == null || runtimeSchemaMissing
     return {
       schemaVersion: null, edgeFunctionVersion: FINALIZATION_EDGE_VERSION,
       minimumClientVersion: FINALIZATION_CLIENT_VERSION,
@@ -2330,7 +2343,7 @@ async function loadFinalizationCapabilitiesV2(db: any): Promise<FinalizationCapa
     schemaVersion, edgeFunctionVersion: FINALIZATION_EDGE_VERSION,
     minimumClientVersion: String(capability.minimumClientVersion ?? FINALIZATION_CLIENT_VERSION),
     immutableFinalizationEnabled: compatible && databaseFeatureEnabled && edgeKillSwitchEnabled,
-    databaseFeatureEnabled, legacySubmitAvailable: !databaseFeatureEnabled, edgeKillSwitchEnabled,
+    databaseFeatureEnabled, legacySubmitAvailable: true, edgeKillSwitchEnabled,
     simplifiedEnabled: compatible && capability.simplifiedEnabled === true,
     standardEnabled: compatible && capability.standardEnabled === true,
     supportsLocalSimplifiedFinalization: compatible && capability.supportsLocalSimplifiedFinalization === true,
@@ -2339,6 +2352,61 @@ async function loadFinalizationCapabilitiesV2(db: any): Promise<FinalizationCapa
     supportsSerializedChainAllocator: compatible && capability.supportsSerializedChainAllocator === true,
     compatible,
   }
+}
+
+async function loadBranchReadinessV2(
+  db: any,
+  branchId: string,
+  userId: string,
+): Promise<BranchReadinessV2> {
+  const { data, error } = await db.rpc('get_zatca_branch_readiness_v2', {
+    p_branch_id: branchId,
+    p_user_id: userId,
+  })
+  if (error) {
+    console.warn('[zatca-submit] branch readiness unavailable:', safeZatcaText(error.message, 160))
+    return {
+      branchId,
+      branchReady: false,
+      branchBlocked: false,
+      readinessStatus: 'missing',
+      chainHeadExists: false,
+      productionConnected: false,
+      clientAcknowledged: false,
+      structurallyReady: false,
+    }
+  }
+  const state = rpcObject(data)
+  const readinessStatus = state.readinessStatus === 'ready' || state.readinessStatus === 'blocked'
+    ? state.readinessStatus
+    : 'missing'
+  return {
+    branchId: String(state.branchId ?? branchId),
+    branchReady: state.branchReady === true,
+    branchBlocked: state.branchBlocked === true,
+    readinessStatus,
+    chainHeadExists: state.chainHeadExists === true,
+    productionConnected: state.productionConnected === true,
+    clientAcknowledged: state.clientAcknowledged === true,
+    structurallyReady: state.structurallyReady === true,
+  }
+}
+
+function branchCheckoutMode(
+  capabilities: FinalizationCapabilitiesV2,
+  readiness: BranchReadinessV2,
+): 'legacy' | 'v2' {
+  return selectZatcaBranchCheckoutMode({
+    compatible: capabilities.compatible,
+    globalMasterEnabled: capabilities.databaseFeatureEnabled,
+    simplifiedEnabled: capabilities.simplifiedEnabled,
+    edgeExecutionEnabled: capabilities.edgeKillSwitchEnabled,
+    clientAcknowledged: readiness.clientAcknowledged,
+    chainHeadExists: readiness.chainHeadExists,
+    branchReady: readiness.branchReady,
+    branchBlocked: readiness.branchBlocked,
+    productionConnected: readiness.productionConnected,
+  })
 }
 
 async function loadLegacyOutputState(
@@ -2758,12 +2826,6 @@ Deno.serve(async (req: Request) => {
 
     const capabilities = await loadFinalizationCapabilitiesV2(supabase as any)
     const clientVersion = typeof body?.clientVersion === 'string' ? body.clientVersion : null
-    const legacyActionlessSubmit = rawAction === null
-      && clientVersion === null
-      && capabilities.legacySubmitAvailable
-    const legacyStatusRequest = action === 'status'
-      && clientVersion === FINALIZATION_CLIENT_VERSION
-      && capabilities.legacySubmitAvailable
 
     if (action === 'capabilities') {
       const branchId = typeof body?.branchId === 'string' ? body.branchId : null
@@ -2771,8 +2833,15 @@ Deno.serve(async (req: Request) => {
       const branchAuth = await authorizeBranchAccess(supabase as any, branchId, callerProfile)
       if (!branchAuth.ok) return branchAuth.response
 
-      let acknowledged = false
-      if (capabilities.compatible && clientVersion === FINALIZATION_CLIENT_VERSION) {
+      let readiness = await loadBranchReadinessV2(supabase as any, branchId, user.id)
+      if (
+        capabilities.compatible
+        && capabilities.databaseFeatureEnabled
+        && capabilities.simplifiedEnabled
+        && capabilities.edgeKillSwitchEnabled
+        && readiness.structurallyReady
+        && clientVersion === FINALIZATION_CLIENT_VERSION
+      ) {
         const acknowledgement = await supabase.rpc('acknowledge_zatca_client_capability_v2', {
           p_user_id: user.id,
           p_branch_id: branchId,
@@ -2780,17 +2849,34 @@ Deno.serve(async (req: Request) => {
           p_edge_version: FINALIZATION_EDGE_VERSION,
           p_ttl_seconds: 300,
         })
-        acknowledged = !acknowledgement.error
+        if (!acknowledgement.error && rpcObject(acknowledgement.data).acknowledged === true) {
+          readiness = await loadBranchReadinessV2(supabase as any, branchId, user.id)
+        }
       }
-      return jsonResponse({ ...capabilities, acknowledged })
+      const simplifiedCheckoutMode = branchCheckoutMode(capabilities, readiness)
+      const standardCheckoutMode = simplifiedCheckoutMode === 'v2' && capabilities.standardEnabled
+        ? 'v2'
+        : 'legacy'
+      return jsonResponse({
+        ...capabilities,
+        ...readiness,
+        acknowledged: readiness.clientAcknowledged,
+        branchV2Ready: simplifiedCheckoutMode === 'v2',
+        checkoutMode: simplifiedCheckoutMode,
+        simplifiedCheckoutMode,
+        standardCheckoutMode,
+      })
     }
 
     if (!invoiceId) {
       return jsonResponse({ error: 'Missing required field: invoiceId' }, 400)
     }
 
-    if (!legacyActionlessSubmit
-        && !legacyStatusRequest
+    const actionlessLegacyRequest = rawAction === null && clientVersion === null
+    const compatibleStatusRequest = action === 'status'
+      && clientVersion === FINALIZATION_CLIENT_VERSION
+    if (!actionlessLegacyRequest
+        && !compatibleStatusRequest
         && (!capabilities.compatible || clientVersion !== FINALIZATION_CLIENT_VERSION)) {
       return jsonResponse({
         error: 'ZATCA finalization client/schema/Edge version mismatch',
@@ -2799,18 +2885,31 @@ Deno.serve(async (req: Request) => {
       }, 426)
     }
 
-    if (!legacyActionlessSubmit
-        && action !== 'status'
-        && !capabilities.immutableFinalizationEnabled) {
-      return jsonResponse({
-        error: 'Immutable ZATCA finalization is disabled',
-        code: 'IMMUTABLE_FINALIZATION_DISABLED',
-        ...capabilities,
-      }, 409)
-    }
-
     const invoiceAuth = await authorizeInvoiceSubmission(supabase as any, invoiceId, callerProfile)
     if (!invoiceAuth.ok) return invoiceAuth.response
+    const readiness = await loadBranchReadinessV2(
+      supabase as any,
+      invoiceAuth.target.branchId,
+      user.id,
+    )
+    const checkoutMode = branchCheckoutMode(capabilities, readiness)
+    const useLegacyProcessor = invoiceAuth.target.v2Invoice !== true
+      || checkoutMode === 'legacy'
+
+    // A row already stamped server_v2 must never be downgraded into the legacy
+    // writer. New rows cannot receive that stamp unless this same branch gate
+    // and acknowledgement passed in the database insert trigger.
+    if (
+      action !== 'status'
+      && invoiceAuth.target.v2Invoice === true
+      && checkoutMode !== 'v2'
+    ) {
+      return jsonResponse({
+        error: 'Branch v2 readiness is no longer valid',
+        code: 'BRANCH_V2_NOT_READY',
+        checkoutMode: 'legacy',
+      }, 409)
+    }
 
     const ipHash = await hashRequestIp(req)
     const reqId = requestId(req)
@@ -2854,7 +2953,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === 'status') {
-      const state = legacyStatusRequest && !capabilities.compatible
+      const state = !capabilities.compatible
         ? await loadLegacyOutputState(supabase as any, invoiceId, invoiceAuth.target.tenantId)
         : await loadOutputStateV2(supabase as any, invoiceId, invoiceAuth.target.tenantId)
       await auditEvent(supabase as any, {
@@ -2872,10 +2971,12 @@ Deno.serve(async (req: Request) => {
         immutableFinalizationEnabled: capabilities.immutableFinalizationEnabled,
         databaseFeatureEnabled: capabilities.databaseFeatureEnabled,
         legacySubmitAvailable: capabilities.legacySubmitAvailable,
+        branchV2Ready: checkoutMode === 'v2',
+        checkoutMode,
       })
     }
 
-    const result = legacyActionlessSubmit
+    const result = useLegacyProcessor
       ? await processLegacyInvoiceDisabledMode(
         supabase as any,
         invoiceId,
@@ -2889,7 +2990,9 @@ Deno.serve(async (req: Request) => {
         source,
         action,
       )
-    const succeeded = action === 'finalize'
+    const succeeded = useLegacyProcessor
+      ? ['reported', 'cleared'].includes(result.invoiceStatus)
+      : action === 'finalize'
       ? ['locally_finalized', 'provisional_signed', 'cleared_final'].includes(result.finalizationStatus)
       : ['reported', 'cleared'].includes(result.invoiceStatus)
     await auditEvent(supabase as any, {

@@ -15,12 +15,14 @@ const legacyEnd = edge.indexOf('async function processInvoiceV1SupersededDoNotCa
 assert.ok(legacyStart > 0 && legacyEnd > legacyStart, 'dedicated legacy compatibility function is missing')
 const legacy = edge.slice(legacyStart, legacyEnd)
 
-assert.match(edge, /const legacySubmitAvailable = runtime\.error == null[\s\S]*runtimeSchemaMissing/)
-assert.match(edge, /databaseFeatureEnabled, legacySubmitAvailable: !databaseFeatureEnabled/)
-assert.match(edge, /rawAction === null\s*&&\s*clientVersion === null\s*&&\s*capabilities\.legacySubmitAvailable/)
+assert.match(edge, /const legacySubmitAvailable = runtime\.error == null \|\| runtimeSchemaMissing/)
+assert.match(edge, /databaseFeatureEnabled, legacySubmitAvailable: true/)
+assert.match(edge, /const actionlessLegacyRequest = rawAction === null && clientVersion === null/)
 assert.match(edge, /rawAction !== null && !\['submit', 'finalize', 'status', 'capability', 'capabilities'\]\.includes\(rawAction\)/)
-assert.match(edge, /!legacyActionlessSubmit[\s\S]*FINALIZATION_VERSION_MISMATCH/)
-assert.match(edge, /legacyStatusRequest && !capabilities\.compatible[\s\S]*loadLegacyOutputState/)
+assert.match(edge, /!actionlessLegacyRequest[\s\S]*FINALIZATION_VERSION_MISMATCH/)
+assert.match(edge, /const readiness = await loadBranchReadinessV2/)
+assert.match(edge, /const useLegacyProcessor = invoiceAuth\.target\.v2Invoice !== true[\s\S]*checkoutMode === 'legacy'/)
+assert.match(edge, /const state = !capabilities\.compatible[\s\S]*loadLegacyOutputState/)
 assert.match(edge, /processLegacyInvoiceDisabledMode/)
 assert.match(edge, /SUPERSEDED_V1_FINALIZATION_PATH_DISABLED/)
 
@@ -45,7 +47,7 @@ assert.match(client, /contractMode === 'legacy'[\s\S]*\{ invoiceId, branchId, so
 assert.match(client, /action: 'submit'[\s\S]*clientVersion: ZATCA_FINALIZATION_CLIENT_VERSION/)
 assert.match(client, /legacyCompatible = data\?\.contractMode === 'legacy'/)
 
-const capabilityIndex = pos.indexOf('await requireZatcaFinalizationCapability(branch.id)')
+const capabilityIndex = pos.indexOf('await requireZatcaFinalizationCapability(')
 const checkoutIndex = pos.indexOf("rpc('pos_checkout'")
 assert.ok(capabilityIndex > 0 && capabilityIndex < checkoutIndex, 'version mismatch is not detected before checkout')
 assert.match(pos, /productionCheckoutMode = capability\.checkoutMode/)
@@ -59,29 +61,44 @@ assert.match(statusSql, /'contractMode', 'v2', 'legacyCompatible', false/)
 assert.match(safeGrant, /REVOKE SELECT ON TABLE public\.invoices FROM authenticated, anon/)
 assert.doesNotMatch(safeGrant, /GRANT SELECT ON TABLE public\.invoices TO authenticated/)
 
-const route = ({ databaseEnabled, rawAction, clientVersion, schemaCompatible }) => {
-  const legacyAvailable = !databaseEnabled
+const route = ({
+  databaseEnabled,
+  rawAction,
+  clientVersion,
+  schemaCompatible,
+  branchReady = false,
+  acknowledged = false,
+  edgeEnabled = false,
+}) => {
   if (rawAction !== null && !['submit', 'finalize', 'status', 'capability', 'capabilities'].includes(rawAction)) return '400'
   if (rawAction === 'capability' || rawAction === 'capabilities') return 'capability'
-  const legacySubmit = rawAction === null && clientVersion === null && legacyAvailable
-  const legacyStatus = rawAction === 'status' && clientVersion === '2.0.0' && legacyAvailable
-  if (!legacySubmit && !legacyStatus && (!schemaCompatible || clientVersion !== '2.0.0')) return '426'
-  if (!legacySubmit && rawAction !== 'status' && !databaseEnabled) return '409'
-  if (legacySubmit) return 'legacy-submit'
-  if (legacyStatus && !schemaCompatible) return 'legacy-status'
+  const actionlessLegacy = rawAction === null && clientVersion === null
+  const compatibleStatus = rawAction === 'status' && clientVersion === '2.1.0'
+  if (!actionlessLegacy && !compatibleStatus && (!schemaCompatible || clientVersion !== '2.1.0')) return '426'
+  if (rawAction === 'status') return schemaCompatible ? 'status' : 'legacy-status'
+  if (actionlessLegacy) return 'legacy-submit'
+  if (!databaseEnabled || !branchReady || !acknowledged || !edgeEnabled) return 'legacy-submit'
   return rawAction ?? 'submit'
 }
 
 assert.equal(route({ databaseEnabled: false, rawAction: null, clientVersion: null, schemaCompatible: false }), 'legacy-submit')
-assert.equal(route({ databaseEnabled: false, rawAction: 'capabilities', clientVersion: '2.0.0', schemaCompatible: false }), 'capability')
-assert.equal(route({ databaseEnabled: false, rawAction: 'capability', clientVersion: '2.0.0', schemaCompatible: false }), 'capability')
-assert.equal(route({ databaseEnabled: false, rawAction: 'status', clientVersion: '2.0.0', schemaCompatible: false }), 'legacy-status')
-assert.equal(route({ databaseEnabled: false, rawAction: 'finalize', clientVersion: '2.0.0', schemaCompatible: false }), '426')
-assert.equal(route({ databaseEnabled: false, rawAction: 'submit', clientVersion: '2.0.0', schemaCompatible: true }), '409')
+assert.equal(route({ databaseEnabled: false, rawAction: 'capabilities', clientVersion: '2.1.0', schemaCompatible: false }), 'capability')
+assert.equal(route({ databaseEnabled: false, rawAction: 'capability', clientVersion: '2.1.0', schemaCompatible: false }), 'capability')
+assert.equal(route({ databaseEnabled: false, rawAction: 'status', clientVersion: '2.1.0', schemaCompatible: false }), 'legacy-status')
+assert.equal(route({ databaseEnabled: false, rawAction: 'finalize', clientVersion: '2.1.0', schemaCompatible: false }), '426')
+assert.equal(route({ databaseEnabled: false, rawAction: 'submit', clientVersion: '2.1.0', schemaCompatible: true }), 'legacy-submit')
 assert.equal(route({ databaseEnabled: false, rawAction: 'retry', clientVersion: null, schemaCompatible: false }), '400')
 assert.equal(route({ databaseEnabled: false, rawAction: 'report', clientVersion: null, schemaCompatible: false }), '400')
 assert.equal(route({ databaseEnabled: false, rawAction: 'clear', clientVersion: null, schemaCompatible: false }), '400')
-assert.equal(route({ databaseEnabled: true, rawAction: null, clientVersion: null, schemaCompatible: true }), '426')
-assert.equal(route({ databaseEnabled: true, rawAction: 'finalize', clientVersion: '2.0.0', schemaCompatible: true }), 'finalize')
+assert.equal(route({ databaseEnabled: true, rawAction: null, clientVersion: null, schemaCompatible: true }), 'legacy-submit')
+assert.equal(route({
+  databaseEnabled: true,
+  rawAction: 'finalize',
+  clientVersion: '2.1.0',
+  schemaCompatible: true,
+  branchReady: true,
+  acknowledged: true,
+  edgeEnabled: true,
+}), 'finalize')
 
 console.log('ZATCA coordinated deployment: 10 contract and routing groups passed')

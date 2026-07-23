@@ -15,8 +15,8 @@ export function isPermanentDemoSandboxBranch(tenantId: string | null | undefined
 }
 
 export type ZatcaSubmitSource = 'auto_checkout' | 'auto_credit_note' | 'manual_retry' | 'bulk_retry'
-export const ZATCA_FINALIZATION_CLIENT_VERSION = '2.0.0'
-export const ZATCA_FINALIZATION_EDGE_VERSION = '2.0.0'
+export const ZATCA_FINALIZATION_CLIENT_VERSION = '2.1.0'
+export const ZATCA_FINALIZATION_EDGE_VERSION = '2.1.0'
 export const ZATCA_FINALIZATION_SCHEMA_VERSION = 2
 export type ZatcaCheckoutMode = 'legacy' | 'v2'
 
@@ -36,6 +36,14 @@ export interface ZatcaFinalizationCapabilities {
   supportsSerializedChainAllocator: boolean
   compatible: boolean
   acknowledged: boolean
+  branchReady: boolean
+  branchBlocked: boolean
+  chainHeadExists: boolean
+  productionConnected: boolean
+  branchV2Ready: boolean
+  checkoutMode: ZatcaCheckoutMode
+  simplifiedCheckoutMode: ZatcaCheckoutMode
+  standardCheckoutMode: ZatcaCheckoutMode
 }
 
 export interface ZatcaSubmitResult {
@@ -116,26 +124,45 @@ export async function getZatcaFinalizationCapabilities(branchId: string): Promis
     supportsSerializedChainAllocator: data?.supportsSerializedChainAllocator === true,
     compatible: data?.compatible === true,
     acknowledged: data?.acknowledged === true,
+    branchReady: data?.branchReady === true,
+    branchBlocked: data?.branchBlocked === true,
+    chainHeadExists: data?.chainHeadExists === true,
+    productionConnected: data?.productionConnected === true,
+    branchV2Ready: data?.branchV2Ready === true,
+    checkoutMode: data?.checkoutMode === 'v2' ? 'v2' : 'legacy',
+    simplifiedCheckoutMode: data?.simplifiedCheckoutMode === 'v2' ? 'v2' : 'legacy',
+    standardCheckoutMode: data?.standardCheckoutMode === 'v2' ? 'v2' : 'legacy',
   }
 }
 
 export async function requireZatcaFinalizationCapability(
   branchId: string,
+  documentKind: 'simplified' | 'standard' = 'simplified',
 ): Promise<ZatcaFinalizationCapabilities & { checkoutMode: ZatcaCheckoutMode }> {
   const capability = await getZatcaFinalizationCapabilities(branchId)
+  const serverCheckoutMode = documentKind === 'standard'
+    ? capability.standardCheckoutMode
+    : capability.simplifiedCheckoutMode
   const v2Ready = capability.schemaVersion === ZATCA_FINALIZATION_SCHEMA_VERSION
     && capability.edgeFunctionVersion === ZATCA_FINALIZATION_EDGE_VERSION
     && capability.minimumClientVersion === ZATCA_FINALIZATION_CLIENT_VERSION
     && capability.compatible
     && capability.acknowledged
+    && serverCheckoutMode === 'v2'
+    && capability.branchV2Ready
+    && capability.branchReady
+    && !capability.branchBlocked
+    && capability.chainHeadExists
+    && capability.productionConnected
     && capability.immutableFinalizationEnabled
     && capability.simplifiedEnabled
     && capability.supportsLocalSimplifiedFinalization
     && capability.supportsStandardClearanceGating
     && capability.supportsLeasedClaims
     && capability.supportsSerializedChainAllocator
+    && (documentKind === 'simplified' || capability.standardEnabled)
   if (v2Ready) return { ...capability, checkoutMode: 'v2' }
-  if (!capability.databaseFeatureEnabled && capability.legacySubmitAvailable) {
+  if (serverCheckoutMode === 'legacy' && capability.legacySubmitAvailable) {
     return { ...capability, checkoutMode: 'legacy' }
   }
   throw new Error('ZATCA finalization is unavailable or version-incompatible. No payment was recorded.')

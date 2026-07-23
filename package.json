@@ -42,6 +42,7 @@
     "audit:phase5b-release-scope": "node scripts/audit-phase5b-release-scope.mjs",
     "test:zatca-finalization-v2": "node scripts/test-zatca-phase2-finalization-v2.mjs",
     "test:zatca-coordinated-deployment": "node scripts/test-zatca-coordinated-deployment.mjs",
+    "test:zatca-branch-readiness-v2": "node scripts/test-zatca-branch-readiness-v2.mjs",
     "test:zatca-release-package": "node scripts/test-zatca-release-package.mjs",
     "test:zatca-phase2-qr": "node scripts/test-zatca-phase2-qr.mjs",
     "test:zatca-invoice-read-surface": "node scripts/test-zatca-invoice-read-surface.mjs",
