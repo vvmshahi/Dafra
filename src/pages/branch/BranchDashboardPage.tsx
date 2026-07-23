@@ -556,16 +556,16 @@ export default function BranchDashboardPage() {
     setLowStockLoading(true)
     const { data } = await db()
       .from('products')
-      .select('id, name, stock_quantity, min_stock_level')
+      .select('id, name, stock_quantity, min_stock_alert')
       .eq('tenant_id', tid)
       .eq('branch_id', bid)
       .eq('is_active', true)
-      .not('min_stock_level', 'is', null)
+      .not('min_stock_alert', 'is', null)
       .order('stock_quantity', { ascending: true })
       .limit(50)
     setLowStock((data ?? []).filter((p: any) =>
-      p.stock_quantity !== null && p.min_stock_level !== null &&
-      Number(p.stock_quantity) <= Number(p.min_stock_level)
+      p.stock_quantity !== null && p.min_stock_alert !== null &&
+      Number(p.stock_quantity) <= Number(p.min_stock_alert)
     ).slice(0, 5))
     setLowStockLoading(false)
   }, [tid])
