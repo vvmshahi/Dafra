@@ -1579,19 +1579,20 @@ async function processLegacyInvoiceDisabledMode(db: any, invoiceId: string, call
     originalInvoice = original
   }
 
-  const { data: branchScope } = await db.from('branches')
-    .select('id,tenant_id,compliance_identity_mode,name,business_name,business_name_ar,vat_number,cr_number,building_number,street,district,city,postal_code,country')
+  const { data: branchScope, error: branchError } = await db.from('branches')
+    .select('id,tenant_id,name,business_name,business_name_ar,vat_number,cr_number,building_number,street,district,city,postal_code,country')
     .eq('id',inv.branch_id).eq('tenant_id',callerTenantId).single()
-  const protectedMode = branchScope?.compliance_identity_mode === 'protected'
-  const branchResult = protectedMode
-    ? await db.from('branch_compliance_profiles').select('branch_id,tenant_id,registered_seller_name,registered_seller_name_ar,vat_number,registration_scheme,registration_identifier,building_number,street,district,city,postal_code,country,validation_status').eq('branch_id',inv.branch_id).eq('tenant_id',callerTenantId).eq('validation_status','verified').single()
-    : { data: branchScope ? {
-        ...branchScope,
-        registered_seller_name: branchScope.business_name || branchScope.name,
-        registered_seller_name_ar: branchScope.business_name_ar,
-        registration_scheme: 'CRN', registration_identifier: branchScope.cr_number,
-      } : null }
-  const branch = branchResult.data
+  if (branchError) {
+    console.error('[zatca-submit] branch lookup failed:', safeZatcaText(branchError.message, 180))
+    return { invoiceStatus: 'error', ...legacyOutputFields('error', null, null) }
+  }
+  const branch = branchScope ? {
+    ...branchScope,
+    registered_seller_name: branchScope.business_name || branchScope.name,
+    registered_seller_name_ar: branchScope.business_name_ar,
+    registration_scheme: 'CRN',
+    registration_identifier: branchScope.cr_number,
+  } : null
 
   if (!branch) {
     console.error('[zatca-submit] branch not found:', inv.branch_id)
@@ -1931,19 +1932,20 @@ async function processInvoiceV1SupersededDoNotCall(db: any, invoiceId: string, c
     originalInvoice = original
   }
 
-  const { data: branchScope } = await db.from('branches')
-    .select('id,tenant_id,compliance_identity_mode,name,business_name,business_name_ar,vat_number,cr_number,building_number,street,district,city,postal_code,country')
+  const { data: branchScope, error: branchError } = await db.from('branches')
+    .select('id,tenant_id,name,business_name,business_name_ar,vat_number,cr_number,building_number,street,district,city,postal_code,country')
     .eq('id',inv.branch_id).eq('tenant_id',callerTenantId).single()
-  const protectedMode = branchScope?.compliance_identity_mode === 'protected'
-  const branchResult = protectedMode
-    ? await db.from('branch_compliance_profiles').select('branch_id,tenant_id,registered_seller_name,registered_seller_name_ar,vat_number,registration_scheme,registration_identifier,building_number,street,district,city,postal_code,country,validation_status').eq('branch_id',inv.branch_id).eq('tenant_id',callerTenantId).eq('validation_status','verified').single()
-    : { data: branchScope ? {
-        ...branchScope,
-        registered_seller_name: branchScope.business_name || branchScope.name,
-        registered_seller_name_ar: branchScope.business_name_ar,
-        registration_scheme: 'CRN', registration_identifier: branchScope.cr_number,
-      } : null }
-  const branch = branchResult.data
+  if (branchError) {
+    console.error('[zatca-submit] branch lookup failed:', safeZatcaText(branchError.message, 180))
+    return { invoiceStatus: 'error' }
+  }
+  const branch = branchScope ? {
+    ...branchScope,
+    registered_seller_name: branchScope.business_name || branchScope.name,
+    registered_seller_name_ar: branchScope.business_name_ar,
+    registration_scheme: 'CRN',
+    registration_identifier: branchScope.cr_number,
+  } : null
 
   if (!branch) {
     console.error('[zatca-submit] branch not found:', inv.branch_id)
@@ -2464,18 +2466,21 @@ async function processInvoiceV2(
   const expectedKind = isSimplified ? 'simplified' : 'standard'
   if (inv.zatca_document_kind !== expectedKind) throw new Error('Invoice document-kind contract mismatch')
 
-  const { data: branchScope } = await db.from('branches')
-    .select('id,tenant_id,compliance_identity_mode,name,business_name,business_name_ar,vat_number,cr_number,building_number,street,district,city,postal_code,country')
+  const { data: branchScope, error: branchError } = await db.from('branches')
+    .select('id,tenant_id,name,business_name,business_name_ar,vat_number,cr_number,building_number,street,district,city,postal_code,country')
     .eq('id', inv.branch_id).eq('tenant_id', callerTenantId).single()
-  const branchResult = branchScope?.compliance_identity_mode === 'protected'
-    ? await db.from('branch_compliance_profiles').select('branch_id,tenant_id,registered_seller_name,registered_seller_name_ar,vat_number,registration_scheme,registration_identifier,building_number,street,district,city,postal_code,country,validation_status').eq('branch_id', inv.branch_id).eq('tenant_id', callerTenantId).eq('validation_status', 'verified').single()
-    : { data: branchScope ? {
-        ...branchScope,
-        registered_seller_name: branchScope.business_name || branchScope.name,
-        registered_seller_name_ar: branchScope.business_name_ar,
-        registration_scheme: 'CRN', registration_identifier: branchScope.cr_number,
-      } : null }
-  const branch = branchResult.data
+  if (branchError) {
+    const message = safeZatcaText(branchError.message, 180) ?? 'branch query failed'
+    console.error('[zatca-submit] branch lookup failed:', message)
+    throw new Error(`Branch lookup failed: ${message}`)
+  }
+  const branch = branchScope ? {
+    ...branchScope,
+    registered_seller_name: branchScope.business_name || branchScope.name,
+    registered_seller_name_ar: branchScope.business_name_ar,
+    registration_scheme: 'CRN',
+    registration_identifier: branchScope.cr_number,
+  } : null
   if (!branch?.registered_seller_name) throw new Error('Verified seller identity is unavailable')
 
   const credentials = await loadSubmissionCredentials(db, inv.branch_id, inv.tenant_id)

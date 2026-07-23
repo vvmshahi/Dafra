@@ -3,6 +3,11 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { parseZatcaClearedInvoice } from '../supabase/functions/_shared/zatca/cleared_artifact.mjs'
+import {
+  canOpenStoredInvoicePrint,
+  renderStoredQrDataUrl,
+  selectStoredOutputStateQr,
+} from '../src/lib/zatca/qrDisplay.mjs'
 
 const root = process.cwd()
 const pkg = join(root, 'scripts/sql/zatca-phase2-finalization-v2')
@@ -394,6 +399,77 @@ await test('30 real two-session allocator fixture is an explicit release gate', 
   assert.match(allocatorSessionB, /DISPOSABLE_DATABASE_REQUIRED/)
   assert.match(allocatorSessionA, /allocate_zatca_chain_v2/)
   assert.match(allocatorSessionB, /allocate_zatca_chain_v2/)
+})
+await test('branch seller lookup uses hosted-compatible columns and preserves query errors', () => {
+  assert.doesNotMatch(edge, /compliance_identity_mode|branch_compliance_profiles/)
+  assert.equal((edge.match(/error: branchError/g) ?? []).length, 3)
+  assert.equal((edge.match(/\[zatca-submit\] branch lookup failed:/g) ?? []).length, 3)
+  assert.equal((edge.match(/registered_seller_name: branchScope\.business_name \|\| branchScope\.name/g) ?? []).length, 3)
+})
+await test('stored output-state QR contract supports legacy and v2 invoice reads', () => {
+  const legacy = {
+    contractMode: 'legacy',
+    legacyCompatible: true,
+    compatible: true,
+    canPrint: true,
+    qrCode: 'LEGACY-FINAL-QR',
+  }
+  const v2 = {
+    contractMode: 'v2',
+    legacyCompatible: false,
+    compatible: true,
+    canPrint: true,
+    qrCode: 'V2-FINAL-QR',
+  }
+  assert.equal(selectStoredOutputStateQr(legacy), 'LEGACY-FINAL-QR')
+  assert.equal(selectStoredOutputStateQr(v2), 'V2-FINAL-QR')
+  assert.equal(selectStoredOutputStateQr({ ...legacy, canPrint: false }), null)
+  assert.equal(selectStoredOutputStateQr({ ...legacy, qrCode: null }), null)
+  for (const page of [invoiceDetail, receiptPrint]) {
+    assert.match(page, /selectStoredOutputStateQr\(outputStateMatchesInvoice \? outputState : null\)/)
+    assert.doesNotMatch(page, /zatca_finalization_version:\s*2/)
+  }
+})
+await test('stored QR rendering succeeds, fails closed, and has a bounded wait', async () => {
+  let renderedPayload = null
+  const ready = await renderStoredQrDataUrl('FINAL-STORED-QR', async payload => {
+    renderedPayload = payload
+    return 'data:image/png;base64,stored'
+  })
+  assert.equal(renderedPayload, 'FINAL-STORED-QR')
+  assert.deepEqual(ready, { status: 'ready', dataUrl: 'data:image/png;base64,stored' })
+
+  let missingRendererCalled = false
+  const missing = await renderStoredQrDataUrl(null, async () => {
+    missingRendererCalled = true
+    return 'unexpected'
+  })
+  assert.equal(missingRendererCalled, false)
+  assert.deepEqual(missing, { status: 'missing', dataUrl: null })
+
+  const started = Date.now()
+  const timedOut = await renderStoredQrDataUrl('FINAL-STORED-QR', () => new Promise(() => {}), 10)
+  assert.deepEqual(timedOut, { status: 'failed', dataUrl: null })
+  assert.ok(Date.now() - started < 500, 'QR renderer timeout must be bounded')
+})
+await test('thermal and A4 printing are independent from QR image success', () => {
+  assert.equal(canOpenStoredInvoicePrint('reported', false), true)
+  assert.equal(canOpenStoredInvoicePrint('cleared', false), true)
+  assert.equal(canOpenStoredInvoicePrint('pending', true), true)
+  assert.equal(canOpenStoredInvoicePrint('pending', false), false)
+  assert.match(invoiceDetail, /async function handlePrintA4\(\)[\s\S]*?window\.print\(\)/)
+  assert.match(invoiceDetail, /async function handlePrintThermal\(\)[\s\S]*?printReceiptInHiddenFrame\(invoice\.id\)/)
+  assert.match(invoiceDetail, /disabled=\{thermalPrinting \|\| !printReady\}/)
+  assert.match(invoiceDetail, /disabled=\{!printReady\}/)
+  assert.match(receiptPrint, /function handlePrint\(\)[\s\S]*?window\.print\(\)/)
+  assert.match(receiptPrint, /qrStatus === 'loading'/)
+  for (const page of [invoiceDetail, receiptPrint]) {
+    assert.match(page, /QR_DISPLAY_TIMEOUT_MS/)
+    assert.match(page, /current === 'loading' \? 'failed' : current/)
+  }
+  assert.match(receiptPrint, /qrUnavailable/)
+  assert.doesNotMatch(invoiceDetail, /outputReady/)
+  assert.doesNotMatch(receiptPrint, /outputReady/)
 })
 await test('package shape and protected scope', () => {
   assert.equal(files.length, 10)

@@ -85,6 +85,7 @@ const receipt = read('src/pages/print/ReceiptPrintPage.tsx')
 const pos = read('src/pages/pos/POSPage.tsx')
 const edge = read('supabase/functions/zatca-submit/index.ts')
 const submission = read('src/lib/zatca/submission.ts')
+const qrDisplay = read('src/lib/zatca/qrDisplay.mjs')
 
 const results = []
 async function test(name, callback) {
@@ -131,9 +132,13 @@ await test('detail, receipt, and historical A4 paths use safe rows plus safe QR 
     assert.match(source, /from\('invoices'\)\.select\(INVOICE_SAFE_SELECT\)/)
     assert.match(source, /getInvoiceZatcaOutputState/)
     assert.match(source, /getSandboxValidationStatus/)
+    assert.match(source, /selectStoredOutputStateQr\(outputStateMatchesInvoice \? outputState : null\)/)
     assert.doesNotMatch(source, /invoice!?\.zatca_qr_code/)
+    assert.doesNotMatch(source, /zatca_finalization_version:\s*2/)
     assert.match(source, /documentFromStoredInvoice/)
   }
+  assert.match(qrDisplay, /outputState\.qrCode/)
+  assert.doesNotMatch(qrDisplay, /zatca_(?:qr_code|simplified_qr|cleared_qr)/)
   assert.match(detail, /A4Document/)
   assert.match(receipt, /ThermalReceipt/)
 })
