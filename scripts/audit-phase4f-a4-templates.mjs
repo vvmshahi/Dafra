@@ -15,5 +15,5 @@ assert.match(settings, /<A4Document[\s\S]*model=\{previewModel\}/)
 assert.doesNotMatch(renderer, /from\('branches'\)|supabase|buildZatcaQR|QRCode|\*\s*0\.15/)
 assert.match(renderer, /seller\.registeredName/); assert.match(renderer, /seller\.vatNumber/); assert.match(renderer, /model\.identity\.kind === 'credit_note'/)
 assert.match(renderer, /presentation\.logo\.previewUrl/); assert.match(renderer, /options\.qrImageUrl/); assert.match(css, /@page \{ size: A4/); assert.doesNotMatch(css, /a4-document[^}]*thermal-paper-width/)
-for (const key of ['taxInvoice', 'creditNoteNumber', 'vatNumber', 'taxableAmount', 'qrCode', 'computerGeneratedCreditNote', 'legacyBestEffort']) { assert.ok(en[key], `English key missing: ${key}`); assert.ok(ar[key], `Arabic key missing: ${key}`) }
+for (const key of ['taxInvoice', 'creditNoteNumber', 'debitNoteNumber', 'taxDebitNote', 'vatNumber', 'taxableAmount', 'qrCode', 'computerGeneratedCreditNote']) { assert.ok(en[key], `English key missing: ${key}`); assert.ok(ar[key], `Arabic key missing: ${key}`) }
 console.log('Phase 4F A4 template static architecture assertions passed.')

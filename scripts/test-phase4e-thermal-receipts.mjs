@@ -13,7 +13,7 @@ assert.match(renderer, /normalizeInvoiceSettings/); assert.match(renderer, /'mod
 assert.doesNotMatch(renderer, /buildZatcaQR|QRCode/)
 for (const mode of ['58mm', '80mm', 'compact', 'standard', 'detailed']) assert.match(renderer, new RegExp(mode))
 assert.match(renderer, /52mm/); assert.match(renderer, /72mm/); assert.match(renderer, /@page \{ size: \$\{width\} auto/)
-for (const required of ['seller\.registeredName', 'seller\.vatNumber', 'seller\.registeredAddress', 'identity\.number', 'totals\.taxableAmount', 'totals\.vat', 'totals\.total', 'originalDocument\.number']) assert.match(renderer, new RegExp(required.replaceAll('.', '\\.')))
+for (const required of ['seller\.registeredName', 'seller\.vatNumber', 'seller\.registeredAddress', 'identity\.number', 'buildVisibleTotals', 'originalDocument\.number']) assert.match(renderer, new RegExp(required.replaceAll('.', '\\.')))
 assert.match(renderer, /presentation\.thermal\.wrapItemNames/); assert.match(renderer, /presentation\.thermal\.showCashChange/); assert.match(renderer, /presentation\.thermal\.qrSize/)
 assert.match(renderer, /creditedQuantity/); assert.match(renderer, /creditReason/); assert.match(renderer, /formatDocumentMoney/); assert.doesNotMatch(renderer, /\*\s*0\.15|taxAmount\s*\+/)
 assert.match(css, /thermal-receipt--58mm/); assert.match(css, /thermal-items--stacked/); assert.match(css, /thermal-cut/)

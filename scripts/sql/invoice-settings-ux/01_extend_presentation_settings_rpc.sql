@@ -1,4 +1,5 @@
--- Additive V1 RPC reconciliation. Review against the hosted definitions before execution.
+-- SUPERSEDED by 06_stabilize_v1_settings_contract.sql. Retained as historical review evidence only.
+-- Do not execute this legacy-shape package.
 -- Does not touch invoices, checkout, identity, Storage, or migration history.
 BEGIN;
 

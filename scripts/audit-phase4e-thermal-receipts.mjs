@@ -14,5 +14,5 @@ assert.match(renderer, /seller\.registeredName/); assert.match(renderer, /seller
 for (const mode of ['58mm', '80mm', 'compact', 'standard', 'detailed']) assert.match(renderer, new RegExp(mode))
 assert.match(renderer, /identity\.kind === 'credit_note'/); assert.match(renderer, /thermalPrintCss/); assert.match(renderer, /@media print/)
 assert.match(renderer, /presentation\.logo\.previewUrl/); assert.match(renderer, /options\.qrImageUrl/)
-for (const key of ['taxInvoice', 'creditNoteNumber', 'vatNumber', 'taxableAmount', 'qrCode', 'computerGeneratedCreditNote']) { assert.ok(en[key], `English document key missing: ${key}`); assert.ok(ar[key], `Arabic document key missing: ${key}`) }
+for (const key of ['taxInvoice', 'creditNoteNumber', 'debitNoteNumber', 'taxDebitNote', 'vatNumber', 'taxableAmount', 'qrCode', 'computerGeneratedCreditNote']) { assert.ok(en[key], `English document key missing: ${key}`); assert.ok(ar[key], `Arabic document key missing: ${key}`) }
 console.log('Phase 4E thermal receipt static architecture assertions passed.')

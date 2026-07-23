@@ -1242,13 +1242,13 @@ export type A4HeaderStyle = 'standard' | 'compact' | 'branded'
 
 export interface InvoicePresentationSettings {
   schema_version: 1
-  identity: { display_heading: string | null; display_subheading: string | null; custom_display_name: string | null; show_company_name: boolean; show_branch_name: boolean }
+  identity: { display_heading: string | null; display_subheading: string | null; custom_display_name: string | null; show_company_name: boolean; show_branch_name: boolean; heading_mode?: 'branch' | 'custom' }
   contact: { phone: string | null; email: string | null; website: string | null; address_override?: string | null; show_phone: boolean; show_email: boolean; show_website: boolean; show_address: boolean }
-  footer: { thank_you_message: string | null; footer_note: string | null; refund_note: string | null; show_thank_you: boolean; show_footer: boolean; show_refund_note: boolean }
+  footer: { thank_you_message: string | null; footer_note: string | null; refund_note: string | null; bold?: boolean; show_thank_you: boolean; show_footer: boolean; show_refund_note: boolean }
   logo: { visible: boolean; asset_path: string | null; asset_version: number; size: LogoAssetSize }
   thermal: { width: ThermalWidth; density: ThermalDensity; qr_size: QrSize; qr_alignment: QrAlignment; wrap_item_names: boolean; show_cash_change: boolean }
   a4: { template_id: A4TemplateId; template_version: 1; header_style: A4HeaderStyle }
-  after_sale_action?: 'ask' | 'receipt' | 'a4' | 'none'
+  after_sale_action?: 'receipt' | 'a4' | 'both'
 }
 
 export interface InvoiceIdentitySnapshotV2 {

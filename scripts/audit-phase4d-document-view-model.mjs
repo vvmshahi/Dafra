@@ -21,5 +21,5 @@ assert.match(adapters, /snapshot\.presentationSettings/); assert.match(adapters,
 assert.match(model, /resolveHistoricalA4Template/); assert.match(model, /unknown_historical_template/)
 assert.match(model, /Object\.freeze/); assert.doesNotMatch(model + adapters, /(password|access_token|service_role|private_key|certificate|csid|otp)/i)
 assert.doesNotMatch(settings.slice(settings.indexOf('const previewModel')), /\b50\.43\b|\b7\.57\b|\b58\.00\b/)
-assert.match(renderer, /totals\.total/); assert.doesNotMatch(renderer, /\*\s*0\.15|\+\s*.*tax/)
+assert.match(renderer, /buildVisibleTotals\(model\)/); assert.doesNotMatch(renderer, /\*\s*0\.15|\+\s*.*tax/)
 console.log('Phase 4D DocumentViewModel static architecture assertions passed.')

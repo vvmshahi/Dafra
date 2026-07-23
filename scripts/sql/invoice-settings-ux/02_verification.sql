@@ -1,4 +1,4 @@
--- Transactional, single-result verification for the V1 presentation RPC reconciliation.
+-- SUPERSEDED by 07_verify_v1_settings_contract.sql. Retained as historical review evidence only.
 -- Execute as an authenticated owner/branch user in the SQL editor. The final ROLLBACK
 -- guarantees that all RPC write tests are discarded.
 BEGIN;
