@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, Printer, RefreshCw, Loader2, AlertCircle, FileText } from 'lucide-react'
 import QRCode from 'qrcode'
@@ -6,17 +6,20 @@ import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import { buildZatcaQR } from '@/lib/zatca/qr'
+import { selectStoredInvoiceQr } from '@/lib/zatca/qrSelector'
 import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
+import A4Document from '@/components/print/A4Document'
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
-import { submitInvoiceToZatca } from '@/lib/zatca/submission'
+import { getInvoiceZatcaOutputState, submitInvoiceToZatca, type ZatcaOutputState } from '@/lib/zatca/submission'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import { getSandboxValidationStatus, type SandboxValidationResponse } from '@/lib/zatca/api'
 import { updateCachedInvoiceRows, upsertInvoiceListRow } from '@/lib/invoices/invoiceListCache'
+import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
+import { INVOICE_SAFE_SELECT } from '@/lib/invoices/invoiceReadContract'
 import {
   documentDate,
   documentDirection,
@@ -56,6 +59,9 @@ interface Customer {
   business_name: string | null
   business_name_ar: string | null
   phone: string | null
+  cr_number: string | null
+  address: string | null
+  address_ar: string | null
 }
 
 interface LinkedCreditNote {
@@ -106,18 +112,6 @@ function fmtQty(n: number): string {
   return Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 })
 }
 
-const INVOICE_DETAIL_SELECT = `
-  id, tenant_id, branch_id, customer_id, created_by,
-  invoice_number, document_language, invoice_reference, original_invoice_id, credit_reason,
-  credit_note_idempotency_key, zatca_uuid, zatca_invoice_type, zatca_type_code,
-  zatca_counter_number, zatca_prev_invoice_hash, zatca_xml_hash, zatca_qr_code,
-  zatca_status, zatca_submission_id, zatca_submitted_at, zatca_clearance_status,
-  zatca_warnings,
-  subtotal, discount_amount, taxable_amount, tax_amount, total_amount, currency_code,
-  invoice_date, supply_date, due_date, status, payment_status,
-  notes, notes_ar, cancelled_at, cancellation_reason, created_at, updated_at
-`
-
 // ── Print style injector ──────────────────────────────────────────────────────
 
 function usePrintStyle() {
@@ -129,8 +123,8 @@ function usePrintStyle() {
         @page { size: A4; margin: 15mm; }
         html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         body { visibility: hidden !important; }
-        #invoice-printable, #invoice-printable * { visibility: visible !important; }
-        #invoice-printable {
+        #invoice-printable-a4, #invoice-printable-a4 * { visibility: visible !important; }
+        #invoice-printable-a4 {
           position: fixed !important;
           top: 0 !important;
           left: 0 !important;
@@ -140,9 +134,8 @@ function usePrintStyle() {
           padding: 0 !important;
           box-shadow: none !important;
         }
-        #invoice-printable table tr,
-        #invoice-printable .invoice-totals,
-        #invoice-printable img { break-inside: avoid; page-break-inside: avoid; }
+        #invoice-printable-a4 table tr,
+        #invoice-printable-a4 img { break-inside: avoid; page-break-inside: avoid; }
         .no-print { display: none !important; }
       }
     `
@@ -182,6 +175,31 @@ export default function InvoiceDetailPage() {
   const [thermalPrinting, setThermalPrinting] = useState(false)
   const [creditModalOpen, setCreditModalOpen] = useState(false)
   const [sandboxValidation, setSandboxValidation] = useState<SandboxValidationResponse | null>(null)
+  const [outputState, setOutputState] = useState<ZatcaOutputState | null>(null)
+
+  const sandboxDocument = Boolean(invoice && isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id))
+  const outputStateMatchesInvoice = Boolean(invoice && outputState?.invoiceId === invoice.id)
+  const selectedQrPayload = selectStoredInvoiceQr(sandboxDocument ? null : {
+    zatca_finalization_version: 2,
+    zatca_artifact_provenance: 'server_v2',
+    zatca_document_kind: outputStateMatchesInvoice ? outputState?.documentKind : null,
+    zatca_lifecycle_state: outputStateMatchesInvoice ? outputState?.finalizationStatus : null,
+    zatca_artifact_stage: outputStateMatchesInvoice ? outputState?.artifactStage : null,
+    zatca_simplified_qr: outputStateMatchesInvoice && outputState?.documentKind === 'simplified' ? outputState.qrCode : null,
+    zatca_cleared_qr: outputStateMatchesInvoice && outputState?.documentKind === 'standard' ? outputState.qrCode : null,
+  }, sandboxDocument ? 'sandbox' : 'production', {
+    sandboxGenerated: sandboxDocument
+      && sandboxValidation?.invoiceId === invoice?.id
+      && Boolean(sandboxValidation?.qrCode),
+    sandboxQrCode: sandboxValidation?.qrCode,
+  })
+  const sandboxValidated = sandboxValidation?.invoiceId === invoice?.id
+    && (sandboxValidation?.status === 'sandbox_validated'
+      || sandboxValidation?.status === 'sandbox_validated_with_warnings')
+  const outputReady = Boolean(selectedQrPayload && qrDataUrl)
+    && (sandboxDocument
+      ? sandboxValidated
+      : outputStateMatchesInvoice && outputState?.canPrint === true)
 
   // Load data
   useEffect(() => {
@@ -193,7 +211,7 @@ export default function InvoiceDetailPage() {
       try {
         // Round 1: invoice + items + payments in parallel
         const [{ data: inv, error: invErr }, { data: itemData }, { data: pmtData }] = await Promise.all([
-          supabase.from('invoices').select(INVOICE_DETAIL_SELECT).eq('id', id).single(),
+          supabase.from('invoices').select(INVOICE_SAFE_SELECT).eq('id', id).single(),
           supabase.from('invoice_items').select('*').eq('invoice_id', id).order('sort_order'),
           supabase.from('payments').select('*').eq('invoice_id', id).order('paid_at', { ascending: true }).order('created_at', { ascending: true }),
         ])
@@ -209,7 +227,7 @@ export default function InvoiceDetailPage() {
         if (inv.customer_id) {
           fetches.push(
             supabase.from('customers')
-              .select('name, name_ar, vat_number, customer_type, company_name, business_name, business_name_ar, phone')
+              .select('name, name_ar, vat_number, cr_number, address, address_ar, customer_type, company_name, business_name, business_name_ar, phone')
               .eq('id', inv.customer_id)
               .single()
           )
@@ -297,24 +315,45 @@ export default function InvoiceDetailPage() {
     return () => { cancelled = true }
   }, [invoice])
 
+  useEffect(() => {
+    if (!invoice || isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)) {
+      setOutputState(null)
+      return
+    }
+    let cancelled = false
+    setOutputState(null)
+    getInvoiceZatcaOutputState({ invoiceId: invoice.id, branchId: invoice.branch_id })
+      .then(state => { if (!cancelled) setOutputState(state) })
+      .catch(() => { if (!cancelled) setOutputState(null) })
+    return () => { cancelled = true }
+  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status])
+
   // Generate QR code after data loads
   useEffect(() => {
     if (!invoice || !branch || !tenant) return
     let cancelled = false
 
     async function generateQR() {
-      // Use the stored TLV from DB when available — guarantees debug panel shows
-      // the exact same payload that was encoded into the QR at creation time.
-      const storedPayload = sandboxValidation?.qrCode ?? invoice!.zatca_qr_code
-
-      const payload = storedPayload ?? buildZatcaQR({
-        // QR tag 1: always use legal business_name, never display_name (ZATCA requirement)
-        sellerName:  branch!.business_name || branch!.name,
-        vatNumber:   branch!.vat_number || tenant!.vat_number || '',
-        timestamp:   invoice!.created_at,
-        totalAmount: Number(invoice!.total_amount),
-        vatAmount:   Number(invoice!.tax_amount),
+      const sandboxDocument = isPermanentDemoSandboxBranch(invoice!.tenant_id, invoice!.branch_id)
+      const payload = selectStoredInvoiceQr(sandboxDocument ? null : {
+        zatca_finalization_version: 2,
+        zatca_artifact_provenance: 'server_v2',
+        zatca_document_kind: outputStateMatchesInvoice ? outputState?.documentKind : null,
+        zatca_lifecycle_state: outputStateMatchesInvoice ? outputState?.finalizationStatus : null,
+        zatca_artifact_stage: outputStateMatchesInvoice ? outputState?.artifactStage : null,
+        zatca_simplified_qr: outputStateMatchesInvoice && outputState?.documentKind === 'simplified' ? outputState.qrCode : null,
+        zatca_cleared_qr: outputStateMatchesInvoice && outputState?.documentKind === 'standard' ? outputState.qrCode : null,
+      }, sandboxDocument ? 'sandbox' : 'production', {
+        sandboxGenerated: sandboxDocument
+          && sandboxValidation?.invoiceId === invoice?.id
+          && Boolean(sandboxValidation?.qrCode),
+        sandboxQrCode: sandboxValidation?.qrCode,
       })
+      if (!payload) {
+        setQrPayload(null)
+        setQrDataUrl(null)
+        return
+      }
 
       if (!cancelled) setQrPayload(payload)
 
@@ -327,22 +366,16 @@ export default function InvoiceDetailPage() {
         })
         if (cancelled) return
         setQrDataUrl(url)
-
-        // Persist QR payload to DB if not yet stored (e.g. invoices created before this fix)
-        if (!storedPayload) {
-          const q = supabase as unknown as { from: (t: string) => any }
-          q.from('invoices').update({ zatca_qr_code: payload }).eq('id', invoice!.id)
-        }
       } catch {}
     }
 
     generateQR()
     return () => { cancelled = true }
-  }, [invoice, branch, tenant, sandboxValidation?.qrCode])
+  }, [invoice, branch, tenant, sandboxValidation?.qrCode, outputState, outputStateMatchesInvoice])
 
   // Auto-print when ?print=1 is in the URL
   useEffect(() => {
-    if (!autoPrint || autoPrintRef.current || loading || !invoice || !branch || !qrDataUrl) return
+    if (!autoPrint || autoPrintRef.current || loading || !invoice || !branch || !outputReady) return
     autoPrintRef.current = true
     const t = setTimeout(() => {
       if (isElectron()) {
@@ -352,11 +385,12 @@ export default function InvoiceDetailPage() {
       }
     }, 500)
     return () => clearTimeout(t)
-  }, [autoPrint, loading, invoice, branch, qrDataUrl])
+  }, [autoPrint, loading, invoice, branch, outputReady])
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
   async function handlePrintA4() {
+    if (!outputReady) return
     if (!isElectron()) {
       window.print()
       return
@@ -370,7 +404,7 @@ export default function InvoiceDetailPage() {
   }
 
   async function handlePrintThermal() {
-    if (!invoice || thermalPrinting) return
+    if (!invoice || thermalPrinting || !outputReady) return
 
     setThermalPrinting(true)
     try {
@@ -395,17 +429,17 @@ export default function InvoiceDetailPage() {
   }
 
   function handleWhatsApp() {
-    if (!customer?.phone) return
+    if (!customer?.phone || !outputReady) return
     const digits = customer.phone.replace(/\D/g, '')
     const wa = digits.startsWith('966') ? digits : digits.startsWith('0') ? '966' + digits.slice(1) : digits
     const date = documentDate(invoice!.created_at, documentLanguage)
     const m = (n: number) => `SAR ${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
     const lines = items.map(i => `${documentNames(documentLanguage, i.name, i.name_ar).join(' / ')} × ${Number(i.quantity)}  ${m(Number(i.total))}`).join('\n')
     const bizName = documentNames(documentLanguage, brandNameEn, brandNameAr).join(' / ')
-    const msg = `${documentLabel(documentLanguage, isCreditNote ? 'taxCreditNote' : 'taxInvoice')} — ${bizName}
+    const msg = `${documentLabel(documentLanguage, isCreditNote ? 'taxCreditNote' : isDebitNote ? 'taxDebitNote' : 'taxInvoice')} — ${bizName}
 ━━━━━━━━━━━━━━━
-${documentLabel(documentLanguage, isCreditNote ? 'creditNoteNumber' : 'invoiceNumber')}: ${invoice!.invoice_number}
-${isCreditNote && invoice!.invoice_reference ? `${documentLabel(documentLanguage, 'originalInvoice')}: ${invoice!.invoice_reference}\n` : ''}${documentLabel(documentLanguage, 'date')}: ${date}
+${documentLabel(documentLanguage, isCreditNote ? 'creditNoteNumber' : isDebitNote ? 'debitNoteNumber' : 'invoiceNumber')}: ${invoice!.invoice_number}
+${(isCreditNote || isDebitNote) && invoice!.invoice_reference ? `${documentLabel(documentLanguage, 'originalInvoice')}: ${invoice!.invoice_reference}\n` : ''}${documentLabel(documentLanguage, 'date')}: ${date}
 ━━━━━━━━━━━━━━━
 ${lines}
 ━━━━━━━━━━━━━━━
@@ -423,10 +457,10 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     try {
       setInvoice(prev => prev ? { ...prev, zatca_status: 'pending' } : prev)
       await submitInvoiceToZatca(invoice.id, invoice.branch_id, { source: 'manual_retry' })
-      const { data: refreshed } = await supabase.from('invoices').select(INVOICE_DETAIL_SELECT).eq('id', invoice.id).single()
+      const { data: refreshed } = await supabase.from('invoices').select(INVOICE_SAFE_SELECT).eq('id', invoice.id).single()
       if (refreshed) setInvoice(refreshed as Invoice)
     } catch {
-      const { data: refreshed } = await supabase.from('invoices').select(INVOICE_DETAIL_SELECT).eq('id', invoice.id).single()
+      const { data: refreshed } = await supabase.from('invoices').select(INVOICE_SAFE_SELECT).eq('id', invoice.id).single()
       if (refreshed) setInvoice(refreshed as Invoice)
     } finally {
       setResubmitting(false)
@@ -535,6 +569,13 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     })()
   }
 
+  // Keep this hook unconditional so loading/error transitions preserve React's hook order.
+  // The print target is rendered only after the required stored-invoice data exists.
+  const documentViewModel = useMemo(() => {
+    if (!invoice || !branch) return null
+    return documentFromStoredInvoice({ invoice, branch, tenant, items, payments, customer: customer ? { name: customer.name, nameAr: customer.name_ar, vatNumber: customer.vat_number, address: customer.address, addressAr: customer.address_ar, identifierType: customer.cr_number ? 'CR' : null, identifierValue: customer.cr_number, type: customer.customer_type } : null })
+  }, [invoice, branch, tenant, items, payments, customer])
+
   // ── Loading / Error states ─────────────────────────────────────────────────
 
   if (loading) {
@@ -574,6 +615,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
   // ── Derived display values ─────────────────────────────────────────────────
 
   const isCreditNote = invoice.zatca_invoice_type === 'credit_note'
+  const isDebitNote = invoice.zatca_invoice_type === 'debit_note'
   const documentLanguage = isCreditNote
     ? resolveCreditNoteDocumentLanguage(invoice.document_language, originalInvoiceLink?.document_language, branch.invoice_language)
     : resolveInvoiceDocumentLanguage(invoice.document_language, branch.invoice_language)
@@ -602,21 +644,21 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     ? 'full'
     : 'partial'
   const isStandardDocument = invoice.zatca_invoice_type === 'standard'
-    || (isCreditNote && customer?.customer_type === 'business' && !!customer?.vat_number)
+    || ((isCreditNote || isDebitNote) && customer?.customer_type === 'business' && !!customer?.vat_number)
   const documentTitleKey = isCreditNote
     ? (isStandardDocument ? 'taxCreditNote' : 'simplifiedTaxCreditNote')
+    : isDebitNote
+    ? (isStandardDocument ? 'taxDebitNote' : 'simplifiedTaxDebitNote')
     : (isStandardDocument ? 'standardTaxInvoice' : 'simplifiedTaxInvoice')
   const documentTitleLines = documentLabelLines(documentLanguage, documentTitleKey)
-  const documentNumberLabel = documentLabel(documentLanguage, isCreditNote ? 'creditNoteNumber' : 'invoiceNumber')
+  const documentNumberLabel = documentLabel(documentLanguage, isCreditNote ? 'creditNoteNumber' : isDebitNote ? 'debitNoteNumber' : 'invoiceNumber')
   const creditLabel = creditStatus === 'full' ? t('invoices:fullyCredited') : creditStatus === 'partial' ? t('invoices:partiallyCredited') : t('invoices:notCredited')
   const creditLabelClass = creditStatus === 'full'
     ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
     : creditStatus === 'partial'
     ? 'text-amber-700 bg-amber-50 border-amber-100'
     : 'text-gray-600 bg-gray-50 border-gray-100'
-  const demoSandbox = isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)
-  const sandboxValidated = sandboxValidation?.status === 'sandbox_validated' ||
-    sandboxValidation?.status === 'sandbox_validated_with_warnings'
+  const demoSandbox = sandboxDocument
   const canCreateCreditNote = !isCreditNote
     && !isCancelled
     && invoice.status === 'posted'
@@ -662,82 +704,12 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
   ].filter(Boolean).join('، ')
   const sellerAddresses = documentNames(documentLanguage, addressParts, addressPartsAr)
 
-  // ── Build thermal receipt data ────────────────────────────────────────────
-
-  const thermalItems = items.map(i => ({
-    name:      i.name,
-    nameAr:    i.name_ar,
-    qty:       Number(i.quantity),
-    unitPrice: Number(i.unit_price),
-    lineTotal: Number(i.total),
-    subtotal:  Number(i.subtotal),
-    taxAmount: Number(i.tax_amount),
-    total:     Number(i.total),
-  }))
-
-  const thermalAddress = [
-    branch.building_number ? `Building ${branch.building_number}` : null,
-    branch.street, branch.district, branch.city,
-  ].filter(Boolean).join(', ')
-  const thermalAddressAr = [
-    branch.building_number ? `مبنى ${branch.building_number}` : null,
-    branch.street_ar, branch.district_ar, branch.city_ar,
-  ].filter(Boolean).join('، ')
-
   return (
     <div className="max-w-4xl mx-auto space-y-4">
 
       {/* ── Hidden thermal receipt (for print) ──────────── */}
-      <ThermalReceipt
-        documentLanguage={documentLanguage}
-        printMode={branch.print_mode ?? 'thermal'}
-        businessNameAr={brandNameAr}
-        businessNameEn={brandNameEn}
-        branchName={branch.name}
-        branchNameAr={branch.name_ar}
-        address={thermalAddress || null}
-        addressAr={thermalAddressAr || null}
-        vatNumber={vatNumber}
-        phone={branch.phone}
-        website={branch.website}
-        showWebsite={branch.show_website ?? false}
-        email={branch.email}
-        showEmail={branch.show_email ?? false}
-        invoiceNumber={invoice.invoice_number}
-        date={invDate}
-        time={invTime}
-        issueTimestamp={invoice.created_at}
-        items={thermalItems}
-        subtotal={Number(invoice.subtotal)}
-        discountAmount={Number(invoice.discount_amount)}
-        taxAmount={Number(invoice.tax_amount)}
-        total={Number(invoice.total_amount)}
-        paymentMethod={isSplitPayment ? 'split' : (payment?.method ?? 'card')}
-        payments={payments.map(p => ({ method: p.method, amount: Number(p.amount) }))}
-        cashReceived={cashReceived}
-        change={changeAmount}
-        customerName={
-          customer?.customer_type === 'business' && (customer.business_name ?? customer.company_name)
-            ? (customer.business_name ?? customer.company_name)
-            : (customer?.name ?? null)
-        }
-        customerNameAr={
-          customer?.customer_type === 'business'
-            ? (customer.business_name_ar ?? customer.name_ar)
-            : (customer?.name_ar ?? null)
-        }
-        buyerVatNumber={isStandardDocument ? (customer?.vat_number ?? null) : null}
-        isStandardInvoice={isStandardDocument}
-        documentType={isCreditNote ? 'credit_note' : 'invoice'}
-        originalInvoiceNumber={invoice.invoice_reference ?? originalInvoiceLink?.invoice_number ?? null}
-        creditReason={invoice.credit_reason}
-        logoUrl={branch.logo_url}
-        showLogo={branch.show_logo ?? true}
-        qrDataUrl={qrDataUrl}
-        receiptFooter={branch.receipt_footer}
-        showFooter={branch.show_footer ?? true}
-        showCashChange={branch.show_cash_change ?? true}
-      />
+      {documentViewModel && <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl }} />}
+      {documentViewModel && <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'invoice-printable-a4', qrImageUrl: qrDataUrl }} />}
 
       {/* ── Action bar (screen only) ─────────────────────── */}
       <div className="no-print flex items-center justify-between">
@@ -756,18 +728,18 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
             </button>
           )}
           {customer?.phone && (
-            <button onClick={handleWhatsApp}
+            <button onClick={handleWhatsApp} disabled={!outputReady}
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-[#25D366] rounded-xl hover:bg-[#22c55e] transition-colors">
               <WhatsAppIcon size={13} />
               {t('payments:whatsapp')}
             </button>
           )}
-          <button onClick={() => void handlePrintThermal()} disabled={thermalPrinting}
+          <button onClick={() => void handlePrintThermal()} disabled={thermalPrinting || !outputReady}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50">
             {thermalPrinting ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
             {thermalPrinting ? t('printing:printing') : t('printing:printReceipt')}
           </button>
-          <button onClick={() => void handlePrintA4()}
+          <button onClick={() => void handlePrintA4()} disabled={!outputReady}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0F2419] rounded-xl hover:bg-[#1a3a28] transition-colors">
             <Printer size={13} />
             {isCreditNote ? t('printing:printCreditNote') : t('printing:printInvoice')} (PDF)
@@ -986,12 +958,12 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
           )}
         </div>
 
-        {isCreditNote && (
+        {(isCreditNote || isDebitNote) && (
           <div className="px-8 py-4 border-b border-gray-100 bg-amber-50/40">
-            <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-widest mb-2">{documentLabel(documentLanguage, 'creditNoteReference')}</p>
+            <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-widest mb-2">{documentLabel(documentLanguage, isDebitNote ? 'debitNoteReference' : 'creditNoteReference')}</p>
             <div className="grid gap-2 text-xs text-gray-700 sm:grid-cols-2">
               <span><span className="font-semibold">{documentLabel(documentLanguage, 'originalInvoice')}:</span> <bdi dir="ltr">{invoice.invoice_reference ?? originalInvoiceLink?.invoice_number ?? '—'}</bdi></span>
-              <span><span className="font-semibold">{documentLabel(documentLanguage, 'creditAmount')}:</span> <span dir="ltr"><Rial amount={Number(invoice.total_amount)} /></span></span>
+              <span><span className="font-semibold">{documentLabel(documentLanguage, isDebitNote ? 'totalIncludingVat' : 'creditAmount')}:</span> <span dir="ltr"><Rial amount={Number(invoice.total_amount)} /></span></span>
               {invoice.credit_reason && (
                 <span className="sm:col-span-2"><span className="font-semibold">{documentLabel(documentLanguage, 'reason')}:</span> {invoice.credit_reason}</span>
               )}

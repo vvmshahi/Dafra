@@ -15,20 +15,225 @@ export function isPermanentDemoSandboxBranch(tenantId: string | null | undefined
 }
 
 export type ZatcaSubmitSource = 'auto_checkout' | 'auto_credit_note' | 'manual_retry' | 'bulk_retry'
+export const ZATCA_FINALIZATION_CLIENT_VERSION = '2.0.0'
+export const ZATCA_FINALIZATION_EDGE_VERSION = '2.0.0'
+export const ZATCA_FINALIZATION_SCHEMA_VERSION = 2
+export type ZatcaCheckoutMode = 'legacy' | 'v2'
+
+export interface ZatcaFinalizationCapabilities {
+  schemaVersion: number | null
+  edgeFunctionVersion: string
+  minimumClientVersion: string
+  immutableFinalizationEnabled: boolean
+  databaseFeatureEnabled: boolean
+  legacySubmitAvailable: boolean
+  edgeKillSwitchEnabled: boolean
+  simplifiedEnabled: boolean
+  standardEnabled: boolean
+  supportsLocalSimplifiedFinalization: boolean
+  supportsStandardClearanceGating: boolean
+  supportsLeasedClaims: boolean
+  supportsSerializedChainAllocator: boolean
+  compatible: boolean
+  acknowledged: boolean
+}
 
 export interface ZatcaSubmitResult {
   ok: boolean
   invoiceStatus: string
   retryable: boolean
+  contractMode: ZatcaCheckoutMode
+  finalizationStatus: string
+  artifactStage: string
+  documentKind: 'simplified' | 'standard' | null
+  canPrint: boolean
+  canShare: boolean
+  qrCode: string | null
 }
 
 export interface ZatcaSubmitOptions {
   source?: ZatcaSubmitSource
+  contractMode?: ZatcaCheckoutMode
+}
+
+export interface ZatcaFinalizationResult {
+  ok: boolean
+  invoiceStatus: string
+  finalizationStatus: string
+  artifactStage: string
+  documentKind: 'simplified' | 'standard' | null
+  canPrint: boolean
+  canShare: boolean
+  retryAvailable: boolean
+  reconciliationRequired: boolean
+  qrCode: string | null
+  error: string | null
+}
+
+export interface ZatcaOutputState {
+  invoiceId: string
+  contractMode: ZatcaCheckoutMode
+  legacyCompatible: boolean
+  schemaVersion: number | null
+  edgeFunctionVersion: string
+  minimumClientVersion: string
+  compatible: boolean
+  immutableFinalizationEnabled: boolean
+  invoiceStatus: string
+  finalizationStatus: string
+  artifactStage: string
+  documentKind: 'simplified' | 'standard' | null
+  canPrint: boolean
+  canShare: boolean
+  retryAvailable: boolean
+  reconciliationRequired: boolean
+  qrCode: string | null
+  error: string | null
+}
+
+export async function getZatcaFinalizationCapabilities(branchId: string): Promise<ZatcaFinalizationCapabilities> {
+  const { data, error } = await supabase.functions.invoke('zatca-submit', {
+    body: {
+      action: 'capabilities',
+      branchId,
+      clientVersion: ZATCA_FINALIZATION_CLIENT_VERSION,
+    },
+  })
+  if (error) throw new Error(error.message)
+  return {
+    schemaVersion: typeof data?.schemaVersion === 'number' ? data.schemaVersion : null,
+    edgeFunctionVersion: String(data?.edgeFunctionVersion ?? ''),
+    minimumClientVersion: String(data?.minimumClientVersion ?? ''),
+    immutableFinalizationEnabled: data?.immutableFinalizationEnabled === true,
+    databaseFeatureEnabled: data?.databaseFeatureEnabled === true,
+    legacySubmitAvailable: data?.legacySubmitAvailable === true,
+    edgeKillSwitchEnabled: data?.edgeKillSwitchEnabled === true,
+    simplifiedEnabled: data?.simplifiedEnabled === true,
+    standardEnabled: data?.standardEnabled === true,
+    supportsLocalSimplifiedFinalization: data?.supportsLocalSimplifiedFinalization === true,
+    supportsStandardClearanceGating: data?.supportsStandardClearanceGating === true,
+    supportsLeasedClaims: data?.supportsLeasedClaims === true,
+    supportsSerializedChainAllocator: data?.supportsSerializedChainAllocator === true,
+    compatible: data?.compatible === true,
+    acknowledged: data?.acknowledged === true,
+  }
+}
+
+export async function requireZatcaFinalizationCapability(
+  branchId: string,
+): Promise<ZatcaFinalizationCapabilities & { checkoutMode: ZatcaCheckoutMode }> {
+  const capability = await getZatcaFinalizationCapabilities(branchId)
+  const v2Ready = capability.schemaVersion === ZATCA_FINALIZATION_SCHEMA_VERSION
+    && capability.edgeFunctionVersion === ZATCA_FINALIZATION_EDGE_VERSION
+    && capability.minimumClientVersion === ZATCA_FINALIZATION_CLIENT_VERSION
+    && capability.compatible
+    && capability.acknowledged
+    && capability.immutableFinalizationEnabled
+    && capability.simplifiedEnabled
+    && capability.supportsLocalSimplifiedFinalization
+    && capability.supportsStandardClearanceGating
+    && capability.supportsLeasedClaims
+    && capability.supportsSerializedChainAllocator
+  if (v2Ready) return { ...capability, checkoutMode: 'v2' }
+  if (!capability.databaseFeatureEnabled && capability.legacySubmitAvailable) {
+    return { ...capability, checkoutMode: 'legacy' }
+  }
+  throw new Error('ZATCA finalization is unavailable or version-incompatible. No payment was recorded.')
 }
 
 export type RoutedZatcaResult =
   | { mode: 'sandbox_validation'; result: SandboxValidationResponse }
   | { mode: 'production_submission'; result: ZatcaSubmitResult }
+
+/**
+ * Performs server-only local Phase 2 finalization. No ZATCA network request is
+ * made by this operation; the returned QR is the immutable stored value used
+ * by the first customer copy.
+ */
+export async function finalizeInvoiceForZatca(params: {
+  invoiceId: string
+  branchId: string
+  options?: ZatcaSubmitOptions
+}): Promise<ZatcaFinalizationResult> {
+  const { data, error } = await supabase.functions.invoke('zatca-submit', {
+    body: {
+      invoiceId: params.invoiceId,
+      branchId: params.branchId,
+      source: params.options?.source ?? 'auto_checkout',
+      action: 'finalize',
+      clientVersion: ZATCA_FINALIZATION_CLIENT_VERSION,
+    },
+  })
+  if (error) throw new Error(error.message)
+  const finalizationStatus = String(data?.finalizationStatus ?? 'finalization_failed')
+  return {
+    ok: ['locally_finalized', 'provisional_signed', 'cleared_final'].includes(finalizationStatus),
+    invoiceStatus: String(data?.invoiceStatus ?? 'pending'),
+    finalizationStatus,
+    artifactStage: String(data?.artifactStage ?? 'none'),
+    documentKind: data?.documentKind === 'simplified' || data?.documentKind === 'standard' ? data.documentKind : null,
+    canPrint: data?.canPrint === true,
+    canShare: data?.canShare === true,
+    retryAvailable: data?.retryAvailable === true,
+    reconciliationRequired: data?.reconciliationRequired === true,
+    qrCode: typeof data?.qrCode === 'string' ? data.qrCode : null,
+    error: typeof data?.error === 'string' ? data.error : null,
+  }
+}
+
+export async function getInvoiceZatcaOutputState(params: {
+  invoiceId: string
+  branchId: string
+}): Promise<ZatcaOutputState> {
+  const { data, error } = await supabase.functions.invoke('zatca-submit', {
+    body: {
+      invoiceId: params.invoiceId,
+      branchId: params.branchId,
+      action: 'status',
+      clientVersion: ZATCA_FINALIZATION_CLIENT_VERSION,
+    },
+  })
+  if (error) throw new Error(error.message)
+  const invoiceId = String(data?.invoiceId ?? '')
+  if (invoiceId !== params.invoiceId) {
+    throw new Error('Invoice output-state identity mismatch')
+  }
+  const schemaVersion = typeof data?.schemaVersion === 'number' ? data.schemaVersion : null
+  const edgeFunctionVersion = String(data?.edgeFunctionVersion ?? '')
+  const minimumClientVersion = String(data?.minimumClientVersion ?? '')
+  const v2Compatible = data?.compatible === true
+    && schemaVersion === ZATCA_FINALIZATION_SCHEMA_VERSION
+    && edgeFunctionVersion === ZATCA_FINALIZATION_EDGE_VERSION
+    && minimumClientVersion === ZATCA_FINALIZATION_CLIENT_VERSION
+  const legacyCompatible = data?.contractMode === 'legacy'
+    && data?.legacyCompatible === true
+    && edgeFunctionVersion === ZATCA_FINALIZATION_EDGE_VERSION
+    && minimumClientVersion === ZATCA_FINALIZATION_CLIENT_VERSION
+  const compatible = v2Compatible || legacyCompatible
+  const contractMode: ZatcaCheckoutMode = legacyCompatible ? 'legacy' : 'v2'
+  const finalizationStatus = String(data?.finalizationStatus ?? 'not_started')
+  const canPrint = compatible && data?.canPrint === true
+  return {
+    invoiceId,
+    contractMode,
+    legacyCompatible,
+    schemaVersion,
+    edgeFunctionVersion,
+    minimumClientVersion,
+    compatible,
+    immutableFinalizationEnabled: data?.immutableFinalizationEnabled === true,
+    invoiceStatus: String(data?.invoiceStatus ?? 'pending'),
+    finalizationStatus,
+    artifactStage: String(data?.artifactStage ?? 'none'),
+    documentKind: data?.documentKind === 'simplified' || data?.documentKind === 'standard' ? data.documentKind : null,
+    canPrint,
+    canShare: compatible && data?.canShare === true,
+    retryAvailable: data?.retryAvailable === true,
+    reconciliationRequired: data?.reconciliationRequired === true,
+    qrCode: canPrint && typeof data?.qrCode === 'string' ? data.qrCode : null,
+    error: typeof data?.error === 'string' ? data.error : null,
+  }
+}
 
 export async function submitInvoiceForBranch(params: {
   invoiceId: string
@@ -51,15 +256,33 @@ export async function submitInvoiceToZatcaDetailed(
   options: ZatcaSubmitOptions = {},
 ): Promise<ZatcaSubmitResult> {
   const source = options.source ?? 'manual_retry'
+  const contractMode = options.contractMode
+    ?? (await requireZatcaFinalizationCapability(branchId)).checkoutMode
   const { data, error } = await supabase.functions.invoke('zatca-submit', {
-    body: { invoiceId, branchId, source },
+    body: contractMode === 'legacy'
+      ? { invoiceId, branchId, source }
+      : {
+        invoiceId,
+        branchId,
+        source,
+        action: 'submit',
+        clientVersion: ZATCA_FINALIZATION_CLIENT_VERSION,
+      },
   })
   if (error) throw new Error(error.message)
   const invoiceStatus = String(data?.invoiceStatus ?? 'error')
+  const resultContractMode: ZatcaCheckoutMode = data?.contractMode === 'legacy' ? 'legacy' : contractMode
   return {
     ok: invoiceStatus === 'reported' || invoiceStatus === 'cleared',
     invoiceStatus,
     retryable: invoiceStatus === 'pending' || invoiceStatus === 'error',
+    contractMode: resultContractMode,
+    finalizationStatus: String(data?.finalizationStatus ?? `${resultContractMode}_${invoiceStatus}`),
+    artifactStage: String(data?.artifactStage ?? (resultContractMode === 'legacy' ? 'legacy_pending' : 'none')),
+    documentKind: data?.documentKind === 'simplified' || data?.documentKind === 'standard' ? data.documentKind : null,
+    canPrint: data?.canPrint === true,
+    canShare: data?.canShare === true,
+    qrCode: data?.canPrint === true && typeof data?.qrCode === 'string' ? data.qrCode : null,
   }
 }
 
