@@ -18,6 +18,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { create as xmlCreate } from 'https://esm.sh/xmlbuilder2@4.0.3'
 import { secp256k1 } from 'https://esm.sh/@noble/curves@2.2.0/secp256k1.js'
 import { extractEcPrivateKeyScalar, signZatcaInvoiceHash } from '../_shared/zatca/signing_core.mjs'
+import { buildZatcaPhase2Qr } from '../_shared/zatca/phase2_qr.mjs'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -628,43 +629,6 @@ function buildInvoiceXMLData(
   }
 }
 
-// ── QR builder (Phase 1 + Phase 2) ───────────────────────────────────────────
-
-function tlvStr(tag: number, value: string): Uint8Array {
-  const bytes = new TextEncoder().encode(value)
-  const buf = new Uint8Array(2 + bytes.length)
-  buf[0] = tag; buf[1] = bytes.length; buf.set(bytes, 2)
-  return buf
-}
-function tlvBytes(tag: number, bytes: Uint8Array): Uint8Array {
-  const buf = new Uint8Array(2 + bytes.length)
-  buf[0] = tag; buf[1] = bytes.length; buf.set(bytes, 2)
-  return buf
-}
-function concatArrays(...arrs: Uint8Array[]): Uint8Array {
-  const len = arrs.reduce((s, a) => s + a.length, 0)
-  const out = new Uint8Array(len); let off = 0
-  for (const a of arrs) { out.set(a, off); off += a.length }
-  return out
-}
-
-// Phase 2 QR — all 9 tags (tags 1–9). Embedded in XML and stored in DB for receipts.
-// 9 tags required by ZATCA; omitting tag 9 (cert CA sig) causes QRCODE_INVALID.
-function buildPhase2QR(
-  sellerName: string, vatNumber: string, timestamp: string,
-  totalAmount: number, vatAmount: number,
-  hashB64: string, sigB64: string, pubKeySpki: Uint8Array, certSigValue: Uint8Array,
-): string {
-  const all = concatArrays(
-    tlvStr(0x01, sellerName), tlvStr(0x02, vatNumber),
-    tlvStr(0x03, timestamp),
-    tlvStr(0x04, totalAmount.toFixed(2)), tlvStr(0x05, vatAmount.toFixed(2)),
-    tlvStr(0x06, hashB64), tlvStr(0x07, sigB64),
-    tlvBytes(0x08, pubKeySpki), tlvBytes(0x09, certSigValue),
-  )
-  return btoa(String.fromCharCode(...all))
-}
-
 // ── C14N11 + XAdES signing ────────────────────────────────────────────────────
 
 function escText(s: string): string {
@@ -809,10 +773,17 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const vatAmount   = parseFloat((signedXml.match(/<cbc:TaxAmount[^>]*>([\d.]+)<\/cbc:TaxAmount>/) ?? [])[1] ?? '0')
 
   // Phase 2 QR (tags 1-9) — used in XML and stored in DB for receipts
-  const qrCode = buildPhase2QR(
-    sellerName, vatNumber, timestamp, totalAmount, vatAmount,
-    invoiceHashB64, sigValueB64, pubKeySpki, certSigValue,
-  )
+  const qrCode = buildZatcaPhase2Qr({
+    sellerName,
+    vatNumber,
+    timestamp,
+    totalAmount,
+    vatAmount,
+    invoiceHashBase64: invoiceHashB64,
+    signatureValueBase64: sigValueB64,
+    publicKeySpki: pubKeySpki,
+    certificateSignatureDer: certSigValue,
+  })
   signedXml = signedXml.replace(
     /(<cbc:ID>QR<\/cbc:ID>[\s\S]*?<cbc:EmbeddedDocumentBinaryObject mimeCode="text\/plain">)([^<]*)(<\/cbc:EmbeddedDocumentBinaryObject>)/,
     `$1${qrCode}$3`,

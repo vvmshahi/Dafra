@@ -1,6 +1,7 @@
 import { create as xmlCreate } from 'https://esm.sh/xmlbuilder2@4.0.3'
 import { secp256k1 } from 'https://esm.sh/@noble/curves@2.2.0/secp256k1.js'
 import { extractEcPrivateKeyScalar, signZatcaInvoiceHash } from './signing_core.mjs'
+import { buildZatcaPhase2Qr } from './phase2_qr.mjs'
 import type { FunctionalityMap } from './config.ts'
 
 export type ComplianceSampleType =
@@ -1203,7 +1204,8 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
   const stampInvoice = (invoiceDigestB64: string): { signedXml: string; qrTimestamp: string } => {
     // ZATCA SDK signs/verifies SHA256withECDSA over the decoded invoice hash
     // bytes, while ds:SignedInfo carries that same hash as DigestValue.
-    const { signatureValueBase64: sigValueB64 } = signZatcaInvoiceHash(invoiceDigestB64, secretKey, secp256k1)
+    const { signatureValueBase64: sigValueB64 } =
+      signZatcaInvoiceHash(invoiceDigestB64, secretKey, secp256k1)
 
     const xadesBlock = buildXadesBlock(
       invoiceDigestB64,
@@ -1228,17 +1230,17 @@ async function signInvoice(xmlString: string, secretKey: Uint8Array, certificate
     const totalAmount = parseFloat((signedXml.match(/<cbc:TaxInclusiveAmount[^>]*>([\d.]+)<\/cbc:TaxInclusiveAmount>/) ?? [])[1] ?? '0')
     const vatAmount = parseFloat((signedXml.match(/<cbc:TaxAmount[^>]*>([\d.]+)<\/cbc:TaxAmount>/) ?? [])[1] ?? '0')
     const qrTimestamp = safeSampleTimestamp(undefined, issueDate, issueTime)
-    const qrCode = buildPhase2QR(
+    const qrCode = buildZatcaPhase2Qr({
       sellerName,
       vatNumber,
-      qrTimestamp,
+      timestamp: qrTimestamp,
       totalAmount,
       vatAmount,
-      invoiceDigestB64,
-      sigValueB64,
-      pubKeySpki,
-      certSigValue,
-    )
+      invoiceHashBase64: invoiceDigestB64,
+      signatureValueBase64: sigValueB64,
+      publicKeySpki: pubKeySpki,
+      certificateSignatureDer: certSigValue,
+    })
 
     signedXml = signedXml.replace(
       /(<cbc:ID>QR<\/cbc:ID>[\s\S]*?<cbc:EmbeddedDocumentBinaryObject mimeCode="text\/plain">)([^<]*)(<\/cbc:EmbeddedDocumentBinaryObject>)/,
@@ -1587,56 +1589,6 @@ function buildXadesBlock(
   const signedInfo = buildSignedInfo(invoiceDigest, signedPropsDigest)
   const signedProps = buildSignedProperties(signingTime, certDigest, issuerDn, serialNumber)
   return `<sig:UBLDocumentSignatures xmlns:sig="urn:oasis:names:specification:ubl:schema:xsd:CommonSignatureComponents-2" xmlns:sac="urn:oasis:names:specification:ubl:schema:xsd:SignatureAggregateComponents-2" xmlns:sbc="urn:oasis:names:specification:ubl:schema:xsd:SignatureBasicComponents-2"><sac:SignatureInformation><cbc:ID xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">urn:oasis:names:specification:ubl:signature:1</cbc:ID><sbc:ReferencedSignatureID>urn:oasis:names:specification:ubl:signature:Invoice</sbc:ReferencedSignatureID><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="signature">${signedInfo}<ds:SignatureValue>${sigValue}</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>${certPemBody}</ds:X509Certificate></ds:X509Data></ds:KeyInfo><ds:Object><xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Target="signature">${signedProps}</xades:QualifyingProperties></ds:Object></ds:Signature></sac:SignatureInformation></sig:UBLDocumentSignatures>`
-}
-
-function buildPhase2QR(
-  sellerName: string,
-  vatNumber: string,
-  timestamp: string,
-  totalAmount: number,
-  vatAmount: number,
-  hashB64: string,
-  sigB64: string,
-  pubKeySpki: Uint8Array,
-  certSigValue: Uint8Array,
-): string {
-  const all = concatArrays(
-    tlvStr(0x01, sellerName),
-    tlvStr(0x02, vatNumber),
-    // KSA-25 requires the QR timestamp to align with invoice IssueDate + IssueTime.
-    tlvStr(0x03, timestamp),
-    tlvStr(0x04, totalAmount.toFixed(2)),
-    tlvStr(0x05, vatAmount.toFixed(2)),
-    tlvStr(0x06, hashB64),
-    tlvStr(0x07, sigB64),
-    tlvBytes(0x08, pubKeySpki),
-    tlvBytes(0x09, certSigValue),
-  )
-  return bytesToBase64(all)
-}
-
-function tlvStr(tag: number, value: string): Uint8Array {
-  const bytes = new TextEncoder().encode(value)
-  return tlvBytes(tag, bytes)
-}
-
-function tlvBytes(tag: number, bytes: Uint8Array): Uint8Array {
-  const buf = new Uint8Array(2 + bytes.length)
-  buf[0] = tag
-  buf[1] = bytes.length
-  buf.set(bytes, 2)
-  return buf
-}
-
-function concatArrays(...arrs: Uint8Array[]): Uint8Array {
-  const len = arrs.reduce((sum, arr) => sum + arr.length, 0)
-  const out = new Uint8Array(len)
-  let offset = 0
-  for (const arr of arrs) {
-    out.set(arr, offset)
-    offset += arr.length
-  }
-  return out
 }
 
 function saudiIssueDate(date: Date): { date: string; time: string; dateTime: string } {
