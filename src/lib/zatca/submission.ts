@@ -17,6 +17,7 @@ export function isPermanentDemoSandboxBranch(tenantId: string | null | undefined
 export type ZatcaSubmitSource = 'auto_checkout' | 'auto_credit_note' | 'manual_retry' | 'bulk_retry'
 export const ZATCA_FINALIZATION_CLIENT_VERSION = '2.1.0'
 export const ZATCA_FINALIZATION_EDGE_VERSION = '2.1.0'
+export const ZATCA_OUTPUT_STATE_READ_VERSION = '2.0.0'
 export const ZATCA_FINALIZATION_SCHEMA_VERSION = 2
 export type ZatcaCheckoutMode = 'legacy' | 'v2'
 
@@ -51,6 +52,7 @@ export interface ZatcaSubmitResult {
   invoiceStatus: string
   retryable: boolean
   contractMode: ZatcaCheckoutMode
+  legacyCompatible: boolean
   finalizationStatus: string
   artifactStage: string
   documentKind: 'simplified' | 'standard' | null
@@ -217,7 +219,7 @@ export async function getInvoiceZatcaOutputState(params: {
       invoiceId: params.invoiceId,
       branchId: params.branchId,
       action: 'status',
-      clientVersion: ZATCA_FINALIZATION_CLIENT_VERSION,
+      clientVersion: ZATCA_OUTPUT_STATE_READ_VERSION,
     },
   })
   if (error) throw new Error(error.message)
@@ -232,14 +234,15 @@ export async function getInvoiceZatcaOutputState(params: {
     && schemaVersion === ZATCA_FINALIZATION_SCHEMA_VERSION
     && edgeFunctionVersion === ZATCA_FINALIZATION_EDGE_VERSION
     && minimumClientVersion === ZATCA_FINALIZATION_CLIENT_VERSION
-  const legacyCompatible = data?.contractMode === 'legacy'
+  const contractMode: ZatcaCheckoutMode = data?.contractMode === 'legacy' ? 'legacy' : 'v2'
+  const legacyCompatible = contractMode === 'legacy'
     && data?.legacyCompatible === true
+  const legacyVersionCompatible = legacyCompatible
     && edgeFunctionVersion === ZATCA_FINALIZATION_EDGE_VERSION
     && minimumClientVersion === ZATCA_FINALIZATION_CLIENT_VERSION
-  const compatible = v2Compatible || legacyCompatible
-  const contractMode: ZatcaCheckoutMode = legacyCompatible ? 'legacy' : 'v2'
+  const compatible = v2Compatible || legacyVersionCompatible
   const finalizationStatus = String(data?.finalizationStatus ?? 'not_started')
-  const canPrint = compatible && data?.canPrint === true
+  const canPrint = data?.canPrint === true
   return {
     invoiceId,
     contractMode,
@@ -254,7 +257,7 @@ export async function getInvoiceZatcaOutputState(params: {
     artifactStage: String(data?.artifactStage ?? 'none'),
     documentKind: data?.documentKind === 'simplified' || data?.documentKind === 'standard' ? data.documentKind : null,
     canPrint,
-    canShare: compatible && data?.canShare === true,
+    canShare: data?.canShare === true,
     retryAvailable: data?.retryAvailable === true,
     reconciliationRequired: data?.reconciliationRequired === true,
     qrCode: canPrint && typeof data?.qrCode === 'string' ? data.qrCode : null,
@@ -304,6 +307,7 @@ export async function submitInvoiceToZatcaDetailed(
     invoiceStatus,
     retryable: invoiceStatus === 'pending' || invoiceStatus === 'error',
     contractMode: resultContractMode,
+    legacyCompatible: resultContractMode === 'legacy' && data?.legacyCompatible === true,
     finalizationStatus: String(data?.finalizationStatus ?? `${resultContractMode}_${invoiceStatus}`),
     artifactStage: String(data?.artifactStage ?? (resultContractMode === 'legacy' ? 'legacy_pending' : 'none')),
     documentKind: data?.documentKind === 'simplified' || data?.documentKind === 'standard' ? data.documentKind : null,

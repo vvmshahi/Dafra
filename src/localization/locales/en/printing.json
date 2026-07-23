@@ -17,7 +17,7 @@
   "printingFailed": "Printing failed.",
   "receiptFailed": "Receipt print failed.",
   "a4Failed": "A4 print failed.",
-  "qrUnavailable": "The stored QR code is unavailable. Printing remains available without it.",
+  "qrUnavailable": "The finalized QR code is unavailable. Printing is blocked until it is ready.",
   "receiptSent": "Receipt sent to printer",
   "tryAgain": "Try Again",
   "browserDialog": "Use the browser print dialog",

@@ -1,32 +1,64 @@
 export const QR_RENDER_TIMEOUT_MS = 5_000
 export const QR_DISPLAY_TIMEOUT_MS = 8_000
 
+function hasFinalStoredOutput(outputState) {
+  if (!outputState || outputState.canPrint !== true || outputState.reconciliationRequired === true) {
+    return false
+  }
+
+  if (outputState.contractMode === 'legacy') {
+    const accepted = outputState.invoiceStatus === 'reported'
+      || outputState.invoiceStatus === 'cleared'
+    const finalMarker = outputState.artifactStage === 'legacy_final'
+      || outputState.finalizationStatus === 'legacy_reported'
+      || outputState.finalizationStatus === 'legacy_cleared'
+      || outputState.finalizationStatus === 'legacy_final'
+    return outputState.legacyCompatible === true && accepted && finalMarker
+  }
+
+  if (outputState.contractMode !== 'v2') return false
+  if (outputState.documentKind === 'simplified') {
+    return outputState.artifactStage === 'simplified_final'
+  }
+  if (outputState.documentKind === 'standard') {
+    return outputState.invoiceStatus === 'cleared'
+      && outputState.artifactStage === 'standard_cleared'
+      && outputState.finalizationStatus === 'cleared_final'
+  }
+  return false
+}
+
 /**
  * Select the finalized QR exposed by the authenticated output-state contract.
  * The Edge response has already selected the correct stored legacy/v2 field;
- * the browser must not reinterpret or regenerate that payload.
+ * the browser must not reinterpret or regenerate that payload. Capability,
+ * readiness, and checkout-version metadata must not erase a printable output
+ * that the authenticated server contract has already finalized.
  */
 export function selectStoredOutputStateQr(outputState) {
-  if (!outputState || outputState.compatible !== true || outputState.canPrint !== true) return null
-  if (outputState.contractMode === 'legacy') {
-    if (outputState.legacyCompatible !== true) return null
-  } else if (outputState.contractMode !== 'v2') {
-    return null
-  }
+  if (!hasFinalStoredOutput(outputState)) return null
 
   const payload = typeof outputState.qrCode === 'string' ? outputState.qrCode.trim() : ''
   return payload || null
 }
 
 /**
- * Reported/cleared invoices remain printable if QR image rendering fails.
- * A positive authenticated output-state decision also covers finalized v2
- * output that is printable before the invoice status changes.
+ * Printing is permitted only after the authenticated finalized payload has
+ * rendered to a non-empty QR image. A missing or failed QR is visible but can
+ * never produce a customer print without its finalized QR.
  */
-export function canOpenStoredInvoicePrint(invoiceStatus, outputStateCanPrint) {
+export function canOpenStoredInvoicePrint(
+  outputStateCanPrint,
+  storedQrPayload,
+  qrStatus,
+  qrDataUrl,
+) {
   return outputStateCanPrint === true
-    || invoiceStatus === 'reported'
-    || invoiceStatus === 'cleared'
+    && typeof storedQrPayload === 'string'
+    && storedQrPayload.trim().length > 0
+    && qrStatus === 'ready'
+    && typeof qrDataUrl === 'string'
+    && qrDataUrl.trim().length > 0
 }
 
 /**

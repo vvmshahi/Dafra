@@ -119,7 +119,9 @@ assert.match(rollback, /immutable_finalization_enabled = false/)
 assert.match(rollback, /simplified_enabled = false/)
 assert.match(rollback, /standard_enabled = false/)
 assert.match(verification, /v_total <> 15 OR v_pass <> 15 OR v_fail <> 0/)
-assert.match(verification, /BEGIN TRANSACTION READ ONLY/)
+assert.match(verification, /BEGIN;/)
+assert.match(verification, /CREATE TEMP TABLE zatca_branch_gate_results/)
+assert.match(verification, /ROLLBACK;/)
 
 for (const runtimeFile of [edge, client, pos]) {
   assert.doesNotMatch(runtimeFile, /371dee75-6e46-496e-89e7-1a7492b51a3c/)

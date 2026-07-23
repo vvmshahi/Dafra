@@ -214,12 +214,14 @@ export default function ReceiptPrintPage() {
       sandboxQrCode: sandboxValidation?.qrCode,
     })
     : selectStoredOutputStateQr(outputStateMatchesInvoice ? outputState : null)
-  const printReady = sandboxDocument
-    ? sandboxValidated
-    : canOpenStoredInvoicePrint(
-      invoice?.zatca_status,
-      outputStateMatchesInvoice && outputState?.canPrint === true,
-    )
+  const printReady = canOpenStoredInvoicePrint(
+    sandboxDocument
+      ? sandboxValidated
+      : outputStateMatchesInvoice && outputState?.canPrint === true,
+    selectedQrPayload,
+    qrStatus,
+    qrDataUrl,
+  )
 
   useEffect(() => {
     if (!invoice?.id) return
@@ -468,10 +470,9 @@ export default function ReceiptPrintPage() {
 
   function handlePrint() {
     if (!printReady) {
-      toast.error(t('printing:printingFailed'))
+      toast.error(t('printing:qrUnavailable'))
       return
     }
-    if (qrStatus !== 'ready') toast.warning(t('printing:qrUnavailable'))
     window.print()
   }
 

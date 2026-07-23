@@ -24,6 +24,11 @@ import {
   type ZatcaCheckoutMode,
 } from '@/lib/zatca/submission'
 import { selectStoredInvoiceQr } from '@/lib/zatca/qrSelector'
+import {
+  renderStoredQrDataUrl,
+  selectStoredOutputStateQr,
+  type QrDisplayStatus,
+} from '@/lib/zatca/qrDisplay.mjs'
 import { toast } from 'sonner'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
@@ -492,44 +497,37 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
   onOpenInvoiceStatus: () => void
   afterSaleAction: 'receipt' | 'a4' | 'both'
 }) {
-  const { t } = useTranslation(['pos', 'payments', 'common'])
+  const { t } = useTranslation(['pos', 'payments', 'printing', 'common'])
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [qrStatus, setQrStatus] = useState<QrDisplayStatus>('loading')
   const [printingReceipt, setPrintingReceipt] = useState(false)
   const [printErrorKey, setPrintErrorKey] = useState<string | null>(null)
   const [retryingFinalization, setRetryingFinalization] = useState(false)
   const documentLanguage = normalizeDocumentLanguage(receipt.documentLanguage)
   const documentViewModel = useMemo(() => documentFromPosReceipt({ ...receipt, zatcaQrCode: receipt.zatcaQrCode, presentationSettings: branch?.presentation_settings, branchDefaults: branch ?? undefined, items: receipt.items.map(item => ({ name: item.name, nameAr: item.nameAr, qty: item.qty, unitPrice: item.unitPrice, lineTotal: item.lineTotal, subtotal: item.subtotal, taxAmount: item.taxAmount, taxRate: item.taxRate, taxCategory: item.taxCategory })), payments: receipt.payments.map(payment => ({ method: payment.method, amount: payment.amount, amountReceived: payment.amountReceived, changeAmount: payment.changeAmount })) }), [receipt, branch])
+  const printReady = receipt.canPrint && qrStatus === 'ready' && Boolean(qrDataUrl)
 
   useEffect(() => {
     async function genQR() {
-      try {
-        const payload = selectStoredInvoiceQr({
-          zatca_finalization_version: 2,
-          zatca_artifact_provenance: 'server_v2',
-          zatca_document_kind: receipt.documentKind,
-          zatca_lifecycle_state: receipt.finalizationStatus,
-          zatca_artifact_stage: receipt.artifactStage,
-          zatca_simplified_qr: receipt.documentKind === 'simplified' ? receipt.zatcaQrCode : null,
-          zatca_cleared_qr: receipt.documentKind === 'standard' ? receipt.zatcaQrCode : null,
-        }, receipt.sandboxGenerated ? 'sandbox' : 'production', {
-          sandboxGenerated: receipt.sandboxGenerated,
-          sandboxQrCode: receipt.zatcaQrCode,
-        })
-        if (!payload) {
-          setQrDataUrl(null)
-          return
-        }
-        const url = await QRCode.toDataURL(payload, {
+      setQrStatus('loading')
+      const result = await renderStoredQrDataUrl(
+        receipt.zatcaQrCode,
+        payload => QRCode.toDataURL(payload, {
           errorCorrectionLevel: 'M', width: 160, margin: 1,
           color: { dark: '#0F2419', light: '#FFFFFF' },
-        })
-        setQrDataUrl(url)
-      } catch {}
+        }),
+      )
+      setQrDataUrl(result.dataUrl)
+      setQrStatus(result.status)
     }
-    genQR()
-  }, [receipt])
+    void genQR()
+  }, [receipt.zatcaQrCode])
 
   function shareWhatsApp() {
+    if (!printReady) {
+      toast.error(t('printing:qrUnavailable'))
+      return
+    }
     if (!receipt.customerPhone) return
     const digits = receipt.customerPhone.replace(/\D/g, '')
     const wa = digits.startsWith('966') ? digits : digits.startsWith('0') ? '966' + digits.slice(1) : digits
@@ -553,7 +551,10 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
   }
 
   async function printPosA4() {
-    if (!receipt.canPrint) return
+    if (!printReady) {
+      toast.error(t('printing:qrUnavailable'))
+      return
+    }
     const existing = document.getElementById('pos-pdf-print-style')
     existing?.remove()
     const s = document.createElement('style')
@@ -588,7 +589,11 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
   }
 
   async function openReceiptPrintPage() {
-    if (printingReceipt || !receipt.canPrint) return
+    if (printingReceipt) return
+    if (!printReady) {
+      toast.error(t('printing:qrUnavailable'))
+      return
+    }
     setPrintErrorKey(null)
 
     setPrintingReceipt(true)
@@ -721,7 +726,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
               {afterSaleAction !== 'a4' && (
                 <button
                   onClick={() => void openReceiptPrintPage()}
-                  disabled={printingReceipt || !receipt.canPrint}
+                  disabled={printingReceipt || !printReady}
                   className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
                 >
                   {printingReceipt ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
@@ -731,7 +736,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
               {afterSaleAction === 'a4' || afterSaleAction === 'both' ? (
                 <button
                   onClick={printPosA4}
-                  disabled={!receipt.canPrint}
+                  disabled={!printReady}
                   className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
                 >
                   <Printer size={14} />
@@ -741,7 +746,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
               {receipt.customerPhone && (
                 <button
                   onClick={shareWhatsApp}
-                  disabled={!receipt.canPrint}
+                  disabled={!printReady}
                   className="flex-1 py-2.5 bg-[#25D366] text-white text-sm font-semibold rounded-xl hover:bg-[#22c55e] transition-colors flex items-center justify-center gap-1.5"
                 >
                   <WhatsAppIcon size={14} />
@@ -772,6 +777,12 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                     {t('pos:zatca.viewInvoice')}
                   </button>
                 </div>
+              </div>
+            )}
+            {receipt.canPrint && qrStatus !== 'loading' && !printReady && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">
+                <AlertCircle size={14} className="mx-auto mb-1" />
+                {t('printing:qrUnavailable')}
               </div>
             )}
             <button onClick={onNewSale}
@@ -2046,8 +2057,8 @@ export default function POSPage() {
             finalizationStatus = legacy.finalizationStatus
             artifactStage = legacy.artifactStage
             documentKind = legacy.documentKind ?? documentKind
-            finalQrCode = legacy.qrCode
-            canPrintCustomerCopy = legacy.canPrint && Boolean(legacy.qrCode)
+            finalQrCode = selectStoredOutputStateQr(legacy)
+            canPrintCustomerCopy = Boolean(finalQrCode)
             if (!canPrintCustomerCopy) {
               finalizationError = legacy.retryable
                 ? 'Legacy ZATCA submission is pending and can be retried.'
@@ -2080,21 +2091,18 @@ export default function POSPage() {
             finalizationStatus = output.finalizationStatus
             artifactStage = output.artifactStage
             documentKind = output.documentKind
-            finalQrCode = output.qrCode
-            canPrintCustomerCopy = output.canPrint && Boolean(output.qrCode)
+            finalQrCode = selectStoredOutputStateQr(output)
+            canPrintCustomerCopy = Boolean(finalQrCode)
             if (!canPrintCustomerCopy) {
               finalizationError = output.error ?? 'Standard invoice is awaiting a validated cleared artifact.'
             }
           } else {
-            finalQrCode = selectStoredInvoiceQr({
-              zatca_finalization_version: 2,
-              zatca_artifact_provenance: 'server_v2',
-              zatca_document_kind: 'simplified',
-              zatca_lifecycle_state: finalization.finalizationStatus,
-              zatca_artifact_stage: finalization.artifactStage,
-              zatca_simplified_qr: finalization.qrCode,
-            }, 'production')
-            canPrintCustomerCopy = finalization.canPrint && Boolean(finalQrCode)
+            finalQrCode = selectStoredOutputStateQr({
+              ...finalization,
+              contractMode: 'v2',
+              legacyCompatible: false,
+            })
+            canPrintCustomerCopy = Boolean(finalQrCode)
           }
         }
       } catch (finalizationFailure) {
@@ -2439,16 +2447,17 @@ export default function POSPage() {
         }
       }
       const output = await getInvoiceZatcaOutputState({ invoiceId: receipt.invoiceId, branchId: branch.id })
+      const storedQrCode = selectStoredOutputStateQr(output)
       setReceipt(current => current ? {
         ...current,
-        zatcaQrCode: output.qrCode ?? '',
-        canPrint: output.canPrint && Boolean(output.qrCode),
+        zatcaQrCode: storedQrCode ?? '',
+        canPrint: Boolean(storedQrCode),
         finalizationStatus: output.finalizationStatus,
         artifactStage: output.artifactStage,
         documentKind: output.documentKind,
-        finalizationError: output.canPrint ? null : (output.error ?? 'Invoice finalization is still pending.'),
+        finalizationError: storedQrCode ? null : (output.error ?? 'The finalized QR code is unavailable.'),
       } : current)
-      if (output.canPrint) toast.success(t('pos:zatca.success'))
+      if (storedQrCode) toast.success(t('pos:zatca.success'))
       else toast.warning(t('pos:zatca.saleCompletedAttention'))
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Invoice finalization requires attention.'

@@ -200,12 +200,14 @@ export default function InvoiceDetailPage() {
     && (sandboxDocument
       ? sandboxValidated
       : outputStateMatchesInvoice && outputState?.canPrint === true)
-  const printReady = sandboxDocument
-    ? sandboxValidated
-    : canOpenStoredInvoicePrint(
-      invoice?.zatca_status,
-      outputStateMatchesInvoice && outputState?.canPrint === true,
-    )
+  const printReady = canOpenStoredInvoicePrint(
+    sandboxDocument
+      ? sandboxValidated
+      : outputStateMatchesInvoice && outputState?.canPrint === true,
+    selectedQrPayload,
+    qrStatus,
+    qrDataUrl,
+  )
 
   useEffect(() => {
     if (!invoice?.id) return
@@ -399,16 +401,11 @@ export default function InvoiceDetailPage() {
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
-  function warnIfQrUnavailable() {
-    if (qrStatus !== 'ready') toast.warning(t('printing:qrUnavailable'))
-  }
-
   async function handlePrintA4() {
     if (!invoice || !printReady) {
-      toast.error(t('printing:printingFailed'))
+      toast.error(t('printing:qrUnavailable'))
       return
     }
-    warnIfQrUnavailable()
     if (!isElectron()) {
       window.print()
       return
@@ -424,10 +421,9 @@ export default function InvoiceDetailPage() {
   async function handlePrintThermal() {
     if (thermalPrinting) return
     if (!invoice || !printReady) {
-      toast.error(t('printing:printingFailed'))
+      toast.error(t('printing:qrUnavailable'))
       return
     }
-    warnIfQrUnavailable()
 
     setThermalPrinting(true)
     try {

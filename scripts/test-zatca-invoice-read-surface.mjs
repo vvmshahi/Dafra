@@ -191,7 +191,9 @@ await test('safe output state exposes only approved customer-output metadata', (
   assert.match(submission, /const invoiceId = String\(data\?\.invoiceId/)
   assert.match(submission, /const minimumClientVersion = String\(data\?\.minimumClientVersion/)
   assert.match(submission, /invoiceId !== params\.invoiceId/)
-  assert.match(submission, /const canPrint = compatible && data\?\.canPrint === true/)
+  assert.match(submission, /clientVersion: ZATCA_OUTPUT_STATE_READ_VERSION/)
+  assert.match(submission, /const canPrint = data\?\.canPrint === true/)
+  assert.match(submission, /qrCode: canPrint && typeof data\?\.qrCode === 'string'/)
 })
 
 await test('service-role Edge reads retain required raw compliance fields', () => {

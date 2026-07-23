@@ -407,29 +407,70 @@ await test('branch seller lookup uses hosted-compatible columns and preserves qu
   assert.equal((edge.match(/\[zatca-submit\] branch lookup failed:/g) ?? []).length, 3)
   assert.equal((edge.match(/registered_seller_name: branchScope\.business_name \|\| branchScope\.name/g) ?? []).length, 3)
 })
-await test('stored output-state QR contract supports legacy and v2 invoice reads', () => {
-  const legacy = {
+await test('stored output-state QR contract supports legacy and v2 invoice reads', async () => {
+  const legacyReported = {
     contractMode: 'legacy',
     legacyCompatible: true,
-    compatible: true,
+    invoiceStatus: 'reported',
+    finalizationStatus: 'legacy_reported',
+    artifactStage: 'legacy_final',
+    documentKind: 'simplified',
     canPrint: true,
     qrCode: 'LEGACY-FINAL-QR',
   }
-  const v2 = {
+  const legacyFinal = {
+    ...legacyReported,
+    invoiceStatus: 'cleared',
+    finalizationStatus: 'legacy_final',
+    qrCode: 'LEGACY-CLEARED-QR',
+  }
+  const v2SimplifiedFinal = {
     contractMode: 'v2',
     legacyCompatible: false,
-    compatible: true,
+    invoiceStatus: 'pending',
+    finalizationStatus: 'locally_finalized',
+    artifactStage: 'simplified_final',
+    documentKind: 'simplified',
     canPrint: true,
     qrCode: 'V2-FINAL-QR',
   }
-  assert.equal(selectStoredOutputStateQr(legacy), 'LEGACY-FINAL-QR')
-  assert.equal(selectStoredOutputStateQr(v2), 'V2-FINAL-QR')
-  assert.equal(selectStoredOutputStateQr({ ...legacy, canPrint: false }), null)
-  assert.equal(selectStoredOutputStateQr({ ...legacy, qrCode: null }), null)
+  for (const [state, expectedQr] of [
+    [legacyReported, 'LEGACY-FINAL-QR'],
+    [legacyFinal, 'LEGACY-CLEARED-QR'],
+    [v2SimplifiedFinal, 'V2-FINAL-QR'],
+  ]) {
+    const selectedQr = selectStoredOutputStateQr(state)
+    assert.equal(selectedQr, expectedQr)
+    const rendered = await renderStoredQrDataUrl(
+      selectedQr,
+      async payload => `data:image/png;base64,${payload}`,
+    )
+    assert.equal(
+      canOpenStoredInvoicePrint(state.canPrint, selectedQr, rendered.status, rendered.dataUrl),
+      true,
+    )
+  }
+  assert.equal(selectStoredOutputStateQr({
+    ...legacyReported,
+    compatible: false,
+    acknowledged: false,
+    branchV2Ready: false,
+    checkoutMode: 'legacy',
+  }), 'LEGACY-FINAL-QR', 'readiness/capability metadata must not erase authenticated final QR')
+  assert.equal(selectStoredOutputStateQr({ ...legacyReported, canPrint: false }), null)
+  assert.equal(selectStoredOutputStateQr({ ...legacyReported, qrCode: null }), null)
+  assert.equal(selectStoredOutputStateQr({
+    ...v2SimplifiedFinal,
+    reconciliationRequired: true,
+  }), null)
   for (const page of [invoiceDetail, receiptPrint]) {
     assert.match(page, /selectStoredOutputStateQr\(outputStateMatchesInvoice \? outputState : null\)/)
     assert.doesNotMatch(page, /zatca_finalization_version:\s*2/)
   }
+  assert.match(pos, /selectStoredOutputStateQr\(legacy\)/)
+  assert.match(pos, /selectStoredOutputStateQr\(output\)/)
+  assert.match(pos, /selectStoredOutputStateQr\(\{\s*\.\.\.finalization,\s*contractMode: 'v2'/)
+  assert.match(pos, /renderStoredQrDataUrl\(\s*receipt\.zatcaQrCode/)
 })
 await test('stored QR rendering succeeds, fails closed, and has a bounded wait', async () => {
   let renderedPayload = null
@@ -477,11 +518,11 @@ await test('stored QR rendering succeeds, fails closed, and has a bounded wait',
   assert.deepEqual(timedOut, { status: 'failed', dataUrl: null })
   assert.ok(Date.now() - started < 500, 'QR renderer timeout must be bounded')
 })
-await test('thermal and A4 printing are independent from QR image success', () => {
-  assert.equal(canOpenStoredInvoicePrint('reported', false), true)
-  assert.equal(canOpenStoredInvoicePrint('cleared', false), true)
-  assert.equal(canOpenStoredInvoicePrint('pending', true), true)
-  assert.equal(canOpenStoredInvoicePrint('pending', false), false)
+await test('thermal and A4 printing require the finalized rendered QR', () => {
+  assert.equal(canOpenStoredInvoicePrint(true, 'FINAL-QR', 'ready', 'data:image/png;base64,qr'), true)
+  assert.equal(canOpenStoredInvoicePrint(true, null, 'missing', null), false)
+  assert.equal(canOpenStoredInvoicePrint(true, 'FINAL-QR', 'failed', null), false)
+  assert.equal(canOpenStoredInvoicePrint(false, 'FINAL-QR', 'ready', 'data:image/png;base64,qr'), false)
   assert.match(invoiceDetail, /async function handlePrintA4\(\)[\s\S]*?window\.print\(\)/)
   assert.match(invoiceDetail, /async function handlePrintThermal\(\)[\s\S]*?printReceiptInHiddenFrame\(invoice\.id\)/)
   assert.match(invoiceDetail, /disabled=\{thermalPrinting \|\| !printReady\}/)
@@ -501,12 +542,16 @@ await test('thermal and A4 printing are independent from QR image success', () =
   )
   for (const printReadiness of [invoiceAutoPrint, receiptAutoPrint, electronReceiptReady]) {
     assert.match(printReadiness, /printReady/)
-    assert.doesNotMatch(printReadiness, /qrStatus|qrDataUrl|QR_(?:RENDER|DISPLAY)_TIMEOUT/)
   }
   for (const page of [invoiceDetail, receiptPrint]) {
+    assert.match(page, /canOpenStoredInvoicePrint\([\s\S]*?selectedQrPayload,\s*qrStatus,\s*qrDataUrl/)
     assert.match(page, /QR_DISPLAY_TIMEOUT_MS/)
     assert.match(page, /current === 'loading' \? 'failed' : current/)
+    assert.match(page, /toast\.error\(t\('printing:qrUnavailable'\)\)/)
   }
+  assert.match(pos, /const printReady = receipt\.canPrint && qrStatus === 'ready' && Boolean\(qrDataUrl\)/)
+  assert.match(pos, /disabled=\{printingReceipt \|\| !printReady\}/)
+  assert.match(pos, /disabled=\{!printReady\}/)
   assert.match(receiptPrint, /qrUnavailable/)
   assert.doesNotMatch(invoiceDetail, /outputReady/)
   assert.doesNotMatch(receiptPrint, /outputReady/)

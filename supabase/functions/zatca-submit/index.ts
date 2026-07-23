@@ -42,6 +42,7 @@ const FIRST_INVOICE_HASH =
 const FINALIZATION_SCHEMA_VERSION = 2
 const FINALIZATION_EDGE_VERSION = '2.1.0'
 const FINALIZATION_CLIENT_VERSION = '2.1.0'
+const OUTPUT_STATE_READ_CLIENT_VERSIONS = new Set(['2.0.0', FINALIZATION_CLIENT_VERSION])
 
 interface SubmissionCredentials {
   environment: 'sandbox' | 'production'
@@ -2874,7 +2875,8 @@ Deno.serve(async (req: Request) => {
 
     const actionlessLegacyRequest = rawAction === null && clientVersion === null
     const compatibleStatusRequest = action === 'status'
-      && clientVersion === FINALIZATION_CLIENT_VERSION
+      && clientVersion !== null
+      && OUTPUT_STATE_READ_CLIENT_VERSIONS.has(clientVersion)
     if (!actionlessLegacyRequest
         && !compatibleStatusRequest
         && (!capabilities.compatible || clientVersion !== FINALIZATION_CLIENT_VERSION)) {
