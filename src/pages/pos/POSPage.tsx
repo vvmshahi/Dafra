@@ -17,6 +17,7 @@ import { updateCachedInvoiceRows, upsertInvoiceListRow } from '@/lib/invoices/in
 import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
 import {
   finalizeInvoiceForZatca,
+  getZatcaFinalizationCapabilities,
   getInvoiceZatcaOutputState,
   isPermanentDemoSandboxBranch,
   requireZatcaFinalizationCapability,
@@ -1711,6 +1712,33 @@ export default function POSPage() {
     return () => { cancelled = true }
   }, [profile?.tenant_id, profile?.branch_id])
 
+  useEffect(() => {
+    const userId = user?.id
+    const tenantId = profile?.tenant_id
+    const branchId = profile?.branch_id
+    if (!userId || !tenantId || !branchId) return
+
+    let cancelled = false
+    void getZatcaFinalizationCapabilities(branchId)
+      .then(capability => {
+        if (cancelled || capability.acknowledged) return
+        console.warn('[POSPage] ZATCA capability acknowledgement unavailable', {
+          branchId,
+          status: capability.acknowledgementStatus,
+          reason: capability.acknowledgementReason,
+        })
+      })
+      .catch(error => {
+        if (cancelled) return
+        console.warn('[POSPage] ZATCA capability handshake failed', {
+          branchId,
+          reason: error instanceof Error ? error.message : 'unknown_error',
+        })
+      })
+
+    return () => { cancelled = true }
+  }, [user?.id, profile?.tenant_id, profile?.branch_id])
+
   // ── Persist cart ─────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -2107,8 +2135,8 @@ export default function POSPage() {
       }
       if (!checkout) {
         if (!demoSandbox) {
-          // Outside the controlled atomic canary, preserve the existing
-          // document-kind routing until that branch is explicitly enabled.
+          // Preserve document-kind routing whenever authoritative eligibility
+          // keeps this branch on the legacy path.
           // No commercial write occurred in the atomic rollout probe.
           const capability = await requireZatcaFinalizationCapability(
             branch.id,

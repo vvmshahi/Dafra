@@ -192,6 +192,8 @@ function logSubmitAuthorization(params: {
   tenantId?: string | null
   branchId?: string | null
   callerRole?: string | null
+  callerTenantId?: string | null
+  callerBranchId?: string | null
   allowed: boolean
 }) {
   console.info('[zatca-submit] authorization decision:', {
@@ -199,6 +201,8 @@ function logSubmitAuthorization(params: {
     tenantId: params.tenantId ?? null,
     branchId: params.branchId ?? null,
     callerRole: params.callerRole ?? null,
+    callerTenantId: params.callerTenantId ?? null,
+    callerBranchId: params.callerBranchId ?? null,
     allowed: params.allowed,
   })
 }
@@ -346,6 +350,8 @@ async function authorizeBranchAccess(
     logSubmitAuthorization({
       branchId,
       callerRole: caller.role,
+      callerTenantId: caller.tenant_id,
+      callerBranchId: caller.branch_id,
       allowed: false,
     })
     return { ok: false, response: jsonResponse({ error: 'Branch not found or access denied' }, 404) }
@@ -361,6 +367,8 @@ async function authorizeBranchAccess(
     tenantId: target.tenantId,
     branchId: target.branchId,
     callerRole: caller.role,
+    callerTenantId: caller.tenant_id,
+    callerBranchId: caller.branch_id,
     allowed,
   })
 
@@ -2414,6 +2422,14 @@ interface AtomicSimplifiedRolloutV2 {
   branchGateEnabled: boolean
 }
 
+interface AtomicSimplifiedEligibilitySyncV2 {
+  previousGateState: boolean | null
+  resultingGateState: boolean
+  readinessResult: boolean
+  blockingReason: string
+  action: 'inserted' | 'updated' | 'unchanged' | 'unavailable'
+}
+
 function rpcObject(value: any): Record<string, any> {
   if (Array.isArray(value)) return value[0] ?? {}
   return value && typeof value === 'object' ? value : {}
@@ -2493,6 +2509,36 @@ async function loadAtomicSimplifiedRolloutV2(
       && runtime.data?.atomic_simplified_checkout_enabled === true,
     branchGateEnabled: branchGate.error == null
       && branchGate.data?.enabled === true,
+  }
+}
+
+async function syncAtomicSimplifiedEligibilityV2(
+  db: any,
+  branchId: string,
+  userId: string,
+): Promise<AtomicSimplifiedEligibilitySyncV2 | null> {
+  const { data, error } = await db.rpc('sync_zatca_atomic_checkout_branch_gates_v2', {
+    p_branch_id: branchId,
+    p_actor_user_id: userId,
+  })
+  if (error) {
+    console.warn('[zatca-submit] atomic eligibility synchronization unavailable:',
+      safeZatcaText(error.message, 160))
+    return null
+  }
+  const result = rpcObject(data)
+  if (String(result.branch_id ?? '') !== branchId) return null
+  const action = ['inserted', 'updated', 'unchanged'].includes(String(result.action ?? ''))
+    ? result.action as 'inserted' | 'updated' | 'unchanged'
+    : 'unavailable'
+  return {
+    previousGateState: typeof result.previous_gate_state === 'boolean'
+      ? result.previous_gate_state
+      : null,
+    resultingGateState: result.resulting_gate_state === true,
+    readinessResult: result.readiness_result === true,
+    blockingReason: String(result.blocking_reason ?? 'eligibility_unknown'),
+    action,
   }
 }
 
@@ -3767,24 +3813,50 @@ Deno.serve(async (req: Request) => {
       const branchAuth = await authorizeBranchAccess(supabase as any, branchId, callerProfile)
       if (!branchAuth.ok) return branchAuth.response
 
-      const atomicRollout = await loadAtomicSimplifiedRolloutV2(
+      const existingAtomicRollout = await loadAtomicSimplifiedRolloutV2(
         supabase as any,
         branchAuth.target.tenantId,
         branchId,
       )
-      const branchCapabilities = resolveAtomicSimplifiedCheckoutCapability(
-        capabilities,
-        atomicRollout,
-      ) as FinalizationCapabilitiesV2
       let readiness = await loadBranchReadinessV2(supabase as any, branchId, user.id)
-      if (
-        branchCapabilities.compatible
-        && branchCapabilities.databaseFeatureEnabled
-        && branchCapabilities.simplifiedEnabled
-        && !branchCapabilities.edgeKillSwitchEnabled
-        && readiness.structurallyReady
-        && clientVersion === FINALIZATION_CLIENT_VERSION
-      ) {
+      const acknowledgementPreviouslyValid = readiness.clientAcknowledged
+      let acknowledgementStatus:
+        | 'written'
+        | 'refreshed'
+        | 'rejected'
+        | 'write_failed'
+        | 'version_mismatch' = 'rejected'
+      let acknowledgementReason = 'acknowledgement_prerequisites_not_met'
+      let acknowledgementExpiresAt: string | null = null
+      const acknowledgementPreconditionFailure = clientVersion !== FINALIZATION_CLIENT_VERSION
+        ? 'version_mismatch'
+        : !capabilities.compatible
+          ? 'runtime_version_incompatible'
+          : !capabilities.databaseFeatureEnabled
+            ? 'immutable_finalization_disabled'
+            : !capabilities.simplifiedEnabled
+              ? 'simplified_finalization_disabled'
+              : capabilities.edgeKillSwitchEnabled
+                ? 'edge_execution_disabled'
+                : !existingAtomicRollout.atomicSimplifiedCheckoutEnabled
+                  ? 'atomic_global_disabled'
+                  : readiness.branchBlocked
+                    ? 'explicitly_blocked'
+                    : !readiness.branchReady
+                      ? 'branch_not_ready'
+                      : !readiness.chainHeadExists
+                        ? 'missing_chain_head'
+                        : !readiness.productionConnected
+                          ? 'missing_production_credentials'
+                          : null
+
+      if (acknowledgementPreconditionFailure === 'version_mismatch') {
+        acknowledgementStatus = 'version_mismatch'
+        acknowledgementReason = acknowledgementPreconditionFailure
+      } else if (acknowledgementPreconditionFailure) {
+        acknowledgementStatus = 'rejected'
+        acknowledgementReason = acknowledgementPreconditionFailure
+      } else {
         const acknowledgement = await supabase.rpc('acknowledge_zatca_client_capability_v2', {
           p_user_id: user.id,
           p_branch_id: branchId,
@@ -3792,22 +3864,109 @@ Deno.serve(async (req: Request) => {
           p_edge_version: FINALIZATION_EDGE_VERSION,
           p_ttl_seconds: 300,
         })
-        if (!acknowledgement.error && rpcObject(acknowledgement.data).acknowledged === true) {
+        const acknowledgementResult = rpcObject(acknowledgement.data)
+        if (acknowledgement.error) {
+          acknowledgementStatus = 'write_failed'
+          acknowledgementReason = safeZatcaText(acknowledgement.error.message, 160)
+            ?? 'acknowledgement_rpc_failed'
+          console.warn('[zatca-submit] capability acknowledgement write failed', {
+            actorUserId: user.id,
+            tenantId: branchAuth.target.tenantId,
+            branchId,
+            reason: acknowledgementReason,
+          })
+        } else if (acknowledgementResult.acknowledged === true) {
           readiness = await loadBranchReadinessV2(supabase as any, branchId, user.id)
+          if (readiness.clientAcknowledged) {
+            acknowledgementStatus = acknowledgementPreviouslyValid ? 'refreshed' : 'written'
+            acknowledgementReason = 'acknowledged'
+            acknowledgementExpiresAt =
+              typeof acknowledgementResult.expiresAt === 'string'
+                ? acknowledgementResult.expiresAt
+                : null
+          } else {
+            acknowledgementStatus = 'write_failed'
+            acknowledgementReason = 'acknowledgement_not_visible_after_write'
+          }
+        } else {
+          acknowledgementReason = safeZatcaText(
+            acknowledgementResult.reason,
+            120,
+          ) ?? 'acknowledgement_rejected'
+          acknowledgementStatus = acknowledgementReason === 'version_mismatch'
+            ? 'version_mismatch'
+            : 'rejected'
         }
       }
+      console.info('[zatca-submit] capability acknowledgement result', {
+        actorUserId: user.id,
+        tenantId: branchAuth.target.tenantId,
+        branchId,
+        status: acknowledgementStatus,
+        reason: acknowledgementReason,
+      })
+      const eligibilitySync = capabilities.compatible
+        && capabilities.databaseFeatureEnabled
+        && capabilities.immutableFinalizationEnabled
+        && capabilities.simplifiedEnabled
+        && existingAtomicRollout.atomicSimplifiedCheckoutEnabled
+        && clientVersion === FINALIZATION_CLIENT_VERSION
+        ? await syncAtomicSimplifiedEligibilityV2(
+            supabase as any,
+            branchId,
+            user.id,
+          )
+        : null
+      const atomicRollout = eligibilitySync
+        ? await loadAtomicSimplifiedRolloutV2(
+            supabase as any,
+            branchAuth.target.tenantId,
+            branchId,
+          )
+        : existingAtomicRollout
+      const branchCapabilities = resolveAtomicSimplifiedCheckoutCapability(
+        capabilities,
+        atomicRollout,
+      ) as FinalizationCapabilitiesV2
       const simplifiedCheckoutMode = branchCheckoutMode(branchCapabilities, readiness)
       const standardCheckoutMode = simplifiedCheckoutMode === 'v2' && branchCapabilities.standardEnabled
         ? 'v2'
         : 'legacy'
+      const atomicEligibilityReason = !capabilities.compatible
+        ? 'version_incompatible'
+        : !capabilities.databaseFeatureEnabled
+          ? 'immutable_finalization_disabled'
+          : !capabilities.simplifiedEnabled
+            ? 'simplified_finalization_disabled'
+            : !existingAtomicRollout.atomicSimplifiedCheckoutEnabled
+              ? 'atomic_global_disabled'
+              : capabilities.edgeKillSwitchEnabled
+                ? 'edge_execution_disabled'
+                : clientVersion !== FINALIZATION_CLIENT_VERSION
+                  ? 'client_request_version_incompatible'
+                  : eligibilitySync?.blockingReason
+                    ?? (atomicRollout.branchGateEnabled
+                      ? 'eligibility_sync_unavailable_existing_gate_preserved'
+                      : 'eligibility_sync_unavailable')
       return jsonResponse({
         ...branchCapabilities,
         ...readiness,
         acknowledged: readiness.clientAcknowledged,
         branchV2Ready: simplifiedCheckoutMode === 'v2',
+        atomicSimplifiedEligible: eligibilitySync?.readinessResult === true,
+        atomicSimplifiedEnabled: simplifiedCheckoutMode === 'v2',
+        atomicBranchGateEnabled: atomicRollout.branchGateEnabled,
+        atomicEligibilityReason,
+        atomicGateSyncAction: eligibilitySync?.action ?? 'unavailable',
+        acknowledgementStatus,
+        acknowledgementReason,
+        acknowledgementExpiresAt,
         checkoutMode: simplifiedCheckoutMode,
         simplifiedCheckoutMode,
         standardCheckoutMode,
+        standardEligibilityReason: branchCapabilities.standardEnabled
+          ? (standardCheckoutMode === 'v2' ? 'standard_enabled' : 'standard_not_ready')
+          : 'standard_disabled',
       })
     }
 
@@ -3908,33 +4067,15 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      const [atomicRuntimeResult, atomicBranchGateResult] = await Promise.all([
-        supabase.from('zatca_finalization_runtime')
-          .select('atomic_simplified_checkout_enabled')
-          .eq('singleton', true)
-          .maybeSingle(),
-        supabase.from('zatca_atomic_checkout_branch_gates_v2')
-          .select('enabled')
-          .eq('tenant_id', branchAuth.target.tenantId)
-          .eq('branch_id', branchId)
-          .maybeSingle(),
-      ])
-      const atomicRolloutEnabled = atomicRuntimeResult.error == null
-        && atomicBranchGateResult.error == null
-        && atomicRuntimeResult.data?.atomic_simplified_checkout_enabled === true
-        && atomicBranchGateResult.data?.enabled === true
-      if (!capabilities.databaseFeatureEnabled
-          || !capabilities.immutableFinalizationEnabled
-          || !capabilities.simplifiedEnabled
-          || !atomicRolloutEnabled) {
-        return jsonResponse({
-          status: 'legacy_required',
-          reason: 'atomic_rollout_disabled',
-        })
-      }
-
+      const existingAtomicRollout = await loadAtomicSimplifiedRolloutV2(
+        supabase as any,
+        branchAuth.target.tenantId,
+        branchId,
+      )
       let readiness = await loadBranchReadinessV2(supabase as any, branchId, user.id)
-      if (readiness.structurallyReady && !readiness.clientAcknowledged) {
+      if (existingAtomicRollout.atomicSimplifiedCheckoutEnabled
+          && readiness.structurallyReady
+          && !readiness.clientAcknowledged) {
         const acknowledgement = await supabase.rpc('acknowledge_zatca_client_capability_v2', {
           p_user_id: user.id,
           p_branch_id: branchId,
@@ -3946,11 +4087,45 @@ Deno.serve(async (req: Request) => {
           readiness = await loadBranchReadinessV2(supabase as any, branchId, user.id)
         }
       }
+      const eligibilitySync = capabilities.databaseFeatureEnabled
+        && capabilities.immutableFinalizationEnabled
+        && capabilities.simplifiedEnabled
+        && existingAtomicRollout.atomicSimplifiedCheckoutEnabled
+        ? await syncAtomicSimplifiedEligibilityV2(
+            supabase as any,
+            branchId,
+            user.id,
+          )
+        : null
+      const atomicRollout = eligibilitySync
+        ? await loadAtomicSimplifiedRolloutV2(
+            supabase as any,
+            branchAuth.target.tenantId,
+            branchId,
+          )
+        : existingAtomicRollout
+      const atomicRolloutEnabled = atomicRollout.atomicSimplifiedCheckoutEnabled
+        && atomicRollout.branchGateEnabled
+      if (!capabilities.databaseFeatureEnabled
+          || !capabilities.immutableFinalizationEnabled
+          || !capabilities.simplifiedEnabled
+          || !atomicRolloutEnabled) {
+        return jsonResponse({
+          status: 'legacy_required',
+          reason: 'atomic_rollout_disabled',
+          blockingReason: eligibilitySync?.blockingReason
+            ?? (!existingAtomicRollout.atomicSimplifiedCheckoutEnabled
+              ? 'atomic_global_disabled'
+              : 'atomic_rollout_disabled'),
+        })
+      }
+
       if (!readiness.structurallyReady || !readiness.clientAcknowledged
           || readiness.branchBlocked || !readiness.productionConnected) {
         return jsonResponse({
           status: 'legacy_required',
           reason: 'atomic_branch_not_ready',
+          blockingReason: eligibilitySync?.blockingReason ?? 'atomic_branch_not_ready',
         })
       }
 

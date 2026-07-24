@@ -21,6 +21,12 @@ export const ZATCA_OUTPUT_STATE_READ_VERSION = '2.0.0'
 export const ZATCA_FINALIZATION_SCHEMA_VERSION = 2
 export type ZatcaCheckoutMode = 'legacy' | 'v2'
 export type ZatcaDocumentKind = 'simplified' | 'standard'
+export type ZatcaCapabilityAcknowledgementStatus =
+  | 'written'
+  | 'refreshed'
+  | 'rejected'
+  | 'write_failed'
+  | 'version_mismatch'
 
 export interface ZatcaFinalizationCapabilities {
   schemaVersion: number | null
@@ -43,6 +49,15 @@ export interface ZatcaFinalizationCapabilities {
   chainHeadExists: boolean
   productionConnected: boolean
   branchV2Ready: boolean
+  atomicSimplifiedEligible: boolean
+  atomicSimplifiedEnabled: boolean
+  atomicBranchGateEnabled: boolean
+  atomicEligibilityReason: string
+  atomicGateSyncAction: 'inserted' | 'updated' | 'unchanged' | 'unavailable'
+  standardEligibilityReason: string
+  acknowledgementStatus: ZatcaCapabilityAcknowledgementStatus
+  acknowledgementReason: string
+  acknowledgementExpiresAt: string | null
   checkoutMode: ZatcaCheckoutMode
   simplifiedCheckoutMode: ZatcaCheckoutMode
   standardCheckoutMode: ZatcaCheckoutMode
@@ -134,6 +149,29 @@ export async function getZatcaFinalizationCapabilities(branchId: string): Promis
     chainHeadExists: data?.chainHeadExists === true,
     productionConnected: data?.productionConnected === true,
     branchV2Ready: data?.branchV2Ready === true,
+    atomicSimplifiedEligible: data?.atomicSimplifiedEligible === true,
+    atomicSimplifiedEnabled: data?.atomicSimplifiedEnabled === true,
+    atomicBranchGateEnabled: data?.atomicBranchGateEnabled === true,
+    atomicEligibilityReason: String(data?.atomicEligibilityReason ?? 'eligibility_unknown'),
+    atomicGateSyncAction: data?.atomicGateSyncAction === 'inserted'
+      || data?.atomicGateSyncAction === 'updated'
+      || data?.atomicGateSyncAction === 'unchanged'
+      ? data.atomicGateSyncAction
+      : 'unavailable',
+    standardEligibilityReason: String(data?.standardEligibilityReason ?? 'standard_disabled'),
+    acknowledgementStatus: data?.acknowledgementStatus === 'written'
+      || data?.acknowledgementStatus === 'refreshed'
+      || data?.acknowledgementStatus === 'rejected'
+      || data?.acknowledgementStatus === 'write_failed'
+      || data?.acknowledgementStatus === 'version_mismatch'
+      ? data.acknowledgementStatus
+      : 'write_failed',
+    acknowledgementReason: String(
+      data?.acknowledgementReason ?? 'acknowledgement_status_missing',
+    ),
+    acknowledgementExpiresAt: typeof data?.acknowledgementExpiresAt === 'string'
+      ? data.acknowledgementExpiresAt
+      : null,
     checkoutMode: data?.checkoutMode === 'v2' ? 'v2' : 'legacy',
     simplifiedCheckoutMode: data?.simplifiedCheckoutMode === 'v2' ? 'v2' : 'legacy',
     standardCheckoutMode: data?.standardCheckoutMode === 'v2' ? 'v2' : 'legacy',
