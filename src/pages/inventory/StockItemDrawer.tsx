@@ -12,6 +12,11 @@ import { useTranslation } from 'react-i18next'
 
 const UNIT_OPTIONS = ['pieces', 'kg', 'grams', 'liters', 'ml', 'boxes', 'bags', 'other'] as const
 
+const createAdjustmentKey = () => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+  return `inventory-adjustment-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 // ── Section label ─────────────────────────────────────────────────────────────
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -48,6 +53,8 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
   const [supplierId, setSupplierId] = useState('')
   const [unitType,   setUnitType]   = useState('pieces')
   const [currentQty, setCurrentQty] = useState('')
+  const [adjustmentReason, setAdjustmentReason] = useState('')
+  const [adjustmentKey, setAdjustmentKey] = useState('')
   const [minQty,     setMinQty]     = useState('')
   const [unitCost,   setUnitCost]   = useState('')
   const [notes,      setNotes]      = useState('')
@@ -60,13 +67,16 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
       setSupplierId(item.supplier_id ?? '')
       setUnitType(item.unit_type)
       setCurrentQty(String(item.current_quantity))
+      setAdjustmentReason('')
+      setAdjustmentKey(createAdjustmentKey())
       setMinQty(String(item.minimum_quantity))
       setUnitCost(String(item.unit_cost))
       setNotes(item.notes ?? '')
     } else {
       setName(''); setNameAr(''); setCategoryId(''); setSupplierId('')
       setUnitType('pieces'); setCurrentQty('0'); setMinQty('0')
-      setUnitCost(''); setNotes('')
+      setUnitCost(''); setNotes(''); setAdjustmentReason('')
+      setAdjustmentKey(createAdjustmentKey())
     }
     setError('')
   }, [open, item])
@@ -76,20 +86,28 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
     if (!name.trim()) { setError(t('inventory:errors.itemNameRequired')); return }
     const cost = parseFloat(unitCost)
     if (isNaN(cost) || cost < 0) { setError(t('inventory:errors.unitCostInvalid')); return }
+    const requestedQuantity = Number(currentQty)
+    if (!Number.isFinite(requestedQuantity) || requestedQuantity < 0) {
+      setError(t('inventory:errors.adjustmentQuantityInvalid'))
+      return
+    }
+    const quantityBefore = Number(item?.current_quantity ?? 0)
+    const adjustmentQuantity = Number((requestedQuantity - quantityBefore).toFixed(3))
+    if (adjustmentQuantity !== 0 && !adjustmentReason.trim()) {
+      setError(t('inventory:errors.adjustmentReasonRequired'))
+      return
+    }
 
     setSaving(true)
     setError('')
 
     try {
       const payload: Record<string, unknown> = {
-        tenant_id:        profile?.tenant_id!,
-        branch_id:        profile?.branch_id!,
         name:             name.trim(),
         name_ar:          nameAr.trim() || null,
         category_id:      categoryId || null,
         supplier_id:      supplierId || null,
         unit_type:        unitType,
-        current_quantity: parseFloat(currentQty) || 0,
         minimum_quantity: parseFloat(minQty) || 0,
         unit_cost:        cost,
         notes:            notes.trim() || null,
@@ -97,12 +115,42 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
 
       const q = supabase as unknown as { from: (t: string) => any }
 
+      let savedItemId = item?.id ?? null
       if (item) {
         const { error: err } = await q.from('inventory_items').update(payload).eq('id', item.id)
         if (err) { console.error('[StockItemDrawer] update failed', err); setError(t('inventory:errors.saveFailed')); return }
       } else {
-        const { error: err } = await q.from('inventory_items').insert(payload)
+        const { data, error: err } = await q
+          .from('inventory_items')
+          .insert({
+            ...payload,
+            tenant_id: profile?.tenant_id!,
+            branch_id: profile?.branch_id!,
+          })
+          .select('id')
+          .single()
         if (err) { console.error('[StockItemDrawer] insert failed', err); setError(t('inventory:errors.saveFailed')); return }
+        savedItemId = data?.id ?? null
+      }
+
+      if (adjustmentQuantity !== 0) {
+        if (!savedItemId) {
+          setError(t('inventory:errors.saveFailed'))
+          return
+        }
+        const { error: adjustmentError } = await (supabase as any).rpc('adjust_inventory_item_stock', {
+          p_payload: {
+            inventory_item_id: savedItemId,
+            adjustment_quantity: adjustmentQuantity,
+            reason: adjustmentReason.trim(),
+            idempotency_key: adjustmentKey,
+          },
+        })
+        if (adjustmentError) {
+          console.error('[StockItemDrawer] audited stock adjustment failed', adjustmentError)
+          setError(t('inventory:errors.saveFailed'))
+          return
+        }
       }
 
       onSaved()
@@ -209,6 +257,22 @@ export default function StockItemDrawer({ open, item, categories, suppliers, onC
                     placeholder="0.00" />
                 </div>
               </div>
+
+              {Number(currentQty) !== Number(item?.current_quantity ?? 0) && (
+                <div>
+                  <label className="label">
+                    {t('inventory:item.adjustmentReason')} <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    className="input"
+                    value={adjustmentReason}
+                    onChange={e => setAdjustmentReason(e.target.value)}
+                    maxLength={500}
+                    placeholder={t('inventory:item.adjustmentReasonPlaceholder')}
+                    dir="auto"
+                  />
+                </div>
+              )}
 
               {parseFloat(unitCost) > 0 && parseFloat(currentQty) > 0 && (
                 <div className="bg-emerald-50 rounded-xl px-4 py-3 flex justify-between items-center">
