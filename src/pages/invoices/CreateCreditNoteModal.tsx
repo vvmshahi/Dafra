@@ -15,6 +15,7 @@ import {
   readPendingAtomicCheckout,
   type AtomicReceiptPayload,
 } from '@/lib/zatca/atomicCheckout'
+import { resolveScopedAtomicCheckout } from '@/lib/zatca/atomicCheckoutScope.mjs'
 import { useAuth } from '@/hooks/useAuth'
 import { resolveBusinessType } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
@@ -100,6 +101,12 @@ interface CreateCreditNoteModalProps {
   defaultRefundMethod?: PaymentMethod | null
   onClose: () => void
   onCreated: (result: CreditNoteCreatedResult) => void
+}
+
+interface CreditNoteModalInvoiceIdentity {
+  id: string
+  branchId: string
+  invoiceNumber: string
 }
 
 function safeCreditNoteError(error: unknown, t: TFunction): string {
@@ -240,6 +247,8 @@ export default function CreateCreditNoteModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [idempotencyKey, setIdempotencyKey] = useState('')
+  const [cartFingerprint, setCartFingerprint] = useState('')
+  const [modalInvoiceIdentity, setModalInvoiceIdentity] = useState<CreditNoteModalInvoiceIdentity | null>(null)
   const [refundMode, setRefundMode] = useState<'cash' | 'card' | 'split'>('cash')
   const [refundCash, setRefundCash] = useState('')
   const [refundCard, setRefundCard] = useState('')
@@ -248,7 +257,6 @@ export default function CreateCreditNoteModal({
   const isServiceBusiness = businessType === 'service'
 
   useEffect(() => {
-    if (!open || !invoice) return
     setSelectedReason('')
     setRemarks('')
     setOriginalPayments([])
@@ -259,14 +267,31 @@ export default function CreateCreditNoteModal({
     setError(null)
     setCreating(false)
     setSubmitting(false)
-    setIdempotencyKey(
-      readPendingAtomicCheckout(invoice.branch_id, 'credit_note')?.idempotencyKey
-        ?? newIdempotencyKey(invoice.id),
-    )
+    setIdempotencyKey('')
+    setCartFingerprint('')
+    setModalInvoiceIdentity(null)
     setRefundMode('cash')
     setRefundCash('')
     setRefundCard('')
     setRefundEdited(false)
+
+    if (!open || !invoice) {
+      setPaymentsLoading(false)
+      setItemsLoading(false)
+      return
+    }
+
+    const originalInvoiceId = invoice.id
+    const originalBranchId = invoice.branch_id
+    setModalInvoiceIdentity({
+      id: originalInvoiceId,
+      branchId: originalBranchId,
+      invoiceNumber: invoice.invoice_number,
+    })
+    setIdempotencyKey(
+      readPendingAtomicCheckout(originalBranchId, 'credit_note', originalInvoiceId)?.idempotencyKey
+        ?? newIdempotencyKey(originalInvoiceId),
+    )
 
     let cancelled = false
 
@@ -275,7 +300,7 @@ export default function CreateCreditNoteModal({
         const { data, error } = await (supabase as any)
           .from('payments')
           .select('method, amount')
-          .eq('invoice_id', invoice.id)
+          .eq('invoice_id', originalInvoiceId)
           .order('paid_at', { ascending: true })
           .order('created_at', { ascending: true })
 
@@ -298,7 +323,7 @@ export default function CreateCreditNoteModal({
     ;(async () => {
       try {
         const { data, error } = await (supabase as any)
-          .rpc('get_invoice_refundable_items', { p_invoice_id: invoice.id })
+          .rpc('get_invoice_refundable_items', { p_invoice_id: originalInvoiceId })
 
         if (cancelled) return
         if (error) throw error
@@ -341,7 +366,15 @@ export default function CreateCreditNoteModal({
     })()
 
     return () => { cancelled = true }
-  }, [open, invoice, isServiceBusiness])
+  }, [
+    open,
+    invoice?.id,
+    invoice?.branch_id,
+    invoice?.invoice_number,
+    invoice?.total_amount,
+    invoice?.zatca_document_kind,
+    isServiceBusiness,
+  ])
 
   const linePreviews = useMemo(() => refundableItems.map(item => {
     const selectedQuantity = parseReturnQuantity(returnQuantities[item.original_invoice_item_id])
@@ -386,6 +419,18 @@ export default function CreateCreditNoteModal({
   async function handleCreate() {
     if (!invoice) return
     if (itemsLoading) return
+    const currentInvoiceIdentity = {
+      id: invoice.id,
+      branchId: invoice.branch_id,
+      invoiceNumber: invoice.invoice_number,
+    }
+    if (!modalInvoiceIdentity
+        || modalInvoiceIdentity.id !== currentInvoiceIdentity.id
+        || modalInvoiceIdentity.branchId !== currentInvoiceIdentity.branchId
+        || modalInvoiceIdentity.invoiceNumber !== currentInvoiceIdentity.invoiceNumber) {
+      setError(t('validation:creditNoteInvoiceChanged'))
+      return
+    }
     if (!selectedReason) {
       setError(t('validation:chooseCreditReason'))
       return
@@ -431,9 +476,10 @@ export default function CreateCreditNoteModal({
     setSubmitting(false)
     setError(null)
     try {
+      const originalInvoiceId = currentInvoiceIdentity.id
       const payload = {
-        original_invoice_id: invoice.id,
-        idempotency_key: idempotencyKey || newIdempotencyKey(invoice.id),
+        original_invoice_id: originalInvoiceId,
+        idempotency_key: idempotencyKey || newIdempotencyKey(originalInvoiceId),
         reason: finalReason,
         // The RPC applies this only to stock-tracked, non-service products and
         // scopes every movement to the original invoice branch.
@@ -451,9 +497,19 @@ export default function CreateCreditNoteModal({
       let atomicReceipt: AtomicReceiptPayload | undefined
       let result: RpcCreditNoteResult | null = null
       if (atomicSimplifiedCreditEligible) {
-        const pending = readPendingAtomicCheckout(invoice.branch_id, 'credit_note')
-        const atomicPayload = pending?.checkout ?? payload
+        const pending = readPendingAtomicCheckout(
+          invoice.branch_id,
+          'credit_note',
+          originalInvoiceId,
+        )
+        const atomicPayload = resolveScopedAtomicCheckout(
+          pending,
+          payload,
+          'credit_note',
+          originalInvoiceId,
+        )
         const fingerprint = await atomicCheckoutFingerprint(atomicPayload)
+        setCartFingerprint(fingerprint)
         if (pending && pending.cartFingerprint !== fingerprint) {
           throw new Error('Persisted credit-note fingerprint does not match its request payload')
         }
@@ -462,7 +518,7 @@ export default function CreateCreditNoteModal({
           cartFingerprint: fingerprint,
           documentType: 'credit_note',
           checkout: atomicPayload,
-        })
+        }, originalInvoiceId)
         const atomic = await checkoutSimplifiedAtomically({
           branchId: invoice.branch_id,
           checkout: atomicPayload,
@@ -489,6 +545,7 @@ export default function CreateCreditNoteModal({
             String(atomicPayload.idempotency_key),
             fingerprint,
             'credit_note',
+            originalInvoiceId,
           )
         } else {
           clearPendingAtomicCheckout(
@@ -496,6 +553,7 @@ export default function CreateCreditNoteModal({
             String(atomicPayload.idempotency_key),
             fingerprint,
             'credit_note',
+            originalInvoiceId,
           )
         }
       }
@@ -553,7 +611,7 @@ export default function CreateCreditNoteModal({
         subtotal: totals.subtotal,
         taxAmount: totals.tax,
         itemsCount: lines.length,
-        originalInvoiceId: invoice.id,
+        originalInvoiceId,
         atomicReceipt,
       })
       onClose()
@@ -589,7 +647,11 @@ export default function CreateCreditNoteModal({
     : t('creditNotes:reasonBillingMistake')
 
   return (
-    <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div
+      className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      data-original-invoice-id={invoice.id}
+      data-cart-fingerprint={cartFingerprint || undefined}
+    >
       <div className="flex max-h-[92vh] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
           <div>
@@ -618,6 +680,9 @@ export default function CreateCreditNoteModal({
             <span>{t('creditNotes:originalTotal')} <bdi dir="ltr">SAR {money(invoice.total_amount)}</bdi></span>
             <span className="mx-2 text-gray-300">·</span>
             <span>{t('creditNotes:remainingQuantity')} <bdi dir="ltr">{qty(totalRemainingQuantity)}</bdi></span>
+            <p className="mt-1 font-mono text-[10px] text-gray-500" dir="ltr">
+              {t('creditNotes:originalInvoiceIdentity', { id: invoice.id })}
+            </p>
           </div>
 
           <section className="space-y-2">

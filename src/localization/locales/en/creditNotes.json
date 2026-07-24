@@ -5,6 +5,7 @@
   "returnFromInvoice": "Return selected items from invoice {{number}}",
   "unchangedNotice": "Choose the returned items and quantities. The original invoice remains unchanged.",
   "originalTotal": "Original total",
+  "originalInvoiceIdentity": "Original invoice ID: {{id}}",
   "remainingQuantity": "Remaining quantity",
   "reason": "Reason for credit note",
   "chooseReason": "Choose a reason",

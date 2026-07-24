@@ -5,6 +5,7 @@
   "returnFromInvoice": "إرجاع أصناف محددة من الفاتورة {{number}}",
   "unchangedNotice": "اختر الأصناف المرتجعة وكمياتها. ستبقى الفاتورة الأصلية دون تغيير.",
   "originalTotal": "الإجمالي الأصلي",
+  "originalInvoiceIdentity": "معرّف الفاتورة الأصلية: {{id}}",
   "remainingQuantity": "الكمية المتبقية",
   "reason": "سبب الإشعار الدائن",
   "chooseReason": "اختر سبباً",

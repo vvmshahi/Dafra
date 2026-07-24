@@ -710,6 +710,7 @@ export default function InvoicesPage() {
       </div>
 
       <CreateCreditNoteModal
+        key={creditModalRow?.id ?? 'closed-credit-note-modal'}
         open={!!creditModalRow}
         invoice={creditModalRow ? {
           id: creditModalRow.id,

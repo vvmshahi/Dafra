@@ -1186,6 +1186,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
       </div>
 
       <CreateCreditNoteModal
+        key={invoice.id}
         open={creditModalOpen}
         invoice={{
           id: invoice.id,

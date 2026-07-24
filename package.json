@@ -51,6 +51,7 @@
     "test:zatca-atomic-simplified-checkout": "node scripts/test-zatca-atomic-simplified-checkout.mjs",
     "test:zatca-atomic-capabilities": "node scripts/test-zatca-atomic-capabilities.mjs",
     "test:zatca-atomic-simplified-checkout-runtime": "node scripts/test-zatca-atomic-simplified-checkout-runtime.mjs",
+    "test:credit-note-modal-identity": "node scripts/test-credit-note-modal-invoice-identity.mjs",
     "test:pos-session-access": "node scripts/test-pos-session-access.mjs",
     "test:dashboard-product-schema-compat": "node scripts/test-dashboard-product-schema-compat.mjs"
   },

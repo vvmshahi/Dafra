@@ -36,6 +36,7 @@
   "creditReasonRequired": "سبب الإشعار الدائن مطلوب.",
   "creditPermissionDenied": "ليست لديك صلاحية إنشاء هذا الإشعار الدائن.",
   "creditNoteFailed": "تعذر إنشاء الإشعار الدائن. تحقق من حالة الفاتورة وحاول مرة أخرى.",
+  "creditNoteInvoiceChanged": "تغيّرت الفاتورة المحددة. أغلق نموذج الإشعار الدائن وافتحه مرة أخرى.",
   "loadRefundableItemsFailed": "تعذر تحميل الأصناف القابلة للإرجاع لهذه الفاتورة.",
   "chooseCreditReason": "اختر سبباً للإشعار الدائن.",
   "returnQuantityRequired": "أدخل كمية إرجاع لصنف واحد على الأقل.",

@@ -1,5 +1,9 @@
 import { supabase } from '@/lib/supabase'
 import { ZATCA_FINALIZATION_CLIENT_VERSION } from '@/lib/zatca/submission'
+import {
+  atomicCheckoutStorageKey,
+  pendingAtomicCheckoutMatchesScope,
+} from '@/lib/zatca/atomicCheckoutScope.mjs'
 
 export type AtomicCheckoutDocumentType = 'invoice' | 'credit_note'
 
@@ -90,6 +94,7 @@ export interface PendingAtomicCheckout {
   cartFingerprint: string
   documentType: AtomicCheckoutDocumentType
   checkout: Record<string, unknown>
+  scopeId?: string
 }
 
 function stableValue(value: unknown): unknown {
@@ -116,30 +121,37 @@ export async function atomicCheckoutFingerprint(payload: Record<string, unknown>
     .join('')
 }
 
-function storageKey(branchId: string, documentType: AtomicCheckoutDocumentType): string {
-  return `dafra:atomic-checkout:v2:${branchId}:${documentType}`
-}
-
 export function persistPendingAtomicCheckout(
   branchId: string,
   pending: PendingAtomicCheckout,
+  scopeId?: string,
 ): void {
-  localStorage.setItem(storageKey(branchId, pending.documentType), JSON.stringify(pending))
+  const scopedPending = scopeId
+    ? { ...pending, scopeId }
+    : pending
+  localStorage.setItem(
+    atomicCheckoutStorageKey(branchId, pending.documentType, scopeId),
+    JSON.stringify(scopedPending),
+  )
 }
 
 export function readPendingAtomicCheckout(
   branchId: string,
   documentType: AtomicCheckoutDocumentType = 'invoice',
+  scopeId?: string,
 ): PendingAtomicCheckout | null {
   try {
-    const raw = localStorage.getItem(storageKey(branchId, documentType))
+    const raw = localStorage.getItem(
+      atomicCheckoutStorageKey(branchId, documentType, scopeId),
+    )
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<PendingAtomicCheckout>
     if (typeof parsed.idempotencyKey !== 'string'
         || !/^[a-f0-9]{64}$/.test(parsed.cartFingerprint ?? '')
         || !['invoice', 'credit_note'].includes(parsed.documentType ?? '')
         || !parsed.checkout || typeof parsed.checkout !== 'object'
-        || Array.isArray(parsed.checkout)) return null
+        || Array.isArray(parsed.checkout)
+        || !pendingAtomicCheckoutMatchesScope(parsed, documentType, scopeId)) return null
     return parsed as PendingAtomicCheckout
   } catch {
     return null
@@ -151,12 +163,15 @@ export function clearPendingAtomicCheckout(
   idempotencyKey: string,
   cartFingerprint: string,
   documentType: AtomicCheckoutDocumentType = 'invoice',
+  scopeId?: string,
 ): void {
-  const pending = readPendingAtomicCheckout(branchId, documentType)
+  const pending = readPendingAtomicCheckout(branchId, documentType, scopeId)
   if (!pending
       || pending.idempotencyKey !== idempotencyKey
       || pending.cartFingerprint !== cartFingerprint) return
-  localStorage.removeItem(storageKey(branchId, documentType))
+  localStorage.removeItem(
+    atomicCheckoutStorageKey(branchId, documentType, scopeId),
+  )
 }
 
 export async function checkoutSimplifiedAtomically(params: {
