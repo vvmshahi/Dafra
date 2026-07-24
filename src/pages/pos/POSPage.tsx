@@ -5,7 +5,7 @@ import {
   Search, Plus, Minus, Trash2, CreditCard, Banknote,
   Receipt, X, ChevronDown, User, Check, Loader2,
   ShoppingBag, AlertCircle, Zap, Printer, PackageOpen, ArrowLeft, Lock,
-  ChevronLeft, ChevronRight, ChevronUp,
+  ChevronLeft, ChevronRight, ChevronUp, RotateCcw,
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
@@ -1246,6 +1246,33 @@ function CloseSessionModal({ session, onClose, onCancel }: {
     }
   }
 
+  const sessionKpis = [
+    {
+      label: t('register:netSessionSales'),
+      amount: totalSessionSales,
+      icon: Receipt,
+      cardClass: 'bg-gradient-to-br from-[#1B6B3A] to-[#0F2419]',
+    },
+    {
+      label: t('register:netCashSales'),
+      amount: cashSales - cashRefunds,
+      icon: Banknote,
+      cardClass: 'bg-gradient-to-br from-[#0e6f53] to-[#0F4A28]',
+    },
+    {
+      label: t('register:netCardSales'),
+      amount: cardSales,
+      icon: CreditCard,
+      cardClass: 'bg-gradient-to-br from-[#4a5568] to-[#1f2937]',
+    },
+    {
+      label: t('register:refundsCreditNotes'),
+      amount: creditRefunds,
+      icon: RotateCcw,
+      cardClass: 'bg-gradient-to-br from-[#b45309] to-[#92400e]',
+    },
+  ]
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[calc(100vh-1.5rem)] mx-2 overflow-hidden flex flex-col">
@@ -1265,17 +1292,33 @@ function CloseSessionModal({ session, onClose, onCancel }: {
           </div>
         ) : (
           <div className="px-4 py-4 space-y-4 overflow-y-auto sm:px-5">
-            <section aria-labelledby="expected-cash-heading" className="rounded-2xl border border-primary-200 bg-primary-50/70 p-4 sm:p-5">
-              <p id="expected-cash-heading" className="text-xs font-bold uppercase tracking-wide text-primary-700">{t('register:expectedCashDrawer')}</p>
-              <div className="mt-3 space-y-2 text-sm text-gray-600">
-                <div className="flex justify-between gap-4"><span>{t('register:openingCash')}</span><span className="tabular-nums" dir="ltr"><Rial amount={openingCash} /></span></div>
-                <div className="flex justify-between gap-4"><span><span aria-hidden="true">+</span> {t('register:netCashSales')}</span><span className="tabular-nums" dir="ltr"><Rial amount={cashSales} /></span></div>
-                <div className="flex justify-between gap-4"><span><span aria-hidden="true">−</span> {t('register:posCashExpenses')}</span><span className="tabular-nums" dir="ltr"><Rial amount={cashExpenses} /></span></div>
-                <div className="flex justify-between gap-4"><span><span aria-hidden="true">−</span> {t('register:cashRefunds')}</span><span className="tabular-nums" dir="ltr"><Rial amount={cashRefunds} /></span></div>
+            <section aria-label={t('register:sessionSummary')} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {sessionKpis.map(({ label, amount, icon: Icon, cardClass }) => (
+                <div key={label} className={`min-w-0 rounded-xl border border-white/10 px-3 py-2.5 shadow-card-md ${cardClass}`}>
+                  <div className="flex items-start gap-2">
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-white/15 ring-1 ring-white/15" aria-hidden="true">
+                      <Icon size={14} strokeWidth={2} className="text-white" />
+                    </span>
+                    <p className="min-w-0 text-[10px] font-semibold leading-4 text-white/70">{label}</p>
+                  </div>
+                  <p className="mt-1.5 text-base font-black tracking-tight text-white tabular-nums" dir="ltr">
+                    <Rial amount={amount} />
+                  </p>
+                </div>
+              ))}
+            </section>
+
+            <section aria-labelledby="expected-cash-heading" className="rounded-2xl border border-white/10 bg-gradient-to-br from-[#1B6B3A] to-[#0F2419] p-4 text-white shadow-card-md ring-1 ring-[#1B6B3A]/15 sm:p-5">
+              <p id="expected-cash-heading" className="text-xs font-bold uppercase tracking-wide text-[#F3DE9A]">{t('register:expectedCashDrawer')}</p>
+              <div className="mt-3 space-y-2 text-sm text-emerald-50/80">
+                <div className="flex justify-between gap-4"><span>{t('register:openingCash')}</span><span className="font-medium text-white tabular-nums" dir="ltr"><Rial amount={openingCash} /></span></div>
+                <div className="flex justify-between gap-4"><span><span className="text-emerald-100/60" aria-hidden="true">+</span> {t('register:netCashSales')}</span><span className="font-medium text-white tabular-nums" dir="ltr"><Rial amount={cashSales} /></span></div>
+                <div className="flex justify-between gap-4"><span><span className="text-emerald-100/60" aria-hidden="true">−</span> {t('register:posCashExpenses')}</span><span className="font-medium text-white tabular-nums" dir="ltr"><Rial amount={cashExpenses} /></span></div>
+                <div className="flex justify-between gap-4"><span><span className="text-emerald-100/60" aria-hidden="true">−</span> {t('register:cashRefunds')}</span><span className="font-medium text-white tabular-nums" dir="ltr"><Rial amount={cashRefunds} /></span></div>
               </div>
-              <div className="mt-3 flex items-end justify-between gap-4 border-t border-primary-200 pt-3">
-                <span className="text-sm font-semibold text-primary-900">{t('register:expectedCashDrawer')}</span>
-                <span className="text-2xl font-black text-primary-900 tabular-nums" dir="ltr"><Rial amount={expectedCash} /></span>
+              <div className="mt-3 flex items-end justify-between gap-4 border-t border-white/15 pt-3">
+                <span className="text-sm font-semibold text-[#FFF6D8]">{t('register:expectedCashDrawer')}</span>
+                <span className="text-2xl font-black tracking-tight text-white tabular-nums" dir="ltr"><Rial amount={expectedCash} /></span>
               </div>
             </section>
 
@@ -1285,7 +1328,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
                 <button
                   type="button"
                   onClick={() => setCashActual(expectedCash.toFixed(2))}
-                  className="rounded-xl border border-primary-200 bg-white px-3 py-2 text-xs font-semibold text-primary-700 hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="rounded-xl border border-[#1B6B3A]/25 bg-[#F3F8F4] px-3 py-2 text-xs font-semibold text-[#155830] hover:bg-[#E8F3EB] focus:outline-none focus:ring-2 focus:ring-[#1B6B3A]/40"
                 >
                   {t('register:cashMatches', { amount: `SAR ${fmt(expectedCash)}` })}
                 </button>
@@ -1295,7 +1338,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
                   <label htmlFor="actual-closing-cash" className="label">{t('register:actualCashCounted')}</label>
                   <div className="relative">
                     <span className="absolute start-3 top-1/2 -translate-y-1/2 text-xs text-gray-400" dir="ltr">SAR</span>
-                    <MoneyInput id="actual-closing-cash" value={cashActual} onValueChange={setCashActual} className="input h-11 ps-10" placeholder="0.00" autoFocus />
+                    <MoneyInput id="actual-closing-cash" value={cashActual} onValueChange={setCashActual} className="input h-11 ps-10 focus:border-[#1B6B3A] focus:ring-[#1B6B3A]/20" placeholder="0.00" autoFocus />
                   </div>
                 </div>
                 <div aria-live="polite" className={`flex min-h-11 items-center justify-center rounded-xl px-4 text-sm font-bold sm:min-w-48 ${differenceState.className}`}>
@@ -1305,7 +1348,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
             </section>
 
             <details className="group rounded-xl border border-gray-100 bg-gray-50/70">
-              <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#1B6B3A]">
                 {t('register:sessionSummary')}
                 <ChevronDown size={16} className="transition-transform group-open:rotate-180" />
               </summary>
@@ -1336,7 +1379,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
             {t('common:cancel')}
           </button>
           <button onClick={handleClose} disabled={!canClose}
-            className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#0F2419] py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#173F2F] disabled:bg-red-500 disabled:text-white disabled:opacity-50">
             {saving ? <Loader2 size={14} className="animate-spin" /> : t('register:close')}
           </button>
         </div>
