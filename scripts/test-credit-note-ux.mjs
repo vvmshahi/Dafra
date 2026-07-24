@@ -275,6 +275,25 @@ const atomicClient = read('src/lib/zatca/atomicCheckout.ts')
 const invoiceList = read('src/pages/invoices/InvoicesPage.tsx')
 const invoiceDetail = read('src/pages/invoices/InvoiceDetailPage.tsx')
 const presentationSource = read('src/lib/zatca/creditNotePresentation.mjs')
+const currentSchema = read('supabase/migrations/20260721000100_dafra_current_schema_and_security.sql')
+
+const trackedPhysical = { product_id: 'product-1', track_stock: true, is_service: false, quantity: 1 }
+const serviceLine = { product_id: 'service-1', track_stock: false, is_service: true, quantity: 1 }
+const untrackedProduct = { product_id: 'product-2', track_stock: false, is_service: false, quantity: 1 }
+const valueLine = { product_id: null, track_stock: false, is_service: false, quantity: 1 }
+const requiresStockReturnChoice = lines => lines.some(
+  line => line.quantity > 0 && line.product_id && line.track_stock && !line.is_service,
+)
+const returnStockValue = (lines, choice) =>
+  requiresStockReturnChoice(lines) ? choice === true : false
+
+assert.equal(requiresStockReturnChoice([trackedPhysical]), true)
+assert.equal(returnStockValue([trackedPhysical], true), true)
+assert.equal(returnStockValue([trackedPhysical], false), false)
+assert.equal(requiresStockReturnChoice([serviceLine]), false)
+assert.equal(requiresStockReturnChoice([untrackedProduct]), false)
+assert.equal(requiresStockReturnChoice([valueLine]), false)
+assert.equal(requiresStockReturnChoice([trackedPhysical, serviceLine]), true)
 
 assert.match(creditModal, /cleanupObsoleteCreditNotePendingCheckouts\(\)/)
 assert.match(creditModal, /window\.addEventListener\('storage', handleStorage\)/)
@@ -295,6 +314,33 @@ assert.doesNotMatch(
   ),
   /qr|xml|signature|customer|secret/i,
 )
+assert.match(creditModal, /useState<boolean \| null>\(null\)/)
+assert.match(
+  creditModal,
+  /line\.item\.product_id && line\.item\.track_stock && !line\.item\.is_service/,
+)
+assert.match(creditModal, /hasEligibleStockLines && stockReturnChoice === null/)
+assert.match(
+  creditModal,
+  /return_stock: hasEligibleStockLines \? stockReturnChoice === true : false/,
+)
+assert.match(creditModal, /stockReturnChoiceMissing[\s\S]*createDisabled/)
+assert.match(creditModal, /role="radio"/)
+
+const creditFunctionStart = currentSchema.indexOf(
+  'FUNCTION "public"."create_partial_credit_note"("p_payload" "jsonb")',
+)
+const creditFunctionEnd = currentSchema.indexOf(
+  'ALTER FUNCTION "public"."create_partial_credit_note"',
+  creditFunctionStart,
+)
+const creditFunction = currentSchema.slice(creditFunctionStart, creditFunctionEnd)
+const replayReturnPosition = creditFunction.indexOf("'idempotent_replay', true")
+const stockUpdatePosition = creditFunction.indexOf('UPDATE public.products')
+assert.ok(replayReturnPosition > 0 && stockUpdatePosition > replayReturnPosition)
+assert.match(creditFunction, /COALESCE\(v_line\.track_stock, FALSE\) IS TRUE/)
+assert.match(creditFunction, /COALESCE\(v_line\.is_service, FALSE\) IS FALSE/)
+assert.match(creditFunction, /return_quantity > remaining_quantity \+ 0\.0005/)
 
 assert.match(invoiceList, /<AtomicCreditNoteReceiptView\s+result=\{creditNoteResult\}/)
 assert.match(invoiceDetail, /<AtomicCreditNoteReceiptView\s+result=\{creditNoteResult\}/)
@@ -320,6 +366,13 @@ const requiredKeys = [
   'clearanceFailed',
   'clearanceFailedRetryable',
   'clearanceFailedReview',
+  'stockReturnQuestion',
+  'stockReturnQuestionHint',
+  'stockReturnYes',
+  'stockReturnYesDescription',
+  'stockReturnNo',
+  'stockReturnNoDescription',
+  'stockReturnChoiceRequired',
 ]
 for (const key of requiredKeys) {
   assert.equal(typeof en[key], 'string', `missing English credit-note key ${key}`)

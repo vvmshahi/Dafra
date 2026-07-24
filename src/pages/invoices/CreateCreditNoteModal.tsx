@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, X } from 'lucide-react'
+import { Loader2, PackageCheck, PackageX, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
@@ -314,6 +314,7 @@ export default function CreateCreditNoteModal({
   const [refundCash, setRefundCash] = useState('')
   const [refundCard, setRefundCard] = useState('')
   const [refundEdited, setRefundEdited] = useState(false)
+  const [stockReturnChoice, setStockReturnChoice] = useState<boolean | null>(null)
   const businessType = resolveBusinessType(tenant?.business_type)
   const isServiceBusiness = businessType === 'service'
 
@@ -353,6 +354,7 @@ export default function CreateCreditNoteModal({
     setRefundCash('')
     setRefundCard('')
     setRefundEdited(false)
+    setStockReturnChoice(null)
 
     if (!open || !invoice) {
       setPaymentsLoading(false)
@@ -475,8 +477,13 @@ export default function CreateCreditNoteModal({
   }), { subtotal: 0, discount: 0, tax: 0, total: 0 })
   const totalRemainingQuantity = refundableItems.reduce((sum, item) => sum + Math.max(item.remaining_quantity, 0), 0)
   const stockReturnQuantity = selectedLines
-    .filter(line => line.item.track_stock && !line.item.is_service)
+    .filter(line => line.item.product_id && line.item.track_stock && !line.item.is_service)
     .reduce((sum, line) => sum + line.quantity, 0)
+  const hasEligibleStockLines = !isServiceBusiness && stockReturnQuantity > 0
+
+  useEffect(() => {
+    if (!hasEligibleStockLines) setStockReturnChoice(null)
+  }, [hasEligibleStockLines])
 
   useEffect(() => {
     if (refundEdited || totals.total <= 0 || paymentsLoading) return
@@ -538,6 +545,10 @@ export default function CreateCreditNoteModal({
       setError(t('validation:returnQuantityNamedExceeded', { name: invalidLine.item.name }))
       return
     }
+    if (hasEligibleStockLines && stockReturnChoice === null) {
+      setError(t('creditNotes:stockReturnChoiceRequired'))
+      return
+    }
 
     const trimmedRemarks = remarks.trim()
     const finalReason = trimmedRemarks ? `${selectedReason} - ${trimmedRemarks}` : selectedReason
@@ -566,9 +577,9 @@ export default function CreateCreditNoteModal({
         original_invoice_id: originalInvoiceId,
         idempotency_key: idempotencyKey || newIdempotencyKey(originalInvoiceId),
         reason: finalReason,
-        // The RPC applies this only to stock-tracked, non-service products and
-        // scopes every movement to the original invoice branch.
-        return_stock: !isServiceBusiness,
+        // One document-level answer applies only to eligible stock-tracked,
+        // non-service product lines; the RPC enforces the same restrictions.
+        return_stock: hasEligibleStockLines ? stockReturnChoice === true : false,
         refund_allocations: refundAllocations,
         items: lines.map(line => ({
           original_invoice_item_id: line.item.original_invoice_item_id,
@@ -851,7 +862,8 @@ export default function CreateCreditNoteModal({
 
   const busy = creating || submitting
   const actionLabel = submitting ? t('creditNotes:submitting') : creating ? t('creditNotes:creating') : t('creditNotes:createRefund')
-  const createDisabled = busy || itemsLoading || selectedLines.length === 0
+  const stockReturnChoiceMissing = hasEligibleStockLines && stockReturnChoice === null
+  const createDisabled = busy || itemsLoading || selectedLines.length === 0 || stockReturnChoiceMissing
   const reasonLabel = (reason: (typeof QUICK_REASONS)[number]) => reason === 'Test sale'
     ? t('creditNotes:reasonTestSale')
     : reason === 'Customer refund'
@@ -1023,10 +1035,70 @@ export default function CreateCreditNoteModal({
             )}
           </section>
 
+          {hasEligibleStockLines && (
+            <fieldset className="space-y-2" aria-describedby="stock-return-help">
+              <legend className="text-xs font-semibold text-gray-800">
+                {t('creditNotes:stockReturnQuestion')}
+              </legend>
+              <p id="stock-return-help" className="text-[11px] leading-relaxed text-gray-500">
+                {t('creditNotes:stockReturnQuestionHint')}
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {([
+                  {
+                    value: true,
+                    icon: PackageCheck,
+                    title: t('creditNotes:stockReturnYes'),
+                    description: t('creditNotes:stockReturnYesDescription'),
+                  },
+                  {
+                    value: false,
+                    icon: PackageX,
+                    title: t('creditNotes:stockReturnNo'),
+                    description: t('creditNotes:stockReturnNoDescription'),
+                  },
+                ] as const).map(option => {
+                  const selected = stockReturnChoice === option.value
+                  const Icon = option.icon
+                  return (
+                    <button
+                      key={String(option.value)}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      disabled={busy}
+                      onClick={() => {
+                        setStockReturnChoice(option.value)
+                        setError(null)
+                      }}
+                      className={`flex min-h-20 items-start gap-3 rounded-xl border px-3 py-3 text-start transition-[border-color,background-color,box-shadow,transform] duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${
+                        selected
+                          ? 'border-[#0F2419] bg-[#F3F8F4] shadow-sm'
+                          : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                        selected ? 'bg-[#0F2419] text-white' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        <Icon size={17} aria-hidden="true" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-xs font-bold text-gray-900">{option.title}</span>
+                        <span className="mt-1 block text-[11px] leading-relaxed text-gray-500">
+                          {option.description}
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </fieldset>
+          )}
+
           <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
             <p className="text-xs font-semibold text-gray-800">{t('creditNotes:stockImpact')}</p>
             <p className="mt-0.5 text-[11px] text-gray-600">
-              {stockReturnQuantity > 0
+              {hasEligibleStockLines && stockReturnChoice === true
                 ? t('creditNotes:unitsReturned', { quantity: qty(stockReturnQuantity) })
                 : t('creditNotes:noStockMovement')}
             </p>
@@ -1119,7 +1191,13 @@ export default function CreateCreditNoteModal({
             type="button"
             onClick={handleCreate}
             disabled={createDisabled}
-            title={selectedLines.length === 0 ? t('creditNotes:enterQuantityFirst') : undefined}
+            title={
+              selectedLines.length === 0
+                ? t('creditNotes:enterQuantityFirst')
+                : stockReturnChoiceMissing
+                  ? t('creditNotes:stockReturnChoiceRequired')
+                  : undefined
+            }
             className="inline-flex items-center gap-2 rounded-xl bg-[#0F2419] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy && <Loader2 size={13} className="animate-spin" />}
