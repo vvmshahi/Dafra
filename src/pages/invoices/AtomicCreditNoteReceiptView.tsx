@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Check, Loader2, Printer } from 'lucide-react'
+import { AlertCircle, Check, Clock3, Loader2, Printer } from 'lucide-react'
 import QRCode from 'qrcode'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
@@ -7,12 +7,14 @@ import ThermalReceipt from '@/components/print/ThermalReceipt'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { getPrinterSettings } from '@/lib/electron'
 import { printAtomicReceiptSnapshot } from '@/lib/atomicReceiptPrint'
+import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { documentFromAtomicReceipt } from '@/lib/invoices/documentViewAdapters'
+import { creditNotePresentationState } from '@/lib/zatca/creditNotePresentation.mjs'
 import {
   renderStoredQrDataUrl,
   type QrDisplayStatus,
 } from '@/lib/zatca/qrDisplay.mjs'
-import type { AtomicReceiptPayload } from '@/lib/zatca/atomicCheckout'
+import type { CreditNoteCreatedResult } from './CreateCreditNoteModal'
 
 const CREDIT_NOTE_RECEIPT_ID = 'atomic-credit-note-receipt'
 
@@ -23,15 +25,16 @@ function printFailureKey(errorType?: string | null): string {
 }
 
 export default function AtomicCreditNoteReceiptView({
-  receipt,
+  result,
   onClose,
   onOpenPrinterSettings,
 }: {
-  receipt: AtomicReceiptPayload
+  result: CreditNoteCreatedResult
   onClose: () => void
   onOpenPrinterSettings: () => void
 }) {
   const { t } = useTranslation(['creditNotes', 'payments', 'printing', 'pos', 'common'])
+  const receipt = result.atomicReceipt
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [qrStatus, setQrStatus] = useState<QrDisplayStatus>('loading')
   const [printing, setPrinting] = useState(false)
@@ -39,10 +42,27 @@ export default function AtomicCreditNoteReceiptView({
   const automaticPrintRef = useRef(false)
   const printAttemptedRef = useRef(false)
   const printInFlightRef = useRef(false)
-  const model = useMemo(() => documentFromAtomicReceipt(receipt), [receipt])
-  const printReady = receipt.can_print === true && qrStatus === 'ready' && Boolean(qrDataUrl)
+  const model = useMemo(
+    () => receipt ? documentFromAtomicReceipt(receipt) : null,
+    [receipt],
+  )
+  const presentation = useMemo(
+    () => creditNotePresentationState(result),
+    [result],
+  )
+  const printReady = presentation.printAllowed
+    && (
+      receipt
+        ? receipt.can_print === true && qrStatus === 'ready' && Boolean(qrDataUrl)
+        : true
+    )
 
   useEffect(() => {
+    if (!receipt) {
+      setQrDataUrl(null)
+      setQrStatus('missing')
+      return
+    }
     let cancelled = false
     setQrStatus('loading')
     void renderStoredQrDataUrl(
@@ -59,19 +79,19 @@ export default function AtomicCreditNoteReceiptView({
       setQrStatus(result.status)
     })
     return () => { cancelled = true }
-  }, [receipt.qr_code])
+  }, [receipt])
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       console.info('[zatca-timing]', {
         event: 'receipt_rendered',
-        invoiceId: receipt.invoice_id,
-        reportingDisplayState: receipt.reporting_display_state,
-        source: 'atomic_credit_note_snapshot',
+        invoiceId: result.creditNoteId,
+        reportingDisplayState: result.reportingDisplayState,
+        source: receipt ? 'atomic_credit_note_snapshot' : 'stored_credit_note',
       })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [receipt.invoice_id, receipt.reporting_display_state])
+  }, [receipt, result.creditNoteId, result.reportingDisplayState])
 
   const printSnapshot = useCallback(async () => {
     if (!printReady || printInFlightRef.current) return
@@ -80,17 +100,22 @@ export default function AtomicCreditNoteReceiptView({
     setPrinting(true)
     setPrintErrorKey(null)
     try {
-      const result = await printAtomicReceiptSnapshot({
-        invoiceId: receipt.invoice_id,
-        receiptElementId: CREDIT_NOTE_RECEIPT_ID,
-        source: 'atomic_credit_note_snapshot',
-      })
-      if (result.success) {
+      if (!receipt) {
+        await printReceiptInHiddenFrame(result.creditNoteId)
         toast.success(t('pos:printer.receiptSent'), { duration: 1800 })
         return
       }
-      const errorKey = printFailureKey(result.errorType)
-      console.warn('[AtomicCreditNoteReceiptView] snapshot print failed', result.errorType)
+      const printResult = await printAtomicReceiptSnapshot({
+        invoiceId: result.creditNoteId,
+        receiptElementId: CREDIT_NOTE_RECEIPT_ID,
+        source: 'atomic_credit_note_snapshot',
+      })
+      if (printResult.success) {
+        toast.success(t('pos:printer.receiptSent'), { duration: 1800 })
+        return
+      }
+      const errorKey = printFailureKey(printResult.errorType)
+      console.warn('[AtomicCreditNoteReceiptView] snapshot print failed', printResult.errorType)
       setPrintErrorKey(errorKey)
       toast.error(t(`pos:${errorKey}`))
     } catch (error) {
@@ -101,7 +126,7 @@ export default function AtomicCreditNoteReceiptView({
       printInFlightRef.current = false
       setPrinting(false)
     }
-  }, [printReady, receipt.invoice_id, t])
+  }, [printReady, receipt, result.creditNoteId, t])
 
   useEffect(() => {
     if (!printReady || automaticPrintRef.current) return
@@ -120,39 +145,68 @@ export default function AtomicCreditNoteReceiptView({
 
   return (
     <>
-      <ThermalReceipt
-        model={model}
-        options={{ id: CREDIT_NOTE_RECEIPT_ID, qrImageUrl: qrDataUrl }}
-      />
+      {model && (
+        <ThermalReceipt
+          model={model}
+          options={{ id: CREDIT_NOTE_RECEIPT_ID, qrImageUrl: qrDataUrl }}
+        />
+      )}
 
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F2419]/90">
         <div className="mx-4 w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
-          <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 px-6 py-8 text-center text-white">
+          <div className={`px-6 py-8 text-center text-white ${
+            presentation.tone === 'success'
+              ? 'bg-gradient-to-br from-emerald-400 to-emerald-600'
+              : presentation.tone === 'progress'
+              ? 'bg-gradient-to-br from-sky-500 to-blue-600'
+              : presentation.tone === 'warning'
+              ? 'bg-gradient-to-br from-amber-400 to-amber-600'
+              : 'bg-gradient-to-br from-red-500 to-red-700'
+          }`}>
             <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-white/20">
-              <Check size={32} strokeWidth={3} />
+              {presentation.tone === 'success' ? (
+                <Check size={32} strokeWidth={3} />
+              ) : presentation.tone === 'progress' ? (
+                <Clock3 size={30} />
+              ) : (
+                <AlertCircle size={30} />
+              )}
             </div>
-            <p className="text-xl font-bold">{t('creditNotes:createdReportingPending')}</p>
-            <p className="mt-1 text-sm text-emerald-100">
-              <bdi dir="ltr">{receipt.invoice_number}</bdi>
+            <p className="text-xl font-bold">{t(presentation.headingKey)}</p>
+            <p className="mt-1 text-sm text-white/85">
+              <bdi dir="ltr">{result.creditNoteNumber}</bdi>
             </p>
           </div>
 
           <div className="space-y-3 p-6">
-            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs">
-              <span className="text-slate-500">ZATCA</span>
-              <span className="font-semibold text-slate-700">
-                {t('pos:zatca.reporting_pending')}
-              </span>
-            </div>
-            {receipt.invoice_reference && (
+            {presentation.messageKey && (
+              <div className={`rounded-xl border px-3 py-2.5 text-xs leading-relaxed ${
+                presentation.tone === 'warning'
+                  ? 'border-amber-200 bg-amber-50 text-amber-800'
+                  : presentation.tone === 'error'
+                  ? 'border-red-200 bg-red-50 text-red-800'
+                  : 'border-slate-200 bg-slate-50 text-slate-600'
+              }`}>
+                {t(presentation.messageKey)}
+              </div>
+            )}
+            {presentation.statusKey && (
+              <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-xs">
+                <span className="text-emerald-700">ZATCA</span>
+                <span className="font-semibold text-emerald-800">
+                  {t(presentation.statusKey)}
+                </span>
+              </div>
+            )}
+            {result.originalInvoiceNumber && (
               <p className="text-sm text-gray-600">
-                {t('creditNotes:creditsOriginal', { number: receipt.invoice_reference })}
+                {t('creditNotes:creditsOriginal', { number: result.originalInvoiceNumber })}
               </p>
             )}
             <div className="flex justify-between border-t border-gray-100 pt-3 text-lg font-bold">
               <span>{t('creditNotes:creditTotal')}</span>
               <span className="text-emerald-600" dir="ltr">
-                <Rial amount={Number(receipt.total)} />
+                <Rial amount={Number(result.total)} />
               </span>
             </div>
 

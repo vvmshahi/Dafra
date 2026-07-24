@@ -14,7 +14,6 @@ import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import { getSandboxValidationStatuses } from '@/lib/zatca/api'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 import AtomicCreditNoteReceiptView from './AtomicCreditNoteReceiptView'
-import type { AtomicReceiptPayload } from '@/lib/zatca/atomicCheckout'
 import {
   INVOICE_LIST_STALE_MS,
   getCachedInvoiceRows,
@@ -144,7 +143,7 @@ export default function InvoicesPage() {
   const [retryingZatca, setRetryingZatca] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [creditModalRow, setCreditModalRow] = useState<InvoiceRow | null>(null)
-  const [atomicCreditReceipt, setAtomicCreditReceipt] = useState<AtomicReceiptPayload | null>(null)
+  const [creditNoteResult, setCreditNoteResult] = useState<CreditNoteCreatedResult | null>(null)
 
   const { start: defaultStart, end: defaultEnd } = quickRangeDates('today')
   const [startDate, setStartDate] = useState(defaultStart)
@@ -744,7 +743,7 @@ export default function InvoicesPage() {
               displayZatcaStatus: demoStatus,
               status: 'posted',
               documentType: 'credit_note',
-              invoiceReference: creditModalRow?.invoiceNumber ?? null,
+              invoiceReference: result.originalInvoiceNumber,
               linkedCreditNoteId: null,
               linkedCreditNoteNumber: null,
               creditNoteCount: 0,
@@ -760,19 +759,18 @@ export default function InvoicesPage() {
             } : row))
           }
           setCreditModalRow(null)
-          if (result.atomicReceipt) {
-            setAtomicCreditReceipt(result.atomicReceipt)
-          } else {
+          setCreditNoteResult(result)
+          if (!result.atomicReceipt) {
             setRefreshKey(key => key + 1)
           }
         }}
       />
-      {atomicCreditReceipt && (
+      {creditNoteResult && (
         <AtomicCreditNoteReceiptView
-          receipt={atomicCreditReceipt}
+          result={creditNoteResult}
           onOpenPrinterSettings={() => navigate('/device-printer')}
           onClose={() => {
-            setAtomicCreditReceipt(null)
+            setCreditNoteResult(null)
             setRefreshKey(key => key + 1)
           }}
         />

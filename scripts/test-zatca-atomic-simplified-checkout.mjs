@@ -23,6 +23,7 @@ const creditReceipt = read('src/pages/invoices/AtomicCreditNoteReceiptView.tsx')
 const invoiceDetail = read('src/pages/invoices/InvoiceDetailPage.tsx')
 const invoiceList = read('src/pages/invoices/InvoicesPage.tsx')
 const atomicClient = read('src/lib/zatca/atomicCheckout.ts')
+const creditPresentation = read('src/lib/zatca/creditNotePresentation.mjs')
 const atomicPrint = read('src/lib/atomicReceiptPrint.ts')
 const electronMain = read('electron/main.cjs')
 const electronPreload = read('electron/preload.cjs')
@@ -609,21 +610,19 @@ await test('atomic credit-note first print renders only the returned receipt sna
   assert.match(creditReceipt, /!printAttemptedRef\.current/)
   assert.match(creditReceipt, /printInFlightRef\.current/)
   assert.doesNotMatch(creditReceipt, /supabase|getInvoiceZatcaOutputState|printReceipt\(\s*\{\s*invoiceId/)
-  assert.match(invoiceDetail, /if \(result\.atomicReceipt\) \{[\s\S]*setAtomicCreditReceipt\(result\.atomicReceipt\)[\s\S]*return/)
-  assert.match(invoiceList, /if \(result\.atomicReceipt\) \{[\s\S]*setAtomicCreditReceipt\(result\.atomicReceipt\)/)
+  assert.match(invoiceDetail, /setCreditNoteResult\(result\)[\s\S]*if \(result\.atomicReceipt\) \{[\s\S]*return/)
+  assert.match(invoiceList, /setCreditNoteResult\(result\)/)
   assert.match(invoiceDetail, /<AtomicCreditNoteReceiptView/)
   assert.match(invoiceList, /<AtomicCreditNoteReceiptView/)
 })
 
 await test('atomic credit-note messaging distinguishes local commit from ZATCA reporting', () => {
   assert.match(credit, /let autoSubmitSucceeded = false/)
-  assert.match(credit, /usedAtomicSimplifiedCredit && zatcaStatus === 'pending'/)
-  assert.match(credit, /createdReportingPending/)
-  const pendingBranch = credit.slice(
-    credit.indexOf("if (usedAtomicSimplifiedCredit && zatcaStatus === 'pending')"),
-    credit.indexOf('} else if', credit.indexOf("if (usedAtomicSimplifiedCredit && zatcaStatus === 'pending')")),
-  )
-  assert.doesNotMatch(pendingBranch, /createdSubmitted/)
+  assert.match(credit, /creditNotePresentationState\(createdResult\)/)
+  assert.match(creditReceipt, /creditNotePresentationState\(result\)/)
+  assert.match(creditPresentation, /headingKey: 'creditNotes:created'/)
+  assert.match(creditPresentation, /messageKey: 'creditNotes:reportingContinuesAutomatically'/)
+  assert.doesNotMatch(creditReceipt, /createdReportingPending/)
 })
 
 await test('all required sanitized timing events are present', () => {

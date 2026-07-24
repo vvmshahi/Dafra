@@ -41,6 +41,7 @@ const oldPending = {
   cartFingerprint: 'a'.repeat(64),
   documentType: 'credit_note',
   scopeId: inv0830.id,
+  branchId,
   checkout: oldCheckout,
 }
 const currentCheckout = {
@@ -53,7 +54,7 @@ const currentCheckout = {
 
 // Reopening the same original may replay its exact durable request.
 assert.equal(
-  resolveScopedAtomicCheckout(oldPending, oldCheckout, 'credit_note', inv0830.id),
+  resolveScopedAtomicCheckout(oldPending, oldCheckout, 'credit_note', inv0830.id, branchId),
   oldCheckout,
 )
 
@@ -63,6 +64,7 @@ const secondSubmission = resolveScopedAtomicCheckout(
   currentCheckout,
   'credit_note',
   inv0835.id,
+  branchId,
 )
 assert.equal(secondSubmission.original_invoice_id, inv0835.id)
 assert.equal(secondSubmission.idempotency_key, 'idem-inv-0835')
@@ -73,7 +75,7 @@ assert.notDeepEqual(secondSubmission.items, oldCheckout.items)
 
 const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 assert.notEqual(fingerprint(secondSubmission), fingerprint(oldCheckout))
-assert.equal(pendingAtomicCheckoutMatchesScope(oldPending, 'credit_note', inv0835.id), false)
+assert.equal(pendingAtomicCheckoutMatchesScope(oldPending, 'credit_note', inv0835.id, branchId), false)
 
 // Pending credit-note durability is scoped by immutable invoice ID, not number.
 assert.notEqual(
@@ -139,7 +141,7 @@ for (const reset of [
 assert.match(creditModal, /setModalInvoiceIdentity\(null\)/)
 assert.match(
   creditModal,
-  /readPendingAtomicCheckout\(\s*originalBranchId,\s*'credit_note',\s*originalInvoiceId\)/,
+  /inspectPendingAtomicCheckout\(\s*originalBranchId,\s*'credit_note',\s*originalInvoiceId/,
 )
 assert.match(
   creditModal,
@@ -159,7 +161,7 @@ assert.match(creditModal, /setError\(t\('validation:creditNoteInvoiceChanged'\)\
 assert.match(creditModal, /original_invoice_id: originalInvoiceId/)
 assert.match(
   creditModal,
-  /resolveScopedAtomicCheckout\(\s*pending,\s*payload,\s*'credit_note',\s*originalInvoiceId,\s*\)/,
+  /resolveScopedAtomicCheckout\(\s*pending,\s*payload,\s*'credit_note',\s*originalInvoiceId,\s*invoice\.branch_id,\s*\)/,
 )
 assert.match(creditModal, /checkoutSimplifiedAtomically\(\{[\s\S]*?checkout: atomicPayload/)
 assert.match(creditModal, /data-original-invoice-id=\{invoice\.id\}/)
@@ -168,8 +170,8 @@ assert.doesNotMatch(creditModal, /pending\?\.checkout \?\? payload/)
 
 // The storage client passes scope through persist/read/clear without changing POS callers.
 assert.match(atomicClient, /atomicCheckoutStorageKey\(branchId, pending\.documentType, scopeId\)/)
-assert.match(atomicClient, /pendingAtomicCheckoutMatchesScope\(parsed, documentType, scopeId\)/)
-assert.match(atomicClient, /readPendingAtomicCheckout\(branchId, documentType, scopeId\)/)
+assert.match(atomicClient, /pendingAtomicCheckoutMatchesScope\(\s*pending,\s*documentType,\s*scopeId,\s*branchId,/)
+assert.match(atomicClient, /return inspectPendingAtomicCheckout\(branchId, documentType, scopeId\)\.pending/)
 
 // The regression patch contains no production-data or historical-incident operation.
 for (const source of [creditModal, invoiceList, invoiceDetail, invoiceCache, atomicClient]) {

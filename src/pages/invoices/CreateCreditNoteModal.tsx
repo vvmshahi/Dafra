@@ -6,16 +6,23 @@ import type { TFunction } from 'i18next'
 import { supabase } from '@/lib/supabase'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import type { PaymentMethod, ZatcaStatus } from '@/types/database'
-import { isPermanentDemoSandboxBranch, submitInvoiceForBranch } from '@/lib/zatca/submission'
+import {
+  getInvoiceZatcaOutputState,
+  isPermanentDemoSandboxBranch,
+  submitInvoiceForBranch,
+} from '@/lib/zatca/submission'
 import {
   atomicCheckoutFingerprint,
   checkoutSimplifiedAtomically,
+  cleanupObsoleteCreditNotePendingCheckouts,
   clearPendingAtomicCheckout,
+  inspectPendingAtomicCheckout,
   persistPendingAtomicCheckout,
-  readPendingAtomicCheckout,
   type AtomicReceiptPayload,
+  type PendingAtomicCheckoutInspection,
 } from '@/lib/zatca/atomicCheckout'
 import { resolveScopedAtomicCheckout } from '@/lib/zatca/atomicCheckoutScope.mjs'
+import { creditNotePresentationState } from '@/lib/zatca/creditNotePresentation.mjs'
 import { useAuth } from '@/hooks/useAuth'
 import { resolveBusinessType } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
@@ -43,6 +50,15 @@ export interface CreditNoteCreatedResult {
   taxAmount: number
   itemsCount: number
   originalInvoiceId: string
+  originalInvoiceNumber: string
+  documentKind: 'simplified' | 'standard'
+  invoiceStatus: string
+  finalizationStatus: string
+  artifactStage: string
+  reportingDisplayState: string
+  canPrint: boolean
+  retryAvailable: boolean
+  reconciliationRequired: boolean
   atomicReceipt?: AtomicReceiptPayload
 }
 
@@ -109,6 +125,17 @@ interface CreditNoteModalInvoiceIdentity {
   invoiceNumber: string
 }
 
+interface CreditNoteOutputState {
+  documentKind: 'simplified' | 'standard'
+  invoiceStatus: string
+  finalizationStatus: string
+  artifactStage: string
+  reportingDisplayState: string
+  canPrint: boolean
+  retryAvailable: boolean
+  reconciliationRequired: boolean
+}
+
 function safeCreditNoteError(error: unknown, t: TFunction): string {
   const message = typeof (error as any)?.message === 'string' ? (error as any).message : ''
   if (/select at least one|no items/i.test(message)) return t('validation:creditNoteChooseItem')
@@ -127,6 +154,40 @@ function safeCreditNoteError(error: unknown, t: TFunction): string {
 
 function newIdempotencyKey(invoiceId: string) {
   return globalThis.crypto?.randomUUID?.() ?? `${invoiceId}-${Date.now()}`
+}
+
+function defaultReportingDisplayState(
+  documentKind: 'simplified' | 'standard',
+  invoiceStatus: string,
+  finalizationStatus: string,
+): string {
+  if (documentKind === 'standard') {
+    if (invoiceStatus === 'cleared') return 'cleared'
+    if (/failed|rejected|blocked/.test(finalizationStatus) || invoiceStatus === 'failed') {
+      return 'clearance_failed'
+    }
+    return 'clearance_pending'
+  }
+  if (invoiceStatus === 'reported') return 'reported'
+  if (/reconciliation/.test(finalizationStatus)) return 'reconciliation_required'
+  if (/failed|rejected|blocked/.test(finalizationStatus) || invoiceStatus === 'failed') {
+    return 'reporting_rejected'
+  }
+  return 'reporting_pending'
+}
+
+function logPendingCreditNoteDiagnostic(
+  currentModalInvoiceId: string,
+  inspection: PendingAtomicCheckoutInspection,
+) {
+  if (!import.meta.env.DEV) return
+  console.info('[credit-note atomic retry]', {
+    currentModalInvoiceId,
+    pendingStorageScope: inspection.storageScope,
+    storedOriginalInvoiceId: inspection.storedOriginalInvoiceId,
+    accepted: inspection.accepted,
+    rejectedReason: inspection.rejectedReason,
+  })
 }
 
 const QUICK_REASONS = [
@@ -257,6 +318,24 @@ export default function CreateCreditNoteModal({
   const isServiceBusiness = businessType === 'service'
 
   useEffect(() => {
+    const cleanup = () => {
+      const removed = cleanupObsoleteCreditNotePendingCheckouts()
+      if (import.meta.env.DEV
+          && (removed.localStorageKeys.length > 0 || removed.sessionStorageKeys.length > 0)) {
+        console.info('[credit-note atomic retry]', {
+          event: 'obsolete_branch_scope_removed',
+          localStorageEntriesRemoved: removed.localStorageKeys.length,
+          sessionStorageEntriesRemoved: removed.sessionStorageKeys.length,
+        })
+      }
+    }
+    cleanup()
+    const handleStorage = () => cleanup()
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
+
+  useEffect(() => {
     setSelectedReason('')
     setRemarks('')
     setOriginalPayments([])
@@ -288,8 +367,14 @@ export default function CreateCreditNoteModal({
       branchId: originalBranchId,
       invoiceNumber: invoice.invoice_number,
     })
+    const pendingInspection = inspectPendingAtomicCheckout(
+      originalBranchId,
+      'credit_note',
+      originalInvoiceId,
+    )
+    logPendingCreditNoteDiagnostic(originalInvoiceId, pendingInspection)
     setIdempotencyKey(
-      readPendingAtomicCheckout(originalBranchId, 'credit_note', originalInvoiceId)?.idempotencyKey
+      pendingInspection.pending?.idempotencyKey
         ?? newIdempotencyKey(originalInvoiceId),
     )
 
@@ -497,16 +582,20 @@ export default function CreateCreditNoteModal({
       let atomicReceipt: AtomicReceiptPayload | undefined
       let result: RpcCreditNoteResult | null = null
       if (atomicSimplifiedCreditEligible) {
-        const pending = readPendingAtomicCheckout(
+        cleanupObsoleteCreditNotePendingCheckouts()
+        const pendingInspection = inspectPendingAtomicCheckout(
           invoice.branch_id,
           'credit_note',
           originalInvoiceId,
         )
+        logPendingCreditNoteDiagnostic(originalInvoiceId, pendingInspection)
+        const pending = pendingInspection.pending
         const atomicPayload = resolveScopedAtomicCheckout(
           pending,
           payload,
           'credit_note',
           originalInvoiceId,
+          invoice.branch_id,
         )
         const fingerprint = await atomicCheckoutFingerprint(atomicPayload)
         setCartFingerprint(fingerprint)
@@ -519,12 +608,27 @@ export default function CreateCreditNoteModal({
           documentType: 'credit_note',
           checkout: atomicPayload,
         }, originalInvoiceId)
-        const atomic = await checkoutSimplifiedAtomically({
-          branchId: invoice.branch_id,
-          checkout: atomicPayload,
-          cartFingerprint: fingerprint,
-          documentType: 'credit_note',
-        })
+        let atomic
+        try {
+          atomic = await checkoutSimplifiedAtomically({
+            branchId: invoice.branch_id,
+            checkout: atomicPayload,
+            cartFingerprint: fingerprint,
+            documentType: 'credit_note',
+          })
+        } catch (atomicError) {
+          if (/ATOMIC_CREDIT_NOTE_REQUIRES_REPORTED_SIMPLIFIED_ORIGINAL/.test(
+            atomicError instanceof Error ? atomicError.message : String(atomicError ?? ''),
+          )) {
+            const postErrorInspection = inspectPendingAtomicCheckout(
+              invoice.branch_id,
+              'credit_note',
+              originalInvoiceId,
+            )
+            logPendingCreditNoteDiagnostic(originalInvoiceId, postErrorInspection)
+          }
+          throw atomicError
+        }
         if (atomic.status === 'committed') {
           usedAtomicSimplifiedCredit = true
           atomicReceipt = atomic.receipt
@@ -572,6 +676,33 @@ export default function CreateCreditNoteModal({
       const creditNoteId = result.credit_note_invoice_id
       let zatcaStatus = result.zatca_status ?? 'pending'
       let autoSubmitSucceeded = false
+      let outputState: CreditNoteOutputState = atomicReceipt
+        ? {
+          documentKind: 'simplified' as const,
+          invoiceStatus: result.zatca_status ?? 'pending',
+          finalizationStatus: atomicReceipt.finalization_status,
+          artifactStage: atomicReceipt.artifact_stage,
+          reportingDisplayState: atomicReceipt.reporting_display_state,
+          canPrint: atomicReceipt.can_print === true,
+          retryAvailable: false,
+          reconciliationRequired: false,
+        }
+        : {
+          documentKind: invoice.zatca_document_kind,
+          invoiceStatus: result.zatca_status ?? 'pending',
+          finalizationStatus: invoice.zatca_document_kind === 'standard'
+            ? 'clearance_pending'
+            : 'reporting_pending',
+          artifactStage: invoice.zatca_document_kind === 'standard'
+            ? 'standard_provisional'
+            : 'none',
+          reportingDisplayState: invoice.zatca_document_kind === 'standard'
+            ? 'clearance_pending'
+            : 'reporting_pending',
+          canPrint: false,
+          retryAvailable: true,
+          reconciliationRequired: false,
+        }
       const shouldAutoSubmit = !usedAtomicSimplifiedCredit
         && zatcaStatus !== 'reported'
         && zatcaStatus !== 'cleared'
@@ -589,15 +720,79 @@ export default function CreateCreditNoteModal({
           autoSubmitSucceeded = routed.mode === 'sandbox_validation'
             ? routed.result.status === 'sandbox_validated' || routed.result.status === 'sandbox_validated_with_warnings'
             : routed.result.ok
+          if (routed.mode === 'production_submission') {
+            const submission = routed.result
+            outputState = {
+              documentKind: submission.documentKind ?? invoice.zatca_document_kind,
+              invoiceStatus: submission.invoiceStatus,
+              finalizationStatus: submission.finalizationStatus,
+              artifactStage: submission.artifactStage,
+              reportingDisplayState: defaultReportingDisplayState(
+                submission.documentKind ?? invoice.zatca_document_kind,
+                submission.invoiceStatus,
+                submission.finalizationStatus,
+              ),
+              canPrint: submission.canPrint,
+              retryAvailable: submission.retryable,
+              reconciliationRequired: false,
+            }
+          } else {
+            outputState = {
+              ...outputState,
+              invoiceStatus: routed.result.status,
+              finalizationStatus: routed.result.status,
+              reportingDisplayState: routed.result.status,
+              canPrint: autoSubmitSucceeded
+                && invoice.zatca_document_kind === 'simplified',
+              retryAvailable: !autoSubmitSucceeded,
+            }
+          }
         } catch {
           autoSubmitSucceeded = false
+          outputState = {
+            ...outputState,
+            finalizationStatus: invoice.zatca_document_kind === 'standard'
+              ? 'clearance_failed'
+              : 'reporting_failed',
+            reportingDisplayState: invoice.zatca_document_kind === 'standard'
+              ? 'clearance_failed'
+              : 'reporting_rejected',
+            canPrint: false,
+            retryAvailable: true,
+          }
         } finally {
           const refreshedStatus = await fetchCreditNoteStatus(creditNoteId)
           zatcaStatus = refreshedStatus ?? zatcaStatus
         }
       }
 
-      onCreated({
+      if (!usedAtomicSimplifiedCredit && !demoSandbox) {
+        try {
+          const authoritative = await getInvoiceZatcaOutputState({
+            invoiceId: creditNoteId,
+            branchId: invoice.branch_id,
+          })
+          outputState = {
+            documentKind: authoritative.documentKind ?? invoice.zatca_document_kind,
+            invoiceStatus: authoritative.invoiceStatus,
+            finalizationStatus: authoritative.finalizationStatus,
+            artifactStage: authoritative.artifactStage,
+            reportingDisplayState: authoritative.reportingDisplayState,
+            canPrint: authoritative.canPrint,
+            retryAvailable: authoritative.retryAvailable,
+            reconciliationRequired: authoritative.reconciliationRequired,
+          }
+          if (authoritative.invoiceStatus === 'reported'
+              || authoritative.invoiceStatus === 'cleared') {
+            zatcaStatus = authoritative.invoiceStatus
+          }
+        } catch {
+          // The submission result remains the safe fallback. Standard output
+          // stays non-printable unless authoritative cleared markers agree.
+        }
+      }
+
+      const createdResult: CreditNoteCreatedResult = {
         creditNoteId: result.credit_note_invoice_id,
         creditNoteNumber: result.credit_note_invoice_number,
         createdAt: result.created_at ?? new Date().toISOString(),
@@ -612,18 +807,33 @@ export default function CreateCreditNoteModal({
         taxAmount: totals.tax,
         itemsCount: lines.length,
         originalInvoiceId,
+        originalInvoiceNumber: currentInvoiceIdentity.invoiceNumber,
+        documentKind: outputState.documentKind,
+        invoiceStatus: outputState.invoiceStatus,
+        finalizationStatus: outputState.finalizationStatus,
+        artifactStage: outputState.artifactStage,
+        reportingDisplayState: outputState.reportingDisplayState,
+        canPrint: outputState.canPrint,
+        retryAvailable: outputState.retryAvailable,
+        reconciliationRequired: outputState.reconciliationRequired,
         atomicReceipt,
-      })
+      }
+      onCreated(createdResult)
       onClose()
-      if (usedAtomicSimplifiedCredit && zatcaStatus === 'pending') {
-        toast.success(t('creditNotes:createdReportingPending'))
-      } else if (autoSubmitSucceeded || zatcaStatus === 'reported' || zatcaStatus === 'cleared') {
-        const demoSubmission = isPermanentDemoSandboxBranch(profile?.tenant_id, invoice.branch_id)
-        toast.success(result.idempotent_replay ? t('creditNotes:alreadyExists') : t('creditNotes:createdSubmitted'), {
-          description: demoSubmission ? t('creditNotes:processedByZatca') : undefined,
-        })
+      const presentation = creditNotePresentationState(createdResult)
+      const description = presentation.messageKey
+        ? t(presentation.messageKey)
+        : presentation.statusKey
+        ? t(presentation.statusKey)
+        : undefined
+      if (presentation.tone === 'error') {
+        toast.error(t(presentation.headingKey), { description })
+      } else if (presentation.tone === 'warning') {
+        toast.warning(t(presentation.headingKey), { description })
+      } else if (presentation.tone === 'progress') {
+        toast.info(t(presentation.headingKey), { description })
       } else {
-        toast.error(t('creditNotes:createdSubmissionFailed'))
+        toast.success(t(presentation.headingKey), { description })
       }
     } catch (err) {
       const safeMessage = safeCreditNoteError(err, t)

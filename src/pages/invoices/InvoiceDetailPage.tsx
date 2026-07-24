@@ -23,7 +23,6 @@ import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { getInvoiceZatcaOutputState, submitInvoiceToZatca, type ZatcaOutputState } from '@/lib/zatca/submission'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 import AtomicCreditNoteReceiptView from './AtomicCreditNoteReceiptView'
-import type { AtomicReceiptPayload } from '@/lib/zatca/atomicCheckout'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import { getSandboxValidationStatus, type SandboxValidationResponse } from '@/lib/zatca/api'
 import { updateCachedInvoiceRows, upsertInvoiceListRow } from '@/lib/invoices/invoiceListCache'
@@ -183,7 +182,7 @@ export default function InvoiceDetailPage() {
   const [resubmitting, setResubmitting] = useState(false)
   const [thermalPrinting, setThermalPrinting] = useState(false)
   const [creditModalOpen, setCreditModalOpen] = useState(false)
-  const [atomicCreditReceipt, setAtomicCreditReceipt] = useState<AtomicReceiptPayload | null>(null)
+  const [creditNoteResult, setCreditNoteResult] = useState<CreditNoteCreatedResult | null>(null)
   const [sandboxValidation, setSandboxValidation] = useState<SandboxValidationResponse | null>(null)
   const [outputState, setOutputState] = useState<ZatcaOutputState | null>(null)
 
@@ -553,8 +552,8 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
       created_at: result.createdAt,
     }, ...prev])
 
+    setCreditNoteResult(result)
     if (result.atomicReceipt) {
-      setAtomicCreditReceipt(result.atomicReceipt)
       return
     }
 
@@ -1202,12 +1201,12 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
         onClose={() => setCreditModalOpen(false)}
         onCreated={handleCreditNoteCreated}
       />
-      {atomicCreditReceipt && (
+      {creditNoteResult && (
         <AtomicCreditNoteReceiptView
-          receipt={atomicCreditReceipt}
+          result={creditNoteResult}
           onOpenPrinterSettings={() => navigate('/device-printer')}
           onClose={() => {
-            setAtomicCreditReceipt(null)
+            setCreditNoteResult(null)
             setLoadAttempt(attempt => attempt + 1)
           }}
         />

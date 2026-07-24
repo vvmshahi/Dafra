@@ -1,7 +1,9 @@
 import { supabase } from '@/lib/supabase'
 import { ZATCA_FINALIZATION_CLIENT_VERSION } from '@/lib/zatca/submission'
 import {
+  CREDIT_NOTE_SCOPE_MIGRATION_KEY,
   atomicCheckoutStorageKey,
+  removeObsoleteCreditNoteStorageEntries,
   pendingAtomicCheckoutMatchesScope,
 } from '@/lib/zatca/atomicCheckoutScope.mjs'
 
@@ -95,6 +97,28 @@ export interface PendingAtomicCheckout {
   documentType: AtomicCheckoutDocumentType
   checkout: Record<string, unknown>
   scopeId?: string
+  branchId?: string
+}
+
+export interface PendingAtomicCheckoutInspection {
+  pending: PendingAtomicCheckout | null
+  storageKey: string
+  storageScope: string
+  storedOriginalInvoiceId: string | null
+  accepted: boolean
+  rejectedReason:
+    | 'invalid_json'
+    | 'invalid_payload'
+    | 'document_mismatch'
+    | 'identity_mismatch'
+    | null
+  removed: boolean
+  migrated: boolean
+}
+
+export interface ObsoleteCreditNoteCleanupResult {
+  localStorageKeys: string[]
+  sessionStorageKeys: string[]
 }
 
 function stableValue(value: unknown): unknown {
@@ -127,7 +151,7 @@ export function persistPendingAtomicCheckout(
   scopeId?: string,
 ): void {
   const scopedPending = scopeId
-    ? { ...pending, scopeId }
+    ? { ...pending, scopeId, branchId }
     : pending
   localStorage.setItem(
     atomicCheckoutStorageKey(branchId, pending.documentType, scopeId),
@@ -135,27 +159,176 @@ export function persistPendingAtomicCheckout(
   )
 }
 
+function storageScope(
+  branchId: string,
+  documentType: AtomicCheckoutDocumentType,
+  scopeId?: string,
+): string {
+  return `${branchId}:${documentType}:${scopeId ?? 'branch'}`
+}
+
+function storedOriginalInvoiceId(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const originalInvoiceId = (value as Record<string, unknown>).original_invoice_id
+  return typeof originalInvoiceId === 'string' ? originalInvoiceId : null
+}
+
+function removeExactPendingKey(key: string): boolean {
+  try {
+    localStorage.removeItem(key)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function cleanupObsoleteCreditNotePendingCheckouts(): ObsoleteCreditNoteCleanupResult {
+  const result: ObsoleteCreditNoteCleanupResult = {
+    localStorageKeys: [],
+    sessionStorageKeys: [],
+  }
+  try {
+    result.localStorageKeys = removeObsoleteCreditNoteStorageEntries(localStorage)
+    localStorage.setItem(CREDIT_NOTE_SCOPE_MIGRATION_KEY, 'invoice-id-scope-v1')
+  } catch {
+    // Storage can be unavailable in private browsing. The scoped read remains fail-closed.
+  }
+  try {
+    result.sessionStorageKeys = removeObsoleteCreditNoteStorageEntries(sessionStorage)
+  } catch {
+    // Session storage cleanup is best-effort and never affects POS invoice state.
+  }
+  return result
+}
+
+export function inspectPendingAtomicCheckout(
+  branchId: string,
+  documentType: AtomicCheckoutDocumentType = 'invoice',
+  scopeId?: string,
+): PendingAtomicCheckoutInspection {
+  const key = atomicCheckoutStorageKey(branchId, documentType, scopeId)
+  const base = {
+    storageKey: key,
+    storageScope: storageScope(branchId, documentType, scopeId),
+    storedOriginalInvoiceId: null,
+    accepted: false,
+    rejectedReason: null,
+    removed: false,
+    migrated: false,
+  } satisfies Omit<PendingAtomicCheckoutInspection, 'pending'>
+
+  let raw: string | null
+  try {
+    raw = localStorage.getItem(key)
+  } catch {
+    return { ...base, pending: null }
+  }
+  if (!raw) return { ...base, pending: null }
+
+  let parsed: Partial<PendingAtomicCheckout>
+  try {
+    parsed = JSON.parse(raw) as Partial<PendingAtomicCheckout>
+  } catch {
+    return {
+      ...base,
+      pending: null,
+      rejectedReason: 'invalid_json',
+      removed: documentType === 'credit_note' && removeExactPendingKey(key),
+    }
+  }
+
+  const originalInvoiceId = storedOriginalInvoiceId(parsed.checkout)
+  const inspectedBase = { ...base, storedOriginalInvoiceId: originalInvoiceId }
+  if (parsed.documentType !== documentType) {
+    return {
+      ...inspectedBase,
+      pending: null,
+      rejectedReason: 'document_mismatch',
+      removed: documentType === 'credit_note' && removeExactPendingKey(key),
+    }
+  }
+
+  const creditIdentityMismatch = documentType === 'credit_note'
+    && Boolean(scopeId)
+    && (
+      parsed.scopeId !== scopeId
+      || originalInvoiceId !== scopeId
+      || (typeof parsed.branchId === 'string' && parsed.branchId !== branchId)
+    )
+  if (creditIdentityMismatch) {
+    return {
+      ...inspectedBase,
+      pending: null,
+      rejectedReason: 'identity_mismatch',
+      removed: removeExactPendingKey(key),
+    }
+  }
+
+  if (typeof parsed.idempotencyKey !== 'string'
+      || !/^[a-f0-9]{64}$/.test(parsed.cartFingerprint ?? '')
+      || !parsed.checkout || typeof parsed.checkout !== 'object'
+      || Array.isArray(parsed.checkout)) {
+    return {
+      ...inspectedBase,
+      pending: null,
+      rejectedReason: 'invalid_payload',
+      removed: documentType === 'credit_note' && removeExactPendingKey(key),
+    }
+  }
+
+  let pending = parsed as PendingAtomicCheckout
+  let migrated = false
+  if (documentType === 'credit_note' && scopeId && pending.branchId == null) {
+    pending = { ...pending, branchId }
+    try {
+      localStorage.setItem(key, JSON.stringify(pending))
+      migrated = true
+    } catch {
+      return {
+        ...inspectedBase,
+        pending: null,
+        rejectedReason: 'invalid_payload',
+      }
+    }
+  }
+  if (!pendingAtomicCheckoutMatchesScope(
+    pending,
+    documentType,
+    scopeId,
+    branchId,
+  )) {
+    return {
+      ...inspectedBase,
+      pending: null,
+      rejectedReason: 'identity_mismatch',
+      removed: documentType === 'credit_note' && removeExactPendingKey(key),
+      migrated,
+    }
+  }
+  return {
+    ...inspectedBase,
+    pending,
+    accepted: true,
+    migrated,
+  }
+}
+
 export function readPendingAtomicCheckout(
   branchId: string,
   documentType: AtomicCheckoutDocumentType = 'invoice',
   scopeId?: string,
 ): PendingAtomicCheckout | null {
-  try {
-    const raw = localStorage.getItem(
-      atomicCheckoutStorageKey(branchId, documentType, scopeId),
-    )
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<PendingAtomicCheckout>
-    if (typeof parsed.idempotencyKey !== 'string'
-        || !/^[a-f0-9]{64}$/.test(parsed.cartFingerprint ?? '')
-        || !['invoice', 'credit_note'].includes(parsed.documentType ?? '')
-        || !parsed.checkout || typeof parsed.checkout !== 'object'
-        || Array.isArray(parsed.checkout)
-        || !pendingAtomicCheckoutMatchesScope(parsed, documentType, scopeId)) return null
-    return parsed as PendingAtomicCheckout
-  } catch {
-    return null
-  }
+  return inspectPendingAtomicCheckout(branchId, documentType, scopeId).pending
+}
+
+export function clearPendingAtomicCheckoutScope(
+  branchId: string,
+  documentType: AtomicCheckoutDocumentType,
+  scopeId: string,
+): void {
+  removeExactPendingKey(
+    atomicCheckoutStorageKey(branchId, documentType, scopeId),
+  )
 }
 
 export function clearPendingAtomicCheckout(
