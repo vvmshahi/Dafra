@@ -22,7 +22,10 @@ for (const script of [
   assert.equal(checked.status, 0, `${script}: ${checked.stderr}`)
 }
 
-for (const step of ['00', '01', '02', '03', '04', '04a', '05', '06', '09', '10', '11', '12']) {
+for (const step of [
+  '00', '01', '02', '03', '04', '04a', '05', '06', '09', '10',
+  '11', '11a', '11b', '12', '13',
+]) {
   assert.match(stepScript, new RegExp(`\\b${step.replace('04a', '04a')}\\)`))
   assert.match(runbook, new RegExp(`run_sql_step\\.sh ${step}\\b`))
 }

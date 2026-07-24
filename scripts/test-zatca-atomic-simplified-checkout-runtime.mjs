@@ -47,14 +47,20 @@ const password = `Atomic-${randomUUID()}!`
 const ids = {
   tenantA: randomUUID(),
   tenantB: randomUUID(),
+  demoTenant: 'ebf1144b-55ed-472a-99c9-23b5ee915351',
   branchA: randomUUID(),
   branchA2: randomUUID(),
   branchB: randomUUID(),
+  demoTradingBranch: '14271653-b404-44bf-9f39-7e9927569c02',
+  demoServiceBranch: 'c30094d7-40ca-4d2e-833a-07aa18c4fa46',
   posSessionA: randomUUID(),
   posSessionA2: randomUUID(),
   posSessionB: randomUUID(),
   product: randomUUID(),
   serviceProduct: randomUUID(),
+  branchA2ServiceProduct: randomUUID(),
+  demoTradingProduct: randomUUID(),
+  demoServiceProduct: randomUUID(),
   individualCustomer: randomUUID(),
   businessCustomer: randomUUID(),
 }
@@ -266,12 +272,33 @@ function runPsql(sql) {
   })
 }
 
+// The hosted production role enum includes the legacy tenant-admin value while
+// the disposable canonical baseline does not. Add it only to this isolated
+// fixture so the reviewed production compatibility path is exercised.
+const adminRoleFixture = await runPsql(
+  "ALTER TYPE public.user_role ADD VALUE IF NOT EXISTS 'admin'",
+)
+assert.equal(
+  adminRoleFixture.code,
+  0,
+  `install disposable admin role fixture: ${adminRoleFixture.stderr}`,
+)
+// ALTER TYPE invalidates PostgREST's schema cache. Wait for its guarded local
+// reload before issuing auth or RPC requests so the test cannot race a restart.
+await delay(5_000)
+
 const ownerAId = await createUser('atomic-owner-a@example.test', 'owner')
+const adminAId = await createUser('atomic-admin-a@example.test', 'admin')
 const branchUserId = await createUser('atomic-branch-a@example.test', 'branch')
 const ownerBId = await createUser('atomic-owner-b@example.test', 'owner')
+const demoTradingUserId = await createUser('atomic-demo-trading@example.test', 'branch')
+const demoServiceUserId = await createUser('atomic-demo-service@example.test', 'branch')
 const ownerA = await login('atomic-owner-a@example.test')
+const adminA = await login('atomic-admin-a@example.test')
 const branchUser = await login('atomic-branch-a@example.test')
 const ownerB = await login('atomic-owner-b@example.test')
+const demoTradingUser = await login('atomic-demo-trading@example.test')
+const demoServiceUser = await login('atomic-demo-service@example.test')
 
 await ok(service.from('tenants').insert([
   {
@@ -286,6 +313,13 @@ await ok(service.from('tenants').insert([
     name: 'Atomic Disposable Tenant B',
     vat_number: '300000000000013',
     city: 'Jeddah',
+    business_type: 'trading',
+  },
+  {
+    id: ids.demoTenant,
+    name: 'Atomic Permanent Demo Tenant',
+    vat_number: '300000000000033',
+    city: 'Riyadh',
     business_type: 'trading',
   },
 ]), 'insert tenants')
@@ -324,6 +358,24 @@ await ok(service.from('branches').insert([
     branch_code: 'ATOM-B',
     is_main_branch: true,
   },
+  {
+    id: ids.demoTradingBranch,
+    tenant_id: ids.demoTenant,
+    name: 'Atomic Demo Trading Branch',
+    branch_code: 'ATOM-DEMO-T',
+    invoice_prefix: 'DMT',
+    is_main_branch: true,
+    zatca_phase: 2,
+  },
+  {
+    id: ids.demoServiceBranch,
+    tenant_id: ids.demoTenant,
+    name: 'Atomic Demo Service Branch',
+    branch_code: 'ATOM-DEMO-S',
+    invoice_prefix: 'DMS',
+    is_main_branch: false,
+    zatca_phase: 2,
+  },
 ]), 'insert branches')
 await ok(service.from('user_profiles').upsert([
   {
@@ -344,6 +396,14 @@ await ok(service.from('user_profiles').upsert([
     is_active: true,
   },
   {
+    id: adminAId,
+    tenant_id: ids.tenantA,
+    role: 'admin',
+    full_name: 'Atomic Admin A',
+    email: 'atomic-admin-a@example.test',
+    is_active: true,
+  },
+  {
     id: ownerBId,
     tenant_id: ids.tenantB,
     role: 'owner',
@@ -351,34 +411,60 @@ await ok(service.from('user_profiles').upsert([
     email: 'atomic-owner-b@example.test',
     is_active: true,
   },
+  {
+    id: demoTradingUserId,
+    tenant_id: ids.demoTenant,
+    branch_id: ids.demoTradingBranch,
+    role: 'branch',
+    full_name: 'Atomic Demo Trading User',
+    email: 'atomic-demo-trading@example.test',
+    is_active: true,
+  },
+  {
+    id: demoServiceUserId,
+    tenant_id: ids.demoTenant,
+    branch_id: ids.demoServiceBranch,
+    role: 'branch',
+    full_name: 'Atomic Demo Service User',
+    email: 'atomic-demo-service@example.test',
+    is_active: true,
+  },
 ]), 'insert profiles')
 
-await ok(service.from('pos_sessions').insert([
-  {
-    id: ids.posSessionA,
-    tenant_id: ids.tenantA,
-    branch_id: ids.branchA,
-    opened_by: branchUserId,
-    opening_cash: 100,
-    status: 'open',
-  },
-  {
-    id: ids.posSessionA2,
-    tenant_id: ids.tenantA,
-    branch_id: ids.branchA2,
-    opened_by: ownerAId,
-    opening_cash: 200,
-    status: 'open',
-  },
-  {
-    id: ids.posSessionB,
-    tenant_id: ids.tenantB,
-    branch_id: ids.branchB,
-    opened_by: ownerBId,
-    opening_cash: 300,
-    status: 'open',
-  },
-]), 'insert POS session RLS fixtures')
+const posSessionFixtures = await runPsql(`
+  INSERT INTO public.pos_sessions
+    (id, tenant_id, branch_id, opened_by, opening_cash, status)
+  VALUES
+    (
+      '${ids.posSessionA}'::uuid,
+      '${ids.tenantA}'::uuid,
+      '${ids.branchA}'::uuid,
+      '${branchUserId}'::uuid,
+      100,
+      'open'
+    ),
+    (
+      '${ids.posSessionA2}'::uuid,
+      '${ids.tenantA}'::uuid,
+      '${ids.branchA2}'::uuid,
+      '${ownerAId}'::uuid,
+      200,
+      'open'
+    ),
+    (
+      '${ids.posSessionB}'::uuid,
+      '${ids.tenantB}'::uuid,
+      '${ids.branchB}'::uuid,
+      '${ownerBId}'::uuid,
+      300,
+      'open'
+    )
+`)
+assert.equal(
+  posSessionFixtures.code,
+  0,
+  `insert disposable POS session fixtures: ${posSessionFixtures.stderr}`,
+)
 
 await expectError(
   anon.from('pos_sessions').select('id,tenant_id,branch_id'),
@@ -481,6 +567,57 @@ await ok(service.from('products').insert([
     name: 'Atomic Service Product',
     sku: 'ATOM-SERVICE',
     price: 20,
+    tax_rate: 15,
+    tax_category: 'S',
+    is_taxable: true,
+    vat_treatment: 'exclusive',
+    stock_quantity: 0,
+    track_stock: false,
+    is_service: true,
+    is_active: true,
+    is_available: true,
+  },
+  {
+    id: ids.branchA2ServiceProduct,
+    tenant_id: ids.tenantA,
+    branch_id: ids.branchA2,
+    name: 'Atomic Branch A2 Service',
+    sku: 'ATOM-A2-SERVICE',
+    price: 30,
+    tax_rate: 15,
+    tax_category: 'S',
+    is_taxable: true,
+    vat_treatment: 'exclusive',
+    stock_quantity: 0,
+    track_stock: false,
+    is_service: true,
+    is_active: true,
+    is_available: true,
+  },
+  {
+    id: ids.demoTradingProduct,
+    tenant_id: ids.demoTenant,
+    branch_id: ids.demoTradingBranch,
+    name: 'Atomic Demo Trading Service',
+    sku: 'ATOM-DEMO-T',
+    price: 40,
+    tax_rate: 15,
+    tax_category: 'S',
+    is_taxable: true,
+    vat_treatment: 'exclusive',
+    stock_quantity: 0,
+    track_stock: false,
+    is_service: true,
+    is_active: true,
+    is_available: true,
+  },
+  {
+    id: ids.demoServiceProduct,
+    tenant_id: ids.demoTenant,
+    branch_id: ids.demoServiceBranch,
+    name: 'Atomic Demo Service Product',
+    sku: 'ATOM-DEMO-S',
+    price: 50,
     tax_rate: 15,
     tax_category: 'S',
     is_taxable: true,
@@ -1149,6 +1286,295 @@ const finalHead = await ok(
 assert.equal(Number(finalHead.last_committed_counter), 3)
 assert.equal(finalHead.last_committed_hash, creditArtifact.hash)
 
+const protectedIncidentCountBefore = await rowCount(
+  service
+    .from('invoices')
+    .select('id', { count: 'exact', head: true })
+    .in('invoice_number', ['INV-0826', 'INV-0827']),
+  'read protected incident count before compatibility checks',
+)
+
+const legacyCheckout = (client, branchId, productId, label) => ok(
+  client.rpc('pos_checkout', {
+    p_payload: {
+      branch_id: branchId,
+      customer_id: null,
+      session_id: null,
+      payment_method: 'card',
+      items: [{ product_id: productId, quantity: 1 }],
+      idempotency_key: `compat-${label}-${randomUUID()}`,
+    },
+  }),
+  `legacy compatibility checkout ${label}`,
+)
+
+const branchOriginal = await legacyCheckout(
+  branchUser,
+  ids.branchA,
+  ids.serviceProduct,
+  'branch-same-branch',
+)
+const ownerOriginal = await legacyCheckout(
+  ownerA,
+  ids.branchA,
+  ids.serviceProduct,
+  'owner-same-tenant',
+)
+const adminOriginal = await legacyCheckout(
+  adminA,
+  ids.branchA,
+  ids.serviceProduct,
+  'admin-same-tenant',
+)
+const otherBranchOriginal = await legacyCheckout(
+  ownerA,
+  ids.branchA2,
+  ids.branchA2ServiceProduct,
+  'owner-other-same-tenant-branch',
+)
+const pendingOriginal = await legacyCheckout(
+  branchUser,
+  ids.branchA,
+  ids.serviceProduct,
+  'normal-pending-original',
+)
+const demoTradingOriginal = await legacyCheckout(
+  demoTradingUser,
+  ids.demoTradingBranch,
+  ids.demoTradingProduct,
+  'demo-trading-original',
+)
+const demoServiceOriginal = await legacyCheckout(
+  demoServiceUser,
+  ids.demoServiceBranch,
+  ids.demoServiceProduct,
+  'demo-service-original',
+)
+
+await expectError(
+  branchUser.rpc('pos_checkout', {
+    p_payload: {
+      branch_id: ids.branchA2,
+      customer_id: null,
+      session_id: null,
+      payment_method: 'card',
+      items: [{ product_id: ids.branchA2ServiceProduct, quantity: 1 }],
+      idempotency_key: `compat-branch-cross-branch-${randomUUID()}`,
+    },
+  }),
+  /Forbidden|42501/,
+  'branch checkout cross-branch rejection',
+)
+await expectError(
+  ownerB.rpc('pos_checkout', {
+    p_payload: {
+      branch_id: ids.branchA,
+      customer_id: null,
+      session_id: null,
+      payment_method: 'card',
+      items: [{ product_id: ids.serviceProduct, quantity: 1 }],
+      idempotency_key: `compat-owner-cross-tenant-${randomUUID()}`,
+    },
+  }),
+  /Forbidden|42501/,
+  'owner checkout cross-tenant rejection',
+)
+await expectError(
+  adminA.rpc('pos_checkout', {
+    p_payload: {
+      branch_id: ids.branchB,
+      customer_id: null,
+      session_id: null,
+      payment_method: 'card',
+      items: [{ product_id: ids.serviceProduct, quantity: 1 }],
+      idempotency_key: `compat-admin-cross-tenant-${randomUUID()}`,
+    },
+  }),
+  /Forbidden|42501/,
+  'admin checkout cross-tenant rejection',
+)
+
+await ok(
+  service
+    .from('invoices')
+    .update({ zatca_status: 'reported' })
+    .in('id', [
+      branchOriginal.invoice_id,
+      ownerOriginal.invoice_id,
+      adminOriginal.invoice_id,
+      otherBranchOriginal.invoice_id,
+    ]),
+  'mark compatibility originals reported',
+)
+
+const originalItemId = async (invoiceId, label) => {
+  const item = await ok(
+    service
+      .from('invoice_items')
+      .select('id')
+      .eq('invoice_id', invoiceId)
+      .single(),
+    `read ${label} original item`,
+  )
+  return item.id
+}
+const partialCredit = async (client, original, label) => ok(
+  client.rpc('create_partial_credit_note', {
+    p_payload: {
+      original_invoice_id: original.invoice_id,
+      idempotency_key: `compat-credit-${label}-${randomUUID()}`,
+      reason: `Compatibility ${label}`,
+      refund_method: 'card',
+      return_stock: false,
+      items: [{
+        original_invoice_item_id: await originalItemId(original.invoice_id, label),
+        quantity: 1,
+      }],
+    },
+  }),
+  `partial credit ${label}`,
+)
+
+await expectError(
+  branchUser.rpc('create_partial_credit_note', {
+    p_payload: {
+      original_invoice_id: otherBranchOriginal.invoice_id,
+      idempotency_key: `compat-credit-branch-cross-branch-${randomUUID()}`,
+      reason: 'Cross branch rejection',
+      refund_method: 'card',
+      return_stock: false,
+      items: [{
+        original_invoice_item_id: await originalItemId(
+          otherBranchOriginal.invoice_id,
+          'cross-branch',
+        ),
+        quantity: 1,
+      }],
+    },
+  }),
+  /Forbidden|42501/,
+  'branch credit cross-branch rejection',
+)
+await expectError(
+  ownerB.rpc('create_partial_credit_note', {
+    p_payload: {
+      original_invoice_id: ownerOriginal.invoice_id,
+      idempotency_key: `compat-credit-owner-cross-tenant-${randomUUID()}`,
+      reason: 'Cross tenant rejection',
+      refund_method: 'card',
+      return_stock: false,
+      items: [{
+        original_invoice_item_id: await originalItemId(
+          ownerOriginal.invoice_id,
+          'cross-tenant',
+        ),
+        quantity: 1,
+      }],
+    },
+  }),
+  /Forbidden|42501/,
+  'owner credit cross-tenant rejection',
+)
+
+const branchCredit = await partialCredit(branchUser, branchOriginal, 'branch-same-branch')
+const ownerCredit = await partialCredit(ownerA, ownerOriginal, 'owner-same-tenant')
+const adminCredit = await partialCredit(adminA, adminOriginal, 'admin-same-tenant')
+for (const result of [branchCredit, ownerCredit, adminCredit]) {
+  assert.ok(result.credit_note_invoice_id)
+}
+
+await expectError(
+  branchUser.rpc('create_partial_credit_note', {
+    p_payload: {
+      original_invoice_id: pendingOriginal.invoice_id,
+      idempotency_key: `compat-credit-normal-pending-${randomUUID()}`,
+      reason: 'Normal pending rejection',
+      refund_method: 'card',
+      return_stock: false,
+      items: [{
+        original_invoice_item_id: await originalItemId(
+          pendingOriginal.invoice_id,
+          'normal-pending',
+        ),
+        quantity: 1,
+      }],
+    },
+  }),
+  /Only reported, cleared, or successfully demo-submitted invoices can be credited|23514/,
+  'normal production pending credit rejection',
+)
+
+const sandboxEvidenceTable = await runPsql(`
+  CREATE TABLE IF NOT EXISTS public.zatca_sandbox_validation_attempts (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    branch_id uuid NOT NULL,
+    invoice_id uuid NOT NULL UNIQUE,
+    status text NOT NULL
+  )
+`)
+assert.equal(
+  sandboxEvidenceTable.code,
+  0,
+  `create disposable Sandbox evidence table: ${sandboxEvidenceTable.stderr}`,
+)
+const sandboxEvidenceInsert = await runPsql(`
+  INSERT INTO public.zatca_sandbox_validation_attempts
+    (tenant_id, branch_id, invoice_id, status)
+  VALUES
+    (
+      '${ids.demoTenant}'::uuid,
+      '${ids.demoTradingBranch}'::uuid,
+      '${demoTradingOriginal.invoice_id}'::uuid,
+      'sandbox_validated'
+    ),
+    (
+      '${ids.demoTenant}'::uuid,
+      '${ids.demoServiceBranch}'::uuid,
+      '${demoServiceOriginal.invoice_id}'::uuid,
+      'sandbox_validated_with_warnings'
+    )
+`)
+assert.equal(
+  sandboxEvidenceInsert.code,
+  0,
+  `insert disposable Sandbox evidence: ${sandboxEvidenceInsert.stderr}`,
+)
+
+const demoTradingCredit = await partialCredit(
+  demoTradingUser,
+  demoTradingOriginal,
+  'demo-trading-sandbox-validated',
+)
+const demoServiceCredit = await partialCredit(
+  demoServiceUser,
+  demoServiceOriginal,
+  'demo-service-sandbox-warning',
+)
+assert.ok(demoTradingCredit.credit_note_invoice_id)
+assert.ok(demoServiceCredit.credit_note_invoice_id)
+
+const headAfterCompatibilityChecks = await ok(
+  service
+    .from('zatca_chain_heads_v2')
+    .select('last_committed_counter,last_committed_hash')
+    .eq('branch_id', ids.branchA)
+    .single(),
+  'read chain head after compatibility checks',
+)
+assert.equal(Number(headAfterCompatibilityChecks.last_committed_counter), 3)
+assert.equal(headAfterCompatibilityChecks.last_committed_hash, creditArtifact.hash)
+assert.equal(
+  await rowCount(
+    service
+      .from('invoices')
+      .select('id', { count: 'exact', head: true })
+      .in('invoice_number', ['INV-0826', 'INV-0827']),
+    'read protected incident count after compatibility checks',
+  ),
+  protectedIncidentCountBefore,
+)
+
 await ok(
   service
     .from('zatca_atomic_checkout_branch_gates_v2')
@@ -1208,6 +1634,9 @@ console.log(JSON.stringify({
     creditNoteCommit: true,
     standardPathUnchanged: true,
     actualRoleSecurity: true,
+    commercialCompatibilityRoles: true,
+    sandboxCreditException: true,
+    protectedIncidentsUnchanged: true,
     posSessionRls: true,
     flagsRestoredFalse: true,
   },

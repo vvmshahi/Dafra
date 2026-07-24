@@ -21,10 +21,11 @@ receive `403`. The maximum batch is ten. The retry ceiling is four transient
 attempts with 60, 120, and 240 second backoffs; deterministic rejections and
 ambiguous outcomes must remain blocked.
 
-Atomic simplified checkout is the subsequent disabled additive step:
-`operator/run_sql_step.sh 12`. Apply it only after step `11`, with every
-existing and new atomic flag false. Its Edge, frontend, single-canary, latency,
-and flag-only rollback sequence is defined in
+Atomic simplified checkout requires the guarded function alignment and
+read-only verification in steps `11a` and `11b`, followed by atomic step `12`
+and the RLS-preserving POS-session grant in step `13`. Apply them only after
+step `11`, with every existing and new atomic flag false. Its Edge, web
+frontend, single-canary, latency, and flag-only rollback sequence is defined in
 `ATOMIC_SIMPLIFIED_CHECKOUT_ROLLOUT.md`.
 
 ## 1. Completion classification
@@ -669,14 +670,14 @@ time next to each item in the release ticket.
       receipt, A4, and background tabs.
 - [ ] Station ledger records branch, station, operator, closed-at UTC, and
       browser process closed.
-- [ ] Long-running Electron/browser instances are fully exited.
+- [ ] Long-running browser tabs for the production web app are fully exited.
 - [ ] No stale application request appears in Edge/PostgREST logs during the
       quiet-period observation.
 - [ ] No station is reopened yet.
 
 Use this ledger; one row is required for every station:
 
-| Branch | Station/device | Operator | All Kubri tabs closed UTC | Browser/Electron process exited | Fresh bundle hash after reopen | Direct receipt URL passed | Operator initials |
+| Branch | Station/device | Operator | All Kubri tabs closed UTC | Browser process exited | Fresh bundle hash after reopen | Direct receipt URL passed | Operator initials |
 |---|---|---|---|---|---|---|---|
 |  |  |  |  |  |  |  |  |
 
@@ -871,15 +872,20 @@ assumptions.
 
 ### Durable reporting and atomic checkout addendum
 
-After the base and readiness packages pass, install the two disabled additive
-steps in order:
+After the base and readiness packages pass, use this exact guarded order:
 
 ```bash
 scripts/sql/zatca-phase2-finalization-v2/operator/run_sql_step.sh 11
+scripts/sql/zatca-phase2-finalization-v2/operator/run_sql_step.sh 11a
+scripts/sql/zatca-phase2-finalization-v2/operator/run_sql_step.sh 11b
 scripts/sql/zatca-phase2-finalization-v2/operator/run_sql_step.sh 12
+scripts/sql/zatca-phase2-finalization-v2/operator/run_sql_step.sh 13
 ```
 
-Step `12` must leave `atomic_simplified_checkout_enabled=false` and every row
-in `zatca_atomic_checkout_branch_gates_v2` disabled or absent. It does not
-authorize a canary. Follow `ATOMIC_SIMPLIFIED_CHECKOUT_ROLLOUT.md` only in a
-separately approved coordinated release.
+Step `11b` must report both aligned hashes as `PASS`. Step `12` must leave
+`atomic_simplified_checkout_enabled=false` and every row in
+`zatca_atomic_checkout_branch_gates_v2` disabled or absent. Step `13` changes
+only the table-level SELECT grant required for existing `pos_sessions` RLS
+policies. None of these steps authorizes a canary. Electron packaging and
+deployment are excluded. Follow `ATOMIC_SIMPLIFIED_CHECKOUT_ROLLOUT.md` only
+in a separately approved coordinated web release.

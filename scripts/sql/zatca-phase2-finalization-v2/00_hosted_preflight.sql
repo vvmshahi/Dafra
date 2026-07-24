@@ -151,10 +151,51 @@ WHERE t.tgrelid = 'public.invoices'::regclass
   AND NOT t.tgisinternal
 ORDER BY t.tgname;
 
--- Protected definitions must match the reviewed release values before any DDL.
+-- Protected commercial definitions may be in one of three exact reviewed
+-- states. Raw production and release-canonical states require step 11a;
+-- neither is accepted directly by the atomic migration.
+WITH reviewed(
+  signature,
+  production_hash,
+  release_canonical_hash,
+  aligned_hash
+) AS (
+  VALUES
+    (
+      'public.pos_checkout(jsonb)',
+      'bdc4ee5a02be05aa8b1d7378ebb84c0f',
+      'b810798d8d9b64248f06ae67c6d95f90',
+      '68d6d28ff7ed53ad8b79180b3e26592b'
+    ),
+    (
+      'public.create_partial_credit_note(jsonb)',
+      'c69249c13a29f0ff3d10c6529d7bca89',
+      '2789273cfedb900ae02d178eded85f90',
+      'ea38d6800970cf51594e27c11c376ebd'
+    )
+)
+SELECT
+  r.signature,
+  r.production_hash,
+  r.release_canonical_hash,
+  r.aligned_hash,
+  CASE WHEN p.oid IS NULL THEN NULL ELSE md5(pg_get_functiondef(p.oid)) END AS observed_hash,
+  CASE
+    WHEN p.oid IS NULL THEN 'MISSING'
+    WHEN md5(pg_get_functiondef(p.oid)) = r.aligned_hash THEN 'ALIGNED'
+    WHEN md5(pg_get_functiondef(p.oid)) IN (
+      r.production_hash,
+      r.release_canonical_hash
+    ) THEN 'ALIGNMENT_REQUIRED'
+    ELSE 'DRIFT'
+  END AS review_result,
+  CASE WHEN p.oid IS NULL THEN NULL ELSE pg_get_functiondef(p.oid) END AS hosted_definition
+FROM reviewed r
+LEFT JOIN pg_proc p ON p.oid = to_regprocedure(r.signature)
+ORDER BY r.signature;
+
 WITH expected(signature, expected_hash) AS (
   VALUES
-    ('public.pos_checkout(jsonb)', 'b810798d8d9b64248f06ae67c6d95f90'),
     ('public.snapshot_invoice_document_language()', '7f9b093d4a68d315868dadc9ce1f2c58')
 )
 SELECT

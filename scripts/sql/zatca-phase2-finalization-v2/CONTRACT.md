@@ -235,14 +235,18 @@ paths.
 
 ## Atomic simplified checkout extension
 
+`11a_atomic_commercial_function_alignment.sql` first installs the exact
+reviewed owner/admin and permanent-demo compatibility definitions. The
+read-only `11b` gate verifies their hashes before
 `12_atomic_simplified_checkout_v2.sql` installs the disabled-by-default atomic
-simplified invoice and simplified credit-note path. A private short-lived
-intent reserves the branch chain position and captures an authoritative
-commercial preview inside a deliberately rolled-back savepoint. Edge signs
-that exact snapshot once. The final authenticated RPC re-runs the commercial
-validation and commits the invoice/items/payments/stock or refund, immutable
-artifact, chain reservation/head, durable outbox, and immutable receipt in one
-transaction.
+simplified invoice and simplified credit-note path. Step `13` then supplies
+the table-level authenticated `pos_sessions` SELECT needed for its existing
+RLS policies. A private short-lived intent reserves the branch chain position
+and captures an authoritative commercial preview inside a deliberately
+rolled-back savepoint. Edge signs that exact snapshot once. The final
+authenticated RPC re-runs the commercial validation and commits the
+invoice/items/payments/stock or refund, immutable artifact, chain
+reservation/head, durable outbox, and immutable receipt in one transaction.
 
 There is at most one active intent per branch. Existing chain allocation cannot
 overtake it. Idempotency, invoice, UUID, invoice-number, and chain-position

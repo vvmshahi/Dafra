@@ -137,23 +137,31 @@ FOR EACH ROW EXECUTE FUNCTION public.assert_zatca_atomic_checkout_intent_immutab
 -- rows. A BEFORE INSERT trigger alone cannot replace that local identity:
 -- invoice_items/payments would still reference the discarded generated ID.
 --
--- Patch only the reviewed canonical definitions, and only so a private atomic
--- transaction context can supply the reserved ID. Calls without that context
--- retain the original pg_catalog.gen_random_uuid() behavior byte-for-byte.
+-- Patch only the reviewed compatibility-aligned definitions, and only so a
+-- private atomic transaction context can supply the reserved ID. Calls without
+-- that context retain the original pg_catalog.gen_random_uuid() behavior.
 DO $install_atomic_commercial_id_context$
 DECLARE
   v_signature regprocedure;
   v_definition text;
   v_expected_hash text;
+  v_expected_post_hash text;
   v_original text;
   v_replacement text;
 BEGIN
-  FOR v_signature, v_expected_hash, v_original, v_replacement IN
+  FOR
+    v_signature,
+    v_expected_hash,
+    v_expected_post_hash,
+    v_original,
+    v_replacement
+  IN
     SELECT *
     FROM (VALUES
       (
         'public.pos_checkout(jsonb)'::regprocedure,
-        'b810798d8d9b64248f06ae67c6d95f90',
+        '68d6d28ff7ed53ad8b79180b3e26592b',
+        '447dc2f026ae6f488fa434079759b75e',
         'v_invoice_id UUID := pg_catalog.gen_random_uuid();',
         $replacement$v_invoice_id UUID := COALESCE(
     NULLIF(current_setting('app.atomic_checkout_invoice_id', true), '')::uuid,
@@ -162,17 +170,27 @@ BEGIN
       ),
       (
         'public.create_partial_credit_note(jsonb)'::regprocedure,
-        '2789273cfedb900ae02d178eded85f90',
+        'ea38d6800970cf51594e27c11c376ebd',
+        'acbf207e42d0a41cb81f09e9859e8fb1',
         'v_credit_note_id UUID := pg_catalog.gen_random_uuid();',
         $replacement$v_credit_note_id UUID := COALESCE(
     NULLIF(current_setting('app.atomic_checkout_invoice_id', true), '')::uuid,
     pg_catalog.gen_random_uuid()
   );$replacement$
       )
-    ) reviewed(signature, expected_hash, original_text, replacement_text)
+    ) reviewed(
+      signature,
+      expected_hash,
+      expected_post_hash,
+      original_text,
+      replacement_text
+    )
   LOOP
     v_definition := pg_get_functiondef(v_signature);
     IF v_definition LIKE '%app.atomic_checkout_invoice_id%' THEN
+      IF md5(v_definition) IS DISTINCT FROM v_expected_post_hash THEN
+        RAISE EXCEPTION 'ATOMIC_COMMERCIAL_PATCHED_FUNCTION_HASH_DRIFT:%', v_signature;
+      END IF;
       CONTINUE;
     END IF;
     IF md5(v_definition) IS DISTINCT FROM v_expected_hash THEN
@@ -182,6 +200,9 @@ BEGIN
       RAISE EXCEPTION 'ATOMIC_COMMERCIAL_ID_DECLARATION_MISSING:%', v_signature;
     END IF;
     EXECUTE replace(v_definition, v_original, v_replacement);
+    IF md5(pg_get_functiondef(v_signature)) IS DISTINCT FROM v_expected_post_hash THEN
+      RAISE EXCEPTION 'ATOMIC_COMMERCIAL_POST_HASH_MISMATCH:%', v_signature;
+    END IF;
   END LOOP;
 END
 $install_atomic_commercial_id_context$;

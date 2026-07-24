@@ -48,11 +48,27 @@ The final RPC is the only transaction that makes a sale buyer-visible. If its
 artifact, chain, outbox, payment, stock, or commercial validation fails, that
 transaction rolls back completely.
 
-## SQL objects
+## SQL objects and required installation order
 
-Migration:
-`supabase/migrations/20260724000100_atomic_simplified_checkout_v2.sql`.
-Operator package step: `12_atomic_simplified_checkout_v2.sql`.
+The protected commercial functions must be aligned and verified before the
+atomic migration. The exact disabled installation sequence is:
+
+```bash
+scripts/sql/zatca-phase2-finalization-v2/operator/run_sql_step.sh 11a
+scripts/sql/zatca-phase2-finalization-v2/operator/run_sql_step.sh 11b
+scripts/sql/zatca-phase2-finalization-v2/operator/run_sql_step.sh 12
+scripts/sql/zatca-phase2-finalization-v2/operator/run_sql_step.sh 13
+```
+
+Step `11a` accepts only the reviewed production or release-canonical function
+hashes and installs deterministic compatibility definitions. Step `11b` is
+read-only and must report the aligned hashes
+`68d6d28ff7ed53ad8b79180b3e26592b` and
+`ea38d6800970cf51594e27c11c376ebd`. Step `12` accepts only those aligned
+hashes, installs the private reserved-ID context, and asserts patched hashes
+`447dc2f026ae6f488fa434079759b75e` and
+`acbf207e42d0a41cb81f09e9859e8fb1`. Step `13` grants authenticated SELECT on
+`pos_sessions` without adding or widening an RLS policy.
 
 | Object | Purpose |
 |---|---|
@@ -126,13 +142,15 @@ No step below is performed by this document or by repository tests.
 
 1. Keep the existing database master, simplified, standard, Edge, and new
    atomic switches false.
-2. Apply reviewed schema/package steps through `12`; verify all flags remain
-   false and no historical row or outbox entry was created.
+2. Apply the guarded `11a` alignment, pass read-only `11b`, apply `12`, then
+   apply the POS-session grant in `13`. Verify all flags remain false and no
+   historical row or outbox entry was created.
 3. Deploy the Edge version containing both the new action and the write-free
    rollout fallback. Verify authentication, exact committed replay, and
    response redaction while the new flag remains false.
-4. Deploy the frontend/electron build. With the atomic flag false it must
-   retain existing routing and record no preparation intent.
+4. Deploy the reviewed web frontend. With the atomic flag false it must retain
+   existing routing and record no preparation intent. Electron packaging and
+   deployment are explicitly excluded from this rollout.
 5. Select one explicitly approved branch. Seed/review its chain using the
    existing readiness process; never derive a historical PIH automatically.
 6. Insert/enable only that branch gate and then enable the global atomic
@@ -188,5 +206,5 @@ DAFRA_ATOMIC_TEST_WORKDIR=/private/tmp/dafra-atomic-disposable.<suffix> \
 
 The runtime suite exercises PostgreSQL transactions, PostgREST schema cache,
 actual anon/authenticated/service-role grants, and two concurrent PostgreSQL
-sessions. A real Electron printer and ZATCA sandbox evidence remain mandatory
-external release gates.
+sessions. Electron testing, packaging, and deployment are outside this web
+rollout.
