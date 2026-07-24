@@ -478,7 +478,7 @@ curl --fail-with-body --silent --show-error \
       .edgeFunctionVersion == "2.0.0"
       and .schemaVersion == null
       and .databaseFeatureEnabled == false
-      and .edgeKillSwitchEnabled == false
+      and .edgeKillSwitchEnabled == true
       and .immutableFinalizationEnabled == false
       and .legacySubmitAvailable == true
       and .compatible == false

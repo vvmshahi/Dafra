@@ -153,8 +153,10 @@ No step below is performed by this document or by repository tests.
    deployment are explicitly excluded from this rollout.
 5. Select one explicitly approved branch. Seed/review its chain using the
    existing readiness process; never derive a historical PIH automatically.
-6. Insert/enable only that branch gate and then enable the global atomic
-   simplified switch. Leave standard behavior unchanged.
+6. Enable the existing immutable master and simplified prerequisites while
+   leaving the standard flag false, then insert/enable only that branch gate
+   and enable the global atomic simplified switch. The capability response is
+   fail-closed unless all four database conditions are true.
 7. On the canary, prove payment, invoice, stock, committed reservation,
    immutable artifact, outbox, and receipt identities match. Prove first print
    uses the response snapshot with no invoice/status refetch.
@@ -182,6 +184,7 @@ either document.
 Run:
 
 ```bash
+npm run test:zatca-atomic-capabilities
 npm run test:zatca-atomic-simplified-checkout
 npm run test:zatca-finalization-v2
 npm run test:zatca-durable-reporting-recovery

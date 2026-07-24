@@ -96,7 +96,7 @@ assert.ok(edgeReadiness > 0 && edgeReadiness < edgeProcessor)
 assert.match(edge, /invoiceAuth\.target\.v2Invoice !== true[\s\S]*checkoutMode === 'legacy'/)
 assert.match(edge, /BRANCH_V2_NOT_READY/)
 assert.match(edge, /legacySubmitAvailable: true/)
-assert.match(edge, /standardCheckoutMode = simplifiedCheckoutMode === 'v2' && capabilities\.standardEnabled/)
+assert.match(edge, /standardCheckoutMode = simplifiedCheckoutMode === 'v2' && branchCapabilities\.standardEnabled/)
 
 assert.match(onboarding, /saveState[\s\S]*initialize_zatca_new_branch_chain_v2/)
 assert.match(onboarding, /branchV2Ready \? 'v2' : 'legacy'/)

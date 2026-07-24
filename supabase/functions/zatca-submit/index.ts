@@ -22,6 +22,10 @@ import { buildZatcaPhase2Qr } from '../_shared/zatca/phase2_qr.mjs'
 import { parseZatcaClearedInvoice } from '../_shared/zatca/cleared_artifact.mjs'
 import { selectZatcaBranchCheckoutMode } from '../_shared/zatca/branch_readiness.mjs'
 import {
+  parseImmutableFinalizationEdgeSwitch,
+  resolveAtomicSimplifiedCheckoutCapability,
+} from '../_shared/zatca/finalization_capabilities.mjs'
+import {
   REPORTING_OUTCOMES,
   clampReportingBatchSize,
   classifyReportingHttpOutcome,
@@ -2405,13 +2409,23 @@ interface BranchReadinessV2 {
   structurallyReady: boolean
 }
 
+interface AtomicSimplifiedRolloutV2 {
+  atomicSimplifiedCheckoutEnabled: boolean
+  branchGateEnabled: boolean
+}
+
 function rpcObject(value: any): Record<string, any> {
   if (Array.isArray(value)) return value[0] ?? {}
   return value && typeof value === 'object' ? value : {}
 }
 
 async function loadFinalizationCapabilitiesV2(db: any): Promise<FinalizationCapabilitiesV2> {
-  const edgeKillSwitchEnabled = Deno.env.get('ZATCA_IMMUTABLE_FINALIZATION_ENABLED') === 'true'
+  const {
+    edgeExecutionEnabled,
+    edgeKillSwitchEnabled,
+  } = parseImmutableFinalizationEdgeSwitch(
+    Deno.env.get('ZATCA_IMMUTABLE_FINALIZATION_ENABLED'),
+  )
   const { data, error } = await db.rpc('get_zatca_finalization_capabilities_v2')
   if (error) {
     console.warn('[zatca-submit] finalization v2 schema unavailable:', safeZatcaText(error.message, 160))
@@ -2446,7 +2460,7 @@ async function loadFinalizationCapabilitiesV2(db: any): Promise<FinalizationCapa
   return {
     schemaVersion, edgeFunctionVersion: FINALIZATION_EDGE_VERSION,
     minimumClientVersion: String(capability.minimumClientVersion ?? FINALIZATION_CLIENT_VERSION),
-    immutableFinalizationEnabled: compatible && databaseFeatureEnabled && edgeKillSwitchEnabled,
+    immutableFinalizationEnabled: compatible && databaseFeatureEnabled && edgeExecutionEnabled,
     databaseFeatureEnabled, legacySubmitAvailable: true, edgeKillSwitchEnabled,
     simplifiedEnabled: compatible && capability.simplifiedEnabled === true,
     standardEnabled: compatible && capability.standardEnabled === true,
@@ -2455,6 +2469,30 @@ async function loadFinalizationCapabilitiesV2(db: any): Promise<FinalizationCapa
     supportsLeasedClaims: compatible && capability.supportsLeasedClaims === true,
     supportsSerializedChainAllocator: compatible && capability.supportsSerializedChainAllocator === true,
     compatible,
+  }
+}
+
+async function loadAtomicSimplifiedRolloutV2(
+  db: any,
+  tenantId: string,
+  branchId: string,
+): Promise<AtomicSimplifiedRolloutV2> {
+  const [runtime, branchGate] = await Promise.all([
+    db.from('zatca_finalization_runtime')
+      .select('atomic_simplified_checkout_enabled')
+      .eq('singleton', true)
+      .maybeSingle(),
+    db.from('zatca_atomic_checkout_branch_gates_v2')
+      .select('enabled')
+      .eq('tenant_id', tenantId)
+      .eq('branch_id', branchId)
+      .maybeSingle(),
+  ])
+  return {
+    atomicSimplifiedCheckoutEnabled: runtime.error == null
+      && runtime.data?.atomic_simplified_checkout_enabled === true,
+    branchGateEnabled: branchGate.error == null
+      && branchGate.data?.enabled === true,
   }
 }
 
@@ -2504,7 +2542,7 @@ function branchCheckoutMode(
     compatible: capabilities.compatible,
     globalMasterEnabled: capabilities.databaseFeatureEnabled,
     simplifiedEnabled: capabilities.simplifiedEnabled,
-    edgeExecutionEnabled: capabilities.edgeKillSwitchEnabled,
+    edgeExecutionEnabled: capabilities.edgeKillSwitchEnabled === false,
     clientAcknowledged: readiness.clientAcknowledged,
     chainHeadExists: readiness.chainHeadExists,
     branchReady: readiness.branchReady,
@@ -3729,12 +3767,21 @@ Deno.serve(async (req: Request) => {
       const branchAuth = await authorizeBranchAccess(supabase as any, branchId, callerProfile)
       if (!branchAuth.ok) return branchAuth.response
 
+      const atomicRollout = await loadAtomicSimplifiedRolloutV2(
+        supabase as any,
+        branchAuth.target.tenantId,
+        branchId,
+      )
+      const branchCapabilities = resolveAtomicSimplifiedCheckoutCapability(
+        capabilities,
+        atomicRollout,
+      ) as FinalizationCapabilitiesV2
       let readiness = await loadBranchReadinessV2(supabase as any, branchId, user.id)
       if (
-        capabilities.compatible
-        && capabilities.databaseFeatureEnabled
-        && capabilities.simplifiedEnabled
-        && capabilities.edgeKillSwitchEnabled
+        branchCapabilities.compatible
+        && branchCapabilities.databaseFeatureEnabled
+        && branchCapabilities.simplifiedEnabled
+        && !branchCapabilities.edgeKillSwitchEnabled
         && readiness.structurallyReady
         && clientVersion === FINALIZATION_CLIENT_VERSION
       ) {
@@ -3749,12 +3796,12 @@ Deno.serve(async (req: Request) => {
           readiness = await loadBranchReadinessV2(supabase as any, branchId, user.id)
         }
       }
-      const simplifiedCheckoutMode = branchCheckoutMode(capabilities, readiness)
-      const standardCheckoutMode = simplifiedCheckoutMode === 'v2' && capabilities.standardEnabled
+      const simplifiedCheckoutMode = branchCheckoutMode(branchCapabilities, readiness)
+      const standardCheckoutMode = simplifiedCheckoutMode === 'v2' && branchCapabilities.standardEnabled
         ? 'v2'
         : 'legacy'
       return jsonResponse({
-        ...capabilities,
+        ...branchCapabilities,
         ...readiness,
         acknowledged: readiness.clientAcknowledged,
         branchV2Ready: simplifiedCheckoutMode === 'v2',

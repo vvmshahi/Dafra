@@ -49,6 +49,7 @@
     "test:zatca-durable-reporting-recovery": "node scripts/test-zatca-durable-reporting-recovery.mjs",
     "test:zatca-outbox-security": "node scripts/test-zatca-outbox-security.mjs",
     "test:zatca-atomic-simplified-checkout": "node scripts/test-zatca-atomic-simplified-checkout.mjs",
+    "test:zatca-atomic-capabilities": "node scripts/test-zatca-atomic-capabilities.mjs",
     "test:zatca-atomic-simplified-checkout-runtime": "node scripts/test-zatca-atomic-simplified-checkout-runtime.mjs",
     "test:pos-session-access": "node scripts/test-pos-session-access.mjs",
     "test:dashboard-product-schema-compat": "node scripts/test-dashboard-product-schema-compat.mjs"
