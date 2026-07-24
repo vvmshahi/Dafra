@@ -68,7 +68,7 @@ type BranchWithLogin = Branch & {
   branch_username?: string | null
 }
 
-type StockModuleSetting = 'default' | 'enabled' | 'disabled'
+type StockModuleSetting = 'enabled' | 'disabled'
 
 const POS_MODE_OPTIONS: Array<{
   value: BranchPosMode
@@ -129,27 +129,23 @@ function branchLoginCredential(branch: BranchWithLogin): { labelKey: 'branchUser
 }
 
 function stockModuleSetting(value: boolean | null | undefined): StockModuleSetting {
-  if (value === true) return 'enabled'
   if (value === false) return 'disabled'
-  return 'default'
+  return 'enabled'
 }
 
 function branchPosMode(value: string | null | undefined): BranchPosMode {
   return value === 'quick' ? 'quick' : 'touch'
 }
 
-function stockModuleValue(setting: StockModuleSetting): boolean | null {
-  if (setting === 'enabled') return true
-  if (setting === 'disabled') return false
-  return null
+function stockModuleValue(setting: StockModuleSetting): boolean {
+  return setting === 'enabled'
 }
 
 function stockModuleHintKey(setting: boolean | null, tenantBusinessType: string | null | undefined) {
+  if (resolveBusinessType(tenantBusinessType) === 'service') return 'stock.hidden'
   if (setting === true) return 'stock.visible'
   if (setting === false) return 'stock.hidden'
-  return resolveBusinessType(tenantBusinessType) === 'service'
-    ? 'stock.serviceDefault'
-    : 'stock.tradingDefault'
+  return 'stock.visible'
 }
 
 function SectionHeader({
@@ -294,7 +290,9 @@ function BranchDrawer({
           allow_split_payments: branch.allow_split_payments ?? false,
           show_pos_scroll_buttons: branch.show_pos_scroll_buttons ?? false,
           pos_mode:        branchPosMode(branch.pos_mode),
-          stock_enabled:    branch.stock_enabled ?? null,
+          stock_enabled:    resolveBusinessType(tenantBusinessType) === 'service'
+            ? false
+            : branch.stock_enabled ?? true,
           zatca_phase:      branch.zatca_phase ?? 1,
           is_active:        branch.is_active,
           is_main_branch:   branch.is_main_branch,
@@ -302,7 +300,10 @@ function BranchDrawer({
           login_password:   '',
           login_confirm_password: '',
         }
-      : { ...EMPTY_FORM },
+      : {
+          ...EMPTY_FORM,
+          stock_enabled: resolveBusinessType(tenantBusinessType) === 'service' ? false : true,
+        },
   )
 
   const [saving, setSaving]       = useState(false)
@@ -741,9 +742,9 @@ function BranchDrawer({
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {([
-                      { key: 'default' }, { key: 'enabled' }, { key: 'disabled' },
+                      { key: 'enabled' }, { key: 'disabled' },
                     ] as { key: StockModuleSetting }[]).map(option => {
                       const selected = stockModuleSetting(form.stock_enabled) === option.key
                       const disabled = serviceTenant && option.key === 'enabled'

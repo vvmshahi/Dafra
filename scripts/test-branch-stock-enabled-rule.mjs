@@ -153,6 +153,38 @@ test('service branch settings cannot select enabled stock', () => {
   assert.match(branches, /disabled=\{disabled\}/)
 })
 
+test('branch stock selector exposes only explicit boolean choices', () => {
+  assert.match(
+    branches,
+    /type StockModuleSetting = 'enabled' \| 'disabled'/,
+  )
+  assert.match(
+    branches,
+    /if \(value === false\) return 'disabled'\s+return 'enabled'/,
+  )
+  assert.match(
+    branches,
+    /\{ key: 'enabled' \}, \{ key: 'disabled' \}/,
+  )
+  assert.doesNotMatch(branches, /\{ key: 'default' \}/)
+  assert.match(
+    branches,
+    /function stockModuleValue\(setting: StockModuleSetting\): boolean \{\s+return setting === 'enabled'/,
+  )
+  assert.match(
+    branches,
+    /stock_enabled:\s+resolveBusinessType\(tenantBusinessType\) === 'service'\s+\? false\s+:\s+branch\.stock_enabled \?\? true/,
+  )
+  assert.match(
+    branches,
+    /stock_enabled: resolveBusinessType\(tenantBusinessType\) === 'service' \? false : true/,
+  )
+  assert.match(
+    branches,
+    /p_stock_enabled: form\.stock_enabled/,
+  )
+})
+
 test('POS hides stock display when disabled', () => {
   assert.match(pos, /isStockModuleVisible\(\{/)
   assert.match(pos, /stockVisible=\{stockVisible\}/)
