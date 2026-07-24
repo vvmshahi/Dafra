@@ -307,6 +307,7 @@ function BranchDrawer({
 
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
+  const serviceTenant = resolveBusinessType(tenantBusinessType) === 'service'
 
   // ── Validation ──────────────────────────────────────────────
   const VAT_RE    = /^3\d{13}3$/
@@ -745,15 +746,19 @@ function BranchDrawer({
                       { key: 'default' }, { key: 'enabled' }, { key: 'disabled' },
                     ] as { key: StockModuleSetting }[]).map(option => {
                       const selected = stockModuleSetting(form.stock_enabled) === option.key
+                      const disabled = serviceTenant && option.key === 'enabled'
                       return (
                         <button
                           key={option.key}
                           type="button"
+                          disabled={disabled}
                           onClick={() => set('stock_enabled')(stockModuleValue(option.key))}
                           className={`rounded-xl border px-3 py-3 text-left transition-all ${
                             selected
                               ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500'
-                              : 'border-gray-200 hover:border-gray-300'
+                              : disabled
+                                ? 'cursor-not-allowed border-gray-100 bg-gray-50 opacity-50'
+                                : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
                           <p className="text-sm font-semibold text-gray-800">{t(`branches:stock.${option.key}.label`)}</p>

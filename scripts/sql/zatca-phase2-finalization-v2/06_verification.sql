@@ -497,9 +497,15 @@ BEGIN
   END LOOP;
 
   -- Protected hosted definitions.
+  --
+  -- pos_checkout includes the reviewed canonical branch stock-enabled gate:
+  -- disabled branches skip product deduction and its stock movement, while
+  -- invoice totals, tax, payment, numbering, and ZATCA calculations remain
+  -- unchanged. The expected value is still the strict MD5 of the complete
+  -- PostgreSQL pg_get_functiondef output; this is not a partial or bypass check.
   FOR v_function IN
     SELECT * FROM (VALUES
-      ('pos_checkout_hash', 'public.pos_checkout(jsonb)', 'b810798d8d9b64248f06ae67c6d95f90'),
+      ('pos_checkout_hash', 'public.pos_checkout(jsonb)', '0db582cb8451ab6a6a69bb9d9d662de6'),
       ('snapshot_language_hash', 'public.snapshot_invoice_document_language()', '7f9b093d4a68d315868dadc9ce1f2c58')
     ) AS expected(check_name, signature, expected_hash)
   LOOP

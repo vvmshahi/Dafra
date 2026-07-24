@@ -51,7 +51,7 @@ import { getPrinterSettings, getPrinters, isElectron, printA4Invoice, printRecei
 import { printAtomicReceiptSnapshot } from '@/lib/atomicReceiptPrint'
 import { openReceiptPreview, printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { supportConfig } from '@/config/support'
-import { resolveBusinessType } from '@/lib/utils/businessType'
+import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 import { AuthenticatedLanguageSwitch } from '@/components/localization/AuthenticatedLanguageSwitch'
@@ -933,15 +933,20 @@ function QuickBillingPanel({
   cart,
   query,
   onAdd,
+  stockVisible,
 }: {
   products: PosProduct[]
   totalProductCount: number
   cart: CartItem[]
   query: string
   onAdd: (product: PosProduct) => void
+  stockVisible: boolean
 }) {
   const { t } = useTranslation('pos')
   const { isRtl } = useLocale()
+  const desktopGrid = stockVisible
+    ? 'lg:grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_120px_110px_92px]'
+    : 'lg:grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_110px_92px]'
   if (products.length === 0) {
     const hasQuery = query.trim().length > 0
     return (
@@ -970,11 +975,11 @@ function QuickBillingPanel({
   return (
     <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
       {!query.trim() && <div className="border-b border-gray-100 px-4 py-3"><p className="text-sm font-bold text-gray-900">{t('browseProducts')}</p><p className="text-[11px] text-gray-500">{t('showingActiveProducts')}</p></div>}
-      <div className="hidden lg:grid grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_120px_110px_92px] gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[10px] font-bold uppercase text-gray-400">
+      <div className={`hidden lg:grid ${desktopGrid} gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[10px] font-bold uppercase text-gray-400`}>
         <span>{t('product')}</span>
         <span>{t('category')}</span>
         <span>{t('skuBarcode')}</span>
-        <span>{t('availableStock')}</span>
+        {stockVisible && <span>{t('availableStock')}</span>}
         <span className="text-end">{t('price')}</span>
         <span className="text-end">{t('add')}</span>
       </div>
@@ -986,7 +991,7 @@ function QuickBillingPanel({
           return (
             <div
               key={product.id}
-              className="grid grid-cols-1 lg:grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_120px_110px_92px] gap-3 px-4 py-3 items-center hover:bg-emerald-50/30 transition-colors"
+              className={`grid grid-cols-1 ${desktopGrid} gap-3 px-4 py-3 items-center hover:bg-emerald-50/30 transition-colors`}
             >
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2">
@@ -1020,7 +1025,7 @@ function QuickBillingPanel({
                 )}
               </div>
 
-              <div>
+              {stockVisible && <div>
                 <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                   product.trackStock
                     ? 'bg-amber-50 text-amber-700'
@@ -1028,7 +1033,7 @@ function QuickBillingPanel({
                 }`}>
                   {product.trackStock ? t('stockCount', { count: formatStockQuantity(product.stockQuantity) }) : t('notTracked')}
                 </span>
-              </div>
+              </div>}
 
               <div className="text-start lg:text-end">
                 <span className="text-sm font-bold tabular-nums text-primary-700" dir="ltr">
@@ -1652,6 +1657,10 @@ export default function POSPage() {
   const checkoutKeyRef = useRef<string | null>(null)
   const autoPrintedReceiptIdRef = useRef<string | null>(null)
   const businessType = resolveBusinessType(tenant?.business_type)
+  const stockVisible = isStockModuleVisible({
+    businessType: tenant?.business_type,
+    stockEnabled: branch?.stock_enabled,
+  })
   const savedBranchPosMode = branchPosMode(branch?.pos_mode)
   const activePosMode: PosMode = businessType === 'trading' ? savedBranchPosMode : 'touch'
   const resolvedInvoiceSettings = useMemo(
@@ -2954,6 +2963,7 @@ export default function POSPage() {
               cart={cart}
               query={searchText}
               onAdd={addToCart}
+              stockVisible={stockVisible}
             />
           ) : (
             <div className={showPosScrollButtons ? 'flex items-start gap-3 min-h-full' : 'min-h-full'}>

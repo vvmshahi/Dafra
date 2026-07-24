@@ -24,7 +24,7 @@ import {
 import { resolveScopedAtomicCheckout } from '@/lib/zatca/atomicCheckoutScope.mjs'
 import { creditNotePresentationState } from '@/lib/zatca/creditNotePresentation.mjs'
 import { useAuth } from '@/hooks/useAuth'
-import { resolveBusinessType } from '@/lib/utils/businessType'
+import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
 
 export interface CreditNoteSourceInvoice {
@@ -296,7 +296,7 @@ export default function CreateCreditNoteModal({
 }: CreateCreditNoteModalProps) {
   const { t } = useTranslation(['creditNotes', 'refunds', 'payments', 'invoices', 'validation', 'common'])
   const { isRtl } = useLocale()
-  const { tenant, profile } = useAuth()
+  const { tenant, branch, profile } = useAuth()
   const [selectedReason, setSelectedReason] = useState<(typeof QUICK_REASONS)[number] | ''>('')
   const [remarks, setRemarks] = useState('')
   const [originalPayments, setOriginalPayments] = useState<CreditNotePaymentRow[]>([])
@@ -317,6 +317,10 @@ export default function CreateCreditNoteModal({
   const [stockReturnChoice, setStockReturnChoice] = useState<boolean | null>(null)
   const businessType = resolveBusinessType(tenant?.business_type)
   const isServiceBusiness = businessType === 'service'
+  const stockEnabled = isStockModuleVisible({
+    businessType: tenant?.business_type,
+    stockEnabled: branch?.stock_enabled,
+  })
 
   useEffect(() => {
     const cleanup = () => {
@@ -479,7 +483,7 @@ export default function CreateCreditNoteModal({
   const stockReturnQuantity = selectedLines
     .filter(line => line.item.product_id && line.item.track_stock && !line.item.is_service)
     .reduce((sum, line) => sum + line.quantity, 0)
-  const hasEligibleStockLines = !isServiceBusiness && stockReturnQuantity > 0
+  const hasEligibleStockLines = !isServiceBusiness && stockEnabled && stockReturnQuantity > 0
 
   useEffect(() => {
     if (!hasEligibleStockLines) setStockReturnChoice(null)
