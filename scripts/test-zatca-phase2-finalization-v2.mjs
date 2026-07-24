@@ -28,6 +28,7 @@ const pos = readFileSync(join(root, 'src/pages/pos/POSPage.tsx'), 'utf8')
 const selector = readFileSync(join(root, 'src/lib/zatca/qrSelector.ts'), 'utf8')
 const submission = readFileSync(join(root, 'src/lib/zatca/submission.ts'), 'utf8')
 const invoiceDetail = readFileSync(join(root, 'src/pages/invoices/InvoiceDetailPage.tsx'), 'utf8')
+const creditNoteModal = readFileSync(join(root, 'src/pages/invoices/CreateCreditNoteModal.tsx'), 'utf8')
 const receiptPrint = readFileSync(join(root, 'src/pages/print/ReceiptPrintPage.tsx'), 'utf8')
 const invoiceReadContract = readFileSync(join(root, 'src/lib/invoices/invoiceReadContract.ts'), 'utf8')
 const allocatorFixture = readFileSync(join(pkg, '08_allocator_two_session_fixture.md'), 'utf8')
@@ -238,6 +239,17 @@ await test('16 payment remains complete on finalization failure', () => {
 })
 await test('17 POS retry does not repeat checkout', () => {
   const body = pos.slice(pos.indexOf('async function retryReceiptFinalization'), pos.indexOf('const canCharge')); assert.doesNotMatch(body, /pos_checkout/); assert.match(body, /finalizeInvoiceForZatca/)
+})
+await test('17a capability routing always uses an explicit document kind', () => {
+  assert.doesNotMatch(submission, /documentKind:\s*ZatcaDocumentKind\s*=/)
+  for (const sourceText of [submission, pos]) {
+    assert.doesNotMatch(sourceText, /requireZatcaFinalizationCapability\(\s*[^,()\n]+\s*\)/)
+  }
+  assert.match(submission, /requireZatcaFinalizationCapability\(branchId, options\.documentKind\)/)
+  assert.match(pos, /receipt\.isStandardInvoice \? 'standard' : 'simplified'/)
+  assert.match(invoiceDetail, /documentKind: isStandardDocument \? 'standard' : 'simplified'/)
+  assert.match(creditNoteModal, /documentKind: invoice\.zatca_document_kind/)
+  assert.match(submission, /originalDocumentKindById\.get\(invoice\.original_invoice_id\)/)
 })
 await test('18 disabled flag blocks unsafe output', () => {
   assert.match(source['01_artifact_lifecycle.sql'], /immutable_finalization_enabled boolean NOT NULL DEFAULT false/); assert.match(submission, /immutableFinalizationEnabled/)

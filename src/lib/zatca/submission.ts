@@ -20,6 +20,7 @@ export const ZATCA_FINALIZATION_EDGE_VERSION = '2.1.0'
 export const ZATCA_OUTPUT_STATE_READ_VERSION = '2.0.0'
 export const ZATCA_FINALIZATION_SCHEMA_VERSION = 2
 export type ZatcaCheckoutMode = 'legacy' | 'v2'
+export type ZatcaDocumentKind = 'simplified' | 'standard'
 
 export interface ZatcaFinalizationCapabilities {
   schemaVersion: number | null
@@ -64,6 +65,7 @@ export interface ZatcaSubmitResult {
 export interface ZatcaSubmitOptions {
   source?: ZatcaSubmitSource
   contractMode?: ZatcaCheckoutMode
+  documentKind: ZatcaDocumentKind
 }
 
 export interface ZatcaFinalizationResult {
@@ -140,7 +142,7 @@ export async function getZatcaFinalizationCapabilities(branchId: string): Promis
 
 export async function requireZatcaFinalizationCapability(
   branchId: string,
-  documentKind: 'simplified' | 'standard' = 'simplified',
+  documentKind: ZatcaDocumentKind,
 ): Promise<ZatcaFinalizationCapabilities & { checkoutMode: ZatcaCheckoutMode }> {
   const capability = await getZatcaFinalizationCapabilities(branchId)
   const serverCheckoutMode = documentKind === 'standard'
@@ -183,7 +185,7 @@ export type RoutedZatcaResult =
 export async function finalizeInvoiceForZatca(params: {
   invoiceId: string
   branchId: string
-  options?: ZatcaSubmitOptions
+  options?: Pick<ZatcaSubmitOptions, 'source'>
 }): Promise<ZatcaFinalizationResult> {
   const { data, error } = await supabase.functions.invoke('zatca-submit', {
     body: {
@@ -304,7 +306,7 @@ export async function submitInvoiceForBranch(params: {
   invoiceId: string
   tenantId: string
   branchId: string
-  options?: ZatcaSubmitOptions & { retryDelayMs?: number }
+  options: ZatcaSubmitOptions & { retryDelayMs?: number }
 }): Promise<RoutedZatcaResult> {
   if (isPermanentDemoSandboxBranch(params.tenantId, params.branchId)) {
     return { mode: 'sandbox_validation', result: await validateInvoiceInSandbox(params.invoiceId) }
@@ -318,7 +320,7 @@ export async function submitInvoiceForBranch(params: {
 export async function submitInvoiceToZatcaDetailed(
   invoiceId: string,
   branchId: string,
-  options: ZatcaSubmitOptions = {},
+  options: ZatcaSubmitOptions,
 ): Promise<ZatcaSubmitResult> {
   const source = options.source ?? 'manual_retry'
   if (!options.contractMode && (source === 'manual_retry' || source === 'bulk_retry')) {
@@ -332,7 +334,7 @@ export async function submitInvoiceToZatcaDetailed(
     }
   }
   const contractMode = options.contractMode
-    ?? (await requireZatcaFinalizationCapability(branchId)).checkoutMode
+    ?? (await requireZatcaFinalizationCapability(branchId, options.documentKind)).checkoutMode
   const { data, error } = await supabase.functions.invoke('zatca-submit', {
     body: contractMode === 'legacy'
       ? { invoiceId, branchId, source }
@@ -362,7 +364,7 @@ export async function submitInvoiceToZatcaDetailed(
   }
 }
 
-export async function submitInvoiceToZatca(invoiceId: string, branchId: string, options: ZatcaSubmitOptions = {}): Promise<boolean> {
+export async function submitInvoiceToZatca(invoiceId: string, branchId: string, options: ZatcaSubmitOptions): Promise<boolean> {
   const result = await submitInvoiceToZatcaDetailed(invoiceId, branchId, options)
   return result.ok
 }
@@ -374,7 +376,7 @@ function wait(ms: number): Promise<void> {
 export async function submitInvoiceToZatcaWithRetry(
   invoiceId: string,
   branchId: string,
-  options: ZatcaSubmitOptions & { retryDelayMs?: number } = {},
+  options: ZatcaSubmitOptions & { retryDelayMs?: number },
 ): Promise<ZatcaSubmitResult> {
   try {
     const first = await submitInvoiceToZatcaDetailed(invoiceId, branchId, options)
@@ -419,7 +421,7 @@ function safeRetryErrorMessage(error: unknown): string {
 export async function retryFailedSubmissions(tenantId: string, branchId?: string | null): Promise<ZatcaRetrySummary> {
   let query = supabase
     .from('invoices')
-    .select('id, branch_id, invoice_number, zatca_status')
+    .select('id, branch_id, invoice_number, zatca_status, zatca_invoice_type, original_invoice_id')
     .eq('tenant_id', tenantId)
     .neq('status', 'cancelled')
     .in('zatca_status', ['failed', 'pending'])
@@ -431,6 +433,24 @@ export async function retryFailedSubmissions(tenantId: string, branchId?: string
   const { data, error } = await query
   if (error) throw new Error(error.message)
 
+  const originalInvoiceIds = [...new Set((data ?? [])
+    .map(invoice => invoice.original_invoice_id)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0))]
+  const originalDocumentKindById = new Map<string, ZatcaDocumentKind>()
+  if (originalInvoiceIds.length > 0) {
+    const { data: originals, error: originalsError } = await supabase
+      .from('invoices')
+      .select('id, zatca_invoice_type')
+      .eq('tenant_id', tenantId)
+      .in('id', originalInvoiceIds)
+    if (originalsError) throw new Error(originalsError.message)
+    for (const original of originals ?? []) {
+      if (original.zatca_invoice_type === 'standard' || original.zatca_invoice_type === 'simplified') {
+        originalDocumentKindById.set(original.id, original.zatca_invoice_type)
+      }
+    }
+  }
+
   const summary: ZatcaRetrySummary = {
     attempted: 0,
     succeeded: 0,
@@ -441,7 +461,16 @@ export async function retryFailedSubmissions(tenantId: string, branchId?: string
   for (const invoice of data ?? []) {
     summary.attempted += 1
     try {
-      const ok = await submitInvoiceToZatca(invoice.id, invoice.branch_id, { source: 'bulk_retry' })
+      const documentKind = invoice.zatca_invoice_type === 'standard' || invoice.zatca_invoice_type === 'simplified'
+        ? invoice.zatca_invoice_type
+        : invoice.original_invoice_id
+          ? originalDocumentKindById.get(invoice.original_invoice_id)
+          : undefined
+      if (!documentKind) throw new Error('Unable to determine invoice document kind for retry')
+      const ok = await submitInvoiceToZatca(invoice.id, invoice.branch_id, {
+        source: 'bulk_retry',
+        documentKind,
+      })
       if (ok) summary.succeeded += 1
       else {
         summary.failed += 1

@@ -2172,7 +2172,11 @@ export default function POSPage() {
             invoiceId: checkout.invoice_id,
             tenantId: branch.tenant_id,
             branchId: branch.id,
-            options: { source: 'auto_checkout', retryDelayMs: 1500 },
+            options: {
+              source: 'auto_checkout',
+              retryDelayMs: 1500,
+              documentKind: isB2BInvoice ? 'standard' : 'simplified',
+            },
           })
           if (preOutputSubmission.mode === 'sandbox_validation') {
             const sandboxResult = preOutputSubmission.result
@@ -2196,6 +2200,7 @@ export default function POSPage() {
               source: 'auto_checkout',
               retryDelayMs: 1500,
               contractMode: productionCheckoutMode,
+              documentKind: isB2BInvoice ? 'standard' : 'simplified',
             },
           })
           if (preOutputSubmission.mode === 'production_submission') {
@@ -2231,6 +2236,7 @@ export default function POSPage() {
                 source: 'auto_checkout',
                 retryDelayMs: 1500,
                 contractMode: productionCheckoutMode,
+                documentKind: 'standard',
               },
             })
             const output = await getInvoiceZatcaOutputState({ invoiceId: checkout.invoice_id, branchId: branch.id })
@@ -2579,7 +2585,10 @@ export default function POSPage() {
           source: 'manual_retry',
         })
       } else {
-        const capability = await requireZatcaFinalizationCapability(branch.id)
+        const capability = await requireZatcaFinalizationCapability(
+          branch.id,
+          receipt.isStandardInvoice ? 'standard' : 'simplified',
+        )
         if (capability.checkoutMode === 'legacy') {
           const routed = await submitInvoiceForBranch({
             invoiceId: receipt.invoiceId,
@@ -2589,6 +2598,7 @@ export default function POSPage() {
               source: 'manual_retry',
               retryDelayMs: 1500,
               contractMode: 'legacy',
+              documentKind: receipt.isStandardInvoice ? 'standard' : 'simplified',
             },
           })
           if (routed.mode !== 'production_submission' || !routed.result.ok) {
@@ -2610,6 +2620,7 @@ export default function POSPage() {
                 source: 'manual_retry',
                 retryDelayMs: 1500,
                 contractMode: 'v2',
+                documentKind: 'standard',
               },
             })
           }

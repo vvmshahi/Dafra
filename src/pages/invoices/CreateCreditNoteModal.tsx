@@ -715,7 +715,11 @@ export default function CreateCreditNoteModal({
             invoiceId: creditNoteId,
             tenantId: profile?.tenant_id ?? '',
             branchId: invoice.branch_id,
-            options: { source: 'auto_credit_note', retryDelayMs: 1500 },
+            options: {
+              source: 'auto_credit_note',
+              retryDelayMs: 1500,
+              documentKind: invoice.zatca_document_kind,
+            },
           })
           autoSubmitSucceeded = routed.mode === 'sandbox_validation'
             ? routed.result.status === 'sandbox_validated' || routed.result.status === 'sandbox_validated_with_warnings'
