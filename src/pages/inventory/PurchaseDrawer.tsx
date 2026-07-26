@@ -100,6 +100,7 @@ interface Props {
   inventoryItems: InventoryItem[]
   tenantId:       string
   branchId:       string
+  stockEnabled:   boolean
   editingPurchase?: Purchase | null
   editingItems?:    PurchaseItem[]
   onClose:        () => void
@@ -114,6 +115,7 @@ export default function PurchaseDrawer({
   inventoryItems,
   tenantId,
   branchId,
+  stockEnabled,
   editingPurchase = null,
   editingItems = [],
   onClose,
@@ -591,22 +593,27 @@ export default function PurchaseDrawer({
               {([
                 { value: 'simple_bill', label: t('purchases:mode.simple'), desc: t('purchases:mode.simpleHint') },
                 { value: 'detailed_receiving', label: t('purchases:mode.receiving'), desc: t('purchases:mode.receivingHint') },
-              ] as { value: PurchaseMode; label: string; desc: string }[]).map(opt => (
+              ] as { value: PurchaseMode; label: string; desc: string }[]).map(opt => {
+                const disabled = isEditing || (!stockEnabled && opt.value === 'detailed_receiving')
+                return (
                 <button
                   key={opt.value}
                   type="button"
-                  disabled={isEditing}
+                  disabled={disabled}
                   onClick={() => { if (!isEditing) setMode(opt.value) }}
                   className={`text-left rounded-xl border px-4 py-3 transition-all ${
                     mode === opt.value
                       ? 'border-primary-500 bg-primary-50 text-primary-700'
-                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                      : disabled
+                        ? 'cursor-not-allowed border-gray-100 bg-gray-50 text-gray-400 opacity-60'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   } ${isEditing ? 'cursor-default' : ''}`}
                 >
                   <span className="block text-sm font-semibold">{opt.label}</span>
                   <span className="block text-xs opacity-70 mt-0.5">{opt.desc}</span>
                 </button>
-              ))}
+                )
+              })}
             </div>
 
             {/* ── Header info ───────────────────────────────── */}

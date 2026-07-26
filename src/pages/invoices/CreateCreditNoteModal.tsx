@@ -1,14 +1,30 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, X } from 'lucide-react'
+import { Loader2, PackageCheck, PackageX, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { supabase } from '@/lib/supabase'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import type { PaymentMethod, ZatcaStatus } from '@/types/database'
-import { isPermanentDemoSandboxBranch, submitInvoiceForBranch } from '@/lib/zatca/submission'
+import {
+  getInvoiceZatcaOutputState,
+  isPermanentDemoSandboxBranch,
+  submitInvoiceForBranch,
+} from '@/lib/zatca/submission'
+import {
+  atomicCheckoutFingerprint,
+  checkoutSimplifiedAtomically,
+  cleanupObsoleteCreditNotePendingCheckouts,
+  clearPendingAtomicCheckout,
+  inspectPendingAtomicCheckout,
+  persistPendingAtomicCheckout,
+  type AtomicReceiptPayload,
+  type PendingAtomicCheckoutInspection,
+} from '@/lib/zatca/atomicCheckout'
+import { resolveScopedAtomicCheckout } from '@/lib/zatca/atomicCheckoutScope.mjs'
+import { creditNotePresentationState } from '@/lib/zatca/creditNotePresentation.mjs'
 import { useAuth } from '@/hooks/useAuth'
-import { resolveBusinessType } from '@/lib/utils/businessType'
+import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
 
 export interface CreditNoteSourceInvoice {
@@ -16,6 +32,7 @@ export interface CreditNoteSourceInvoice {
   branch_id: string
   invoice_number: string
   total_amount: number
+  zatca_document_kind: 'simplified' | 'standard'
 }
 
 export interface CreditNoteCreatedResult {
@@ -33,6 +50,16 @@ export interface CreditNoteCreatedResult {
   taxAmount: number
   itemsCount: number
   originalInvoiceId: string
+  originalInvoiceNumber: string
+  documentKind: 'simplified' | 'standard'
+  invoiceStatus: string
+  finalizationStatus: string
+  artifactStage: string
+  reportingDisplayState: string
+  canPrint: boolean
+  retryAvailable: boolean
+  reconciliationRequired: boolean
+  atomicReceipt?: AtomicReceiptPayload
 }
 
 interface RpcCreditNoteResult {
@@ -92,6 +119,23 @@ interface CreateCreditNoteModalProps {
   onCreated: (result: CreditNoteCreatedResult) => void
 }
 
+interface CreditNoteModalInvoiceIdentity {
+  id: string
+  branchId: string
+  invoiceNumber: string
+}
+
+interface CreditNoteOutputState {
+  documentKind: 'simplified' | 'standard'
+  invoiceStatus: string
+  finalizationStatus: string
+  artifactStage: string
+  reportingDisplayState: string
+  canPrint: boolean
+  retryAvailable: boolean
+  reconciliationRequired: boolean
+}
+
 function safeCreditNoteError(error: unknown, t: TFunction): string {
   const message = typeof (error as any)?.message === 'string' ? (error as any).message : ''
   if (/select at least one|no items/i.test(message)) return t('validation:creditNoteChooseItem')
@@ -110,6 +154,40 @@ function safeCreditNoteError(error: unknown, t: TFunction): string {
 
 function newIdempotencyKey(invoiceId: string) {
   return globalThis.crypto?.randomUUID?.() ?? `${invoiceId}-${Date.now()}`
+}
+
+function defaultReportingDisplayState(
+  documentKind: 'simplified' | 'standard',
+  invoiceStatus: string,
+  finalizationStatus: string,
+): string {
+  if (documentKind === 'standard') {
+    if (invoiceStatus === 'cleared') return 'cleared'
+    if (/failed|rejected|blocked/.test(finalizationStatus) || invoiceStatus === 'failed') {
+      return 'clearance_failed'
+    }
+    return 'clearance_pending'
+  }
+  if (invoiceStatus === 'reported') return 'reported'
+  if (/reconciliation/.test(finalizationStatus)) return 'reconciliation_required'
+  if (/failed|rejected|blocked/.test(finalizationStatus) || invoiceStatus === 'failed') {
+    return 'reporting_rejected'
+  }
+  return 'reporting_pending'
+}
+
+function logPendingCreditNoteDiagnostic(
+  currentModalInvoiceId: string,
+  inspection: PendingAtomicCheckoutInspection,
+) {
+  if (!import.meta.env.DEV) return
+  console.info('[credit-note atomic retry]', {
+    currentModalInvoiceId,
+    pendingStorageScope: inspection.storageScope,
+    storedOriginalInvoiceId: inspection.storedOriginalInvoiceId,
+    accepted: inspection.accepted,
+    rejectedReason: inspection.rejectedReason,
+  })
 }
 
 const QUICK_REASONS = [
@@ -218,7 +296,7 @@ export default function CreateCreditNoteModal({
 }: CreateCreditNoteModalProps) {
   const { t } = useTranslation(['creditNotes', 'refunds', 'payments', 'invoices', 'validation', 'common'])
   const { isRtl } = useLocale()
-  const { tenant, profile } = useAuth()
+  const { tenant, branch, profile } = useAuth()
   const [selectedReason, setSelectedReason] = useState<(typeof QUICK_REASONS)[number] | ''>('')
   const [remarks, setRemarks] = useState('')
   const [originalPayments, setOriginalPayments] = useState<CreditNotePaymentRow[]>([])
@@ -230,15 +308,39 @@ export default function CreateCreditNoteModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [idempotencyKey, setIdempotencyKey] = useState('')
+  const [cartFingerprint, setCartFingerprint] = useState('')
+  const [modalInvoiceIdentity, setModalInvoiceIdentity] = useState<CreditNoteModalInvoiceIdentity | null>(null)
   const [refundMode, setRefundMode] = useState<'cash' | 'card' | 'split'>('cash')
   const [refundCash, setRefundCash] = useState('')
   const [refundCard, setRefundCard] = useState('')
   const [refundEdited, setRefundEdited] = useState(false)
+  const [stockReturnChoice, setStockReturnChoice] = useState<boolean | null>(null)
   const businessType = resolveBusinessType(tenant?.business_type)
   const isServiceBusiness = businessType === 'service'
+  const stockEnabled = isStockModuleVisible({
+    businessType: tenant?.business_type,
+    stockEnabled: branch?.stock_enabled,
+  })
 
   useEffect(() => {
-    if (!open || !invoice) return
+    const cleanup = () => {
+      const removed = cleanupObsoleteCreditNotePendingCheckouts()
+      if (import.meta.env.DEV
+          && (removed.localStorageKeys.length > 0 || removed.sessionStorageKeys.length > 0)) {
+        console.info('[credit-note atomic retry]', {
+          event: 'obsolete_branch_scope_removed',
+          localStorageEntriesRemoved: removed.localStorageKeys.length,
+          sessionStorageEntriesRemoved: removed.sessionStorageKeys.length,
+        })
+      }
+    }
+    cleanup()
+    const handleStorage = () => cleanup()
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
+
+  useEffect(() => {
     setSelectedReason('')
     setRemarks('')
     setOriginalPayments([])
@@ -249,11 +351,38 @@ export default function CreateCreditNoteModal({
     setError(null)
     setCreating(false)
     setSubmitting(false)
-    setIdempotencyKey(newIdempotencyKey(invoice.id))
+    setIdempotencyKey('')
+    setCartFingerprint('')
+    setModalInvoiceIdentity(null)
     setRefundMode('cash')
     setRefundCash('')
     setRefundCard('')
     setRefundEdited(false)
+    setStockReturnChoice(null)
+
+    if (!open || !invoice) {
+      setPaymentsLoading(false)
+      setItemsLoading(false)
+      return
+    }
+
+    const originalInvoiceId = invoice.id
+    const originalBranchId = invoice.branch_id
+    setModalInvoiceIdentity({
+      id: originalInvoiceId,
+      branchId: originalBranchId,
+      invoiceNumber: invoice.invoice_number,
+    })
+    const pendingInspection = inspectPendingAtomicCheckout(
+      originalBranchId,
+      'credit_note',
+      originalInvoiceId,
+    )
+    logPendingCreditNoteDiagnostic(originalInvoiceId, pendingInspection)
+    setIdempotencyKey(
+      pendingInspection.pending?.idempotencyKey
+        ?? newIdempotencyKey(originalInvoiceId),
+    )
 
     let cancelled = false
 
@@ -262,7 +391,7 @@ export default function CreateCreditNoteModal({
         const { data, error } = await (supabase as any)
           .from('payments')
           .select('method, amount')
-          .eq('invoice_id', invoice.id)
+          .eq('invoice_id', originalInvoiceId)
           .order('paid_at', { ascending: true })
           .order('created_at', { ascending: true })
 
@@ -285,7 +414,7 @@ export default function CreateCreditNoteModal({
     ;(async () => {
       try {
         const { data, error } = await (supabase as any)
-          .rpc('get_invoice_refundable_items', { p_invoice_id: invoice.id })
+          .rpc('get_invoice_refundable_items', { p_invoice_id: originalInvoiceId })
 
         if (cancelled) return
         if (error) throw error
@@ -328,7 +457,15 @@ export default function CreateCreditNoteModal({
     })()
 
     return () => { cancelled = true }
-  }, [open, invoice, isServiceBusiness])
+  }, [
+    open,
+    invoice?.id,
+    invoice?.branch_id,
+    invoice?.invoice_number,
+    invoice?.total_amount,
+    invoice?.zatca_document_kind,
+    isServiceBusiness,
+  ])
 
   const linePreviews = useMemo(() => refundableItems.map(item => {
     const selectedQuantity = parseReturnQuantity(returnQuantities[item.original_invoice_item_id])
@@ -344,8 +481,13 @@ export default function CreateCreditNoteModal({
   }), { subtotal: 0, discount: 0, tax: 0, total: 0 })
   const totalRemainingQuantity = refundableItems.reduce((sum, item) => sum + Math.max(item.remaining_quantity, 0), 0)
   const stockReturnQuantity = selectedLines
-    .filter(line => line.item.track_stock && !line.item.is_service)
+    .filter(line => line.item.product_id && line.item.track_stock && !line.item.is_service)
     .reduce((sum, line) => sum + line.quantity, 0)
+  const hasEligibleStockLines = !isServiceBusiness && stockEnabled && stockReturnQuantity > 0
+
+  useEffect(() => {
+    if (!hasEligibleStockLines) setStockReturnChoice(null)
+  }, [hasEligibleStockLines])
 
   useEffect(() => {
     if (refundEdited || totals.total <= 0 || paymentsLoading) return
@@ -373,6 +515,18 @@ export default function CreateCreditNoteModal({
   async function handleCreate() {
     if (!invoice) return
     if (itemsLoading) return
+    const currentInvoiceIdentity = {
+      id: invoice.id,
+      branchId: invoice.branch_id,
+      invoiceNumber: invoice.invoice_number,
+    }
+    if (!modalInvoiceIdentity
+        || modalInvoiceIdentity.id !== currentInvoiceIdentity.id
+        || modalInvoiceIdentity.branchId !== currentInvoiceIdentity.branchId
+        || modalInvoiceIdentity.invoiceNumber !== currentInvoiceIdentity.invoiceNumber) {
+      setError(t('validation:creditNoteInvoiceChanged'))
+      return
+    }
     if (!selectedReason) {
       setError(t('validation:chooseCreditReason'))
       return
@@ -393,6 +547,10 @@ export default function CreateCreditNoteModal({
     const invalidLine = lines.find(line => line.quantity > line.item.remaining_quantity + 0.0005)
     if (invalidLine) {
       setError(t('validation:returnQuantityNamedExceeded', { name: invalidLine.item.name }))
+      return
+    }
+    if (hasEligibleStockLines && stockReturnChoice === null) {
+      setError(t('creditNotes:stockReturnChoiceRequired'))
       return
     }
 
@@ -418,23 +576,114 @@ export default function CreateCreditNoteModal({
     setSubmitting(false)
     setError(null)
     try {
+      const originalInvoiceId = currentInvoiceIdentity.id
       const payload = {
-        original_invoice_id: invoice.id,
-        idempotency_key: idempotencyKey || newIdempotencyKey(invoice.id),
+        original_invoice_id: originalInvoiceId,
+        idempotency_key: idempotencyKey || newIdempotencyKey(originalInvoiceId),
         reason: finalReason,
-        // The RPC applies this only to stock-tracked, non-service products and
-        // scopes every movement to the original invoice branch.
-        return_stock: !isServiceBusiness,
+        // One document-level answer applies only to eligible stock-tracked,
+        // non-service product lines; the RPC enforces the same restrictions.
+        return_stock: hasEligibleStockLines ? stockReturnChoice === true : false,
         refund_allocations: refundAllocations,
         items: lines.map(line => ({
           original_invoice_item_id: line.item.original_invoice_item_id,
           quantity: line.quantity,
         })),
       }
-      const { data, error: rpcError } = await (supabase as any).rpc('create_partial_credit_note_with_refund', { p_payload: payload })
-      if (rpcError) throw rpcError
-
-      const result = data as RpcCreditNoteResult
+      const demoSandbox = isPermanentDemoSandboxBranch(profile?.tenant_id, invoice.branch_id)
+      const atomicSimplifiedCreditEligible = !demoSandbox
+        && invoice.zatca_document_kind === 'simplified'
+      let usedAtomicSimplifiedCredit = false
+      let atomicReceipt: AtomicReceiptPayload | undefined
+      let result: RpcCreditNoteResult | null = null
+      if (atomicSimplifiedCreditEligible) {
+        cleanupObsoleteCreditNotePendingCheckouts()
+        const pendingInspection = inspectPendingAtomicCheckout(
+          invoice.branch_id,
+          'credit_note',
+          originalInvoiceId,
+        )
+        logPendingCreditNoteDiagnostic(originalInvoiceId, pendingInspection)
+        const pending = pendingInspection.pending
+        const atomicPayload = resolveScopedAtomicCheckout(
+          pending,
+          payload,
+          'credit_note',
+          originalInvoiceId,
+          invoice.branch_id,
+        )
+        const fingerprint = await atomicCheckoutFingerprint(atomicPayload)
+        setCartFingerprint(fingerprint)
+        if (pending && pending.cartFingerprint !== fingerprint) {
+          throw new Error('Persisted credit-note fingerprint does not match its request payload')
+        }
+        persistPendingAtomicCheckout(invoice.branch_id, {
+          idempotencyKey: String(atomicPayload.idempotency_key),
+          cartFingerprint: fingerprint,
+          documentType: 'credit_note',
+          checkout: atomicPayload,
+        }, originalInvoiceId)
+        let atomic
+        try {
+          atomic = await checkoutSimplifiedAtomically({
+            branchId: invoice.branch_id,
+            checkout: atomicPayload,
+            cartFingerprint: fingerprint,
+            documentType: 'credit_note',
+          })
+        } catch (atomicError) {
+          if (/ATOMIC_CREDIT_NOTE_REQUIRES_REPORTED_SIMPLIFIED_ORIGINAL/.test(
+            atomicError instanceof Error ? atomicError.message : String(atomicError ?? ''),
+          )) {
+            const postErrorInspection = inspectPendingAtomicCheckout(
+              invoice.branch_id,
+              'credit_note',
+              originalInvoiceId,
+            )
+            logPendingCreditNoteDiagnostic(originalInvoiceId, postErrorInspection)
+          }
+          throw atomicError
+        }
+        if (atomic.status === 'committed') {
+          usedAtomicSimplifiedCredit = true
+          atomicReceipt = atomic.receipt
+          result = {
+            credit_note_invoice_id: atomic.receipt.invoice_id,
+            credit_note_invoice_number: atomic.receipt.invoice_number,
+            created_at: atomic.receipt.created_at,
+            total: Number(atomic.receipt.total),
+            refund_status: 'completed',
+            zatca_status: 'pending',
+            refund_method: atomic.receipt.payments.length > 1
+              ? 'split'
+              : atomic.receipt.payment_method as PaymentMethod,
+            idempotent_replay: atomic.idempotentReplay,
+          }
+          clearPendingAtomicCheckout(
+            invoice.branch_id,
+            String(atomicPayload.idempotency_key),
+            fingerprint,
+            'credit_note',
+            originalInvoiceId,
+          )
+        } else {
+          clearPendingAtomicCheckout(
+            invoice.branch_id,
+            String(atomicPayload.idempotency_key),
+            fingerprint,
+            'credit_note',
+            originalInvoiceId,
+          )
+        }
+      }
+      if (!result) {
+        const { data, error: rpcError } = await (supabase as any).rpc(
+          'create_partial_credit_note_with_refund',
+          { p_payload: payload },
+        )
+        if (rpcError) throw rpcError
+        result = data as RpcCreditNoteResult
+      }
       if (!result.credit_note_invoice_id || !result.credit_note_invoice_number) {
         throw new Error(t('creditNotes:missingResult'))
       }
@@ -442,7 +691,36 @@ export default function CreateCreditNoteModal({
       const creditNoteId = result.credit_note_invoice_id
       let zatcaStatus = result.zatca_status ?? 'pending'
       let autoSubmitSucceeded = false
-      const shouldAutoSubmit = zatcaStatus !== 'reported' && zatcaStatus !== 'cleared'
+      let outputState: CreditNoteOutputState = atomicReceipt
+        ? {
+          documentKind: 'simplified' as const,
+          invoiceStatus: result.zatca_status ?? 'pending',
+          finalizationStatus: atomicReceipt.finalization_status,
+          artifactStage: atomicReceipt.artifact_stage,
+          reportingDisplayState: atomicReceipt.reporting_display_state,
+          canPrint: atomicReceipt.can_print === true,
+          retryAvailable: false,
+          reconciliationRequired: false,
+        }
+        : {
+          documentKind: invoice.zatca_document_kind,
+          invoiceStatus: result.zatca_status ?? 'pending',
+          finalizationStatus: invoice.zatca_document_kind === 'standard'
+            ? 'clearance_pending'
+            : 'reporting_pending',
+          artifactStage: invoice.zatca_document_kind === 'standard'
+            ? 'standard_provisional'
+            : 'none',
+          reportingDisplayState: invoice.zatca_document_kind === 'standard'
+            ? 'clearance_pending'
+            : 'reporting_pending',
+          canPrint: false,
+          retryAvailable: true,
+          reconciliationRequired: false,
+        }
+      const shouldAutoSubmit = !usedAtomicSimplifiedCredit
+        && zatcaStatus !== 'reported'
+        && zatcaStatus !== 'cleared'
 
       if (shouldAutoSubmit) {
         setCreating(false)
@@ -452,20 +730,88 @@ export default function CreateCreditNoteModal({
             invoiceId: creditNoteId,
             tenantId: profile?.tenant_id ?? '',
             branchId: invoice.branch_id,
-            options: { source: 'auto_credit_note', retryDelayMs: 1500 },
+            options: {
+              source: 'auto_credit_note',
+              retryDelayMs: 1500,
+              documentKind: invoice.zatca_document_kind,
+            },
           })
           autoSubmitSucceeded = routed.mode === 'sandbox_validation'
             ? routed.result.status === 'sandbox_validated' || routed.result.status === 'sandbox_validated_with_warnings'
             : routed.result.ok
+          if (routed.mode === 'production_submission') {
+            const submission = routed.result
+            outputState = {
+              documentKind: submission.documentKind ?? invoice.zatca_document_kind,
+              invoiceStatus: submission.invoiceStatus,
+              finalizationStatus: submission.finalizationStatus,
+              artifactStage: submission.artifactStage,
+              reportingDisplayState: defaultReportingDisplayState(
+                submission.documentKind ?? invoice.zatca_document_kind,
+                submission.invoiceStatus,
+                submission.finalizationStatus,
+              ),
+              canPrint: submission.canPrint,
+              retryAvailable: submission.retryable,
+              reconciliationRequired: false,
+            }
+          } else {
+            outputState = {
+              ...outputState,
+              invoiceStatus: routed.result.status,
+              finalizationStatus: routed.result.status,
+              reportingDisplayState: routed.result.status,
+              canPrint: autoSubmitSucceeded
+                && invoice.zatca_document_kind === 'simplified',
+              retryAvailable: !autoSubmitSucceeded,
+            }
+          }
         } catch {
           autoSubmitSucceeded = false
+          outputState = {
+            ...outputState,
+            finalizationStatus: invoice.zatca_document_kind === 'standard'
+              ? 'clearance_failed'
+              : 'reporting_failed',
+            reportingDisplayState: invoice.zatca_document_kind === 'standard'
+              ? 'clearance_failed'
+              : 'reporting_rejected',
+            canPrint: false,
+            retryAvailable: true,
+          }
         } finally {
           const refreshedStatus = await fetchCreditNoteStatus(creditNoteId)
           zatcaStatus = refreshedStatus ?? zatcaStatus
         }
       }
 
-      onCreated({
+      if (!usedAtomicSimplifiedCredit && !demoSandbox) {
+        try {
+          const authoritative = await getInvoiceZatcaOutputState({
+            invoiceId: creditNoteId,
+            branchId: invoice.branch_id,
+          })
+          outputState = {
+            documentKind: authoritative.documentKind ?? invoice.zatca_document_kind,
+            invoiceStatus: authoritative.invoiceStatus,
+            finalizationStatus: authoritative.finalizationStatus,
+            artifactStage: authoritative.artifactStage,
+            reportingDisplayState: authoritative.reportingDisplayState,
+            canPrint: authoritative.canPrint,
+            retryAvailable: authoritative.retryAvailable,
+            reconciliationRequired: authoritative.reconciliationRequired,
+          }
+          if (authoritative.invoiceStatus === 'reported'
+              || authoritative.invoiceStatus === 'cleared') {
+            zatcaStatus = authoritative.invoiceStatus
+          }
+        } catch {
+          // The submission result remains the safe fallback. Standard output
+          // stays non-printable unless authoritative cleared markers agree.
+        }
+      }
+
+      const createdResult: CreditNoteCreatedResult = {
         creditNoteId: result.credit_note_invoice_id,
         creditNoteNumber: result.credit_note_invoice_number,
         createdAt: result.created_at ?? new Date().toISOString(),
@@ -479,16 +825,34 @@ export default function CreateCreditNoteModal({
         subtotal: totals.subtotal,
         taxAmount: totals.tax,
         itemsCount: lines.length,
-        originalInvoiceId: invoice.id,
-      })
+        originalInvoiceId,
+        originalInvoiceNumber: currentInvoiceIdentity.invoiceNumber,
+        documentKind: outputState.documentKind,
+        invoiceStatus: outputState.invoiceStatus,
+        finalizationStatus: outputState.finalizationStatus,
+        artifactStage: outputState.artifactStage,
+        reportingDisplayState: outputState.reportingDisplayState,
+        canPrint: outputState.canPrint,
+        retryAvailable: outputState.retryAvailable,
+        reconciliationRequired: outputState.reconciliationRequired,
+        atomicReceipt,
+      }
+      onCreated(createdResult)
       onClose()
-      if (autoSubmitSucceeded || zatcaStatus === 'reported' || zatcaStatus === 'cleared') {
-        const demoSubmission = isPermanentDemoSandboxBranch(profile?.tenant_id, invoice.branch_id)
-        toast.success(result.idempotent_replay ? t('creditNotes:alreadyExists') : t('creditNotes:createdSubmitted'), {
-          description: demoSubmission ? t('creditNotes:processedByZatca') : undefined,
-        })
+      const presentation = creditNotePresentationState(createdResult)
+      const description = presentation.messageKey
+        ? t(presentation.messageKey)
+        : presentation.statusKey
+        ? t(presentation.statusKey)
+        : undefined
+      if (presentation.tone === 'error') {
+        toast.error(t(presentation.headingKey), { description })
+      } else if (presentation.tone === 'warning') {
+        toast.warning(t(presentation.headingKey), { description })
+      } else if (presentation.tone === 'progress') {
+        toast.info(t(presentation.headingKey), { description })
       } else {
-        toast.error(t('creditNotes:createdSubmissionFailed'))
+        toast.success(t(presentation.headingKey), { description })
       }
     } catch (err) {
       const safeMessage = safeCreditNoteError(err, t)
@@ -502,7 +866,8 @@ export default function CreateCreditNoteModal({
 
   const busy = creating || submitting
   const actionLabel = submitting ? t('creditNotes:submitting') : creating ? t('creditNotes:creating') : t('creditNotes:createRefund')
-  const createDisabled = busy || itemsLoading || selectedLines.length === 0
+  const stockReturnChoiceMissing = hasEligibleStockLines && stockReturnChoice === null
+  const createDisabled = busy || itemsLoading || selectedLines.length === 0 || stockReturnChoiceMissing
   const reasonLabel = (reason: (typeof QUICK_REASONS)[number]) => reason === 'Test sale'
     ? t('creditNotes:reasonTestSale')
     : reason === 'Customer refund'
@@ -512,7 +877,11 @@ export default function CreateCreditNoteModal({
     : t('creditNotes:reasonBillingMistake')
 
   return (
-    <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div
+      className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      data-original-invoice-id={invoice.id}
+      data-cart-fingerprint={cartFingerprint || undefined}
+    >
       <div className="flex max-h-[92vh] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
           <div>
@@ -541,6 +910,9 @@ export default function CreateCreditNoteModal({
             <span>{t('creditNotes:originalTotal')} <bdi dir="ltr">SAR {money(invoice.total_amount)}</bdi></span>
             <span className="mx-2 text-gray-300">·</span>
             <span>{t('creditNotes:remainingQuantity')} <bdi dir="ltr">{qty(totalRemainingQuantity)}</bdi></span>
+            <p className="mt-1 font-mono text-[10px] text-gray-500" dir="ltr">
+              {t('creditNotes:originalInvoiceIdentity', { id: invoice.id })}
+            </p>
           </div>
 
           <section className="space-y-2">
@@ -667,10 +1039,70 @@ export default function CreateCreditNoteModal({
             )}
           </section>
 
+          {hasEligibleStockLines && (
+            <fieldset className="space-y-2" aria-describedby="stock-return-help">
+              <legend className="text-xs font-semibold text-gray-800">
+                {t('creditNotes:stockReturnQuestion')}
+              </legend>
+              <p id="stock-return-help" className="text-[11px] leading-relaxed text-gray-500">
+                {t('creditNotes:stockReturnQuestionHint')}
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {([
+                  {
+                    value: true,
+                    icon: PackageCheck,
+                    title: t('creditNotes:stockReturnYes'),
+                    description: t('creditNotes:stockReturnYesDescription'),
+                  },
+                  {
+                    value: false,
+                    icon: PackageX,
+                    title: t('creditNotes:stockReturnNo'),
+                    description: t('creditNotes:stockReturnNoDescription'),
+                  },
+                ] as const).map(option => {
+                  const selected = stockReturnChoice === option.value
+                  const Icon = option.icon
+                  return (
+                    <button
+                      key={String(option.value)}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      disabled={busy}
+                      onClick={() => {
+                        setStockReturnChoice(option.value)
+                        setError(null)
+                      }}
+                      className={`flex min-h-20 items-start gap-3 rounded-xl border px-3 py-3 text-start transition-[border-color,background-color,box-shadow,transform] duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${
+                        selected
+                          ? 'border-[#0F2419] bg-[#F3F8F4] shadow-sm'
+                          : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                        selected ? 'bg-[#0F2419] text-white' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        <Icon size={17} aria-hidden="true" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-xs font-bold text-gray-900">{option.title}</span>
+                        <span className="mt-1 block text-[11px] leading-relaxed text-gray-500">
+                          {option.description}
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </fieldset>
+          )}
+
           <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
             <p className="text-xs font-semibold text-gray-800">{t('creditNotes:stockImpact')}</p>
             <p className="mt-0.5 text-[11px] text-gray-600">
-              {stockReturnQuantity > 0
+              {hasEligibleStockLines && stockReturnChoice === true
                 ? t('creditNotes:unitsReturned', { quantity: qty(stockReturnQuantity) })
                 : t('creditNotes:noStockMovement')}
             </p>
@@ -763,7 +1195,13 @@ export default function CreateCreditNoteModal({
             type="button"
             onClick={handleCreate}
             disabled={createDisabled}
-            title={selectedLines.length === 0 ? t('creditNotes:enterQuantityFirst') : undefined}
+            title={
+              selectedLines.length === 0
+                ? t('creditNotes:enterQuantityFirst')
+                : stockReturnChoiceMissing
+                  ? t('creditNotes:stockReturnChoiceRequired')
+                  : undefined
+            }
             className="inline-flex items-center gap-2 rounded-xl bg-[#0F2419] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy && <Loader2 size={13} className="animate-spin" />}

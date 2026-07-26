@@ -1,18 +1,19 @@
 import { documentDirection, normalizeDocumentLanguage, type DocumentLanguage } from '@/localization/documents'
 import { resolveHistoricalA4Template } from './presentationSettings'
-import type { A4HeaderStyle, InvoicePresentationSettings, LogoAssetSize, QrSize, ThermalDensity, ThermalWidth } from '@/types/database'
+import type { A4HeaderStyle, InvoicePresentationSettings, LogoAssetSize, QrSize, QrAlignment, ThermalDensity, ThermalWidth } from '@/types/database'
 
-export type DocumentKind = 'invoice' | 'credit_note'
+export type DocumentKind = 'invoice' | 'credit_note' | 'debit_note'
 export type DocumentFidelity = 'exact_snapshot' | 'best_effort' | 'sample'
 
 export interface DocumentViewModel {
-  readonly source: 'snapshot_v2' | 'snapshot_v1' | 'legacy' | 'preview'
+  readonly source: 'snapshot_v2' | 'snapshot_v1' | 'atomic_receipt' | 'legacy' | 'preview'
   readonly identity: Readonly<{
     kind: DocumentKind
     invoiceType: string
     number: string
     uuid: string | null
     issueTimestamp: string
+    supplyDate?: string | null
     language: DocumentLanguage
     direction: 'ltr' | 'rtl'
     snapshotVersion: 1 | 2 | null
@@ -35,14 +36,15 @@ export interface DocumentViewModel {
     renderNameAr: string | null
   }>
   readonly presentation: Readonly<{
-    contact: Readonly<{ phone: string | null; email: string | null; website: string | null; addressVisible: boolean; phoneVisible: boolean; emailVisible: boolean; websiteVisible: boolean }>
-    footer: Readonly<{ thankYou: string | null; footer: string | null; refund: string | null; thankYouVisible: boolean; footerVisible: boolean; refundVisible: boolean }>
+    contact: Readonly<{ phone: string | null; email: string | null; website: string | null; address: string | null; addressVisible: boolean; phoneVisible: boolean; emailVisible: boolean; websiteVisible: boolean }>
+    footer: Readonly<{ thankYou: string | null; footer: string | null; refund: string | null; bold: boolean; thankYouVisible: boolean; footerVisible: boolean; refundVisible: boolean }>
     logo: Readonly<{ visible: boolean; assetPath: string | null; assetVersion: number | null; size: LogoAssetSize | null; previewUrl: string | null }>
-    thermal: Readonly<{ width: ThermalWidth; density: ThermalDensity; qrSize: QrSize; wrapItemNames: boolean; showCashChange: boolean }>
+    thermal: Readonly<{ width: ThermalWidth; density: ThermalDensity; qrSize: QrSize; qrAlignment: QrAlignment; wrapItemNames: boolean; showCashChange: boolean }>
     printMode: 'thermal' | 'pdf' | 'both'
+    afterSaleAction: 'receipt' | 'a4' | 'both'
   }>
-  readonly buyer: Readonly<{ name: string | null; nameAr: string | null; vatNumber: string | null; address: string | null; type: string | null }>
-  readonly items: readonly Readonly<{ description: string; descriptionAr: string | null; quantity: number; unitPrice: number; discount: number; taxableAmount: number; vatRate: number; vatAmount: number; lineTotal: number; creditedQuantity: number | null }>[]
+  readonly buyer: Readonly<{ name: string | null; nameAr: string | null; vatNumber: string | null; address: string | null; addressAr: string | null; identifierType: string | null; identifierValue: string | null; type: string | null }>
+  readonly items: readonly Readonly<{ description: string; descriptionAr: string | null; quantity: number; unitPrice: number; discount: number; taxableAmount: number; vatRate: number; vatAmount: number; vatCategory?: string | null; lineTotal: number; creditedQuantity: number | null }>[]
   readonly totals: Readonly<{ currency: 'SAR'; subtotal: number; discount: number; taxableAmount: number; vat: number; total: number; paid: number; refunded: number; balance: number | null }>
   readonly payments: Readonly<{ method: string; amount: number; cashTendered: number | null; change: number | null; reference: string | null }>[]
   readonly compliance: Readonly<{ qr: Readonly<{ source: 'stored_reference' | 'sample' | 'unavailable'; reference: string | null }>; xmlState: 'available' | 'unavailable'; originalDocument: Readonly<{ id: string | null; number: string | null }>; creditReason: string | null }>
@@ -66,10 +68,16 @@ export interface DocumentPresentationInput {
 }
 
 export function buildPresentationDocument(input: DocumentPresentationInput, base: Omit<DocumentViewModel, 'seller' | 'presentation' | 'template' | 'format'>): DocumentViewModel {
-  const { settings, language } = input
+  const settings = input.settings
+  const language = normalizeDocumentLanguage(input.language)
   const template = resolveHistoricalA4Template(settings.a4.template_id, settings.a4.template_version)
-  const displayName = settings.identity.display_heading || settings.identity.custom_display_name || (settings.identity.show_company_name ? input.registeredName : input.branchName) || input.registeredName
-  const displayNameAr = settings.identity.display_subheading || (settings.identity.show_company_name ? input.registeredNameAr : input.branchNameAr) || input.registeredNameAr
+  const customHeading = settings.identity.heading_mode === 'custom'
+  const displayName = customHeading
+    ? settings.identity.display_heading || null
+    : settings.identity.display_heading || settings.identity.custom_display_name || (settings.identity.show_company_name ? input.registeredName : input.branchName) || null
+  const displayNameAr = customHeading
+    ? settings.identity.display_heading || null
+    : settings.identity.display_subheading || (settings.identity.show_company_name ? input.registeredNameAr : input.branchNameAr) || null
   return immutable({
     ...base,
     identity: { ...base.identity, language, direction: documentDirection(language) },
@@ -82,11 +90,12 @@ export function buildPresentationDocument(input: DocumentPresentationInput, base
       renderName: displayName, renderNameAr: displayNameAr,
     },
     presentation: {
-      contact: { phone: settings.contact.phone, email: settings.contact.email, website: settings.contact.website, addressVisible: settings.contact.show_address, phoneVisible: settings.contact.show_phone, emailVisible: settings.contact.show_email, websiteVisible: settings.contact.show_website },
-      footer: { thankYou: settings.footer.thank_you_message, footer: settings.footer.footer_note, refund: settings.footer.refund_note, thankYouVisible: settings.footer.show_thank_you, footerVisible: settings.footer.show_footer, refundVisible: settings.footer.show_refund_note },
+      contact: { phone: settings.contact.phone, email: settings.contact.email, website: settings.contact.website, address: settings.contact.address_override ?? null, addressVisible: settings.contact.show_address, phoneVisible: settings.contact.show_phone, emailVisible: settings.contact.show_email, websiteVisible: settings.contact.show_website },
+      footer: { thankYou: settings.footer.thank_you_message, footer: settings.footer.footer_note, refund: settings.footer.refund_note, bold: !!settings.footer.footer_note || !!settings.footer.thank_you_message || !!settings.footer.refund_note, thankYouVisible: settings.footer.show_thank_you, footerVisible: settings.footer.show_footer, refundVisible: settings.footer.show_refund_note },
       logo: { visible: settings.logo.visible, assetPath: settings.logo.asset_path, assetVersion: settings.logo.asset_version, size: settings.logo.size, previewUrl: input.logoPreviewUrl ?? null },
-      thermal: { width: settings.thermal.width, density: settings.thermal.density, qrSize: settings.thermal.qr_size, wrapItemNames: settings.thermal.wrap_item_names, showCashChange: settings.thermal.show_cash_change },
+      thermal: { width: settings.thermal.width, density: settings.thermal.density, qrSize: settings.thermal.qr_size, qrAlignment: settings.thermal.qr_alignment, wrapItemNames: settings.thermal.wrap_item_names, showCashChange: settings.thermal.show_cash_change },
       printMode: input.printMode,
+      afterSaleAction: settings.after_sale_action ?? (input.printMode === 'pdf' ? 'a4' : input.printMode === 'both' ? 'both' : 'receipt'),
     },
     template: { rendererFamily: 'a4', requestedId: template.requestedId, requestedVersion: template.requestedVersion, resolvedId: template.resolvedId, resolvedVersion: template.resolvedVersion, fallback: !template.exact, fallbackReason: template.exact ? null : 'unknown_historical_template', headerStyle: settings.a4.header_style },
     format: { currency: 'SAR', minimumFractionDigits: 2, maximumFractionDigits: 2, quantityMaximumFractionDigits: 3, numberDirection: 'ltr', dateLocale: language === 'ar' ? 'ar-SA' : 'en-SA' },

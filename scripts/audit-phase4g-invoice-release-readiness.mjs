@@ -15,5 +15,5 @@ for (const source of [invoice, pos, settings]) assert.match(source, /<ThermalRec
 for (const source of [a4, thermal]) { assert.doesNotMatch(source, /supabase|buildZatcaQR|QRCode|\*\s*0\.15/) }
 assert.match(adapters, /documentFromStoredInvoiceV2/); assert.match(adapters, /documentFromStoredInvoiceV1/); assert.match(adapters, /documentFromLegacyInvoice/)
 assert.doesNotMatch(branches, /storage\.from\('branch-assets'\)\.upload/); assert.doesNotMatch(branches, /upsert:\s*true/)
-assert.match(settings, /presentation_settings: normalized\.presentation/); assert.doesNotMatch(settings, /presentation_settings:[\s\S]{0,500}(registeredSellerName|vatNumber|registrationIdentifier|certificate|csid)/)
+assert.match(settings, /serializeInvoicePresentationSettingsForSave\(normalized/); assert.doesNotMatch(settings, /presentation_settings:[\s\S]{0,500}(registeredSellerName|vatNumber|registrationIdentifier|certificate|csid)/)
 console.log('Phase 4G release-readiness static assertions passed (paths, snapshots, immutable Storage baseline, renderer secrecy, locale-safe presentation boundary, and migration determinism).')

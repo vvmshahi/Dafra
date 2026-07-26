@@ -5,11 +5,13 @@ export type DocumentLanguage = 'en' | 'ar' | 'both'
 export type DocumentTextKey = keyof typeof documentsEn
 
 export function normalizeDocumentLanguage(value: unknown): DocumentLanguage {
-  return value === 'en' || value === 'ar' || value === 'both' ? value : 'both'
+  // Saudi tax documents must contain Arabic; legacy English-only values are
+  // retained only as an input compatibility alias for bilingual output.
+  return value === 'ar' ? 'ar' : 'both'
 }
 
 export function parseDocumentLanguage(value: unknown): DocumentLanguage | null {
-  return value === 'en' || value === 'ar' || value === 'both' ? value : null
+  return value === 'ar' ? 'ar' : value === 'en' || value === 'both' ? 'both' : null
 }
 
 export function resolveInvoiceDocumentLanguage(invoiceValue: unknown, branchValue: unknown): DocumentLanguage {

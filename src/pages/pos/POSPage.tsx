@@ -5,7 +5,7 @@ import {
   Search, Plus, Minus, Trash2, CreditCard, Banknote,
   Receipt, X, ChevronDown, User, Check, Loader2,
   ShoppingBag, AlertCircle, Zap, Printer, PackageOpen, ArrowLeft, Lock,
-  ChevronLeft, ChevronRight, ChevronUp,
+  ChevronLeft, ChevronRight, ChevronUp, RotateCcw,
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
@@ -14,29 +14,53 @@ import { Rial } from '@/components/ui/RiyalSymbol'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { resolveEffectiveVatTreatment } from '@/lib/pricing/vat'
 import { updateCachedInvoiceRows, upsertInvoiceListRow } from '@/lib/invoices/invoiceListCache'
-import { buildZatcaQR } from '@/lib/zatca/qr'
 import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
-import { isPermanentDemoSandboxBranch, submitInvoiceForBranch } from '@/lib/zatca/submission'
+import {
+  finalizeInvoiceForZatca,
+  getZatcaFinalizationCapabilities,
+  getInvoiceZatcaOutputState,
+  isPermanentDemoSandboxBranch,
+  requireZatcaFinalizationCapability,
+  retryStoredSimplifiedArtifact,
+  submitInvoiceForBranch,
+  type ZatcaCheckoutMode,
+} from '@/lib/zatca/submission'
+import {
+  atomicCheckoutFingerprint,
+  checkoutSimplifiedAtomically,
+  clearPendingAtomicCheckout,
+  persistPendingAtomicCheckout,
+  readPendingAtomicCheckout,
+  type AtomicCheckoutResult,
+} from '@/lib/zatca/atomicCheckout'
+import { selectStoredInvoiceQr } from '@/lib/zatca/qrSelector'
+import {
+  renderStoredQrDataUrl,
+  selectStoredOutputStateQr,
+  type QrDisplayStatus,
+} from '@/lib/zatca/qrDisplay.mjs'
 import { toast } from 'sonner'
+import { resolveBranchDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
+import A4Document from '@/components/print/A4Document'
 import type { Branch, BranchPosMode, PaymentMethod, VatTreatment } from '@/types/database'
 import { usePosSession } from '@/hooks/usePosSession'
 import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
 import { useSubscription } from '@/hooks/useSubscription'
 import { getPrinterSettings, getPrinters, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
+import { printAtomicReceiptSnapshot } from '@/lib/atomicReceiptPrint'
 import { openReceiptPreview, printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { supportConfig } from '@/config/support'
-import { resolveBusinessType } from '@/lib/utils/businessType'
+import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 import { AuthenticatedLanguageSwitch } from '@/components/localization/AuthenticatedLanguageSwitch'
+import { documentFromPosReceipt } from '@/lib/invoices/documentViewAdapters'
+import { resolveInvoicePresentationSettings } from '@/lib/invoices/presentationSettings'
 import {
   documentDate,
-  documentDirection,
-  documentFontFamily,
   documentLabel,
-  documentLabelLines,
   documentNames,
   documentPaymentLabel,
   normalizeDocumentLanguage,
@@ -93,6 +117,9 @@ interface PosCustomer {
   vat_number: string | null
   business_name: string | null
   business_name_ar: string | null
+  cr_number: string | null
+  address: string | null
+  address_ar: string | null
 }
 
 interface CartItem {
@@ -117,6 +144,10 @@ interface ReceiptData {
   cashReceived: number
   customerName: string
   customerNameAr: string | null
+  customerAddress: string | null
+  customerAddressAr: string | null
+  buyerIdentifierType: string | null
+  buyerIdentifierValue: string | null
   customerPhone: string | null
   isStandardInvoice: boolean
   buyerVatNumber: string | null
@@ -143,6 +174,15 @@ interface ReceiptData {
   showLogo: boolean
   payments: ReceiptPayment[]
   displayPaymentMethod: string
+  zatcaQrCode: string
+  canPrint: boolean
+  finalizationStatus: string
+  artifactStage: string
+  documentKind: 'simplified' | 'standard' | null
+  finalizationError: string | null
+  sandboxGenerated: boolean
+  reportingDisplayState: string
+  atomicSnapshot: boolean
 }
 
 function branchPosMode(value: string | null | undefined): PosMode {
@@ -159,6 +199,8 @@ interface PosCheckoutItemResult {
   line_amount: number | string
   subtotal: number | string
   tax_amount: number | string
+  tax_rate?: number | string | null
+  tax_category?: string | null
   total: number | string
 }
 
@@ -460,40 +502,80 @@ function QuickExpenseModal({
 
 // ── Receipt overlay ───────────────────────────────────────────────────────────
 
-function ReceiptView({ receipt, onNewSale, onOpenPrinterSettings, printMode }: {
+function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetryFinalization, onOpenInvoiceStatus, afterSaleAction }: {
   receipt: ReceiptData
+  branch: Branch | null
   onNewSale: () => void
   onOpenPrinterSettings: () => void
-  printMode: 'thermal' | 'pdf' | 'both'
+  onRetryFinalization: () => Promise<void>
+  onOpenInvoiceStatus: () => void
+  afterSaleAction: 'receipt' | 'a4' | 'both'
 }) {
-  const { t } = useTranslation(['pos', 'payments', 'common'])
+  const { t } = useTranslation(['pos', 'payments', 'printing', 'common'])
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [qrStatus, setQrStatus] = useState<QrDisplayStatus>('loading')
   const [printingReceipt, setPrintingReceipt] = useState(false)
   const [printErrorKey, setPrintErrorKey] = useState<string | null>(null)
+  const [retryingFinalization, setRetryingFinalization] = useState(false)
+  const automaticSnapshotPrintRef = useRef(false)
   const documentLanguage = normalizeDocumentLanguage(receipt.documentLanguage)
-  const documentDir = documentDirection(documentLanguage)
+  const documentViewModel = useMemo(() => documentFromPosReceipt({ ...receipt, zatcaQrCode: receipt.zatcaQrCode, presentationSettings: branch?.presentation_settings, branchDefaults: branch ?? undefined, items: receipt.items.map(item => ({ name: item.name, nameAr: item.nameAr, qty: item.qty, unitPrice: item.unitPrice, lineTotal: item.lineTotal, subtotal: item.subtotal, taxAmount: item.taxAmount, taxRate: item.taxRate, taxCategory: item.taxCategory })), payments: receipt.payments.map(payment => ({ method: payment.method, amount: payment.amount, amountReceived: payment.amountReceived, changeAmount: payment.changeAmount })) }), [receipt, branch])
+  const printReady = receipt.canPrint && qrStatus === 'ready' && Boolean(qrDataUrl)
 
   useEffect(() => {
     async function genQR() {
-      try {
-        const payload = buildZatcaQR({
-          sellerName:  receipt.businessNameAr || receipt.businessNameEn,
-          vatNumber:   receipt.vatNumber,
-          timestamp:   receipt.createdAt,
-          totalAmount: receipt.total,
-          vatAmount:   receipt.taxAmount,
-        })
-        const url = await QRCode.toDataURL(payload, {
+      setQrStatus('loading')
+      const result = await renderStoredQrDataUrl(
+        receipt.zatcaQrCode,
+        payload => QRCode.toDataURL(payload, {
           errorCorrectionLevel: 'M', width: 160, margin: 1,
           color: { dark: '#0F2419', light: '#FFFFFF' },
-        })
-        setQrDataUrl(url)
-      } catch {}
+        }),
+      )
+      setQrDataUrl(result.dataUrl)
+      setQrStatus(result.status)
     }
-    genQR()
-  }, [receipt])
+    void genQR()
+  }, [receipt.zatcaQrCode])
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      console.info('[zatca-timing]', {
+        event: 'receipt_rendered',
+        invoiceId: receipt.invoiceId,
+        reportingDisplayState: receipt.reportingDisplayState,
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [receipt.invoiceId, receipt.reportingDisplayState])
+
+  async function printRenderedReceiptSnapshot(): Promise<boolean> {
+    const result = await printAtomicReceiptSnapshot({
+      invoiceId: receipt.invoiceId,
+      receiptElementId: 'thermal-receipt',
+      source: 'atomic_checkout_snapshot',
+    })
+    if (result.success) {
+      return true
+    }
+    console.warn('[ReceiptView] receipt snapshot print failed', result.errorType)
+    return false
+  }
+
+  useEffect(() => {
+    if (!receipt.atomicSnapshot || !printReady || automaticSnapshotPrintRef.current) return
+    automaticSnapshotPrintRef.current = true
+    void getPrinterSettings().then(settings => {
+      if (!settings.autoPrintReceiptAfterSale) return
+      void openReceiptPrintPage()
+    })
+  }, [receipt.atomicSnapshot, receipt.invoiceId, printReady])
 
   function shareWhatsApp() {
+    if (!printReady) {
+      toast.error(t('printing:qrUnavailable'))
+      return
+    }
     if (!receipt.customerPhone) return
     const digits = receipt.customerPhone.replace(/\D/g, '')
     const wa = digits.startsWith('966') ? digits : digits.startsWith('0') ? '966' + digits.slice(1) : digits
@@ -516,13 +598,16 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank')
   }
 
-  const invDate = documentDate(receipt.createdAt, documentLanguage, { month: '2-digit' })
-  const invTime = toSaudiTime(receipt.createdAt)
-  const isSplitPayment = receipt.displayPaymentMethod === 'split' || isSplitPaymentRows(receipt.payments)
-  const cashPayment = receipt.payments.find(payment => payment.method === 'cash')
-  const cardPayment = receipt.payments.find(payment => payment.method === 'card')
-
   async function printPosA4() {
+    if (!printReady) {
+      toast.error(t('printing:qrUnavailable'))
+      return
+    }
+    console.info('[zatca-timing]', {
+      event: 'print_requested',
+      invoiceId: receipt.invoiceId,
+      source: receipt.atomicSnapshot ? 'atomic_checkout_a4_snapshot' : 'pos_a4_snapshot',
+    })
     const existing = document.getElementById('pos-pdf-print-style')
     existing?.remove()
     const s = document.createElement('style')
@@ -552,16 +637,34 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     if (!result.success) {
       console.warn('[ReceiptView] A4 print failed', result.errorType)
       toast.error(t('pos:printer.a4Failed'))
+    } else {
+      console.info('[zatca-timing]', {
+        event: 'printer_started',
+        invoiceId: receipt.invoiceId,
+        source: receipt.atomicSnapshot ? 'atomic_checkout_a4_snapshot' : 'pos_a4_snapshot',
+      })
     }
     s.remove()
   }
 
   async function openReceiptPrintPage() {
     if (printingReceipt) return
+    if (!printReady) {
+      toast.error(t('printing:qrUnavailable'))
+      return
+    }
     setPrintErrorKey(null)
 
     setPrintingReceipt(true)
     try {
+      if (receipt.atomicSnapshot) {
+        const printed = await printRenderedReceiptSnapshot()
+        if (printed) {
+          toast.success(t('pos:printer.receiptSent'), { duration: 1800 })
+          return
+        }
+        throw new Error('Rendered receipt snapshot could not be printed')
+      }
       if (!isElectron()) {
         await printReceiptInHiddenFrame(receipt.invoiceId)
         return
@@ -600,141 +703,9 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
   return (
     <>
-      {/* A4 invoice — hidden, shown only via printPosA4() print style */}
-      <div id="pos-pdf-printable" dir={documentDir} style={{ display: 'none', fontFamily: documentFontFamily(documentLanguage), fontSize: '12px', color: '#111', lineHeight: '1.5', background: 'white' }}>
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: '20px', borderBottom: '2px solid #e5e7eb', marginBottom: '20px' }}>
-          <div>
-            {receipt.showLogo && receipt.logoUrl && (
-              <img src={receipt.logoUrl} alt="logo" style={{ maxHeight: '60px', maxWidth: '160px', objectFit: 'contain', display: 'block', marginBottom: '10px' }} />
-            )}
-            {documentNames(documentLanguage, receipt.businessNameEn, receipt.businessNameAr).map((name, index) => <div key={name} dir="auto" style={{ fontSize: index === 0 ? '20px' : '12px', fontWeight: index === 0 ? 'bold' : 'normal', color: index === 0 ? '#111' : '#6b7280', marginTop: index === 0 ? 0 : '2px' }}>{name}</div>)}
-            {documentNames(documentLanguage, receipt.branchAddress, receipt.branchAddressAr).map(value => <div key={value} dir="auto" style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>{value}</div>)}
-            <div style={{ fontSize: '11px', color: '#374151', marginTop: '6px' }}>{documentLabel(documentLanguage, 'vatNumber')}: <bdi dir="ltr">{receipt.vatNumber}</bdi></div>
-            {receipt.showWebsite && receipt.website && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>{receipt.website}</div>}
-            {receipt.showEmail && receipt.email && <div style={{ fontSize: '11px', color: '#6b7280' }}>{receipt.email}</div>}
-          </div>
-          <div style={{ textAlign: documentDir === 'rtl' ? 'left' : 'right' }}>
-            <div style={{ marginBottom: '14px' }}>{documentLabelLines(documentLanguage, 'simplifiedTaxInvoice').map((line, index) => <div key={line} dir="auto" style={{ fontSize: index === 0 ? '18px' : '11px', fontWeight: index === 0 ? 'bold' : 'normal', color: index === 0 ? '#0F2419' : '#9ca3af' }}>{line}</div>)}</div>
-            <div style={{ fontSize: '12px', marginBottom: '3px' }}>{documentLabel(documentLanguage, 'invoiceNumber')}: <strong><bdi dir="ltr">{receipt.invoiceNumber}</bdi></strong></div>
-            <div style={{ fontSize: '12px', marginBottom: '3px' }}>{documentLabel(documentLanguage, 'date')}: <bdi dir="ltr">{invDate}</bdi></div>
-            <div style={{ fontSize: '12px' }}>{documentLabel(documentLanguage, 'time')}: <bdi dir="ltr">{invTime}</bdi></div>
-          </div>
-        </div>
-        {/* Customer */}
-        <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px' }}>
-          <div style={{ fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>{documentLabel(documentLanguage, 'billTo')}</div>
-          {documentNames(documentLanguage, receipt.customerName, receipt.customerNameAr).map(name => <div key={name} dir="auto" style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{name}</div>)}
-        </div>
-        {/* Items */}
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
-              <th style={{ textAlign: 'start', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase' }}>{documentLabel(documentLanguage, 'item')}</th>
-              <th style={{ textAlign: 'end', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', width: '50px' }}>{documentLabel(documentLanguage, 'quantity')}</th>
-              <th style={{ textAlign: 'end', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', width: '100px' }}>{documentLabel(documentLanguage, 'unitPrice')}</th>
-              <th style={{ textAlign: 'end', padding: '8px 4px', fontSize: '10px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', width: '100px' }}>{documentLabel(documentLanguage, 'totalIncludingVat')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {receipt.items.map((item, i) => (
-              <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                <td style={{ padding: '10px 4px', fontSize: '13px', color: '#111827' }}>{documentNames(documentLanguage, item.name, item.nameAr).map(name => <div key={name} dir="auto">{name}</div>)}</td>
-                <td dir="ltr" style={{ textAlign: 'end', padding: '10px 4px', fontSize: '12px', color: '#6b7280' }}>{item.qty}</td>
-                <td dir="ltr" style={{ textAlign: 'end', padding: '10px 4px', fontSize: '12px', color: '#374151' }}><Rial amount={item.unitPrice} /></td>
-                <td dir="ltr" style={{ textAlign: 'end', padding: '10px 4px', fontSize: '13px', fontWeight: '600', color: '#111827' }}><Rial amount={item.lineTotal} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {/* Totals */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
-          <div style={{ width: '240px', background: '#f9fafb', borderRadius: '8px', padding: '14px 16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>
-              <span>{documentLabel(documentLanguage, 'amountBeforeVat')}</span><span dir="ltr"><Rial amount={receipt.subtotal} /></span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '600', color: '#b45309', background: '#fffbeb', padding: '4px 6px', borderRadius: '4px', marginBottom: '6px' }}>
-              <span>{documentLabel(documentLanguage, 'vatAmount')} (15%)</span><span dir="ltr"><Rial amount={receipt.taxAmount} /></span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 'bold', color: '#111827', borderTop: '1px solid #e5e7eb', paddingTop: '8px', marginTop: '4px' }}>
-              <span>{documentLabel(documentLanguage, 'totalIncludingVat')}</span><span dir="ltr"><Rial amount={receipt.total} /></span>
-            </div>
-          </div>
-        </div>
-        {/* Payment */}
-        <div style={{ fontSize: '12px', color: '#374151', marginBottom: '20px', padding: '10px 14px', background: '#f9fafb', borderRadius: '8px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-          <span><strong>{documentLabel(documentLanguage, 'paymentMethod')}:</strong> {documentPaymentLabel(documentLanguage, isSplitPayment ? 'split' : receipt.paymentMethod)}</span>
-          {isSplitPayment && cashPayment && (
-            <span><strong>{documentLabel(documentLanguage, 'cashAmount')}:</strong> <span dir="ltr"><Rial amount={cashPayment.amount} /></span></span>
-          )}
-          {isSplitPayment && cardPayment && (
-            <span><strong>{documentLabel(documentLanguage, 'cardAmount')}:</strong> <span dir="ltr"><Rial amount={cardPayment.amount} /></span></span>
-          )}
-          {isSplitPayment && (
-            <span><strong>{documentLabel(documentLanguage, 'totalPaid')}:</strong> <span dir="ltr"><Rial amount={paymentRowsTotal(receipt.payments)} /></span></span>
-          )}
-          {!isSplitPayment && receipt.paymentMethod === 'cash' && receipt.cashReceived > 0 && (
-            <span><strong>{documentLabel(documentLanguage, 'received')}:</strong> <span dir="ltr"><Rial amount={receipt.cashReceived} /></span></span>
-          )}
-          {!isSplitPayment && receipt.showCashChange && receipt.paymentMethod === 'cash' && receipt.change > 0.005 && (
-            <span><strong>{documentLabel(documentLanguage, 'change')}:</strong> <span dir="ltr"><Rial amount={receipt.change} /></span></span>
-          )}
-        </div>
-        {/* QR + footer */}
-        <div style={{ borderTop: '2px solid #e5e7eb', paddingTop: '16px', display: 'flex', alignItems: 'flex-end', gap: '16px' }}>
-          {qrDataUrl && (
-            <div style={{ textAlign: 'center', flexShrink: 0 }}>
-              <img src={qrDataUrl} alt={documentLabel(documentLanguage, 'qrCode')} style={{ width: '100px', height: '100px', display: 'block' }} />
-              <div style={{ fontSize: '9px', color: '#d1d5db', marginTop: '4px' }}>{documentLabel(documentLanguage, 'scanToVerify')}</div>
-            </div>
-          )}
-          <div style={{ fontSize: '9px', color: '#9ca3af' }}>
-            {receipt.showFooter && receipt.receiptFooter ? (
-              <div style={{ marginBottom: '4px', color: '#4b5563', fontWeight: 600 }}>{receipt.receiptFooter}</div>
-            ) : null}
-            <div style={{ color: '#d1d5db' }}>{documentLabel(documentLanguage, 'computerGeneratedInvoice')}</div>
-          </div>
-        </div>
-      </div>
-
+      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'pos-pdf-printable', qrImageUrl: qrDataUrl }} />
       {/* Hidden thermal receipt — rendered for print only */}
-      <ThermalReceipt
-        documentLanguage={documentLanguage}
-        businessNameAr={receipt.businessNameAr}
-        businessNameEn={receipt.businessNameEn}
-        logoUrl={receipt.logoUrl}
-        showLogo={receipt.showLogo}
-        branchName={receipt.branchName}
-        branchNameAr={receipt.branchNameAr}
-        address={receipt.branchAddress}
-        addressAr={receipt.branchAddressAr}
-        vatNumber={receipt.vatNumber}
-        phone={receipt.phone}
-        website={receipt.website}
-        showWebsite={receipt.showWebsite}
-        email={receipt.email}
-        showEmail={receipt.showEmail}
-        invoiceNumber={receipt.invoiceNumber}
-        date={invDate}
-        time={invTime}
-        cashierName={receipt.cashierName}
-        items={receipt.items}
-        subtotal={receipt.subtotal}
-        taxAmount={receipt.taxAmount}
-        total={receipt.total}
-        paymentMethod={isSplitPayment ? 'split' : receipt.paymentMethod}
-        payments={receipt.payments}
-        cashReceived={receipt.cashReceived}
-        change={receipt.change}
-        showCashChange={receipt.showCashChange}
-        customerName={receipt.customerName}
-        customerNameAr={receipt.customerNameAr}
-        buyerVatNumber={receipt.buyerVatNumber}
-        isStandardInvoice={receipt.isStandardInvoice}
-        qrDataUrl={qrDataUrl}
-        receiptFooter={receipt.receiptFooter}
-        showFooter={receipt.showFooter}
-      />
+      <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl }} />
 
       {/* Success overlay */}
       <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0F2419]/90">
@@ -751,6 +722,14 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
           {/* Summary */}
           <div className="p-6 space-y-3">
+            {!receipt.isStandardInvoice && (
+              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs">
+                <span className="text-slate-500">ZATCA</span>
+                <span className="font-semibold text-slate-700">
+                  {t(`pos:zatca.${receipt.reportingDisplayState}`)}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">{t('payments:customer')}</span>
               <span className="font-medium text-gray-800" dir="auto">{receipt.customerName}</span>
@@ -819,19 +798,20 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
           {/* Actions */}
           <div className="px-6 pb-6 space-y-2">
             <div className="flex gap-2">
-              {printMode !== 'pdf' && (
+              {afterSaleAction !== 'a4' && (
                 <button
                   onClick={() => void openReceiptPrintPage()}
-                  disabled={printingReceipt}
+                  disabled={printingReceipt || !printReady}
                   className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
                 >
                   {printingReceipt ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
                   {printingReceipt ? t('payments:printing') : t('payments:printReceipt')}
                 </button>
               )}
-              {printMode === 'pdf' || printMode === 'both' ? (
+              {afterSaleAction === 'a4' || afterSaleAction === 'both' ? (
                 <button
                   onClick={printPosA4}
+                  disabled={!printReady}
                   className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
                 >
                   <Printer size={14} />
@@ -841,6 +821,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
               {receipt.customerPhone && (
                 <button
                   onClick={shareWhatsApp}
+                  disabled={!printReady}
                   className="flex-1 py-2.5 bg-[#25D366] text-white text-sm font-semibold rounded-xl hover:bg-[#22c55e] transition-colors flex items-center justify-center gap-1.5"
                 >
                   <WhatsAppIcon size={14} />
@@ -848,6 +829,37 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                 </button>
               )}
             </div>
+            {!receipt.canPrint && (
+              <div className="rounded-lg bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">
+                <p>{receipt.finalizationError
+                  ? t('pos:zatca.saleCompletedAttention')
+                  : receipt.isStandardInvoice ? t('pos:zatca.finalizingTaxInvoice') : t('pos:zatca.finalizingInvoice')}</p>
+                {receipt.finalizationError && <p className="mt-1 font-normal text-amber-700">{receipt.finalizationError}</p>}
+                <div className="mt-2 flex justify-center gap-2">
+                  <button
+                    type="button"
+                    disabled={retryingFinalization}
+                    onClick={async () => {
+                      setRetryingFinalization(true)
+                      try { await onRetryFinalization() } finally { setRetryingFinalization(false) }
+                    }}
+                    className="rounded-lg bg-white px-2.5 py-1.5 font-semibold shadow-sm hover:bg-amber-100 disabled:opacity-50"
+                  >
+                    {retryingFinalization ? t('common:loading') : t('pos:zatca.retryFinalization')}
+                  </button>
+                  <button type="button" onClick={onOpenInvoiceStatus}
+                    className="rounded-lg bg-white px-2.5 py-1.5 font-semibold shadow-sm hover:bg-amber-100">
+                    {t('pos:zatca.viewInvoice')}
+                  </button>
+                </div>
+              </div>
+            )}
+            {receipt.canPrint && qrStatus !== 'loading' && !printReady && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">
+                <AlertCircle size={14} className="mx-auto mb-1" />
+                {t('printing:qrUnavailable')}
+              </div>
+            )}
             <button onClick={onNewSale}
               className="w-full py-3 bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity">
               {t('payments:newSale')}
@@ -922,15 +934,20 @@ function QuickBillingPanel({
   cart,
   query,
   onAdd,
+  stockVisible,
 }: {
   products: PosProduct[]
   totalProductCount: number
   cart: CartItem[]
   query: string
   onAdd: (product: PosProduct) => void
+  stockVisible: boolean
 }) {
   const { t } = useTranslation('pos')
   const { isRtl } = useLocale()
+  const desktopGrid = stockVisible
+    ? 'lg:grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_120px_110px_92px]'
+    : 'lg:grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_110px_92px]'
   if (products.length === 0) {
     const hasQuery = query.trim().length > 0
     return (
@@ -959,11 +976,11 @@ function QuickBillingPanel({
   return (
     <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
       {!query.trim() && <div className="border-b border-gray-100 px-4 py-3"><p className="text-sm font-bold text-gray-900">{t('browseProducts')}</p><p className="text-[11px] text-gray-500">{t('showingActiveProducts')}</p></div>}
-      <div className="hidden lg:grid grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_120px_110px_92px] gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[10px] font-bold uppercase text-gray-400">
+      <div className={`hidden lg:grid ${desktopGrid} gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[10px] font-bold uppercase text-gray-400`}>
         <span>{t('product')}</span>
         <span>{t('category')}</span>
         <span>{t('skuBarcode')}</span>
-        <span>{t('availableStock')}</span>
+        {stockVisible && <span>{t('availableStock')}</span>}
         <span className="text-end">{t('price')}</span>
         <span className="text-end">{t('add')}</span>
       </div>
@@ -975,7 +992,7 @@ function QuickBillingPanel({
           return (
             <div
               key={product.id}
-              className="grid grid-cols-1 lg:grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_120px_110px_92px] gap-3 px-4 py-3 items-center hover:bg-emerald-50/30 transition-colors"
+              className={`grid grid-cols-1 ${desktopGrid} gap-3 px-4 py-3 items-center hover:bg-emerald-50/30 transition-colors`}
             >
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2">
@@ -1009,7 +1026,7 @@ function QuickBillingPanel({
                 )}
               </div>
 
-              <div>
+              {stockVisible && <div>
                 <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                   product.trackStock
                     ? 'bg-amber-50 text-amber-700'
@@ -1017,7 +1034,7 @@ function QuickBillingPanel({
                 }`}>
                   {product.trackStock ? t('stockCount', { count: formatStockQuantity(product.stockQuantity) }) : t('notTracked')}
                 </span>
-              </div>
+              </div>}
 
               <div className="text-start lg:text-end">
                 <span className="text-sm font-bold tabular-nums text-primary-700" dir="ltr">
@@ -1235,6 +1252,33 @@ function CloseSessionModal({ session, onClose, onCancel }: {
     }
   }
 
+  const sessionKpis = [
+    {
+      label: t('register:netSessionSales'),
+      amount: totalSessionSales,
+      icon: Receipt,
+      cardClass: 'bg-gradient-to-br from-[#1B6B3A] to-[#0F2419]',
+    },
+    {
+      label: t('register:netCashSales'),
+      amount: cashSales - cashRefunds,
+      icon: Banknote,
+      cardClass: 'bg-gradient-to-br from-[#0e6f53] to-[#0F4A28]',
+    },
+    {
+      label: t('register:netCardSales'),
+      amount: cardSales,
+      icon: CreditCard,
+      cardClass: 'bg-gradient-to-br from-[#4a5568] to-[#1f2937]',
+    },
+    {
+      label: t('register:refundsCreditNotes'),
+      amount: creditRefunds,
+      icon: RotateCcw,
+      cardClass: 'bg-gradient-to-br from-[#b45309] to-[#92400e]',
+    },
+  ]
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[calc(100vh-1.5rem)] mx-2 overflow-hidden flex flex-col">
@@ -1254,17 +1298,33 @@ function CloseSessionModal({ session, onClose, onCancel }: {
           </div>
         ) : (
           <div className="px-4 py-4 space-y-4 overflow-y-auto sm:px-5">
-            <section aria-labelledby="expected-cash-heading" className="rounded-2xl border border-primary-200 bg-primary-50/70 p-4 sm:p-5">
-              <p id="expected-cash-heading" className="text-xs font-bold uppercase tracking-wide text-primary-700">{t('register:expectedCashDrawer')}</p>
-              <div className="mt-3 space-y-2 text-sm text-gray-600">
-                <div className="flex justify-between gap-4"><span>{t('register:openingCash')}</span><span className="tabular-nums" dir="ltr"><Rial amount={openingCash} /></span></div>
-                <div className="flex justify-between gap-4"><span><span aria-hidden="true">+</span> {t('register:netCashSales')}</span><span className="tabular-nums" dir="ltr"><Rial amount={cashSales} /></span></div>
-                <div className="flex justify-between gap-4"><span><span aria-hidden="true">−</span> {t('register:posCashExpenses')}</span><span className="tabular-nums" dir="ltr"><Rial amount={cashExpenses} /></span></div>
-                <div className="flex justify-between gap-4"><span><span aria-hidden="true">−</span> {t('register:cashRefunds')}</span><span className="tabular-nums" dir="ltr"><Rial amount={cashRefunds} /></span></div>
+            <section aria-label={t('register:sessionSummary')} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {sessionKpis.map(({ label, amount, icon: Icon, cardClass }) => (
+                <div key={label} className={`min-w-0 rounded-xl border border-white/10 px-3 py-2.5 shadow-card-md ${cardClass}`}>
+                  <div className="flex items-start gap-2">
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-white/15 ring-1 ring-white/15" aria-hidden="true">
+                      <Icon size={14} strokeWidth={2} className="text-white" />
+                    </span>
+                    <p className="min-w-0 text-[10px] font-semibold leading-4 text-white/70">{label}</p>
+                  </div>
+                  <p className="mt-1.5 text-base font-black tracking-tight text-white tabular-nums" dir="ltr">
+                    <Rial amount={amount} />
+                  </p>
+                </div>
+              ))}
+            </section>
+
+            <section aria-labelledby="expected-cash-heading" className="rounded-2xl border border-white/10 bg-gradient-to-br from-[#1B6B3A] to-[#0F2419] p-4 text-white shadow-card-md ring-1 ring-[#1B6B3A]/15 sm:p-5">
+              <p id="expected-cash-heading" className="text-xs font-bold uppercase tracking-wide text-[#F3DE9A]">{t('register:expectedCashDrawer')}</p>
+              <div className="mt-3 space-y-2 text-sm text-emerald-50/80">
+                <div className="flex justify-between gap-4"><span>{t('register:openingCash')}</span><span className="font-medium text-white tabular-nums" dir="ltr"><Rial amount={openingCash} /></span></div>
+                <div className="flex justify-between gap-4"><span><span className="text-emerald-100/60" aria-hidden="true">+</span> {t('register:netCashSales')}</span><span className="font-medium text-white tabular-nums" dir="ltr"><Rial amount={cashSales} /></span></div>
+                <div className="flex justify-between gap-4"><span><span className="text-emerald-100/60" aria-hidden="true">−</span> {t('register:posCashExpenses')}</span><span className="font-medium text-white tabular-nums" dir="ltr"><Rial amount={cashExpenses} /></span></div>
+                <div className="flex justify-between gap-4"><span><span className="text-emerald-100/60" aria-hidden="true">−</span> {t('register:cashRefunds')}</span><span className="font-medium text-white tabular-nums" dir="ltr"><Rial amount={cashRefunds} /></span></div>
               </div>
-              <div className="mt-3 flex items-end justify-between gap-4 border-t border-primary-200 pt-3">
-                <span className="text-sm font-semibold text-primary-900">{t('register:expectedCashDrawer')}</span>
-                <span className="text-2xl font-black text-primary-900 tabular-nums" dir="ltr"><Rial amount={expectedCash} /></span>
+              <div className="mt-3 flex items-end justify-between gap-4 border-t border-white/15 pt-3">
+                <span className="text-sm font-semibold text-[#FFF6D8]">{t('register:expectedCashDrawer')}</span>
+                <span className="text-2xl font-black tracking-tight text-white tabular-nums" dir="ltr"><Rial amount={expectedCash} /></span>
               </div>
             </section>
 
@@ -1274,7 +1334,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
                 <button
                   type="button"
                   onClick={() => setCashActual(expectedCash.toFixed(2))}
-                  className="rounded-xl border border-primary-200 bg-white px-3 py-2 text-xs font-semibold text-primary-700 hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="rounded-xl border border-[#1B6B3A]/25 bg-[#F3F8F4] px-3 py-2 text-xs font-semibold text-[#155830] hover:bg-[#E8F3EB] focus:outline-none focus:ring-2 focus:ring-[#1B6B3A]/40"
                 >
                   {t('register:cashMatches', { amount: `SAR ${fmt(expectedCash)}` })}
                 </button>
@@ -1284,7 +1344,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
                   <label htmlFor="actual-closing-cash" className="label">{t('register:actualCashCounted')}</label>
                   <div className="relative">
                     <span className="absolute start-3 top-1/2 -translate-y-1/2 text-xs text-gray-400" dir="ltr">SAR</span>
-                    <MoneyInput id="actual-closing-cash" value={cashActual} onValueChange={setCashActual} className="input h-11 ps-10" placeholder="0.00" autoFocus />
+                    <MoneyInput id="actual-closing-cash" value={cashActual} onValueChange={setCashActual} className="input h-11 ps-10 focus:border-[#1B6B3A] focus:ring-[#1B6B3A]/20" placeholder="0.00" autoFocus />
                   </div>
                 </div>
                 <div aria-live="polite" className={`flex min-h-11 items-center justify-center rounded-xl px-4 text-sm font-bold sm:min-w-48 ${differenceState.className}`}>
@@ -1294,7 +1354,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
             </section>
 
             <details className="group rounded-xl border border-gray-100 bg-gray-50/70">
-              <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#1B6B3A]">
                 {t('register:sessionSummary')}
                 <ChevronDown size={16} className="transition-transform group-open:rotate-180" />
               </summary>
@@ -1325,7 +1385,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
             {t('common:cancel')}
           </button>
           <button onClick={handleClose} disabled={!canClose}
-            className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#0F2419] py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#173F2F] disabled:bg-red-500 disabled:text-white disabled:opacity-50">
             {saving ? <Loader2 size={14} className="animate-spin" /> : t('register:close')}
           </button>
         </div>
@@ -1546,10 +1606,18 @@ export default function POSPage() {
   const searchRef = useRef<HTMLInputElement>(null)
   const categoryScrollRef = useRef<HTMLDivElement>(null)
   const productScrollRef = useRef<HTMLDivElement>(null)
+  const checkoutInFlightRef = useRef(false)
   const sub       = useSubscription()
 
   // Session management
-  const { session, loading: sessionLoading, openSession, closeSession } = usePosSession(
+  const {
+    session,
+    loading: sessionLoading,
+    error: sessionLoadError,
+    openSession,
+    closeSession,
+    fetchActiveSession,
+  } = usePosSession(
     profile?.branch_id,
     profile?.tenant_id,
     profile?.id,
@@ -1590,8 +1658,16 @@ export default function POSPage() {
   const checkoutKeyRef = useRef<string | null>(null)
   const autoPrintedReceiptIdRef = useRef<string | null>(null)
   const businessType = resolveBusinessType(tenant?.business_type)
+  const stockVisible = isStockModuleVisible({
+    businessType: tenant?.business_type,
+    stockEnabled: branch?.stock_enabled,
+  })
   const savedBranchPosMode = branchPosMode(branch?.pos_mode)
   const activePosMode: PosMode = businessType === 'trading' ? savedBranchPosMode : 'touch'
+  const resolvedInvoiceSettings = useMemo(
+    () => resolveInvoicePresentationSettings({ savedSettings: branch?.presentation_settings, branch: branch ?? {} }),
+    [branch],
+  )
 
   useEffect(() => {
     if (!isElectron()) return
@@ -1629,7 +1705,7 @@ export default function POSPage() {
             .order('name', { ascending: true }),
           supabase
             .from('customers')
-            .select('id, name, name_ar, phone, customer_type, vat_number, business_name, business_name_ar')
+            .select('id, name, name_ar, phone, customer_type, vat_number, cr_number, address, address_ar, business_name, business_name_ar')
             .eq('branch_id', bid)
             .eq('is_active', true)
             .order('name', { ascending: true })
@@ -1688,6 +1764,33 @@ export default function POSPage() {
     load()
     return () => { cancelled = true }
   }, [profile?.tenant_id, profile?.branch_id])
+
+  useEffect(() => {
+    const userId = user?.id
+    const tenantId = profile?.tenant_id
+    const branchId = profile?.branch_id
+    if (!userId || !tenantId || !branchId) return
+
+    let cancelled = false
+    void getZatcaFinalizationCapabilities(branchId)
+      .then(capability => {
+        if (cancelled || capability.acknowledged) return
+        console.warn('[POSPage] ZATCA capability acknowledgement unavailable', {
+          branchId,
+          status: capability.acknowledgementStatus,
+          reason: capability.acknowledgementReason,
+        })
+      })
+      .catch(error => {
+        if (cancelled) return
+        console.warn('[POSPage] ZATCA capability handshake failed', {
+          branchId,
+          reason: error instanceof Error ? error.message : 'unknown_error',
+        })
+      })
+
+    return () => { cancelled = true }
+  }, [user?.id, profile?.tenant_id, profile?.branch_id])
 
   // ── Persist cart ─────────────────────────────────────────────────────────
 
@@ -1972,16 +2075,24 @@ export default function POSPage() {
 
   async function charge() {
     const tid = profile?.tenant_id
-    if (!tid || !branch || cart.length === 0 || submitting) return
+    if (!tid || !branch || cart.length === 0 || submitting || checkoutInFlightRef.current) return
     if (isAccountSuspended) {
       toast.error(t('pos:accountSuspendedFull'))
       return
     }
+    checkoutInFlightRef.current = true
     setSubmitting(true)
-    const idempotencyKey = checkoutKeyRef.current ?? createCheckoutIdempotencyKey()
-    checkoutKeyRef.current = idempotencyKey
 
     try {
+      const persistedAtomicCheckout = readPendingAtomicCheckout(branch.id)
+      const persistedInvoiceCheckout = persistedAtomicCheckout?.documentType === 'invoice'
+        ? persistedAtomicCheckout
+        : null
+      const idempotencyKey = persistedInvoiceCheckout?.idempotencyKey
+        ?? checkoutKeyRef.current
+        ?? createCheckoutIdempotencyKey()
+      checkoutKeyRef.current = idempotencyKey
+
       if (payMethod === 'split') {
         if (!splitPaymentsEnabled) {
           toast.error(t('validation:splitPaymentDisabled'))
@@ -2005,7 +2116,7 @@ export default function POSPage() {
             { method: 'card', amount: round2(splitCardAmount) },
           ]
         : null
-      const payload = {
+      let payload: Record<string, unknown> = {
         branch_id: branch.id,
         customer_id: customerId,
         session_id: session?.id ?? null,
@@ -2020,10 +2131,77 @@ export default function POSPage() {
         })),
       }
 
-      const { data, error } = await (supabase as any).rpc('pos_checkout', { p_payload: payload })
-      if (error) throw error
-
-      const checkout = data as PosCheckoutResult
+      const demoSandbox = isPermanentDemoSandboxBranch(branch.tenant_id, branch.id)
+      const standardRequested = selectedCust?.customer_type === 'business'
+        && /^3[0-9]{13}3$/.test(selectedCust.vat_number ?? '')
+      let productionCheckoutMode: ZatcaCheckoutMode = 'legacy'
+      let atomicCheckoutResult: AtomicCheckoutResult | null = null
+      let atomicFingerprint: string | null = null
+      let checkout: PosCheckoutResult | null = null
+      if (!demoSandbox && !standardRequested) {
+        if (persistedInvoiceCheckout) payload = persistedInvoiceCheckout.checkout
+        atomicFingerprint = await atomicCheckoutFingerprint(payload)
+        if (persistedInvoiceCheckout
+            && persistedInvoiceCheckout.cartFingerprint !== atomicFingerprint) {
+          throw new Error('Persisted checkout fingerprint does not match its request payload')
+        }
+        persistPendingAtomicCheckout(branch.id, {
+          idempotencyKey,
+          cartFingerprint: atomicFingerprint,
+          documentType: 'invoice',
+          checkout: payload,
+        })
+        const atomicAttempt = await checkoutSimplifiedAtomically({
+          branchId: branch.id,
+          checkout: payload,
+          cartFingerprint: atomicFingerprint,
+        })
+        if (atomicAttempt.status === 'committed') {
+          atomicCheckoutResult = atomicAttempt
+          const atomicReceipt = atomicCheckoutResult.receipt
+          const atomicPayments = Array.isArray(atomicReceipt.payments) ? atomicReceipt.payments : []
+          const firstAtomicPayment = atomicPayments[0]
+          checkout = {
+            invoice_id: atomicReceipt.invoice_id,
+            invoice_number: atomicReceipt.invoice_number,
+            created_at: atomicReceipt.created_at,
+            subtotal: atomicReceipt.subtotal,
+            tax_amount: atomicReceipt.tax_amount,
+            total: atomicReceipt.total,
+            payment_method: atomicReceipt.payment_method as PaymentMethod,
+            display_payment_method: atomicPayments.length > 1 ? 'split' : atomicReceipt.payment_method,
+            payment_status: atomicReceipt.payment_status,
+            amount_received: firstAtomicPayment?.amount_received ?? atomicReceipt.total,
+            change_amount: firstAtomicPayment?.change_amount ?? 0,
+            payments: atomicPayments.map(payment => ({
+              method: payment.method as PaymentMethod,
+              amount: payment.amount,
+              amount_received: payment.amount_received,
+              change_amount: payment.change_amount,
+            })),
+            zatca_invoice_type: 'simplified',
+            items: atomicReceipt.items,
+            document_language: atomicReceipt.document_language ?? undefined,
+            idempotent_replay: atomicCheckoutResult.idempotentReplay,
+          } as PosCheckoutResult
+        }
+      }
+      if (!checkout) {
+        if (!demoSandbox) {
+          // Preserve document-kind routing whenever authoritative eligibility
+          // keeps this branch on the legacy path.
+          // No commercial write occurred in the atomic rollout probe.
+          const capability = await requireZatcaFinalizationCapability(
+            branch.id,
+            standardRequested ? 'standard' : 'simplified',
+          )
+          productionCheckoutMode = capability.checkoutMode
+        }
+        const { data, error } = await (supabase as any).rpc('pos_checkout', { p_payload: payload })
+        if (error) throw error
+        checkout = data as PosCheckoutResult
+      }
+      if (!checkout) throw new Error('Checkout did not return an invoice')
       const serverTotal = num(checkout.total)
       const serverTax = num(checkout.tax_amount)
       const serverSubtotal = num(checkout.subtotal)
@@ -2055,6 +2233,118 @@ export default function POSPage() {
         : serverTotal
       const receiptChange = displayPaymentMethod !== 'split' && receiptPaymentMethod === 'cash' ? serverChangeAmount : 0
       const isB2BInvoice = checkout.zatca_invoice_type === 'standard'
+      let preOutputSubmission: Awaited<ReturnType<typeof submitInvoiceForBranch>> | null = null
+      let finalQrCode: string | null = null
+      let canPrintCustomerCopy = false
+      let finalizationStatus = 'not_started'
+      let artifactStage = 'none'
+      let documentKind: 'simplified' | 'standard' | null = isB2BInvoice ? 'standard' : 'simplified'
+      let finalizationError: string | null = null
+
+      try {
+        if (atomicCheckoutResult) {
+          finalizationStatus = atomicCheckoutResult.finalizationStatus
+          artifactStage = atomicCheckoutResult.artifactStage
+          documentKind = atomicCheckoutResult.documentKind
+          finalQrCode = atomicCheckoutResult.receipt.qr_code
+          canPrintCustomerCopy = atomicCheckoutResult.receipt.can_print === true
+        } else if (demoSandbox) {
+          preOutputSubmission = await submitInvoiceForBranch({
+            invoiceId: checkout.invoice_id,
+            tenantId: branch.tenant_id,
+            branchId: branch.id,
+            options: {
+              source: 'auto_checkout',
+              retryDelayMs: 1500,
+              documentKind: isB2BInvoice ? 'standard' : 'simplified',
+            },
+          })
+          if (preOutputSubmission.mode === 'sandbox_validation') {
+            const sandboxResult = preOutputSubmission.result
+            finalQrCode = selectStoredInvoiceQr(null, 'sandbox', {
+              sandboxGenerated: Boolean(sandboxResult.qrCode),
+              sandboxQrCode: sandboxResult.qrCode,
+            })
+            canPrintCustomerCopy = Boolean(finalQrCode)
+              && (sandboxResult.status === 'sandbox_validated'
+                || sandboxResult.status === 'sandbox_validated_with_warnings')
+            finalizationStatus = sandboxResult.status
+            artifactStage = 'sandbox'
+            documentKind = null
+          }
+        } else if (productionCheckoutMode === 'legacy') {
+          preOutputSubmission = await submitInvoiceForBranch({
+            invoiceId: checkout.invoice_id,
+            tenantId: branch.tenant_id,
+            branchId: branch.id,
+            options: {
+              source: 'auto_checkout',
+              retryDelayMs: 1500,
+              contractMode: productionCheckoutMode,
+              documentKind: isB2BInvoice ? 'standard' : 'simplified',
+            },
+          })
+          if (preOutputSubmission.mode === 'production_submission') {
+            const legacy = preOutputSubmission.result
+            finalizationStatus = legacy.finalizationStatus
+            artifactStage = legacy.artifactStage
+            documentKind = legacy.documentKind ?? documentKind
+            finalQrCode = selectStoredOutputStateQr(legacy)
+            canPrintCustomerCopy = Boolean(finalQrCode)
+            if (!canPrintCustomerCopy) {
+              finalizationError = legacy.retryable
+                ? 'Legacy ZATCA submission is pending and can be retried.'
+                : 'Legacy ZATCA submission did not produce a printable artifact.'
+            }
+          }
+        } else {
+          const finalization = await finalizeInvoiceForZatca({
+            invoiceId: checkout.invoice_id,
+            branchId: branch.id,
+            options: { source: 'auto_checkout' },
+          })
+          finalizationStatus = finalization.finalizationStatus
+          artifactStage = finalization.artifactStage
+          documentKind = finalization.documentKind
+          if (!finalization.ok) throw new Error(finalization.error ?? 'Invoice finalization failed')
+
+          if (isB2BInvoice) {
+            preOutputSubmission = await submitInvoiceForBranch({
+              invoiceId: checkout.invoice_id,
+              tenantId: branch.tenant_id,
+              branchId: branch.id,
+              options: {
+                source: 'auto_checkout',
+                retryDelayMs: 1500,
+                contractMode: productionCheckoutMode,
+                documentKind: 'standard',
+              },
+            })
+            const output = await getInvoiceZatcaOutputState({ invoiceId: checkout.invoice_id, branchId: branch.id })
+            finalizationStatus = output.finalizationStatus
+            artifactStage = output.artifactStage
+            documentKind = output.documentKind
+            finalQrCode = selectStoredOutputStateQr(output)
+            canPrintCustomerCopy = Boolean(finalQrCode)
+            if (!canPrintCustomerCopy) {
+              finalizationError = output.error ?? 'Standard invoice is awaiting a validated cleared artifact.'
+            }
+          } else {
+            finalQrCode = selectStoredOutputStateQr({
+              ...finalization,
+              contractMode: 'v2',
+              legacyCompatible: false,
+            })
+            canPrintCustomerCopy = Boolean(finalQrCode)
+          }
+        }
+      } catch (finalizationFailure) {
+        finalizationError = finalizationFailure instanceof Error
+          ? finalizationFailure.message
+          : 'Invoice finalization requires attention.'
+        canPrintCustomerCopy = false
+        finalQrCode = null
+      }
 
       const branchAddr = [
         branch.building_number ? `Building ${branch.building_number}` : null,
@@ -2064,6 +2354,9 @@ export default function POSPage() {
         branch.building_number ? `مبنى ${branch.building_number}` : null,
         branch.street_ar, branch.district_ar, branch.city_ar,
       ].filter(Boolean).join('، ')
+      const atomicReceipt = atomicCheckoutResult?.receipt ?? null
+      const atomicSeller = atomicReceipt?.seller ?? null
+      const atomicCustomer = atomicReceipt?.customer ?? null
 
       setReceipt({
         invoiceNumber:  checkout.invoice_number,
@@ -2074,13 +2367,25 @@ export default function POSPage() {
         paymentMethod:  receiptPaymentMethod,
         change:         receiptChange,
         cashReceived:   receiptCashReceived,
-        customerName:      selectedCust?.customer_type === 'business' && selectedCust?.business_name
+        customerName:      typeof atomicCustomer?.business_name === 'string' && atomicCustomer.business_name
+          ? atomicCustomer.business_name
+          : typeof atomicCustomer?.name === 'string' && atomicCustomer.name
+          ? atomicCustomer.name
+          : selectedCust?.customer_type === 'business' && selectedCust?.business_name
           ? selectedCust.business_name
           : (selectedCust?.name ?? 'Walk-in Customer'),
-        customerNameAr:    selectedCust?.customer_type === 'business'
+        customerNameAr:    typeof atomicCustomer?.business_name_ar === 'string'
+          ? atomicCustomer.business_name_ar
+          : typeof atomicCustomer?.name_ar === 'string'
+          ? atomicCustomer.name_ar
+          : selectedCust?.customer_type === 'business'
           ? (selectedCust?.business_name_ar ?? selectedCust?.name_ar)
           : (selectedCust?.name_ar ?? null),
-        customerPhone:     selectedCust?.phone ?? null,
+        customerAddress: typeof atomicCustomer?.address === 'string' ? atomicCustomer.address : (selectedCust?.address ?? null),
+        customerAddressAr: typeof atomicCustomer?.address_ar === 'string' ? atomicCustomer.address_ar : (selectedCust?.address_ar ?? null),
+        buyerIdentifierType: atomicCustomer?.cr_number || selectedCust?.cr_number ? 'CR' : null,
+        buyerIdentifierValue: typeof atomicCustomer?.cr_number === 'string' ? atomicCustomer.cr_number : (selectedCust?.cr_number ?? null),
+        customerPhone: typeof atomicCustomer?.phone === 'string' ? atomicCustomer.phone : (selectedCust?.phone ?? null),
         isStandardInvoice: isB2BInvoice,
         buyerVatNumber:    isB2BInvoice ? (selectedCust?.vat_number ?? null) : null,
         cashierName:    profile?.full_name ?? user?.email?.split('@')[0] ?? 'Cashier',
@@ -2092,29 +2397,45 @@ export default function POSPage() {
           lineTotal: num(i.total),
           subtotal:  num(i.subtotal),
           taxAmount: num(i.tax_amount),
+          taxRate: i.tax_rate == null ? undefined : num(i.tax_rate),
+          taxCategory: i.tax_category ?? null,
           total:     num(i.total),
         })),
         createdAt,
-        businessNameAr:  branch.business_name_ar || branch.name_ar || branch.display_name || branch.business_name || branch.name,
-        businessNameEn:  branch.display_name || branch.business_name || branch.name,
-        branchName:      branch.name,
-        branchNameAr:    branch.name_ar,
+        businessNameAr:  (typeof atomicSeller?.business_name_ar === 'string' ? atomicSeller.business_name_ar : null)
+          || (typeof atomicSeller?.branch_name_ar === 'string' ? atomicSeller.branch_name_ar : null)
+          || branch.business_name_ar || branch.name_ar || branch.display_name || branch.business_name || branch.name,
+        businessNameEn:  (typeof atomicSeller?.display_name === 'string' ? atomicSeller.display_name : null)
+          || (typeof atomicSeller?.business_name === 'string' ? atomicSeller.business_name : null)
+          || branch.display_name || branch.business_name || branch.name,
+        branchName:      typeof atomicSeller?.branch_name === 'string' ? atomicSeller.branch_name : branch.name,
+        branchNameAr:    typeof atomicSeller?.branch_name_ar === 'string' ? atomicSeller.branch_name_ar : branch.name_ar,
         branchAddress:   branchAddr || null,
         branchAddressAr: branchAddrAr || null,
         documentLanguage: normalizeDocumentLanguage(checkout.document_language ?? branch.invoice_language),
-        vatNumber:       branch.vat_number ?? '',
-        phone:           branch.phone,
-        website:         branch.website ?? null,
-        email:           branch.email ?? null,
-        showWebsite:     branch.show_website ?? false,
-        showEmail:       branch.show_email ?? false,
-        receiptFooter:   branch.receipt_footer,
-        showFooter:      branch.show_footer ?? true,
-        showCashChange:  branch.show_cash_change ?? true,
-        logoUrl:         branch.logo_url ?? null,
-        showLogo:        branch.show_logo ?? true,
+        vatNumber:       typeof atomicSeller?.vat_number === 'string' ? atomicSeller.vat_number : (branch.vat_number ?? ''),
+        phone:           typeof atomicSeller?.phone === 'string' ? atomicSeller.phone : branch.phone,
+        website:         typeof atomicSeller?.website === 'string' ? atomicSeller.website : (branch.website ?? null),
+        email:           typeof atomicSeller?.email === 'string' ? atomicSeller.email : (branch.email ?? null),
+        showWebsite:     typeof atomicSeller?.show_website === 'boolean' ? atomicSeller.show_website : (branch.show_website ?? false),
+        showEmail:       typeof atomicSeller?.show_email === 'boolean' ? atomicSeller.show_email : (branch.show_email ?? false),
+        receiptFooter:   typeof atomicSeller?.receipt_footer === 'string' ? atomicSeller.receipt_footer : branch.receipt_footer,
+        showFooter:      typeof atomicSeller?.show_footer === 'boolean' ? atomicSeller.show_footer : (branch.show_footer ?? true),
+        showCashChange:  typeof atomicSeller?.show_cash_change === 'boolean' ? atomicSeller.show_cash_change : (branch.show_cash_change ?? true),
+        logoUrl:         typeof atomicSeller?.logo_url === 'string' ? atomicSeller.logo_url : (branch.logo_url ?? null),
+        showLogo:        typeof atomicSeller?.show_logo === 'boolean' ? atomicSeller.show_logo : (branch.show_logo ?? true),
         payments:        receiptPayments,
         displayPaymentMethod,
+        zatcaQrCode:    finalQrCode ?? '',
+        canPrint:       canPrintCustomerCopy,
+        finalizationStatus,
+        artifactStage,
+        documentKind,
+        finalizationError,
+        sandboxGenerated: demoSandbox,
+        reportingDisplayState: atomicCheckoutResult?.reportingDisplayState
+          ?? (isB2BInvoice ? 'clearance_pending' : 'reporting_pending'),
+        atomicSnapshot: Boolean(atomicCheckoutResult),
       })
       upsertInvoiceListRow(branch.tenant_id, {
         id: checkout.invoice_id,
@@ -2143,7 +2464,9 @@ export default function POSPage() {
         creditStatus: 'none',
         remainingRefundableQuantity: (checkout.items ?? []).reduce((sum, item) => sum + num(item.quantity), 0),
       })
-      void maybeAutoPrintReceiptAfterSale(checkout.invoice_id)
+      if (canPrintCustomerCopy && !isB2BInvoice && !atomicCheckoutResult) {
+        void maybeAutoPrintReceiptAfterSale(checkout.invoice_id)
+      }
       setCart([])
       setCustomerId(null)
       setNote('')
@@ -2151,56 +2474,53 @@ export default function POSPage() {
       setSplitCash('')
       setSplitCard('')
       setSplitOpen(false)
+      if (atomicFingerprint) {
+        clearPendingAtomicCheckout(branch.id, idempotencyKey, atomicFingerprint)
+      }
       checkoutKeyRef.current = null
 
-      // The loaded branch row is the authoritative checkout scope. Using it here
-      // avoids routing differences while an auth profile is being rehydrated.
-      const demoSandboxValidation = isPermanentDemoSandboxBranch(branch.tenant_id, branch.id)
-      submitInvoiceForBranch({
-        invoiceId: checkout.invoice_id,
-        tenantId: branch.tenant_id,
-        branchId: branch.id,
-        options: { source: 'auto_checkout', retryDelayMs: 1500 },
-      })
-        .then((routed) => {
-          if (routed.mode === 'sandbox_validation') {
-            const validated = routed.result.status === 'sandbox_validated' ||
-              routed.result.status === 'sandbox_validated_with_warnings'
-            updateCachedInvoiceRows(branch.tenant_id, branch.id, cachedRows => cachedRows.map(row => row.id === checkout.invoice_id
-              ? { ...row, displayZatcaStatus: routed.result.status }
-              : row))
-            if (routed.result.status === 'sandbox_validated_with_warnings') {
-              toast.warning(t('pos:zatca.warning'), { duration: 5000 })
-            } else if (validated) {
-              toast.success(t('pos:zatca.success'), { duration: 2500 })
-            } else if (routed.result.status === 'sandbox_validation_rejected' || routed.result.status === 'sandbox_validation_failed') {
-              toast.error(t('pos:zatca.failed'), { duration: Infinity, action: { label: t('pos:zatca.viewInvoice'), onClick: () => navigate(`/invoices/${checkout.invoice_id}`) } })
-            }
-            return
+      if (finalizationError) {
+        toast.warning(t('pos:zatca.saleCompletedAttention'), {
+          duration: Infinity,
+          action: { label: t('pos:zatca.viewInvoice'), onClick: () => navigate(`/invoices/${checkout.invoice_id}`) },
+        })
+      }
+
+      if (preOutputSubmission) {
+        if (preOutputSubmission.mode === 'sandbox_validation') {
+          const sandboxResult = preOutputSubmission.result
+          const validated = sandboxResult.status === 'sandbox_validated'
+            || sandboxResult.status === 'sandbox_validated_with_warnings'
+          updateCachedInvoiceRows(branch.tenant_id, branch.id, cachedRows => cachedRows.map(row => row.id === checkout.invoice_id
+            ? { ...row, displayZatcaStatus: sandboxResult.status }
+            : row))
+          if (sandboxResult.status === 'sandbox_validated_with_warnings') {
+            toast.warning(t('pos:zatca.warning'), { duration: 5000 })
+          } else if (validated) {
+            toast.success(t('pos:zatca.success'), { duration: 2500 })
+          } else {
+            toast.error(t('pos:zatca.failed'), { duration: Infinity, action: { label: t('pos:zatca.viewInvoice'), onClick: () => navigate(`/invoices/${checkout.invoice_id}`) } })
           }
-          const result = routed.result
+        } else {
+          const result = preOutputSubmission.result
           updateCachedInvoiceRows(branch.tenant_id, branch.id, cachedRows => cachedRows.map(row => row.id === checkout.invoice_id
             ? { ...row, zatcaStatus: result.invoiceStatus, displayZatcaStatus: result.invoiceStatus }
             : row))
           if (result.ok) {
+            setReceipt(prev => prev ? { ...prev, canPrint: true } : prev)
+            if (isB2BInvoice) void maybeAutoPrintReceiptAfterSale(checkout.invoice_id)
             toast.success(t('pos:zatca.success'), { duration: 2500 })
           } else if (result.invoiceStatus === 'failed') {
             toast.error(t('pos:zatca.failed'), { duration: Infinity, action: { label: t('pos:zatca.viewInvoice'), onClick: () => navigate(`/invoices/${checkout.invoice_id}`) } })
           }
-        })
-        .catch((error) => {
-          console.warn('[POSPage charge] automatic ZATCA action remains pending', {
-            invoiceId: checkout.invoice_id,
-            branchId: branch.id,
-            mode: demoSandboxValidation ? 'sandbox_validation' : 'production_submission',
-            message: error instanceof Error ? error.message : String(error ?? ''),
-          })
-        })
+        }
+      }
     } catch (err) {
       const safeKey = safeCheckoutErrorKey(err)
       console.warn('[POSPage charge] checkout failed', err)
       toast.error(t(safeKey))
     } finally {
+      checkoutInFlightRef.current = false
       setSubmitting(false)
     }
   }
@@ -2222,6 +2542,35 @@ export default function POSPage() {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50">
         <p className="text-gray-500 text-sm">{t('pos:noBranch')}</p>
+      </div>
+    )
+  }
+
+  if (sessionLoadError) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#0F2419]">
+        <div className="mx-4 w-full max-w-sm rounded-2xl bg-white p-8 text-center shadow-2xl">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50">
+            <AlertCircle size={28} className="text-red-500" />
+          </div>
+          <h2 className="mb-2 text-xl font-bold text-gray-900">{t('register:loadFailed')}</h2>
+          <p className="mb-6 text-sm text-gray-500">{t('register:loadFailedPrompt')}</p>
+          <button
+            type="button"
+            onClick={() => void fetchActiveSession()}
+            className="w-full rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 py-3 font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            {t('common:retry')}
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/branch')}
+            className="mt-3 w-full text-sm text-gray-400 transition-colors hover:text-gray-600"
+          >
+            <DirectionalIcon icon={ArrowLeft} size={13} className="me-1 inline-block" />
+            {t('pos:backToDashboard')}
+          </button>
+        </div>
       </div>
     )
   }
@@ -2299,6 +2648,85 @@ export default function POSPage() {
     )
   }
 
+  async function retryReceiptFinalization() {
+    if (!receipt || !branch) return
+    try {
+      const currentOutput = await getInvoiceZatcaOutputState({
+        invoiceId: receipt.invoiceId,
+        branchId: branch.id,
+      })
+      if (
+        currentOutput.contractMode === 'v2'
+        && currentOutput.documentKind === 'simplified'
+        && currentOutput.artifactStage === 'simplified_final'
+      ) {
+        await retryStoredSimplifiedArtifact({
+          invoiceId: receipt.invoiceId,
+          branchId: branch.id,
+          source: 'manual_retry',
+        })
+      } else {
+        const capability = await requireZatcaFinalizationCapability(
+          branch.id,
+          receipt.isStandardInvoice ? 'standard' : 'simplified',
+        )
+        if (capability.checkoutMode === 'legacy') {
+          const routed = await submitInvoiceForBranch({
+            invoiceId: receipt.invoiceId,
+            tenantId: branch.tenant_id,
+            branchId: branch.id,
+            options: {
+              source: 'manual_retry',
+              retryDelayMs: 1500,
+              contractMode: 'legacy',
+              documentKind: receipt.isStandardInvoice ? 'standard' : 'simplified',
+            },
+          })
+          if (routed.mode !== 'production_submission' || !routed.result.ok) {
+            throw new Error('Legacy ZATCA submission is still pending.')
+          }
+        } else {
+          const finalized = await finalizeInvoiceForZatca({
+            invoiceId: receipt.invoiceId,
+            branchId: branch.id,
+            options: { source: 'manual_retry' },
+          })
+          if (!finalized.ok) throw new Error(finalized.error ?? 'Invoice finalization is still pending.')
+          if (finalized.documentKind === 'standard') {
+            await submitInvoiceForBranch({
+              invoiceId: receipt.invoiceId,
+              tenantId: branch.tenant_id,
+              branchId: branch.id,
+              options: {
+                source: 'manual_retry',
+                retryDelayMs: 1500,
+                contractMode: 'v2',
+                documentKind: 'standard',
+              },
+            })
+          }
+        }
+      }
+      const output = await getInvoiceZatcaOutputState({ invoiceId: receipt.invoiceId, branchId: branch.id })
+      const storedQrCode = selectStoredOutputStateQr(output)
+      setReceipt(current => current ? {
+        ...current,
+        zatcaQrCode: storedQrCode ?? '',
+        canPrint: Boolean(storedQrCode),
+        finalizationStatus: output.finalizationStatus,
+        artifactStage: output.artifactStage,
+        documentKind: output.documentKind,
+        finalizationError: storedQrCode ? null : (output.error ?? 'The finalized QR code is unavailable.'),
+      } : current)
+      if (storedQrCode) toast.success(t('pos:zatca.success'))
+      else toast.warning(t('pos:zatca.saleCompletedAttention'))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invoice finalization requires attention.'
+      setReceipt(current => current ? { ...current, canPrint: false, finalizationError: message } : current)
+      toast.warning(t('pos:zatca.saleCompletedAttention'))
+    }
+  }
+
   const canCharge = !isAccountSuspended && cart.length > 0 && !submitting &&
     (payMethod === 'split'
       ? splitReady
@@ -2311,9 +2739,12 @@ export default function POSPage() {
       {receipt && (
         <ReceiptView
           receipt={receipt}
+          branch={branch}
           onNewSale={() => setReceipt(null)}
           onOpenPrinterSettings={() => navigate(DEVICE_PRINTER_PATH)}
-          printMode={branch?.print_mode ?? 'thermal'}
+          onRetryFinalization={retryReceiptFinalization}
+          onOpenInvoiceStatus={() => navigate(`/invoices/${receipt.invoiceId}`)}
+          afterSaleAction={resolvedInvoiceSettings.afterSaleAction}
         />
       )}
       {showExpense && branch && (
@@ -2378,8 +2809,8 @@ export default function POSPage() {
           </div>
 
           <div className="min-w-0 flex-1 text-center px-1">
-            <h1 className="truncate text-sm font-semibold text-white" title={branch?.name ?? t('pos:activeBranch')} dir="auto">
-              {branch?.name ?? t('pos:activeBranch')}
+            <h1 className="truncate text-sm font-semibold text-white" title={resolveBranchDisplayName(branch, isRtl, t('pos:activeBranch'))} dir="auto">
+              {resolveBranchDisplayName(branch, isRtl, t('pos:activeBranch'))}
             </h1>
             <p className="mt-0.5 text-[10px] text-white/55">{activePosMode === 'quick' ? t('pos:quickBilling') : t('pos:touchPos')}</p>
           </div>
@@ -2533,6 +2964,7 @@ export default function POSPage() {
               cart={cart}
               query={searchText}
               onAdd={addToCart}
+              stockVisible={stockVisible}
             />
           ) : (
             <div className={showPosScrollButtons ? 'flex items-start gap-3 min-h-full' : 'min-h-full'}>

@@ -1,3 +1,5 @@
+import { resolveBranchDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
+
 export interface RegisterInvoiceRow {
   id: string
   invoiceNumber: string
@@ -108,7 +110,7 @@ export function normalizeRegisterSession(value: unknown): RegisterSessionSummary
   return {
     sessionId: stringOrNull(pick(value, 'sessionId', 'session_id')),
     branchId,
-    branchName: stringOrNull(pick(value, 'branchName', 'branch_name')) ?? '',
+    branchName: resolveBranchDisplayName(value, false, ''),
     logoUrl: stringOrNull(pick(value, 'logoUrl', 'logo_url')),
     status: status === 'open' || status === 'closed' ? status : null,
     openedAt: stringOrNull(pick(value, 'openedAt', 'opened_at')),

@@ -684,6 +684,54 @@ async function printReceiptByInvoice(sender, request = {}) {
   }
 }
 
+async function printCurrentReceiptSnapshot(sender) {
+  try {
+    const settings = readPrinterSettings()
+    if (!settings.receiptPrinterName) {
+      return {
+        success: false,
+        errorType: 'NO_PRINTER_CONFIGURED',
+        message: 'No receipt printer is configured on this device.',
+        settings,
+      }
+    }
+    await assertSelectedPrinterAvailable(sender, settings.receiptPrinterName)
+    const heightPx = await sender.executeJavaScript(`
+      (() => {
+        const receipt = document.getElementById('thermal-receipt');
+        if (!receipt) return 0;
+        const rect = receipt.getBoundingClientRect();
+        return Math.ceil(Math.max(rect.height, receipt.scrollHeight));
+      })()
+    `)
+    if (!Number.isFinite(heightPx) || heightPx <= 0) {
+      throw new Error('Rendered receipt snapshot is unavailable')
+    }
+    const heightMm = pixelsToMillimetres(heightPx)
+      + settings.receiptMarginTopMm
+      + settings.receiptMarginBottomMm
+      + Math.abs(settings.receiptVerticalOffsetMm)
+      + 20
+    const result = await printCurrentWindow(
+      sender,
+      settings.receiptPrinterName,
+      receiptPrintOptions(settings, heightMm),
+    )
+    return {
+      ...result,
+      settings,
+      message: result.success ? null : (result.errorType || 'Receipt print failed.'),
+    }
+  } catch (error) {
+    return {
+      success: false,
+      errorType: 'DIRECT_PRINT_FAILED',
+      message: safeErrorMessage(error),
+      settings: readPrinterSettings(),
+    }
+  }
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -982,6 +1030,10 @@ function registerPrinterIpc() {
 
   ipcMain.handle('print-receipt', async (event, request) => {
     return printReceiptByInvoice(event.sender, request)
+  })
+
+  ipcMain.handle('print-current-receipt', async (event) => {
+    return printCurrentReceiptSnapshot(event.sender)
   })
 
   ipcMain.handle('print-a4-invoice', async (event) => {

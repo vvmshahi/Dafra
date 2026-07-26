@@ -182,6 +182,13 @@ export interface ProductionOnboardingResponse {
   updatedAt?: string | null
   productionCsidExists?: boolean
   productionSecretExists?: boolean
+  branchReady?: boolean
+  branchBlocked?: boolean
+  chainHeadExists?: boolean
+  branchV2Ready?: boolean
+  chainInitialized?: boolean
+  v2Ready?: boolean
+  checkoutMode?: 'legacy' | 'v2'
   branchName?: string | null
   vatNumber?: string | null
   crNumber?: string | null

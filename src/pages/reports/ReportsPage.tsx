@@ -20,6 +20,7 @@ import PurchaseReport   from './PurchaseReport'
 import RegisterSessionsReport from './RegisterSessionsReport'
 import type { PhaseAReportKind } from './pdf/reportPdfExporters'
 import { useTranslation } from 'react-i18next'
+import { resolveBranchDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ const PHASE_A_EXPORTS: Partial<Record<TabId, PhaseAReportKind>> = {
 export default function ReportsPage() {
   const { profile, tenant, branch: authBranch } = useAuth()
   const { t, i18n } = useTranslation('reports')
+  const isArabic = i18n.resolvedLanguage?.startsWith('ar') === true
 
   const [tab,       setTab]       = useState<TabId>('sessions')
   const [preset,    setPreset]    = useState<DatePreset>('today')
@@ -90,9 +92,9 @@ export default function ReportsPage() {
       ? branches[0]
       : null
   const branchLabel = branchId
-    ? selectedBranch?.name ?? t('filters.selectedBranch')
+    ? resolveBranchDisplayName(selectedBranch, isArabic, t('filters.selectedBranch'))
     : branches.length === 1
-      ? branches[0].name
+      ? resolveBranchDisplayName(branches[0], isArabic, t('filters.selectedBranch'))
       : t('filters.allBranches')
   const exportDisabled = exporting || !startDate || !endDate
 
@@ -198,7 +200,7 @@ export default function ReportsPage() {
           >
             <option value="">{t('filters.allBranches')}</option>
             {branches.map(b => (
-              <option key={b.id} value={b.id}>{b.name}</option>
+              <option key={b.id} value={b.id}>{resolveBranchDisplayName(b, isArabic)}</option>
             ))}
           </select>
         )}
@@ -209,7 +211,7 @@ export default function ReportsPage() {
         <p className="text-xs text-gray-400">
           {t('filters.showing', { range: formatDateRangeLabel(startDate, endDate, i18n.resolvedLanguage) })}
           {branchId && branches.length > 1 && (
-            <> · <span className="font-medium text-gray-600">{branches.find(b => b.id === branchId)?.name}</span></>
+            <> · <span className="font-medium text-gray-600">{branchLabel}</span></>
           )}
         </p>
       )}

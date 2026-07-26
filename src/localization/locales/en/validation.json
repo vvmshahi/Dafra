@@ -36,6 +36,7 @@
   "creditReasonRequired": "A credit note reason is required.",
   "creditPermissionDenied": "You do not have permission to create this credit note.",
   "creditNoteFailed": "Could not create the credit note. Check the invoice status and try again.",
+  "creditNoteInvoiceChanged": "The selected invoice changed. Close this credit-note form and open it again.",
   "loadRefundableItemsFailed": "Could not load refundable items for this invoice.",
   "chooseCreditReason": "Choose a reason for the credit note.",
   "returnQuantityRequired": "Enter a return quantity for at least one item.",

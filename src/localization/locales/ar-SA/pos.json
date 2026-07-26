@@ -107,7 +107,18 @@
     "success": "تم إرسال الفاتورة إلى ZATCA بنجاح",
     "warning": "اكتمل إرسال ZATCA مع وجود تنبيهات",
     "failed": "فشل إرسال الفاتورة إلى ZATCA",
-    "viewInvoice": "عرض الفاتورة"
+    "viewInvoice": "عرض الفاتورة",
+    "finalizingInvoice": "جارٍ اعتماد الفاتورة…",
+    "finalizingTaxInvoice": "جارٍ اعتماد الفاتورة الضريبية مع ZATCA…",
+    "saleCompletedAttention": "اكتمل البيع — اعتماد الفاتورة يحتاج إلى متابعة",
+    "retryFinalization": "إعادة محاولة الاعتماد",
+    "reporting_pending": "الإبلاغ قيد الانتظار",
+    "reported": "تم الإبلاغ",
+    "reported_with_warnings": "تم الإبلاغ مع تنبيهات",
+    "rejected": "مرفوضة",
+    "retryable_failure": "فشل قابل لإعادة المحاولة",
+    "reconciliation_required": "تتطلب مطابقة",
+    "manual_review_required": "تتطلب مراجعة يدوية"
   },
   "errors": {
     "amountReceived": "المبلغ المستلم أقل من إجمالي الفاتورة.",
