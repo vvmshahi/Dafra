@@ -410,6 +410,54 @@ for (const fingerprint of [
 }
 assert.match(verification, /pg_get_constraintdef/)
 assert.match(verification, /pg_indexes/)
+for (const helper of [
+  'default_barcode_label_settings\\(\\)',
+  'validate_barcode_label_settings\\(jsonb\\)',
+]) {
+  assert.match(
+    verification,
+    new RegExp(
+      `'public\\.${helper}'[\\s\\S]*?false,[\\s\\S]*?` +
+      `ARRAY\\['search_path=pg_catalog'\\]::text\\[\\][\\s\\S]*?` +
+      `false, false, false, false,[\\s\\S]*?'jsonb'`,
+    ),
+    `${helper} remains a private SECURITY INVOKER pure helper`,
+  )
+}
+assert.match(
+  verification,
+  /'public\.barcode_label_settings_scope\(uuid\)'[\s\S]*?true,[\s\S]*?ARRAY\['search_path=public, pg_temp', 'row_security=off'\]::text\[\][\s\S]*?false, false, false, false,[\s\S]*?NULL/,
+  'the SECURITY DEFINER scope helper remains private to postgres',
+)
+for (const rpc of [
+  'get_branch_barcode_label_settings\\(uuid\\)',
+  'update_branch_barcode_label_settings\\(jsonb\\)',
+  'get_product_barcode_print_status\\(uuid\\)',
+  'record_product_barcode_print_batch\\(jsonb\\)',
+]) {
+  assert.match(
+    verification,
+    new RegExp(
+      `'public\\.${rpc}'[\\s\\S]*?true,[\\s\\S]*?` +
+      `ARRAY\\['search_path=public, pg_temp', 'row_security=off'\\]::text\\[\\][\\s\\S]*?` +
+      `true, true, false, false`,
+    ),
+    `${rpc} retains the scoped public-RPC privilege contract`,
+  )
+}
+assert.match(verification, /settings table RLS enabled/)
+assert.match(verification, /settings table FORCE RLS intentionally disabled/)
+assert.match(verification, /relation\.relforcerowsecurity[\s\S]*?'false'[\s\S]*?THEN 'PASS'/)
+assert.match(verification, /authenticated direct settings writes denied/)
+assert.match(verification, /service-role-only ALL policy/)
+assert.match(verification, /roles = ARRAY\['service_role'\]::name\[\]/)
+assert.match(verification, /'SUMMARY'/)
+assert.match(verification, /count\(\*\) FILTER \(WHERE result = 'FAIL'\) = 0/)
+assert.match(verification, /'0 FAIL'/)
+assert.match(
+  verification,
+  /SELECT\s+check_name,\s+observed_value,\s+expected_value,\s+result\s+FROM report/,
+)
 assert.match(runtime, /BEGIN;/)
 assert.match(runtime, /ROLLBACK;/)
 assert.match(runtime, /first_print/)
