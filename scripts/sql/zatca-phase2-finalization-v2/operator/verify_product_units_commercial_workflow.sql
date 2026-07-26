@@ -108,6 +108,18 @@ contract_state AS (
     min(registered_at) AS registered_at
   FROM public.product_units_commercial_function_contracts_v1 contract
 ),
+receiving_contract AS (
+  SELECT
+    pg_get_functiondef(
+      'public.receive_product_stock_legacy_base_v1(jsonb)'::regprocedure
+    ) AS legacy_definition,
+    pg_get_functiondef(
+      'public.receive_product_stock_with_units_v1(jsonb)'::regprocedure
+    ) AS unit_definition,
+    pg_get_functiondef(
+      'public.receive_product_stock(jsonb)'::regprocedure
+    ) AS dispatcher_definition
+),
 quantity_type AS (
   SELECT numeric_precision, numeric_scale
   FROM information_schema.columns
@@ -226,6 +238,42 @@ checks(check_name, observed_value, expected_value, result) AS (
     '0 mismatches',
     CASE WHEN mismatch_count = 0 THEN 'PASS' ELSE 'FAIL' END
   FROM contract_state
+  UNION ALL
+  SELECT
+    'product_receiving_production_safeguards',
+    CASE
+      WHEN legacy_definition LIKE
+          '%''branch'', ''manager'', ''cashier'', ''accountant''%'
+       AND unit_definition LIKE
+          '%''branch'', ''manager'', ''cashier'', ''accountant''%'
+       AND unit_definition LIKE '%Supplier belongs to another branch%'
+       AND unit_definition LIKE '%IDEMPOTENCY_FINGERPRINT_MISMATCH%'
+       AND unit_definition LIKE '%v_package_unit_cost / v_resolved.conversion_to_base%'
+       AND unit_definition LIKE '%v_resolved.base_quantity, ''stock_receipt''%'
+       AND dispatcher_definition LIKE
+          '%receive_product_stock_legacy_base_v1%'
+       AND dispatcher_definition LIKE
+          '%receive_product_stock_with_units_v1%'
+      THEN 'production safeguards and additive unit paths present'
+      ELSE 'receiving contract missing a reviewed safeguard'
+    END,
+    'production safeguards and additive unit paths present',
+    CASE
+      WHEN legacy_definition LIKE
+          '%''branch'', ''manager'', ''cashier'', ''accountant''%'
+       AND unit_definition LIKE
+          '%''branch'', ''manager'', ''cashier'', ''accountant''%'
+       AND unit_definition LIKE '%Supplier belongs to another branch%'
+       AND unit_definition LIKE '%IDEMPOTENCY_FINGERPRINT_MISMATCH%'
+       AND unit_definition LIKE '%v_package_unit_cost / v_resolved.conversion_to_base%'
+       AND unit_definition LIKE '%v_resolved.base_quantity, ''stock_receipt''%'
+       AND dispatcher_definition LIKE
+          '%receive_product_stock_legacy_base_v1%'
+       AND dispatcher_definition LIKE
+          '%receive_product_stock_with_units_v1%'
+      THEN 'PASS' ELSE 'FAIL'
+    END
+  FROM receiving_contract
   UNION ALL
   SELECT
     'checkout_dispatch_paths',

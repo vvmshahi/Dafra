@@ -84,13 +84,23 @@ test('production preflight and postflight are strict read-only release gates', (
     '0db582cb8451ab6a6a69bb9d9d662de6',
     '9d9b05d14a501ebfb887e9172b9c1fe2',
     '3e0c27664ae59b78ab51066a612ca6e5',
-    '20676b116d9001c6eedf7179e5e9ba64',
+    '78c5524f0f0ccef32740ca5453aaaa68',
     '00022982d7619aefb65fc1e6f3125108',
   ]) assert.match(productionPreflight, new RegExp(hash))
   assert.match(productionPreflight, /invoice_items_bytes/)
   assert.match(productionPreflight, /active_pos_checkout_queries/)
   assert.match(productionPostflight, /function_privilege_matrix/)
   assert.match(productionPostflight, /function_contract_registry_hashes/)
+  assert.match(productionPostflight, /product_receiving_production_safeguards/)
+  assert.match(
+    productionPostflight,
+    /'branch'', ''manager'', ''cashier'', ''accountant'/,
+  )
+  assert.match(productionPostflight, /IDEMPOTENCY_FINGERPRINT_MISMATCH/)
+  assert.match(
+    productionPostflight,
+    /v_package_unit_cost \/ v_resolved\.conversion_to_base/,
+  )
   assert.match(productionPostflight, /historical_rows_not_backfilled/)
   assert.match(productionPostflight, /no_duplicate_request_fingerprints/)
   assert.match(verification, /v_total <> 60 OR v_pass <> 55/)
@@ -279,8 +289,29 @@ test('credit notes use original snapshots for exact fractional returns and mixed
   assert.equal(exactQuantity({ quantity: 0.5, packageScale: 1, conversion: 24, baseScale: 0 }), true)
 })
 
-test('product stock receiving resolves receiving eligibility and stores base/package snapshots once', () => {
-  assert.match(migration, /20676b116d9001c6eedf7179e5e9ba64/)
+test('product stock receiving preserves production hardening and stores base/package snapshots once', () => {
+  assert.match(migration, /78c5524f0f0ccef32740ca5453aaaa68/)
+  assert.match(
+    migration,
+    /v_profile\.role IN \(\s*'branch', 'manager', 'cashier', 'accountant'\s*\)/,
+  )
+  assert.match(migration, /v_profile\.role IN \('owner', 'admin'\)/)
+  assert.match(migration, /v_profile\.role = 'super_admin'/)
+  assert.match(migration, /SET row_security = off/)
+  assert.match(migration, /SET search_path = public, pg_temp/)
+  assert.match(migration, /Supplier belongs to another branch/)
+  assert.match(migration, /Caller profile not found or inactive/)
+  assert.match(migration, /Stock module is disabled for this branch/)
+  assert.match(migration, /Service products cannot receive stock/)
+  assert.match(migration, /Unsupported product stock receipt field/)
+  assert.match(
+    migration,
+    /jsonb_typeof\(p_payload -> 'package_quantity'\) <> 'number'/,
+  )
+  assert.match(
+    migration,
+    /jsonb_typeof\(p_payload -> 'unit_cost'\) <> 'number'/,
+  )
   assert.match(receiving, /\.rpc\('get_product_units'/)
   assert.match(receiving, /row\.is_active === true && row\.receiving_enabled === true/)
   assert.match(receiving, /unitsRequestRef\.current !== requestId/)
@@ -292,8 +323,20 @@ test('product stock receiving resolves receiving eligibility and stores base/pac
     /receive_product_stock_with_units_v1[\s\S]*?pg_advisory_xact_lock\([\s\S]*?v_resolved\.product_id::text[\s\S]*?v_idempotency_key[\s\S]*?SELECT \*[\s\S]*?FROM public\.product_stock_receipts/,
   )
   assert.match(migration, /v_base_unit_cost := round\([\s\S]*?v_package_unit_cost \/ v_resolved\.conversion_to_base/)
+  assert.match(migration, /stock_quantity = v_after/)
+  assert.match(migration, /cost = round\(v_base_unit_cost, 2\)/)
+  assert.match(
+    migration,
+    /quantity_delta, reason[\s\S]*?v_resolved\.base_quantity, 'stock_receipt'/,
+  )
   assert.match(migration, /product_stock_receipts[\s\S]*?package_unit_cost, base_unit_cost, request_fingerprint/)
   assert.match(migration, /reason, created_by, created_at, idempotency_key,[\s\S]*?product_unit_id/)
+  assert.match(
+    migration,
+    /v_existing\.product_unit_id[\s\S]*?v_existing\.product_unit_version[\s\S]*?v_existing\.package_quantity[\s\S]*?v_existing\.base_quantity/,
+  )
+  assert.match(migration, /PERFORM public\.mark_product_unit_used\(v_resolved\.product_unit_id\)/)
+  assert.match(migration, /RETURN public\.receive_product_stock_legacy_base_v1\(p_payload\)/)
 })
 
 test('documents render saved selling units and leave legacy unit snapshots nullable', () => {

@@ -13,7 +13,7 @@ expected_prerequisites(signature, expected_md5) AS (
     ('public.pos_checkout(jsonb)', '0db582cb8451ab6a6a69bb9d9d662de6'),
     ('public.create_partial_credit_note(jsonb)', '9d9b05d14a501ebfb887e9172b9c1fe2'),
     ('public.create_partial_credit_note_with_refund(jsonb)', '3e0c27664ae59b78ab51066a612ca6e5'),
-    ('public.receive_product_stock(jsonb)', '20676b116d9001c6eedf7179e5e9ba64'),
+    ('public.receive_product_stock(jsonb)', '78c5524f0f0ccef32740ca5453aaaa68'),
     ('public.build_zatca_atomic_receipt_snapshot_v2(uuid)', '00022982d7619aefb65fc1e6f3125108')
 ),
 prerequisite_results AS (

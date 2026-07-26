@@ -1823,7 +1823,7 @@ BEGIN
     v_definition := pg_get_functiondef(
       'public.receive_product_stock(jsonb)'::regprocedure
     );
-    IF md5(v_definition) <> '20676b116d9001c6eedf7179e5e9ba64'
+    IF md5(v_definition) <> '78c5524f0f0ccef32740ca5453aaaa68'
        OR v_definition NOT LIKE '%Stock module is disabled for this branch%'
     THEN
       RAISE EXCEPTION 'PRODUCT_UNITS_RECEIVING_LEGACY_DEFINITION_UNREVIEWED';
@@ -1891,6 +1891,24 @@ BEGIN
     )
   ) THEN
     RAISE EXCEPTION 'Unsupported product stock receipt field'
+      USING ERRCODE = '22023';
+  END IF;
+  IF NOT (p_payload ? 'package_quantity')
+     OR jsonb_typeof(p_payload -> 'package_quantity') <> 'number'
+  THEN
+    RAISE EXCEPTION 'Quantity received must be a number'
+      USING ERRCODE = '22023';
+  END IF;
+  IF NOT (p_payload ? 'unit_cost')
+     OR jsonb_typeof(p_payload -> 'unit_cost') <> 'number'
+  THEN
+    RAISE EXCEPTION 'Unit purchase cost must be a number'
+      USING ERRCODE = '22023';
+  END IF;
+  IF NOT (p_payload ? 'expected_product_unit_version')
+     OR jsonb_typeof(p_payload -> 'expected_product_unit_version') <> 'number'
+  THEN
+    RAISE EXCEPTION 'Product unit version must be a number'
       USING ERRCODE = '22023';
   END IF;
 
@@ -1981,17 +1999,21 @@ BEGIN
     'receive'
   );
 
-  IF v_profile.role = 'branch' THEN
+  IF v_profile.role = 'super_admin' THEN
+    NULL;
+  ELSIF v_profile.role IN ('owner', 'admin') THEN
+    IF v_profile.tenant_id IS DISTINCT FROM v_resolved.tenant_id THEN
+      RAISE EXCEPTION 'Forbidden' USING ERRCODE = '42501';
+    END IF;
+  ELSIF v_profile.role IN (
+    'branch', 'manager', 'cashier', 'accountant'
+  ) THEN
     IF v_profile.tenant_id IS DISTINCT FROM v_resolved.tenant_id
        OR v_profile.branch_id IS DISTINCT FROM v_resolved.branch_id THEN
       RAISE EXCEPTION 'Product belongs to another branch'
         USING ERRCODE = '42501';
     END IF;
-  ELSIF v_profile.role IN ('owner', 'admin') THEN
-    IF v_profile.tenant_id IS DISTINCT FROM v_resolved.tenant_id THEN
-      RAISE EXCEPTION 'Forbidden' USING ERRCODE = '42501';
-    END IF;
-  ELSIF v_profile.role <> 'super_admin' THEN
+  ELSE
     RAISE EXCEPTION 'Insufficient permission to receive product stock'
       USING ERRCODE = '42501';
   END IF;
