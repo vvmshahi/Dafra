@@ -24,6 +24,7 @@ import SuppliersPage       from '@/pages/suppliers/SuppliersPage'
 import InventoryPage       from '@/pages/inventory/InventoryPage'
 import PurchasesPage       from '@/pages/purchases/PurchasesPage'
 import ReportsPage         from '@/pages/reports/ReportsPage'
+import CustomerIntelligenceReportsPage from '@/pages/reports/CustomerIntelligenceReportsPage'
 import OperationsPage      from '@/pages/operations/OperationsPage'
 import ZatcaPage           from '@/pages/zatca/ZatcaPage'
 import SuperAdminDashboard    from '@/pages/super-admin/SuperAdminDashboard'
@@ -364,6 +365,7 @@ export default function App() {
             <Route path="/profile"    element={<ProfilePage />} />
             <Route path="/day-closing" element={<DayClosingPage />} />
             <Route path="/reports"   element={<ReportsPage />} />
+            <Route path="/reports/customers" element={<CustomerIntelligenceReportsPage />} />
             <Route path="/suppliers" element={<SuppliersPage />} />
             <Route path="/device-printer" element={<DevicePrinterPage />} />
 

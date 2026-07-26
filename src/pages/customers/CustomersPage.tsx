@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, Pencil, Eye, Trash2, Users, X, Building2, User } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Plus, Search, Pencil, Eye, Trash2, Users, X, Building2, User, BarChart3 } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
-import { Rial } from '@/components/ui/RiyalSymbol'
 import type { Customer, CustomerType } from '@/types'
 import CustomerDrawer from './CustomerDrawer'
 import { useTranslation } from 'react-i18next'
@@ -30,13 +29,6 @@ function displayName(c: CustomerWithStats) {
   return c.name
 }
 
-function formatDate(iso: string | null, locale: string) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
-}
-
 // ── Customer row ──────────────────────────────────────────────────────────────
 
 function CustomerRow({
@@ -47,7 +39,7 @@ function CustomerRow({
   onDelete: () => void
   onView: () => void
 }) {
-  const { t, i18n } = useTranslation('customers')
+  const { t } = useTranslation('customers')
   const isBusiness = customer.customer_type === 'business'
   const primary    = displayName(customer)
   const secondary  = isBusiness && (customer.business_name ?? customer.company_name) ? customer.name : customer.name_ar
@@ -98,23 +90,6 @@ function CustomerRow({
         <p className="text-xs text-gray-500 font-mono truncate" dir="ltr">
           {customer.vat_number ?? '—'}
         </p>
-      </div>
-
-      {/* Total purchases */}
-      <div className="w-28 flex-shrink-0 text-right hidden sm:block">
-        <p className="text-sm font-semibold text-primary-600">
-          <Rial amount={customer.total_purchases} />
-        </p>
-        {customer.purchase_count > 0 && (
-          <p className="text-[10px] text-gray-400">
-            {t('invoiceCount', { count: customer.purchase_count })}
-          </p>
-        )}
-      </div>
-
-      {/* Last purchase */}
-      <div className="w-28 flex-shrink-0 text-right hidden xl:block">
-        <p className="text-xs text-gray-500" dir="ltr">{formatDate(customer.last_purchase_date, i18n.resolvedLanguage ?? 'en')}</p>
       </div>
 
       {/* Actions */}
@@ -203,7 +178,7 @@ function EmptyState({ filtered, onAdd }: { filtered: boolean; onAdd: () => void 
 export default function CustomersPage() {
   const { profile }  = useAuth()
   const navigate     = useNavigate()
-  const { t } = useTranslation('customers')
+  const { t } = useTranslation(['customers', 'customerIntelligence'])
 
   const [customers,   setCustomers]   = useState<CustomerWithStats[]>([])
   const [loading,     setLoading]     = useState(true)
@@ -216,44 +191,21 @@ export default function CustomersPage() {
     const bid = profile?.branch_id
     if (!bid) { setLoading(false); return }
 
-    const [{ data: custs }, { data: invData }] = await Promise.all([
-      supabase
-        .from('customers')
-        .select('*')
-        .eq('branch_id', bid)
-        .eq('is_active', true)
-        .order('name', { ascending: true }),
-      supabase
-        .from('invoices')
-        .select('customer_id, total_amount, invoice_date')
-        .eq('branch_id', bid)
-        .neq('status', 'cancelled')
-        .not('customer_id', 'is', null),
-    ])
+    const { data: custs } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('branch_id', bid)
+      .eq('is_active', true)
+      .order('name', { ascending: true })
 
-    // Build aggregate map: customer_id → {total, lastDate, count}
-    type Agg = { total: number; lastDate: string | null; count: number }
-    const aggMap = new Map<string, Agg>()
-    for (const inv of (invData ?? []) as { customer_id: string; total_amount: number; invoice_date: string }[]) {
-      const prev = aggMap.get(inv.customer_id) ?? { total: 0, lastDate: null, count: 0 }
-      aggMap.set(inv.customer_id, {
-        total:    prev.total + inv.total_amount,
-        lastDate: !prev.lastDate || inv.invoice_date > prev.lastDate
-          ? inv.invoice_date
-          : prev.lastDate,
-        count: prev.count + 1,
-      })
-    }
-
-    const withStats: CustomerWithStats[] = ((custs ?? []) as unknown as Customer[]).map(c => {
-      const agg = aggMap.get(c.id) ?? { total: 0, lastDate: null, count: 0 }
-      return {
-        ...c,
-        total_purchases:    agg.total,
-        last_purchase_date: agg.lastDate,
-        purchase_count:     agg.count,
-      }
-    })
+    // Financial metrics are intentionally not calculated from browser-loaded
+    // invoice rows. The dedicated report and detail RPCs own those totals.
+    const withStats: CustomerWithStats[] = ((custs ?? []) as unknown as Customer[]).map(c => ({
+      ...c,
+      total_purchases: 0,
+      last_purchase_date: null,
+      purchase_count: 0,
+    }))
 
     setCustomers(withStats)
     setLoading(false)
@@ -299,7 +251,7 @@ export default function CustomersPage() {
     <div className="space-y-5">
 
       {/* ── Header ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 flex-wrap">
         <div className="flex-1 flex items-center gap-2 min-w-0">
           <h1 className="text-lg font-bold text-gray-900">{t('title')}</h1>
           {!loading && (
@@ -312,6 +264,10 @@ export default function CustomersPage() {
           <Plus size={14} />
           {t('add')}
         </Button>
+        <Link to="/reports/customers" className="btn-secondary px-3 py-1.5 text-xs rounded-lg">
+          <BarChart3 size={14} />
+          {t('customerIntelligence:reports.openDedicated')}
+        </Link>
       </div>
 
       {/* ── Filter tabs ─────────────────────────────────────── */}
@@ -357,8 +313,6 @@ export default function CustomersPage() {
             <div className="w-32 flex-shrink-0 hidden sm:block">{t('fields.mobile')}</div>
             <div className="w-24 flex-shrink-0 hidden md:block">{t('fields.type')}</div>
             <div className="w-36 flex-shrink-0 hidden lg:block">{t('fields.vatNumber')}</div>
-            <div className="w-28 flex-shrink-0 text-end hidden sm:block">{t('fields.totalSpent')}</div>
-            <div className="w-28 flex-shrink-0 text-end hidden xl:block">{t('fields.lastPurchase')}</div>
             <div className="w-24 flex-shrink-0" />
           </div>
           {filtered.map(c => (
@@ -384,12 +338,9 @@ export default function CustomersPage() {
             <Building2 size={14} className="text-gold-500" />
             <span>{t('businessCount', { count: counts.business })}</span>
           </div>
-          <div className="ml-auto text-gray-500">
-            {t('listedRevenue')}:{' '}
-            <strong className="text-primary-600">
-              <Rial amount={customers.reduce((s, c) => s + c.total_purchases, 0)} />
-            </strong>
-          </div>
+          <Link to="/reports/customers" className="ms-auto font-semibold text-primary-600 hover:text-primary-700">
+            {t('customerIntelligence:reports.openDedicated')}
+          </Link>
         </div>
       )}
 
