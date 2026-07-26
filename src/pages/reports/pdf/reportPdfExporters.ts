@@ -347,10 +347,17 @@ async function exportSalesPdf(context: ReportPdfContext, data: SalesExportData) 
     nextY = addSectionTitle(doc, context, nextY, pt('sales.topProducts'), pt('sales.byRevenue'))
     nextY = addAutoTable(doc, context, {
       startY: nextY,
-      head: [pt('common.product'), pt('common.quantity'), pt('common.revenue'), pt('common.share')],
+      head: [pt('common.product'), pt('sales.baseQuantitySold'), pt('common.revenue'), pt('common.share')],
       body: data.topProducts.map(row => [
-        safePdfText(row.name, pt('common.product')),
-        formatNumberPdf(row.quantity, 2),
+        safePdfText(
+          row.packageBreakdown?.length
+            ? `${row.name}\n${row.packageBreakdown
+              .map(unit => `${formatNumberPdf(unit.packageQuantity, 6)} ${unit.sellingUnit} × SAR ${formatNumberPdf(unit.packageUnitPrice, 2)}`)
+              .join(' · ')}`
+            : row.name,
+          pt('common.product'),
+        ),
+        formatNumberPdf(row.quantity, 3),
         amountCell(row.revenue),
         formatPercentPdf(row.pct),
       ]),
@@ -366,10 +373,10 @@ async function exportSalesPdf(context: ReportPdfContext, data: SalesExportData) 
     nextY = addSectionTitle(doc, context, nextY, pt('sales.categoryPerformance'), pt('common.amountsSar'))
     nextY = addAutoTable(doc, context, {
       startY: nextY,
-      head: [pt('common.category'), pt('common.items'), pt('common.revenue'), pt('common.share')],
+      head: [pt('common.category'), pt('sales.baseQuantitySold'), pt('common.revenue'), pt('common.share')],
       body: data.catPerformance.map(row => [
         safePdfText(row.name, pt('common.category')),
-        formatNumberPdf(row.items, 2),
+        formatNumberPdf(row.items, 3),
         amountCell(row.revenue),
         formatPercentPdf(row.pct),
       ]),

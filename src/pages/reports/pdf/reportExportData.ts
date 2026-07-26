@@ -42,8 +42,20 @@ export interface SalesMethodRow {
 export interface SalesTopProductRow {
   name: string
   quantity: number
+  baseQuantity?: number
   revenue: number
   pct: number
+  packageBreakdown?: {
+    productUnitId: string | null
+    productUnitVersion: number | null
+    sellingUnit: string
+    unitCode: string
+    conversionToBase: number
+    packageUnitPrice: number
+    packageQuantity: number
+    baseQuantity: number
+    revenue: number
+  }[]
 }
 
 export interface SalesCategoryRow {
@@ -167,8 +179,22 @@ function salesTopProductRow(row: SalesTopProductRow): SalesTopProductRow {
   return {
     name: stringOrFallback(row.name, 'Product'),
     quantity: numberOrZero(row.quantity),
+    baseQuantity: numberOrZero(row.baseQuantity ?? row.quantity),
     revenue: numberOrZero(row.revenue),
     pct: numberOrZero(row.pct),
+    packageBreakdown: asArray<NonNullable<SalesTopProductRow['packageBreakdown']>[number]>(
+      row.packageBreakdown,
+    ).map(unit => ({
+      productUnitId: typeof unit.productUnitId === 'string' ? unit.productUnitId : null,
+      productUnitVersion: unit.productUnitVersion == null ? null : intOrZero(unit.productUnitVersion),
+      sellingUnit: stringOrFallback(unit.sellingUnit, 'Unit'),
+      unitCode: stringOrFallback(unit.unitCode, 'PCE'),
+      conversionToBase: numberOrZero(unit.conversionToBase ?? 1),
+      packageUnitPrice: numberOrZero(unit.packageUnitPrice),
+      packageQuantity: numberOrZero(unit.packageQuantity),
+      baseQuantity: numberOrZero(unit.baseQuantity),
+      revenue: numberOrZero(unit.revenue),
+    })),
   }
 }
 
@@ -230,7 +256,7 @@ export async function loadRegisterSessionsExport(params: ReportExportParams): Pr
 
 export async function loadSalesExport(params: ReportExportParams): Promise<SalesExportData> {
   const summary = await loadReportSummary<SalesExportData>(
-    'get_sales_report_summary',
+    'get_sales_report_summary_v2',
     reportParams(params.startDate, params.endDate, params.branchId),
     EMPTY_SALES_DATA,
   )

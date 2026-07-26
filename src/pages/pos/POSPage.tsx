@@ -86,6 +86,7 @@ interface PosProduct {
   barcode: string | null
   price: number
   unit: string
+  unitAr: string | null
   vatTreatment: VatTreatment
   stockQuantity: number | null
   trackStock: boolean
@@ -97,6 +98,20 @@ interface PosProduct {
   catName: string | null
   catNameAr: string | null
   catColor: string | null
+  sellingUnits: PosSellingUnit[]
+}
+
+interface PosSellingUnit {
+  id: string
+  name: string
+  nameAr: string | null
+  code: string
+  conversionToBase: number
+  quantityScale: number
+  pricingMethod: 'calculated' | 'custom'
+  resolvedPrice: number
+  isBase: boolean
+  version: number
 }
 
 interface PosCategory {
@@ -122,7 +137,18 @@ interface PosCustomer {
 }
 
 interface CartItem {
+  cartLineId: string
   productId: string
+  productUnitId: string | null
+  productUnitVersion: number | null
+  pricingMethod: 'calculated' | 'custom' | 'legacy'
+  conversionToBase: number
+  quantityScale: number
+  unitName: string
+  unitNameAr: string | null
+  unitCode: string | null
+  baseUnitName: string
+  baseUnitNameAr: string | null
   name: string
   nameAr: string | null
   price: number
@@ -201,6 +227,21 @@ interface PosCheckoutItemResult {
   tax_rate?: number | string | null
   tax_category?: string | null
   total: number | string
+  product_unit_id?: string | null
+  product_unit_version?: number | string | null
+  selling_unit_name?: string | null
+  selling_unit_name_ar?: string | null
+  selling_unit_code?: string | null
+  package_quantity?: number | string | null
+  package_quantity_scale?: number | string | null
+  conversion_to_base?: number | string | null
+  base_quantity?: number | string | null
+  base_unit_name?: string | null
+  base_unit_name_ar?: string | null
+  base_unit_code?: string | null
+  pricing_method?: string | null
+  base_unit_price?: number | string | null
+  package_unit_price?: number | string | null
 }
 
 interface PosCheckoutResult {
@@ -319,6 +360,21 @@ function safeCheckoutErrorKey(err: unknown): string {
   }
   if (/insufficient stock/i.test(message)) {
     return 'validation:insufficientStock'
+  }
+  if (/fingerprint|idempotency key was reused/i.test(message)) {
+    return 'pos:packages.fingerprintMismatch'
+  }
+  if (/changed; reload|stale.*version/i.test(message)) {
+    return 'pos:packages.changed'
+  }
+  if (/unit is inactive|package.*inactive/i.test(message)) {
+    return 'pos:packages.inactive'
+  }
+  if (/not enabled for selling|selling.*disabled/i.test(message)) {
+    return 'pos:packages.sellingDisabled'
+  }
+  if (/unsupported decimal precision|exact valid base quantity|package quantity/i.test(message)) {
+    return 'pos:packages.invalidQuantity'
   }
   if (/not available/i.test(message)) {
     return 'validation:unavailableItem'
@@ -518,7 +574,7 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
   const [retryingFinalization, setRetryingFinalization] = useState(false)
   const automaticSnapshotPrintRef = useRef(false)
   const documentLanguage = normalizeDocumentLanguage(receipt.documentLanguage)
-  const documentViewModel = useMemo(() => documentFromPosReceipt({ ...receipt, zatcaQrCode: receipt.zatcaQrCode, presentationSettings: branch?.presentation_settings, branchDefaults: branch ?? undefined, items: receipt.items.map(item => ({ name: item.name, nameAr: item.nameAr, qty: item.qty, unitPrice: item.unitPrice, lineTotal: item.lineTotal, subtotal: item.subtotal, taxAmount: item.taxAmount, taxRate: item.taxRate, taxCategory: item.taxCategory })), payments: receipt.payments.map(payment => ({ method: payment.method, amount: payment.amount, amountReceived: payment.amountReceived, changeAmount: payment.changeAmount })) }), [receipt, branch])
+  const documentViewModel = useMemo(() => documentFromPosReceipt({ ...receipt, zatcaQrCode: receipt.zatcaQrCode, presentationSettings: branch?.presentation_settings, branchDefaults: branch ?? undefined, items: receipt.items.map(item => ({ name: item.name, nameAr: item.nameAr, qty: item.qty, unitPrice: item.unitPrice, lineTotal: item.lineTotal, subtotal: item.subtotal, taxAmount: item.taxAmount, taxRate: item.taxRate, taxCategory: item.taxCategory, unitName: item.unitName, unitNameAr: item.unitNameAr, unitCode: item.unitCode, baseQuantity: item.baseQuantity, baseUnitName: item.baseUnitName, baseUnitNameAr: item.baseUnitNameAr })), payments: receipt.payments.map(payment => ({ method: payment.method, amount: payment.amount, amountReceived: payment.amountReceived, changeAmount: payment.changeAmount })) }), [receipt, branch])
   const printReady = receipt.canPrint && qrStatus === 'ready' && Boolean(qrDataUrl)
 
   useEffect(() => {
@@ -580,7 +636,10 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
     const wa = digits.startsWith('966') ? digits : digits.startsWith('0') ? '966' + digits.slice(1) : digits
     const date = documentDate(receipt.createdAt, documentLanguage, { month: '2-digit' })
     const m = (n: number) => `SAR ${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-    const lines = receipt.items.map(i => `${documentNames(documentLanguage, i.name, i.nameAr).join(' / ')} × ${i.qty}  ${m(i.lineTotal)}`).join('\n')
+    const lines = receipt.items.map(i => {
+      const unit = documentNames(documentLanguage, i.unitName, i.unitNameAr).join(' / ')
+      return `${documentNames(documentLanguage, i.name, i.nameAr).join(' / ')} × ${i.qty}${unit ? ` ${unit}` : ''}  ${m(i.lineTotal)}`
+    }).join('\n')
     const businessName = documentNames(documentLanguage, receipt.businessNameEn, receipt.businessNameAr).join(' / ')
     const msg = `${documentLabel(documentLanguage, 'taxInvoice')} — ${businessName}
 ━━━━━━━━━━━━━━━
@@ -927,6 +986,11 @@ function formatStockQuantity(value: number | null | undefined) {
   })
 }
 
+function singleUnitCartQuantity(cart: CartItem[], productId: string): number {
+  const lines = cart.filter(item => item.productId === productId)
+  return lines.length === 1 ? lines[0].quantity : 0
+}
+
 function QuickBillingPanel({
   products,
   totalProductCount,
@@ -986,7 +1050,22 @@ function QuickBillingPanel({
       <div className="divide-y divide-gray-100">
         {products.map(product => {
           const codeParts = [product.sku, product.barcode].filter(Boolean)
-          const cartQty = cart.find(item => item.productId === product.id)?.quantity ?? 0
+          const cartLines = cart.filter(item => item.productId === product.id)
+          const cartSummary = cartLines.length === 1
+            ? t('packages.inCartWithUnit', {
+                quantity: formatPackageQuantity(
+                  cartLines[0].quantity,
+                  cartLines[0].quantityScale,
+                ),
+                unit: localizedName(
+                  cartLines[0].unitName,
+                  cartLines[0].unitNameAr,
+                  isRtl,
+                ),
+              })
+            : cartLines.length > 1
+              ? t('packages.mixedUnitsInCart', { count: cartLines.length })
+              : null
 
           return (
             <div
@@ -997,9 +1076,9 @@ function QuickBillingPanel({
                 <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2">
                   <span dir="auto">{localizedName(product.name, product.nameAr, isRtl)}</span>
                 </p>
-                {cartQty > 0 && (
+                {cartSummary && (
                   <span className="mt-1 inline-flex rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold text-primary-700">
-                    {t('inCart', { count: cartQty })}
+                    {cartSummary}
                   </span>
                 )}
               </div>
@@ -1052,6 +1131,170 @@ function QuickBillingPanel({
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+function packageQuantityStep(scale: number): number {
+  return Number((10 ** -Math.max(0, Math.min(6, scale))).toFixed(Math.max(0, Math.min(6, scale))))
+}
+
+function formatPackageQuantity(value: number, scale = 3): string {
+  return value.toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: Math.max(0, Math.min(6, scale)),
+  })
+}
+
+function SellingUnitChooser({
+  product,
+  onChoose,
+  onClose,
+}: {
+  product: PosProduct
+  onChoose: (unit: PosSellingUnit, quantity: number) => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation(['pos', 'common'])
+  const { isRtl } = useLocale()
+  const units = useMemo(
+    () => [...product.sellingUnits].sort((left, right) => Number(right.isBase) - Number(left.isBase)),
+    [product.sellingUnits],
+  )
+  const [selectedId, setSelectedId] = useState(units[0]?.id ?? '')
+  const selected = units.find(unit => unit.id === selectedId) ?? units[0]
+  const [quantity, setQuantity] = useState('1')
+  const parsedQuantity = Number(quantity)
+  const step = packageQuantityStep(selected?.quantityScale ?? 0)
+  const validQuantity = Boolean(
+    selected
+      && Number.isFinite(parsedQuantity)
+      && parsedQuantity > 0
+      && Number(parsedQuantity.toFixed(selected.quantityScale)) === parsedQuantity,
+  )
+
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [onClose])
+
+  useEffect(() => {
+    setQuantity('1')
+  }, [selectedId])
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="selling-unit-title"
+      onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}
+    >
+      <div className="max-h-[85vh] w-full overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-w-lg sm:rounded-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
+          <div className="min-w-0">
+            <h2 id="selling-unit-title" className="text-base font-bold text-gray-900">
+              {t('pos:packages.chooseSellingUnit')}
+            </h2>
+            <p className="mt-0.5 truncate text-xs text-gray-500" dir="auto">
+              {localizedName(product.name, product.nameAr, isRtl)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t('common:close')}
+            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="max-h-[52vh] overflow-y-auto p-4">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {units.map(unit => {
+              const active = unit.id === selected?.id
+              return (
+                <button
+                  key={unit.id}
+                  type="button"
+                  onClick={() => setSelectedId(unit.id)}
+                  aria-pressed={active}
+                  className={`min-w-0 rounded-2xl border p-3 text-start transition-colors ${
+                    active
+                      ? 'border-emerald-500 bg-emerald-50/70 ring-1 ring-emerald-500'
+                      : 'border-gray-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/30'
+                  }`}
+                >
+                  <span className="flex items-start justify-between gap-2">
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold text-gray-900" dir="auto">
+                        {localizedName(unit.name, unit.nameAr, isRtl)}
+                      </span>
+                      {!unit.isBase && (
+                        <span className="mt-1 block text-[11px] leading-4 text-gray-500">
+                          {t('pos:packages.contains', {
+                            quantity: formatPackageQuantity(unit.conversionToBase, 6),
+                            unit: localizedName(product.unit, product.unitAr, isRtl),
+                          })}
+                        </span>
+                      )}
+                    </span>
+                    <span className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border ${
+                      active ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-gray-300'
+                    }`}>
+                      {active && <Check size={12} />}
+                    </span>
+                  </span>
+                  <span className="mt-2 block text-base font-extrabold tabular-nums text-emerald-700" dir="ltr">
+                    <Rial amount={unit.resolvedPrice} />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="border-t border-gray-100 bg-gray-50/70 p-4">
+          <label htmlFor="selling-unit-quantity" className="mb-1.5 block text-xs font-semibold text-gray-700">
+            {t('pos:packages.packageQuantity')}
+          </label>
+          <div className="flex min-w-0 gap-2">
+            <input
+              id="selling-unit-quantity"
+              type="number"
+              inputMode="decimal"
+              min={step}
+              step={step}
+              value={quantity}
+              onChange={event => setQuantity(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && validQuantity && selected) {
+                  onChoose(selected, parsedQuantity)
+                }
+              }}
+              autoFocus
+              className="input min-w-0 flex-1 text-base tabular-nums"
+              dir="ltr"
+              aria-invalid={!validQuantity}
+            />
+            <button
+              type="button"
+              disabled={!validQuantity || !selected}
+              onClick={() => { if (selected) onChoose(selected, parsedQuantity) }}
+              className="min-w-[132px] rounded-xl bg-[#1B6B3A] px-4 text-sm font-bold text-white hover:bg-[#155830] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {t('pos:packages.addSelected')}
+            </button>
+          </div>
+          {!validQuantity && (
+            <p className="mt-1.5 text-xs text-red-600">{t('pos:packages.invalidQuantity')}</p>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -1646,6 +1889,7 @@ export default function POSPage() {
   const [splitLastEdited, setSplitLastEdited] = useState<'cash' | 'card'>('cash')
   const [submitting,   setSubmitting]   = useState(false)
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
+  const [unitChooserProduct, setUnitChooserProduct] = useState<PosProduct | null>(null)
   const [showExpense,  setShowExpense]  = useState(false)
   const [printerStatus, setPrinterStatus] = useState<'connected' | 'unconfigured' | 'error'>('unconfigured')
   const [scrollState,  setScrollState]  = useState({
@@ -1692,11 +1936,16 @@ export default function POSPage() {
       if (!tid || !bid) { setLoading(false); return }
       setLoading(true)
       try {
-        const [{ data: branchData }, { data: prodData }, { data: custData }] = await Promise.all([
+        const [
+          { data: branchData },
+          { data: prodData },
+          { data: custData },
+          { data: unitData, error: unitError },
+        ] = await Promise.all([
           supabase.from('branches').select('*').eq('id', bid).single(),
           supabase
             .from('products')
-            .select('id, name, name_ar, sku, barcode, price, unit, vat_treatment, category_id, stock_quantity, track_stock, image_url, is_service, is_active, is_available, categories(id, name, name_ar, color, icon)')
+            .select('id, name, name_ar, sku, barcode, price, unit, unit_ar, vat_treatment, category_id, stock_quantity, track_stock, image_url, is_service, is_active, is_available, categories(id, name, name_ar, color, icon)')
             .eq('branch_id', bid)
             .eq('is_active', true)
             .eq('is_available', true)
@@ -1709,10 +1958,32 @@ export default function POSPage() {
             .eq('is_active', true)
             .order('name', { ascending: true })
             .limit(200),
+          (supabase as any).rpc('get_branch_selling_product_units', { p_branch_id: bid }),
         ])
         if (cancelled) return
 
         setBranch(branchData as Branch)
+
+        const unitsByProduct = new Map<string, PosSellingUnit[]>()
+        if (!unitError) {
+          for (const row of unitData ?? []) {
+            const unit: PosSellingUnit = {
+              id: String(row.id),
+              name: String(row.name),
+              nameAr: row.name_ar ?? null,
+              code: String(row.unit_code ?? 'PCE'),
+              conversionToBase: Number(row.conversion_to_base),
+              quantityScale: Number(row.quantity_scale ?? 0),
+              pricingMethod: row.pricing_method === 'custom' ? 'custom' : 'calculated',
+              resolvedPrice: Number(row.resolved_selling_price),
+              isBase: row.is_base === true,
+              version: Number(row.version),
+            }
+            const existing = unitsByProduct.get(String(row.product_id)) ?? []
+            existing.push(unit)
+            unitsByProduct.set(String(row.product_id), existing)
+          }
+        }
 
         const prods: PosProduct[] = (prodData ?? []).map((p: any) => ({
           id:            p.id,
@@ -1722,6 +1993,7 @@ export default function POSPage() {
           barcode:       p.barcode ?? null,
           price:         Number(p.price),
           unit:          p.unit ?? 'pcs',
+          unitAr:        p.unit_ar ?? null,
           vatTreatment:  (p.vat_treatment ?? 'inherit') as VatTreatment,
           stockQuantity: p.stock_quantity == null ? null : Number(p.stock_quantity),
           trackStock:    Boolean(p.track_stock),
@@ -1733,8 +2005,13 @@ export default function POSPage() {
           catName:       (p.categories as any)?.name ?? null,
           catNameAr:     (p.categories as any)?.name_ar ?? null,
           catColor:     (p.categories as any)?.color ?? null,
+          sellingUnits:  unitsByProduct.get(p.id) ?? [],
         }))
         setProducts(prods)
+        if (unitError) {
+          console.warn('[POSPage] selling-unit load failed', { code: unitError.code ?? 'unknown' })
+          toast.error(t('pos:packages.loadFailed'))
+        }
 
         const catMap = new Map<string, PosCategory>()
         for (const p of prodData ?? []) {
@@ -1754,7 +2031,62 @@ export default function POSPage() {
 
         try {
           const saved = localStorage.getItem(cartKey(bid))
-          if (saved) setCart(JSON.parse(saved))
+          if (saved) {
+            const rawItems = JSON.parse(saved) as Partial<CartItem>[]
+            const restored = rawItems.flatMap(raw => {
+              const product = prods.find(candidate => candidate.id === raw.productId)
+              if (!product || !Number.isFinite(Number(raw.quantity)) || Number(raw.quantity) <= 0) return []
+              const requestedUnit = raw.productUnitId
+                ? product.sellingUnits.find(unit => unit.id === raw.productUnitId)
+                : product.sellingUnits.find(unit => unit.isBase)
+              if (raw.productUnitId && !requestedUnit) return []
+              if (requestedUnit) {
+                return [{
+                  cartLineId: `${product.id}:${requestedUnit.id}:${requestedUnit.version}:${requestedUnit.pricingMethod}:${requestedUnit.resolvedPrice.toFixed(2)}:${product.vatTreatment}`,
+                  productId: product.id,
+                  productUnitId: requestedUnit.id,
+                  productUnitVersion: requestedUnit.version,
+                  pricingMethod: requestedUnit.pricingMethod,
+                  conversionToBase: requestedUnit.conversionToBase,
+                  quantityScale: requestedUnit.quantityScale,
+                  unitName: requestedUnit.name,
+                  unitNameAr: requestedUnit.nameAr,
+                  unitCode: requestedUnit.code,
+                  baseUnitName: product.unit,
+                  baseUnitNameAr: product.unitAr,
+                  name: product.name,
+                  nameAr: product.nameAr,
+                  price: requestedUnit.resolvedPrice,
+                  vatTreatment: product.vatTreatment,
+                  unit: requestedUnit.name,
+                  quantity: Number(raw.quantity),
+                  catColor: product.catColor,
+                }]
+              }
+              return [{
+                cartLineId: `${product.id}:legacy:0:legacy:${product.price.toFixed(2)}:${product.vatTreatment}`,
+                productId: product.id,
+                productUnitId: null,
+                productUnitVersion: null,
+                pricingMethod: 'legacy' as const,
+                conversionToBase: 1,
+                quantityScale: 3,
+                unitName: product.unit,
+                unitNameAr: null,
+                unitCode: null,
+                baseUnitName: product.unit,
+                baseUnitNameAr: product.unitAr,
+                name: product.name,
+                nameAr: product.nameAr,
+                price: product.price,
+                vatTreatment: product.vatTreatment,
+                unit: product.unit,
+                quantity: Number(raw.quantity),
+                catColor: product.catColor,
+              }]
+            })
+            setCart(restored)
+          }
         } catch {}
       } finally {
         if (!cancelled) setLoading(false)
@@ -2009,18 +2341,39 @@ export default function POSPage() {
 
   // ── Cart ops ─────────────────────────────────────────────────────────────
 
-  function addQuantityToCart(product: PosProduct, quantity: number) {
+  function addQuantityToCart(product: PosProduct, quantity: number, unit?: PosSellingUnit) {
     if (!Number.isFinite(quantity) || quantity <= 0) return
+    const selectedUnit = unit ?? product.sellingUnits.find(candidate => candidate.isBase)
+    const unitId = selectedUnit?.id ?? null
+    const unitVersion = selectedUnit?.version ?? null
+    const pricingMethod = selectedUnit?.pricingMethod ?? 'legacy'
+    const price = selectedUnit?.resolvedPrice ?? product.price
+    const cartLineId = `${product.id}:${unitId ?? 'legacy'}:${unitVersion ?? 0}:${pricingMethod}:${price.toFixed(2)}:${product.vatTreatment}`
     setCart(prev => {
-      const existing = prev.find(c => c.productId === product.id)
-      if (existing) return prev.map(c => c.productId === product.id ? { ...c, quantity: c.quantity + quantity } : c)
+      const existing = prev.find(item => item.cartLineId === cartLineId)
+      if (existing) {
+        return prev.map(item => item.cartLineId === cartLineId
+          ? { ...item, quantity: item.quantity + quantity }
+          : item)
+      }
       return [...prev, {
+        cartLineId,
         productId:    product.id,
+        productUnitId: unitId,
+        productUnitVersion: unitVersion,
+        pricingMethod,
+        conversionToBase: selectedUnit?.conversionToBase ?? 1,
+        quantityScale: selectedUnit?.quantityScale ?? 3,
+        unitName: selectedUnit?.name ?? product.unit,
+        unitNameAr: selectedUnit?.nameAr ?? null,
+        unitCode: selectedUnit?.code ?? null,
+        baseUnitName: product.unit,
+        baseUnitNameAr: product.unitAr,
         name:         product.name,
         nameAr:       product.nameAr,
-        price:        product.price,
+        price,
         vatTreatment: product.vatTreatment,
-        unit:         product.unit,
+        unit:         selectedUnit?.name ?? product.unit,
         quantity,
         catColor:     product.catColor,
       }]
@@ -2028,13 +2381,18 @@ export default function POSPage() {
   }
 
   function addToCart(product: PosProduct) {
-    addQuantityToCart(product, 1)
+    const alternates = product.sellingUnits.filter(unit => !unit.isBase)
+    if (alternates.length > 0) {
+      setUnitChooserProduct(product)
+      return
+    }
+    addQuantityToCart(product, 1, product.sellingUnits.find(unit => unit.isBase))
   }
 
-  function adjustQty(productId: string, delta: number) {
+  function adjustQty(cartLineId: string, delta: number) {
     setCart(prev => prev
-      .map(c => c.productId === productId ? { ...c, quantity: c.quantity + delta } : c)
-      .filter(c => c.quantity > 0)
+      .map(item => item.cartLineId === cartLineId ? { ...item, quantity: item.quantity + delta } : item)
+      .filter(item => item.quantity > 0)
     )
   }
 
@@ -2124,10 +2482,17 @@ export default function POSPage() {
         ...(splitPayments ? { payments: splitPayments } : {}),
         note: note || null,
         idempotency_key: idempotencyKey,
-        items: cart.map(item => ({
-          product_id: item.productId,
-          quantity: item.quantity,
-        })),
+        items: cart.map(item => item.productUnitId
+          ? {
+              product_id: item.productId,
+              product_unit_id: item.productUnitId,
+              package_quantity: item.quantity,
+              expected_product_unit_version: item.productUnitVersion,
+            }
+          : {
+              product_id: item.productId,
+              quantity: item.quantity,
+            }),
       }
 
       const demoSandbox = isPermanentDemoSandboxBranch(branch.tenant_id, branch.id)
@@ -2392,6 +2757,12 @@ export default function POSPage() {
           name:      i.name,
           nameAr:    i.name_ar,
           qty:       num(i.quantity),
+          unitName: i.selling_unit_name ?? null,
+          unitNameAr: i.selling_unit_name_ar ?? null,
+          unitCode: i.selling_unit_code ?? null,
+          baseQuantity: i.base_quantity == null ? null : num(i.base_quantity),
+          baseUnitName: i.base_unit_name ?? null,
+          baseUnitNameAr: i.base_unit_name_ar ?? null,
           unitPrice: num(i.unit_price),
           lineTotal: num(i.total),
           subtotal:  num(i.subtotal),
@@ -2517,7 +2888,19 @@ export default function POSPage() {
     } catch (err) {
       const safeKey = safeCheckoutErrorKey(err)
       console.warn('[POSPage charge] checkout failed', err)
-      toast.error(t(safeKey))
+      const reloadPackage = [
+        'pos:packages.changed',
+        'pos:packages.inactive',
+        'pos:packages.sellingDisabled',
+      ].includes(safeKey)
+      toast.error(t(safeKey), reloadPackage
+        ? {
+            action: {
+              label: t('pos:packages.reload'),
+              onClick: () => window.location.reload(),
+            },
+          }
+        : undefined)
     } finally {
       checkoutInFlightRef.current = false
       setSubmitting(false)
@@ -2744,6 +3127,16 @@ export default function POSPage() {
           onRetryFinalization={retryReceiptFinalization}
           onOpenInvoiceStatus={() => navigate(`/invoices/${receipt.invoiceId}`)}
           afterSaleAction={resolvedInvoiceSettings.afterSaleAction}
+        />
+      )}
+      {unitChooserProduct && (
+        <SellingUnitChooser
+          product={unitChooserProduct}
+          onClose={() => setUnitChooserProduct(null)}
+          onChoose={(unit, quantity) => {
+            addQuantityToCart(unitChooserProduct, quantity, unit)
+            setUnitChooserProduct(null)
+          }}
         />
       )}
       {showExpense && branch && (
@@ -3005,7 +3398,7 @@ export default function POSPage() {
                       <ProductCard
                         key={p.id}
                         product={p}
-                        cartQty={cart.find(c => c.productId === p.id)?.quantity ?? 0}
+                        cartQty={singleUnitCartQuantity(cart, p.id)}
                         onAdd={() => addToCart(p)}
                       />
                     ))}
@@ -3129,30 +3522,41 @@ export default function POSPage() {
               const line  = item.price * item.quantity
               const color = item.catColor ?? '#6b7280'
               return (
-                <div key={item.productId} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2.5">
+                <div key={item.cartLineId} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2.5">
                   <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center"
                     style={{ backgroundColor: `${color}20` }}>
                     <ShoppingBag size={12} style={{ color }} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-gray-800 truncate" dir="auto">{localizedName(item.name, item.nameAr, isRtl)}</p>
+                    <p className="text-[10px] font-medium text-gray-500" dir="auto">
+                      {localizedName(item.unitName, item.unitNameAr, isRtl)}
+                      {item.conversionToBase !== 1 && (
+                        <span className="ms-1 text-gray-400">
+                          · {t('pos:packages.baseEquivalent', {
+                            quantity: formatPackageQuantity(item.quantity * item.conversionToBase),
+                            unit: localizedName(item.baseUnitName, item.baseUnitNameAr, isRtl),
+                          })}
+                        </span>
+                      )}
+                    </p>
                     <p className="text-[10px] text-gray-400 tabular-nums" dir="ltr">
-                      {fmt(item.price)} × {item.quantity} = <span className="text-gray-700 font-semibold"><Rial amount={line} /></span>
+                      {fmt(item.price)} × {formatPackageQuantity(item.quantity, item.quantityScale)} = <span className="text-gray-700 font-semibold"><Rial amount={line} /></span>
                     </p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0" dir="ltr">
-                    <button onClick={() => adjustQty(item.productId, -1)}
-                      aria-label={item.quantity === 1
+                    <button onClick={() => adjustQty(item.cartLineId, -1)}
+                      aria-label={item.quantity <= 1
                         ? t('pos:removeItem', { name: localizedName(item.name, item.nameAr, isRtl) })
                         : t('pos:decreaseQuantity', { name: localizedName(item.name, item.nameAr, isRtl) })}
                       className="w-6 h-6 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-red-50 hover:border-red-200 transition-colors">
-                      {item.quantity === 1
+                      {item.quantity <= 1
                         ? <Trash2 size={10} className="text-red-400" />
                         : <Minus size={10} className="text-gray-500" />
                       }
                     </button>
-                    <span className="text-xs font-bold text-gray-900 w-5 text-center tabular-nums">{item.quantity}</span>
-                    <button onClick={() => adjustQty(item.productId, 1)}
+                    <span className="min-w-5 text-center text-xs font-bold tabular-nums text-gray-900">{formatPackageQuantity(item.quantity, item.quantityScale)}</span>
+                    <button onClick={() => adjustQty(item.cartLineId, 1)}
                       aria-label={t('pos:increaseQuantity', { name: localizedName(item.name, item.nameAr, isRtl) })}
                       className="w-6 h-6 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-primary-50 hover:border-primary-200 transition-colors">
                       <Plus size={10} className="text-gray-500" />

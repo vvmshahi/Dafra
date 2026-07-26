@@ -731,8 +731,10 @@ After every `01`–`06` invocation:
 - [ ] Edge kill switch remains false.
 - [ ] No unexpected application traffic occurred.
 
-`06` itself raises and exits nonzero unless it produces exactly 59 named rows:
-54 PASS, 5 REVIEW, 0 FAIL. Stop immediately on any nonzero result.
+`06` itself raises and exits nonzero unless it produces the exact versioned
+result set: 59 named rows (54 PASS, 5 REVIEW, 0 FAIL) before the Product Units
+commercial contract, or 60 named rows (55 PASS, 5 REVIEW, 0 FAIL) after that
+contract is installed. Stop immediately on any nonzero result.
 
 ### Fresh-client verification and reopen
 
@@ -793,7 +795,7 @@ Never run the superseded directory. Never set a feature flag in this package.
 | Raw-v2 browser denial | Raw column and `select('*')` requests fail; safe selector succeeds. |
 | Disabled infrastructure | Chain heads, reservations, and capability rows remain empty except an explicitly explained capability acknowledgement created by the new client; no artifact row is populated. |
 | Flags | Database master/simplified/standard=false and Edge kill switch=false. |
-| Verifier | 59 total: 54 PASS, 5 REVIEW, 0 FAIL; all REVIEW evidence attached. |
+| Verifier | Exact versioned total: 59/54 PASS before the Product Units commercial contract, or 60/55 PASS after it; always 5 REVIEW and 0 FAIL, with all REVIEW evidence attached. |
 
 If a smoke sale creates a capability acknowledgement while flags are false,
 record and explain it. It is not a chain reservation or finalization artifact.

@@ -737,7 +737,7 @@ function buildInvoice(data: any, opts: any): string {
   for (const line of data.lines) {
     const il = root.ele(NS.cac, 'InvoiceLine')
     il.ele(NS.cbc, 'ID').txt(String(line.id))
-    il.ele(NS.cbc, 'InvoicedQuantity').att('unitCode', 'PCE').txt(String(line.qty))
+    il.ele(NS.cbc, 'InvoicedQuantity').att('unitCode', line.unitCode ?? 'PCE').txt(String(line.qty))
     il.ele(NS.cbc, 'LineExtensionAmount').att('currencyID', 'SAR').txt(fmt(line.lineNetAmt))
     if (line.discountAmt > 0) {
       const allow = il.ele(NS.cac, 'AllowanceCharge')
@@ -756,7 +756,7 @@ function buildInvoice(data: any, opts: any): string {
     itemTax.ele(NS.cac, 'TaxScheme').ele(NS.cbc, 'ID').txt('VAT')
     const price = il.ele(NS.cac, 'Price')
     price.ele(NS.cbc, 'PriceAmount').att('currencyID', 'SAR').txt(fmt(line.qty > 0 ? line.lineNetAmt / line.qty : 0))
-    price.ele(NS.cbc, 'BaseQuantity').att('unitCode', 'PCE').txt('1')
+    price.ele(NS.cbc, 'BaseQuantity').att('unitCode', line.unitCode ?? 'PCE').txt('1')
   }
 
   return root.end({ prettyPrint: false }) as string
@@ -810,6 +810,9 @@ function buildInvoiceXMLData(
     totalAmount:   inv.total_amount,
     lines: items.map((it: any, i: number) => ({
       id: i + 1, name: it.name, qty: it.quantity, unitPrice: it.unit_price,
+      unitCode: /^[A-Z0-9]{2,8}$/.test(String(it.selling_unit_code ?? '').trim().toUpperCase())
+        ? String(it.selling_unit_code).trim().toUpperCase()
+        : 'PCE',
       discountAmt: it.discount_amount, lineNetAmt: it.subtotal,
       taxRate: it.tax_rate, taxAmount: it.tax_amount, lineTotal: it.total,
     })),
@@ -1621,7 +1624,7 @@ async function processLegacyInvoiceDisabledMode(db: any, invoiceId: string, call
       zatca_counter_number, zatca_prev_invoice_hash, zatca_xml_hash, zatca_qr_code, zatca_status,
       subtotal, discount_amount, taxable_amount, tax_amount, total_amount,
       branch_id, tenant_id, customer_id,
-      invoice_items(id, name, quantity, unit_price, discount_amount, subtotal, tax_rate, tax_amount, total),
+      invoice_items(id, name, quantity, selling_unit_code, unit_price, discount_amount, subtotal, tax_rate, tax_amount, total),
       customers(name, vat_number)`)
     .eq('id', invoiceId).eq('tenant_id', callerTenantId).single()
 
@@ -1965,7 +1968,7 @@ async function processInvoiceV1SupersededDoNotCall(db: any, invoiceId: string, c
       zatca_finalization_status, zatca_finalized_at, zatca_finalization_error,
       subtotal, discount_amount, taxable_amount, tax_amount, total_amount,
       branch_id, tenant_id, customer_id,
-      invoice_items(id, name, quantity, unit_price, discount_amount, subtotal, tax_rate, tax_amount, total),
+      invoice_items(id, name, quantity, selling_unit_code, unit_price, discount_amount, subtotal, tax_rate, tax_amount, total),
       customers(name, vat_number)`)
     .eq('id', invoiceId).eq('tenant_id', callerTenantId).single()
 
@@ -2950,7 +2953,7 @@ async function processInvoiceV2(
       zatca_cleared_xml, zatca_cleared_xml_hash, zatca_cleared_signature, zatca_cleared_qr,
       subtotal, discount_amount, taxable_amount, tax_amount, total_amount,
       branch_id, tenant_id, customer_id,
-      invoice_items(id, name, quantity, unit_price, discount_amount, subtotal, tax_rate, tax_amount, total),
+      invoice_items(id, name, quantity, selling_unit_code, unit_price, discount_amount, subtotal, tax_rate, tax_amount, total),
       customers(name, vat_number)`)
       .eq('id', invoiceId).eq('tenant_id', callerTenantId).single()
     if (error || !data) throw new Error('Invoice not found')

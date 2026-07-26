@@ -151,10 +151,12 @@ test('newly persisted products stop using add-product SKU suggestion behavior', 
   assert.match(drawer, /\[open, product, createdProductId, skuManuallyEdited, resolvedBranchId, name\]/)
 })
 
-test('browser package mutations are RPC-only and nothing is exposed in POS', () => {
+test('browser package mutations remain RPC-only while POS uses the approved scoped read RPC', () => {
   assert.doesNotMatch(units, /\.from\(['"]product_units['"]\)/)
   assert.doesNotMatch(units, /\.insert\(|\.update\(|\.delete\(/)
-  assert.doesNotMatch(pos, /ProductUnitsSection|product_units|create_product_unit|update_product_unit/)
+  assert.match(pos, /\.rpc\('get_branch_selling_product_units'/)
+  assert.doesNotMatch(pos, /\.from\(['"]product_units['"]\)/)
+  assert.doesNotMatch(pos, /ProductUnitsSection|create_product_unit|update_product_unit/)
 })
 
 test('Phase 2 UI contains no checkout, credit-note, reporting, ZATCA or migration implementation', () => {

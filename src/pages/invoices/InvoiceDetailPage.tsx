@@ -455,7 +455,14 @@ export default function InvoiceDetailPage() {
     const wa = digits.startsWith('966') ? digits : digits.startsWith('0') ? '966' + digits.slice(1) : digits
     const date = documentDate(invoice!.created_at, documentLanguage)
     const m = (n: number) => `SAR ${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-    const lines = items.map(i => `${documentNames(documentLanguage, i.name, i.name_ar).join(' / ')} × ${Number(i.quantity)}  ${m(Number(i.total))}`).join('\n')
+    const lines = items.map(i => {
+      const sellingUnit = documentNames(
+        documentLanguage,
+        i.selling_unit_name ?? null,
+        i.selling_unit_name_ar ?? null,
+      ).join(' / ')
+      return `${documentNames(documentLanguage, i.name, i.name_ar).join(' / ')} × ${Number(i.quantity)}${sellingUnit ? ` ${sellingUnit}` : ''}  ${m(Number(i.total))}`
+    }).join('\n')
     const bizName = documentNames(documentLanguage, brandNameEn, brandNameAr).join(' / ')
     const msg = `${documentLabel(documentLanguage, isCreditNote ? 'taxCreditNote' : isDebitNote ? 'taxDebitNote' : 'taxInvoice')} — ${bizName}
 ━━━━━━━━━━━━━━━
@@ -1030,7 +1037,13 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                   <td className="py-3">
                     {documentNames(documentLanguage, item.name, item.name_ar).map((name, index) => <p key={name} className={index === 0 ? 'text-sm font-medium text-gray-900' : 'text-[10px] text-gray-400'} dir="auto">{name}</p>)}
                   </td>
-                  <td className="py-3 text-end text-xs text-gray-500">{item.unit ?? '—'}</td>
+                  <td className="py-3 text-end text-xs text-gray-500" dir="auto">
+                    {documentNames(
+                      documentLanguage,
+                      item.selling_unit_name ?? item.unit,
+                      item.selling_unit_name_ar ?? null,
+                    ).join(' / ') || '—'}
+                  </td>
                   <td className="py-3 text-end text-xs text-gray-800 tabular-nums font-medium" dir="ltr">{Number(item.quantity)}</td>
                   <td className="py-3 text-end text-xs text-gray-700 tabular-nums" dir="ltr"><Rial amount={Number(item.unit_price)} /></td>
                   <td className="py-3 text-end text-xs text-gray-500" dir="ltr">

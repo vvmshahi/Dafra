@@ -218,6 +218,10 @@ function operationalInvoice(inv: any, branch: any): SandboxComplianceValidationI
   }
   const lines = inv.invoice_items.map((item: any, index: number) => {
     const taxRate = numberValue(item.tax_rate, 'line tax rate')
+    const storedUnitCode = clean(item.selling_unit_code).toUpperCase()
+    const unitCode = /^[A-Z0-9]{2,8}$/.test(storedUnitCode)
+      ? storedUnitCode
+      : null
     if (Math.abs(taxRate - 0.15) > 0.000001) {
       throw new RequestError('The isolated demo validator currently supports 15% standard-rated lines only.', 422)
     }
@@ -225,6 +229,7 @@ function operationalInvoice(inv: any, branch: any): SandboxComplianceValidationI
       id: index + 1,
       name: clean(item.name),
       quantity: numberValue(item.quantity, 'line quantity'),
+      ...(unitCode ? { unitCode } : {}),
       discountAmount: numberValue(item.discount_amount, 'line discount'),
       lineNetAmount: numberValue(item.subtotal, 'line subtotal'),
       taxRate,
@@ -278,7 +283,7 @@ async function loadScope(db: any, invoiceId: string, branchId: typeof DEMO_BRANC
       id,tenant_id,branch_id,invoice_number,invoice_reference,original_invoice_id,credit_reason,
       zatca_uuid,zatca_invoice_type,zatca_type_code,
       zatca_status,status,created_at,subtotal,discount_amount,taxable_amount,tax_amount,total_amount,
-      invoice_items(id,name,quantity,unit_price,discount_amount,subtotal,tax_rate,tax_amount,total)
+      invoice_items(id,name,quantity,selling_unit_code,unit_price,discount_amount,subtotal,tax_rate,tax_amount,total)
     `).eq('id', invoiceId).eq('tenant_id', DEMO_TENANT_ID).eq('branch_id', branchId).maybeSingle(),
     db.from('zatca_sandbox_credentials').select(`
       id,tenant_id,branch_id,device_id,environment,compliance_demo_status,

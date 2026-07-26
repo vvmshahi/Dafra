@@ -171,8 +171,11 @@ returned-artifact sandbox proof.
    master, simplified, standard, and Edge flags false after every file. `04a`
    immediately follows `04` to minimize the broad-grant interval; the
    pre-schema Edge status fallback covers the interval before `05`.
-7. Run `06`; all 59 mandatory rows must be present: 54 `PASS`, 5 `REVIEW`, and
-   0 `FAIL`. Discharge each `REVIEW` with its named external test before release.
+7. Run `06`; before the Product Units commercial contract is installed, all
+   59 mandatory rows must be present: 54 `PASS`, 5 `REVIEW`, and 0 `FAIL`. After
+   that versioned contract is installed, require all 60 rows: 55 `PASS`, 5
+   `REVIEW`, and 0 `FAIL`. Discharge each `REVIEW` with its named external test
+   before release.
 8. Review and explicitly seed each pre-existing branch chain head.
 
 ## Per-branch readiness extension

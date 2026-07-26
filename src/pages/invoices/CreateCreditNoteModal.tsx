@@ -100,6 +100,23 @@ interface RefundableItem {
   remaining_total: number
   track_stock: boolean
   is_service: boolean
+  product_unit_id: string | null
+  product_unit_version: number | null
+  selling_unit_name: string | null
+  selling_unit_name_ar: string | null
+  selling_unit_code: string | null
+  package_quantity: number | null
+  package_quantity_scale: number | null
+  conversion_to_base: number | null
+  base_quantity: number | null
+  base_unit_name: string | null
+  base_unit_name_ar: string | null
+  base_unit_code: string | null
+  base_quantity_scale: number | null
+  package_unit_price: number | null
+  base_unit_price: number | null
+  stock_tracked_at_sale: boolean | null
+  service_item_at_sale: boolean | null
 }
 
 interface ReturnLinePreview {
@@ -140,6 +157,9 @@ function safeCreditNoteError(error: unknown, t: TFunction): string {
   const message = typeof (error as any)?.message === 'string' ? (error as any).message : ''
   if (/select at least one|no items/i.test(message)) return t('validation:creditNoteChooseItem')
   if (/invalid returned quantity|quantity.*greater than zero/i.test(message)) return t('validation:returnQuantityPositive')
+  if (/unsupported decimal precision|exact valid base quantity|invalid package fraction/i.test(message)) {
+    return t('creditNotes:packages.invalidFraction')
+  }
   if (/exceeds remaining|fully credited/i.test(message)) return t('validation:returnQuantityExceeded')
   if (/does not belong/i.test(message)) return t('validation:returnItemMismatch')
   if (/duplicate/i.test(message)) return t('validation:returnItemDuplicate')
@@ -208,12 +228,18 @@ function money(amount: number): string {
   return Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function qty(amount: number): string {
-  return Number(amount).toLocaleString('en-US', { maximumFractionDigits: 3 })
+function qty(amount: number, scale = 3): string {
+  return Number(amount).toLocaleString('en-US', {
+    maximumFractionDigits: Math.max(0, Math.min(6, scale)),
+  })
 }
 
 function quantityStep(item: RefundableItem): string {
-  return Number.isInteger(item.original_quantity) ? '1' : '0.001'
+  if (!item.product_unit_id) {
+    return Number.isInteger(item.original_quantity) ? '1' : '0.001'
+  }
+  const scale = item.product_unit_id ? (item.package_quantity_scale ?? 0) : 3
+  return String(10 ** -Math.max(0, Math.min(6, scale)))
 }
 
 function roundMoney(amount: number): number {
@@ -225,8 +251,9 @@ function parseReturnQuantity(value: string | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-function formatQuantityInput(amount: number): string {
-  return String(Math.round(amount * 1000) / 1000)
+function formatQuantityInput(amount: number, scale = 3): string {
+  const factor = 10 ** Math.max(0, Math.min(6, scale))
+  return String(Math.round(amount * factor) / factor)
 }
 
 function normalizeQuantityInput(value: string, item: RefundableItem): string {
@@ -234,12 +261,31 @@ function normalizeQuantityInput(value: string, item: RefundableItem): string {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return ''
   if (parsed < 0) return '0'
-  if (parsed > item.remaining_quantity) return formatQuantityInput(item.remaining_quantity)
+  if (parsed > item.remaining_quantity) {
+    return formatQuantityInput(item.remaining_quantity, item.package_quantity_scale ?? 3)
+  }
   return value
 }
 
 function fullReturnQuantity(item: RefundableItem): string {
-  return formatQuantityInput(Math.max(item.remaining_quantity, 0))
+  return formatQuantityInput(
+    Math.max(item.remaining_quantity, 0),
+    item.package_quantity_scale ?? 3,
+  )
+}
+
+function invalidPackageReturn(item: RefundableItem, quantity: number): boolean {
+  if (!item.product_unit_id || quantity <= 0) return false
+  const packageScale = item.package_quantity_scale ?? 0
+  const baseScale = item.base_quantity_scale ?? 3
+  const conversion = item.conversion_to_base
+  if (!Number.isFinite(conversion) || Number(conversion) <= 0) return true
+  const packageFactor = 10 ** Math.max(0, Math.min(6, packageScale))
+  const baseFactor = 10 ** Math.max(0, Math.min(6, baseScale))
+  const packageScaled = quantity * packageFactor
+  const baseScaled = quantity * Number(conversion) * baseFactor
+  return Math.abs(packageScaled - Math.round(packageScaled)) > 1e-7
+    || Math.abs(baseScaled - Math.round(baseScaled)) > 1e-7
 }
 
 function amountForQuantity(
@@ -249,7 +295,7 @@ function amountForQuantity(
   returnQuantity: number,
 ): number {
   if (returnQuantity <= 0 || item.original_quantity <= 0) return 0
-  if (Math.abs(returnQuantity - item.remaining_quantity) <= 0.0005) return roundMoney(remainingAmount)
+  if (Math.abs(returnQuantity - item.remaining_quantity) <= 0.0000005) return roundMoney(remainingAmount)
   return Math.min(roundMoney(originalAmount * (returnQuantity / item.original_quantity)), roundMoney(remainingAmount))
 }
 
@@ -414,7 +460,7 @@ export default function CreateCreditNoteModal({
     ;(async () => {
       try {
         const { data, error } = await (supabase as any)
-          .rpc('get_invoice_refundable_items', { p_invoice_id: originalInvoiceId })
+          .rpc('get_invoice_refundable_items_v2', { p_invoice_id: originalInvoiceId })
 
         if (cancelled) return
         if (error) throw error
@@ -441,6 +487,23 @@ export default function CreateCreditNoteModal({
           remaining_total: Number(row.remaining_total ?? 0),
           track_stock: Boolean(row.track_stock),
           is_service: Boolean(row.is_service),
+          product_unit_id: row.product_unit_id ?? null,
+          product_unit_version: row.product_unit_version == null ? null : Number(row.product_unit_version),
+          selling_unit_name: row.selling_unit_name ?? null,
+          selling_unit_name_ar: row.selling_unit_name_ar ?? null,
+          selling_unit_code: row.selling_unit_code ?? null,
+          package_quantity: row.package_quantity == null ? null : Number(row.package_quantity),
+          package_quantity_scale: row.package_quantity_scale == null ? null : Number(row.package_quantity_scale),
+          conversion_to_base: row.conversion_to_base == null ? null : Number(row.conversion_to_base),
+          base_quantity: row.base_quantity == null ? null : Number(row.base_quantity),
+          base_unit_name: row.base_unit_name ?? null,
+          base_unit_name_ar: row.base_unit_name_ar ?? null,
+          base_unit_code: row.base_unit_code ?? null,
+          base_quantity_scale: row.base_quantity_scale == null ? null : Number(row.base_quantity_scale),
+          package_unit_price: row.package_unit_price == null ? null : Number(row.package_unit_price),
+          base_unit_price: row.base_unit_price == null ? null : Number(row.base_unit_price),
+          stock_tracked_at_sale: row.stock_tracked_at_sale == null ? null : Boolean(row.stock_tracked_at_sale),
+          service_item_at_sale: row.service_item_at_sale == null ? null : Boolean(row.service_item_at_sale),
         }))
 
         setRefundableItems(rows)
@@ -473,16 +536,21 @@ export default function CreateCreditNoteModal({
   }), [refundableItems, returnQuantities])
 
   const selectedLines = linePreviews.filter(line => line.quantity > 0)
+  const hasInvalidPackageReturn = selectedLines.some(line => invalidPackageReturn(line.item, line.quantity))
   const totals = selectedLines.reduce((acc, line) => ({
     subtotal: acc.subtotal + line.subtotal,
     discount: acc.discount + line.discount,
     tax: acc.tax + line.tax,
     total: acc.total + line.total,
   }), { subtotal: 0, discount: 0, tax: 0, total: 0 })
-  const totalRemainingQuantity = refundableItems.reduce((sum, item) => sum + Math.max(item.remaining_quantity, 0), 0)
+  const remainingLineCount = refundableItems.filter(item => item.remaining_quantity > 0).length
   const stockReturnQuantity = selectedLines
     .filter(line => line.item.product_id && line.item.track_stock && !line.item.is_service)
-    .reduce((sum, line) => sum + line.quantity, 0)
+    .reduce((sum, line) => sum + (
+      line.item.product_unit_id
+        ? line.quantity * Number(line.item.conversion_to_base ?? 0)
+        : line.quantity
+    ), 0)
   const hasEligibleStockLines = !isServiceBusiness && stockEnabled && stockReturnQuantity > 0
 
   useEffect(() => {
@@ -547,6 +615,11 @@ export default function CreateCreditNoteModal({
     const invalidLine = lines.find(line => line.quantity > line.item.remaining_quantity + 0.0005)
     if (invalidLine) {
       setError(t('validation:returnQuantityNamedExceeded', { name: invalidLine.item.name }))
+      return
+    }
+    const invalidPackageLine = lines.find(line => invalidPackageReturn(line.item, line.quantity))
+    if (invalidPackageLine) {
+      setError(t('creditNotes:packages.invalidFractionNamed', { name: invalidPackageLine.item.name }))
       return
     }
     if (hasEligibleStockLines && stockReturnChoice === null) {
@@ -867,7 +940,7 @@ export default function CreateCreditNoteModal({
   const busy = creating || submitting
   const actionLabel = submitting ? t('creditNotes:submitting') : creating ? t('creditNotes:creating') : t('creditNotes:createRefund')
   const stockReturnChoiceMissing = hasEligibleStockLines && stockReturnChoice === null
-  const createDisabled = busy || itemsLoading || selectedLines.length === 0 || stockReturnChoiceMissing
+  const createDisabled = busy || itemsLoading || selectedLines.length === 0 || stockReturnChoiceMissing || hasInvalidPackageReturn
   const reasonLabel = (reason: (typeof QUICK_REASONS)[number]) => reason === 'Test sale'
     ? t('creditNotes:reasonTestSale')
     : reason === 'Customer refund'
@@ -909,7 +982,7 @@ export default function CreateCreditNoteModal({
             <span className="mx-2 text-gray-300">·</span>
             <span>{t('creditNotes:originalTotal')} <bdi dir="ltr">SAR {money(invoice.total_amount)}</bdi></span>
             <span className="mx-2 text-gray-300">·</span>
-            <span>{t('creditNotes:remainingQuantity')} <bdi dir="ltr">{qty(totalRemainingQuantity)}</bdi></span>
+            <span>{t('creditNotes:refundableLines', { count: remainingLineCount })}</span>
             <p className="mt-1 font-mono text-[10px] text-gray-500" dir="ltr">
               {t('creditNotes:originalInvoiceIdentity', { id: invoice.id })}
             </p>
@@ -939,7 +1012,7 @@ export default function CreateCreditNoteModal({
                 <Loader2 size={14} className="animate-spin" />
                 {t('creditNotes:loadingItems')}
               </div>
-            ) : refundableItems.length === 0 || totalRemainingQuantity <= 0 ? (
+            ) : refundableItems.length === 0 || remainingLineCount === 0 ? (
               <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-4 text-xs leading-relaxed text-gray-500">
                 {t('creditNotes:noRemainingItems')}
               </div>
@@ -949,6 +1022,13 @@ export default function CreateCreditNoteModal({
                   const item = line.item
                   const disabled = busy || item.remaining_quantity <= 0
                   const lineIncluded = line.quantity > 0
+                  const sellingUnit = isRtl && item.selling_unit_name_ar?.trim()
+                    ? item.selling_unit_name_ar
+                    : (item.selling_unit_name ?? item.unit ?? '')
+                  const baseUnit = isRtl && item.base_unit_name_ar?.trim()
+                    ? item.base_unit_name_ar
+                    : (item.base_unit_name ?? '')
+                  const packageReturnInvalid = invalidPackageReturn(item, line.quantity)
                   return (
                     <div
                       key={item.original_invoice_item_id}
@@ -964,12 +1044,20 @@ export default function CreateCreditNoteModal({
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-gray-900" dir="auto">{isRtl && item.name_ar?.trim() ? item.name_ar : item.name}</p>
                           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500">
-                            <span>{t('creditNotes:originalQuantity', { quantity: qty(item.original_quantity), unit: item.unit ?? '' })}</span>
-                            <span>{t('creditNotes:previouslyCredited', { quantity: qty(item.credited_quantity) })}</span>
+                            <span>{t('creditNotes:originalQuantity', { quantity: qty(item.original_quantity, item.package_quantity_scale ?? 3), unit: sellingUnit })}</span>
+                            <span>{t('creditNotes:previouslyCreditedWithUnit', { quantity: qty(item.credited_quantity, item.package_quantity_scale ?? 3), unit: sellingUnit })}</span>
                             <span className={item.remaining_quantity > 0 ? 'font-semibold text-emerald-700' : 'font-semibold text-gray-400'}>
-                              {t('creditNotes:remainingReturnable', { quantity: qty(item.remaining_quantity) })}
+                              {t('creditNotes:remainingReturnableWithUnit', { quantity: qty(item.remaining_quantity, item.package_quantity_scale ?? 3), unit: sellingUnit })}
                             </span>
                             {item.track_stock && !item.is_service && <span>{t('creditNotes:stockItem')}</span>}
+                            {item.product_unit_id && item.conversion_to_base != null && baseUnit && (
+                              <span>
+                                {t('creditNotes:packages.baseEquivalent', {
+                                  quantity: qty(item.original_quantity * item.conversion_to_base, item.base_quantity_scale ?? 3),
+                                  unit: baseUnit,
+                                })}
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -992,7 +1080,7 @@ export default function CreateCreditNoteModal({
                           />
                           <span className="min-w-0">
                             <span className="block text-xs font-bold">{t('creditNotes:returnAll')}</span>
-                            <span className="block text-[10px] text-gray-500">{t('creditNotes:returnAllHint', { quantity: qty(item.remaining_quantity) })}</span>
+                            <span className="block text-[10px] text-gray-500">{t('creditNotes:returnAllHintWithUnit', { quantity: qty(item.remaining_quantity, item.package_quantity_scale ?? 3), unit: sellingUnit })}</span>
                           </span>
                         </label>
 
@@ -1015,6 +1103,11 @@ export default function CreateCreditNoteModal({
                             disabled={disabled}
                             className="h-9 w-full rounded-lg border border-gray-200 px-3 text-sm font-semibold tabular-nums outline-none focus:border-[#0F2419] disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
                           />
+                          {packageReturnInvalid && (
+                            <span className="block text-[10px] font-medium text-red-600">
+                              {t('creditNotes:packages.invalidFraction')}
+                            </span>
+                          )}
                         </label>
 
                         <div className="grid grid-cols-3 gap-2 text-end md:block md:space-y-1">

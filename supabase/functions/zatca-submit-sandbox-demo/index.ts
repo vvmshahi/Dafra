@@ -544,7 +544,7 @@ function buildInvoice(data: any, opts: any): string {
   for (const line of data.lines) {
     const il = root.ele(NS.cac, 'InvoiceLine')
     il.ele(NS.cbc, 'ID').txt(String(line.id))
-    il.ele(NS.cbc, 'InvoicedQuantity').att('unitCode', 'PCE').txt(String(line.qty))
+    il.ele(NS.cbc, 'InvoicedQuantity').att('unitCode', line.unitCode ?? 'PCE').txt(String(line.qty))
     il.ele(NS.cbc, 'LineExtensionAmount').att('currencyID', 'SAR').txt(fmt(line.lineNetAmt))
     if (line.discountAmt > 0) {
       const allow = il.ele(NS.cac, 'AllowanceCharge')
@@ -563,7 +563,7 @@ function buildInvoice(data: any, opts: any): string {
     itemTax.ele(NS.cac, 'TaxScheme').ele(NS.cbc, 'ID').txt('VAT')
     const price = il.ele(NS.cac, 'Price')
     price.ele(NS.cbc, 'PriceAmount').att('currencyID', 'SAR').txt(fmt(line.qty > 0 ? line.lineNetAmt / line.qty : 0))
-    price.ele(NS.cbc, 'BaseQuantity').att('unitCode', 'PCE').txt('1')
+    price.ele(NS.cbc, 'BaseQuantity').att('unitCode', line.unitCode ?? 'PCE').txt('1')
   }
 
   return root.end({ prettyPrint: false }) as string
@@ -617,6 +617,9 @@ function buildInvoiceXMLData(
     totalAmount:   inv.total_amount,
     lines: items.map((it: any, i: number) => ({
       id: i + 1, name: it.name, qty: it.quantity, unitPrice: it.unit_price,
+      unitCode: /^[A-Z0-9]{2,8}$/.test(String(it.selling_unit_code ?? '').trim().toUpperCase())
+        ? String(it.selling_unit_code).trim().toUpperCase()
+        : 'PCE',
       discountAmt: it.discount_amount, lineNetAmt: it.subtotal,
       taxRate: it.tax_rate, taxAmount: it.tax_amount, lineTotal: it.total,
     })),
@@ -1039,7 +1042,7 @@ async function rpc(db:any, name:string, args:Record<string,unknown>):Promise<any
   const {data,error}=await db.rpc(name,args); if(error) throw new Error(error.message); return data
 }
 async function processInvoice(db:any, invoiceId:string, tenantId:string, internalRetry:boolean):Promise<any> {
-  const q=await db.from('invoices').select('id,invoice_number,invoice_reference,original_invoice_id,credit_reason,zatca_uuid,zatca_invoice_type,zatca_type_code,created_at,zatca_status,subtotal,discount_amount,taxable_amount,tax_amount,total_amount,branch_id,tenant_id,invoice_items(id,name,quantity,unit_price,discount_amount,subtotal,tax_rate,tax_amount,total),customers(name,vat_number)').eq('id',invoiceId).eq('tenant_id',tenantId).single()
+  const q=await db.from('invoices').select('id,invoice_number,invoice_reference,original_invoice_id,credit_reason,zatca_uuid,zatca_invoice_type,zatca_type_code,created_at,zatca_status,subtotal,discount_amount,taxable_amount,tax_amount,total_amount,branch_id,tenant_id,invoice_items(id,name,quantity,selling_unit_code,unit_price,discount_amount,subtotal,tax_rate,tax_amount,total),customers(name,vat_number)').eq('id',invoiceId).eq('tenant_id',tenantId).single()
   const inv=q.data; if(q.error||!inv) throw new Error('Invoice not found')
   const tq=await db.from('tenants').select('id').eq('id',tenantId).eq('is_demo',true).eq('is_active',true).single()
   const legacyBranch=await db.from('branches').select('id,tenant_id,compliance_identity_mode,name,business_name,business_name_ar,vat_number,cr_number,building_number,street,district,city,postal_code,country,zatca_environment,is_active').eq('id',inv.branch_id).eq('tenant_id',tenantId).eq('zatca_environment','sandbox').eq('is_active',true).single()
