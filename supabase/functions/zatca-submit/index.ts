@@ -55,7 +55,7 @@ const FINALIZATION_SCHEMA_VERSION = 2
 const FINALIZATION_EDGE_VERSION = '2.1.0'
 const FINALIZATION_CLIENT_VERSION = '2.1.0'
 // Phase 1 only: the additive authenticated RPC is not on the checkout path.
-const CONSOLIDATED_ATOMIC_PREFLIGHT_ENABLED = false
+const CONSOLIDATED_ATOMIC_PREFLIGHT_ENABLED = true
 function consolidatedAtomicPreflightEnabled(): boolean {
   const edgeSwitch = parseImmutableFinalizationEdgeSwitch(
     Deno.env.get('ZATCA_IMMUTABLE_FINALIZATION_ENABLED'),

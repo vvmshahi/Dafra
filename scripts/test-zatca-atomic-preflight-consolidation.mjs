@@ -152,22 +152,31 @@ test('function grants and search_path are hardened', () => {
   assert.doesNotMatch(migration, /GRANT EXECUTE[\s\S]*TO (?:anon|PUBLIC|service_role)/)
 })
 
-test('Edge kill switch is authoritative and consolidated preflight remains disabled', () => {
-  assert.match(edge, /const CONSOLIDATED_ATOMIC_PREFLIGHT_ENABLED = false/)
+test('enabled consolidated preflight still requires every Edge safety prerequisite', () => {
+  assert.match(edge, /const CONSOLIDATED_ATOMIC_PREFLIGHT_ENABLED = true/)
   assert.match(edge, /function consolidatedAtomicPreflightEnabled\(\)[\s\S]*parseImmutableFinalizationEdgeSwitch\([\s\S]*ZATCA_IMMUTABLE_FINALIZATION_ENABLED[\s\S]*CONSOLIDATED_ATOMIC_PREFLIGHT_ENABLED && edgeSwitch\.edgeExecutionEnabled/)
   const enabledCheck = edge.indexOf('partialCheckoutAction && consolidatedAtomicPreflightEnabled()')
   const invoke = edge.indexOf('await invokePartialAtomicPreflight(', enabledCheck)
   assert.ok(enabledCheck > 0 && invoke > enabledCheck)
   const handler = edge.indexOf("if (action === 'checkout_simplified'")
-  for (const existingCall of [
-    'loadAtomicSimplifiedRolloutV2(',
-    'loadBranchReadinessV2(',
-    'syncAtomicSimplifiedEligibilityV2(',
-    "enforceRateLimit(supabase as any",
-    "auditEvent(supabase as any",
-  ]) {
-    assert.ok(edge.indexOf(existingCall, handler) > handler, `serial call missing: ${existingCall}`)
-  }
+  const rollout = edge.indexOf('loadAtomicSimplifiedRolloutV2(', handler)
+  const readiness = edge.indexOf('loadBranchReadinessV2(', rollout)
+  const eligibility = edge.indexOf('syncAtomicSimplifiedEligibilityV2(', readiness)
+  const gate = edge.indexOf('const atomicRolloutEnabled =', eligibility)
+  const rateLimit = edge.indexOf('enforceRateLimit(supabase as any', gate)
+  const audit = edge.indexOf("action: 'zatca_atomic_checkout_attempted'", rateLimit)
+  const issuance = edge.indexOf('await processAtomicSimplifiedCheckoutV2(', audit)
+  assert.ok(
+    handler > invoke && rollout > handler && readiness > rollout
+      && eligibility > readiness && gate > eligibility && rateLimit > gate
+      && audit > rateLimit && issuance > audit,
+  )
+  const processStart = edge.indexOf('async function processAtomicSimplifiedCheckoutV2(')
+  const prepare = edge.indexOf("serviceDb.rpc('prepare_zatca_atomic_checkout_v2'", processStart)
+  const signing = edge.indexOf('signInvoice(', prepare)
+  const storage = edge.indexOf("serviceDb.rpc('store_zatca_atomic_checkout_artifact_v2'", signing)
+  const commit = edge.indexOf("callerDb.rpc('commit_zatca_atomic_checkout_v2'", storage)
+  assert.ok(processStart > 0 && prepare > processStart && signing > prepare && storage > signing && commit > storage)
 })
 
 test('enabled partial path removes only consolidated calls after preflight_ok', () => {
