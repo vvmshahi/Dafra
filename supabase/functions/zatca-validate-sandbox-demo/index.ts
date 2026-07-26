@@ -14,6 +14,7 @@ import {
   type SampleSeller,
   type SandboxComplianceValidationInvoice,
 } from '../_shared/zatca/samples.ts'
+import { extractSignedQrCode } from '../_shared/zatca/signed_qr.mjs'
 
 const DEMO_TENANT_ID = 'ebf1144b-55ed-472a-99c9-23b5ee915351'
 const TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
@@ -359,16 +360,10 @@ function browserResult(attempt: ValidationAttempt | null, invoiceId: string, eli
     warnings: attempt?.validation_warnings ?? [],
     errors: attempt?.validation_errors ?? [],
     updatedAt: attempt?.completed_at ?? attempt?.updated_at ?? null,
-    qrCode: attempt ? signedQrCode(attempt.signed_xml) : null,
+    qrCode: attempt ? extractSignedQrCode(attempt.signed_xml) : null,
     retryAllowed: !!attempt && ['sandbox_validation_rejected', 'sandbox_validation_failed'].includes(attempt.status) && !attempt.dispatched_at,
     stages: safeStages(attempt, eligible),
   }
-}
-
-function signedQrCode(signedXml: string | null): string | null {
-  if (!signedXml) return null
-  const match = signedXml.match(/<cbc:EmbeddedDocumentBinaryObject[^>]*mimeCode="text\/plain"[^>]*>([^<]+)<\/cbc:EmbeddedDocumentBinaryObject>/)
-  return match?.[1]?.trim() || null
 }
 
 function safeStages(attempt: ValidationAttempt | null, eligible: boolean): Array<Record<string, unknown>> {

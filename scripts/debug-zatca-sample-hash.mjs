@@ -3,6 +3,7 @@ import { createHash, createPublicKey, verify as verifySignature } from 'node:cry
 import { execFileSync } from 'node:child_process'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { extractEcPrivateKeyScalar, signZatcaInvoiceHash } from '../supabase/functions/_shared/zatca/signing_core.mjs'
+import { buildZatcaPhase2Qr } from '../supabase/functions/_shared/zatca/phase2_qr.mjs'
 
 const OUT_DIR = '.zatca-debug'
 const NS = {
@@ -216,37 +217,6 @@ function privateKeyMatchesCertificate(privateKey, certPemBody) {
   }
 }
 
-function tlvBytes(tag, value) {
-  if (value.length > 255) throw new Error(`TLV value too long for tag ${tag}`)
-  return new Uint8Array([tag, value.length, ...value])
-}
-
-function tlvStr(tag, value) {
-  return tlvBytes(tag, new TextEncoder().encode(value))
-}
-
-function buildPhase2QR(sellerName, vatNumber, timestamp, totalAmount, vatAmount, hashB64, sigB64, pubKeySpki, certSigValue) {
-  const parts = [
-    tlvStr(0x01, sellerName),
-    tlvStr(0x02, vatNumber),
-    tlvStr(0x03, timestamp),
-    tlvStr(0x04, totalAmount.toFixed(2)),
-    tlvStr(0x05, vatAmount.toFixed(2)),
-    tlvStr(0x06, hashB64),
-    tlvStr(0x07, sigB64),
-    tlvBytes(0x08, pubKeySpki),
-    tlvBytes(0x09, certSigValue),
-  ]
-  const total = parts.reduce((sum, part) => sum + part.length, 0)
-  const all = new Uint8Array(total)
-  let offset = 0
-  for (const part of parts) {
-    all.set(part, offset)
-    offset += part.length
-  }
-  return bytesToBase64(all)
-}
-
 function extractQrTag(qrB64, tag) {
   const bytes = base64ToBytes(qrB64)
   let offset = 0
@@ -413,17 +383,17 @@ function signInvoice(xml, privateKey, certificate, sampleTimestamp) {
     /<ext:ExtensionContent>[\s\S]*?<\/ext:ExtensionContent>/,
     `<ext:ExtensionContent>${xadesBlock}</ext:ExtensionContent>`,
   )
-  const qrCode = buildPhase2QR(
-    'ZATCA Debug Seller',
-    '300000000000003',
-    sampleTimestamp,
-    115,
-    15,
-    invoiceHash,
-    sigValueB64,
-    pubKeySpki,
-    certSigValue,
-  )
+  const qrCode = buildZatcaPhase2Qr({
+    sellerName: 'ZATCA Debug Seller',
+    vatNumber: '300000000000003',
+    timestamp: sampleTimestamp,
+    totalAmount: 115,
+    vatAmount: 15,
+    invoiceHashBase64: invoiceHash,
+    signatureValueBase64: sigValueB64,
+    publicKeySpki: pubKeySpki,
+    certificateSignatureDer: certSigValue,
+  })
   signedXml = signedXml.replace(
     /(<cbc:ID>QR<\/cbc:ID>[\s\S]*?<cbc:EmbeddedDocumentBinaryObject mimeCode="text\/plain">)([^<]*)(<\/cbc:EmbeddedDocumentBinaryObject>)/,
     `$1${qrCode}$3`,

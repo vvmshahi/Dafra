@@ -41,7 +41,7 @@ export function isStockModuleVisible({
   businessType: string | null | undefined
   stockEnabled: boolean | null | undefined
 }) {
-  if (stockEnabled === true) return true
+  if (resolveBusinessType(businessType) === 'service') return false
   if (stockEnabled === false) return false
-  return resolveBusinessType(businessType) !== 'service'
+  return true
 }

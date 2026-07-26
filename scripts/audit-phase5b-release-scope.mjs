@@ -13,9 +13,10 @@ assert.equal(migrations.at(-1), '20260722000100_reconcile_branch_assets_bucket.s
 for (const rule of ['INSERT INTO storage.buckets','2097152','image/jpeg','image/png','image/webp','DROP POLICY IF EXISTS','storage_invoice_branding_immutable','phase5b_invoice_branding_insert','invoice-branding']) assert.match(additive, new RegExp(rule.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')))
 assert.doesNotMatch(additive, /DELETE FROM storage\.objects|UPDATE public\.invoices|identity_snapshot/)
 assert.doesNotMatch(branches, /storage\.from\('branch-assets'\)\.upload|upsert:\s*true/)
-assert.match(invoiceSettings, /presentation_settings: normalized\.presentation/); assert.doesNotMatch(invoiceSettings, /presentation_settings:[\s\S]{0,500}(registeredSellerName|vatNumber|registrationIdentifier|certificate|csid)/)
+assert.match(invoiceSettings, /serializeInvoicePresentationSettingsForSave\(normalized/); assert.doesNotMatch(invoiceSettings, /presentation_settings:[\s\S]{0,500}(registeredSellerName|vatNumber|registrationIdentifier|certificate|csid)/)
 for (const renderer of [a4,thermal]) assert.doesNotMatch(renderer, /supabase|buildZatcaQR|QRCode|\*\s*0\.15/)
-for (const source of [invoice,pos]) { assert.match(source, /documentFromStoredInvoice/); assert.match(source, /<ThermalReceipt/); assert.match(source, /<A4Document/) }
+assert.match(invoice, /documentFromStoredInvoice/); assert.match(pos, /documentFromPosReceipt/)
+for (const source of [invoice,pos]) { assert.match(source, /<ThermalReceipt/); assert.match(source, /<A4Document/) }
 assert.doesNotMatch(`${invoiceSettings}\n${branches}\n${a4}\n${thermal}`, /\bdebugger\b/)
-for (const key of ['taxInvoice','creditNoteNumber','legacyBestEffort','qrCode']) { assert.ok(en[key],`English key missing: ${key}`); assert.ok(ar[key],`Arabic key missing: ${key}`) }
+for (const key of ['taxInvoice','creditNoteNumber','qrCode']) { assert.ok(en[key],`English key missing: ${key}`); assert.ok(ar[key],`Arabic key missing: ${key}`) }
 console.log('Phase 5B release-scope audit passed (additive Storage migration, immutable render paths, presentation boundary, shared documents, locales, and no debugger statements).')

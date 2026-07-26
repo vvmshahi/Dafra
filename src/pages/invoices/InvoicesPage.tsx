@@ -13,6 +13,7 @@ import { retryFailedSubmissions } from '@/lib/zatca/submission'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import { getSandboxValidationStatuses } from '@/lib/zatca/api'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
+import AtomicCreditNoteReceiptView from './AtomicCreditNoteReceiptView'
 import {
   INVOICE_LIST_STALE_MS,
   getCachedInvoiceRows,
@@ -142,6 +143,7 @@ export default function InvoicesPage() {
   const [retryingZatca, setRetryingZatca] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [creditModalRow, setCreditModalRow] = useState<InvoiceRow | null>(null)
+  const [creditNoteResult, setCreditNoteResult] = useState<CreditNoteCreatedResult | null>(null)
 
   const { start: defaultStart, end: defaultEnd } = quickRangeDates('today')
   const [startDate, setStartDate] = useState(defaultStart)
@@ -707,12 +709,16 @@ export default function InvoicesPage() {
       </div>
 
       <CreateCreditNoteModal
+        key={creditModalRow?.id ?? 'closed-credit-note-modal'}
         open={!!creditModalRow}
         invoice={creditModalRow ? {
           id: creditModalRow.id,
           branch_id: creditModalRow.branchId,
           invoice_number: creditModalRow.invoiceNumber,
           total_amount: creditModalRow.totalAmount,
+          zatca_document_kind: creditModalRow.documentType === 'standard'
+            ? 'standard'
+            : 'simplified',
         } : null}
         defaultRefundMethod={(creditModalRow?.paymentMethod === 'split' ? 'other' : (creditModalRow?.paymentMethod ?? 'cash')) as PaymentMethod}
         onClose={() => setCreditModalRow(null)}
@@ -737,7 +743,7 @@ export default function InvoicesPage() {
               displayZatcaStatus: demoStatus,
               status: 'posted',
               documentType: 'credit_note',
-              invoiceReference: creditModalRow?.invoiceNumber ?? null,
+              invoiceReference: result.originalInvoiceNumber,
               linkedCreditNoteId: null,
               linkedCreditNoteNumber: null,
               creditNoteCount: 0,
@@ -753,9 +759,22 @@ export default function InvoicesPage() {
             } : row))
           }
           setCreditModalRow(null)
-          setRefreshKey(key => key + 1)
+          setCreditNoteResult(result)
+          if (!result.atomicReceipt) {
+            setRefreshKey(key => key + 1)
+          }
         }}
       />
+      {creditNoteResult && (
+        <AtomicCreditNoteReceiptView
+          result={creditNoteResult}
+          onOpenPrinterSettings={() => navigate('/device-printer')}
+          onClose={() => {
+            setCreditNoteResult(null)
+            setRefreshKey(key => key + 1)
+          }}
+        />
+      )}
     </div>
   )
 }

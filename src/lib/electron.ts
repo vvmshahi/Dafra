@@ -59,6 +59,7 @@ interface ElectronApi {
   testPrint: (settings?: Partial<PrinterSettings>) => Promise<PrintResult>
   testPrintA4: (settings?: Partial<PrinterSettings>) => Promise<PrintResult>
   printReceipt: (request: PrintReceiptRequest) => Promise<PrintResult>
+  printCurrentReceipt: () => Promise<PrintResult>
   printA4Invoice: () => Promise<PrintResult>
   receiptReady: (payload: ReceiptReadyPayload) => void
   receiptFailed: (payload: ReceiptReadyPayload) => void
@@ -251,6 +252,15 @@ export const printReceipt = async (request: PrintReceiptRequest): Promise<PrintR
     return { success: false, errorType: 'NOT_ELECTRON', message: 'Direct receipt printing is available in the Kubri desktop app.' }
   }
   return window.electronAPI?.printReceipt?.(request) ?? { success: false, errorType: 'IPC_UNAVAILABLE', message: 'Printer bridge is unavailable.' }
+}
+
+export const printCurrentReceipt = async (): Promise<PrintResult> => {
+  if (!isElectron()) {
+    window.print()
+    return { success: true }
+  }
+  return window.electronAPI?.printCurrentReceipt?.()
+    ?? { success: false, errorType: 'IPC_UNAVAILABLE', message: 'Printer bridge is unavailable.' }
 }
 
 export const printA4Invoice = async (): Promise<PrintResult> => {

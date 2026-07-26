@@ -12,6 +12,8 @@
   "sessionOpenSince": "Register session open since {{time}}",
   "openingAmount": "Opening: {{amount}}",
   "loading": "Loading register…",
+  "loadFailed": "Register session unavailable",
+  "loadFailedPrompt": "The register session could not be loaded. Retry before accepting payments.",
   "alreadyOpen": "The register is already open for this branch.",
   "unableToOpen": "The register could not be opened. Try again.",
   "unableToClose": "The register could not be closed. Try again.",

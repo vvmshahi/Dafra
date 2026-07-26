@@ -77,6 +77,7 @@ type TraceStage =
   | 'production_csid_request_started'
   | 'production_csid_request_completed'
   | 'production_credentials_saved'
+  | 'v2_chain_initialized'
 
 interface TraceEntry {
   stage: TraceStage
@@ -105,7 +106,13 @@ const TRACE_STAGES: TraceStage[] = [
   'production_csid_request_started',
   'production_csid_request_completed',
   'production_credentials_saved',
+  'v2_chain_initialized',
 ]
+
+function rpcObject(value: any): Record<string, any> {
+  if (Array.isArray(value)) return value[0] ?? {}
+  return value && typeof value === 'object' ? value : {}
+}
 
 Deno.serve(async (req: Request) => {
   const trace = createTrace()
@@ -144,10 +151,24 @@ Deno.serve(async (req: Request) => {
       )
       setTrace(trace, 'owner_branch_loaded', 'success', 'Branch loaded for this tenant.')
       const status = await loadSafeOnboardingStatus(db, branch.id, userContext.tenantId)
+      const readinessResult = await db.rpc('get_zatca_branch_readiness_v2', {
+        p_branch_id: branch.id,
+        p_user_id: userContext.userId,
+      })
+      const readiness = readinessResult.error ? {
+        branchReady: false,
+        branchBlocked: false,
+        chainHeadExists: false,
+        productionConnected: false,
+      } : rpcObject(readinessResult.data)
       skipPendingTrace(trace, 'Status check only.')
       return jsonResponse({
         ok: true,
         ...status,
+        branchReady: readiness.branchReady === true,
+        branchBlocked: readiness.branchBlocked === true,
+        chainHeadExists: readiness.chainHeadExists === true,
+        v2Ready: readiness.structurallyReady === true,
         branchName: branch.name,
         vatNumber: branch.vat_number ?? null,
         crNumber: branch.cr_number ?? null,
@@ -643,12 +664,36 @@ Deno.serve(async (req: Request) => {
     })
     setTrace(trace, 'production_credentials_saved', 'success', 'Encrypted production credentials were saved.')
 
+    const chainInitializationResult = await db.rpc('initialize_zatca_new_branch_chain_v2', {
+      p_branch_id: branch.id,
+      p_reason: 'Approved production onboarding completed for a new compliance unit.',
+      p_approved_by: owner.userId,
+    })
+    if (chainInitializationResult.error) {
+      setTrace(trace, 'v2_chain_initialized', 'failed', 'V2 chain initialization failed closed.')
+      throw new Error('Production onboarding completed but branch v2 chain initialization is incomplete')
+    }
+    const chainInitialization = rpcObject(chainInitializationResult.data)
+    const branchV2Ready = chainInitialization.branchReady === true
+    setTrace(
+      trace,
+      'v2_chain_initialized',
+      branchV2Ready ? 'success' : 'skipped',
+      branchV2Ready
+        ? 'New production branch chain initialized with the approved first counter and PIH.'
+        : 'Historical branch remains on legacy pending controlled chain reconciliation.',
+    )
+
     await auditEvent(db as any, {
       ...auditBase,
       action: 'zatca_onboarding_completed',
       severity: 'warning',
       status: 'succeeded',
-      metadata: { functionalityMap: body.functionalityMap },
+      metadata: {
+        functionalityMap: body.functionalityMap,
+        branchV2Ready,
+        chainInitializationReason: safeDiagnosticField(chainInitialization.reason, 120),
+      },
     })
 
     return jsonResponse({
@@ -661,6 +706,9 @@ Deno.serve(async (req: Request) => {
       functionalityMap: body.functionalityMap,
       complianceSampleResults,
       connectedAt,
+      branchV2Ready,
+      chainInitialized: chainInitialization.initialized === true,
+      checkoutMode: branchV2Ready ? 'v2' : 'legacy',
       trace,
     })
   } catch (err) {

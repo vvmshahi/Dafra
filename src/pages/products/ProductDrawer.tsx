@@ -10,6 +10,7 @@ import { calculateVatPriceBreakdown, type BranchVatMode } from '@/lib/pricing/va
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import type { Category, ProductSecurePayload, ProductSecureResult, ProductSecureUpdatePayload, ProductSkuSuggestionResult, VatTreatment } from '@/types'
 import type { ProductRow } from './ProductsPage'
+import { ProductUnitsSection } from './ProductUnitsSection'
 import { useTranslation } from 'react-i18next'
 
 // ── VAT options ───────────────────────────────────────────────────────────────
@@ -28,6 +29,7 @@ function Section({
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={open}
         className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
       >
         <span className="text-sm font-semibold text-gray-700">{title}</span>
@@ -106,8 +108,9 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
 
   const [s0, setS0] = useState(true)   // Basic Info
   const [s1, setS1] = useState(true)   // Pricing & VAT
-  const [s2, setS2] = useState(true)   // Image
-  const [s3, setS3] = useState(true)   // Settings
+  const [s2, setS2] = useState(true)   // Selling units
+  const [s3, setS3] = useState(true)   // Image
+  const [s4, setS4] = useState(true)   // Settings
 
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
@@ -134,6 +137,12 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
   const [showAdjustment, setShowAdjustment] = useState(false)
   const [createdProductId, setCreatedProductId] = useState<string | null>(null)
   const [createdTrackedProduct, setCreatedTrackedProduct] = useState<{ id: string; name: string } | null>(null)
+  const [pendingTrackedProduct, setPendingTrackedProduct] = useState<{ id: string; name: string } | null>(null)
+  const [createdProductWasTracked, setCreatedProductWasTracked] = useState(false)
+  const [savedBaseline, setSavedBaseline] = useState<string | null>(null)
+  const [savedStockBaseline, setSavedStockBaseline] = useState<string | null>(null)
+  const [packageEditorDirty, setPackageEditorDirty] = useState(false)
+  const [productCreatedMessage, setProductCreatedMessage] = useState(false)
 
   const businessType = resolveBusinessType(tenant?.business_type)
   const stockModuleVisible = isStockModuleVisible({
@@ -212,9 +221,9 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
 
   const hasUnsavedChanges = open && !saving && (
     imageFile !== null ||
-    current !== baseline ||
-    createdProductId !== null ||
-    (stockControlsAllowed && stockCurrent !== stockBaseline)
+    current !== (savedBaseline ?? baseline) ||
+    packageEditorDirty ||
+    (stockControlsAllowed && stockCurrent !== (savedStockBaseline ?? stockBaseline))
   )
 
   const resolvedTenantId = profile?.tenant_id ?? tenant?.id ?? ''
@@ -286,11 +295,17 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
     setShowAdjustment(false)
     setCreatedProductId(null)
     setCreatedTrackedProduct(null)
+    setPendingTrackedProduct(null)
+    setCreatedProductWasTracked(false)
+    setSavedBaseline(null)
+    setSavedStockBaseline(null)
+    setPackageEditorDirty(false)
+    setProductCreatedMessage(false)
     setError('')
   }, [open, product, draftKey, stockControlsAllowed])
 
   useEffect(() => {
-    if (!open || !draftKey || initializedFormKey.current !== draftKey) return
+    if (!open || createdProductId || !draftKey || initializedFormKey.current !== draftKey) return
     if (skipNextDraftWrite.current) {
       skipNextDraftWrite.current = false
       return
@@ -301,7 +316,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
     }
     try { sessionStorage.setItem(draftKey, JSON.stringify(draft)) } catch {}
   }, [
-    open, draftKey, name, nameAr, categoryId, description, price, vatTreatment,
+    open, createdProductId, draftKey, name, nameAr, categoryId, description, price, vatTreatment,
     isAvailable, sortOrder, sku, skuManuallyEdited, notes, trackStock,
   ])
 
@@ -311,7 +326,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
   }
 
   useEffect(() => {
-    if (!open || product || skuManuallyEdited || !resolvedBranchId || !name.trim()) {
+    if (!open || product || createdProductId || skuManuallyEdited || !resolvedBranchId || !name.trim()) {
       setSuggestedSku(null)
       setSkuSuggesting(false)
       return
@@ -348,7 +363,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [open, product, skuManuallyEdited, resolvedBranchId, name])
+  }, [open, product, createdProductId, skuManuallyEdited, resolvedBranchId, name])
 
   useEffect(() => {
     if (!open || !categoryId) return
@@ -389,6 +404,10 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
     if (hasUnsavedChanges && !confirm(t('products:actions.discard'))) return
     if (imagePreview?.startsWith('blob:')) URL.revokeObjectURL(imagePreview)
     clearDraft()
+    if (pendingTrackedProduct) {
+      setCreatedTrackedProduct(pendingTrackedProduct)
+      return
+    }
     onClose()
   }
 
@@ -475,7 +494,9 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
       }
 
       let savedProductId = product?.id ?? createdProductId
-      const shouldShowTrackedCreationSuccess = !product && trackStock && stockControlsAllowed
+      const isFirstProductSave = !product && !createdProductId
+      const shouldShowTrackedCreationSuccess = isFirstProductSave && trackStock && stockControlsAllowed
+      let normalizedSku = sku.trim()
 
       if (product || createdProductId) {
         if (!savedProductId) {
@@ -495,7 +516,10 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
           return
         }
         const result = data as ProductSecureResult | null
-        if (result?.sku) setSku(result.sku)
+        if (result?.sku) {
+          normalizedSku = result.sku
+          setSku(result.sku)
+        }
       } else {
         const { data, error: err } = await supabase.rpc('create_product_secure', {
           p_payload: {
@@ -506,17 +530,24 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
         if (err) { console.error('[ProductDrawer] create failed', err); setError(t('products:errors.saveFailed')); return }
         const result = data as ProductSecureResult | null
         savedProductId = result?.product_id ?? null
-        if (result?.sku) setSku(result.sku)
+        if (result?.sku) {
+          normalizedSku = result.sku
+          setSku(result.sku)
+        }
         if (result?.product_id) setCreatedProductId(result.product_id)
       }
 
       if (stockControlsAllowed && savedProductId) {
         const stockPayload: Record<string, unknown> = { product_id: savedProductId }
 
-        if (!product && trackStock) {
+        if (isFirstProductSave && trackStock) {
           stockPayload.track_stock = true
           stockPayload.opening_stock_quantity = 0
           stockPayload.reason = 'opening_stock'
+        } else if (createdProductId && trackStock !== createdProductWasTracked) {
+          stockPayload.track_stock = trackStock
+          stockPayload.reason = trackStock ? 'opening_stock' : 'tracking_disabled'
+          if (trackStock) stockPayload.opening_stock_quantity = 0
         } else if (product && trackStock !== productWasTracked) {
           stockPayload.track_stock = trackStock
           stockPayload.reason = trackStock ? 'opening_stock' : 'tracking_disabled'
@@ -545,13 +576,36 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
         }
       }
 
-      setCreatedProductId(null)
       setAdjustmentIdempotencyKey(null)
       clearDraft()
       if (imagePreview?.startsWith('blob:')) URL.revokeObjectURL(imagePreview)
+      setImageFile(null)
+      setImagePreview(imageUrl)
+      setSavedBaseline(JSON.stringify({
+        name,
+        nameAr,
+        categoryId,
+        description,
+        price,
+        vatTreatment,
+        imagePreview: imageUrl,
+        isAvailable,
+        sortOrder,
+        sku: normalizedSku,
+        notes,
+      }))
+      setSavedStockBaseline(JSON.stringify({
+        trackStock,
+        adjustmentQuantity: '',
+      }))
+      setCreatedProductWasTracked(trackStock)
+      setAdjustmentQuantity('')
       onSaved()
-      if (shouldShowTrackedCreationSuccess && savedProductId) {
-        setCreatedTrackedProduct({ id: savedProductId, name: name.trim() })
+      if (isFirstProductSave && savedProductId) {
+        setProductCreatedMessage(true)
+        if (shouldShowTrackedCreationSuccess) {
+          setPendingTrackedProduct({ id: savedProductId, name: name.trim() })
+        }
         return
       }
       onClose()
@@ -782,8 +836,24 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
               </div>
             </Section>
 
+            {/* Selling units and cartons */}
+            <Section title={t('products:sections.units')} open={s2} onToggle={() => setS2(v => !v)}>
+              {productCreatedMessage && (
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3.5 py-3 text-xs leading-5 text-emerald-800" role="status">
+                  {t('products:units.productCreated')}
+                </div>
+              )}
+              <ProductUnitsSection
+                productId={product?.id ?? createdProductId}
+                basePrice={price}
+                serviceRestricted={businessType === 'service' || product?.is_service === true}
+                stockEnabled={stockModuleVisible}
+                onDirtyChange={setPackageEditorDirty}
+              />
+            </Section>
+
             {/* Product Image */}
-            <Section title={t('products:sections.image')} open={s2} onToggle={() => setS2(v => !v)}>
+            <Section title={t('products:sections.image')} open={s3} onToggle={() => setS3(v => !v)}>
               <input
                 ref={fileRef}
                 type="file"
@@ -835,7 +905,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
             </Section>
 
             {/* Settings */}
-            <Section title={t('products:sections.settings')} open={s3} onToggle={() => setS3(v => !v)}>
+            <Section title={t('products:sections.settings')} open={s4} onToggle={() => setS4(v => !v)}>
               {/* Show in POS toggle */}
               <div className="flex items-center justify-between">
                 <div>
@@ -1004,7 +1074,7 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
               {t('common:cancel')}
             </Button>
             <Button type="submit" className="flex-1" loading={saving}>
-              {product ? t('products:actions.update') : t('products:actions.save')}
+              {product || createdProductId ? t('products:actions.update') : t('products:actions.save')}
             </Button>
           </div>
 

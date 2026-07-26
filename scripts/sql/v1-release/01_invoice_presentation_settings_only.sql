@@ -19,7 +19,7 @@ BEGIN
     'contact',jsonb_build_object('phone',b.phone,'email',b.email,'website',b.website,'show_phone',b.phone is not null,'show_email',coalesce(b.show_email,false),'show_website',coalesce(b.show_website,false),'show_address',true),
     'footer',jsonb_build_object('thank_you_message',null,'footer_note',b.receipt_footer,'refund_note',null,'show_thank_you',false,'show_footer',coalesce(b.show_footer,true),'show_refund_note',false),
     'logo',jsonb_build_object('visible',coalesce(b.show_logo,false),'asset_path',b.logo_url,'asset_version',1,'size','medium'),
-    'thermal',jsonb_build_object('width','80mm','density','standard','qr_size','standard','wrap_item_names',true,'show_cash_change',coalesce(b.show_cash_change,true)),
+    'thermal',jsonb_build_object('width','80mm','density','standard','qr_size','standard','qr_alignment','center','wrap_item_names',true,'show_cash_change',coalesce(b.show_cash_change,true)),
     'a4',jsonb_build_object('template_id','classic','template_version',1,'header_style','standard'));
 END $$;
 

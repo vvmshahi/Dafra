@@ -107,7 +107,18 @@
     "success": "ZATCA submission successful",
     "warning": "ZATCA submission completed with warnings",
     "failed": "ZATCA submission failed",
-    "viewInvoice": "View invoice"
+    "viewInvoice": "View invoice",
+    "finalizingInvoice": "Finalizing invoice…",
+    "finalizingTaxInvoice": "Finalizing tax invoice with ZATCA…",
+    "saleCompletedAttention": "Sale completed — invoice finalization requires attention",
+    "retryFinalization": "Retry finalization",
+    "reporting_pending": "Reporting pending",
+    "reported": "Reported",
+    "reported_with_warnings": "Reported with warnings",
+    "rejected": "Rejected",
+    "retryable_failure": "Retryable failure",
+    "reconciliation_required": "Reconciliation required",
+    "manual_review_required": "Manual review required"
   },
   "errors": {
     "amountReceived": "Amount received is less than the invoice total.",

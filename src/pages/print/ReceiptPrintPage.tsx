@@ -1,16 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Loader2, Printer, RefreshCw } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Loader2, Printer } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import QRCode from 'qrcode'
+import { toast } from 'sonner'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import { supabase } from '@/lib/supabase'
 import { DEFAULT_PRINTER_SETTINGS, type PrinterSettings } from '@/lib/electron'
-import { buildZatcaQR } from '@/lib/zatca/qr'
+import { INVOICE_SAFE_SELECT } from '@/lib/invoices/invoiceReadContract'
+import { getSandboxValidationStatus, type SandboxValidationResponse } from '@/lib/zatca/api'
+import { selectStoredInvoiceQr } from '@/lib/zatca/qrSelector'
+import {
+  canOpenStoredInvoicePrint,
+  QR_DISPLAY_TIMEOUT_MS,
+  renderStoredQrDataUrl,
+  selectStoredOutputStateQr,
+  type QrDisplayStatus,
+} from '@/lib/zatca/qrDisplay.mjs'
+import { getInvoiceZatcaOutputState, isPermanentDemoSandboxBranch, type ZatcaOutputState } from '@/lib/zatca/submission'
+import { RECEIPT_FRAME_FAILED, RECEIPT_FRAME_READY } from '@/lib/receiptPrint'
 import { toSaudiTime } from '@/lib/utils/date'
 import type { Branch, Invoice, InvoiceItem, Payment } from '@/types/database'
 import { documentDate, resolveCreditNoteDocumentLanguage, resolveInvoiceDocumentLanguage } from '@/localization/documents'
+import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
 
 interface Tenant {
   name: string
@@ -29,15 +42,10 @@ interface Customer {
   business_name: string | null
   business_name_ar: string | null
   phone: string | null
+  cr_number: string | null
+  address: string | null
+  address_ar: string | null
 }
-
-const INVOICE_PRINT_SELECT = `
-  id, tenant_id, branch_id, customer_id,
-  invoice_number, document_language, invoice_reference, original_invoice_id, credit_reason,
-  zatca_invoice_type, zatca_qr_code,
-  subtotal, discount_amount, tax_amount, total_amount,
-  status, payment_status, created_at
-`
 
 function isSplitPaymentRows(payments: Payment[]): boolean {
   return payments.length > 1
@@ -174,6 +182,7 @@ export default function ReceiptPrintPage() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const autoPrint = params.get('auto') === '1'
+  const embeddedPrint = params.get('embedded') === '1'
   const electronPrint = params.get('electronPrint') === '1'
   const printJobId = params.get('printJobId')
   const receiptProfile = useMemo(
@@ -192,9 +201,76 @@ export default function ReceiptPrintPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [qrStatus, setQrStatus] = useState<QrDisplayStatus>('loading')
+  const [sandboxValidation, setSandboxValidation] = useState<SandboxValidationResponse | null>(null)
+  const [outputState, setOutputState] = useState<ZatcaOutputState | null>(null)
   const [originalDocumentLanguage, setOriginalDocumentLanguage] = useState<string | null>(null)
+  const sandboxValidated = sandboxValidation?.invoiceId === invoice?.id
+    && (sandboxValidation?.status === 'sandbox_validated'
+      || sandboxValidation?.status === 'sandbox_validated_with_warnings')
+  const outputStateMatchesInvoice = Boolean(invoice && outputState?.invoiceId === invoice.id)
+  const sandboxDocument = Boolean(invoice && isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id))
+  const selectedQrPayload = sandboxDocument
+    ? selectStoredInvoiceQr(null, 'sandbox', {
+      sandboxGenerated: sandboxValidated && Boolean(sandboxValidation?.qrCode),
+      sandboxQrCode: sandboxValidation?.qrCode,
+    })
+    : selectStoredOutputStateQr(outputStateMatchesInvoice ? outputState : null)
+  const printReady = canOpenStoredInvoicePrint(
+    sandboxDocument
+      ? sandboxValidated
+      : outputStateMatchesInvoice && outputState?.canPrint === true,
+    selectedQrPayload,
+    qrStatus,
+    qrDataUrl,
+  )
+
+  useEffect(() => {
+    if (!invoice?.id) return
+    const timeout = window.setTimeout(() => {
+      setQrStatus(current => current === 'loading' ? 'failed' : current)
+    }, QR_DISPLAY_TIMEOUT_MS)
+    return () => window.clearTimeout(timeout)
+  }, [invoice?.id, invoice?.zatca_status])
 
   useReceiptPrintStyle(receiptProfile, electronPrint)
+
+  useEffect(() => {
+    if (!invoice || !isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)) {
+      setSandboxValidation(null)
+      return
+    }
+    let cancelled = false
+    setQrStatus('loading')
+    getSandboxValidationStatus(invoice.id)
+      .then(result => { if (!cancelled) setSandboxValidation(result) })
+      .catch(() => {
+        if (!cancelled) {
+          setSandboxValidation(null)
+          setQrStatus('failed')
+        }
+      })
+    return () => { cancelled = true }
+  }, [invoice?.id, invoice?.tenant_id, invoice?.branch_id])
+
+  useEffect(() => {
+    if (!invoice || isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)) {
+      setOutputState(null)
+      return
+    }
+    let cancelled = false
+    setOutputState(null)
+    setQrStatus('loading')
+    getInvoiceZatcaOutputState({ invoiceId: invoice.id, branchId: invoice.branch_id })
+      .then(state => { if (!cancelled) setOutputState(state) })
+      .catch(() => {
+        if (!cancelled) {
+          setOutputState(null)
+          setQrStatus('failed')
+        }
+      })
+    return () => { cancelled = true }
+  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status])
 
   useEffect(() => {
     if (!invoiceId) return
@@ -205,7 +281,7 @@ export default function ReceiptPrintPage() {
       setError(null)
       try {
         const [{ data: inv, error: invErr }, { data: itemData }, { data: paymentData }] = await Promise.all([
-          supabase.from('invoices').select(INVOICE_PRINT_SELECT).eq('id', invoiceId).single(),
+          supabase.from('invoices').select(INVOICE_SAFE_SELECT).eq('id', invoiceId).single(),
           supabase.from('invoice_items').select('*').eq('invoice_id', invoiceId).order('sort_order'),
           supabase.from('payments').select('*').eq('invoice_id', invoiceId).order('paid_at', { ascending: true }).order('created_at', { ascending: true }),
         ])
@@ -223,7 +299,7 @@ export default function ReceiptPrintPage() {
         if (inv.customer_id) {
           fetches.push(
             supabase.from('customers')
-              .select('name, name_ar, vat_number, customer_type, company_name, business_name, business_name_ar, phone')
+              .select('name, name_ar, vat_number, cr_number, address, address_ar, customer_type, company_name, business_name, business_name_ar, phone')
               .eq('id', inv.customer_id)
               .single(),
           )
@@ -265,39 +341,74 @@ export default function ReceiptPrintPage() {
     let cancelled = false
 
     async function generateQR() {
-      const payload = invoice!.zatca_qr_code ?? buildZatcaQR({
-        sellerName: branch!.business_name || branch!.name,
-        vatNumber: branch!.vat_number || tenant!.vat_number || '',
-        timestamp: invoice!.created_at,
-        totalAmount: Number(invoice!.total_amount),
-        vatAmount: Number(invoice!.tax_amount),
-      })
+      const environment = isPermanentDemoSandboxBranch(invoice!.tenant_id, invoice!.branch_id) ? 'sandbox' : 'production'
+      if (environment === 'production' && !outputStateMatchesInvoice) return
+      if (environment === 'sandbox' && sandboxValidation?.invoiceId !== invoice!.id) return
 
-      try {
-        const url = await QRCode.toDataURL(payload, {
+      setQrStatus('loading')
+      const result = await renderStoredQrDataUrl(
+        selectedQrPayload,
+        payload => QRCode.toDataURL(payload, {
           errorCorrectionLevel: 'M',
           width: 200,
           margin: 1,
           color: { dark: '#0F2419', light: '#FFFFFF' },
-        })
-        if (!cancelled) setQrDataUrl(url)
-      } catch {
-        if (!cancelled) setQrDataUrl(null)
-      }
+        }),
+      )
+      if (cancelled) return
+      setQrDataUrl(result.dataUrl)
+      setQrStatus(result.status)
     }
 
     generateQR()
     return () => { cancelled = true }
-  }, [invoice, branch, tenant])
+  }, [invoice, branch, tenant, sandboxValidation?.invoiceId, selectedQrPayload, outputStateMatchesInvoice])
 
   useEffect(() => {
-    if (!autoPrint || electronPrint || printedRef.current || loading || error || !invoice || !branch || !qrDataUrl) return
+    if (!autoPrint || embeddedPrint || electronPrint || printedRef.current || loading || error || !invoice || !branch || !printReady) return
     printedRef.current = true
     const timer = window.setTimeout(() => {
       window.print()
     }, 350)
     return () => window.clearTimeout(timer)
-  }, [autoPrint, electronPrint, loading, error, invoice, branch, qrDataUrl])
+  }, [autoPrint, embeddedPrint, electronPrint, loading, error, invoice, branch, printReady])
+
+  useEffect(() => {
+    if (!embeddedPrint || loading || !invoiceId) return
+    if (error) {
+      window.parent.postMessage({
+        type: RECEIPT_FRAME_FAILED,
+        invoiceId,
+        error,
+      }, window.location.origin)
+      return
+    }
+    if (invoice && branch && tenant && printReady) {
+      window.parent.postMessage({
+        type: RECEIPT_FRAME_READY,
+        invoiceId,
+      }, window.location.origin)
+      return
+    }
+    if (qrStatus === 'missing' || qrStatus === 'failed') {
+      window.parent.postMessage({
+        type: RECEIPT_FRAME_FAILED,
+        invoiceId,
+        error: t('printing:qrUnavailable'),
+      }, window.location.origin)
+    }
+  }, [
+    embeddedPrint,
+    loading,
+    error,
+    invoiceId,
+    invoice,
+    branch,
+    tenant,
+    printReady,
+    qrStatus,
+    t,
+  ])
 
   const receipt = useMemo(() => {
     if (!invoice || !branch || !tenant) return null
@@ -365,14 +476,26 @@ export default function ReceiptPrintPage() {
     }
   }, [invoice, branch, tenant, items, payments, customer, originalDocumentLanguage])
 
+  const documentViewModel = useMemo(() => {
+    if (!invoice || !branch || !tenant) return null
+    return documentFromStoredInvoice({
+      invoice,
+      branch,
+      tenant,
+      items,
+      payments,
+      customer: customer ? { name: customerDisplayName(customer) ?? customer.name, nameAr: customer.name_ar, vatNumber: customer.vat_number, address: customer.address, addressAr: customer.address_ar, identifierType: customer.cr_number ? 'CR' : null, identifierValue: customer.cr_number, type: customer.customer_type } : null,
+    })
+  }, [invoice, branch, tenant, items, payments, customer])
+
   useEffect(() => {
-    if (!electronPrint || electronReadyRef.current || loading || error || !invoice || !branch || !tenant || !receipt || !qrDataUrl) return
+    if (!electronPrint || electronReadyRef.current || loading || error || !invoice || !branch || !tenant || !receipt || !printReady) return
     electronReadyRef.current = true
     window.electronAPI?.receiptReady?.({
       invoiceId: invoice.id,
       jobId: printJobId,
     })
-  }, [electronPrint, loading, error, invoice, branch, tenant, receipt, qrDataUrl, printJobId])
+  }, [electronPrint, loading, error, invoice, branch, tenant, receipt, printReady, printJobId])
 
   useEffect(() => {
     if (!electronPrint || electronReadyRef.current || !error || !invoiceId) return
@@ -384,6 +507,14 @@ export default function ReceiptPrintPage() {
     })
   }, [electronPrint, error, invoiceId, printJobId])
 
+  function handlePrint() {
+    if (!printReady) {
+      toast.error(t('printing:qrUnavailable'))
+      return
+    }
+    window.print()
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 text-gray-400">
@@ -392,7 +523,7 @@ export default function ReceiptPrintPage() {
     )
   }
 
-  if (error || !invoice || !branch || !tenant || !receipt) {
+  if (error || !invoice || !branch || !tenant || !receipt || !documentViewModel) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
         <div className="max-w-sm rounded-2xl border border-gray-100 bg-white p-6 text-center shadow-sm">
@@ -435,59 +566,26 @@ export default function ReceiptPrintPage() {
             </Link>
             <button
               type="button"
-              onClick={() => window.print()}
-              disabled={!qrDataUrl}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[#0F2419] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1a3a28] disabled:cursor-wait disabled:opacity-60"
+              onClick={handlePrint}
+              disabled={!printReady}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#0F2419] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {qrDataUrl ? <Printer size={13} /> : <RefreshCw size={13} className="animate-spin" />}
+              <Printer size={13} />
               {t('printing:print')}
             </button>
           </div>
         </div>
       </div>
 
+      {qrStatus !== 'loading' && qrStatus !== 'ready' && (
+        <div className="no-print mx-auto mt-4 flex max-w-3xl items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+          <AlertCircle size={16} className="shrink-0" />
+          {t('printing:qrUnavailable')}
+        </div>
+      )}
+
       <main id="receipt-print-page" className="mx-auto flex min-h-[calc(100vh-64px)] max-w-3xl items-start justify-center bg-white px-3 py-5 sm:my-6 sm:min-h-0 sm:rounded-2xl sm:border sm:border-gray-100 sm:shadow-sm">
-        <ThermalReceipt
-          preview
-          documentLanguage={receipt.documentLanguage}
-          businessNameAr={receipt.brandNameAr}
-          businessNameEn={receipt.brandNameEn}
-          branchName={receipt.branchNameEn}
-          branchNameAr={receipt.branchNameAr}
-          address={receipt.address}
-          addressAr={receipt.addressAr}
-          vatNumber={branch.vat_number || tenant.vat_number || ''}
-          phone={branch.phone}
-          website={branch.website}
-          showWebsite={branch.show_website ?? false}
-          email={branch.email}
-          showEmail={branch.show_email ?? false}
-          invoiceNumber={invoice.invoice_number}
-          date={receipt.date}
-          time={receipt.time}
-          items={receipt.items}
-          subtotal={Number(invoice.subtotal)}
-          discountAmount={Number(invoice.discount_amount ?? 0)}
-          taxAmount={Number(invoice.tax_amount)}
-          total={Number(invoice.total_amount)}
-          paymentMethod={receipt.splitPayment ? 'split' : (receipt.payment?.method ?? 'card')}
-          payments={payments.map(payment => ({ method: payment.method, amount: Number(payment.amount) }))}
-          cashReceived={receipt.cashReceived}
-          change={receipt.changeAmount}
-          customerName={receipt.customerName}
-          customerNameAr={receipt.customerNameAr}
-          buyerVatNumber={receipt.buyerVatNumber}
-          isStandardInvoice={receipt.isStandardDocument}
-          documentType={receipt.documentType}
-          originalInvoiceNumber={invoice.invoice_reference ?? null}
-          creditReason={invoice.credit_reason}
-          logoUrl={branch.logo_url}
-          showLogo={branch.show_logo ?? true}
-          qrDataUrl={qrDataUrl}
-          receiptFooter={branch.receipt_footer}
-          showFooter={branch.show_footer ?? true}
-          showCashChange={branch.show_cash_change ?? true}
-        />
+        <ThermalReceipt model={documentViewModel} options={{ preview: true, qrImageUrl: qrDataUrl }} />
       </main>
     </div>
   )

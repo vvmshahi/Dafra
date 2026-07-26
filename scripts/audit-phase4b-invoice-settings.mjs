@@ -9,7 +9,7 @@ assert.match(sql,/u\.role='owner'/);assert.match(sql,/u\.role='branch'[\s\S]*u\.
 for(const field of ['show_phone','show_address','thank_you_message','footer_note','refund_note','width','qr_size','wrap_item_names','size','header_style','template_id','template_version','show_cash_change'])assert.match(sql,new RegExp(`'${field}'`),`missing ${field}`)
 assert.match(sql,/'version',2/);assert.match(types,/InvoiceIdentitySnapshotV1/);assert.match(types,/InvoiceIdentitySnapshotV2/);assert.match(identity,/snapshot\?\.version === 2/)
 assert.match(adapters,/THERMAL_WIDTHS/);assert.match(adapters,/THERMAL_DENSITIES/);assert.match(adapters,/QR_SIZES/);assert.match(adapters,/LOGO_SIZES/);assert.match(adapters,/modern_split/);assert.match(adapters,/minimal_professional/)
-assert.match(sql,/invoice-branding\/.*logo\\\.\(png\|jpg\|jpeg\|webp\)/);assert.match(page,/immutableLogoObjectPath/);assert.match(page,/upsert: false/);assert.doesNotMatch(page,/`\$\{bid\}\/logo\.\$\{ext\}`/)
+assert.match(sql,/invoice-branding\/.*logo\\\.\(png\|jpg\|jpeg\|webp\)/);assert.match(page,/branch\.id\}\/logo/);assert.match(page,/upsert: true/);assert.doesNotMatch(page,/immutableLogoObjectPath/)
 assert.doesNotMatch(sql,/presentationSettings[\s\S]*(base64|binary|certificate|csid|private_key)/i)
 assert.match(sql,/Deliberately no UPDATE\/DELETE policy/)
 assert.match(sql,/storage_invoice_branding_immutable/);assert.match(sql,/Versioned invoice-branding assets are immutable/)

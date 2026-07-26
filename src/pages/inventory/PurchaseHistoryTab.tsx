@@ -362,7 +362,7 @@ function ConfirmStockModal({
 
 // ── Main tab ──────────────────────────────────────────────────────────────────
 
-export default function PurchaseHistoryTab() {
+export default function PurchaseHistoryTab({ stockEnabled }: { stockEnabled: boolean }) {
   const { profile } = useAuth()
   const { t, i18n } = useTranslation(['purchases', 'common'])
   const initialDateRange = getDateRange('today')
@@ -508,6 +508,7 @@ export default function PurchaseHistoryTab() {
     )
 
   const canConfirmReceiving = (purchase: PurchaseRow) =>
+    stockEnabled &&
     isInEditWindow(purchase) &&
     isPendingStockReceiving(purchase)
 
@@ -898,6 +899,7 @@ export default function PurchaseHistoryTab() {
         branchId={profile?.branch_id ?? ''}
         editingPurchase={editingPurchase}
         editingItems={editingItems}
+        stockEnabled={stockEnabled}
         onClose={closeDrawer}
         onSaved={load}
       />
