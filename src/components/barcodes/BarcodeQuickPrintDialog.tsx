@@ -1,0 +1,238 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, Layers3, Printer, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/Button'
+import { useDialogFocus } from '@/hooks/useDialogFocus'
+import BarcodeLabelDesigner from './BarcodeLabelDesigner'
+import { getBranchBarcodeLabelSettings, recordBarcodePrintBatch } from '@/lib/barcodes/labelApi'
+import {
+  barcodePrintDocument,
+  browserBarcodePrintAdapter,
+  type BarcodeLabel,
+} from '@/lib/barcodes/labelPrint'
+import {
+  DEFAULT_BARCODE_LABEL_SETTINGS,
+  loadBarcodeDeviceCalibration,
+  type BarcodeLabelSettings,
+} from '@/lib/barcodes/labelSettings'
+import type { BarcodeType } from '@/lib/barcodes/barcode'
+
+interface Props {
+  open: boolean
+  branchId: string
+  barcodeId: string
+  barcode: string
+  barcodeType: BarcodeType
+  productId: string
+  productName: string
+  productNameAr: string | null
+  unitId: string
+  unitName: string
+  price: string
+  sku: string | null
+  businessName: string | null
+  hasPrinted: boolean | null
+  onClose: () => void
+  onPrinted: () => void
+  onAddToBatch?: () => void
+}
+
+export default function BarcodeQuickPrintDialog(props: Props) {
+  const { t } = useTranslation('printing')
+  const [settings, setSettings] = useState<BarcodeLabelSettings>(DEFAULT_BARCODE_LABEL_SETTINGS)
+  const [copies, setCopies] = useState(1)
+  const [reason, setReason] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [printing, setPrinting] = useState(false)
+  const [error, setError] = useState('')
+  const close = useCallback(() => {
+    if (!printing) props.onClose()
+  }, [printing, props.onClose])
+  const dialogRef = useDialogFocus(props.open, close)
+  const calibration = useMemo(() => loadBarcodeDeviceCalibration(), [props.open])
+  const auditLabel = props.hasPrinted === null
+    ? 'barcodeLabels.audit.printLabel'
+    : props.hasPrinted
+      ? 'barcodeLabels.audit.reprint'
+      : 'barcodeLabels.audit.firstPrint'
+  const label = useMemo<BarcodeLabel>(() => ({
+    barcodeId: props.barcodeId,
+    productId: props.productId,
+    productUnitId: props.unitId,
+    barcode: props.barcode,
+    barcodeType: props.barcodeType,
+    businessName: props.businessName,
+    productName: props.productName,
+    productNameEn: props.productName,
+    productNameAr: props.productNameAr,
+    unitName: props.unitName,
+    price: props.price,
+    sku: props.sku,
+    copies,
+  }), [props, copies])
+
+  useEffect(() => {
+    if (!props.open) return
+    setLoading(true)
+    setError('')
+    void getBranchBarcodeLabelSettings(props.branchId)
+      .then(result => {
+        setSettings(result.settings)
+        setCopies(result.settings.defaultCopies)
+      })
+      .catch(() => {
+        setSettings(DEFAULT_BARCODE_LABEL_SETTINGS)
+        setCopies(1)
+        setError(t('barcodeLabels.errors.branchDefaultsUnavailable'))
+      })
+      .finally(() => setLoading(false))
+  }, [props.open, props.branchId, t])
+
+  const createDocument = (preview: boolean) => barcodePrintDocument([label], settings, calibration, {
+    preview,
+    copy: {
+      title: t('barcodeLabels.preview.title'),
+      print: t('barcodeLabels.actions.print'),
+      saveAsPdf: t('barcodeLabels.preview.saveAsPdf'),
+      dialogGuidance: t('barcodeLabels.preview.dialogGuidance'),
+    },
+  })
+
+  const preview = () => {
+    setError('')
+    try {
+      if (!browserBarcodePrintAdapter.preview(createDocument(true).html)) {
+        setError(t('barcodeLabels.errors.previewBlocked'))
+      }
+    } catch {
+      setError(t('barcodeLabels.errors.invalidBarcodeForPrint'))
+    }
+  }
+
+  const print = async () => {
+    const normalizedCopies = Math.floor(Number(copies))
+    if (!Number.isInteger(normalizedCopies) || normalizedCopies < 1 || normalizedCopies > 500) {
+      setError(t('barcodeLabels.errors.copies'))
+      return
+    }
+    if (normalizedCopies > 50 && reason.trim().length < 3) {
+      setError(t('barcodeLabels.errors.reasonRequired'))
+      return
+    }
+    setPrinting(true)
+    setError('')
+    try {
+      const document = createDocument(false)
+      if (!document.layout.fits) throw new Error('layout')
+      await recordBarcodePrintBatch(
+        [{ barcodeId: props.barcodeId, copies: normalizedCopies }],
+        `${settings.presetId}:${settings.templateId}`.slice(0, 40),
+        normalizedCopies > 50 ? reason : null,
+      )
+      browserBarcodePrintAdapter.print(document.html)
+      props.onPrinted()
+      props.onClose()
+    } catch {
+      setError(t('barcodeLabels.errors.printFailed'))
+    } finally {
+      setPrinting(false)
+    }
+  }
+
+  if (!props.open) return null
+  return <div
+    className="fixed inset-0 z-[70] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
+    onMouseDown={event => { if (event.target === event.currentTarget) close() }}
+  >
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="barcode-quick-print-title"
+      className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl"
+    >
+      <header className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-100 px-4 py-4 sm:px-6">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
+            <Printer size={18} aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+              {t(auditLabel)}
+            </p>
+            <h2 id="barcode-quick-print-title" className="truncate text-base font-bold text-gray-950">
+              {t('barcodeLabels.quickPrint.title')}
+            </h2>
+            <p className="truncate text-xs text-gray-500" dir="auto">{props.productName} · {props.unitName}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-label={t('barcodeLabels.actions.close')}
+          onClick={close}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+        >
+          <X size={18} />
+        </button>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+        {loading ? <div className="grid h-64 place-items-center text-sm text-gray-500">{t('barcodeLabels.loading')}</div> : <>
+          <div className="mb-5 grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+            <label className="space-y-1.5 text-xs font-semibold text-gray-700">
+              <span>{t('barcodeLabels.copies')}</span>
+              <input
+                data-autofocus
+                type="number"
+                min={1}
+                max={500}
+                step={1}
+                value={copies}
+                onChange={event => setCopies(Math.floor(Number(event.target.value)))}
+                className="input h-11 tabular-nums"
+              />
+            </label>
+            <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5">
+              <p className="text-xs font-semibold text-gray-800">{t('barcodeLabels.quickPrint.sameIdentity')}</p>
+              <p className="mt-0.5 text-[11px] text-gray-500">{t('barcodeLabels.quickPrint.sameIdentityHelp')}</p>
+            </div>
+          </div>
+          {copies > 50 && <label className="mb-5 block space-y-1.5 text-xs font-semibold text-gray-700">
+            <span>{t('barcodeLabels.audit.reason')}</span>
+            <input
+              value={reason}
+              maxLength={200}
+              onChange={event => setReason(event.target.value)}
+              placeholder={t('barcodeLabels.audit.reasonPlaceholder')}
+              className="input"
+            />
+          </label>}
+          {error && <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5 text-xs text-red-700" role="alert">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0" aria-hidden="true" /> {error}
+          </div>}
+          <BarcodeLabelDesigner
+            labels={[label]}
+            settings={settings}
+            calibration={calibration}
+            onChange={setSettings}
+            previewDataLabel={t('barcodeLabels.preview.actualData')}
+          />
+        </>}
+      </div>
+
+      <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-gray-100 bg-white px-4 py-3 sm:px-6">
+        {props.onAddToBatch && <Button type="button" variant="secondary" onClick={props.onAddToBatch} disabled={printing}>
+          <Layers3 size={14} aria-hidden="true" /> {t('barcodeLabels.batch.addToQueue')}
+        </Button>}
+        <span className="min-w-0 flex-1 text-[10px] text-gray-500">{t('barcodeLabels.preview.dialogGuidance')}</span>
+        <Button type="button" variant="secondary" onClick={preview} disabled={loading || printing}>
+          {t('barcodeLabels.actions.preview')}
+        </Button>
+        <Button type="button" onClick={() => void print()} loading={printing} disabled={loading}>
+          <Printer size={14} aria-hidden="true" />
+          {t(props.hasPrinted ? 'barcodeLabels.audit.reprint' : 'barcodeLabels.audit.printLabel')}
+        </Button>
+      </footer>
+    </div>
+  </div>
+}

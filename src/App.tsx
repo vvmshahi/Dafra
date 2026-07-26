@@ -42,7 +42,7 @@ import EmployeesPage        from '@/pages/employees/EmployeesPage'
 import ProfilePage          from '@/pages/profile/ProfilePage'
 import DayClosingPage       from '@/pages/day-closing/DayClosingPage'
 import BranchDashboardPage  from '@/pages/branch/BranchDashboardPage'
-import InvoiceSettingsPage  from '@/pages/branch/InvoiceSettingsPage'
+import PrintingDocumentsPage from '@/pages/branch/PrintingDocumentsPage'
 import ForgotPasswordPage   from '@/pages/auth/ForgotPasswordPage'
 import ResetPasswordPage    from '@/pages/auth/ResetPasswordPage'
 import TermsPage            from '@/pages/legal/TermsPage'
@@ -329,7 +329,7 @@ export default function App() {
             {/* Branch dashboard — inside AppLayout so sidebar shows */}
             <Route element={<RequireBranch />}>
               <Route path="/branch"            element={<BranchDashboardPage />} />
-              <Route path="/invoice-settings"  element={<InvoiceSettingsPage />} />
+              <Route path="/invoice-settings"  element={<PrintingDocumentsPage />} />
             </Route>
 
             {/* Super admin only */}

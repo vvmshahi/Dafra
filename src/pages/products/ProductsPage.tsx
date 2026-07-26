@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  Plus, LayoutGrid, List, Search, Tag, Pencil, Trash2, Package, X, FolderPlus,
+  Plus, LayoutGrid, List, Search, Tag, Pencil, Trash2, Package, X, FolderPlus, Printer,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -14,6 +14,7 @@ import ProductDrawer from './ProductDrawer'
 import CategoriesModal from './CategoriesModal'
 import { CategoryEmojiPicker } from '@/components/ui/CategoryEmojiPicker'
 import { useTranslation } from 'react-i18next'
+import BarcodeBatchPrintDrawer from '@/components/barcodes/BarcodeBatchPrintDrawer'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -518,8 +519,8 @@ function AddCategoryDialog({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ProductsPage() {
-  const { profile } = useAuth()
-  const { t } = useTranslation('products')
+  const { profile, tenant, branch } = useAuth()
+  const { t } = useTranslation(['products', 'printing'])
   const uiStateRestored = useRef(false)
 
   const [products,   setProducts]   = useState<ProductRow[]>([])
@@ -532,6 +533,7 @@ export default function ProductsPage() {
   const [editing,    setEditing]    = useState<ProductRow | null>(null)
   const [catsOpen,   setCatsOpen]   = useState(false)
   const [addCatOpen, setAddCatOpen] = useState(false)
+  const [batchPrintOpen, setBatchPrintOpen] = useState(false)
   const uiStateKey = profile?.tenant_id && profile?.branch_id
     ? `kubri:products-ui:${profile.tenant_id}:${profile.branch_id}`
     : ''
@@ -659,6 +661,10 @@ export default function ProductsPage() {
         <Button variant="secondary" size="sm" onClick={() => setAddCatOpen(true)}>
           <FolderPlus size={14} />
           {t('category.add')}
+        </Button>
+        <Button variant="secondary" size="sm" onClick={() => setBatchPrintOpen(true)}>
+          <Printer size={14} aria-hidden="true" />
+          {t('printing:barcodeLabels.batch.open')}
         </Button>
         <Button size="sm" onClick={openAdd}>
           <Plus size={14} />
@@ -798,6 +804,13 @@ export default function ProductsPage() {
         onClose={() => setAddCatOpen(false)}
         onCreated={load}
       />
+      {profile?.branch_id && <BarcodeBatchPrintDrawer
+        open={batchPrintOpen}
+        branchId={profile.branch_id}
+        businessName={tenant?.business_name_ar || tenant?.business_name || tenant?.name || branch?.name_ar || branch?.name || null}
+        products={products}
+        onClose={() => setBatchPrintOpen(false)}
+      />}
     </div>
   )
 }

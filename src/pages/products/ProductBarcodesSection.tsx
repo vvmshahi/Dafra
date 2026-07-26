@@ -10,13 +10,15 @@ import {
   validateBarcode,
   type BarcodeType,
 } from '@/lib/barcodes/barcode'
-import {
-  barcodeLabelDocument,
-  browserBarcodePrintAdapter,
-  DEFAULT_LABEL_SETTINGS,
-  type LabelPrintSettings,
-} from '@/lib/barcodes/labelPrint'
 import { useAuth } from '@/hooks/useAuth'
+import BarcodeQuickPrintDialog from '@/components/barcodes/BarcodeQuickPrintDialog'
+import { getProductBarcodePrintStatus } from '@/lib/barcodes/labelApi'
+import {
+  loadBarcodePrintQueue,
+  mergeBarcodePrintQueue,
+  queueItemKey,
+  saveBarcodePrintQueue,
+} from '@/lib/barcodes/labelQueue'
 
 interface BarcodeRow {
   id: string
@@ -36,25 +38,7 @@ interface UnitOption {
   name_ar: string | null
   is_base: boolean
   is_active: boolean
-}
-
-const LABEL_SETTINGS_KEY = 'dafra_barcode_label_settings_v1'
-
-function savedLabelSettings(): LabelPrintSettings {
-  try {
-    const value = JSON.parse(localStorage.getItem(LABEL_SETTINGS_KEY) ?? 'null')
-    if (!value || typeof value !== 'object') return DEFAULT_LABEL_SETTINGS
-    return {
-      widthMm: Number(value.widthMm) || DEFAULT_LABEL_SETTINGS.widthMm,
-      heightMm: Number(value.heightMm) || DEFAULT_LABEL_SETTINGS.heightMm,
-      marginMm: Number(value.marginMm) || 0,
-      columns: Number(value.columns) || 1,
-      copies: Number(value.copies) || 1,
-      template: String(value.template || DEFAULT_LABEL_SETTINGS.template),
-    }
-  } catch {
-    return DEFAULT_LABEL_SETTINGS
-  }
+  resolved_selling_price?: number
 }
 
 export function ProductBarcodesSection({
@@ -72,8 +56,8 @@ export function ProductBarcodesSection({
   price: string
   units: UnitOption[]
 }) {
-  const { t } = useTranslation('products')
-  const { tenant } = useAuth()
+  const { t } = useTranslation(['products', 'printing'])
+  const { tenant, branch } = useAuth()
   const [rows, setRows] = useState<BarcodeRow[]>([])
   const [unitId, setUnitId] = useState(units.find(unit => unit.is_base)?.id ?? '')
   const [value, setValue] = useState('')
@@ -82,15 +66,10 @@ export function ProductBarcodesSection({
   const [primary, setPrimary] = useState(true)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
-  const [settings, setSettings] = useState(savedLabelSettings)
-  const [content, setContent] = useState({
-    business: true,
-    arabicName: true,
-    price: true,
-    sku: true,
-    printDate: false,
-  })
-  const [printReason, setPrintReason] = useState('')
+  const [messageTone, setMessageTone] = useState<'error' | 'success'>('error')
+  const [printStatus, setPrintStatus] = useState<Map<string, { printCount: number }>>(new Map())
+  const [printStatusAvailable, setPrintStatusAvailable] = useState(false)
+  const [selectedPrint, setSelectedPrint] = useState<{ row: BarcodeRow; unit: UnitOption } | null>(null)
   const captureRef = useRef<HTMLInputElement>(null)
 
   const load = async () => {
@@ -98,16 +77,24 @@ export function ProductBarcodesSection({
       p_product_id: productId,
     })
     if (error) {
+      setMessageTone('error')
       setMessage(t('barcodes.errors.load'))
       return
     }
     setRows((data ?? []) as BarcodeRow[])
+    setPrintStatusAvailable(false)
+    void getProductBarcodePrintStatus(productId)
+      .then(status => {
+        setPrintStatus(status)
+        setPrintStatusAvailable(true)
+      })
+      .catch(() => {
+        setPrintStatus(new Map())
+        setPrintStatusAvailable(false)
+      })
   }
 
   useEffect(() => { void load() }, [productId])
-  useEffect(() => {
-    localStorage.setItem(LABEL_SETTINGS_KEY, JSON.stringify(settings))
-  }, [settings])
 
   const grouped = useMemo(() => new Map(units.map(unit => [
     unit.id,
@@ -118,10 +105,12 @@ export function ProductBarcodesSection({
     const normalized = normalizeBarcode(value)
     const validation = validateBarcode(normalized, type)
     if (validation) {
+      setMessageTone('error')
       setMessage(t(`barcodes.errors.${validation}`))
       return
     }
     setBusy(true)
+    setMessageTone('error')
     setMessage('')
     const { error } = await (supabase as any).rpc('create_product_unit_barcode', {
       p_payload: {
@@ -143,6 +132,7 @@ export function ProductBarcodesSection({
 
   const generate = async () => {
     setBusy(true)
+    setMessageTone('error')
     setMessage('')
     const { error } = await (supabase as any).rpc('generate_internal_product_unit_barcode', {
       p_product_unit_id: unitId,
@@ -155,6 +145,7 @@ export function ProductBarcodesSection({
 
   const disable = async (id: string) => {
     setBusy(true)
+    setMessageTone('error')
     const { error } = await (supabase as any).rpc('disable_product_unit_barcode', { p_barcode_id: id })
     setBusy(false)
     if (error) setMessage(t('barcodes.errors.save'))
@@ -163,6 +154,7 @@ export function ProductBarcodesSection({
 
   const reactivate = async (id: string) => {
     setBusy(true)
+    setMessageTone('error')
     const { error } = await (supabase as any).rpc('reactivate_product_unit_barcode', { p_barcode_id: id })
     setBusy(false)
     if (error) setMessage(t(error.code === '23505' ? 'barcodes.errors.duplicate' : 'barcodes.errors.save'))
@@ -171,41 +163,44 @@ export function ProductBarcodesSection({
 
   const setAsPrimary = async (id: string) => {
     setBusy(true)
+    setMessageTone('error')
     const { error } = await (supabase as any).rpc('set_primary_product_unit_barcode', { p_barcode_id: id })
     setBusy(false)
     if (error) setMessage(t('barcodes.errors.save'))
     else await load()
   }
 
-  const print = async (row: BarcodeRow, selectedUnit: UnitOption) => {
-    try {
-      const documentHtml = barcodeLabelDocument({
-        barcode: row.barcode,
-        barcodeType: row.barcode_type,
-        businessName: content.business
-          ? tenant?.business_name_ar || tenant?.business_name || tenant?.name || null
-          : null,
-        productName,
-        productNameAr: content.arabicName ? productNameAr : null,
-        unitName: selectedUnit.name,
-        price: content.price ? price : undefined,
-        sku: content.sku ? sku : null,
-        showPrintDate: content.printDate,
-      }, settings)
-      const { error } = await (supabase as any).rpc('record_product_barcode_print', {
-        p_payload: {
-          barcode_id: row.id,
-          copies: settings.copies,
-          label_template: settings.template,
-          print_kind: 'reprint',
-          reason: settings.copies > 50 ? printReason.trim() : null,
-        },
-      })
-      if (error) throw error
-      browserBarcodePrintAdapter.preview(documentHtml)
-    } catch {
-      setMessage(t('barcodes.errors.print'))
-    }
+  const addSelectedToQueue = () => {
+    if (!selectedPrint || !branch?.id) return
+    const selectedUnit = selectedPrint.unit
+    const current = loadBarcodePrintQueue(branch.id)
+    const next = mergeBarcodePrintQueue(current, {
+      key: queueItemKey(productId, selectedUnit.id, selectedPrint.row.id),
+      productId,
+      productName,
+      productNameAr,
+      sku,
+      unit: {
+        id: selectedUnit.id,
+        name: selectedUnit.name,
+        nameAr: selectedUnit.name_ar,
+        isBase: selectedUnit.is_base,
+        price: `SAR ${Number(selectedUnit.resolved_selling_price ?? price).toFixed(2)}`,
+      },
+      barcode: {
+        id: selectedPrint.row.id,
+        productUnitId: selectedUnit.id,
+        value: selectedPrint.row.barcode,
+        type: selectedPrint.row.barcode_type,
+        isPrimary: selectedPrint.row.is_primary,
+        isActive: selectedPrint.row.is_active,
+      },
+      copies: 1,
+    })
+    saveBarcodePrintQueue(branch.id, next)
+    setMessageTone('success')
+    setMessage(t('printing:barcodeLabels.batch.added'))
+    setSelectedPrint(null)
   }
 
   return (
@@ -281,50 +276,7 @@ export function ProductBarcodesSection({
           <Sparkles size={14} />{t('barcodes.generate')}
         </Button>
       </div>
-      {message && <p className="text-xs text-red-700" role="alert">{message}</p>}
-
-      <div className="grid grid-cols-2 gap-2 rounded-lg border border-gray-100 bg-white p-2 sm:grid-cols-5">
-        {([
-          ['widthMm', 25, 210], ['heightMm', 15, 297], ['marginMm', 0, 10],
-          ['columns', 1, 5], ['copies', 1, 500],
-        ] as const).map(([key, min, max]) => (
-          <label key={key} className="text-[10px] font-semibold text-gray-500">
-            {t(`barcodes.print.${key}`)}
-            <input
-              className="input mt-1 h-8 px-2 text-xs tabular-nums"
-              type="number"
-              min={min}
-              max={max}
-              value={settings[key]}
-              onChange={event => setSettings(current => ({ ...current, [key]: Number(event.target.value) }))}
-            />
-          </label>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-2 text-[10px] text-gray-600">
-        {(Object.keys(content) as (keyof typeof content)[]).map(key => (
-          <label key={key} className="flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={content[key]}
-              onChange={event => setContent(current => ({ ...current, [key]: event.target.checked }))}
-            />
-            {t(`barcodes.print.${key}`)}
-          </label>
-        ))}
-      </div>
-      {settings.copies > 50 && (
-        <label className="block text-xs font-semibold text-gray-600">
-          {t('barcodes.print.reason')}
-          <input
-            className="input mt-1"
-            value={printReason}
-            maxLength={200}
-            onChange={event => setPrintReason(event.target.value)}
-            placeholder={t('barcodes.print.reasonPlaceholder')}
-          />
-        </label>
-      )}
+      {message && <p className={`text-xs ${messageTone === 'success' ? 'text-emerald-700' : 'text-red-700'}`} role={messageTone === 'success' ? 'status' : 'alert'}>{message}</p>}
 
       {units.map(unit => {
         const unitRows = grouped.get(unit.id) ?? []
@@ -344,8 +296,9 @@ export function ProductBarcodesSection({
                 )}
                 {row.is_active && (
                   <>
-                    <button type="button" aria-label={t('barcodes.print.action')} onClick={() => void print(row, unit)}>
-                      <Printer size={14} className="text-gray-500" />
+                    <button type="button" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold text-primary-700 hover:bg-primary-50" onClick={() => setSelectedPrint({ row, unit })}>
+                      <Printer size={13} aria-hidden="true" />
+                      {t(printStatus.get(row.id)?.printCount ? 'printing:barcodeLabels.audit.reprint' : 'printing:barcodeLabels.audit.printLabel')}
                     </button>
                     <button type="button" aria-label={t('barcodes.disable')} onClick={() => void disable(row.id)}>
                       <XCircle size={14} className="text-red-500" />
@@ -362,6 +315,32 @@ export function ProductBarcodesSection({
           </div>
         )
       })}
+      {selectedPrint && branch?.id && <BarcodeQuickPrintDialog
+        open
+        branchId={branch.id}
+        barcodeId={selectedPrint.row.id}
+        barcode={selectedPrint.row.barcode}
+        barcodeType={selectedPrint.row.barcode_type}
+        productId={productId}
+        productName={productName}
+        productNameAr={productNameAr}
+        unitId={selectedPrint.unit.id}
+        unitName={selectedPrint.unit.name_ar || selectedPrint.unit.name}
+        price={`SAR ${Number(selectedPrint.unit.resolved_selling_price ?? price).toFixed(2)}`}
+        sku={sku}
+        businessName={tenant?.business_name_ar || tenant?.business_name || tenant?.name || null}
+        hasPrinted={printStatusAvailable
+          ? (printStatus.get(selectedPrint.row.id)?.printCount ?? 0) > 0
+          : null}
+        onClose={() => setSelectedPrint(null)}
+        onPrinted={() => {
+          setPrintStatusAvailable(true)
+          setPrintStatus(current => new Map(current).set(selectedPrint.row.id, {
+            printCount: (current.get(selectedPrint.row.id)?.printCount ?? 0) + 1,
+          }))
+        }}
+        onAddToBatch={addSelectedToQueue}
+      />}
     </section>
   )
 }
