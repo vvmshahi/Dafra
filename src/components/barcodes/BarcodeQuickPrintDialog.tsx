@@ -38,13 +38,14 @@ interface Props {
 }
 
 export default function BarcodeQuickPrintDialog(props: Props) {
-  const { t } = useTranslation('printing')
+  const { t, i18n } = useTranslation('printing')
   const [settings, setSettings] = useState<BarcodeLabelSettings>(DEFAULT_BARCODE_LABEL_SETTINGS)
   const [copies, setCopies] = useState(1)
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
   const [printing, setPrinting] = useState(false)
   const [error, setError] = useState('')
+  const [overflowAcknowledged, setOverflowAcknowledged] = useState(false)
   const close = useCallback(() => {
     if (!printing) props.onClose()
   }, [printing, props.onClose])
@@ -75,10 +76,11 @@ export default function BarcodeQuickPrintDialog(props: Props) {
     if (!props.open) return
     setLoading(true)
     setError('')
+    setOverflowAcknowledged(false)
     void getBranchBarcodeLabelSettings(props.branchId)
       .then(result => {
         setSettings(result.settings)
-        setCopies(result.settings.defaultCopies)
+        setCopies(1)
       })
       .catch(() => {
         setSettings(DEFAULT_BARCODE_LABEL_SETTINGS)
@@ -90,13 +92,40 @@ export default function BarcodeQuickPrintDialog(props: Props) {
 
   const createDocument = (preview: boolean) => barcodePrintDocument([label], settings, calibration, {
     preview,
+    allowPrint: fitStatus !== 'overflow' || overflowAcknowledged,
+    locale: i18n.language,
     copy: {
       title: t('barcodeLabels.preview.title'),
       print: t('barcodeLabels.actions.print'),
       saveAsPdf: t('barcodeLabels.preview.saveAsPdf'),
       dialogGuidance: t('barcodeLabels.preview.dialogGuidance'),
+      riyalAccessible: t('barcodeLabels.currency.accessible'),
     },
   })
+  const fitStatus = useMemo(() => {
+    try {
+      return barcodePrintDocument([label], settings, calibration, {
+        locale: i18n.language,
+      }).layout.contentFitStatus
+    } catch {
+      return 'overflow'
+    }
+  }, [label, settings, calibration, i18n.language])
+
+  useEffect(
+    () => setOverflowAcknowledged(false),
+    [
+      fitStatus,
+      settings,
+      props.barcode,
+      props.productName,
+      props.productNameAr,
+      props.unitName,
+      props.price,
+      props.sku,
+      props.businessName,
+    ],
+  )
 
   const preview = () => {
     setError('')
@@ -117,6 +146,10 @@ export default function BarcodeQuickPrintDialog(props: Props) {
     }
     if (normalizedCopies > 50 && reason.trim().length < 3) {
       setError(t('barcodeLabels.errors.reasonRequired'))
+      return
+    }
+    if (fitStatus === 'overflow' && !overflowAcknowledged) {
+      setError(t('barcodeLabels.errors.overflowAcknowledgement'))
       return
     }
     setPrinting(true)
@@ -195,6 +228,9 @@ export default function BarcodeQuickPrintDialog(props: Props) {
             <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5">
               <p className="text-xs font-semibold text-gray-800">{t('barcodeLabels.quickPrint.sameIdentity')}</p>
               <p className="mt-0.5 text-[11px] text-gray-500">{t('barcodeLabels.quickPrint.sameIdentityHelp')}</p>
+              <p className="mt-1.5 truncate font-mono text-[11px] font-semibold tabular-nums text-gray-700" dir="ltr">
+                {props.barcode}
+              </p>
             </div>
           </div>
           {copies > 50 && <label className="mb-5 block space-y-1.5 text-xs font-semibold text-gray-700">
@@ -217,6 +253,18 @@ export default function BarcodeQuickPrintDialog(props: Props) {
             onChange={setSettings}
             previewDataLabel={t('barcodeLabels.preview.actualData')}
           />
+          {fitStatus === 'overflow' && <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+            <input
+              type="checkbox"
+              checked={overflowAcknowledged}
+              onChange={event => setOverflowAcknowledged(event.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-amber-700"
+            />
+            <span>
+              <span className="block font-bold">{t('barcodeLabels.preview.overflowAcknowledgement')}</span>
+              <span className="mt-0.5 block text-[11px] leading-5">{t('barcodeLabels.preview.testPrintWarning')}</span>
+            </span>
+          </label>}
         </>}
       </div>
 
@@ -228,7 +276,7 @@ export default function BarcodeQuickPrintDialog(props: Props) {
         <Button type="button" variant="secondary" onClick={preview} disabled={loading || printing}>
           {t('barcodeLabels.actions.preview')}
         </Button>
-        <Button type="button" onClick={() => void print()} loading={printing} disabled={loading}>
+        <Button type="button" onClick={() => void print()} loading={printing} disabled={loading || (fitStatus === 'overflow' && !overflowAcknowledged)}>
           <Printer size={14} aria-hidden="true" />
           {t(props.hasPrinted ? 'barcodeLabels.audit.reprint' : 'barcodeLabels.audit.printLabel')}
         </Button>

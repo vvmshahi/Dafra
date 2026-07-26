@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Barcode, CheckCircle2, Printer, ScanLine, Sparkles, XCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
+import { sarStr } from '@/components/ui/RiyalSymbol'
 import { supabase } from '@/lib/supabase'
 import {
   BARCODE_TYPES,
@@ -185,7 +186,7 @@ export function ProductBarcodesSection({
         name: selectedUnit.name,
         nameAr: selectedUnit.name_ar,
         isBase: selectedUnit.is_base,
-        price: `SAR ${Number(selectedUnit.resolved_selling_price ?? price).toFixed(2)}`,
+        price: sarStr(Number(selectedUnit.resolved_selling_price ?? price)),
       },
       barcode: {
         id: selectedPrint.row.id,
@@ -326,7 +327,7 @@ export function ProductBarcodesSection({
         productNameAr={productNameAr}
         unitId={selectedPrint.unit.id}
         unitName={selectedPrint.unit.name_ar || selectedPrint.unit.name}
-        price={`SAR ${Number(selectedPrint.unit.resolved_selling_price ?? price).toFixed(2)}`}
+        price={sarStr(Number(selectedPrint.unit.resolved_selling_price ?? price))}
         sku={sku}
         businessName={tenant?.business_name_ar || tenant?.business_name || tenant?.name || null}
         hasPrinted={printStatusAvailable

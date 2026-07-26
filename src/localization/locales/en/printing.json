@@ -109,6 +109,9 @@
   "barcodeLabels": {
     "loading": "Loading label settings…",
     "copies": "Number of copies",
+    "currency": {
+      "accessible": "Saudi Riyals"
+    },
     "design": {
       "title": "Choose a sticker type",
       "help": "Start with a friendly preset. You can adjust it without changing the built-in design."
@@ -189,11 +192,20 @@
       "pageSummary": "{{labels}} labels · {{pages}} pages · {{final}} on the last page",
       "fits": "Fits selected page",
       "doesNotFit": "Does not fit",
+      "fitStatus": {
+        "safe": "Fits safely",
+        "tight": "Tight fit",
+        "overflow": "Content does not fit"
+      },
+      "fitGuidance": "Choose a larger label, use the Compact template, hide an optional field, reduce the configured name size, or shorten optional text.",
+      "testPrintWarning": "Content may be clipped or reduce barcode readability. Verify with a test print.",
+      "overflowAcknowledgement": "I understand this content may not fit and will verify a test print.",
       "invalidBarcode": "The selected barcode cannot be rendered in this barcode format.",
       "saveAsPdf": "To save a file, choose Save as PDF in the print dialog.",
       "dialogGuidance": "Print at 100% and turn off Fit to page and browser headers or footers.",
       "warnings": {
-        "contentMayClip": "The sticker is too small for the selected content. Reduce content or use a larger preset.",
+        "contentTight": "The name was reduced to fit. Review the preview carefully.",
+        "contentOverflow": "The enabled content exceeds the label's protected text area.",
         "sheetWidthOverflow": "The selected columns, margins, and gaps are wider than the A4 page.",
         "sheetHeightOverflow": "The selected rows, margins, and gaps are taller than the A4 page."
       }
@@ -209,7 +221,6 @@
     "settings": {
       "title": "Branch label default",
       "help": "This design is shared by label printing in this branch. Printer alignment remains specific to each device.",
-      "defaultCopies": "Default copies",
       "branchDefaultSaved": "Branch default saved",
       "builtInDefault": "Using built-in default",
       "readOnly": "You can view this branch design but cannot change it.",
@@ -301,7 +312,8 @@
       "reasonRequired": "Enter a reason of at least 3 characters for more than 50 labels.",
       "invalidBarcodeForPrint": "This barcode cannot be printed with its saved barcode format.",
       "previewBlocked": "The preview window was blocked. Allow pop-ups for Dafra and try again.",
-      "printFailed": "The print job could not be recorded or opened. Nothing about the barcode was changed."
+      "printFailed": "The print job could not be recorded or opened. Nothing about the barcode was changed.",
+      "overflowAcknowledgement": "Acknowledge the fit warning before printing."
     }
   }
 }

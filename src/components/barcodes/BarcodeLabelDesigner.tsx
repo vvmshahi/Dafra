@@ -1,5 +1,5 @@
 import { useDeferredValue, useMemo } from 'react'
-import { Check, ChevronDown, FileText, Printer, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { AlertTriangle, Check, ChevronDown, FileText, Printer, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
   barcodePrintDocument,
@@ -69,6 +69,14 @@ export function BarcodeLabelPreview({
       {t('barcodeLabels.preview.invalidBarcode')}
     </div>
   }
+  const fitStatus = !document.layout.fits || document.layout.contentFitStatus === 'overflow'
+    ? 'overflow'
+    : document.layout.contentFitStatus
+  const statusClass = fitStatus === 'safe'
+    ? 'bg-emerald-50 text-emerald-700'
+    : fitStatus === 'tight'
+      ? 'bg-amber-50 text-amber-800'
+      : 'bg-red-50 text-red-700'
   return <div className="overflow-hidden rounded-2xl border border-gray-200 bg-[#e9eeeb] shadow-inner">
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white px-3 py-2">
       <div>
@@ -81,8 +89,11 @@ export function BarcodeLabelPreview({
           })}
         </p>
       </div>
-      <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${document.layout.fits ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-        {t(document.layout.fits ? 'barcodeLabels.preview.fits' : 'barcodeLabels.preview.doesNotFit')}
+      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold ${statusClass}`} role="status" aria-live="polite">
+        {fitStatus === 'safe'
+          ? <Check size={11} aria-hidden="true" />
+          : <AlertTriangle size={11} aria-hidden="true" />}
+        {t(`barcodeLabels.preview.fitStatus.${fitStatus}`)}
       </span>
     </div>
     <iframe
@@ -109,12 +120,15 @@ export default function BarcodeLabelDesigner({
     try {
       return barcodePrintDocument(deferredLabels, deferredSettings, calibration, {
         preview: true,
+        allowPrint: false,
+        locale: i18n.language,
         copy: {
           title: t('barcodeLabels.preview.title'),
           print: t('barcodeLabels.actions.print'),
           saveAsPdf: t('barcodeLabels.preview.saveAsPdf'),
           dialogGuidance: t('barcodeLabels.preview.dialogGuidance'),
           previewData: previewDataLabel,
+          riyalAccessible: t('barcodeLabels.currency.accessible'),
         },
       })
     } catch {
@@ -316,8 +330,14 @@ export default function BarcodeLabelDesigner({
         <FileText size={13} aria-hidden="true" /> {previewDataLabel}
       </div>}
       <BarcodeLabelPreview document={preview} title={t('barcodeLabels.preview.title')} />
-      {preview?.layout.warnings.length ? <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50 p-3 text-[11px] text-amber-800" role="alert">
+      {preview?.layout.warnings.length ? <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-5 text-amber-900" role="alert" aria-live="polite">
+        <p className="flex items-start gap-1.5 font-bold">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+          {t(`barcodeLabels.preview.fitStatus.${!preview.layout.fits ? 'overflow' : preview.layout.contentFitStatus}`)}
+        </p>
         {preview.layout.warnings.map(warning => <p key={warning}>{t(`barcodeLabels.preview.warnings.${warning}`)}</p>)}
+        <p>{t('barcodeLabels.preview.fitGuidance')}</p>
+        <p className="font-semibold">{t('barcodeLabels.preview.testPrintWarning')}</p>
       </div> : null}
     </aside>
   </div>

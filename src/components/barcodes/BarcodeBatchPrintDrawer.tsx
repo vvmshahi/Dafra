@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Barcode, ChevronDown, Layers3, PackagePlus, Printer, Search, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
+import { sarStr } from '@/components/ui/RiyalSymbol'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useDialogFocus } from '@/hooks/useDialogFocus'
 import { supabase } from '@/lib/supabase'
@@ -70,7 +71,7 @@ interface Props {
   onClose: () => void
 }
 
-const money = (value: number) => `SAR ${Number(value).toFixed(2)}`
+const money = (value: number) => sarStr(Number(value))
 
 export default function BarcodeBatchPrintDrawer({
   open,
@@ -79,7 +80,7 @@ export default function BarcodeBatchPrintDrawer({
   products,
   onClose,
 }: Props) {
-  const { t } = useTranslation('printing')
+  const { t, i18n } = useTranslation('printing')
   const [items, setItems] = useState<BarcodePrintQueueItem[]>([])
   const [options, setOptions] = useState<Record<string, ProductOptions>>({})
   const [settings, setSettings] = useState<BarcodeLabelSettings>(DEFAULT_BARCODE_LABEL_SETTINGS)
@@ -90,6 +91,7 @@ export default function BarcodeBatchPrintDrawer({
   const [printing, setPrinting] = useState(false)
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')
+  const [overflowAcknowledged, setOverflowAcknowledged] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const calibration = useMemo(() => loadBarcodeDeviceCalibration(), [open])
   const total = barcodeQueueTotal(items)
@@ -102,6 +104,7 @@ export default function BarcodeBatchPrintDrawer({
     if (!open) return
     setItems(loadBarcodePrintQueue(branchId))
     setError('')
+    setOverflowAcknowledged(false)
     void getBranchBarcodeLabelSettings(branchId)
       .then(result => setSettings(result.settings))
       .catch(() => {
@@ -195,7 +198,7 @@ export default function BarcodeBatchPrintDrawer({
       sku: product.sku,
       unit,
       barcode,
-      copies: settings.defaultCopies,
+      copies: 1,
     }))
   }
 
@@ -250,6 +253,17 @@ export default function BarcodeBatchPrintDrawer({
     sku: item.sku,
     copies: item.copies,
   })), [items, businessName])
+  const fitStatus = useMemo(() => {
+    try {
+      return barcodePrintDocument(labels, settings, calibration, {
+        locale: i18n.language,
+      }).layout.contentFitStatus
+    } catch {
+      return 'overflow'
+    }
+  }, [labels, settings, calibration, i18n.language])
+
+  useEffect(() => setOverflowAcknowledged(false), [items, settings, fitStatus])
 
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLocaleLowerCase()
@@ -270,11 +284,14 @@ export default function BarcodeBatchPrintDrawer({
     try {
       const document = barcodePrintDocument(labels, settings, calibration, {
         preview: true,
+        allowPrint: fitStatus !== 'overflow' || overflowAcknowledged,
+        locale: i18n.language,
         copy: {
           title: t('barcodeLabels.batch.previewTitle'),
           print: t('barcodeLabels.actions.print'),
           saveAsPdf: t('barcodeLabels.preview.saveAsPdf'),
           dialogGuidance: t('barcodeLabels.preview.dialogGuidance'),
+          riyalAccessible: t('barcodeLabels.currency.accessible'),
         },
       })
       if (!browserBarcodePrintAdapter.preview(document.html)) {
@@ -298,15 +315,21 @@ export default function BarcodeBatchPrintDrawer({
       setError(t('barcodeLabels.errors.reasonRequired'))
       return
     }
+    if (fitStatus === 'overflow' && !overflowAcknowledged) {
+      setError(t('barcodeLabels.errors.overflowAcknowledgement'))
+      return
+    }
     setPrinting(true)
     setError('')
     try {
       const document = barcodePrintDocument(labels, settings, calibration, {
+        locale: i18n.language,
         copy: {
           title: t('barcodeLabels.batch.previewTitle'),
           print: t('barcodeLabels.actions.print'),
           saveAsPdf: t('barcodeLabels.preview.saveAsPdf'),
           dialogGuidance: t('barcodeLabels.preview.dialogGuidance'),
+          riyalAccessible: t('barcodeLabels.currency.accessible'),
         },
       })
       if (!document.layout.fits) throw new Error('layout')
@@ -432,6 +455,18 @@ export default function BarcodeBatchPrintDrawer({
                 <ChevronDown size={14} className={showDesigner ? 'rotate-180' : ''} aria-hidden="true" />
               </button>
               {showDesigner && <BarcodeLabelDesigner labels={labels} settings={settings} calibration={calibration} onChange={setSettings} previewDataLabel={t('barcodeLabels.preview.actualData')} compact />}
+              {fitStatus === 'overflow' && <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+                <input
+                  type="checkbox"
+                  checked={overflowAcknowledged}
+                  onChange={event => setOverflowAcknowledged(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-amber-700"
+                />
+                <span>
+                  <span className="block font-bold">{t('barcodeLabels.preview.overflowAcknowledgement')}</span>
+                  <span className="mt-0.5 block text-[11px] leading-5">{t('barcodeLabels.preview.testPrintWarning')}</span>
+                </span>
+              </label>}
 
               {total > 50 && <label className="block space-y-1.5 text-xs font-semibold text-gray-700">
                 <span>{t('barcodeLabels.audit.reason')}</span>
@@ -446,7 +481,7 @@ export default function BarcodeBatchPrintDrawer({
         <Button type="button" variant="ghost" onClick={() => setConfirmClear(true)} disabled={!items.length || printing}>{t('barcodeLabels.batch.clear')}</Button>
         <span className="min-w-0 flex-1 text-[10px] text-gray-500">{t('barcodeLabels.preview.dialogGuidance')}</span>
         <Button type="button" variant="secondary" onClick={preview} disabled={!items.length || printing}>{t('barcodeLabels.actions.preview')}</Button>
-        <Button type="button" onClick={() => void print()} loading={printing} disabled={!items.length || total > 500}>
+        <Button type="button" onClick={() => void print()} loading={printing} disabled={!items.length || total > 500 || (fitStatus === 'overflow' && !overflowAcknowledged)}>
           <Printer size={14} aria-hidden="true" /> {t('barcodeLabels.batch.printCount', { count: total })}
         </Button>
       </footer>

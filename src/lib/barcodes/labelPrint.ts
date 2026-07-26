@@ -52,13 +52,18 @@ export interface BarcodePrintDocumentCopy {
   saveAsPdf: string
   dialogGuidance: string
   previewData?: string
+  riyalAccessible?: string
 }
 
 export interface BarcodePrintDocumentOptions {
   preview?: boolean
   calibrationPattern?: boolean
   copy?: BarcodePrintDocumentCopy
+  locale?: string
+  allowPrint?: boolean
 }
+
+export type BarcodeLabelFitStatus = 'safe' | 'tight' | 'overflow'
 
 export interface BarcodePrintLayout {
   labelCount: number
@@ -69,6 +74,7 @@ export interface BarcodePrintLayout {
   pageWidthMm: number
   pageHeightMm: number
   fits: boolean
+  contentFitStatus: BarcodeLabelFitStatus
   warnings: string[]
 }
 
@@ -118,31 +124,170 @@ export const escapeHtml = (value: unknown) => String(value ?? '')
 
 const copies = (value: unknown) => Math.max(1, Math.min(500, Math.floor(Number(value)) || 1))
 
+const PT_TO_MM = 0.3528
+const MIN_PRODUCT_NAME_FONT_PT = 7
+const NAME_LINE_HEIGHT = 1.32
+const NAME_FONT_BY_SIZE = { small: 8, normal: 10, large: 13 } as const
+const NAME_LINES_BY_TEMPLATE = { compact: 1, standard: 2, detailed: 4 } as const
+const MIN_BARCODE_HEIGHT_MM = 8
+
+interface BarcodeLabelFit {
+  status: BarcodeLabelFitStatus
+  nameFontPt: number
+  nameLineLimit: number
+  totalNameLines: number
+}
+
+const visibleLabelNames = (label: BarcodeLabel, settings: BarcodeLabelSettings): string[] => {
+  const values: string[] = []
+  const seen = new Set<string>()
+  const generic = label.productName.trim()
+  const english = label.productNameEn?.trim() || ''
+  const arabic = label.productNameAr?.trim() || ''
+  const add = (value: string) => {
+    if (value && !seen.has(value)) {
+      seen.add(value)
+      values.push(value)
+    }
+  }
+  if (settings.content.productName) add(arabic || english || generic)
+  if (settings.content.productNameAr) add(arabic || english || generic)
+  if (settings.content.productNameEn) add(english || arabic || generic)
+  return values
+}
+
+const textUnits = (value: string): number => Array.from(value.trim()).reduce((total, character) => {
+  if (/\s/u.test(character)) return total + 0.34
+  if (/[\u0600-\u06ff]/u.test(character)) return total + 0.94
+  if (/[A-Z0-9]/u.test(character)) return total + 0.68
+  return total + 0.56
+}, 0)
+
+const estimatedTextWidthMm = (value: string, fontPt: number): number =>
+  textUnits(value) * fontPt * PT_TO_MM
+
+const labelDimensions = (settings: BarcodeLabelSettings) => ({
+  width: settings.orientation === 'landscape'
+    ? Math.max(settings.widthMm, settings.heightMm)
+    : Math.min(settings.widthMm, settings.heightMm),
+  height: settings.orientation === 'landscape'
+    ? Math.min(settings.widthMm, settings.heightMm)
+    : Math.max(settings.widthMm, settings.heightMm),
+})
+
+/**
+ * Deterministic fit estimate shared by preview and printed markup.
+ * It deliberately reserves the barcode before allocating space to dynamic text.
+ */
+export function barcodeLabelFit(
+  label: BarcodeLabel,
+  rawSettings: BarcodeLabelSettings,
+): BarcodeLabelFit {
+  const settings = normalizeBarcodeLabelSettings(rawSettings)
+  const dimensions = labelDimensions(settings)
+  const innerWidth = Math.max(0, dimensions.width - settings.marginMm * 2)
+  const innerHeight = Math.max(0, dimensions.height - settings.marginMm * 2)
+  const names = visibleLabelNames(label, settings)
+  const maximumNameLines = NAME_LINES_BY_TEMPLATE[settings.templateId]
+  const perNameLineLimit = Math.max(1, Math.floor(maximumNameLines / Math.max(1, names.length)))
+  const preferredFontPt = NAME_FONT_BY_SIZE[settings.productNameSize]
+  const barcodeHeight = Math.max(MIN_BARCODE_HEIGHT_MM, settings.barcodeHeightMm)
+  const fixedHeight =
+    (settings.content.businessName && label.businessName ? 2.8 : 0)
+    + (settings.content.unitName || (settings.content.sellingPrice && label.price) ? 4.2 : 0)
+    + barcodeHeight
+    + (settings.templateId === 'compact' ? 0.8 : 1.6)
+    + (settings.content.barcodeValue ? 2.8 : 0)
+    + (settings.content.sku || settings.content.printDate ? 2.5 : 0)
+  const availableNameHeight = Math.max(0, innerHeight - fixedHeight)
+
+  let nameFontPt = preferredFontPt
+  let totalNameLines = 0
+  let namesFit = names.length === 0
+  for (let candidate = preferredFontPt; candidate >= MIN_PRODUCT_NAME_FONT_PT; candidate -= 0.5) {
+    const lines = names.map(name => Math.max(
+      1,
+      Math.ceil(estimatedTextWidthMm(name, candidate) / Math.max(innerWidth, 1)),
+    ))
+    const totalLines = lines.reduce((sum, lineCount) => sum + lineCount, 0)
+    const requiredHeight = totalLines * candidate * PT_TO_MM * NAME_LINE_HEIGHT
+    nameFontPt = candidate
+    totalNameLines = totalLines
+    if (lines.every(lineCount => lineCount <= perNameLineLimit)
+      && totalLines <= maximumNameLines
+      && requiredHeight <= availableNameHeight + 0.01) {
+      namesFit = true
+      break
+    }
+  }
+
+  const metaWidth = [
+    settings.content.unitName ? label.unitName : '',
+    settings.content.sellingPrice ? label.price ?? '' : '',
+  ].filter(Boolean).reduce((sum, value) => sum + estimatedTextWidthMm(value, 7.5), 0)
+  const footerWidth = [
+    settings.content.sku ? label.sku ?? '' : '',
+    settings.content.printDate ? label.printDate ?? '0000-00-00' : '',
+  ].filter(Boolean).reduce((sum, value) => sum + estimatedTextWidthMm(value, 6.5), 0)
+  const fixedRegionsFit = innerWidth >= 18 && fixedHeight <= innerHeight + 0.01
+  const horizontalOverflow = metaWidth > innerWidth * 1.35 || footerWidth > innerWidth * 1.35
+  if (!fixedRegionsFit || !namesFit || horizontalOverflow) {
+    return {
+      status: 'overflow',
+      nameFontPt: Math.max(MIN_PRODUCT_NAME_FONT_PT, nameFontPt),
+      nameLineLimit: perNameLineLimit,
+      totalNameLines,
+    }
+  }
+
+  const nameHeight = totalNameLines * nameFontPt * PT_TO_MM * NAME_LINE_HEIGHT
+  const usedHeightRatio = innerHeight > 0 ? (fixedHeight + nameHeight) / innerHeight : 1
+  const tight = nameFontPt < preferredFontPt
+    || usedHeightRatio > 0.86
+    || metaWidth > innerWidth
+    || footerWidth > innerWidth
+  return {
+    status: tight ? 'tight' : 'safe',
+    nameFontPt,
+    nameLineLimit: perNameLineLimit,
+    totalNameLines,
+  }
+}
+
+const fitRank: Record<BarcodeLabelFitStatus, number> = {
+  safe: 0,
+  tight: 1,
+  overflow: 2,
+}
+
+function worstFitStatus(
+  labels: BarcodeLabel[],
+  settings: BarcodeLabelSettings,
+): BarcodeLabelFitStatus {
+  const candidates = labels.length ? labels : [{
+    barcode: '4006381333931',
+    barcodeType: 'ean13' as const,
+    productName: 'Sample product',
+    productNameAr: 'منتج تجريبي',
+    productNameEn: 'Sample product',
+    unitName: 'Piece',
+    price: '84.00',
+    sku: 'SKU-0000',
+  }]
+  return candidates.reduce<BarcodeLabelFitStatus>((worst, label) => {
+    const status = barcodeLabelFit(label, settings).status
+    return fitRank[status] > fitRank[worst] ? status : worst
+  }, 'safe')
+}
+
 export function barcodePrintLayout(
   labelCount: number,
   rawSettings: BarcodeLabelSettings,
+  labels: BarcodeLabel[] = [],
 ): BarcodePrintLayout {
   const settings = normalizeBarcodeLabelSettings(rawSettings)
-  const labelWidthMm = settings.orientation === 'landscape'
-    ? Math.max(settings.widthMm, settings.heightMm)
-    : Math.min(settings.widthMm, settings.heightMm)
-  const labelHeightMm = settings.orientation === 'landscape'
-    ? Math.min(settings.widthMm, settings.heightMm)
-    : Math.max(settings.widthMm, settings.heightMm)
-  const nameRows = Number(settings.content.productName)
-    + Number(settings.content.productNameAr)
-    + Number(settings.content.productNameEn)
-  const contentRows = Number(settings.content.businessName)
-    + nameRows
-    + Number(settings.content.unitName || settings.content.sellingPrice)
-    + Number(settings.content.barcodeValue)
-    + Number(settings.content.sku || settings.content.printDate)
-  const estimatedTextHeightMm = contentRows * 3
-    + (settings.productNameSize === 'large' && nameRows ? 1.5 : 0)
-    + (settings.priceStyle === 'large' && settings.content.sellingPrice ? 1 : 0)
-  const contentMayClip = settings.marginMm * 2 + settings.barcodeHeightMm
-    + estimatedTextHeightMm > labelHeightMm
-    || settings.marginMm * 2 + 10 > labelWidthMm
+  const { width: labelWidthMm, height: labelHeightMm } = labelDimensions(settings)
+  const contentFitStatus = worstFitStatus(labels, settings)
   const count = Math.max(0, Math.min(500, Math.floor(labelCount)))
   if (settings.outputMode === 'thermal') {
     return {
@@ -154,7 +299,12 @@ export function barcodePrintLayout(
       pageWidthMm: labelWidthMm,
       pageHeightMm: labelHeightMm,
       fits: true,
-      warnings: contentMayClip ? ['contentMayClip'] : [],
+      contentFitStatus,
+      warnings: contentFitStatus === 'overflow'
+        ? ['contentOverflow']
+        : contentFitStatus === 'tight'
+          ? ['contentTight']
+          : [],
     }
   }
 
@@ -180,10 +330,12 @@ export function barcodePrintLayout(
     pageWidthMm,
     pageHeightMm,
     fits: requiredWidth <= pageWidthMm + 0.001 && requiredHeight <= pageHeightMm + 0.001,
+    contentFitStatus,
     warnings: [
       ...(requiredWidth > pageWidthMm + 0.001 ? ['sheetWidthOverflow'] : []),
       ...(requiredHeight > pageHeightMm + 0.001 ? ['sheetHeightOverflow'] : []),
-      ...(contentMayClip ? ['contentMayClip'] : []),
+      ...(contentFitStatus === 'overflow' ? ['contentOverflow'] : []),
+      ...(contentFitStatus === 'tight' ? ['contentTight'] : []),
     ],
   }
 }
@@ -221,21 +373,68 @@ function labelNames(label: BarcodeLabel, settings: BarcodeLabelSettings): string
   return parts.join('')
 }
 
+export interface BarcodeLabelCurrency {
+  amount: string
+  fallback: string
+  isArabic: boolean
+}
+
+/**
+ * Barcode-label-only currency formatter. The official glyph is rendered from
+ * the approved local SaudiRiyal.woff2 asset; this text fallback remains visible
+ * until that font is confirmed loaded in the isolated print document.
+ */
+export function formatBarcodeLabelCurrency(
+  rawValue: string,
+  locale = 'en',
+): BarcodeLabelCurrency {
+  const amount = String(rawValue ?? '')
+    .trim()
+    .replace(/^SAR\s*/i, '')
+    .replace(/\s*ر\.?\s*س\.?$/u, '')
+    .replace(/^[ê]\s*/u, '')
+    .trim()
+  const isArabic = locale.toLowerCase().startsWith('ar')
+  return {
+    amount: amount || String(rawValue ?? '').trim(),
+    fallback: isArabic ? 'ر.س' : 'SAR',
+    isArabic,
+  }
+}
+
+function priceMarkup(
+  rawValue: string,
+  locale: string,
+  accessibleCurrencyName: string,
+): string {
+  const currency = formatBarcodeLabelCurrency(rawValue, locale)
+  const fallback = currency.isArabic
+    ? `${escapeHtml(currency.amount)}&nbsp;<span dir="rtl">${currency.fallback}</span>`
+    : `${currency.fallback}&nbsp;${escapeHtml(currency.amount)}`
+  return `<bdi class="price" dir="ltr" aria-label="${escapeHtml(`${currency.amount} ${accessibleCurrencyName}`)}">
+    <span class="riyal-official" aria-hidden="true"><span class="riyal-symbol">ê</span>&nbsp;${escapeHtml(currency.amount)}</span>
+    <span class="riyal-fallback" aria-hidden="true">${fallback}</span>
+  </bdi>`
+}
+
 function labelMarkup(
   label: BarcodeLabel,
   settings: BarcodeLabelSettings,
   svg: string,
   calibrationPattern: boolean,
+  locale: string,
+  accessibleCurrencyName: string,
 ): string {
   const c = settings.content
   const printDate = label.printDate || new Date().toLocaleDateString('en-CA')
-  return `<article class="label label--${settings.templateId} label--name-${settings.productNameSize} label--price-${settings.priceStyle}" data-barcode-id="${escapeHtml(label.barcodeId ?? '')}">
+  const fit = barcodeLabelFit(label, settings)
+  return `<article class="label label--${settings.templateId} label--name-${settings.productNameSize} label--price-${settings.priceStyle}" data-fit-status="${fit.status}" data-barcode-id="${escapeHtml(label.barcodeId ?? '')}" style="--fitted-name-size:${fit.nameFontPt}pt;--name-line-limit:${fit.nameLineLimit}">
     ${calibrationPattern ? '<div class="calibration-cross" aria-hidden="true"></div><i class="edge edge--tl"></i><i class="edge edge--tr"></i><i class="edge edge--bl"></i><i class="edge edge--br"></i>' : ''}
     ${c.businessName && label.businessName ? `<div class="business" dir="auto">${escapeHtml(label.businessName)}</div>` : ''}
-    ${labelNames(label, settings)}
+    <div class="product-names">${labelNames(label, settings)}</div>
     <div class="label-meta">
       ${c.unitName && label.unitName ? `<span class="unit" dir="auto">${escapeHtml(label.unitName)}</span>` : ''}
-      ${c.sellingPrice && label.price ? `<strong class="price" dir="ltr">${escapeHtml(label.price)}</strong>` : ''}
+      ${c.sellingPrice && label.price ? priceMarkup(label.price, locale, accessibleCurrencyName) : ''}
     </div>
     <div class="barcode-graphic barcode-graphic--${escapeHtml(label.barcodeType)}" dir="ltr">${svg}</div>
     ${c.barcodeValue ? `<div class="barcode-value" dir="ltr">${escapeHtml(label.barcode)}</div>` : ''}
@@ -253,12 +452,16 @@ function pagesMarkup(
   layout: BarcodePrintLayout,
   barcodeMarkup: Map<string, string>,
   calibrationPattern: boolean,
+  locale: string,
+  accessibleCurrencyName: string,
 ): string {
   const render = (label: BarcodeLabel) => labelMarkup(
     label,
     settings,
     barcodeMarkup.get(`${label.barcodeType}:${label.barcode}`) ?? '',
     calibrationPattern,
+    locale,
+    accessibleCurrencyName,
   )
   if (settings.outputMode === 'thermal') {
     return labels.map(label => `<section class="print-page print-page--thermal">${render(label)}</section>`).join('')
@@ -290,7 +493,7 @@ export function barcodePrintDocument(
     ? branchSettings
     : { ...branchSettings, orientation: calibration.orientationOverride }
   const labels = expandedLabels(inputLabels)
-  const layout = barcodePrintLayout(labels.length, settings)
+  const layout = barcodePrintLayout(labels.length, settings, labels)
   const barcodeMarkup = new Map<string, string>()
   for (const label of labels) {
     const cacheKey = `${label.barcodeType}:${label.barcode}`
@@ -304,6 +507,11 @@ export function barcodePrintDocument(
     saveAsPdf: '',
     dialogGuidance: '',
   }
+  const locale = options.locale
+    || (typeof document === 'undefined' ? 'en' : document.documentElement.lang)
+    || 'en'
+  const accessibleCurrencyName = copy.riyalAccessible
+    || (locale.toLowerCase().startsWith('ar') ? 'ريال سعودي' : 'Saudi Riyals')
   const width = settings.orientation === 'landscape'
     ? Math.max(settings.widthMm, settings.heightMm)
     : Math.min(settings.widthMm, settings.heightMm)
@@ -327,18 +535,21 @@ export function barcodePrintDocument(
   const previewScale = options.preview ? Math.min(1, 100 / layout.pageWidthMm) : 1
   const toolbar = options.preview ? `<nav class="preview-toolbar" aria-label="${escapeHtml(copy.title)}">
     <div><strong>${escapeHtml(copy.title)}</strong><span>${escapeHtml(copy.dialogGuidance)}</span></div>
-    <button type="button" onclick="window.print()">${escapeHtml(copy.print)}</button>
+    <button type="button" onclick="window.print()"${options.allowPrint === false ? ' disabled aria-disabled="true"' : ''}>${escapeHtml(copy.print)}</button>
     <small>${escapeHtml(copy.saveAsPdf)}</small>
   </nav>` : ''
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(copy.title)}</title>
+  const html = `<!doctype html><html lang="${escapeHtml(locale)}" class="riyal-fallback-active"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(copy.title)}</title>
   <style>
     @page { size: ${pageSize}; margin: 0; }
+    @font-face { font-family:"SaudiRiyal"; src:url("/fonts/SaudiRiyal.woff2") format("woff2"); font-weight:normal; font-style:normal; font-display:block; }
+    @font-face { font-family:"KubriArabic"; src:url("/fonts/NotoNaskhArabic-Regular.ttf") format("truetype"); font-weight:400 800; font-style:normal; font-display:swap; }
     * { box-sizing: border-box; }
-    html, body { margin: 0; min-height: 100%; color: #000; background: ${options.preview ? '#e5e7eb' : '#fff'}; font-family: Arial, "Noto Sans Arabic", sans-serif; }
+    html, body { margin: 0; min-height: 100%; color: #000; background: ${options.preview ? '#e5e7eb' : '#fff'}; font-family: Arial, "KubriArabic", "Noto Sans Arabic", sans-serif; }
     .preview-toolbar { position: sticky; inset-block-start: 0; z-index: 5; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 4px 16px; align-items: center; padding: 12px 16px; color:#fff; background:#10261a; box-shadow:0 4px 18px rgba(0,0,0,.14); }
     .preview-toolbar strong,.preview-toolbar span { display:block; } .preview-toolbar span,.preview-toolbar small { color:#cbd5d1; font-size:12px; }
     .preview-toolbar button { grid-row:1 / span 2; grid-column:2; border:0; border-radius:10px; padding:9px 18px; color:#fff; background:#27864b; font-weight:700; cursor:pointer; }
+    .preview-toolbar button:disabled { cursor:not-allowed; opacity:.45; }
     .document${previewClass} { padding:${options.preview ? '18px' : '0'}; }
     .print-page { position:relative; overflow:hidden; break-after:page; page-break-after:always; background:#fff; }
     .print-page:last-child { break-after:auto; page-break-after:auto; }
@@ -347,14 +558,18 @@ export function barcodePrintDocument(
     .is-preview .print-page { zoom:${previewScale}; margin:0 auto 18px; box-shadow:0 10px 30px rgba(15,36,25,.12); }
     .label { position:relative; width:${width}mm; height:${height}mm; overflow:hidden; display:flex; flex-direction:column; padding:${settings.marginMm}mm; color:#000; background:#fff; text-align:${align}; transform:translate(${calibration.horizontalOffsetMm}mm,${calibration.verticalOffsetMm}mm) scale(${calibration.widthScalePercent / 100},${calibration.heightScalePercent / 100}); transform-origin:center; border:${options.preview || options.calibrationPattern ? '.2mm dashed #94a3b8' : '0'}; }
     .is-preview .label::after { content:""; position:absolute; inset:${settings.marginMm}mm; pointer-events:none; border:.15mm dotted #cbd5e1; }
-    .business,.product-name,.unit,.price,.sku,time,.barcode-value { position:relative; z-index:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .business,.unit,.price,.sku,time,.barcode-value { position:relative; z-index:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .business { font-size:7.5pt; font-weight:700; letter-spacing:.02em; }
-    .product-name { font-weight:800; line-height:1.12; }
-    .label--name-small .product-name { font-size:8pt; } .label--name-normal .product-name { font-size:10pt; } .label--name-large .product-name { font-size:13pt; }
-    .product-name--ar { font-family:Arial,"Noto Sans Arabic",sans-serif; }
-    .label-meta { display:flex; min-height:4mm; align-items:baseline; justify-content:space-between; gap:1.5mm; font-size:7.5pt; }
-    .price { font-size:10pt; direction:ltr; font-variant-numeric:tabular-nums; } .label--price-large .price { font-size:14pt; }
-    .barcode-graphic { min-height:${Math.max(6, settings.barcodeHeightMm)}mm; height:${settings.barcodeHeightMm}mm; margin-block:${settings.templateId === 'compact' ? '.4mm' : '.8mm'}; padding-inline:2.5mm; display:flex; align-items:stretch; justify-content:center; overflow:hidden; image-rendering:${quality}; }
+    .product-names { min-block-size:0; overflow:hidden; }
+    .product-name { position:relative; z-index:1; display:-webkit-box; overflow:hidden; overflow-wrap:anywhere; word-break:normal; -webkit-box-orient:vertical; -webkit-line-clamp:var(--name-line-limit); font-size:var(--fitted-name-size); font-weight:800; line-height:${NAME_LINE_HEIGHT}; text-overflow:ellipsis; }
+    .product-name--ar { padding-block:.04em .1em; font-family:"KubriArabic",Arial,"Noto Sans Arabic",sans-serif; line-height:1.38; }
+    .label-meta { display:flex; min-block-size:4.2mm; align-items:baseline; justify-content:space-between; gap:1.5mm; overflow:hidden; font-size:7.5pt; }
+    .unit { min-inline-size:0; }
+    .price { flex:none; font-size:10pt; direction:ltr; font-variant-numeric:tabular-nums; } .label--price-large .price { font-size:14pt; }
+    .riyal-official { display:none; white-space:nowrap; } .riyal-fallback { display:inline; white-space:nowrap; }
+    .riyal-symbol-ready .riyal-official { display:inline; } .riyal-symbol-ready .riyal-fallback { display:none; }
+    .riyal-symbol { display:inline-block; font-family:"SaudiRiyal"; font-weight:400; line-height:1; vertical-align:baseline; }
+    .barcode-graphic { flex:0 0 ${Math.max(MIN_BARCODE_HEIGHT_MM, settings.barcodeHeightMm)}mm; min-block-size:${Math.max(MIN_BARCODE_HEIGHT_MM, settings.barcodeHeightMm)}mm; block-size:${Math.max(MIN_BARCODE_HEIGHT_MM, settings.barcodeHeightMm)}mm; inline-size:100%; max-inline-size:100%; margin-block:${settings.templateId === 'compact' ? '.4mm' : '.8mm'}; padding-inline:2.5mm; display:flex; align-items:stretch; justify-content:center; overflow:hidden; image-rendering:${quality}; }
     .barcode-graphic--ean13,.barcode-graphic--ean8,.barcode-graphic--upca { padding-inline:3.6mm; }
     .barcode-graphic svg { display:block; width:100%; height:100%; overflow:visible; shape-rendering:crispEdges; }
     .barcode-value { text-align:center; font-family:"Courier New",monospace; font-size:7pt; letter-spacing:.04em; font-variant-numeric:tabular-nums; }
@@ -380,7 +595,14 @@ export function barcodePrintDocument(
       .label { border:0; }
       .label::after { display:none !important; }
     }
-  </style></head><body>${toolbar}<main class="document${previewClass}${patternClass}">${pagesMarkup(labels, settings, layout, barcodeMarkup, options.calibrationPattern === true)}</main></body></html>`
+  </style>
+  <script>
+    if (document.fonts && document.fonts.load) {
+      document.fonts.load('12px SaudiRiyal').then(function (fonts) {
+        if (fonts.length) document.documentElement.classList.add('riyal-symbol-ready');
+      }).catch(function () {});
+    }
+  </script></head><body>${toolbar}<main class="document${previewClass}${patternClass}">${pagesMarkup(labels, settings, layout, barcodeMarkup, options.calibrationPattern === true, locale, accessibleCurrencyName)}</main></body></html>`
   return { html, layout }
 }
 
@@ -417,7 +639,10 @@ function openDocument(documentHtml: string, autoPrint: boolean): Window | null {
   preview.document.write(documentHtml)
   preview.document.close()
   preview.focus()
-  if (autoPrint) preview.setTimeout(() => preview.print(), 150)
+  if (autoPrint) {
+    const fontsReady = preview.document.fonts?.ready ?? Promise.resolve()
+    void fontsReady.finally(() => preview.setTimeout(() => preview.print(), 50))
+  }
   return preview
 }
 
@@ -437,9 +662,14 @@ export const browserBarcodePrintAdapter: BarcodePrintAdapter = {
     frame.srcdoc = documentHtml
     document.body.appendChild(frame)
     frame.onload = () => {
-      frame.contentWindow?.focus()
-      frame.contentWindow?.print()
-      window.setTimeout(() => frame.remove(), 1000)
+      const print = () => {
+        frame.contentWindow?.focus()
+        frame.contentWindow?.print()
+        window.setTimeout(() => frame.remove(), 1000)
+      }
+      const fontsReady = frame.contentDocument?.fonts?.ready
+      if (fontsReady) void fontsReady.finally(print)
+      else print()
     }
     return null
   },

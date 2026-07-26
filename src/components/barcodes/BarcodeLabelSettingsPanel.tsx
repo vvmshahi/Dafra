@@ -40,8 +40,8 @@ export default function BarcodeLabelSettingsPanel({ branchId, businessName }: Pr
     unitName: t('barcodeLabels.preview.sampleUnit'),
     price: t('barcodeLabels.preview.samplePrice'),
     sku: 'SKU-1048',
-    copies: settings.outputMode === 'a4' ? 7 : 1,
-  }), [businessName, settings.outputMode, t])
+    copies: 1,
+  }), [businessName, t])
 
   useEffect(() => {
     setLoading(true)
@@ -85,18 +85,6 @@ export default function BarcodeLabelSettingsPanel({ branchId, businessName }: Pr
           {t(hasSavedDefault ? 'barcodeLabels.settings.branchDefaultSaved' : 'barcodeLabels.settings.builtInDefault')}
         </span>
       </div>
-      <label className="mt-4 block max-w-48 space-y-1.5 text-xs font-semibold text-gray-700">
-        <span>{t('barcodeLabels.settings.defaultCopies')}</span>
-        <input
-          type="number"
-          min={1}
-          max={500}
-          step={1}
-          value={settings.defaultCopies}
-          onChange={event => setSettings(current => ({ ...current, defaultCopies: Math.max(1, Math.min(500, Math.floor(Number(event.target.value)) || 1)) }))}
-          className="input h-10 tabular-nums"
-        />
-      </label>
     </section>
 
     {!canEdit && <p className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-800">{t('barcodeLabels.settings.readOnly')}</p>}

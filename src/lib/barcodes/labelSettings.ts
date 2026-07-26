@@ -279,7 +279,9 @@ export function normalizeBarcodeLabelSettings(value: unknown): BarcodeLabelSetti
       startRow: whole(rawA4.startRow ?? rawA4.start_row, defaults.a4.startRow, 1, rows),
       startColumn: whole(rawA4.startColumn ?? rawA4.start_column, defaults.a4.startColumn, 1, columns),
     },
-    defaultCopies: whole(raw.defaultCopies ?? raw.default_copies, defaults.defaultCopies, 1, 500),
+    // The applied database schema still requires this compatibility key.
+    // Copies belong to each print action and are never a branch-shared default.
+    defaultCopies: 1,
   }
 }
 
@@ -322,7 +324,8 @@ export function serializeBarcodeLabelSettings(value: BarcodeLabelSettings): Reco
       start_row: settings.a4.startRow,
       start_column: settings.a4.startColumn,
     },
-    default_copies: settings.defaultCopies,
+    // Required by the deployed JSON validator; intentionally not configurable.
+    default_copies: 1,
   }
 }
 

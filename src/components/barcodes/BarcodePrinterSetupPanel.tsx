@@ -37,7 +37,7 @@ function CalibrationButton({
 }
 
 export default function BarcodePrinterSetupPanel({ branchId, businessName }: Props) {
-  const { t } = useTranslation('printing')
+  const { t, i18n } = useTranslation('printing')
   const [calibration, setCalibration] = useState<BarcodeDeviceCalibration>(DEFAULT_BARCODE_DEVICE_CALIBRATION)
   const [saved, setSaved] = useState<BarcodeDeviceCalibration>(DEFAULT_BARCODE_DEVICE_CALIBRATION)
   const [settings, setSettings] = useState<BarcodeLabelSettings>(DEFAULT_BARCODE_LABEL_SETTINGS)
@@ -67,17 +67,19 @@ export default function BarcodePrinterSetupPanel({ branchId, businessName }: Pro
       return barcodePrintDocument([sample], testSettings, calibration, {
         preview: true,
         calibrationPattern: true,
+        locale: i18n.language,
         copy: {
           title: t('barcodeLabels.calibration.testPattern'),
           print: t('barcodeLabels.actions.print'),
           saveAsPdf: t('barcodeLabels.preview.saveAsPdf'),
           dialogGuidance: t('barcodeLabels.preview.dialogGuidance'),
+          riyalAccessible: t('barcodeLabels.currency.accessible'),
         },
       })
     } catch {
       return null
     }
-  }, [sample, testSettings, calibration, t])
+  }, [sample, testSettings, calibration, t, i18n.language])
 
   useEffect(() => {
     const local = loadBarcodeDeviceCalibration()
@@ -111,11 +113,13 @@ export default function BarcodePrinterSetupPanel({ branchId, businessName }: Pro
     if (!preview) return
     browserBarcodePrintAdapter.print(barcodePrintDocument([sample], testSettings, calibration, {
       calibrationPattern: true,
+      locale: i18n.language,
       copy: {
         title: t('barcodeLabels.calibration.testPattern'),
         print: t('barcodeLabels.actions.print'),
         saveAsPdf: t('barcodeLabels.preview.saveAsPdf'),
         dialogGuidance: t('barcodeLabels.preview.dialogGuidance'),
+        riyalAccessible: t('barcodeLabels.currency.accessible'),
       },
     }).html)
   }

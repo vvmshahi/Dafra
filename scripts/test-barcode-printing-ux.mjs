@@ -50,8 +50,10 @@ const {
   settingsFromPreset,
 } = settingsModule
 const {
+  barcodeLabelFit,
   barcodePrintLayout,
   barcodePrintDocument,
+  formatBarcodeLabelCurrency,
 } = printModule
 const {
   barcodeQueueTotal,
@@ -112,13 +114,14 @@ const normalized = normalizeBarcodeLabelSettings({
   },
 })
 assert.equal(normalized.widthMm, 200)
-assert.equal(normalized.defaultCopies, 500)
+assert.equal(normalized.defaultCopies, 1, 'persisted copy defaults are compatibility-only')
 assert.equal(normalized.content.productName, true, 'an empty visible-content configuration is repaired')
 assert.equal(normalized.orientation, 'landscape')
 const serialized = serializeBarcodeLabelSettings(normalized)
 assert.equal(serialized.preset_id, 'carton_label')
 assert.equal(serialized.content.product_name, true)
 assert.equal(serialized.a4.start_row, 1)
+assert.equal(serialized.default_copies, 1, 'the deployed validator receives the fixed compatibility value')
 assert.deepEqual(Object.keys(serialized).sort(), [
   'a4', 'barcode_height_mm', 'content', 'default_copies', 'height_mm',
   'margin_mm', 'orientation', 'output_mode', 'preset_id', 'price_style',
@@ -271,6 +274,117 @@ assert.match(
   }], settingsFromPreset('carton_label')).html,
   /000012345678901234[\s\S]*Carton · 12 pieces|Carton · 12 pieces[\s\S]*000012345678901234/,
 )
+
+// Dynamic names fit deterministically while the barcode keeps a protected zone.
+const excessiveArabic = 'عبوة قهوة عربية فاخرة محمصة بعناية للاستخدام اليومي الطويل جداً والمتكرر'
+const excessiveEnglish = 'Extra long premium roasted coffee product name for a very small retail sticker'
+const compactOverflowSettings = normalizeBarcodeLabelSettings({
+  ...settingsFromPreset('compact_sticker'),
+  content: {
+    product_name: false,
+    product_name_ar: true,
+    product_name_en: true,
+    selling_price: true,
+    unit_name: true,
+    sku: true,
+    business_name: true,
+    barcode_value: true,
+    print_date: true,
+  },
+})
+const compactOverflowLabel = {
+  ...sampleLabel,
+  productName: excessiveEnglish,
+  productNameAr: excessiveArabic,
+  productNameEn: excessiveEnglish,
+  unitName: 'Extra long carton unit · 144 pieces',
+  sku: 'SKU-EXTRA-LONG-0000000001',
+}
+assert.equal(barcodeLabelFit(compactOverflowLabel, compactOverflowSettings).status, 'overflow')
+const compactOverflowDocument = barcodePrintDocument([compactOverflowLabel], compactOverflowSettings)
+assert.equal(compactOverflowDocument.layout.contentFitStatus, 'overflow')
+assert.ok(compactOverflowDocument.layout.warnings.includes('contentOverflow'))
+assert.match(compactOverflowDocument.html, /--fitted-name-size:7pt/)
+assert.match(compactOverflowDocument.html, /overflow-wrap:anywhere/)
+assert.match(compactOverflowDocument.html, /product-name--ar[\s\S]*line-height:1\.38/)
+assert.match(compactOverflowDocument.html, /flex:0 0 10mm/)
+assert.match(compactOverflowDocument.html, /padding-inline:3\.6mm/)
+assert.doesNotMatch(compactOverflowDocument.html, /\.product-name[^}]*white-space:nowrap/)
+
+const hierarchyLabel = {
+  ...sampleLabel,
+  productName: 'Premium coffee '.repeat(7).trim(),
+  productNameEn: 'Premium coffee '.repeat(7).trim(),
+  productNameAr: null,
+}
+const nameAndBarcodeOnly = {
+  productName: true,
+  productNameAr: false,
+  productNameEn: false,
+  sellingPrice: false,
+  unitName: false,
+  sku: false,
+  businessName: false,
+  barcodeValue: true,
+  printDate: false,
+}
+const standardFit = barcodeLabelFit(hierarchyLabel, {
+  ...settingsFromPreset('standard_product'),
+  content: nameAndBarcodeOnly,
+})
+const detailedFit = barcodeLabelFit(hierarchyLabel, {
+  ...settingsFromPreset('detailed_product'),
+  content: nameAndBarcodeOnly,
+})
+assert.equal(standardFit.status, 'overflow', 'Standard uses its own two-line name budget')
+assert.notEqual(detailedFit.status, 'overflow', 'Detailed uses its independent four-line budget')
+assert.ok(detailedFit.nameFontPt >= 7)
+assert.ok(detailedFit.nameFontPt <= 13)
+
+const bilingualDocument = barcodePrintDocument([{
+  ...sampleLabel,
+  productName: excessiveEnglish,
+  productNameAr: excessiveArabic,
+  productNameEn: excessiveEnglish,
+}], {
+  ...settingsFromPreset('detailed_product'),
+  content: {
+    ...settingsFromPreset('detailed_product').content,
+    productNameAr: true,
+    productNameEn: true,
+  },
+})
+assert.match(bilingualDocument.html, new RegExp(excessiveArabic))
+assert.match(bilingualDocument.html, new RegExp(excessiveEnglish))
+assert.match(bilingualDocument.html, /-webkit-line-clamp:var\(--name-line-limit\)/)
+
+// Label prices use the approved local Riyal font with deterministic text fallbacks.
+assert.deepEqual(formatBarcodeLabelCurrency('SAR 84.00', 'en'), {
+  amount: '84.00',
+  fallback: 'SAR',
+  isArabic: false,
+})
+assert.deepEqual(formatBarcodeLabelCurrency('84.00 ر.س', 'ar-SA'), {
+  amount: '84.00',
+  fallback: 'ر.س',
+  isArabic: true,
+})
+const riyalDocument = barcodePrintDocument([{ ...sampleLabel, price: 'SAR 84.00' }], standard, undefined, {
+  locale: 'ar-SA',
+  copy: {
+    title: 'Preview',
+    print: 'Print',
+    saveAsPdf: 'PDF',
+    dialogGuidance: '100%',
+    riyalAccessible: 'ريال سعودي',
+  },
+})
+assert.match(riyalDocument.html, /SaudiRiyal\.woff2/)
+assert.match(riyalDocument.html, /class="riyal-symbol">ê</)
+assert.match(riyalDocument.html, /class="riyal-fallback"[^>]*>84\.00&nbsp;<span dir="rtl">ر\.س/)
+assert.match(riyalDocument.html, /aria-label="84\.00 ريال سعودي"/)
+assert.doesNotMatch(riyalDocument.html, /﷼/)
+
 assert.throws(
   () => barcodePrintDocument([{ ...sampleLabel, barcode: '4006381333932', barcodeType: 'ean13' }], standard),
   /invalidCheckDigit/,
@@ -328,6 +442,7 @@ const batch = read('src/components/barcodes/BarcodeBatchPrintDrawer.tsx')
 const settingsPanel = read('src/components/barcodes/BarcodeLabelSettingsPanel.tsx')
 const calibrationPanel = read('src/components/barcodes/BarcodePrinterSetupPanel.tsx')
 const productBarcodes = read('src/pages/products/ProductBarcodesSection.tsx')
+const labelPrintSource = read('src/lib/barcodes/labelPrint.ts')
 const productsPage = read('src/pages/products/ProductsPage.tsx')
 const workspace = read('src/pages/branch/PrintingDocumentsPage.tsx')
 const app = read('src/App.tsx')
@@ -375,10 +490,29 @@ assert.match(designer, /barcodeLabels\.templates\./)
 assert.match(designer, /barcodeLabels\.content\./)
 assert.match(settingsPanel, /updateBranchBarcodeLabelSettings/)
 assert.match(settingsPanel, /setSettings\(saved\)/)
+assert.doesNotMatch(settingsPanel, /defaultCopies|default copies/i, 'branch design settings never expose print quantity')
+assert.match(quickPrint, /const \[copies, setCopies\] = useState\(1\)/)
+assert.match(quickPrint, /\.then\(result => \{[\s\S]*setSettings\(result\.settings\)[\s\S]*setCopies\(1\)/)
+assert.doesNotMatch(quickPrint, /result\.settings\.defaultCopies/)
+assert.match(batch, /copies: 1,[\s\S]*\}\)\)/, 'new batch rows start at one copy')
+assert.doesNotMatch(batch, /copies: settings\.defaultCopies/)
+assert.match(quickPrint, /productNameAr: props\.productNameAr/)
+assert.match(quickPrint, /unitName: props\.unitName/)
+assert.match(quickPrint, /price: props\.price/)
+assert.match(quickPrint, /sku: props\.sku/)
+assert.match(settingsPanel, /previewDataLabel=\{t\('barcodeLabels\.preview\.sampleData'\)\}/)
+assert.match(quickPrint, /previewDataLabel=\{t\('barcodeLabels\.preview\.actualData'\)\}/)
+assert.match(quickPrint, /overflowAcknowledged/)
+assert.match(batch, /overflowAcknowledged/)
+assert.match(labelPrintSource, /formatBarcodeLabelCurrency/)
+assert.match(labelPrintSource, /MIN_PRODUCT_NAME_FONT_PT = 7/)
+assert.match(labelPrintSource, /NAME_LINES_BY_TEMPLATE = \{ compact: 1, standard: 2, detailed: 4 \}/)
+assert.match(labelPrintSource, /MIN_BARCODE_HEIGHT_MM = 8/)
+assert.doesNotMatch(`${quickPrint}\n${batch}\n${productBarcodes}`, /`SAR \$\{/)
 assert.match(calibrationPanel, /saveBarcodeDeviceCalibration/)
 assert.match(calibrationPanel, /calibrationPattern: true/)
 assert.match(calibrationPanel, /getPrinters/)
-assert.match(read('src/lib/barcodes/labelPrint.ts'), /preview\.opener = null/)
+assert.match(labelPrintSource, /preview\.opener = null/)
 assert.match(quickPrint, /recordBarcodePrintBatch/)
 assert.match(quickPrint, /normalizedCopies > 50/)
 assert.match(quickPrint, /role="dialog"/)
