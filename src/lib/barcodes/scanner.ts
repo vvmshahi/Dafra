@@ -89,4 +89,3 @@ export class OrderedScanQueue {
     this.tail = this.tail.then(task, task)
   }
 }
-

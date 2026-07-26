@@ -40,4 +40,3 @@ export function useBarcodeScanner({
     }
   }, [blocked, enabled, queue])
 }
-

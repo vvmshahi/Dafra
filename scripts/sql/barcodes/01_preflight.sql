@@ -1,6 +1,5 @@
+-- Supabase SQL Editor compatible. This script is read-only and always rolls back.
 BEGIN TRANSACTION READ ONLY;
-
-\echo 'Barcode workflow production preflight (read-only)'
 
 SELECT current_database(), current_user, current_setting('transaction_read_only') AS transaction_read_only;
 
@@ -22,17 +21,35 @@ FROM public.product_units_commercial_function_contracts_v1 c
 ORDER BY c.function_signature;
 
 SELECT
-  to_regclass('public.product_unit_barcodes') IS NULL AS barcode_table_absent,
-  to_regclass('public.product_barcode_print_events') IS NULL AS print_audit_table_absent,
-  to_regprocedure('public.resolve_product_unit_barcode(uuid,text)') IS NULL AS resolver_absent,
-  NOT EXISTS (
+  to_regclass('public.product_unit_barcodes') IS NOT NULL AS barcode_table_present,
+  to_regclass('public.product_barcode_print_events') IS NOT NULL AS print_audit_table_present,
+  to_regprocedure('public.resolve_product_unit_barcode(uuid,text)') IS NOT NULL AS resolver_present,
+  to_regprocedure('public.product_barcode_scope(uuid)') IS NOT NULL AS scope_helper_present,
+  to_regclass('public.barcode_function_contracts_v1') IS NULL AS new_contract_table_absent,
+  EXISTS (
     SELECT 1 FROM supabase_migrations.schema_migrations
     WHERE version = '20260726000100'
-  ) AS migration_history_clear;
+  ) AS initial_migration_recorded,
+  NOT EXISTS (
+    SELECT 1 FROM supabase_migrations.schema_migrations
+    WHERE version = '20260726000200'
+  ) AS follow_up_migration_history_clear;
+
+SELECT
+  pg_get_function_result(
+    'public.product_barcode_scope(uuid)'::regprocedure
+  ) AS scope_declared_result,
+  md5(pg_get_functiondef(
+    'public.product_barcode_scope(uuid)'::regprocedure
+  )) AS current_scope_md5,
+  position(
+    'up.role::text'
+    IN pg_get_functiondef('public.product_barcode_scope(uuid)'::regprocedure)
+  ) > 0 AS correction_already_present;
 
 SELECT
   pg_get_function_identity_arguments(p.oid) AS arguments,
-  encode(digest(pg_get_functiondef(p.oid), 'sha256'), 'hex') AS sha256
+  md5(pg_get_functiondef(p.oid)) AS definition_md5
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE n.nspname = 'public'
