@@ -6,6 +6,10 @@ import {
   removeObsoleteCreditNoteStorageEntries,
   pendingAtomicCheckoutMatchesScope,
 } from '@/lib/zatca/atomicCheckoutScope.mjs'
+import {
+  logPosCheckoutPerf,
+  type PosCheckoutPerfContext,
+} from '@/lib/checkoutPerf'
 
 export type AtomicCheckoutDocumentType = 'invoice' | 'credit_note'
 
@@ -99,6 +103,7 @@ export interface AtomicCheckoutResult {
   canPrint: true
   receipt: AtomicReceiptPayload
   idempotentReplay: boolean
+  checkoutPerfRequestId?: string
 }
 
 export interface AtomicCheckoutLegacyRequired {
@@ -370,20 +375,35 @@ export async function checkoutSimplifiedAtomically(params: {
   checkout: Record<string, unknown>
   cartFingerprint: string
   documentType?: AtomicCheckoutDocumentType
+  perf?: PosCheckoutPerfContext
 }): Promise<AtomicCheckoutResult | AtomicCheckoutLegacyRequired> {
   const documentType = params.documentType ?? 'invoice'
-  const { data, error } = await supabase.functions.invoke('zatca-submit', {
-    body: {
-      action: documentType === 'credit_note'
-        ? 'checkout_simplified_credit_note'
-        : 'checkout_simplified',
-      branchId: params.branchId,
-      checkout: params.checkout,
-      cartFingerprint: params.cartFingerprint,
-      clientVersion: ZATCA_FINALIZATION_CLIENT_VERSION,
-      source: documentType === 'credit_note' ? 'auto_credit_note' : 'auto_checkout',
-    },
-  })
+  const invokeStartedAt = performance.now()
+  if (params.perf) logPosCheckoutPerf(params.perf, 'atomic_invoke_start', invokeStartedAt)
+  let invokeResult
+  try {
+    invokeResult = await supabase.functions.invoke('zatca-submit', {
+      body: {
+        action: documentType === 'credit_note'
+          ? 'checkout_simplified_credit_note'
+          : 'checkout_simplified',
+        branchId: params.branchId,
+        checkout: params.checkout,
+        cartFingerprint: params.cartFingerprint,
+        clientVersion: ZATCA_FINALIZATION_CLIENT_VERSION,
+        source: documentType === 'credit_note' ? 'auto_credit_note' : 'auto_checkout',
+        checkoutPerfRequestId: params.perf?.requestId,
+      },
+    })
+    if (params.perf) {
+      logPosCheckoutPerf(params.perf, 'atomic_invoke_duration', invokeStartedAt)
+      logPosCheckoutPerf(params.perf, 'response_received', performance.now())
+    }
+  } catch (error) {
+    if (params.perf) logPosCheckoutPerf(params.perf, 'atomic_invoke_duration', invokeStartedAt, 'error')
+    throw error
+  }
+  const { data, error } = invokeResult
   if (error) throw new Error(error.message)
   if (data?.status === 'legacy_required'
       && (data?.reason === 'atomic_rollout_disabled'

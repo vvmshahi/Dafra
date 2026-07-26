@@ -69,6 +69,10 @@ import {
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
 import { normalizeBarcode } from '@/lib/barcodes/barcode'
 import type { ScannerCapture } from '@/lib/barcodes/scanner'
+import {
+  createPosCheckoutPerfContext,
+  logPosCheckoutPerf,
+} from '@/lib/checkoutPerf'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -212,6 +216,8 @@ interface ReceiptData {
   sandboxGenerated: boolean
   reportingDisplayState: string
   atomicSnapshot: boolean
+  checkoutPerfRequestId?: string
+  checkoutPerfStartedAt?: number
 }
 
 function branchPosMode(value: string | null | undefined): PosMode {
@@ -604,9 +610,23 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
         invoiceId: receipt.invoiceId,
         reportingDisplayState: receipt.reportingDisplayState,
       })
+      if (receipt.checkoutPerfRequestId && receipt.checkoutPerfStartedAt != null) {
+        logPosCheckoutPerf({
+          requestId: receipt.checkoutPerfRequestId,
+          startedAt: receipt.checkoutPerfStartedAt,
+        }, 'success_screen_visible', receipt.checkoutPerfStartedAt)
+      }
     })
     return () => window.cancelAnimationFrame(frame)
   }, [receipt.invoiceId, receipt.reportingDisplayState])
+
+  useEffect(() => {
+    if (!printReady || !receipt.checkoutPerfRequestId || receipt.checkoutPerfStartedAt == null) return
+    logPosCheckoutPerf({
+      requestId: receipt.checkoutPerfRequestId,
+      startedAt: receipt.checkoutPerfStartedAt,
+    }, 'print_modal_ready', receipt.checkoutPerfStartedAt)
+  }, [printReady, receipt.checkoutPerfRequestId, receipt.checkoutPerfStartedAt])
 
   async function printRenderedReceiptSnapshot(): Promise<boolean> {
     const result = await printAtomicReceiptSnapshot({
@@ -2563,8 +2583,11 @@ export default function POSPage() {
     }
     checkoutInFlightRef.current = true
     setSubmitting(true)
+    const checkoutPerf = createPosCheckoutPerfContext()
+    logPosCheckoutPerf(checkoutPerf, 'charge_clicked', checkoutPerf.startedAt)
 
     try {
+      const validationStartedAt = performance.now()
       const persistedAtomicCheckout = readPendingAtomicCheckout(branch.id)
       const persistedInvoiceCheckout = persistedAtomicCheckout?.documentType === 'invoice'
         ? persistedAtomicCheckout
@@ -2625,6 +2648,7 @@ export default function POSPage() {
       let productionCheckoutMode: ZatcaCheckoutMode = 'legacy'
       let atomicCheckoutResult: AtomicCheckoutResult | null = null
       let atomicFingerprint: string | null = null
+      logPosCheckoutPerf(checkoutPerf, 'client_validation', validationStartedAt)
       let checkout: PosCheckoutResult | null = null
       if (!demoSandbox && !standardRequested) {
         if (persistedInvoiceCheckout) payload = persistedInvoiceCheckout.checkout
@@ -2643,6 +2667,7 @@ export default function POSPage() {
           branchId: branch.id,
           checkout: payload,
           cartFingerprint: atomicFingerprint,
+          perf: checkoutPerf,
         })
         if (atomicAttempt.status === 'committed') {
           atomicCheckoutResult = atomicAttempt
@@ -2846,6 +2871,7 @@ export default function POSPage() {
       const atomicSeller = atomicReceipt?.seller ?? null
       const atomicCustomer = atomicReceipt?.customer ?? null
 
+      const receiptStateStartedAt = performance.now()
       setReceipt({
         invoiceNumber:  checkout.invoice_number,
         invoiceId:      checkout.invoice_id,
@@ -2930,7 +2956,12 @@ export default function POSPage() {
         reportingDisplayState: atomicCheckoutResult?.reportingDisplayState
           ?? (isB2BInvoice ? 'clearance_pending' : 'reporting_pending'),
         atomicSnapshot: Boolean(atomicCheckoutResult),
+        checkoutPerfRequestId: atomicCheckoutResult ? checkoutPerf.requestId : undefined,
+        checkoutPerfStartedAt: atomicCheckoutResult ? checkoutPerf.startedAt : undefined,
       })
+      if (atomicCheckoutResult) {
+        logPosCheckoutPerf(checkoutPerf, 'receipt_state_created', receiptStateStartedAt)
+      }
       upsertInvoiceListRow(branch.tenant_id, {
         id: checkout.invoice_id,
         branchId: branch.id,
