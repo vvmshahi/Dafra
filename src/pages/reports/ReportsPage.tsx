@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, BarChart2, FileText, CreditCard, Users, ShoppingCart, Download, Clock3, Loader2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { TrendingUp, BarChart2, FileText, CreditCard, Users, ShoppingCart, Download, Clock3, Loader2, Truck } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -134,24 +135,33 @@ export default function ReportsPage() {
     <div className="space-y-4">
 
       {/* ── Page header ─────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <h1 className="text-lg font-bold text-gray-900 flex-1">{t('title')}</h1>
-        {exportSupported && (
-          <button
-            type="button"
-            disabled={exportDisabled}
-            onClick={handleExport}
-            title={t('export.download')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
-              exportDisabled
-                ? 'border-gray-200 text-gray-400 cursor-not-allowed opacity-60'
-                : 'border-primary-200 bg-white text-primary-700 hover:bg-primary-50'
-            }`}
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/reports/suppliers"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-amber-200 bg-white text-amber-800 text-sm font-medium hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
           >
-            {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-            {t(exporting ? 'export.exporting' : 'export.pdf')}
-          </button>
-        )}
+            <Truck size={14} />
+            {t('tabs.suppliers')}
+          </Link>
+          {exportSupported && (
+            <button
+              type="button"
+              disabled={exportDisabled}
+              onClick={handleExport}
+              title={t('export.download')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                exportDisabled
+                  ? 'border-gray-200 text-gray-400 cursor-not-allowed opacity-60'
+                  : 'border-primary-200 bg-white text-primary-700 hover:bg-primary-50'
+              }`}
+            >
+              {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              {t(exporting ? 'export.exporting' : 'export.pdf')}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Tab bar ─────────────────────────────────────────── */}

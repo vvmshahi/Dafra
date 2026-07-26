@@ -21,10 +21,12 @@ import CustomersPage        from '@/pages/customers/CustomersPage'
 import CustomerDetailPage   from '@/pages/customers/CustomerDetailPage'
 import ExpensesPage        from '@/pages/expenses/ExpensesPage'
 import SuppliersPage       from '@/pages/suppliers/SuppliersPage'
+import SupplierDetailPage  from '@/pages/suppliers/SupplierDetailPage'
 import InventoryPage       from '@/pages/inventory/InventoryPage'
 import PurchasesPage       from '@/pages/purchases/PurchasesPage'
 import ReportsPage         from '@/pages/reports/ReportsPage'
 import CustomerIntelligenceReportsPage from '@/pages/reports/CustomerIntelligenceReportsPage'
+import SupplierIntelligenceReportsPage from '@/pages/reports/SupplierIntelligenceReportsPage'
 import OperationsPage      from '@/pages/operations/OperationsPage'
 import ZatcaPage           from '@/pages/zatca/ZatcaPage'
 import SuperAdminDashboard    from '@/pages/super-admin/SuperAdminDashboard'
@@ -366,7 +368,9 @@ export default function App() {
             <Route path="/day-closing" element={<DayClosingPage />} />
             <Route path="/reports"   element={<ReportsPage />} />
             <Route path="/reports/customers" element={<CustomerIntelligenceReportsPage />} />
+            <Route path="/reports/suppliers" element={<SupplierIntelligenceReportsPage />} />
             <Route path="/suppliers" element={<SuppliersPage />} />
+            <Route path="/suppliers/:id" element={<SupplierDetailPage />} />
             <Route path="/device-printer" element={<DevicePrinterPage />} />
 
             <Route element={<RequireOwnerAdminOrSuperAdmin />}>

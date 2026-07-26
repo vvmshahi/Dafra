@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Pencil, Trash2, Search, Phone, MapPin, User, Building2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Plus, Pencil, Trash2, Search, Phone, MapPin, User, Building2, BarChart3, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
@@ -43,7 +44,7 @@ function stringOrNull(value: unknown): string | null {
 
 export default function SuppliersPage() {
   const { profile } = useAuth()
-  const { t, i18n } = useTranslation('suppliers')
+  const { t, i18n } = useTranslation(['suppliers', 'supplierIntelligence'])
 
   const [suppliers,   setSuppliers]   = useState<SupplierWithStats[]>([])
   const [loading,     setLoading]     = useState(true)
@@ -153,21 +154,29 @@ export default function SuppliersPage() {
     <div className="space-y-5">
 
       {/* ── Header ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex-1">
           <h1 className="text-lg font-bold text-gray-900">{t('title')}</h1>
           <p className="text-xs text-gray-400 mt-0.5">
             {t('subtitle')}
           </p>
         </div>
-        <Button size="sm" onClick={openAdd}>
-          <Plus size={14} />
-          {t('add')}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to="/reports/suppliers">
+            <Button size="sm" variant="secondary">
+              <BarChart3 size={14} />
+              {t('supplierIntelligence:reports.openReports')}
+            </Button>
+          </Link>
+          <Button size="sm" onClick={openAdd}>
+            <Plus size={14} />
+            {t('add')}
+          </Button>
+        </div>
       </div>
 
       {/* ── Summary cards ───────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
           <p className="text-xs font-medium text-gray-400">{t('totalSuppliers')}</p>
           <p className="text-xl font-bold text-gray-900 mt-0.5">{suppliers.length}</p>
@@ -245,7 +254,7 @@ export default function SuppliersPage() {
             <div className="w-24 hidden sm:block">{t('columns.city')}</div>
             <div className="w-24 hidden lg:block">{t('columns.terms')}</div>
             <div className="w-40 text-end">{t('columns.purchased')}</div>
-            <div className="w-16 flex-shrink-0" />
+            <div className="w-24 flex-shrink-0" />
           </div>
 
           {filtered.map(supplier => (
@@ -258,7 +267,13 @@ export default function SuppliersPage() {
                   <Building2 size={15} className="text-emerald-600" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate" dir="auto">{dn(supplier.name, supplier.name_ar)}</p>
+                  <Link
+                    to={`/suppliers/${supplier.id}`}
+                    className="text-sm font-semibold text-gray-900 hover:text-primary-700 truncate block rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    dir="auto"
+                  >
+                    {dn(supplier.name, supplier.name_ar)}
+                  </Link>
                   {supplier.vat_number && (
                     <p className="text-[10px] text-gray-400">{t('vatShort')}: <bdi dir="ltr">{supplier.vat_number}</bdi></p>
                   )}
@@ -319,12 +334,21 @@ export default function SuppliersPage() {
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-1 w-16 justify-end">
+              <div className="flex items-center gap-1 w-24 justify-end">
+                <Link
+                  to={`/suppliers/${supplier.id}`}
+                  aria-label={t('supplierIntelligence:actions.viewActivity')}
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-amber-50 hover:text-amber-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                >
+                  <ChevronRight size={14} className={i18n.resolvedLanguage === 'ar-SA' ? 'rotate-180' : ''} />
+                </Link>
                 <button onClick={() => openEdit(supplier)}
+                  aria-label={t('edit')}
                   className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
                   <Pencil size={14} />
                 </button>
                 <button onClick={() => handleDelete(supplier.id, supplier.name)}
+                  aria-label={t('deleteConfirm', { name: supplier.name })}
                   className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors">
                   <Trash2 size={14} />
                 </button>
