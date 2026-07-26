@@ -846,6 +846,9 @@ export default function ProductDrawer({ open, product, categories, onClose, onSa
               <ProductUnitsSection
                 productId={product?.id ?? createdProductId}
                 basePrice={price}
+                productName={name.trim()}
+                productNameAr={nameAr.trim() || null}
+                sku={sku.trim() || null}
                 serviceRestricted={businessType === 'service' || product?.is_service === true}
                 stockEnabled={stockModuleVisible}
                 onDirtyChange={setPackageEditorDirty}

@@ -79,5 +79,25 @@
       "loadFailed": "Selling units could not be loaded. Try again."
     }
   },
+  "barcodes": {
+    "title": "Barcodes and labels",
+    "help": "Assign manufacturer or private store codes to each selling unit.",
+    "unit": "Selling unit",
+    "value": "Barcode",
+    "scanOrType": "Scan or type a barcode",
+    "type": "Symbology",
+    "source": "Source",
+    "makePrimary": "Use as the primary barcode for this unit",
+    "add": "Add barcode",
+    "generate": "Generate private Code 128",
+    "primary": "Primary",
+    "setPrimary": "Make primary",
+    "disable": "Disable barcode",
+    "reactivate": "Reactivate",
+    "types": {"ean13":"EAN-13","ean8":"EAN-8","upca":"UPC-A","upce":"UPC-E","code128":"Code 128","code39":"Code 39","itf14":"ITF-14","gs1_databar":"GS1 DataBar","gs1_128":"GS1-128","gs1_datamatrix":"GS1 DataMatrix","qr":"QR / Digital Link","unknown":"Custom / unknown"},
+    "sources": {"manufacturer":"Manufacturer","supplier":"Supplier","internal":"Private store code","imported":"Imported legacy code"},
+    "print": {"action":"Preview and print label","widthMm":"Width (mm)","heightMm":"Height (mm)","marginMm":"Margin (mm)","columns":"Columns","copies":"Copies","business":"Business name","arabicName":"Arabic product name","price":"Selling price","sku":"SKU","printDate":"Print date","reason":"Reason for bulk reprint","reasonPlaceholder":"Required for more than 50 copies"},
+    "errors": {"load":"Barcodes could not be loaded.","invalidValue":"Enter 3–128 printable characters.","invalidCheckDigit":"The selected EAN/UPC/GTIN check digit is invalid.","duplicate":"This barcode is already assigned in this branch.","save":"The barcode could not be saved.","print":"The barcode cannot be printed with the selected format."}
+  },
   "emoji": { "selected": "Selected category icon {{emoji}}", "noneSelected": "No category icon selected", "none": "None", "choose": "Choose category emoji", "remove": "Remove category icon", "noIcon": "No icon", "suggested": "Suggested from category name", "useSuggested": "Use suggested emoji {{emoji}}", "searchHelp": "Search by English emoji name", "close": "Close emoji picker", "recent": "Recently used", "useRecent": "Use recently selected emoji {{emoji}}", "loading": "Loading emoji search…", "search": "Search emojis" }
 }

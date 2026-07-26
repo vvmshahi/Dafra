@@ -6,6 +6,7 @@ import {
   Receipt, X, ChevronDown, User, Check, Loader2,
   ShoppingBag, AlertCircle, Zap, Printer, PackageOpen, ArrowLeft, Lock,
   ChevronLeft, ChevronRight, ChevronUp, RotateCcw,
+  ScanLine,
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
@@ -65,6 +66,9 @@ import {
   normalizeDocumentLanguage,
   type DocumentLanguage,
 } from '@/localization/documents'
+import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
+import { normalizeBarcode } from '@/lib/barcodes/barcode'
+import type { ScannerCapture } from '@/lib/barcodes/scanner'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1890,6 +1894,9 @@ export default function POSPage() {
   const [submitting,   setSubmitting]   = useState(false)
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [unitChooserProduct, setUnitChooserProduct] = useState<PosProduct | null>(null)
+  const [scannerEnabled, setScannerEnabled] = useState(true)
+  const [manualBarcode, setManualBarcode] = useState('')
+  const [scannerStatus, setScannerStatus] = useState<'idle' | 'looking' | 'accepted' | 'unknown' | 'error'>('idle')
   const [showExpense,  setShowExpense]  = useState(false)
   const [printerStatus, setPrinterStatus] = useState<'connected' | 'unconfigured' | 'error'>('unconfigured')
   const [scrollState,  setScrollState]  = useState({
@@ -1900,6 +1907,7 @@ export default function POSPage() {
   })
   const checkoutKeyRef = useRef<string | null>(null)
   const autoPrintedReceiptIdRef = useRef<string | null>(null)
+  const lastScannerRequestRef = useRef<{ code: string; at: number } | null>(null)
   const businessType = resolveBusinessType(tenant?.business_type)
   const stockVisible = isStockModuleVisible({
     businessType: tenant?.business_type,
@@ -1911,6 +1919,122 @@ export default function POSPage() {
     () => resolveInvoicePresentationSettings({ savedSettings: branch?.presentation_settings, branch: branch ?? {} }),
     [branch],
   )
+
+  const playScannerTone = (accepted: boolean) => {
+    try {
+      const AudioContextClass = window.AudioContext
+      const context = new AudioContextClass()
+      const oscillator = context.createOscillator()
+      const gain = context.createGain()
+      oscillator.frequency.value = accepted ? 880 : 220
+      gain.gain.setValueAtTime(0.035, context.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.08)
+      oscillator.connect(gain)
+      gain.connect(context.destination)
+      oscillator.start()
+      oscillator.stop(context.currentTime + 0.08)
+      oscillator.onended = () => void context.close()
+    } catch {
+      // Visual feedback remains available when browser audio is unavailable.
+    }
+  }
+
+  const resolveScannedBarcode = async (capture: ScannerCapture) => {
+    const branchId = profile?.branch_id
+    const code = normalizeBarcode(capture.code)
+    if (!branchId || code.length < 3) return
+    const now = performance.now()
+    const previous = lastScannerRequestRef.current
+    if (previous?.code === code && now - previous.at < 120) return
+    lastScannerRequestRef.current = { code, at: now }
+    setScannerStatus('looking')
+    const lookupStarted = performance.now()
+    const { data, error } = await (supabase as any).rpc('resolve_product_unit_barcode', {
+      p_branch_id: branchId,
+      p_barcode: code,
+    })
+    const lookupDurationMs = Math.round(performance.now() - lookupStarted)
+    if (error) {
+      setScannerStatus('error')
+      playScannerTone(false)
+      toast.error(t('pos:scanner.networkError'))
+      if (import.meta.env.DEV) console.info('[barcode-scan]', {
+        codeLength: code.length,
+        scanDurationMs: Math.round(capture.durationMs),
+        lookupDurationMs,
+        result: 'network_error',
+      })
+      return
+    }
+    const row = data?.[0]
+    if (!row) {
+      setScannerStatus('unknown')
+      playScannerTone(false)
+      toast.error(t('pos:scanner.unknown'))
+      if (import.meta.env.DEV) console.info('[barcode-scan]', {
+        codeLength: code.length,
+        scanDurationMs: Math.round(capture.durationMs),
+        lookupDurationMs,
+        result: 'unknown',
+      })
+      return
+    }
+    if (row.resolution_status !== 'active') {
+      setScannerStatus('unknown')
+      playScannerTone(false)
+      toast.error(t('pos:scanner.inactive'))
+      return
+    }
+    const product = products.find(candidate => candidate.id === row.product_id)
+    if (!product) {
+      setScannerStatus('error')
+      toast.error(t('pos:scanner.refreshRequired'))
+      return
+    }
+    if (
+      row.stock_enabled === true
+      && row.track_stock === true
+      && row.is_service !== true
+      && Number(row.stock_quantity) < Number(row.conversion_to_base)
+    ) {
+      setScannerStatus('unknown')
+      playScannerTone(false)
+      toast.error(t('pos:scanner.outOfStock'))
+      return
+    }
+    const unit: PosSellingUnit = {
+      id: String(row.product_unit_id),
+      name: String(row.unit_name),
+      nameAr: row.unit_name_ar ?? null,
+      code: String(row.unit_code),
+      conversionToBase: Number(row.conversion_to_base),
+      quantityScale: Number(row.quantity_scale),
+      pricingMethod: row.pricing_method === 'custom' ? 'custom' : 'calculated',
+      resolvedPrice: Number(row.selling_price),
+      isBase: product.sellingUnits.some(candidate => candidate.id === row.product_unit_id && candidate.isBase),
+      version: Number(row.product_unit_version),
+    }
+    addQuantityToCart(product, 1, unit)
+    setScannerStatus('accepted')
+    playScannerTone(true)
+    toast.success(t('pos:scanner.accepted', { product: row.product_name, unit: row.unit_name }), { duration: 900 })
+    if (import.meta.env.DEV) console.info('[barcode-scan]', {
+      codeLength: code.length,
+      scanDurationMs: Math.round(capture.durationMs),
+      lookupDurationMs,
+      result: 'accepted',
+      unitCode: row.unit_code,
+    })
+  }
+
+  useBarcodeScanner({
+    enabled: scannerEnabled,
+    blocked: Boolean(
+      receipt || showOpenSession || showCloseSession || unitChooserProduct
+      || custOpen || splitOpen || showExpense || submitting
+    ),
+    onScan: resolveScannedBarcode,
+  })
 
   useEffect(() => {
     if (!isElectron()) return
@@ -3208,6 +3332,24 @@ export default function POSPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setScannerEnabled(value => !value)}
+              aria-pressed={scannerEnabled}
+              title={t(scannerEnabled ? 'pos:scanner.disable' : 'pos:scanner.enable')}
+              className={`relative flex h-9 w-9 items-center justify-center rounded-lg border transition-colors ${
+                scannerEnabled
+                  ? 'border-sky-400/30 bg-sky-500/20 text-sky-200'
+                  : 'border-white/15 bg-white/10 text-white/50'
+              }`}
+            >
+              <ScanLine size={15} />
+              <span className={`absolute end-1 top-1 h-1.5 w-1.5 rounded-full ${
+                scannerStatus === 'accepted' ? 'bg-emerald-400'
+                  : scannerStatus === 'unknown' || scannerStatus === 'error' ? 'bg-red-400'
+                    : scannerStatus === 'looking' ? 'bg-amber-300' : 'bg-white/40'
+              }`} />
+            </button>
             <AuthenticatedLanguageSwitch inverse className="h-9" />
             {isElectron() && (
               <button
@@ -3257,6 +3399,28 @@ export default function POSPage() {
               <> · {t('register:openingAmount', { amount: '' })}<span dir="ltr"><Rial amount={Number(session.opening_cash)} /></span></>
             )}
           </span>
+          <form
+            className="ms-auto flex min-w-0 items-center gap-1"
+            data-scanner-ignore="true"
+            onSubmit={event => {
+              event.preventDefault()
+              const code = normalizeBarcode(manualBarcode)
+              if (!code) return
+              void resolveScannedBarcode({ code, characterCount: code.length, durationMs: 0, terminator: 'enter' })
+              setManualBarcode('')
+            }}
+          >
+            <input
+              className="h-7 w-24 rounded-md border border-emerald-200 bg-white px-2 text-xs font-mono text-gray-700 outline-none focus:border-emerald-400 sm:w-40"
+              dir="ltr"
+              value={manualBarcode}
+              onChange={event => setManualBarcode(event.target.value)}
+              placeholder={t('pos:scanner.manual')}
+            />
+            <button type="submit" className="rounded-md bg-emerald-700 px-2 py-1 text-[10px] font-semibold text-white">
+              {t('pos:scanner.add')}
+            </button>
+          </form>
         </div>
 
         {/* Search + category tabs */}

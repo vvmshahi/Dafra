@@ -6,6 +6,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { RiyalSymbol } from '@/components/ui/RiyalSymbol'
 import { Switch } from '@/components/ui/Switch'
 import { supabase } from '@/lib/supabase'
+import { ProductBarcodesSection } from './ProductBarcodesSection'
 
 export interface ProductUnitRow {
   id: string
@@ -401,12 +402,18 @@ export function ProductUnitsSection({
   basePrice,
   serviceRestricted,
   stockEnabled,
+  productName,
+  productNameAr,
+  sku,
   onDirtyChange,
 }: {
   productId: string | null
   basePrice: string
   serviceRestricted: boolean
   stockEnabled: boolean
+  productName: string
+  productNameAr: string | null
+  sku: string | null
   onDirtyChange: (dirty: boolean) => void
 }) {
   const { t, i18n } = useTranslation('products')
@@ -496,14 +503,6 @@ export function ProductUnitsSection({
     )
   }
 
-  if (serviceRestricted) {
-    return (
-      <div className="rounded-xl border border-gray-100 bg-gray-50 px-3.5 py-3 text-xs leading-5 text-gray-600">
-        {t('units.serviceRestriction')}
-      </div>
-    )
-  }
-
   if (loading) {
     return <p className="py-3 text-center text-xs text-gray-500" role="status">{t('units.loading')}</p>
   }
@@ -515,6 +514,24 @@ export function ProductUnitsSection({
         <Button type="button" variant="secondary" size="sm" className="mt-2" onClick={() => void loadUnits()}>
           {t('units.retry')}
         </Button>
+      </div>
+    )
+  }
+
+  if (serviceRestricted) {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-xl border border-gray-100 bg-gray-50 px-3.5 py-3 text-xs leading-5 text-gray-600">
+          {t('units.serviceRestriction')}
+        </div>
+        <ProductBarcodesSection
+          productId={productId}
+          productName={productName}
+          productNameAr={productNameAr}
+          sku={sku}
+          price={basePrice}
+          units={units}
+        />
       </div>
     )
   }
@@ -595,6 +612,15 @@ export function ProductUnitsSection({
           {t('units.addPackage')}
         </Button>
       )}
+
+      <ProductBarcodesSection
+        productId={productId}
+        productName={productName}
+        productNameAr={productNameAr}
+        sku={sku}
+        price={basePrice}
+        units={units}
+      />
 
       {inactivePackages.length > 0 && (
         <div className="space-y-2 border-t border-gray-100 pt-3">
