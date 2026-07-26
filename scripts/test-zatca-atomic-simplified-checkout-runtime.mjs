@@ -629,6 +629,15 @@ await ok(service.from('products').insert([
     is_available: true,
   },
 ]), 'insert products')
+const baseProductUnit = await ok(
+  service
+    .from('product_units')
+    .select('id,version')
+    .eq('product_id', ids.product)
+    .eq('is_base', true)
+    .single(),
+  'read disposable base product unit',
+)
 await ok(service.from('customers').insert([
   {
     id: ids.individualCustomer,
@@ -791,6 +800,56 @@ const productAfterSuccess = await ok(
   'read success stock',
 )
 assert.equal(Number(productAfterSuccess.stock_quantity), 48)
+
+const packagePayload = {
+  branch_id: ids.branchA,
+  customer_id: null,
+  session_id: ids.posSessionA,
+  payment_method: 'cash',
+  items: [{
+    product_id: ids.product,
+    product_unit_id: baseProductUnit.id,
+    package_quantity: 1,
+    expected_product_unit_version: baseProductUnit.version,
+  }],
+  idempotency_key: `atomic-package-${randomUUID()}`,
+}
+const packagePrepared = await prepare(branchUserId, packagePayload)
+assert.equal(packagePrepared.status, 'prepared')
+await storeArtifact(packagePrepared, artifact('package-parent-id'))
+const packageCommitted = await commit(branchUser, packagePrepared)
+assert.equal(packageCommitted.status, 'committed')
+assert.equal(packageCommitted.invoiceId, packagePrepared.snapshot.invoice_id)
+assert.equal(packageCommitted.receipt.invoice_id, packagePrepared.snapshot.invoice_id)
+assert.deepEqual(await invoiceCounts(packageCommitted.invoiceId), {
+  invoice: 1,
+  items: 1,
+  payments: 1,
+  movements: 1,
+  outbox: 1,
+  reservation: 1,
+})
+const packageItems = await ok(
+  service
+    .from('invoice_items')
+    .select('invoice_id,product_unit_id,package_quantity')
+    .eq('invoice_id', packageCommitted.invoiceId),
+  'read atomic package invoice items',
+)
+assert.equal(packageItems.length, 1)
+assert.equal(packageItems[0].invoice_id, packageCommitted.invoiceId)
+assert.equal(packageItems[0].product_unit_id, baseProductUnit.id)
+assert.equal(Number(packageItems[0].package_quantity), 1)
+const packageReplay = await prepare(branchUserId, packagePayload)
+assert.equal(packageReplay.status, 'committed')
+assert.equal(packageReplay.idempotentReplay, true)
+assert.equal(packageReplay.invoiceId, packageCommitted.invoiceId)
+assert.deepEqual(packageReplay.receipt, packageCommitted.receipt)
+const productAfterPackageSuccess = await ok(
+  service.from('products').select('stock_quantity').eq('id', ids.product).single(),
+  'read package success stock',
+)
+assert.equal(Number(productAfterPackageSuccess.stock_quantity), 47)
 
 const replayPrepare = await prepare(branchUserId, basePayload)
 assert.equal(replayPrepare.status, 'committed')
@@ -1197,13 +1256,13 @@ const contentionFirstIntent = await ok(
   'read contention first intent',
 )
 assert.equal(contentionFirstIntent.state, 'prepared')
-assert.equal(Number(contentionFirstIntent.zatca_counter_number), 2)
-assert.equal(contentionFirstIntent.previous_hash, artifact('normal').hash)
+assert.equal(Number(contentionFirstIntent.zatca_counter_number), 3)
+assert.equal(contentionFirstIntent.previous_hash, artifact('package-parent-id').hash)
 await expireIntent(contentionFirstIntent.id)
 
 const contentionRecovered = await prepare(branchUserId, contentionPayload2)
-assert.equal(Number(contentionRecovered.snapshot.zatca_counter_number), 2)
-assert.equal(contentionRecovered.snapshot.previous_hash, artifact('normal').hash)
+assert.equal(Number(contentionRecovered.snapshot.zatca_counter_number), 3)
+assert.equal(contentionRecovered.snapshot.previous_hash, artifact('package-parent-id').hash)
 const contentionArtifact = artifact('contention-recovered')
 await storeArtifact(contentionRecovered, contentionArtifact)
 const contentionCommitted = await commit(branchUser, contentionRecovered)
@@ -1216,7 +1275,7 @@ const headAfterContention = await ok(
     .single(),
   'read head after contention',
 )
-assert.equal(Number(headAfterContention.last_committed_counter), 2)
+assert.equal(Number(headAfterContention.last_committed_counter), 3)
 assert.equal(headAfterContention.last_committed_hash, contentionArtifact.hash)
 assert.equal(
   await rowCount(
@@ -1247,7 +1306,7 @@ const creditPayload = {
   refund_allocations: [{ method: 'card', amount: Number(originalItem.total) / 2 }],
 }
 const creditPrepared = await prepare(branchUserId, creditPayload, 'credit_note')
-assert.equal(Number(creditPrepared.snapshot.zatca_counter_number), 3)
+assert.equal(Number(creditPrepared.snapshot.zatca_counter_number), 4)
 assert.equal(creditPrepared.snapshot.previous_hash, contentionArtifact.hash)
 const creditArtifact = artifact('credit-note')
 await storeArtifact(creditPrepared, creditArtifact)
@@ -1264,7 +1323,7 @@ const creditInvoice = await ok(
 assert.equal(creditInvoice.zatca_invoice_type, 'credit_note')
 assert.equal(creditInvoice.original_invoice_id, normalInvoiceId)
 assert.equal(creditInvoice.zatca_artifact_stage, 'simplified_final')
-assert.equal(Number(creditInvoice.zatca_counter_number), 3)
+assert.equal(Number(creditInvoice.zatca_counter_number), 4)
 assert.equal(creditInvoice.zatca_simplified_xml_hash, creditArtifact.hash)
 assert.deepEqual(await invoiceCounts(creditCommitted.invoiceId), {
   invoice: 1,
@@ -1283,7 +1342,7 @@ const finalHead = await ok(
     .single(),
   'read final chain head',
 )
-assert.equal(Number(finalHead.last_committed_counter), 3)
+assert.equal(Number(finalHead.last_committed_counter), 4)
 assert.equal(finalHead.last_committed_hash, creditArtifact.hash)
 
 const protectedIncidentCountBefore = await rowCount(
@@ -1562,7 +1621,7 @@ const headAfterCompatibilityChecks = await ok(
     .single(),
   'read chain head after compatibility checks',
 )
-assert.equal(Number(headAfterCompatibilityChecks.last_committed_counter), 3)
+assert.equal(Number(headAfterCompatibilityChecks.last_committed_counter), 4)
 assert.equal(headAfterCompatibilityChecks.last_committed_hash, creditArtifact.hash)
 assert.equal(
   await rowCount(

@@ -1373,6 +1373,63 @@ function safeZatcaText(value: unknown, maxLength = 220): string | undefined {
   return cleaned
 }
 
+type AtomicCheckoutFailure = {
+  code: string
+  category: string
+  message: string
+  stage: string
+}
+
+function classifyAtomicCheckoutFailure(error: unknown): AtomicCheckoutFailure {
+  const internalMessage = safeZatcaText(
+    error instanceof Error ? error.message : error,
+    220,
+  ) ?? ''
+
+  if (internalMessage.includes('ATOMIC_CHECKOUT_COMMERCIAL_PARENT_MISSING')) {
+    return {
+      code: 'ATOMIC_COMMERCIAL_PARENT_MISSING',
+      category: 'missing_parent',
+      message: 'The checkout parent document could not be resolved.',
+      stage: 'commercial_commit',
+    }
+  }
+  if (/IDEMPOTENCY_FINGERPRINT_MISMATCH|ATOMIC_CHECKOUT_COMMITTED_INCONSISTENT/.test(
+    internalMessage,
+  )) {
+    return {
+      code: 'ATOMIC_IDEMPOTENCY_INCONSISTENCY',
+      category: 'idempotency_inconsistency',
+      message: 'The checkout request conflicts with an existing checkout.',
+      stage: 'idempotency_resolution',
+    }
+  }
+  if (/ATOMIC_CHECKOUT_INTENT_EXPIRED|ATOMIC_CHECKOUT_INTENT_STALE/.test(
+    internalMessage,
+  )) {
+    return {
+      code: 'ATOMIC_STALE_INTENT',
+      category: 'stale_intent',
+      message: 'The checkout attempt expired. Start the checkout again.',
+      stage: 'intent_resolution',
+    }
+  }
+  if (error instanceof ZatcaSubmitAssertionError) {
+    return {
+      code: error.statusString,
+      category: 'zatca_processing_failure',
+      message: 'The invoice could not be finalized for checkout.',
+      stage: 'zatca_finalization',
+    }
+  }
+  return {
+    code: 'ATOMIC_UNEXPECTED_DATABASE_FAILURE',
+    category: 'unexpected_database_failure',
+    message: 'The checkout could not be completed.',
+    stage: 'atomic_checkout',
+  }
+}
+
 function safeZatcaMessages(body: any, kind: 'error' | 'warning'): Array<{ code?: string; message?: string }> {
   const validationResults = body?.validationResults ?? {}
   const direct = kind === 'error' ? body?.errors : body?.warnings
@@ -4188,20 +4245,25 @@ Deno.serve(async (req: Request) => {
         }), '[zatca-audit] unable to persist atomic checkout success audit:')
         return jsonResponse(result)
       } catch (error) {
-        const message = safeZatcaText(error instanceof Error ? error.message : error, 220)
-          ?? 'Atomic simplified checkout failed'
+        const failure = classifyAtomicCheckoutFailure(error)
         await auditEvent(supabase as any, {
           ...auditBase,
           action: 'zatca_atomic_checkout_failed',
           severity: 'warning',
           status: 'failed',
-          metadata: { operation: action, reason: message },
+          metadata: {
+            operation: action,
+            stage: failure.stage,
+            category: failure.category,
+            code: failure.code,
+          },
         })
         return jsonResponse({
-          error: message,
-          code: error instanceof ZatcaSubmitAssertionError
-            ? error.statusString
-            : 'ATOMIC_SIMPLIFIED_CHECKOUT_FAILED',
+          error: failure.message,
+          code: failure.code,
+          category: failure.category,
+          stage: failure.stage,
+          requestId: reqId,
         }, 409)
       }
     }
