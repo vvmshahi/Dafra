@@ -5,6 +5,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
@@ -152,7 +153,7 @@ function ProductCard({
           onClick={() => onToggle(!product.is_available)}
           title={t('actions.toggleAvailability')}
           aria-label={`Mark ${product.name} as ${product.is_available ? 'unavailable' : 'available'}`}
-          className={`absolute top-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full border shadow-sm transition-colors ${
+          className={`absolute end-2 top-2 text-[10px] font-semibold px-2 py-0.5 rounded-full border shadow-sm transition-colors ${
             product.is_available
               ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
               : 'bg-white/90 text-gray-600 border-gray-200 hover:bg-gray-50'
@@ -162,7 +163,7 @@ function ProductCard({
         </button>
 
         {/* Touch-friendly action buttons */}
-        <div className="absolute top-2 left-2 flex gap-1">
+        <div className="absolute start-2 top-2 flex gap-1">
           <button
             onClick={onEdit}
             aria-label={`Edit ${product.name}`}
@@ -182,7 +183,7 @@ function ProductCard({
 
       {/* Content */}
       <div className="p-3 flex flex-col flex-1 gap-1">
-        <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-1">{dn(product.name, product.name_ar)}</p>
+        <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-1" dir="auto">{dn(product.name, product.name_ar)}</p>
         <div className="flex items-center gap-1.5 flex-wrap mt-1">
           {product.categories && (
             <span
@@ -239,7 +240,7 @@ function ProductListRow({
 
       {/* Name */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 truncate">{dn(product.name, product.name_ar)}</p>
+        <p className="text-sm font-medium text-gray-900 truncate" dir="auto">{dn(product.name, product.name_ar)}</p>
         {(product.sku || product.barcode) && (
           <p className="text-[11px] text-gray-400">
             {product.sku ? `SKU: ${product.sku}` : `Barcode: ${product.barcode}`}
@@ -645,32 +646,35 @@ export default function ProductsPage() {
     <div className="space-y-5">
 
       {/* ── Header ──────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex-1 flex items-center gap-2 min-w-0">
-          <h1 className="text-lg font-bold text-gray-900">{t('title')}</h1>
-          {!loading && (
-            <span className="text-xs font-semibold bg-primary-50 text-primary-600 px-2 py-0.5 rounded-full">
-              {products.length}
-            </span>
-          )}
-        </div>
-        <Button variant="secondary" size="sm" onClick={() => setCatsOpen(true)}>
-          <Tag size={14} />
-          {t('category.manage')}
-        </Button>
-        <Button variant="secondary" size="sm" onClick={() => setAddCatOpen(true)}>
-          <FolderPlus size={14} />
-          {t('category.add')}
-        </Button>
-        <Button variant="secondary" size="sm" onClick={() => setBatchPrintOpen(true)}>
-          <Printer size={14} aria-hidden="true" />
-          {t('printing:barcodeLabels.batch.open')}
-        </Button>
-        <Button size="sm" onClick={openAdd}>
-          <Plus size={14} />
-          {t('add')}
-        </Button>
-      </div>
+      <PageHeader
+        title={t('title')}
+        description={t('subtitle')}
+        meta={!loading ? (
+          <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs font-semibold text-primary-600">
+            {products.length}
+          </span>
+        ) : undefined}
+        actions={(
+          <>
+            <Button variant="secondary" size="sm" onClick={() => setCatsOpen(true)}>
+              <Tag size={14} />
+              {t('category.manage')}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setAddCatOpen(true)}>
+              <FolderPlus size={14} />
+              {t('category.add')}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setBatchPrintOpen(true)}>
+              <Printer size={14} aria-hidden="true" />
+              {t('printing:barcodeLabels.batch.open')}
+            </Button>
+            <Button size="sm" onClick={openAdd}>
+              <Plus size={14} />
+              {t('add')}
+            </Button>
+          </>
+        )}
+      />
 
       {/* ── Category filter tabs ────────────────────────────────── */}
       {categories.length > 0 && (
@@ -695,18 +699,21 @@ export default function ProductsPage() {
       {/* ── Search + view toggle ────────────────────────────────── */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-sm">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
             type="text"
             placeholder={t('searchPlaceholder')}
+            aria-label={t('searchPlaceholder')}
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="input pl-9 py-2 text-sm"
+            className="input ps-9 pe-9 py-2 text-sm"
           />
           {search && (
             <button
+              type="button"
               onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+              aria-label={t('common:clearSearch')}
+              className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
             >
               <X size={13} />
             </button>
@@ -716,7 +723,10 @@ export default function ProductsPage() {
         {/* View toggle */}
         <div className="flex items-center bg-white border border-gray-200 rounded-xl p-0.5 flex-shrink-0">
           <button
+            type="button"
             onClick={() => setViewMode('grid')}
+            aria-label={t('viewGrid')}
+            aria-pressed={viewMode === 'grid'}
             className={`p-2 rounded-[10px] transition-colors ${
               viewMode === 'grid' ? 'bg-primary-500 text-white' : 'text-gray-400 hover:text-gray-600'
             }`}
@@ -724,7 +734,10 @@ export default function ProductsPage() {
             <LayoutGrid size={15} />
           </button>
           <button
+            type="button"
             onClick={() => setViewMode('list')}
+            aria-label={t('viewList')}
+            aria-pressed={viewMode === 'list'}
             className={`p-2 rounded-[10px] transition-colors ${
               viewMode === 'list' ? 'bg-primary-500 text-white' : 'text-gray-400 hover:text-gray-600'
             }`}

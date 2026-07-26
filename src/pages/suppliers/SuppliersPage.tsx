@@ -4,7 +4,8 @@ import { Plus, Pencil, Trash2, Search, Phone, MapPin, User, Building2, BarChart3
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { PageHeader } from '@/components/ui/PageHeader'
+import { ContentState } from '@/components/ui/ContentState'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { displayName as dn } from '@/lib/utils/display'
 import type { Supplier } from '@/types'
@@ -154,26 +155,25 @@ export default function SuppliersPage() {
     <div className="space-y-5">
 
       {/* ── Header ──────────────────────────────────────────── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="flex-1">
-          <h1 className="text-lg font-bold text-gray-900">{t('title')}</h1>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {t('subtitle')}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link to="/reports/suppliers">
-            <Button size="sm" variant="secondary">
+      <PageHeader
+        title={t('title')}
+        description={t('subtitle')}
+        actions={(
+          <>
+            <Link
+              to="/reports/suppliers"
+              className="btn-secondary min-h-9 rounded-lg px-3 py-1.5 text-xs"
+            >
               <BarChart3 size={14} />
               {t('supplierIntelligence:reports.openReports')}
+            </Link>
+            <Button size="sm" onClick={openAdd}>
+              <Plus size={14} />
+              {t('add')}
             </Button>
-          </Link>
-          <Button size="sm" onClick={openAdd}>
-            <Plus size={14} />
-            {t('add')}
-          </Button>
-        </div>
-      </div>
+          </>
+        )}
+      />
 
       {/* ── Summary cards ───────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -212,10 +212,11 @@ export default function SuppliersPage() {
           )}
         </div>
         <div className="relative">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <Search size={15} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
-            className="input pl-9"
+            className="input ps-9"
             placeholder={t('searchPlaceholder')}
+            aria-label={t('searchPlaceholder')}
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -224,27 +225,21 @@ export default function SuppliersPage() {
 
       {/* ── Content ─────────────────────────────────────────── */}
       {loading ? (
-        <div className="flex justify-center py-20"><LoadingSpinner size="lg" /></div>
+        <ContentState kind="loading" className="py-20" />
       ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center mb-4">
-            <Building2 size={22} className="text-emerald-300" />
-          </div>
-          <p className="text-gray-700 font-semibold">
-            {search ? t('noneFound') : t('noneYet')}
-          </p>
-          <p className="text-gray-400 text-sm mt-1 max-w-xs">
-            {search
-              ? t('trySearch')
-              : t('emptyHint')}
-          </p>
-          {!search && (
-            <Button className="mt-5" onClick={openAdd}>
+        <ContentState
+          kind="empty"
+          icon={Building2}
+          title={t(search ? 'noneFound' : 'noneYet')}
+          description={t(search ? 'trySearch' : 'emptyHint')}
+          action={!search ? (
+            <Button onClick={openAdd}>
               <Plus size={15} />
               {t('add')}
             </Button>
-          )}
-        </div>
+          ) : undefined}
+          className="py-20"
+        />
       ) : (
         <div className="card overflow-hidden">
           {/* Table header */}

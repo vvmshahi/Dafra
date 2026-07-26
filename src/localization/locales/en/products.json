@@ -1,6 +1,8 @@
 {
   "title": "Products",
   "subtitle": "Manage products, pricing, categories, and POS availability",
+  "viewGrid": "Show products as a grid",
+  "viewList": "Show products as a list",
   "add": "Add Product",
   "edit": "Edit Product",
   "created": "Product created successfully.",

@@ -81,7 +81,7 @@ function NavItemRow({ item, label, isActive, collapsed }: NavItemRowProps) {
   return (
     <div className={`
       flex items-center rounded-xl text-sm font-medium
-      transition-all duration-150 group
+      transition-[background-color,color,transform] duration-150 group active:scale-[0.98]
       ${collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'}
       ${isActive
         ? 'bg-primary-500 text-white shadow-sm'
@@ -151,7 +151,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   return (
     <aside dir={isRtl ? 'rtl' : 'ltr'} className={`
       flex-shrink-0 bg-sidebar flex flex-col h-full shadow-sidebar
-      transition-all duration-200 ease-in-out
+      transition-[width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]
       ${collapsed ? 'w-16' : 'w-[240px]'}
     `}>
 
@@ -198,7 +198,10 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto sidebar-scroll">
+      <nav
+        className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto sidebar-scroll"
+        aria-label={t('navigation:mainNavigation')}
+      >
         {navItems.map((item, index) => {
           const isActive = isNavActive(item)
           const itemLabel = t(`navigation:${item.labelKey}`)
@@ -211,7 +214,12 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 </p>
               )}
               {showSection && collapsed && index > 0 && <div className="mx-2 mb-2 border-t border-sidebar-border" />}
-              <NavLink to={item.path} title={collapsed ? itemLabel : undefined}>
+              <NavLink
+                to={item.path}
+                title={collapsed ? itemLabel : undefined}
+                aria-current={isActive ? 'page' : undefined}
+                className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+              >
                 <NavItemRow item={item} label={itemLabel} isActive={isActive} collapsed={collapsed} />
               </NavLink>
             </div>
@@ -245,11 +253,15 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         )}
 
         {/* Profile */}
-        <NavLink to="/profile" title={collapsed ? t('navigation:profile') : undefined}>
+        <NavLink
+          to="/profile"
+          title={collapsed ? t('navigation:profile') : undefined}
+          className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+        >
           {({ isActive }) => (
             <div className={`
               flex items-center rounded-xl text-sm font-medium
-              transition-all duration-150 group
+              transition-[background-color,color,transform] duration-150 group active:scale-[0.98]
               ${collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'}
               ${isActive
                 ? 'bg-primary-500 text-white shadow-sm'
@@ -271,7 +283,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           className={`
             flex items-center w-full rounded-xl text-sidebar-text
             hover:bg-sidebar-hover hover:text-white text-sm font-medium
-            transition-all duration-150 group
+            transition-[background-color,color,transform] duration-150 group active:scale-[0.98]
             ${collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'}
           `}
         >

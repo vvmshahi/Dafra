@@ -10,6 +10,7 @@ import { resolveBusinessType } from '@/lib/utils/businessType'
 import { useTranslation } from 'react-i18next'
 import ComplianceReadinessCard from '@/components/compliance/ComplianceReadinessCard'
 import { ENABLE_OFFICIAL_SELLER_IDENTITY } from '@/lib/releaseFlags'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 /* ── Tab config ─────────────────────────────────────────────── */
 
@@ -50,18 +51,21 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-4xl space-y-6">
+      <PageHeader title={t('pageTitle')} description={t('pageSubtitle')} />
 
       {/* Tab bar */}
-      <div className="card p-1.5 flex gap-1 overflow-x-auto">
+      <div className="card p-1.5 flex gap-1 overflow-x-auto" aria-label={t('pageTitle')}>
         {TABS.map(tab => {
           const Icon    = tab.icon
           const isActive = tab.id === active
           return (
             <button
               key={tab.id}
+              type="button"
               data-tab={tab.id}
+              aria-pressed={isActive}
               onClick={() => setActive(tab.id)}
-              className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap flex-1 justify-center transition-all ${
+              className={`flex min-h-10 flex-1 items-center justify-center gap-2.5 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-medium transition-[background-color,color,box-shadow,transform] active:scale-[0.98] ${
                 isActive
                   ? 'bg-primary-500 text-white shadow-sm'
                   : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
@@ -100,9 +104,11 @@ export default function SettingsPage() {
       {ENABLE_OFFICIAL_SELLER_IDENTITY && canViewBusinessType && <ComplianceReadinessCard manage />}
 
       {/* Tab content */}
-      {active === 'subscription' && <SubscriptionTab />}
-      {active === 'account'      && <AccountTab />}
-      {active === 'printer'      && <PrinterTab />}
+      <section aria-live="polite" aria-label={t(`tabs.${current.id}.label`)}>
+        {active === 'subscription' && <SubscriptionTab />}
+        {active === 'account'      && <AccountTab />}
+        {active === 'printer'      && <PrinterTab />}
+      </section>
     </div>
   )
 }

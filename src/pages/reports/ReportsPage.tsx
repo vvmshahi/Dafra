@@ -21,6 +21,7 @@ import PurchaseReport   from './PurchaseReport'
 import RegisterSessionsReport from './RegisterSessionsReport'
 import type { PhaseAReportKind } from './pdf/reportPdfExporters'
 import { useTranslation } from 'react-i18next'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -135,12 +136,13 @@ export default function ReportsPage() {
     <div className="space-y-4">
 
       {/* ── Page header ─────────────────────────────────────── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <h1 className="text-lg font-bold text-gray-900 flex-1">{t('title')}</h1>
-        <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        title={t('title')}
+        actions={(
+          <>
           <Link
             to="/reports/suppliers"
-            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-amber-200 bg-white text-amber-800 text-sm font-medium hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-amber-200 bg-white px-4 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
           >
             <Truck size={14} />
             {t('tabs.suppliers')}
@@ -161,8 +163,9 @@ export default function ReportsPage() {
               {t(exporting ? 'export.exporting' : 'export.pdf')}
             </button>
           )}
-        </div>
-      </div>
+          </>
+        )}
+      />
 
       {/* ── Tab bar ─────────────────────────────────────────── */}
       <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
@@ -202,7 +205,7 @@ export default function ReportsPage() {
         {/* Branch selector */}
         {branches.length > 1 && (
           <select
-            className="input py-1.5 text-sm w-auto ml-auto"
+            className="input ms-auto w-auto py-1.5 text-sm"
             value={branchId ?? ''}
             onChange={e => setBranchId(e.target.value || null)}
           >

@@ -4,8 +4,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { Badge } from '@/components/ui/Badge'
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { ContentState } from '@/components/ui/ContentState'
 import type { Customer, CustomerType } from '@/types'
 import CustomerDrawer from './CustomerDrawer'
 import { useTranslation } from 'react-i18next'
@@ -151,25 +152,19 @@ function FilterTab({
 function EmptyState({ filtered, onAdd }: { filtered: boolean; onAdd: () => void }) {
   const { t } = useTranslation('customers')
   return (
-    <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-primary-50 flex items-center justify-center mb-4">
-        <Users size={28} className="text-primary-300" />
-      </div>
-      <p className="text-gray-700 font-semibold">
-        {t(filtered ? 'noMatches' : 'noCustomers')}
-      </p>
-      <p className="text-gray-400 text-sm mt-1 max-w-xs leading-relaxed">
-        {filtered
-          ? t('filterHint')
-          : t('emptyHint')}
-      </p>
-      {!filtered && (
-        <Button className="mt-5" onClick={onAdd}>
+    <ContentState
+      kind="empty"
+      icon={Users}
+      title={t(filtered ? 'noMatches' : 'noCustomers')}
+      description={t(filtered ? 'filterHint' : 'emptyHint')}
+      action={!filtered ? (
+        <Button onClick={onAdd}>
           <Plus size={15} />
           {t('add')}
         </Button>
-      )}
-    </div>
+      ) : undefined}
+      className="py-24"
+    />
   )
 }
 
@@ -178,7 +173,7 @@ function EmptyState({ filtered, onAdd }: { filtered: boolean; onAdd: () => void 
 export default function CustomersPage() {
   const { profile }  = useAuth()
   const navigate     = useNavigate()
-  const { t } = useTranslation(['customers', 'customerIntelligence'])
+  const { t } = useTranslation(['customers', 'customerIntelligence', 'common'])
 
   const [customers,   setCustomers]   = useState<CustomerWithStats[]>([])
   const [loading,     setLoading]     = useState(true)
@@ -251,24 +246,26 @@ export default function CustomersPage() {
     <div className="space-y-5">
 
       {/* ── Header ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex-1 flex items-center gap-2 min-w-0">
-          <h1 className="text-lg font-bold text-gray-900">{t('title')}</h1>
-          {!loading && (
-            <span className="text-xs font-semibold bg-primary-50 text-primary-600 px-2 py-0.5 rounded-full">
-              {customers.length}
-            </span>
-          )}
-        </div>
-        <Button size="sm" onClick={openAdd}>
-          <Plus size={14} />
-          {t('add')}
-        </Button>
-        <Link to="/reports/customers" className="btn-secondary px-3 py-1.5 text-xs rounded-lg">
-          <BarChart3 size={14} />
-          {t('customerIntelligence:reports.openDedicated')}
-        </Link>
-      </div>
+      <PageHeader
+        title={t('title')}
+        meta={!loading ? (
+          <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs font-semibold text-primary-600">
+            {customers.length}
+          </span>
+        ) : undefined}
+        actions={(
+          <>
+            <Button size="sm" onClick={openAdd}>
+              <Plus size={14} />
+              {t('add')}
+            </Button>
+            <Link to="/reports/customers" className="btn-secondary px-3 py-1.5 text-xs rounded-lg">
+              <BarChart3 size={14} />
+              {t('customerIntelligence:reports.openDedicated')}
+            </Link>
+          </>
+        )}
+      />
 
       {/* ── Filter tabs ─────────────────────────────────────── */}
       <div className="flex items-center gap-2">
@@ -279,18 +276,21 @@ export default function CustomersPage() {
 
       {/* ── Search ──────────────────────────────────────────── */}
       <div className="relative max-w-sm">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         <input
           type="text"
           placeholder={t('search')}
+          aria-label={t('search')}
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="input pl-9 py-2 text-sm"
+          className="input ps-9 pe-9 py-2 text-sm"
         />
         {search && (
           <button
+            type="button"
             onClick={() => setSearch('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+            aria-label={t('common:clearSearch')}
+            className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
           >
             <X size={13} />
           </button>
@@ -299,9 +299,7 @@ export default function CustomersPage() {
 
       {/* ── Content ─────────────────────────────────────────── */}
       {loading ? (
-        <div className="flex justify-center py-24">
-          <LoadingSpinner size="lg" />
-        </div>
+        <ContentState kind="loading" className="py-24" />
       ) : filtered.length === 0 ? (
         <EmptyState filtered={isFiltered} onAdd={openAdd} />
       ) : (

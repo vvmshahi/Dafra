@@ -9,6 +9,9 @@ import { useTranslation } from 'react-i18next'
 import { useLocale } from '@/localization/useLocale'
 
 const WA_LINK = supportConfig.whatsappLink
+const subscriptionBannerClass = 'flex shrink-0 flex-wrap items-center gap-2.5 px-4 py-2.5 text-sm sm:flex-nowrap'
+const subscriptionMessageClass = 'min-w-0 flex-[1_1_180px] [overflow-wrap:anywhere]'
+const subscriptionActionClass = 'ms-auto flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/30'
 
 function SubscriptionBanner() {
   const { profile } = useAuth()
@@ -22,16 +25,16 @@ function SubscriptionBanner() {
 
   if (sub.status === 'suspended') {
     return (
-      <div className="flex items-center gap-3 bg-red-700 text-white px-4 py-2.5 text-sm flex-shrink-0">
+      <div className={`${subscriptionBannerClass} bg-red-700 text-white`}>
         <AlertTriangle size={15} className="flex-shrink-0" />
-        <span className="flex-1">
+        <span className={subscriptionMessageClass}>
           {t('subscription.suspended')}
         </span>
         <a
           href={WA_LINK}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+          className={subscriptionActionClass}
         >
           <MessageCircle size={13} /> {t('contactUs')}
         </a>
@@ -43,16 +46,16 @@ function SubscriptionBanner() {
 
   if (sub.status === 'grace_period') {
     return (
-      <div className="flex items-center gap-3 bg-amber-600 text-white px-4 py-2.5 text-sm flex-shrink-0">
+      <div className={`${subscriptionBannerClass} bg-amber-600 text-white`}>
         <AlertTriangle size={15} className="flex-shrink-0" />
-        <span className="flex-1">
+        <span className={subscriptionMessageClass}>
           {t('subscription.gracePeriod')}
         </span>
         <a
           href={WA_LINK}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+          className={subscriptionActionClass}
         >
           <MessageCircle size={13} /> {t('contactUs')}
         </a>
@@ -62,16 +65,16 @@ function SubscriptionBanner() {
 
   if (sub.showWarning) {
     return (
-      <div className="flex items-center gap-3 bg-amber-500 text-white px-4 py-2.5 text-sm flex-shrink-0">
+      <div className={`${subscriptionBannerClass} bg-amber-500 text-white`}>
         <AlertTriangle size={15} className="flex-shrink-0" />
-        <span className="flex-1">
+        <span className={subscriptionMessageClass}>
           {t('subscription.dueSoon')}
         </span>
         <a
           href={WA_LINK}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+          className={subscriptionActionClass}
         >
           <MessageCircle size={13} /> {t('renewNow')}
         </a>
@@ -81,16 +84,16 @@ function SubscriptionBanner() {
 
   if (sub.status === 'expired') {
     return (
-      <div className="flex items-center gap-3 bg-amber-600 text-white px-4 py-2.5 text-sm flex-shrink-0">
+      <div className={`${subscriptionBannerClass} bg-amber-600 text-white`}>
         <AlertTriangle size={15} className="flex-shrink-0" />
-        <span className="flex-1">
+        <span className={subscriptionMessageClass}>
           {t('subscription.overdue')}
         </span>
         <a
           href={WA_LINK}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+          className={subscriptionActionClass}
         >
           <MessageCircle size={13} /> {t('contactUs')}
         </a>
@@ -111,6 +114,7 @@ function getInitialCollapsed(): boolean {
 
 export default function AppLayout() {
   const { isRtl } = useLocale()
+  const { t } = useTranslation('common')
   const [collapsed, setCollapsed] = useState(getInitialCollapsed)
   const location = useLocation()
   const flushContent = location.pathname === '/branch'
@@ -125,10 +129,21 @@ export default function AppLayout() {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden" dir="ltr">
+      <a
+        href="#main-content"
+        dir={isRtl ? 'rtl' : 'ltr'}
+        className="fixed start-3 top-3 z-[100] -translate-y-20 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-primary-800 shadow-card-lg transition-transform focus:translate-y-0"
+      >
+        {t('skipToContent')}
+      </a>
       <Sidebar collapsed={collapsed} onToggle={toggle} />
       <div className="flex-1 flex flex-col min-w-0" dir={isRtl ? 'rtl' : 'ltr'}>
         <SubscriptionBanner />
-        <main className={`flex-1 overflow-y-auto ${flushContent ? 'p-0' : 'p-6'}`}>
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className={`flex-1 overflow-y-auto outline-none ${flushContent ? 'p-0' : 'px-4 py-5 sm:p-6'}`}
+        >
           <Outlet />
         </main>
       </div>

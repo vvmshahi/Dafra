@@ -1,5 +1,10 @@
 import { CalendarRange, SlidersHorizontal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import {
+  FilterPanel,
+  FilterPresetRow,
+  ResponsiveFilterGrid,
+} from '@/components/ui/FilterPanel'
 import type {
   IntelligenceDatePreset,
   SupplierIntelligenceFilters,
@@ -59,22 +64,16 @@ export function SupplierIntelligenceFiltersPanel({
   const { t } = useTranslation('supplierIntelligence')
 
   return (
-    <section className="card p-4 space-y-4" aria-labelledby="supplier-intelligence-filters">
-      <div className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
-          <SlidersHorizontal size={15} />
-        </div>
-        <div>
-          <h2 id="supplier-intelligence-filters" className="text-sm font-bold text-gray-900">
-            {t('filters.title')}
-          </h2>
-          <p className="text-xs text-gray-400">{t('commercialActivity')}</p>
-        </div>
-      </div>
-
+    <FilterPanel
+      id="supplier-intelligence-filters"
+      title={t('filters.title')}
+      description={t('commercialActivity')}
+      icon={SlidersHorizontal}
+      accentClassName="bg-amber-50 text-amber-700"
+    >
       <fieldset>
         <legend className="sr-only">{t('filters.dateRange')}</legend>
-        <div className="flex gap-1.5 overflow-x-auto pb-1" role="group" aria-label={t('filters.dateRange')}>
+        <FilterPresetRow label={t('filters.dateRange')}>
           {PRESETS.map(value => (
             <button
               key={value}
@@ -90,10 +89,10 @@ export function SupplierIntelligenceFiltersPanel({
               {t(`filters.${value}`)}
             </button>
           ))}
-        </div>
+        </FilterPresetRow>
       </fieldset>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
+      <ResponsiveFilterGrid columns={6}>
         <label className="space-y-1">
           <span className="label">{t('filters.startDate')}</span>
           <span className="relative block">
@@ -194,7 +193,7 @@ export function SupplierIntelligenceFiltersPanel({
             {t('paymentStatus.informational')}
           </span>
         </label>
-      </div>
-    </section>
+      </ResponsiveFilterGrid>
+    </FilterPanel>
   )
 }

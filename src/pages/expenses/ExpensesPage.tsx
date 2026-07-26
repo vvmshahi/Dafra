@@ -2,6 +2,7 @@ import { useState } from 'react'
 import DailyExpensesTab from './DailyExpensesTab'
 import FixedExpensesTab from './FixedExpensesTab'
 import { useTranslation } from 'react-i18next'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 type Tab = 'daily' | 'fixed'
 
@@ -13,9 +14,7 @@ export default function ExpensesPage() {
     <div className="space-y-5">
 
       {/* ── Header ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
-        <h1 className="text-lg font-bold text-gray-900 flex-1">{t('title')}</h1>
-      </div>
+      <PageHeader title={t('title')} />
 
       {/* ── Tab switcher ────────────────────────────────────── */}
       <div className="flex items-center bg-white border border-gray-100 rounded-2xl p-1 w-fit shadow-card">

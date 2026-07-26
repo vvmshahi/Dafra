@@ -1,5 +1,10 @@
 import { CalendarRange, SlidersHorizontal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import {
+  FilterPanel,
+  FilterPresetRow,
+  ResponsiveFilterGrid,
+} from '@/components/ui/FilterPanel'
 import type {
   CustomerIntelligenceFilters,
   IntelligenceDatePreset,
@@ -51,22 +56,15 @@ export function CustomerIntelligenceFiltersPanel({
   const { t } = useTranslation('customerIntelligence')
 
   return (
-    <section className="card p-4 space-y-4" aria-labelledby="customer-intelligence-filters">
-      <div className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded-lg bg-gray-100 text-gray-500 flex items-center justify-center">
-          <SlidersHorizontal size={15} />
-        </div>
-        <div>
-          <h2 id="customer-intelligence-filters" className="text-sm font-bold text-gray-900">
-            {t('filters.title')}
-          </h2>
-          <p className="text-xs text-gray-400">{t('commercialActivity')}</p>
-        </div>
-      </div>
-
+    <FilterPanel
+      id="customer-intelligence-filters"
+      title={t('filters.title')}
+      description={t('commercialActivity')}
+      icon={SlidersHorizontal}
+    >
       <fieldset>
         <legend className="sr-only">{t('filters.dateRange')}</legend>
-        <div className="flex gap-1.5 overflow-x-auto pb-1" role="group" aria-label={t('filters.dateRange')}>
+        <FilterPresetRow label={t('filters.dateRange')}>
           {PRESETS.map(value => (
             <button
               key={value}
@@ -82,10 +80,10 @@ export function CustomerIntelligenceFiltersPanel({
               {t(`filters.${value}`)}
             </button>
           ))}
-        </div>
+        </FilterPresetRow>
       </fieldset>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <ResponsiveFilterGrid columns={4}>
         <label className="space-y-1">
           <span className="label">{t('filters.startDate')}</span>
           <span className="relative block">
@@ -166,7 +164,7 @@ export function CustomerIntelligenceFiltersPanel({
             ))}
           </select>
         </label>
-      </div>
-    </section>
+      </ResponsiveFilterGrid>
+    </FilterPanel>
   )
 }

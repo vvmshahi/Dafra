@@ -121,14 +121,14 @@ export default function LoginPage() {
             </div>
 
             {successMsg && (
-              <div className="mb-4 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              <div className="mb-4 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800" role="status" aria-live="polite">
                 <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0 text-emerald-600" />
                 <span>{successMsg}</span>
               </div>
             )}
 
             {error && (
-              <div className="mb-4 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              <div className="mb-4 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
                 <span className="mt-0.5 flex-shrink-0 font-black text-red-500">!</span>
                 <span>{error}</span>
               </div>
@@ -140,7 +140,7 @@ export default function LoginPage() {
                 type="text"
                 value={identifier}
                 onChange={e => setIdentifier(e.target.value)}
-                placeholder="owner@company.com or counter_user"
+                placeholder={t('auth:login.identifierPlaceholder')}
                 icon={UserRound}
                 required
                 autoComplete="username"

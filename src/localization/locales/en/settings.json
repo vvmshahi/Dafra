@@ -1,4 +1,6 @@
 {
+  "pageTitle": "Settings",
+  "pageSubtitle": "Manage your account, subscription, and device preferences.",
   "tabs": { "subscription": { "label": "Subscription", "description": "Plan, billing, and usage limits" }, "account": { "label": "Account", "description": "Profile, name, phone, and password" }, "printer": { "label": "Printer", "description": "Default receipt printer for silent printing" } },
   "businessType": { "title": "Business Type", "readOnly": "Read only", "trading": { "label": "Trading business", "description": "Products, stock, and purchase tracking." }, "service": { "label": "Service business", "description": "Services, produced items, materials, and simple profit estimates." } },
   "language": "Language",
