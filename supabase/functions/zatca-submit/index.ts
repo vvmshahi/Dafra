@@ -3977,6 +3977,19 @@ Deno.serve(async (req: Request) => {
       })
       if (!capabilities.compatible
           || clientVersion !== FINALIZATION_CLIENT_VERSION) {
+        // This contract decision happens before branch authorization,
+        // idempotency lookup, preparation, or any commercial write. A
+        // pre-v2/version-mismatched database must retain the coordinated
+        // deployment's write-free legacy checkout path.
+        if (capabilities.legacySubmitAvailable) {
+          return jsonResponse({
+            status: 'legacy_required',
+            reason: 'atomic_rollout_disabled',
+            blockingReason: !capabilities.compatible
+              ? 'runtime_version_incompatible'
+              : 'client_request_version_incompatible',
+          })
+        }
         return jsonResponse({
           error: 'Atomic simplified checkout is unavailable or version-incompatible',
           code: 'ATOMIC_SIMPLIFIED_CHECKOUT_UNAVAILABLE',
