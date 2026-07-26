@@ -54,6 +54,51 @@ const FIRST_INVOICE_HASH =
 const FINALIZATION_SCHEMA_VERSION = 2
 const FINALIZATION_EDGE_VERSION = '2.1.0'
 const FINALIZATION_CLIENT_VERSION = '2.1.0'
+// Phase 1 only: the additive authenticated RPC is not on the checkout path.
+const CONSOLIDATED_ATOMIC_PREFLIGHT_ENABLED = false
+function consolidatedAtomicPreflightEnabled(): boolean {
+  const edgeSwitch = parseImmutableFinalizationEdgeSwitch(
+    Deno.env.get('ZATCA_IMMUTABLE_FINALIZATION_ENABLED'),
+  )
+  return CONSOLIDATED_ATOMIC_PREFLIGHT_ENABLED && edgeSwitch.edgeExecutionEnabled
+}
+type PartialAtomicPreflightResult = {
+  status: 'preflight_ok' | 'committed' | 'conflict' | 'authorization_failed'
+    | 'unavailable' | 'dependency_failed'
+  actorUserId?: string
+  tenantId?: string
+  branchId?: string
+  actorRole?: string
+  invoiceId?: string
+  idempotentReplay?: boolean
+  code?: string
+  reason?: string
+  blockingReason?: string
+}
+
+async function invokePartialAtomicPreflight(
+  callerDb: any,
+  input: {
+    branchId: string
+    documentType: 'invoice' | 'credit_note'
+    idempotencyKey: string
+    cartFingerprint: string
+    clientVersion: string
+  },
+): Promise<PartialAtomicPreflightResult> {
+  const { data, error } = await callerDb.rpc('preflight_zatca_atomic_checkout_v2', {
+    p_branch_id: input.branchId,
+    p_document_type: input.documentType,
+    p_idempotency_key: input.idempotencyKey,
+    p_cart_fingerprint: input.cartFingerprint,
+    p_client_version: input.clientVersion,
+    p_edge_version: FINALIZATION_EDGE_VERSION,
+  })
+  if (error) {
+    return { status: 'dependency_failed', code: 'ATOMIC_CHECKOUT_PREFLIGHT_FAILED' }
+  }
+  return rpcObject(data) as PartialAtomicPreflightResult
+}
 const OUTPUT_STATE_READ_CLIENT_VERSIONS = new Set(['2.0.0', FINALIZATION_CLIENT_VERSION])
 const ZATCA_OUTBOX_PROJECT_REF = 'bkbphkpqcxuejozayrsy'
 const RECOVERY_BRANCH_ID = '371dee75-6e46-496e-89e7-1a7492b51a3c'
@@ -3888,20 +3933,160 @@ Deno.serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    const authOperation = () => authClient.auth.getUser(callerJWT)
-    const { data: { user }, error: authErr } = checkoutPerf
-      ? await checkoutPerf.span('auth_get_user', authOperation)
-      : await authOperation()
-    if (authErr || !user) {
-      return jsonResponse({ error: 'Unauthorized' }, 401)
+    const partialCheckoutAction = earlyAction === 'checkout_simplified'
+      || earlyAction === 'checkout_simplified_credit_note'
+    let usePartialPreflight = partialCheckoutAction && consolidatedAtomicPreflightEnabled()
+    let partialPreflight: PartialAtomicPreflightResult | null = null
+    let user: { id: string } | null = null
+    let callerProfile: CallerProfile | null = null
+    let capabilities: FinalizationCapabilitiesV2 | null = null
+
+    if (usePartialPreflight) {
+      const branchId = typeof earlyPostBody.branchId === 'string' ? earlyPostBody.branchId : null
+      const checkoutPayload = rpcObject(earlyPostBody.checkout)
+      const cartFingerprint = typeof earlyPostBody.cartFingerprint === 'string'
+        ? earlyPostBody.cartFingerprint.trim().toLowerCase()
+        : ''
+      const idempotencyKey = typeof checkoutPayload.idempotency_key === 'string'
+        ? checkoutPayload.idempotency_key.trim()
+        : ''
+      const requestClientVersion = typeof earlyPostBody.clientVersion === 'string'
+        ? earlyPostBody.clientVersion
+        : ''
+      if (!branchId || Object.keys(checkoutPayload).length === 0
+          || !/^[a-f0-9]{64}$/.test(cartFingerprint)) {
+        return jsonResponse({
+          error: 'Atomic simplified checkout request is incomplete',
+          code: 'INVALID_ATOMIC_CHECKOUT_REQUEST',
+        }, 400)
+      }
+      partialPreflight = await invokePartialAtomicPreflight(authClient as any, {
+        branchId,
+        documentType: earlyAction === 'checkout_simplified_credit_note' ? 'credit_note' : 'invoice',
+        idempotencyKey,
+        cartFingerprint,
+        clientVersion: requestClientVersion,
+      })
+      if (partialPreflight.status === 'dependency_failed') {
+        // Safe rollback path: the RPC performs no final decision, rate limit, or
+        // audit write. Fall back to the unchanged serial path.
+        usePartialPreflight = false
+        partialPreflight = null
+      } else if (partialPreflight.status === 'authorization_failed') {
+        return jsonResponse({
+          error: partialPreflight.reason === 'unauthenticated'
+            ? 'Unauthorized'
+            : partialPreflight.reason === 'caller_profile_not_found'
+            ? 'Caller profile not found'
+            : 'Forbidden',
+        }, partialPreflight.reason === 'unauthenticated' ? 401 : 403)
+      } else if (partialPreflight.status === 'conflict') {
+        const code = partialPreflight.code ?? 'ATOMIC_CHECKOUT_IDEMPOTENCY_CONFLICT'
+        return jsonResponse({
+          error: code === 'ATOMIC_CHECKOUT_IDEMPOTENCY_IN_PROGRESS'
+            ? 'An atomic checkout with this idempotency key is not committed yet'
+            : code === 'INVALID_ATOMIC_CHECKOUT_REQUEST'
+            ? 'Atomic simplified checkout request is incomplete'
+            : 'Atomic checkout idempotency lookup failed',
+          code,
+        }, code === 'INVALID_ATOMIC_CHECKOUT_REQUEST' ? 400 : 409)
+      } else if (partialPreflight.status === 'unavailable') {
+        if (partialPreflight.reason === 'existing_legacy_idempotency') {
+          return jsonResponse({
+            status: 'legacy_required',
+            reason: 'existing_legacy_idempotency',
+          })
+        }
+        if (partialPreflight.code === 'ATOMIC_SIMPLIFIED_CHECKOUT_UNAVAILABLE') {
+          return jsonResponse({
+            error: 'Atomic simplified checkout is unavailable or version-incompatible',
+            code: 'ATOMIC_SIMPLIFIED_CHECKOUT_UNAVAILABLE',
+          }, 409)
+        }
+        return jsonResponse({
+          status: 'legacy_required',
+          reason: 'atomic_rollout_disabled',
+          blockingReason: partialPreflight.blockingReason ?? 'atomic_rollout_disabled',
+        })
+      } else if (partialPreflight.status === 'committed') {
+        const existingResult = await supabase.rpc('get_zatca_atomic_checkout_result_v2', {
+          p_actor_user_id: partialPreflight.actorUserId,
+          p_branch_id: branchId,
+          p_idempotency_key: idempotencyKey,
+          p_cart_fingerprint: cartFingerprint,
+        })
+        const existing = rpcObject(existingResult.data)
+        if (existingResult.error || existing.status !== 'committed' || !existing.receipt) {
+          return jsonResponse({
+            error: 'Atomic checkout idempotency lookup failed',
+            code: 'ATOMIC_CHECKOUT_IDEMPOTENCY_CONFLICT',
+          }, 409)
+        }
+        return jsonResponse({
+          status: 'committed',
+          invoiceStatus: 'pending',
+          finalizationStatus: 'locally_finalized',
+          artifactStage: 'simplified_final',
+          documentKind: 'simplified',
+          reportingDisplayState: existing.receipt.reporting_display_state ?? 'reporting_pending',
+          canPrint: true,
+          receipt: existing.receipt,
+          idempotentReplay: true,
+        })
+      } else {
+        if (!partialPreflight.actorUserId || !partialPreflight.tenantId
+            || !partialPreflight.branchId || !partialPreflight.actorRole) {
+          usePartialPreflight = false
+          partialPreflight = null
+        } else {
+          user = { id: partialPreflight.actorUserId }
+          callerProfile = {
+            id: partialPreflight.actorUserId,
+            tenant_id: partialPreflight.tenantId,
+            branch_id: partialPreflight.actorRole === 'branch' ? partialPreflight.branchId : null,
+            role: partialPreflight.actorRole,
+            is_active: true,
+          }
+          capabilities = {
+            schemaVersion: FINALIZATION_SCHEMA_VERSION,
+            edgeFunctionVersion: FINALIZATION_EDGE_VERSION,
+            minimumClientVersion: FINALIZATION_CLIENT_VERSION,
+            immutableFinalizationEnabled: true,
+            databaseFeatureEnabled: true,
+            legacySubmitAvailable: true,
+            edgeKillSwitchEnabled: false,
+            simplifiedEnabled: true,
+            standardEnabled: false,
+            supportsLocalSimplifiedFinalization: true,
+            supportsStandardClearanceGating: true,
+            supportsLeasedClaims: true,
+            supportsSerializedChainAllocator: true,
+            compatible: true,
+          }
+        }
+      }
     }
 
-    const callerProfile = checkoutPerf
-      ? await checkoutPerf.span('caller_profile_load',
-          () => loadCallerProfile(authClient as any, user.id))
-      : await loadCallerProfile(authClient as any, user.id)
-    if (!callerProfile) {
-      return jsonResponse({ error: 'Caller profile not found' }, 403)
+    if (!usePartialPreflight) {
+      const authOperation = () => authClient.auth.getUser(callerJWT)
+      const authResult = checkoutPerf
+        ? await checkoutPerf.span('auth_get_user', authOperation)
+        : await authOperation()
+      user = authResult.data.user
+      if (authResult.error || !user) {
+        return jsonResponse({ error: 'Unauthorized' }, 401)
+      }
+
+      callerProfile = checkoutPerf
+        ? await checkoutPerf.span('caller_profile_load',
+            () => loadCallerProfile(authClient as any, user!.id))
+        : await loadCallerProfile(authClient as any, user.id)
+      if (!callerProfile) {
+        return jsonResponse({ error: 'Caller profile not found' }, 403)
+      }
+    }
+    if (!user || !callerProfile) {
+      return jsonResponse({ error: 'Unauthorized' }, 401)
     }
 
     // ── GET /debug?branchId=... — sandbox-only cert digest diagnostics ──
@@ -3975,10 +4160,13 @@ Deno.serve(async (req: Request) => {
     }
     const action = normalizeSubmitAction(body?.action)
 
-    const capabilities = checkoutPerf
+    capabilities = capabilities ?? (checkoutPerf
       ? await checkoutPerf.span('runtime_capabilities_load',
           () => loadFinalizationCapabilitiesV2(supabase as any))
-      : await loadFinalizationCapabilitiesV2(supabase as any)
+      : await loadFinalizationCapabilitiesV2(supabase as any))
+    if (!capabilities) {
+      return jsonResponse({ error: 'Server configuration error' }, 500)
+    }
     const clientVersion = typeof body?.clientVersion === 'string' ? body.clientVersion : null
 
     if (action === 'capabilities') {
@@ -4168,14 +4356,22 @@ Deno.serve(async (req: Request) => {
           code: 'INVALID_ATOMIC_CHECKOUT_REQUEST',
         }, 400)
       }
-      const branchAuth = await checkoutPerf!.span('branch_authorization',
-        () => authorizeBranchAccess(supabase as any, branchId, callerProfile))
+      const branchAuth = usePartialPreflight && partialPreflight?.status === 'preflight_ok'
+        ? {
+            ok: true as const,
+            target: {
+              tenantId: partialPreflight.tenantId!,
+              branchId: partialPreflight.branchId!,
+            },
+          }
+        : await checkoutPerf!.span('branch_authorization',
+            () => authorizeBranchAccess(supabase as any, branchId, callerProfile))
       if (!branchAuth.ok) return branchAuth.response
 
       const checkoutIdempotencyKey = typeof checkoutPayload.idempotency_key === 'string'
         ? checkoutPayload.idempotency_key.trim()
         : ''
-      if (checkoutIdempotencyKey) {
+      if (!usePartialPreflight && checkoutIdempotencyKey) {
         const existingResult = await checkoutPerf!.span('idempotency_result_lookup', () => supabase.rpc('get_zatca_atomic_checkout_result_v2', {
           p_actor_user_id: user.id,
           p_branch_id: branchId,
