@@ -40,6 +40,7 @@ import {
   type QrDisplayStatus,
 } from '@/lib/zatca/qrDisplay.mjs'
 import { toast } from 'sonner'
+import { resolveBranchDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import A4Document from '@/components/print/A4Document'
@@ -2808,8 +2809,8 @@ export default function POSPage() {
           </div>
 
           <div className="min-w-0 flex-1 text-center px-1">
-            <h1 className="truncate text-sm font-semibold text-white" title={branch?.name ?? t('pos:activeBranch')} dir="auto">
-              {branch?.name ?? t('pos:activeBranch')}
+            <h1 className="truncate text-sm font-semibold text-white" title={resolveBranchDisplayName(branch, isRtl, t('pos:activeBranch'))} dir="auto">
+              {resolveBranchDisplayName(branch, isRtl, t('pos:activeBranch'))}
             </h1>
             <p className="mt-0.5 text-[10px] text-white/55">{activePosMode === 'quick' ? t('pos:quickBilling') : t('pos:touchPos')}</p>
           </div>

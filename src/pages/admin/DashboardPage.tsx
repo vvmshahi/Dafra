@@ -20,6 +20,8 @@ import {
   logRegisterSessionRpcError,
   normalizeRegisterSessionList,
 } from '@/lib/registerSessions'
+import { resolveBranchDisplayName, resolveBusinessDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
+import { useLocale } from '@/localization/useLocale'
 
 
 // ── KPI stat card ─────────────────────────────────────────────────────────────
@@ -53,6 +55,10 @@ function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
 interface BranchStat {
   id: string
   name: string
+  name_ar?: string | null
+  display_name?: string | null
+  branch_name?: string | null
+  branchName?: string | null
   logo_url: string | null
   is_active: boolean
   is_main_branch: boolean
@@ -78,6 +84,8 @@ interface DashboardDailySale {
 interface BranchRow {
   id: string
   name: string
+  name_ar: string | null
+  display_name: string | null
   logo_url: string | null
   is_active: boolean
   is_main_branch: boolean
@@ -110,6 +118,8 @@ function branchRowToStat(branch: BranchRow): BranchStat {
   return {
     id: branch.id,
     name: branch.name,
+    name_ar: branch.name_ar,
+    display_name: branch.display_name,
     logo_url: branch.logo_url,
     is_active: branch.is_active,
     is_main_branch: branch.is_main_branch,
@@ -160,7 +170,11 @@ function normalizeDashboardBranchStat(value: unknown): BranchStat | null {
   const productionStatusValue = pick(value, 'productionStatus', 'production_status')
   return {
     id,
-    name: stringOrNull(pick(value, 'name', 'branch_name')) ?? '',
+    name: resolveBranchDisplayName(value, false, ''),
+    name_ar: stringOrNull(pick(value, 'name_ar')),
+    display_name: stringOrNull(pick(value, 'display_name', 'displayName')),
+    branch_name: stringOrNull(pick(value, 'branch_name')),
+    branchName: stringOrNull(pick(value, 'branchName')),
     logo_url: stringOrNull(pick(value, 'logo_url', 'logoUrl')),
     is_active: booleanOr(pick(value, 'is_active', 'isActive'), true),
     is_main_branch: booleanOr(pick(value, 'is_main_branch', 'isMainBranch'), false),
@@ -244,6 +258,11 @@ function registerSessionErrorKey(error: unknown): string {
 
 function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onView: () => void; demoSandbox: boolean }) {
   const { t, i18n } = useTranslation('dashboard')
+  const branchLabel = resolveBranchDisplayName(
+    branch,
+    i18n.resolvedLanguage?.startsWith('ar') === true,
+    t('branch.myBranch'),
+  )
   const zatca = productionStatusLabel(branch.productionStatus)
   const session = branch.registerSession ?? null
   const hasSession = !!session?.sessionId
@@ -273,13 +292,13 @@ function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onVie
       <div className="flex items-start gap-3">
         <div className="w-11 h-11 rounded-xl bg-primary-50 ring-1 ring-primary-100 flex items-center justify-center overflow-hidden flex-shrink-0">
           {branch.logo_url
-            ? <img src={branch.logo_url} alt={branch.name} className="w-full h-full object-cover" />
+            ? <img src={branch.logo_url} alt={branchLabel} className="w-full h-full object-cover" />
             : <Store size={18} className="text-primary-600" />
           }
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-bold text-sm text-gray-950 truncate" style={{ fontFamily: 'Inter, Cairo, sans-serif' }}>{branch.name}</span>
+            <span className="font-bold text-sm text-gray-950 truncate" dir="auto" style={{ fontFamily: 'Inter, Cairo, sans-serif' }}>{branchLabel}</span>
             {branch.is_main_branch && (
               <span className="text-[9px] font-bold bg-gold-500/10 text-gold-700 px-1.5 py-0.5 rounded-full ring-1 ring-gold-500/20 flex-shrink-0">
                 {t('status.main')}
@@ -437,6 +456,7 @@ function WelcomeState({ onAddBranch }: { onAddBranch: () => void }) {
 
 export default function DashboardPage() {
   const { t } = useTranslation('dashboard')
+  const { isRtl } = useLocale()
   const navigate = useNavigate()
   const { profile, tenant } = useAuth()
 
@@ -466,7 +486,7 @@ export default function DashboardPage() {
     try {
       const { data: branchRows, error: branchError } = await supabase
         .from('branches')
-        .select('id, name, logo_url, is_active, is_main_branch, zatca_phase')
+        .select('id, name, name_ar, display_name, logo_url, is_active, is_main_branch, zatca_phase')
         .eq('tenant_id', tid)
         .order('is_main_branch', { ascending: false })
         .order('created_at', { ascending: true })
@@ -626,7 +646,9 @@ export default function DashboardPage() {
         <div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-gold-300">{t('owner.eyebrow')}</p>
-            <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">{tenant?.name ?? t('owner.overview')}</h1>
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl" dir="auto">
+              {resolveBusinessDisplayName(tenant, isRtl, t('owner.overview'))}
+            </h1>
             <p className="mt-1 text-sm text-primary-100/80">{t('owner.subtitle')}</p>
           </div>
           <button
