@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 import { useLocale } from '@/localization/useLocale'
 import { AuthenticatedLanguageSwitch } from '@/components/localization/AuthenticatedLanguageSwitch'
+import { resolveBusinessDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
 
 interface NavItem {
   labelKey: string
@@ -138,7 +139,9 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             ...ownerNav.filter(item => item.section === 'analysis'),
           ]
         : ownerNav
-  const subtitle = isSuperAdmin ? `Kubri ${t('navigation:roles.superAdmin')}` : (tenant?.name ?? 'Kubri')
+  const subtitle = isSuperAdmin
+    ? `Kubri ${t('navigation:roles.superAdmin')}`
+    : resolveBusinessDisplayName(tenant, isRtl, 'Kubri')
   const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? t('navigation:roles.user')
   const roleKey = profile?.role === 'super_admin' ? 'superAdmin' : String(profile?.role ?? 'user')
   const roleLabel = t(`navigation:roles.${roleKey}`)

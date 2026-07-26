@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { documentFromPreviewDraft, type InvoicePresentationDraft } from '@/lib/invoices/documentViewAdapters'
 import { resolveInvoicePresentationSettings, serializeInvoicePresentationSettingsForSave } from '@/lib/invoices/presentationSettings'
 import { resolveInvoiceLogoUrl } from '@/lib/invoices/runtimePresentation'
+import { resolveBranchDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import A4Document from '@/components/print/A4Document'
 import A4PreviewFit from '@/components/print/A4PreviewFit'
@@ -84,7 +85,7 @@ function TextField({ id, label, value, onChange, placeholder, disabled = false, 
 }
 
 export default function InvoiceSettingsPage() {
-  const { t } = useTranslation(['settings', 'common'])
+  const { t, i18n } = useTranslation(['settings', 'common'])
   const { profile, loading: authLoading } = useAuth()
   const [branches, setBranches] = useState<Branch[]>([])
   const [branchId, setBranchId] = useState<string | null>(null)
@@ -197,7 +198,7 @@ export default function InvoiceSettingsPage() {
   const actionOptions = [{ value: 'receipt' as const, label: 'Receipt only', description: 'Use the thermal receipt path' }, { value: 'a4' as const, label: 'A4 invoice only', description: 'Use the A4 invoice path' }, { value: 'both' as const, label: 'Receipt and A4 invoice', description: 'Keep both document formats available' }]
 
   return <div className="mx-auto max-w-[1440px] space-y-5 pb-28">
-    <header className="border-b border-gray-200 pb-5"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Invoice workspace</p><h1 className="mt-1 text-2xl font-bold text-gray-950">Invoice Settings</h1><p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">Shape the invoices your team sends without changing compliance identity or print execution.</p></div>{branches.length > 1 && <label className="min-w-48 text-xs font-semibold text-gray-700">Branch<select value={branchId ?? ''} onChange={event => { if (isDirty && !window.confirm('Discard unsaved changes?')) { event.preventDefault(); return }; setBranchId(event.target.value) }} className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-normal"><option value="" disabled>Select branch</option>{branches.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}</div></header>
+    <header className="border-b border-gray-200 pb-5"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Invoice workspace</p><h1 className="mt-1 text-2xl font-bold text-gray-950">Invoice Settings</h1><p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">Shape the invoices your team sends without changing compliance identity or print execution.</p></div>{branches.length > 1 && <label className="min-w-48 text-xs font-semibold text-gray-700">Branch<select value={branchId ?? ''} onChange={event => { if (isDirty && !window.confirm('Discard unsaved changes?')) { event.preventDefault(); return }; setBranchId(event.target.value) }} className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-normal"><option value="" disabled>Select branch</option>{branches.map(item => <option key={item.id} value={item.id}>{resolveBranchDisplayName(item, i18n.resolvedLanguage?.startsWith('ar') === true)}</option>)}</select></label>}</div></header>
     <div className="flex gap-2 overflow-x-auto rounded-2xl border border-gray-200 bg-white p-2" role="tablist" aria-label="Invoice settings sections">{tabs.map(tab => <TabButton key={tab.id} active={activeTab === tab.id} label={tab.label} onClick={() => { setActiveTab(tab.id); setMobilePane('settings') }} />)}</div>
     <div className="flex gap-2 lg:hidden"><button type="button" onClick={() => setMobilePane('settings')} className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold ${mobilePane === 'settings' ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600'}`}>Settings</button><button type="button" onClick={() => setMobilePane('preview')} className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold ${mobilePane === 'preview' ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600'}`}>Preview</button></div>
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
