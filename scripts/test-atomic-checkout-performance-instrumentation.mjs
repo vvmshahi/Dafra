@@ -21,7 +21,7 @@ async function test(name, run) {
 const edgeStages = [
   'request_total', 'auth_get_user', 'caller_profile_load', 'runtime_capabilities_load',
   'branch_authorization', 'idempotency_result_lookup', 'legacy_idempotency_lookup',
-  'rollout_initial_load', 'readiness_initial_load', 'capability_acknowledgement',
+  'final_eligibility_total', 'rollout_initial_load', 'readiness_initial_load', 'capability_acknowledgement',
   'readiness_reload', 'eligibility_sync', 'rollout_reload', 'rate_limit', 'attempt_audit',
   'atomic_prepare_total', 'signing_claim', 'credential_load', 'credential_decryption',
   'xml_generation', 'signing_and_qr', 'artifact_validation', 'artifact_storage',

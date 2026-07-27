@@ -54,13 +54,149 @@ const FIRST_INVOICE_HASH =
 const FINALIZATION_SCHEMA_VERSION = 2
 const FINALIZATION_EDGE_VERSION = '2.1.0'
 const FINALIZATION_CLIENT_VERSION = '2.1.0'
-// Phase 1 only: the additive authenticated RPC is not on the checkout path.
+// Authenticated partial preflight remains the required first checkout RPC.
 const CONSOLIDATED_ATOMIC_PREFLIGHT_ENABLED = true
+// Set false to restore the existing rollout/readiness/sync/reload sequence.
+const CONSOLIDATED_ATOMIC_FINAL_ELIGIBILITY_ENABLED = true
 function consolidatedAtomicPreflightEnabled(): boolean {
   const edgeSwitch = parseImmutableFinalizationEdgeSwitch(
     Deno.env.get('ZATCA_IMMUTABLE_FINALIZATION_ENABLED'),
   )
   return CONSOLIDATED_ATOMIC_PREFLIGHT_ENABLED && edgeSwitch.edgeExecutionEnabled
+}
+type AtomicFinalEligibilityResult = {
+  status: 'eligible' | 'legacy_required' | 'authorization_failed'
+    | 'unavailable' | 'dependency_failed'
+  branchId?: string
+  reason?: string
+  blockingReason?: string | null
+  gateSyncAction?: 'inserted' | 'updated' | 'unchanged'
+}
+
+const UUID_TEXT_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const FINAL_ELIGIBILITY_GATE_ACTIONS = new Set(['inserted', 'updated', 'unchanged'])
+const FINAL_ELIGIBILITY_LEGACY_REASONS =
+  new Set(['atomic_rollout_disabled', 'atomic_branch_not_ready'])
+const FINAL_ELIGIBILITY_FAILURE_REASONS = Object.freeze({
+  authorization_failed: new Set([
+    'unauthenticated',
+    'caller_profile_not_found',
+    'branch_access_denied',
+  ]),
+  dependency_failed: new Set(['final_eligibility_dependency_failed']),
+  unavailable: new Set(['version_incompatible']),
+})
+
+function hasExactObjectKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+): boolean {
+  const actual = Object.keys(value).sort()
+  const wanted = [...expected].sort()
+  return actual.length === wanted.length
+    && actual.every((key, index) => key === wanted[index])
+}
+
+function parseAtomicFinalEligibilityResult(value: unknown): AtomicFinalEligibilityResult {
+  const malformed: AtomicFinalEligibilityResult = {
+    status: 'dependency_failed',
+    reason: 'final_eligibility_dependency_failed',
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return malformed
+  const result = value as Record<string, unknown>
+
+  if (result.status === 'eligible') {
+    if (!hasExactObjectKeys(result, [
+      'status', 'branchId', 'blockingReason', 'gateSyncAction',
+    ]) || typeof result.branchId !== 'string'
+        || !UUID_TEXT_PATTERN.test(result.branchId)
+        || result.blockingReason !== null
+        || typeof result.gateSyncAction !== 'string'
+        || !FINAL_ELIGIBILITY_GATE_ACTIONS.has(result.gateSyncAction)) {
+      return malformed
+    }
+    return result as AtomicFinalEligibilityResult
+  }
+
+  if (result.status === 'legacy_required') {
+    if (!hasExactObjectKeys(result, [
+      'status', 'branchId', 'reason', 'blockingReason', 'gateSyncAction',
+    ]) || typeof result.branchId !== 'string'
+        || !UUID_TEXT_PATTERN.test(result.branchId)
+        || typeof result.reason !== 'string'
+        || !FINAL_ELIGIBILITY_LEGACY_REASONS.has(result.reason)
+        || typeof result.blockingReason !== 'string'
+        || !/^[a-z0-9_]{1,80}$/.test(result.blockingReason)
+        || typeof result.gateSyncAction !== 'string'
+        || !FINAL_ELIGIBILITY_GATE_ACTIONS.has(result.gateSyncAction)) {
+      return malformed
+    }
+    return result as AtomicFinalEligibilityResult
+  }
+
+  if (result.status === 'authorization_failed'
+      || result.status === 'dependency_failed'
+      || result.status === 'unavailable') {
+    const approvedReasons = FINAL_ELIGIBILITY_FAILURE_REASONS[result.status]
+    if (!hasExactObjectKeys(result, ['status', 'reason'])
+        || typeof result.reason !== 'string'
+        || !approvedReasons.has(result.reason)) {
+      return malformed
+    }
+    return result as AtomicFinalEligibilityResult
+  }
+
+  return malformed
+}
+
+async function invokeAtomicFinalEligibility(
+  callerDb: any,
+  branchId: string,
+  clientVersion: string,
+): Promise<AtomicFinalEligibilityResult> {
+  try {
+    const { data, error } = await callerDb.rpc(
+      'evaluate_zatca_atomic_checkout_eligibility_v2',
+      {
+        p_branch_id: branchId,
+        p_client_version: clientVersion,
+        p_edge_version: FINALIZATION_EDGE_VERSION,
+      },
+    )
+    if (error) {
+      return {
+        status: 'dependency_failed',
+        reason: 'final_eligibility_dependency_failed',
+      }
+    }
+    return parseAtomicFinalEligibilityResult(data)
+  } catch {
+    return {
+      status: 'dependency_failed',
+      reason: 'final_eligibility_dependency_failed',
+    }
+  }
+}
+
+async function invokeTimedAtomicFinalEligibility(
+  perf: CheckoutPerfTrace,
+  callerDb: any,
+  branchId: string,
+  clientVersion: string,
+): Promise<AtomicFinalEligibilityResult> {
+  const startedAt = performance.now()
+  const result = await invokeAtomicFinalEligibility(callerDb, branchId, clientVersion)
+  perf.log(
+    'final_eligibility_total',
+    startedAt,
+    result.status === 'eligible'
+      ? 'ok'
+      : result.status === 'legacy_required'
+        ? 'legacy_required'
+        : 'error',
+  )
+  return result
 }
 type PartialAtomicPreflightResult = {
   status: 'preflight_ok' | 'committed' | 'conflict' | 'authorization_failed'
@@ -201,6 +337,7 @@ const CHECKOUT_PERF_OPERATIONS: Readonly<Record<string, string>> = Object.freeze
   branch_authorization: 'branches.select',
   idempotency_result_lookup: 'get_zatca_atomic_checkout_result_v2',
   legacy_idempotency_lookup: 'invoices.select_idempotency',
+  final_eligibility_total: 'evaluate_zatca_atomic_checkout_eligibility_v2',
   rollout_initial_load: 'loadAtomicSimplifiedRolloutV2',
   readiness_initial_load: 'get_zatca_branch_readiness_v2',
   capability_acknowledgement: 'acknowledge_zatca_client_capability_v2',
@@ -4438,75 +4575,139 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      const existingAtomicRollout = await checkoutPerf!.span('rollout_initial_load', () => loadAtomicSimplifiedRolloutV2(
-        supabase as any,
-        branchAuth.target.tenantId,
-        branchId,
-      ))
-      let readiness = await checkoutPerf!.span('readiness_initial_load',
-        () => loadBranchReadinessV2(supabase as any, branchId, user.id))
-      if (existingAtomicRollout.atomicSimplifiedCheckoutEnabled
-          && readiness.structurallyReady
-          && !readiness.clientAcknowledged) {
-        const acknowledgement = await checkoutPerf!.span('capability_acknowledgement', () => supabase.rpc('acknowledge_zatca_client_capability_v2', {
-          p_user_id: user.id,
-          p_branch_id: branchId,
-          p_client_version: clientVersion,
-          p_edge_version: FINALIZATION_EDGE_VERSION,
-          p_ttl_seconds: 300,
-        }))
-        if (!acknowledgement.error && rpcObject(acknowledgement.data).acknowledged === true) {
-          readiness = await checkoutPerf!.span('readiness_reload',
-            () => loadBranchReadinessV2(supabase as any, branchId, user.id))
+      const useConsolidatedFinalEligibility =
+        CONSOLIDATED_ATOMIC_FINAL_ELIGIBILITY_ENABLED && usePartialPreflight
+      if (useConsolidatedFinalEligibility) {
+        for (const skippedStage of [
+          'rollout_initial_load',
+          'readiness_initial_load',
+          'capability_acknowledgement',
+          'readiness_reload',
+          'eligibility_sync',
+          'rollout_reload',
+        ]) {
+          checkoutPerf!.log(skippedStage, performance.now(), 'skipped')
+        }
+        const finalEligibility = await invokeTimedAtomicFinalEligibility(
+          checkoutPerf!,
+          authClient as any,
+          branchId,
+          clientVersion,
+        )
+        // Fixed response mapping:
+        // authorization_failed -> HTTP 403/FORBIDDEN
+        // unavailable -> HTTP 409/ATOMIC_SIMPLIFIED_CHECKOUT_UNAVAILABLE
+        // dependency_failed -> fail-closed legacy_required
+        // legacy_required -> preserve the RPC's approved rollout/readiness reason
+        if (finalEligibility.status === 'authorization_failed') {
+          return jsonResponse({
+            error: 'You are not authorized for this branch',
+            code: 'FORBIDDEN',
+          }, 403)
+        }
+        if (finalEligibility.status === 'unavailable') {
+          return jsonResponse({
+            error: 'Atomic simplified checkout is unavailable or version-incompatible',
+            code: 'ATOMIC_SIMPLIFIED_CHECKOUT_UNAVAILABLE',
+          }, 409)
+        }
+        if (finalEligibility.status === 'dependency_failed') {
+          return jsonResponse({
+            status: 'legacy_required',
+            reason: 'atomic_branch_not_ready',
+            blockingReason: finalEligibility.reason
+              ?? 'final_eligibility_dependency_failed',
+          })
+        }
+        if (finalEligibility.status === 'legacy_required') {
+          return jsonResponse({
+            status: 'legacy_required',
+            reason: finalEligibility.reason,
+            blockingReason: finalEligibility.blockingReason,
+          })
+        }
+        if (finalEligibility.status !== 'eligible'
+            || finalEligibility.branchId?.toLowerCase() !== branchId.toLowerCase()
+            || finalEligibility.blockingReason !== null
+            || !finalEligibility.gateSyncAction) {
+          return jsonResponse({
+            status: 'legacy_required',
+            reason: 'atomic_branch_not_ready',
+            blockingReason: 'final_eligibility_invalid_result',
+          })
         }
       } else {
-        checkoutPerf!.log('capability_acknowledgement', performance.now(), 'skipped')
-        checkoutPerf!.log('readiness_reload', performance.now(), 'skipped')
-      }
-      const eligibilitySync = capabilities.databaseFeatureEnabled
-        && capabilities.immutableFinalizationEnabled
-        && capabilities.simplifiedEnabled
-        && existingAtomicRollout.atomicSimplifiedCheckoutEnabled
-        ? await checkoutPerf!.span('eligibility_sync', () => syncAtomicSimplifiedEligibilityV2(
-            supabase as any,
-            branchId,
-            user.id,
-          ))
-        : null
-      if (eligibilitySync === null) {
-        checkoutPerf!.log('eligibility_sync', performance.now(), 'skipped')
-      }
-      const atomicRollout = eligibilitySync
-        ? await checkoutPerf!.span('rollout_reload', () => loadAtomicSimplifiedRolloutV2(
-            supabase as any,
-            branchAuth.target.tenantId,
-            branchId,
-          ))
-        : existingAtomicRollout
-      if (!eligibilitySync) checkoutPerf!.log('rollout_reload', performance.now(), 'skipped')
-      const atomicRolloutEnabled = atomicRollout.atomicSimplifiedCheckoutEnabled
-        && atomicRollout.branchGateEnabled
-      if (!capabilities.databaseFeatureEnabled
-          || !capabilities.immutableFinalizationEnabled
-          || !capabilities.simplifiedEnabled
-          || !atomicRolloutEnabled) {
-        return jsonResponse({
-          status: 'legacy_required',
-          reason: 'atomic_rollout_disabled',
-          blockingReason: eligibilitySync?.blockingReason
-            ?? (!existingAtomicRollout.atomicSimplifiedCheckoutEnabled
-              ? 'atomic_global_disabled'
-              : 'atomic_rollout_disabled'),
-        })
-      }
+        checkoutPerf!.log('final_eligibility_total', performance.now(), 'skipped')
+        const existingAtomicRollout = await checkoutPerf!.span('rollout_initial_load', () => loadAtomicSimplifiedRolloutV2(
+          supabase as any,
+          branchAuth.target.tenantId,
+          branchId,
+        ))
+        let readiness = await checkoutPerf!.span('readiness_initial_load',
+          () => loadBranchReadinessV2(supabase as any, branchId, user.id))
+        if (existingAtomicRollout.atomicSimplifiedCheckoutEnabled
+            && readiness.structurallyReady
+            && !readiness.clientAcknowledged) {
+          const acknowledgement = await checkoutPerf!.span('capability_acknowledgement', () => supabase.rpc('acknowledge_zatca_client_capability_v2', {
+            p_user_id: user.id,
+            p_branch_id: branchId,
+            p_client_version: clientVersion,
+            p_edge_version: FINALIZATION_EDGE_VERSION,
+            p_ttl_seconds: 300,
+          }))
+          if (!acknowledgement.error && rpcObject(acknowledgement.data).acknowledged === true) {
+            readiness = await checkoutPerf!.span('readiness_reload',
+              () => loadBranchReadinessV2(supabase as any, branchId, user.id))
+          }
+        } else {
+          checkoutPerf!.log('capability_acknowledgement', performance.now(), 'skipped')
+          checkoutPerf!.log('readiness_reload', performance.now(), 'skipped')
+        }
+        const eligibilitySync = capabilities.databaseFeatureEnabled
+          && capabilities.immutableFinalizationEnabled
+          && capabilities.simplifiedEnabled
+          && existingAtomicRollout.atomicSimplifiedCheckoutEnabled
+          ? await checkoutPerf!.span('eligibility_sync', () => syncAtomicSimplifiedEligibilityV2(
+              supabase as any,
+              branchId,
+              user.id,
+            ))
+          : null
+        if (eligibilitySync === null) {
+          checkoutPerf!.log('eligibility_sync', performance.now(), 'skipped')
+        }
+        const atomicRollout = eligibilitySync
+          ? await checkoutPerf!.span('rollout_reload', () => loadAtomicSimplifiedRolloutV2(
+              supabase as any,
+              branchAuth.target.tenantId,
+              branchId,
+            ))
+          : existingAtomicRollout
+        if (!eligibilitySync) checkoutPerf!.log('rollout_reload', performance.now(), 'skipped')
+        const atomicRolloutEnabled = atomicRollout.atomicSimplifiedCheckoutEnabled
+          && atomicRollout.branchGateEnabled
+        if (!capabilities.databaseFeatureEnabled
+            || !capabilities.immutableFinalizationEnabled
+            || !capabilities.simplifiedEnabled
+            || !atomicRolloutEnabled) {
+          return jsonResponse({
+            status: 'legacy_required',
+            reason: 'atomic_rollout_disabled',
+            blockingReason: eligibilitySync?.blockingReason
+              ?? (!existingAtomicRollout.atomicSimplifiedCheckoutEnabled
+                ? 'atomic_global_disabled'
+                : 'atomic_rollout_disabled'),
+          })
+        }
 
-      if (!readiness.structurallyReady || !readiness.clientAcknowledged
-          || readiness.branchBlocked || !readiness.productionConnected) {
-        return jsonResponse({
-          status: 'legacy_required',
-          reason: 'atomic_branch_not_ready',
-          blockingReason: eligibilitySync?.blockingReason ?? 'atomic_branch_not_ready',
-        })
+        if (!readiness.structurallyReady || !readiness.clientAcknowledged
+            || readiness.branchBlocked || !readiness.productionConnected) {
+          return jsonResponse({
+            status: 'legacy_required',
+            reason: 'atomic_branch_not_ready',
+            blockingReason: eligibilitySync?.blockingReason ?? 'atomic_branch_not_ready',
+          })
+        }
       }
 
       const reqId = requestId(req)
