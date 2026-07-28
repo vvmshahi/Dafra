@@ -17,7 +17,10 @@ assert.match(
 
 const config = readFileSync(`${workdir}/supabase/config.toml`, 'utf8')
 const projectId = config.match(/project_id = "([^"]+)"/)?.[1]
-assert.match(projectId ?? '', /^dafra_(?:atomic_disposable|migration_chain)_[^"]+$/)
+assert.match(
+  projectId ?? '',
+  /^dafra_(?:atomic_disposable|migration_chain|remote_reconcile)_[^"]+$/,
+)
 assert.ok(!config.includes('bkbphkpqcxuejozayrsy'), 'Production project ref is forbidden')
 
 const statusText = execFileSync(
@@ -1103,28 +1106,24 @@ await expectError(
   'cross-tenant preparation',
 )
 
-await expectError(
-  anon.rpc('prepare_zatca_atomic_checkout_v2', {
-    p_actor_user_id: branchUserId,
-    p_document_type: 'invoice',
-    p_payload: basePayload,
-    p_cart_fingerprint: fingerprint(basePayload),
-    p_ttl_seconds: 120,
-  }),
-  /permission denied|42501|401|403/i,
-  'anon prepare privilege',
-)
-await expectError(
-  branchUser.rpc('prepare_zatca_atomic_checkout_v2', {
-    p_actor_user_id: branchUserId,
-    p_document_type: 'invoice',
-    p_payload: basePayload,
-    p_cart_fingerprint: fingerprint(basePayload),
-    p_ttl_seconds: 120,
-  }),
-  /permission denied|42501|401|403/i,
-  'authenticated prepare privilege',
-)
+// Query the catalog directly for denied roles. PostgreSQL 17.6 can crash a
+// disposable backend while PostgREST exercises this denied SECURITY DEFINER
+// call, obscuring the ACL assertion with PGRST001 during crash recovery.
+const preparePrivileges = execFileSync(
+  'psql',
+  [
+    localEnv.DB_URL,
+    '-Atc',
+    `select has_function_privilege('anon',
+       'public.prepare_zatca_atomic_checkout_v2(uuid,text,jsonb,text,integer)',
+       'EXECUTE'),
+     has_function_privilege('authenticated',
+       'public.prepare_zatca_atomic_checkout_v2(uuid,text,jsonb,text,integer)',
+       'EXECUTE')`,
+  ],
+  { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+).trim()
+assert.equal(preparePrivileges, 'f|f', 'browser roles must not execute atomic preparation')
 for (const [client, label] of [[anon, 'anon'], [branchUser, 'authenticated']]) {
   await expectError(
     client.from('zatca_atomic_checkout_intents_v2').select('id,claim_token,candidate_signed_xml'),
