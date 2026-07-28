@@ -57,7 +57,9 @@ update existing branches.
 
 The migration also repairs the established additional-branch RPC's exact
 historical `NOT =` PL/pgSQL typo so the existing Owner path can reach the insert
-trigger. No other branch-creation behavior changes.
+trigger. It preserves the reviewed deployed `NOT IN ('owner', 'admin')` guard
+when that newer variant is already present. No other branch-creation behavior
+changes.
 
 ## Atomic enablement
 

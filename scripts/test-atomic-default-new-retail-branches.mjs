@@ -17,6 +17,7 @@ assert.doesNotMatch(
   'existing branch gates must not be updated',
 )
 assert.match(migration, /v_profile\.role NOT = ''owner''[\s\S]*v_profile\.role <> ''owner''/)
+assert.match(migration, /v_profile\.role NOT IN \(''owner'', ''admin''\)/)
 
 assert.match(migration, /resolve_pos_checkout_document_internal_v1/)
 assert.match(migration, /resolve_pos_checkout_document_v1[\s\S]*auth\.uid\(\)/)

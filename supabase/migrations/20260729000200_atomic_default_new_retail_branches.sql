@@ -91,6 +91,11 @@ BEGIN
       'v_profile.role <> ''owner'''
     );
     EXECUTE v_repaired;
+  ELSIF v_definition LIKE
+      '%v_profile.role NOT IN (''owner'', ''admin'')%' THEN
+    -- Production already has the reviewed owner/admin authorization guard.
+    -- Preserve that newer contract verbatim.
+    NULL;
   ELSIF v_definition NOT LIKE '%v_profile.role <> ''owner''%' THEN
     RAISE EXCEPTION 'CREATE_BRANCH_FOR_TENANT_ROLE_GUARD_UNREVIEWED';
   END IF;
