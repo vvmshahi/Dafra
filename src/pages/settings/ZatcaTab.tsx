@@ -7,7 +7,8 @@
  * Each branch operates independently and maintains its production connection.
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ShieldCheck, ShieldX, Building2,
   CheckCircle2, AlertTriangle, ExternalLink, Lock,
@@ -106,7 +107,7 @@ function GuideModal({ onClose }: { onClose: () => void }) {
             href={FATOORA_PORTAL_URL}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary-600 px-3 py-2 text-xs font-semibold text-white hover:bg-primary-700"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary-500 px-3 py-2 text-xs font-semibold text-white hover:bg-primary-600"
           >
             <ExternalLink size={12} /> {t('guide.openPortal')}
           </a>
@@ -148,7 +149,9 @@ function functionalityLabel(value: ZatcaFunctionalityMap | string | undefined, t
 
 function formatDateTime(value: string | null | undefined, locale = 'en-SA'): string {
   if (!value) return '—'
-  return new Date(value).toLocaleString(locale, {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleString(locale, {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -245,7 +248,8 @@ function ProductionConnectionStatus({
   onReconnect: () => void
   onRemove: () => void
 }) {
-  const { t } = useTranslation('zatca')
+  const { t, i18n } = useTranslation('zatca')
+  const dateLocale = i18n.resolvedLanguage?.startsWith('ar') ? 'ar-SA' : 'en-SA'
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
@@ -268,12 +272,6 @@ function ProductionConnectionStatus({
         <InfoRow label={t('fields.productionCsid')} value={status.productionCsidExists ? t('status.stored') : t('status.missing')} />
         <InfoRow label={t('fields.status')} value={safeStatusText(status.onboardingStatus, t)} />
         <InfoRow label={t('fields.lastUpdated')} value={formatDateTime(status.updatedAt, dateLocale)} />
-      </div>
-
-      <div className="rounded-2xl border border-gold-200 bg-gold-50 px-3.5 py-3">
-        <p className="text-[11px] text-gold-900 leading-relaxed">
-          {t('connection.featureFlagHelp')}
-        </p>
       </div>
 
       <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-4">
@@ -643,7 +641,9 @@ function ProductionOnboardingPanel({
                   key={option.value}
                   type="button"
                   onClick={() => setFunctionalityMap(option.value)}
-                  className={`text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                  role="radio"
+                  aria-checked={functionalityMap === option.value}
+                  className={`text-start rounded-xl border px-3 py-3 transition-[border-color,background-color,transform] duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
                     functionalityMap === option.value
                       ? 'border-primary-300 bg-primary-50'
                       : 'border-gray-200 bg-white hover:border-gray-300'
@@ -772,13 +772,11 @@ function branchSummaryKey(bc: BranchWithCert): string {
   return 'summary.available'
 }
 
-function BranchAccordionRow({
-  bc, isExpanded, onToggle, onProductionStatusUpdate,
+function BranchRow({
+  bc, onOpen,
 }: {
   bc: BranchWithCert
-  isExpanded: boolean
-  onToggle: () => void
-  onProductionStatusUpdate: (branchId: string, status: ProductionOnboardingResponse) => void
+  onOpen: (branchId: string, trigger: HTMLButtonElement) => void
 }) {
   const { t } = useTranslation('zatca')
   const phase = bc.zatca_phase ?? 1
@@ -789,16 +787,12 @@ function BranchAccordionRow({
     : productionDisconnected
     ? { variant: 'neutral' as const, label: t('status.disconnected') }
     : { variant: 'neutral' as const, label: t('status.ready') }
-  const handleProductionStatusChange = useCallback((nextStatus: ProductionOnboardingResponse) => {
-    onProductionStatusUpdate(bc.id, nextStatus)
-  }, [bc.id, onProductionStatusUpdate])
-
   return (
-    <div className="card overflow-hidden transition-all duration-150 hover:border-primary-100 hover:shadow-card-md">
-      {/* Collapsed header row — always visible */}
+    <div className="overflow-hidden rounded-2xl border border-primary-950/10 bg-white shadow-card transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:shadow-card-md">
       <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-3 px-4 py-4 hover:bg-primary-50/50 transition-colors text-left"
+        onClick={event => onOpen(bc.id, event.currentTarget)}
+        className="w-full flex items-center gap-3 border-s-4 border-gold-500 px-4 py-4 hover:bg-primary-50/50 transition-colors text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500"
+        aria-haspopup="dialog"
       >
         <div className="w-10 h-10 rounded-2xl bg-primary-50 ring-1 ring-primary-100 flex items-center justify-center flex-shrink-0">
           <Building2 size={16} className="text-primary-600" />
@@ -825,23 +819,98 @@ function BranchAccordionRow({
           )}
           <ChevronDown
             size={15}
-            className={`text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+            className="text-gray-400"
           />
         </div>
       </button>
+    </div>
+  )
+}
 
-      {/* Expanded content */}
-      {isExpanded && (
-        <div className="border-t border-gray-100 bg-white p-5 space-y-5">
+function ZatcaBranchModal({
+  branch, onClose, onProductionStatusUpdate, returnFocusRef,
+}: {
+  branch: BranchWithCert
+  onClose: () => void
+  onProductionStatusUpdate: (branchId: string, status: ProductionOnboardingResponse) => void
+  returnFocusRef: React.MutableRefObject<HTMLButtonElement | null>
+}) {
+  const { t } = useTranslation('zatca')
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const phase = branch.zatca_phase ?? 1
+  const handleProductionStatusChange = useCallback((nextStatus: ProductionOnboardingResponse) => {
+    onProductionStatusUpdate(branch.id, nextStatus)
+  }, [branch.id, onProductionStatusUpdate])
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const frame = window.requestAnimationFrame(() => {
+      dialogRef.current?.querySelector<HTMLElement>('button, input, [href]')?.focus()
+    })
+    return () => {
+      window.cancelAnimationFrame(frame)
+      document.body.style.overflow = previousOverflow
+      returnFocusRef.current?.focus()
+    }
+  }, [returnFocusRef])
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      onClose()
+      return
+    }
+    if (event.key !== 'Tab' || !dialogRef.current) return
+    const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), [href], select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )]
+    if (!focusable.length) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-2 sm:p-4"
+      role="presentation"
+      onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`zatca-dialog-${branch.id}`}
+        onKeyDown={handleKeyDown}
+        className="flex max-h-[calc(100dvh-1rem)] w-full max-w-[880px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-h-[min(760px,calc(100dvh-2rem))]"
+      >
+        <header className="flex flex-shrink-0 items-center justify-between gap-4 bg-sidebar px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-gold-300">{t(branchSummaryKey(branch))}</p>
+            <h2 id={`zatca-dialog-${branch.id}`} className="mt-1 truncate text-base font-black text-white" dir="auto">
+              {branch.name || t('fields.branch')}
+            </h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label={t('guide.close')}
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-white/70 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300">
+            <X size={18} />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[#fffdf7] p-4 sm:p-6">
           {phase < 2 ? (
             <div className="space-y-4">
-              <div className="flex items-start gap-3 bg-primary-50 border border-primary-100 rounded-2xl p-4">
-                <Info size={14} className="text-primary-600 mt-0.5 flex-shrink-0" />
+              <div className="flex items-start gap-3 rounded-2xl border border-primary-100 bg-primary-50 p-4">
+                <Info size={14} className="mt-0.5 flex-shrink-0 text-primary-600" />
                 <div className="space-y-1.5">
                   <p className="text-xs font-semibold text-primary-900">{t('phase.notYet')}</p>
-                  <p className="text-[11px] text-primary-800 leading-relaxed">
-                    {t('phase.upgradeHelp')}
-                  </p>
+                  <p className="text-[11px] leading-relaxed text-primary-800">{t('phase.upgradeHelp')}</p>
                 </div>
               </div>
               <button
@@ -849,23 +918,22 @@ function BranchAccordionRow({
                   const el = document.querySelector('[data-tab="subscription"]') as HTMLElement | null
                   el?.click()
                 }}
-                className="w-full py-2.5 rounded-xl border border-primary-200 text-primary-700 text-sm font-semibold hover:bg-primary-50 transition-colors"
+                className="w-full rounded-xl border border-primary-200 py-2.5 text-sm font-semibold text-primary-700 transition-colors hover:bg-primary-50"
               >
                 {t('phase.upgrade')}
               </button>
             </div>
           ) : (
-            <div className="rounded-2xl border border-gray-100 p-4">
-              <ProductionOnboardingPanel
-                branch={bc}
-                initialStatus={bc.productionStatus}
-                onStatusChange={handleProductionStatusChange}
-              />
-            </div>
+            <ProductionOnboardingPanel
+              branch={branch}
+              initialStatus={branch.productionStatus}
+              onStatusChange={handleProductionStatusChange}
+            />
           )}
         </div>
-      )}
-    </div>
+      </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -877,7 +945,8 @@ export default function ZatcaTab() {
   const [data, setData]         = useState<BranchWithCert[]>([])
   const [loading, setLoading]   = useState(true)
   const [sandboxStatuses, setSandboxStatuses] = useState<Record<string, SandboxDemoConnectionStatus | null>>({})
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
+  const modalTriggerRef = useRef<HTMLButtonElement | null>(null)
   const [showGuide, setShowGuide]   = useState(false)
   const [showServiceSandboxStart, setShowServiceSandboxStart] = useState(false)
 
@@ -909,8 +978,6 @@ export default function ZatcaTab() {
       ...b,
       productionStatus: productionStatuses.has(b.id) ? productionStatuses.get(b.id) ?? null : undefined,
     })))
-    // Auto-expand first branch if only one
-    setExpandedId(prev => branches.length === 1 && !prev ? branches[0].id : prev)
     setLoading(false)
   }, [profile?.tenant_id, profile?.role])
 
@@ -938,9 +1005,15 @@ export default function ZatcaTab() {
     )))
   }, [])
 
-  const handleToggle = (branchId: string) => {
-    setExpandedId(prev => prev === branchId ? null : branchId)
-  }
+  const openBranchModal = useCallback((branchId: string, trigger: HTMLButtonElement) => {
+    modalTriggerRef.current = trigger
+    setSelectedBranchId(branchId)
+  }, [])
+  const closeBranchModal = useCallback(() => setSelectedBranchId(null), [])
+  const selectedBranch = useMemo(
+    () => selectedBranchId ? data.find(branch => branch.id === selectedBranchId) ?? null : null,
+    [data, selectedBranchId],
+  )
 
   const phase2Count = data.filter(b => (b.zatca_phase ?? 1) === 2).length
   const activeCount = data.filter(b =>
@@ -962,9 +1035,12 @@ export default function ZatcaTab() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="text-base font-black text-gray-950">{t('connections')}</h3>
-          <p className="text-xs text-gray-500 mt-1">
-            {t('summary.counts', { count: data.length, phase2: phase2Count, active: activeCount })}
-          </p>
+          <p className="text-xs text-gray-500 mt-1">{t('subtitle')}</p>
+          <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
+            <span className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-gray-600">{t('summary.counts', { count: data.length, phase2: phase2Count, active: activeCount })}</span>
+            <span className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-emerald-700">{t('status.connected')}: {activeCount}</span>
+            <span className="rounded-lg bg-gold-50 px-2.5 py-1.5 text-gold-800">{t('status.ready')}: {Math.max(phase2Count - activeCount, 0)}</span>
+          </div>
         </div>
         <button
           onClick={() => setShowGuide(true)}
@@ -1072,15 +1148,22 @@ export default function ZatcaTab() {
       ) : (
         <div className="space-y-3">
           {regularBranches.map(bc => (
-            <BranchAccordionRow
+            <BranchRow
               key={bc.id}
               bc={bc}
-              isExpanded={expandedId === bc.id}
-              onToggle={() => handleToggle(bc.id)}
-              onProductionStatusUpdate={handleProductionStatusUpdate}
+              onOpen={openBranchModal}
             />
           ))}
         </div>
+      )}
+
+      {selectedBranch && (
+        <ZatcaBranchModal
+          branch={selectedBranch}
+          onClose={closeBranchModal}
+          onProductionStatusUpdate={handleProductionStatusUpdate}
+          returnFocusRef={modalTriggerRef}
+        />
       )}
 
       {data.some(b => !b.vat_number && (b.zatca_phase ?? 1) === 2) && (
@@ -1096,8 +1179,8 @@ export default function ZatcaTab() {
       )}
 
       {/* Security note */}
-      <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3.5 shadow-card">
-        <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+      <div className="flex items-start gap-2.5 px-1 py-2">
+        <div className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
           <Lock size={14} />
         </div>
         <div>

@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useSubscription } from '@/hooks/useSubscription'
 import { supportConfig } from '@/config/support'
 import { useTranslation } from 'react-i18next'
+import { resolveBusinessType } from '@/lib/utils/businessType'
 
 const WA_LINK    = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
@@ -31,9 +32,34 @@ function ContactButtons({ label }: { label?: string }) {
   )
 }
 
+function BusinessTypeCard({ type }: { type: 'trading' | 'service' }) {
+  const { t } = useTranslation('settings')
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-primary-100 bg-primary-50/50 p-5 shadow-card">
+      <div className="absolute inset-y-0 start-0 w-1 bg-primary-500" />
+      <div className="ps-2">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-primary-500">{t('businessType.title')}</p>
+        <p className="mt-1 text-sm font-bold text-gray-900">{t(`businessType.${type}.label`)}</p>
+        <p className="mt-1 text-xs leading-relaxed text-gray-500">{t(`businessType.${type}.description`)}</p>
+      </div>
+    </div>
+  )
+}
+
+function SupportCard() {
+  const { t } = useTranslation('settings')
+  return (
+    <div className="card p-5">
+      <p className="text-sm font-semibold text-gray-900">{t('subscription.renewUpgrade')}</p>
+      <p className="mt-1 text-xs text-gray-400">{t('subscription.updateTiming')}</p>
+      <ContactButtons />
+    </div>
+  )
+}
+
 export default function SubscriptionTab() {
   const { t, i18n } = useTranslation('settings')
-  const { profile } = useAuth()
+  const { profile, tenant } = useAuth()
   const sub = useSubscription()
 
   const [endsAt,    setEndsAt]    = useState<string | null>(null)
@@ -71,6 +97,7 @@ export default function SubscriptionTab() {
     : t('subscription.totalBranches', { count: totalBranches })
   const nextBillingDate = sub.nextDueDate ?? endsAt
   const dateLocale = i18n.resolvedLanguage?.startsWith('ar') ? 'ar-SA' : 'en-SA'
+  const businessType = resolveBusinessType(tenant?.business_type)
 
   if (loading || sub.status === 'loading') {
     return (
@@ -105,6 +132,8 @@ export default function SubscriptionTab() {
             {branchTotalLine && <p className="text-xs text-gray-400 mt-0.5">{branchTotalLine}</p>}
           </div>
         </div>
+        {tenant && <BusinessTypeCard type={businessType} />}
+        <SupportCard />
       </div>
     )
   }
@@ -148,7 +177,6 @@ export default function SubscriptionTab() {
                 {sub.daysOverdue > 0 && <> · {t('subscription.daysOverdue', { count: sub.daysOverdue })}</>}
               </p>
             )}
-            <ContactButtons label={needsActivation ? t('subscription.contactActivate') : isSuspended ? t('subscription.contact') : t('subscription.renewNow')} />
           </div>
         </div>
         <div className="card p-5 flex gap-4">
@@ -159,6 +187,8 @@ export default function SubscriptionTab() {
             {branchTotalLine && <p className="text-xs text-gray-400 mt-0.5">{branchTotalLine}</p>}
           </div>
         </div>
+        {tenant && <BusinessTypeCard type={businessType} />}
+        <SupportCard />
       </div>
     )
   }
@@ -184,7 +214,6 @@ export default function SubscriptionTab() {
               </p>
             )}
             {planName && <p className="text-xs text-amber-600 mt-1">{t('subscription.plan', { plan: planName })}</p>}
-            <ContactButtons />
           </div>
         </div>
         <div className="card p-5 flex gap-4">
@@ -195,42 +224,49 @@ export default function SubscriptionTab() {
             {branchTotalLine && <p className="text-xs text-gray-400 mt-0.5">{branchTotalLine}</p>}
           </div>
         </div>
+        {tenant && <BusinessTypeCard type={businessType} />}
+        <SupportCard />
       </div>
     )
   }
 
   // Active
   return (
-    <div className="space-y-5">
-      <div className="flex items-start gap-4 bg-emerald-50 border border-emerald-100 rounded-2xl p-6">
-        <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
-          <CheckCircle2 size={24} className="text-emerald-600" />
+    <div className="grid gap-4 lg:grid-cols-2">
+      <div className="relative overflow-hidden rounded-2xl bg-sidebar p-5 text-white shadow-card">
+        <div className="absolute inset-y-0 start-0 w-1 bg-gold-500" />
+        <div className="flex items-start gap-4">
+        <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 ring-1 ring-white/15">
+          <CheckCircle2 size={22} className="text-emerald-300" />
         </div>
         <div>
-          <p className="text-base font-bold text-emerald-800">{t('subscription.active')}</p>
-          {planName && <p className="text-sm text-emerald-700 mt-0.5">{t('subscription.plan', { plan: planName })}</p>}
+          <p className="text-base font-bold text-white">{t('subscription.active')}</p>
+          {planName && <p className="text-sm text-gold-200 mt-0.5">{t('subscription.plan', { plan: planName })}</p>}
           {nextBillingDate && (
-            <p className="text-sm text-emerald-700 mt-0.5">
+            <p className="text-xs text-white/65 mt-2">
               {t('subscription.renewsExpires', { date: new Date(nextBillingDate).toLocaleDateString(dateLocale) })}
             </p>
           )}
         </div>
-      </div>
-
-      <div className="card p-5 flex gap-4">
-        <CreditCard size={18} className="text-gray-300 mt-0.5 flex-shrink-0" />
-        <div className="text-sm text-gray-500">
-          <p className="font-medium text-gray-700">{t('subscription.branches')}</p>
-          <p>{branchUsageLine}</p>
-          {branchTotalLine && <p className="text-xs text-gray-400 mt-0.5">{branchTotalLine}</p>}
         </div>
       </div>
 
-      <div className="card p-6">
-        <p className="text-sm font-semibold text-gray-900 mb-1">{t('subscription.renewUpgrade')}</p>
-        <p className="text-xs text-gray-400 mb-4">{t('subscription.updateTiming')}</p>
-        <ContactButtons />
+      <div className="card p-5">
+        <div className="flex gap-4">
+        <CreditCard size={18} className="text-primary-500 mt-0.5 flex-shrink-0" />
+        <div className="flex-1 text-sm text-gray-500">
+          <p className="font-medium text-gray-700">{t('subscription.branches')}</p>
+          <p>{branchUsageLine}</p>
+          {branchTotalLine && <p className="text-xs text-gray-400 mt-0.5">{branchTotalLine}</p>}
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-primary-50" role="progressbar" aria-valuemin={0} aria-valuemax={sub.maxBranches} aria-valuenow={activeBranches}>
+            <div className="h-full rounded-full bg-primary-500" style={{ width: `${Math.min((activeBranches / Math.max(sub.maxBranches, 1)) * 100, 100)}%` }} />
+          </div>
+        </div>
+        </div>
       </div>
+
+      {tenant && <div className="lg:col-span-2"><BusinessTypeCard type={businessType} /></div>}
+      <div className="lg:col-span-2"><SupportCard /></div>
     </div>
   )
 }

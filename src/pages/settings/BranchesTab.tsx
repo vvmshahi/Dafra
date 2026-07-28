@@ -6,7 +6,6 @@ import {
   Star, KeyRound, LogIn,
   CreditCard, Warehouse,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { useSubscription } from '@/hooks/useSubscription'
@@ -72,7 +71,7 @@ type BranchWithLogin = Branch & {
 }
 
 type StockModuleSetting = 'enabled' | 'disabled'
-type BranchModalTab = 'general' | 'access' | 'pos' | 'modules' | 'invoices' | 'zatca'
+type BranchModalTab = 'general' | 'access' | 'pos' | 'modules' | 'invoices'
 
 const POS_MODE_OPTIONS: Array<{
   value: BranchPosMode
@@ -268,7 +267,6 @@ function BranchModal({
 }) {
   const { t } = useTranslation(['settings', 'branches', 'common'])
   const { isRtl } = useLocale()
-  const navigate = useNavigate()
   const isNew = branch === null
   const [form, setForm] = useState<BranchForm>(
     branch
@@ -383,14 +381,12 @@ function BranchModal({
   const checkout = useSection(true)
   const modules = useSection(true)
   const invoice = useSection(true)
-  const zatca = useSection(true)
   const tabs: Array<{ id: BranchModalTab; icon: React.ElementType }> = [
     { id: 'general', icon: Building2 },
     { id: 'access', icon: KeyRound },
     { id: 'pos', icon: CreditCard },
     ...(canEditModuleSettings ? [{ id: 'modules' as const, icon: Warehouse }] : []),
     { id: 'invoices', icon: ReceiptText },
-    { id: 'zatca', icon: ShieldCheck },
   ]
 
   const set = (k: keyof BranchForm) => (v: string | boolean | number | null) =>
@@ -482,6 +478,29 @@ function BranchModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    if (isNew && activeTab !== tabs[tabs.length - 1].id) {
+      const currentTabInvalid =
+        (activeTab === 'general' && generalError) ||
+        (activeTab === 'access' && accessError)
+      if (currentTabInvalid) {
+        setShowAllErrors(true)
+        const firstInvalidField = activeTab === 'access'
+          ? ['login_username', 'login_password', 'login_confirm_password'].find(key => errs[key])
+          : Object.keys(errs).find(key => !key.startsWith('login_') && errs[key])
+        if (firstInvalidField) {
+          setTouched(prev => new Set([...prev, firstInvalidField]))
+          window.requestAnimationFrame(() => {
+            dialogRef.current
+              ?.querySelector<HTMLElement>(`[data-branch-field="${firstInvalidField}"] input, [data-branch-field="${firstInvalidField}"] select`)
+              ?.focus()
+          })
+        }
+        return
+      }
+      const currentIndex = tabs.findIndex(tab => tab.id === activeTab)
+      selectTab(tabs[Math.min(currentIndex + 1, tabs.length - 1)].id, true)
+      return
+    }
     if (hasErrors) {
       setShowAllErrors(true)
       setTouched(new Set(Object.keys(errs)))
@@ -710,14 +729,6 @@ function BranchModal({
 
           {activeTab === 'general' && (
           <section id="branch-panel-general" role="tabpanel" aria-labelledby="branch-tab-general" className="space-y-3">
-          {/* Info note */}
-          <div className="flex items-start gap-2.5 rounded-xl border border-primary-100 bg-primary-50/50 px-4 py-3">
-            <FileText size={14} className="mt-0.5 flex-shrink-0 text-primary-700" />
-            <p className="text-[11px] leading-relaxed text-primary-900">
-              {t('branches:editor.legalIdentityHelp')}
-            </p>
-          </div>
-
           {/* ── BRANCH IDENTITY ───────────────────────── */}
           <div className={sectionClass(identity.open)}>
             <SectionHeader icon={Building2} title={t('branches:editor.identity')} open={identity.open} toggle={identity.toggle} />
@@ -885,7 +896,7 @@ function BranchModal({
                           }`}
                         >
                           <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-                            <span className={`h-3.5 w-3.5 rounded-full border ${selected ? 'border-primary-600 bg-primary-600 ring-2 ring-white' : 'border-gray-300 bg-white'}`} aria-hidden="true" />
+                            <span className={`h-3.5 w-3.5 rounded-full border ${selected ? 'border-primary-500 bg-primary-500 ring-2 ring-white' : 'border-gray-300 bg-white'}`} aria-hidden="true" />
                             {t(`branches:pos.${option.key}.label`)}
                           </span>
                           <span className="mt-1 block text-[11px] leading-4 text-gray-400">{t(`branches:pos.${option.key}.description`)}</span>
@@ -1050,70 +1061,6 @@ function BranchModal({
           </section>
           )}
 
-          {/* ── ZATCA SETTINGS ────────────────────────── */}
-          {activeTab === 'zatca' && (
-          <section id="branch-panel-zatca" role="tabpanel" aria-labelledby="branch-tab-zatca">
-          <div className={sectionClass(zatca.open)}>
-            <SectionHeader icon={ShieldCheck} title={t('branches:editor.zatcaSettings')} open={zatca.open} toggle={zatca.toggle}
-              color="text-violet-600" bg="bg-violet-50" />
-            {zatca.open && (
-              <div className="px-5 py-4 space-y-4">
-                <p className="text-xs leading-5 text-gray-600">{t('branches:tabs.zatcaSeparate')}</p>
-                {/* Phase indicator — read-only, derived from subscription plan */}
-                <div className="flex items-center justify-between rounded-xl border border-primary-100 bg-primary-50/50 px-4 py-3">
-                  <div>
-                    <p className="text-xs font-semibold text-gray-700">
-                      {isNew
-                        ? t('branches:zatca.newPhase', { phase: isPhase2 ? 2 : 1 })
-                        : t('branches:zatca.phase', { phase: form.zatca_phase })
-                      }
-                    </p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">
-                      {(isNew ? isPhase2 : form.zatca_phase === 2)
-                        ? t('branches:zatca.phase2Help')
-                        : t('branches:zatca.phase1Help')}
-                    </p>
-                  </div>
-                  <span className={`rounded-md px-2 py-1 text-[10px] font-bold ${
-                    (isNew ? isPhase2 : form.zatca_phase === 2)
-                      ? 'bg-violet-100 text-violet-700'
-                      : 'bg-gray-100 text-gray-500'
-                  }`}>
-                    {t('branches:zatca.phase', { phase: isNew ? (isPhase2 ? 2 : 1) : form.zatca_phase })}
-                  </span>
-                </div>
-
-                {!isNew && (
-                  <div className="flex items-start gap-3 rounded-xl border border-[#e8e1d1] bg-white p-4">
-                    <FileText size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-xs font-semibold text-gray-700">{t('branches:zatca.certificate')}</p>
-                      <p className="text-[11px] text-gray-400 mt-1">
-                        {t('branches:zatca.certificateHelp')}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                {isNew ? (
-                  <div>
-                    <Button type="button" variant="secondary" disabled aria-describedby="zatca-after-create-reason">
-                      {t('branches:tabs.manageZatca')}
-                    </Button>
-                    <p id="zatca-after-create-reason" className="mt-2 text-[11px] text-gray-500">
-                      {t('branches:tabs.availableAfterCreation')}
-                    </p>
-                  </div>
-                ) : (
-                  <Button type="button" variant="secondary" onClick={() => requestClose(() => navigate('/zatca'))}>
-                    <ShieldCheck size={14} /> {t('branches:tabs.manageZatca')}
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
-          </section>
-          )}
-
           {/* ── BRANCH LOGIN (existing branch — read-only + reset) ─ */}
           {activeTab === 'access' && (
           <section id="branch-panel-access" role="tabpanel" aria-labelledby="branch-tab-access" className="space-y-3">
@@ -1214,7 +1161,11 @@ function BranchModal({
           <div className="flex flex-col-reverse gap-2 sm:flex-row">
             <Button type="button" variant="secondary" disabled={saving} onClick={() => requestClose()} className="w-full sm:w-auto">{t('branches:editor.cancel')}</Button>
             <Button type="submit" form="branch-modal-form" loading={saving} disabled={saving} className="w-full sm:w-auto">
-              {t(isNew ? 'branches:editor.create' : 'branches:editor.saveChanges')}
+              {t(isNew && activeTab !== tabs[tabs.length - 1].id
+                ? 'common:next'
+                : isNew
+                ? 'branches:editor.create'
+                : 'branches:editor.saveChanges')}
             </Button>
           </div>
         </footer>
@@ -1329,43 +1280,38 @@ function BranchCard({
 
   return (
     <div className={`card overflow-hidden transition-all duration-150 hover:-translate-y-0.5 hover:border-primary-100 hover:shadow-card-md ${!branch.is_active ? 'opacity-60' : ''}`}>
-      <div className="flex items-start justify-between gap-4 border-b border-gray-100 bg-gradient-to-r from-white to-primary-50/40 p-5">
+      <div className="flex items-start justify-between gap-4 border-b border-sidebar-border bg-sidebar p-5">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-primary-50 flex items-center justify-center flex-shrink-0 overflow-hidden border border-primary-100">
+          <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center flex-shrink-0 overflow-hidden border border-white/15">
             {branch.logo_url
               ? <img src={branch.logo_url} alt={branch.name} className="w-full h-full object-cover" />
-              : <span className="text-lg font-black text-primary-700">{branch.name.charAt(0)}</span>
+              : <span className="text-lg font-black text-gold-300">{branch.name.charAt(0)}</span>
             }
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-black text-gray-950 text-base truncate" dir="auto">{branch.name}</span>
-              {branch.name_ar && <span className="text-gray-500 text-sm leading-5" dir="auto" style={{ fontFamily: 'Cairo' }}>{branch.name_ar}</span>}
+              <span className="font-black text-white text-base break-words" dir="auto">{branch.name}</span>
+              {branch.name_ar && <span className="text-white/65 text-sm leading-5" dir="auto" style={{ fontFamily: 'Cairo' }}>{branch.name_ar}</span>}
               {branch.is_main_branch && (
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-gold-500/10 text-gold-700 px-2 py-0.5 rounded-full ring-1 ring-gold-500/20">
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-gold-300/15 text-gold-200 px-2 py-0.5 rounded-full ring-1 ring-gold-300/25">
                   <Star size={9} /> {t('detail.main')}
                 </span>
               )}
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              <Badge variant={branch.is_active ? 'success' : 'neutral'} dot>
+              <Badge variant={branch.is_active ? 'success' : 'neutral'} dot className="rounded-md border-0 bg-white/90 px-2 py-1 text-[11px]">
                 {t(`status.${branch.is_active ? 'active' : 'inactive'}`)}
               </Badge>
-              <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-primary-700 ring-1 ring-primary-100">
+              <span className="inline-flex items-center gap-1 rounded-md bg-white/90 px-2 py-1 text-[11px] font-semibold text-primary-800">
                 <ShieldCheck size={11} />
                 Phase {branch.zatca_phase ?? 1}
               </span>
-              {branch.invoice_prefix && (
-                <span className="rounded-full bg-white px-2.5 py-0.5 font-mono text-[11px] font-semibold text-gray-500 ring-1 ring-gray-100">
-                  #{branch.invoice_prefix}-XXXX
-                </span>
-              )}
             </div>
           </div>
         </div>
 
         <button onClick={onEdit}
-          className="w-9 h-9 flex items-center justify-center rounded-xl text-gray-400 hover:bg-white hover:text-primary-700 active:scale-[0.97] transition-all"
+          className="w-9 h-9 flex items-center justify-center rounded-xl text-white/70 hover:bg-white/10 hover:text-gold-200 active:scale-[0.97] transition-[background-color,color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300"
           title={t('editor.edit')} aria-label={t('editor.edit')}>
           <Pencil size={15} />
         </button>
@@ -1517,14 +1463,19 @@ export default function BranchesTab() {
   return (
     <div className="space-y-5">
 
-      {/* Toolbar */}
-      <div className="flex items-center justify-between gap-4">
+      {/* Capacity and actions */}
+      <div className="overflow-hidden rounded-2xl border border-primary-100 bg-white shadow-card">
+        <div className="h-1 bg-gold-500" />
+        <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-base font-black text-gray-950">{t('list.directory')}</h3>
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
-            <span>{t('list.usage', { active: activeBranchCount, max: maxBranches })}</span>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-primary-700">{t('list.directory')}</p>
+          <p className="mt-1 text-xl font-black text-gray-950">{t('list.usage', { active: activeBranchCount, max: maxBranches })}</p>
+          <div className="mt-3 h-2 w-full max-w-sm overflow-hidden rounded-full bg-primary-50 ring-1 ring-primary-100" role="progressbar" aria-valuemin={0} aria-valuemax={maxBranches} aria-valuenow={activeBranchCount}>
+            <div className={`h-full rounded-full ${remainingBranches === 0 ? 'bg-gold-500' : 'bg-primary-500'}`} style={{ width: `${Math.min((activeBranchCount / Math.max(maxBranches, 1)) * 100, 100)}%` }} />
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
             <span>{t('list.total', { count: totalBranchCount })}</span>
-            <span>{t('list.remaining', { count: remainingBranches })}</span>
+            <span className={remainingBranches === 0 ? 'font-semibold text-gold-700' : ''}>{t('list.remaining', { count: remainingBranches })}</span>
             {branchUsageError && <span className="text-amber-600">{t('list.localCount')}</span>}
           </div>
         </div>
@@ -1553,6 +1504,7 @@ export default function BranchesTab() {
             <Plus size={14} /> {t('list.addBranch')}
           </Button>
         )}
+        </div>
       </div>
 
       {/* List */}
