@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { documentFromPreviewDraft, type InvoicePresentationDraft } from '@/lib/invoices/documentViewAdapters'
 import { resolveInvoicePresentationSettings, serializeInvoicePresentationSettingsForSave } from '@/lib/invoices/presentationSettings'
 import { resolveInvoiceLogoUrl } from '@/lib/invoices/runtimePresentation'
+import { resolveBranchDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import A4Document from '@/components/print/A4Document'
 import A4PreviewFit from '@/components/print/A4PreviewFit'
@@ -92,7 +93,7 @@ export default function InvoiceSettingsPage({
   embedded?: boolean
   workspace?: 'receipts' | 'invoices'
 } = {}) {
-  const { t } = useTranslation(['settings', 'common', 'printing'])
+  const { t, i18n } = useTranslation(['settings', 'common', 'printing'])
   const navigate = useNavigate()
   const { profile, loading: authLoading } = useAuth()
   const [branches, setBranches] = useState<Branch[]>([])
@@ -214,7 +215,7 @@ export default function InvoiceSettingsPage({
   const actionOptions = [{ value: 'receipt' as const, label: t('printing:invoiceSettings.actions.receiptOnly'), description: t('printing:invoiceSettings.actions.receiptHelp') }, { value: 'a4' as const, label: t('printing:invoiceSettings.actions.a4Only'), description: t('printing:invoiceSettings.actions.a4Help') }, { value: 'both' as const, label: t('printing:invoiceSettings.actions.both'), description: t('printing:invoiceSettings.actions.bothHelp') }]
 
   return <div className={`mx-auto max-w-[1440px] space-y-5 ${embedded ? 'pb-24' : 'pb-28'}`}>
-    {!embedded && <header className="border-b border-gray-200 pb-5"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-primary-700">{t('printing:invoiceSettings.eyebrow')}</p><h1 className="mt-1 text-2xl font-bold text-gray-950">{t('printing:invoiceSettings.title')}</h1><p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">{t('printing:invoiceSettings.subtitle')}</p></div>{branches.length > 1 && <label className="min-w-48 text-xs font-semibold text-gray-700">{t('printing:invoiceSettings.branch')}<select value={branchId ?? ''} onChange={event => setBranchId(event.target.value)} className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-normal"><option value="" disabled>{t('printing:invoiceSettings.selectBranch')}</option>{branches.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}</div></header>}
+    {!embedded && <header className="border-b border-gray-200 pb-5"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-primary-700">{t('printing:invoiceSettings.eyebrow')}</p><h1 className="mt-1 text-2xl font-bold text-gray-950">{t('printing:invoiceSettings.title')}</h1><p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">{t('printing:invoiceSettings.subtitle')}</p></div>{branches.length > 1 && <label className="min-w-48 text-xs font-semibold text-gray-700">{t('printing:invoiceSettings.branch')}<select value={branchId ?? ''} onChange={event => setBranchId(event.target.value)} className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-normal"><option value="" disabled>{t('printing:invoiceSettings.selectBranch')}</option>{branches.map(item => <option key={item.id} value={item.id}>{resolveBranchDisplayName(item, i18n.resolvedLanguage?.startsWith('ar') === true)}</option>)}</select></label>}</div></header>}
     <div className="flex gap-2 overflow-x-auto rounded-2xl border border-gray-200 bg-white p-2" role="tablist" aria-label={t('printing:invoiceSettings.sections')}>{tabs.map(tab => <TabButton key={tab.id} active={activeTab === tab.id} label={tab.label} onClick={() => { setActiveTab(tab.id); setMobilePane('settings') }} />)}</div>
     <div className="flex gap-2 lg:hidden"><button type="button" onClick={() => setMobilePane('settings')} className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold ${mobilePane === 'settings' ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600'}`}>{t('printing:invoiceSettings.settings')}</button><button type="button" onClick={() => setMobilePane('preview')} className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold ${mobilePane === 'preview' ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600'}`}>{t('printing:preview')}</button></div>
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">

@@ -22,6 +22,7 @@ import {
   logRegisterSessionRpcError,
   normalizeRegisterSession,
 } from '@/lib/registerSessions'
+import { resolveBranchDisplayName, resolveBusinessDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
 
 const db = () => supabase as any
 
@@ -517,10 +518,10 @@ function registerSessionErrorKey(error: unknown): string {
 }
 
 export default function BranchDashboardPage() {
-  const { locale } = useLocale()
+  const { locale, isRtl } = useLocale()
   const { t } = useTranslation('dashboard')
   const navigate = useNavigate()
-  const { profile, tenant } = useAuth()
+  const { profile, tenant, branch } = useAuth()
 
   const tid = profile?.tenant_id
   const bid = profile?.branch_id
@@ -531,7 +532,6 @@ export default function BranchDashboardPage() {
 
   const [recentInvs,   setRecentInvs]   = useState<any[]>([])
   const [lowStock,     setLowStock]     = useState<any[]>([])
-  const [branchName,   setBranchName]   = useState('')
   const [zatcaPhase,   setZatcaPhase]   = useState<1 | 2>(1)
   const [hasActiveCert, setHasActiveCert] = useState(false)
   const [productionStatus, setProductionStatus] = useState<ProductionOnboardingResponse | null>(null)
@@ -551,7 +551,7 @@ export default function BranchDashboardPage() {
     const summaryParams = { p_branch_id: bid, p_start_date: today, p_end_date: today }
     try {
       const [branchRes, registerRes] = await Promise.all([
-        db().from('branches').select('name, zatca_phase').eq('id', bid).maybeSingle(),
+        db().from('branches').select('zatca_phase').eq('id', bid).maybeSingle(),
         (supabase as any).rpc('get_register_session_summary', {
           p_branch_id: bid,
         }),
@@ -568,7 +568,6 @@ export default function BranchDashboardPage() {
         setRegisterSession(normalizeRegisterSession(sessionValue))
       }
 
-      setBranchName(branchRes.data?.name ?? '')
       const branchZatcaPhase = branchRes.data?.zatca_phase ?? 1
       setZatcaPhase(branchZatcaPhase)
       setHasActiveCert(false)
@@ -598,8 +597,7 @@ export default function BranchDashboardPage() {
       setStatsError('errors.branchLoad')
       setRegisterSession(null)
       try {
-        const { data } = await db().from('branches').select('name, zatca_phase').eq('id', bid).maybeSingle()
-        setBranchName(data?.name ?? '')
+        const { data } = await db().from('branches').select('zatca_phase').eq('id', bid).maybeSingle()
         setZatcaPhase(data?.zatca_phase ?? 1)
       } catch {}
     } finally {
@@ -676,12 +674,20 @@ export default function BranchDashboardPage() {
   const displayedZatcaTone = demoSandbox || zatcaPhase === 2 ? zatcaStatus.tone : 'info'
   const displayedZatcaLabel = demoSandbox || zatcaPhase === 2 ? zatcaStatus.label : t('zatca.phase1Qr')
   const zatcaHeaderStyle = headerStatusStyles[displayedZatcaTone]
-  const dashboardTitle = branchName || tenant?.name || t('branch.myBranch')
-  const localizedBusinessName = locale === 'ar-SA'
-    ? tenant?.name_ar?.trim() || tenant?.name?.trim() || ''
-    : tenant?.name?.trim() || tenant?.name_ar?.trim() || ''
-  const dashboardContextName = localizedBusinessName && localizedBusinessName !== dashboardTitle.trim()
-    ? localizedBusinessName
+  const companyName = resolveBusinessDisplayName({
+    business_name_ar: branch?.business_name_ar,
+    business_name: branch?.business_name,
+    name_ar: tenant?.name_ar,
+    name: tenant?.name,
+    display_name: branch?.display_name,
+  }, isRtl, '')
+  const dashboardTitle = resolveBranchDisplayName(
+    branch,
+    isRtl,
+    companyName || t('branch.myBranch'),
+  )
+  const dashboardContextName = companyName && companyName !== dashboardTitle
+    ? companyName
     : ''
   const dashboardDate = new Date().toLocaleDateString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 

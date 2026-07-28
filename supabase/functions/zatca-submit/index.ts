@@ -56,6 +56,7 @@ const FINALIZATION_EDGE_VERSION = '2.1.0'
 const FINALIZATION_CLIENT_VERSION = '2.1.0'
 const OUTPUT_STATE_READ_CLIENT_VERSIONS = new Set(['2.0.0', FINALIZATION_CLIENT_VERSION])
 const ZATCA_OUTBOX_PROJECT_REF = 'bkbphkpqcxuejozayrsy'
+const REPORTING_LEASE_SECONDS = 240
 const RECOVERY_BRANCH_ID = '371dee75-6e46-496e-89e7-1a7492b51a3c'
 const IMMUTABLE_RECOVERY_TARGETS = Object.freeze([
   {
@@ -3199,7 +3200,7 @@ async function processReportingOutboxV2(
 ): Promise<ReportingOutboxDispatchResult> {
   const claimResult = await db.rpc('claim_zatca_reporting_outbox_v2', {
     p_claimed_by: claimedBy,
-    p_lease_seconds: 120,
+    p_lease_seconds: REPORTING_LEASE_SECONDS,
     p_invoice_id: invoiceId,
   })
   if (claimResult.error) {
@@ -3277,7 +3278,7 @@ async function processReportingOutboxV2(
     const networkClaimResult = await db.rpc('claim_zatca_network_v2', {
       p_invoice_id: claimedInvoiceId,
       p_claimed_by: claimedBy,
-      p_lease_seconds: 120,
+      p_lease_seconds: REPORTING_LEASE_SECONDS,
     })
     if (networkClaimResult.error) throw new Error('Unable to acquire reporting network lease')
     const networkClaim = rpcObject(networkClaimResult.data)
@@ -3980,6 +3981,19 @@ Deno.serve(async (req: Request) => {
       })
       if (!capabilities.compatible
           || clientVersion !== FINALIZATION_CLIENT_VERSION) {
+        // This contract decision happens before branch authorization,
+        // idempotency lookup, preparation, or any commercial write. A
+        // pre-v2/version-mismatched database must retain the coordinated
+        // deployment's write-free legacy checkout path.
+        if (capabilities.legacySubmitAvailable) {
+          return jsonResponse({
+            status: 'legacy_required',
+            reason: 'atomic_rollout_disabled',
+            blockingReason: !capabilities.compatible
+              ? 'runtime_version_incompatible'
+              : 'client_request_version_incompatible',
+          })
+        }
         return jsonResponse({
           error: 'Atomic simplified checkout is unavailable or version-incompatible',
           code: 'ATOMIC_SIMPLIFIED_CHECKOUT_UNAVAILABLE',
@@ -4329,7 +4343,7 @@ Deno.serve(async (req: Request) => {
           code: 'LEGACY_RETRY_CONTRACT_REQUIRED',
         }, 409)
       }
-      const state = await loadOutputStateV2(
+      let state = await loadOutputStateV2(
         supabase as any,
         invoiceId,
         invoiceAuth.target.tenantId,
@@ -4339,6 +4353,50 @@ Deno.serve(async (req: Request) => {
           error: 'Only an immutable simplified_final artifact can use durable reporting retry',
           code: 'STORED_SIMPLIFIED_ARTIFACT_REQUIRED',
         }, 409)
+      }
+      if (state.reconciliationRequired === true) {
+        const reconciled = await supabase.rpc('reconcile_zatca_reporting_response_evidence_v2', {
+          p_invoice_id: invoiceId,
+        })
+        if (reconciled.error) {
+          return jsonResponse({
+            ...state,
+            error: safeZatcaText(reconciled.error.message, 180)
+              ?? 'Unable to reconcile durable ZATCA response evidence',
+            code: 'REPORTING_EVIDENCE_RECONCILIATION_FAILED',
+            reportingDispatch: 'blocked',
+            durable: true,
+          }, 409)
+        }
+        const reconciliation = rpcObject(reconciled.data)
+        state = await loadOutputStateV2(
+          supabase as any,
+          invoiceId,
+          invoiceAuth.target.tenantId,
+        )
+        if (reconciliation.status === 'accepted' || state.invoiceStatus === 'reported') {
+          await auditEvent(supabase as any, {
+            ...auditBase,
+            action: 'zatca_reporting_evidence_reconciled',
+            status: 'succeeded',
+            metadata: { source, operation: action, outcome: 'accepted' },
+          })
+          return jsonResponse({
+            ...state,
+            reportingDispatch: 'accepted',
+            durable: true,
+          })
+        }
+        if (reconciliation.status !== 'retryable') {
+          return jsonResponse({
+            ...state,
+            error: safeZatcaText(reconciliation.reason, 180)
+              ?? 'Stored ZATCA response evidence requires operator review',
+            code: 'REPORTING_EVIDENCE_RECONCILIATION_REQUIRED',
+            reportingDispatch: 'blocked',
+            durable: true,
+          }, 409)
+        }
       }
       const queued = await supabase.rpc('enqueue_zatca_reporting_outbox_v2', {
         p_invoice_id: invoiceId,

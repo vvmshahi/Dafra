@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { complianceCapability, confirmOfficialSellerInformation, getComplianceReadiness, saveComplianceDraft } from '@/lib/complianceIdentity'
+import { resolveBranchDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
 import type { BranchComplianceProfile, ComplianceReadiness, DraftProfilePayload } from '@/types/complianceIdentity'
 
 const EMPTY: DraftProfilePayload = {
@@ -32,11 +33,11 @@ function publicState(readiness: ComplianceReadiness | null): PublicState {
 }
 
 export default function OfficialSellerProfilePage() {
-  const { t } = useTranslation('settings')
+  const { t, i18n } = useTranslation('settings')
   const { profile } = useAuth()
   const owner = profile?.role === 'owner'
   const [enabled, setEnabled] = useState<boolean | null>(null)
-  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
+  const [branches, setBranches] = useState<{ id: string; name: string | null; name_ar?: string | null; display_name?: string | null }[]>([])
   const [branchId, setBranchId] = useState('')
   const [readiness, setReadiness] = useState<ComplianceReadiness | null>(null)
   const [form, setForm] = useState<DraftProfilePayload>({ ...EMPTY })
@@ -73,7 +74,7 @@ export default function OfficialSellerProfilePage() {
         if (stopped) return
         setEnabled(capability.available)
         if (!capability.available) return
-        const { data } = await supabase.from('branches').select('id,name').order('name')
+        const { data } = await supabase.from('branches').select('id,name,name_ar,display_name').order('name')
         const rows = (data ?? []) as { id: string; name: string }[]
         setBranches(rows)
         if (rows[0]) setBranchId(rows[0].id)
@@ -140,7 +141,7 @@ export default function OfficialSellerProfilePage() {
     <div className={`rounded-2xl border p-4 ${displayedState === 'confirmed' ? 'border-emerald-100 bg-emerald-50' : displayedState === 'reconfirm' ? 'border-amber-100 bg-amber-50' : 'border-gray-100 bg-white'}`}>
       <div className="flex items-start gap-3">{displayedState === 'confirmed' ? <CheckCircle2 className="text-emerald-600" size={19}/> : <AlertTriangle className="text-amber-600" size={19}/>}<div><p className="text-sm font-bold text-gray-900">{t(`officialSeller.publicState.${displayedState}`)}</p>{displayedState === 'reconfirm' && <p className="mt-1 text-xs text-amber-800">{t('officialSeller.changeWarning')}</p>}</div></div>
     </div>
-    <div className="card p-4"><label className="label" htmlFor="official-branch">{t('officialSeller.branch')}</label><select id="official-branch" className="input" value={branchId} onChange={e => setBranchId(e.target.value)}>{branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></div>
+    <div className="card p-4"><label className="label" htmlFor="official-branch">{t('officialSeller.branch')}</label><select id="official-branch" className="input" value={branchId} onChange={e => setBranchId(e.target.value)}>{branches.map(branch => <option key={branch.id} value={branch.id}>{resolveBranchDisplayName(branch, i18n.resolvedLanguage?.startsWith('ar') === true)}</option>)}</select></div>
     {(['identity', 'address', 'optional'] as const).map(group => <section key={group} className="card p-5"><h2 className="text-sm font-bold text-gray-900">{t(`officialSeller.groups.${group}`)}</h2><div className="mt-4 grid gap-4 sm:grid-cols-2">
       {group === 'identity' && <div><label className="label" htmlFor="registrationScheme">{t('officialSeller.fields.registrationScheme')}</label><select id="registrationScheme" className="input" dir="ltr" disabled={disabled} value={form.registrationScheme} onChange={set('registrationScheme')}>{['CRN','MOM','MLS','SAG','OTH'].map(value => <option key={value}>{value}</option>)}</select></div>}
       {fields.filter(field => field.group === group).map(field => <div key={field.key} className={field.key === 'evidenceReference' ? 'sm:col-span-2' : ''}><label className="label" htmlFor={field.key}>{t(`officialSeller.fields.${field.key}`)}</label><input id={field.key} className="input" dir={field.ltr ? 'ltr' : 'auto'} disabled={disabled} value={form[field.key]} onChange={set(field.key)} aria-invalid={(field.key === 'vatNumber' && Boolean(form.vatNumber) && !/^3\d{13}3$/.test(form.vatNumber)) || (field.key === 'postalCode' && Boolean(form.postalCode) && !/^\d{5}$/.test(form.postalCode))}/>{field.key === 'vatNumber' && form.vatNumber && !/^3\d{13}3$/.test(form.vatNumber) && <p className="mt-1 text-xs text-red-600">{t('officialSeller.validation.vat')}</p>}{field.key === 'postalCode' && form.postalCode && !/^\d{5}$/.test(form.postalCode) && <p className="mt-1 text-xs text-red-600">{t('officialSeller.validation.postal')}</p>}</div>)}
