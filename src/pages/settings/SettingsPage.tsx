@@ -6,7 +6,6 @@ import AccountTab      from './AccountTab'
 import PrinterTab      from './PrinterTab'
 import { isElectron }  from '@/lib/electron'
 import { useAuth } from '@/hooks/useAuth'
-import { resolveBusinessType } from '@/lib/utils/businessType'
 import { useTranslation } from 'react-i18next'
 import ComplianceReadinessCard from '@/components/compliance/ComplianceReadinessCard'
 import { ENABLE_OFFICIAL_SELLER_IDENTITY } from '@/lib/releaseFlags'
@@ -30,7 +29,7 @@ const TABS = isElectron() ? [...BASE_TABS, ...ELECTRON_TABS] : BASE_TABS
 
 export default function SettingsPage() {
   const { t } = useTranslation('settings')
-  const { profile, tenant } = useAuth()
+  const { profile } = useAuth()
   const [params] = useSearchParams()
   const requestedTab = params.get('tab')
   const initialTab = requestedTab && TABS.some(tab => tab.id === requestedTab) ? requestedTab as TabId : 'subscription'
@@ -44,10 +43,8 @@ export default function SettingsPage() {
     }
   }, [requestedTab])
 
-  const current = TABS.find(t => t.id === active)!
   const role = String(profile?.role ?? '')
   const canViewBusinessType = role === 'owner' || role === 'admin'
-  const tenantBusinessType = resolveBusinessType(tenant?.business_type)
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -78,37 +75,13 @@ export default function SettingsPage() {
         })}
       </div>
 
-      {/* Section header */}
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-primary-50 flex items-center justify-center">
-          <current.icon size={16} className="text-primary-600" />
-        </div>
-        <div>
-          <h2 className="text-sm font-bold text-gray-900">{t(`tabs.${current.id}.label`)}</h2>
-          <p className="text-xs text-gray-400">{t(`tabs.${current.id}.description`)}</p>
-        </div>
-      </div>
-
-      {canViewBusinessType && tenant && (
-        <div className="card p-4 flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{t('businessType.title')}</p>
-            <p className="text-sm font-bold text-gray-900 mt-1">{t(`businessType.${tenantBusinessType}.label`)}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{t(`businessType.${tenantBusinessType}.description`)}</p>
-          </div>
-          <span className="rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-semibold text-gray-500">
-            {t('businessType.readOnly')}
-          </span>
-        </div>
-      )}
-      {ENABLE_OFFICIAL_SELLER_IDENTITY && canViewBusinessType && <ComplianceReadinessCard manage />}
-
       {/* Tab content */}
-      <section aria-live="polite" aria-label={t(`tabs.${current.id}.label`)}>
+      <section aria-live="polite" aria-label={t(`tabs.${active}.label`)}>
         {active === 'subscription' && <SubscriptionTab />}
         {active === 'account'      && <AccountTab />}
         {active === 'printer'      && <PrinterTab />}
       </section>
+      {active === 'subscription' && ENABLE_OFFICIAL_SELLER_IDENTITY && canViewBusinessType && <ComplianceReadinessCard manage />}
     </div>
   )
 }

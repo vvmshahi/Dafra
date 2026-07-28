@@ -139,6 +139,11 @@
   },
   "profile": {
     "accountInfo": "Account information",
+    "email": "Login email",
+    "application": "Application",
+    "build": "Build",
+    "loading": "Loading profile",
+    "notProvided": "Not provided",
     "role": "Role",
     "memberSince": "Member since",
     "edit": "Edit profile",

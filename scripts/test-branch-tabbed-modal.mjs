@@ -12,11 +12,12 @@ assert.match(source, /(?:max-w-\[1040px\]|md:w-\[min\(100%,1040px\)\])/)
 assert.match(source, /id="branch-modal-form"/)
 assert.match(source, /form="branch-modal-form"/)
 
-for (const tab of ['general', 'access', 'pos', 'modules', 'invoices', 'zatca']) {
+for (const tab of ['general', 'access', 'pos', 'modules', 'invoices']) {
   assert.match(source, new RegExp(`id: '${tab}'`))
   assert.match(source, new RegExp(`branch-tab-\\$\\{tab\\.id\\}`))
   assert.match(source, new RegExp(`branch-panel-${tab}`))
 }
+assert.doesNotMatch(source, /id: 'zatca'|branch-panel-zatca|manageZatca/)
 assert.match(source, /role="tablist"/)
 assert.match(source, /role="tab"/)
 assert.match(source, /role="tabpanel"/)
@@ -68,8 +69,9 @@ assert.match(source, /openerRef\.current\?\.focus\(\)/)
 assert.match(source, /event\.key === 'Escape'/)
 assert.match(source, /event\.key !== 'Tab'/)
 
-assert.match(source, /requestClose\(\(\) => navigate\('\/zatca'\)\)/)
-assert.match(source, /availableAfterCreation/)
+assert.match(source, /isNew && activeTab !== tabs\[tabs\.length - 1\]\.id/)
+assert.match(source, /'common:next'/)
+assert.match(source, /'branches:editor\.create'/)
 assert.match(source, /invoiceWorkspaceHelp/)
 assert.match(source, /canEditModuleSettings \? \[\{ id: 'modules'/)
 assert.match(source, /p_stock_enabled: form\.stock_enabled/)

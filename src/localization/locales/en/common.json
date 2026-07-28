@@ -19,6 +19,8 @@
   "refresh": "Refresh",
   "previous": "Previous",
   "next": "Next",
+  "show": "Show",
+  "hide": "Hide",
   "optional": "Optional",
   "required": "Required",
   "subtotal": "Subtotal",

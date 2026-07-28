@@ -286,50 +286,40 @@ function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onVie
     : 'text-gray-400'
 
   return (
-    <div className={`group bg-white rounded-2xl border border-gray-100 shadow-card p-4 flex flex-col gap-3 transition-all duration-150 hover:-translate-y-0.5 hover:border-primary-100 hover:shadow-card-md ${!branch.is_active ? 'opacity-60' : ''}`}>
+    <div className={`group min-h-[390px] overflow-hidden rounded-2xl border border-primary-950/10 bg-white shadow-card flex flex-col transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:shadow-card-md ${!branch.is_active ? 'opacity-60' : ''}`}>
 
       {/* Header */}
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-xl bg-primary-50 ring-1 ring-primary-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+      <div className="flex items-start gap-3 bg-sidebar px-4 py-4">
+        <div className="w-10 h-10 rounded-xl bg-white/10 ring-1 ring-white/15 flex items-center justify-center overflow-hidden flex-shrink-0">
           {branch.logo_url
             ? <img src={branch.logo_url} alt={branchLabel} className="w-full h-full object-cover" />
-            : <Store size={18} className="text-primary-600" />
+            : <Store size={18} className="text-gold-300" />
           }
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-bold text-sm text-gray-950 truncate" dir="auto" style={{ fontFamily: 'Inter, Cairo, sans-serif' }}>{branchLabel}</span>
+            <span className="font-bold text-sm text-white break-words" dir="auto" style={{ fontFamily: 'Inter, Cairo, sans-serif' }}>{branchLabel}</span>
             {branch.is_main_branch && (
-              <span className="text-[9px] font-bold bg-gold-500/10 text-gold-700 px-1.5 py-0.5 rounded-full ring-1 ring-gold-500/20 flex-shrink-0">
+                <span className="text-[9px] font-bold bg-gold-300/15 text-gold-200 px-1.5 py-0.5 rounded-full ring-1 ring-gold-300/25 flex-shrink-0">
                 {t('status.main')}
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-            <Badge variant={branch.is_active ? 'success' : 'neutral'} dot className="text-[10px] bg-white">
+          <div className="mt-2 grid gap-1.5 text-[10px] sm:grid-cols-2">
+            <span className={`inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 font-semibold ${branch.is_active ? 'bg-primary-50/95 text-primary-800' : 'bg-gray-100/95 text-gray-600'}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${branch.is_active ? 'bg-primary-500' : 'bg-gray-400'}`} />
               {branch.is_active ? t('status.active') : t('status.inactive')}
-            </Badge>
-            <span className={`inline-flex items-center gap-1 rounded-full bg-gray-50 px-2 py-0.5 text-[10px] font-semibold ring-1 ring-gray-100 ${zatcaTone}`}>
-              <ShieldCheck size={10} className={demoSandbox || (branch.zatca_phase === 2 && !zatcaUnavailable && zatca.tone === 'success') ? 'text-emerald-500' : 'text-violet-400'} />
+            </span>
+            <span className={`inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 font-semibold ${demoSandbox || (branch.zatca_phase === 2 && !zatcaUnavailable && zatca.tone === 'success') ? 'bg-emerald-50/95 text-emerald-800' : branch.zatca_phase === 2 && !zatcaUnavailable ? 'bg-amber-50/95 text-amber-800' : 'bg-gray-100/95 text-gray-600'}`}>
+              <ShieldCheck size={10} />
               {zatcaLabel}
             </span>
-            {isOpen ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700 font-semibold ring-1 ring-emerald-100">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
-                {t('status.open')}
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-gray-50 px-2 py-0.5 text-[10px] text-gray-500 font-semibold ring-1 ring-gray-100">
-                <span className="w-1.5 h-1.5 rounded-full bg-gray-300 flex-shrink-0" />
-                {t('status.closed')}
-              </span>
-            )}
           </div>
         </div>
       </div>
 
       {/* Register Session */}
-      <div className={`rounded-xl border px-3 py-3 ${
+      <div className={`m-4 mb-3 flex-1 rounded-xl border px-3 py-3 ${
         session?.isLongOpen
           ? 'border-amber-200 bg-amber-50'
           : session?.status === 'open'
@@ -397,14 +387,17 @@ function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onVie
             </div>
           </div>
         ) : (
-          <p className="mt-2 text-[11px] text-gray-400">{t('register.noneYet')}</p>
+          <div className="flex min-h-28 flex-col items-center justify-center gap-2 py-4 text-center text-gray-500">
+            <Store size={20} className="text-gray-300" aria-hidden="true" />
+            <p className="max-w-[18rem] text-[11px] leading-relaxed">{t('register.noneYet')}</p>
+          </div>
         )}
       </div>
 
       {/* View Details */}
       <button
         onClick={onView}
-        className="flex min-h-10 items-center justify-center gap-2 w-full py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-primary-50 hover:border-primary-200 hover:text-primary-700 active:scale-[0.99] transition-all"
+        className="mx-4 mb-4 flex min-h-10 w-[calc(100%-2rem)] items-center justify-center gap-2 rounded-xl border border-gold-600 bg-gold-500 px-4 py-2 text-xs font-bold text-[#17301f] transition-[background-color,transform,box-shadow] duration-150 hover:bg-gold-400 hover:shadow-card active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-500 focus-visible:ring-offset-2"
       >
         <Eye size={14} /> {t('owner.viewDetails')}
       </button>
