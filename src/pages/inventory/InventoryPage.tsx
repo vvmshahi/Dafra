@@ -5,6 +5,7 @@ import StockOverviewTab from './StockOverviewTab'
 import { useAuth } from '@/hooks/useAuth'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import { useTranslation } from 'react-i18next'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 interface InventoryRouteState {
   stockTab?: 'product' | 'materials'
@@ -46,12 +47,7 @@ export default function InventoryPage() {
   if (!stockVisible) {
     return (
       <div className="space-y-5">
-        <div>
-          <h1 className="text-lg font-bold text-gray-900">{t('title')}</h1>
-          <p className="mt-1 text-xs text-gray-400">
-            {t('subtitleOther')}
-          </p>
-        </div>
+        <PageHeader title={t('title')} description={t('subtitleOther')} />
 
         <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-5 shadow-card">
           <p className="text-sm font-semibold text-amber-900">
@@ -74,14 +70,10 @@ export default function InventoryPage() {
   return (
     <div className="space-y-5">
 
-      <div className="flex items-center gap-3">
-        <h1 className="text-lg font-bold text-gray-900 flex-1">{t('title')}</h1>
-      </div>
-      <p className="text-xs text-gray-400 -mt-3">
-        {isTrading
-          ? t('subtitleTrading')
-          : t('subtitleOther')}
-      </p>
+      <PageHeader
+        title={t('title')}
+        description={isTrading ? t('subtitleTrading') : t('subtitleOther')}
+      />
 
       {isTrading ? (
         <>

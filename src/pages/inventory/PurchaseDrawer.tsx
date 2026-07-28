@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
-import { X, Plus, Trash2, ImagePlus, Banknote, CreditCard, Building } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { X, Plus, Trash2, ImagePlus, Banknote, CreditCard, Building, FileText, Check, AlertTriangle, Info } from 'lucide-react'
+import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
@@ -90,7 +91,7 @@ const PAY_OPTIONS = [
   { value: 'bank_transfer', icon: Building   },
 ] as const
 
-const PAYMENT_STATUS_OPTIONS: PaymentStatus[] = ['paid', 'unpaid', 'partial']
+const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -124,6 +125,12 @@ export default function PurchaseDrawer({
   const { profile } = useAuth()
   const { t } = useTranslation(['purchases', 'common'])
   const fileRef     = useRef<HTMLInputElement>(null)
+  const dialogRef   = useRef<HTMLDivElement>(null)
+  const supplierRef = useRef<HTMLSelectElement>(null)
+  const modeRef = useRef<HTMLFieldSetElement>(null)
+  const dateRef = useRef<HTMLInputElement>(null)
+  const amountRef = useRef<HTMLInputElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
   const isEditing   = Boolean(editingPurchase)
 
   const [saving,      setSaving]      = useState(false)
@@ -132,7 +139,7 @@ export default function PurchaseDrawer({
   const [billPreview, setBillPreview] = useState<string | null>(null)
   const [billChanged, setBillChanged] = useState(false)
 
-  const [mode,          setMode]          = useState<PurchaseMode>('simple_bill')
+  const [mode,          setMode]          = useState<PurchaseMode | null>(null)
   const [date,          setDate]          = useState('')
   const [supplierId,    setSupplierId]    = useState('')
   const [billNumber,    setBillNumber]    = useState('')
@@ -149,9 +156,28 @@ export default function PurchaseDrawer({
     [suppliers, resolvedBranchId],
   )
 
+  const resetTransientState = useCallback(() => {
+    setSaving(false)
+    setError('')
+    setBillFile(null)
+    setBillPreview(null)
+    setBillChanged(false)
+    setMode(null)
+    setDate('')
+    setSupplierId('')
+    setBillNumber('')
+    setPayMethod('cash')
+    setPaymentStatus('paid')
+    setTaxMode('included')
+    setSimpleAmount('')
+    setLines([newLine()])
+    setNotes('')
+  }, [])
+
   useEffect(() => {
     if (open) {
-      const purchaseMode = editingPurchase?.purchase_mode ?? 'simple_bill'
+      previousFocusRef.current = document.activeElement as HTMLElement | null
+      const purchaseMode = editingPurchase?.purchase_mode ?? null
       const nextTaxMode = editingPurchase?.tax_input_mode === 'excluded' ? 'excluded' : 'included'
 
       setMode(purchaseMode)
@@ -187,8 +213,42 @@ export default function PurchaseDrawer({
       setBillPreview(editingPurchase?.bill_path ? 'attached' : editingPurchase?.bill_url ?? null)
       setNotes(editingPurchase?.notes ?? '')
       setError('')
+      window.setTimeout(() => {
+        if (editingPurchase) supplierRef.current?.focus()
+        else modeRef.current?.focus()
+      }, 0)
     }
   }, [open, editingPurchase, editingItems])
+
+  const requestClose = useCallback(() => {
+    if (saving) return
+    resetTransientState()
+    onClose()
+    window.setTimeout(() => previousFocusRef.current?.focus(), 0)
+  }, [onClose, resetTransientState, saving])
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !saving) {
+        event.preventDefault()
+        requestClose()
+        return
+      }
+      if (event.key !== 'Tab' || !dialogRef.current) return
+      const nodes = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE))
+      if (!nodes.length) return
+      if (event.shiftKey && document.activeElement === nodes[0]) {
+        event.preventDefault()
+        nodes[nodes.length - 1].focus()
+      } else if (!event.shiftKey && document.activeElement === nodes[nodes.length - 1]) {
+        event.preventDefault()
+        nodes[0].focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [open, requestClose, saving])
 
   useEffect(() => {
     if (!open || !supplierId) return
@@ -240,6 +300,14 @@ export default function PurchaseDrawer({
   const removeLine = (key: string) => {
     if (lines.length === 1) return
     setLines(prev => prev.filter(l => l.key !== key))
+  }
+
+  const changeMode = (nextMode: PurchaseMode) => {
+    if (isEditing || nextMode === mode) return
+    setMode(nextMode)
+    setError('')
+    if (nextMode === 'simple_bill') setLines([newLine()])
+    else setSimpleAmount('')
   }
 
   const handleBillChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -318,13 +386,21 @@ export default function PurchaseDrawer({
     return () => window.clearTimeout(timer)
   }, [open, mode, supplierId, lines, inventoryItems, resolvedBranchId])
 
+  const lineSupplierName = (line: LineItem) =>
+    (line.supplier_item_name || line.name).trim()
+
   // Totals
   const rawLineAmount = roundMoney(lines.reduce((s, l) => s + lineTotal(l), 0))
   const simpleTotals = calculatePurchaseTotals(simpleAmount, taxMode)
   const detailedTotals = calculatePurchaseTotals(String(rawLineAmount), taxMode)
-
-  const lineSupplierName = (line: LineItem) =>
-    (line.supplier_item_name || line.name).trim()
+  const activeTotals = mode === 'simple_bill' ? simpleTotals : detailedTotals
+  const validLines = lines.filter(
+    line => lineSupplierName(line) && (parseFloat(line.quantity) || 0) > 0
+  )
+  const totalReceivingQuantity = validLines.reduce(
+    (sum, line) => sum + (parseFloat(line.quantity) || 0),
+    0,
+  )
 
   const uploadBill = async (tenantId: string, branchId: string, purchaseKey: string) => {
     if (!billFile) return null
@@ -382,18 +458,22 @@ export default function PurchaseDrawer({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    const validLines = lines.filter(
-      l => lineSupplierName(l) && (parseFloat(l.quantity) || 0) > 0
-    )
+    if (!mode) {
+      setError(t('purchases:errors.purchaseTypeRequired'))
+      modeRef.current?.focus()
+      return
+    }
     const selectedSupplier = supplierId
       ? branchSuppliers.find(supplier => supplier.id === supplierId) ?? null
       : null
     if (!date) {
       setError(t('purchases:errors.dateRequired'))
+      dateRef.current?.focus()
       return
     }
     if (mode === 'simple_bill' && !supplierId) {
       setError(t('purchases:errors.supplierRequired'))
+      supplierRef.current?.focus()
       return
     }
     if (supplierId && !selectedSupplier) {
@@ -402,6 +482,7 @@ export default function PurchaseDrawer({
     }
     if (mode === 'simple_bill' && simpleTotals.total <= 0) {
       setError(t('purchases:errors.amountPositive'))
+      amountRef.current?.focus()
       return
     }
     if (mode === 'detailed_receiving' && validLines.length === 0) {
@@ -490,8 +571,11 @@ export default function PurchaseDrawer({
         await setPurchaseAttachment(editingPurchase.id, billPath)
         await rememberSelectedMatches(validLines).catch(err => console.warn('Remembering supplier item mapping failed', err))
 
+        toast.success(t(mode === 'simple_bill' ? 'purchases:success.bill' : 'purchases:success.receiving'))
         onSaved()
+        resetTransientState()
         onClose()
+        window.setTimeout(() => previousFocusRef.current?.focus(), 0)
         return
       }
 
@@ -514,8 +598,11 @@ export default function PurchaseDrawer({
 
       if (mode === 'simple_bill') {
         if (billPath) await setPurchaseAttachment(purchaseId, billPath)
+        toast.success(t('purchases:success.bill'))
         onSaved()
+        resetTransientState()
         onClose()
+        window.setTimeout(() => previousFocusRef.current?.focus(), 0)
         return
       }
 
@@ -546,8 +633,11 @@ export default function PurchaseDrawer({
       if (billPath) await setPurchaseAttachment(purchaseId, billPath)
       await rememberSelectedMatches(validLines).catch(err => console.warn('Remembering supplier item mapping failed', err))
 
+      toast.success(t('purchases:success.receiving'))
       onSaved()
+      resetTransientState()
       onClose()
+      window.setTimeout(() => previousFocusRef.current?.focus(), 0)
     } catch (err) {
       console.error('[PurchaseDrawer] save failed', err)
       setError(t('purchases:errors.saveFailed'))
@@ -561,403 +651,408 @@ export default function PurchaseDrawer({
   const selectedSupplier = supplierId
     ? branchSuppliers.find(supplier => supplier.id === supplierId)
     : null
-  const simpleBillCanSubmit = mode !== 'simple_bill' ||
-    Boolean(date && supplierId && selectedSupplier && selectedSupplier.branch_id === resolvedBranchId && simpleTotals.total > 0)
+  const supplierIsValid = !supplierId || Boolean(selectedSupplier?.branch_id === resolvedBranchId)
+  const simpleBillCanSubmit = Boolean(
+    date && supplierId && supplierIsValid && simpleTotals.total > 0
+  )
+  const receivingCanSubmit = Boolean(
+    date && supplierIsValid && validLines.length > 0
+  )
+  const formCanSubmit = Boolean(mode && (
+    mode === 'simple_bill' ? simpleBillCanSubmit : receivingCanSubmit
+  ))
+  const dynamicSubtitle = !mode
+    ? t('purchases:modal.chooseType')
+    : t(mode === 'simple_bill' ? 'purchases:modal.simpleSubtitle' : 'purchases:modal.receivingSubtitle')
 
   return (
-    <>
-      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-
-      <div className="fixed inset-y-0 right-0 w-full max-w-[620px] bg-white shadow-2xl z-50 flex flex-col">
-        <form onSubmit={handleSubmit} className="flex flex-col h-full">
-
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
-            <div>
-              <h2 className="text-base font-bold text-gray-900">{t(isEditing ? 'purchases:edit' : 'purchases:new')}</h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {t(mode === 'simple_bill' ? 'purchases:mode.simpleHint' : 'purchases:mode.receivingHint')}
-              </p>
+    <div
+      className="fixed inset-y-0 left-0 right-0 z-50 flex items-center justify-center bg-black/55 p-2 md:left-[var(--app-sidebar-width)] md:p-5"
+      onMouseDown={event => {
+        if (event.target === event.currentTarget) requestClose()
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="purchase-modal-title"
+        aria-describedby="purchase-modal-description"
+        className="flex max-h-[calc(100dvh-1rem)] w-full max-w-[1000px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[#fffdf7] shadow-2xl md:max-h-[min(92vh,880px)]"
+      >
+        <form onSubmit={handleSubmit} noValidate className="flex min-h-0 flex-1 flex-col">
+          <header className="flex flex-shrink-0 items-center gap-3 border-b border-primary-100 bg-white px-4 py-3 sm:px-6 sm:py-4">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
+              <FileText size={19} aria-hidden="true" />
             </div>
-            <button type="button" onClick={onClose}
-              className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400">
-              <X size={18} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h2 id="purchase-modal-title" className="truncate text-base font-bold text-gray-900">
+                  {t(isEditing ? 'purchases:edit' : 'purchases:new')}
+                </h2>
+                {mode && (
+                  <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold text-primary-700">
+                    {t(mode === 'simple_bill' ? 'purchases:mode.simple' : 'purchases:mode.receiving')}
+                  </span>
+                )}
+              </div>
+              <p id="purchase-modal-description" className="mt-0.5 truncate text-xs text-gray-500">{dynamicSubtitle}</p>
+            </div>
+            <button
+              type="button"
+              onClick={requestClose}
+              disabled={saving}
+              aria-label={t('common:close')}
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 disabled:opacity-50"
+            >
+              <X size={18} aria-hidden="true" />
             </button>
-          </div>
+          </header>
 
-          {/* Body */}
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6">
+            <fieldset ref={modeRef} tabIndex={-1} aria-describedby={!mode && error ? 'purchase-form-error' : undefined}>
+              <legend className="sr-only">{t('purchases:modal.modeLegend')}</legend>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {([
+                  { value: 'simple_bill', label: t('purchases:mode.simple'), desc: t('purchases:modal.simpleExplanation') },
+                  { value: 'detailed_receiving', label: t('purchases:mode.receiving'), desc: t('purchases:modal.receivingExplanation') },
+                ] as { value: PurchaseMode; label: string; desc: string }[]).map(opt => {
+                  const disabled = isEditing || (!stockEnabled && opt.value === 'detailed_receiving')
+                  const checked = mode === opt.value
+                  return (
+                    <label key={opt.value} className={`relative flex cursor-pointer items-start gap-3 rounded-xl border p-3 focus-within:ring-2 focus-within:ring-primary-500 ${
+                      checked ? 'border-primary-600 bg-primary-50' : 'border-gray-200 bg-white'
+                    } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}>
+                      <input
+                        type="radio"
+                        name="purchase-mode"
+                        value={opt.value}
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={() => changeMode(opt.value)}
+                        className="sr-only"
+                      />
+                      <span className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border ${
+                        checked ? 'border-primary-700 bg-primary-700 text-white' : 'border-gray-300'
+                      }`}>
+                        {checked && <Check size={12} aria-hidden="true" />}
+                      </span>
+                      <span>
+                        <span className="block text-sm font-semibold text-gray-900">{opt.label}</span>
+                        <span className="mt-0.5 block text-xs leading-5 text-gray-500">{opt.desc}</span>
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            </fieldset>
 
-            {/* ── Mode selector ─────────────────────────────── */}
-            <div className="grid grid-cols-2 gap-2">
-              {([
-                { value: 'simple_bill', label: t('purchases:mode.simple'), desc: t('purchases:mode.simpleHint') },
-                { value: 'detailed_receiving', label: t('purchases:mode.receiving'), desc: t('purchases:mode.receivingHint') },
-              ] as { value: PurchaseMode; label: string; desc: string }[]).map(opt => {
-                const disabled = isEditing || (!stockEnabled && opt.value === 'detailed_receiving')
-                return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => { if (!isEditing) setMode(opt.value) }}
-                  className={`text-left rounded-xl border px-4 py-3 transition-all ${
-                    mode === opt.value
-                      ? 'border-primary-500 bg-primary-50 text-primary-700'
-                      : disabled
-                        ? 'cursor-not-allowed border-gray-100 bg-gray-50 text-gray-400 opacity-60'
-                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                  } ${isEditing ? 'cursor-default' : ''}`}
-                >
-                  <span className="block text-sm font-semibold">{opt.label}</span>
-                  <span className="block text-xs opacity-70 mt-0.5">{opt.desc}</span>
-                </button>
-                )
-              })}
-            </div>
-
-            {/* ── Header info ───────────────────────────────── */}
-            <div className="space-y-4">
-              <SectionLabel>{t('purchases:sections.details')}</SectionLabel>
-
-              <div className="grid grid-cols-2 gap-3">
+            {mode && (
+            <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.75fr)_minmax(280px,1fr)]">
+            <div className="min-w-0 space-y-4">
+            <section aria-labelledby="purchase-details-heading">
+              <SectionHeading id="purchase-details-heading">{t('purchases:sections.details')}</SectionHeading>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="label">{t('purchases:fields.date')} <span className="text-red-500">*</span></label>
-                  <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
+                  <label className="label" htmlFor="purchase-date">{t('purchases:fields.date')} <span className="text-red-600">*</span></label>
+                  <input ref={dateRef} id="purchase-date" className="input" type="date" value={date} onChange={event => setDate(event.target.value)} />
                 </div>
                 <div>
-                  <label className="label">{t('purchases:fields.supplier')} {mode === 'simple_bill' && <span className="text-red-500">*</span>}</label>
-                  <select className="input" value={supplierId} onChange={e => handleSupplierChange(e.target.value)}>
+                  <label className="label" htmlFor="purchase-supplier">
+                    {t('purchases:fields.supplier')} {mode === 'simple_bill' && <span className="text-red-600">*</span>}
+                  </label>
+                  <select
+                    ref={supplierRef}
+                    id="purchase-supplier"
+                    className="input"
+                    value={supplierId}
+                    aria-invalid={Boolean(supplierId && !selectedSupplier)}
+                    onChange={event => handleSupplierChange(event.target.value)}
+                  >
                     <option value="">— {t('purchases:noSupplier')} —</option>
-                    {branchSuppliers.map(s => (
-                      <option key={s.id} value={s.id}>{s.name_ar || s.name}</option>
+                    {branchSuppliers.map(supplier => (
+                      <option key={supplier.id} value={supplier.id}>{supplier.name_ar || supplier.name}</option>
                     ))}
                   </select>
                   {branchSuppliers.length === 0 && (
-                    <p className="mt-1.5 text-[11px] leading-relaxed text-amber-600">
-                      {t('purchases:supplierEmpty')}
-                    </p>
-                  )}
-                  {supplierId && !selectedSupplier && (
-                    <p className="mt-1.5 text-[11px] leading-relaxed text-red-600">
-                      {t('purchases:errors.supplierInvalid')}
+                    <p role="status" className="mt-1 flex items-center gap-1.5 text-[11px] text-gray-600">
+                      <AlertTriangle size={12} className="flex-shrink-0 text-amber-600" aria-hidden="true" />
+                      <span>{t('purchases:modal.supplierCompactEmpty')}</span>
+                      <a href="/suppliers" target="_blank" rel="noreferrer" className="font-semibold text-primary-700 underline underline-offset-2">
+                        {t('purchases:modal.addSupplier')}
+                      </a>
                     </p>
                   )}
                 </div>
-                <div className="col-span-2">
-                  <label className="label">{t('purchases:fields.billNumber')}</label>
+                <div>
+                  <label className="label" htmlFor="purchase-bill-number">{t('purchases:fields.billNumber')}</label>
                   <input
+                    id="purchase-bill-number"
                     className="input"
                     value={billNumber}
-                    onChange={e => setBillNumber(e.target.value)}
-                    placeholder={t('purchases:placeholders.billNumber')}
+                    onChange={event => setBillNumber(event.target.value)}
+                    placeholder={t('purchases:modal.supplierBillNumber')}
                   />
                 </div>
-              </div>
-            </div>
-
-            {/* ── Payment method ────────────────────────────── */}
-            <div className="space-y-3">
-              <SectionLabel>{t('purchases:sections.payment')}</SectionLabel>
-              <div className="flex gap-2">
-                {PAY_OPTIONS.map(({ value, icon: Icon }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setPayMethod(value)}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                      payMethod === value
-                        ? 'border-primary-500 bg-primary-50 text-primary-700'
-                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                    }`}
-                  >
-                    <Icon size={15} />
-                    {t(`purchases:paymentMethod.${value}`)}
-                  </button>
-                ))}
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {PAYMENT_STATUS_OPTIONS.map(value => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setPaymentStatus(value)}
-                    className={`py-2 rounded-xl border text-sm font-medium transition-all ${
-                      paymentStatus === value
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                    }`}
-                  >
-                    {t(`purchases:status.${value}`)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {mode === 'simple_bill' && (
-              <div className="space-y-4">
-                <SectionLabel>{t('purchases:sections.billAmount')}</SectionLabel>
                 <div>
-                  <label className="label">
-                    {t(taxMode === 'excluded' ? 'purchases:fields.subtotalBeforeVat' : 'purchases:fields.totalAmount')}
-                    <span className="text-red-500"> *</span>
-                  </label>
-                  <MoneyInput
-                    className="input"
-                    value={simpleAmount}
-                    onValueChange={setSimpleAmount}
-                    placeholder="0.00"
+                  <span className="label">{t('purchases:sections.attachment')}</span>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/heic,application/pdf"
+                    className="hidden"
+                    onChange={handleBillChange}
                   />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  {([
-                    { value: 'included', label: t('purchases:vatIncluded') },
-                    { value: 'excluded', label: t('purchases:vatExcluded') },
-                  ] as { value: TaxInputMode; label: string }[]).map(opt => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setTaxMode(opt.value)}
-                      className={`py-2 rounded-xl border text-xs font-semibold transition-all ${
-                        taxMode === opt.value
-                          ? 'border-amber-500 bg-amber-50 text-amber-700'
-                          : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                      }`}
-                    >
-                      {t(`purchases:taxMode.${opt.value}`)}
+                  <div className="flex h-[38px] items-center gap-2 rounded-lg border border-gray-200 bg-white px-2">
+                    <button type="button" onClick={() => fileRef.current?.click()}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium text-gray-600 hover:text-primary-700">
+                      <ImagePlus size={14} className="flex-shrink-0" aria-hidden="true" />
+                      <span className="truncate">{billFile?.name || (billPreview ? t('purchases:billAttached') : t('purchases:attachBill'))}</span>
                     </button>
-                  ))}
-                </div>
-
-                {simpleTotals.total > 0 && (
-                  <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2">
-                    <div className="flex justify-between text-sm text-gray-600">
-                      <span>{t('purchases:fields.subtotal')}</span>
-                      <span className="tabular-nums font-medium"><Rial amount={simpleTotals.subtotal} /></span>
-                    </div>
-                    <div className="flex justify-between text-sm text-gray-600">
-                      <span>{t('purchases:fields.vat')}</span>
-                      <span className="tabular-nums font-medium"><Rial amount={simpleTotals.vat} /></span>
-                    </div>
-                    <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-2">
-                      <span>{t('purchases:fields.total')}</span>
-                      <span className="tabular-nums text-emerald-600"><Rial amount={simpleTotals.total} /></span>
-                    </div>
+                    {billPreview && (
+                      <button type="button" aria-label={t('purchases:remove')}
+                        onClick={() => { setBillFile(null); setBillPreview(null); setBillChanged(true) }}
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600">
+                        <X size={13} aria-hidden="true" />
+                      </button>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
-            )}
+            </section>
 
             {mode === 'detailed_receiving' && (
-              <>
-                {/* ── Line items ────────────────────────────────── */}
-                <div className="space-y-3">
-                  <SectionLabel>{t('purchases:sections.items')}</SectionLabel>
-                  <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                    {t('purchases:receivingReviewHint')}
-                  </div>
-
-                  <div className="space-y-2">
-                    {lines.map((line, idx) => (
-                      <div key={line.key} className="bg-gray-50 rounded-xl p-3 space-y-2">
+              <section aria-labelledby="purchase-items-heading">
+                <SectionHeading id="purchase-items-heading">{t('purchases:modal.receivingItems')}</SectionHeading>
+                <p className="mt-1 text-xs text-gray-500">{t('purchases:receivingReviewHint')}</p>
+                <div className="mt-3 space-y-3">
+                  {lines.map((line, index) => {
+                    const linkedItem = inventoryItems.find(item => item.id === line.inventory_item_id)
+                    const received = parseFloat(line.quantity) || 0
+                    return (
+                      <div key={line.key} className="rounded-xl border border-gray-200 bg-white p-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold text-gray-400 w-5">{idx + 1}.</span>
+                          <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-bold text-primary-700">{index + 1}</span>
                           <select
-                            className="input flex-1 text-sm"
+                            className="input min-w-0 flex-1 text-sm"
                             value={line.inventory_item_id}
-                            onChange={e => selectItem(line.key, e.target.value)}
+                            aria-label={t('purchases:modal.stockItemNumber', { number: index + 1 })}
+                            onChange={event => selectItem(line.key, event.target.value)}
                           >
                             <option value="">— {t('purchases:placeholders.selectItem')} —</option>
-                            {inventoryItems.map(i => (
-                              <option key={i.id} value={i.id}>{i.name}</option>
-                            ))}
+                            {inventoryItems.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                           </select>
                           <button
                             type="button"
                             onClick={() => removeLine(line.key)}
                             disabled={lines.length === 1}
-                            className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors disabled:opacity-30"
+                            aria-label={t('purchases:modal.removeLine', { number: index + 1 })}
+                            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-30"
                           >
-                            <Trash2 size={13} />
+                            <Trash2 size={14} aria-hidden="true" />
                           </button>
                         </div>
-
-                        {line.match_source === 'mapping' && line.suggestion_label && (
-                          <div className="pl-7">
-                            <span className="inline-flex items-center rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700">
-                              {t('purchases:suggested', { name: line.suggestion_label })}
-                            </span>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-12">
+                          <div className="sm:col-span-5">
+                            <label className="label" htmlFor={`purchase-line-name-${line.key}`}>{t('purchases:placeholders.itemName')}</label>
+                            <input id={`purchase-line-name-${line.key}`} className="input" value={line.supplier_item_name}
+                              onChange={event => updateSupplierItemName(line.key, event.target.value)} />
                           </div>
-                        )}
-
-                        <div className="flex gap-2 pl-7">
-                          <div className="flex-1">
-                            <input
-                              className="input text-sm"
-                              value={line.supplier_item_name}
-                              onChange={e => updateSupplierItemName(line.key, e.target.value)}
-                              placeholder={`${t('purchases:placeholders.itemName')} *`}
-                            />
+                          <div className="sm:col-span-3">
+                            <label className="label" htmlFor={`purchase-line-quantity-${line.key}`}>{t('purchases:fields.quantity')}</label>
+                            <input id={`purchase-line-quantity-${line.key}`} className="input" type="number" step="0.001" min="0"
+                              value={line.quantity} onChange={event => updateLine(line.key, { quantity: event.target.value })} />
                           </div>
-                          <div className="w-24">
-                            <input
-                              className="input text-sm"
-                              type="number"
-                              step="0.001"
-                              min="0"
-                              value={line.quantity}
-                              onChange={e => updateLine(line.key, { quantity: e.target.value })}
-                              placeholder={`${t('purchases:placeholders.quantity')} *`}
-                            />
-                          </div>
-                          <div className="w-28">
-                            <MoneyInput
-                              className="input text-sm"
-                              value={line.unit_cost}
-                              onValueChange={value => updateLine(line.key, { unit_cost: value })}
-                              placeholder={t('purchases:placeholders.unitCost')}
-                            />
-                          </div>
-                          <div className="w-28 flex items-center justify-end">
-                            <span className="text-sm font-semibold text-gray-700 tabular-nums">
-                              <Rial amount={lineTotal(line)} />
-                            </span>
+                          <div className="sm:col-span-4">
+                            <label className="label" htmlFor={`purchase-line-cost-${line.key}`}>{t('purchases:fields.unitCost')}</label>
+                            <MoneyInput id={`purchase-line-cost-${line.key}`} className="input" value={line.unit_cost}
+                              onValueChange={value => updateLine(line.key, { unit_cost: value })} />
                           </div>
                         </div>
-
+                        <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-gray-50 p-2 text-xs sm:grid-cols-4">
+                          <SummaryItem label={t('purchases:modal.currentStock')} value={linkedItem ? `${linkedItem.current_quantity} ${linkedItem.unit_type}` : '—'} />
+                          <SummaryItem label={t('purchases:modal.receiving')} value={`${received} ${linkedItem?.unit_type ?? ''}`} />
+                          <SummaryItem label={t('purchases:modal.projectedStock')} value={linkedItem ? `${Number(linkedItem.current_quantity) + received} ${linkedItem.unit_type}` : '—'} />
+                          <SummaryItem label={t('purchases:modal.lineTotal')} value={<Rial amount={lineTotal(line)} />} />
+                        </div>
+                        {line.match_source === 'mapping' && line.suggestion_label && (
+                          <p className="mt-2 text-xs font-medium text-emerald-700">{t('purchases:suggested', { name: line.suggestion_label })}</p>
+                        )}
                         {supplierId && line.inventory_item_id && lineSupplierName(line) && (
-                          <label className="ml-7 flex items-center gap-2 text-xs text-gray-500">
-                            <input
-                              type="checkbox"
-                              checked={line.remember_match}
-                              onChange={e => updateLine(line.key, { remember_match: e.target.checked })}
-                              className="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                            />
+                          <label className="mt-2 flex items-center gap-2 text-xs text-gray-600">
+                            <input type="checkbox" checked={line.remember_match}
+                              onChange={event => updateLine(line.key, { remember_match: event.target.checked })}
+                              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
                             {t('purchases:rememberMatch')}
                           </label>
                         )}
                       </div>
+                    )
+                  })}
+                </div>
+                <button type="button" onClick={() => setLines(previous => [...previous, newLine()])}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-200 py-2.5 text-sm text-gray-500 hover:border-primary-400 hover:text-primary-700 focus-visible:ring-2 focus-visible:ring-primary-500">
+                  <Plus size={15} aria-hidden="true" />{t('purchases:addAnotherItem')}
+                </button>
+              </section>
+            )}
+
+            <section aria-labelledby="purchase-payment-heading">
+              <SectionHeading id="purchase-payment-heading">{t('purchases:sections.payment')}</SectionHeading>
+              <div className="mt-2">
+                <fieldset>
+                  <legend className="sr-only">{t('purchases:modal.paymentMethod')}</legend>
+                  <div className="grid grid-cols-3 gap-2">
+                    {PAY_OPTIONS.map(({ value, icon: Icon }) => (
+                      <label key={value} className={`flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-center text-xs font-semibold focus-within:ring-2 focus-within:ring-primary-500 ${
+                        payMethod === value ? 'border-primary-600 bg-primary-50 text-primary-800' : 'border-gray-200 text-gray-600'
+                      }`}>
+                        <input className="sr-only" type="radio" name="payment-method" value={value}
+                          checked={payMethod === value} onChange={() => setPayMethod(value)} />
+                        <Icon size={15} aria-hidden="true" />
+                        {t(`purchases:paymentMethod.${value}`)}
+                      </label>
                     ))}
                   </div>
+                </fieldset>
+              </div>
+            </section>
 
-                  <button
-                    type="button"
-                    onClick={() => setLines(prev => [...prev, newLine()])}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-gray-200 text-sm text-gray-400 hover:border-primary-400 hover:text-primary-500 transition-colors"
-                  >
-                    <Plus size={15} />
-                    {t('purchases:addAnotherItem')}
-                  </button>
-                </div>
-
-                {/* ── VAT mode ──────────────────────────────────── */}
-                <div className="space-y-2">
-                  <SectionLabel>{t('purchases:sections.vat')}</SectionLabel>
-                  <div className="grid grid-cols-2 gap-2">
-                    {([
-                      { value: 'included', label: t('purchases:vatIncluded') },
-                      { value: 'excluded', label: t('purchases:vatExcluded') },
-                    ] as { value: TaxInputMode; label: string }[]).map(opt => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setTaxMode(opt.value)}
-                        className={`py-2 rounded-xl border text-xs font-semibold transition-all ${
-                          taxMode === opt.value
-                            ? 'border-amber-500 bg-amber-50 text-amber-700'
-                            : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                        }`}
-                      >
-                        {t(`purchases:taxMode.${opt.value}`)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* ── Totals ────────────────────────────────────── */}
-                {rawLineAmount > 0 && (
-                  <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2">
-                    <div className="flex justify-between text-sm text-gray-600">
-                      <span>{t('purchases:fields.subtotal')}</span>
-                      <span className="tabular-nums font-medium"><Rial amount={detailedTotals.subtotal} /></span>
-                    </div>
-                    <div className="flex justify-between text-sm text-gray-600">
-                      <span>{t('purchases:fields.vat')} (15%)</span>
-                      <span className="tabular-nums font-medium"><Rial amount={detailedTotals.vat} /></span>
-                    </div>
-                    <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-2">
-                      <span>{t('purchases:fields.total')}</span>
-                      <span className="tabular-nums text-emerald-600"><Rial amount={detailedTotals.total} /></span>
+            <section aria-labelledby="purchase-vat-heading">
+              <SectionHeading id="purchase-vat-heading">{t('purchases:modal.amountAndVat')}</SectionHeading>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                {mode === 'simple_bill' && (
+                  <div>
+                    <label className="label" htmlFor="purchase-amount">
+                      {t(taxMode === 'excluded' ? 'purchases:fields.subtotalBeforeVat' : 'purchases:fields.totalAmount')} <span className="text-red-600">*</span>
+                    </label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute inset-y-0 start-3 flex items-center text-xs font-semibold text-gray-500">SAR</span>
+                      <MoneyInput ref={amountRef} id="purchase-amount" className="input ps-12" value={simpleAmount}
+                        onValueChange={setSimpleAmount} placeholder="0.00" />
                     </div>
                   </div>
                 )}
-              </>
-            )}
+                <fieldset className={mode === 'detailed_receiving' ? 'md:col-span-2' : ''}>
+                  <legend className="mb-2 text-xs font-semibold text-gray-600">{t('purchases:sections.vat')}</legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['included', 'excluded'] as TaxInputMode[]).map(value => (
+                      <label key={value} className={`cursor-pointer rounded-lg border px-2.5 py-2 focus-within:ring-2 focus-within:ring-amber-500 ${
+                        taxMode === value ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-white'
+                      }`}>
+                        <input className="sr-only" type="radio" name="tax-mode" value={value}
+                          checked={taxMode === value} onChange={() => setTaxMode(value)} />
+                        <span className="flex items-center gap-2 text-xs font-bold text-gray-800">
+                          {taxMode === value && <Check size={12} className="text-amber-700" aria-hidden="true" />}
+                          {t(`purchases:taxMode.${value}`)}
+                        </span>
+                        <span className="mt-1 block text-[11px] leading-4 text-gray-500">
+                          {t(`purchases:modal.vat${value === 'included' ? 'Included' : 'Excluded'}Hint`)}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              </div>
+            </section>
 
-            {/* ── Bill upload ───────────────────────────────── */}
-            <div className="space-y-3">
-              <SectionLabel>{t('purchases:sections.attachment')}</SectionLabel>
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/heic,application/pdf"
-                className="hidden"
-                onChange={handleBillChange}
-              />
-              {billPreview ? (
-                <div className="relative group/img">
-                  {(billFile?.type.startsWith('image/') || billPreview.match(/\.(jpg|jpeg|png|webp)(\?|$)/i)) ? (
-                    <img src={billPreview} alt="Bill"
-                      className="w-full h-36 object-cover rounded-xl border border-gray-200" />
-                  ) : (
-                    <div className="w-full h-16 flex items-center justify-center bg-gray-50 rounded-xl border border-gray-200">
-                      <p className="text-sm text-gray-500">{t('purchases:billAttached')}</p>
-                    </div>
+            <section aria-label={t('purchases:modal.supportingDetails')}>
+                <label className="label" htmlFor="purchase-notes">{t('purchases:fields.notes')}</label>
+                <textarea id="purchase-notes" className="input resize-none" rows={2} value={notes}
+                  onChange={event => setNotes(event.target.value)} placeholder={t('purchases:placeholders.notes')} dir="auto" />
+                <p className="mt-1 text-[11px] text-gray-500">{t('purchases:modal.notesHelper')}</p>
+            </section>
+            </div>
+
+            <aside className="min-w-0 lg:sticky lg:top-0 lg:self-start" aria-labelledby="purchase-preview-heading">
+              <section className="rounded-xl border border-primary-200 bg-primary-50/70 p-4">
+                <h3 id="purchase-preview-heading" className="text-sm font-bold text-[#173f2a]">{t('purchases:modal.financialPreview')}</h3>
+                <dl className="mt-3 divide-y divide-primary-100 text-sm" aria-live="polite">
+                  <PreviewMetric label={t('purchases:fields.subtotal')} value={<Rial amount={activeTotals.subtotal} />} />
+                  <PreviewMetric label={t('purchases:fields.vat')} value={<Rial amount={activeTotals.vat} />} />
+                  <PreviewMetric label={t('purchases:modal.paymentMethod')} value={t(`purchases:paymentMethod.${payMethod}`)} />
+                  {mode === 'detailed_receiving' && (
+                    <>
+                      <PreviewMetric label={t('purchases:modal.receivingSummary')} value={t('purchases:modal.lineQuantitySummary', {
+                        lines: validLines.length,
+                        quantity: totalReceivingQuantity,
+                      })} />
+                      <PreviewMetric label={t('purchases:modal.totalInventoryCost')} value={<Rial amount={rawLineAmount} />} />
+                    </>
                   )}
-                  <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 group-hover/img:opacity-100 transition-opacity bg-black/20 rounded-xl">
-                    <button type="button" onClick={() => fileRef.current?.click()}
-                      className="bg-white text-gray-700 text-xs font-medium px-3 py-1.5 rounded-lg shadow">
-                      {t('purchases:change')}
-                    </button>
-                    <button type="button" onClick={() => { setBillFile(null); setBillPreview(null); setBillChanged(true) }}
-                      className="bg-white text-red-500 text-xs font-medium px-3 py-1.5 rounded-lg shadow">
-                      {t('purchases:remove')}
-                    </button>
+                </dl>
+                <div className="mt-3 border-t-2 border-primary-700 pt-3">
+                  <div className="flex items-end justify-between gap-3">
+                    <span className="text-sm font-bold text-[#173f2a]">{t('purchases:modal.totalBill')}</span>
+                    <span className="text-xl font-bold text-primary-800"><Rial amount={activeTotals.total} /></span>
                   </div>
                 </div>
-              ) : (
-                <button type="button" onClick={() => fileRef.current?.click()}
-                  className="w-full h-20 flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-gray-200 rounded-xl hover:border-primary-400 hover:bg-primary-50/20 transition-colors group/up">
-                  <ImagePlus size={18} className="text-gray-300 group-hover/up:text-primary-400" />
-                  <p className="text-xs text-gray-400 group-hover/up:text-primary-500">{t('purchases:attachBill')}</p>
-                </button>
-              )}
+                {mode === 'simple_bill' && (
+                  <p className="mt-4 flex items-start gap-2 rounded-lg bg-white/70 p-2.5 text-xs leading-5 text-gray-600">
+                    <Info size={14} className="mt-0.5 flex-shrink-0 text-primary-700" aria-hidden="true" />
+                    {t('purchases:modal.compactNoStockNote')}
+                  </p>
+                )}
+                <p className="mt-3 text-xs leading-5 text-gray-600" aria-live="polite">
+                  {formCanSubmit
+                    ? t(mode === 'simple_bill' ? 'purchases:modal.billConfirmation' : 'purchases:modal.receivingConfirmation', {
+                        amount: activeTotals.total.toFixed(2),
+                        vat: activeTotals.vat.toFixed(2),
+                        lines: validLines.length,
+                      })
+                    : t('purchases:modal.completeRequired')}
+                </p>
+              </section>
+            </aside>
             </div>
-
-            {/* ── Notes ─────────────────────────────────────── */}
-            <div>
-              <label className="label">{t('purchases:fields.notes')}</label>
-              <textarea className="input resize-none" rows={2} value={notes}
-                onChange={e => setNotes(e.target.value)} placeholder={t('purchases:placeholders.notes')} dir="auto" />
-            </div>
+            )}
 
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600">
+              <div id="purchase-form-error" role="alert" aria-live="assertive" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
               </div>
             )}
           </div>
 
-          {/* Footer */}
-          <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>{t('common:cancel')}</Button>
-            <Button type="submit" className="flex-1" loading={saving} disabled={saving || !simpleBillCanSubmit}>
-              {isEditing ? t('purchases:actions.saveChanges') : mode === 'simple_bill' ? t('purchases:actions.recordBill') : t('purchases:actions.saveConfirmation')}
-            </Button>
-          </div>
+          <footer className="flex flex-shrink-0 flex-col gap-3 border-t border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <p className="text-xs leading-5 text-gray-600 sm:max-w-[65%]" aria-live="polite">
+              {!mode ? t('purchases:modal.chooseType') : !formCanSubmit ? t('purchases:modal.completeRequired') : ''}
+            </p>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={requestClose} disabled={saving}>
+                {t('common:cancel')}
+              </Button>
+              <Button type="submit" className="w-full bg-[#173f2a] hover:bg-[#22563b] sm:w-auto" loading={saving} disabled={saving || !formCanSubmit}>
+                {isEditing
+                  ? t('purchases:actions.saveChanges')
+                  : t(!mode ? 'purchases:actions.selectType' : mode === 'simple_bill' ? 'purchases:actions.recordBill' : 'purchases:actions.receiveStock')}
+              </Button>
+            </div>
+          </footer>
         </form>
       </div>
-    </>
+    </div>
+  )
+}
+
+function SectionHeading({ id, children }: { id: string; children: React.ReactNode }) {
+  return <h3 id={id} className="text-xs font-bold uppercase tracking-wide text-gray-600">{children}</h3>
+}
+
+function SummaryItem({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="truncate text-gray-500">{label}</dt>
+      <dd className="mt-0.5 truncate font-semibold text-gray-800" dir="auto">{value}</dd>
+    </div>
+  )
+}
+
+function PreviewMetric({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2">
+      <dt className="text-gray-600">{label}</dt>
+      <dd className="text-end font-semibold tabular-nums text-gray-900">{value}</dd>
+    </div>
   )
 }

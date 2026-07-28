@@ -10,7 +10,7 @@
   "expenses": "Expenses",
   "reports": "Reports",
   "settings": "Settings",
-  "invoiceSettings": "Invoice Settings",
+  "invoiceSettings": "Printing & Documents",
   "devicePrinter": "Device Printer",
   "profile": "Profile",
   "employees": "Employees",
@@ -20,6 +20,7 @@
   "clients": "Clients",
   "subscriptions": "Subscriptions",
   "operations": "Operations",
+  "mainNavigation": "Main navigation",
   "sections": {
     "daily": "Daily",
     "catalogue": "Catalogue",

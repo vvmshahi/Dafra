@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { isElectron } from '@/lib/electron'
 import PrinterTab from './PrinterTab'
 import { useTranslation } from 'react-i18next'
+import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 
 export default function DevicePrinterPage() {
   const navigate = useNavigate()
@@ -17,7 +18,7 @@ export default function DevicePrinterPage() {
           onClick={() => navigate(-1)}
           className="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-gray-800"
         >
-          <ArrowLeft size={16} />
+          <DirectionalIcon icon={ArrowLeft} size={16} />
           {t('back')}
         </button>
 
@@ -51,7 +52,7 @@ export default function DevicePrinterPage() {
           </div>
         </div>
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-2">
-          <ArrowLeft size={14} />
+          <DirectionalIcon icon={ArrowLeft} size={14} />
           {t('back')}
         </Button>
       </div>

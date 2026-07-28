@@ -61,6 +61,8 @@ function useProvideAuth() {
   const [branch, setBranch] = useState<Branch | null>(null)
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
+  const [signingOut, setSigningOut] = useState(false)
+  const signOutPending = useRef(false)
   // null = not yet checked, true = has ≥1 branch, false = no branches
   const [hasBranch, setHasBranch] = useState<boolean | null>(null)
   const [firstBranchProvisioningState, setFirstBranchProvisioningState] = useState<string | null>(null)
@@ -337,15 +339,49 @@ function useProvideAuth() {
   }
 
   const signOut = async () => {
+    if (signOutPending.current) return { error: null, pending: true }
+    signOutPending.current = true
+    setSigningOut(true)
+    let error: Error | null = null
+    try {
+      const result = await supabase.auth.signOut()
+      error = result.error
+    } catch (cause) {
+      error = cause instanceof Error ? cause : new Error('Remote sign-out failed')
+    }
+    if (error) {
+      signOutPending.current = false
+      setSigningOut(false)
+      return { error, pending: false }
+    }
+
+    // Remote revocation is confirmed before user-scoped browser state is
+    // removed. Language and other device preferences are intentionally kept.
     const toRemove: string[] = []
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
-      if (key && (key.startsWith('pos_cart_') || key.startsWith('meem_'))) {
+      if (key && (
+        key.startsWith('pos_cart_')
+        || key.startsWith('meem_')
+        || key.startsWith('kubri_')
+        || key.startsWith('pos_customer_')
+        || key.startsWith('pos_modal_')
+      )) {
         toRemove.push(key)
       }
     }
     toRemove.forEach(k => localStorage.removeItem(k))
-    await supabase.auth.signOut()
+    currentUserId.current = null
+    currentProfile.current = null
+    setUser(null)
+    setSession(null)
+    setProfile(null)
+    setTenant(null)
+    setBranch(null)
+    setHasBranch(true)
+    signOutPending.current = false
+    setSigningOut(false)
+    return { error: null, pending: false }
   }
 
   const hasRole = (...roles: UserRole[]) =>
@@ -374,6 +410,7 @@ function useProvideAuth() {
     signIn,
     signUp,
     signOut,
+    signingOut,
     refreshProfile,
     refreshBranchCount,
   }

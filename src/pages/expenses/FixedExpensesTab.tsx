@@ -7,9 +7,11 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Switch } from '@/components/ui/Switch'
 import type { FixedExpense, ExpenseCategory } from '@/types'
-import FixedExpenseDrawer from './FixedExpenseDrawer'
+import FixedExpenseModal from './FixedExpenseModal'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -28,12 +30,13 @@ const PAY_BADGE: Record<string, 'success' | 'info' | 'neutral'> = {
 // ── Fixed expense row ─────────────────────────────────────────────────────────
 
 function FixedRow({
-  item, onEdit, onDelete, onToggle,
+  item, onEdit, onDelete, onToggle, toggling,
 }: {
   item: FixedExpenseRow
   onEdit: () => void
   onDelete: () => void
   onToggle: (v: boolean) => void
+  toggling: boolean
 }) {
   const { t } = useTranslation('expenses')
   const catColor = item.expense_categories?.color ?? '#6b7280'
@@ -92,6 +95,7 @@ function FixedRow({
         <Switch
           checked={item.is_active}
           onChange={onToggle}
+          disabled={toggling}
           size="sm"
           ariaLabel={t(item.is_active ? 'actions.deactivate' : 'actions.activate')}
           title={t(item.is_active ? 'actions.deactivate' : 'actions.activate')}
@@ -100,12 +104,12 @@ function FixedRow({
 
       {/* Actions */}
       <div className="flex items-center gap-1 flex-shrink-0">
-        <button onClick={onEdit}
-          className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+        <button onClick={onEdit} title={t('actions.edit')} aria-label={t('actions.edit')}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
           <Pencil size={14} />
         </button>
-        <button onClick={onDelete}
-          className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors">
+        <button onClick={onDelete} title={t('actions.delete')} aria-label={t('actions.delete')}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
           <Trash2 size={14} />
         </button>
       </div>
@@ -122,8 +126,12 @@ export default function FixedExpensesTab() {
   const [items,      setItems]      = useState<FixedExpenseRow[]>([])
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
   const [loading,    setLoading]    = useState(true)
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
   const [editing,    setEditing]    = useState<FixedExpenseRow | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<FixedExpenseRow | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [togglingIds, setTogglingIds] = useState<Set<string>>(() => new Set())
+  const [toggleTarget, setToggleTarget] = useState<{ id: string; value: boolean } | null>(null)
 
   const load = useCallback(async () => {
     const tid = profile?.tenant_id
@@ -152,20 +160,40 @@ export default function FixedExpensesTab() {
 
   useEffect(() => { load() }, [load])
 
-  const openAdd  = () => { setEditing(null); setDrawerOpen(true) }
-  const openEdit = (item: FixedExpenseRow) => { setEditing(item); setDrawerOpen(true) }
+  const openAdd  = () => { setEditing(null); setModalOpen(true) }
+  const openEdit = (item: FixedExpenseRow) => { setEditing(item); setModalOpen(true) }
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(t('deleteFixedConfirm', { name }))) return
+  const handleDelete = async () => {
+    if (!deleteTarget || deleting) return
+    const id = deleteTarget.id
+    setDeleting(true)
     const q = supabase as unknown as { from: (t: string) => any }
-    await q.from('fixed_expenses').delete().eq('id', id)
+    const result = await q.from('fixed_expenses').delete().eq('id', id).select('id').maybeSingle()
+    if (result.error || (result.status !== undefined && (result.status < 200 || result.status >= 300)) || result.data?.id !== id) {
+      toast.error(t('errors.deleteFailed'))
+      setDeleting(false)
+      return
+    }
     setItems(prev => prev.filter(i => i.id !== id))
+    setDeleteTarget(null)
+    setDeleting(false)
+    toast.success(t('success.fixedDeleted'))
   }
 
   const handleToggle = async (id: string, val: boolean) => {
+    if (togglingIds.has(id)) return
+    setTogglingIds(previous => new Set(previous).add(id))
     const q = supabase as unknown as { from: (t: string) => any }
-    await q.from('fixed_expenses').update({ is_active: val }).eq('id', id)
+    const result = await q.from('fixed_expenses').update({ is_active: val }).eq('id', id).select('id,is_active').maybeSingle()
+    if (result.error || result.data?.id !== id || result.data?.is_active !== val) {
+      toast.error(t('errors.statusFailed'))
+      setTogglingIds(previous => { const next = new Set(previous); next.delete(id); return next })
+      return
+    }
     setItems(prev => prev.map(i => i.id === id ? { ...i, is_active: val } : i))
+    setToggleTarget(null)
+    setTogglingIds(previous => { const next = new Set(previous); next.delete(id); return next })
+    toast.success(t(val ? 'success.activated' : 'success.deactivated'))
   }
 
   const activeItems   = items.filter(i => i.is_active)
@@ -182,19 +210,19 @@ export default function FixedExpensesTab() {
       <div className="flex items-start gap-4 flex-wrap">
         {/* Summary cards */}
         <div className="flex gap-3 flex-1 flex-wrap min-w-0">
-          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-primary-500 border border-primary-600 text-white shadow-card">
+          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-primary-500 border border-primary-800 text-white shadow-card">
             <p className="text-xs font-medium text-white/70">{t('monthlyFixedCost')}</p>
             <p className="text-lg font-bold mt-0.5"><Rial amount={monthlyTotal} /></p>
             <p className="text-[10px] text-white/60 mt-0.5">
               {t('activeCount', { count: activeItems.length })}
             </p>
           </div>
-          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
+          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-primary-800/70 shadow-card">
             <p className="text-xs font-medium text-gray-400">{t('annualEstimate')}</p>
             <p className="text-lg font-bold text-gray-900 mt-0.5"><Rial amount={yearlyTotal} /></p>
             <p className="text-[10px] text-gray-400 mt-0.5">{t('annualHint')}</p>
           </div>
-          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
+          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-primary-800/70 shadow-card">
             <p className="text-xs font-medium text-gray-400">{t('totalEntries')}</p>
             <p className="text-lg font-bold text-gray-900 mt-0.5">{items.length}</p>
             <p className="text-[10px] text-gray-400 mt-0.5">
@@ -245,8 +273,9 @@ export default function FixedExpensesTab() {
               key={item.id}
               item={item}
               onEdit={() => openEdit(item)}
-              onDelete={() => handleDelete(item.id, item.name)}
-              onToggle={v => handleToggle(item.id, v)}
+              onDelete={() => setDeleteTarget(item)}
+              onToggle={value => setToggleTarget({ id: item.id, value })}
+              toggling={togglingIds.has(item.id)}
             />
           ))}
 
@@ -272,12 +301,27 @@ export default function FixedExpensesTab() {
         </div>
       )}
 
-      <FixedExpenseDrawer
-        open={drawerOpen}
+      <FixedExpenseModal
+        open={modalOpen}
         item={editing}
         categories={categories}
-        onClose={() => setDrawerOpen(false)}
+        onClose={() => setModalOpen(false)}
         onSaved={load}
+      />
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        kind="delete"
+        name={deleteTarget?.name}
+        busy={deleting}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => void handleDelete()}
+      />
+      <ConfirmDialog
+        open={toggleTarget !== null}
+        kind={toggleTarget?.value ? 'activateFixedExpense' : 'deactivateFixedExpense'}
+        busy={toggleTarget ? togglingIds.has(toggleTarget.id) : false}
+        onClose={() => setToggleTarget(null)}
+        onConfirm={() => { if (toggleTarget) void handleToggle(toggleTarget.id, toggleTarget.value) }}
       />
     </div>
   )

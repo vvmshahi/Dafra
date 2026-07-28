@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Calendar, Filter, Eye, TrendingUp, FileText, Receipt, RefreshCw, RotateCcw } from 'lucide-react'
+import { Search, Eye, TrendingUp, FileText, Receipt, RefreshCw, RotateCcw, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
@@ -8,12 +8,24 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import type { InvoiceType, PaymentMethod, ZatcaStatus } from '@/types/database'
-import { saudiDateStr, saudiNow } from '@/lib/utils/date'
+import {
+  formatSaudiDate,
+  formatSaudiDateTime,
+  formatSaudiTime,
+  saudiDatePresetRange,
+  saudiDateRangeUtc,
+  saudiDateStr,
+} from '@/lib/utils/date'
+import { usePosSession, type PosSession } from '@/hooks/usePosSession'
 import { retryFailedSubmissions } from '@/lib/zatca/submission'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import { getSandboxValidationStatuses } from '@/lib/zatca/api'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 import AtomicCreditNoteReceiptView from './AtomicCreditNoteReceiptView'
+import { PageHeader } from '@/components/ui/PageHeader'
+import { FilterPresetRow } from '@/components/ui/FilterPanel'
+import { ContentState } from '@/components/ui/ContentState'
+import { Button } from '@/components/ui/Button'
 import {
   INVOICE_LIST_STALE_MS,
   getCachedInvoiceRows,
@@ -33,86 +45,88 @@ type InvoiceRow = InvoiceListRow
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 type QuickRange = 'today' | 'yesterday' | 'this_month' | 'last_month' | 'custom'
-
-function dateInputValue(date: Date) {
-  return date.toISOString().split('T')[0]
-}
+type SessionShortcut = 'current' | 'previous'
 
 function quickRangeDates(range: Exclude<QuickRange, 'custom'>) {
-  const now = saudiNow()
-  const today = dateInputValue(now)
-
-  if (range === 'today') {
-    return { start: today, end: today }
-  }
-
-  if (range === 'yesterday') {
-    const yesterday = new Date(now)
-    yesterday.setUTCDate(yesterday.getUTCDate() - 1)
-    const value = dateInputValue(yesterday)
-    return { start: value, end: value }
-  }
-
-  if (range === 'last_month') {
-    const firstOfThisMonth = new Date(now)
-    firstOfThisMonth.setUTCDate(1)
-    const lastOfPreviousMonth = new Date(firstOfThisMonth)
-    lastOfPreviousMonth.setUTCDate(0)
-    const firstOfPreviousMonth = new Date(lastOfPreviousMonth)
-    firstOfPreviousMonth.setUTCDate(1)
-    return {
-      start: dateInputValue(firstOfPreviousMonth),
-      end: dateInputValue(lastOfPreviousMonth),
-    }
-  }
-
-  const first = new Date(now)
-  first.setUTCDate(1)
-  return { start: dateInputValue(first), end: today }
+  return saudiDatePresetRange(range)
 }
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function fmtDate(s: string) {
-  return new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+function fmtDate(s: string, locale: string) {
+  return formatSaudiDate(s, locale)
 }
 
-function fmtTime(s: string | null | undefined) {
+function fmtTime(s: string | null | undefined, locale: string) {
   if (!s) return '—'
-  return new Date(s).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  return formatSaudiTime(s, locale)
 }
 
-const ZATCA_BADGE: Record<string, { label: string; bg: string; text: string }> = {
-  not_submitted: { label: 'Not Required', bg: 'bg-blue-50',    text: 'text-blue-600'    },
-  pending:       { label: 'Pending',       bg: 'bg-gray-100',   text: 'text-gray-500'    },
-  reported:      { label: 'Reported',      bg: 'bg-green-50',   text: 'text-green-700'   },
-  cleared:       { label: 'Cleared',       bg: 'bg-emerald-50', text: 'text-emerald-700' },
-  failed:        { label: 'Failed',        bg: 'bg-red-50',     text: 'text-red-600'     },
-  sandbox_validated: { label: 'Submitted', bg: 'bg-green-50', text: 'text-green-700' },
-  sandbox_validated_with_warnings: { label: 'Submitted with warnings', bg: 'bg-amber-50', text: 'text-amber-700' },
-  sandbox_validation_pending: { label: 'Pending', bg: 'bg-gray-100', text: 'text-gray-500' },
-  sandbox_validation_rejected: { label: 'Rejected', bg: 'bg-red-50', text: 'text-red-700' },
-  sandbox_validation_failed: { label: 'Failed', bg: 'bg-red-50', text: 'text-red-600' },
-  sandbox_not_validated: { label: 'Not submitted', bg: 'bg-gray-100', text: 'text-gray-600' },
+type DocumentBadgeConfig = { label: string; bg: string; text: string; ring: string; dot: string }
+
+const ZATCA_BADGE: Record<string, DocumentBadgeConfig> = {
+  not_submitted: { label: 'Not Required', bg: 'bg-slate-50', text: 'text-slate-600', ring: 'ring-slate-500/20', dot: 'bg-slate-400' },
+  pending: { label: 'Pending', bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-600/20', dot: 'bg-amber-500' },
+  reported: { label: 'Reported', bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-600/20', dot: 'bg-emerald-500' },
+  cleared: { label: 'Cleared', bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-600/20', dot: 'bg-emerald-500' },
+  failed: { label: 'Failed', bg: 'bg-red-50', text: 'text-red-700', ring: 'ring-red-600/20', dot: 'bg-red-500' },
+  sandbox_validated: { label: 'Submitted', bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-600/20', dot: 'bg-emerald-500' },
+  sandbox_validated_with_warnings: { label: 'Submitted with warnings', bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-600/20', dot: 'bg-amber-500' },
+  sandbox_validation_pending: { label: 'Pending', bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-600/20', dot: 'bg-amber-500' },
+  sandbox_validation_rejected: { label: 'Rejected', bg: 'bg-red-50', text: 'text-red-700', ring: 'ring-red-600/20', dot: 'bg-red-500' },
+  sandbox_validation_failed: { label: 'Failed', bg: 'bg-red-50', text: 'text-red-700', ring: 'ring-red-600/20', dot: 'bg-red-500' },
+  sandbox_not_validated: { label: 'Not submitted', bg: 'bg-slate-50', text: 'text-slate-600', ring: 'ring-slate-500/20', dot: 'bg-slate-400' },
 }
 
-const PAY_BADGE: Record<string, { label: string; bg: string; text: string }> = {
-  cash:          { label: 'Cash',  bg: 'bg-emerald-50', text: 'text-emerald-700' },
-  card:          { label: 'Card',  bg: 'bg-indigo-50',  text: 'text-indigo-700'  },
-  split:         { label: 'Split', bg: 'bg-slate-100',  text: 'text-slate-700'   },
-  bank_transfer: { label: 'Bank',  bg: 'bg-amber-50',   text: 'text-amber-700'   },
-  other:         { label: 'Other', bg: 'bg-gray-50',    text: 'text-gray-600'    },
+const PAY_BADGE: Record<string, DocumentBadgeConfig> = {
+  cash: { label: 'Cash', bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-600/20', dot: 'bg-emerald-500' },
+  card: { label: 'Card', bg: 'bg-indigo-50', text: 'text-indigo-700', ring: 'ring-indigo-600/20', dot: 'bg-indigo-500' },
+  split: { label: 'Split', bg: 'bg-teal-50', text: 'text-teal-700', ring: 'ring-teal-600/20', dot: 'bg-teal-500' },
+  bank_transfer: { label: 'Bank', bg: 'bg-sky-50', text: 'text-sky-700', ring: 'ring-sky-600/20', dot: 'bg-sky-500' },
+  other: { label: 'Other', bg: 'bg-gray-50', text: 'text-gray-600', ring: 'ring-gray-500/20', dot: 'bg-gray-400' },
 }
 
-function Badge({ label, bg, text }: { label: string; bg: string; text: string }) {
+function DocumentBadge({ label, bg, text, ring, dot }: DocumentBadgeConfig) {
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${bg} ${text}`}>
+    <span className={`inline-flex min-h-6 max-w-full items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${bg} ${text} ${ring}`}>
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} aria-hidden="true" />
       {label}
     </span>
   )
 }
+
+function CreditContext({ row, t }: { row: InvoiceRow; t: TFunction }) {
+  const isCreditNote = row.documentType === 'credit_note'
+  if (isCreditNote && row.invoiceReference) {
+    return (
+      <p className="mt-1 text-[10px] leading-4 text-gray-500 [overflow-wrap:anywhere]">
+        {t('invoices:forInvoice', { number: row.invoiceReference })}
+      </p>
+    )
+  }
+  if (isCreditNote || row.creditStatus === 'none') return null
+  return (
+    <div className={`mt-1 text-[10px] leading-4 ${row.creditStatus === 'full' ? 'text-emerald-700' : 'text-amber-700'}`}>
+      <p className="font-semibold">
+        {row.creditStatus === 'full' ? t('invoices:fullyCredited') : t('invoices:partiallyCredited')}
+      </p>
+      {row.linkedCreditNoteNumber ? (
+        <p className="[overflow-wrap:anywhere]">
+          {t('invoices:latestCreditNote', { number: row.linkedCreditNoteNumber })}
+          {row.creditNoteCount > 1 ? ` · ${t('invoices:notesCount', { count: row.creditNoteCount })}` : ''}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+const INVOICE_KPI_TONES = [
+  'bg-gradient-to-br from-[#334155] to-[#1e293b]',
+  'bg-gradient-to-br from-[#1B6B3A] to-[#0F2419]',
+  'bg-gradient-to-br from-[#285e61] to-[#1f3f43]',
+] as const
 
 function creditNoteDisabledReason(row: InvoiceRow, role: string | null | undefined, t: TFunction): string | null {
   if (row.documentType === 'credit_note') return t('invoices:creditNotesCannotBeCredited')
@@ -124,7 +138,7 @@ function creditNoteDisabledReason(row: InvoiceRow, role: string | null | undefin
   if (!submitted) return row.displayZatcaStatus.startsWith('sandbox_')
     ? t('invoices:submitBeforeCredit')
     : t('invoices:reportedOnly')
-  if (role && !['owner', 'admin', 'branch'].includes(role)) return t('validation:creditPermissionDenied')
+  if (role && !['owner', 'branch'].includes(role)) return t('validation:creditPermissionDenied')
   if (row.creditStatus === 'full' || row.remainingRefundableQuantity <= 0) return t('invoices:fullyCreditedReason')
   return null
 }
@@ -132,9 +146,16 @@ function creditNoteDisabledReason(row: InvoiceRow, role: string | null | undefin
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function InvoicesPage() {
-  const { t } = useTranslation(['invoices', 'creditNotes', 'payments', 'validation', 'common'])
+  const { t, i18n } = useTranslation(['invoices', 'creditNotes', 'payments', 'validation', 'common'])
   const { profile } = useAuth()
   const navigate    = useNavigate()
+  const {
+    session: activeSession,
+    loading: activeSessionLoading,
+    error: activeSessionError,
+    resolvedBranchId: activeSessionBranchId,
+    fetchActiveSession,
+  } = usePosSession(profile?.branch_id, profile?.tenant_id, undefined)
 
   const [rows,    setRows]    = useState<InvoiceRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -144,29 +165,55 @@ export default function InvoicesPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [creditModalRow, setCreditModalRow] = useState<InvoiceRow | null>(null)
   const [creditNoteResult, setCreditNoteResult] = useState<CreditNoteCreatedResult | null>(null)
+  const [previousSession, setPreviousSession] = useState<PosSession | null>(null)
+  const [previousSessionLoading, setPreviousSessionLoading] = useState(true)
+  const [filterReady, setFilterReady] = useState(false)
+  const initializedBranchRef = useRef<string | null>(null)
 
   const { start: defaultStart, end: defaultEnd } = quickRangeDates('today')
   const [startDate, setStartDate] = useState(defaultStart)
   const [endDate,   setEndDate]   = useState(defaultEnd)
-  const [quickRange, setQuickRange] = useState<QuickRange>('today')
+  const [quickRange, setQuickRange] = useState<QuickRange | null>(null)
+  const [sessionShortcut, setSessionShortcut] = useState<SessionShortcut | null>(null)
   const [search,    setSearch]    = useState('')
   const [payFilter, setPayFilter] = useState('all')
   const [zatcaFilter, setZatcaFilter] = useState('all')
   const pageSize = 100
-  const scope = useMemo<InvoiceListScope | null>(() => profile?.tenant_id && profile?.branch_id ? ({
+  const filtersResolved = filterReady && initializedBranchRef.current === profile?.branch_id
+  const selectedSession = sessionShortcut === 'current'
+    ? activeSession
+    : sessionShortcut === 'previous'
+    ? previousSession
+    : null
+  const scope = useMemo<InvoiceListScope | null>(() => (
+    profile?.tenant_id
+    && profile?.branch_id
+    && filtersResolved
+    && (!sessionShortcut || selectedSession)
+  ) ? ({
     tenantId: profile.tenant_id,
     branchId: profile.branch_id,
     startDate,
     endDate,
     page: 0,
     pageSize,
-  }) : null, [profile?.tenant_id, profile?.branch_id, startDate, endDate])
+    sessionId: selectedSession?.id ?? null,
+  }) : null, [
+    profile?.tenant_id,
+    profile?.branch_id,
+    startDate,
+    endDate,
+    selectedSession?.id,
+    filtersResolved,
+    sessionShortcut,
+  ])
 
   const viewKey = scope
     ? invoiceListViewKey(scope, { search, paymentMethod: payFilter, zatcaStatus: zatcaFilter })
     : 'invoice-list-unscoped'
 
   function applyQuickRange(range: QuickRange) {
+    setSessionShortcut(null)
     setQuickRange(range)
     if (range === 'custom') return
 
@@ -176,6 +223,7 @@ export default function InvoicesPage() {
   }
 
   function updateManualDate(which: 'start' | 'end', value: string) {
+    setSessionShortcut(null)
     setQuickRange('custom')
     if (which === 'start') {
       setStartDate(value)
@@ -183,6 +231,83 @@ export default function InvoicesPage() {
     }
     setEndDate(value)
   }
+
+  function applySessionShortcut(shortcut: SessionShortcut) {
+    const session = shortcut === 'current' ? activeSession : previousSession
+    if (!session) return
+    setQuickRange(null)
+    setSessionShortcut(shortcut)
+  }
+
+  useEffect(() => {
+    const branchId = profile?.branch_id
+    if (!branchId) {
+      initializedBranchRef.current = null
+      setFilterReady(false)
+      setPreviousSession(null)
+      setPreviousSessionLoading(false)
+      return
+    }
+    let cancelled = false
+    setPreviousSessionLoading(true)
+    ;(async () => {
+      const { data, error } = await (supabase as any)
+        .from('pos_sessions')
+        .select('id, branch_id, tenant_id, opened_by, opened_at, opening_cash, status, closed_at')
+        .eq('tenant_id', profile.tenant_id)
+        .eq('branch_id', branchId)
+        .eq('status', 'closed')
+        .order('closed_at', { ascending: false })
+        .limit(1)
+      if (cancelled) return
+      if (error) {
+        console.error('[InvoicesPage] previous session query failed', error)
+        setPreviousSession(null)
+      } else {
+        setPreviousSession((data ?? [])[0] ?? null)
+      }
+      setPreviousSessionLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [profile?.branch_id, profile?.tenant_id])
+
+  useEffect(() => {
+    const branchId = profile?.branch_id
+    if (
+      !branchId
+      || activeSessionLoading
+      || activeSessionError
+      || activeSessionBranchId !== branchId
+      || initializedBranchRef.current === branchId
+    ) return
+    initializedBranchRef.current = branchId
+    const today = quickRangeDates('today')
+    setStartDate(today.start)
+    setEndDate(today.end)
+    if (activeSession) {
+      setSessionShortcut('current')
+      setQuickRange(null)
+    } else {
+      setSessionShortcut(null)
+      setQuickRange('today')
+    }
+    setFilterReady(true)
+  }, [
+    profile?.branch_id,
+    activeSession,
+    activeSessionBranchId,
+    activeSessionError,
+    activeSessionLoading,
+  ])
+
+  useEffect(() => {
+    if (!filterReady || activeSessionLoading || sessionShortcut !== 'current' || activeSession) return
+    const today = quickRangeDates('today')
+    setSessionShortcut(null)
+    setQuickRange('today')
+    setStartDate(today.start)
+    setEndDate(today.end)
+  }, [activeSession, activeSessionLoading, filterReady, sessionShortcut])
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
 
@@ -206,10 +331,10 @@ export default function InvoicesPage() {
       else setLoading(true)
       setLoadError(null)
       try {
-        const { data, error: invoiceError } = await supabase
+        const baseQuery = supabase
           .from('invoices')
           .select(`
-            id, branch_id, invoice_number, invoice_reference, zatca_invoice_type, invoice_date, created_at, status,
+            id, branch_id, session_id, invoice_number, invoice_reference, zatca_invoice_type, invoice_date, created_at, status,
             subtotal, tax_amount, total_amount, zatca_status,
             customers(name),
             invoice_items(id, quantity),
@@ -217,8 +342,13 @@ export default function InvoicesPage() {
           `)
           .eq('tenant_id', tid)
           .eq('branch_id', activeScope.branchId)
-          .gte('invoice_date', activeScope.startDate)
-          .lte('invoice_date', activeScope.endDate)
+        const boundedQuery = activeScope.sessionId
+          ? baseQuery.eq('session_id', activeScope.sessionId)
+          : (() => {
+            const range = saudiDateRangeUtc(activeScope.startDate, activeScope.endDate)
+            return baseQuery.gte('created_at', range.start).lte('created_at', range.end)
+          })()
+        const { data, error: invoiceError } = await boundedQuery
           .order('created_at', { ascending: false })
           .range(0, activeScope.pageSize - 1)
         if (invoiceError) throw invoiceError
@@ -312,6 +442,7 @@ export default function InvoicesPage() {
           invoiceNumber: inv.invoice_number,
           date:          inv.invoice_date,
           createdAt:     inv.created_at,
+          sessionId:     inv.session_id ?? null,
           customerName:  (inv.customers as any)?.name ?? null,
           itemsCount:    invoiceItems.length,
           subtotal:      Number(inv.subtotal),
@@ -379,8 +510,78 @@ export default function InvoicesPage() {
     revenue: filtered.reduce((s, r) => s + (r.documentType === 'credit_note' ? -r.totalAmount : r.totalAmount), 0),
     vat:     filtered.reduce((s, r) => s + (r.documentType === 'credit_note' ? -r.taxAmount : r.taxAmount), 0),
   }
+  const periodLabel = sessionShortcut
+    ? t(`invoices:${sessionShortcut === 'current' ? 'currentSession' : 'previousSession'}`)
+    : quickRange === 'custom'
+    ? t('invoices:dateRange', {
+        start: fmtDate(startDate, i18n.language),
+        end: fmtDate(endDate, i18n.language),
+      })
+    : t(`invoices:${quickRange === 'this_month' ? 'thisMonth' : quickRange === 'last_month' ? 'lastMonth' : quickRange ?? 'today'}`)
+  const hasActiveFilters = sessionShortcut !== null
+    || quickRange !== 'today'
+    || startDate !== defaultStart
+    || endDate !== defaultEnd
+    || search.trim() !== ''
+    || payFilter !== 'all'
+    || zatcaFilter !== 'all'
   const demoSandbox = isPermanentDemoSandboxBranch(profile?.tenant_id, profile?.branch_id)
   const retryableZatcaCount = demoSandbox ? 0 : rows.filter(r => r.status !== 'cancelled' && (r.zatcaStatus === 'failed' || r.zatcaStatus === 'pending')).length
+  const emptyTitle = sessionShortcut === 'current'
+    ? t('invoices:noCurrentSessionInvoices')
+    : sessionShortcut === 'previous'
+    ? t('invoices:noPreviousSessionInvoices')
+    : quickRange === 'today'
+    ? t('invoices:noInvoicesToday')
+    : t('invoices:noInvoicesDateRange')
+  const emptyDescription = sessionShortcut
+    ? t('invoices:sessionEmptyHint')
+    : t('invoices:noDocumentsHint')
+
+  function resetFilters() {
+    setStartDate(defaultStart)
+    setEndDate(defaultEnd)
+    if (activeSession) {
+      setSessionShortcut('current')
+      setQuickRange(null)
+    } else {
+      setSessionShortcut(null)
+      setQuickRange('today')
+    }
+    setSearch('')
+    setPayFilter('all')
+    setZatcaFilter('all')
+  }
+
+  const documentRows = filtered.map(r => {
+    const zatcaBase = ZATCA_BADGE[r.displayZatcaStatus] ?? ZATCA_BADGE.pending
+    const zatcaKey = r.displayZatcaStatus === 'sandbox_validated' ? 'submitted'
+      : r.displayZatcaStatus === 'sandbox_validated_with_warnings' ? 'submittedWarnings'
+      : r.displayZatcaStatus === 'sandbox_validation_rejected' ? 'rejected'
+      : r.displayZatcaStatus === 'sandbox_not_validated' ? 'notSubmitted'
+      : r.displayZatcaStatus === 'not_submitted' ? 'notRequired'
+      : r.displayZatcaStatus === 'reported' ? 'reported'
+      : r.displayZatcaStatus === 'cleared' ? 'cleared'
+      : r.displayZatcaStatus.includes('failed') ? 'failed' : 'pending'
+    const zatca = { ...zatcaBase, label: t(`invoices:${zatcaKey}`) }
+    const payBase = r.paymentMethod ? (PAY_BADGE[r.paymentMethod] ?? PAY_BADGE.other) : null
+    const pay = payBase ? {
+      ...payBase,
+      label: r.paymentMethod === 'cash' ? t('payments:cash')
+        : r.paymentMethod === 'card' ? t('payments:card')
+        : r.paymentMethod === 'split' ? t('payments:split')
+        : r.paymentMethod === 'bank_transfer' ? t('payments:bankTransfer')
+        : t('payments:other'),
+    } : null
+    return {
+      row: r,
+      zatca,
+      pay,
+      isCancelled: r.status === 'cancelled',
+      isCreditNote: r.documentType === 'credit_note',
+      creditDisabledReason: creditNoteDisabledReason(r, profile?.role, t),
+    }
+  })
 
   async function handleRetryZatca() {
     const tid = profile?.tenant_id
@@ -404,309 +605,509 @@ export default function InvoicesPage() {
     }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
-  return (
-    <div className="space-y-5">
-
-      {/* ── Page header ─────────────────────────────────── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-600">{t('invoices:branchDocuments')}</p>
-          <h1 className="mt-1 text-2xl font-bold text-gray-950">{t('invoices:title')}</h1>
-          <p className="text-sm text-gray-500 mt-1">{t('invoices:subtitle')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-        {refreshing && rows.length > 0 && (
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-400" aria-live="polite">
-            <RefreshCw size={12} className="animate-spin" /> {t('invoices:updating')}
-          </span>
-        )}
-        {retryableZatcaCount > 0 && (
+  function renderDocumentActions(document: typeof documentRows[number]) {
+    const { row: r, creditDisabledReason: disabledReason } = document
+    return (
+      <div className="inline-grid w-[74px] grid-cols-2 items-center gap-2" data-invoice-action-slots>
+        <button
+          type="button"
+          onClick={() => navigate(`/invoices/${r.id}`)}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 shadow-sm transition-[background-color,border-color,color,transform] duration-150 hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 active:scale-[0.97]"
+          title={t('invoices:viewDocument')}
+          aria-label={t('invoices:viewDocumentNumber', { number: r.invoiceNumber })}
+        >
+          <Eye size={15} aria-hidden="true" />
+        </button>
+        {!disabledReason ? (
           <button
             type="button"
-            onClick={handleRetryZatca}
-            disabled={retryingZatca}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 text-red-700 text-sm font-semibold hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed"
-            title={t('invoices:retryTitle')}
+            onClick={() => setCreditModalRow(r)}
+            title={t('creditNotes:create')}
+            aria-label={t('creditNotes:create')}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 shadow-sm transition-[background-color,border-color,color,transform] duration-150 hover:border-amber-200 hover:bg-amber-50 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 active:scale-[0.97]"
           >
-            <RefreshCw size={14} className={retryingZatca ? 'animate-spin' : ''} />
-            {t('invoices:retryZatca', { count: retryableZatcaCount })}
+            <RotateCcw size={15} aria-hidden="true" />
           </button>
+        ) : (
+          <span className="h-8 w-8" aria-hidden="true" data-invoice-action-placeholder />
         )}
-        </div>
       </div>
+    )
+  }
 
-      {/* ── Summary bar ─────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  if (!filtersResolved) {
+    return (
+      <div className="min-w-0 space-y-4" aria-live="polite">
+        <PageHeader
+          eyebrow={t('invoices:branchDocuments')}
+          title={t('invoices:title')}
+          description={t('invoices:subtitle')}
+        />
+        {activeSessionError ? (
+          <ContentState
+            kind="error"
+            title={t('invoices:sessionResolutionFailed')}
+            description={t('invoices:sessionResolutionFailedHint')}
+            action={(
+              <Button type="button" size="sm" onClick={() => void fetchActiveSession()}>
+                {t('common:retry')}
+              </Button>
+            )}
+          />
+        ) : (
+          <ContentState kind="loading" title={t('invoices:resolvingSessionFilter')} />
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-w-0 space-y-4">
+      <PageHeader
+        eyebrow={t('invoices:branchDocuments')}
+        title={t('invoices:title')}
+        description={t('invoices:subtitle')}
+        actions={(
+          <>
+            {refreshing && rows.length > 0 && (
+              <span className="inline-flex min-h-9 items-center gap-1.5 text-xs font-medium text-gray-500" aria-live="polite">
+                <RefreshCw size={13} className="animate-spin" aria-hidden="true" />
+                {t('invoices:updating')}
+              </span>
+            )}
+            {retryableZatcaCount > 0 && (
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                onClick={handleRetryZatca}
+                loading={retryingZatca}
+                title={t('invoices:retryTitle')}
+                aria-label={t('invoices:retryTitle')}
+                className="min-h-9"
+              >
+                {!retryingZatca && <RefreshCw size={14} aria-hidden="true" />}
+                {t('invoices:retryZatca', { count: retryableZatcaCount })}
+              </Button>
+            )}
+          </>
+        )}
+      />
+
+      <section className="grid grid-cols-1 gap-2.5 md:grid-cols-3" aria-label={t('invoices:documentSummary')}>
         {[
-          { label: t('invoices:totalInvoices'), value: String(summary.count), icon: FileText, color: 'text-primary-700', bg: 'bg-primary-50 ring-primary-100' },
-          { label: t('invoices:netRevenue'),    value: <Rial amount={summary.revenue} />, icon: TrendingUp, color: 'text-emerald-700', bg: 'bg-emerald-50 ring-emerald-100' },
-          { label: t('invoices:netVat'),        value: <Rial amount={summary.vat} />,    icon: Receipt,    color: 'text-amber-700',   bg: 'bg-amber-50 ring-amber-100'   },
-        ].map(s => (
-          <div key={s.label} className="card px-5 py-4 flex items-center gap-4 border border-gray-100 shadow-sm">
-            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ring-1 ${s.bg}`}>
-              <s.icon size={18} className={s.color} />
+          { label: t('invoices:totalDocuments'), value: String(summary.count), icon: FileText, tone: INVOICE_KPI_TONES[0] },
+          { label: t('invoices:netRevenue'), value: <Rial amount={summary.revenue} />, icon: TrendingUp, tone: INVOICE_KPI_TONES[1] },
+          { label: t('invoices:netVat'), value: <Rial amount={summary.vat} />, icon: Receipt, tone: INVOICE_KPI_TONES[2] },
+        ].map(metric => (
+          <article
+            key={metric.label}
+            className={`relative min-h-[92px] overflow-hidden rounded-xl border border-white/10 px-3.5 py-3 shadow-sm ${metric.tone}`}
+          >
+            <div className="flex items-start justify-between gap-2.5">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-white/65 [overflow-wrap:anywhere] rtl:normal-case rtl:tracking-normal">
+                  {metric.label}
+                </p>
+                <p dir="ltr" className="mt-1 text-lg font-black tracking-tight text-white tabular-nums [&>span>span:first-child]:text-[0.72em]">
+                  {metric.value}
+                </p>
+                <p className="mt-0.5 text-[10px] font-medium text-white/55 [overflow-wrap:anywhere]">{periodLabel}</p>
+              </div>
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/10">
+                <metric.icon size={15} className="text-white/85" aria-hidden="true" />
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-gray-500 font-semibold">{s.label}</p>
-              <p className="mt-0.5 text-lg font-bold text-gray-950 tabular-nums">{s.value}</p>
-            </div>
-          </div>
+            <div className="absolute inset-x-0 bottom-0 h-0.5 bg-gold-400/65" />
+          </article>
         ))}
-      </div>
+      </section>
 
-      {/* ── Filters ─────────────────────────────────────── */}
-      <div className="card p-4 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {[
-            { key: 'today', label: t('invoices:today') },
-            { key: 'yesterday', label: t('invoices:yesterday') },
-            { key: 'this_month', label: t('invoices:thisMonth') },
-            { key: 'last_month', label: t('invoices:lastMonth') },
-            { key: 'custom', label: t('invoices:custom') },
-          ].map(option => (
-            <button
-              key={option.key}
-              type="button"
-              onClick={() => applyQuickRange(option.key as QuickRange)}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                quickRange === option.key
-                  ? 'bg-primary-700 text-white shadow-sm'
-                  : 'bg-gray-50 text-gray-600 hover:bg-primary-50 hover:text-primary-700'
-              }`}
+      <section
+        className="space-y-2 rounded-xl border border-gray-100 bg-white px-3 py-2.5 shadow-sm"
+        aria-labelledby="invoice-filters-heading"
+        data-invoice-compact-filters
+      >
+        <h2 id="invoice-filters-heading" className="sr-only">{t('invoices:filters')}</h2>
+        <fieldset>
+          <legend className="sr-only">{t('invoices:sessionShortcuts')}</legend>
+          <FilterPresetRow label={t('invoices:sessionShortcuts')}>
+            {([
+              {
+                key: 'current',
+                label: activeSession ? t('invoices:currentSession') : t('invoices:noActiveSession'),
+                disabled: !activeSession,
+              },
+              {
+                key: 'previous',
+                label: previousSessionLoading
+                  ? t('invoices:loadingPreviousSession')
+                  : previousSession
+                  ? t('invoices:previousSession')
+                  : t('invoices:noPreviousSession'),
+                disabled: previousSessionLoading || !previousSession,
+              },
+            ] as const).map(option => (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => applySessionShortcut(option.key)}
+                aria-pressed={sessionShortcut === option.key}
+                disabled={option.disabled}
+                className={`min-h-8 shrink-0 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-[background-color,color,transform,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45 ${
+                  sessionShortcut === option.key
+                    ? 'border-primary-800 bg-primary-800 text-white shadow-sm'
+                    : 'border-gray-200 bg-white text-gray-600 hover:bg-primary-50 hover:text-primary-700'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </FilterPresetRow>
+        </fieldset>
+
+        <fieldset>
+          <legend className="sr-only">{t('invoices:datePresets')}</legend>
+          <FilterPresetRow label={t('invoices:datePresets')}>
+            {[
+              { key: 'today', label: t('invoices:today') },
+              { key: 'yesterday', label: t('invoices:yesterday') },
+              { key: 'this_month', label: t('invoices:thisMonth') },
+              { key: 'last_month', label: t('invoices:lastMonth') },
+              { key: 'custom', label: t('invoices:custom') },
+            ].map(option => (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => applyQuickRange(option.key as QuickRange)}
+                aria-pressed={quickRange === option.key}
+                className={`min-h-8 shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-[background-color,color,transform,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 active:scale-[0.97] ${
+                  quickRange === option.key
+                    ? 'bg-primary-700 text-white shadow-sm'
+                    : 'border border-gray-200 bg-white text-gray-600 hover:bg-primary-50 hover:text-primary-700'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </FilterPresetRow>
+        </fieldset>
+
+        {selectedSession && (
+          <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-lg bg-primary-50 px-2.5 py-1.5 text-[11px] font-medium text-primary-900" aria-live="polite">
+            <span className="font-bold">
+              {t(`invoices:${sessionShortcut === 'current' ? 'currentSession' : 'previousSession'}`)}
+            </span>
+            <span aria-hidden="true">·</span>
+            <bdi dir="ltr">
+              {sessionShortcut === 'current'
+                ? t('invoices:sessionOpenedAt', {
+                  time: formatSaudiTime(selectedSession.opened_at, i18n.language),
+                })
+                : t('invoices:sessionClosedAt', {
+                  dateTime: formatSaudiDateTime(selectedSession.closed_at!, i18n.language),
+                })}
+            </bdi>
+            <span aria-hidden="true">·</span>
+            <span>{t('invoices:documentsCount', { count: summary.count })}</span>
+          </p>
+        )}
+
+        <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[minmax(130px,0.8fr)_minmax(130px,0.8fr)_minmax(230px,1.7fr)_minmax(140px,0.85fr)_minmax(140px,0.85fr)_auto]">
+          <label className="min-w-0 text-[10px] font-semibold text-gray-600">
+            <span className="mb-0.5 block">{t('invoices:from')}</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={event => updateManualDate('start', event.target.value)}
+              disabled={sessionShortcut !== null}
+              className="input min-h-9 w-full px-2 text-xs tabular-nums"
+            />
+          </label>
+
+          <label className="min-w-0 text-[10px] font-semibold text-gray-600">
+            <span className="mb-0.5 block">{t('invoices:to')}</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={event => updateManualDate('end', event.target.value)}
+              disabled={sessionShortcut !== null}
+              className="input min-h-9 w-full px-2 text-xs tabular-nums"
+            />
+          </label>
+
+          <label className="min-w-0 text-[10px] font-semibold text-gray-600 sm:col-span-2 lg:col-span-2 xl:col-span-1">
+            <span className="mb-1 block">{t('invoices:search')}</span>
+            <span className="relative block">
+              <Search size={14} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+              <input
+                type="search"
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                placeholder={t('invoices:searchPlaceholder')}
+                className="input min-h-9 w-full ps-9 text-xs"
+              />
+            </span>
+          </label>
+
+          <label className="min-w-0 text-[10px] font-semibold text-gray-600">
+            <span className="mb-0.5 block">{t('invoices:paymentMethod')}</span>
+            <select
+              value={payFilter}
+              onChange={event => setPayFilter(event.target.value)}
+              className="input min-h-9 w-full pe-8 text-xs"
             >
-              {option.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[auto_minmax(220px,1fr)_auto_auto] lg:items-center">
-          {/* Date range */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Calendar size={14} className="text-gray-400" />
-            <input type="date" value={startDate} onChange={e => updateManualDate('start', e.target.value)}
-              className="input py-1.5 text-xs w-36" />
-            <span className="text-gray-300 text-xs">–</span>
-            <input type="date" value={endDate} onChange={e => updateManualDate('end', e.target.value)}
-              className="input py-1.5 text-xs w-36" />
-          </div>
-
-          {/* Search */}
-          <div className="relative">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-              placeholder={t('invoices:searchPlaceholder')}
-              className="input pl-8 py-1.5 text-xs w-full" />
-          </div>
-
-          {/* Payment filter */}
-          <div className="flex items-center gap-1.5">
-            <Filter size={13} className="text-gray-400" />
-            <select value={payFilter} onChange={e => setPayFilter(e.target.value)}
-              className="input py-1.5 text-xs pr-7 w-full sm:w-auto">
               <option value="all">{t('invoices:allMethods')}</option>
               <option value="cash">{t('payments:cash')}</option>
               <option value="card">{t('payments:card')}</option>
               <option value="split">{t('payments:splitPayment')}</option>
               <option value="bank_transfer">{t('payments:bankTransfer')}</option>
             </select>
-          </div>
+          </label>
 
-          {/* ZATCA filter */}
-          <select value={zatcaFilter} onChange={e => setZatcaFilter(e.target.value)}
-            className="input py-1.5 text-xs pr-7">
-            <option value="all">{t('invoices:allStatuses')}</option>
-            {demoSandbox ? (
-              <>
-                <option value="sandbox_validated">{t('invoices:submitted')}</option>
-                <option value="sandbox_validated_with_warnings">{t('invoices:submittedWarnings')}</option>
-                <option value="sandbox_validation_pending">{t('invoices:pending')}</option>
-                <option value="sandbox_validation_rejected">{t('invoices:rejected')}</option>
-                <option value="sandbox_validation_failed">{t('invoices:failed')}</option>
-                <option value="sandbox_not_validated">{t('invoices:notSubmitted')}</option>
-              </>
-            ) : (
-              <>
-                <option value="not_submitted">{t('invoices:notRequired')}</option>
-                <option value="pending">{t('invoices:pending')}</option>
-                <option value="reported">{t('invoices:reported')}</option>
-                <option value="cleared">{t('invoices:cleared')}</option>
-                <option value="failed">{t('invoices:failed')}</option>
-              </>
-            )}
-          </select>
+          <label className="min-w-0 text-[10px] font-semibold text-gray-600">
+            <span className="mb-0.5 block">{t('invoices:zatcaStatus')}</span>
+            <select
+              value={zatcaFilter}
+              onChange={event => setZatcaFilter(event.target.value)}
+              className="input min-h-9 w-full pe-8 text-xs"
+            >
+              <option value="all">{t('invoices:allStatuses')}</option>
+              {demoSandbox ? (
+                <>
+                  <option value="sandbox_validated">{t('invoices:submitted')}</option>
+                  <option value="sandbox_validated_with_warnings">{t('invoices:submittedWarnings')}</option>
+                  <option value="sandbox_validation_pending">{t('invoices:pending')}</option>
+                  <option value="sandbox_validation_rejected">{t('invoices:rejected')}</option>
+                  <option value="sandbox_validation_failed">{t('invoices:failed')}</option>
+                  <option value="sandbox_not_validated">{t('invoices:notSubmitted')}</option>
+                </>
+              ) : (
+                <>
+                  <option value="not_submitted">{t('invoices:notRequired')}</option>
+                  <option value="pending">{t('invoices:pending')}</option>
+                  <option value="reported">{t('invoices:reported')}</option>
+                  <option value="cleared">{t('invoices:cleared')}</option>
+                  <option value="failed">{t('invoices:failed')}</option>
+                </>
+              )}
+            </select>
+          </label>
+          {hasActiveFilters && (
+            <Button type="button" variant="ghost" size="sm" onClick={resetFilters} className="min-h-9 self-end px-2.5">
+              <X size={13} aria-hidden="true" />
+              {t('invoices:clearFilters')}
+            </Button>
+          )}
         </div>
-      </div>
+      </section>
 
-      {/* ── Table ───────────────────────────────────────── */}
-      <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-
-        {/* Table header */}
-        <div className="flex min-w-[980px] gap-2 px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-100 bg-gray-50/80">
-          <div className="w-28">{t('invoices:documentNumber')}</div>
-          <div className="w-24">{t('invoices:date')}</div>
-          <div className="w-16">{t('invoices:time')}</div>
-          <div className="flex-1">{t('invoices:customer')}</div>
-          <div className="w-10 text-end">{t('invoices:lines')}</div>
-          <div className="w-24 text-end">{t('invoices:beforeVat')}</div>
-          <div className="w-20 text-end">{t('invoices:vat')}</div>
-          <div className="w-24 text-end font-bold">{t('invoices:total')}</div>
-          <div className="w-16 text-center">{t('invoices:method')}</div>
-          <div className="w-24 text-center">ZATCA</div>
-          <div className="w-20" />
-        </div>
+      <section className="min-w-0 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm" aria-labelledby="invoice-documents-heading">
+        <h2 id="invoice-documents-heading" className="sr-only">{t('invoices:documents')}</h2>
 
         {loading && rows.length === 0 ? (
-          <div className="divide-y divide-gray-50" aria-label={t('invoices:loadingLabel')}>
-            {Array.from({ length: 6 }, (_, index) => (
-              <div key={index} className="flex min-w-[980px] gap-2 px-4 py-3">
-                {[112, 96, 64, 220, 40, 96, 80, 96, 64, 96].map((width, cell) => (
-                  <div key={cell} className="h-4 animate-pulse rounded bg-gray-100" style={{ width }} />
-                ))}
-              </div>
-            ))}
-          </div>
+          <ContentState kind="loading" title={t('invoices:loadingLabel')} />
         ) : loadError && rows.length === 0 ? (
-          <div className="py-14 text-center">
-            <p className="text-sm font-semibold text-gray-700">{t('invoices:loadFailed')}</p>
-            <p className="mt-1 text-xs text-gray-400">{t('validation:networkUnavailable')}</p>
-            <button type="button" onClick={() => setRefreshKey(key => key + 1)} className="mt-3 rounded-lg bg-primary-700 px-3 py-2 text-xs font-semibold text-white">{t('common:retry')}</button>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="py-16 text-center">
-            <FileText size={32} className="text-gray-200 mx-auto mb-3" />
-            <p className="text-sm text-gray-400">{t('invoices:noResults')}</p>
-            <p className="text-xs text-gray-300 mt-1">{t('invoices:tryDifferentFilter')}</p>
-          </div>
+          <ContentState
+            kind="error"
+            title={t('invoices:loadFailed')}
+            description={t('validation:networkUnavailable')}
+            action={(
+              <Button type="button" size="sm" onClick={() => setRefreshKey(key => key + 1)}>
+                {t('common:retry')}
+              </Button>
+            )}
+          />
+        ) : documentRows.length === 0 ? (
+          <ContentState
+            kind="empty"
+            icon={FileText}
+            title={rows.length === 0 ? emptyTitle : t('invoices:noMatchingDocuments')}
+            description={rows.length === 0 ? emptyDescription : t('invoices:tryDifferentFilter')}
+            action={hasActiveFilters ? (
+              <Button type="button" variant="secondary" size="sm" onClick={resetFilters}>
+                {t('invoices:clearFilters')}
+              </Button>
+            ) : undefined}
+          />
         ) : (
           <>
-            {filtered.map(r => {
-              const zatcaBase = ZATCA_BADGE[r.displayZatcaStatus] ?? ZATCA_BADGE.pending
-              const zatcaKey = r.displayZatcaStatus === 'sandbox_validated' ? 'submitted'
-                : r.displayZatcaStatus === 'sandbox_validated_with_warnings' ? 'submittedWarnings'
-                : r.displayZatcaStatus === 'sandbox_validation_rejected' ? 'rejected'
-                : r.displayZatcaStatus === 'sandbox_not_validated' ? 'notSubmitted'
-                : r.displayZatcaStatus === 'not_submitted' ? 'notRequired'
-                : r.displayZatcaStatus === 'reported' ? 'reported'
-                : r.displayZatcaStatus === 'cleared' ? 'cleared'
-                : r.displayZatcaStatus.includes('failed') ? 'failed' : 'pending'
-              const zatca = { ...zatcaBase, label: t(`invoices:${zatcaKey}`) }
-              const payBase = r.paymentMethod ? (PAY_BADGE[r.paymentMethod] ?? PAY_BADGE.other) : null
-              const pay = payBase ? { ...payBase, label: r.paymentMethod === 'cash' ? t('payments:cash') : r.paymentMethod === 'card' ? t('payments:card') : r.paymentMethod === 'split' ? t('payments:split') : r.paymentMethod === 'bank_transfer' ? t('payments:bankTransfer') : t('payments:other') } : null
-              const isCancelled = r.status === 'cancelled'
-              const isCreditNote = r.documentType === 'credit_note'
-              const creditDisabledReason = creditNoteDisabledReason(r, profile?.role, t)
-              return (
-                <div
-                  key={r.id}
-                  className={`flex min-w-[980px] gap-2 px-4 py-3 border-t border-gray-50 items-center hover:bg-primary-50/30 transition-colors ${isCancelled ? 'opacity-50' : ''}`}
-                >
-                  <div className="w-28">
-                    <span className="text-xs font-bold text-gray-900 font-mono">{r.invoiceNumber}</span>
-                    {isCreditNote && (
-                      <span className="ms-1 text-[9px] font-semibold text-amber-700 bg-amber-50 px-1 py-0.5 rounded">{t('invoices:creditNoteShort')}</span>
-                    )}
-                    {isCancelled && (
-                      <span className="ms-1 text-[9px] font-semibold text-red-500 bg-red-50 px-1 py-0.5 rounded">{t('invoices:void')}</span>
-                    )}
-                    {isCreditNote && r.invoiceReference && (
-                      <p className="mt-0.5 text-[9px] text-gray-400">{t('invoices:forInvoice', { number: r.invoiceReference })}</p>
-                    )}
-                    {!isCreditNote && r.creditStatus !== 'none' && (
-                      <p className={`mt-0.5 text-[9px] ${r.creditStatus === 'full' ? 'text-emerald-700' : 'text-amber-600'}`}>
-                        {r.creditStatus === 'full' ? t('invoices:fullyCredited') : t('invoices:partiallyCredited')}
-                        {r.linkedCreditNoteNumber ? ` · ${t('invoices:latest', { number: r.linkedCreditNoteNumber })}` : ''}
-                        {r.creditNoteCount > 1 ? ` · ${t('invoices:notesCount', { count: r.creditNoteCount })}` : ''}
-                      </p>
-                    )}
-                  </div>
-                  <div className="w-24 text-xs text-gray-500">{fmtDate(r.date)}</div>
-                  <div className="w-16 text-xs text-gray-500 tabular-nums">{fmtTime(r.createdAt)}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-800 truncate">{r.customerName ?? t('invoices:walkInCustomer')}</p>
-                  </div>
-                  <div className="w-10 text-right text-xs text-gray-500 tabular-nums">{r.itemsCount}</div>
-                  <div className="w-24 text-right text-xs text-gray-600 tabular-nums">
-                    {isCreditNote ? `-${fmt(r.subtotal)}` : fmt(r.subtotal)}
-                  </div>
-                  <div className="w-20 text-right text-xs text-amber-600 tabular-nums">
-                    {isCreditNote ? `-${fmt(r.taxAmount)}` : fmt(r.taxAmount)}
-                  </div>
-                  <div className="w-24 text-right text-sm font-bold text-gray-900 tabular-nums">
-                    {isCreditNote ? (
-                      <span className="text-amber-700">- <Rial amount={r.totalAmount} /></span>
-                    ) : (
-                      <Rial amount={r.totalAmount} />
-                    )}
-                  </div>
-                  <div className="w-16 flex justify-center">
-                    {pay ? <Badge {...pay} /> : <span className="text-gray-300 text-xs">—</span>}
-                  </div>
-                  <div className="w-24 flex justify-center">
-                    <Badge {...zatca} />
-                  </div>
-                  <div className="w-20 flex justify-center gap-1">
-                    <button
-                      onClick={() => navigate(`/invoices/${r.id}`)}
-                      className="p-1.5 rounded-lg hover:bg-primary-50 text-gray-400 hover:text-primary-600 transition-colors"
-                      title={t('invoices:view')}
-                    >
-                      <Eye size={14} />
-                    </button>
-                    {!isCreditNote && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (creditDisabledReason) return
-                          setCreditModalRow(r)
-                        }}
-                        disabled={!!creditDisabledReason}
-                        title={creditDisabledReason ?? t('creditNotes:create')}
-                        aria-label={creditDisabledReason ?? t('creditNotes:create')}
-                        className="p-1.5 rounded-lg text-gray-400 transition-colors hover:bg-amber-50 hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+            <div className="hidden overflow-x-auto lg:block" data-invoice-desktop-table>
+              <table className="w-full min-w-[1040px] border-separate border-spacing-0">
+                <caption className="sr-only">{t('invoices:documentTableCaption', { period: periodLabel })}</caption>
+                <thead>
+                  <tr>
+                    {[
+                      [t('invoices:documentNumber'), 'text-start'],
+                      [t('invoices:date'), 'text-start'],
+                      [t('invoices:time'), 'text-start'],
+                      [t('invoices:customer'), 'text-start'],
+                      [t('invoices:lines'), 'text-end'],
+                      [t('invoices:beforeVat'), 'text-end'],
+                      [t('invoices:vat'), 'text-end'],
+                      [t('invoices:total'), 'text-end'],
+                      [t('invoices:method'), 'text-center'],
+                      ['ZATCA', 'text-center'],
+                      [t('invoices:documentActions'), 'text-center'],
+                    ].map(([label, alignment]) => (
+                      <th
+                        key={label}
+                        scope="col"
+                        className={`sticky top-0 z-10 border-b border-gray-200 bg-slate-50 px-2.5 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-500 rtl:normal-case rtl:tracking-normal ${alignment}`}
                       >
-                        <RotateCcw size={14} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {documentRows.map(document => {
+                    const { row: r, zatca, pay, isCancelled, isCreditNote } = document
+                    return (
+                      <tr
+                        key={r.id}
+                        className={`group transition-colors hover:bg-primary-50/35 ${
+                          isCreditNote ? 'bg-amber-50/25' : ''
+                        } ${isCancelled ? 'opacity-50' : ''}`}
+                      >
+                        <td className={`px-2.5 py-2 align-top ${isCreditNote ? 'border-s-2 border-amber-300' : ''}`}>
+                          <div className="min-w-[116px]">
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span dir="ltr" className="font-mono text-xs font-bold text-gray-950">{r.invoiceNumber}</span>
+                              {isCreditNote && (
+                                <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                                  {t('invoices:creditNoteShort')}
+                                </span>
+                              )}
+                              {isCancelled && (
+                                <span className="rounded-md bg-red-50 px-1.5 py-0.5 text-[9px] font-bold text-red-600 ring-1 ring-inset ring-red-600/20">
+                                  {t('invoices:void')}
+                                </span>
+                              )}
+                            </div>
+                            <CreditContext row={r} t={t} />
+                          </div>
+                        </td>
+                        <td dir="ltr" className="whitespace-nowrap px-2.5 py-2 align-top text-xs text-gray-500 tabular-nums">
+                          {fmtDate(r.createdAt, i18n.language)}
+                        </td>
+                        <td dir="ltr" className="whitespace-nowrap px-2.5 py-2 align-top text-xs text-gray-500 tabular-nums">
+                          {fmtTime(r.createdAt, i18n.language)}
+                        </td>
+                        <td dir="auto" className="max-w-[180px] px-2.5 py-2 align-top text-xs text-gray-800 [overflow-wrap:anywhere]">
+                          {r.customerName ?? t('invoices:walkInCustomer')}
+                        </td>
+                        <td className="px-2.5 py-2 text-end align-top text-xs text-gray-500 tabular-nums">{r.itemsCount}</td>
+                        <td dir="ltr" className={`px-2.5 py-2 text-end align-top text-xs tabular-nums ${isCreditNote ? 'text-amber-700' : 'text-gray-600'}`}>
+                          {isCreditNote ? `-${fmt(r.subtotal)}` : fmt(r.subtotal)}
+                        </td>
+                        <td dir="ltr" className={`px-2.5 py-2 text-end align-top text-xs tabular-nums ${isCreditNote ? 'text-amber-700' : 'text-gray-600'}`}>
+                          {isCreditNote ? `-${fmt(r.taxAmount)}` : fmt(r.taxAmount)}
+                        </td>
+                        <td dir="ltr" className="px-2.5 py-2 text-end align-top text-sm font-bold tabular-nums">
+                          {isCreditNote ? <span className="text-amber-700">- <Rial amount={r.totalAmount} /></span> : <Rial amount={r.totalAmount} />}
+                        </td>
+                        <td className="px-2.5 py-2 text-center align-top">
+                          {pay ? <DocumentBadge {...pay} /> : <span className="text-xs text-gray-300">—</span>}
+                        </td>
+                        <td className="px-2.5 py-2 text-center align-top"><DocumentBadge {...zatca} /></td>
+                        <td className="px-2.5 py-1.5 text-center align-top">{renderDocumentActions(document)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-50">
+                    <th scope="row" colSpan={5} className="border-t border-gray-200 px-2.5 py-2.5 text-start text-xs font-bold text-gray-600">
+                      {t('invoices:documentsCount', { count: filtered.length })}
+                    </th>
+                    <td dir="ltr" className="border-t border-gray-200 px-2.5 py-2.5 text-end text-xs font-bold text-gray-700 tabular-nums">
+                      <Rial amount={summary.revenue - summary.vat} />
+                    </td>
+                    <td dir="ltr" className="border-t border-gray-200 px-2.5 py-2.5 text-end text-xs font-bold text-amber-700 tabular-nums">
+                      <Rial amount={summary.vat} />
+                    </td>
+                    <td dir="ltr" className="border-t border-gray-200 px-2.5 py-2.5 text-end text-sm font-black text-primary-700 tabular-nums">
+                      <Rial amount={summary.revenue} />
+                    </td>
+                    <td colSpan={3} className="border-t border-gray-200" />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
 
-            {/* Totals row */}
-            <div className="flex min-w-[980px] gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
-              <div className="w-28 text-xs font-semibold text-gray-500">
-                {t('invoices:documentsCount', { count: filtered.length })}
-              </div>
-              <div className="w-24" />
-              <div className="w-16" />
-              <div className="flex-1" />
-              <div className="w-10" />
-              <div className="w-24 text-right text-xs font-bold text-gray-700 tabular-nums">
-                <Rial amount={summary.revenue - summary.vat} />
-              </div>
-              <div className="w-20 text-right text-xs font-bold text-amber-700 tabular-nums">
-                <Rial amount={summary.vat} />
-              </div>
-              <div className="w-24 text-right text-sm font-bold text-primary-700 tabular-nums">
-                <Rial amount={summary.revenue} />
-              </div>
-              <div className="w-16" />
-              <div className="w-24" />
-              <div className="w-20" />
+            <div className="grid gap-3 p-3 lg:hidden sm:grid-cols-2" data-invoice-mobile-cards>
+              {documentRows.map(document => {
+                const { row, zatca, pay, isCancelled, isCreditNote } = document
+                return (
+                  <article
+                    key={row.id}
+                    className={`min-w-0 rounded-xl border bg-white p-4 shadow-sm ${
+                      isCreditNote ? 'border-amber-200 border-s-2 bg-amber-50/20' : 'border-gray-100'
+                    } ${isCancelled ? 'opacity-55' : ''}`}
+                  >
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span dir="ltr" className="font-mono text-sm font-black text-gray-950 [overflow-wrap:anywhere]">{row.invoiceNumber}</span>
+                          <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold ring-1 ring-inset ${
+                            isCreditNote
+                              ? 'bg-amber-50 text-amber-700 ring-amber-600/20'
+                              : 'bg-slate-50 text-slate-600 ring-slate-500/20'
+                          }`}>
+                            {isCreditNote ? t('invoices:creditNote') : t('invoices:invoice')}
+                          </span>
+                          {isCancelled && <span className="text-[9px] font-bold text-red-600">{t('invoices:void')}</span>}
+                        </div>
+                        <p dir="ltr" className="mt-1 text-[11px] text-gray-500 tabular-nums">
+                          {fmtDate(row.createdAt, i18n.language)} · {fmtTime(row.createdAt, i18n.language)}
+                        </p>
+                      </div>
+                      <p dir="ltr" className={`shrink-0 text-sm font-black tabular-nums ${isCreditNote ? 'text-amber-700' : 'text-gray-950'}`}>
+                        {isCreditNote ? '- ' : ''}<Rial amount={row.totalAmount} />
+                      </p>
+                    </div>
+
+                    <p dir="auto" className="mt-3 text-sm font-semibold text-gray-800 [overflow-wrap:anywhere]">
+                      {row.customerName ?? t('invoices:walkInCustomer')}
+                    </p>
+                    <CreditContext row={row} t={t} />
+
+                    <dl className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="min-w-0">
+                        <dt className="text-[10px] font-bold uppercase tracking-wide text-gray-400 rtl:normal-case rtl:tracking-normal">{t('invoices:paymentMethod')}</dt>
+                        <dd className="mt-1">{pay ? <DocumentBadge {...pay} /> : <span className="text-xs text-gray-300">—</span>}</dd>
+                      </div>
+                      <div className="min-w-0">
+                        <dt className="text-[10px] font-bold uppercase tracking-wide text-gray-400 rtl:normal-case rtl:tracking-normal">ZATCA</dt>
+                        <dd className="mt-1"><DocumentBadge {...zatca} /></dd>
+                      </div>
+                    </dl>
+
+                    <div className="mt-4 flex justify-end border-t border-gray-100 pt-3">
+                      {renderDocumentActions(document)}
+                    </div>
+                  </article>
+                )
+              })}
             </div>
           </>
         )}
         {loadError && rows.length > 0 && (
-          <div className="flex items-center justify-between border-t border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-800" role="alert">
             <span>{t('invoices:refreshFailed')}</span>
-            <button type="button" onClick={() => setRefreshKey(key => key + 1)} className="font-semibold underline underline-offset-2">{t('common:retry')}</button>
+            <button
+              type="button"
+              onClick={() => setRefreshKey(key => key + 1)}
+              className="min-h-9 rounded-lg px-2 font-semibold underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600"
+            >
+              {t('common:retry')}
+            </button>
           </div>
         )}
-        </div>
-      </div>
+      </section>
 
       <CreateCreditNoteModal
         key={creditModalRow?.id ?? 'closed-credit-note-modal'}
@@ -716,6 +1117,8 @@ export default function InvoicesPage() {
           branch_id: creditModalRow.branchId,
           invoice_number: creditModalRow.invoiceNumber,
           total_amount: creditModalRow.totalAmount,
+          invoice_date: creditModalRow.date,
+          customer_name: creditModalRow.customerName,
           zatca_document_kind: creditModalRow.documentType === 'standard'
             ? 'standard'
             : 'simplified',
@@ -733,6 +1136,7 @@ export default function InvoicesPage() {
               invoiceNumber: result.creditNoteNumber,
               date: saudiDateStr(result.createdAt),
               createdAt: result.createdAt,
+              sessionId: activeSession?.id ?? null,
               customerName: creditModalRow?.customerName ?? null,
               itemsCount: result.itemsCount,
               subtotal: result.subtotal,

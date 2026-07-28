@@ -103,6 +103,7 @@ export interface SandboxComplianceValidationInvoice {
     id: number
     name: string
     quantity: number
+    unitCode?: string
     discountAmount: number
     lineNetAmount: number
     taxRate: number
@@ -376,6 +377,7 @@ export async function prepareSandboxComplianceValidation(params: {
       id: line.id,
       name: line.name,
       qty: line.quantity,
+      unitCode: line.unitCode ?? 'PCE',
       discountAmt: line.discountAmount,
       lineNetAmt: line.lineNetAmount,
       taxRate: line.taxRate,
@@ -1138,7 +1140,7 @@ function buildInvoice(data: any, opts: any): string {
   for (const line of data.lines) {
     const il = root.ele(NS.cac, 'InvoiceLine')
     il.ele(NS.cbc, 'ID').txt(String(line.id))
-    il.ele(NS.cbc, 'InvoicedQuantity').att('unitCode', 'PCE').txt(String(line.qty))
+    il.ele(NS.cbc, 'InvoicedQuantity').att('unitCode', line.unitCode ?? 'PCE').txt(String(line.qty))
     il.ele(NS.cbc, 'LineExtensionAmount').att('currencyID', 'SAR').txt(fmt(line.lineNetAmt))
     if (line.discountAmt > 0) {
       const allowance = il.ele(NS.cac, 'AllowanceCharge')
@@ -1157,7 +1159,7 @@ function buildInvoice(data: any, opts: any): string {
     itemTax.ele(NS.cac, 'TaxScheme').ele(NS.cbc, 'ID').txt('VAT')
     const price = il.ele(NS.cac, 'Price')
     price.ele(NS.cbc, 'PriceAmount').att('currencyID', 'SAR').txt(fmt(line.lineNetAmt / line.qty))
-    price.ele(NS.cbc, 'BaseQuantity').att('unitCode', 'PCE').txt('1')
+    price.ele(NS.cbc, 'BaseQuantity').att('unitCode', line.unitCode ?? 'PCE').txt('1')
   }
 
   return root.end({ prettyPrint: false }) as string

@@ -23,6 +23,7 @@ import {
   normalizeDocumentLanguage,
   type DocumentLanguage,
 } from '@/localization/documents'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const db = () => supabase as any
 
@@ -221,6 +222,7 @@ export default function DayClosingPage() {
 
   const [loading,     setLoading]     = useState(true)
   const [saving,      setSaving]      = useState(false)
+  const [closeDayOpen, setCloseDayOpen] = useState(false)
   const [summary,     setSummary]     = useState<DaySummary | null>(null)
   const [prevClosings,setPrevClosings]= useState<PreviousClosing[]>([])
   const [todayClosing,setTodayClosing]= useState<PreviousClosing | null>(null)
@@ -366,8 +368,6 @@ export default function DayClosingPage() {
   async function closeDay() {
     if (!summary || !branchId || !tenantId) return
     if (!actualCash) { setSaveErr('actualCashRequired'); return }
-    if (!confirm(t('register:confirmCloseDay'))) return
-
     setSaving(true)
     setSaveErr(null)
 
@@ -398,6 +398,7 @@ export default function DayClosingPage() {
       setSaveErr('dayCloseFailed')
       return
     }
+    setCloseDayOpen(false)
     setSaveMsg('dayClosed')
     load()
   }
@@ -630,7 +631,7 @@ export default function DayClosingPage() {
                     <Printer size={14} /> {t('register:printReport')}
                   </button>
                   <button
-                    onClick={closeDay}
+                    onClick={() => setCloseDayOpen(true)}
                     disabled={saving || !actualCash}
                     className="btn-primary flex items-center gap-2 disabled:opacity-50"
                   >
@@ -706,6 +707,7 @@ export default function DayClosingPage() {
           </>
         )}
       </div>
+      <ConfirmDialog open={closeDayOpen} kind="closeDay" busy={saving} onClose={() => setCloseDayOpen(false)} onConfirm={() => void closeDay()} />
     </>
   )
 }

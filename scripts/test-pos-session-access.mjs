@@ -35,7 +35,7 @@ const noSessionAssignment = hook.indexOf('setSession((data ?? [])[0] ?? null)', 
 assert.ok(queryStart > 0 && queryErrorCheck > queryStart)
 assert.ok(noSessionAssignment > queryErrorCheck)
 assert.match(hook.slice(queryErrorCheck, noSessionAssignment), /setError\(queryError\)[\s\S]*return/)
-assert.match(hook, /return \{ session, loading, error, openSession, closeSession, fetchActiveSession \}/)
+assert.match(hook, /return \{ session, loading, error, resolvedBranchId, openSession, closeSession, fetchActiveSession \}/)
 
 const loadErrorState = pos.indexOf('if (sessionLoadError)')
 const closedState = pos.indexOf('if (!session)')

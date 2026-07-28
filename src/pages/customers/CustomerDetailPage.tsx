@@ -1,366 +1,916 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  ArrowLeft, Phone, Mail, MapPin, Building2, User,
-  FileText, Download, Receipt,
+  ArrowLeft,
+  BarChart3,
+  Building2,
+  CalendarClock,
+  Download,
+  FileText,
+  Mail,
+  Pencil,
+  Phone,
+  Receipt,
+  RefreshCw,
+  RotateCcw,
+  ShoppingBag,
+  Sparkles,
+  TrendingUp,
+  User,
 } from 'lucide-react'
+import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/hooks/useAuth'
+import { useLocale } from '@/localization/useLocale'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
-import { Rial } from '@/components/ui/RiyalSymbol'
-import type { Customer, InvoiceStatus, PaymentStatus } from '@/types'
-import { useTranslation } from 'react-i18next'
+import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
+import { CustomerIntelligenceFiltersPanel } from '@/components/customers/CustomerIntelligenceFilters'
+import CustomerModal from './CustomerModal'
+import type { CustomerWithStats } from './CustomersPage'
+import type { Branch } from '@/types'
+import {
+  buildCustomerInsights,
+  customerDisplayName,
+  intelligenceDateRange,
+  loadCustomerHistory,
+  loadCustomerIntelligence,
+  type CustomerActivityType,
+  type CustomerHistoryResponse,
+  type CustomerInsight,
+  type CustomerIntelligenceFilters,
+  type CustomerIntelligenceResponse,
+  type IntelligenceDatePreset,
+} from '@/lib/customers/customerIntelligence'
+import {
+  CUSTOMER_REPORT_HISTORY_LIMIT,
+  openCustomerReportWindow,
+  renderCustomerIntelligenceReport,
+  type CustomerReportCopy,
+} from '@/lib/customers/customerIntelligencePrint'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// Safe-read contract note: invoice_number, invoice_date, total_amount now come
+// from scoped customer-intelligence RPC output instead of a browser invoice query.
+const PAGE_SIZE = 20
 
-interface CustomerFull extends Customer {
-  company_name: string | null
-}
-
-interface InvoiceRow {
+interface FilterOption {
   id: string
-  invoice_number: string
-  invoice_date: string
-  total_amount: number
-  tax_amount: number
-  status: InvoiceStatus
-  payment_status: PaymentStatus
-  invoice_items: { id: string }[]
+  name: string
+  nameAr: string | null
 }
 
-// ── Badge mappings ────────────────────────────────────────────────────────────
-
-type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'gold'
-
-const STATUS_MAP: Record<InvoiceStatus, BadgeVariant> = {
-  draft: 'neutral', posted: 'success', cancelled: 'danger',
-}
-
-const PAYMENT_MAP: Record<PaymentStatus, BadgeVariant> = {
-  pending: 'warning', paid: 'success', partial: 'info', refunded: 'danger',
-}
-
-// ── Info row ──────────────────────────────────────────────────────────────────
-
-function InfoRow({ icon: Icon, value }: { icon: React.ElementType; value: string | null | undefined }) {
-  if (!value) return null
-  return (
-    <div className="flex items-center gap-2 text-sm text-gray-600">
-      <Icon size={14} className="text-gray-400 flex-shrink-0" />
-      <span className="truncate">{value}</span>
-    </div>
+function formatDate(value: string | null, locale: string, withTime = false) {
+  if (!value) return '—'
+  return new Date(value).toLocaleString(
+    locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA',
+    withTime ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' },
   )
 }
 
-// ── Stat card ─────────────────────────────────────────────────────────────────
-
-function StatCard({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+function MetricCard({
+  label,
+  value,
+  detail,
+  tone = 'neutral',
+  icon: Icon,
+}: {
+  label: string
+  value: React.ReactNode
+  detail: string
+  tone?: 'neutral' | 'emerald' | 'amber'
+  icon: React.ElementType
+}) {
+  const styles = tone === 'emerald'
+    ? 'border-emerald-200 bg-emerald-50/70 text-emerald-800'
+    : tone === 'amber'
+      ? 'border-amber-200 bg-amber-50/60 text-amber-800'
+      : 'border-gray-100 bg-white text-gray-900'
+  const iconStyles = tone === 'emerald'
+    ? 'bg-emerald-100 text-emerald-700'
+    : tone === 'amber'
+      ? 'bg-amber-100 text-amber-700'
+      : 'bg-gray-100 text-gray-500'
   return (
-    <div className="flex-1 min-w-0 bg-white rounded-xl border border-gray-100 px-4 py-3 shadow-card">
-      <p className="text-xs text-gray-400 font-medium">{label}</p>
-      <p className="text-lg font-bold text-gray-900 mt-0.5">{value}</p>
-      {sub && <p className="text-[11px] text-gray-400 mt-0.5">{sub}</p>}
-    </div>
+    <article className={`rounded-xl border p-3.5 shadow-card min-w-0 ${styles}`} aria-label={label}>
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-semibold opacity-70 leading-snug">{label}</p>
+        <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${iconStyles}`}>
+          <Icon size={14} />
+        </span>
+      </div>
+      <div className="text-xl font-bold mt-2 tabular-nums truncate">{value}</div>
+      <p className="text-[11px] mt-1 opacity-65 leading-snug min-h-8">{detail}</p>
+    </article>
   )
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+function insightText(
+  insight: CustomerInsight,
+  t: ReturnType<typeof useTranslation>['t'],
+) {
+  return t(`insights.${insight.key}`, insight.values)
+}
 
 export default function CustomerDetailPage() {
-  const { t, i18n } = useTranslation(['customers', 'common'])
-  const { id }   = useParams<{ id: string }>()
+  const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { t, i18n } = useTranslation(['customerIntelligence', 'customers', 'common'])
+  const { profile, tenant, branch: authBranch } = useAuth()
+  const { isRtl } = useLocale()
+  const locale = i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA' : 'en'
+  const queryStart = searchParams.get('start')
+  const queryEnd = searchParams.get('end')
+  const defaultRange = intelligenceDateRange('last30')
 
-  const [customer,  setCustomer]  = useState<CustomerFull | null>(null)
-  const [invoices,  setInvoices]  = useState<InvoiceRow[]>([])
-  const [loading,   setLoading]   = useState(true)
-  const [notFound,  setNotFound]  = useState(false)
+  const [preset, setPreset] = useState<IntelligenceDatePreset>(
+    queryStart && queryEnd ? 'custom' : 'last30',
+  )
+  const [filters, setFilters] = useState<CustomerIntelligenceFilters>({
+    startDate: queryStart || defaultRange.startDate,
+    endDate: queryEnd || defaultRange.endDate,
+    branchId: searchParams.get('branch') || (profile?.role === 'branch' ? profile.branch_id : null),
+    productId: searchParams.get('product'),
+    productUnitId: searchParams.get('unit'),
+  })
+  const [data, setData] = useState<CustomerIntelligenceResponse | null>(null)
+  const [history, setHistory] = useState<CustomerHistoryResponse | null>(null)
+  const [historyType, setHistoryType] = useState<CustomerActivityType>('all')
+  const [historyPage, setHistoryPage] = useState(1)
+  const [loading, setLoading] = useState(true)
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [products, setProducts] = useState<FilterOption[]>([])
+  const [units, setUnits] = useState<FilterOption[]>([])
+  const [editingCustomer, setEditingCustomer] = useState<CustomerWithStats | null>(null)
+  const [preparingPdf, setPreparingPdf] = useState(false)
 
-  const load = useCallback(async () => {
-    if (!id) { setNotFound(true); setLoading(false); return }
+  const canChooseBranch = profile?.role !== 'branch'
 
-    const [{ data: cust }, { data: invs }] = await Promise.all([
-      supabase
-        .from('customers')
-        .select('*')
-        .eq('id', id)
-        .maybeSingle(),
-      supabase
-        .from('invoices')
-        .select('id, invoice_number, invoice_date, total_amount, tax_amount, status, payment_status, invoice_items(id)')
-        .eq('customer_id', id)
-        .order('invoice_date', { ascending: false }),
-    ])
+  useEffect(() => {
+    if (!profile?.tenant_id) return
+    let cancelled = false
+    void supabase
+      .from('branches')
+      .select('*')
+      .eq('tenant_id', profile.tenant_id)
+      .eq('is_active', true)
+      .order('name')
+      .then(({ data: branchRows }) => {
+        if (!cancelled) setBranches((branchRows ?? []) as unknown as Branch[])
+      })
+    return () => { cancelled = true }
+  }, [profile?.tenant_id])
 
-    if (!cust) { setNotFound(true); setLoading(false); return }
+  useEffect(() => {
+    if (!profile?.tenant_id) return
+    let cancelled = false
+    let query = supabase
+      .from('products')
+      .select('id, name, name_ar')
+      .eq('tenant_id', profile.tenant_id)
+      .eq('is_active', true)
+      .order('name')
+      .limit(500)
+    if (filters.branchId) query = query.eq('branch_id', filters.branchId)
+    void query.then(({ data: productRows }) => {
+      if (!cancelled) {
+        setProducts((productRows ?? []).map(row => ({
+          id: String(row.id),
+          name: String(row.name),
+          nameAr: row.name_ar ? String(row.name_ar) : null,
+        })))
+      }
+    })
+    return () => { cancelled = true }
+  }, [profile?.tenant_id, filters.branchId])
 
-    setCustomer(cust as unknown as CustomerFull)
-    setInvoices((invs ?? []) as unknown as InvoiceRow[])
-    setLoading(false)
-  }, [id])
+  useEffect(() => {
+    if (!filters.productId) {
+      setUnits([])
+      return
+    }
+    let cancelled = false
+    void supabase
+      .from('product_units')
+      .select('id, name, name_ar')
+      .eq('product_id', filters.productId)
+      .eq('is_active', true)
+      .order('sort_order')
+      .limit(100)
+      .then(({ data: unitRows }) => {
+        if (!cancelled) {
+          setUnits((unitRows ?? []).map(row => ({
+            id: String(row.id),
+            name: String(row.name),
+            nameAr: row.name_ar ? String(row.name_ar) : null,
+          })))
+        }
+      })
+    return () => { cancelled = true }
+  }, [filters.productId])
 
-  useEffect(() => { load() }, [load])
+  const loadSummary = useCallback(async () => {
+    if (!id) return
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await loadCustomerIntelligence(id, filters)
+      setData(result)
+    } catch (loadError) {
+      console.error('Unable to load customer intelligence', loadError)
+      setData(null)
+      setError(t('customerIntelligence:errors.load'))
+    } finally {
+      setLoading(false)
+    }
+  }, [filters, id, t])
 
-  if (loading) {
+  useEffect(() => {
+    let stale = false
+    if (!id) {
+      setError(t('customerIntelligence:errors.load'))
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    setError(null)
+    void loadCustomerIntelligence(id, filters)
+      .then(result => {
+        if (!stale) setData(result)
+      })
+      .catch(loadError => {
+        console.error('Unable to load customer intelligence', loadError)
+        if (!stale) {
+          setData(null)
+          setError(t('customerIntelligence:errors.load'))
+        }
+      })
+      .finally(() => {
+        if (!stale) setLoading(false)
+      })
+    return () => { stale = true }
+  }, [filters, id, t])
+
+  useEffect(() => {
+    let stale = false
+    if (!id) return
+    setHistoryLoading(true)
+    setHistoryError(null)
+    void loadCustomerHistory(id, filters, historyType, historyPage, PAGE_SIZE)
+      .then(result => {
+        if (!stale) setHistory(result)
+      })
+      .catch(loadError => {
+        console.error('Unable to load customer history', loadError)
+        if (!stale) {
+          setHistory(null)
+          setHistoryError(t('customerIntelligence:errors.history'))
+        }
+      })
+      .finally(() => {
+        if (!stale) setHistoryLoading(false)
+      })
+    return () => { stale = true }
+  }, [filters, historyPage, historyRefreshKey, historyType, id, t])
+
+  useEffect(() => {
+    setHistoryPage(1)
+    const next = new URLSearchParams()
+    next.set('start', filters.startDate)
+    next.set('end', filters.endDate)
+    if (filters.branchId) next.set('branch', filters.branchId)
+    if (filters.productId) next.set('product', filters.productId)
+    if (filters.productUnitId) next.set('unit', filters.productUnitId)
+    setSearchParams(next, { replace: true })
+  }, [filters, setSearchParams])
+
+  const handlePreset = (nextPreset: IntelligenceDatePreset) => {
+    setPreset(nextPreset)
+    if (nextPreset !== 'custom') {
+      const range = intelligenceDateRange(nextPreset)
+      setFilters(current => ({ ...current, ...range }))
+    }
+  }
+
+  const handleFilterChange = (next: CustomerIntelligenceFilters) => {
+    setPreset('custom')
+    setFilters(next)
+  }
+
+  const handleEdit = async () => {
+    if (!id) return
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle()
+    if (customer) {
+      setEditingCustomer({
+        ...(customer as unknown as CustomerWithStats),
+        total_purchases: data?.summary.grossPurchases ?? 0,
+        last_purchase_date: data?.summary.lastPurchase?.invoiceDate ?? null,
+        purchase_count: data?.summary.invoiceCount ?? 0,
+      })
+    }
+  }
+
+  const selectedBranch = filters.branchId
+    ? branches.find(branch => branch.id === filters.branchId)
+      ?? (authBranch?.id === filters.branchId ? authBranch : null)
+    : null
+  const selectedProduct = products.find(product => product.id === filters.productId)
+  const selectedUnit = units.find(unit => unit.id === filters.productUnitId)
+  const localizedOption = (option: { name: string; nameAr?: string | null } | null | undefined) => (
+    option ? (isRtl ? option.nameAr?.trim() || option.name : option.name || option.nameAr || '—') : null
+  )
+
+  const insights = useMemo(() => data ? buildCustomerInsights(data, isRtl) : [], [data, isRtl])
+
+  const handlePdf = async () => {
+    if (!id || !data) return
+    const reportWindow = openCustomerReportWindow(t('customerIntelligence:pdf.preparing'))
+    if (!reportWindow) {
+      toast.error(t('customerIntelligence:pdf.blocked'))
+      return
+    }
+    setPreparingPdf(true)
+    try {
+      const fullHistory = await loadCustomerHistory(
+        id,
+        filters,
+        'all',
+        1,
+        CUSTOMER_REPORT_HISTORY_LIMIT,
+      )
+      const copy: CustomerReportCopy = {
+        title: t('customerIntelligence:pdf.title'),
+        generatedAt: t('customerIntelligence:pdf.generatedAt'),
+        selectedPeriod: t('customerIntelligence:pdf.selectedPeriod'),
+        filters: t('customerIntelligence:pdf.filters'),
+        allBranches: t('customerIntelligence:filters.allBranches'),
+        allProducts: t('customerIntelligence:filters.allProducts'),
+        allUnits: t('customerIntelligence:filters.allUnits'),
+        customer: t('customerIntelligence:pdf.customer'),
+        phone: t('customerIntelligence:pdf.phone'),
+        vatNumber: t('customerIntelligence:pdf.vatNumber'),
+        grossPurchases: t('customerIntelligence:metrics.grossPurchases'),
+        creditedAmount: t('customerIntelligence:metrics.creditedAmount'),
+        netPurchases: t('customerIntelligence:metrics.netPurchases'),
+        invoiceCount: t('customerIntelligence:metrics.invoiceCount'),
+        creditNoteCount: t('customerIntelligence:metrics.creditNoteCount'),
+        averageInvoice: t('customerIntelligence:metrics.averageInvoice'),
+        lastPurchase: t('customerIntelligence:metrics.lastPurchase'),
+        purchaseFrequency: t('customerIntelligence:metrics.purchaseFrequency'),
+        days: t('customerIntelligence:days'),
+        topProducts: t('customerIntelligence:products.title'),
+        product: t('customerIntelligence:products.product'),
+        unit: t('customerIntelligence:products.unit'),
+        quantity: t('customerIntelligence:products.quantity'),
+        amount: t('customerIntelligence:products.amount'),
+        invoices: t('customerIntelligence:products.invoices'),
+        purchaseTimeline: t('customerIntelligence:timeline.title'),
+        period: t('customerIntelligence:timeline.period'),
+        gross: t('customerIntelligence:timeline.gross'),
+        credited: t('customerIntelligence:timeline.credited'),
+        net: t('customerIntelligence:timeline.net'),
+        customerInsights: t('customerIntelligence:insights.title'),
+        documentHistory: t('customerIntelligence:history.title'),
+        date: t('customerIntelligence:history.date'),
+        document: t('customerIntelligence:history.document'),
+        branch: t('customerIntelligence:history.branch'),
+        items: t('customerIntelligence:history.items'),
+        disclaimer: t('customerIntelligence:pdf.disclaimer'),
+        limitedHistory: t('customerIntelligence:pdf.limitedHistory'),
+        print: t('customerIntelligence:pdf.print'),
+        close: t('customerIntelligence:pdf.close'),
+        noData: t('customerIntelligence:empty.noData'),
+        documentTypes: {
+          simplified: t('customerIntelligence:history.simplified'),
+          standard: t('customerIntelligence:history.standard'),
+          credit_note: t('customerIntelligence:history.credit_note'),
+        },
+        insightText: insight => insightText(insight, t),
+      }
+      renderCustomerIntelligenceReport(reportWindow, {
+        data,
+        history: fullHistory.rows,
+        historyTotalCount: fullHistory.totalCount,
+        filters,
+        filterLabels: {
+          branch: localizedOption(selectedBranch) || t('customerIntelligence:filters.allBranches'),
+          product: localizedOption(selectedProduct) || t('customerIntelligence:filters.allProducts'),
+          unit: localizedOption(selectedUnit) || t('customerIntelligence:filters.allUnits'),
+          dateRange: `${formatDate(filters.startDate, locale)} – ${formatDate(filters.endDate, locale)}`,
+        },
+        tenant,
+        branch: selectedBranch,
+        locale,
+        copy,
+        insights,
+      })
+    } catch (pdfError) {
+      reportWindow.close()
+      console.error('Unable to prepare customer report', pdfError)
+      toast.error(t('customerIntelligence:pdf.failed'))
+    } finally {
+      setPreparingPdf(false)
+    }
+  }
+
+  if (loading && !data) {
     return (
-      <div className="flex justify-center items-center py-32">
+      <div className="min-h-[55vh] flex items-center justify-center" role="status" aria-live="polite">
         <LoadingSpinner size="lg" />
+        <span className="sr-only">{t('common:loading')}</span>
       </div>
     )
   }
 
-  if (notFound || !customer) {
+  if (error || !data) {
     return (
-      <div className="flex flex-col items-center justify-center py-32 text-center">
-        <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-          <User size={24} className="text-gray-400" />
+      <div className="min-h-[55vh] flex flex-col items-center justify-center text-center px-4" role="alert">
+        <div className="w-12 h-12 rounded-xl bg-red-50 text-red-500 flex items-center justify-center">
+          <RefreshCw size={20} />
         </div>
-        <p className="text-gray-700 font-semibold">{t('customers:notFound')}</p>
-        <p className="text-gray-400 text-sm mt-1">{t('customers:notFoundHint')}</p>
-        <Button variant="secondary" className="mt-5" onClick={() => navigate('/customers')}>
-          <ArrowLeft size={15} />
-          {t('customers:back')}
+        <p className="mt-4 text-sm font-semibold text-gray-800">{error ?? t('customerIntelligence:errors.load')}</p>
+        <Button variant="secondary" size="sm" className="mt-4" onClick={() => void loadSummary()}>
+          {t('customerIntelligence:actions.retry')}
         </Button>
       </div>
     )
   }
 
-  const isBusiness   = customer.customer_type === 'business'
-  const displayName  = isBusiness && customer.company_name
-    ? customer.company_name
-    : customer.name
-  const contactName  = isBusiness && customer.company_name ? customer.name : null
-
-  const postedInvoices    = invoices.filter(i => i.status === 'posted')
-  const totalSpent        = postedInvoices.reduce((s, i) => s + i.total_amount, 0)
-  const totalVat          = postedInvoices.reduce((s, i) => s + i.tax_amount, 0)
-  const lastInvoiceDate   = postedInvoices[0]?.invoice_date ?? null
+  const displayName = customerDisplayName(data.customer, isRtl)
+  const secondaryName = isRtl ? data.customer.name : data.customer.nameAr
+  const maxTimeline = Math.max(...data.timeline.map(point => Math.abs(point.netPurchases)), 1)
+  const reportQuery = new URLSearchParams({
+    start: filters.startDate,
+    end: filters.endDate,
+  })
+  if (filters.branchId) reportQuery.set('branch', filters.branchId)
 
   return (
-    <div className="space-y-5 max-w-4xl">
-
-      {/* ── Back nav ──────────────────────────────────────── */}
+    <div className="space-y-5 max-w-[1500px]">
       <button
+        type="button"
         onClick={() => navigate('/customers')}
-        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+        className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
-        <ArrowLeft size={15} />
-        {t('customers:back')}
+        <ArrowLeft size={15} className={isRtl ? 'rotate-180' : ''} />
+        {t('customerIntelligence:actions.back')}
       </button>
 
-      {/* ── Customer info card ───────────────────────────── */}
-      <div className="card p-5">
-        <div className="flex items-start gap-4">
-          {/* Avatar */}
-          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${
-            isBusiness ? 'bg-gold-500/10 text-gold-700' : 'bg-primary-50 text-primary-600'
-          }`}>
-            {isBusiness
-              ? <Building2 size={20} />
-              : <span className="text-lg font-bold">{displayName.charAt(0).toUpperCase()}</span>
-            }
+      <header className="card overflow-hidden">
+        <div className="h-1 bg-gradient-to-r from-emerald-500 via-primary-500 to-teal-400" />
+        <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-start gap-5">
+          <div className="flex items-start gap-4 flex-1 min-w-0">
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${
+              data.customer.customerType === 'business'
+                ? 'bg-amber-50 text-amber-700'
+                : 'bg-emerald-50 text-emerald-700'
+            }`}>
+              {data.customer.customerType === 'business' ? <Building2 size={21} /> : <User size={21} />}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 break-words" dir="auto">
+                  {displayName}
+                </h1>
+                <Badge variant={data.customer.isActive ? 'success' : 'neutral'} dot>
+                  {t(`customerIntelligence:status.${data.customer.isActive ? 'active' : 'inactive'}`)}
+                </Badge>
+                <Badge variant="neutral">
+                  {t(`customers:${data.customer.customerType}`)}
+                </Badge>
+              </div>
+              {secondaryName?.trim() && secondaryName.trim() !== displayName && (
+                <p className="text-sm text-gray-400 mt-1" dir="auto">{secondaryName}</p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm text-gray-500">
+                {data.customer.phone && (
+                  <span className="inline-flex items-center gap-1.5" dir="ltr"><Phone size={14} />{data.customer.phone}</span>
+                )}
+                {data.customer.email && (
+                  <span className="inline-flex items-center gap-1.5"><Mail size={14} />{data.customer.email}</span>
+                )}
+                {data.customer.vatNumber && (
+                  <span className="inline-flex items-center gap-1.5" dir="ltr"><FileText size={14} />{data.customer.vatNumber}</span>
+                )}
+              </div>
+            </div>
           </div>
-
-          {/* Name + type */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-lg font-bold text-gray-900 leading-none" dir="auto">{displayName}</h2>
-              <Badge variant={isBusiness ? 'gold' : 'neutral'}>
-                {t(isBusiness ? 'customers:business' : 'customers:individual')}
-              </Badge>
-            </div>
-            {contactName && (
-              <p className="text-sm text-gray-500 mt-1">{t('customers:fields.contact')}: <span dir="auto">{contactName}</span></p>
-            )}
-            {customer.name_ar && (
-              <p className="text-sm text-gray-400 mt-1" dir="rtl">{customer.name_ar}</p>
-            )}
-
-            {/* Contact details */}
-            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
-              <InfoRow icon={Phone}   value={customer.phone} />
-              <InfoRow icon={Mail}    value={customer.email} />
-              <InfoRow icon={MapPin}  value={customer.city} />
-              {isBusiness && customer.vat_number && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <FileText size={14} className="text-gray-400" />
-                  <span className="font-mono text-xs">VAT: {customer.vat_number}</span>
-                </div>
-              )}
-              {isBusiness && customer.cr_number && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <Building2 size={14} className="text-gray-400" />
-                  <span className="font-mono text-xs">CR: {customer.cr_number}</span>
-                </div>
-              )}
-            </div>
-
-            {customer.notes && (
-              <p className="mt-3 text-xs text-gray-400 italic leading-relaxed">
-                {customer.notes}
-              </p>
-            )}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" size="sm" onClick={() => void handleEdit()}>
+              <Pencil size={14} />
+              {t('customerIntelligence:actions.edit')}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={preparingPdf}
+              aria-label={t('customerIntelligence:pdf.action')}
+              onClick={() => void handlePdf()}
+            >
+              <Download size={14} />
+              {t('customerIntelligence:pdf.action')}
+            </Button>
+            <Link
+              to={`/reports/customers?${reportQuery.toString()}`}
+              className="btn-primary px-3 py-1.5 text-xs rounded-lg"
+            >
+              <BarChart3 size={14} />
+              {t('customerIntelligence:reports.openDedicated')}
+            </Link>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* ── Summary stats ─────────────────────────────────── */}
-      <div className="flex gap-3 flex-wrap">
-        <StatCard
-          label={t('customers:fields.totalSpent')}
-          value={<Rial amount={totalSpent} />}
-          sub={t('customers:postedTotal')}
-        />
-        <StatCard
-          label={t('customers:fields.totalVat')}
-          value={<Rial amount={totalVat} />}
-        />
-        <StatCard
-          label={t('customers:fields.invoiceCount')}
-          value={String(invoices.length)}
-          sub={`${postedInvoices.length} posted`}
-        />
-        <StatCard
-          label={t('customers:fields.lastPurchase')}
-          value={lastInvoiceDate
-            ? new Date(lastInvoiceDate).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', {
-                day: '2-digit', month: 'short', year: 'numeric',
-              })
-            : '—'
-          }
-        />
-      </div>
+      <CustomerIntelligenceFiltersPanel
+        filters={filters}
+        preset={preset}
+        branches={branches.map(branch => ({ id: branch.id, name: branch.name, nameAr: branch.name_ar }))}
+        products={products}
+        units={units}
+        canChooseBranch={canChooseBranch}
+        isArabic={isRtl}
+        onPreset={handlePreset}
+        onChange={handleFilterChange}
+      />
 
-      {/* ── Purchase history ──────────────────────────────── */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-gray-900">{t('customers:purchaseHistory')}</h3>
-          <button
-            disabled
-            title={t('customers:exportSoon')}
-            className="flex items-center gap-2 text-xs font-medium text-gray-400 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 opacity-60 cursor-not-allowed select-none"
-          >
-            <Download size={13} />
-            Download PDF
-          </button>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs text-gray-500">
+            {t('customerIntelligence:filters.activeRange', {
+              range: `${formatDate(filters.startDate, locale)} – ${formatDate(filters.endDate, locale)}`,
+            })}
+          </p>
+          {(filters.productId || filters.productUnitId) && (
+            <p className="text-[11px] text-gray-400 mt-1 max-w-3xl">
+              {t('customerIntelligence:filters.productDocumentBasis')}
+            </p>
+          )}
         </div>
+        {loading && <LoadingSpinner size="sm" />}
+      </div>
 
-        {invoices.length === 0 ? (
-          <div className="card flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-12 h-12 rounded-xl bg-gray-50 flex items-center justify-center mb-3">
-              <Receipt size={20} className="text-gray-300" />
-            </div>
-            <p className="text-gray-500 font-medium text-sm">{t('customers:noHistory')}</p>
-            <p className="text-gray-400 text-xs mt-1">
-              {t('customers:noHistoryHint')}
+      <section aria-labelledby="customer-summary-title">
+        <div className="flex items-end justify-between gap-3 mb-3">
+          <div>
+            <h2 id="customer-summary-title" className="text-sm font-bold text-gray-900">
+              {t('customerIntelligence:commercialActivity')}
+            </h2>
+            <p className="text-xs text-gray-400">{t('customerIntelligence:notBalance')}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+          <MetricCard
+            label={t('customerIntelligence:metrics.grossPurchases')}
+            value={<Rial amount={data.summary.grossPurchases} />}
+            detail={t('customerIntelligence:metrics.grossDefinition')}
+            icon={ShoppingBag}
+          />
+          <MetricCard
+            label={t('customerIntelligence:metrics.creditedAmount')}
+            value={<Rial amount={data.summary.creditedAmount} />}
+            detail={`${data.summary.creditNoteCount} ${t('customerIntelligence:metrics.creditNoteCount')}`}
+            tone="amber"
+            icon={RotateCcw}
+          />
+          <MetricCard
+            label={t('customerIntelligence:metrics.netPurchases')}
+            value={<Rial amount={data.summary.netPurchases} />}
+            detail={t('customerIntelligence:metrics.netDefinition')}
+            tone="emerald"
+            icon={TrendingUp}
+          />
+          <MetricCard
+            label={t('customerIntelligence:metrics.invoiceCount')}
+            value={data.summary.invoiceCount.toLocaleString('en-US')}
+            detail={t('customerIntelligence:metrics.grossDefinition')}
+            icon={Receipt}
+          />
+          <MetricCard
+            label={t('customerIntelligence:metrics.averageInvoice')}
+            value={<Rial amount={data.summary.averageInvoiceValue} />}
+            detail={data.summary.invoiceCount
+              ? t('customerIntelligence:metrics.invoiceCount')
+              : t('customerIntelligence:metrics.notEnoughFrequency')}
+            icon={BarChart3}
+          />
+          <MetricCard
+            label={t('customerIntelligence:metrics.lastPurchase')}
+            value={formatDate(data.summary.lastPurchase?.createdAt ?? null, locale)}
+            detail={data.summary.lastPurchase?.reference ?? '—'}
+            icon={CalendarClock}
+          />
+        </div>
+        <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <p className="text-sm text-gray-600">
+            <span className="font-semibold text-gray-900">{t('customerIntelligence:metrics.purchaseFrequency')}:</span>{' '}
+            {data.summary.averageDaysBetweenPurchases == null
+              ? t('customerIntelligence:metrics.notEnoughFrequency')
+              : t('customerIntelligence:metrics.averageDays', {
+                  days: data.summary.averageDaysBetweenPurchases.toLocaleString('en-US'),
+                })}
+          </p>
+          <p className="text-xs text-gray-500 tabular-nums" dir="ltr">
+            {sarStr(data.summary.grossPurchases)} − {sarStr(data.summary.creditedAmount)} = {sarStr(data.summary.netPurchases)}
+          </p>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <section className="card p-4 xl:col-span-2" aria-labelledby="timeline-title">
+          <div className="mb-4">
+            <h2 id="timeline-title" className="text-sm font-bold text-gray-900">
+              {t('customerIntelligence:timeline.title')}
+            </h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {t('customerIntelligence:timeline.subtitle', {
+                granularity: t(`customerIntelligence:timeline.${data.timelineGranularity}`),
+              })}
             </p>
           </div>
-        ) : (
-          <div className="card overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-              <div className="w-36 flex-shrink-0">{t('customers:fields.invoiceNumber')}</div>
-              <div className="w-28 flex-shrink-0">{t('customers:fields.date')}</div>
-              <div className="w-16 flex-shrink-0 text-center hidden sm:block">{t('customers:fields.items')}</div>
-              <div className="flex-1 text-end">{t('customers:fields.totalSar')}</div>
-              <div className="w-24 flex-shrink-0 text-end hidden md:block">{t('customers:fields.vatSar')}</div>
-              <div className="w-20 flex-shrink-0 text-center">{t('customers:fields.status')}</div>
-              <div className="w-20 flex-shrink-0 text-center hidden sm:block">{t('customers:fields.payment')}</div>
-            </div>
-
-            {invoices.map(inv => {
-              const statusVariant = STATUS_MAP[inv.status] ?? 'neutral'
-              const payVariant = PAYMENT_MAP[inv.payment_status] ?? 'neutral'
-              const itemCount   = Array.isArray(inv.invoice_items) ? inv.invoice_items.length : 0
-
-              return (
-                <div
-                  key={inv.id}
-                  className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50/70 transition-colors border-b border-gray-100 last:border-0"
-                >
-                  {/* Invoice number */}
-                  <div className="w-36 flex-shrink-0">
-                    <p className="text-sm font-semibold text-primary-600 font-mono">
-                      {inv.invoice_number}
-                    </p>
-                  </div>
-
-                  {/* Date */}
-                  <div className="w-28 flex-shrink-0">
-                    <p className="text-sm text-gray-600">
-                      {new Date(inv.invoice_date).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', {
-                        day: '2-digit', month: 'short', year: 'numeric',
-                      })}
-                    </p>
-                  </div>
-
-                  {/* Item count */}
-                  <div className="w-16 flex-shrink-0 text-center hidden sm:block">
-                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                      {t('customers:invoiceCount', { count: itemCount })}
+          {data.timeline.length ? (
+            <div className="space-y-3" role="img" aria-label={t('customerIntelligence:timeline.title')}>
+              {data.timeline.map(point => {
+                const width = Math.max(3, Math.abs(point.netPurchases) / maxTimeline * 100)
+                const accessible = t('customerIntelligence:timeline.accessibleSummary', {
+                  period: formatDate(point.bucketStart, locale),
+                  gross: sarStr(point.grossPurchases),
+                  credited: sarStr(point.creditedAmount),
+                  net: sarStr(point.netPurchases),
+                  count: point.invoiceCount,
+                })
+                return (
+                  <div key={point.bucketStart} className="grid grid-cols-[6rem_1fr_auto] sm:grid-cols-[8rem_1fr_auto] gap-3 items-center">
+                    <span className="text-xs text-gray-500">{formatDate(point.bucketStart, locale)}</span>
+                    <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden" aria-hidden="true">
+                      <div
+                        className={`h-full rounded-full ${point.netPurchases < 0 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                        style={{ width: `${width}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-semibold text-gray-700 tabular-nums" dir="ltr">
+                      {sarStr(point.netPurchases)}
                     </span>
+                    <span className="sr-only">{accessible}</span>
                   </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="py-12 text-center text-sm text-gray-400">
+              {t('customerIntelligence:empty.noActivity')}
+            </div>
+          )}
+        </section>
 
-                  {/* Total */}
-                  <div className="flex-1 text-right">
-                    <p className="text-sm font-bold text-gray-900 tabular-nums">
-                      {inv.total_amount.toLocaleString('en-US', {
-                        minimumFractionDigits: 2, maximumFractionDigits: 2,
-                      })}
-                    </p>
-                  </div>
-
-                  {/* VAT */}
-                  <div className="w-24 flex-shrink-0 text-right hidden md:block">
-                    <p className="text-sm text-gray-500 tabular-nums">
-                      {inv.tax_amount.toLocaleString('en-US', {
-                        minimumFractionDigits: 2, maximumFractionDigits: 2,
-                      })}
-                    </p>
-                  </div>
-
-                  {/* Invoice status */}
-                  <div className="w-20 flex-shrink-0 flex justify-center">
-                    <Badge variant={statusVariant}>
-                      {t(`customers:status.${inv.status}`, { defaultValue: t('customers:status.unknown') })}
-                    </Badge>
-                  </div>
-
-                  {/* Payment status */}
-                  <div className="w-20 flex-shrink-0 flex justify-center hidden sm:flex">
-                    <Badge variant={payVariant}>
-                      {t(`customers:status.${inv.payment_status}`, { defaultValue: t('customers:status.unknown') })}
-                    </Badge>
-                  </div>
-                </div>
-              )
-            })}
-
-            {/* Total row */}
-            <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 border-t border-gray-100">
-              <div className="w-36 flex-shrink-0" />
-              <div className="w-28 flex-shrink-0" />
-              <div className="w-16 flex-shrink-0 hidden sm:block" />
-              <div className="flex-1 text-right">
-                <p className="text-sm font-bold text-primary-600 tabular-nums">
-                  <Rial amount={totalSpent} />
-                </p>
-                <p className="text-[10px] text-gray-400">{t('customers:postedTotal')}</p>
-              </div>
-              <div className="w-24 flex-shrink-0 text-right hidden md:block">
-                <p className="text-sm font-semibold text-gray-600 tabular-nums">
-                  {totalVat.toLocaleString('en-US', {
-                    minimumFractionDigits: 2, maximumFractionDigits: 2,
-                  })}
-                </p>
-              </div>
-              <div className="w-20 flex-shrink-0" />
-              <div className="w-20 flex-shrink-0 hidden sm:block" />
+        <section className="card p-4" aria-labelledby="recent-title">
+          <h2 id="recent-title" className="text-sm font-bold text-gray-900">
+            {t('customerIntelligence:recent.title')}
+          </h2>
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <div className="rounded-xl bg-emerald-50 p-3">
+              <p className="text-xs text-emerald-700">{t('customerIntelligence:recent.last30')}</p>
+              <p className="text-lg font-bold text-emerald-900 mt-1"><Rial amount={data.recentComparison.recentGross} /></p>
+              <p className="text-xs text-emerald-700 mt-1">
+                {t('customerIntelligence:recent.invoices', { count: data.recentComparison.recentInvoiceCount })}
+              </p>
+            </div>
+            <div className="rounded-xl bg-gray-50 p-3">
+              <p className="text-xs text-gray-500">{t('customerIntelligence:recent.previous30')}</p>
+              <p className="text-lg font-bold text-gray-800 mt-1"><Rial amount={data.recentComparison.previousGross} /></p>
+              <p className="text-xs text-gray-500 mt-1">
+                {t('customerIntelligence:recent.invoices', { count: data.recentComparison.previousInvoiceCount })}
+              </p>
             </div>
           </div>
-        )}
+          <p className="mt-3 text-xs text-gray-500 leading-relaxed">
+            {data.recentComparison.grossPercentChange == null
+              ? t('customerIntelligence:recent.noComparable')
+              : data.recentComparison.grossPercentChange > 0
+                ? t('customerIntelligence:recent.increase', {
+                    percent: Math.abs(data.recentComparison.grossPercentChange).toLocaleString('en-US'),
+                  })
+                : data.recentComparison.grossPercentChange < 0
+                  ? t('customerIntelligence:recent.decrease', {
+                      percent: Math.abs(data.recentComparison.grossPercentChange).toLocaleString('en-US'),
+                    })
+                  : t('customerIntelligence:recent.unchanged')}
+          </p>
+        </section>
       </div>
+
+      <section className="card overflow-hidden" aria-labelledby="top-products-title">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h2 id="top-products-title" className="text-sm font-bold text-gray-900">
+            {t('customerIntelligence:products.title')}
+          </h2>
+          <p className="text-xs text-gray-400 mt-0.5">{t('customerIntelligence:products.subtitle')}</p>
+        </div>
+        {data.topProducts.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead className="bg-gray-50 text-xs text-gray-500">
+                <tr>
+                  <th scope="col" className="text-start font-semibold px-4 py-2.5">{t('customerIntelligence:products.product')}</th>
+                  <th scope="col" className="text-start font-semibold px-4 py-2.5">{t('customerIntelligence:products.unit')}</th>
+                  <th scope="col" className="text-end font-semibold px-4 py-2.5">{t('customerIntelligence:products.quantity')}</th>
+                  <th scope="col" className="text-end font-semibold px-4 py-2.5">{t('customerIntelligence:products.amount')}</th>
+                  <th scope="col" className="text-end font-semibold px-4 py-2.5">{t('customerIntelligence:products.invoices')}</th>
+                  <th scope="col" className="text-end font-semibold px-4 py-2.5">{t('customerIntelligence:products.lastPurchased')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.topProducts.map(product => (
+                  <tr key={`${product.productId}:${product.productUnitId}:${product.unitName}`} className="border-t border-gray-100 hover:bg-gray-50/60">
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        disabled={!product.productId}
+                        title={t('customerIntelligence:products.filter')}
+                        onClick={() => product.productId && setFilters(current => ({
+                          ...current,
+                          productId: product.productId,
+                          productUnitId: product.productUnitId,
+                        }))}
+                        className="font-semibold text-gray-900 hover:text-primary-600 text-start disabled:cursor-default disabled:hover:text-gray-900"
+                      >
+                        {isRtl ? product.nameAr || product.name : product.name || product.nameAr}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {isRtl ? product.unitNameAr || product.unitName : product.unitName || product.unitNameAr}
+                    </td>
+                    <td className="px-4 py-3 text-end tabular-nums" dir="ltr">{product.quantity.toLocaleString('en-US', { maximumFractionDigits: 6 })}</td>
+                    <td className="px-4 py-3 text-end font-semibold"><Rial amount={product.grossAmount} /></td>
+                    <td className="px-4 py-3 text-end tabular-nums">{product.invoiceCount.toLocaleString('en-US')}</td>
+                    <td className="px-4 py-3 text-end text-gray-500">{formatDate(product.lastPurchased, locale)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="py-12 text-center text-sm text-gray-400">{t('customerIntelligence:empty.noProducts')}</div>
+        )}
+      </section>
+
+      <section className="card p-4" aria-labelledby="insights-title">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center flex-shrink-0">
+            <Sparkles size={17} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 id="insights-title" className="text-sm font-bold text-gray-900">
+              {t('customerIntelligence:insights.title')}
+            </h2>
+            <p className="text-xs text-gray-400 mt-0.5">{t('customerIntelligence:insights.subtitle')}</p>
+            <ul className="mt-3 grid sm:grid-cols-2 gap-2">
+              {insights.map((insight, index) => (
+                <li key={`${insight.key}:${index}`} className="rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-600 leading-relaxed">
+                  {insightText(insight, t)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section className="card overflow-hidden" aria-labelledby="history-title">
+        <div className="px-4 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1">
+            <h2 id="history-title" className="text-sm font-bold text-gray-900">
+              {t('customerIntelligence:history.title')}
+            </h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {t('customerIntelligence:history.subtitle', { count: history?.totalCount ?? 0 })}
+            </p>
+          </div>
+          <label>
+            <span className="sr-only">{t('customerIntelligence:filters.activityType')}</span>
+            <select
+              className="input py-2 text-sm"
+              value={historyType}
+              onChange={event => {
+                setHistoryType(event.target.value as CustomerActivityType)
+                setHistoryPage(1)
+              }}
+            >
+              <option value="all">{t('customerIntelligence:filters.allActivity')}</option>
+              <option value="invoice">{t('customerIntelligence:filters.invoicesOnly')}</option>
+              <option value="credit_note">{t('customerIntelligence:filters.creditsOnly')}</option>
+            </select>
+          </label>
+        </div>
+
+        <div aria-live="polite" aria-busy={historyLoading}>
+          {historyLoading ? (
+            <div className="py-16 flex justify-center"><LoadingSpinner /></div>
+          ) : historyError ? (
+            <div className="py-12 text-center" role="alert">
+              <p className="text-sm text-red-600">{historyError}</p>
+              <Button size="sm" variant="secondary" className="mt-3" onClick={() => setHistoryRefreshKey(key => key + 1)}>
+                {t('customerIntelligence:actions.retry')}
+              </Button>
+            </div>
+          ) : history?.rows.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[920px] text-sm">
+                <thead className="bg-gray-50 text-xs text-gray-500">
+                  <tr>
+                    <th scope="col" className="text-start font-semibold px-4 py-2.5">{t('customerIntelligence:history.date')}</th>
+                    <th scope="col" className="text-start font-semibold px-4 py-2.5">{t('customerIntelligence:history.document')}</th>
+                    <th scope="col" className="text-start font-semibold px-4 py-2.5">{t('customerIntelligence:history.branch')}</th>
+                    <th scope="col" className="text-end font-semibold px-4 py-2.5">{t('customerIntelligence:history.items')}</th>
+                    <th scope="col" className="text-end font-semibold px-4 py-2.5">{t('customerIntelligence:history.gross')}</th>
+                    <th scope="col" className="text-end font-semibold px-4 py-2.5">{t('customerIntelligence:history.credited')}</th>
+                    <th scope="col" className="text-end font-semibold px-4 py-2.5">{t('customerIntelligence:history.net')}</th>
+                    <th scope="col" className="text-center font-semibold px-4 py-2.5">{t('customerIntelligence:history.status')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.rows.map(row => (
+                    <tr key={row.id} className="border-t border-gray-100 hover:bg-gray-50/60">
+                      <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(row.createdAt, locale, true)}</td>
+                      <td className="px-4 py-3">
+                        <Link
+                          to={`/invoices/${row.id}`}
+                          className="font-semibold text-primary-600 hover:text-primary-700"
+                          aria-label={t('customerIntelligence:history.openDocument', { reference: row.reference })}
+                        >
+                          {row.reference}
+                        </Link>
+                        <p className="text-xs text-gray-400 mt-0.5">{t(`customerIntelligence:history.${row.documentType}`)}</p>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">{isRtl ? row.branchNameAr || row.branchName : row.branchName || row.branchNameAr}</td>
+                      <td className="px-4 py-3 text-end tabular-nums">{row.itemCount}</td>
+                      <td className="px-4 py-3 text-end"><Rial amount={row.grossAmount} /></td>
+                      <td className="px-4 py-3 text-end text-amber-700"><Rial amount={row.creditedAmount} /></td>
+                      <td className={`px-4 py-3 text-end font-semibold ${row.netEffect < 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
+                        <Rial amount={row.netEffect} />
+                      </td>
+                      <td className="px-4 py-3 text-center"><Badge variant="success">{t('customerIntelligence:history.posted')}</Badge></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="py-14 text-center">
+              <Receipt size={22} className="mx-auto text-gray-300" />
+              <p className="text-sm font-medium text-gray-500 mt-3">
+                {data.summary.invoiceCount === 0 && data.summary.creditNoteCount === 0
+                  ? t('customerIntelligence:empty.noPurchases')
+                  : historyType === 'invoice' && data.summary.creditNoteCount > 0
+                    ? t('customerIntelligence:empty.onlyCredits')
+                    : t('customerIntelligence:empty.noActivity')}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">{t('customerIntelligence:empty.noActivityHint')}</p>
+            </div>
+          )}
+        </div>
+
+        {!!history?.totalPages && history.totalPages > 1 && (
+          <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={historyPage <= 1 || historyLoading}
+              onClick={() => setHistoryPage(page => Math.max(1, page - 1))}
+            >
+              {t('customerIntelligence:actions.previous')}
+            </Button>
+            <p className="text-xs text-gray-500" aria-live="polite">
+              {t('customerIntelligence:history.page', { page: historyPage, pages: history.totalPages })}
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={historyPage >= history.totalPages || historyLoading}
+              onClick={() => setHistoryPage(page => page + 1)}
+            >
+              {t('customerIntelligence:actions.next')}
+            </Button>
+          </div>
+        )}
+      </section>
+
+      <p className="text-xs text-gray-400 leading-relaxed">{t('customerIntelligence:pdf.disclaimer')}</p>
+
+      <CustomerModal
+        open={editingCustomer !== null}
+        customer={editingCustomer}
+        onClose={() => setEditingCustomer(null)}
+        onSaved={() => void loadSummary()}
+      />
     </div>
   )
 }

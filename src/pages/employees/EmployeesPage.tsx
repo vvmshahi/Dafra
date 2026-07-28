@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Users, Plus, Search, Pencil, Trash2, X,
   Loader2, Building2, Phone, UserCheck, UserX, AlertTriangle,
@@ -9,12 +9,14 @@ import { Badge } from '@/components/ui/Badge'
 import { Switch } from '@/components/ui/Switch'
 import type { Employee, Branch } from '@/types/database'
 import { useTranslation } from 'react-i18next'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { toast } from 'sonner'
 
 const db = () => supabase as any
 
-// ── Employee drawer ───────────────────────────────────────────────────────────
+// ── Centered employee editor modal ───────────────────────────────────────────
 
-interface DrawerProps {
+interface EmployeeModalProps {
   employee: Employee | null
   branches: Branch[]
   tenantId: string
@@ -22,7 +24,7 @@ interface DrawerProps {
   onClose: () => void
 }
 
-function EmployeeDrawer({ employee, branches, tenantId, onSave, onClose }: DrawerProps) {
+function EmployeeModal({ employee, branches, tenantId, onSave, onClose }: EmployeeModalProps) {
   const { t } = useTranslation('employees')
   const isEdit = !!employee
   const [form, setForm] = useState({
@@ -37,12 +39,18 @@ function EmployeeDrawer({ employee, branches, tenantId, onSave, onClose }: Drawe
   })
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState<string | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const nameRef = useRef<HTMLInputElement>(null)
+  const branchRef = useRef<HTMLSelectElement>(null)
+  const openerRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null)
+  const savingRef = useRef(false)
+  savingRef.current = saving
 
   const set = (k: string, v: string | boolean) => setForm(f => ({ ...f, [k]: v }))
 
   async function save() {
-    if (!form.full_name.trim()) { setError(t('errors.name')); return }
-    if (!form.branch_id) { setError(t('errors.branch')); return }
+    if (!form.full_name.trim()) { setError(t('errors.name')); nameRef.current?.focus(); return }
+    if (!form.branch_id) { setError(t('errors.branch')); branchRef.current?.focus(); return }
     setSaving(true)
     setError(null)
     const payload = {
@@ -56,28 +64,66 @@ function EmployeeDrawer({ employee, branches, tenantId, onSave, onClose }: Drawe
       hire_date:    form.hire_date     || null,
       is_active:    form.is_active,
     }
-    const { error: dbErr } = isEdit
-      ? await db().from('employees').update(payload).eq('id', employee!.id)
-      : await db().from('employees').insert(payload)
+    const result = isEdit
+      ? await db().from('employees').update(payload).eq('id', employee!.id).select('id').single()
+      : await db().from('employees').insert(payload).select('id').single()
     setSaving(false)
-    if (dbErr) { console.error('Employee save failed', dbErr); setError(t('errors.save')); return }
+    if (result.error || !result.data?.id || (isEdit && result.data.id !== employee!.id)) {
+      console.error('Employee save failed', { code: result.error?.code ?? 'unconfirmed_response' })
+      setError(t('errors.save'))
+      return
+    }
     onSave()
   }
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const frame = window.requestAnimationFrame(() => nameRef.current?.focus())
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !savingRef.current) {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key !== 'Tab' || !dialogRef.current) return
+      const nodes = [...dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )]
+      if (!nodes.length) return
+      if (event.shiftKey && document.activeElement === nodes[0]) {
+        event.preventDefault()
+        nodes.at(-1)?.focus()
+      } else if (!event.shiftKey && document.activeElement === nodes.at(-1)) {
+        event.preventDefault()
+        nodes[0].focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      document.removeEventListener('keydown', onKeyDown)
+      document.body.style.overflow = previousOverflow
+      openerRef.current?.focus()
+    }
+  }, [onClose])
+
   return (
-    <div className="fixed inset-0 z-50 flex">
-      <div className="flex-1 bg-black/40" onClick={onClose} />
-      <aside className="w-full max-w-md bg-white h-full flex flex-col shadow-2xl overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-2 sm:p-5"
+      onMouseDown={event => { if (event.target === event.currentTarget && !saving) onClose() }}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="employee-modal-title"
+        className="flex max-h-[calc(100dvh-1rem)] w-full max-w-[820px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-h-[min(90vh,760px)]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">
+          <h2 id="employee-modal-title" className="text-sm font-semibold text-gray-900">
             {t(isEdit ? 'edit' : 'add')}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <button type="button" onClick={onClose} disabled={saving} aria-label={t('actions.cancel')}
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus-visible:ring-2 focus-visible:ring-primary-500 disabled:opacity-50">
             <X size={18} />
           </button>
         </div>
 
-        <div className="flex-1 p-6 space-y-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4 sm:p-6">
           {error && (
             <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl p-3">
               <AlertTriangle size={13} className="text-red-500 flex-shrink-0" />
@@ -88,17 +134,17 @@ function EmployeeDrawer({ employee, branches, tenantId, onSave, onClose }: Drawe
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <label className="label">{t('fields.fullName')} <span className="text-red-400">*</span></label>
-              <input className="input" value={form.full_name}
+              <input ref={nameRef} className="input" value={form.full_name}
                 onChange={e => set('full_name', e.target.value)} placeholder={t('placeholders.name')} dir="auto" />
             </div>
             <div className="col-span-2">
               <label className="label">{t('fields.fullNameAr')}</label>
               <input className="input" dir="rtl" value={form.full_name_ar}
-                onChange={e => set('full_name_ar', e.target.value)} placeholder="أحمد الراشد" />
+                onChange={e => set('full_name_ar', e.target.value)} placeholder={t('placeholders.nameAr')} />
             </div>
             <div className="col-span-2">
               <label className="label">{t('fields.branch')} <span className="text-red-400">*</span></label>
-              <select className="input" value={form.branch_id}
+              <select ref={branchRef} className="input" value={form.branch_id}
                 onChange={e => set('branch_id', e.target.value)}>
                 <option value="">{t('placeholders.branch')}</option>
                 {branches.map(b => (
@@ -138,18 +184,18 @@ function EmployeeDrawer({ employee, branches, tenantId, onSave, onClose }: Drawe
           </div>
         </div>
 
-        <div className="px-6 pb-6 flex gap-3 border-t border-gray-100 pt-4">
-          <button onClick={onClose}
+        <div className="flex flex-col-reverse gap-2 border-t border-gray-100 bg-gray-50 px-4 py-3 sm:flex-row sm:justify-end sm:px-6">
+          <button type="button" onClick={onClose} disabled={saving}
             className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
             {t('actions.cancel')}
           </button>
-          <button onClick={save} disabled={saving}
+          <button type="button" onClick={save} disabled={saving}
             className="flex-1 py-2.5 rounded-xl bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {saving && <Loader2 size={14} className="animate-spin" />}
             {t(saving ? 'actions.saving' : isEdit ? 'actions.save' : 'actions.add')}
           </button>
         </div>
-      </aside>
+      </div>
     </div>
   )
 }
@@ -228,6 +274,8 @@ export default function EmployeesPage() {
   const [search,    setSearch]    = useState('')
   const [branchFilter, setBranchFilter] = useState<string>('all')
   const [drawer,    setDrawer]    = useState<'add' | Employee | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(async () => {
     const tid = profile?.tenant_id
@@ -244,10 +292,19 @@ export default function EmployeesPage() {
 
   useEffect(() => { load() }, [load])
 
-  async function deleteEmployee(id: string) {
-    if (!confirm(t('deleteConfirm'))) return
-    await db().from('employees').delete().eq('id', id)
-    setEmployees(prev => prev.filter(e => e.id !== id))
+  async function deleteEmployee() {
+    if (!deleteTarget || deleting) return
+    setDeleting(true)
+    const result = await db().from('employees').delete().eq('id', deleteTarget.id).select('id').maybeSingle()
+    if (result.error || result.data?.id !== deleteTarget.id) {
+      toast.error(t('errors.delete'))
+      setDeleting(false)
+      return
+    }
+    setEmployees(prev => prev.filter(employee => employee.id !== deleteTarget.id))
+    setDeleteTarget(null)
+    setDeleting(false)
+    toast.success(t('success.deleted'))
   }
 
   const branchMap = Object.fromEntries(branches.map(b => [b.id, b.name]))
@@ -318,12 +375,12 @@ export default function EmployeesPage() {
 
       {/* Search */}
       <div className="relative">
-        <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+        <Search size={14} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder={t('search')}
-          className="input pl-9 w-full"
+          className="input w-full ps-9"
         />
       </div>
 
@@ -379,7 +436,7 @@ export default function EmployeesPage() {
                     emp={emp}
                     branchName={emp.branch_id ? (branchMap[emp.branch_id] ?? null) : null}
                     onEdit={() => setDrawer(emp)}
-                    onDelete={() => deleteEmployee(emp.id)}
+                    onDelete={() => setDeleteTarget(emp)}
                   />
                 ))}
               </tbody>
@@ -409,9 +466,9 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* Drawer */}
+      {/* Centered add/edit modal */}
       {drawer !== null && (
-        <EmployeeDrawer
+        <EmployeeModal
           employee={typeof drawer === 'string' ? null : drawer}
           branches={branches}
           tenantId={profile!.tenant_id!}
@@ -419,6 +476,14 @@ export default function EmployeesPage() {
           onClose={() => setDrawer(null)}
         />
       )}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        kind="delete"
+        name={deleteTarget?.full_name}
+        busy={deleting}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => void deleteEmployee()}
+      />
     </div>
   )
 }

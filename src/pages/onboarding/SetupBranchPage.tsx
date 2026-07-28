@@ -24,6 +24,7 @@ import {
 } from '@/lib/utils/branchUsername'
 import { CompactLanguageSelector } from '@/components/localization/CompactLanguageSelector'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 const VAT_RE    = /^3\d{13}3$/
 const CR_RE     = /^[a-zA-Z0-9]+$/
@@ -31,10 +32,21 @@ const BLDG_RE   = /^\d{4}$/
 const POSTAL_RE = /^\d{5}$/
 
 export default function SetupBranchPage() {
-  const { t } = useTranslation('onboarding')
+  const { t } = useTranslation(['onboarding', 'auth'])
   const navigate = useNavigate()
-  const { profile, refreshBranchCount, firstBranchProvisioningState } = useAuth()
+  const {
+    profile,
+    refreshBranchCount,
+    firstBranchProvisioningState,
+    signOut,
+    signingOut,
+  } = useAuth()
   const { isPhase2 } = useSubscription()
+
+  async function handleSignOut() {
+    const result = await signOut()
+    if (result?.error) toast.error(t('auth:signOutFailure'))
+  }
 
   const [name,     setName]     = useState('')
   const [vat,      setVat]      = useState('')
@@ -144,11 +156,13 @@ export default function SetupBranchPage() {
           <div className="flex items-center gap-2">
           <CompactLanguageSelector inverse />
           <button
-            onClick={() => supabase.auth.signOut()}
+            onClick={() => void handleSignOut()}
+            disabled={signingOut}
+            aria-label={t(signingOut ? 'auth:signingOut' : 'auth:signOut')}
             className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white"
           >
             <LogOut size={13} />
-            {t('actions.signOut')}
+            {t(signingOut ? 'auth:signingOut' : 'actions.signOut')}
           </button>
           </div>
         </div>

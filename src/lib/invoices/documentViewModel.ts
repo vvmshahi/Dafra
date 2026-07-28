@@ -44,12 +44,30 @@ export interface DocumentViewModel {
     afterSaleAction: 'receipt' | 'a4' | 'both'
   }>
   readonly buyer: Readonly<{ name: string | null; nameAr: string | null; vatNumber: string | null; address: string | null; addressAr: string | null; identifierType: string | null; identifierValue: string | null; type: string | null }>
-  readonly items: readonly Readonly<{ description: string; descriptionAr: string | null; quantity: number; unitPrice: number; discount: number; taxableAmount: number; vatRate: number; vatAmount: number; vatCategory?: string | null; lineTotal: number; creditedQuantity: number | null }>[]
+  readonly items: readonly Readonly<{
+    description: string
+    descriptionAr: string | null
+    quantity: number
+    unitName: string | null
+    unitNameAr: string | null
+    unitCode: string | null
+    baseQuantity: number | null
+    baseUnitName: string | null
+    baseUnitNameAr: string | null
+    unitPrice: number
+    discount: number
+    taxableAmount: number
+    vatRate: number
+    vatAmount: number
+    vatCategory?: string | null
+    lineTotal: number
+    creditedQuantity: number | null
+  }>[]
   readonly totals: Readonly<{ currency: 'SAR'; subtotal: number; discount: number; taxableAmount: number; vat: number; total: number; paid: number; refunded: number; balance: number | null }>
   readonly payments: Readonly<{ method: string; amount: number; cashTendered: number | null; change: number | null; reference: string | null }>[]
   readonly compliance: Readonly<{ qr: Readonly<{ source: 'stored_reference' | 'sample' | 'unavailable'; reference: string | null }>; xmlState: 'available' | 'unavailable'; originalDocument: Readonly<{ id: string | null; number: string | null }>; creditReason: string | null }>
   readonly template: Readonly<{ rendererFamily: 'thermal' | 'a4'; requestedId: string; requestedVersion: number; resolvedId: string; resolvedVersion: number; fallback: boolean; fallbackReason: string | null; headerStyle: A4HeaderStyle | null }>
-  readonly format: Readonly<{ currency: 'SAR'; minimumFractionDigits: 2; maximumFractionDigits: 2; quantityMaximumFractionDigits: 3; numberDirection: 'ltr'; dateLocale: 'en-SA' | 'ar-SA' }>
+  readonly format: Readonly<{ currency: 'SAR'; minimumFractionDigits: 2; maximumFractionDigits: 2; quantityMaximumFractionDigits: 6; numberDirection: 'ltr'; dateLocale: 'en-SA' | 'ar-SA' }>
 }
 
 export interface DocumentPresentationInput {
@@ -98,7 +116,7 @@ export function buildPresentationDocument(input: DocumentPresentationInput, base
       afterSaleAction: settings.after_sale_action ?? (input.printMode === 'pdf' ? 'a4' : input.printMode === 'both' ? 'both' : 'receipt'),
     },
     template: { rendererFamily: 'a4', requestedId: template.requestedId, requestedVersion: template.requestedVersion, resolvedId: template.resolvedId, resolvedVersion: template.resolvedVersion, fallback: !template.exact, fallbackReason: template.exact ? null : 'unknown_historical_template', headerStyle: settings.a4.header_style },
-    format: { currency: 'SAR', minimumFractionDigits: 2, maximumFractionDigits: 2, quantityMaximumFractionDigits: 3, numberDirection: 'ltr', dateLocale: language === 'ar' ? 'ar-SA' : 'en-SA' },
+    format: { currency: 'SAR', minimumFractionDigits: 2, maximumFractionDigits: 2, quantityMaximumFractionDigits: 6, numberDirection: 'ltr', dateLocale: language === 'ar' ? 'ar-SA' : 'en-SA' },
   })
 }
 

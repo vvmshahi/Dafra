@@ -1,4 +1,4 @@
-import { forwardRef } from 'react'
+import { forwardRef, useId } from 'react'
 import type { LucideIcon } from 'lucide-react'
 
 interface Props extends React.InputHTMLAttributes<HTMLInputElement> {
@@ -10,7 +10,10 @@ interface Props extends React.InputHTMLAttributes<HTMLInputElement> {
 
 export const Input = forwardRef<HTMLInputElement, Props>(
   ({ label, error, helperText, icon: Icon, className = '', id, ...props }, ref) => {
-    const inputId = id ?? label?.toLowerCase().replace(/\s+/g, '-')
+    const generatedId = useId().replace(/:/g, '')
+    const inputId = id ?? `field-${generatedId}`
+    const helperId = helperText && !error ? `${inputId}-helper` : undefined
+    const errorId = error ? `${inputId}-error` : undefined
     return (
       <div className="w-full">
         {label && (
@@ -27,12 +30,22 @@ export const Input = forwardRef<HTMLInputElement, Props>(
           <input
             ref={ref}
             id={inputId}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={errorId ?? helperId}
             className={`input ${Icon ? 'ps-10' : ''} ${error ? 'border-red-400 focus:border-red-400 focus:ring-red-400/20' : ''} ${className}`}
             {...props}
           />
         </div>
-        {error      && <p className="mt-1.5 text-xs text-red-600 text-start" dir="auto">{error}</p>}
-        {helperText && !error && <p className="mt-1.5 text-xs text-gray-500 text-start">{helperText}</p>}
+        {error && (
+          <p id={errorId} className="mt-1.5 text-xs text-red-600 text-start" dir="auto" role="alert">
+            {error}
+          </p>
+        )}
+        {helperText && !error && (
+          <p id={helperId} className="mt-1.5 text-xs text-gray-500 text-start">
+            {helperText}
+          </p>
+        )}
       </div>
     )
   },

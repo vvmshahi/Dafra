@@ -20,6 +20,7 @@ import ComplianceReadinessCard from '@/components/compliance/ComplianceReadiness
 import { ENABLE_OFFICIAL_SELLER_IDENTITY } from '@/lib/releaseFlags'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/Badge'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import {
   getProductionOnboardingStatus,
   getSandboxDemoConnectionStatus,
@@ -424,6 +425,7 @@ function ProductionOnboardingPanel({
   const [loading, setLoading] = useState(false)
   const [statusLoading, setStatusLoading] = useState(false)
   const [showReconnect, setShowReconnect] = useState(false)
+  const [reconnectConfirmOpen, setReconnectConfirmOpen] = useState(false)
   const [showDisconnect, setShowDisconnect] = useState(false)
   const [disconnectPhrase, setDisconnectPhrase] = useState('')
   const [disconnecting, setDisconnecting] = useState(false)
@@ -468,7 +470,7 @@ function ProductionOnboardingPanel({
     return () => { mounted = false }
   }, [branch.id, isOwner, onStatusChange])
 
-  const connect = async () => {
+  const connect = async (reconnectConfirmed = false) => {
     if (!isOwner) {
       setError(t('errors.ownerOnly'))
       return
@@ -477,7 +479,8 @@ function ProductionOnboardingPanel({
       setError(t('errors.alreadyConnected'))
       return
     }
-    if (isConnected && showReconnect && !window.confirm(t('connection.reconnectConfirm'))) {
+    if (isConnected && showReconnect && !reconnectConfirmed) {
+      setReconnectConfirmOpen(true)
       return
     }
     if (!/^[0-9]{6}$/.test(otp)) {
@@ -700,7 +703,7 @@ function ProductionOnboardingPanel({
       {showOnboardingForm && !(statusLoading && !status) && (
         <div>
           <button
-            onClick={connect}
+            onClick={() => void connect()}
             disabled={!isOwner || loading || otp.length !== 6 || !functionalityMap}
             className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50"
           >
@@ -709,6 +712,7 @@ function ProductionOnboardingPanel({
           </button>
         </div>
       )}
+      <ConfirmDialog open={reconnectConfirmOpen} kind="zatcaReconnect" busy={loading} onClose={() => setReconnectConfirmOpen(false)} onConfirm={() => { setReconnectConfirmOpen(false); void connect(true) }} />
 
       <div className="border-t border-gray-100 pt-4 space-y-3">
         <div className="flex items-center justify-between">

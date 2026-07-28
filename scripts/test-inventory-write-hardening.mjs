@@ -6,7 +6,7 @@ const root = process.cwd()
 const read = path => readFileSync(join(root, path), 'utf8')
 const migration = read('supabase/migrations/20260725000300_inventory_balance_write_hardening.sql')
 const currentSchema = read('supabase/migrations/20260721000100_dafra_current_schema_and_security.sql')
-const drawer = read('src/pages/inventory/StockItemDrawer.tsx')
+const drawer = read('src/pages/inventory/StockItemModal.tsx')
 const productDrawer = read('src/pages/products/ProductDrawer.tsx')
 
 const results = []

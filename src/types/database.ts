@@ -314,7 +314,10 @@ export interface Database {
           p_payload: {
             product_id: string
             supplier_id?: string | null
-            quantity: number
+            quantity?: number
+            product_unit_id?: string | null
+            package_quantity?: number
+            expected_product_unit_version?: number
             unit_cost: number
             idempotency_key: string
             note?: string | null
@@ -438,6 +441,22 @@ export interface Database {
       get_invoice_refundable_items: {
         Args: { p_invoice_id: string }
         Returns: RefundableInvoiceItem[]
+      }
+      get_invoice_refundable_items_v2: {
+        Args: { p_invoice_id: string }
+        Returns: RefundableInvoiceItem[]
+      }
+      get_branch_selling_product_units: {
+        Args: { p_branch_id: string }
+        Returns: ProductUnit[]
+      }
+      get_sales_report_summary_v2: {
+        Args: {
+          p_start_date: string
+          p_end_date: string
+          p_branch_id?: string | null
+        }
+        Returns: Record<string, unknown>
       }
       confirm_purchase_receiving: {
         Args: { p_purchase_id: string; p_confirm?: boolean }
@@ -1295,6 +1314,24 @@ export interface InvoiceItem {
   total: number
   sort_order: number
   created_at: string
+  product_unit_id?: string | null
+  product_unit_version?: number | null
+  selling_unit_name?: string | null
+  selling_unit_name_ar?: string | null
+  selling_unit_code?: string | null
+  package_quantity?: number | null
+  package_quantity_scale?: number | null
+  conversion_to_base?: number | null
+  base_quantity?: number | null
+  base_unit_name?: string | null
+  base_unit_name_ar?: string | null
+  base_unit_code?: string | null
+  base_quantity_scale?: number | null
+  package_pricing_method?: 'calculated' | 'custom' | null
+  base_unit_price?: number | null
+  package_unit_price?: number | null
+  stock_tracked_at_sale?: boolean | null
+  service_item_at_sale?: boolean | null
 }
 
 export interface RefundableInvoiceItem {
@@ -1323,6 +1360,42 @@ export interface RefundableInvoiceItem {
   remaining_total: number
   track_stock: boolean
   is_service: boolean
+  product_unit_id?: string | null
+  product_unit_version?: number | null
+  selling_unit_name?: string | null
+  selling_unit_name_ar?: string | null
+  selling_unit_code?: string | null
+  package_quantity?: number | null
+  package_quantity_scale?: number | null
+  conversion_to_base?: number | null
+  base_quantity?: number | null
+  base_unit_name?: string | null
+  base_unit_name_ar?: string | null
+  base_unit_code?: string | null
+  base_quantity_scale?: number | null
+  package_unit_price?: number | null
+  base_unit_price?: number | null
+  stock_tracked_at_sale?: boolean | null
+  service_item_at_sale?: boolean | null
+}
+
+export interface ProductUnit {
+  id: string
+  product_id: string
+  name: string
+  name_ar: string | null
+  unit_code: string
+  conversion_to_base: number
+  quantity_scale: number
+  pricing_method: 'calculated' | 'custom'
+  custom_selling_price?: number | null
+  resolved_selling_price: number
+  selling_enabled?: boolean
+  receiving_enabled?: boolean
+  is_base: boolean
+  is_active?: boolean
+  sort_order?: number
+  version: number
 }
 
 export interface Payment {
@@ -1733,6 +1806,18 @@ export interface ProductStockReceipt {
   reference: string | null
   created_by: string
   created_at: string
+  product_unit_id?: string | null
+  product_unit_version?: number | null
+  package_quantity?: number | null
+  conversion_to_base?: number | null
+  base_quantity?: number | null
+  package_unit_name?: string | null
+  base_unit_name?: string | null
+  package_unit_code?: string | null
+  base_unit_code?: string | null
+  package_unit_cost?: number | null
+  base_unit_cost?: number | null
+  request_fingerprint?: string | null
 }
 
 export type ProductStockReceiptInsert = Omit<ProductStockReceipt, 'id' | 'created_at'>

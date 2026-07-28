@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 import { authErrorKey } from '@/localization/authErrors'
 import { CompactLanguageSelector } from '@/components/localization/CompactLanguageSelector'
+import { useAuth } from '@/hooks/useAuth'
 
 function GeometricPattern() {
   return (
@@ -34,6 +35,7 @@ type PageStatus = 'loading' | 'ready' | 'invalid' | 'success'
 export default function ResetPasswordPage() {
   const navigate = useNavigate()
   const { t } = useTranslation(['auth', 'common', 'validation'])
+  const { signOut } = useAuth()
 
   const [status,   setStatus]   = useState<PageStatus>('loading')
   const [password, setPassword] = useState('')
@@ -94,7 +96,12 @@ export default function ResetPasswordPage() {
     setStatus('success')
     await markOwnerSetupCompleteSilently('password_update')
     // Sign out after password update so user must log in with new password
-    await supabase.auth.signOut()
+    const signOutResult = await signOut()
+    if (signOutResult.error) {
+      setStatus('ready')
+      setError(t('auth:signOutFailure'))
+      return
+    }
     setTimeout(() => {
       navigate('/login', {
         state: { successKey: 'auth:reset.updatedSignIn' },

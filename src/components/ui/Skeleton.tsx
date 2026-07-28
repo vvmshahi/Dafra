@@ -2,7 +2,7 @@ interface Props { className?: string }
 
 export function Skeleton({ className = '' }: Props) {
   return (
-    <div className={`animate-pulse rounded-xl bg-gray-100 ${className}`} />
+    <div className={`animate-pulse rounded-xl bg-gray-100 ${className}`} aria-hidden="true" />
   )
 }
 

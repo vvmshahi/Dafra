@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Pencil, Trash2, Search, Phone, MapPin, User, Building2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Plus, Pencil, Archive, Search, Phone, MapPin, User, Building2, BarChart3, ChevronRight, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { PageHeader } from '@/components/ui/PageHeader'
+import { ContentState } from '@/components/ui/ContentState'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { displayName as dn } from '@/lib/utils/display'
 import type { Supplier } from '@/types'
-import SupplierDrawer from './SupplierDrawer'
+import SupplierModal from './SupplierModal'
 import { useTranslation } from 'react-i18next'
 import {
   CompactDateRangeFilter,
@@ -15,6 +17,9 @@ import {
   formatDateRangeLabel,
   getDateRange,
 } from '@/pages/reports/reportUtils'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { archiveEntity, type ArchiveEntityClient } from '@/lib/archiveEntity'
+import { toast } from 'sonner'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,13 +48,15 @@ function stringOrNull(value: unknown): string | null {
 
 export default function SuppliersPage() {
   const { profile } = useAuth()
-  const { t, i18n } = useTranslation('suppliers')
+  const { t, i18n } = useTranslation(['suppliers', 'supplierIntelligence'])
 
   const [suppliers,   setSuppliers]   = useState<SupplierWithStats[]>([])
   const [loading,     setLoading]     = useState(true)
   const [search,      setSearch]      = useState('')
   const [drawerOpen,  setDrawerOpen]  = useState(false)
   const [editing,     setEditing]     = useState<Supplier | null>(null)
+  const [archiveTarget, setArchiveTarget] = useState<SupplierWithStats | null>(null)
+  const [archivingIds, setArchivingIds] = useState<Set<string>>(() => new Set())
   const [preset,      setPreset]      = useState<DatePreset>('this_month')
   const initialRange = getDateRange('this_month')
   const [startDate,   setStartDate]   = useState(initialRange.start)
@@ -125,12 +132,24 @@ export default function SuppliersPage() {
   const openAdd  = () => { setEditing(null); setDrawerOpen(true) }
   const openEdit = (s: Supplier) => { setEditing(s); setDrawerOpen(true) }
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(t('deleteConfirm', { name }))) return
-    const q = supabase as unknown as { from: (t: string) => any }
-    const { error } = await q.from('suppliers').update({ is_active: false }).eq('id', id)
-    if (error) { console.error('[SuppliersPage] delete failed', error); return }
-    setSuppliers(prev => prev.filter(s => s.id !== id))
+  const handleArchive = async () => {
+    const target = archiveTarget
+    if (!target || archivingIds.has(target.id)) return
+    setArchivingIds(previous => new Set(previous).add(target.id))
+    try {
+      await archiveEntity(supabase as unknown as ArchiveEntityClient, 'suppliers', target.id)
+      setSuppliers(prev => prev.filter(supplier => supplier.id !== target.id))
+      setArchiveTarget(null)
+      toast.success(t('success.archived'))
+    } catch {
+      toast.error(t('errors.archiveFailed'))
+    } finally {
+      setArchivingIds(previous => {
+        const next = new Set(previous)
+        next.delete(target.id)
+        return next
+      })
+    }
   }
 
   const filtered = suppliers.filter(s => {
@@ -153,32 +172,39 @@ export default function SuppliersPage() {
     <div className="space-y-5">
 
       {/* ── Header ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
-        <div className="flex-1">
-          <h1 className="text-lg font-bold text-gray-900">{t('title')}</h1>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {t('subtitle')}
-          </p>
-        </div>
-        <Button size="sm" onClick={openAdd}>
-          <Plus size={14} />
-          {t('add')}
-        </Button>
-      </div>
+      <PageHeader
+        title={t('title')}
+        description={t('subtitle')}
+        actions={(
+          <>
+            <Link
+              to="/reports/suppliers"
+              className="btn-secondary min-h-9 rounded-lg px-3 py-1.5 text-xs"
+            >
+              <BarChart3 size={14} />
+              {t('supplierIntelligence:reports.openReports')}
+            </Link>
+            <Button size="sm" onClick={openAdd}>
+              <Plus size={14} />
+              {t('add')}
+            </Button>
+          </>
+        )}
+      />
 
       {/* ── Summary cards ───────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-xl px-4 py-3 bg-white border border-[#173f2a]/70 shadow-card">
           <p className="text-xs font-medium text-gray-400">{t('totalSuppliers')}</p>
           <p className="text-xl font-bold text-gray-900 mt-0.5">{suppliers.length}</p>
           <p className="text-[10px] text-gray-400 mt-0.5">{t('activeVendors')}</p>
         </div>
-        <div className="rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
+        <div className="rounded-xl px-4 py-3 bg-white border border-[#173f2a]/70 shadow-card">
           <p className="text-xs font-medium text-gray-400">{t('totalPurchased')}</p>
           <p className="text-xl font-bold text-emerald-600 mt-0.5"><Rial amount={totalPurchased} /></p>
           <p className="text-[10px] text-gray-400 mt-0.5">{rangeLabel || t('selectedRange')}</p>
         </div>
-        <div className="rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
+        <div className="rounded-xl px-4 py-3 bg-white border border-[#173f2a]/70 shadow-card">
           <p className="text-xs font-medium text-gray-400">{t('creditTermsCount')}</p>
           <p className="text-xl font-bold text-amber-600 mt-0.5">{creditCount}</p>
           <p className="text-[10px] text-gray-400 mt-0.5">{t('creditTermsSummary')}</p>
@@ -203,10 +229,11 @@ export default function SuppliersPage() {
           )}
         </div>
         <div className="relative">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <Search size={15} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
-            className="input pl-9"
+            className="input ps-9"
             placeholder={t('searchPlaceholder')}
+            aria-label={t('searchPlaceholder')}
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -215,27 +242,21 @@ export default function SuppliersPage() {
 
       {/* ── Content ─────────────────────────────────────────── */}
       {loading ? (
-        <div className="flex justify-center py-20"><LoadingSpinner size="lg" /></div>
+        <ContentState kind="loading" className="py-20" />
       ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center mb-4">
-            <Building2 size={22} className="text-emerald-300" />
-          </div>
-          <p className="text-gray-700 font-semibold">
-            {search ? t('noneFound') : t('noneYet')}
-          </p>
-          <p className="text-gray-400 text-sm mt-1 max-w-xs">
-            {search
-              ? t('trySearch')
-              : t('emptyHint')}
-          </p>
-          {!search && (
-            <Button className="mt-5" onClick={openAdd}>
+        <ContentState
+          kind="empty"
+          icon={Building2}
+          title={t(search ? 'noneFound' : 'noneYet')}
+          description={t(search ? 'trySearch' : 'emptyHint')}
+          action={!search ? (
+            <Button onClick={openAdd}>
               <Plus size={15} />
               {t('add')}
             </Button>
-          )}
-        </div>
+          ) : undefined}
+          className="py-20"
+        />
       ) : (
         <div className="card overflow-hidden">
           {/* Table header */}
@@ -245,7 +266,7 @@ export default function SuppliersPage() {
             <div className="w-24 hidden sm:block">{t('columns.city')}</div>
             <div className="w-24 hidden lg:block">{t('columns.terms')}</div>
             <div className="w-40 text-end">{t('columns.purchased')}</div>
-            <div className="w-16 flex-shrink-0" />
+            <div className="w-24 flex-shrink-0" />
           </div>
 
           {filtered.map(supplier => (
@@ -258,7 +279,13 @@ export default function SuppliersPage() {
                   <Building2 size={15} className="text-emerald-600" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate" dir="auto">{dn(supplier.name, supplier.name_ar)}</p>
+                  <Link
+                    to={`/suppliers/${supplier.id}`}
+                    className="text-sm font-semibold text-gray-900 hover:text-primary-700 truncate block rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    dir="auto"
+                  >
+                    {dn(supplier.name, supplier.name_ar)}
+                  </Link>
                   {supplier.vat_number && (
                     <p className="text-[10px] text-gray-400">{t('vatShort')}: <bdi dir="ltr">{supplier.vat_number}</bdi></p>
                   )}
@@ -319,14 +346,27 @@ export default function SuppliersPage() {
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-1 w-16 justify-end">
+              <div className="flex items-center gap-1 w-24 justify-end">
+                <Link
+                  to={`/suppliers/${supplier.id}`}
+                  aria-label={t('supplierIntelligence:actions.viewActivity')}
+                  title={t('supplierIntelligence:actions.viewActivity')}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-amber-50 hover:text-amber-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                >
+                  <ChevronRight size={14} className={i18n.resolvedLanguage === 'ar-SA' ? 'rotate-180' : ''} />
+                </Link>
                 <button onClick={() => openEdit(supplier)}
-                  className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+                  aria-label={t('edit')}
+                  title={t('edit')}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
                   <Pencil size={14} />
                 </button>
-                <button onClick={() => handleDelete(supplier.id, supplier.name)}
-                  className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors">
-                  <Trash2 size={14} />
+                <button onClick={() => setArchiveTarget(supplier)}
+                  aria-label={t(archivingIds.has(supplier.id) ? 'actions.archiving' : 'actions.archive')}
+                  title={t('actions.archive')}
+                  disabled={archivingIds.has(supplier.id)}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-amber-600 hover:bg-amber-50 hover:text-amber-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-wait disabled:opacity-50">
+                  {archivingIds.has(supplier.id) ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
                 </button>
               </div>
             </div>
@@ -334,11 +374,20 @@ export default function SuppliersPage() {
         </div>
       )}
 
-      <SupplierDrawer
+      <SupplierModal
         open={drawerOpen}
         supplier={editing}
         onClose={() => setDrawerOpen(false)}
         onSaved={load}
+      />
+      <ConfirmDialog
+        open={archiveTarget !== null}
+        kind="supplierArchive"
+        name={archiveTarget?.name}
+        busy={archiveTarget ? archivingIds.has(archiveTarget.id) : false}
+        confirmVariant="gold"
+        onClose={() => setArchiveTarget(null)}
+        onConfirm={() => void handleArchive()}
       />
     </div>
   )

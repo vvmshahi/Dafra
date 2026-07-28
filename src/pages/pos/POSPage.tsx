@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -6,6 +6,7 @@ import {
   Receipt, X, ChevronDown, User, Check, Loader2,
   ShoppingBag, AlertCircle, Zap, Printer, PackageOpen, ArrowLeft, Lock,
   ChevronLeft, ChevronRight, ChevronUp, RotateCcw,
+  ScanLine,
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
@@ -66,6 +67,22 @@ import {
   normalizeDocumentLanguage,
   type DocumentLanguage,
 } from '@/localization/documents'
+import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
+import { normalizeBarcode } from '@/lib/barcodes/barcode'
+import type { ScannerCapture } from '@/lib/barcodes/scanner'
+import {
+  applyScannerCartMutation,
+  createScannerIndex,
+  resolveScannerCode,
+  type ScannerIndexEntry,
+} from '@/lib/pos/unifiedScanner'
+import {
+  customerDisplayName,
+  normalizeSaudiMobile,
+  searchCustomers,
+  type PosCustomerRecord,
+} from '@/lib/pos/customerSearch'
+import { PosCustomerQuickCreateModal } from './PosCustomerQuickCreateModal'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -87,6 +104,7 @@ interface PosProduct {
   barcode: string | null
   price: number
   unit: string
+  unitAr: string | null
   vatTreatment: VatTreatment
   stockQuantity: number | null
   trackStock: boolean
@@ -98,6 +116,20 @@ interface PosProduct {
   catName: string | null
   catNameAr: string | null
   catColor: string | null
+  sellingUnits: PosSellingUnit[]
+}
+
+interface PosSellingUnit {
+  id: string
+  name: string
+  nameAr: string | null
+  code: string
+  conversionToBase: number
+  quantityScale: number
+  pricingMethod: 'calculated' | 'custom'
+  resolvedPrice: number
+  isBase: boolean
+  version: number
 }
 
 interface PosCategory {
@@ -108,22 +140,19 @@ interface PosCategory {
   icon: string | null
 }
 
-interface PosCustomer {
-  id: string
-  name: string
-  name_ar: string | null
-  phone: string | null
-  customer_type: string
-  vat_number: string | null
-  business_name: string | null
-  business_name_ar: string | null
-  cr_number: string | null
-  address: string | null
-  address_ar: string | null
-}
-
 interface CartItem {
+  cartLineId: string
   productId: string
+  productUnitId: string | null
+  productUnitVersion: number | null
+  pricingMethod: 'calculated' | 'custom' | 'legacy'
+  conversionToBase: number
+  quantityScale: number
+  unitName: string
+  unitNameAr: string | null
+  unitCode: string | null
+  baseUnitName: string
+  baseUnitNameAr: string | null
   name: string
   nameAr: string | null
   price: number
@@ -202,6 +231,21 @@ interface PosCheckoutItemResult {
   tax_rate?: number | string | null
   tax_category?: string | null
   total: number | string
+  product_unit_id?: string | null
+  product_unit_version?: number | string | null
+  selling_unit_name?: string | null
+  selling_unit_name_ar?: string | null
+  selling_unit_code?: string | null
+  package_quantity?: number | string | null
+  package_quantity_scale?: number | string | null
+  conversion_to_base?: number | string | null
+  base_quantity?: number | string | null
+  base_unit_name?: string | null
+  base_unit_name_ar?: string | null
+  base_unit_code?: string | null
+  pricing_method?: string | null
+  base_unit_price?: number | string | null
+  package_unit_price?: number | string | null
 }
 
 interface PosCheckoutResult {
@@ -320,6 +364,21 @@ function safeCheckoutErrorKey(err: unknown): string {
   }
   if (/insufficient stock/i.test(message)) {
     return 'validation:insufficientStock'
+  }
+  if (/fingerprint|idempotency key was reused/i.test(message)) {
+    return 'pos:packages.fingerprintMismatch'
+  }
+  if (/changed; reload|stale.*version/i.test(message)) {
+    return 'pos:packages.changed'
+  }
+  if (/unit is inactive|package.*inactive/i.test(message)) {
+    return 'pos:packages.inactive'
+  }
+  if (/not enabled for selling|selling.*disabled/i.test(message)) {
+    return 'pos:packages.sellingDisabled'
+  }
+  if (/unsupported decimal precision|exact valid base quantity|package quantity/i.test(message)) {
+    return 'pos:packages.invalidQuantity'
   }
   if (/not available/i.test(message)) {
     return 'validation:unavailableItem'
@@ -519,7 +578,7 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
   const [retryingFinalization, setRetryingFinalization] = useState(false)
   const automaticSnapshotPrintRef = useRef(false)
   const documentLanguage = normalizeDocumentLanguage(receipt.documentLanguage)
-  const documentViewModel = useMemo(() => documentFromPosReceipt({ ...receipt, zatcaQrCode: receipt.zatcaQrCode, presentationSettings: branch?.presentation_settings, branchDefaults: branch ?? undefined, items: receipt.items.map(item => ({ name: item.name, nameAr: item.nameAr, qty: item.qty, unitPrice: item.unitPrice, lineTotal: item.lineTotal, subtotal: item.subtotal, taxAmount: item.taxAmount, taxRate: item.taxRate, taxCategory: item.taxCategory })), payments: receipt.payments.map(payment => ({ method: payment.method, amount: payment.amount, amountReceived: payment.amountReceived, changeAmount: payment.changeAmount })) }), [receipt, branch])
+  const documentViewModel = useMemo(() => documentFromPosReceipt({ ...receipt, zatcaQrCode: receipt.zatcaQrCode, presentationSettings: branch?.presentation_settings, branchDefaults: branch ?? undefined, items: receipt.items.map(item => ({ name: item.name, nameAr: item.nameAr, qty: item.qty, unitPrice: item.unitPrice, lineTotal: item.lineTotal, subtotal: item.subtotal, taxAmount: item.taxAmount, taxRate: item.taxRate, taxCategory: item.taxCategory, unitName: item.unitName, unitNameAr: item.unitNameAr, unitCode: item.unitCode, baseQuantity: item.baseQuantity, baseUnitName: item.baseUnitName, baseUnitNameAr: item.baseUnitNameAr })), payments: receipt.payments.map(payment => ({ method: payment.method, amount: payment.amount, amountReceived: payment.amountReceived, changeAmount: payment.changeAmount })) }), [receipt, branch])
   const printReady = receipt.canPrint && qrStatus === 'ready' && Boolean(qrDataUrl)
 
   useEffect(() => {
@@ -581,7 +640,10 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
     const wa = digits.startsWith('966') ? digits : digits.startsWith('0') ? '966' + digits.slice(1) : digits
     const date = documentDate(receipt.createdAt, documentLanguage, { month: '2-digit' })
     const m = (n: number) => `SAR ${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-    const lines = receipt.items.map(i => `${documentNames(documentLanguage, i.name, i.nameAr).join(' / ')} × ${i.qty}  ${m(i.lineTotal)}`).join('\n')
+    const lines = receipt.items.map(i => {
+      const unit = documentNames(documentLanguage, i.unitName, i.unitNameAr).join(' / ')
+      return `${documentNames(documentLanguage, i.name, i.nameAr).join(' / ')} × ${i.qty}${unit ? ` ${unit}` : ''}  ${m(i.lineTotal)}`
+    }).join('\n')
     const businessName = documentNames(documentLanguage, receipt.businessNameEn, receipt.businessNameAr).join(' / ')
     const msg = `${documentLabel(documentLanguage, 'taxInvoice')} — ${businessName}
 ━━━━━━━━━━━━━━━
@@ -928,6 +990,11 @@ function formatStockQuantity(value: number | null | undefined) {
   })
 }
 
+function singleUnitCartQuantity(cart: CartItem[], productId: string): number {
+  const lines = cart.filter(item => item.productId === productId)
+  return lines.length === 1 ? lines[0].quantity : 0
+}
+
 function QuickBillingPanel({
   products,
   totalProductCount,
@@ -987,7 +1054,22 @@ function QuickBillingPanel({
       <div className="divide-y divide-gray-100">
         {products.map(product => {
           const codeParts = [product.sku, product.barcode].filter(Boolean)
-          const cartQty = cart.find(item => item.productId === product.id)?.quantity ?? 0
+          const cartLines = cart.filter(item => item.productId === product.id)
+          const cartSummary = cartLines.length === 1
+            ? t('packages.inCartWithUnit', {
+                quantity: formatPackageQuantity(
+                  cartLines[0].quantity,
+                  cartLines[0].quantityScale,
+                ),
+                unit: localizedName(
+                  cartLines[0].unitName,
+                  cartLines[0].unitNameAr,
+                  isRtl,
+                ),
+              })
+            : cartLines.length > 1
+              ? t('packages.mixedUnitsInCart', { count: cartLines.length })
+              : null
 
           return (
             <div
@@ -998,9 +1080,9 @@ function QuickBillingPanel({
                 <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2">
                   <span dir="auto">{localizedName(product.name, product.nameAr, isRtl)}</span>
                 </p>
-                {cartQty > 0 && (
+                {cartSummary && (
                   <span className="mt-1 inline-flex rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold text-primary-700">
-                    {t('inCart', { count: cartQty })}
+                    {cartSummary}
                   </span>
                 )}
               </div>
@@ -1058,6 +1140,170 @@ function QuickBillingPanel({
   )
 }
 
+function packageQuantityStep(scale: number): number {
+  return Number((10 ** -Math.max(0, Math.min(6, scale))).toFixed(Math.max(0, Math.min(6, scale))))
+}
+
+function formatPackageQuantity(value: number, scale = 3): string {
+  return value.toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: Math.max(0, Math.min(6, scale)),
+  })
+}
+
+function SellingUnitChooser({
+  product,
+  onChoose,
+  onClose,
+}: {
+  product: PosProduct
+  onChoose: (unit: PosSellingUnit, quantity: number) => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation(['pos', 'common'])
+  const { isRtl } = useLocale()
+  const units = useMemo(
+    () => [...product.sellingUnits].sort((left, right) => Number(right.isBase) - Number(left.isBase)),
+    [product.sellingUnits],
+  )
+  const [selectedId, setSelectedId] = useState(units[0]?.id ?? '')
+  const selected = units.find(unit => unit.id === selectedId) ?? units[0]
+  const [quantity, setQuantity] = useState('1')
+  const parsedQuantity = Number(quantity)
+  const step = packageQuantityStep(selected?.quantityScale ?? 0)
+  const validQuantity = Boolean(
+    selected
+      && Number.isFinite(parsedQuantity)
+      && parsedQuantity > 0
+      && Number(parsedQuantity.toFixed(selected.quantityScale)) === parsedQuantity,
+  )
+
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [onClose])
+
+  useEffect(() => {
+    setQuantity('1')
+  }, [selectedId])
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="selling-unit-title"
+      onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}
+    >
+      <div className="max-h-[85vh] w-full overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-w-lg sm:rounded-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
+          <div className="min-w-0">
+            <h2 id="selling-unit-title" className="text-base font-bold text-gray-900">
+              {t('pos:packages.chooseSellingUnit')}
+            </h2>
+            <p className="mt-0.5 truncate text-xs text-gray-500" dir="auto">
+              {localizedName(product.name, product.nameAr, isRtl)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t('common:close')}
+            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="max-h-[52vh] overflow-y-auto p-4">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {units.map(unit => {
+              const active = unit.id === selected?.id
+              return (
+                <button
+                  key={unit.id}
+                  type="button"
+                  onClick={() => setSelectedId(unit.id)}
+                  aria-pressed={active}
+                  className={`min-w-0 rounded-2xl border p-3 text-start transition-colors ${
+                    active
+                      ? 'border-emerald-500 bg-emerald-50/70 ring-1 ring-emerald-500'
+                      : 'border-gray-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/30'
+                  }`}
+                >
+                  <span className="flex items-start justify-between gap-2">
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold text-gray-900" dir="auto">
+                        {localizedName(unit.name, unit.nameAr, isRtl)}
+                      </span>
+                      {!unit.isBase && (
+                        <span className="mt-1 block text-[11px] leading-4 text-gray-500">
+                          {t('pos:packages.contains', {
+                            quantity: formatPackageQuantity(unit.conversionToBase, 6),
+                            unit: localizedName(product.unit, product.unitAr, isRtl),
+                          })}
+                        </span>
+                      )}
+                    </span>
+                    <span className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border ${
+                      active ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-gray-300'
+                    }`}>
+                      {active && <Check size={12} />}
+                    </span>
+                  </span>
+                  <span className="mt-2 block text-base font-extrabold tabular-nums text-emerald-700" dir="ltr">
+                    <Rial amount={unit.resolvedPrice} />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="border-t border-gray-100 bg-gray-50/70 p-4">
+          <label htmlFor="selling-unit-quantity" className="mb-1.5 block text-xs font-semibold text-gray-700">
+            {t('pos:packages.packageQuantity')}
+          </label>
+          <div className="flex min-w-0 gap-2">
+            <input
+              id="selling-unit-quantity"
+              type="number"
+              inputMode="decimal"
+              min={step}
+              step={step}
+              value={quantity}
+              onChange={event => setQuantity(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && validQuantity && selected) {
+                  onChoose(selected, parsedQuantity)
+                }
+              }}
+              autoFocus
+              className="input min-w-0 flex-1 text-base tabular-nums"
+              dir="ltr"
+              aria-invalid={!validQuantity}
+            />
+            <button
+              type="button"
+              disabled={!validQuantity || !selected}
+              onClick={() => { if (selected) onChoose(selected, parsedQuantity) }}
+              className="min-w-[132px] rounded-xl bg-[#1B6B3A] px-4 text-sm font-bold text-white hover:bg-[#155830] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {t('pos:packages.addSelected')}
+            </button>
+          </div>
+          {!validQuantity && (
+            <p className="mt-1.5 text-xs text-red-600">{t('pos:packages.invalidQuantity')}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── WhatsApp icon ─────────────────────────────────────────────────────────────
 
 function WhatsAppIcon({ size = 14 }: { size?: number }) {
@@ -1094,7 +1340,7 @@ function OpenSessionModal({
           {onBack && (
             <button
               onClick={onBack}
-              className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+              className="absolute end-3 top-3 flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 transition-colors hover:bg-white/20"
               title={t('pos:backToDashboard')}
             >
               <X size={14} />
@@ -1607,6 +1853,7 @@ export default function POSPage() {
   const categoryScrollRef = useRef<HTMLDivElement>(null)
   const productScrollRef = useRef<HTMLDivElement>(null)
   const checkoutInFlightRef = useRef(false)
+  const cartRef = useRef<CartItem[]>([])
   const sub       = useSubscription()
 
   // Session management
@@ -1629,7 +1876,7 @@ export default function POSPage() {
   const [branch,     setBranch]     = useState<Branch | null>(null)
   const [products,   setProducts]   = useState<PosProduct[]>([])
   const [categories, setCategories] = useState<PosCategory[]>([])
-  const [customers,  setCustomers]  = useState<PosCustomer[]>([])
+  const [customers,  setCustomers]  = useState<PosCustomerRecord[]>([])
   const [loading,    setLoading]    = useState(true)
 
   const [search,       setSearch]       = useState('')
@@ -1638,6 +1885,9 @@ export default function POSPage() {
   const [customerId,   setCustomerId]   = useState<string | null>(null)
   const [custSearch,   setCustSearch]   = useState('')
   const [custOpen,     setCustOpen]     = useState(false)
+  const [customerActiveIndex, setCustomerActiveIndex] = useState(0)
+  const [showQuickCustomer, setShowQuickCustomer] = useState(false)
+  const [customerStatus, setCustomerStatus] = useState('')
   const [note,         setNote]         = useState('')
   const [payMethod,    setPayMethod]    = useState<PosPaymentChoice>('cash')
   const [cashReceived, setCashReceived] = useState('')
@@ -1647,6 +1897,10 @@ export default function POSPage() {
   const [splitLastEdited, setSplitLastEdited] = useState<'cash' | 'card'>('cash')
   const [submitting,   setSubmitting]   = useState(false)
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
+  const [unitChooserProduct, setUnitChooserProduct] = useState<PosProduct | null>(null)
+  const [scannerEnabled, setScannerEnabled] = useState(true)
+  const [scannerStatus, setScannerStatus] = useState<'idle' | 'looking' | 'accepted' | 'unknown' | 'conflict' | 'error'>('idle')
+  const [scannerMessage, setScannerMessage] = useState('')
   const [showExpense,  setShowExpense]  = useState(false)
   const [printerStatus, setPrinterStatus] = useState<'connected' | 'unconfigured' | 'error'>('unconfigured')
   const [scrollState,  setScrollState]  = useState({
@@ -1657,6 +1911,7 @@ export default function POSPage() {
   })
   const checkoutKeyRef = useRef<string | null>(null)
   const autoPrintedReceiptIdRef = useRef<string | null>(null)
+  const resolvedBarcodeCacheRef = useRef(new Map<string, ScannerIndexEntry<PosProduct, PosSellingUnit>>())
   const businessType = resolveBusinessType(tenant?.business_type)
   const stockVisible = isStockModuleVisible({
     businessType: tenant?.business_type,
@@ -1668,6 +1923,138 @@ export default function POSPage() {
     () => resolveInvoicePresentationSettings({ savedSettings: branch?.presentation_settings, branch: branch ?? {} }),
     [branch],
   )
+
+  const playScannerTone = (accepted: boolean) => {
+    try {
+      const AudioContextClass = window.AudioContext
+      const context = new AudioContextClass()
+      const oscillator = context.createOscillator()
+      const gain = context.createGain()
+      oscillator.frequency.value = accepted ? 880 : 220
+      gain.gain.setValueAtTime(0.035, context.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.08)
+      oscillator.connect(gain)
+      gain.connect(context.destination)
+      oscillator.start()
+      oscillator.stop(context.currentTime + 0.08)
+      oscillator.onended = () => void context.close()
+    } catch {
+      // Visual feedback remains available when browser audio is unavailable.
+    }
+  }
+
+  const loadedBarcodeIndex = useMemo(() => {
+    const entries: Array<{
+      code: string | null
+      product: PosProduct
+      unit: PosSellingUnit
+      source: 'barcode' | 'sku'
+    }> = []
+    for (const product of products) {
+      const baseUnit = product.sellingUnits.find(unit => unit.isBase)
+      if (!baseUnit) continue
+      entries.push({ code: product.barcode, product, unit: baseUnit, source: 'barcode' })
+      if (normalizeBarcode(product.sku ?? '').toLocaleLowerCase('en-US')
+        !== normalizeBarcode(product.barcode ?? '').toLocaleLowerCase('en-US')) {
+        entries.push({ code: product.sku, product, unit: baseUnit, source: 'sku' })
+      }
+    }
+    return createScannerIndex(entries)
+  }, [products])
+
+  const announceScan = (status: typeof scannerStatus, message: string, accepted = false) => {
+    setScannerStatus(status)
+    setScannerMessage(message)
+    playScannerTone(accepted)
+  }
+
+  const addScannedUnit = (product: PosProduct, unit: PosSellingUnit) => {
+    const mutation = mutateCart(product, 1, unit, true)
+    if (mutation.status === 'out_of_stock') {
+      announceScan('unknown', t('pos:scanner.outOfStock'))
+      return
+    }
+    announceScan(
+      'accepted',
+      mutation.status === 'incremented'
+        ? t('pos:scanner.quantityUpdated', { product: localizedName(product.name, product.nameAr, isRtl), quantity: mutation.quantity })
+        : t(unit.isBase ? 'pos:scanner.productAdded' : 'pos:scanner.packageAdded', {
+            product: localizedName(product.name, product.nameAr, isRtl),
+            unit: localizedName(unit.name, unit.nameAr, isRtl),
+          }),
+      true,
+    )
+  }
+
+  const resolveScannedBarcode = async (capture: ScannerCapture) => {
+    const branchId = profile?.branch_id
+    const code = normalizeBarcode(capture.code)
+    if (!branchId || code.length < 3 || submitting || checkoutInFlightRef.current) return
+    setScannerStatus('looking')
+    setScannerMessage(t('pos:scanner.processing'))
+    const indexed = resolveScannerCode(loadedBarcodeIndex, code)
+    if (indexed.status === 'conflict') {
+      announceScan('conflict', t('pos:scanner.conflict'))
+      console.warn('[POS scanner] ambiguous loaded barcode', { codeLength: code.length, matches: indexed.entries.length })
+      return
+    }
+    if (indexed.status === 'found') {
+      addScannedUnit(indexed.entry.product, indexed.entry.unit)
+      return
+    }
+    const cacheKey = code.toLocaleLowerCase('en-US')
+    const cached = resolvedBarcodeCacheRef.current.get(cacheKey)
+    if (cached) {
+      addScannedUnit(cached.product, cached.unit)
+      return
+    }
+    const { data, error } = await (supabase as any).rpc('resolve_product_unit_barcode', {
+      p_branch_id: branchId,
+      p_barcode: code,
+    })
+    if (error) {
+      announceScan('error', t('pos:scanner.networkError'))
+      console.warn('[POS scanner] barcode resolution failed', { codeLength: code.length })
+      return
+    }
+    const row = data?.[0]
+    if (!row) {
+      announceScan('unknown', t('pos:scanner.unknown'))
+      return
+    }
+    if (row.resolution_status !== 'active') {
+      announceScan('unknown', t('pos:scanner.inactive'))
+      return
+    }
+    const product = products.find(candidate => candidate.id === row.product_id)
+    if (!product) {
+      announceScan('error', t('pos:scanner.refreshRequired'))
+      return
+    }
+    const unit: PosSellingUnit = {
+      id: String(row.product_unit_id),
+      name: String(row.unit_name),
+      nameAr: row.unit_name_ar ?? null,
+      code: String(row.unit_code),
+      conversionToBase: Number(row.conversion_to_base),
+      quantityScale: Number(row.quantity_scale),
+      pricingMethod: row.pricing_method === 'custom' ? 'custom' : 'calculated',
+      resolvedPrice: Number(row.selling_price),
+      isBase: product.sellingUnits.some(candidate => candidate.id === row.product_unit_id && candidate.isBase),
+      version: Number(row.product_unit_version),
+    }
+    resolvedBarcodeCacheRef.current.set(cacheKey, { product, unit, source: 'unit' })
+    addScannedUnit(product, unit)
+  }
+
+  useBarcodeScanner({
+    enabled: scannerEnabled,
+    blocked: Boolean(
+      receipt || showOpenSession || showCloseSession || unitChooserProduct
+      || custOpen || showQuickCustomer || splitOpen || showExpense || submitting
+    ),
+    onScan: resolveScannedBarcode,
+  })
 
   useEffect(() => {
     if (!isElectron()) return
@@ -1693,11 +2080,16 @@ export default function POSPage() {
       if (!tid || !bid) { setLoading(false); return }
       setLoading(true)
       try {
-        const [{ data: branchData }, { data: prodData }, { data: custData }] = await Promise.all([
+        const [
+          { data: branchData },
+          { data: prodData },
+          { data: custData },
+          { data: unitData, error: unitError },
+        ] = await Promise.all([
           supabase.from('branches').select('*').eq('id', bid).single(),
           supabase
             .from('products')
-            .select('id, name, name_ar, sku, barcode, price, unit, vat_treatment, category_id, stock_quantity, track_stock, image_url, is_service, is_active, is_available, categories(id, name, name_ar, color, icon)')
+            .select('id, name, name_ar, sku, barcode, price, unit, unit_ar, vat_treatment, category_id, stock_quantity, track_stock, image_url, is_service, is_active, is_available, categories(id, name, name_ar, color, icon)')
             .eq('branch_id', bid)
             .eq('is_active', true)
             .eq('is_available', true)
@@ -1710,10 +2102,32 @@ export default function POSPage() {
             .eq('is_active', true)
             .order('name', { ascending: true })
             .limit(200),
+          (supabase as any).rpc('get_branch_selling_product_units', { p_branch_id: bid }),
         ])
         if (cancelled) return
 
         setBranch(branchData as Branch)
+
+        const unitsByProduct = new Map<string, PosSellingUnit[]>()
+        if (!unitError) {
+          for (const row of unitData ?? []) {
+            const unit: PosSellingUnit = {
+              id: String(row.id),
+              name: String(row.name),
+              nameAr: row.name_ar ?? null,
+              code: String(row.unit_code ?? 'PCE'),
+              conversionToBase: Number(row.conversion_to_base),
+              quantityScale: Number(row.quantity_scale ?? 0),
+              pricingMethod: row.pricing_method === 'custom' ? 'custom' : 'calculated',
+              resolvedPrice: Number(row.resolved_selling_price),
+              isBase: row.is_base === true,
+              version: Number(row.version),
+            }
+            const existing = unitsByProduct.get(String(row.product_id)) ?? []
+            existing.push(unit)
+            unitsByProduct.set(String(row.product_id), existing)
+          }
+        }
 
         const prods: PosProduct[] = (prodData ?? []).map((p: any) => ({
           id:            p.id,
@@ -1723,6 +2137,7 @@ export default function POSPage() {
           barcode:       p.barcode ?? null,
           price:         Number(p.price),
           unit:          p.unit ?? 'pcs',
+          unitAr:        p.unit_ar ?? null,
           vatTreatment:  (p.vat_treatment ?? 'inherit') as VatTreatment,
           stockQuantity: p.stock_quantity == null ? null : Number(p.stock_quantity),
           trackStock:    Boolean(p.track_stock),
@@ -1734,8 +2149,13 @@ export default function POSPage() {
           catName:       (p.categories as any)?.name ?? null,
           catNameAr:     (p.categories as any)?.name_ar ?? null,
           catColor:     (p.categories as any)?.color ?? null,
+          sellingUnits:  unitsByProduct.get(p.id) ?? [],
         }))
         setProducts(prods)
+        if (unitError) {
+          console.warn('[POSPage] selling-unit load failed', { code: unitError.code ?? 'unknown' })
+          toast.error(t('pos:packages.loadFailed'))
+        }
 
         const catMap = new Map<string, PosCategory>()
         for (const p of prodData ?? []) {
@@ -1747,15 +2167,76 @@ export default function POSPage() {
         setCustomers((custData ?? []).map((c: any) => ({
           id:            c.id,
           name:          c.name,
+          name_ar:       c.name_ar ?? null,
           phone:         c.phone,
           customer_type: c.customer_type ?? 'individual',
           vat_number:    c.vat_number ?? null,
           business_name: c.business_name ?? null,
+          business_name_ar: c.business_name_ar ?? null,
+          cr_number: c.cr_number ?? null,
+          address: c.address ?? null,
+          address_ar: c.address_ar ?? null,
         })))
 
         try {
           const saved = localStorage.getItem(cartKey(bid))
-          if (saved) setCart(JSON.parse(saved))
+          if (saved) {
+            const rawItems = JSON.parse(saved) as Partial<CartItem>[]
+            const restored = rawItems.flatMap(raw => {
+              const product = prods.find(candidate => candidate.id === raw.productId)
+              if (!product || !Number.isFinite(Number(raw.quantity)) || Number(raw.quantity) <= 0) return []
+              const requestedUnit = raw.productUnitId
+                ? product.sellingUnits.find(unit => unit.id === raw.productUnitId)
+                : product.sellingUnits.find(unit => unit.isBase)
+              if (raw.productUnitId && !requestedUnit) return []
+              if (requestedUnit) {
+                return [{
+                  cartLineId: `${product.id}:${requestedUnit.id}:${requestedUnit.version}:${requestedUnit.pricingMethod}:${requestedUnit.resolvedPrice.toFixed(2)}:${product.vatTreatment}`,
+                  productId: product.id,
+                  productUnitId: requestedUnit.id,
+                  productUnitVersion: requestedUnit.version,
+                  pricingMethod: requestedUnit.pricingMethod,
+                  conversionToBase: requestedUnit.conversionToBase,
+                  quantityScale: requestedUnit.quantityScale,
+                  unitName: requestedUnit.name,
+                  unitNameAr: requestedUnit.nameAr,
+                  unitCode: requestedUnit.code,
+                  baseUnitName: product.unit,
+                  baseUnitNameAr: product.unitAr,
+                  name: product.name,
+                  nameAr: product.nameAr,
+                  price: requestedUnit.resolvedPrice,
+                  vatTreatment: product.vatTreatment,
+                  unit: requestedUnit.name,
+                  quantity: Number(raw.quantity),
+                  catColor: product.catColor,
+                }]
+              }
+              return [{
+                cartLineId: `${product.id}:legacy:0:legacy:${product.price.toFixed(2)}:${product.vatTreatment}`,
+                productId: product.id,
+                productUnitId: null,
+                productUnitVersion: null,
+                pricingMethod: 'legacy' as const,
+                conversionToBase: 1,
+                quantityScale: 3,
+                unitName: product.unit,
+                unitNameAr: null,
+                unitCode: null,
+                baseUnitName: product.unit,
+                baseUnitNameAr: product.unitAr,
+                name: product.name,
+                nameAr: product.nameAr,
+                price: product.price,
+                vatTreatment: product.vatTreatment,
+                unit: product.unit,
+                quantity: Number(raw.quantity),
+                catColor: product.catColor,
+              }]
+            })
+            cartRef.current = restored
+            setCart(restored)
+          }
         } catch {}
       } finally {
         if (!cancelled) setLoading(false)
@@ -1797,8 +2278,15 @@ export default function POSPage() {
   useEffect(() => {
     const bid = profile?.branch_id
     if (!bid) return
+    cartRef.current = cart
     localStorage.setItem(cartKey(bid), JSON.stringify(cart))
   }, [cart, profile?.branch_id])
+
+  useEffect(() => {
+    if (!session || submitting || receipt || showOpenSession || showCloseSession || unitChooserProduct || custOpen || showQuickCustomer || splitOpen || showExpense) return
+    const frame = window.requestAnimationFrame(() => searchRef.current?.focus())
+    return () => window.cancelAnimationFrame(frame)
+  }, [session, submitting, receipt, showOpenSession, showCloseSession, unitChooserProduct, custOpen, showQuickCustomer, splitOpen, showExpense])
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────────
 
@@ -1822,17 +2310,6 @@ export default function POSPage() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [cart, navigate])
-
-  // Enter-to-add: separate effect so it sees latest products/search/cart
-  useEffect(() => {
-    function onEnter(e: KeyboardEvent) {
-      if (e.key !== 'Enter' || e.target !== searchRef.current) return
-      const visible = activePosMode === 'quick' ? quickFiltered : filtered
-      if (visible.length === 1) addToCart(visible[0])
-    }
-    window.addEventListener('keydown', onEnter)
-    return () => window.removeEventListener('keydown', onEnter)
-  })
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
@@ -1861,6 +2338,18 @@ export default function POSPage() {
     return (searchQ ? visible.sort((a, b) => productSearchRank(a, searchQ) - productSearchRank(b, searchQ)) : visible).slice(0, 25)
   }, [products, activeCat, searchQ])
 
+  function handleCommandBarKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') return
+    const code = normalizeBarcode(search)
+    if (code.length < 3) return
+    const loadedResolution = resolveScannerCode(loadedBarcodeIndex, code)
+    const visibleResults = activePosMode === 'quick' ? quickFiltered : filtered
+    if (loadedResolution.status === 'unknown' && visibleResults.length > 0) return
+    event.preventDefault()
+    void resolveScannedBarcode({ code, characterCount: code.length, durationMs: 0, terminator: 'enter' })
+    setSearch('')
+  }
+
   const vatMode = branch?.vat_mode ?? 'exclusive'
   const totals  = computeTotals(cart, vatMode)
   const cashAmt = parseFloat(cashReceived) || 0
@@ -1878,13 +2367,9 @@ export default function POSPage() {
     && splitBalanced
   const isAccountSuspended = sub.status === 'suspended'
 
-  const filteredCusts = custSearch.trim()
-    ? customers.filter(c =>
-        c.name.toLowerCase().includes(custSearch.toLowerCase()) ||
-        (c.phone ?? '').includes(custSearch)
-      )
-    : customers
+  const filteredCusts = useMemo(() => searchCustomers(customers, custSearch), [customers, custSearch])
   const selectedCust = customers.find(c => c.id === customerId)
+  const exactCustomerMobile = normalizeSaudiMobile(custSearch)
 
   function getScrollState(el: HTMLElement | null) {
     if (!el) return { atStart: true, atEnd: true }
@@ -2010,33 +2495,68 @@ export default function POSPage() {
 
   // ── Cart ops ─────────────────────────────────────────────────────────────
 
-  function addQuantityToCart(product: PosProduct, quantity: number) {
+  function addQuantityToCart(product: PosProduct, quantity: number, unit?: PosSellingUnit) {
     if (!Number.isFinite(quantity) || quantity <= 0) return
-    setCart(prev => {
-      const existing = prev.find(c => c.productId === product.id)
-      if (existing) return prev.map(c => c.productId === product.id ? { ...c, quantity: c.quantity + quantity } : c)
-      return [...prev, {
+    mutateCart(product, quantity, unit, false)
+  }
+
+  function mutateCart(product: PosProduct, quantity: number, unit: PosSellingUnit | undefined, enforceScanStock: boolean) {
+    const selectedUnit = unit ?? product.sellingUnits.find(candidate => candidate.isBase)
+    const unitId = selectedUnit?.id ?? null
+    const unitVersion = selectedUnit?.version ?? null
+    const pricingMethod = selectedUnit?.pricingMethod ?? 'legacy'
+    const price = selectedUnit?.resolvedPrice ?? product.price
+    const cartLineId = `${product.id}:${unitId ?? 'legacy'}:${unitVersion ?? 0}:${pricingMethod}:${price.toFixed(2)}:${product.vatTreatment}`
+    const line: CartItem = {
+      cartLineId,
         productId:    product.id,
+        productUnitId: unitId,
+        productUnitVersion: unitVersion,
+        pricingMethod,
+        conversionToBase: selectedUnit?.conversionToBase ?? 1,
+        quantityScale: selectedUnit?.quantityScale ?? 3,
+        unitName: selectedUnit?.name ?? product.unit,
+        unitNameAr: selectedUnit?.nameAr ?? null,
+        unitCode: selectedUnit?.code ?? null,
+        baseUnitName: product.unit,
+        baseUnitNameAr: product.unitAr,
         name:         product.name,
         nameAr:       product.nameAr,
-        price:        product.price,
+        price,
         vatTreatment: product.vatTreatment,
-        unit:         product.unit,
-        quantity,
+        unit:         selectedUnit?.name ?? product.unit,
+        quantity: 1,
         catColor:     product.catColor,
-      }]
+    }
+    const mutation = applyScannerCartMutation({
+      cart: cartRef.current,
+      line,
+      quantity,
+      stockQuantity: product.stockQuantity,
+      enforceStock: enforceScanStock && stockVisible && product.trackStock && !product.isService,
     })
+    if (mutation.status !== 'out_of_stock') {
+      cartRef.current = mutation.cart
+      setCart(mutation.cart)
+    }
+    return mutation
   }
 
   function addToCart(product: PosProduct) {
-    addQuantityToCart(product, 1)
+    const alternates = product.sellingUnits.filter(unit => !unit.isBase)
+    if (alternates.length > 0) {
+      setUnitChooserProduct(product)
+      return
+    }
+    addQuantityToCart(product, 1, product.sellingUnits.find(unit => unit.isBase))
   }
 
-  function adjustQty(productId: string, delta: number) {
-    setCart(prev => prev
-      .map(c => c.productId === productId ? { ...c, quantity: c.quantity + delta } : c)
-      .filter(c => c.quantity > 0)
-    )
+  function adjustQty(cartLineId: string, delta: number) {
+    const next = cartRef.current
+      .map(item => item.cartLineId === cartLineId ? { ...item, quantity: item.quantity + delta } : item)
+      .filter(item => item.quantity > 0)
+    cartRef.current = next
+    setCart(next)
   }
 
   async function maybeAutoPrintReceiptAfterSale(invoiceId: string) {
@@ -2125,10 +2645,17 @@ export default function POSPage() {
         ...(splitPayments ? { payments: splitPayments } : {}),
         note: note || null,
         idempotency_key: idempotencyKey,
-        items: cart.map(item => ({
-          product_id: item.productId,
-          quantity: item.quantity,
-        })),
+        items: cart.map(item => item.productUnitId
+          ? {
+              product_id: item.productId,
+              product_unit_id: item.productUnitId,
+              package_quantity: item.quantity,
+              expected_product_unit_version: item.productUnitVersion,
+            }
+          : {
+              product_id: item.productId,
+              quantity: item.quantity,
+            }),
       }
 
       const demoSandbox = isPermanentDemoSandboxBranch(branch.tenant_id, branch.id)
@@ -2393,6 +2920,12 @@ export default function POSPage() {
           name:      i.name,
           nameAr:    i.name_ar,
           qty:       num(i.quantity),
+          unitName: i.selling_unit_name ?? null,
+          unitNameAr: i.selling_unit_name_ar ?? null,
+          unitCode: i.selling_unit_code ?? null,
+          baseQuantity: i.base_quantity == null ? null : num(i.base_quantity),
+          baseUnitName: i.base_unit_name ?? null,
+          baseUnitNameAr: i.base_unit_name_ar ?? null,
           unitPrice: num(i.unit_price),
           lineTotal: num(i.total),
           subtotal:  num(i.subtotal),
@@ -2467,6 +3000,7 @@ export default function POSPage() {
       if (canPrintCustomerCopy && !isB2BInvoice && !atomicCheckoutResult) {
         void maybeAutoPrintReceiptAfterSale(checkout.invoice_id)
       }
+      cartRef.current = []
       setCart([])
       setCustomerId(null)
       setNote('')
@@ -2518,7 +3052,19 @@ export default function POSPage() {
     } catch (err) {
       const safeKey = safeCheckoutErrorKey(err)
       console.warn('[POSPage charge] checkout failed', err)
-      toast.error(t(safeKey))
+      const reloadPackage = [
+        'pos:packages.changed',
+        'pos:packages.inactive',
+        'pos:packages.sellingDisabled',
+      ].includes(safeKey)
+      toast.error(t(safeKey), reloadPackage
+        ? {
+            action: {
+              label: t('pos:packages.reload'),
+              onClick: () => window.location.reload(),
+            },
+          }
+        : undefined)
     } finally {
       checkoutInFlightRef.current = false
       setSubmitting(false)
@@ -2747,6 +3293,16 @@ export default function POSPage() {
           afterSaleAction={resolvedInvoiceSettings.afterSaleAction}
         />
       )}
+      {unitChooserProduct && (
+        <SellingUnitChooser
+          product={unitChooserProduct}
+          onClose={() => setUnitChooserProduct(null)}
+          onChoose={(unit, quantity) => {
+            addQuantityToCart(unitChooserProduct, quantity, unit)
+            setUnitChooserProduct(null)
+          }}
+        />
+      )}
       {showExpense && branch && (
         <QuickExpenseModal
           branchId={branch.id}
@@ -2779,6 +3335,28 @@ export default function POSPage() {
             setSessionSummary(summary)
           }}
           onCancel={() => setShowCloseSession(false)}
+        />
+      )}
+      {showQuickCustomer && profile.tenant_id && profile.branch_id && (
+        <PosCustomerQuickCreateModal
+          customers={customers}
+          initialQuery={custSearch}
+          tenantId={profile.tenant_id}
+          branchId={profile.branch_id}
+          onClose={() => setShowQuickCustomer(false)}
+          onSelectExisting={customer => {
+            setCustomerId(customer.id)
+            setCustomerStatus(t('pos:customerQuick.existingSelected'))
+            setShowQuickCustomer(false)
+            setCustSearch('')
+          }}
+          onCreated={customer => {
+            setCustomers(current => [...current, customer])
+            setCustomerId(customer.id)
+            setCustomerStatus(t('pos:customerQuick.addedSelected'))
+            setShowQuickCustomer(false)
+            setCustSearch('')
+          }}
         />
       )}
       {custOpen && <div className="fixed inset-0 z-10" onClick={() => setCustOpen(false)} />}
@@ -2816,6 +3394,24 @@ export default function POSPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setScannerEnabled(value => !value)}
+              aria-pressed={scannerEnabled}
+              title={t(scannerEnabled ? 'pos:scanner.disable' : 'pos:scanner.enable')}
+              className={`relative flex h-9 w-9 items-center justify-center rounded-lg border transition-colors ${
+                scannerEnabled
+                  ? 'border-sky-400/30 bg-sky-500/20 text-sky-200'
+                  : 'border-white/15 bg-white/10 text-white/50'
+              }`}
+            >
+              <ScanLine size={15} />
+              <span className={`absolute end-1 top-1 h-1.5 w-1.5 rounded-full ${
+                scannerStatus === 'accepted' ? 'bg-emerald-400'
+                  : scannerStatus === 'unknown' || scannerStatus === 'error' ? 'bg-red-400'
+                    : scannerStatus === 'looking' ? 'bg-amber-300' : 'bg-white/40'
+              }`} />
+            </button>
             <AuthenticatedLanguageSwitch inverse className="h-9" />
             {isElectron() && (
               <button
@@ -2865,18 +3461,34 @@ export default function POSPage() {
               <> · {t('register:openingAmount', { amount: '' })}<span dir="ltr"><Rial amount={Number(session.opening_cash)} /></span></>
             )}
           </span>
+          <span className="ms-auto hidden text-[10px] font-medium text-emerald-700 sm:inline">
+            {t(scannerEnabled ? 'pos:scanner.ready' : 'pos:scanner.unavailable')}
+          </span>
         </div>
 
         {/* Search + category tabs */}
-        <div className="px-4 py-2.5 border-b border-gray-100 bg-white flex items-center gap-3 flex-shrink-0">
+        <div className="px-4 py-2.5 border-b border-gray-100 bg-white flex flex-col gap-2.5 flex-shrink-0 sm:flex-row sm:items-center">
           {activePosMode === 'quick' ? (
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <div className="relative min-w-[220px] max-w-xl flex-1">
+            <div className="contents">
+              <div className="relative min-w-0 flex-1 sm:min-w-[280px] sm:max-w-xl">
                 <Search size={13} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input ref={searchRef} type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('pos:searchProducts')} className="input ps-8 pe-8 py-1.5 text-sm" />
-                {search && <button type="button" onClick={() => setSearch('')} aria-label={t('pos:clearProductSearch')} className="absolute end-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={13} /></button>}
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  onKeyDown={handleCommandBarKeyDown}
+                  placeholder={t('pos:searchProducts')}
+                  aria-label={t('pos:searchProducts')}
+                  aria-describedby="pos-scanner-status"
+                  autoComplete="off"
+                  className="input ps-8 pe-14 py-2 text-sm"
+                />
+                <ScanLine size={14} aria-hidden="true" className="absolute end-3 top-1/2 -translate-y-1/2 text-sky-500" />
+                {search && <button type="button" onClick={() => setSearch('')} aria-label={t('pos:clearProductSearch')} className="absolute end-8 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={13} /></button>}
+                <span id="pos-scanner-status" className="sr-only" aria-live="polite" aria-atomic="true">{scannerMessage || t(scannerEnabled ? 'pos:scanner.ready' : 'pos:scanner.unavailable')}</span>
               </div>
-              <div className="hidden min-w-0 flex-1 items-center gap-1.5 overflow-x-auto md:flex">
+              <div className="flex w-full min-w-0 items-center gap-1.5 overflow-x-auto sm:flex-1">
                 <button type="button" onClick={() => setActiveCat(null)} className={`whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-medium ${!activeCat ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600'}`}>{t('pos:allProducts')}</button>
                 {categories.map(category => (
                   <button key={category.id} type="button" onClick={() => setActiveCat(activeCat === category.id ? null : category.id)} className={`whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-medium ${activeCat === category.id ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600'}`} dir="auto">{localizedName(category.name, category.nameAr, isRtl)}</button>
@@ -2885,26 +3497,32 @@ export default function POSPage() {
             </div>
           ) : (
             <>
-              <div className="relative w-52 flex-shrink-0">
+              <div className="relative w-full flex-shrink-0 sm:w-72 lg:w-96">
                 <Search size={13} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   ref={searchRef}
                   type="text"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  placeholder={t('pos:searchShortcut')}
-                  className="input ps-8 pe-8 py-1.5 text-sm"
+                  onKeyDown={handleCommandBarKeyDown}
+                  placeholder={t('pos:searchProducts')}
+                  aria-label={t('pos:searchProducts')}
+                  aria-describedby="pos-scanner-status"
+                  autoComplete="off"
+                  className="input ps-8 pe-14 py-2 text-sm"
                 />
+                <ScanLine size={14} aria-hidden="true" className="absolute end-3 top-1/2 -translate-y-1/2 text-sky-500" />
                 {search && (
                   <button
                     type="button"
                     onClick={() => setSearch('')}
                     aria-label={t('pos:clearProductSearch')}
-                    className="absolute end-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    className="absolute end-8 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                   >
                     <X size={13} />
                   </button>
                 )}
+                <span id="pos-scanner-status" className="sr-only" aria-live="polite" aria-atomic="true">{scannerMessage || t(scannerEnabled ? 'pos:scanner.ready' : 'pos:scanner.unavailable')}</span>
               </div>
               {showPosScrollButtons && (
                 <button
@@ -3006,7 +3624,7 @@ export default function POSPage() {
                       <ProductCard
                         key={p.id}
                         product={p}
-                        cartQty={cart.find(c => c.productId === p.id)?.quantity ?? 0}
+                        cartQty={singleUnitCartQuantity(cart, p.id)}
                         onAdd={() => addToCart(p)}
                       />
                     ))}
@@ -3055,7 +3673,7 @@ export default function POSPage() {
             )}
           </div>
           {cart.length > 0 && (
-            <button onClick={() => setCart([])}
+            <button onClick={() => { cartRef.current = []; setCart([]) }}
               className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 transition-colors">
               <X size={11} /> {t('pos:clearCart')}
             </button>
@@ -3065,7 +3683,11 @@ export default function POSPage() {
         {/* Customer selector */}
         <div className="px-4 py-2.5 border-b border-gray-100 flex-shrink-0 relative z-20">
           <button
-            onClick={() => { setCustOpen(o => !o); setCustSearch('') }}
+            type="button"
+            onClick={() => { setCustOpen(o => !o); setCustSearch(''); setCustomerActiveIndex(0) }}
+            aria-haspopup="listbox"
+            aria-expanded={custOpen}
+            aria-controls="pos-customer-listbox"
             className="w-full flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-start hover:border-primary-200 transition-colors"
           >
             <User size={13} className="text-gray-400 flex-shrink-0" />
@@ -3079,11 +3701,43 @@ export default function POSPage() {
           {custOpen && (
             <div className="absolute start-4 end-4 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-20 overflow-hidden">
               <div className="p-2 border-b border-gray-100">
-                <input type="text" value={custSearch} onChange={e => setCustSearch(e.target.value)}
-                  placeholder={t('pos:searchCustomers')} className="input text-xs py-1.5" autoFocus />
+                <input
+                  type="text"
+                  role="combobox"
+                  aria-expanded="true"
+                  aria-controls="pos-customer-listbox"
+                  aria-activedescendant={filteredCusts[customerActiveIndex] ? `pos-customer-${filteredCusts[customerActiveIndex].id}` : undefined}
+                  aria-label={t('pos:customerQuick.search')}
+                  value={custSearch}
+                  onChange={event => { setCustSearch(event.target.value); setCustomerActiveIndex(0) }}
+                  onKeyDown={event => {
+                    if (event.key === 'ArrowDown') {
+                      event.preventDefault()
+                      if (filteredCusts.length > 0) setCustomerActiveIndex(index => Math.min(filteredCusts.length - 1, index + 1))
+                    } else if (event.key === 'ArrowUp') {
+                      event.preventDefault()
+                      setCustomerActiveIndex(index => Math.max(0, index - 1))
+                    } else if (event.key === 'Enter' && filteredCusts[customerActiveIndex]) {
+                      event.preventDefault()
+                      setCustomerId(filteredCusts[customerActiveIndex].id)
+                      setCustOpen(false)
+                      setCustomerStatus(t('pos:customerQuick.existingSelected'))
+                    } else if (event.key === 'Escape') {
+                      event.preventDefault()
+                      setCustOpen(false)
+                    }
+                  }}
+                  placeholder={t('pos:customerQuick.search')}
+                  className="input text-xs py-1.5"
+                  autoComplete="off"
+                  autoFocus
+                />
               </div>
-              <div className="max-h-52 overflow-y-auto">
+              <div id="pos-customer-listbox" role="listbox" aria-label={t('pos:customerQuick.results')} className="max-h-60 overflow-y-auto">
                 <button
+                  type="button"
+                  role="option"
+                  aria-selected={!customerId}
                   onClick={() => { setCustomerId(null); setCustOpen(false) }}
                   className={`w-full px-3 py-2.5 text-start text-xs flex items-center gap-2 hover:bg-gray-50 ${!customerId ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-gray-700'}`}
                 >
@@ -3094,27 +3748,58 @@ export default function POSPage() {
                 {filteredCusts.map(c => (
                   <button
                     key={c.id}
-                    onClick={() => { setCustomerId(c.id); setCustOpen(false) }}
-                    className={`w-full px-3 py-2.5 text-start text-xs flex items-center gap-2 hover:bg-gray-50 ${customerId === c.id ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-gray-700'}`}
+                    id={`pos-customer-${c.id}`}
+                    type="button"
+                    role="option"
+                    aria-selected={customerId === c.id}
+                    onClick={() => { setCustomerId(c.id); setCustOpen(false); setCustomerStatus(t('pos:customerQuick.existingSelected')) }}
+                    className={`w-full px-3 py-2.5 text-start text-xs flex items-center gap-2 hover:bg-gray-50 ${
+                      customerId === c.id ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-gray-700'
+                    }`}
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="truncate" dir="auto">
-                        {c.customer_type === 'business' && c.business_name ? c.business_name : c.name}
-                      </p>
-                      {c.customer_type === 'business' && c.business_name && (
-                        <p className="text-gray-400 text-[10px] truncate" dir="auto">{c.name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="truncate font-medium" dir="auto">{customerDisplayName(c)}</p>
+                        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-500">
+                          {t(c.customer_type === 'business' ? 'customers:businessB2b' : 'customers:individual')}
+                        </span>
+                      </div>
+                      {c.phone && (
+                        <p className="mt-0.5 text-gray-500 text-[10px]">
+                          <bdi dir="ltr">{c.phone}</bdi>
+                          {exactCustomerMobile.length === 10 && normalizeSaudiMobile(c.phone) === exactCustomerMobile && (
+                            <span className="ms-1.5 font-semibold text-emerald-700">{t('pos:customerQuick.exactMobile')}</span>
+                          )}
+                        </p>
                       )}
-                      {c.phone && <p className="text-gray-400 text-[10px]"><bdi dir="ltr">{c.phone}</bdi></p>}
+                      {c.customer_type === 'business' && c.vat_number && (
+                        <p className="text-gray-400 text-[10px]"><bdi dir="ltr">{t('customers:fields.vatNumber')}: {c.vat_number}</bdi></p>
+                      )}
                     </div>
                     {customerId === c.id && <Check size={12} className="flex-shrink-0" />}
                   </button>
                 ))}
                 {filteredCusts.length === 0 && custSearch && (
-                  <p className="px-3 py-4 text-center text-xs text-gray-400">{t('pos:noCustomersFound')}</p>
+                  <div className="px-3 py-3 text-center">
+                    <p className="text-xs text-gray-500">{t('pos:customerQuick.noneFound')}</p>
+                    <button type="button" onClick={() => { setCustOpen(false); setShowQuickCustomer(true) }}
+                      className="mt-2 rounded-lg bg-primary-600 px-3 py-2 text-xs font-semibold text-white focus-visible:ring-2 focus-visible:ring-primary-500">
+                      {/^05\d{8}$/.test(exactCustomerMobile)
+                        ? t('pos:customerQuick.addWithMobile', { mobile: exactCustomerMobile })
+                        : t('pos:customerQuick.addNew')}
+                    </button>
+                  </div>
+                )}
+                {filteredCusts.length > 0 && (
+                  <button type="button" onClick={() => { setCustOpen(false); setShowQuickCustomer(true) }}
+                    className="w-full border-t border-gray-100 px-3 py-2.5 text-start text-xs font-semibold text-primary-700 hover:bg-primary-50">
+                    <Plus size={12} className="me-1 inline" aria-hidden="true" />{t('pos:customerQuick.addNew')}
+                  </button>
                 )}
               </div>
             </div>
           )}
+          <span className="sr-only" role="status" aria-live="polite">{customerStatus}</span>
         </div>
 
         {/* Cart items */}
@@ -3130,30 +3815,41 @@ export default function POSPage() {
               const line  = item.price * item.quantity
               const color = item.catColor ?? '#6b7280'
               return (
-                <div key={item.productId} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2.5">
+                <div key={item.cartLineId} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2.5">
                   <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center"
                     style={{ backgroundColor: `${color}20` }}>
                     <ShoppingBag size={12} style={{ color }} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-gray-800 truncate" dir="auto">{localizedName(item.name, item.nameAr, isRtl)}</p>
+                    <p className="text-[10px] font-medium text-gray-500" dir="auto">
+                      {localizedName(item.unitName, item.unitNameAr, isRtl)}
+                      {item.conversionToBase !== 1 && (
+                        <span className="ms-1 text-gray-400">
+                          · {t('pos:packages.baseEquivalent', {
+                            quantity: formatPackageQuantity(item.quantity * item.conversionToBase),
+                            unit: localizedName(item.baseUnitName, item.baseUnitNameAr, isRtl),
+                          })}
+                        </span>
+                      )}
+                    </p>
                     <p className="text-[10px] text-gray-400 tabular-nums" dir="ltr">
-                      {fmt(item.price)} × {item.quantity} = <span className="text-gray-700 font-semibold"><Rial amount={line} /></span>
+                      {fmt(item.price)} × {formatPackageQuantity(item.quantity, item.quantityScale)} = <span className="text-gray-700 font-semibold"><Rial amount={line} /></span>
                     </p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0" dir="ltr">
-                    <button onClick={() => adjustQty(item.productId, -1)}
-                      aria-label={item.quantity === 1
+                    <button onClick={() => adjustQty(item.cartLineId, -1)}
+                      aria-label={item.quantity <= 1
                         ? t('pos:removeItem', { name: localizedName(item.name, item.nameAr, isRtl) })
                         : t('pos:decreaseQuantity', { name: localizedName(item.name, item.nameAr, isRtl) })}
                       className="w-6 h-6 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-red-50 hover:border-red-200 transition-colors">
-                      {item.quantity === 1
+                      {item.quantity <= 1
                         ? <Trash2 size={10} className="text-red-400" />
                         : <Minus size={10} className="text-gray-500" />
                       }
                     </button>
-                    <span className="text-xs font-bold text-gray-900 w-5 text-center tabular-nums">{item.quantity}</span>
-                    <button onClick={() => adjustQty(item.productId, 1)}
+                    <span className="min-w-5 text-center text-xs font-bold tabular-nums text-gray-900">{formatPackageQuantity(item.quantity, item.quantityScale)}</span>
+                    <button onClick={() => adjustQty(item.cartLineId, 1)}
                       aria-label={t('pos:increaseQuantity', { name: localizedName(item.name, item.nameAr, isRtl) })}
                       className="w-6 h-6 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-primary-50 hover:border-primary-200 transition-colors">
                       <Plus size={10} className="text-gray-500" />

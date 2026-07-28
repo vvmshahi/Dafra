@@ -42,6 +42,7 @@ export function Switch({
     <button
       {...props}
       type="button"
+      dir="ltr"
       role="switch"
       aria-checked={checked}
       aria-label={label}
@@ -50,7 +51,7 @@ export function Switch({
         if (!disabled) onChange(!checked)
       }}
       className={classes(
-        'relative inline-flex shrink-0 items-center rounded-full p-0.5 transition-colors',
+        "relative inline-flex shrink-0 items-center justify-start rounded-full p-0.5 transition-colors before:absolute before:-inset-x-1 before:-inset-y-2 before:content-['']",
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2',
         disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
         checked ? 'bg-primary-500' : 'bg-gray-200',
@@ -61,7 +62,7 @@ export function Switch({
       <span
         aria-hidden="true"
         className={classes(
-          'block rounded-full bg-white shadow-sm transition-transform',
+          'block rounded-full bg-white shadow-sm transition-transform duration-150',
           selectedSize.thumb,
           checked ? selectedSize.translate : 'translate-x-0',
         )}

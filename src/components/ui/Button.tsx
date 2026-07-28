@@ -32,9 +32,10 @@ export const Button = forwardRef<HTMLButtonElement, Props>(
       ref={ref}
       className={`${variantClass[variant]} ${sizeClass[size]} ${className}`}
       disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...props}
     >
-      {loading && <Loader2 size={15} className="animate-spin" />}
+      {loading && <Loader2 size={15} className="animate-spin" aria-hidden="true" />}
       {children}
     </button>
   ),

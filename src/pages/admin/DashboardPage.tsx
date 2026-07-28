@@ -286,11 +286,11 @@ function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onVie
     : 'text-gray-400'
 
   return (
-    <div className={`group bg-white rounded-2xl border border-gray-100 shadow-card p-5 flex flex-col gap-4 transition-all duration-150 hover:-translate-y-0.5 hover:border-primary-100 hover:shadow-card-md ${!branch.is_active ? 'opacity-60' : ''}`}>
+    <div className={`group bg-white rounded-2xl border border-gray-100 shadow-card p-4 flex flex-col gap-3 transition-all duration-150 hover:-translate-y-0.5 hover:border-primary-100 hover:shadow-card-md ${!branch.is_active ? 'opacity-60' : ''}`}>
 
       {/* Header */}
       <div className="flex items-start gap-3">
-        <div className="w-11 h-11 rounded-xl bg-primary-50 ring-1 ring-primary-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+        <div className="w-10 h-10 rounded-xl bg-primary-50 ring-1 ring-primary-100 flex items-center justify-center overflow-hidden flex-shrink-0">
           {branch.logo_url
             ? <img src={branch.logo_url} alt={branchLabel} className="w-full h-full object-cover" />
             : <Store size={18} className="text-primary-600" />
@@ -305,7 +305,7 @@ function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onVie
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
             <Badge variant={branch.is_active ? 'success' : 'neutral'} dot className="text-[10px] bg-white">
               {branch.is_active ? t('status.active') : t('status.inactive')}
             </Badge>
@@ -329,7 +329,7 @@ function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onVie
       </div>
 
       {/* Register Session */}
-      <div className={`rounded-2xl border px-4 py-4 ${
+      <div className={`rounded-xl border px-3 py-3 ${
         session?.isLongOpen
           ? 'border-amber-200 bg-amber-50'
           : session?.status === 'open'
@@ -364,34 +364,34 @@ function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onVie
           )}
         </div>
         {session?.isLongOpen && (
-          <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-snug text-amber-800">
+          <p className="mt-1.5 flex items-start gap-1.5 text-[11px] leading-snug text-amber-800">
             <AlertCircle size={12} className="mt-0.5 flex-shrink-0" />
             {t('register.closeBeforeShift')}
           </p>
         )}
         {hasSession ? (
-          <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
-            <div className="rounded-xl bg-white/70 px-3 py-2 ring-1 ring-black/5">
+          <div className="mt-2.5 grid grid-cols-2 gap-1.5 text-[11px] sm:grid-cols-3">
+            <div className="rounded-lg bg-white/70 px-2.5 py-1.5 ring-1 ring-black/5">
               <p className="text-gray-400">{t('kpi.sessionSalesLabel', { prefix: sessionPrefix })}</p>
               <p dir="ltr" className="font-bold text-gray-900 tabular-nums"><Rial amount={session.totalSales} /></p>
             </div>
-            <div className="rounded-xl bg-white/70 px-3 py-2 ring-1 ring-black/5">
+            <div className="rounded-lg bg-white/70 px-2.5 py-1.5 ring-1 ring-black/5">
               <p className="text-gray-400">{cashFinalLabel}</p>
               <p dir="ltr" className="font-bold text-gray-900 tabular-nums"><Rial amount={cashFinalValue} /></p>
             </div>
-            <div className="rounded-xl bg-white/70 px-3 py-2 ring-1 ring-black/5">
+            <div className="rounded-lg bg-white/70 px-2.5 py-1.5 ring-1 ring-black/5">
               <p className="text-gray-400">{t('kpi.cash')}</p>
               <p dir="ltr" className="font-semibold text-emerald-700 tabular-nums"><Rial amount={session.cashTotal} /></p>
             </div>
-            <div className="rounded-xl bg-white/70 px-3 py-2 ring-1 ring-black/5">
+            <div className="rounded-lg bg-white/70 px-2.5 py-1.5 ring-1 ring-black/5">
               <p className="text-gray-400">{t('kpi.card')}</p>
               <p dir="ltr" className="font-semibold text-blue-700 tabular-nums"><Rial amount={session.cardTotal} /></p>
             </div>
-            <div className="rounded-xl bg-white/70 px-3 py-2 ring-1 ring-black/5">
+            <div className="rounded-lg bg-white/70 px-2.5 py-1.5 ring-1 ring-black/5">
               <p className="text-gray-400">{t('kpi.invoices')}</p>
               <p dir="ltr" className="font-semibold text-gray-800 tabular-nums">{session.invoiceCount}</p>
             </div>
-            <div className="rounded-xl bg-white/70 px-3 py-2 ring-1 ring-black/5">
+            <div className="rounded-lg bg-white/70 px-2.5 py-1.5 ring-1 ring-black/5">
               <p className="text-gray-400">{t('kpi.vat')}</p>
               <p dir="ltr" className="font-semibold text-amber-700 tabular-nums"><Rial amount={session.vatTotal} /></p>
             </div>
@@ -404,7 +404,7 @@ function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onVie
       {/* View Details */}
       <button
         onClick={onView}
-        className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-primary-50 hover:border-primary-200 hover:text-primary-700 active:scale-[0.99] transition-all"
+        className="flex min-h-10 items-center justify-center gap-2 w-full py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-primary-50 hover:border-primary-200 hover:text-primary-700 active:scale-[0.99] transition-all"
       >
         <Eye size={14} /> {t('owner.viewDetails')}
       </button>
@@ -717,7 +717,7 @@ export default function DashboardPage() {
           </button>
         </div>
         {branchLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 [@media(min-width:1440px)]:grid-cols-3">
             {[1, 2, 3].map(i => (
               <div key={i} className="bg-white rounded-2xl border border-gray-100 p-5 h-52 animate-pulse" />
             ))}
@@ -733,7 +733,7 @@ export default function DashboardPage() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 [@media(min-width:1440px)]:grid-cols-3">
             {branchStats.map(b => (
               <BranchCard
                 key={b.id}

@@ -10,7 +10,7 @@
   "expenses": "المصروفات",
   "reports": "التقارير",
   "settings": "الإعدادات",
-  "invoiceSettings": "إعدادات الفاتورة",
+  "invoiceSettings": "الطباعة والمستندات",
   "devicePrinter": "طابعة الجهاز",
   "profile": "الملف الشخصي",
   "employees": "الموظفون",
@@ -20,6 +20,7 @@
   "clients": "العملاء التجاريون",
   "subscriptions": "الاشتراكات",
   "operations": "العمليات",
+  "mainNavigation": "التنقل الرئيسي",
   "sections": {
     "daily": "العمل اليومي",
     "catalogue": "المنتجات والمخزون",

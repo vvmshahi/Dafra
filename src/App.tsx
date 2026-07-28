@@ -21,9 +21,12 @@ import CustomersPage        from '@/pages/customers/CustomersPage'
 import CustomerDetailPage   from '@/pages/customers/CustomerDetailPage'
 import ExpensesPage        from '@/pages/expenses/ExpensesPage'
 import SuppliersPage       from '@/pages/suppliers/SuppliersPage'
+import SupplierDetailPage  from '@/pages/suppliers/SupplierDetailPage'
 import InventoryPage       from '@/pages/inventory/InventoryPage'
 import PurchasesPage       from '@/pages/purchases/PurchasesPage'
 import ReportsPage         from '@/pages/reports/ReportsPage'
+import CustomerIntelligenceReportsPage from '@/pages/reports/CustomerIntelligenceReportsPage'
+import SupplierIntelligenceReportsPage from '@/pages/reports/SupplierIntelligenceReportsPage'
 import OperationsPage      from '@/pages/operations/OperationsPage'
 import ZatcaPage           from '@/pages/zatca/ZatcaPage'
 import SuperAdminDashboard    from '@/pages/super-admin/SuperAdminDashboard'
@@ -42,7 +45,7 @@ import EmployeesPage        from '@/pages/employees/EmployeesPage'
 import ProfilePage          from '@/pages/profile/ProfilePage'
 import DayClosingPage       from '@/pages/day-closing/DayClosingPage'
 import BranchDashboardPage  from '@/pages/branch/BranchDashboardPage'
-import InvoiceSettingsPage  from '@/pages/branch/InvoiceSettingsPage'
+import PrintingDocumentsPage from '@/pages/branch/PrintingDocumentsPage'
 import ForgotPasswordPage   from '@/pages/auth/ForgotPasswordPage'
 import ResetPasswordPage    from '@/pages/auth/ResetPasswordPage'
 import TermsPage            from '@/pages/legal/TermsPage'
@@ -336,7 +339,7 @@ export default function App() {
             {/* Branch dashboard — inside AppLayout so sidebar shows */}
             <Route element={<RequireBranch />}>
               <Route path="/branch"            element={<BranchDashboardPage />} />
-              <Route path="/invoice-settings"  element={<InvoiceSettingsPage />} />
+              <Route path="/invoice-settings"  element={<PrintingDocumentsPage />} />
             </Route>
 
             {/* Super admin only */}
@@ -371,7 +374,10 @@ export default function App() {
             <Route path="/profile"    element={<ProfilePage />} />
             <Route path="/day-closing" element={<DayClosingPage />} />
             <Route path="/reports"   element={<ReportsPage />} />
+            <Route path="/reports/customers" element={<CustomerIntelligenceReportsPage />} />
+            <Route path="/reports/suppliers" element={<SupplierIntelligenceReportsPage />} />
             <Route path="/suppliers" element={<SuppliersPage />} />
+            <Route path="/suppliers/:id" element={<SupplierDetailPage />} />
             <Route path="/device-printer" element={<DevicePrinterPage />} />
 
             <Route element={<RequireOwnerAdminOrSuperAdmin />}>

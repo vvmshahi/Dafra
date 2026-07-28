@@ -16,6 +16,7 @@ const creditNote = read('src/pages/invoices/CreateCreditNoteModal.tsx')
 const purchases = read('src/pages/purchases/PurchasesPage.tsx')
 const purchaseHistory = read('src/pages/inventory/PurchaseHistoryTab.tsx')
 const purchaseDrawer = read('src/pages/inventory/PurchaseDrawer.tsx')
+const purchaseBill = read('src/pages/inventory/PurchaseBillModal.tsx')
 
 const results = []
 const test = (name, fn) => {
@@ -200,10 +201,12 @@ test('credit-note stock choice uses branch stock visibility', () => {
   )
 })
 
-test('purchase receiving controls are disabled while stock is disabled', () => {
-  assert.match(purchases, /<PurchaseHistoryTab stockEnabled=\{stockEnabled\}/)
-  assert.match(purchaseHistory, /stockEnabled &&\s+isInEditWindow/)
-  assert.match(purchaseHistory, /stockEnabled=\{stockEnabled\}/)
+test('current purchase creation is bill-only and independent of stock visibility', () => {
+  assert.match(purchases, /<PurchaseHistoryTab \/>/)
+  assert.doesNotMatch(purchases, /stockEnabled|isStockModuleVisible/)
+  assert.match(purchaseHistory, /<PurchaseBillModal/)
+  assert.doesNotMatch(purchaseBill, /stockEnabled|detailed_receiving|confirm_purchase_receiving/)
+  // The unused legacy drawer keeps its compatibility guard for possible future reuse.
   assert.match(purchaseDrawer, /!stockEnabled && opt\.value === 'detailed_receiving'/)
 })
 

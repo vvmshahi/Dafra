@@ -1,15 +1,18 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, Pencil, Eye, Trash2, Users, X, Building2, User } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Plus, Search, Pencil, Eye, Archive, Users, X, Building2, User, BarChart3, Loader2 } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { Badge } from '@/components/ui/Badge'
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
-import { Rial } from '@/components/ui/RiyalSymbol'
+import { ContentState } from '@/components/ui/ContentState'
 import type { Customer, CustomerType } from '@/types'
-import CustomerDrawer from './CustomerDrawer'
+import CustomerModal from './CustomerModal'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { archiveEntity, type ArchiveEntityClient } from '@/lib/archiveEntity'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -30,24 +33,18 @@ function displayName(c: CustomerWithStats) {
   return c.name
 }
 
-function formatDate(iso: string | null, locale: string) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
-}
-
 // ── Customer row ──────────────────────────────────────────────────────────────
 
 function CustomerRow({
-  customer, onEdit, onDelete, onView,
+  customer, onEdit, onArchive, onView, archiving,
 }: {
   customer: CustomerWithStats
   onEdit: () => void
-  onDelete: () => void
+  onArchive: () => void
   onView: () => void
+  archiving: boolean
 }) {
-  const { t, i18n } = useTranslation('customers')
+  const { t } = useTranslation('customers')
   const isBusiness = customer.customer_type === 'business'
   const primary    = displayName(customer)
   const secondary  = isBusiness && (customer.business_name ?? customer.company_name) ? customer.name : customer.name_ar
@@ -100,45 +97,32 @@ function CustomerRow({
         </p>
       </div>
 
-      {/* Total purchases */}
-      <div className="w-28 flex-shrink-0 text-right hidden sm:block">
-        <p className="text-sm font-semibold text-primary-600">
-          <Rial amount={customer.total_purchases} />
-        </p>
-        {customer.purchase_count > 0 && (
-          <p className="text-[10px] text-gray-400">
-            {t('invoiceCount', { count: customer.purchase_count })}
-          </p>
-        )}
-      </div>
-
-      {/* Last purchase */}
-      <div className="w-28 flex-shrink-0 text-right hidden xl:block">
-        <p className="text-xs text-gray-500" dir="ltr">{formatDate(customer.last_purchase_date, i18n.resolvedLanguage ?? 'en')}</p>
-      </div>
-
       {/* Actions */}
       <div className="flex items-center gap-1 flex-shrink-0">
         <button
           onClick={onView}
           title={t('actions.view')}
-          className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-primary-50 hover:text-primary-600 transition-colors"
+          aria-label={t('actions.view')}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-primary-50 hover:text-primary-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
         >
           <Eye size={14} />
         </button>
         <button
           onClick={onEdit}
           title={t('actions.edit')}
-          className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+          aria-label={t('actions.edit')}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
         >
           <Pencil size={14} />
         </button>
         <button
-          onClick={onDelete}
-          title={t('actions.delete')}
-          className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+          onClick={onArchive}
+          title={t('actions.archive')}
+          aria-label={archiving ? t('actions.archiving') : t('actions.archive')}
+          disabled={archiving}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-amber-600 hover:bg-amber-50 hover:text-amber-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-wait disabled:opacity-50"
         >
-          <Trash2 size={14} />
+          {archiving ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
         </button>
       </div>
     </div>
@@ -176,25 +160,19 @@ function FilterTab({
 function EmptyState({ filtered, onAdd }: { filtered: boolean; onAdd: () => void }) {
   const { t } = useTranslation('customers')
   return (
-    <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-primary-50 flex items-center justify-center mb-4">
-        <Users size={28} className="text-primary-300" />
-      </div>
-      <p className="text-gray-700 font-semibold">
-        {t(filtered ? 'noMatches' : 'noCustomers')}
-      </p>
-      <p className="text-gray-400 text-sm mt-1 max-w-xs leading-relaxed">
-        {filtered
-          ? t('filterHint')
-          : t('emptyHint')}
-      </p>
-      {!filtered && (
-        <Button className="mt-5" onClick={onAdd}>
+    <ContentState
+      kind="empty"
+      icon={Users}
+      title={t(filtered ? 'noMatches' : 'noCustomers')}
+      description={t(filtered ? 'filterHint' : 'emptyHint')}
+      action={!filtered ? (
+        <Button onClick={onAdd}>
           <Plus size={15} />
           {t('add')}
         </Button>
-      )}
-    </div>
+      ) : undefined}
+      className="py-24"
+    />
   )
 }
 
@@ -203,7 +181,7 @@ function EmptyState({ filtered, onAdd }: { filtered: boolean; onAdd: () => void 
 export default function CustomersPage() {
   const { profile }  = useAuth()
   const navigate     = useNavigate()
-  const { t } = useTranslation('customers')
+  const { t } = useTranslation(['customers', 'customerIntelligence', 'common'])
 
   const [customers,   setCustomers]   = useState<CustomerWithStats[]>([])
   const [loading,     setLoading]     = useState(true)
@@ -211,49 +189,28 @@ export default function CustomersPage() {
   const [filterType,  setFilterType]  = useState<FilterType>('all')
   const [drawerOpen,  setDrawerOpen]  = useState(false)
   const [editing,     setEditing]     = useState<CustomerWithStats | null>(null)
+  const [archiveTarget, setArchiveTarget] = useState<CustomerWithStats | null>(null)
+  const [archivingIds, setArchivingIds] = useState<Set<string>>(() => new Set())
 
   const load = useCallback(async () => {
     const bid = profile?.branch_id
     if (!bid) { setLoading(false); return }
 
-    const [{ data: custs }, { data: invData }] = await Promise.all([
-      supabase
-        .from('customers')
-        .select('*')
-        .eq('branch_id', bid)
-        .eq('is_active', true)
-        .order('name', { ascending: true }),
-      supabase
-        .from('invoices')
-        .select('customer_id, total_amount, invoice_date')
-        .eq('branch_id', bid)
-        .neq('status', 'cancelled')
-        .not('customer_id', 'is', null),
-    ])
+    const { data: custs } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('branch_id', bid)
+      .eq('is_active', true)
+      .order('name', { ascending: true })
 
-    // Build aggregate map: customer_id → {total, lastDate, count}
-    type Agg = { total: number; lastDate: string | null; count: number }
-    const aggMap = new Map<string, Agg>()
-    for (const inv of (invData ?? []) as { customer_id: string; total_amount: number; invoice_date: string }[]) {
-      const prev = aggMap.get(inv.customer_id) ?? { total: 0, lastDate: null, count: 0 }
-      aggMap.set(inv.customer_id, {
-        total:    prev.total + inv.total_amount,
-        lastDate: !prev.lastDate || inv.invoice_date > prev.lastDate
-          ? inv.invoice_date
-          : prev.lastDate,
-        count: prev.count + 1,
-      })
-    }
-
-    const withStats: CustomerWithStats[] = ((custs ?? []) as unknown as Customer[]).map(c => {
-      const agg = aggMap.get(c.id) ?? { total: 0, lastDate: null, count: 0 }
-      return {
-        ...c,
-        total_purchases:    agg.total,
-        last_purchase_date: agg.lastDate,
-        purchase_count:     agg.count,
-      }
-    })
+    // Financial metrics are intentionally not calculated from browser-loaded
+    // invoice rows. The dedicated report and detail RPCs own those totals.
+    const withStats: CustomerWithStats[] = ((custs ?? []) as unknown as Customer[]).map(c => ({
+      ...c,
+      total_purchases: 0,
+      last_purchase_date: null,
+      purchase_count: 0,
+    }))
 
     setCustomers(withStats)
     setLoading(false)
@@ -264,11 +221,24 @@ export default function CustomersPage() {
   const openAdd  = () => { setEditing(null); setDrawerOpen(true) }
   const openEdit = (c: CustomerWithStats) => { setEditing(c); setDrawerOpen(true) }
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(t('deleteConfirm', { name }))) return
-    const q = supabase as unknown as { from: (t: string) => any }
-    await q.from('customers').update({ is_active: false }).eq('id', id)
-    setCustomers(prev => prev.filter(c => c.id !== id))
+  const handleArchive = async () => {
+    const target = archiveTarget
+    if (!target || archivingIds.has(target.id)) return
+    setArchivingIds(prev => new Set(prev).add(target.id))
+    try {
+      await archiveEntity(supabase as unknown as ArchiveEntityClient, 'customers', target.id)
+      setCustomers(prev => prev.filter(customer => customer.id !== target.id))
+      setArchiveTarget(null)
+      toast.success(t('success.archived'))
+    } catch {
+      toast.error(t('errors.archiveFailed'))
+    } finally {
+      setArchivingIds(prev => {
+        const next = new Set(prev)
+        next.delete(target.id)
+        return next
+      })
+    }
   }
 
   const counts = {
@@ -299,20 +269,26 @@ export default function CustomersPage() {
     <div className="space-y-5">
 
       {/* ── Header ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
-        <div className="flex-1 flex items-center gap-2 min-w-0">
-          <h1 className="text-lg font-bold text-gray-900">{t('title')}</h1>
-          {!loading && (
-            <span className="text-xs font-semibold bg-primary-50 text-primary-600 px-2 py-0.5 rounded-full">
-              {customers.length}
-            </span>
-          )}
-        </div>
-        <Button size="sm" onClick={openAdd}>
-          <Plus size={14} />
-          {t('add')}
-        </Button>
-      </div>
+      <PageHeader
+        title={t('title')}
+        meta={!loading ? (
+          <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs font-semibold text-primary-600">
+            {customers.length}
+          </span>
+        ) : undefined}
+        actions={(
+          <>
+            <Button size="sm" onClick={openAdd}>
+              <Plus size={14} />
+              {t('add')}
+            </Button>
+            <Link to="/reports/customers" className="btn-secondary px-3 py-1.5 text-xs rounded-lg">
+              <BarChart3 size={14} />
+              {t('customerIntelligence:reports.openDedicated')}
+            </Link>
+          </>
+        )}
+      />
 
       {/* ── Filter tabs ─────────────────────────────────────── */}
       <div className="flex items-center gap-2">
@@ -323,18 +299,21 @@ export default function CustomersPage() {
 
       {/* ── Search ──────────────────────────────────────────── */}
       <div className="relative max-w-sm">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         <input
           type="text"
           placeholder={t('search')}
+          aria-label={t('search')}
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="input pl-9 py-2 text-sm"
+          className="input ps-9 pe-9 py-2 text-sm"
         />
         {search && (
           <button
+            type="button"
             onClick={() => setSearch('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+            aria-label={t('common:clearSearch')}
+            className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
           >
             <X size={13} />
           </button>
@@ -343,9 +322,7 @@ export default function CustomersPage() {
 
       {/* ── Content ─────────────────────────────────────────── */}
       {loading ? (
-        <div className="flex justify-center py-24">
-          <LoadingSpinner size="lg" />
-        </div>
+        <ContentState kind="loading" className="py-24" />
       ) : filtered.length === 0 ? (
         <EmptyState filtered={isFiltered} onAdd={openAdd} />
       ) : (
@@ -357,8 +334,6 @@ export default function CustomersPage() {
             <div className="w-32 flex-shrink-0 hidden sm:block">{t('fields.mobile')}</div>
             <div className="w-24 flex-shrink-0 hidden md:block">{t('fields.type')}</div>
             <div className="w-36 flex-shrink-0 hidden lg:block">{t('fields.vatNumber')}</div>
-            <div className="w-28 flex-shrink-0 text-end hidden sm:block">{t('fields.totalSpent')}</div>
-            <div className="w-28 flex-shrink-0 text-end hidden xl:block">{t('fields.lastPurchase')}</div>
             <div className="w-24 flex-shrink-0" />
           </div>
           {filtered.map(c => (
@@ -367,7 +342,8 @@ export default function CustomersPage() {
               customer={c}
               onEdit={() => openEdit(c)}
               onView={() => navigate(`/customers/${c.id}`)}
-              onDelete={() => handleDelete(c.id, displayName(c))}
+              onArchive={() => setArchiveTarget(c)}
+              archiving={archivingIds.has(c.id)}
             />
           ))}
         </div>
@@ -384,21 +360,27 @@ export default function CustomersPage() {
             <Building2 size={14} className="text-gold-500" />
             <span>{t('businessCount', { count: counts.business })}</span>
           </div>
-          <div className="ml-auto text-gray-500">
-            {t('listedRevenue')}:{' '}
-            <strong className="text-primary-600">
-              <Rial amount={customers.reduce((s, c) => s + c.total_purchases, 0)} />
-            </strong>
-          </div>
+          <Link to="/reports/customers" className="ms-auto font-semibold text-primary-600 hover:text-primary-700">
+            {t('customerIntelligence:reports.openDedicated')}
+          </Link>
         </div>
       )}
 
-      {/* ── Drawer ──────────────────────────────────────────── */}
-      <CustomerDrawer
+      <CustomerModal
         open={drawerOpen}
         customer={editing}
         onClose={() => setDrawerOpen(false)}
         onSaved={load}
+      />
+      <ConfirmDialog
+        open={archiveTarget !== null}
+        kind="customerArchive"
+        name={archiveTarget ? displayName(archiveTarget) : undefined}
+        busy={archiveTarget ? archivingIds.has(archiveTarget.id) : false}
+        confirmVariant="gold"
+        cancelLabel={t('actions.cancel')}
+        onClose={() => setArchiveTarget(null)}
+        onConfirm={() => void handleArchive()}
       />
     </div>
   )

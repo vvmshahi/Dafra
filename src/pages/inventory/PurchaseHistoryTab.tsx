@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Eye, ShoppingCart, Paperclip, X, Trash2, AlertTriangle, CheckCircle2, Pencil } from 'lucide-react'
+import { Plus, Eye, ShoppingCart, Paperclip, X, Trash2, AlertTriangle, Pencil } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import type { Purchase, PurchaseItem, Supplier, InventoryItem } from '@/types'
-import PurchaseDrawer from './PurchaseDrawer'
+import type { Purchase, PurchaseItem, Supplier } from '@/types'
+import PurchaseBillModal from './PurchaseBillModal'
 import {
   COMPACT_DATE_PRESETS,
   CompactDateRangeFilter,
@@ -34,9 +34,6 @@ const EDIT_WINDOW_DAYS = 45
 const PAY_BADGE: Record<string, 'success' | 'info' | 'neutral'> = {
   cash: 'success', card: 'info', bank_transfer: 'neutral',
 }
-const fmt = (n: number) =>
-  n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
 // ── Purchase detail modal ─────────────────────────────────────────────────────
 
 function PurchaseDetailModal({
@@ -276,104 +273,18 @@ function DeletePurchaseModal({
   )
 }
 
-function ConfirmStockModal({
-  purchase, confirming, error, confirmed, onConfirmed, onClose, onConfirm,
-}: {
-  purchase: PurchaseRow
-  confirming: boolean
-  error: string
-  confirmed: boolean
-  onConfirmed: (value: boolean) => void
-  onClose: () => void
-  onConfirm: () => void
-}) {
-  const { t, i18n } = useTranslation(['purchases', 'common'])
-  const supplierName = purchase.suppliers ? dn(purchase.suppliers.name, purchase.suppliers.name_ar) : t('purchases:noSupplierLower')
-
-  return (
-    <>
-      <div className="fixed inset-0 bg-black/40 z-50" onClick={onClose} />
-      <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-          <div className="px-6 py-5 border-b border-gray-100 flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0">
-              <CheckCircle2 size={18} />
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-base font-bold text-gray-900">{t('purchases:receive')}</h3>
-              <p className="text-sm text-gray-500 mt-1">
-                {t('purchases:confirmStockHint')}
-              </p>
-            </div>
-          </div>
-
-          <div className="px-6 py-5 space-y-4">
-            <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm">
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">{t('purchases:fields.supplier')}</span>
-                <span className="font-medium text-gray-700 truncate">{supplierName}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">{t('purchases:fields.total')}</span>
-                <span className="font-semibold text-gray-900"><Rial amount={purchase.total_amount} /></span>
-              </div>
-              <div className="flex justify-between gap-3 mt-1">
-                <span className="text-gray-500">{t('purchases:fields.date')}</span>
-                <span className="font-medium text-gray-700">{new Date(purchase.purchase_date).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-GB')}</span>
-              </div>
-            </div>
-
-            <label className="flex items-start gap-3 rounded-xl border border-gray-200 px-4 py-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={confirmed}
-                onChange={e => onConfirmed(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-              />
-              <span className="text-sm text-gray-600">
-                {t('purchases:confirmStockAcknowledge')}
-              </span>
-            </label>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600">
-                {error}
-              </div>
-            )}
-          </div>
-
-          <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>{t('common:cancel')}</Button>
-            <Button
-              type="button"
-              className="flex-1"
-              loading={confirming}
-              disabled={!confirmed}
-              onClick={onConfirm}
-            >
-              {t('common:confirm')}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </>
-  )
-}
-
 // ── Main tab ──────────────────────────────────────────────────────────────────
 
-export default function PurchaseHistoryTab({ stockEnabled }: { stockEnabled: boolean }) {
+export default function PurchaseHistoryTab() {
   const { profile } = useAuth()
   const { t, i18n } = useTranslation(['purchases', 'common'])
   const initialDateRange = getDateRange('today')
 
   const [purchases,       setPurchases]       = useState<PurchaseRow[]>([])
   const [suppliers,       setSuppliers]       = useState<Supplier[]>([])
-  const [inventoryItems,  setInventoryItems]  = useState<InventoryItem[]>([])
   const [loading,         setLoading]         = useState(true)
   const [drawerOpen,      setDrawerOpen]      = useState(false)
   const [editingPurchase, setEditingPurchase] = useState<PurchaseRow | null>(null)
-  const [editingItems,    setEditingItems]    = useState<PurchaseItem[]>([])
 
   // Detail modal
   const [viewingPurchase, setViewingPurchase] = useState<PurchaseRow | null>(null)
@@ -383,10 +294,6 @@ export default function PurchaseHistoryTab({ stockEnabled }: { stockEnabled: boo
   const [deleteConfirmed, setDeleteConfirmed] = useState(false)
   const [deleteError,     setDeleteError]     = useState('')
   const [deleting,        setDeleting]        = useState(false)
-  const [confirmTarget,   setConfirmTarget]   = useState<PurchaseRow | null>(null)
-  const [confirmChecked,  setConfirmChecked]  = useState(false)
-  const [confirmError,    setConfirmError]    = useState('')
-  const [confirming,      setConfirming]      = useState(false)
   const [datePreset,      setDatePreset]      = useState<DatePreset>('today')
   const [startDate,       setStartDate]       = useState(initialDateRange.start)
   const [endDate,         setEndDate]         = useState(initialDateRange.end)
@@ -405,7 +312,6 @@ export default function PurchaseHistoryTab({ stockEnabled }: { stockEnabled: boo
     if (!tid || !bid) {
       setPurchases([])
       setSuppliers([])
-      setInventoryItems([])
       setLoading(false)
       return
     }
@@ -413,7 +319,7 @@ export default function PurchaseHistoryTab({ stockEnabled }: { stockEnabled: boo
     setLoading(true)
     setSuppliers([])
 
-    const [{ data: purData }, { data: supData }, { data: invData }] = await Promise.all([
+    const [{ data: purData }, { data: supData }] = await Promise.all([
       supabase
         .from('purchases')
         .select('*, suppliers(name,name_ar), purchase_items(id)')
@@ -447,16 +353,10 @@ export default function PurchaseHistoryTab({ stockEnabled }: { stockEnabled: boo
         .eq('branch_id', bid)
         .eq('is_active', true)
         .order('name'),
-      supabase
-        .from('inventory_items')
-        .select('*')
-        .eq('branch_id', bid)
-        .order('name'),
     ])
 
     setPurchases((purData ?? []) as unknown as PurchaseRow[])
     setSuppliers((supData ?? []) as unknown as Supplier[])
-    setInventoryItems((invData ?? []) as unknown as InventoryItem[])
     setLoading(false)
   }, [profile?.id, profile?.role, profile?.tenant_id, profile?.branch_id, startDate, endDate])
 
@@ -507,18 +407,11 @@ export default function PurchaseHistoryTab({ stockEnabled }: { stockEnabled: boo
       (receivingStatus(purchase) === 'not_applicable' && purchase.status === 'draft')
     )
 
-  const canConfirmReceiving = (purchase: PurchaseRow) =>
-    stockEnabled &&
-    isInEditWindow(purchase) &&
-    isPendingStockReceiving(purchase)
-
   const canEditPurchase = (purchase: PurchaseRow) =>
     isInEditWindow(purchase) &&
     !isDeletedPurchase(purchase) &&
-    (
-      (purchaseMode(purchase) === 'simple_bill' && purchase.purchase_items.length === 0) ||
-      isPendingStockReceiving(purchase)
-    )
+    purchaseMode(purchase) === 'simple_bill' &&
+    purchase.purchase_items.length === 0
 
   const canDeletePurchase = (purchase: PurchaseRow) =>
     isInEditWindow(purchase) &&
@@ -565,25 +458,17 @@ export default function PurchaseHistoryTab({ stockEnabled }: { stockEnabled: boo
 
   const openAdd = () => {
     setEditingPurchase(null)
-    setEditingItems([])
     setDrawerOpen(true)
   }
 
   const closeDrawer = () => {
     setDrawerOpen(false)
     setEditingPurchase(null)
-    setEditingItems([])
   }
 
-  const openEdit = async (purchase: PurchaseRow) => {
+  const openEdit = (purchase: PurchaseRow) => {
     if (!canEditPurchase(purchase)) return
-    const q = supabase as unknown as { from: (t: string) => any }
-    const { data } = await q.from('purchase_items')
-      .select('*')
-      .eq('purchase_id', purchase.id)
-      .order('created_at')
     setEditingPurchase(purchase)
-    setEditingItems((data ?? []) as unknown as PurchaseItem[])
     setDrawerOpen(true)
   }
 
@@ -611,29 +496,6 @@ export default function PurchaseHistoryTab({ stockEnabled }: { stockEnabled: boo
     setDeleting(false)
     setDeleteTarget(null)
     setDeleteConfirmed(false)
-    await load()
-  }
-
-  const confirmStock = async () => {
-    if (!confirmTarget) return
-    setConfirming(true)
-    setConfirmError('')
-
-    const { error } = await (supabase as any).rpc('confirm_purchase_receiving', {
-      p_purchase_id: confirmTarget.id,
-      p_confirm: confirmChecked,
-    })
-
-    if (error) {
-      console.error('[PurchaseHistoryTab] receiving confirmation failed', error)
-      setConfirmError(t('purchases:errors.receiveFailed'))
-      setConfirming(false)
-      return
-    }
-
-    setConfirming(false)
-    setConfirmTarget(null)
-    setConfirmChecked(false)
     await load()
   }
 
@@ -681,17 +543,17 @@ export default function PurchaseHistoryTab({ stockEnabled }: { stockEnabled: boo
       {/* ── Header row ──────────────────────────────────────── */}
       <div className="flex items-start gap-4 flex-wrap">
         <div className="flex gap-3 flex-1 flex-wrap min-w-0">
-          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-primary-500 border border-primary-600 text-white shadow-card">
-            <p className="text-xs font-medium text-white/70">{t('purchases:totalPurchased')}</p>
-            <p className="text-lg font-bold mt-0.5"><Rial amount={totalSpent} /></p>
-            <p className="text-[10px] text-white/60 mt-0.5">{t('purchases:purchaseCount', { count: purchases.length })}</p>
+          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-[#173f2a]/70 shadow-card">
+            <p className="text-xs font-medium text-gray-500">{t('purchases:totalPurchased')}</p>
+            <p className="text-lg font-bold text-primary-700 mt-0.5"><Rial amount={totalSpent} /></p>
+            <p className="text-[10px] text-gray-500 mt-0.5">{t('purchases:purchaseCount', { count: purchases.length })}</p>
           </div>
-          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
+          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-[#173f2a]/70 shadow-card">
             <p className="text-xs font-medium text-gray-400">{t('purchases:vatPaid')}</p>
             <p className="text-lg font-bold text-amber-600 mt-0.5"><Rial amount={totalVat} /></p>
             <p className="text-[10px] text-gray-400 mt-0.5">{t('purchases:allPurchases')}</p>
           </div>
-          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-gray-100 shadow-card">
+          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-[#173f2a]/70 shadow-card">
             <p className="text-xs font-medium text-gray-400">{t('purchases:suppliersUsed')}</p>
             <p className="text-lg font-bold text-gray-900 mt-0.5">
               {new Set(purchases.map(p => p.supplier_id).filter(Boolean)).size}
@@ -740,7 +602,36 @@ export default function PurchaseHistoryTab({ stockEnabled }: { stockEnabled: boo
           </Button>
         </div>
       ) : (
-        <div className="card overflow-hidden">
+        <>
+        <div className="grid gap-3 md:hidden" aria-label={t('purchases:title')}>
+          {purchases.map(p => (
+            <article key={p.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-card">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="break-words text-sm font-bold text-gray-900">
+                    {p.suppliers ? dn(p.suppliers.name, p.suppliers.name_ar) : t('purchases:noSupplierLower')}
+                  </h3>
+                  <p className="mt-1 break-words text-xs text-gray-500" dir="auto">
+                    {p.bill_number || p.notes || (purchaseMode(p) === 'simple_bill' ? t('purchases:mode.bill') : t('purchases:mode.stock'))}
+                  </p>
+                </div>
+                <p className="shrink-0 text-sm font-black tabular-nums text-gray-900" dir="ltr"><Rial amount={p.total_amount} /></p>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-gray-600" dir="ltr">{new Date(p.purchase_date).toLocaleDateString(i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-GB')}</span>
+                <Badge variant={PAY_BADGE[p.payment_method] ?? 'neutral'}>{t(`purchases:paymentMethod.${p.payment_method}`, { defaultValue: t('purchases:paymentMethod.unknown') })}</Badge>
+                <Badge variant={purchaseStatusVariant(p)} dot>{t(`purchases:status.${purchaseStatusLabel(p)}`, { defaultValue: t('purchases:status.unknown') })}</Badge>
+              </div>
+              <div className="mt-3 flex flex-wrap justify-end gap-1 border-t border-gray-100 pt-3">
+                {p.bill_path || p.bill_url ? <button type="button" onClick={() => openBillAttachment(p)} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-amber-700 hover:bg-amber-50"><Paperclip size={14} />{t('purchases:fields.bill')}</button> : null}
+                <button type="button" onClick={() => viewDetails(p)} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-gray-700 hover:bg-gray-100"><Eye size={14} />{t('purchases:actions.view')}</button>
+                {canEditPurchase(p) && <button type="button" onClick={() => openEdit(p)} aria-label={t('purchases:actions.edit')} className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-600 hover:bg-gray-100"><Pencil size={14} /></button>}
+                {canDeletePurchase(p) && <button type="button" onClick={() => openDelete(p)} aria-label={t('purchases:actions.delete')} className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-600 hover:bg-red-50 hover:text-red-600"><Trash2 size={14} /></button>}
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="card hidden overflow-hidden md:block">
           {/* Table header */}
           <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
             <div className="w-24 flex-shrink-0">{t('purchases:fields.date')}</div>
@@ -857,15 +748,6 @@ export default function PurchaseHistoryTab({ stockEnabled }: { stockEnabled: boo
                     <Trash2 size={14} />
                   </button>
                 )}
-                {canConfirmReceiving(p) && (
-                  <button
-                    onClick={() => { setConfirmTarget(p); setConfirmChecked(false); setConfirmError('') }}
-                    className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
-                    title={t('purchases:actions.confirmStock')}
-                  >
-                    <CheckCircle2 size={14} />
-                  </button>
-                )}
               </div>
             </div>
           ))}
@@ -889,17 +771,15 @@ export default function PurchaseHistoryTab({ stockEnabled }: { stockEnabled: boo
             <div className="w-36" />
           </div>
         </div>
+        </>
       )}
 
-      <PurchaseDrawer
+      <PurchaseBillModal
         open={drawerOpen}
         suppliers={suppliers}
-        inventoryItems={inventoryItems}
         tenantId={profile?.tenant_id ?? ''}
         branchId={profile?.branch_id ?? ''}
         editingPurchase={editingPurchase}
-        editingItems={editingItems}
-        stockEnabled={stockEnabled}
         onClose={closeDrawer}
         onSaved={load}
       />
@@ -926,22 +806,6 @@ export default function PurchaseHistoryTab({ stockEnabled }: { stockEnabled: boo
         />
       )}
 
-      {confirmTarget && (
-        <ConfirmStockModal
-          purchase={confirmTarget}
-          confirming={confirming}
-          error={confirmError}
-          confirmed={confirmChecked}
-          onConfirmed={setConfirmChecked}
-          onClose={() => {
-            if (confirming) return
-            setConfirmTarget(null)
-            setConfirmChecked(false)
-            setConfirmError('')
-          }}
-          onConfirm={confirmStock}
-        />
-      )}
     </div>
   )
 }

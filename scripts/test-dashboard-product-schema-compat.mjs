@@ -40,7 +40,8 @@ assert.doesNotMatch(baseSchema + canonicalSchema, /min_stock_level/)
 
 assert.match(productStockTab, /'stock_quantity', 'min_stock_alert'/)
 assert.match(productStockTab, /\.eq\('track_stock', true\)/)
-assert.match(productsPage, /'stock_quantity', 'track_stock'/)
+assert.match(productsPage, /'stock_quantity', 'min_stock_alert'/)
+assert.match(productsPage, /'min_stock_alert', 'track_stock'/)
 assert.match(posPage, /stock_quantity, track_stock/)
 
 assert.doesNotMatch(browserSources, /min_stock_level/)

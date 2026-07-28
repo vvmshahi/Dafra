@@ -19,6 +19,12 @@ export interface ThermalItem {
   readonly name: string
   readonly nameAr?: string | null
   readonly qty: number
+  readonly unitName?: string | null
+  readonly unitNameAr?: string | null
+  readonly unitCode?: string | null
+  readonly baseQuantity?: number | null
+  readonly baseUnitName?: string | null
+  readonly baseUnitNameAr?: string | null
   readonly unitPrice: number
   readonly lineTotal: number
   readonly subtotal?: number
@@ -105,6 +111,25 @@ function names(model: DocumentViewModel, en: string | null, ar: string | null) {
   return documentNames(model.identity.language, en, ar)
 }
 
+function QuantityWithUnit({
+  quantity,
+  item,
+  model,
+}: {
+  quantity: number
+  item: DocumentViewModel['items'][number]
+  model: DocumentViewModel
+}) {
+  return (
+    <>
+      <bdi dir="ltr">{formatDocumentQuantity(quantity, model)}</bdi>
+      {names(model, item.unitName, item.unitNameAr).map((unit, index) => (
+        <span key={`${unit}-${index}`} dir="auto"> {unit}</span>
+      ))}
+    </>
+  )
+}
+
 export function thermalPrintCss(width: '58mm' | '80mm') {
   const content = width === '58mm' ? '52mm' : '72mm'
   return `@media print { @page { size: ${width} auto; margin: 0; } html, body { width: ${width}; margin: 0 !important; padding: 0 !important; } body > * { visibility: hidden !important; } .thermal-receipt, .thermal-receipt * { visibility: visible !important; } .thermal-receipt { position: absolute !important; inset: 0 auto auto 0 !important; width: ${width} !important; max-width: ${width} !important; min-height: 0 !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; } .thermal-receipt__paper { width: ${content} !important; max-width: ${content} !important; } }`
@@ -158,6 +183,12 @@ function legacyModel(props: LegacyThermalReceiptProps): DocumentViewModel {
     description: item.name,
     descriptionAr: item.nameAr ?? null,
     quantity: Number(item.qty) || 0,
+    unitName: item.unitName ?? null,
+    unitNameAr: item.unitNameAr ?? null,
+    unitCode: item.unitCode ?? null,
+    baseQuantity: item.baseQuantity ?? null,
+    baseUnitName: item.baseUnitName ?? null,
+    baseUnitNameAr: item.baseUnitNameAr ?? null,
     unitPrice: Number(item.unitPrice) || 0,
     discount: 0,
     taxableAmount: Number(item.subtotal ?? item.lineTotal) || 0,
@@ -214,7 +245,7 @@ export default function ThermalReceipt(props: ThermalReceiptProps) {
   const isCredit = identity.kind === 'credit_note'
   const isDebit = identity.kind === 'debit_note'
   const isAdjustment = isCredit || isDebit
-  const isStandard = identity.invoiceType === 'standard' || (isAdjustment && buyer.type === 'business' && !!buyer.vatNumber)
+  const isStandard = identity.invoiceType === 'standard'
   const title = isCredit
     ? (isStandard ? 'taxCreditNote' : 'simplifiedTaxCreditNote')
     : isDebit
@@ -253,7 +284,7 @@ export default function ThermalReceipt(props: ThermalReceiptProps) {
       <section className="thermal-meta"><div>{documentLabel(identity.language, isCredit ? 'creditNoteNumber' : isDebit ? 'debitNoteNumber' : 'invoiceNumber')}: <bdi dir="ltr">{identity.number}</bdi></div><div>{documentLabel(identity.language, 'date')}: <bdi dir="ltr">{date}</bdi></div><div>{documentLabel(identity.language, 'time')}: <bdi dir="ltr">{time}</bdi></div>{isAdjustment && model.compliance.originalDocument.number && <div>{documentLabel(identity.language, 'originalInvoice')}: <bdi dir="ltr">{model.compliance.originalDocument.number}</bdi></div>}{isAdjustment && model.compliance.creditReason && <div>{documentLabel(identity.language, 'reason')}: <span dir="auto">{model.compliance.creditReason}</span></div>}</section>
       {(mandatoryBuyer || (!isCompact && buyer.name)) && <><Rule /><section className="thermal-buyer"><div className="thermal-section-label">{documentLabel(identity.language, 'customer')}</div>{names(model, buyer.name, buyer.nameAr).map((name, index) => <div key={`${name}-${index}`} dir="auto">{name}</div>)}{isDetailed && names(model, buyer.address, buyer.addressAr).map((value, index) => <div key={`${value}-${index}`} dir="auto">{value}</div>)}{buyer.vatNumber && <div>{documentLabel(identity.language, 'customerVatNumber')}: <bdi dir="ltr">{buyer.vatNumber}</bdi></div>}{buyer.identifierValue && <div>{buyer.identifierType ?? documentLabel(identity.language, 'identifier')}: <bdi dir="ltr">{buyer.identifierValue}</bdi></div>}</section></>}
       <Rule />
-      <section className={`thermal-items ${is58 ? 'thermal-items--stacked' : 'thermal-items--wide'}`}>{model.items.map((item, index) => <article className="thermal-item" key={`${item.description}-${index}`}><div className={`thermal-item-name ${presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>{names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}</div><div className="thermal-item-values"><span><bdi dir="ltr">{formatDocumentQuantity(item.quantity, model)} ×</bdi> <Money value={item.unitPrice} model={model} /></span><span><Money value={item.lineTotal} model={model} /></span></div>{(isStandard || isAdjustment || item.discount > 0) && <div className="thermal-item-detail">{(isStandard || isAdjustment) && <span>{documentLabel(identity.language, 'vatAmount')} <bdi dir="ltr">{formatDocumentQuantity(item.vatRate, model)}%</bdi></span>}{item.discount > 0 && <span>{documentLabel(identity.language, 'discount')}: <Money value={item.discount} model={model} /></span>}{isCredit && item.creditedQuantity != null && <span>{documentLabel(identity.language, 'quantity')}: <bdi dir="ltr">{formatDocumentQuantity(item.creditedQuantity, model)}</bdi></span>}</div>}</article>)}</section>
+      <section className={`thermal-items ${is58 ? 'thermal-items--stacked' : 'thermal-items--wide'}`}>{model.items.map((item, index) => <article className="thermal-item" key={`${item.description}-${index}`}><div className={`thermal-item-name ${presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>{names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}</div><div className="thermal-item-values"><span><QuantityWithUnit quantity={item.quantity} item={item} model={model} /> <span aria-hidden="true">×</span> <Money value={item.unitPrice} model={model} /></span><span><Money value={item.lineTotal} model={model} /></span></div>{(isStandard || isAdjustment || item.discount > 0) && <div className="thermal-item-detail">{(isStandard || isAdjustment) && <span>{documentLabel(identity.language, 'vatAmount')} <bdi dir="ltr">{formatDocumentQuantity(item.vatRate, model)}%</bdi></span>}{item.discount > 0 && <span>{documentLabel(identity.language, 'discount')}: <Money value={item.discount} model={model} /></span>}{isCredit && item.creditedQuantity != null && <span>{documentLabel(identity.language, 'quantity')}: <QuantityWithUnit quantity={item.creditedQuantity} item={item} model={model} /></span>}</div>}</article>)}</section>
       <Rule />
       <section className="thermal-totals">{visibleTotals.map(row => <Row key={row.key} label={row.label} strong={row.emphasized}><Money value={row.value} model={model} /></Row>)}</section>
       <><Rule /><section className="thermal-payments"><div>{documentLabel(identity.language, isCredit ? 'refundMethod' : 'paymentMethod')}: <strong>{documentPaymentLabel(identity.language, paymentKind)}</strong></div>{(isDetailed || payments.length > 1) && payments.map((payment, index) => <Row key={`${payment.method}-${index}`} label={documentPaymentLabel(identity.language, payment.method)}><Money value={payment.amount} model={model} /></Row>)}{presentation.thermal.showCashChange && payments.length === 1 && payments[0]?.method === 'cash' && payments[0]?.cashTendered != null && Math.abs((payments[0]?.cashTendered ?? 0) - totals.total) > 0.005 && <Row label={documentLabel(identity.language, 'received')}><Money value={payments[0].cashTendered} model={model} /></Row>}{presentation.thermal.showCashChange && payments.length === 1 && payments[0]?.method === 'cash' && (payments[0]?.change ?? 0) > 0 && <Row label={documentLabel(identity.language, 'change')}><Money value={payments[0].change ?? 0} model={model} /></Row>}</section></>

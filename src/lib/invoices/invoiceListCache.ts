@@ -9,6 +9,7 @@ export interface InvoiceListRow {
   invoiceNumber: string
   date: string
   createdAt: string
+  sessionId?: string | null
   customerName: string | null
   itemsCount: number
   subtotal: number
@@ -34,6 +35,7 @@ export interface InvoiceListScope {
   endDate: string
   page: number
   pageSize: number
+  sessionId?: string | null
 }
 
 interface CacheEntry {
@@ -47,7 +49,15 @@ export const INVOICE_LIST_STALE_MS = 30_000
 export const INVOICE_LIST_CACHE_MS = 10 * 60_000
 
 export function invoiceListCacheKey(scope: InvoiceListScope) {
-  return [scope.tenantId, scope.branchId, scope.startDate, scope.endDate, scope.page, scope.pageSize].join('|')
+  return [
+    scope.tenantId,
+    scope.branchId,
+    scope.startDate,
+    scope.endDate,
+    scope.page,
+    scope.pageSize,
+    scope.sessionId ?? 'date',
+  ].join('|')
 }
 
 export function invoiceListViewKey(scope: InvoiceListScope, filters: {
@@ -81,8 +91,9 @@ export function setCachedInvoiceRows(scope: InvoiceListScope, rows: InvoiceListR
 export function upsertInvoiceListRow(tenantId: string, row: InvoiceListRow) {
   let matched = false
   for (const [key, entry] of cache) {
-    const [cachedTenant, cachedBranch, startDate, endDate, page, pageSize] = key.split('|')
+    const [cachedTenant, cachedBranch, startDate, endDate, page, pageSize, cachedSessionId] = key.split('|')
     if (cachedTenant !== tenantId || cachedBranch !== row.branchId || row.date < startDate || row.date > endDate) continue
+    if (cachedSessionId !== 'date' && cachedSessionId !== (row.sessionId ?? '')) continue
     if (page !== '0') continue
     matched = true
     const rows = [row, ...entry.rows.filter(existing => existing.id !== row.id)]

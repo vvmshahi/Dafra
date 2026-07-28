@@ -28,6 +28,7 @@ DECLARE
   v_missing bigint;
   v_oid oid;
   v_definition text;
+  v_contract_hash text;
   v_search_path_ok boolean;
   v_public_execute boolean;
   v_anon_execute boolean;
@@ -510,23 +511,104 @@ BEGIN
     ) AS expected(check_name, signature, expected_hash)
   LOOP
     v_oid := to_regprocedure(v_function.signature)::oid;
+    IF v_function.check_name = 'pos_checkout_hash'
+       AND to_regclass(
+         'public.product_units_commercial_function_contracts_v1'
+       ) IS NOT NULL
+    THEN
+      EXECUTE $contract$
+        SELECT definition_md5
+        FROM public.product_units_commercial_function_contracts_v1
+        WHERE function_signature = $1
+      $contract$
+      INTO v_contract_hash
+      USING v_function.signature;
+
+      INSERT INTO zatca_v2_verification_results VALUES (
+        v_function.check_name,
+        CASE WHEN v_oid IS NULL
+          THEN 'missing'
+          ELSE md5(pg_get_functiondef(v_oid))
+        END,
+        COALESCE(v_contract_hash, 'contract_missing'),
+        CASE WHEN v_oid IS NOT NULL
+          AND v_contract_hash IS NOT NULL
+          AND md5(pg_get_functiondef(v_oid)) = v_contract_hash
+        THEN 'PASS' ELSE 'FAIL' END
+      );
+    ELSE
+      INSERT INTO zatca_v2_verification_results VALUES (
+        v_function.check_name,
+        CASE WHEN v_oid IS NULL THEN 'missing' ELSE md5(pg_get_functiondef(v_oid)) END,
+        v_function.expected_hash,
+        CASE WHEN v_oid IS NOT NULL
+          AND md5(pg_get_functiondef(v_oid)) = v_function.expected_hash
+        THEN 'PASS' ELSE 'FAIL' END
+      );
+    END IF;
+  END LOOP;
+
+  IF to_regclass(
+    'public.product_units_commercial_function_contracts_v1'
+  ) IS NOT NULL
+  THEN
+    v_oid := to_regprocedure(
+      'public.pos_checkout_legacy_base_v1(jsonb)'
+    )::oid;
+    EXECUTE $contract$
+      SELECT definition_md5
+      FROM public.product_units_commercial_function_contracts_v1
+      WHERE function_signature = 'public.pos_checkout_legacy_base_v1(jsonb)'
+    $contract$
+    INTO v_contract_hash;
     INSERT INTO zatca_v2_verification_results VALUES (
-      v_function.check_name,
-      CASE WHEN v_oid IS NULL THEN 'missing' ELSE md5(pg_get_functiondef(v_oid)) END,
-      v_function.expected_hash,
+      'pos_checkout_legacy_hash',
+      CASE WHEN v_oid IS NULL
+        THEN 'missing'
+        ELSE md5(pg_get_functiondef(v_oid))
+      END,
+      COALESCE(v_contract_hash, 'contract_missing'),
       CASE WHEN v_oid IS NOT NULL
-        AND md5(pg_get_functiondef(v_oid)) = v_function.expected_hash
+        AND v_contract_hash IS NOT NULL
+        AND md5(pg_get_functiondef(v_oid)) = v_contract_hash
       THEN 'PASS' ELSE 'FAIL' END
     );
-  END LOOP;
+
+    EXECUTE $contract$
+      SELECT count(*)
+      FROM public.product_units_commercial_function_contracts_v1 contract
+      WHERE CASE
+        WHEN to_regprocedure(contract.function_signature) IS NULL THEN true
+        ELSE md5(pg_get_functiondef(
+          to_regprocedure(contract.function_signature)::oid
+        )) IS DISTINCT FROM contract.definition_md5
+      END
+    $contract$
+    INTO v_missing;
+  ELSE
+    v_missing := 0;
+  END IF;
 
   INSERT INTO zatca_v2_verification_results VALUES
     ('no_invoice_calculation_changes',
-      'covered by protected pos_checkout hash',
-      'pos_checkout_hash PASS',
+      format(
+        'covered by protected dispatcher/preserved implementation hashes; registered_contract_mismatches=%s',
+        v_missing
+      ),
+      'pos_checkout_hash PASS; package workflow also requires pos_checkout_legacy_hash PASS and registered_contract_mismatches=0',
       CASE WHEN EXISTS (
         SELECT 1 FROM zatca_v2_verification_results
         WHERE check_name = 'pos_checkout_hash' AND result = 'PASS'
+      ) AND (
+        to_regclass(
+          'public.product_units_commercial_function_contracts_v1'
+        ) IS NULL
+        OR EXISTS (
+          SELECT 1 FROM zatca_v2_verification_results
+          WHERE check_name = 'pos_checkout_legacy_hash'
+            AND result = 'PASS'
+        )
+        AND v_missing = 0
       ) THEN 'PASS' ELSE 'FAIL' END),
     ('no_storage_mutation', 'not observable from PostgreSQL package verifier',
       'repository SQL static audit passes', 'REVIEW'),
@@ -550,11 +632,34 @@ BEGIN
   INTO v_total, v_pass, v_review, v_fail
   FROM zatca_v2_verification_results;
 
-  IF v_total <> 59 OR v_pass <> 54 OR v_review <> 5 OR v_fail <> 0 THEN
+  IF (
+       to_regclass(
+         'public.product_units_commercial_function_contracts_v1'
+       ) IS NULL
+       AND (
+         v_total <> 59 OR v_pass <> 54 OR v_review <> 5 OR v_fail <> 0
+       )
+     )
+     OR (
+       to_regclass(
+         'public.product_units_commercial_function_contracts_v1'
+       ) IS NOT NULL
+       AND (
+         v_total <> 60 OR v_pass <> 55 OR v_review <> 5 OR v_fail <> 0
+       )
+     )
+  THEN
     RAISE EXCEPTION
       'VERIFICATION_RESULT_SET_UNEXPECTED:total=%,pass=%,review=%,fail=%',
       v_total, v_pass, v_review, v_fail
-      USING HINT = 'Expected exactly 59 named rows: 54 PASS, 5 REVIEW, and 0 FAIL.';
+      USING HINT = CASE
+        WHEN to_regclass(
+          'public.product_units_commercial_function_contracts_v1'
+        ) IS NULL
+          THEN 'Expected exactly 59 named rows: 54 PASS, 5 REVIEW, and 0 FAIL.'
+        ELSE
+          'Expected exactly 60 named rows: 55 PASS, 5 REVIEW, and 0 FAIL with the Product Units commercial contract.'
+      END;
   END IF;
 END
 $complete_result_set$;
@@ -564,7 +669,15 @@ FROM zatca_v2_verification_results
 ORDER BY CASE result WHEN 'FAIL' THEN 1 WHEN 'REVIEW' THEN 2 ELSE 3 END, check_name;
 
 WITH expected(result, expected_checks) AS (
-  VALUES ('FAIL', 0::bigint), ('PASS', 54::bigint), ('REVIEW', 5::bigint)
+  VALUES
+    ('FAIL', 0::bigint),
+    ('PASS', 54::bigint + CASE
+        WHEN to_regclass(
+          'public.product_units_commercial_function_contracts_v1'
+        ) IS NULL THEN 0 ELSE 1
+      END
+    ),
+    ('REVIEW', 5::bigint)
 ), observed AS (
   SELECT result, count(*) AS observed_checks
   FROM zatca_v2_verification_results

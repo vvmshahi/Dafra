@@ -17,7 +17,26 @@ import { useTranslation } from 'react-i18next'
 
 interface DaySale      { date: string; revenue: number; invoices: number }
 interface MethodData   { name: string; value: number }
-interface TopProduct   { name: string; quantity: number; revenue: number; pct: number }
+interface PackageBreakdown {
+  productUnitId: string | null
+  productUnitVersion: number | null
+  sellingUnit: string
+  unitCode: string
+  conversionToBase: number
+  packageUnitPrice: number
+  packageQuantity: number
+  baseQuantity: number
+  revenue: number
+}
+interface TopProduct   {
+  productId: string | null
+  name: string
+  quantity: number
+  baseQuantity: number
+  revenue: number
+  pct: number
+  packageBreakdown: PackageBreakdown[]
+}
 interface CatPerf      { name: string; items: number; revenue: number; pct: number }
 
 interface SalesData {
@@ -98,10 +117,23 @@ function normalizeSalesSummary(summary: SalesData): SalesData {
       value: numberOrZero(row.value),
     })),
     topProducts: arrayFromKeys<Record<string, unknown>>(record, 'topProducts').map(row => ({
+      productId: typeof row.productId === 'string' ? row.productId : null,
       name: stringOrFallback(row.name, 'Unknown item'),
       quantity: numberOrZero(row.quantity),
+      baseQuantity: numberOrZero(row.baseQuantity ?? row.quantity),
       revenue: numberOrZero(row.revenue),
       pct: numberOrZero(row.pct),
+      packageBreakdown: arrayFromKeys<Record<string, unknown>>(row, 'packageBreakdown').map(unit => ({
+        productUnitId: typeof unit.productUnitId === 'string' ? unit.productUnitId : null,
+        productUnitVersion: unit.productUnitVersion == null ? null : numberOrZero(unit.productUnitVersion),
+        sellingUnit: stringOrFallback(unit.sellingUnit, 'Unit'),
+        unitCode: stringOrFallback(unit.unitCode, 'PCE'),
+        conversionToBase: numberOrZero(unit.conversionToBase ?? 1),
+        packageUnitPrice: numberOrZero(unit.packageUnitPrice),
+        packageQuantity: numberOrZero(unit.packageQuantity),
+        baseQuantity: numberOrZero(unit.baseQuantity),
+        revenue: numberOrZero(unit.revenue),
+      })),
     })),
     catPerformance: arrayFromKeys<Record<string, unknown>>(record, 'catPerformance', 'categoryBreakdown').map(row => ({
       name: stringOrFallback(row.name, 'Uncategorized'),
@@ -130,7 +162,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
       setError(null)
       try {
         const summary = await loadReportSummary<SalesData>(
-          'get_sales_report_summary',
+          'get_sales_report_summary_v2',
           reportParams(startDate, endDate, branchId),
           EMPTY_SALES_DATA,
         )
@@ -268,16 +300,29 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
           ) : (
             <>
               <div className="flex gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-                <div className="flex-1">{t('common.product')}</div><div className="w-14 text-end">{t('common.quantity')}</div><div className="w-24 text-end">{t('common.revenue')}</div>
+                <div className="flex-1">{t('common.product')}</div><div className="w-20 text-end">{t('sales.baseQuantitySold')}</div><div className="w-24 text-end">{t('common.revenue')}</div>
                 <div className="w-10 text-right">%</div>
               </div>
               {data.topProducts.map((p, i) => (
-                <div key={p.name} className="flex gap-2 px-4 py-2.5 border-t border-gray-50 hover:bg-gray-50/50">
+                <div key={p.productId ?? p.name} className="flex gap-2 px-4 py-2.5 border-t border-gray-50 hover:bg-gray-50/50">
                   <div className="flex-1 min-w-0 flex items-center gap-2">
                     <span className="text-[10px] font-bold text-gray-300 w-4">{i + 1}</span>
-                    <p className="text-sm text-gray-800 truncate">{p.name}</p>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-gray-800">{p.name}</p>
+                      {p.packageBreakdown.length > 0 && (
+                        <p className="mt-0.5 flex flex-wrap gap-x-1 text-[10px] text-gray-400" dir="auto">
+                          {p.packageBreakdown.map((unit, unitIndex) => (
+                            <span key={`${unit.productUnitId ?? unit.unitCode}-${unit.productUnitVersion ?? 'legacy'}-${unit.packageUnitPrice}-${unitIndex}`}>
+                              {fmtQty(unit.packageQuantity, 6)} {unit.sellingUnit}
+                              {' × '}
+                              <span dir="ltr"><Rial amount={unit.packageUnitPrice} /></span>
+                            </span>
+                          ))}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <div className="w-14 text-right text-sm text-gray-600 tabular-nums">
+                  <div className="w-20 text-right text-sm text-gray-600 tabular-nums">
                     {fmtQty(p.quantity)}
                   </div>
                   <div className="w-24 text-right text-sm font-semibold text-gray-900 tabular-nums">
@@ -302,7 +347,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
           ) : (
             <>
               <div className="flex gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-                <div className="flex-1">{t('common.category')}</div><div className="w-14 text-end">{t('common.items')}</div><div className="w-24 text-end">{t('common.revenue')}</div>
+                <div className="flex-1">{t('common.category')}</div><div className="w-20 text-end">{t('sales.baseQuantitySold')}</div><div className="w-24 text-end">{t('common.revenue')}</div>
                 <div className="w-10 text-right">%</div>
               </div>
               {data.catPerformance.map((c, i) => (
@@ -312,7 +357,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
                       style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
                     <p className="text-sm text-gray-800 truncate">{c.name}</p>
                   </div>
-                  <div className="w-14 text-right text-sm text-gray-600 tabular-nums">
+                  <div className="w-20 text-right text-sm text-gray-600 tabular-nums">
                     {fmtQty(c.items)}
                   </div>
                   <div className="w-24 text-right text-sm font-semibold text-gray-900 tabular-nums">
@@ -331,6 +376,8 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
   )
 }
 
-function fmtQty(n: number) {
-  return n.toLocaleString('en-US', { maximumFractionDigits: 2 })
+function fmtQty(n: number, scale = 3) {
+  return n.toLocaleString('en-US', {
+    maximumFractionDigits: Math.max(0, Math.min(6, scale)),
+  })
 }

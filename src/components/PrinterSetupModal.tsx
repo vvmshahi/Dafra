@@ -70,7 +70,7 @@ export function PrinterSetupModal({ onClose }: Props) {
         <div className="px-6 py-4 max-h-72 overflow-y-auto space-y-1.5">
           {loading ? (
             <div className="flex items-center justify-center py-10 text-gray-400">
-              <Loader2 size={20} className="animate-spin mr-2" />
+              <Loader2 size={20} className="me-2 animate-spin" />
               <span className="text-sm">{t('loadingPrinters')}</span>
             </div>
           ) : printers.length === 0 ? (

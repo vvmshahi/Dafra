@@ -2,6 +2,7 @@ import { useState } from 'react'
 import DailyExpensesTab from './DailyExpensesTab'
 import FixedExpensesTab from './FixedExpensesTab'
 import { useTranslation } from 'react-i18next'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 type Tab = 'daily' | 'fixed'
 
@@ -13,19 +14,19 @@ export default function ExpensesPage() {
     <div className="space-y-5">
 
       {/* ── Header ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
-        <h1 className="text-lg font-bold text-gray-900 flex-1">{t('title')}</h1>
-      </div>
+      <PageHeader title={t('title')} />
 
       {/* ── Tab switcher ────────────────────────────────────── */}
-      <div className="flex items-center bg-white border border-gray-100 rounded-2xl p-1 w-fit shadow-card">
+      <div className="flex items-center bg-white border border-primary-800/70 rounded-2xl p-1 w-fit shadow-card" role="tablist" aria-label={t('title')}>
         {([
-          { key: 'daily',  label: t('daily') },
-          { key: 'fixed',  label: t('fixed') },
+          { key: 'daily',  label: t('tabs.daily') },
+          { key: 'fixed',  label: t('tabs.fixed') },
         ] as { key: Tab; label: string }[]).map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
+            role="tab"
+            aria-selected={tab === t.key}
             className={`px-5 py-2 text-sm font-semibold rounded-xl transition-all duration-150 ${
               tab === t.key
                 ? 'bg-primary-500 text-white shadow-sm'
@@ -36,6 +37,7 @@ export default function ExpensesPage() {
           </button>
         ))}
       </div>
+      <p className="-mt-2 text-sm text-gray-500">{t(tab === 'daily' ? 'dailyDescription' : 'fixedDescription')}</p>
 
       {/* ── Tab content ─────────────────────────────────────── */}
       {tab === 'daily' ? <DailyExpensesTab /> : <FixedExpensesTab />}

@@ -16,6 +16,24 @@ export interface AtomicReceiptItem {
   name_ar: string | null
   sku?: string | null
   unit: string | null
+  product_unit_id?: string | null
+  product_unit_version?: number | null
+  selling_unit_name?: string | null
+  selling_unit_name_ar?: string | null
+  selling_unit_code?: string | null
+  package_quantity?: number | string | null
+  package_quantity_scale?: number | null
+  conversion_to_base?: number | string | null
+  base_quantity?: number | string | null
+  base_unit_name?: string | null
+  base_unit_name_ar?: string | null
+  base_unit_code?: string | null
+  base_quantity_scale?: number | null
+  package_pricing_method?: 'calculated' | 'custom' | null
+  base_unit_price?: number | string | null
+  package_unit_price?: number | string | null
+  stock_tracked_at_sale?: boolean | null
+  service_item_at_sale?: boolean | null
   quantity: number | string
   unit_price: number | string
   discount_percent?: number | string
