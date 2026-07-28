@@ -57,6 +57,20 @@ function countRows(adminClient: any, table: string, label: string, applyFilters:
   return countQuery(applyFilters(adminClient.from(table).select('id', { count: 'exact', head: true })), label)
 }
 
+async function requireMutation(resultPromise: PromiseLike<{ error: { message?: string } | null }>, label: string): Promise<void> {
+  const { error } = await resultPromise
+  if (error) {
+    console.error('[delete-tenant] database cleanup failed:', { step: label })
+    throw new Error(`TENANT_CLEANUP_FAILED:${label}`)
+  }
+}
+
+function authDeletionCode(message: string): string {
+  if (/storage|object.*owner|owns.*object/i.test(message)) return 'AUTH_USER_OWNS_STORAGE'
+  if (/foreign key|23503|still referenced/i.test(message)) return 'AUTH_USER_HAS_DEPENDENCIES'
+  return 'AUTH_USER_DELETE_FAILED'
+}
+
 async function collectTenantDeletionPlan(adminClient: any, tenant: TenantRow): Promise<TenantDeletionPlan> {
   const { data: profileRows, error: profileErr } = await adminClient
     .from('user_profiles')
@@ -325,62 +339,79 @@ Deno.serve(async (req: Request) => {
     })
 
     if (plan.invoiceIds.length > 0) {
-      await adminClient.from('invoices').update({ session_id: null }).in('id', plan.invoiceIds)
+      await requireMutation(
+        adminClient.from('invoices').update({ session_id: null }).in('id', plan.invoiceIds),
+        'detach_invoice_sessions',
+      )
     }
 
-    await adminClient.from('expenses').update({ session_id: null }).eq('tenant_id', tenant.id)
-    await adminClient.from('sync_queue').delete().eq('tenant_id', tenant.id)
-    await adminClient.from('pos_sessions').delete().eq('tenant_id', tenant.id)
-    await adminClient.from('day_closings').delete().eq('tenant_id', tenant.id)
-    await adminClient.from('zatca_certificates').delete().eq('tenant_id', tenant.id)
+    await requireMutation(adminClient.from('expenses').update({ session_id: null }).eq('tenant_id', tenant.id), 'detach_expense_sessions')
+    await requireMutation(adminClient.from('sync_queue').delete().eq('tenant_id', tenant.id), 'sync_queue')
+    await requireMutation(adminClient.from('pos_sessions').delete().eq('tenant_id', tenant.id), 'pos_sessions')
+    await requireMutation(adminClient.from('day_closings').delete().eq('tenant_id', tenant.id), 'day_closings')
+    await requireMutation(adminClient.from('zatca_certificates').delete().eq('tenant_id', tenant.id), 'zatca_certificates')
+    await requireMutation(adminClient.from('product_stock_receipts').delete().eq('tenant_id', tenant.id), 'product_stock_receipts')
+    await requireMutation(adminClient.from('zatca_atomic_checkout_branch_gates_v2').delete().eq('tenant_id', tenant.id), 'zatca_atomic_checkout_branch_gates')
 
     if (plan.purchaseIds.length > 0) {
-      await adminClient.from('purchase_items').delete().in('purchase_id', plan.purchaseIds)
+      await requireMutation(adminClient.from('purchase_items').delete().in('purchase_id', plan.purchaseIds), 'purchase_items')
     }
 
-    await adminClient.from('purchases').delete().eq('tenant_id', tenant.id)
+    await requireMutation(adminClient.from('purchases').delete().eq('tenant_id', tenant.id), 'purchases')
 
     if (plan.branchIds.length > 0) {
-      await adminClient.from('inventory_items').delete().eq('tenant_id', tenant.id).in('branch_id', plan.branchIds)
+      await requireMutation(
+        adminClient.from('inventory_items').delete().eq('tenant_id', tenant.id).in('branch_id', plan.branchIds),
+        'inventory_items',
+      )
     }
 
     if (plan.invoiceIds.length > 0) {
-      await adminClient.from('invoice_items').delete().in('invoice_id', plan.invoiceIds)
-      await adminClient.from('payments').delete().in('invoice_id', plan.invoiceIds)
+      await requireMutation(adminClient.from('invoice_items').delete().in('invoice_id', plan.invoiceIds), 'invoice_items')
+      await requireMutation(adminClient.from('payments').delete().in('invoice_id', plan.invoiceIds), 'payments')
     }
 
-    await adminClient.from('invoices').delete().eq('tenant_id', tenant.id)
-    await adminClient.from('expenses').delete().eq('tenant_id', tenant.id)
-    await adminClient.from('fixed_expenses').delete().eq('tenant_id', tenant.id)
-    await adminClient.from('employees').delete().eq('tenant_id', tenant.id)
-    await adminClient.from('products').delete().eq('tenant_id', tenant.id)
-    await adminClient.from('categories').delete().eq('tenant_id', tenant.id)
-    await adminClient.from('customers').delete().eq('tenant_id', tenant.id)
-    await adminClient.from('suppliers').delete().eq('tenant_id', tenant.id)
-    await adminClient.from('branches').delete().eq('tenant_id', tenant.id)
-    await adminClient.from('tenant_subscriptions').delete().eq('tenant_id', tenant.id)
-    await adminClient.from('user_profiles').delete().eq('tenant_id', tenant.id)
-    await adminClient.from('tenants').delete().eq('id', tenant.id)
+    await requireMutation(adminClient.from('invoices').delete().eq('tenant_id', tenant.id), 'invoices')
+    await requireMutation(adminClient.from('expenses').delete().eq('tenant_id', tenant.id), 'expenses')
+    await requireMutation(adminClient.from('fixed_expenses').delete().eq('tenant_id', tenant.id), 'fixed_expenses')
+    await requireMutation(adminClient.from('employees').delete().eq('tenant_id', tenant.id), 'employees')
+    await requireMutation(adminClient.from('products').delete().eq('tenant_id', tenant.id), 'products')
+    await requireMutation(adminClient.from('categories').delete().eq('tenant_id', tenant.id), 'categories')
+    await requireMutation(adminClient.from('customers').delete().eq('tenant_id', tenant.id), 'customers')
+    await requireMutation(adminClient.from('suppliers').delete().eq('tenant_id', tenant.id), 'suppliers')
 
-    let authDeleteFailures = 0
+    // Keep tenant/profile linkage intact until every Auth identity is gone. A
+    // failed Auth deletion can then be retried safely from the same tenant.
+    const authDeleteFailureCodes = new Set<string>()
     for (const authId of plan.authUserIds) {
       const { error: deleteAuthErr } = await adminClient.auth.admin.deleteUser(authId)
       if (deleteAuthErr) {
-        authDeleteFailures += 1
-        console.error('[delete-tenant] auth user deletion failed:', deleteAuthErr.message)
+        const code = authDeletionCode(deleteAuthErr.message)
+        authDeleteFailureCodes.add(code)
+        console.error('[delete-tenant] auth user deletion failed:', { code })
       }
     }
 
-    if (authDeleteFailures > 0) {
+    if (authDeleteFailureCodes.size > 0) {
+      const codes = [...authDeleteFailureCodes].sort()
       await auditEvent(adminClient as any, {
         ...auditBase,
         action: 'delete_tenant_failed',
         severity: 'critical',
         status: 'failed',
-        metadata: { reason: 'auth_delete_failures', authDeleteFailures },
+        metadata: { reason: 'auth_delete_failures', codes },
       })
-      return jsonResponse({ error: 'Tenant data deleted but one or more auth users could not be removed' }, 500)
+      return jsonResponse({
+        error: 'Tenant cleanup requires attention before Auth users can be removed',
+        code: codes[0],
+        retryable: true,
+      }, 409)
     }
+
+    await requireMutation(adminClient.from('branches').delete().eq('tenant_id', tenant.id), 'branches')
+    await requireMutation(adminClient.from('tenant_subscriptions').delete().eq('tenant_id', tenant.id), 'tenant_subscriptions')
+    await requireMutation(adminClient.from('user_profiles').delete().eq('tenant_id', tenant.id), 'user_profiles')
+    await requireMutation(adminClient.from('tenants').delete().eq('id', tenant.id), 'tenant')
 
     await auditEvent(adminClient as any, {
       ...auditBase,
