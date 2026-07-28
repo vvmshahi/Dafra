@@ -117,7 +117,16 @@ function useProvideAuth() {
               ownerSetupCompletionAttempts.current.add(attemptKey)
               void markOwnerSetupCompleteSilently('owner_profile_load', { knownOwner: true })
             }
-            await fetchBranchCount(p.tenant_id)
+            try {
+              await fetchBranchCount(p.tenant_id)
+            } catch (branchStatusError) {
+              console.error('[useAuth] first-branch access check failed safely')
+              if (mounted) {
+                setHasBranch(null)
+                setAuthError('We could not verify your branch access. Please retry or sign in again.')
+              }
+              void branchStatusError
+            }
           } else {
             // Branch users and super admins don't need the branch gate
             if (mounted) setHasBranch(true)
