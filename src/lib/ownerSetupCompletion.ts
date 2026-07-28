@@ -18,39 +18,42 @@ export async function markOwnerSetupCompleteSilently(
   source: OwnerSetupCompletionSource,
   options: MarkOwnerSetupCompleteOptions = {}
 ) {
-  if (!options.knownOwner) {
-    const { data: userData } = await supabase.auth.getUser()
-    if (!userData.user) return null
+  try {
+    if (!options.knownOwner) {
+      const { data: userData, error: userError } = await supabase.auth.getUser()
+      if (userError || !userData.user) return null
 
-    const { data: profile, error: profileError } = await supabase
-      .from('user_profiles')
-      .select('role, tenant_id, is_active')
-      .eq('id', userData.user.id)
-      .maybeSingle()
+      const { data: profile, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('role, tenant_id, is_active')
+        .eq('id', userData.user.id)
+        .maybeSingle()
 
-    if (profileError) {
-      console.warn('[ownerSetupCompletion] profile check failed', {
+      if (profileError) {
+        console.warn('[ownerSetupCompletion] profile check failed', {
+          source,
+          code: profileError.code,
+        })
+        return null
+      }
+
+      if (profile?.role !== 'owner' || !profile.tenant_id || profile.is_active === false) {
+        return null
+      }
+    }
+
+    const { data, error } = await (supabase as any).rpc('mark_owner_setup_complete')
+    if (error) {
+      console.warn('[ownerSetupCompletion] tracking update failed', {
         source,
-        message: profileError.message,
-        code: profileError.code,
+        code: error.code,
       })
       return null
     }
 
-    if (profile?.role !== 'owner' || !profile.tenant_id || profile.is_active === false) {
-      return null
-    }
-  }
-
-  const { data, error } = await (supabase as any).rpc('mark_owner_setup_complete')
-  if (error) {
-    console.warn('[ownerSetupCompletion] tracking update failed', {
-      source,
-      message: error.message,
-      code: error.code,
-    })
+    return ((data ?? [])[0] ?? null) as OwnerSetupCompletionResult | null
+  } catch {
+    console.warn('[ownerSetupCompletion] tracking request failed safely', { source })
     return null
   }
-
-  return ((data ?? [])[0] ?? null) as OwnerSetupCompletionResult | null
 }
