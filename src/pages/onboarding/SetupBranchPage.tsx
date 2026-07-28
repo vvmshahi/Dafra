@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -22,7 +22,6 @@ import {
   normalizeBranchUsernameInput,
   validateBranchUsernameInput,
 } from '@/lib/utils/branchUsername'
-import { branchIdFromRpcResult } from '@/lib/utils/branchCreation'
 import { CompactLanguageSelector } from '@/components/localization/CompactLanguageSelector'
 import { useTranslation } from 'react-i18next'
 
@@ -34,7 +33,7 @@ const POSTAL_RE = /^\d{5}$/
 export default function SetupBranchPage() {
   const { t } = useTranslation('onboarding')
   const navigate = useNavigate()
-  const { profile, refreshBranchCount } = useAuth()
+  const { profile, refreshBranchCount, firstBranchProvisioningState } = useAuth()
   const { isPhase2 } = useSubscription()
 
   const [name,     setName]     = useState('')
@@ -54,6 +53,12 @@ export default function SetupBranchPage() {
   const [touched, setTouched] = useState(false)
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState('')
+
+  useEffect(() => {
+    if (firstBranchProvisioningState === 'failed_manual_review') {
+      setError(t('errors.manualReview'))
+    }
+  }, [firstBranchProvisioningState, t])
 
   const usernameValidation = validateBranchUsernameInput(loginUsername)
   const localizedUsernameValidation = !usernameValidation ? null
@@ -90,47 +95,28 @@ export default function SetupBranchPage() {
     setSaving(true)
     setError('')
     try {
-      const { data: branchData, error: insertErr } = await (supabase as any)
-        .rpc('create_branch_for_tenant', {
-          p_payload: {
-            name:             name.trim(),
-            vat_number:       vat.trim(),
-            cr_number:        cr.trim(),
-            building_number:  bldg.trim(),
-            postal_code:      postal.trim(),
-            street:           street.trim(),
-            district:         district.trim(),
-            city:             city.trim(),
-            phone:            phone.trim() || null,
-            country:          'SA',
-            is_main_branch:   true,
-            is_active:        true,
-            vat_mode:         'exclusive',
-            invoice_prefix:   'INV',
-            invoice_language: 'both',
-            show_logo:        true,
-            zatca_phase:      isPhase2 ? 2 : 1,
-          },
-        })
-
-      if (insertErr) throw insertErr
-      const branchId = branchIdFromRpcResult(branchData)
-
-      // Create the branch user (no email sent — owner sets credentials directly)
-      const { data: fnData, error: fnErr } = await supabase.functions.invoke('create-branch-user', {
+      const { data: fnData, error: fnErr } = await supabase.functions.invoke('provision-first-branch', {
         body: {
-          username:  normalizeBranchUsernameInput(loginUsername),
-          password:  loginPwd,
-          full_name: name.trim(),
-          tenant_id: profile!.tenant_id,
-          branch_id: branchId,
+          name: name.trim(),
+          vat_number: vat.trim(),
+          cr_number: cr.trim(),
+          building_number: bldg.trim(),
+          postal_code: postal.trim(),
+          street: street.trim(),
+          district: district.trim(),
+          city: city.trim(),
+          phone: phone.trim() || null,
+          zatca_phase: isPhase2 ? 2 : 1,
+          username: normalizeBranchUsernameInput(loginUsername),
+          password: loginPwd,
         },
       })
-
-      const fnErrMsg = fnErr?.message ?? (fnData as any)?.error ?? null
-      if (fnErrMsg) {
-        console.error('Branch login setup failed', fnErrMsg)
-        throw new Error('BRANCH_LOGIN_SETUP_FAILED')
+      const resultCode = (fnData as any)?.code
+      if (resultCode !== 'COMPLETE') {
+        if (resultCode === 'RESUMABLE_LOGIN_CONFLICT') throw new Error('BRANCH_LOGIN_USERNAME_CONFLICT')
+        if (resultCode === 'MANUAL_REVIEW_REQUIRED') throw new Error('BRANCH_MANUAL_REVIEW')
+        if (fnErr || resultCode === 'CORE_BRANCH_READY_ACCESS_FAILED') throw new Error('BRANCH_LOGIN_SETUP_FAILED')
+        throw new Error('BRANCH_PROVISIONING_FAILED')
       }
 
       await refreshBranchCount()
@@ -138,7 +124,9 @@ export default function SetupBranchPage() {
     } catch (err: any) {
       console.error('Failed to create initial branch', err)
       const message = String(err?.message ?? '')
-      setError(message === 'BRANCH_LOGIN_SETUP_FAILED' ? t('errors.loginSetup')
+      setError(message === 'BRANCH_LOGIN_USERNAME_CONFLICT' ? t('errors.usernameTaken')
+        : message === 'BRANCH_MANUAL_REVIEW' ? t('errors.manualReview')
+        : message === 'BRANCH_LOGIN_SETUP_FAILED' ? t('errors.loginSetup')
         : /jwt|session|auth/i.test(message) ? t('errors.sessionExpired')
         : /permission|forbidden|42501/i.test(message) ? t('errors.permissionDenied')
         : t('errors.createBranch'))
