@@ -15,47 +15,93 @@
 
 import { supabase } from '@/lib/supabase'
 import type { CertificateStatus } from '@/types'
+import {
+  clearStaleAuthSessionData,
+  isInvalidRefreshTokenError,
+} from '@/lib/authSessionRecovery'
 
 const EDGE = (name: string) =>
   `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`
+const EDGE_API_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const REFRESH_WINDOW_SECONDS = 60
+
+export type ZatcaAuthDiagnostic =
+  | 'AUTH_HEADER_MISSING'
+  | 'SESSION_MISSING'
+  | 'TOKEN_REFRESH_FAILED'
+  | 'EDGE_JWT_REJECTED'
+
+export class ZatcaAuthError extends Error {
+  constructor(public readonly code: ZatcaAuthDiagnostic) {
+    super(code)
+    this.name = 'ZatcaAuthError'
+  }
+}
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
 
-async function edgePost<T>(fnName: string, body: Record<string, unknown>): Promise<T> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const jwt = session?.access_token
-
-  const res = await fetch(EDGE(fnName), {
-    method:  'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${jwt}`,
-    },
-    body: JSON.stringify(body),
-  })
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(safeBrowserMessage(err.error, `Edge Function ${fnName} returned ${res.status}`))
+function expireKubriSession(code: ZatcaAuthDiagnostic): never {
+  clearStaleAuthSessionData()
+  if (typeof window !== 'undefined') {
+    window.location.assign('/login?reason=session_expired')
   }
-  return res.json()
+  throw new ZatcaAuthError(code)
+}
+
+async function currentAccessToken(): Promise<string> {
+  const initial = await supabase.auth.getSession()
+  if (initial.error) {
+    if (isInvalidRefreshTokenError(initial.error)) {
+      return expireKubriSession('TOKEN_REFRESH_FAILED')
+    }
+    return expireKubriSession('SESSION_MISSING')
+  }
+
+  let session = initial.data.session
+  if (!session?.access_token) return expireKubriSession('SESSION_MISSING')
+
+  const expiresSoon = typeof session.expires_at === 'number'
+    && session.expires_at - Math.floor(Date.now() / 1000) <= REFRESH_WINDOW_SECONDS
+  if (expiresSoon) {
+    const refreshed = await supabase.auth.refreshSession()
+    if (refreshed.error || !refreshed.data.session?.access_token) {
+      return expireKubriSession('TOKEN_REFRESH_FAILED')
+    }
+    session = refreshed.data.session
+  }
+  return session.access_token
+}
+
+async function edgePost<T>(fnName: string, body: Record<string, unknown>): Promise<T> {
+  return edgePostSafe<T>(fnName, body)
 }
 
 async function edgePostSafe<T>(fnName: string, body: Record<string, unknown>): Promise<T> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const jwt = session?.access_token
+  const jwt = await currentAccessToken()
 
   const res = await fetch(EDGE(fnName), {
     method:  'POST',
     headers: {
       'Content-Type':  'application/json',
       'Authorization': `Bearer ${jwt}`,
+      'apikey': EDGE_API_KEY,
     },
     body: JSON.stringify(body),
   })
 
   const payload = await res.json().catch(() => ({}))
   if (!res.ok) {
+    if (res.status === 401) {
+      clearStaleAuthSessionData()
+      if (typeof window !== 'undefined') {
+        window.location.assign('/login?reason=session_expired')
+      }
+      const error = new ZatcaAuthError(
+        payload?.code === 'AUTH_HEADER_MISSING' ? 'AUTH_HEADER_MISSING' : 'EDGE_JWT_REJECTED',
+      )
+      ;(error as any).payload = payload
+      throw error
+    }
     const message = safeBrowserMessage(payload?.error, `Edge Function ${fnName} returned ${res.status}`)
     const diagnostics = fnName === 'zatca-onboard-production'
       ? formatProductionDebugDiagnostics(payload?.complianceSampleResults)
@@ -66,6 +112,16 @@ async function edgePostSafe<T>(fnName: string, body: Record<string, unknown>): P
     throw error
   }
   return payload as T
+}
+
+export function isZatcaOtpRejection(error: unknown): boolean {
+  const payload = (error as { payload?: any } | null)?.payload
+  if (/otp/i.test(String(payload?.error ?? ''))) return true
+  return Array.isArray(payload?.trace) && payload.trace.some((entry: any) => (
+    entry?.stage === 'compliance_csid_request_completed'
+    && entry?.status === 'failed'
+    && (entry?.httpStatus === 400 || entry?.httpStatus === 401)
+  ))
 }
 
 function safeBrowserMessage(message: unknown, fallback: string): string {
