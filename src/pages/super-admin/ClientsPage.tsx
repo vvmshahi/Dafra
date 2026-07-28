@@ -190,6 +190,8 @@ function RestoreModal({ client, onConfirm, onCancel, acting }: {
 interface PlanOption { id: string; name: string; price_monthly: number }
 
 interface CreateOwnerAccountResponse {
+  code?: string
+  provisioning_id?: string
   user_id?: string
   tenant_id?: string
   email?: string
@@ -313,12 +315,16 @@ function CreateAccountModal({ onCreated, onCancel }: {
         },
       })
 
-      const errMsg = fnErr?.message ?? (fnData as any)?.error ?? null
-      if (errMsg) throw new Error(errMsg)
-
       const result = (fnData ?? {}) as CreateOwnerAccountResponse
+      if (result.code === 'CORE_COMPLETE_SETUP_LINK_FAILED') {
+        setWarning(t('validation.setupLinkRetry'))
+        return
+      }
+      if (!['COMPLETE', 'RESUMED_AND_COMPLETE', 'COMPLETE_SETUP_LINK_REGENERATED'].includes(result.code ?? '')) {
+        throw new Error(result.code ?? fnErr?.message ?? 'FAILED_RECOVERABLE')
+      }
       setCreated(result)
-      setWarning(result.warning ?? '')
+      setWarning(result.code === 'COMPLETE_SETUP_LINK_REGENERATED' ? t('validation.setupLinkRegenerated') : '')
     } catch (err: any) {
       console.error('Failed to create client account:', err)
       setError(t('validation.createFailed'))

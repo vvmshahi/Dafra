@@ -11,12 +11,16 @@ const workdir = process.env.DAFRA_ATOMIC_TEST_WORKDIR
 assert.ok(workdir, 'DAFRA_ATOMIC_TEST_WORKDIR is required')
 assert.match(
   workdir,
-  /^\/(?:private\/)?tmp\/dafra-atomic-disposable\./,
+  /^\/(?:private\/)?tmp\/dafra-(?:atomic-disposable|migration-chain)\./,
   'Refusing to run outside a named disposable temporary workdir',
 )
 
 const config = readFileSync(`${workdir}/supabase/config.toml`, 'utf8')
-assert.match(config, /project_id = "dafra_atomic_disposable_[^"]+"/)
+const projectId = config.match(/project_id = "([^"]+)"/)?.[1]
+assert.match(
+  projectId ?? '',
+  /^dafra_(?:atomic_disposable|migration_chain|remote_reconcile)_[^"]+$/,
+)
 assert.ok(!config.includes('bkbphkpqcxuejozayrsy'), 'Production project ref is forbidden')
 
 const statusText = execFileSync(
@@ -35,7 +39,7 @@ for (const endpoint of [localEnv.API_URL, localEnv.DB_URL]) {
   const url = new URL(endpoint)
   assert.ok(['127.0.0.1', 'localhost'].includes(url.hostname), 'Refusing non-local endpoint')
 }
-assert.equal(new URL(localEnv.DB_URL).port, '55432', 'Unexpected disposable database port')
+assert.ok(new URL(localEnv.DB_URL).port, 'Disposable database port is required')
 assert.ok(localEnv.SERVICE_ROLE_KEY && localEnv.ANON_KEY, 'Disposable local keys are required')
 
 const clientOptions = {
@@ -44,6 +48,15 @@ const clientOptions = {
 const service = createClient(localEnv.API_URL, localEnv.SERVICE_ROLE_KEY, clientOptions)
 const anon = createClient(localEnv.API_URL, localEnv.ANON_KEY, clientOptions)
 const password = `Atomic-${randomUUID()}!`
+const identityRun = randomUUID().replaceAll('-', '')
+const emails = {
+  ownerA: `atomic-owner-a-${identityRun}@example.test`,
+  adminA: `atomic-admin-a-${identityRun}@example.test`,
+  branch: `atomic-branch-a-${identityRun}@example.test`,
+  ownerB: `atomic-owner-b-${identityRun}@example.test`,
+  demoTrading: `atomic-demo-trading-${identityRun}@example.test`,
+  demoService: `atomic-demo-service-${identityRun}@example.test`,
+}
 const ids = {
   tenantA: randomUUID(),
   tenantB: randomUUID(),
@@ -287,18 +300,18 @@ assert.equal(
 // reload before issuing auth or RPC requests so the test cannot race a restart.
 await delay(5_000)
 
-const ownerAId = await createUser('atomic-owner-a@example.test', 'owner')
-const adminAId = await createUser('atomic-admin-a@example.test', 'admin')
-const branchUserId = await createUser('atomic-branch-a@example.test', 'branch')
-const ownerBId = await createUser('atomic-owner-b@example.test', 'owner')
-const demoTradingUserId = await createUser('atomic-demo-trading@example.test', 'branch')
-const demoServiceUserId = await createUser('atomic-demo-service@example.test', 'branch')
-const ownerA = await login('atomic-owner-a@example.test')
-const adminA = await login('atomic-admin-a@example.test')
-const branchUser = await login('atomic-branch-a@example.test')
-const ownerB = await login('atomic-owner-b@example.test')
-const demoTradingUser = await login('atomic-demo-trading@example.test')
-const demoServiceUser = await login('atomic-demo-service@example.test')
+const ownerAId = await createUser(emails.ownerA, 'owner')
+const adminAId = await createUser(emails.adminA, 'admin')
+const branchUserId = await createUser(emails.branch, 'branch')
+const ownerBId = await createUser(emails.ownerB, 'owner')
+const demoTradingUserId = await createUser(emails.demoTrading, 'branch')
+const demoServiceUserId = await createUser(emails.demoService, 'branch')
+const ownerA = await login(emails.ownerA)
+const adminA = await login(emails.adminA)
+const branchUser = await login(emails.branch)
+const ownerB = await login(emails.ownerB)
+const demoTradingUser = await login(emails.demoTrading)
+const demoServiceUser = await login(emails.demoService)
 
 await ok(service.from('tenants').insert([
   {
@@ -383,7 +396,7 @@ await ok(service.from('user_profiles').upsert([
     tenant_id: ids.tenantA,
     role: 'owner',
     full_name: 'Atomic Owner A',
-    email: 'atomic-owner-a@example.test',
+    email: emails.ownerA,
     is_active: true,
   },
   {
@@ -392,7 +405,7 @@ await ok(service.from('user_profiles').upsert([
     branch_id: ids.branchA,
     role: 'branch',
     full_name: 'Atomic Branch User',
-    email: 'atomic-branch-a@example.test',
+    email: emails.branch,
     is_active: true,
   },
   {
@@ -400,7 +413,7 @@ await ok(service.from('user_profiles').upsert([
     tenant_id: ids.tenantA,
     role: 'admin',
     full_name: 'Atomic Admin A',
-    email: 'atomic-admin-a@example.test',
+    email: emails.adminA,
     is_active: true,
   },
   {
@@ -408,7 +421,7 @@ await ok(service.from('user_profiles').upsert([
     tenant_id: ids.tenantB,
     role: 'owner',
     full_name: 'Atomic Owner B',
-    email: 'atomic-owner-b@example.test',
+    email: emails.ownerB,
     is_active: true,
   },
   {
@@ -417,7 +430,7 @@ await ok(service.from('user_profiles').upsert([
     branch_id: ids.demoTradingBranch,
     role: 'branch',
     full_name: 'Atomic Demo Trading User',
-    email: 'atomic-demo-trading@example.test',
+    email: emails.demoTrading,
     is_active: true,
   },
   {
@@ -426,7 +439,7 @@ await ok(service.from('user_profiles').upsert([
     branch_id: ids.demoServiceBranch,
     role: 'branch',
     full_name: 'Atomic Demo Service User',
-    email: 'atomic-demo-service@example.test',
+    email: emails.demoService,
     is_active: true,
   },
 ]), 'insert profiles')
@@ -1093,28 +1106,24 @@ await expectError(
   'cross-tenant preparation',
 )
 
-await expectError(
-  anon.rpc('prepare_zatca_atomic_checkout_v2', {
-    p_actor_user_id: branchUserId,
-    p_document_type: 'invoice',
-    p_payload: basePayload,
-    p_cart_fingerprint: fingerprint(basePayload),
-    p_ttl_seconds: 120,
-  }),
-  /permission denied|42501|401|403/i,
-  'anon prepare privilege',
-)
-await expectError(
-  branchUser.rpc('prepare_zatca_atomic_checkout_v2', {
-    p_actor_user_id: branchUserId,
-    p_document_type: 'invoice',
-    p_payload: basePayload,
-    p_cart_fingerprint: fingerprint(basePayload),
-    p_ttl_seconds: 120,
-  }),
-  /permission denied|42501|401|403/i,
-  'authenticated prepare privilege',
-)
+// Query the catalog directly for denied roles. PostgreSQL 17.6 can crash a
+// disposable backend while PostgREST exercises this denied SECURITY DEFINER
+// call, obscuring the ACL assertion with PGRST001 during crash recovery.
+const preparePrivileges = execFileSync(
+  'psql',
+  [
+    localEnv.DB_URL,
+    '-Atc',
+    `select has_function_privilege('anon',
+       'public.prepare_zatca_atomic_checkout_v2(uuid,text,jsonb,text,integer)',
+       'EXECUTE'),
+     has_function_privilege('authenticated',
+       'public.prepare_zatca_atomic_checkout_v2(uuid,text,jsonb,text,integer)',
+       'EXECUTE')`,
+  ],
+  { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+).trim()
+assert.equal(preparePrivileges, 'f|f', 'browser roles must not execute atomic preparation')
 for (const [client, label] of [[anon, 'anon'], [branchUser, 'authenticated']]) {
   await expectError(
     client.from('zatca_atomic_checkout_intents_v2').select('id,claim_token,candidate_signed_xml'),
@@ -1620,7 +1629,7 @@ assert.equal(finalGate.enabled, false)
 
 console.log(JSON.stringify({
   result: 'Atomic simplified checkout disposable runtime assertions passed',
-  projectId: 'dafra_atomic_disposable_20260724',
+  projectId,
   migrationVersion: '20260724000100',
   timingsMs: timings,
   contentionTimelineMs: timeline,

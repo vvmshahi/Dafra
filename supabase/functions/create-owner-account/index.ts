@@ -1,331 +1,206 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
 import { resolveOwnerSetupRedirectUrl } from '../_shared/owner_setup_redirect.ts'
+import { disposableDelay, disposableFault } from '../_shared/test-faults.ts'
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-dafra-test-fault, x-dafra-test-fault-secret',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+const json = (body: Record<string, unknown>, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
+async function sha256(value: string): Promise<string> {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+async function findAuthUserByEmail(admin: any, email: string) {
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 })
+    if (error) throw new Error('AUTH_LOOKUP_FAILED')
+    const match = data.users.find((user: any) => user.email?.toLowerCase() === email)
+    if (match) return match
+    if (data.users.length < 1000) return null
+  }
+  throw new Error('AUTH_LOOKUP_INCOMPLETE')
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { status: 200, headers: corsHeaders })
-  }
-
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  const started = Date.now()
+  let provisioningId: string | null = null
   try {
-    const supabaseUrl      = Deno.env.get('SUPABASE_URL')!
-    const SERVICE_ROLE_KEY = Deno.env.get('DAFRA_SERVICE_ROLE_KEY')
-
-    if (!SERVICE_ROLE_KEY || !SERVICE_ROLE_KEY.startsWith('eyJ')) {
-      console.error('[create-owner-account] FATAL: DAFRA_SERVICE_ROLE_KEY missing or malformed')
-      return new Response(JSON.stringify({ error: 'Server configuration error' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const serviceKey = Deno.env.get('DAFRA_SERVICE_ROLE_KEY')
+    if (!serviceKey?.startsWith('eyJ')) return json({ code: 'SERVER_CONFIGURATION_ERROR' }, 500)
+    const redirectTo = resolveOwnerSetupRedirectUrl()
+    const admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+    const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim()
+    if (!jwt) return json({ code: 'UNAUTHORIZED' }, 401)
+    const { data: { user: caller }, error: authError } = await admin.auth.getUser(jwt)
+    if (authError || !caller) return json({ code: 'UNAUTHORIZED' }, 401)
+    const { data: callerProfile } = await admin.from('user_profiles').select('role,is_active').eq('id', caller.id).maybeSingle()
+    if (callerProfile?.role !== 'super_admin' || callerProfile?.is_active !== true) {
+      return json({ code: 'FORBIDDEN' }, 403)
     }
 
-    let ownerSetupRedirectUrl: string
-    try {
-      ownerSetupRedirectUrl = resolveOwnerSetupRedirectUrl()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'OWNER_SETUP_REDIRECT_URL is invalid'
-      console.error('[create-owner-account] FATAL:', message)
-      return new Response(JSON.stringify({ error: 'Server configuration error' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const adminClient = createClient(supabaseUrl, SERVICE_ROLE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    })
-
-    // ── Verify caller is super_admin ─────────────────────────────────────────
-    const authHeader = req.headers.get('Authorization') ?? ''
-    const callerJWT  = authHeader.replace(/^Bearer\s+/i, '').trim()
-
-    if (!callerJWT) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const { data: { user: caller }, error: authError } = await adminClient.auth.getUser(callerJWT)
-
-    if (authError || !caller) {
-      return new Response(JSON.stringify({ error: 'Invalid token' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const { data: callerProfile, error: profileErr } = await adminClient
-      .from('user_profiles')
-      .select('role, is_active')
-      .eq('id', caller.id)
-      .maybeSingle()
-
-    if (profileErr || !callerProfile || callerProfile.is_active !== true) {
-      console.error('[create-owner-account] Could not load caller profile:', profileErr?.message)
-      return new Response(JSON.stringify({ error: 'Could not verify caller' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    if (callerProfile.role !== 'super_admin') {
-      return new Response(JSON.stringify({ error: 'Forbidden: super_admin role required' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    // ── Parse body ───────────────────────────────────────────────────────────
     const body = await req.json()
-    const {
-      company_name, company_name_ar, vat_number, cr_number,
-      email, phone, city, business_type,
-      plan_id, payment_type, duration_months, ends_at, branch_count,
-      pay_method, pay_ref, notes,
-    } = body
-    const normalizedBusinessType = business_type === 'service' ? 'service' : 'trading'
-
-    if (!company_name || !email || !plan_id) {
-      return new Response(
-        JSON.stringify({ error: 'Missing required fields: company_name, email, plan_id' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+    const normalizedEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+    const companyName = typeof body.company_name === 'string' ? body.company_name.trim() : ''
+    if (!companyName || !normalizedEmail || typeof body.plan_id !== 'string') {
+      return json({ code: 'INVALID_REQUEST' }, 400)
     }
-
-    const normalizedEmail = email.trim().toLowerCase()
-    const ipHash = await hashRequestIp(req)
-    const reqId = requestId(req)
+    const safePayload = {
+      company_name: companyName,
+      company_name_ar: body.company_name_ar?.trim() || null,
+      vat_number: body.vat_number?.trim() || '',
+      cr_number: body.cr_number?.trim() || null,
+      phone: body.phone?.trim() || null,
+      city: body.city?.trim() || null,
+      business_type: body.business_type === 'service' ? 'service' : 'trading',
+      duration_months: Number.isInteger(body.duration_months) ? body.duration_months : 0,
+      ends_at: body.ends_at || null,
+      pay_method: body.pay_method || null,
+      pay_ref: body.pay_ref || null,
+      notes: body.notes?.trim() || null,
+    }
+    // ends_at is intentionally excluded: the UI derives it from "now", so a
+    // retry seconds later must still address the original durable request.
+    const fingerprint = await sha256(JSON.stringify({
+      email: normalizedEmail, plan_id: body.plan_id, company_name: safePayload.company_name,
+      company_name_ar: safePayload.company_name_ar, vat_number: safePayload.vat_number,
+      cr_number: safePayload.cr_number, phone: safePayload.phone, city: safePayload.city,
+      business_type: safePayload.business_type, duration_months: safePayload.duration_months,
+      pay_method: safePayload.pay_method, pay_ref: safePayload.pay_ref, notes: safePayload.notes,
+    }))
     const auditBase = {
-      tenantId: null,
-      branchId: null,
-      actorUserId: caller.id,
-      actorRole: 'super_admin',
-      targetType: 'tenant',
-      targetId: null,
-      ipHash,
-      requestId: reqId,
+      tenantId: null, branchId: null, actorUserId: caller.id, actorRole: 'super_admin',
+      targetType: 'owner_provisioning', targetId: null, ipHash: await hashRequestIp(req), requestId: requestId(req),
     }
-
-    await auditEvent(adminClient as any, {
-      ...auditBase,
-      action: 'owner_account_create_attempted',
-      severity: 'warning',
-      status: 'attempted',
-      metadata: { paymentType: payment_type ?? null, businessType: normalizedBusinessType },
+    const rate = await enforceRateLimit(admin as any, {
+      ...auditBase, action: 'create_owner_account', scope: 'actor', scopeId: caller.id,
+      maxAttempts: 20, windowSeconds: 86400,
     })
+    if (!rate.allowed) return json(rateLimitBody(rate), 429)
 
-    const rate = await enforceRateLimit(adminClient as any, {
-      ...auditBase,
-      action: 'create_owner_account',
-      scope: 'actor',
-      scopeId: caller.id,
-      maxAttempts: 20,
-      windowSeconds: 86400,
-      metadata: { paymentType: payment_type ?? null, businessType: normalizedBusinessType },
+    const { data: acquired, error: acquireError } = await admin.rpc('acquire_owner_provisioning', {
+      p_initiated_by: caller.id,
+      p_normalized_email: normalizedEmail,
+      p_plan_id: body.plan_id,
+      p_request_fingerprint: fingerprint,
+      p_request_payload: safePayload,
     })
-
-    if (!rate.allowed) {
-      await auditEvent(adminClient as any, {
-        ...auditBase,
-        action: 'owner_account_create_rate_limited',
-        severity: 'warning',
-        status: 'blocked',
-        metadata: { retryAfterSeconds: rate.retryAfterSeconds },
-      })
-      return new Response(JSON.stringify(rateLimitBody(rate)), {
-        status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    if (acquireError || !acquired?.[0]) {
+      const code = /PLAN_NOT_ELIGIBLE/.test(acquireError?.message ?? '') ? 'PLAN_NOT_ELIGIBLE'
+        : /CONFLICT/.test(acquireError?.message ?? '') ? 'CONFLICT_REQUEST_DATA' : 'FAILED_RECOVERABLE'
+      return json({ code }, code === 'FAILED_RECOVERABLE' ? 503 : 409)
     }
+    const state = acquired[0]
+    provisioningId = state.provisioning_id
+    let authUserId = state.auth_user_id as string | null
 
-    // ── Step 1: Create auth user ─────────────────────────────────────────────
-    const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
-      email:         normalizedEmail,
-      email_confirm: true,
-      user_metadata: { full_name: company_name.trim(), role: 'owner' },
-    })
-
-    if (createErr) {
-      console.error('[create-owner-account] Step 1 FAILED — auth user creation:', createErr.message)
-      await auditEvent(adminClient as any, {
-        ...auditBase,
-        action: 'owner_account_create_failed',
-        severity: 'warning',
-        status: 'failed',
-        metadata: { stage: 'auth_create' },
+    if (!authUserId) {
+      const existing = await findAuthUserByEmail(admin, normalizedEmail)
+      if (existing) {
+        if (existing.user_metadata?.owner_provisioning_id !== provisioningId) {
+          await admin.rpc('set_owner_provisioning_result', {
+            p_provisioning_id: provisioningId, p_state: 'failed_manual_review',
+            p_error_code: 'EXISTING_AUTH_IDENTITY',
+          })
+          return json({ code: 'CONFLICT_EXISTING_UNRELATED_USER', provisioning_id: provisioningId }, 409)
+        }
+        authUserId = existing.id
+      } else {
+        const { data: created, error: createError } = await admin.auth.admin.createUser({
+          email: normalizedEmail,
+          email_confirm: true,
+          user_metadata: { full_name: companyName, owner_provisioning_id: provisioningId },
+        })
+        if (createError || !created.user?.id) {
+          const racedUser = await findAuthUserByEmail(admin, normalizedEmail)
+          if (racedUser?.user_metadata?.owner_provisioning_id !== provisioningId) {
+            await admin.rpc('set_owner_provisioning_result', {
+              p_provisioning_id: provisioningId, p_state: 'failed_recoverable',
+              p_error_code: 'AUTH_CREATE_FAILED',
+            })
+            return json({ code: 'FAILED_RECOVERABLE', provisioning_id: provisioningId }, 503)
+          }
+          authUserId = racedUser.id
+        } else {
+          authUserId = created.user.id
+        }
+      }
+      const { error: attachError } = await admin.rpc('attach_owner_provisioning_auth', {
+        p_provisioning_id: provisioningId, p_auth_user_id: authUserId,
       })
-      return new Response(JSON.stringify({ error: createErr.message }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const newUserId = created.user.id
-    // ── Step 2: Create tenant ────────────────────────────────────────────────
-    const { data: tenantRow, error: tenantErr } = await adminClient
-      .from('tenants')
-      .insert({
-        name:         company_name.trim(),
-        name_ar:      company_name_ar?.trim() || null,
-        vat_number:   vat_number?.trim() || null,
-        cr_number:    cr_number?.trim() || null,
-        email:        normalizedEmail,
-        phone:        phone?.trim() || null,
-        city:         city?.trim() || null,
-        business_type: normalizedBusinessType,
-        country:      'SA',
-        is_active:    true,
-        address:      notes?.trim() || null,
-        max_branches: branch_count ?? 999,
-      })
-      .select('id')
-      .single()
-
-    if (tenantErr || !tenantRow) {
-      console.error('[create-owner-account] Step 2 FAILED — tenant insert:', tenantErr?.message, tenantErr?.code)
-      await adminClient.auth.admin.deleteUser(newUserId)
-      await auditEvent(adminClient as any, {
-        ...auditBase,
-        action: 'owner_account_create_failed',
-        severity: 'warning',
-        status: 'failed',
-        targetType: 'user_profile',
-        targetId: newUserId,
-        metadata: { stage: 'tenant_insert' },
-      })
-      return new Response(
-        JSON.stringify({ error: 'Failed to create tenant: ' + (tenantErr?.message ?? 'unknown') }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
-    }
-
-    const tenantId = tenantRow.id
-
-    // ── Step 3: Link user profile to tenant immediately ──────────────────────
-    const { error: linkErr2 } = await adminClient
-      .from('user_profiles')
-      .update({ tenant_id: tenantId })
-      .eq('id', newUserId)
-
-    if (linkErr2) {
-      console.error('[create-owner-account] Step 3 WARNING — profile link failed:', linkErr2.message)
-    }
-
-    // ── Step 4: Upsert user profile ──────────────────────────────────────────
-    const { error: profileUpsertErr } = await adminClient
-      .from('user_profiles')
-      .upsert({
-        id:         newUserId,
-        role:       'owner',
-        tenant_id:  tenantId,
-        full_name:  company_name.trim(),
-        email:      normalizedEmail,
-        is_active:  true,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'id' })
-
-    if (profileUpsertErr) {
-      console.error('[create-owner-account] Step 4 WARNING — profile upsert failed:', profileUpsertErr.message)
-    }
-
-    // ── Step 5: Create subscription ──────────────────────────────────────────
-    // NOTE: DB enum subscription_status only allows: trial, active, expired, cancelled
-    // Lifetime free accounts use status='active' + ends_at=null (identified client-side)
-    const isLifetime  = payment_type === 'lifetime_free' || duration_months === 0
-    const paymentNote = [pay_method, pay_ref].filter(Boolean).join(' · ') || null
-
-    const { error: subErr } = await adminClient
-      .from('tenant_subscriptions')
-      .insert({
-        tenant_id:               tenantId,
-        plan_id,
-        status:                  'active',
-        starts_at:               new Date().toISOString(),
-        ends_at:                 isLifetime ? null : (ends_at ?? null),
-        trial_ends_at:           null,
-        cancelled_at:            null,
-        moyasar_subscription_id: isLifetime ? 'Lifetime Free' : paymentNote,
-      })
-
-    if (subErr) {
-      console.error('[create-owner-account] Step 5 WARNING — subscription insert failed:', subErr.message, subErr.code)
-    }
-
-    // ── Step 6: Generate manual setup link ──────────────────────────────────
-    // generateLink returns an action_link for a custom/manual send flow; it
-    // does not send an email by itself.
-    let setupLinkWarning: string | null = null
-    let setupLink: string | null = null
-
-    const { data: linkData, error: linkErr } = await adminClient.auth.admin.generateLink({
-      type:  'recovery',
-      email: normalizedEmail,
-      options: {
-        redirectTo: ownerSetupRedirectUrl,
-      },
-    })
-
-    if (linkErr) {
-      console.error('[create-owner-account] Step 6 WARNING — generateLink failed:', linkErr.message)
-      setupLinkWarning = `Account created but setup link generation failed: ${linkErr.message}. Send a manual password reset from the Supabase dashboard.`
-    } else {
-      setupLink = linkData?.properties?.action_link ?? null
-      if (!setupLink) {
-        setupLinkWarning = 'Account created but Supabase did not return a setup link. Send a manual password reset from the Supabase dashboard.'
-        console.warn('[create-owner-account] Step 6 WARNING — setup link missing')
+      if (attachError) {
+        await admin.rpc('set_owner_provisioning_result', {
+          p_provisioning_id: provisioningId, p_state: 'failed_manual_review',
+          p_error_code: 'AUTH_RECONCILIATION_FAILED',
+        })
+        return json({ code: 'MANUAL_REVIEW_REQUIRED', provisioning_id: provisioningId }, 409)
       }
     }
 
-    if (setupLink) {
-      const { error: onboardingErr } = await adminClient
-        .from('tenant_onboarding_status')
-        .upsert({
-          tenant_id: tenantId,
-          onboarding_status: 'owner_invited',
-          owner_setup_status: 'owner_invited',
-          owner_setup_link_sent_at: new Date().toISOString(),
-          updated_by: caller.id,
-        }, { onConflict: 'tenant_id' })
-
-      if (onboardingErr) {
-        console.error('[create-owner-account] Step 6 WARNING — onboarding tracking failed:', onboardingErr.message)
-      }
+    const { data: core, error: coreError } = await admin.rpc('complete_owner_provisioning_core', {
+      p_provisioning_id: provisioningId,
+    })
+    if (coreError || !core?.[0]) {
+      await admin.rpc('set_owner_provisioning_result', {
+        p_provisioning_id: provisioningId, p_state: 'failed_recoverable',
+        p_error_code: 'CORE_DATABASE_FAILED',
+      })
+      return json({ code: 'FAILED_RECOVERABLE', provisioning_id: provisioningId }, 503)
     }
-
-    const response: Record<string, unknown> = {
-      user_id:   newUserId,
-      tenant_id: tenantId,
-      email:     normalizedEmail,
-      setup_link_generated: !!setupLink,
+    const result = core[0]
+    const forcedLinkFailure = disposableFault(req, 'owner_setup_link')
+    const { data: linkData, error: linkError } = forcedLinkFailure
+      ? { data: null, error: new Error('DISPOSABLE_SETUP_LINK_FAILURE') }
+      : await admin.auth.admin.generateLink({
+        type: 'recovery', email: normalizedEmail, options: { redirectTo },
+      })
+    const setupLink = linkData?.properties?.action_link
+    if (linkError || !setupLink) {
+      await admin.rpc('set_owner_provisioning_result', {
+        p_provisioning_id: provisioningId, p_state: 'failed_recoverable',
+        p_error_code: 'SETUP_LINK_UNAVAILABLE',
+      })
+      await auditEvent(admin as any, {
+        ...auditBase, tenantId: result.tenant_id, targetId: provisioningId,
+        action: 'owner_provisioning_partial', severity: 'warning', status: 'failed',
+        metadata: { step: 'setup_link', code: 'SETUP_LINK_UNAVAILABLE', durationMs: Date.now() - started },
+      })
+      return json({
+        code: 'CORE_COMPLETE_SETUP_LINK_FAILED', provisioning_id: provisioningId,
+        user_id: authUserId, tenant_id: result.tenant_id, account_provisioned: true,
+      }, 503)
     }
-    if (setupLink) response.setup_link = setupLink
-    if (setupLinkWarning) response.warning = setupLinkWarning
-
-    await auditEvent(adminClient as any, {
-      ...auditBase,
-      tenantId,
-      action: 'owner_account_created',
-      severity: 'warning',
-      status: 'succeeded',
-      targetType: 'tenant',
-      targetId: tenantId,
-      metadata: {
-        userId: newUserId,
-        setupLinkGenerated: !!setupLink,
-        paymentType: payment_type ?? null,
-        businessType: normalizedBusinessType,
-      },
+    await admin.rpc('set_owner_provisioning_result', {
+      p_provisioning_id: provisioningId, p_state: 'complete', p_error_code: null,
     })
-
-    console.info('[create-owner-account] owner account created:', { tenantId, userId: newUserId })
-    return new Response(JSON.stringify(response), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    await admin.from('tenant_onboarding_status').upsert({
+      tenant_id: result.tenant_id, onboarding_status: 'owner_invited',
+      owner_setup_status: 'owner_invited', owner_setup_link_sent_at: new Date().toISOString(),
+      updated_by: caller.id,
+    }, { onConflict: 'tenant_id' })
+    const responseCode = state.is_replay
+      ? (state.state === 'complete' ? 'COMPLETE_SETUP_LINK_REGENERATED' : 'RESUMED_AND_COMPLETE')
+      : 'COMPLETE'
+    console.info('[create-owner-account]', {
+      provisioningId, step: 'complete', result: responseCode, durationMs: Date.now() - started,
     })
-
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Internal error'
-    console.error('[create-owner-account] UNHANDLED ERROR:', message)
-    return new Response(JSON.stringify({ error: 'Internal error' }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    await disposableDelay(req, 'owner_response_after_complete')
+    return json({
+      code: responseCode, provisioning_id: provisioningId, user_id: authUserId,
+      tenant_id: result.tenant_id, subscription_id: result.subscription_id,
+      setup_link_generated: true, setup_link: setupLink,
     })
+  } catch (error) {
+    console.error('[create-owner-account]', {
+      provisioningId, step: 'unhandled', code: 'INTERNAL_ERROR', durationMs: Date.now() - started,
+    })
+    return json({ code: 'FAILED_RECOVERABLE', provisioning_id: provisioningId }, 500)
   }
 })

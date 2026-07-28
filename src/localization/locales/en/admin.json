@@ -256,7 +256,7 @@
   },
   "validation": {
     "companyRequired": "Company name is required", "ownerEmailRequired": "Owner email is required", "planRequired": "Plan is required",
-    "createFailed": "Failed to create client", "copyFailed": "Copy failed. Select the setup link and copy it manually.",
+    "createFailed": "Client provisioning was not completed. Retry safely or contact support.", "setupLinkRetry": "The account is provisioned, but its setup link is unavailable. Retry to generate a link; no duplicate account will be created.", "setupLinkRegenerated": "The existing account was verified and a new setup link was generated.", "copyFailed": "Copy failed. Select the setup link and copy it manually.",
     "subscriptionSaveFailed": "Failed to save subscription", "paidBranches": "Paid branch count must be at least 1.",
     "amountInvalid": "Payment amount is invalid.", "currency": "Currency must be a 3-letter code.", "coverageRequired": "Coverage dates are required.",
     "coverageOrder": "Coverage end must be on or after coverage start.", "graceDate": "Grace date must be exactly 7 days after next due date."
