@@ -21,6 +21,22 @@ export const ZATCA_OUTPUT_STATE_READ_VERSION = '2.0.0'
 export const ZATCA_FINALIZATION_SCHEMA_VERSION = 2
 export type ZatcaCheckoutMode = 'legacy' | 'v2'
 export type ZatcaDocumentKind = 'simplified' | 'standard'
+export type PosCheckoutPath = 'atomic' | 'legacy'
+export type ZatcaFunctionalityMap = '0100' | '1000' | '1100'
+
+export interface PosCheckoutDocumentDecision {
+  status: 'allowed' | 'blocked'
+  code: string | null
+  documentType: ZatcaDocumentKind | null
+  checkoutPath: PosCheckoutPath | null
+  capability: ZatcaFunctionalityMap | null
+  classificationReason: string | null
+  atomicEligible: boolean
+  atomicEligibilityReason: string
+  readinessStatus: string
+  readinessReason: string | null
+  productionConnected: boolean
+}
 export type ZatcaCapabilityAcknowledgementStatus =
   | 'written'
   | 'refreshed'
@@ -117,6 +133,55 @@ export interface ZatcaOutputState {
   reconciliationRequired: boolean
   qrCode: string | null
   error: string | null
+}
+
+export async function resolvePosCheckoutDocument(
+  branchId: string,
+  customerId: string | null,
+): Promise<PosCheckoutDocumentDecision> {
+  const { data, error } = await (supabase as any).rpc(
+    'resolve_pos_checkout_document_v1',
+    {
+      p_branch_id: branchId,
+      p_customer_id: customerId,
+    },
+  )
+  if (error) throw new Error(error.message)
+
+  const status = data?.status === 'allowed' ? 'allowed' : 'blocked'
+  const documentType = data?.documentType === 'simplified'
+    || data?.documentType === 'standard'
+    ? data.documentType
+    : null
+  const checkoutPath = data?.checkoutPath === 'atomic'
+    || data?.checkoutPath === 'legacy'
+    ? data.checkoutPath
+    : null
+  const capability = data?.capability === '0100'
+    || data?.capability === '1000'
+    || data?.capability === '1100'
+    ? data.capability
+    : null
+
+  return {
+    status,
+    code: typeof data?.code === 'string' ? data.code : null,
+    documentType,
+    checkoutPath,
+    capability,
+    classificationReason: typeof data?.classificationReason === 'string'
+      ? data.classificationReason
+      : null,
+    atomicEligible: data?.atomicEligible === true,
+    atomicEligibilityReason: String(
+      data?.atomicEligibilityReason ?? 'not_evaluated',
+    ),
+    readinessStatus: String(data?.readinessStatus ?? 'missing'),
+    readinessReason: typeof data?.readinessReason === 'string'
+      ? data.readinessReason
+      : null,
+    productionConnected: data?.productionConnected === true,
+  }
 }
 
 export async function getZatcaFinalizationCapabilities(branchId: string): Promise<ZatcaFinalizationCapabilities> {

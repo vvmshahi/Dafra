@@ -53,6 +53,8 @@
     "test:zatca-capability-acknowledgement": "node scripts/test-zatca-capability-acknowledgement.mjs",
     "test:zatca-atomic-eligibility-rollout": "node scripts/test-zatca-atomic-eligibility-rollout.mjs",
     "test:zatca-atomic-simplified-checkout-runtime": "node scripts/test-zatca-atomic-simplified-checkout-runtime.mjs",
+    "test:atomic-default-new-retail": "node scripts/test-atomic-default-new-retail-branches.mjs",
+    "test:atomic-default-new-retail-runtime": "node scripts/test-atomic-default-new-retail-branches-runtime.mjs",
     "test:credit-note-modal-identity": "node scripts/test-credit-note-modal-invoice-identity.mjs",
     "test:credit-note-ux": "node scripts/test-credit-note-ux.mjs",
     "test:invoice-session-filters": "node --experimental-strip-types scripts/test-invoice-session-filters.mjs",

@@ -22,6 +22,7 @@ import {
   getInvoiceZatcaOutputState,
   isPermanentDemoSandboxBranch,
   requireZatcaFinalizationCapability,
+  resolvePosCheckoutDocument,
   retryStoredSimplifiedArtifact,
   submitInvoiceForBranch,
   type ZatcaCheckoutMode,
@@ -379,6 +380,24 @@ function safeCheckoutErrorKey(err: unknown): string {
   }
   if (/unsupported decimal precision|exact valid base quantity|package quantity/i.test(message)) {
     return 'pos:packages.invalidQuantity'
+  }
+  if (/BRANCH_SIMPLIFIED_ONLY/.test(message)) {
+    return 'validation:branchSimplifiedOnly'
+  }
+  if (/BRANCH_STANDARD_ONLY/.test(message)) {
+    return 'validation:branchStandardOnly'
+  }
+  if (/INVOICE_CAPABILITY_NOT_CONFIGURED/.test(message)) {
+    return 'validation:invoiceCapabilityNotConfigured'
+  }
+  if (/ZATCA_CONNECTION_REQUIRED/.test(message)) {
+    return 'validation:zatcaConnectionRequired'
+  }
+  if (/ATOMIC_NOT_READY|ATOMIC_CHECKOUT_REQUIRED/.test(message)) {
+    return 'validation:atomicNotReady'
+  }
+  if (/STANDARD_CUSTOMER_DETAILS_REQUIRED/.test(message)) {
+    return 'validation:standardCustomerDetailsRequired'
   }
   if (/not available/i.test(message)) {
     return 'validation:unavailableItem'
@@ -2659,13 +2678,24 @@ export default function POSPage() {
       }
 
       const demoSandbox = isPermanentDemoSandboxBranch(branch.tenant_id, branch.id)
-      const standardRequested = selectedCust?.customer_type === 'business'
-        && /^3[0-9]{13}3$/.test(selectedCust.vat_number ?? '')
+      const documentDecision = demoSandbox
+        ? null
+        : await resolvePosCheckoutDocument(branch.id, customerId)
+      if (documentDecision?.status === 'blocked') {
+        throw new Error(documentDecision.code ?? 'CHECKOUT_DOCUMENT_BLOCKED')
+      }
+      const standardRequested = documentDecision
+        ? documentDecision.documentType === 'standard'
+        : selectedCust?.customer_type === 'business'
+          && /^3[0-9]{13}3$/.test(selectedCust.vat_number ?? '')
+      const atomicRequested = !demoSandbox
+        && documentDecision?.documentType === 'simplified'
+        && documentDecision.checkoutPath === 'atomic'
       let productionCheckoutMode: ZatcaCheckoutMode = 'legacy'
       let atomicCheckoutResult: AtomicCheckoutResult | null = null
       let atomicFingerprint: string | null = null
       let checkout: PosCheckoutResult | null = null
-      if (!demoSandbox && !standardRequested) {
+      if (atomicRequested) {
         if (persistedInvoiceCheckout) payload = persistedInvoiceCheckout.checkout
         atomicFingerprint = await atomicCheckoutFingerprint(payload)
         if (persistedInvoiceCheckout
@@ -2715,14 +2745,10 @@ export default function POSPage() {
       }
       if (!checkout) {
         if (!demoSandbox) {
-          // Preserve document-kind routing whenever authoritative eligibility
-          // keeps this branch on the legacy path.
-          // No commercial write occurred in the atomic rollout probe.
-          const capability = await requireZatcaFinalizationCapability(
-            branch.id,
-            standardRequested ? 'standard' : 'simplified',
-          )
-          productionCheckoutMode = capability.checkoutMode
+          // The authenticated server classifier has already selected the
+          // document kind. Standard and non-eligible Simplified transactions
+          // retain the approved legacy path without changing fiscal type.
+          productionCheckoutMode = 'legacy'
         }
         const { data, error } = await (supabase as any).rpc('pos_checkout', { p_payload: payload })
         if (error) throw error

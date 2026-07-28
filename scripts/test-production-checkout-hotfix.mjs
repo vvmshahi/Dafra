@@ -135,7 +135,7 @@ test('generic UI error keeps the original failure in sanitized developer evidenc
     pos,
     /console\.warn\('\[POSPage charge\] checkout failed', err\)/,
   )
-  assert.match(pos, /toast\.error\(t\(safeKey\)\)/)
+  assert.match(pos, /toast\.error\(t\(safeKey\),/)
 })
 
 test('production diagnostic is transactionally read-only and redacted', () => {

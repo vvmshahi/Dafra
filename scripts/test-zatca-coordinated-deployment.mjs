@@ -55,10 +55,14 @@ assert.match(client, /const legacyCompatible = contractMode === 'legacy'[\s\S]*d
 assert.match(client, /ZATCA_OUTPUT_STATE_READ_VERSION = '2\.0\.0'/)
 assert.match(edge, /OUTPUT_STATE_READ_CLIENT_VERSIONS = new Set\(\['2\.0\.0', FINALIZATION_CLIENT_VERSION\]\)/)
 
-const capabilityIndex = pos.indexOf('await requireZatcaFinalizationCapability(')
+const classifierIndex = pos.indexOf('await resolvePosCheckoutDocument(branch.id, customerId)')
 const checkoutIndex = pos.indexOf("rpc('pos_checkout'")
-assert.ok(capabilityIndex > 0 && capabilityIndex < checkoutIndex, 'version mismatch is not detected before checkout')
-assert.match(pos, /productionCheckoutMode = capability\.checkoutMode/)
+assert.ok(
+  classifierIndex > 0 && classifierIndex < checkoutIndex,
+  'the authoritative server document decision must precede checkout',
+)
+assert.match(pos, /documentDecision\.checkoutPath === 'atomic'/)
+assert.match(pos, /productionCheckoutMode = 'legacy'/)
 assert.match(pos, /productionCheckoutMode === 'legacy'[\s\S]*contractMode: productionCheckoutMode/)
 
 assert.match(statusSql, /'contractMode', 'legacy', 'legacyCompatible', true/)
