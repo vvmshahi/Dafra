@@ -19,6 +19,19 @@ function isElectronEnvironment(): boolean {
   return typeof window !== 'undefined' && window.electronAPI?.isElectron === true
 }
 
+const PROFILE_RETRY_DELAYS_MS = [0, 250, 750] as const
+
+async function loadProfileWithRetry(userId: string) {
+  let lastError: unknown = null
+  for (const delay of PROFILE_RETRY_DELAYS_MS) {
+    if (delay) await new Promise((resolve) => window.setTimeout(resolve, delay))
+    const result = await supabase.from('user_profiles').select('*').eq('id', userId).maybeSingle()
+    if (!result.error) return { profile: result.data as unknown as UserProfile | null, error: null }
+    lastError = result.error
+  }
+  return { profile: null, error: lastError }
+}
+
 function logDesktopAuthDiagnostic(event: string, session: Session | null) {
   if (!isElectronEnvironment()) return
 
@@ -48,6 +61,7 @@ function useProvideAuth() {
   const signOutPending = useRef(false)
   // null = not yet checked, true = has ≥1 branch, false = no branches
   const [hasBranch, setHasBranch] = useState<boolean | null>(null)
+  const [firstBranchProvisioningState, setFirstBranchProvisioningState] = useState<string | null>(null)
   const ownerSetupCompletionAttempts = useRef(new Set<string>())
   const currentUserId = useRef<string | null>(null)
   const currentProfile = useRef<UserProfile | null>(null)
@@ -55,23 +69,19 @@ function useProvideAuth() {
   useEffect(() => {
     let mounted = true
 
-    async function fetchBranchCount(tenantId: string) {
-      const { count } = await supabase
-        .from('branches')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
+    async function fetchBranchCount(_tenantId: string) {
+      const { data, error } = await (supabase.rpc as any)('get_first_branch_provisioning_status')
       if (!mounted) return
-      setHasBranch((count ?? 0) > 0)
+      if (error) throw error
+      const status = Array.isArray(data) ? data[0] : data
+      setFirstBranchProvisioningState(status?.state ?? null)
+      setHasBranch(status?.access_complete === true)
     }
 
     async function fetchProfile(userId: string) {
       try {
         if (mounted) setAuthError(null)
-        const { data, error } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('id', userId)
-          .maybeSingle()
+        const { profile: data, error } = await loadProfileWithRetry(userId)
         if (!mounted) return
         if (error) throw error
         const p = data as unknown as UserProfile | null
@@ -168,6 +178,7 @@ function useProvideAuth() {
         if (sameAuthenticatedUser) return
         setLoading(true)
         setHasBranch(null)
+        setFirstBranchProvisioningState(null)
         setAuthError(null)
         fetchProfile(session.user.id)
       }
@@ -205,24 +216,27 @@ function useProvideAuth() {
       .maybeSingle()
     const prof = p as { role: string; tenant_id: string | null } | null
     if (prof?.role === 'owner' && prof?.tenant_id) {
-      const { count } = await supabase
-        .from('branches')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', prof.tenant_id)
-      setHasBranch((count ?? 0) > 0)
+      const { data, error } = await (supabase.rpc as any)('get_first_branch_provisioning_status')
+      if (error) {
+        setAuthError('We could not verify first-branch access. Please retry.')
+        return
+      }
+      const status = Array.isArray(data) ? data[0] : data
+      setFirstBranchProvisioningState(status?.state ?? null)
+      setHasBranch(status?.access_complete === true)
     }
   }, [])
 
-  const refreshProfile = useCallback(async () => {
+  const refreshProfile = useCallback(async (): Promise<{ ok: boolean; profile: UserProfile | null; code?: string }> => {
     const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.user) return
+    if (!session?.user) return { ok: false, profile: null, code: 'SESSION_MISSING' }
     try {
-      const { data } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .maybeSingle()
-      const p = data as unknown as UserProfile | null
+      const { profile: p, error } = await loadProfileWithRetry(session.user.id)
+      if (error) {
+        setAuthError('We could not load your account profile. Please retry or sign in again.')
+        return { ok: false, profile: currentProfile.current, code: 'PROFILE_QUERY_FAILED' }
+      }
+      setAuthError(null)
       currentProfile.current = p
       setProfile(p)
       if (p?.tenant_id) {
@@ -245,8 +259,11 @@ function useProvideAuth() {
       } else {
         setBranch(null)
       }
+      return { ok: true, profile: p, code: p ? undefined : 'PROFILE_MISSING' }
     } catch (err) {
       console.error('[useAuth] refreshProfile error:', err)
+      setAuthError('We could not load your account profile. Please retry or sign in again.')
+      return { ok: false, profile: currentProfile.current, code: 'PROFILE_QUERY_FAILED' }
     }
   }, [])
 
@@ -360,6 +377,7 @@ function useProvideAuth() {
     isAuthenticated,
     isNewUser,
     hasBranch,
+    firstBranchProvisioningState,
     hasRole,
     signIn,
     signUp,

@@ -55,6 +55,7 @@ import LandingPage         from '@/pages/landing/LandingPage'
 import PricingPage         from '@/pages/landing/PricingPage'
 import FAQPage             from '@/pages/landing/FAQPage'
 import ReceiptPrintPage    from '@/pages/print/ReceiptPrintPage'
+import { decideProtectedRoute, decideSetupBranchRoute } from '@/lib/authRouteRecovery'
 
 // ── Shared spinner ────────────────────────────────────────────────────────
 
@@ -66,7 +67,7 @@ function FullscreenSpinner() {
   )
 }
 
-function AuthLoadError() {
+export function AuthRecoveryPanel({ onRetry, onSignOut }: { onRetry: () => void; onSignOut: () => void }) {
   const { t } = useTranslation(['common', 'auth'])
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-6">
@@ -78,18 +79,23 @@ function AuthLoadError() {
         <div className="flex gap-2 justify-center mt-5">
           <button
             type="button"
-            onClick={() => window.location.reload()}
+            onClick={onRetry}
             className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700"
           >
             {t('common:retry')}
           </button>
-          <a href="/login" className="px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-50">
+          <button type="button" onClick={onSignOut} className="px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-50">
             {t('auth:signInAgain')}
-          </a>
+          </button>
         </div>
       </div>
     </div>
   )
+}
+
+function AuthLoadError() {
+  const { signOut } = useAuth()
+  return <AuthRecoveryPanel onRetry={() => window.location.reload()} onSignOut={signOut} />
 }
 
 function UnauthorizedPage() {
@@ -131,16 +137,15 @@ function isSuperAdminRole(role: string) {
  */
 function RequireAuth() {
   const { isAuthenticated, loading, authError, isOnboarded, profile, hasBranch } = useAuth()
-  if (loading)               return <FullscreenSpinner />
-  if (authError)             return <AuthLoadError />
-  if (!isAuthenticated)      return <Navigate to="/login" replace />
-  if (isOnboarded === null)  return <FullscreenSpinner />
-  if (isOnboarded === false) return <Navigate to="/onboarding" replace />
-  // Owners must have at least one branch before accessing the app
-  if (profile?.role === 'owner') {
-    if (hasBranch === null)  return <FullscreenSpinner />
-    if (hasBranch === false) return <Navigate to="/setup-branch" replace />
-  }
+  const decision = decideProtectedRoute({
+    loading, authError, isAuthenticated, isOnboarded, role: profile?.role,
+    firstBranchAccessComplete: hasBranch,
+  })
+  if (decision === 'loading') return <FullscreenSpinner />
+  if (decision === 'recovery') return <AuthLoadError />
+  if (decision === 'login') return <Navigate to="/login" replace />
+  if (decision === 'onboarding') return <Navigate to="/onboarding" replace />
+  if (decision === 'setup-branch') return <Navigate to="/setup-branch" replace />
   return <Outlet />
 }
 
@@ -150,15 +155,17 @@ function RequireAuth() {
  */
 function RequireSetupBranch() {
   const { isAuthenticated, loading, authError, isOnboarded, profile, hasBranch } = useAuth()
-  if (loading)               return <FullscreenSpinner />
-  if (authError)             return <AuthLoadError />
-  if (!isAuthenticated)      return <Navigate to="/login" replace />
-  if (isOnboarded === null)  return <FullscreenSpinner />
-  if (isOnboarded === false) return <Navigate to="/onboarding" replace />
-  if (profile?.role === 'super_admin') return <Navigate to="/super-admin" replace />
-  if (profile?.role === 'branch')      return <Navigate to="/branch"       replace />
-  if (hasBranch === null)    return <FullscreenSpinner />
-  if (hasBranch === true)    return <Navigate to="/dashboard"  replace />
+  const decision = decideSetupBranchRoute({
+    loading, authError, isAuthenticated, isOnboarded, role: profile?.role,
+    firstBranchAccessComplete: hasBranch,
+  })
+  if (decision === 'loading') return <FullscreenSpinner />
+  if (decision === 'recovery') return <AuthLoadError />
+  if (decision === 'login') return <Navigate to="/login" replace />
+  if (decision === 'onboarding') return <Navigate to="/onboarding" replace />
+  if (decision === 'super-admin') return <Navigate to="/super-admin" replace />
+  if (decision === 'branch') return <Navigate to="/branch" replace />
+  if (decision === 'dashboard') return <Navigate to="/dashboard" replace />
   return <Outlet />
 }
 

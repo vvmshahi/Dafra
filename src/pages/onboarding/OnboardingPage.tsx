@@ -303,10 +303,22 @@ export default function OnboardingPage() {
         p_website:         data.website.trim(),
         p_plan_id:         data.plan_id || undefined,
       })
-      if (error) throw error
+      if (error) {
+        const message = String(error.message ?? '')
+        if (/ALREADY_ONBOARDED|timeout|network|fetch/i.test(message)) {
+          const reconciled = await refreshProfile()
+          if (reconciled.ok && reconciled.profile?.tenant_id) {
+            if (user?.id) localStorage.removeItem(STORAGE_KEY(user.id))
+            navigate('/dashboard', { replace: true })
+            return
+          }
+        }
+        throw error
+      }
 
       if (user?.id) localStorage.removeItem(STORAGE_KEY(user.id))
-      await refreshProfile()
+      const refreshed = await refreshProfile()
+      if (!refreshed.ok || !refreshed.profile?.tenant_id) throw new Error('PROFILE_RECONCILIATION_FAILED')
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
       console.error('Failed to complete onboarding', err)
