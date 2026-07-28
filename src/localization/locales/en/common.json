@@ -9,6 +9,7 @@
   "loading": "Loading",
   "search": "Search",
   "retry": "Retry",
+  "reload": "Reload",
   "confirm": "Confirm",
   "delete": "Delete",
   "edit": "Edit",
@@ -28,6 +29,8 @@
   "errors": {
     "accountLoadTitle": "Account could not be loaded",
     "accountLoadBody": "We could not verify your account profile. Check your connection and try again.",
+    "runtimeTitle": "Something went wrong",
+    "runtimeBody": "Reload the app or sign out and sign in again.",
     "accessDeniedTitle": "You do not have access to this page",
     "accessDeniedBody": "Use the pages available for your account role.",
     "pageNotFoundTitle": "Page not found",

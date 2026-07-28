@@ -66,8 +66,6 @@ const operationsNavItem: NavItem = {
   section: 'administration',
 }
 
-const operationsRoles = new Set(['owner', 'admin', 'super_admin'])
-
 const KUBRI_WORDMARK_SRC = '/brand/kubiri-wordmark.png?v=kubri-2'
 const KUBRI_MARK_SRC = '/brand/kubiri-logo-mark.png?v=kubri-2'
 
@@ -112,7 +110,6 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const isSuperAdmin = profile?.role === 'super_admin'
   const isBranch     = profile?.role === 'branch'
-  const canViewOperations = operationsRoles.has(String(profile?.role ?? ''))
   const stockVisible = isStockModuleVisible({
     businessType: tenant?.business_type,
     stockEnabled: branch?.stock_enabled,
@@ -131,14 +128,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             ...branchNavigation.filter(item => item.section === 'analysis'),
           ]
         : branchNavigation
-      : canViewOperations
-        ? [
-            ...ownerNav.filter(item => item.section !== 'settings' && item.section !== 'analysis'),
-            operationsNavItem,
-            ...ownerNav.filter(item => item.section === 'settings'),
-            ...ownerNav.filter(item => item.section === 'analysis'),
-          ]
-        : ownerNav
+      : ownerNav
   const subtitle = isSuperAdmin
     ? `Kubri ${t('navigation:roles.superAdmin')}`
     : resolveBusinessDisplayName(tenant, isRtl, 'Kubri')
