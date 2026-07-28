@@ -10,13 +10,20 @@ export interface TenantUserContext extends OwnerContext {
   branchId: string | null
 }
 
+export class ZatcaAuthContractError extends Error {
+  constructor(public readonly code: 'AUTH_HEADER_MISSING' | 'EDGE_JWT_REJECTED') {
+    super('Unauthorized')
+    this.name = 'ZatcaAuthContractError'
+  }
+}
+
 export async function requireTenantUser(db: any, req: Request): Promise<TenantUserContext> {
   const authHeader = req.headers.get('Authorization') ?? ''
-  const jwt = authHeader.replace('Bearer ', '').trim()
-  if (!jwt) throw new Error('Unauthorized')
+  const jwt = authHeader.replace(/^Bearer\s+/i, '').trim()
+  if (!jwt) throw new ZatcaAuthContractError('AUTH_HEADER_MISSING')
 
   const { data: { user }, error: authErr } = await db.auth.getUser(jwt)
-  if (authErr || !user) throw new Error('Unauthorized')
+  if (authErr || !user) throw new ZatcaAuthContractError('EDGE_JWT_REJECTED')
 
   const { data: profile, error: profileErr } = await db
     .from('user_profiles')
@@ -38,11 +45,11 @@ export async function requireTenantUser(db: any, req: Request): Promise<TenantUs
 
 export async function requireTenantOwner(db: any, req: Request): Promise<OwnerContext> {
   const authHeader = req.headers.get('Authorization') ?? ''
-  const jwt = authHeader.replace('Bearer ', '').trim()
-  if (!jwt) throw new Error('Unauthorized')
+  const jwt = authHeader.replace(/^Bearer\s+/i, '').trim()
+  if (!jwt) throw new ZatcaAuthContractError('AUTH_HEADER_MISSING')
 
   const { data: { user }, error: authErr } = await db.auth.getUser(jwt)
-  if (authErr || !user) throw new Error('Unauthorized')
+  if (authErr || !user) throw new ZatcaAuthContractError('EDGE_JWT_REJECTED')
 
   const { data: profile, error: profileErr } = await db
     .from('user_profiles')

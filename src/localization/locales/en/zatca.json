@@ -65,6 +65,8 @@
     "alreadyConnected": "This branch is already connected. Open the advanced reconnect action before replacing production credentials.",
     "otp": "Enter the 6-digit OTP from the FATOORA portal.",
     "capability": "Choose what this billing system will issue before connecting to ZATCA production.",
+    "sessionExpired": "Your session has expired. Sign in again.",
+    "invalidOrExpiredOtp": "The ZATCA OTP is invalid or expired. Generate a fresh OTP and try again.",
     "onboardingFailed": "ZATCA production onboarding failed.", "disconnectFailed":"Unable to remove local ZATCA connection."
   },
   "disconnect":{"title":"Remove local ZATCA connection","branchOnly":"This affects only {{branch}}.","help":"This removes the production credentials from Kubri and stops this branch from submitting invoices through this connection. It may not remove or revoke the device from the FATOORA portal. Manage the device in FATOORA separately if required.","type":"Type","toConfirm":"to confirm.","cancel":"Cancel","confirm":"Remove connection"},

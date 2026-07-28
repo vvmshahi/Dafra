@@ -27,7 +27,13 @@ import {
   type FunctionalityMap,
   type OnboardingStatus,
 } from '../_shared/zatca/config.ts'
-import { requireTenantOwner, requireTenantUser, loadOwnedBranch, loadTenant } from '../_shared/zatca/auth.ts'
+import {
+  requireTenantOwner,
+  requireTenantUser,
+  loadOwnedBranch,
+  loadTenant,
+  ZatcaAuthContractError,
+} from '../_shared/zatca/auth.ts'
 import { generateProductionCsr, validateCsrInputs, type CsrParams } from '../_shared/zatca/csr.ts'
 import { encryptText } from '../_shared/zatca/crypto.ts'
 import { isZatcaHttpError, requestComplianceCsid, requestProductionCsid } from '../_shared/zatca/client.ts'
@@ -717,9 +723,12 @@ Deno.serve(async (req: Request) => {
     markFirstPendingFailed(trace, message)
     skipPendingTrace(trace)
     console.error('[zatca-onboard-production] top-level failure:', JSON.stringify(debug))
-    const status = message === 'Unauthorized' ? 401 : message.startsWith('Forbidden') ? 403 : 500
+    const status = err instanceof ZatcaAuthContractError
+      ? 401
+      : message.startsWith('Forbidden') ? 403 : 500
     return jsonResponse({
       error: message,
+      ...(err instanceof ZatcaAuthContractError ? { code: err.code } : {}),
       trace,
     }, status)
   }

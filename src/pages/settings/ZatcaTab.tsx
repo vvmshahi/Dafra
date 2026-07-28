@@ -24,7 +24,9 @@ import {
   getProductionOnboardingStatus,
   getSandboxDemoConnectionStatus,
   disconnectProductionZatca,
+  isZatcaOtpRejection,
   onboardProductionZatca,
+  ZatcaAuthError,
   type ProductionOnboardingResponse,
   type ProductionOnboardingTraceEntry,
   type ProductionOnboardingStatus,
@@ -453,8 +455,11 @@ function ProductionOnboardingPanel({
           onStatusChange(res)
         }
       } catch (err: any) {
-        console.error('Unable to load production onboarding status', err)
-        if (mounted) setError(t('errors.loadStatus'))
+        if (mounted) {
+          setError(err instanceof ZatcaAuthError
+            ? t('errors.sessionExpired')
+            : t('errors.loadStatus'))
+        }
       } finally {
         if (mounted) setStatusLoading(false)
       }
@@ -512,8 +517,14 @@ function ProductionOnboardingPanel({
         setStatus(nextStatus)
         onStatusChange(nextStatus)
       }
-      console.error('ZATCA production onboarding failed', err)
-      setError(t('errors.onboardingFailed'))
+      if (err instanceof ZatcaAuthError) {
+        setError(t('errors.sessionExpired'))
+      } else if (isZatcaOtpRejection(err)) {
+        setError(t('errors.invalidOrExpiredOtp'))
+      } else {
+        console.error('ZATCA production onboarding failed safely')
+        setError(t('errors.onboardingFailed'))
+      }
     } finally {
       setLoading(false)
     }
