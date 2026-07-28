@@ -327,6 +327,114 @@ assert.match(
 assert.match(creditModal, /stockReturnChoiceMissing[\s\S]*createDisabled/)
 assert.match(creditModal, /role="radio"/)
 
+// Approved modal interaction contract.
+assert.match(
+  creditModal,
+  /const QUICK_REASONS = \[\s*'Customer refund',\s*'Cancelled order',\s*'Billing mistake',\s*'Test sale',\s*\]/,
+)
+assert.match(creditModal, /useState<\(typeof QUICK_REASONS\)\[number\] \| ''>\(''\)/)
+assert.match(creditModal, /useState<boolean \| null>\(null\)/)
+assert.match(creditModal, /useState<'' \| 'cash' \| 'card' \| 'split'>\(''\)/)
+assert.doesNotMatch(creditModal, /setRefundMode\('cash'\)[\s\S]*setRefundMode\('split'\)/)
+assert.match(creditModal, /function isWholeUnitItem\(item: RefundableItem\): boolean/)
+assert.match(creditModal, /unitCode === 'PCE'/)
+assert.match(creditModal, /value === 'piece'[\s\S]*value === 'pieces'/)
+assert.ok(
+  creditModal.indexOf("unitCode === 'PCE'") < creditModal.indexOf('if (!item.product_unit_id) return true'),
+  'explicit Piece identity must be checked before product-unit scale fallbacks',
+)
+assert.match(creditModal, /if \(isWholeUnitItem\(item\)\) return '1'/)
+assert.match(creditModal, /const scale = item\.package_quantity_scale \?\? 0/)
+assert.match(creditModal, /function quantityDisplayScaleForItem\(item: RefundableItem\): number/)
+assert.match(creditModal, /if \(isWholeUnitItem\(item\) && !Number\.isInteger\(parsed\)\) return currentValue/)
+assert.match(creditModal, /Math\.min\(\s*item\.remaining_quantity/)
+assert.match(creditModal, /data-testid="returned-items-grid"/)
+assert.match(creditModal, /className="grid grid-cols-1 items-start gap-2\.5 xl:grid-cols-2"/)
+assert.match(creditModal, /w-full max-w-\[34rem\]/)
+assert.doesNotMatch(creditModal, /xl:grid-cols-3|lg:grid-cols-3/)
+assert.match(creditModal, /data-testid="source-invoice-strip"[\s\S]*bg-\[#0F2419\]/)
+assert.match(creditModal, /\? 'border-\[#B5943E\] bg-\[#0F2419\] text-\[#FFF9E8\] shadow-sm'/)
+assert.match(creditModal, /selected \? 'border-\[#B5943E\] bg-\[#0F2419\] text-\[#FFF9E8\] shadow-sm'/)
+assert.match(creditModal, /refundMode === method[\s\S]*border-\[#B5943E\] bg-\[#0F2419\] text-\[#FFF9E8\]/)
+assert.match(creditModal, /data-selected=\{lineIncluded\}/)
+assert.match(creditModal, /max-w-\[34rem\][\s\S]*lineIncluded[\s\S]*before:bg-\[#0F2419\]/)
+assert.match(creditModal, /disabled=\{disabled \|\| line\.quantity <= 0\}/)
+assert.match(creditModal, /disabled=\{disabled \|\| line\.quantity >= item\.remaining_quantity\}/)
+assert.match(creditModal, /fullReturnQuantity\(item\)/)
+assert.match(creditModal, /disabled=\{disabled \|\| Math\.abs\(line\.quantity - item\.remaining_quantity\) <= 1e-7\}/)
+assert.match(creditModal, /creditNotes:returnQuantityMaximum/)
+
+// Regression fixture: generic numeric scale 3 must not make a Piece fractional.
+const dishwasherGelPiece = {
+  product_name: 'Automatic Dishwasher Gel 1 Litre',
+  product_unit_id: 'product-unit-piece',
+  selling_unit_code: 'PCE',
+  selling_unit_name: 'piece',
+  unit_label: 'piece',
+  original_quantity: 1,
+  remaining_quantity: 1,
+  package_quantity_scale: 3,
+  conversion_to_base: 1,
+  remaining_total: 18.5,
+}
+const wholeForContract = item => (
+  ['PCE', 'EA', 'H87'].includes(item.selling_unit_code)
+  || ['piece', 'pieces', 'unit', 'units'].includes(item.selling_unit_name ?? item.unit_label)
+  || (!item.product_unit_id)
+  || (item.package_quantity_scale ?? 0) === 0
+)
+const stepForContract = item => wholeForContract(item) ? 1 : 10 ** -(item.package_quantity_scale ?? 0)
+const adjustForContract = (current, direction, item) => {
+  const step = stepForContract(item)
+  const scale = wholeForContract(item) ? 0 : item.package_quantity_scale ?? 0
+  const factor = 10 ** scale
+  return Math.min(item.remaining_quantity, Math.max(0, Math.round((current + direction * step) * factor) / factor))
+}
+assert.equal(wholeForContract(dishwasherGelPiece), true)
+assert.equal(stepForContract(dishwasherGelPiece), 1)
+assert.equal(adjustForContract(0, 1, dishwasherGelPiece), 1)
+assert.equal(adjustForContract(1, -1, dishwasherGelPiece), 0)
+assert.equal(adjustForContract(1, 1, dishwasherGelPiece), 1)
+assert.equal(adjustForContract(0, -1, dishwasherGelPiece), 0)
+assert.equal(adjustForContract(0, 1, dishwasherGelPiece) >= dishwasherGelPiece.remaining_quantity, true)
+assert.equal(adjustForContract(0, -1, dishwasherGelPiece) <= 0, true)
+assert.equal(String(dishwasherGelPiece.remaining_quantity), '1')
+assert.equal(String(adjustForContract(0, 1, dishwasherGelPiece).toFixed(0)).includes('0.001'), false)
+assert.equal(
+  adjustForContract(0, 1, dishwasherGelPiece) * dishwasherGelPiece.conversion_to_base,
+  1,
+)
+assert.equal(
+  adjustForContract(0, 1, dishwasherGelPiece) === dishwasherGelPiece.remaining_quantity
+    ? dishwasherGelPiece.remaining_total
+    : 0,
+  dishwasherGelPiece.remaining_total,
+)
+const fractional = {
+  product_unit_id: 'product-unit-weighted',
+  selling_unit_code: 'KGM',
+  selling_unit_name: 'kilogram',
+  package_quantity_scale: 2,
+  remaining_quantity: 2,
+}
+assert.equal(wholeForContract(fractional), false)
+assert.equal(stepForContract(fractional), 0.01)
+assert.equal(adjustForContract(0, 1, fractional), 0.01)
+assert.match(creditModal, /creditNotes:invoiceNumber/)
+assert.doesNotMatch(creditModal, /originalInvoiceIdentity/)
+assert.doesNotMatch(creditModal, /invoice\.id\}<\/bdi>|invoice\.id\}<\/dd>/)
+assert.match(creditModal, /completionChecks\.some\(check => !check\.complete\)/)
+assert.match(creditModal, /selectedReason/)
+assert.match(creditModal, /refundAllocationValid/)
+assert.match(creditModal, /stockReturnChoiceMissing/)
+assert.match(creditModal, /hasInvalidQuantity/)
+assert.match(creditModal, /env\(safe-area-inset-bottom\)/)
+assert.match(creditModal, /lg:hidden/)
+assert.match(creditModal, /scrollIntoView\(\{ behavior: 'smooth'/)
+assert.match(creditModal, /return_stock: hasEligibleStockLines \? stockReturnChoice === true : false/)
+assert.match(creditModal, /invoice\.zatca_document_kind === 'simplified'/)
+assert.match(creditModal, /create_partial_credit_note_with_refund/)
+
 const creditFunctionStart = currentSchema.indexOf(
   'FUNCTION "public"."create_partial_credit_note"("p_payload" "jsonb")',
 )
@@ -373,6 +481,18 @@ const requiredKeys = [
   'stockReturnNo',
   'stockReturnNoDescription',
   'stockReturnChoiceRequired',
+  'invoiceNumber',
+  'remainingRefundableTotal',
+  'invalidUnitFraction',
+  'returnQuantityMaximum',
+  'refundMethodRequired',
+  'nonCashRefund',
+  'nonCashRefundHint',
+  'completionChecklist',
+  'checkReason',
+  'checkItems',
+  'checkInventory',
+  'checkRefund',
 ]
 for (const key of requiredKeys) {
   assert.equal(typeof en[key], 'string', `missing English credit-note key ${key}`)

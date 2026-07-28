@@ -540,7 +540,7 @@ await test('thermal and A4 printing require the finalized rendered QR', () => {
   assert.match(invoiceDetail, /async function handlePrintA4\(\)[\s\S]*?window\.print\(\)/)
   assert.match(invoiceDetail, /async function handlePrintThermal\(\)[\s\S]*?printReceiptInHiddenFrame\(invoice\.id\)/)
   assert.match(invoiceDetail, /disabled=\{thermalPrinting \|\| !printReady\}/)
-  assert.match(invoiceDetail, /disabled=\{!printReady\}/)
+  assert.match(invoiceDetail, /disabled=\{a4Printing \|\| !printReady\}/)
   assert.match(receiptPrint, /function handlePrint\(\)[\s\S]*?window\.print\(\)/)
   const invoiceAutoPrint = invoiceDetail.slice(
     invoiceDetail.indexOf('// Auto-print when ?print=1'),

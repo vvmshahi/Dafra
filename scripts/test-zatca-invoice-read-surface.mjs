@@ -145,7 +145,7 @@ await test('detail, receipt, and historical A4 paths use safe rows plus safe QR 
 
 await test('list, POS, credit-note, dashboard, and accounting selectors stay within the safe contract', () => {
   const expected = new Map([
-    ['src/pages/invoices/InvoicesPage.tsx', ['id, branch_id, invoice_number', 'original_invoice_id']],
+    ['src/pages/invoices/InvoicesPage.tsx', ['id, branch_id, session_id, invoice_number', 'original_invoice_id']],
     ['src/pages/pos/POSPage.tsx', ['id, zatca_invoice_type, total_amount']],
     ['src/pages/invoices/InvoiceDetailPage.tsx', ['payment_status, credit_reason', 'document_language']],
     ['src/pages/invoices/CreateCreditNoteModal.tsx', ['zatca_status']],

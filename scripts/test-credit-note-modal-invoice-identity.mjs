@@ -131,10 +131,9 @@ for (const reset of [
   "setCartFingerprint('')",
   "setCreating(false)",
   "setSubmitting(false)",
-  "setRefundMode('cash')",
+  "setRefundMode('')",
   "setRefundCash('')",
   "setRefundCard('')",
-  "setRefundEdited(false)",
 ]) {
   assert.ok(creditModal.includes(reset), `missing modal reset: ${reset}`)
 }
@@ -164,8 +163,9 @@ assert.match(
   /resolveScopedAtomicCheckout\(\s*pending,\s*payload,\s*'credit_note',\s*originalInvoiceId,\s*invoice\.branch_id,\s*\)/,
 )
 assert.match(creditModal, /checkoutSimplifiedAtomically\(\{[\s\S]*?checkout: atomicPayload/)
-assert.match(creditModal, /data-original-invoice-id=\{invoice\.id\}/)
-assert.match(creditModal, /originalInvoiceIdentity', \{ id: invoice\.id \}/)
+assert.doesNotMatch(creditModal, /data-original-invoice-id=\{invoice\.id\}/)
+assert.doesNotMatch(creditModal, /originalInvoiceIdentity', \{ id: invoice\.id \}/)
+assert.match(creditModal, /\{invoice\.invoice_number\}/)
 assert.doesNotMatch(creditModal, /pending\?\.checkout \?\? payload/)
 
 // The storage client passes scope through persist/read/clear without changing POS callers.

@@ -27,8 +27,9 @@ const calculatedPreview = (basePrice, conversion) => {
 
 test('ProductDrawer owns the units section and keeps product and package saves separate', () => {
   assert.match(drawer, /import \{ ProductUnitsSection \} from '\.\/ProductUnitsSection'/)
-  assert.match(drawer, /<Section title=\{t\('products:sections\.units'\)\}/)
-  assert.match(drawer, /productId=\{product\?\.id \?\? createdProductId\}/)
+  assert.match(drawer, /id="product-panel-units"/)
+  assert.match(drawer, /const persistedProductId = product\?\.id \?\? createdProductId/)
+  assert.match(drawer, /view="units"/)
   assert.match(drawer, /isFirstProductSave = !product && !createdProductId/)
   assert.match(drawer, /setProductCreatedMessage\(true\)/)
   assert.match(english.units.productCreated, /saved separately/i)
@@ -38,7 +39,7 @@ test('a product with only a base unit renders a read-only base relationship', ()
   assert.match(units, /const baseUnit = units\.find\(unit => unit\.is_base\)/)
   assert.match(units, /t\('units\.baseUnit'\)/)
   assert.match(units, /t\('units\.baseEquation'/)
-  assert.match(units, /t\('units\.baseReadOnly'\)/)
+  assert.match(units, /t\('units\.stockMaintained'/)
   assert.doesNotMatch(units, /unit\.is_base[\s\S]{0,120}(deactivate_product_unit|reactivate_product_unit)/)
 })
 
@@ -135,7 +136,8 @@ test('English and Arabic package copy is complete and dynamically names the base
 })
 
 test('package editor is keyboard-accessible, RTL-safe and mobile-safe', () => {
-  assert.match(drawer, /aria-expanded=\{open\}/)
+  assert.match(drawer, /role="dialog"/)
+  assert.match(drawer, /role="tablist"/)
   assert.match(units, /grid-cols-1 gap-3 sm:grid-cols-2/)
   assert.match(units, /min-w-0/)
   assert.match(units, /max-w-\[48%\] break-words/)

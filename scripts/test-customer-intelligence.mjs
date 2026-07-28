@@ -14,6 +14,7 @@ const print = read('src/lib/customers/customerIntelligencePrint.ts')
 const detail = read('src/pages/customers/CustomerDetailPage.tsx')
 const reports = read('src/pages/reports/CustomerIntelligenceReportsPage.tsx')
 const customers = read('src/pages/customers/CustomersPage.tsx')
+const archiveEntity = read('src/lib/archiveEntity.ts')
 const reportTab = read('src/pages/reports/CustomerReport.tsx')
 const filters = read('src/components/customers/CustomerIntelligenceFilters.tsx')
 const app = read('src/App.tsx')
@@ -207,10 +208,11 @@ test('customer detail no longer loads all invoices or calculates financial autho
 })
 
 test('existing customer editing and soft-deactivation workflow remain available', () => {
-  assert.match(detail, /<CustomerDrawer/)
+  assert.match(detail, /<CustomerModal/)
   assert.match(detail, /\.from\('customers'\)[\s\S]*?\.select\('\*'\)/)
-  assert.match(customers, /update\(\{ is_active: false \}\)/)
-  assert.match(customers, /<CustomerDrawer/)
+  assert.match(customers, /archiveEntity\([^)]*'customers'/)
+  assert.match(archiveEntity, /update\(\{ is_active: false \}\)/)
+  assert.match(customers, /<CustomerModal/)
 })
 
 test('detail empty, error, loading and credit-only states are merchant friendly', () => {

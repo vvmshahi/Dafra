@@ -15,7 +15,8 @@ const detail = read('src/pages/suppliers/SupplierDetailPage.tsx')
 const reports = read('src/pages/reports/SupplierIntelligenceReportsPage.tsx')
 const filters = read('src/components/suppliers/SupplierIntelligenceFilters.tsx')
 const suppliers = read('src/pages/suppliers/SuppliersPage.tsx')
-const drawer = read('src/pages/suppliers/SupplierDrawer.tsx')
+const archiveEntity = read('src/lib/archiveEntity.ts')
+const drawer = read('src/pages/suppliers/SupplierModal.tsx')
 const purchaseDrawer = read('src/pages/inventory/PurchaseDrawer.tsx')
 const app = read('src/App.tsx')
 const i18n = read('src/localization/i18n.ts')
@@ -291,9 +292,10 @@ test('Saudi Riyal presentation reuses local project infrastructure', () => {
 })
 
 test('existing supplier editing and deactivation remain unchanged', () => {
-  assert.match(detail, /<SupplierDrawer/)
+  assert.match(detail, /<SupplierModal/)
   assert.match(drawer, /\.from\('suppliers'\)\.update\(payload\)/)
-  assert.match(suppliers, /update\(\{ is_active: false \}\)/)
+  assert.match(suppliers, /archiveEntity\([^)]*'suppliers'/)
+  assert.match(archiveEntity, /update\(\{ is_active: false \}\)/)
 })
 
 test('existing receiving behavior is not replaced or called by intelligence', () => {

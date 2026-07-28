@@ -19,7 +19,7 @@ assert.match(adapters, /documentFromStoredInvoiceV2/); assert.match(adapters, /d
 assert.match(fixture, /قهوة إثيوبية/); assert.match(fixture, /sample-credit-qr-marker/)
 assert.match(invoiceDetail, /selectStoredOutputStateQr/); assert.match(invoiceDetail, /renderStoredQrDataUrl/)
 assert.match(invoiceDetail, /async function handlePrintA4\(\)[\s\S]*?window\.print\(\)/)
-assert.match(invoiceDetail, /disabled=\{!printReady\}/); assert.match(invoiceDetail, /qrUnavailable/)
+assert.match(invoiceDetail, /disabled=\{a4Printing \|\| !printReady\}/); assert.match(invoiceDetail, /qrUnavailable/)
 const invoiceAutoPrint = invoiceDetail.slice(invoiceDetail.indexOf('// Auto-print when ?print=1'), invoiceDetail.indexOf('// ── Actions'))
 assert.match(invoiceAutoPrint, /window\.print\(\)/)
 assert.match(invoiceAutoPrint, /printReady/)
