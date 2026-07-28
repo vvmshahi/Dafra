@@ -16,11 +16,14 @@
     "session": "Session", "registerCurrent": "Current register", "registerClosed": "Closed register",
     "opened": "Opened", "closed": "Closed", "earlier": "Earlier", "stillOpen": "Still open",
     "timeOpen": "Opened {{opened}} → Still open", "timeClosed": "Opened {{opened}} → Closed {{closed}}", "timeOpened": "Opened {{opened}}",
-    "longOpenWarning": "This register session has been open since {{time}}. Close it before starting a new shift.",
+    "longOpenWarning": "Opened {{time}}. Close it before starting a new shift.",
+    "longOpenRisk": "Open for {{age}}. Long sessions increase reconciliation risk.",
+    "manage": "Manage register",
     "closeBeforeShift": "Close this register before starting a new shift.",
     "openingCash": "Opening cash", "expectedCash": "Expected cash", "actualCash": "Actual cash", "difference": "Difference",
     "expectedDrawer": "Expected in drawer", "actualVsExpected": "Actual vs expected",
-    "currentCount": "{{current}} current · {{last}} last", "retryLoad": "Retry to load register sessions"
+    "currentCount": "{{current}} current · {{last}} last", "retryLoad": "Retry to load register sessions",
+    "durationHoursMinutes": "{{hours}}h {{minutes}}m", "durationMinutes": "{{minutes}}m"
   },
   "kpi": {
     "grossSales": "Gross Sales", "creditNotes": "Credit Notes", "refundDocuments": "Refund documents",
@@ -46,12 +49,14 @@
     "operations": "Branch operations", "dashboard": "Branch dashboard", "myBranch": "My Branch", "loading": "Loading branch...",
     "newSale": "New Sale", "quickActions": "Quick Actions", "workflow": "Daily branch workflow",
     "openPos": "Open POS", "recordCosts": "Record costs", "reviewReceipts": "Review receipts",
+    "registerSnapshot": "Register session snapshot",
     "lowStock_one": "{{count}} product low on stock", "lowStock_other": "{{count}} products low on stock"
   },
   "recent": {
     "title": "Recent Invoices", "viewAll": "View all", "none": "No invoices yet",
     "startSale": "Start your first sale from the POS", "invoice": "Invoice", "customer": "Customer",
-    "amount": "Amount", "status": "Status", "date": "Date", "walkIn": "Walk-in Customer"
+    "amount": "Amount", "status": "Status", "date": "Date", "walkIn": "Walk-in Customer",
+    "openInvoice": "Open invoice {{number}}"
   },
   "errors": {
     "dashboardRefresh": "Dashboard data needs a refresh", "branchRefresh": "Branch dashboard data needs a refresh",

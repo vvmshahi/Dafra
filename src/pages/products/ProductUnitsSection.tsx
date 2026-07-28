@@ -130,6 +130,7 @@ function PackageEditor({
   const { t } = useTranslation('products')
   const initial = useMemo(() => unit ? packageDraftFromUnit(unit) : EMPTY_DRAFT, [unit])
   const [draft, setDraft] = useState<PackageDraft>(initial)
+  const [editing, setEditing] = useState(!unit)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const conversionLocked = Boolean(unit?.first_used_at)
@@ -192,6 +193,7 @@ function PackageEditor({
 
     setSaving(false)
     await onSaved()
+    setEditing(false)
   }
 
   const changeActivity = async () => {
@@ -215,6 +217,50 @@ function PackageEditor({
     }
     setSaving(false)
     await onSaved()
+  }
+
+  if (unit && !editing) {
+    const shownPrice = unit.pricing_method === 'custom'
+      ? unit.custom_selling_price
+      : calculatedPrice
+    return (
+      <div className={`rounded-xl border px-3.5 py-3 ${unit.is_active ? 'border-primary-100 bg-white' : 'border-gray-200 bg-gray-50/70'}`}>
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
+            <Box size={16} aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="truncate text-sm font-semibold text-gray-800">{unit.name}</p>
+              <span className={`text-[10px] font-semibold ${unit.is_active ? 'text-emerald-600' : 'text-gray-400'}`}>
+                {t(unit.is_active ? 'units.active' : 'units.inactive')}
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs text-gray-500">
+              {t('units.equation', { package: unit.name, conversion: draft.conversion, baseUnit: baseUnitName })}
+              {' · '}
+              {t(unit.pricing_method === 'custom' ? 'units.customPriceShort' : 'units.followPriceShort')}
+              {shownPrice ? ` · ${formatPackagePrice(String(shownPrice))}` : ''}
+            </p>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button type="button" size="sm" variant="secondary" onClick={() => setEditing(true)}>
+              {t('units.edit')}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={unit.is_active ? 'danger' : 'secondary'}
+              loading={saving}
+              onClick={changeActivity}
+            >
+              {unit.is_active ? <Archive size={13} aria-hidden="true" /> : <RefreshCw size={13} aria-hidden="true" />}
+              {t(unit.is_active ? 'units.deactivate' : 'units.reactivate')}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -339,28 +385,33 @@ function PackageEditor({
         </div>
       )}
 
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 px-3 py-2.5">
-          <label className="text-xs font-medium text-gray-700" htmlFor={`package-selling-${unit?.id ?? 'new'}`}>{t('units.allowSelling')}</label>
-          <Switch
-            id={`package-selling-${unit?.id ?? 'new'}`}
-            size="sm"
-            checked={draft.sellingEnabled}
-            onChange={value => setField('sellingEnabled', value)}
-            ariaLabel={t('units.allowSelling')}
-          />
+      <details className="mt-3">
+        <summary className="cursor-pointer rounded-lg px-2 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500">
+          {t('units.advanced')}
+        </summary>
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 px-3 py-2.5">
+            <label className="text-xs font-medium text-gray-700" htmlFor={`package-selling-${unit?.id ?? 'new'}`}>{t('units.allowSelling')}</label>
+            <Switch
+              id={`package-selling-${unit?.id ?? 'new'}`}
+              size="sm"
+              checked={draft.sellingEnabled}
+              onChange={value => setField('sellingEnabled', value)}
+              ariaLabel={t('units.allowSelling')}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 px-3 py-2.5">
+            <label className="text-xs font-medium text-gray-700" htmlFor={`package-receiving-${unit?.id ?? 'new'}`}>{t('units.allowReceiving')}</label>
+            <Switch
+              id={`package-receiving-${unit?.id ?? 'new'}`}
+              size="sm"
+              checked={draft.receivingEnabled}
+              onChange={value => setField('receivingEnabled', value)}
+              ariaLabel={t('units.allowReceiving')}
+            />
+          </div>
         </div>
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 px-3 py-2.5">
-          <label className="text-xs font-medium text-gray-700" htmlFor={`package-receiving-${unit?.id ?? 'new'}`}>{t('units.allowReceiving')}</label>
-          <Switch
-            id={`package-receiving-${unit?.id ?? 'new'}`}
-            size="sm"
-            checked={draft.receivingEnabled}
-            onChange={value => setField('receivingEnabled', value)}
-            ariaLabel={t('units.allowReceiving')}
-          />
-        </div>
-      </div>
+      </details>
 
       {message && (
         <p
@@ -406,6 +457,9 @@ export function ProductUnitsSection({
   productNameAr,
   sku,
   onDirtyChange,
+  onBaseUnitName,
+  view = 'combined',
+  barcodeAutoFocus = false,
 }: {
   productId: string | null
   basePrice: string
@@ -415,6 +469,9 @@ export function ProductUnitsSection({
   productNameAr: string | null
   sku: string | null
   onDirtyChange: (dirty: boolean) => void
+  onBaseUnitName?: (name: string) => void
+  view?: 'combined' | 'units' | 'barcodes'
+  barcodeAutoFocus?: boolean
 }) {
   const { t, i18n } = useTranslation('products')
   const [units, setUnits] = useState<ProductUnitRow[]>([])
@@ -473,6 +530,9 @@ export function ProductUnitsSection({
   const baseUnitName = baseUnit && i18n.language.startsWith('ar') && baseUnit.name_ar
     ? baseUnit.name_ar
     : baseUnit?.name ?? ''
+  useEffect(() => {
+    onBaseUnitName?.(baseUnitName)
+  }, [baseUnitName, onBaseUnitName])
   const activePackages = units.filter(unit => !unit.is_base && unit.is_active)
   const inactivePackages = units.filter(unit => !unit.is_base && !unit.is_active)
   const activeNames = activePackages.map(unit => unit.name.trim().toLocaleLowerCase())
@@ -521,18 +581,37 @@ export function ProductUnitsSection({
   if (serviceRestricted) {
     return (
       <div className="space-y-3">
-        <div className="rounded-xl border border-gray-100 bg-gray-50 px-3.5 py-3 text-xs leading-5 text-gray-600">
-          {t('units.serviceRestriction')}
-        </div>
-        <ProductBarcodesSection
-          productId={productId}
-          productName={productName}
-          productNameAr={productNameAr}
-          sku={sku}
-          price={basePrice}
-          units={units}
-        />
+        {view !== 'barcodes' && (
+          <div className="rounded-xl border border-gray-100 bg-gray-50 px-3.5 py-3 text-xs leading-5 text-gray-600">
+            {t('units.serviceRestriction')}
+          </div>
+        )}
+        {view !== 'units' && (
+          <ProductBarcodesSection
+            productId={productId}
+            productName={productName}
+            productNameAr={productNameAr}
+            sku={sku}
+            price={basePrice}
+            units={units}
+            autoFocus={barcodeAutoFocus}
+          />
+        )}
       </div>
+    )
+  }
+
+  if (view === 'barcodes') {
+    return (
+      <ProductBarcodesSection
+        productId={productId}
+        productName={productName}
+        productNameAr={productNameAr}
+        sku={sku}
+        price={basePrice}
+        units={units}
+        autoFocus={barcodeAutoFocus}
+      />
     )
   }
 
@@ -569,7 +648,7 @@ export function ProductUnitsSection({
             {t('units.baseEquation', { baseUnit: baseUnitName })}
           </span>
         </div>
-        <p className="mt-2 text-[10px] leading-4 text-gray-500">{t('units.baseReadOnly')}</p>
+        <p className="mt-2 text-[10px] leading-4 text-gray-500">{t('units.stockMaintained', { baseUnit: baseUnitName })}</p>
       </div>
 
       {activePackages.map(unit => (
@@ -613,32 +692,38 @@ export function ProductUnitsSection({
         </Button>
       )}
 
-      <ProductBarcodesSection
-        productId={productId}
-        productName={productName}
-        productNameAr={productNameAr}
-        sku={sku}
-        price={basePrice}
-        units={units}
-      />
+      {view === 'combined' && (
+        <ProductBarcodesSection
+          productId={productId}
+          productName={productName}
+          productNameAr={productNameAr}
+          sku={sku}
+          price={basePrice}
+          units={units}
+        />
+      )}
 
       {inactivePackages.length > 0 && (
-        <div className="space-y-2 border-t border-gray-100 pt-3">
-          <p className="text-xs font-semibold text-gray-500">{t('units.inactivePackages')}</p>
-          {inactivePackages.map(unit => (
-            <PackageEditor
-              key={`${unit.id}:${unit.version}`}
-              unit={unit}
-              baseUnit={baseUnit}
-              baseUnitName={baseUnitName}
-              basePrice={basePrice}
-              duplicateNames={activeNames}
-              onSaved={handleSaved}
-              onStale={handleStale}
-              onDirtyChange={dirtyHandler(unit.id)}
-            />
-          ))}
-        </div>
+        <details className="border-t border-gray-100 pt-3">
+          <summary className="cursor-pointer rounded-lg px-2 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500">
+            {t('units.retiredHistory')} ({inactivePackages.length})
+          </summary>
+          <div className="mt-2 space-y-2">
+            {inactivePackages.map(unit => (
+              <PackageEditor
+                key={`${unit.id}:${unit.version}`}
+                unit={unit}
+                baseUnit={baseUnit}
+                baseUnitName={baseUnitName}
+                basePrice={basePrice}
+                duplicateNames={activeNames}
+                onSaved={handleSaved}
+                onStale={handleStale}
+                onDirtyChange={dirtyHandler(unit.id)}
+              />
+            ))}
+          </div>
+        </details>
       )}
     </div>
   )

@@ -84,8 +84,26 @@ export class KeyboardWedgeCapture {
 
 export class OrderedScanQueue {
   private tail = Promise.resolve()
+  private queued = 0
 
-  enqueue(task: () => Promise<void>): void {
-    this.tail = this.tail.then(task, task)
+  enqueue(task: () => Promise<void>): Promise<void> {
+    this.queued += 1
+    const run = async () => {
+      try {
+        await task()
+      } finally {
+        this.queued -= 1
+      }
+    }
+    this.tail = this.tail.then(run, run)
+    return this.tail
+  }
+
+  get pending(): number {
+    return this.queued
+  }
+
+  whenIdle(): Promise<void> {
+    return this.tail
   }
 }

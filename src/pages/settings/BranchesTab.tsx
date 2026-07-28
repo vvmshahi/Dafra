@@ -1,17 +1,19 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Plus, Pencil, Building2, CheckCircle2, X,
   Globe, Phone, Mail, MapPin, FileText,
-  ReceiptText, ShieldCheck, ChevronDown, ChevronRight,
+  ReceiptText, ShieldCheck, ChevronDown, ChevronRight, AlertTriangle,
   Star, KeyRound, LogIn,
   CreditCard, Warehouse,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { useSubscription } from '@/hooks/useSubscription'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import type { Branch, BranchLoginUsername, BranchPosMode, TenantBranchUsage } from '@/types'
 import { supportConfig } from '@/config/support'
 import {
@@ -22,6 +24,7 @@ import {
 import { branchIdFromRpcResult } from '@/lib/utils/branchCreation'
 import { resolveBusinessType } from '@/lib/utils/businessType'
 import { useTranslation, type TFunction } from 'react-i18next'
+import { useLocale } from '@/localization/useLocale'
 
 /* ── Types ──────────────────────────────────────────────────── */
 
@@ -69,6 +72,7 @@ type BranchWithLogin = Branch & {
 }
 
 type StockModuleSetting = 'enabled' | 'disabled'
+type BranchModalTab = 'general' | 'access' | 'pos' | 'modules' | 'invoices' | 'zatca'
 
 const POS_MODE_OPTIONS: Array<{
   value: BranchPosMode
@@ -105,7 +109,7 @@ const EMPTY_FORM: BranchForm = {
 /* ── Helpers ─────────────────────────────────────────────────── */
 
 function sectionClass(open: boolean) {
-  return `border border-gray-100 rounded-2xl overflow-hidden mb-3 transition-shadow ${open ? 'shadow-sm' : ''}`
+  return `overflow-hidden rounded-xl border border-[#e8e1d1] bg-white ${open ? '' : 'bg-white/70'}`
 }
 
 function branchUsername(branch: BranchWithLogin): string | null {
@@ -158,9 +162,9 @@ function SectionHeader({
     <button
       type="button"
       onClick={toggle}
-      className="w-full flex items-center gap-3 px-5 py-3.5 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+      className="flex w-full items-center gap-3 bg-white px-4 py-3 text-start transition-colors hover:bg-[#faf8f2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500"
     >
-      <div className={`w-7 h-7 rounded-lg ${bg} flex items-center justify-center flex-shrink-0`}>
+      <div className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg ${bg}`}>
         <Icon size={14} className={color} />
       </div>
       <span className="flex-1 text-sm font-semibold text-gray-800">{title}</span>
@@ -247,9 +251,9 @@ function branchModuleSettingsErrorDebug(error: unknown) {
   }
 }
 
-/* ── Drawer ──────────────────────────────────────────────────── */
+/* ── Centered branch editor modal ───────────────────────────── */
 
-function BranchDrawer({
+function BranchModal({
   branch, tenantId, tenantBusinessType, canEditModuleSettings, isPhase2, onClose, onSaved, onRefresh, onResetPassword,
 }: {
   branch: BranchWithLogin | null
@@ -262,7 +266,9 @@ function BranchDrawer({
   onRefresh?: () => void
   onResetPassword?: () => void
 }) {
-  const { t } = useTranslation(['settings', 'branches'])
+  const { t } = useTranslation(['settings', 'branches', 'common'])
+  const { isRtl } = useLocale()
+  const navigate = useNavigate()
   const isNew = branch === null
   const [form, setForm] = useState<BranchForm>(
     branch
@@ -308,7 +314,23 @@ function BranchDrawer({
 
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
+  const [activeTab, setActiveTab] = useState<BranchModalTab>('general')
+  const [showAllErrors, setShowAllErrors] = useState(false)
+  const [discardOpen, setDiscardOpen] = useState(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const openerRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null)
+  const initialFormRef = useRef('')
+  const pendingCloseActionRef = useRef<(() => void) | null>(null)
+  const discardOpenRef = useRef(false)
+  const dirtyRef = useRef(false)
+  const savingRef = useRef(false)
+  savingRef.current = saving
+  discardOpenRef.current = discardOpen
+  if (!initialFormRef.current) initialFormRef.current = JSON.stringify(form)
   const serviceTenant = resolveBusinessType(tenantBusinessType) === 'service'
+  const isDirty = JSON.stringify(form) !== initialFormRef.current
+  dirtyRef.current = isDirty
 
   // ── Validation ──────────────────────────────────────────────
   const VAT_RE    = /^3\d{13}3$/
@@ -333,6 +355,7 @@ function BranchDrawer({
   const touch = (k: string) => setTouched(prev => { const s = new Set(prev); s.add(k); return s })
 
   const errs: Record<string, string | null> = {
+    name:            !form.name.trim() ? t('branches:validation.required') : null,
     vat_number:      !form.vat_number.trim() ? t('branches:validation.required') : !VAT_RE.test(form.vat_number.trim()) ? t('branches:validation.vat') : null,
     cr_number:       !form.cr_number.trim() ? t('branches:validation.required') : !CR_RE.test(form.cr_number.trim()) ? t('branches:validation.alphanumeric') : null,
     building_number: !form.building_number.trim() ? t('branches:validation.required') : !BLDG_RE.test(form.building_number.trim()) ? t('branches:validation.building') : null,
@@ -349,18 +372,67 @@ function BranchDrawer({
     } : {}),
   }
   const hasErrors = Object.values(errs).some(Boolean)
-  const fieldErr  = (k: string) => (touched.has(k) ? errs[k] : null)
-
-  const identity  = useSection(true)
-  const address   = useSection(true)
-  const contact   = useSection(true)
-  const checkout  = useSection(false)
-  const modules   = useSection(false)
-  const invoice   = useSection(false)
-  const zatca     = useSection(false)
+  const fieldErr  = (k: string) => (showAllErrors || touched.has(k) ? errs[k] : null)
+  const generalError = ['name', 'vat_number', 'cr_number', 'building_number', 'postal_code', 'street', 'city', 'district']
+    .some(key => Boolean(errs[key]))
+  const accessError = isNew && ['login_username', 'login_password', 'login_confirm_password']
+    .some(key => Boolean(errs[key]))
+  const identity = useSection(true)
+  const address = useSection(true)
+  const contact = useSection(true)
+  const checkout = useSection(true)
+  const modules = useSection(true)
+  const invoice = useSection(true)
+  const zatca = useSection(true)
+  const tabs: Array<{ id: BranchModalTab; icon: React.ElementType }> = [
+    { id: 'general', icon: Building2 },
+    { id: 'access', icon: KeyRound },
+    { id: 'pos', icon: CreditCard },
+    ...(canEditModuleSettings ? [{ id: 'modules' as const, icon: Warehouse }] : []),
+    { id: 'invoices', icon: ReceiptText },
+    { id: 'zatca', icon: ShieldCheck },
+  ]
 
   const set = (k: keyof BranchForm) => (v: string | boolean | number | null) =>
     setForm(prev => ({ ...prev, [k]: v }))
+
+  const requestClose = (afterClose?: () => void) => {
+    if (saving) return
+    if (!isDirty) {
+      onClose()
+      afterClose?.()
+      return
+    }
+    pendingCloseActionRef.current = afterClose ?? null
+    setDiscardOpen(true)
+  }
+
+  const confirmDiscard = () => {
+    const afterClose = pendingCloseActionRef.current
+    pendingCloseActionRef.current = null
+    setDiscardOpen(false)
+    onClose()
+    afterClose?.()
+  }
+
+  const selectTab = (tab: BranchModalTab, focus = false) => {
+    setActiveTab(tab)
+    window.requestAnimationFrame(() => {
+      tabRefs.current[tab]?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+      if (focus) tabRefs.current[tab]?.focus()
+    })
+  }
+
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | null = null
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = tabs.length - 1
+    if (event.key === 'ArrowRight') nextIndex = (index + (isRtl ? -1 : 1) + tabs.length) % tabs.length
+    if (event.key === 'ArrowLeft') nextIndex = (index + (isRtl ? 1 : -1) + tabs.length) % tabs.length
+    if (nextIndex === null) return
+    event.preventDefault()
+    selectTab(tabs[nextIndex].id, true)
+  }
 
   const savePosSettings = async (branchId: string) => {
     const currentPosMode = branch ? branchPosMode(branch.pos_mode) : 'touch'
@@ -410,6 +482,19 @@ function BranchDrawer({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    if (hasErrors) {
+      setShowAllErrors(true)
+      setTouched(new Set(Object.keys(errs)))
+      const firstInvalidField = Object.keys(errs).find(key => errs[key])
+      const invalidTab: BranchModalTab = firstInvalidField?.startsWith('login_') ? 'access' : 'general'
+      selectTab(invalidTab)
+      window.requestAnimationFrame(() => {
+        dialogRef.current
+          ?.querySelector<HTMLElement>(`[data-branch-field="${firstInvalidField}"] input, [data-branch-field="${firstInvalidField}"] select`)
+          ?.focus()
+      })
+      return
+    }
     setSaving(true)
 
     try {
@@ -474,8 +559,8 @@ function BranchDrawer({
           return  // Keep drawer open so owner sees the error; list already refreshed above
         }
       } else {
-        const { error } = await q.from('branches').update(branchPayload).eq('id', branch!.id)
-        if (error) throw error
+        const { data, error } = await q.from('branches').update(branchPayload).eq('id', branch!.id).select('id').single()
+        if (error || data?.id !== branch!.id) throw error ?? new Error('Branch update response was not confirmed')
         if (
           form.allow_split_payments !== (branch!.allow_split_payments ?? false) ||
           form.show_pos_scroll_buttons !== (branch!.show_pos_scroll_buttons ?? false) ||
@@ -488,53 +573,148 @@ function BranchDrawer({
         }
       }
 
+      initialFormRef.current = JSON.stringify(form)
       onSaved()
     } catch (err: any) {
       console.error('Failed to save branch', err)
-      setError(t('branches:editor.saveFailed'))
+      const safeAreaErrors = new Set([
+        t('branches:errors.posPermission'),
+        t('branches:errors.posUnavailable'),
+        t('branches:errors.posRejected'),
+        t('branches:errors.posSaveFailed'),
+        t('branches:errors.modulePermission'),
+        t('branches:errors.moduleUnavailable'),
+        t('branches:errors.moduleSaveFailed'),
+      ])
+      setError(err instanceof Error && safeAreaErrors.has(err.message)
+        ? err.message
+        : t('branches:editor.saveFailed'))
     } finally {
       setSaving(false)
     }
   }
 
-  // Close on Escape
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const frame = window.requestAnimationFrame(() => dialogRef.current?.querySelector<HTMLElement>('input:not([disabled])')?.focus())
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !savingRef.current && !discardOpenRef.current) {
+        event.preventDefault()
+        if (dirtyRef.current) setDiscardOpen(true)
+        else onClose()
+        return
+      }
+      if (event.key !== 'Tab' || !dialogRef.current) return
+      const nodes = [...dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )]
+      if (!nodes.length) return
+      if (event.shiftKey && document.activeElement === nodes[0]) {
+        event.preventDefault()
+        nodes.at(-1)?.focus()
+      } else if (!event.shiftKey && document.activeElement === nodes.at(-1)) {
+        event.preventDefault()
+        nodes[0].focus()
+      }
+    }
     document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      document.removeEventListener('keydown', handler)
+      document.body.style.overflow = previousOverflow
+      openerRef.current?.focus()
+    }
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-50 flex">
-      {/* Backdrop */}
-      <div className="flex-1 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
-
-      {/* Drawer */}
-      <div className="w-full max-w-[640px] bg-white h-full flex flex-col shadow-2xl overflow-hidden">
+    <>
+    <div className="fixed inset-y-0 left-0 right-0 z-50 flex items-center justify-center bg-black/55 p-0 md:left-[var(--app-sidebar-width)] md:p-4"
+      onMouseDown={event => { if (event.target === event.currentTarget) requestClose() }}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="branch-modal-title" aria-describedby="branch-modal-description"
+        className="flex h-full w-full flex-col overflow-hidden bg-[#fffdf7] shadow-2xl md:h-[min(760px,calc(100dvh-32px))] md:w-[min(100%,1040px)] md:rounded-2xl md:border md:border-white/20">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
-          <div>
-            <h2 className="text-base font-bold text-gray-900">
-              {t(isNew ? 'branches:editor.add' : 'branches:editor.edit')}
-            </h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {isNew ? t('branches:editor.drawerHelp') : <span dir="auto">{branch!.name}</span>}
-            </p>
+        <header className="flex flex-shrink-0 items-center justify-between gap-3 bg-[#173f2a] px-4 py-3 text-white sm:px-6 sm:py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-white/10 text-[#e7ca78] ring-1 ring-white/10">
+              <Building2 size={18} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 id="branch-modal-title" className="text-base font-bold text-white sm:text-lg">
+                  {t(isNew ? 'branches:editor.add' : 'branches:editor.edit')}
+                </h2>
+                {!isNew && (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-white/75">
+                    <span className={`h-1.5 w-1.5 rounded-full ${branch?.is_active ? 'bg-emerald-300' : 'bg-white/40'}`} aria-hidden="true" />
+                    {t(`branches:status.${branch?.is_active ? 'active' : 'inactive'}`)}
+                  </span>
+                )}
+                {!isNew && branch?.is_main_branch && <span className="text-[11px] font-semibold text-[#e7ca78]">{t('branches:detail.main')}</span>}
+              </div>
+              <p id="branch-modal-description" className="mt-0.5 truncate text-xs text-white/70">
+                {isNew ? t('branches:tabs.addSubtitle') : t('branches:tabs.editSubtitle', { name: branch!.name })}
+              </p>
+            </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
-            <X size={16} />
+          <button type="button" onClick={() => requestClose()} disabled={saving} aria-label={t('common:close')}
+            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl text-white/75 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e7ca78] disabled:opacity-50">
+            <X size={20} />
           </button>
+        </header>
+
+        <div className="flex-shrink-0 border-b border-[#e8e1d1] bg-white px-2 sm:px-5">
+          <div role="tablist" aria-label={t('branches:tabs.label')}
+            className="flex h-12 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {tabs.map((tab, index) => {
+              const selected = activeTab === tab.id
+              const invalid = (tab.id === 'general' && showAllErrors && generalError) || (tab.id === 'access' && showAllErrors && accessError)
+              const Icon = tab.icon
+              return (
+                <button
+                  key={tab.id}
+                  ref={node => { tabRefs.current[tab.id] = node }}
+                  id={`branch-tab-${tab.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  aria-controls={`branch-panel-${tab.id}`}
+                  aria-invalid={invalid || undefined}
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => selectTab(tab.id)}
+                  onKeyDown={event => handleTabKeyDown(event, index)}
+                  className={`relative inline-flex h-12 flex-none items-center gap-2 px-3 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500 sm:px-4 ${
+                    selected
+                      ? 'text-[#173f2a] after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-[#b89138]'
+                      : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  <Icon size={14} aria-hidden="true" />
+                  <span>{t(`branches:tabs.${tab.id}`)}</span>
+                  {invalid && (
+                    <span className="inline-flex items-center gap-1 text-red-600" title={t('branches:tabs.incomplete')}>
+                      <AlertTriangle size={12} aria-hidden="true" />
+                      <span className="sr-only">{t('branches:tabs.incomplete')}</span>
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-0">
+        <form id="branch-modal-form" onSubmit={handleSubmit} noValidate
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#fffdf7] px-4 py-4 sm:px-6 sm:py-6">
 
+          {activeTab === 'general' && (
+          <section id="branch-panel-general" role="tabpanel" aria-labelledby="branch-tab-general" className="space-y-3">
           {/* Info note */}
-          <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 mb-3">
-            <FileText size={14} className="text-blue-500 flex-shrink-0 mt-0.5" />
-            <p className="text-[11px] text-blue-700 leading-relaxed">
-              Each branch requires its own CR number and address. The Company Name and VAT number are shared across all your branches.
+          <div className="flex items-start gap-2.5 rounded-xl border border-primary-100 bg-primary-50/50 px-4 py-3">
+            <FileText size={14} className="mt-0.5 flex-shrink-0 text-primary-700" />
+            <p className="text-[11px] leading-relaxed text-primary-900">
+              {t('branches:editor.legalIdentityHelp')}
             </p>
           </div>
 
@@ -543,9 +723,15 @@ function BranchDrawer({
             <SectionHeader icon={Building2} title={t('branches:editor.identity')} open={identity.open} toggle={identity.toggle} />
             {identity.open && (
               <div className="px-5 py-4 space-y-4">
-                <p className="rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">{t('settings:officialSeller.legacyFieldWarning')}</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <Input label={t('branches:editor.nameEn')} value={form.name} onChange={e => set('name')(e.target.value)} placeholder={t('branches:editor.nameEnPlaceholder')} required />
+                <div className="flex items-start gap-2 rounded-lg border-s-2 border-amber-400 bg-[#fff9e9] px-3 py-2 text-[11px] leading-relaxed text-gray-700">
+                  <AlertTriangle size={13} className="mt-0.5 flex-shrink-0 text-amber-600" aria-hidden="true" />
+                  <p>{t('settings:officialSeller.legacyFieldWarning')}</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div data-branch-field="name" onBlur={() => touch('name')}>
+                    <Input label={t('branches:editor.nameEn')} value={form.name} onChange={e => set('name')(e.target.value)}
+                      placeholder={t('branches:editor.nameEnPlaceholder')} error={fieldErr('name') ?? undefined} required />
+                  </div>
                   <Input label={t('branches:editor.nameAr')} value={form.name_ar} onChange={e => set('name_ar')(e.target.value)} placeholder={t('branches:editor.nameArPlaceholder')} />
                 </div>
                 <Input
@@ -554,25 +740,25 @@ function BranchDrawer({
                   onChange={e => set('business_name')(e.target.value)}
                   helperText={t('branches:editor.companyNameHelp')}
                 />
-                <div className="grid grid-cols-2 gap-3">
-                  <div onBlur={() => touch('vat_number')}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div data-branch-field="vat_number" onBlur={() => touch('vat_number')}>
                     <Input
                       label={t('branches:editor.vatNumber')}
                       value={form.vat_number}
                       onChange={e => set('vat_number')(e.target.value)}
                       maxLength={15}
                       helperText={t('branches:editor.vatHelp')}
+                      error={fieldErr('vat_number') ?? undefined}
                     />
-                    {fieldErr('vat_number') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('vat_number')}</p>}
                   </div>
-                  <div onBlur={() => touch('cr_number')}>
+                  <div data-branch-field="cr_number" onBlur={() => touch('cr_number')}>
                     <Input
                       label={t('branches:editor.crNumber')}
                       value={form.cr_number}
                       onChange={e => set('cr_number')(e.target.value)}
                       helperText={t('branches:editor.crHelp')}
+                      error={fieldErr('cr_number') ?? undefined}
                     />
-                    {fieldErr('cr_number') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('cr_number')}</p>}
                   </div>
                 </div>
                 {/* Flags */}
@@ -598,37 +784,37 @@ function BranchDrawer({
               color="text-blue-600" bg="bg-blue-50" />
             {address.open && (
               <div className="px-5 py-4 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div onBlur={() => touch('building_number')}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div data-branch-field="building_number" onBlur={() => touch('building_number')}>
                     <Input
                       label={t('branches:editor.buildingNumber')}
                       value={form.building_number}
                       onChange={e => set('building_number')(e.target.value)}
-                      helperText="4-digit building number from your Saudi National Address (العنوان الوطني). Use leading zeros e.g. 0056"
+                      helperText={t('branches:editor.buildingHelp')}
+                      error={fieldErr('building_number') ?? undefined}
                     />
-                    {fieldErr('building_number') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('building_number')}</p>}
                   </div>
-                  <div onBlur={() => touch('street')}>
-                    <Input label={t('branches:editor.street')} value={form.street} onChange={e => set('street')(e.target.value)} placeholder={t('branches:editor.streetPlaceholder')} />
-                    {fieldErr('street') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('street')}</p>}
+                  <div data-branch-field="street" onBlur={() => touch('street')}>
+                    <Input label={t('branches:editor.street')} value={form.street} onChange={e => set('street')(e.target.value)}
+                      placeholder={t('branches:editor.streetPlaceholder')} error={fieldErr('street') ?? undefined} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div onBlur={() => touch('district')}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div data-branch-field="district" onBlur={() => touch('district')}>
                     <Input
                       label={t('branches:editor.district')}
                       value={form.district}
                       onChange={e => set('district')(e.target.value)}
                       helperText={t('branches:editor.districtHelp')}
+                      error={fieldErr('district') ?? undefined}
                     />
-                    {fieldErr('district') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('district')}</p>}
                   </div>
-                  <div onBlur={() => touch('city')}>
-                    <Input label={t('branches:editor.city')} value={form.city} onChange={e => set('city')(e.target.value)} placeholder={t('branches:editor.cityPlaceholder')} />
-                    {fieldErr('city') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('city')}</p>}
+                  <div data-branch-field="city" onBlur={() => touch('city')}>
+                    <Input label={t('branches:editor.city')} value={form.city} onChange={e => set('city')(e.target.value)}
+                      placeholder={t('branches:editor.cityPlaceholder')} error={fieldErr('city') ?? undefined} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div className="w-full">
                     <label className="label">{t('branches:editor.country')}</label>
                     <select value={form.country} onChange={e => set('country')(e.target.value)}
@@ -641,14 +827,14 @@ function BranchDrawer({
                       <option value="QA">{t('branches:countries.QA')}</option>
                     </select>
                   </div>
-                  <div onBlur={() => touch('postal_code')}>
+                  <div data-branch-field="postal_code" onBlur={() => touch('postal_code')}>
                     <Input
                       label={t('branches:editor.postalCode')}
                       value={form.postal_code}
                       onChange={e => set('postal_code')(e.target.value)}
                       helperText={t('branches:editor.postalHelp')}
+                      error={fieldErr('postal_code') ?? undefined}
                     />
-                    {fieldErr('postal_code') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('postal_code')}</p>}
                   </div>
                 </div>
               </div>
@@ -661,20 +847,24 @@ function BranchDrawer({
               color="text-emerald-600" bg="bg-emerald-50" />
             {contact.open && (
               <div className="px-5 py-4 space-y-3">
-                <Input label={t('branches:editor.phone')} icon={Phone} type="tel" value={form.phone} onChange={e => set('phone')(e.target.value)} placeholder="+966 5x xxx xxxx" />
-                <Input label={t('branches:editor.email')} icon={Mail} type="email" value={form.email} onChange={e => set('email')(e.target.value)} placeholder="branch@company.com" />
-                <Input label={t('branches:editor.website')} icon={Globe} type="url" value={form.website} onChange={e => set('website')(e.target.value)} placeholder="https://company.com" />
+                <Input label={t('branches:editor.phone')} icon={Phone} type="tel" value={form.phone} onChange={e => set('phone')(e.target.value)} placeholder={t('branches:editor.phonePlaceholder')} />
+                <Input label={t('branches:editor.email')} icon={Mail} type="email" value={form.email} onChange={e => set('email')(e.target.value)} placeholder={t('branches:editor.emailPlaceholder')} />
+                <Input label={t('branches:editor.website')} icon={Globe} type="url" value={form.website} onChange={e => set('website')(e.target.value)} placeholder={t('branches:editor.websitePlaceholder')} />
               </div>
             )}
           </div>
+          </section>
+          )}
 
           {/* ── POS CHECKOUT ─────────────────────────── */}
+          {activeTab === 'pos' && (
+          <section id="branch-panel-pos" role="tabpanel" aria-labelledby="branch-tab-pos">
           <div className={sectionClass(checkout.open)}>
             <SectionHeader icon={CreditCard} title={t('branches:editor.posCheckout')} open={checkout.open} toggle={checkout.toggle}
               color="text-indigo-600" bg="bg-indigo-50" />
             {checkout.open && (
               <div className="px-5 py-4 space-y-3">
-                <div className="rounded-xl bg-gray-50 border border-gray-100 p-3">
+                <div className="rounded-xl border border-[#e8e1d1] bg-[#faf8f2] p-3">
                   <div className="mb-3">
                     <p className="text-sm font-medium text-gray-800">{t('branches:pos.title')}</p>
                     <p className="text-[11px] text-gray-400">{t('branches:pos.help')}</p>
@@ -688,20 +878,23 @@ function BranchDrawer({
                           type="button"
                           aria-pressed={selected}
                           onClick={() => set('pos_mode')(option.value)}
-                          className={`rounded-xl border px-3 py-2.5 text-left transition-colors active:scale-[0.99] ${
+                          className={`rounded-xl border px-3 py-2.5 text-start transition-colors active:scale-[0.99] ${
                             selected
-                              ? 'border-primary-200 bg-white text-primary-800 shadow-sm ring-1 ring-primary-100'
+                              ? 'border-primary-400 bg-primary-50/60 text-primary-800 ring-1 ring-primary-200'
                               : 'border-gray-100 bg-white/70 text-gray-600 hover:border-gray-200 hover:bg-white'
                           }`}
                         >
-                          <span className="block text-sm font-semibold text-gray-900">{t(`branches:pos.${option.key}.label`)}</span>
+                          <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                            <span className={`h-3.5 w-3.5 rounded-full border ${selected ? 'border-primary-600 bg-primary-600 ring-2 ring-white' : 'border-gray-300 bg-white'}`} aria-hidden="true" />
+                            {t(`branches:pos.${option.key}.label`)}
+                          </span>
                           <span className="mt-1 block text-[11px] leading-4 text-gray-400">{t(`branches:pos.${option.key}.description`)}</span>
                         </button>
                       )
                     })}
                   </div>
                 </div>
-                <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-xl bg-gray-50 border border-gray-100">
+                <label className="flex cursor-pointer select-none items-center gap-3 rounded-xl border border-[#e8e1d1] bg-white p-3">
                   <input
                     type="checkbox"
                     checked={form.allow_split_payments}
@@ -713,7 +906,7 @@ function BranchDrawer({
                     <p className="text-[11px] text-gray-400">{t('branches:pos.splitHelp')}</p>
                   </div>
                 </label>
-                <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-xl bg-gray-50 border border-gray-100">
+                <label className="flex cursor-pointer select-none items-center gap-3 rounded-xl border border-[#e8e1d1] bg-white p-3">
                   <input
                     type="checkbox"
                     checked={form.show_pos_scroll_buttons}
@@ -725,11 +918,15 @@ function BranchDrawer({
                     <p className="text-[11px] text-gray-400">{t('branches:pos.arrowsHelp')}</p>
                   </div>
                 </label>
+                <p className="text-[11px] leading-5 text-gray-500">{t('branches:tabs.invoiceWorkspaceHelp')}</p>
               </div>
             )}
           </div>
+          </section>
+          )}
 
-          {canEditModuleSettings && (
+          {activeTab === 'modules' && canEditModuleSettings && (
+            <section id="branch-panel-modules" role="tabpanel" aria-labelledby="branch-tab-modules">
             <div className={sectionClass(modules.open)}>
               <SectionHeader icon={Warehouse} title={t('branches:editor.modules')} open={modules.open} toggle={modules.toggle}
                 color="text-teal-600" bg="bg-teal-50" />
@@ -742,7 +939,7 @@ function BranchDrawer({
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid gap-2 sm:grid-cols-2">
                     {([
                       { key: 'enabled' }, { key: 'disabled' },
                     ] as { key: StockModuleSetting }[]).map(option => {
@@ -754,9 +951,9 @@ function BranchDrawer({
                           type="button"
                           disabled={disabled}
                           onClick={() => set('stock_enabled')(stockModuleValue(option.key))}
-                          className={`rounded-xl border px-3 py-3 text-left transition-all ${
+                          className={`rounded-xl border px-3 py-3 text-start transition-[border-color,background-color,box-shadow] ${
                             selected
-                              ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500'
+                              ? 'border-primary-400 bg-primary-50/60 ring-1 ring-primary-200'
                               : disabled
                                 ? 'cursor-not-allowed border-gray-100 bg-gray-50 opacity-50'
                                 : 'border-gray-200 hover:border-gray-300'
@@ -769,7 +966,7 @@ function BranchDrawer({
                     })}
                   </div>
 
-                  <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5">
+                  <div className="rounded-xl border border-[#e8e1d1] bg-[#faf8f2] px-3 py-2.5">
                     <p className="text-[11px] font-medium text-gray-600">
                       {t(`branches:${stockModuleHintKey(form.stock_enabled, tenantBusinessType)}`)}
                     </p>
@@ -780,9 +977,12 @@ function BranchDrawer({
                 </div>
               )}
             </div>
+            </section>
           )}
 
           {/* ── INVOICE SETTINGS ──────────────────────── */}
+          {activeTab === 'invoices' && (
+          <section id="branch-panel-invoices" role="tabpanel" aria-labelledby="branch-tab-invoices">
           <div className={sectionClass(invoice.open)}>
             <SectionHeader icon={ReceiptText} title={t('branches:editor.invoiceSettings')} open={invoice.open} toggle={invoice.toggle}
               color="text-gold-600" bg="bg-amber-50" />
@@ -791,12 +991,12 @@ function BranchDrawer({
                 {/* VAT mode */}
                 <div>
                   <label className="label">{t('branches:invoice.vatMode')}</label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid gap-2 sm:grid-cols-2">
                     {(['exclusive', 'inclusive'] as const).map(mode => (
                       <button key={mode} type="button" onClick={() => set('vat_mode')(mode)}
-                        className={`border rounded-xl px-4 py-3 text-left transition-all ${
+                        className={`border rounded-xl px-4 py-3 text-start transition-[border-color,background-color,box-shadow] ${
                           form.vat_mode === mode
-                            ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500'
+                            ? 'border-primary-400 bg-primary-50/60 ring-1 ring-primary-200'
                             : 'border-gray-200 hover:border-gray-300'
                         }`}>
                         <p className="text-sm font-semibold text-gray-800">{t(`branches:invoice.${mode}`)}</p>
@@ -808,8 +1008,8 @@ function BranchDrawer({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <Input label={t('branches:invoice.prefix')} value={form.invoice_prefix} onChange={e => set('invoice_prefix')(e.target.value.toUpperCase())} placeholder="INV" maxLength={10} helperText={t('branches:invoice.prefixHelp')} />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Input label={t('branches:invoice.prefix')} value={form.invoice_prefix} onChange={e => set('invoice_prefix')(e.target.value.toUpperCase())} placeholder={t('branches:invoice.prefixPlaceholder')} maxLength={10} helperText={t('branches:invoice.prefixHelp')} />
 
                   {/* Invoice language */}
                   <div>
@@ -836,7 +1036,7 @@ function BranchDrawer({
                 </div>
 
                 {/* Show logo */}
-                <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-xl bg-gray-50 border border-gray-100">
+                <label className="flex cursor-pointer select-none items-center gap-3 rounded-xl border border-[#e8e1d1] bg-white p-3">
                   <input type="checkbox" checked={form.show_logo} onChange={e => set('show_logo')(e.target.checked)}
                     className="rounded border-gray-300 text-primary-500 focus:ring-primary-500 flex-shrink-0" />
                   <div>
@@ -847,15 +1047,20 @@ function BranchDrawer({
               </div>
             )}
           </div>
+          </section>
+          )}
 
           {/* ── ZATCA SETTINGS ────────────────────────── */}
+          {activeTab === 'zatca' && (
+          <section id="branch-panel-zatca" role="tabpanel" aria-labelledby="branch-tab-zatca">
           <div className={sectionClass(zatca.open)}>
             <SectionHeader icon={ShieldCheck} title={t('branches:editor.zatcaSettings')} open={zatca.open} toggle={zatca.toggle}
               color="text-violet-600" bg="bg-violet-50" />
             {zatca.open && (
               <div className="px-5 py-4 space-y-4">
+                <p className="text-xs leading-5 text-gray-600">{t('branches:tabs.zatcaSeparate')}</p>
                 {/* Phase indicator — read-only, derived from subscription plan */}
-                <div className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-xl px-4 py-3">
+                <div className="flex items-center justify-between rounded-xl border border-primary-100 bg-primary-50/50 px-4 py-3">
                   <div>
                     <p className="text-xs font-semibold text-gray-700">
                       {isNew
@@ -869,7 +1074,7 @@ function BranchDrawer({
                         : t('branches:zatca.phase1Help')}
                     </p>
                   </div>
-                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                  <span className={`rounded-md px-2 py-1 text-[10px] font-bold ${
                     (isNew ? isPhase2 : form.zatca_phase === 2)
                       ? 'bg-violet-100 text-violet-700'
                       : 'bg-gray-100 text-gray-500'
@@ -879,7 +1084,7 @@ function BranchDrawer({
                 </div>
 
                 {!isNew && (
-                  <div className="flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-xl p-4">
+                  <div className="flex items-start gap-3 rounded-xl border border-[#e8e1d1] bg-white p-4">
                     <FileText size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
                     <div>
                       <p className="text-xs font-semibold text-gray-700">{t('branches:zatca.certificate')}</p>
@@ -889,11 +1094,29 @@ function BranchDrawer({
                     </div>
                   </div>
                 )}
+                {isNew ? (
+                  <div>
+                    <Button type="button" variant="secondary" disabled aria-describedby="zatca-after-create-reason">
+                      {t('branches:tabs.manageZatca')}
+                    </Button>
+                    <p id="zatca-after-create-reason" className="mt-2 text-[11px] text-gray-500">
+                      {t('branches:tabs.availableAfterCreation')}
+                    </p>
+                  </div>
+                ) : (
+                  <Button type="button" variant="secondary" onClick={() => requestClose(() => navigate('/zatca'))}>
+                    <ShieldCheck size={14} /> {t('branches:tabs.manageZatca')}
+                  </Button>
+                )}
               </div>
             )}
           </div>
+          </section>
+          )}
 
           {/* ── BRANCH LOGIN (existing branch — read-only + reset) ─ */}
+          {activeTab === 'access' && (
+          <section id="branch-panel-access" role="tabpanel" aria-labelledby="branch-tab-access" className="space-y-3">
           {!isNew && (
             <div className={sectionClass(true)}>
               <SectionHeader icon={KeyRound} title={t('branches:editor.login')} open={true} toggle={() => {}}
@@ -913,11 +1136,12 @@ function BranchDrawer({
                           ? t('branches:editor.usernameHelp')
                           : t('branches:editor.legacyEmailHelp')}
                       </p>
+                      <p className="mt-1 text-[11px] text-gray-500">{t('branches:tabs.readOnlyAccessHelp')}</p>
                     </div>
                     <button
                       type="button"
-                      onClick={() => { onClose(); onResetPassword?.() }}
-                      className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+                      onClick={() => requestClose(onResetPassword)}
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-primary-200 bg-white px-3 text-sm font-semibold text-primary-700 transition-colors hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                     >
                       <KeyRound size={14} /> {t('branches:editor.resetPassword')}
                     </button>
@@ -941,53 +1165,71 @@ function BranchDrawer({
                 <p className="text-xs text-gray-400">
                   {t('branches:editor.credentialsHelp')}
                 </p>
-                <div onBlur={() => touch('login_username')}>
+                  <div data-branch-field="login_username" onBlur={() => touch('login_username')}>
                   <Input
                     label={t('branches:editor.branchUsername')}
                     icon={LogIn}
                     type="text"
                     value={form.login_username}
                     onChange={e => set('login_username')(normalizeBranchUsernameInput(e.target.value))}
-                    placeholder="main_counter"
+                    placeholder={t('branches:editor.usernamePlaceholder')}
                     helperText={t('branches:editor.usernameFormatHelp')}
+                    error={fieldErr('login_username') ?? undefined}
                     required
                     autoComplete="username"
                   />
-                  {fieldErr('login_username') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('login_username')}</p>}
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div onBlur={() => touch('login_password')}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div data-branch-field="login_password" onBlur={() => touch('login_password')}>
                     <Input label={t('branches:editor.password')} icon={KeyRound} type="password" value={form.login_password}
-                      onChange={e => set('login_password')(e.target.value)} placeholder={t('branches:editor.passwordPlaceholder')} required />
-                    {fieldErr('login_password') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('login_password')}</p>}
+                      onChange={e => set('login_password')(e.target.value)} placeholder={t('branches:editor.passwordPlaceholder')}
+                      error={fieldErr('login_password') ?? undefined} required />
                   </div>
-                  <div onBlur={() => touch('login_confirm_password')}>
+                  <div data-branch-field="login_confirm_password" onBlur={() => touch('login_confirm_password')}>
                     <Input label={t('branches:editor.confirmPassword')} icon={KeyRound} type="password" value={form.login_confirm_password}
-                      onChange={e => set('login_confirm_password')(e.target.value)} placeholder={t('branches:editor.repeatPassword')} required />
-                    {fieldErr('login_confirm_password') && <p className="text-[11px] text-red-500 mt-1">{fieldErr('login_confirm_password')}</p>}
+                      onChange={e => set('login_confirm_password')(e.target.value)} placeholder={t('branches:editor.repeatPassword')}
+                      error={fieldErr('login_confirm_password') ?? undefined} required />
                   </div>
                 </div>
               </div>
             </div>
           )}
+          </section>
+          )}
 
           {/* Error */}
           {error && (
-            <div className="flex items-center gap-2 bg-red-50 border border-red-100 text-red-700 text-sm px-4 py-3 rounded-xl">
+            <div role="alert" className="flex items-center gap-2 bg-red-50 border border-red-100 text-red-700 text-sm px-4 py-3 rounded-xl">
               <span className="text-red-400">⚠</span> {error}
             </div>
           )}
         </form>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 flex-shrink-0 bg-gray-50">
-          <Button type="button" variant="ghost" onClick={onClose}>{t('branches:editor.cancel')}</Button>
-          <Button type="submit" loading={saving} disabled={hasErrors || saving} onClick={handleSubmit as any}>
-            {t(isNew ? 'branches:editor.create' : 'branches:editor.saveChanges')}
-          </Button>
-        </div>
+        <footer className="flex flex-shrink-0 flex-col-reverse gap-2 border-t border-[#e8e1d1] bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
+          <div className="flex items-center gap-2">
+            <p className="hidden text-[11px] text-gray-500 sm:block">{t('branches:tabs.footerHelp')}</p>
+            {isDirty && <span className="text-[11px] font-semibold text-amber-700">{t('branches:tabs.unsaved')}</span>}
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <Button type="button" variant="secondary" disabled={saving} onClick={() => requestClose()} className="w-full sm:w-auto">{t('branches:editor.cancel')}</Button>
+            <Button type="submit" form="branch-modal-form" loading={saving} disabled={saving} className="w-full sm:w-auto">
+              {t(isNew ? 'branches:editor.create' : 'branches:editor.saveChanges')}
+            </Button>
+          </div>
+        </footer>
       </div>
     </div>
+    <ConfirmDialog
+      open={discardOpen}
+      kind="discard"
+      title={t('branches:tabs.unsavedTitle')}
+      body={t('branches:tabs.unsavedBody')}
+      confirmLabel={t('branches:tabs.discard')}
+      onClose={() => { pendingCloseActionRef.current = null; setDiscardOpen(false) }}
+      onConfirm={confirmDiscard}
+    />
+    </>
   )
 }
 
@@ -1124,7 +1366,7 @@ function BranchCard({
 
         <button onClick={onEdit}
           className="w-9 h-9 flex items-center justify-center rounded-xl text-gray-400 hover:bg-white hover:text-primary-700 active:scale-[0.97] transition-all"
-          title={t('editor.edit')}>
+          title={t('editor.edit')} aria-label={t('editor.edit')}>
           <Pencil size={15} />
         </button>
       </div>
@@ -1136,7 +1378,7 @@ function BranchCard({
               <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-400">
                 <item.icon size={11} /> {item.label}
               </p>
-              <p className="mt-1 truncate text-sm font-semibold text-gray-800" dir="auto">{item.value}</p>
+              <p className="mt-1 truncate text-sm font-semibold text-gray-800" dir="auto" title={item.value}>{item.value}</p>
             </div>
           )) : (
             <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-3 py-2.5 text-sm text-gray-400">
@@ -1149,7 +1391,7 @@ function BranchCard({
           <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">{t('editor.login')}</p>
           {loginCredential ? (
             <div className="mt-2 space-y-2">
-              <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-indigo-600">
+              <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-indigo-600" title={loginCredential.value}>
                 <LogIn size={13} /> {loginCredential.value}
               </p>
               <button
@@ -1287,7 +1529,7 @@ export default function BranchesTab() {
           </div>
         </div>
         {!canCreateActiveBranch ? (
-          <div className="text-right">
+          <div className="flex flex-col items-end gap-2 text-end">
             <p className="text-xs text-red-600 font-medium">
               {t(sub.status === 'suspended' ? 'list.accountSuspended' : 'list.limitReached')}
             </p>
@@ -1295,17 +1537,20 @@ export default function BranchesTab() {
               href={WA_LINK}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-primary-600 hover:underline"
+              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-primary-600 bg-white px-3 py-2 text-xs font-semibold text-primary-700 transition-colors hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              aria-label={t('list.contactAddBranches')}
             >
-              Contact us to add more
+              <Phone size={13} className="me-1.5" aria-hidden="true" />
+              {t('list.contactAddBranches')}
             </a>
-            <Button onClick={() => setDrawer('new')} size="sm" disabled className="mt-2">
-              <Plus size={14} /> Add Branch
+            <p id="add-branch-disabled-reason" className="text-[11px] text-gray-500">{t('list.addDisabledReason')}</p>
+            <Button onClick={() => setDrawer('new')} size="sm" disabled aria-describedby="add-branch-disabled-reason">
+              <Plus size={14} /> {t('list.addBranch')}
             </Button>
           </div>
         ) : (
           <Button onClick={() => setDrawer('new')} size="sm">
-            <Plus size={14} /> Add Branch
+            <Plus size={14} /> {t('list.addBranch')}
           </Button>
         )}
       </div>
@@ -1328,7 +1573,7 @@ export default function BranchesTab() {
           <p className="text-sm font-medium text-gray-500">{t('list.empty')}</p>
           <p className="text-xs text-gray-400 mt-1 mb-4">{t('list.emptyBody')}</p>
           <Button size="sm" onClick={() => setDrawer('new')} disabled={!canCreateActiveBranch}>
-            <Plus size={13} /> Add your first branch
+            <Plus size={13} /> {t('list.addFirstBranch')}
           </Button>
         </div>
       ) : (
@@ -1352,9 +1597,9 @@ export default function BranchesTab() {
         />
       )}
 
-      {/* Drawer */}
+      {/* Centered add/edit modal */}
       {drawerBranch !== null && (
-        <BranchDrawer
+        <BranchModal
           branch={drawerBranch === 'new' ? null : drawerBranch}
           tenantId={tenantId}
           tenantBusinessType={tenant?.business_type}

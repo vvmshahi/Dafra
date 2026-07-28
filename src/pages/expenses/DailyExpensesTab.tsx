@@ -7,10 +7,12 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import type { Expense, ExpenseCategory, ExpenseVatClaimStatus } from '@/types'
-import ExpenseDrawer from './ExpenseDrawer'
+import DailyExpenseModal from './DailyExpenseModal'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { effectiveExpenseVatClaimStatus } from '@/lib/utils/expenseVat'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -60,8 +62,8 @@ function SumCard({ label, value, sub, accent }: {
   return (
     <div className={`flex-1 min-w-0 rounded-xl px-4 py-3 border ${
       accent
-        ? 'bg-primary-500 border-primary-600 text-white'
-        : 'bg-white border-gray-100 shadow-card'
+        ? 'bg-primary-500 border-primary-800 text-white'
+        : 'bg-white border-primary-800/70 shadow-card'
     }`}>
       <p className={`text-xs font-medium ${accent ? 'text-white/70' : 'text-gray-400'}`}>{label}</p>
       <p className={`text-lg font-bold mt-0.5 ${accent ? 'text-white' : 'text-gray-900'}`}>{value}</p>
@@ -189,13 +191,17 @@ function ExpenseRow({ expense, onEdit, onDelete }: {
       <div className="flex items-center gap-1 flex-shrink-0">
         <button
           onClick={onEdit}
-          className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+          title={t('actions.edit')}
+          aria-label={t('actions.edit')}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
         >
           <Pencil size={14} />
         </button>
         <button
           onClick={onDelete}
-          className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+          title={t('actions.delete')}
+          aria-label={t('actions.delete')}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
         >
           <Trash2 size={14} />
         </button>
@@ -240,7 +246,7 @@ export default function DailyExpensesTab() {
   const [expenses,    setExpenses]    = useState<ExpenseRow[]>([])
   const [categories,  setCategories]  = useState<ExpenseCategory[]>([])
   const [loading,     setLoading]     = useState(true)
-  const [drawerOpen,  setDrawerOpen]  = useState(false)
+  const [modalOpen,  setModalOpen]  = useState(false)
   const [editing,     setEditing]     = useState<ExpenseRow | null>(null)
 
   // Filters
@@ -250,6 +256,8 @@ export default function DailyExpensesTab() {
   const [filterCat,   setFilterCat]   = useState('')
   const [filterPay,   setFilterPay]   = useState('')
   const [search,      setSearch]      = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<ExpenseRow | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const setPresetDates = (p: Preset) => {
     setPreset(p)
@@ -297,14 +305,24 @@ export default function DailyExpensesTab() {
 
   useEffect(() => { load() }, [load])
 
-  const openAdd  = () => { setEditing(null); setDrawerOpen(true) }
-  const openEdit = (e: ExpenseRow) => { setEditing(e); setDrawerOpen(true) }
+  const openAdd  = () => { setEditing(null); setModalOpen(true) }
+  const openEdit = (e: ExpenseRow) => { setEditing(e); setModalOpen(true) }
 
-  const handleDelete = async (id: string, desc: string) => {
-    if (!confirm(t('deleteConfirm', { name: desc }))) return
+  const handleDelete = async () => {
+    if (!deleteTarget || deleting) return
+    const id = deleteTarget.id
+    setDeleting(true)
     const q = supabase as unknown as { from: (t: string) => any }
-    await q.from('expenses').delete().eq('id', id)
+    const result = await q.from('expenses').delete().eq('id', id).select('id').maybeSingle()
+    if (result.error || (result.status !== undefined && (result.status < 200 || result.status >= 300)) || result.data?.id !== id) {
+      toast.error(t('errors.deleteFailed'))
+      setDeleting(false)
+      return
+    }
     setExpenses(prev => prev.filter(e => e.id !== id))
+    setDeleteTarget(null)
+    setDeleting(false)
+    toast.success(t('success.deleted'))
   }
 
   // Client-side filter by category, payment method, and search
@@ -394,17 +412,17 @@ export default function DailyExpensesTab() {
       {/* ── Search + dropdowns ────────────────────────────── */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-48 max-w-sm">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <Search size={14} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
             placeholder={t('filters.search')}
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="input pl-8 py-2 text-sm"
+            className="input py-2 ps-8 text-sm"
           />
           {search && (
             <button onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
               <X size={13} />
             </button>
           )}
@@ -412,11 +430,11 @@ export default function DailyExpensesTab() {
 
         {/* Category filter */}
         <div className="relative flex-shrink-0">
-          <Filter size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <Filter size={13} className="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
           <select
             value={filterCat}
             onChange={e => setFilterCat(e.target.value)}
-            className="input pl-7 py-2 text-sm w-40 appearance-none"
+            className="input w-40 appearance-none py-2 ps-7 text-sm"
           >
             <option value="">{t('filters.allCategories')}</option>
             {categories.map(c => (
@@ -467,7 +485,7 @@ export default function DailyExpensesTab() {
               key={e.id}
               expense={e}
               onEdit={() => openEdit(e)}
-              onDelete={() => handleDelete(e.id, e.description)}
+              onDelete={() => setDeleteTarget(e)}
             />
           ))}
 
@@ -495,13 +513,20 @@ export default function DailyExpensesTab() {
         </div>
       )}
 
-      {/* ── Drawer ────────────────────────────────────────── */}
-      <ExpenseDrawer
-        open={drawerOpen}
+      <DailyExpenseModal
+        open={modalOpen}
         expense={editing}
         categories={categories}
-        onClose={() => setDrawerOpen(false)}
+        onClose={() => setModalOpen(false)}
         onSaved={load}
+      />
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        kind="delete"
+        name={deleteTarget?.description}
+        busy={deleting}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => void handleDelete()}
       />
     </div>
   )

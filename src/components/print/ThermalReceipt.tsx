@@ -245,7 +245,7 @@ export default function ThermalReceipt(props: ThermalReceiptProps) {
   const isCredit = identity.kind === 'credit_note'
   const isDebit = identity.kind === 'debit_note'
   const isAdjustment = isCredit || isDebit
-  const isStandard = identity.invoiceType === 'standard' || (isAdjustment && buyer.type === 'business' && !!buyer.vatNumber)
+  const isStandard = identity.invoiceType === 'standard'
   const title = isCredit
     ? (isStandard ? 'taxCreditNote' : 'simplifiedTaxCreditNote')
     : isDebit

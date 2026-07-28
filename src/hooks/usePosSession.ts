@@ -82,15 +82,18 @@ export function usePosSession(
   const [session, setSession] = useState<PosSession | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<unknown | null>(null)
+  const [resolvedBranchId, setResolvedBranchId] = useState<string | null>(null)
 
   const fetchActiveSession = useCallback(async () => {
     if (!branchId) {
       setSession(null)
+      setResolvedBranchId(null)
       setError(null)
       setLoading(false)
       return
     }
     setLoading(true)
+    setResolvedBranchId(null)
     setError(null)
     try {
       const { data, error: queryError } = await q().from('pos_sessions')
@@ -101,11 +104,13 @@ export function usePosSession(
         .limit(1)
       if (queryError) {
         console.error('[usePosSession] active session query failed', queryError)
+        setSession(null)
         setError(queryError)
         return
       }
       setSession((data ?? [])[0] ?? null)
     } finally {
+      setResolvedBranchId(branchId)
       setLoading(false)
     }
   }, [branchId])
@@ -161,5 +166,5 @@ export function usePosSession(
     return closedSummaryFromRpc(data)
   }, [session])
 
-  return { session, loading, error, openSession, closeSession, fetchActiveSession }
+  return { session, loading, error, resolvedBranchId, openSession, closeSession, fetchActiveSession }
 }

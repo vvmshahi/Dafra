@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { AlertTriangle, MessageCircle } from 'lucide-react'
 import Sidebar from './Sidebar'
@@ -128,7 +128,11 @@ export default function AppLayout() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden" dir="ltr">
+    <div
+      className="flex h-screen bg-gray-50 overflow-hidden"
+      dir="ltr"
+      style={{ '--app-sidebar-width': collapsed ? '64px' : '240px' } as CSSProperties}
+    >
       <a
         href="#main-content"
         dir={isRtl ? 'rtl' : 'ltr'}

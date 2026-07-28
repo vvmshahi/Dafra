@@ -110,16 +110,16 @@ export default function AccountTab() {
           <div>
             <label className="label">{t('settings:profile.fullName')} <span className="text-red-400">*</span></label>
             <div className="relative">
-              <User size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input className="input pl-9" value={fullName}
+              <User size={14} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input className="input ps-9" value={fullName}
                 onChange={e => setFullName(e.target.value)} placeholder={t('settings:profile.fullNamePlaceholder')} dir="auto" />
             </div>
           </div>
           <div>
             <label className="label">{t('settings:profile.phoneOptional')}</label>
             <div className="relative">
-              <Phone size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input className="input pl-9" type="tel" value={phone}
+              <Phone size={14} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input className="input ps-9" type="tel" value={phone}
                 onChange={e => setPhone(e.target.value)} placeholder="+966 50 000 0000" />
             </div>
           </div>
@@ -153,12 +153,12 @@ export default function AccountTab() {
           <div>
             <label className="label">{t('settings:profile.newPassword')}</label>
             <div className="relative">
-              <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input className="input pl-9 pr-10" type={showNew ? 'text' : 'password'}
+              <Lock size={14} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input className="input pe-10 ps-9" type={showNew ? 'text' : 'password'}
                 value={newPass} onChange={e => setNewPass(e.target.value)}
                 placeholder={t('validation:passwordTooShort')} />
               <button type="button" onClick={() => setShowNew(s => !s)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                 {showNew ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>
@@ -166,12 +166,12 @@ export default function AccountTab() {
           <div>
             <label className="label">{t('settings:profile.confirmPassword')}</label>
             <div className="relative">
-              <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input className="input pl-9 pr-10" type={showConfirm ? 'text' : 'password'}
+              <Lock size={14} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input className="input pe-10 ps-9" type={showConfirm ? 'text' : 'password'}
                 value={confirmPass} onChange={e => setConfirmPass(e.target.value)}
                 placeholder={t('settings:profile.repeatPassword')} />
               <button type="button" onClick={() => setShowConfirm(s => !s)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                 {showConfirm ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>

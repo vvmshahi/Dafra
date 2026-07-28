@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, Printer, RefreshCw, Loader2, AlertCircle, FileText } from 'lucide-react'
+import { ArrowLeft, Printer, RefreshCw, Loader2, AlertCircle, FileText, ReceiptText } from 'lucide-react'
 import QRCode from 'qrcode'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
@@ -14,9 +14,10 @@ import {
   selectStoredOutputStateQr,
   type QrDisplayStatus,
 } from '@/lib/zatca/qrDisplay.mjs'
-import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
+import { saudiDateStr } from '@/lib/utils/date'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import A4Document from '@/components/print/A4Document'
+import A4PreviewFit, { type A4PreviewZoom } from '@/components/print/A4PreviewFit'
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
@@ -27,18 +28,26 @@ import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import { getSandboxValidationStatus, type SandboxValidationResponse } from '@/lib/zatca/api'
 import { updateCachedInvoiceRows, upsertInvoiceListRow } from '@/lib/invoices/invoiceListCache'
 import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
+import { useAuth } from '@/hooks/useAuth'
 import { INVOICE_SAFE_SELECT } from '@/lib/invoices/invoiceReadContract'
 import {
   documentDate,
-  documentDirection,
-  documentFontFamily,
   documentLabel,
-  documentLabelLines,
   documentNames,
-  documentPaymentLabel,
   resolveCreditNoteDocumentLanguage,
   resolveInvoiceDocumentLanguage,
 } from '@/localization/documents'
+
+type PreviewMode = 'a4' | 'thermal'
+
+export function resolveDefaultInvoicePreviewMode(
+  printMode: 'thermal' | 'pdf' | 'both',
+  afterSaleAction?: 'receipt' | 'a4' | 'both',
+): PreviewMode {
+  if (printMode === 'thermal') return 'thermal'
+  if (printMode === 'pdf') return 'a4'
+  return afterSaleAction === 'receipt' ? 'thermal' : 'a4'
+}
 
 function WhatsAppIcon({ size = 13 }: { size?: number }) {
   return (
@@ -102,22 +111,10 @@ interface RefundableItemSummary {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmt(n: number) {
-  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
 function isSplitPaymentRows(payments: Payment[]): boolean {
   return payments.length > 1
     && payments.some(payment => payment.method === 'cash' && Number(payment.amount) > 0)
     && payments.some(payment => payment.method === 'card' && Number(payment.amount) > 0)
-}
-
-function paymentRowsTotal(payments: Payment[]): number {
-  return payments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0)
-}
-
-function fmtQty(n: number): string {
-  return Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 })
 }
 
 // ── Print style injector ──────────────────────────────────────────────────────
@@ -159,6 +156,7 @@ export default function InvoiceDetailPage() {
   const { id }     = useParams<{ id: string }>()
   const navigate   = useNavigate()
   const location   = useLocation()
+  const { profile } = useAuth()
   const autoPrint  = new URLSearchParams(location.search).get('print') === '1'
   const autoPrintRef = useRef(false)
   usePrintStyle()
@@ -166,7 +164,6 @@ export default function InvoiceDetailPage() {
   const [invoice,  setInvoice]  = useState<Invoice | null>(null)
   const [items,    setItems]    = useState<InvoiceItem[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
-  const [originalPayments, setOriginalPayments] = useState<Payment[]>([])
   const [refunds,  setRefunds]  = useState<PaymentRefund[]>([])
   const [branch,   setBranch]   = useState<Branch | null>(null)
   const [tenant,   setTenant]   = useState<Tenant | null>(null)
@@ -181,10 +178,15 @@ export default function InvoiceDetailPage() {
   const [qrStatus,     setQrStatus]     = useState<QrDisplayStatus>('loading')
   const [resubmitting, setResubmitting] = useState(false)
   const [thermalPrinting, setThermalPrinting] = useState(false)
+  const [a4Printing, setA4Printing] = useState(false)
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('a4')
+  const [a4PreviewZoom, setA4PreviewZoom] = useState<A4PreviewZoom>('fit')
   const [creditModalOpen, setCreditModalOpen] = useState(false)
   const [creditNoteResult, setCreditNoteResult] = useState<CreditNoteCreatedResult | null>(null)
   const [sandboxValidation, setSandboxValidation] = useState<SandboxValidationResponse | null>(null)
   const [outputState, setOutputState] = useState<ZatcaOutputState | null>(null)
+  const previewTabRefs = useRef<Record<PreviewMode, HTMLButtonElement | null>>({ a4: null, thermal: null })
+  const creditNoteTriggerRef = useRef<HTMLButtonElement>(null)
 
   const sandboxDocument = Boolean(invoice && isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id))
   const outputStateMatchesInvoice = Boolean(invoice && outputState?.invoiceId === invoice.id)
@@ -258,7 +260,7 @@ export default function InvoiceDetailPage() {
         const tenantData = results[1].data as Tenant
         const custData   = results[2]?.data as Customer | null ?? null
 
-	        const [creditNoteResult, originalInvoiceResult, refundResult, refundableResult, originalPaymentsResult] = await Promise.all([
+	        const [creditNoteResult, originalInvoiceResult, refundResult, refundableResult] = await Promise.all([
 	          inv.zatca_invoice_type === 'credit_note'
 	            ? Promise.resolve({ data: [] })
 	            : supabase
@@ -284,15 +286,11 @@ export default function InvoiceDetailPage() {
 	            ? Promise.resolve({ data: [] })
 	            : (supabase as any)
 	              .rpc('get_invoice_refundable_items', { p_invoice_id: inv.id }),
-	          inv.original_invoice_id
-	            ? supabase.from('payments').select('*').eq('invoice_id', inv.original_invoice_id).order('paid_at', { ascending: true }).order('created_at', { ascending: true })
-	            : Promise.resolve({ data: [] }),
 	        ])
 
         setInvoice(inv as Invoice)
         setItems((itemData ?? []) as InvoiceItem[])
         setPayments((pmtData ?? []) as Payment[])
-        setOriginalPayments((originalPaymentsResult.data ?? []) as Payment[])
         setRefunds((refundResult.data ?? []) as PaymentRefund[])
         setBranch(branchData)
         setTenant(tenantData)
@@ -404,19 +402,40 @@ export default function InvoiceDetailPage() {
   // ── Actions ────────────────────────────────────────────────────────────────
 
   async function handlePrintA4() {
+    if (a4Printing) return
     if (!invoice || !printReady) {
       toast.error(t('printing:qrUnavailable'))
       return
     }
-    if (!isElectron()) {
-      window.print()
-      return
-    }
-
-    const result = await printA4Invoice()
-    if (!result.success) {
-      console.error('A4 invoice print failed:', result)
+    setA4Printing(true)
+    try {
+      if (!isElectron()) {
+        await new Promise<void>((resolve, reject) => {
+          let settled = false
+          const finish = () => {
+            if (settled) return
+            settled = true
+            window.removeEventListener('afterprint', finish)
+            resolve()
+          }
+          window.addEventListener('afterprint', finish, { once: true })
+          try {
+            window.print()
+            window.setTimeout(finish, 1_500)
+          } catch (error) {
+            window.removeEventListener('afterprint', finish)
+            reject(error)
+          }
+        })
+        return
+      }
+      const result = await printA4Invoice()
+      if (!result.success) throw new Error(result.message ?? 'A4 print failed')
+    } catch (error) {
+      console.error('A4 invoice print failed:', error)
       toast.error(t('printing:a4Failed'))
+    } finally {
+      setA4Printing(false)
     }
   }
 
@@ -609,8 +628,16 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
   // The print target is rendered only after the required stored-invoice data exists.
   const documentViewModel = useMemo(() => {
     if (!invoice || !branch) return null
-    return documentFromStoredInvoice({ invoice, branch, tenant, items, payments, customer: customer ? { name: customer.name, nameAr: customer.name_ar, vatNumber: customer.vat_number, address: customer.address, addressAr: customer.address_ar, identifierType: customer.cr_number ? 'CR' : null, identifierValue: customer.cr_number, type: customer.customer_type } : null })
-  }, [invoice, branch, tenant, items, payments, customer])
+    return documentFromStoredInvoice({ invoice, branch, tenant, items, payments, customer: customer ? { name: customer.name, nameAr: customer.name_ar, vatNumber: customer.vat_number, address: customer.address, addressAr: customer.address_ar, identifierType: customer.cr_number ? 'CR' : null, identifierValue: customer.cr_number, type: customer.customer_type } : null, authoritativeDocumentKind: outputStateMatchesInvoice ? outputState?.documentKind : null })
+  }, [invoice, branch, tenant, items, payments, customer, outputStateMatchesInvoice, outputState?.documentKind])
+
+  useEffect(() => {
+    if (!documentViewModel) return
+    setPreviewMode(resolveDefaultInvoicePreviewMode(
+      documentViewModel.presentation.printMode,
+      documentViewModel.presentation.afterSaleAction,
+    ))
+  }, [invoice?.id, documentViewModel])
 
   // ── Loading / Error states ─────────────────────────────────────────────────
 
@@ -655,39 +682,27 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
   const documentLanguage = isCreditNote
     ? resolveCreditNoteDocumentLanguage(invoice.document_language, originalInvoiceLink?.document_language, branch.invoice_language)
     : resolveInvoiceDocumentLanguage(invoice.document_language, branch.invoice_language)
-  const documentDir = documentDirection(documentLanguage)
-  const invDate = documentDate(invoice.created_at, documentLanguage)
-  const invTime = toSaudiTime(invoice.created_at)
   const payment   = payments[0] ?? null
   const isSplitPayment = isSplitPaymentRows(payments)
-  const cashPayment = payments.find(p => p.method === 'cash')
-  const cardPayment = payments.find(p => p.method === 'card')
-  const cashReceived = payment?.method === 'cash'
-    ? Number(payment.amount_received ?? payment.amount ?? invoice.total_amount)
-    : null
-  const changeAmount = payment?.method === 'cash'
-    ? Number(payment.change_amount ?? 0)
-    : null
   const isCancelled = invoice.status === 'cancelled'
-  const hasRefunds = refunds.length > 0
-  const latestCreditNote = linkedCreditNotes[0] ?? null
   const totalOriginalQuantity = refundableItems.reduce((sum, item) => sum + Number(item.original_quantity ?? 0), 0)
-  const totalCreditedQuantity = refundableItems.reduce((sum, item) => sum + Number(item.credited_quantity ?? 0), 0)
   const totalRemainingQuantity = refundableItems.reduce((sum, item) => sum + Math.max(Number(item.remaining_quantity ?? 0), 0), 0)
+  const creditedAmount = linkedCreditNotes.reduce((sum, note) => sum + Number(note.total_amount ?? 0), 0)
+  const remainingRefundableAmount = refundableItems.length > 0
+    ? refundableItems.reduce((sum, item) => sum + Math.max(Number(item.remaining_total ?? 0), 0), 0)
+    : null
   const creditStatus: 'none' | 'partial' | 'full' = isCreditNote || linkedCreditNotes.length === 0
     ? 'none'
     : totalOriginalQuantity > 0 && totalRemainingQuantity <= 0.0005
     ? 'full'
     : 'partial'
-  const isStandardDocument = invoice.zatca_invoice_type === 'standard'
-    || ((isCreditNote || isDebitNote) && customer?.customer_type === 'business' && !!customer?.vat_number)
+  const isStandardDocument = documentViewModel.identity.invoiceType === 'standard'
   const documentTitleKey = isCreditNote
     ? (isStandardDocument ? 'taxCreditNote' : 'simplifiedTaxCreditNote')
     : isDebitNote
     ? (isStandardDocument ? 'taxDebitNote' : 'simplifiedTaxDebitNote')
     : (isStandardDocument ? 'standardTaxInvoice' : 'simplifiedTaxInvoice')
-  const documentTitleLines = documentLabelLines(documentLanguage, documentTitleKey)
-  const documentNumberLabel = documentLabel(documentLanguage, isCreditNote ? 'creditNoteNumber' : isDebitNote ? 'debitNoteNumber' : 'invoiceNumber')
+  const documentTitle = documentLabel(documentViewModel.identity.language, documentTitleKey)
   const creditLabel = creditStatus === 'full' ? t('invoices:fullyCredited') : creditStatus === 'partial' ? t('invoices:partiallyCredited') : t('invoices:notCredited')
   const creditLabelClass = creditStatus === 'full'
     ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
@@ -695,7 +710,9 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     ? 'text-amber-700 bg-amber-50 border-amber-100'
     : 'text-gray-600 bg-gray-50 border-gray-100'
   const demoSandbox = sandboxDocument
+  const canIssueCreditNote = profile?.role === 'owner' || profile?.role === 'branch'
   const canCreateCreditNote = !isCreditNote
+    && canIssueCreditNote
     && !isCancelled
     && invoice.status === 'posted'
     && (sandboxValidated || invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared')
@@ -720,485 +737,193 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     : invoice.zatca_status === 'failed'
       || (isCreditNote && invoice.zatca_status === 'pending')
 
-  const brandNameEn = branch.display_name || branch.business_name || branch.name
-  const brandNameAr = branch.business_name_ar || branch.name_ar || brandNameEn
-  const sellerNames = documentNames(documentLanguage, brandNameEn, brandNameAr)
-  const vatNumber    = branch.vat_number || tenant?.vat_number || '—'
-  const crNumber     = branch.cr_number  || tenant?.cr_number  || '—'
+  const zatcaStatusLabel = t(`invoices:${invoice.zatca_status}`, {
+    defaultValue: invoice.zatca_status.replaceAll('_', ' '),
+  })
 
-  const addressParts = [
-    branch.building_number ? `Building ${branch.building_number}` : null,
-    branch.street,
-    branch.district,
-    branch.city,
-    branch.country,
-    branch.postal_code,
-  ].filter(Boolean).join(', ')
-  const addressPartsAr = [
-    branch.building_number ? `مبنى ${branch.building_number}` : null,
-    branch.street_ar,
-    branch.district_ar,
-    branch.city_ar,
-    branch.country,
-    branch.postal_code,
-  ].filter(Boolean).join('، ')
-  const sellerAddresses = documentNames(documentLanguage, addressParts, addressPartsAr)
+  function selectPreview(mode: PreviewMode, focus = false) {
+    setPreviewMode(mode)
+    if (focus) previewTabRefs.current[mode]?.focus()
+  }
+
+  function handlePreviewTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    const direction = event.key === 'ArrowRight' ? 1 : -1
+    const modes: PreviewMode[] = documentViewModel.identity.direction === 'rtl'
+      ? ['thermal', 'a4']
+      : ['a4', 'thermal']
+    const current = modes.indexOf(previewMode)
+    selectPreview(modes[(current + direction + modes.length) % modes.length], true)
+  }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4">
+    <div className="mx-auto min-w-0 max-w-6xl space-y-3 overflow-x-clip pb-6">
+      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'invoice-printable-a4', qrImageUrl: qrDataUrl }} />
 
-      {/* ── Hidden thermal receipt (for print) ──────────── */}
-      {documentViewModel && <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl }} />}
-      {documentViewModel && <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'invoice-printable-a4', qrImageUrl: qrDataUrl }} />}
+      <header className="no-print overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" aria-labelledby="invoice-detail-title">
+        <div className="h-1 bg-gold-500" aria-hidden="true" />
+        <div className="px-3 py-2.5 sm:px-4 sm:py-3">
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <button type="button" onClick={() => navigate('/invoices')}
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-md px-1 text-xs font-semibold text-gray-500 outline-none transition-colors hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-[#0F2419]">
+                <ArrowLeft size={14} aria-hidden="true" />
+                {t('invoices:back')}
+              </button>
+              <h1 id="invoice-detail-title" className="mt-0.5 text-lg font-bold leading-tight text-gray-950 sm:text-xl">
+                <span dir="auto">{documentTitle}</span>
+                <span className="mx-1.5 text-gray-300" aria-hidden="true">·</span>
+                <span className="font-mono text-base font-semibold text-gray-600 sm:text-lg" dir="ltr">{invoice.invoice_number}</span>
+              </h1>
+              <div className="mt-1.5 flex flex-wrap gap-1.5" aria-label={t('invoices:documentStatus')}>
+                <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">{t('invoices:zatcaStatus')}: {zatcaStatusLabel}</span>
+                {!isCreditNote && <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${creditLabelClass}`}>{creditLabel}</span>}
+              </div>
+            </div>
 
-      {/* ── Action bar (screen only) ─────────────────────── */}
-      <div className="no-print flex items-center justify-between">
-        <button onClick={() => navigate('/invoices')}
-          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 transition-colors">
-          <ArrowLeft size={16} />
-          {t('invoices:back')}
-        </button>
-
-        <div className="flex items-center gap-2">
-          {outputStateMatchesInvoice && outputState?.documentKind === 'simplified' && (
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600">
-              {t(`pos:zatca.${outputState.reportingDisplayState}`)}
-            </span>
-          )}
-          {canSubmitCurrentDocument && !demoSandbox && (
-            <button onClick={handleResend} disabled={resubmitting}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-600 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 transition-colors disabled:opacity-50">
-              <RefreshCw size={13} className={resubmitting ? 'animate-spin' : ''} />
-              {isCreditNote && invoice.zatca_status === 'pending' ? t('invoices:submitCreditNote') : t('invoices:resendZatca')}
-            </button>
-          )}
-          {customer?.phone && (
-            <button onClick={handleWhatsApp} disabled={!shareReady}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-[#25D366] rounded-xl hover:bg-[#22c55e] transition-colors">
-              <WhatsAppIcon size={13} />
-              {t('payments:whatsapp')}
-            </button>
-          )}
-          <button onClick={() => void handlePrintThermal()} disabled={thermalPrinting || !printReady}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50">
-            {thermalPrinting ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
-            {thermalPrinting ? t('printing:printing') : t('printing:printReceipt')}
-          </button>
-          <button onClick={() => void handlePrintA4()} disabled={!printReady}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0F2419] rounded-xl hover:bg-[#1a3a28] transition-colors">
-            <Printer size={13} />
-            {isCreditNote ? t('printing:printCreditNote') : t('printing:printInvoice')} (PDF)
-          </button>
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              <div className="inline-flex items-center gap-2" aria-label={t('printing:printActions')}>
+                <button type="button" onClick={() => void handlePrintA4()} disabled={a4Printing || !printReady}
+                  className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#0F2419] px-4 py-2 text-xs font-semibold text-white outline-none transition-colors hover:bg-[#1a3a28] focus-visible:ring-2 focus-visible:ring-[#B5943E] focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
+                  {a4Printing ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Printer size={14} aria-hidden="true" />}
+                  {a4Printing ? t('printing:printing') : t('printing:printInvoice')}
+                </button>
+              <button type="button" onClick={() => void handlePrintThermal()} disabled={thermalPrinting || !printReady}
+                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 outline-none transition-colors hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-[#0F2419] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
+                {thermalPrinting ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Printer size={14} aria-hidden="true" />}
+                {thermalPrinting ? t('printing:printing') : t('printing:printReceipt')}
+              </button>
+              </div>
+              {canSubmitCurrentDocument && !demoSandbox && (
+                <button type="button" onClick={handleResend} disabled={resubmitting}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 outline-none transition-colors hover:bg-red-100 focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50">
+                  <RefreshCw size={13} className={resubmitting ? 'animate-spin' : ''} aria-hidden="true" />
+                  {isCreditNote && invoice.zatca_status === 'pending' ? t('invoices:submitCreditNote') : t('invoices:resendZatca')}
+                </button>
+              )}
+              {customer?.phone && (
+                <button type="button" onClick={handleWhatsApp} disabled={!shareReady}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-[#25D366] px-3 py-2 text-xs font-semibold text-white outline-none transition-colors hover:bg-[#22c55e] focus-visible:ring-2 focus-visible:ring-[#128C7E] disabled:opacity-50">
+                  <WhatsAppIcon size={13} />
+                  {t('payments:whatsapp')}
+                </button>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
+      </header>
 
-      {/* ── Cancelled banner ─────────────────────────────── */}
       {isCancelled && (
-        <div className="no-print bg-red-50 border border-red-100 rounded-xl px-4 py-3 flex items-center gap-2 text-sm text-red-600">
-          <AlertCircle size={16} />
+        <div className="no-print flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700" role="status">
+          <AlertCircle size={16} aria-hidden="true" />
           {t('invoices:cancelled')}
         </div>
       )}
 
-      {/* ── Refund / Credit Note status ─────────────────── */}
-      <div className="no-print bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <FileText size={16} className="text-[#0F2419]" />
-              <h2 className="text-sm font-bold text-gray-900">{t('creditNotes:sectionTitle')}</h2>
-              {!isCreditNote && (
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${creditLabelClass}`}>
-                  {creditLabel}
-                </span>
-              )}
+      <section className="no-print min-w-0 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4" aria-labelledby="document-preview-title">
+        <div className="mb-3 flex flex-col gap-2.5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+            <h2 id="document-preview-title" className="text-sm font-bold text-gray-950">{t('invoices:documentPreview')}</h2>
+            <p className="mt-0.5 text-xs text-gray-500">{t('invoices:documentPreviewHint')}</p>
+            </div>
+            {!isCreditNote && canIssueCreditNote && canCreateCreditNote && (
+              <button ref={creditNoteTriggerRef} type="button" onClick={openCreditModal}
+                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-[#0F2419] bg-white px-3 py-1.5 text-xs font-semibold text-[#0F2419] outline-none transition-colors hover:bg-emerald-50 focus-visible:ring-2 focus-visible:ring-[#0F2419] active:scale-[0.98]">
+                <FileText size={13} aria-hidden="true" />
+                {creditStatus === 'partial' ? t('creditNotes:createAnother') : t('creditNotes:create')}
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div role="tablist" aria-label={t('invoices:previewMode')} className="grid w-full grid-cols-2 rounded-xl bg-gray-100 p-1 sm:w-auto sm:min-w-64">
+            <button ref={node => { previewTabRefs.current.a4 = node }} id="invoice-preview-tab-a4" type="button" role="tab"
+              aria-selected={previewMode === 'a4'} aria-controls="invoice-preview-panel-a4" tabIndex={previewMode === 'a4' ? 0 : -1}
+              onClick={() => selectPreview('a4')} onKeyDown={handlePreviewTabKeyDown}
+              className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#0F2419] ${previewMode === 'a4' ? 'bg-[#0F2419] text-white shadow-sm' : 'text-gray-600 hover:bg-white'}`}>
+              <FileText size={14} aria-hidden="true" />{t('printing:invoicePreviewTab')}
+            </button>
+            <button ref={node => { previewTabRefs.current.thermal = node }} id="invoice-preview-tab-thermal" type="button" role="tab"
+              aria-selected={previewMode === 'thermal'} aria-controls="invoice-preview-panel-thermal" tabIndex={previewMode === 'thermal' ? 0 : -1}
+              onClick={() => selectPreview('thermal')} onKeyDown={handlePreviewTabKeyDown}
+              className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#0F2419] ${previewMode === 'thermal' ? 'bg-[#0F2419] text-white shadow-sm' : 'text-gray-600 hover:bg-white'}`}>
+              <ReceiptText size={14} aria-hidden="true" />{t('printing:receiptPreviewTab')}
+            </button>
             </div>
 
-            {isCreditNote ? (
-              <div className="space-y-1 text-xs text-gray-600">
-                <p>{t('creditNotes:creditsOriginal', { number: invoice.invoice_reference ?? originalInvoiceLink?.invoice_number ?? '—' })}</p>
-                {invoice.credit_reason && <p><span className="font-semibold text-gray-800">{t('refunds:reason')}:</span> {invoice.credit_reason}</p>}
-                {originalInvoiceLink && (
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/invoices/${originalInvoiceLink.id}`)}
-                    className="text-xs font-semibold text-[#0F2419] underline underline-offset-2"
-                  >
-                    {t('creditNotes:openOriginal')}
+            {previewMode === 'a4' && (
+              <div className="grid grid-cols-4 rounded-lg border border-gray-200 bg-white p-0.5" role="group" aria-label={t('printing:previewZoom')}>
+                {([
+                  ['fit', t('printing:zoomFit')],
+                  [0.75, '75%'],
+                  [1, '100%'],
+                  [1.25, '125%'],
+                ] as const).map(([value, label]) => (
+                  <button key={String(value)} type="button" onClick={() => setA4PreviewZoom(value)}
+                    aria-pressed={a4PreviewZoom === value}
+                    aria-label={value === 'fit' ? t('printing:zoomFit') : t('printing:zoomPercent', { percent: Math.round(value * 100) })}
+                    className={`min-h-9 rounded-md px-2 py-1 text-[11px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#0F2419] ${a4PreviewZoom === value ? 'bg-[#0F2419] text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
+                    {label}
                   </button>
-                )}
-              </div>
-            ) : linkedCreditNotes.length > 0 ? (
-              <div className="space-y-1 text-xs text-gray-600">
-                <p>{t('creditNotes:linkedSummary', { status: creditLabel, count: linkedCreditNotes.length })}</p>
-                {latestCreditNote && (
-                  <p>{t('creditNotes:latestStatus', { number: latestCreditNote.invoice_number, status: t(`invoices:${latestCreditNote.zatca_status === 'reported' ? 'reported' : latestCreditNote.zatca_status === 'cleared' ? 'cleared' : latestCreditNote.zatca_status === 'failed' ? 'failed' : 'pending'}`) })}</p>
-                )}
-                <p>{t('creditNotes:quantitySummary', { credited: fmtQty(totalCreditedQuantity), remaining: fmtQty(totalRemainingQuantity) })}</p>
-              </div>
-            ) : (
-              <p className="text-xs text-gray-500">
-                {demoSandbox
-                  ? sandboxValidated
-                    ? t('creditNotes:createForSubmitted')
-                    : t('creditNotes:submitFirst')
-                  : t('creditNotes:reportedFirst')}
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-wrap gap-2 sm:justify-end">
-            {latestCreditNote && !isCreditNote && (
-              <button
-                type="button"
-                onClick={() => navigate(`/invoices/${latestCreditNote.id}`)}
-                className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                {t('creditNotes:openLatest')}
-              </button>
-            )}
-            {!isCreditNote && (
-              <button
-                type="button"
-                onClick={openCreditModal}
-                disabled={!canCreateCreditNote}
-                title={creditDisabledReason ?? undefined}
-                className="rounded-xl bg-[#0F2419] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
-              >
-                {t('creditNotes:createRefund')}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {!isCreditNote && refundableItems.length > 0 && (
-          <div className="mt-4 overflow-x-auto rounded-xl border border-gray-100">
-            <div className="min-w-[620px]">
-              <div className="grid grid-cols-[minmax(0,1fr)_90px_90px_90px_110px] gap-2 bg-gray-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                <span>{t('invoices:item')}</span>
-                <span className="text-end">{t('creditNotes:originalQuantity', { quantity: '', unit: '' }).trim()}</span>
-                <span className="text-end">{t('invoices:partiallyCredited')}</span>
-                <span className="text-end">{t('creditNotes:remainingQuantity')}</span>
-                <span className="text-end">{t('creditNotes:remainingTotal')}</span>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {refundableItems.map(item => (
-                  <div key={item.original_invoice_item_id} className="grid grid-cols-[minmax(0,1fr)_90px_90px_90px_110px] gap-2 px-3 py-2 text-xs">
-                    <span className="truncate font-semibold text-gray-800">{item.name}</span>
-                    <span className="text-end tabular-nums text-gray-600" dir="ltr">{fmtQty(item.original_quantity)} {item.unit ?? ''}</span>
-                    <span className="text-end tabular-nums text-amber-700" dir="ltr">{fmtQty(item.credited_quantity)}</span>
-                    <span className={`text-end tabular-nums font-semibold ${item.remaining_quantity > 0 ? 'text-emerald-700' : 'text-gray-400'}`} dir="ltr">{fmtQty(item.remaining_quantity)}</span>
-                    <span className="text-end tabular-nums font-semibold text-gray-900" dir="ltr"><Rial amount={item.remaining_total} /></span>
-                  </div>
                 ))}
               </div>
-            </div>
+            )}
           </div>
-        )}
 
-	        {creditDisabledReason && !isCreditNote && (
-	          <p className="mt-3 text-[11px] text-gray-400">{creditDisabledReason}</p>
-	        )}
-	      </div>
-
-      {/* ══════════════════════════════════════════════════ */}
-      {/* PRINTABLE INVOICE AREA                            */}
-      {/* ══════════════════════════════════════════════════ */}
-      <div
-        id="invoice-printable"
-        dir={documentDir}
-        lang={documentLanguage === 'ar' ? 'ar' : documentLanguage === 'en' ? 'en' : undefined}
-        className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
-        style={{ fontFamily: documentFontFamily(documentLanguage) }}
-      >
-
-        {/* ── Invoice header ─────────────────────────────── */}
-        <div className="px-8 pt-8 pb-6 border-b border-gray-100">
-          <div className="flex items-start justify-between gap-6">
-
-            {/* Seller info (left) */}
-            <div className="flex items-start gap-4 flex-1">
-              {branch.logo_url && (branch.show_logo ?? true) ? (
-                <img src={branch.logo_url} alt="logo" className="w-14 h-14 object-contain rounded-xl flex-shrink-0" />
-              ) : (
-                <div className="w-14 h-14 rounded-xl bg-[#0F2419] flex items-center justify-center flex-shrink-0">
-                  <span className="text-gold-400 font-black text-2xl leading-none">د</span>
-                </div>
-              )}
-              <div>
-                {sellerNames.map((name, index) => (
-                  <p key={name} className={index === 0 ? 'text-xl font-bold text-gray-900' : 'text-sm text-gray-400 font-medium'} dir="auto">{name}</p>
-                ))}
-                {sellerAddresses.map(value => <p key={value} className="text-xs text-gray-400 mt-1 max-w-xs" dir="auto">{value}</p>)}
-                <div className="flex flex-wrap gap-3 mt-2">
-                  <span className="text-[10px] text-gray-500">
-                    <span className="font-semibold text-gray-700">{documentLabel(documentLanguage, 'vatNumber')}:</span> <bdi dir="ltr">{vatNumber}</bdi>
-                  </span>
-                  <span className="text-[10px] text-gray-500">
-                    <span className="font-semibold text-gray-700">{documentLabel(documentLanguage, 'crNumber')}:</span> <bdi dir="ltr">{crNumber}</bdi>
-                  </span>
-                </div>
-                {(branch.show_website ?? false) && branch.website && (
-                  <p className="text-[10px] text-gray-400 mt-0.5">{branch.website}</p>
-                )}
-                {(branch.show_email ?? false) && branch.email && (
-                  <p className="text-[10px] text-gray-400">{branch.email}</p>
-                )}
-              </div>
+          {isCreditNote ? (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-gray-50 px-3 py-2 text-[11px] text-gray-600">
+              <span>{t('creditNotes:creditsOriginal', { number: invoice.invoice_reference ?? originalInvoiceLink?.invoice_number ?? '—' })}</span>
+              {invoice.credit_reason && <span><strong className="text-gray-800">{t('refunds:reason')}:</strong> {invoice.credit_reason}</span>}
+              <span dir="ltr"><Rial amount={Number(invoice.total_amount)} /></span>
+              {refunds.length > 0 && <span>{t('creditNotes:refundAllocationTitle')}: {refunds.map(refund => `${refund.method} · ${refund.status}`).join(', ')}</span>}
+              {originalInvoiceLink && <button type="button" onClick={() => navigate(`/invoices/${originalInvoiceLink.id}`)} className="font-semibold text-[#0F2419] underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F2419]">{t('creditNotes:openOriginal')}</button>}
             </div>
-
-            {/* Invoice info + QR (right) */}
-            <div className="text-end flex-shrink-0">
-              <div className="mb-3">
-                {documentTitleLines.map((line, index) => <p key={line} dir="auto" className={index === 0 ? 'text-lg font-bold text-[#0F2419]' : 'text-xs text-gray-400'}>{line}</p>)}
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-end gap-3">
-                  <span className="text-xs font-semibold text-gray-800 font-mono" dir="ltr">{invoice.invoice_number}</span>
-                  <span className="text-[10px] text-gray-400 uppercase tracking-wide">{documentNumberLabel}</span>
-                </div>
-                {isCreditNote && (invoice.invoice_reference || originalInvoiceLink?.invoice_number) && (
-                  <div className="flex items-center justify-end gap-3">
-                    <span className="text-xs text-gray-700" dir="ltr">{invoice.invoice_reference ?? originalInvoiceLink?.invoice_number}</span>
-                    <span className="text-[10px] text-gray-400 uppercase tracking-wide">{documentLabel(documentLanguage, 'originalInvoice')}</span>
-                  </div>
-                )}
-                <div className="flex items-center justify-end gap-3">
-                  <span className="text-xs text-gray-700" dir="ltr">{invDate}</span>
-                  <span className="text-[10px] text-gray-400 uppercase tracking-wide">{documentLabel(documentLanguage, 'date')}</span>
-                </div>
-                <div className="flex items-center justify-end gap-3">
-                  <span className="text-xs text-gray-700" dir="ltr">{invTime}</span>
-                  <span className="text-[10px] text-gray-400 uppercase tracking-wide">{documentLabel(documentLanguage, 'time')}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Customer section ────────────────────────────── */}
-        <div className="px-8 py-5 border-b border-gray-100 bg-gray-50/50">
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1">{documentLabel(documentLanguage, 'billTo')}</p>
-          {customer ? (
-            <>
-              {customer.customer_type === 'business' && (customer.business_name ?? customer.company_name) ? (
-                <>
-                  {documentNames(documentLanguage, customer.business_name ?? customer.company_name, customer.business_name_ar).map((name, index) => <p key={name} className={index === 0 ? 'text-sm font-semibold text-gray-900' : 'text-xs text-gray-400'} dir="auto">{name}</p>)}
-                  <p className="text-xs text-gray-500 mt-0.5">{documentLabel(documentLanguage, 'contact')}: <span dir="auto">{customer.name}</span></p>
-                </>
-              ) : (
-                <>
-                  {documentNames(documentLanguage, customer.name, customer.name_ar).map((name, index) => <p key={name} className={index === 0 ? 'text-sm font-semibold text-gray-900' : 'text-xs text-gray-400'} dir="auto">{name}</p>)}
-                </>
-              )}
-              {customer.vat_number && (
-                <p className="text-xs text-gray-500 mt-0.5">
-                  <span className="font-semibold">{documentLabel(documentLanguage, 'customerVatNumber')}:</span> <bdi dir="ltr">{customer.vat_number}</bdi>
-                </p>
-              )}
-            </>
           ) : (
-            <p className="text-sm text-gray-600">{documentLanguage === 'ar' ? 'عميل نقدي' : documentLanguage === 'both' ? 'Walk-in Customer / عميل نقدي' : 'Walk-in Customer'}</p>
+            (linkedCreditNotes.length > 0 || remainingRefundableAmount !== null || (creditDisabledReason && canIssueCreditNote)) && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-500">
+                {linkedCreditNotes.length > 0 && <span>{t('creditNotes:creditedAmount')}: <bdi className="font-semibold text-gray-800" dir="ltr"><Rial amount={creditedAmount} /></bdi></span>}
+                {remainingRefundableAmount !== null && <span>{t('creditNotes:remainingRefundableTotal')}: <bdi className="font-semibold text-gray-800" dir="ltr"><Rial amount={remainingRefundableAmount} /></bdi></span>}
+                {creditDisabledReason && canIssueCreditNote && !canCreateCreditNote && <span>{creditDisabledReason}</span>}
+              </div>
+            )
           )}
         </div>
 
-        {(isCreditNote || isDebitNote) && (
-          <div className="px-8 py-4 border-b border-gray-100 bg-amber-50/40">
-            <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-widest mb-2">{documentLabel(documentLanguage, isDebitNote ? 'debitNoteReference' : 'creditNoteReference')}</p>
-            <div className="grid gap-2 text-xs text-gray-700 sm:grid-cols-2">
-              <span><span className="font-semibold">{documentLabel(documentLanguage, 'originalInvoice')}:</span> <bdi dir="ltr">{invoice.invoice_reference ?? originalInvoiceLink?.invoice_number ?? '—'}</bdi></span>
-              <span><span className="font-semibold">{documentLabel(documentLanguage, isDebitNote ? 'totalIncludingVat' : 'creditAmount')}:</span> <span dir="ltr"><Rial amount={Number(invoice.total_amount)} /></span></span>
-              {invoice.credit_reason && (
-                <span className="sm:col-span-2"><span className="font-semibold">{documentLabel(documentLanguage, 'reason')}:</span> {invoice.credit_reason}</span>
-              )}
+        {previewMode === 'a4' ? (
+          <div id="invoice-preview-panel-a4" role="tabpanel" aria-labelledby="invoice-preview-tab-a4" tabIndex={0} className="min-w-0 outline-none">
+            <A4PreviewFit bounded zoom={a4PreviewZoom}>
+              <A4Document model={documentViewModel} options={{ preview: true, id: 'invoice-preview-a4', qrImageUrl: qrDataUrl, pageNumbers: true }} />
+            </A4PreviewFit>
+          </div>
+        ) : (
+          <div id="invoice-preview-panel-thermal" role="tabpanel" aria-labelledby="invoice-preview-tab-thermal" tabIndex={0}
+            className="h-[clamp(30rem,calc(100dvh-14.5rem),58rem)] min-h-[30rem] min-w-0 overflow-auto rounded-xl bg-gray-100 px-3 py-5 outline-none sm:px-6">
+            <div className="mx-auto w-max max-w-full">
+              <ThermalReceipt model={documentViewModel} options={{ preview: true, id: 'invoice-preview-thermal', qrImageUrl: qrDataUrl }} />
             </div>
           </div>
         )}
 
-        {/* ── Line items table ─────────────────────────────── */}
-        <div className="px-8 py-4">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b-2 border-gray-200">
-                <th className="text-start py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-6">#</th>
-                <th className="text-start py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{documentLabel(documentLanguage, 'item')}</th>
-                <th className="text-end py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-16">{documentLabel(documentLanguage, 'unit')}</th>
-                <th className="text-end py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-12">{documentLabel(documentLanguage, 'quantity')}</th>
-                <th className="text-end py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-28">{documentLabel(documentLanguage, 'unitPrice')}</th>
-                <th className="text-end py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-16">{documentLabel(documentLanguage, 'vatAmount')} %</th>
-                <th className="text-end py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-28">{documentLabel(documentLanguage, 'totalIncludingVat')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item, i) => (
-                <tr key={item.id} className="border-b border-gray-50">
-                  <td className="py-3 text-[10px] text-gray-300">{i + 1}</td>
-                  <td className="py-3">
-                    {documentNames(documentLanguage, item.name, item.name_ar).map((name, index) => <p key={name} className={index === 0 ? 'text-sm font-medium text-gray-900' : 'text-[10px] text-gray-400'} dir="auto">{name}</p>)}
-                  </td>
-                  <td className="py-3 text-end text-xs text-gray-500" dir="auto">
-                    {documentNames(
-                      documentLanguage,
-                      item.selling_unit_name ?? item.unit,
-                      item.selling_unit_name_ar ?? null,
-                    ).join(' / ') || '—'}
-                  </td>
-                  <td className="py-3 text-end text-xs text-gray-800 tabular-nums font-medium" dir="ltr">{Number(item.quantity)}</td>
-                  <td className="py-3 text-end text-xs text-gray-700 tabular-nums" dir="ltr"><Rial amount={Number(item.unit_price)} /></td>
-                  <td className="py-3 text-end text-xs text-gray-500" dir="ltr">
-                    {item.tax_rate > 0 ? `${(Number(item.tax_rate) * 100).toFixed(0)}%` : documentLabel(documentLanguage, 'exempt')}
-                  </td>
-                  <td className="py-3 text-end text-sm font-semibold text-gray-900 tabular-nums" dir="ltr">
-                    <Rial amount={Number(item.total)} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* ── Totals block ─────────────────────────────────── */}
-        <div className="px-8 pb-6">
-          <div className="flex justify-end">
-            <div className="invoice-totals w-72 space-y-2 bg-gray-50 rounded-xl px-5 py-4">
-              <div className="flex justify-between text-xs text-gray-600">
-                <span>{documentLabel(documentLanguage, 'amountBeforeVat')}</span>
-                <span className="tabular-nums font-medium" dir="ltr"><Rial amount={Number(invoice.subtotal)} /></span>
-              </div>
-              {Number(invoice.discount_amount) > 0 && (
-                <div className="flex justify-between text-xs text-red-500">
-                  <span>{documentLabel(documentLanguage, 'discount')}</span>
-                  <span className="tabular-nums" dir="ltr">− <Rial amount={Number(invoice.discount_amount)} /></span>
-                </div>
-              )}
-              <div className="flex justify-between text-xs text-gray-600">
-                <span>{documentLabel(documentLanguage, 'taxableAmount')}</span>
-                <span className="tabular-nums" dir="ltr"><Rial amount={Number(invoice.taxable_amount)} /></span>
-              </div>
-              <div className="flex justify-between text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded-lg">
-                <span className="font-semibold">{documentLabel(documentLanguage, 'vatAmount')} (15%)</span>
-                <span className="tabular-nums font-semibold" dir="ltr"><Rial amount={Number(invoice.tax_amount)} /></span>
-              </div>
-              <div className="flex justify-between font-bold text-gray-900 text-base pt-1.5 border-t border-gray-200">
-                <span>{documentLabel(documentLanguage, isCreditNote ? 'creditTotal' : 'totalIncludingVat')}</span>
-                <span className="tabular-nums text-[#0F2419]" dir="ltr"><Rial amount={Number(invoice.total_amount)} /></span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Original payment remains separate from the refund allocation ── */}
-        {isCreditNote && (
-          <div className="px-8 py-4 border-t border-gray-100 bg-gray-50/40">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">{documentLabel(documentLanguage, 'originalPayment')}</p>
-            {originalPayments.length > 0 ? (
-              <div className="flex flex-wrap gap-6 text-xs text-gray-700">
-                {originalPayments.map(originalPayment => (
-                  <span key={originalPayment.id}>
-                    <span className="font-semibold">{documentPaymentLabel(documentLanguage, originalPayment.method)}:</span>{' '}
-                    <span dir="ltr"><Rial amount={Number(originalPayment.amount)} /></span>
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="text-[11px] text-amber-700">{documentLabel(documentLanguage, 'allocationUnavailable')}</p>
-            )}
-          </div>
-        )}
-
-        {/* ── Payment / refund issued info ─────────────────── */}
-        {payments.length > 0 && (
-          <div className="px-8 py-4 border-t border-gray-100 bg-gray-50/40">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">{documentLabel(documentLanguage, isCreditNote ? 'refundIssued' : 'paymentMethod')}</p>
-            <div className="flex flex-wrap gap-6 text-xs text-gray-700">
-              <span><span className="font-semibold">{documentLabel(documentLanguage, isCreditNote ? 'refundMethod' : 'paymentMethod')}:</span> {documentPaymentLabel(documentLanguage, isSplitPayment ? 'split' : payment?.method ?? 'other')}</span>
-              {isSplitPayment ? (
-                <>
-                  {cashPayment && <span><span className="font-semibold">{documentLabel(documentLanguage, 'cashAmount')}:</span> <span dir="ltr"><Rial amount={Number(cashPayment.amount)} /></span></span>}
-                  {cardPayment && <span><span className="font-semibold">{documentLabel(documentLanguage, 'cardAmount')}:</span> <span dir="ltr"><Rial amount={Number(cardPayment.amount)} /></span></span>}
-                  <span><span className="font-semibold">{documentLabel(documentLanguage, 'totalPaid')}:</span> <span dir="ltr"><Rial amount={paymentRowsTotal(payments)} /></span></span>
-                </>
-              ) : (
-                <span><span className="font-semibold">{documentLabel(documentLanguage, 'amount')}:</span> <span dir="ltr"><Rial amount={Number(payment?.amount ?? 0)} /></span></span>
-              )}
-              {!isSplitPayment && payment?.method === 'cash' && cashReceived !== null && (
-                <span><span className="font-semibold">{documentLabel(documentLanguage, 'received')}:</span> <span dir="ltr"><Rial amount={cashReceived} /></span></span>
-              )}
-              {!isSplitPayment && (branch.show_cash_change ?? true) && payment?.method === 'cash' && (changeAmount ?? 0) > 0.005 && (
-                <span><span className="font-semibold">{documentLabel(documentLanguage, 'change')}:</span> <span dir="ltr"><Rial amount={changeAmount ?? 0} /></span></span>
-              )}
-              {payment && <span><span className="font-semibold">{documentLabel(documentLanguage, 'date')}:</span> <bdi dir="ltr">{documentDate(payment.paid_at, documentLanguage)}</bdi></span>}
-              {payment?.reference && <span><span className="font-semibold">{documentLabel(documentLanguage, 'reference')}:</span> <bdi dir="ltr">{payment.reference}</bdi></span>}
-            </div>
-            {invoice.payment_method === 'other' && !isSplitPayment && (
-              <p className="mt-2 text-[11px] text-amber-700">{documentLabel(documentLanguage, 'allocationUnavailable')}</p>
-            )}
-          </div>
-        )}
-
-        {isCreditNote && hasRefunds && payments.length === 0 && (
-          <div className="px-8 py-4 border-t border-gray-100 bg-gray-50/40">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">{documentLabel(documentLanguage, 'refundIssued')}</p>
-            <div className="space-y-1.5 text-xs text-gray-700">
-              {refunds.map(refund => (
-                <div key={refund.id} className="flex flex-wrap gap-6">
-                  <span><span className="font-semibold">{documentLabel(documentLanguage, 'refundMethod')}:</span> {documentPaymentLabel(documentLanguage, refund.method)}</span>
-                  <span><span className="font-semibold">{documentLabel(documentLanguage, 'amount')}:</span> <span dir="ltr"><Rial amount={Number(refund.amount)} /></span></span>
-                  <span><span className="font-semibold">{documentLabel(documentLanguage, 'status')}:</span> {refund.status}</span>
-                  <span><span className="font-semibold">{documentLabel(documentLanguage, 'date')}:</span> <bdi dir="ltr">{documentDate(refund.created_at, documentLanguage)}</bdi></span>
-                </div>
+        {!isCreditNote && linkedCreditNotes.length > 0 && (
+          <details className="mt-2 rounded-lg border border-gray-100 bg-gray-50/70">
+            <summary className="cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold text-[#0F2419] outline-none focus-visible:ring-2 focus-visible:ring-[#0F2419]">
+              {t('creditNotes:viewCreditNotes')} · {linkedCreditNotes.length}
+            </summary>
+            <div className="divide-y divide-gray-100 border-t border-gray-100 bg-white">
+              {linkedCreditNotes.map(note => (
+                <button key={note.id} type="button" onClick={() => navigate(`/invoices/${note.id}`)}
+                  className="grid min-h-11 w-full gap-1 px-3 py-2 text-start text-xs outline-none hover:bg-gray-50 focus-visible:bg-emerald-50 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:gap-4">
+                  <span className="font-semibold text-gray-900" dir="ltr">{note.invoice_number}</span>
+                  <span className="text-gray-500">{t(`invoices:${note.zatca_status}`, { defaultValue: note.zatca_status })}</span>
+                  <span className="font-semibold text-gray-900" dir="ltr"><Rial amount={Number(note.total_amount)} /></span>
+                </button>
               ))}
             </div>
-          </div>
+          </details>
         )}
-
-        {/* ── Notes ────────────────────────────────────────── */}
-        {invoice.notes && (
-          <div className="px-8 py-3 border-t border-gray-100">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1">{documentLabel(documentLanguage, 'notes')}</p>
-            <p className="text-xs text-gray-600">{invoice.notes}</p>
-          </div>
-        )}
-
-        {/* ── ZATCA + QR footer ────────────────────────────── */}
-        <div className="px-8 py-6 border-t-2 border-gray-100">
-          <div className="flex items-start gap-8">
-
-            {/* QR code */}
-            <div className="flex-shrink-0 text-center">
-              {qrStatus === 'ready' && qrDataUrl ? (
-                <img src={qrDataUrl} alt={documentLabel(documentLanguage, 'qrCode')} className="w-28 h-28 border border-gray-100 rounded-xl p-1" />
-              ) : qrStatus === 'loading' ? (
-                <div className="w-28 h-28 border border-gray-100 rounded-xl flex items-center justify-center bg-gray-50">
-                  <Loader2 size={20} className="animate-spin text-gray-300" />
-                </div>
-              ) : (
-                <div className="w-28 min-h-28 border border-amber-200 rounded-xl flex flex-col items-center justify-center gap-1.5 bg-amber-50 p-2 text-amber-700">
-                  <AlertCircle size={20} />
-                  <span className="text-[9px] font-semibold leading-tight">{t('printing:qrUnavailable')}</span>
-                </div>
-              )}
-              <p className="text-[9px] text-gray-400 mt-1.5">
-                {documentLabel(documentLanguage, 'scanToVerify')}
-              </p>
-            </div>
-
-            {(branch.show_footer ?? true) && branch.receipt_footer && (
-              <div className="flex-1 rounded-xl bg-gray-50 px-4 py-3 text-xs font-medium text-gray-600">
-                {branch.receipt_footer}
-              </div>
-            )}
-
-          </div>
-        </div>
-
-        {/* Footer note */}
-        <div className="px-8 pb-6 text-center">
-          <p className="text-[9px] text-gray-300">
-          </p>
-        </div>
-      </div>
+      </section>
 
       <CreateCreditNoteModal
         key={invoice.id}
@@ -1208,13 +933,18 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
           branch_id: invoice.branch_id,
           invoice_number: invoice.invoice_number,
           total_amount: Number(invoice.total_amount),
+          invoice_date: invoice.invoice_date ?? invoice.created_at,
+          customer_name: customer?.name ?? null,
           zatca_document_kind: outputState?.documentKind === 'standard'
             || invoice.zatca_invoice_type === 'standard'
             ? 'standard'
             : 'simplified',
         }}
         defaultRefundMethod={(isSplitPayment ? 'other' : (payment?.method ?? invoice.payment_method ?? 'cash')) as PaymentMethod}
-        onClose={() => setCreditModalOpen(false)}
+        onClose={() => {
+          setCreditModalOpen(false)
+          window.requestAnimationFrame(() => creditNoteTriggerRef.current?.focus())
+        }}
         onCreated={handleCreditNoteCreated}
       />
       {creditNoteResult && (

@@ -148,7 +148,7 @@ export function CategoryEmojiPicker({ value, categoryName = '', onChange }: Prop
 
             <Suspense fallback={
               <div className="flex h-[420px] items-center justify-center text-sm text-gray-400">
-                <Search size={16} className="mr-2" /> {t('emoji.loading')}
+                <Search size={16} className="me-2" /> {t('emoji.loading')}
               </div>
             }>
               <EmojiPicker

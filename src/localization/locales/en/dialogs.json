@@ -9,6 +9,81 @@
     "body": "This action cannot be undone.",
     "confirm": "Delete"
   },
+  "archive": {
+    "title": "Archive product?",
+    "body": "This product will be removed from the active catalogue and POS. Sales and stock history will be preserved.",
+    "confirm": "Archive product"
+  },
+  "customerArchive": {
+    "title": "Archive customer?",
+    "body": "This customer will be removed from the active customer list. Sales and invoice history will be preserved.",
+    "confirm": "Archive customer"
+  },
+  "supplierArchive": {
+    "title": "Archive supplier?",
+    "body": "This supplier will be hidden from active supplier lists. Existing purchase history will be preserved.",
+    "confirm": "Archive supplier"
+  },
+  "categoryDelete": {
+    "title": "Delete category?",
+    "body": "This category will be permanently deleted. Products using it will become uncategorised. This action cannot be undone.",
+    "confirm": "Delete category"
+  },
+  "deactivateStock": {
+    "title": "Disable stock tracking?",
+    "body": "Stock tracking will be disabled for this product. Existing stock history will be preserved.",
+    "confirm": "Disable tracking"
+  },
+  "activateFixedExpense": {
+    "title": "Activate fixed expense?",
+    "body": "This recurring-cost template will be included in active fixed-expense totals. Historical expense records will not change.",
+    "confirm": "Activate"
+  },
+  "deactivateFixedExpense": {
+    "title": "Deactivate fixed expense?",
+    "body": "This recurring-cost template will be excluded from active fixed-expense totals. Historical expense records will be preserved.",
+    "confirm": "Deactivate"
+  },
+  "closeDay": {
+    "title": "Close the day?",
+    "body": "This records today's final sales, expense, and cash reconciliation figures.",
+    "confirm": "Close day"
+  },
+  "lifetimeAccess": {
+    "title": "Grant lifetime access?",
+    "body": "This changes the client subscription to lifetime access with no recurring charge.",
+    "confirm": "Grant lifetime access"
+  },
+  "zatcaReconnect": {
+    "title": "Reconnect ZATCA production?",
+    "body": "Kubri will repeat the existing production onboarding flow for this branch. Current invoice records will not be changed.",
+    "confirm": "Reconnect"
+  },
+  "resetLabelPreset": {
+    "title": "Reset label preset?",
+    "body": "Current unsaved label adjustments will be replaced with the built-in values for this preset. Branch defaults and device calibration will not change.",
+    "confirm": "Reset preset"
+  },
+  "restoreBranchLabelDefault": {
+    "title": "Restore branch default?",
+    "body": "Your unsaved label changes will be replaced with the current saved branch default. Device calibration will not be changed.",
+    "confirm": "Restore default"
+  },
+  "resetDeviceCalibration": {
+    "title": "Reset device calibration?",
+    "body": "Printer alignment on this device will return to its defaults. The saved branch label design will not change.",
+    "confirm": "Reset calibration"
+  },
+  "removeLogo": {
+    "title": "Remove logo?",
+    "body": "The logo will disappear from the draft and future documents after you save.",
+    "confirm": "Remove logo"
+  },
+  "removeReceipt": {
+    "title": "Remove receipt?",
+    "body": "The attached receipt will be removed from this expense draft.",
+    "confirm": "Remove receipt"
+  },
   "cancel": {
     "title": "Cancel this action?",
     "body": "Any unfinished changes will be lost.",

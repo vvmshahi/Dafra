@@ -26,7 +26,7 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { SupplierIntelligenceFiltersPanel } from '@/components/suppliers/SupplierIntelligenceFilters'
-import SupplierDrawer from './SupplierDrawer'
+import SupplierModal from './SupplierModal'
 import type { Branch, Supplier } from '@/types'
 import {
   buildSupplierInsights,
@@ -920,7 +920,7 @@ export default function SupplierDetailPage() {
         )}
       </section>
 
-      <SupplierDrawer
+      <SupplierModal
         open={editingSupplier !== null}
         supplier={editingSupplier}
         onClose={() => setEditingSupplier(null)}

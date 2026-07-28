@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Package, PackagePlus, SlidersHorizontal } from 'lucide-react'
+import {
+  AlertTriangle, Boxes, CircleDollarSign, Package, PackagePlus, PackageX, SlidersHorizontal,
+} from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
@@ -8,7 +10,7 @@ import { Rial } from '@/components/ui/RiyalSymbol'
 import { displayName as dn } from '@/lib/utils/display'
 import type { Category, Supplier } from '@/types'
 import type { ProductRow } from '@/pages/products/ProductsPage'
-import ProductDrawer from '@/pages/products/ProductDrawer'
+import ProductDrawer, { type ProductDrawerInitialStockAction } from '@/pages/products/ProductDrawer'
 import ProductStockReceiptDrawer from './ProductStockReceiptDrawer'
 import { useTranslation } from 'react-i18next'
 
@@ -23,26 +25,44 @@ export interface ProductStockRow extends ProductRow {
   cost: number | null
   min_stock_alert: number | null
   unit: string | null
+  resolved_barcode?: string | null
   categories: CategorySnap | null
 }
 
-function SumCard({ label, value, sub, accent }: {
+function SumCard({ label, value, sub, icon: Icon, accent = 'blue', active = true, emphasized = false }: {
   label: string
   value: React.ReactNode
   sub?: string
-  accent?: 'green' | 'amber' | 'red'
+  icon: typeof Package
+  accent?: 'blue' | 'teal' | 'green' | 'amber' | 'red'
+  active?: boolean
+  emphasized?: boolean
 }) {
+  const tone = active ? accent : 'neutral'
+  const toneClasses = {
+    blue: { icon: 'bg-blue-50 text-blue-700', value: 'text-gray-900' },
+    teal: { icon: 'bg-teal-50 text-teal-700', value: 'text-gray-900' },
+    green: { icon: 'bg-primary-50 text-primary-700', value: 'text-primary-700' },
+    amber: { icon: 'bg-amber-50 text-amber-700', value: 'text-amber-700' },
+    red: { icon: 'bg-red-50 text-red-700', value: 'text-red-700' },
+    neutral: { icon: 'bg-gray-100 text-gray-500', value: 'text-gray-900' },
+  } as const
+  const styles = toneClasses[tone]
   const valueClass =
-    accent === 'green' ? 'text-emerald-600' :
-    accent === 'amber' ? 'text-amber-600' :
-    accent === 'red' ? 'text-red-500' :
-    'text-gray-900'
+    emphasized ? 'text-primary-700' : styles.value
 
   return (
-    <div className="min-w-40 flex-1 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-card">
-      <p className="text-xs font-medium text-gray-400">{label}</p>
-      <p className={`mt-0.5 text-lg font-bold ${valueClass}`}>{value}</p>
-      {sub && <p className="mt-0.5 text-[10px] text-gray-400">{sub}</p>}
+    <div className="min-w-40 flex-1 rounded-xl border border-[#173f2a]/70 bg-white px-4 py-3 shadow-card">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-medium text-gray-500">{label}</p>
+          <p className={`mt-0.5 text-lg font-bold tabular-nums ${valueClass}`}>{value}</p>
+        </div>
+        <span className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${styles.icon}`} aria-hidden="true">
+          <Icon size={15} />
+        </span>
+      </div>
+      {sub && <p className="mt-0.5 truncate text-[10px] text-gray-500">{sub}</p>}
     </div>
   )
 }
@@ -60,6 +80,42 @@ function productStatus(product: ProductStockRow) {
   if (quantity <= 0) return { key: 'status.outOfStock', accent: 'red' as const }
   if (minimum > 0 && quantity <= minimum) return { key: 'status.lowStock', accent: 'amber' as const }
   return { key: 'status.inStock', accent: 'green' as const }
+}
+
+interface ProductUnitReadRow {
+  id: string
+  is_active: boolean
+  is_base: boolean
+}
+
+interface ProductBarcodeReadRow {
+  barcode: string
+  product_unit_id: string
+  is_active: boolean
+  is_primary: boolean
+}
+
+async function resolveBaseUnitBarcode(product: ProductStockRow) {
+  try {
+    const [{ data: unitData, error: unitError }, { data: barcodeData, error: barcodeError }] = await Promise.all([
+      (supabase as any).rpc('get_product_units', { p_product_id: product.id }),
+      (supabase as any).rpc('list_product_unit_barcodes', { p_product_id: product.id }),
+    ])
+
+    if (unitError || barcodeError) return product.barcode ?? null
+
+    const baseUnit = ((unitData ?? []) as ProductUnitReadRow[])
+      .find(unit => unit.is_active === true && unit.is_base === true)
+    if (!baseUnit) return product.barcode ?? null
+
+    const barcode = ((barcodeData ?? []) as ProductBarcodeReadRow[])
+      .filter(item => item.is_active === true && item.product_unit_id === baseUnit.id)
+      .sort((left, right) => Number(right.is_primary) - Number(left.is_primary))[0]
+
+    return barcode?.barcode ?? product.barcode ?? null
+  } catch {
+    return product.barcode ?? null
+  }
 }
 
 interface ProductStockTabProps {
@@ -80,7 +136,10 @@ export default function ProductStockTab({
   const [loading, setLoading] = useState(true)
   const [receiptOpen, setReceiptOpen] = useState(false)
   const [receiptProduct, setReceiptProduct] = useState<ProductStockRow | null>(null)
-  const [adjustProduct, setAdjustProduct] = useState<ProductStockRow | null>(null)
+  const [editorContext, setEditorContext] = useState<{
+    product: ProductStockRow
+    stockAction: ProductDrawerInitialStockAction
+  } | null>(null)
 
   const load = useCallback(async () => {
     const tid = profile?.tenant_id
@@ -124,7 +183,12 @@ export default function ProductStockTab({
         .order('name', { ascending: true }),
     ])
 
-    setProducts((productData ?? []) as unknown as ProductStockRow[])
+    const loadedProducts = (productData ?? []) as unknown as ProductStockRow[]
+    const productsWithBarcodes = await Promise.all(loadedProducts.map(async product => ({
+      ...product,
+      resolved_barcode: await resolveBaseUnitBarcode(product),
+    })))
+    setProducts(productsWithBarcodes)
     setCategories((categoryData ?? []) as unknown as Category[])
     setSuppliers((supplierData ?? []) as unknown as Supplier[])
     setLoading(false)
@@ -165,15 +229,20 @@ export default function ProductStockTab({
     setReceiptOpen(true)
   }
 
+  const closeReceipt = () => {
+    setReceiptOpen(false)
+    setReceiptProduct(null)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start gap-4">
         <div className="flex min-w-0 flex-1 flex-wrap gap-3">
-          <SumCard label={t('inventory:metrics.totalProducts')} value={String(products.length)} sub={t('inventory:metrics.trackedProducts')} />
-          <SumCard label={t('inventory:metrics.totalUnits')} value={formatStockQuantity(metrics.totalUnits)} sub={t('inventory:metrics.availableNow')} />
-          <SumCard label={t('inventory:metrics.totalValue')} value={<Rial amount={metrics.totalValue} />} sub={t('inventory:metrics.latestCost')} accent="green" />
-          <SumCard label={t('inventory:metrics.lowStock')} value={String(metrics.lowStock)} sub={t('inventory:metrics.aboveZero')} accent={metrics.lowStock > 0 ? 'amber' : undefined} />
-          <SumCard label={t('inventory:metrics.outOfStock')} value={String(metrics.outOfStock)} sub={t('inventory:metrics.needsReceiving')} accent={metrics.outOfStock > 0 ? 'red' : undefined} />
+          <SumCard icon={Package} accent="blue" label={t('inventory:metrics.totalProducts')} value={String(products.length)} sub={t('inventory:metrics.trackedProducts')} />
+          <SumCard icon={Boxes} accent="teal" label={t('inventory:metrics.totalUnits')} value={formatStockQuantity(metrics.totalUnits)} sub={t('inventory:metrics.availableNow')} />
+          <SumCard icon={CircleDollarSign} accent="green" emphasized label={t('inventory:metrics.totalValue')} value={<Rial amount={metrics.totalValue} />} sub={t('inventory:metrics.latestCost')} />
+          <SumCard icon={AlertTriangle} accent="amber" active={metrics.lowStock > 0} label={t('inventory:metrics.lowStock')} value={String(metrics.lowStock)} sub={metrics.lowStock > 0 ? t('inventory:metrics.productsBelowThreshold', { count: metrics.lowStock }) : t('inventory:metrics.noneBelowThreshold')} />
+          <SumCard icon={PackageX} accent="red" active={metrics.outOfStock > 0} label={t('inventory:metrics.outOfStock')} value={String(metrics.outOfStock)} sub={metrics.outOfStock > 0 ? t('inventory:metrics.productsNeedReceiving', { count: metrics.outOfStock }) : t('inventory:metrics.noneNeedReceiving')} />
         </div>
         <Button size="sm" onClick={() => openReceipt()} className="flex-shrink-0">
           <PackagePlus size={14} />
@@ -237,7 +306,7 @@ export default function ProductStockTab({
                 <div className="hidden w-28 md:block">
                   {product.categories?.name ? (
                     <span
-                      className="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                      className="inline-block max-w-full truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium"
                       style={{ backgroundColor: `${categoryColor}22`, color: categoryColor }}
                     >
                       <span dir="auto">{dn(product.categories.name, product.categories.name_ar)}</span>
@@ -249,7 +318,7 @@ export default function ProductStockTab({
 
                 <div className="hidden w-28 lg:block">
                   <p className="truncate text-xs text-gray-700" dir="ltr">{product.sku || t('inventory:noSku')}</p>
-                  <p className="truncate text-[10px] text-gray-400" dir="ltr">{product.barcode || t('inventory:noBarcode')}</p>
+                  <p className="truncate text-[10px] text-gray-400" dir="ltr">{product.resolved_barcode || t('inventory:noBarcode')}</p>
                 </div>
 
                 <div className="w-24 text-right">
@@ -288,12 +357,24 @@ export default function ProductStockTab({
                 </div>
 
                 <div className="flex w-40 flex-shrink-0 justify-end gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openReceipt(product)}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => openReceipt(product)}
+                    title={t('inventory:actions.addStockFor', { name: dn(product.name, product.name_ar) })}
+                    aria-label={t('inventory:actions.addStockFor', { name: dn(product.name, product.name_ar) })}
+                  >
                     {t('inventory:actions.addStock')}
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setAdjustProduct(product)}>
-                    <SlidersHorizontal size={13} />
-                    {t('inventory:actions.adjust')}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setEditorContext({ product, stockAction: 'adjust' })}
+                    className="h-9 w-9 flex-shrink-0 p-0 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+                    title={t('inventory:actions.adjustStockFor', { name: dn(product.name, product.name_ar) })}
+                    aria-label={t('inventory:actions.adjustStockFor', { name: dn(product.name, product.name_ar) })}
+                  >
+                    <SlidersHorizontal size={15} aria-hidden="true" />
                   </Button>
                 </div>
               </div>
@@ -307,16 +388,18 @@ export default function ProductStockTab({
         products={products}
         suppliers={suppliers}
         initialProduct={receiptProduct}
-        onClose={() => setReceiptOpen(false)}
+        onClose={closeReceipt}
         onSaved={load}
       />
 
       <ProductDrawer
-        open={adjustProduct !== null}
-        product={adjustProduct}
+        open={editorContext !== null}
+        product={editorContext?.product ?? null}
         categories={categories}
         products={products}
-        onClose={() => setAdjustProduct(null)}
+        initialTab="inventory"
+        initialStockAction={editorContext?.stockAction ?? null}
+        onClose={() => setEditorContext(null)}
         onSaved={load}
       />
     </div>

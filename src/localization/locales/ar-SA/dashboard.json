@@ -16,11 +16,14 @@
     "session": "الجلسة", "registerCurrent": "الصندوق الحالي", "registerClosed": "الصندوق المغلق",
     "opened": "فُتح", "closed": "أُغلق", "earlier": "في وقت سابق", "stillOpen": "ما زال مفتوحاً",
     "timeOpen": "فُتح {{opened}} ← ما زال مفتوحاً", "timeClosed": "فُتح {{opened}} ← أُغلق {{closed}}", "timeOpened": "فُتح {{opened}}",
-    "longOpenWarning": "جلسة الصندوق هذه مفتوحة منذ {{time}}. أغلقها قبل بدء وردية جديدة.",
+    "longOpenWarning": "فُتحت في {{time}}. أغلقها قبل بدء وردية جديدة.",
+    "longOpenRisk": "مفتوحة منذ {{age}}. الجلسات الطويلة تزيد مخاطر المطابقة.",
+    "manage": "إدارة الصندوق",
     "closeBeforeShift": "أغلق هذا الصندوق قبل بدء وردية جديدة.",
     "openingCash": "النقد الافتتاحي", "expectedCash": "النقد المتوقع", "actualCash": "النقد الفعلي", "difference": "الفرق",
     "expectedDrawer": "المتوقع في الصندوق", "actualVsExpected": "الفعلي مقابل المتوقع",
-    "currentCount": "{{current}} حالية · {{last}} سابقة", "retryLoad": "أعد المحاولة لتحميل جلسات الصندوق"
+    "currentCount": "{{current}} حالية · {{last}} سابقة", "retryLoad": "أعد المحاولة لتحميل جلسات الصندوق",
+    "durationHoursMinutes": "{{hours}} س {{minutes}} د", "durationMinutes": "{{minutes}} د"
   },
   "kpi": {
     "grossSales": "إجمالي المبيعات", "creditNotes": "الإشعارات الدائنة", "refundDocuments": "مستندات الاسترداد",
@@ -46,12 +49,14 @@
     "operations": "عمليات الفرع", "dashboard": "لوحة تحكم الفرع", "myBranch": "فرعي", "loading": "جارٍ تحميل الفرع...",
     "newSale": "بيع جديد", "quickActions": "إجراءات سريعة", "workflow": "سير عمل الفرع اليومي",
     "openPos": "فتح نقطة البيع", "recordCosts": "تسجيل التكاليف", "reviewReceipts": "مراجعة الإيصالات",
+    "registerSnapshot": "ملخص جلسة الصندوق",
     "lowStock_one": "منتج واحد منخفض المخزون", "lowStock_other": "{{count}} منتجات منخفضة المخزون"
   },
   "recent": {
     "title": "أحدث الفواتير", "viewAll": "عرض الكل", "none": "لا توجد فواتير حتى الآن",
     "startSale": "ابدأ أول عملية بيع من نقطة البيع", "invoice": "الفاتورة", "customer": "العميل",
-    "amount": "المبلغ", "status": "الحالة", "date": "التاريخ", "walkIn": "عميل نقدي"
+    "amount": "المبلغ", "status": "الحالة", "date": "التاريخ", "walkIn": "عميل نقدي",
+    "openInvoice": "فتح الفاتورة {{number}}"
   },
   "errors": {
     "dashboardRefresh": "تحتاج بيانات لوحة التحكم إلى تحديث", "branchRefresh": "تحتاج بيانات لوحة الفرع إلى تحديث",

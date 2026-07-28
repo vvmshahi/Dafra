@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Barcode, FileText, Printer, ReceiptText } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '@/hooks/useAuth'
@@ -21,6 +21,7 @@ export default function PrintingDocumentsPage() {
   const { t } = useTranslation('printing')
   const { branch, tenant, profile } = useAuth()
   const [active, setActive] = useState<Workspace>('invoices')
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const branchId = branch?.id || profile?.branch_id || ''
   const businessName = tenant?.business_name_ar
     || tenant?.business_name
@@ -38,17 +39,31 @@ export default function PrintingDocumentsPage() {
       <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">{t('workspace.subtitle')}</p>
     </header>
 
-    <nav className="grid grid-cols-2 gap-2 rounded-2xl border border-gray-200 bg-white p-2 lg:grid-cols-4" aria-label={t('workspace.title')}>
-      {tabs.map(tab => {
+    <nav className="grid grid-cols-2 gap-2 rounded-2xl border border-primary-900/60 bg-white p-2 lg:grid-cols-4" role="tablist" aria-label={t('workspace.title')}>
+      {tabs.map((tab, index) => {
         const Icon = tab.icon
         const selected = active === tab.id
         return <button
           key={tab.id}
+          id={`printing-tab-${tab.id}`}
+          ref={node => { tabRefs.current[index] = node }}
           type="button"
-          aria-current={selected ? 'page' : undefined}
+          role="tab"
+          aria-selected={selected}
+          aria-controls={`printing-panel-${tab.id}`}
+          tabIndex={selected ? 0 : -1}
           onClick={() => setActive(tab.id)}
+          onKeyDown={event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+            event.preventDefault()
+            const rtl = document.documentElement.dir === 'rtl'
+            const delta = event.key === 'ArrowRight' ? (rtl ? -1 : 1) : event.key === 'ArrowLeft' ? (rtl ? 1 : -1) : 0
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + delta + tabs.length) % tabs.length
+            setActive(tabs[next].id)
+            tabRefs.current[next]?.focus()
+          }}
           className={`flex min-h-14 items-center gap-3 rounded-xl px-3 py-2 text-start outline-none transition-[background-color,color,transform] duration-150 active:scale-[.98] focus-visible:ring-2 focus-visible:ring-primary-500 ${
-            selected ? 'bg-[#10261a] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'
+            selected ? 'bg-[#10261a] text-white shadow-sm ring-2 ring-primary-200 ring-offset-1' : 'text-gray-600 hover:bg-gray-50'
           }`}
         >
           <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${selected ? 'bg-white/10' : 'bg-gray-100'}`}><Icon size={15} aria-hidden="true" /></span>
@@ -57,6 +72,7 @@ export default function PrintingDocumentsPage() {
       })}
     </nav>
 
+    <main id={`printing-panel-${active}`} role="tabpanel" aria-labelledby={`printing-tab-${active}`}>
     {active === 'receipts' && <InvoiceSettingsPage key="receipts" embedded workspace="receipts" />}
     {active === 'invoices' && <InvoiceSettingsPage key="invoices" embedded workspace="invoices" />}
     {active === 'barcodeLabels' && branchId && <BarcodeLabelSettingsPanel branchId={branchId} businessName={businessName} />}
@@ -64,5 +80,6 @@ export default function PrintingDocumentsPage() {
       <BarcodePrinterSetupPanel branchId={branchId} businessName={businessName} />
       {isElectron() && <section className="border-t border-gray-200 pt-8"><PrinterTab /></section>}
     </div>}
+    </main>
   </div>
 }

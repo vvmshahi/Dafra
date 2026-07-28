@@ -491,8 +491,9 @@ export default function ReceiptPrintPage() {
       items,
       payments,
       customer: customer ? { name: customerDisplayName(customer) ?? customer.name, nameAr: customer.name_ar, vatNumber: customer.vat_number, address: customer.address, addressAr: customer.address_ar, identifierType: customer.cr_number ? 'CR' : null, identifierValue: customer.cr_number, type: customer.customer_type } : null,
+      authoritativeDocumentKind: outputStateMatchesInvoice ? outputState?.documentKind : null,
     })
-  }, [invoice, branch, tenant, items, payments, customer])
+  }, [invoice, branch, tenant, items, payments, customer, outputStateMatchesInvoice, outputState?.documentKind])
 
   useEffect(() => {
     if (!electronPrint || electronReadyRef.current || loading || error || !invoice || !branch || !tenant || !receipt || !printReady) return

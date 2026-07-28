@@ -7,7 +7,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { displayName as dn } from '@/lib/utils/display'
 import type { InventoryItem, Category, Supplier } from '@/types'
-import StockItemDrawer from './StockItemDrawer'
+import StockItemModal from './StockItemModal'
 import { useTranslation } from 'react-i18next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -217,7 +217,7 @@ export default function StockOverviewTab() {
                       'text-gray-900'
                     }`}>
                       {item.current_quantity.toLocaleString('en-US', { maximumFractionDigits: 3 })}
-                      <span className="text-[10px] font-normal text-gray-400 ml-1">
+                      <span className="ms-1 text-[10px] font-normal text-gray-400">
                         {UNIT_LABEL[item.unit_type] ?? item.unit_type}
                       </span>
                     </p>
@@ -285,7 +285,7 @@ export default function StockOverviewTab() {
         </div>
       )}
 
-      <StockItemDrawer
+      <StockItemModal
         open={drawerOpen}
         item={editing}
         categories={categories}

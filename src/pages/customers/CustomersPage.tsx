@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, Pencil, Eye, Trash2, Users, X, Building2, User, BarChart3 } from 'lucide-react'
+import { Plus, Search, Pencil, Eye, Archive, Users, X, Building2, User, BarChart3, Loader2 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -8,8 +8,11 @@ import { PageHeader } from '@/components/ui/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import { ContentState } from '@/components/ui/ContentState'
 import type { Customer, CustomerType } from '@/types'
-import CustomerDrawer from './CustomerDrawer'
+import CustomerModal from './CustomerModal'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { archiveEntity, type ArchiveEntityClient } from '@/lib/archiveEntity'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -33,12 +36,13 @@ function displayName(c: CustomerWithStats) {
 // ── Customer row ──────────────────────────────────────────────────────────────
 
 function CustomerRow({
-  customer, onEdit, onDelete, onView,
+  customer, onEdit, onArchive, onView, archiving,
 }: {
   customer: CustomerWithStats
   onEdit: () => void
-  onDelete: () => void
+  onArchive: () => void
   onView: () => void
+  archiving: boolean
 }) {
   const { t } = useTranslation('customers')
   const isBusiness = customer.customer_type === 'business'
@@ -98,23 +102,27 @@ function CustomerRow({
         <button
           onClick={onView}
           title={t('actions.view')}
-          className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-primary-50 hover:text-primary-600 transition-colors"
+          aria-label={t('actions.view')}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-primary-50 hover:text-primary-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
         >
           <Eye size={14} />
         </button>
         <button
           onClick={onEdit}
           title={t('actions.edit')}
-          className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+          aria-label={t('actions.edit')}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
         >
           <Pencil size={14} />
         </button>
         <button
-          onClick={onDelete}
-          title={t('actions.delete')}
-          className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+          onClick={onArchive}
+          title={t('actions.archive')}
+          aria-label={archiving ? t('actions.archiving') : t('actions.archive')}
+          disabled={archiving}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-amber-600 hover:bg-amber-50 hover:text-amber-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-wait disabled:opacity-50"
         >
-          <Trash2 size={14} />
+          {archiving ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
         </button>
       </div>
     </div>
@@ -181,6 +189,8 @@ export default function CustomersPage() {
   const [filterType,  setFilterType]  = useState<FilterType>('all')
   const [drawerOpen,  setDrawerOpen]  = useState(false)
   const [editing,     setEditing]     = useState<CustomerWithStats | null>(null)
+  const [archiveTarget, setArchiveTarget] = useState<CustomerWithStats | null>(null)
+  const [archivingIds, setArchivingIds] = useState<Set<string>>(() => new Set())
 
   const load = useCallback(async () => {
     const bid = profile?.branch_id
@@ -211,11 +221,24 @@ export default function CustomersPage() {
   const openAdd  = () => { setEditing(null); setDrawerOpen(true) }
   const openEdit = (c: CustomerWithStats) => { setEditing(c); setDrawerOpen(true) }
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(t('deleteConfirm', { name }))) return
-    const q = supabase as unknown as { from: (t: string) => any }
-    await q.from('customers').update({ is_active: false }).eq('id', id)
-    setCustomers(prev => prev.filter(c => c.id !== id))
+  const handleArchive = async () => {
+    const target = archiveTarget
+    if (!target || archivingIds.has(target.id)) return
+    setArchivingIds(prev => new Set(prev).add(target.id))
+    try {
+      await archiveEntity(supabase as unknown as ArchiveEntityClient, 'customers', target.id)
+      setCustomers(prev => prev.filter(customer => customer.id !== target.id))
+      setArchiveTarget(null)
+      toast.success(t('success.archived'))
+    } catch {
+      toast.error(t('errors.archiveFailed'))
+    } finally {
+      setArchivingIds(prev => {
+        const next = new Set(prev)
+        next.delete(target.id)
+        return next
+      })
+    }
   }
 
   const counts = {
@@ -319,7 +342,8 @@ export default function CustomersPage() {
               customer={c}
               onEdit={() => openEdit(c)}
               onView={() => navigate(`/customers/${c.id}`)}
-              onDelete={() => handleDelete(c.id, displayName(c))}
+              onArchive={() => setArchiveTarget(c)}
+              archiving={archivingIds.has(c.id)}
             />
           ))}
         </div>
@@ -342,12 +366,21 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* ── Drawer ──────────────────────────────────────────── */}
-      <CustomerDrawer
+      <CustomerModal
         open={drawerOpen}
         customer={editing}
         onClose={() => setDrawerOpen(false)}
         onSaved={load}
+      />
+      <ConfirmDialog
+        open={archiveTarget !== null}
+        kind="customerArchive"
+        name={archiveTarget ? displayName(archiveTarget) : undefined}
+        busy={archiveTarget ? archivingIds.has(archiveTarget.id) : false}
+        confirmVariant="gold"
+        cancelLabel={t('actions.cancel')}
+        onClose={() => setArchiveTarget(null)}
+        onConfirm={() => void handleArchive()}
       />
     </div>
   )

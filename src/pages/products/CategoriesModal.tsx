@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react'
-import { X, Pencil, Trash2, Check, GripVertical } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { X, Pencil, Trash2, Check, GripVertical, Loader2, RotateCcw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { useDialogFocus } from '@/hooks/useDialogFocus'
 import type { Category } from '@/types'
 import type { ProductRow } from './ProductsPage'
 import { CategoryEmojiPicker } from '@/components/ui/CategoryEmojiPicker'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 // ── Palette & defaults ────────────────────────────────────────────────────────
 
@@ -52,11 +55,20 @@ export default function CategoriesModal({ open, categories, products, onClose, o
   const [showForm,  setShowForm]  = useState(false)
   const [saving,    setSaving]    = useState(false)
   const [reorderingId, setReorderingId] = useState<string | null>(null)
+  const [orderStatus, setOrderStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Category | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [localCategories, setLocalCategories] = useState<Category[]>([])
   const [error,     setError]     = useState('')
   const [notice,    setNotice]    = useState('')
+  const deletePendingRef = useRef(false)
+  const savedStatusTimerRef = useRef<number | null>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  const closeModal = useCallback(() => onCloseRef.current(), [])
+  const modalRef = useDialogFocus(open && deleteTarget === null, closeModal)
 
   const sortCategories = (items: Category[]) => [...items].sort((a, b) => {
     const order = Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)
@@ -78,8 +90,14 @@ export default function CategoriesModal({ open, categories, products, onClose, o
       setError('')
       setDraggedId(null)
       setDragOverId(null)
+      setDeleteTarget(null)
+      setOrderStatus('idle')
     }
   }, [open, categories])
+
+  useEffect(() => () => {
+    if (savedStatusTimerRef.current !== null) window.clearTimeout(savedStatusTimerRef.current)
+  }, [])
 
   const startEdit = (cat: Category) => {
     setEditingId(cat.id)
@@ -143,24 +161,42 @@ export default function CategoriesModal({ open, categories, products, onClose, o
     onChanged()
   }
 
-  const handleDelete = async (id: string, name: string) => {
-    const productCount = products.filter(p => p.category_id === id).length
-    const warning = productCount > 0
-      ? t('products:category.deleteUsed', { count: productCount })
-      : t('products:category.deleteUnused')
-    if (!confirm(`${t('products:category.deleteConfirm', { name })}\n\n${warning}`)) return
-
+  const handleDelete = async () => {
+    const id = deleteTarget?.id
+    if (!id || deletePendingRef.current) return
+    deletePendingRef.current = true
+    setDeletingId(id)
     setError('')
     setNotice('')
     const q = supabase as unknown as { from: (t: string) => any }
-    const { error: err } = await q.from('categories').delete().eq('id', id)
-    if (err) {
-      console.error('[CategoriesModal] delete failed', err)
-      setError(t('products:errors.saveFailed'))
-      return
+    try {
+      const { data, error: err, status } = await q
+        .from('categories')
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .single()
+      if (err || status < 200 || status >= 300 || data?.id !== id) {
+        throw err ?? new Error(`Unexpected category delete response (${status})`)
+      }
+      setLocalCategories(current => current.filter(category => category.id !== id))
+      setDeleteTarget(null)
+      toast.success(t('products:categoryManagement.deleteSuccess'))
+      onChanged()
+    } catch (deleteError) {
+      console.error('[CategoriesModal] delete failed', deleteError)
+      const code = typeof deleteError === 'object' && deleteError !== null && 'code' in deleteError
+        ? String(deleteError.code)
+        : ''
+      const message = code === '23503'
+        ? t('products:categoryManagement.deleteDependencyError')
+        : t('products:categoryManagement.deleteError')
+      setError(message)
+      toast.error(message)
+    } finally {
+      deletePendingRef.current = false
+      setDeletingId(null)
     }
-    setNotice(t('products:category.deleted'))
-    onChanged()
   }
 
   const persistOrder = async (nextOrder: Category[], movedId: string) => {
@@ -169,6 +205,7 @@ export default function CategoriesModal({ open, categories, products, onClose, o
     setLocalCategories(normalizedOrder)
 
     setReorderingId(movedId)
+    setOrderStatus('saving')
     setError('')
     setNotice('')
 
@@ -181,15 +218,24 @@ export default function CategoriesModal({ open, categories, products, onClose, o
     const failed = results.find(result => result.error)
     if (failed?.error) {
       console.error('[CategoriesModal] reorder failed', failed.error)
-      setError(t('products:errors.saveFailed'))
+      const message = t('products:categoryManagement.orderStatus.error')
+      setError(message)
+      setOrderStatus('error')
       setLocalCategories(previousOrder)
+      toast.error(message)
+      await Promise.all(previousOrder.map(category =>
+        q.from('categories').update({ sort_order: category.sort_order ?? 0 }).eq('id', category.id)
+      ))
       setReorderingId(null)
+      onChanged()
       return
     }
 
-    setNotice(t('products:category.orderSaved'))
+    setOrderStatus('saved')
     setReorderingId(null)
     onChanged()
+    if (savedStatusTimerRef.current !== null) window.clearTimeout(savedStatusTimerRef.current)
+    savedStatusTimerRef.current = window.setTimeout(() => setOrderStatus('idle'), 1800)
   }
 
   const handleDropCategory = async (targetId: string) => {
@@ -212,48 +258,81 @@ export default function CategoriesModal({ open, categories, products, onClose, o
     await persistOrder(nextOrder, moved.id)
   }
 
+  const handleKeyboardReorder = async (categoryId: string, direction: -1 | 1) => {
+    if (reorderingId) return
+    const currentIndex = orderedCategories.findIndex(category => category.id === categoryId)
+    const nextIndex = currentIndex + direction
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= orderedCategories.length) return
+    const nextOrder = [...orderedCategories]
+    const [moved] = nextOrder.splice(currentIndex, 1)
+    nextOrder.splice(nextIndex, 0, moved)
+    await persistOrder(nextOrder, moved.id)
+  }
+
   if (!open) return null
 
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={() => {
+        if (!saving && !reorderingId && !deletingId) closeModal()
+      }} />
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[88vh] flex flex-col">
+        <div
+          ref={modalRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="manage-categories-title"
+          aria-describedby="manage-categories-guidance"
+          className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[88vh] flex flex-col overflow-hidden"
+        >
 
           {/* ── Header ──────────────────────────────────────── */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
-            <div>
-              <h2 className="text-base font-bold text-gray-900">{t('products:category.manage')}</h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {t('products:category.count', { count: categories.length })} · {t('products:category.savedImmediately')}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                {t('products:category.orderHint')}
+          <div className="flex items-start justify-between gap-4 px-4 py-4 border-b border-gray-100 flex-shrink-0 sm:px-6">
+            <div className="min-w-0">
+              <h2 id="manage-categories-title" className="text-lg font-bold text-gray-900">{t('products:category.manage')}</h2>
+              <div className="mt-1 flex min-h-5 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+                <span>{t('products:category.count', { count: orderedCategories.length })}</span>
+                <span aria-hidden="true">·</span>
+                <span aria-live="polite" aria-atomic="true" className={`inline-flex items-center gap-1 font-medium ${
+                  orderStatus === 'error' ? 'text-red-600' : orderStatus === 'saved' ? 'text-emerald-700' : 'text-gray-500'
+                }`}>
+                  {orderStatus === 'saving' && <Loader2 size={12} className="animate-spin" aria-hidden="true" />}
+                  {t(`products:categoryManagement.orderStatus.${orderStatus}`)}
+                </span>
+              </div>
+              <p id="manage-categories-guidance" className="text-xs text-gray-500 mt-1">
+                {t('products:categoryManagement.orderHint')}
               </p>
             </div>
             <button
-              onClick={onClose}
-              className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+              type="button"
+              onClick={closeModal}
+              disabled={saving || Boolean(reorderingId) || Boolean(deletingId)}
+              aria-label={t('common:close')}
+              className="w-9 h-9 flex flex-shrink-0 items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:opacity-40 transition-colors"
             >
-              <X size={18} />
+              <X size={18} aria-hidden="true" />
             </button>
           </div>
 
           {/* ── Body ────────────────────────────────────────── */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 sm:p-6">
 
             {/* Edit form */}
             {notice && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-medium text-emerald-700">
+              <div aria-live="polite" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-medium text-emerald-700">
                 {notice}
               </div>
             )}
             {error && !showForm && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-medium text-red-600">
-                {error}
+              <div role="alert" aria-live="assertive" className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-medium text-red-700">
+                <span>{error}</span>
+                <button type="button" onClick={() => { setError(''); onChanged() }} className="inline-flex flex-shrink-0 items-center gap-1 rounded-lg px-2 py-1 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
+                  <RotateCcw size={12} aria-hidden="true" />{t('products:categoryManagement.retry')}
+                </button>
               </div>
             )}
 
@@ -270,7 +349,7 @@ export default function CategoriesModal({ open, categories, products, onClose, o
                 </p>
 
                 {/* Names */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="label text-xs">{t('products:category.name')} *</label>
                     <input
@@ -354,30 +433,26 @@ export default function CategoriesModal({ open, categories, products, onClose, o
             ) : null}
 
             {/* ── Category grid ──────────────────────────────── */}
-            {categories.length === 0 ? (
+            {orderedCategories.length === 0 ? (
               <div className="text-center py-8 text-gray-400 text-sm">
                 {t('products:category.empty')}
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2" role="list">
                 {orderedCategories.map((cat, index) => {
                   const color = cat.color ?? '#6b7280'
                   const icon  = cat.icon  ?? ''
                   const isEditing = editingId === cat.id
-                  const isReordering = reorderingId === cat.id
                   const isDragging = draggedId === cat.id
                   const isDragTarget = dragOverId === cat.id && draggedId !== cat.id
 
                   return (
                     <div
                       key={cat.id}
-                      draggable={reorderingId === null}
-                      onDragStart={e => {
-                        setDraggedId(cat.id)
-                        e.dataTransfer.effectAllowed = 'move'
-                        e.dataTransfer.setData('text/plain', cat.id)
-                      }}
+                      role="listitem"
+                      aria-label={t('products:categoryManagement.rowAria', { name: cat.name, position: index + 1, count: orderedCategories.length })}
                       onDragOver={e => {
+                        if (!draggedId || reorderingId) return
                         e.preventDefault()
                         e.dataTransfer.dropEffect = 'move'
                         setDragOverId(cat.id)
@@ -387,76 +462,96 @@ export default function CategoriesModal({ open, categories, products, onClose, o
                         e.preventDefault()
                         handleDropCategory(cat.id)
                       }}
-                      onDragEnd={() => {
-                        setDraggedId(null)
-                        setDragOverId(null)
-                      }}
-                      className={`flex items-center gap-3 p-3 rounded-xl border transition-all bg-white ${
+                      className={`flex items-center gap-2 rounded-xl border bg-white p-2.5 transition-[border-color,background-color,box-shadow,opacity,transform] duration-150 sm:gap-3 ${
                         isEditing
                           ? 'border-primary-300 bg-primary-50/20'
                           : isDragTarget
-                            ? 'border-primary-300 bg-primary-50/30'
+                            ? 'border-primary-400 bg-primary-50/50 shadow-[inset_0_2px_0_0_#238447]'
                             : 'border-gray-100 hover:border-gray-200'
-                      } ${isDragging ? 'opacity-60 shadow-sm' : ''}`}
+                      } ${isDragging ? 'scale-[0.99] border-amber-300 bg-amber-50/60 opacity-70 shadow-md' : ''}`}
                     >
                       {/* Order number */}
-                      <div className="w-8 h-8 rounded-xl bg-primary-50 border border-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                      <div className="w-8 h-8 rounded-lg bg-primary-50 border border-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold flex-shrink-0" aria-hidden="true">
                         {index + 1}
                       </div>
 
                       {/* Drag handle */}
                       <button
                         type="button"
-                        className={`w-7 h-9 rounded-lg flex items-center justify-center text-gray-300 hover:bg-gray-100 hover:text-gray-500 transition-colors ${
+                        draggable={reorderingId === null}
+                        disabled={reorderingId !== null}
+                        onDragStart={event => {
+                          setDraggedId(cat.id)
+                          event.dataTransfer.effectAllowed = 'move'
+                          event.dataTransfer.setData('text/plain', cat.id)
+                        }}
+                        onDragEnd={() => {
+                          setDraggedId(null)
+                          setDragOverId(null)
+                        }}
+                        onKeyDown={event => {
+                          if (event.key === 'ArrowUp') {
+                            event.preventDefault()
+                            void handleKeyboardReorder(cat.id, -1)
+                          } else if (event.key === 'ArrowDown') {
+                            event.preventDefault()
+                            void handleKeyboardReorder(cat.id, 1)
+                          }
+                        }}
+                        className={`w-10 h-10 rounded-lg flex flex-shrink-0 items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-1 transition-colors ${
                           reorderingId === null ? 'cursor-grab active:cursor-grabbing' : 'cursor-wait'
                         }`}
-                        aria-label={`Drag to reorder ${cat.name}`}
-                        title={t('products:category.drag')}
-                        tabIndex={0}
+                        aria-label={t('products:categoryManagement.dragAria', { name: cat.name, position: index + 1, count: orderedCategories.length })}
+                        aria-describedby="manage-categories-guidance"
+                        title={t('products:categoryManagement.dragTooltip', { position: index + 1 })}
                       >
-                        <GripVertical size={16} />
+                        <GripVertical size={18} aria-hidden="true" />
                       </button>
 
                       {/* Color swatch + icon */}
                       <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                        className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 sm:h-10 sm:w-10 sm:text-xl"
                         style={{ backgroundColor: color + '22' }}
+                        aria-hidden="true"
                       >
                         {icon}
                       </div>
 
                       {/* Name */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{cat.name}</p>
+                        <p className="truncate text-sm font-medium text-gray-800" dir="auto">{cat.name}</p>
                         {cat.name_ar && (
-                          <p className="text-xs text-gray-400 truncate" dir="rtl">{cat.name_ar}</p>
+                          <p className="truncate text-xs text-gray-500" dir="auto">{cat.name_ar}</p>
                         )}
-                        <p className="text-[11px] text-gray-400 mt-0.5">{t('products:category.priority', { number: index + 1 })}</p>
                       </div>
 
-                      {/* Color dot */}
-                      <div
-                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: color }}
-                      />
-
                       {/* Actions */}
-                      <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <div className="flex items-center gap-1 flex-shrink-0">
                         <button
+                          type="button"
                           onClick={() => startEdit(cat)}
-                          disabled={isReordering}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40 transition-colors"
-                          aria-label={`Edit ${cat.name}`}
+                          disabled={Boolean(reorderingId) || Boolean(deletingId) || saving}
+                          title={t('products:category.editAria', { name: cat.name })}
+                          className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+                          aria-label={t('products:category.editAria', { name: cat.name })}
+                          aria-busy={(saving && editingId === cat.id) || undefined}
                         >
-                          <Pencil size={13} />
+                          {saving && editingId === cat.id
+                            ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                            : <Pencil size={14} aria-hidden="true" />}
                         </button>
                         <button
-                          onClick={() => handleDelete(cat.id, cat.name)}
-                          disabled={isReordering}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-40 transition-colors"
-                          aria-label={`Delete ${cat.name}`}
+                          type="button"
+                          onClick={() => setDeleteTarget(cat)}
+                          disabled={Boolean(reorderingId) || Boolean(deletingId) || saving}
+                          title={t('products:category.deleteAria', { name: cat.name })}
+                          className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-500 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+                          aria-label={t('products:category.deleteAria', { name: cat.name })}
+                          aria-busy={(deletingId === cat.id) || undefined}
                         >
-                          <Trash2 size={13} />
+                          {deletingId === cat.id
+                            ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                            : <Trash2 size={14} aria-hidden="true" />}
                         </button>
                       </div>
                     </div>
@@ -467,14 +562,27 @@ export default function CategoriesModal({ open, categories, products, onClose, o
           </div>
 
           {/* ── Footer ──────────────────────────────────────── */}
-          <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0">
-            <Button variant="secondary" className="w-full" onClick={onClose}>
-              Done
+          <div className="flex flex-shrink-0 justify-end border-t border-gray-100 px-4 py-4 sm:px-6">
+            <Button
+              className="w-full sm:w-auto sm:min-w-28"
+              onClick={closeModal}
+              disabled={saving || Boolean(reorderingId) || Boolean(deletingId)}
+            >
+              {t('products:done')}
             </Button>
           </div>
 
         </div>
       </div>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        kind="categoryDelete"
+        busy={deletingId !== null}
+        destructive
+        cancelLabel={t('common:cancel')}
+        onConfirm={() => void handleDelete()}
+        onClose={() => { if (!deletePendingRef.current) setDeleteTarget(null) }}
+      />
     </>
   )
 }

@@ -28,7 +28,7 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { CustomerIntelligenceFiltersPanel } from '@/components/customers/CustomerIntelligenceFilters'
-import CustomerDrawer from './CustomerDrawer'
+import CustomerModal from './CustomerModal'
 import type { CustomerWithStats } from './CustomersPage'
 import type { Branch } from '@/types'
 import {
@@ -905,7 +905,7 @@ export default function CustomerDetailPage() {
 
       <p className="text-xs text-gray-400 leading-relaxed">{t('customerIntelligence:pdf.disclaimer')}</p>
 
-      <CustomerDrawer
+      <CustomerModal
         open={editingCustomer !== null}
         customer={editingCustomer}
         onClose={() => setEditingCustomer(null)}

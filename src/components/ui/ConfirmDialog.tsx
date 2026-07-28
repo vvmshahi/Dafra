@@ -2,7 +2,7 @@ import { useEffect, useRef, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from './Button'
 
-export type ConfirmationKind = 'discard' | 'delete' | 'cancel' | 'restoreDefaults' | 'sessionTimeout' | 'signOut' | 'retry'
+export type ConfirmationKind = 'discard' | 'delete' | 'archive' | 'customerArchive' | 'supplierArchive' | 'categoryDelete' | 'deactivateStock' | 'activateFixedExpense' | 'deactivateFixedExpense' | 'closeDay' | 'lifetimeAccess' | 'zatcaReconnect' | 'removeLogo' | 'removeReceipt' | 'resetLabelPreset' | 'restoreBranchLabelDefault' | 'resetDeviceCalibration' | 'cancel' | 'restoreDefaults' | 'sessionTimeout' | 'signOut' | 'retry'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -10,6 +10,11 @@ interface ConfirmDialogProps {
   name?: string
   busy?: boolean
   destructive?: boolean
+  cancelLabel?: string
+  confirmVariant?: 'primary' | 'danger' | 'gold'
+  title?: string
+  body?: string
+  confirmLabel?: string
   onConfirm: () => void
   onClose: () => void
 }
@@ -20,6 +25,11 @@ export function ConfirmDialog({
   name,
   busy = false,
   destructive = kind === 'delete',
+  cancelLabel,
+  confirmVariant,
+  title,
+  body,
+  confirmLabel,
   onConfirm,
   onClose,
 }: ConfirmDialogProps) {
@@ -90,20 +100,20 @@ export function ConfirmDialog({
         className="w-full max-w-sm rounded-2xl border border-gray-100 bg-white p-5 text-start shadow-2xl"
       >
         <h2 id={titleId} className="text-base font-semibold text-gray-900" dir="auto">
-          {t(`dialogs:${kind}.title`, { name: name ?? t('common:delete') })}
+          {title ?? t(`dialogs:${kind}.title`, { name: name ?? t('common:delete') })}
         </h2>
-        <p id={bodyId} className="mt-2 text-sm leading-6 text-gray-500">{t(`dialogs:${kind}.body`)}</p>
+        <p id={bodyId} className="mt-2 text-sm leading-6 text-gray-500">{body ?? t(`dialogs:${kind}.body`)}</p>
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <Button ref={cancelRef} type="button" variant="secondary" disabled={busy} onClick={onClose}>
-            {t('common:close')}
+            {cancelLabel ?? t('common:cancel')}
           </Button>
           <Button
             type="button"
-            variant={destructive ? 'danger' : 'primary'}
+            variant={confirmVariant ?? (destructive ? 'danger' : 'primary')}
             loading={busy}
             onClick={onConfirm}
           >
-            {t(`dialogs:${kind}.confirm`)}
+            {confirmLabel ?? t(`dialogs:${kind}.confirm`)}
           </Button>
         </div>
       </section>

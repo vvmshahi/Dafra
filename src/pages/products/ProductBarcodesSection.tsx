@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Barcode, CheckCircle2, Printer, ScanLine, Sparkles, XCircle } from 'lucide-react'
+import { Barcode, CheckCircle2, Printer, ScanLine, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { sarStr } from '@/components/ui/RiyalSymbol'
@@ -49,6 +49,7 @@ export function ProductBarcodesSection({
   sku,
   price,
   units,
+  autoFocus = false,
 }: {
   productId: string
   productName: string
@@ -56,6 +57,7 @@ export function ProductBarcodesSection({
   sku: string | null
   price: string
   units: UnitOption[]
+  autoFocus?: boolean
 }) {
   const { t } = useTranslation(['products', 'printing'])
   const { tenant, branch } = useAuth()
@@ -97,6 +99,12 @@ export function ProductBarcodesSection({
 
   useEffect(() => { void load() }, [productId])
 
+  useEffect(() => {
+    if (!autoFocus || busy || selectedPrint) return
+    const frame = window.requestAnimationFrame(() => captureRef.current?.focus())
+    return () => window.cancelAnimationFrame(frame)
+  }, [autoFocus])
+
   const grouped = useMemo(() => new Map(units.map(unit => [
     unit.id,
     rows.filter(row => row.product_unit_id === unit.id),
@@ -129,6 +137,9 @@ export function ProductBarcodesSection({
     }
     setValue('')
     await load()
+    setMessageTone('success')
+    setMessage(t('barcodes.scanSuccess'))
+    captureRef.current?.focus()
   }
 
   const generate = async () => {
@@ -212,7 +223,7 @@ export function ProductBarcodesSection({
         </span>
         <div>
           <h3 className="text-sm font-bold text-gray-900">{t('barcodes.title')}</h3>
-          <p className="text-[11px] text-gray-500">{t('barcodes.help')}</p>
+          <p className="text-[11px] text-gray-500">{t('barcodes.scannerHelp')}</p>
         </div>
       </div>
 
@@ -231,6 +242,7 @@ export function ProductBarcodesSection({
             <ScanLine size={15} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               ref={captureRef}
+              id="product-barcode-value"
               className="input ps-9 font-mono"
               dir="ltr"
               value={value}
@@ -250,21 +262,28 @@ export function ProductBarcodesSection({
             />
           </div>
         </label>
-        <label className="text-xs font-semibold text-gray-600">
-          {t('barcodes.type')}
-          <select className="input mt-1" value={type} onChange={event => setType(event.target.value as BarcodeType)}>
-            {BARCODE_TYPES.map(option => <option key={option} value={option}>{t(`barcodes.types.${option}`)}</option>)}
-          </select>
-        </label>
-        <label className="text-xs font-semibold text-gray-600">
-          {t('barcodes.source')}
-          <select className="input mt-1" value={source} onChange={event => setSource(event.target.value as BarcodeRow['source'])}>
-            {(['manufacturer', 'supplier'] as const).map(option => (
-              <option key={option} value={option}>{t(`barcodes.sources.${option}`)}</option>
-            ))}
-          </select>
-        </label>
       </div>
+      <details>
+        <summary className="cursor-pointer rounded-lg px-2 py-2 text-xs font-semibold text-gray-600 hover:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500">
+          {t('barcodes.entryOptions')}
+        </summary>
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="text-xs font-semibold text-gray-600">
+            {t('barcodes.type')}
+            <select className="input mt-1" value={type} onChange={event => setType(event.target.value as BarcodeType)}>
+              {BARCODE_TYPES.map(option => <option key={option} value={option}>{t(`barcodes.types.${option}`)}</option>)}
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-gray-600">
+            {t('barcodes.source')}
+            <select className="input mt-1" value={source} onChange={event => setSource(event.target.value as BarcodeRow['source'])}>
+              {(['manufacturer', 'supplier'] as const).map(option => (
+                <option key={option} value={option}>{t(`barcodes.sources.${option}`)}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </details>
       <label className="flex items-center gap-2 text-xs text-gray-600">
         <input type="checkbox" checked={primary} onChange={event => setPrimary(event.target.checked)} />
         {t('barcodes.makePrimary')}
@@ -277,42 +296,68 @@ export function ProductBarcodesSection({
           <Sparkles size={14} />{t('barcodes.generate')}
         </Button>
       </div>
-      {message && <p className={`text-xs ${messageTone === 'success' ? 'text-emerald-700' : 'text-red-700'}`} role={messageTone === 'success' ? 'status' : 'alert'}>{message}</p>}
+      <div aria-live="polite" aria-atomic="true">
+        {message && <p className={`text-xs ${messageTone === 'success' ? 'text-emerald-700' : 'text-red-700'}`} role={messageTone === 'success' ? 'status' : 'alert'}>{message}</p>}
+      </div>
 
       {units.map(unit => {
         const unitRows = grouped.get(unit.id) ?? []
         if (!unitRows.length) return null
+        const preferred = unitRows.find(row => row.is_active && row.is_primary)
+        const activeAliases = unitRows.filter(row => row.is_active && row.id !== preferred?.id)
+        const inactiveRows = unitRows.filter(row => !row.is_active)
+        const renderRow = (row: BarcodeRow) => (
+          <div key={row.id} className={`flex min-w-0 flex-wrap items-center gap-2 rounded-lg border bg-white px-3 py-2.5 ${row.is_active ? 'border-gray-100' : 'border-gray-100 opacity-70'}`}>
+            <code className="min-w-32 flex-1 truncate text-xs" dir="ltr">{row.barcode}</code>
+            <span className="text-[10px] text-gray-400">{t(`barcodes.types.${row.barcode_type}`)} · {t(`barcodes.sources.${row.source}`)}</span>
+            {row.is_primary && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">{t('barcodes.primary')}</span>}
+            {row.is_active && !row.is_primary && (
+              <button type="button" className="min-h-9 rounded-lg px-2 text-[10px] font-semibold text-sky-700 hover:bg-sky-50" onClick={() => void setAsPrimary(row.id)}>
+                {t('barcodes.setPrimary')}
+              </button>
+            )}
+            {row.is_active ? (
+              <>
+                <button type="button" className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-[10px] font-semibold text-primary-700 hover:bg-primary-50" onClick={() => setSelectedPrint({ row, unit })}>
+                  <Printer size={13} aria-hidden="true" />
+                  {t(printStatus.get(row.id)?.printCount ? 'printing:barcodeLabels.audit.reprint' : 'printing:barcodeLabels.audit.printLabel')}
+                </button>
+                <button type="button" className="min-h-9 rounded-lg px-2 text-[10px] font-semibold text-red-600 hover:bg-red-50" onClick={() => void disable(row.id)}>
+                  {t('barcodes.disable')}
+                </button>
+              </>
+            ) : (
+              <button type="button" className="min-h-9 rounded-lg px-2 text-[10px] font-semibold text-sky-700 hover:bg-sky-50" onClick={() => void reactivate(row.id)}>
+                {t('barcodes.reactivate')}
+              </button>
+            )}
+          </div>
+        )
         return (
-          <div key={unit.id} className="space-y-1.5">
-            <p className="text-xs font-bold text-gray-700">{unit.name}</p>
-            {unitRows.map(row => (
-              <div key={row.id} className={`flex min-w-0 items-center gap-2 rounded-lg border bg-white px-2.5 py-2 ${row.is_active ? 'border-gray-100' : 'border-gray-100 opacity-60'}`}>
-                <code className="min-w-0 flex-1 truncate text-xs" dir="ltr">{row.barcode}</code>
-                <span className="text-[10px] text-gray-400">{t(`barcodes.types.${row.barcode_type}`)}</span>
-                {row.is_primary && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">{t('barcodes.primary')}</span>}
-                {row.is_active && !row.is_primary && (
-                  <button type="button" className="text-[10px] font-semibold text-sky-700" onClick={() => void setAsPrimary(row.id)}>
-                    {t('barcodes.setPrimary')}
-                  </button>
-                )}
-                {row.is_active && (
-                  <>
-                    <button type="button" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold text-primary-700 hover:bg-primary-50" onClick={() => setSelectedPrint({ row, unit })}>
-                      <Printer size={13} aria-hidden="true" />
-                      {t(printStatus.get(row.id)?.printCount ? 'printing:barcodeLabels.audit.reprint' : 'printing:barcodeLabels.audit.printLabel')}
-                    </button>
-                    <button type="button" aria-label={t('barcodes.disable')} onClick={() => void disable(row.id)}>
-                      <XCircle size={14} className="text-red-500" />
-                    </button>
-                  </>
-                )}
-                {!row.is_active && (
-                  <button type="button" className="text-[10px] font-semibold text-sky-700" onClick={() => void reactivate(row.id)}>
-                    {t('barcodes.reactivate')}
-                  </button>
-                )}
-              </div>
-            ))}
+          <div key={unit.id} className="space-y-2 rounded-xl border border-gray-200 bg-gray-50/70 p-3">
+            <p className="text-sm font-bold text-gray-800">{unit.name}</p>
+            {preferred ? renderRow(preferred) : <p className="rounded-lg border border-dashed border-gray-200 bg-white px-3 py-2 text-xs text-gray-500">{t('barcodes.makePrimary')}</p>}
+            {activeAliases.length > 0 && (
+              <details className="group">
+                <summary className="cursor-pointer rounded-lg px-2 py-2 text-xs font-semibold text-sky-800 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                  {t('barcodes.additional')} ({activeAliases.length})
+                </summary>
+                <div className="mt-2 space-y-2">
+                  {activeAliases.map(renderRow)}
+                </div>
+              </details>
+            )}
+            {inactiveRows.length > 0 && (
+              <details className="group">
+                <summary className="cursor-pointer rounded-lg px-2 py-2 text-xs font-semibold text-gray-600 hover:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500">
+                  {t('barcodes.history')} ({inactiveRows.length})
+                </summary>
+                <div className="mt-2 space-y-2">
+                  <p className="text-[11px] leading-5 text-gray-500">{t('barcodes.unitSafety')}</p>
+                  {inactiveRows.map(renderRow)}
+                </div>
+              </details>
+            )}
           </div>
         )
       })}

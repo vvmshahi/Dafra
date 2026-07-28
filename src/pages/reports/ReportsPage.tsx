@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, type KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { TrendingUp, BarChart2, FileText, CreditCard, Users, ShoppingCart, Download, Clock3, Loader2, Truck } from 'lucide-react'
 import { toast } from 'sonner'
@@ -25,12 +25,65 @@ import { PageHeader } from '@/components/ui/PageHeader'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type TabId = 'sessions' | 'sales' | 'pl' | 'vat' | 'expenses' | 'customers' | 'purchases'
+export type TabId = 'sessions' | 'sales' | 'pl' | 'vat' | 'expenses' | 'customers' | 'purchases'
 
-const TABS: { id: TabId; icon: React.ElementType }[] = [
+export const REPORT_TABS: { id: TabId; icon: React.ElementType }[] = [
   { id: 'sessions', icon: Clock3 }, { id: 'sales', icon: TrendingUp }, { id: 'pl', icon: BarChart2 },
   { id: 'vat', icon: FileText }, { id: 'expenses', icon: CreditCard }, { id: 'customers', icon: Users }, { id: 'purchases', icon: ShoppingCart },
 ]
+
+export function ReportTabs({ active, onSelect }: { active: TabId; onSelect: (tab: TabId) => void }) {
+  const { t } = useTranslation('reports')
+  const tabRefs = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({})
+
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, current: TabId) {
+    const currentIndex = REPORT_TABS.findIndex(item => item.id === current)
+    let nextIndex: number | null = null
+    const rtl = document.documentElement.dir === 'rtl'
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + (rtl ? -1 : 1) + REPORT_TABS.length) % REPORT_TABS.length
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex + (rtl ? 1 : -1) + REPORT_TABS.length) % REPORT_TABS.length
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = REPORT_TABS.length - 1
+    if (nextIndex === null) return
+    event.preventDefault()
+    const next = REPORT_TABS[nextIndex].id
+    onSelect(next)
+    tabRefs.current[next]?.focus()
+    tabRefs.current[next]?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }
+
+  return (
+    <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0" role="region" aria-label={t('tabs.label')} tabIndex={0}>
+      <div className="flex items-center bg-white border border-gray-100 rounded-2xl p-1 w-max shadow-card" role="tablist" aria-label={t('tabs.label')}>
+        {REPORT_TABS.map(tabItem => {
+          const Icon = tabItem.icon
+          return (
+            <button
+              key={tabItem.id}
+              ref={node => { tabRefs.current[tabItem.id] = node }}
+              id={`report-tab-${tabItem.id}`}
+              type="button"
+              role="tab"
+              aria-selected={active === tabItem.id}
+              aria-controls={`report-panel-${tabItem.id}`}
+              tabIndex={active === tabItem.id ? 0 : -1}
+              onClick={() => onSelect(tabItem.id)}
+              onKeyDown={event => handleKeyDown(event, tabItem.id)}
+              className={`flex min-h-10 items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl transition-[background-color,color,box-shadow] duration-150 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 ${
+                active === tabItem.id
+                  ? 'bg-primary-500 text-white shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Icon size={13} aria-hidden="true" />
+              {t(`tabs.${tabItem.id}`)}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 const PHASE_A_EXPORTS: Partial<Record<TabId, PhaseAReportKind>> = {
   sessions: 'sessions',
@@ -52,7 +105,6 @@ export default function ReportsPage() {
   const [branchId,  setBranchId]  = useState<string | null>(null)
   const [branches,  setBranches]  = useState<Branch[]>([])
   const [exporting, setExporting] = useState(false)
-
   // Init date range from preset
   useEffect(() => {
     const { start, end } = getDateRange('today')
@@ -168,30 +220,10 @@ export default function ReportsPage() {
       />
 
       {/* ── Tab bar ─────────────────────────────────────────── */}
-      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-        <div className="flex items-center bg-white border border-gray-100 rounded-2xl p-1 w-max shadow-card">
-          {TABS.map(tabItem => {
-            const Icon = tabItem.icon
-            return (
-              <button
-                key={tabItem.id}
-                onClick={() => setTab(tabItem.id)}
-                className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl transition-all duration-150 whitespace-nowrap ${
-                  tab === tabItem.id
-                    ? 'bg-primary-500 text-white shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <Icon size={13} />
-                {t(`tabs.${tabItem.id}`)}
-              </button>
-            )
-          })}
-        </div>
-      </div>
+      <ReportTabs active={tab} onSelect={setTab} />
 
       {/* ── Date range + branch filter ───────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <CompactDateRangeFilter
           preset={preset}
           startDate={startDate}
@@ -205,7 +237,7 @@ export default function ReportsPage() {
         {/* Branch selector */}
         {branches.length > 1 && (
           <select
-            className="input ms-auto w-auto py-1.5 text-sm"
+            className="input w-full py-1.5 text-sm sm:ms-auto sm:w-auto"
             value={branchId ?? ''}
             onChange={e => setBranchId(e.target.value || null)}
           >
@@ -228,18 +260,16 @@ export default function ReportsPage() {
       )}
 
       {/* ── Active report ────────────────────────────────────── */}
-      {tab === 'sessions' && startDate && endDate && (
-        <RegisterSessionsReport branchId={branchId} startDate={startDate} endDate={endDate} />
-      )}
-      {tab !== 'sessions' && startDate && endDate && (
-        <>
+      {startDate && endDate && (
+        <section id={`report-panel-${tab}`} role="tabpanel" aria-labelledby={`report-tab-${tab}`} tabIndex={0}>
+          {tab === 'sessions' && <RegisterSessionsReport branchId={branchId} startDate={startDate} endDate={endDate} />}
           {tab === 'sales'     && <SalesReport      {...reportProps} />}
           {tab === 'pl'        && <ProfitLossReport  {...reportProps} />}
           {tab === 'vat'       && <VatReport         {...reportProps} />}
           {tab === 'expenses'  && <ExpenseReport     {...reportProps} />}
           {tab === 'customers' && <CustomerReport    {...reportProps} />}
           {tab === 'purchases' && <PurchaseReport    {...reportProps} />}
-        </>
+        </section>
       )}
     </div>
   )

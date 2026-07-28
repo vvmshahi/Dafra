@@ -1,8 +1,10 @@
-import { useDeferredValue, useMemo } from 'react'
-import { AlertTriangle, Check, ChevronDown, FileText, Printer, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { useDeferredValue, useMemo, useState } from 'react'
+import { AlertTriangle, Check, ChevronDown, Eye, Printer, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
 import { useTranslation } from 'react-i18next'
 import {
   barcodePrintDocument,
+  browserBarcodePrintAdapter,
   type BarcodeLabel,
   type BarcodePrintDocument,
 } from '@/lib/barcodes/labelPrint'
@@ -15,6 +17,7 @@ import {
   type LabelPresetId,
   type LabelTemplateId,
 } from '@/lib/barcodes/labelSettings'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 interface Props {
   labels: BarcodeLabel[]
@@ -100,7 +103,7 @@ export function BarcodeLabelPreview({
       title={title}
       sandbox="allow-scripts allow-modals"
       srcDoc={document.html}
-      className="h-[460px] w-full bg-white"
+      className="h-[clamp(280px,48vh,460px)] w-full bg-white [@media(max-height:740px)]:h-[300px]"
     />
   </div>
 }
@@ -114,6 +117,9 @@ export default function BarcodeLabelDesigner({
   compact = false,
 }: Props) {
   const { t, i18n } = useTranslation('printing')
+  const [printing, setPrinting] = useState(false)
+  const [printError, setPrintError] = useState('')
+  const [resetPresetOpen, setResetPresetOpen] = useState(false)
   const deferredLabels = useDeferredValue(labels)
   const deferredSettings = useDeferredValue(settings)
   const preview = useMemo(() => {
@@ -148,6 +154,29 @@ export default function BarcodeLabelDesigner({
     value: BarcodeLabelSettings['a4'][K],
   ) => update('a4', { ...settings.a4, [key]: value })
   const applyPreset = (id: LabelPresetId) => onChange(settingsFromPreset(id))
+  const printPreview = () => {
+    if (!preview || printing) return
+    setPrinting(true)
+    setPrintError('')
+    try {
+      const printable = barcodePrintDocument(labels, settings, calibration, {
+        locale: i18n.language,
+        copy: {
+          title: t('barcodeLabels.preview.title'),
+          print: t('barcodeLabels.actions.print'),
+          saveAsPdf: t('barcodeLabels.preview.saveAsPdf'),
+          dialogGuidance: t('barcodeLabels.preview.dialogGuidance'),
+          previewData: previewDataLabel,
+          riyalAccessible: t('barcodeLabels.currency.accessible'),
+        },
+      })
+      browserBarcodePrintAdapter.print(printable.html)
+    } catch {
+      setPrintError(t('barcodeLabels.errors.printFailed'))
+    } finally {
+      setPrinting(false)
+    }
+  }
 
   return <div className={`grid items-start gap-5 ${compact ? '' : 'xl:grid-cols-[minmax(0,1fr)_minmax(340px,.9fr)]'}`}>
     <div className="min-w-0 space-y-5">
@@ -181,13 +210,14 @@ export default function BarcodeLabelDesigner({
         </div>
         <button
           type="button"
-          onClick={() => applyPreset(settings.presetId)}
+          onClick={() => setResetPresetOpen(true)}
           className="mt-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-gray-600 hover:bg-gray-100"
         >
           <RotateCcw size={13} aria-hidden="true" />
           {t('barcodeLabels.actions.resetPreset')}
         </button>
       </section>
+      <ConfirmDialog open={resetPresetOpen} kind="resetLabelPreset" onClose={() => setResetPresetOpen(false)} onConfirm={() => { applyPreset(settings.presetId); setResetPresetOpen(false) }} />
 
       <section className="rounded-2xl border border-gray-200 bg-white p-4">
         <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.templates.title')}</h3>
@@ -326,19 +356,30 @@ export default function BarcodeLabelDesigner({
     </div>
 
     <aside className={`${compact ? '' : 'xl:sticky xl:top-4'} min-w-0`}>
-      {previewDataLabel && <div className="mb-2 flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[11px] text-blue-700">
-        <FileText size={13} aria-hidden="true" /> {previewDataLabel}
+      {previewDataLabel && <div className="mb-2 flex items-start gap-2 rounded-xl border border-primary-200 bg-primary-50 px-3 py-2 text-[11px] text-primary-800">
+        <Eye size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <span><strong className="block font-semibold">{t('barcodeLabels.preview.sampleTitle')}</strong>{t('barcodeLabels.preview.sampleHelp')}</span>
       </div>}
       <BarcodeLabelPreview document={preview} title={t('barcodeLabels.preview.title')} />
-      {preview?.layout.warnings.length ? <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-5 text-amber-900" role="alert" aria-live="polite">
+      {preview?.layout.warnings.length ? <div className="mt-2 rounded-xl border border-amber-200 border-s-4 bg-[#fffaf0] p-3 text-[11px] leading-5 text-gray-700" role="status" aria-live="polite">
         <p className="flex items-start gap-1.5 font-bold">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-          {t(`barcodeLabels.preview.fitStatus.${!preview.layout.fits ? 'overflow' : preview.layout.contentFitStatus}`)}
+          {t(!preview.layout.fits || preview.layout.contentFitStatus === 'overflow' ? 'barcodeLabels.preview.denseTitleOverflow' : 'barcodeLabels.preview.denseTitle')}
         </p>
         {preview.layout.warnings.map(warning => <p key={warning}>{t(`barcodeLabels.preview.warnings.${warning}`)}</p>)}
-        <p>{t('barcodeLabels.preview.fitGuidance')}</p>
-        <p className="font-semibold">{t('barcodeLabels.preview.testPrintWarning')}</p>
+        <details className="mt-1"><summary className="cursor-pointer font-semibold text-primary-800">{t('barcodeLabels.preview.recommendations')}</summary>
+          <p className="mt-1">{t('barcodeLabels.preview.fitGuidance')}</p>
+          <p className="font-semibold">{t('barcodeLabels.preview.testPrintWarning')}</p>
+        </details>
       </div> : null}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button type="button" onClick={printPreview} loading={printing} disabled={!preview || printing}
+          className="bg-primary-700 hover:bg-primary-800 active:scale-[0.97]">
+          <Printer size={15} aria-hidden="true" /> {t('barcodeLabels.actions.print')}
+        </Button>
+        {!preview && <span className="text-[11px] text-red-700">{t('barcodeLabels.preview.printUnavailable')}</span>}
+        {printError && <span role="alert" className="text-[11px] text-red-700">{printError}</span>}
+      </div>
     </aside>
   </div>
 }

@@ -1,1 +1,53 @@
-{"title":"Employees","add":"Add Employee","edit":"Edit Employee","total":"{{count}} total · {{active}} active · {{inactive}} inactive","allBranches":"All Branches ({{count}})","search":"Search by name, title, phone, email, role or branch…","noMatch":"No employees match your search","adjust":"Try adjusting your filters","empty":"No employees yet","emptyHint":"Add your first employee to get started","deleteConfirm":"Delete this employee? This cannot be undone.","fields":{"employee":"Employee","fullName":"Full Name","fullNameAr":"Full Name (Arabic)","branch":"Branch","jobTitle":"Job Title","phone":"Phone","email":"Email","hireDate":"Hire Date","status":"Status"},"placeholders":{"name":"Ahmed Al-Rashid","nameAr":"أحمد الراشد","branch":"Select branch…","job":"Cashier","phone":"+966 50 000 0000","email":"employee@company.com"},"status":{"active":"Active","inactive":"Inactive"},"actions":{"cancel":"Cancel","saving":"Saving…","save":"Save Changes","add":"Add Employee"},"stats":{"total":"Total Employees","active":"Active","inactive":"Inactive"},"errors":{"name":"Full name is required","branch":"Branch is required","save":"The employee could not be saved. Try again."}}
+{
+  "title": "Employees",
+  "add": "Add Employee",
+  "edit": "Edit Employee",
+  "total": "{{count}} total · {{active}} active · {{inactive}} inactive",
+  "allBranches": "All Branches ({{count}})",
+  "search": "Search by name, title, phone, email, role or branch…",
+  "noMatch": "No employees match your search",
+  "adjust": "Try adjusting your filters",
+  "empty": "No employees yet",
+  "emptyHint": "Add your first employee to get started",
+  "deleteConfirm": "Delete this employee? This cannot be undone.",
+  "fields": {
+    "employee": "Employee",
+    "fullName": "Full Name",
+    "fullNameAr": "Full Name (Arabic)",
+    "branch": "Branch",
+    "jobTitle": "Job Title",
+    "phone": "Phone",
+    "email": "Email",
+    "hireDate": "Hire Date",
+    "status": "Status"
+  },
+  "placeholders": {
+    "name": "Ahmed Al-Rashid",
+    "nameAr": "أحمد الراشد",
+    "branch": "Select branch…",
+    "job": "Cashier",
+    "phone": "+966 50 000 0000",
+    "email": "employee@company.com"
+  },
+  "status": { "active": "Active", "inactive": "Inactive" },
+  "actions": {
+    "cancel": "Cancel",
+    "saving": "Saving…",
+    "save": "Save Changes",
+    "add": "Add Employee"
+  },
+  "stats": {
+    "total": "Total Employees",
+    "active": "Active",
+    "inactive": "Inactive"
+  },
+  "success": {
+    "deleted": "Employee deleted successfully."
+  },
+  "errors": {
+    "name": "Full name is required",
+    "branch": "Branch is required",
+    "save": "The employee could not be saved. Try again.",
+    "delete": "The employee could not be deleted. Try again."
+  }
+}

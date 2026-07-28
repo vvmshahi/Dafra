@@ -18,6 +18,7 @@ import {
   type BarcodeDeviceCalibration,
   type BarcodeLabelSettings,
 } from '@/lib/barcodes/labelSettings'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 interface Props {
   branchId: string
@@ -43,6 +44,7 @@ export default function BarcodePrinterSetupPanel({ branchId, businessName }: Pro
   const [settings, setSettings] = useState<BarcodeLabelSettings>(DEFAULT_BARCODE_LABEL_SETTINGS)
   const [printers, setPrinters] = useState<{ name: string }[]>([])
   const [status, setStatus] = useState('')
+  const [resetOpen, setResetOpen] = useState(false)
   const dirty = JSON.stringify(calibration) !== JSON.stringify(saved)
   const sample = useMemo<BarcodeLabel>(() => ({
     barcode: 'DF001234567890123456',
@@ -126,13 +128,13 @@ export default function BarcodePrinterSetupPanel({ branchId, businessName }: Pro
 
   return <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
     <div className="space-y-5">
-      <section className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+      <section className="rounded-2xl border border-primary-200 bg-primary-50/70 p-4">
         <div className="flex items-start gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-blue-700 shadow-sm"><Printer size={18} aria-hidden="true" /></span>
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-primary-700 shadow-sm"><Printer size={18} aria-hidden="true" /></span>
           <div>
             <h2 className="text-base font-bold text-gray-950">{t('barcodeLabels.calibration.title')}</h2>
             <p className="mt-1 text-xs leading-5 text-gray-600">{t('barcodeLabels.calibration.help')}</p>
-            <p className="mt-2 text-[10px] font-semibold text-blue-800">{t('barcodeLabels.calibration.deviceOnly')}</p>
+            <p className="mt-2 text-[10px] font-semibold text-primary-800">{t('barcodeLabels.calibration.deviceOnly')}</p>
           </div>
         </div>
       </section>
@@ -144,6 +146,18 @@ export default function BarcodePrinterSetupPanel({ branchId, businessName }: Pro
           {printers.map(printer => <option key={printer.name} value={printer.name}>{printer.name}</option>)}
         </select>
       </label>}
+
+      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label={t('barcodeLabels.calibration.currentValues')}>
+        {[
+          [t('barcodeLabels.calibration.xOffset'), `${calibration.horizontalOffsetMm.toFixed(1)} ${t('barcodeLabels.units.mm')}`],
+          [t('barcodeLabels.calibration.yOffset'), `${calibration.verticalOffsetMm.toFixed(1)} ${t('barcodeLabels.units.mm')}`],
+          [t('barcodeLabels.calibration.widthValue'), `${calibration.widthScalePercent}%`],
+          [t('barcodeLabels.calibration.heightValue'), `${calibration.heightScalePercent}%`],
+        ].map(([label, value]) => <div key={label} className="rounded-xl border border-primary-900/50 bg-white px-3 py-2">
+          <dt className="text-[10px] text-gray-500">{label}</dt>
+          <dd className="mt-0.5 text-sm font-bold tabular-nums text-gray-900" dir="ltr">{value}</dd>
+        </div>)}
+      </dl>
 
       <section className="rounded-2xl border border-gray-200 bg-white p-4">
         <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.calibration.position')}</h3>
@@ -198,10 +212,15 @@ export default function BarcodePrinterSetupPanel({ branchId, businessName }: Pro
       </details>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" onClick={save} disabled={!dirty}><Save size={14} aria-hidden="true" /> {t('barcodeLabels.calibration.save')}</Button>
+        <Button type="button" onClick={save} disabled={!dirty}
+          aria-describedby={!dirty ? 'device-calibration-save-reason' : undefined}
+          title={!dirty ? t('barcodeLabels.calibration.noUnsavedChanges') : undefined}>
+          <Save size={14} aria-hidden="true" /> {t('barcodeLabels.calibration.save')}
+        </Button>
         <Button type="button" variant="secondary" onClick={printTest}><TestTube2 size={14} aria-hidden="true" /> {t('barcodeLabels.calibration.printTest')}</Button>
-        <Button type="button" variant="ghost" onClick={reset}><RotateCcw size={14} aria-hidden="true" /> {t('barcodeLabels.calibration.reset')}</Button>
+        <Button type="button" variant="ghost" onClick={() => setResetOpen(true)}><RotateCcw size={14} aria-hidden="true" /> {t('barcodeLabels.calibration.reset')}</Button>
         {status && <span className="inline-flex items-center gap-1 text-xs text-emerald-700" role="status"><Check size={13} aria-hidden="true" /> {status}</span>}
+        {!dirty && <span id="device-calibration-save-reason" className="text-[11px] text-gray-500">{t('barcodeLabels.calibration.noUnsavedChanges')}</span>}
       </div>
       <p className="rounded-xl bg-gray-50 px-3 py-2 text-[11px] leading-5 text-gray-600">{t('barcodeLabels.calibration.gapGuidance')}</p>
     </div>
@@ -214,8 +233,10 @@ export default function BarcodePrinterSetupPanel({ branchId, businessName }: Pro
             X {calibration.horizontalOffsetMm.toFixed(1)} {t('barcodeLabels.units.mm')} · Y {calibration.verticalOffsetMm.toFixed(1)} {t('barcodeLabels.units.mm')} · {calibration.widthScalePercent}% × {calibration.heightScalePercent}%
           </p>
         </div>
-        <iframe title={t('barcodeLabels.calibration.liveTest')} sandbox="allow-scripts allow-modals" srcDoc={preview.html} className="h-[520px] w-full bg-white" />
+        <iframe title={t('barcodeLabels.calibration.liveTest')} sandbox="allow-scripts allow-modals" srcDoc={preview.html}
+          className="h-[clamp(300px,52vh,520px)] w-full bg-white [@media(max-height:740px)]:h-[320px]" />
       </div>}
     </aside>
+    <ConfirmDialog open={resetOpen} kind="resetDeviceCalibration" onClose={() => setResetOpen(false)} onConfirm={() => { reset(); setResetOpen(false) }} />
   </div>
 }

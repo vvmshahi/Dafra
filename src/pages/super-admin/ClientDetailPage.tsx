@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { MoneyInput } from '@/components/ui/MoneyInput'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { supabase } from '@/lib/supabase'
 import type {
   BranchSetupStatus,
@@ -1258,6 +1259,7 @@ export default function ClientDetailPage() {
   const [phase4bWarning, setPhase4bWarning] = useState('')
   const [loading,    setLoading]    = useState(true)
   const [acting,     setActing]     = useState(false)
+  const [lifetimeOpen, setLifetimeOpen] = useState(false)
   const [plans,      setPlans]      = useState<PlanRow[]>([])
 
   // Modal state
@@ -1427,7 +1429,7 @@ export default function ClientDetailPage() {
   }
 
   async function confirmLifetimeFree() {
-    if (!id || !confirm(t('clients.lifetimeConfirm'))) return
+    if (!id) return
     setActing(true)
     const planId = plans[plans.length - 1]?.id ?? plans[0]?.id
     if (!planId) { setActing(false); return }
@@ -1457,6 +1459,7 @@ export default function ClientDetailPage() {
     }
     await (supabase as any).from('tenants').update({ is_active: true }).eq('id', id)
     setActing(false)
+    setLifetimeOpen(false)
     load()
   }
 
@@ -1705,7 +1708,7 @@ export default function ClientDetailPage() {
             <h2 className="text-sm font-semibold text-gray-900">{t('clients.subscription')}</h2>
             <div className="flex items-center gap-2">
               <button
-                onClick={confirmLifetimeFree}
+                onClick={() => setLifetimeOpen(true)}
                 disabled={acting}
                 title={t('clients.markLifetime')}
                 className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
@@ -1894,6 +1897,7 @@ export default function ClientDetailPage() {
           </table>
         </div>
       </div>
+      <ConfirmDialog open={lifetimeOpen} kind="lifetimeAccess" busy={acting} onClose={() => setLifetimeOpen(false)} onConfirm={() => void confirmLifetimeFree()} />
 
     </div>
   )

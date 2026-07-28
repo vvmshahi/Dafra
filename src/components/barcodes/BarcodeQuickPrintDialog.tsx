@@ -17,6 +17,16 @@ import {
 } from '@/lib/barcodes/labelSettings'
 import type { BarcodeType } from '@/lib/barcodes/barcode'
 
+export interface BarcodeQuickPrintChoice {
+  barcodeId: string
+  barcode: string
+  barcodeType: BarcodeType
+  unitId: string
+  unitName: string
+  price: string
+  hasPrinted: boolean | null
+}
+
 interface Props {
   open: boolean
   branchId: string
@@ -35,6 +45,7 @@ interface Props {
   onClose: () => void
   onPrinted: () => void
   onAddToBatch?: () => void
+  choices?: BarcodeQuickPrintChoice[]
 }
 
 export default function BarcodeQuickPrintDialog(props: Props) {
@@ -46,34 +57,45 @@ export default function BarcodeQuickPrintDialog(props: Props) {
   const [printing, setPrinting] = useState(false)
   const [error, setError] = useState('')
   const [overflowAcknowledged, setOverflowAcknowledged] = useState(false)
+  const [selectedChoiceId, setSelectedChoiceId] = useState(props.barcodeId)
+  const activeChoice = props.choices?.find(choice => choice.barcodeId === selectedChoiceId) ?? {
+    barcodeId: props.barcodeId,
+    barcode: props.barcode,
+    barcodeType: props.barcodeType,
+    unitId: props.unitId,
+    unitName: props.unitName,
+    price: props.price,
+    hasPrinted: props.hasPrinted,
+  }
   const close = useCallback(() => {
     if (!printing) props.onClose()
   }, [printing, props.onClose])
   const dialogRef = useDialogFocus(props.open, close)
   const calibration = useMemo(() => loadBarcodeDeviceCalibration(), [props.open])
-  const auditLabel = props.hasPrinted === null
+  const auditLabel = activeChoice.hasPrinted === null
     ? 'barcodeLabels.audit.printLabel'
-    : props.hasPrinted
+    : activeChoice.hasPrinted
       ? 'barcodeLabels.audit.reprint'
       : 'barcodeLabels.audit.firstPrint'
   const label = useMemo<BarcodeLabel>(() => ({
-    barcodeId: props.barcodeId,
+    barcodeId: activeChoice.barcodeId,
     productId: props.productId,
-    productUnitId: props.unitId,
-    barcode: props.barcode,
-    barcodeType: props.barcodeType,
+    productUnitId: activeChoice.unitId,
+    barcode: activeChoice.barcode,
+    barcodeType: activeChoice.barcodeType,
     businessName: props.businessName,
     productName: props.productName,
     productNameEn: props.productName,
     productNameAr: props.productNameAr,
-    unitName: props.unitName,
-    price: props.price,
+    unitName: activeChoice.unitName,
+    price: activeChoice.price,
     sku: props.sku,
     copies,
-  }), [props, copies])
+  }), [props.productId, props.productName, props.productNameAr, props.businessName, props.sku, activeChoice, copies])
 
   useEffect(() => {
     if (!props.open) return
+    setSelectedChoiceId(props.barcodeId)
     setLoading(true)
     setError('')
     setOverflowAcknowledged(false)
@@ -117,11 +139,11 @@ export default function BarcodeQuickPrintDialog(props: Props) {
     [
       fitStatus,
       settings,
-      props.barcode,
+      activeChoice.barcode,
       props.productName,
       props.productNameAr,
-      props.unitName,
-      props.price,
+      activeChoice.unitName,
+      activeChoice.price,
       props.sku,
       props.businessName,
     ],
@@ -158,7 +180,7 @@ export default function BarcodeQuickPrintDialog(props: Props) {
       const document = createDocument(false)
       if (!document.layout.fits) throw new Error('layout')
       await recordBarcodePrintBatch(
-        [{ barcodeId: props.barcodeId, copies: normalizedCopies }],
+        [{ barcodeId: activeChoice.barcodeId, copies: normalizedCopies }],
         `${settings.presetId}:${settings.templateId}`.slice(0, 40),
         normalizedCopies > 50 ? reason : null,
       )
@@ -196,7 +218,7 @@ export default function BarcodeQuickPrintDialog(props: Props) {
             <h2 id="barcode-quick-print-title" className="truncate text-base font-bold text-gray-950">
               {t('barcodeLabels.quickPrint.title')}
             </h2>
-            <p className="truncate text-xs text-gray-500" dir="auto">{props.productName} · {props.unitName}</p>
+            <p className="truncate text-xs text-gray-500" dir="auto">{props.productName} · {activeChoice.unitName}</p>
           </div>
         </div>
         <button
@@ -211,6 +233,20 @@ export default function BarcodeQuickPrintDialog(props: Props) {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
         {loading ? <div className="grid h-64 place-items-center text-sm text-gray-500">{t('barcodeLabels.loading')}</div> : <>
+          {props.choices && props.choices.length > 1 && <label className="mb-4 block space-y-1.5 text-xs font-semibold text-gray-700">
+            <span>{t('barcodeLabels.quickPrint.identity')}</span>
+            <select
+              className="input h-11"
+              value={activeChoice.barcodeId}
+              onChange={event => setSelectedChoiceId(event.target.value)}
+            >
+              {props.choices.map(choice => (
+                <option key={choice.barcodeId} value={choice.barcodeId}>
+                  {choice.unitName} · {choice.barcode}
+                </option>
+              ))}
+            </select>
+          </label>}
           <div className="mb-5 grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
             <label className="space-y-1.5 text-xs font-semibold text-gray-700">
               <span>{t('barcodeLabels.copies')}</span>
@@ -229,7 +265,7 @@ export default function BarcodeQuickPrintDialog(props: Props) {
               <p className="text-xs font-semibold text-gray-800">{t('barcodeLabels.quickPrint.sameIdentity')}</p>
               <p className="mt-0.5 text-[11px] text-gray-500">{t('barcodeLabels.quickPrint.sameIdentityHelp')}</p>
               <p className="mt-1.5 truncate font-mono text-[11px] font-semibold tabular-nums text-gray-700" dir="ltr">
-                {props.barcode}
+                {activeChoice.barcode}
               </p>
             </div>
           </div>

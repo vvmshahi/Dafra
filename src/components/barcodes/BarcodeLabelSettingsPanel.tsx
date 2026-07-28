@@ -13,6 +13,7 @@ import {
   loadBarcodeDeviceCalibration,
   type BarcodeLabelSettings,
 } from '@/lib/barcodes/labelSettings'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 interface Props {
   branchId: string
@@ -28,6 +29,7 @@ export default function BarcodeLabelSettingsPanel({ branchId, businessName }: Pr
   const [canEdit, setCanEdit] = useState(true)
   const [hasSavedDefault, setHasSavedDefault] = useState(false)
   const [status, setStatus] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+  const [restoreOpen, setRestoreOpen] = useState(false)
   const calibration = useMemo(() => loadBarcodeDeviceCalibration(), [])
   const dirty = JSON.stringify(settings) !== JSON.stringify(saved)
   const previewLabel = useMemo<BarcodeLabel>(() => ({
@@ -104,15 +106,21 @@ export default function BarcodeLabelSettingsPanel({ branchId, businessName }: Pr
     </fieldset>
 
     <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-2 rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-lg backdrop-blur-sm">
-      <Button type="button" onClick={() => void save()} loading={saving} disabled={!canEdit || !dirty}>
+      <Button type="button" onClick={() => void save()} loading={saving} disabled={!canEdit || !dirty}
+        aria-describedby={!canEdit || !dirty ? 'branch-label-save-reason' : undefined}
+        title={!canEdit ? t('barcodeLabels.settings.readOnly') : !dirty ? t('barcodeLabels.settings.noUnsavedChanges') : undefined}>
         <Save size={14} aria-hidden="true" /> {t('barcodeLabels.actions.saveBranchDefault')}
       </Button>
-      <Button type="button" variant="secondary" onClick={() => { setSettings(saved); setStatus(null) }} disabled={!dirty || saving}>
+      <Button type="button" variant="secondary" onClick={() => setRestoreOpen(true)} disabled={!dirty || saving}>
         <RotateCcw size={14} aria-hidden="true" /> {t('barcodeLabels.actions.restoreBranchDefault')}
       </Button>
       <span className="ms-auto text-[10px] text-gray-500">
         {dirty ? t('barcodeLabels.settings.unsaved') : t('barcodeLabels.settings.upToDate')}
       </span>
+      {(!canEdit || !dirty) && <span id="branch-label-save-reason" className="sr-only">
+        {t(!canEdit ? 'barcodeLabels.settings.readOnly' : 'barcodeLabels.settings.noUnsavedChanges')}
+      </span>}
     </div>
+    <ConfirmDialog open={restoreOpen} kind="restoreBranchLabelDefault" onClose={() => setRestoreOpen(false)} onConfirm={() => { setSettings(saved); setStatus(null); setRestoreOpen(false) }} />
   </div>
 }

@@ -11,6 +11,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useLocale } from '@/localization/useLocale'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/Badge'
+import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { productionStatusLabel } from '@/lib/zatca/status'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
@@ -31,12 +32,38 @@ const statusConfig = {
   pending: { variant: 'warning' as const, labelKey: 'status.pending', icon: Clock },
 }
 
-const zatcaIndicatorClass = {
-  success: 'bg-emerald-300 shadow-[0_0_16px_rgba(110,231,183,0.72)]',
-  warning: 'bg-amber-300 shadow-[0_0_16px_rgba(252,211,77,0.70)]',
-  danger: 'bg-red-300 shadow-[0_0_16px_rgba(252,165,165,0.70)]',
-  neutral: 'bg-white/55 shadow-[0_0_14px_rgba(255,255,255,0.38)]',
-  info: 'bg-blue-300 shadow-[0_0_16px_rgba(147,197,253,0.70)]',
+const BRANCH_KPI_TONES = {
+  grossSales: 'bg-gradient-to-br from-[#1B6B3A] to-[#0F2419]',
+  creditNotes: 'bg-gradient-to-br from-[#64748b] to-[#334155]',
+  netSales: 'bg-gradient-to-br from-[#0e6f53] to-[#0F4A28]',
+  sessionInvoices: 'bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]',
+  sessionCash: 'bg-gradient-to-br from-[#059669] to-[#047857]',
+  sessionCard: 'bg-gradient-to-br from-[#256f7a] to-[#174852]',
+  netVat: 'bg-gradient-to-br from-[#b45309] to-[#92400e]',
+  expectedCash: 'bg-gradient-to-br from-[#4a5568] to-[#1f2937]',
+} as const
+
+const headerStatusStyles = {
+  success: {
+    pill: 'border-emerald-300/20 bg-emerald-950/25 text-emerald-100',
+    dot: 'bg-emerald-300 shadow-[0_0_7px_rgba(110,231,183,0.48)]',
+  },
+  warning: {
+    pill: 'border-amber-300/20 bg-amber-950/25 text-amber-100',
+    dot: 'bg-amber-300 shadow-[0_0_7px_rgba(252,211,77,0.38)]',
+  },
+  danger: {
+    pill: 'border-red-300/20 bg-red-950/25 text-red-100',
+    dot: 'bg-red-300 shadow-[0_0_7px_rgba(252,165,165,0.36)]',
+  },
+  neutral: {
+    pill: 'border-white/12 bg-black/10 text-white/75',
+    dot: 'bg-white/45',
+  },
+  info: {
+    pill: 'border-sky-300/20 bg-sky-950/25 text-sky-100',
+    dot: 'bg-sky-300',
+  },
 } as const
 
 interface DashboardBranchStat {
@@ -94,34 +121,56 @@ const EMPTY_DASHBOARD_SUMMARY: DashboardSummary = {
   branchStats: [],
 }
 
-function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
+function getRegisterDuration(openedAt: string | null, now: number) {
+  if (!openedAt) return null
+  const openedTime = Date.parse(openedAt)
+  if (!Number.isFinite(openedTime) || openedTime > now) return null
+  const totalMinutes = Math.floor((now - openedTime) / 60_000)
+  return {
+    hours: Math.floor(totalMinutes / 60),
+    minutes: totalMinutes % 60,
+  }
+}
+
+function StatCard({ label, value, sub, icon: Icon, tone, loading }: {
   label: string; value: React.ReactNode; sub: string
-  icon: React.ElementType; gradient: string; loading?: boolean
+  icon: React.ElementType; tone: string; loading?: boolean
 }) {
   return (
-    <div className={`relative min-h-[122px] overflow-hidden rounded-2xl p-4 shadow-sm ${gradient}`}>
+    <article className={`relative min-h-[124px] overflow-hidden rounded-2xl border border-[#173f2a] p-4 shadow-card-md sm:min-h-[132px] sm:p-5 [@media(max-height:740px)]:min-h-[116px] [@media(max-height:740px)]:p-4 ${tone}`}>
       <div className="flex h-full items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-white/70">{label}</p>
+          <p className="text-[11px] font-bold uppercase leading-4 tracking-wide text-white/65 [overflow-wrap:anywhere] rtl:normal-case rtl:tracking-normal">
+            {label}
+          </p>
           {loading
-            ? <div className="mt-1.5 h-7 w-24 bg-white/20 rounded animate-pulse" />
-            : <p dir="ltr" className="mt-2 text-2xl font-black text-white tracking-tight tabular-nums">{value}</p>
+            ? <div className="mt-2 h-7 w-24 rounded bg-white/20 animate-pulse" />
+            : (
+              <p
+                dir="ltr"
+                className="mt-2 text-xl font-black tracking-tight text-white tabular-nums sm:text-2xl [&>span>span:first-child]:text-[0.72em] [&>span>span:first-child]:opacity-80"
+              >
+                {value}
+              </p>
+            )
           }
-          <p className="mt-2 text-xs leading-5 text-white/65">{sub}</p>
+          <p className="mt-2 text-[11px] font-medium leading-4 text-white/60 [overflow-wrap:anywhere]">{sub}</p>
         </div>
-        <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0 shadow-inner shadow-white/10">
-          <Icon size={17} className="text-white" />
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/10">
+          <Icon size={17} className="text-white/90" aria-hidden="true" />
         </div>
       </div>
-      <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/5" />
-    </div>
+      <div className="absolute inset-x-0 bottom-0 h-1 bg-gold-400/70" />
+    </article>
   )
 }
 
-function RegisterSessionPanel({ session, loading, error, children }: {
+function RegisterSessionPanel({ session, loading, error, duration, onManageRegister, children }: {
   session: RegisterSessionSummary | null
   loading: boolean
   error: string
+  duration: string | null
+  onManageRegister: () => void
   children?: React.ReactNode
 }) {
   const { t, i18n } = useTranslation('dashboard')
@@ -135,94 +184,101 @@ function RegisterSessionPanel({ session, loading, error, children }: {
     : session?.expectedCash ?? 0
   const grossSales = session ? session.totalSales + session.creditNoteTotal : 0
   return (
-    <section className="space-y-4">
+    <section className="min-w-0 space-y-4" aria-labelledby="branch-register-session-heading">
+      <h2
+        id="branch-register-session-heading"
+        className="text-xs font-bold uppercase tracking-[0.16em] text-gray-500 rtl:normal-case rtl:tracking-normal"
+      >
+        {t('branch.registerSnapshot')}
+      </h2>
       {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {[1, 2, 3, 4, 5, 6, 7, 8].map(i => <div key={i} className="h-28 rounded-2xl bg-white border border-gray-100 animate-pulse" />)}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-busy="true">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+            <div key={i} className="h-[136px] rounded-2xl border border-gray-100 bg-white animate-pulse" aria-hidden="true" />
+          ))}
         </div>
       ) : error ? (
         <div className="grid gap-4 lg:grid-cols-[3fr_1fr]">
-          <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-card" role="alert">
             {error}
           </div>
           {children}
         </div>
       ) : !hasSession ? (
         <div className="grid gap-4 lg:grid-cols-[3fr_1fr]">
-          <div className="rounded-2xl border border-gray-100 bg-white px-5 py-6 shadow-sm">
-            <h2 className="text-sm font-bold text-gray-900">{t('register.none')}</h2>
+          <div className="rounded-2xl border border-gray-100 bg-white px-5 py-6 shadow-card">
+            <h3 className="text-sm font-bold text-gray-900">{t('register.none')}</h3>
             <p className="mt-1 text-sm text-gray-500">{t('register.openPrompt')}</p>
           </div>
           {children}
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
               label={t('kpi.grossSales')}
               value={<Rial amount={grossSales} />}
               sub={t('kpi.invoiceCount', { count: session.invoiceCount })}
               icon={TrendingUp}
-              gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F4A28]"
+              tone={BRANCH_KPI_TONES.grossSales}
             />
             <StatCard
               label={t('kpi.creditNotes')}
               value={<Rial amount={session.creditNoteTotal} />}
               sub={t('kpi.refundDocuments')}
               icon={Receipt}
-              gradient="bg-gradient-to-br from-[#64748b] to-[#334155]"
+              tone={BRANCH_KPI_TONES.creditNotes}
             />
             <StatCard
               label={t('kpi.netSales')}
               value={<Rial amount={session.totalSales} />}
               sub={t('kpi.grossLessCredits')}
               icon={TrendingUp}
-              gradient="bg-gradient-to-br from-[#0e6f53] to-[#0F4A28]"
+              tone={BRANCH_KPI_TONES.netSales}
             />
             <StatCard
               label={t('kpi.sessionInvoicesLabel', { prefix: labelPrefix })}
               value={String(session.invoiceCount)}
               sub={isOpen ? t('register.registerCurrent') : t('register.registerClosed')}
               icon={FileText}
-              gradient="bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]"
+              tone={BRANCH_KPI_TONES.sessionInvoices}
             />
             <StatCard
               label={t('kpi.sessionCashLabel', { prefix: labelPrefix })}
               value={<Rial amount={session.cashTotal} />}
               sub={t('kpi.cashAndSplit')}
               icon={Banknote}
-              gradient="bg-gradient-to-br from-[#059669] to-[#047857]"
+              tone={BRANCH_KPI_TONES.sessionCash}
             />
             <StatCard
               label={t('kpi.sessionCardLabel', { prefix: labelPrefix })}
               value={<Rial amount={session.cardTotal} />}
               sub={t('kpi.cardAndSplit')}
               icon={CreditCard}
-              gradient="bg-gradient-to-br from-[#0891b2] to-[#0e7490]"
+              tone={BRANCH_KPI_TONES.sessionCard}
             />
             <StatCard
               label={t('kpi.netVat')}
               value={<Rial amount={session.vatTotal} />}
               sub={t('kpi.sessionNetVat')}
               icon={BadgePercent}
-              gradient="bg-gradient-to-br from-[#b45309] to-[#92400e]"
+              tone={BRANCH_KPI_TONES.netVat}
             />
             <StatCard
               label={cashFinalLabel}
               value={<Rial amount={cashFinalValue} />}
               sub={session.status === 'closed' && session.actualCash !== null ? t('register.actualVsExpected') : t('register.expectedDrawer')}
               icon={Receipt}
-              gradient="bg-gradient-to-br from-[#4f46e5] to-[#3730a3]"
+              tone={BRANCH_KPI_TONES.expectedCash}
             />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[3fr_1fr]">
-            <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
-              <div className="border-b border-gray-100 bg-gradient-to-r from-[#F7FAF6] to-white px-5 py-4">
+            <div className="min-w-0 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
+              <div className="border-b border-gray-100 bg-gradient-to-r from-[#F7FAF6] to-white px-5 py-4 rtl:bg-gradient-to-l">
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary-600">{t('register.current')}</p>
-                    <h2 className="mt-1 text-lg font-black text-gray-950">{title}</h2>
+                  <div className="min-w-0">
+                    <h3 className="text-base font-black text-gray-950 [overflow-wrap:anywhere] sm:text-lg">{title}</h3>
                     <p className="mt-1 text-xs text-gray-500">{session.openedAt
                       ? session.status === 'open'
                         ? t('register.timeOpen', { opened: new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) })
@@ -231,14 +287,22 @@ function RegisterSessionPanel({ session, loading, error, children }: {
                         : t('register.timeOpened', { opened: new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) })
                       : t('register.noneYet')}</p>
                   </div>
-                  <span className={`rounded-full px-3 py-1.5 text-[10px] font-black ${
+                  <span className={`inline-flex min-h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-bold ${
                     session.isLongOpen
-                      ? 'bg-amber-100 text-amber-700'
+                      ? 'border-amber-200 bg-amber-50 text-amber-700'
                       : session.status === 'open'
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-gray-100 text-gray-600'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : 'border-gray-200 bg-gray-50 text-gray-600'
                   }`}>
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                      session.isLongOpen
+                        ? 'bg-amber-500'
+                        : session.status === 'open'
+                        ? 'bg-emerald-500'
+                        : 'bg-gray-400'
+                    }`} aria-hidden="true" />
                     {session.isLongOpen ? t('status.longOpen') : session.status === 'open' ? t('status.open') : t('status.closed')}
+                    {session.status === 'open' && duration ? <span className="opacity-70">· {duration}</span> : null}
                   </span>
                 </div>
               </div>
@@ -260,13 +324,13 @@ function RegisterSessionPanel({ session, loading, error, children }: {
                     { label: t('kpi.creditNotesRefunds'), value: <Rial amount={session.creditNoteTotal} /> },
                     { label: t('kpi.expenses'), value: <Rial amount={session.expensesTotal} /> },
                   ]).map(item => (
-                  <div key={item.label} className={`rounded-2xl border px-4 py-3 ${
+                  <div key={item.label} className={`min-w-0 rounded-xl border px-4 py-3 ${
                     item.emphasis
                       ? 'border-primary-100 bg-primary-50'
                       : 'border-gray-100 bg-gray-50/70'
                   }`}>
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{item.label}</p>
-                    <p dir="ltr" className={`mt-1 text-sm font-black tabular-nums ${item.emphasis ? 'text-primary-700' : 'text-gray-900'}`}>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 [overflow-wrap:anywhere] rtl:normal-case rtl:tracking-normal">{item.label}</p>
+                    <p dir="ltr" className={`mt-1 text-sm font-black tabular-nums [overflow-wrap:anywhere] ${item.emphasis ? 'text-primary-700' : 'text-gray-900'}`}>
                       {item.value}
                     </p>
                   </div>
@@ -274,11 +338,17 @@ function RegisterSessionPanel({ session, loading, error, children }: {
               </div>
 
               {session.isLongOpen && (
-                <div className="mx-5 mb-5 flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
-                  <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-amber-600" />
-                  <p className="text-xs text-amber-800">
-                    {t('register.longOpenWarning', { time: session.openedAt ? new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : t('register.earlier') })}
-                  </p>
+                <div className="mx-5 mb-5 flex flex-col gap-3 rounded-xl border border-amber-200 bg-[#fffbeb] px-4 py-3 sm:flex-row sm:items-center">
+                  <AlertTriangle size={16} className="flex-shrink-0 text-amber-600" aria-hidden="true" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-amber-950">{t('register.longOpenRisk', { age: duration ?? t('register.earlier') })}</p>
+                    <p className="mt-0.5 text-xs text-amber-800">
+                      {t('register.longOpenWarning', { time: session.openedAt ? new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : t('register.earlier') })}
+                    </p>
+                  </div>
+                  <button type="button" onClick={onManageRegister} className="min-h-10 shrink-0 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-amber-900 shadow-sm hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600">
+                    {t('register.manage')}
+                  </button>
                 </div>
               )}
             </div>
@@ -303,31 +373,34 @@ function QuickActionsPanel({ onNavigate, lowStock, lowStockLoading }: {
   ]
 
   return (
-    <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+    <aside className="min-w-0 rounded-2xl border border-gray-100 bg-white p-5 shadow-card" aria-labelledby="branch-quick-actions-heading">
       <div className="mb-4">
-        <h2 className="text-sm font-black text-gray-900">{t('branch.quickActions')}</h2>
+        <h2 id="branch-quick-actions-heading" className="text-sm font-black text-gray-900">{t('branch.quickActions')}</h2>
         <p className="mt-0.5 text-xs text-gray-400">{t('branch.workflow')}</p>
       </div>
 
       <div className="grid gap-2.5">
         {actions.map(action => (
-          <button key={action.label} onClick={() => onNavigate(action.path)}
-            className={`group flex min-h-[68px] w-full items-center gap-3 rounded-2xl px-3.5 py-3 text-left transition-all ${
+          <button
+            key={action.label}
+            type="button"
+            onClick={() => onNavigate(action.path)}
+            className={`group flex min-h-[64px] w-full items-center gap-3 rounded-xl px-3.5 py-3 text-start transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 focus-visible:ring-offset-2 active:scale-[0.98] ${
               action.primary
-                ? 'bg-[#0F2419] text-white shadow-sm hover:bg-[#173F2F]'
+                ? 'bg-[#0F2419] text-white shadow-card hover:bg-[#173F2F]'
                 : 'border border-gray-100 bg-gray-50/80 hover:border-primary-100 hover:bg-primary-50/60'
             }`}
           >
-            <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
               action.primary ? 'bg-gold-400/20 text-gold-200' : 'border border-gray-200 bg-white text-gray-500 group-hover:text-primary-600'
             }`}>
-              <action.icon size={16} />
+              <action.icon size={16} aria-hidden="true" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className={`truncate text-sm font-black ${action.primary ? 'text-white' : 'text-gray-900'}`}>
+              <p className={`text-sm font-black [overflow-wrap:anywhere] ${action.primary ? 'text-white' : 'text-gray-900'}`}>
                 {action.label}
               </p>
-              <p className={`truncate text-[11px] font-medium ${action.primary ? 'text-white/65' : 'text-gray-400'}`}>
+              <p className={`mt-0.5 text-[11px] font-medium leading-4 [overflow-wrap:anywhere] ${action.primary ? 'text-white/65' : 'text-gray-400'}`}>
                 {action.desc}
               </p>
             </div>
@@ -346,7 +419,7 @@ function QuickActionsPanel({ onNavigate, lowStock, lowStockLoading }: {
           </div>
         </div>
       )}
-    </div>
+    </aside>
   )
 }
 
@@ -467,6 +540,7 @@ export default function BranchDashboardPage() {
   const [registerSessionError, setRegisterSessionError] = useState('')
   const [statsError, setStatsError] = useState('')
   const [invoiceError, setInvoiceError] = useState('')
+  const [durationNow, setDurationNow] = useState(() => Date.now())
 
   const loadStats = useCallback(async () => {
     if (!tid || !bid) { setStatsLoading(false); return }
@@ -573,6 +647,12 @@ export default function BranchDashboardPage() {
   useEffect(() => { loadStats() },    [loadStats])
   useEffect(() => { loadInvoices() }, [loadInvoices])
   useEffect(() => { loadLowStock() }, [loadLowStock])
+  useEffect(() => {
+    if (registerSession?.status !== 'open' || !registerSession.openedAt) return
+    setDurationNow(Date.now())
+    const interval = window.setInterval(() => setDurationNow(Date.now()), 60_000)
+    return () => window.clearInterval(interval)
+  }, [registerSession?.sessionId, registerSession?.status, registerSession?.openedAt])
 
   const demoSandbox = isPermanentDemoSandboxBranch(tid, bid)
   const productionKey = productionStatus?.onboardingStatus === 'production_connected'
@@ -583,12 +663,26 @@ export default function BranchDashboardPage() {
   const zatcaStatus = demoSandbox
     ? { label: t('zatca.connected'), tone: 'success' as const }
     : zatcaPhase === 2 && !productionStatusReadable
-    ? { label: t('zatca.phase2Unavailable'), tone: 'neutral' as const }
+    ? { label: t('zatca.phase2Unavailable'), tone: 'danger' as const }
     : { ...productionStatusLabel(productionStatus, hasActiveCert), label: t(productionKey) }
+  const registerDurationParts = registerSession?.status === 'open'
+    ? getRegisterDuration(registerSession.openedAt, durationNow)
+    : null
+  const registerDuration = registerDurationParts
+    ? registerDurationParts.hours > 0
+      ? t('register.durationHoursMinutes', registerDurationParts)
+      : t('register.durationMinutes', registerDurationParts)
+    : null
+  const displayedZatcaTone = demoSandbox || zatcaPhase === 2 ? zatcaStatus.tone : 'info'
+  const displayedZatcaLabel = demoSandbox || zatcaPhase === 2 ? zatcaStatus.label : t('zatca.phase1Qr')
+  const zatcaHeaderStyle = headerStatusStyles[displayedZatcaTone]
   const dashboardTitle = branchName || tenant?.name || t('branch.myBranch')
-  const dashboardSubtitle = tenant?.name && branchName && tenant.name !== branchName
-    ? tenant.name
-    : tenant?.name_ar || t('branch.dashboard')
+  const localizedBusinessName = locale === 'ar-SA'
+    ? tenant?.name_ar?.trim() || tenant?.name?.trim() || ''
+    : tenant?.name?.trim() || tenant?.name_ar?.trim() || ''
+  const dashboardContextName = localizedBusinessName && localizedBusinessName !== dashboardTitle.trim()
+    ? localizedBusinessName
+    : ''
   const dashboardDate = new Date().toLocaleDateString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 
   useEffect(() => {
@@ -603,43 +697,63 @@ export default function BranchDashboardPage() {
   }, [bid, loadStats])
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen min-w-0 bg-gray-50">
 
       {/* Header */}
-      <header className="relative overflow-hidden bg-[#0F2419] px-5 py-5 shadow-[0_18px_50px_rgba(15,36,25,0.24)] sm:px-7">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(34,121,70,0.20),transparent_32%),radial-gradient(circle_at_85%_12%,rgba(216,183,106,0.11),transparent_30%),linear-gradient(135deg,rgba(7,21,16,0.94),rgba(15,36,25,0.98))]" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold-300/45 to-transparent" />
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative z-10 min-w-0">
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-gold-300">{t('branch.operations')}</p>
-          <h1 className="mt-1 truncate text-2xl font-black tracking-tight text-white sm:text-3xl">
-            {statsLoading ? t('branch.loading') : dashboardTitle}
-          </h1>
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/80">
-            <span className="font-semibold text-white/90" dir={tenant?.name_ar && dashboardSubtitle === tenant.name_ar ? 'rtl' : 'ltr'}>
-              {dashboardSubtitle}
-            </span>
-            <span className="hidden text-white/35 sm:inline">/</span>
-            <span className="text-white/70">{dashboardDate}</span>
+      <header
+        data-branch-dashboard-header
+        className="relative overflow-hidden bg-[#0F2419] px-6 py-4 shadow-card sm:py-[18px]"
+        aria-labelledby="branch-dashboard-title"
+      >
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gold-500" />
+        <div className="relative mx-auto flex max-w-6xl min-w-0 flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="relative z-10 min-w-0">
+            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-gold-300 rtl:normal-case rtl:tracking-normal">{t('branch.operations')}</p>
+            <h1
+              id="branch-dashboard-title"
+              dir="auto"
+              className="mt-1 text-2xl font-black tracking-tight text-white [overflow-wrap:anywhere] sm:text-3xl"
+            >
+              {statsLoading ? t('branch.loading') : dashboardTitle}
+            </h1>
+            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/70">
+              {dashboardContextName ? (
+                <>
+                  <span className="font-semibold text-white/85 [overflow-wrap:anywhere]" dir="auto">
+                    {dashboardContextName}
+                  </span>
+                  <span className="hidden text-white/30 sm:inline" aria-hidden="true">/</span>
+                </>
+              ) : null}
+              <span>{dashboardDate}</span>
+            </div>
           </div>
-        </div>
-        <div className="relative z-10 flex flex-col items-start gap-2 sm:items-end">
-          <button
-            onClick={() => navigate('/pos')}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gold-500 text-[#0F2419] text-sm font-black rounded-xl hover:bg-gold-400 transition-colors shadow-lg shadow-gold-950/20"
+
+          <div
+            data-branch-header-action-stack
+            className="relative z-10 flex w-full min-w-0 flex-col items-stretch gap-2 md:w-auto md:min-w-[10.5rem] md:shrink-0 md:items-end"
           >
-            <Receipt size={15} />
-            {t('branch.newSale')}
-          </button>
-          <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.065] px-3 py-1.5 text-xs font-black text-emerald-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-            <span className={`h-2.5 w-2.5 rounded-full ${demoSandbox || zatcaPhase === 2 ? zatcaIndicatorClass[zatcaStatus.tone] : zatcaIndicatorClass.info}`} />
-            <span>{demoSandbox || zatcaPhase === 2 ? zatcaStatus.label : t('zatca.phase1Qr')}</span>
+            <button
+              type="button"
+              onClick={() => navigate('/pos')}
+              className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-gold-500 px-4 py-2.5 text-sm font-black text-[#0F2419] shadow-card transition-[background-color,transform,box-shadow] duration-150 ease-out hover:bg-gold-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-200 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F2419] active:scale-[0.97] md:w-auto"
+            >
+              <Receipt size={16} aria-hidden="true" />
+              {t('branch.newSale')}
+            </button>
+            <div
+              data-branch-zatca-status
+              className={`inline-flex min-h-7 max-w-full items-center gap-1.5 self-start rounded-full border px-3 py-1 text-[11px] font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] md:self-end ${zatcaHeaderStyle.pill}`}
+              role="status"
+            >
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${zatcaHeaderStyle.dot}`} aria-hidden="true" />
+              <span className="min-w-0 [overflow-wrap:anywhere]">{displayedZatcaLabel}</span>
+            </div>
           </div>
-        </div>
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+      <div className="mx-auto max-w-6xl space-y-5 px-4 pb-6 pt-4 sm:px-6 [@media(max-height:740px)]:space-y-4">
 
         {(statsError || invoiceError) && (
           <div className="flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
@@ -651,7 +765,7 @@ export default function BranchDashboardPage() {
             <button
               type="button"
               onClick={() => { loadStats(); loadInvoices() }}
-              className="text-xs font-semibold text-amber-900 hover:text-amber-700"
+              className="min-h-9 rounded-lg px-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600"
             >
               {t('errors.retry')}
             </button>
@@ -662,6 +776,8 @@ export default function BranchDashboardPage() {
           session={registerSession}
           loading={statsLoading && !registerSession}
           error={registerSessionError ? t(registerSessionError) : ''}
+          duration={registerDuration}
+          onManageRegister={() => navigate('/pos')}
         >
           <QuickActionsPanel
             onNavigate={navigate}
@@ -671,12 +787,15 @@ export default function BranchDashboardPage() {
         </RegisterSessionPanel>
 
         {/* Recent invoices */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-900">{t('recent.title')}</h2>
-            <button onClick={() => navigate('/invoices')}
-              className="text-xs text-primary-600 font-medium hover:text-primary-700 flex items-center gap-1">
-              {t('recent.viewAll')} <ArrowRight size={12} />
+        <section className="min-w-0 rounded-2xl border border-gray-100 bg-white shadow-card" aria-labelledby="recent-invoices-heading">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-4 sm:px-6">
+            <h2 id="recent-invoices-heading" className="text-sm font-semibold text-gray-900">{t('recent.title')}</h2>
+            <button
+              type="button"
+              onClick={() => navigate('/invoices')}
+              className="flex min-h-9 items-center gap-1 rounded-lg px-2 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-50 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            >
+              {t('recent.viewAll')} <DirectionalIcon icon={ArrowRight} size={12} />
             </button>
           </div>
 
@@ -694,8 +813,11 @@ export default function BranchDashboardPage() {
             <div className="py-10 text-center">
               <AlertCircle size={28} className="text-amber-300 mx-auto mb-2" />
               <p className="text-sm text-gray-500">{t(invoiceError)}</p>
-              <button onClick={loadInvoices}
-                className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold rounded-xl transition-colors">
+              <button
+                type="button"
+                onClick={loadInvoices}
+                className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+              >
                 {t('errors.retry')}
               </button>
             </div>
@@ -704,20 +826,29 @@ export default function BranchDashboardPage() {
               <Package size={28} className="text-gray-200 mx-auto mb-2" />
               <p className="text-sm text-gray-500">{t('recent.none')}</p>
               <p className="text-xs text-gray-400 mt-1">{t('recent.startSale')}</p>
-              <button onClick={() => navigate('/pos')}
-                className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold rounded-xl transition-colors">
-                <Receipt size={14} /> {t('branch.openPos')}
+              <button
+                type="button"
+                onClick={() => navigate('/pos')}
+                className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+              >
+                <Receipt size={14} aria-hidden="true" /> {t('branch.openPos')}
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <div className="overflow-x-auto" role="region" aria-label={t('recent.title')} tabIndex={0}>
+              <table className="w-full min-w-[680px]">
                 <thead>
                   <tr className="border-b border-gray-50">
                     {[t('recent.invoice'), t('recent.customer'), t('recent.amount'), t('recent.status'), t('recent.date')].map((h, i) => (
-                      <th key={h} className={`px-6 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wide ${
-                        i === 2 ? 'text-right' : 'text-left'
-                      }`}>{h}</th>
+                      <th
+                        key={h}
+                        scope="col"
+                        className={`px-6 py-3 text-[11px] font-semibold uppercase tracking-wide text-gray-400 rtl:normal-case rtl:tracking-normal ${
+                          i === 2 ? 'text-end' : 'text-start'
+                        }`}
+                      >
+                        {h}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -730,21 +861,33 @@ export default function BranchDashboardPage() {
                     const invoiceDate = inv.invoiceDate ?? inv.invoice_date ?? ''
                     const documentType = inv.documentType ?? inv.zatca_invoice_type ?? 'simplified'
                     return (
-                      <tr key={inv.id}
+                      <tr
+                        key={inv.id}
                         onClick={() => navigate(`/invoices/${inv.id}`)}
-                        className="hover:bg-gray-50/60 transition-colors cursor-pointer">
-                        <td dir="ltr" className="px-6 py-3.5 text-xs font-mono font-semibold text-primary-600">
-                          {invoiceNumber}
-                          {documentType === 'credit_note' && (
-                            <span className="ml-2 rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
-                              {t('status.credit')}
-                            </span>
-                          )}
+                        className="cursor-pointer transition-colors hover:bg-gray-50/60"
+                      >
+                        <td dir="ltr" className="px-6 py-3.5">
+                          <button
+                            type="button"
+                            onClick={event => {
+                              event.stopPropagation()
+                              navigate(`/invoices/${inv.id}`)
+                            }}
+                            aria-label={t('recent.openInvoice', { number: invoiceNumber })}
+                            className="inline-flex min-h-9 items-center rounded-lg px-1 text-xs font-mono font-semibold text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                          >
+                            {invoiceNumber}
+                            {documentType === 'credit_note' && (
+                              <span className="ms-2 rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
+                                {t('status.credit')}
+                              </span>
+                            )}
+                          </button>
                         </td>
-                        <td className="px-6 py-3.5 text-sm text-gray-700">
+                        <td dir="auto" className="px-6 py-3.5 text-sm text-gray-700 [overflow-wrap:anywhere]">
                           {customerName}
                         </td>
-                        <td dir="ltr" className="px-6 py-3.5 text-sm font-semibold text-gray-900 text-right tabular-nums">
+                        <td dir="ltr" className="px-6 py-3.5 text-end text-sm font-semibold text-gray-900 tabular-nums">
                           <Rial amount={amount} />
                         </td>
                         <td className="px-6 py-3.5">
@@ -758,7 +901,7 @@ export default function BranchDashboardPage() {
               </table>
             </div>
           )}
-        </div>
+        </section>
       </div>
     </div>
   )
