@@ -50,10 +50,34 @@ SELECT 'branches_without_tenants', count(*)
 FROM public.branches b LEFT JOIN public.tenants t ON t.id = b.tenant_id
 WHERE t.id IS NULL
 UNION ALL
-SELECT 'branches_without_active_login_mapping', count(*)
-FROM public.branches b WHERE NOT EXISTS (
+SELECT 'branches_without_usable_access', count(*)
+FROM public.branches b
+WHERE b.is_active IS TRUE
+AND NOT EXISTS (
   SELECT 1 FROM public.branch_login_usernames m
-  WHERE m.branch_id = b.id AND m.tenant_id = b.tenant_id AND m.is_active IS TRUE
+  JOIN public.user_profiles p
+    ON p.id = m.user_id
+   AND p.branch_id = b.id
+   AND p.tenant_id = b.tenant_id
+   AND p.role IN ('branch', 'manager', 'cashier', 'accountant')
+   AND p.is_active IS TRUE
+  JOIN auth.users u
+    ON u.id = p.id
+   AND lower(u.email) = lower(m.internal_auth_email)
+  WHERE m.branch_id = b.id
+    AND m.tenant_id = b.tenant_id
+    AND m.is_active IS TRUE
+    AND nullif(btrim(u.email), '') IS NOT NULL
+)
+AND NOT EXISTS (
+  SELECT 1 FROM public.user_profiles p
+  JOIN auth.users u ON u.id = p.id
+  WHERE p.branch_id = b.id
+    AND p.tenant_id = b.tenant_id
+    AND p.role IN ('branch', 'manager', 'cashier', 'accountant')
+    AND p.is_active IS TRUE
+    AND nullif(btrim(u.email), '') IS NOT NULL
+    AND u.email ~ '^[^[:space:]@]+@[^[:space:]@]+$'
 )
 UNION ALL
 SELECT 'duplicate_branch_usernames', count(*) FROM (
@@ -64,6 +88,103 @@ UNION ALL
 SELECT 'eligible_unassigned_owners', count(*)
 FROM public.user_profiles p JOIN auth.users u ON u.id = p.id
 WHERE p.role = 'owner' AND p.tenant_id IS NULL;
+
+-- Existing branches may use either the username-login contract or the legacy
+-- email-login contract. New Phase 1 provisioning still completes only after
+-- complete_first_branch_access creates its intended username mapping.
+WITH branch_access AS (
+  SELECT
+    b.id,
+    b.is_active,
+    EXISTS (
+      SELECT 1
+      FROM public.branch_login_usernames m
+      JOIN public.user_profiles p
+        ON p.id = m.user_id
+       AND p.branch_id = b.id
+       AND p.tenant_id = b.tenant_id
+       AND p.role IN ('branch', 'manager', 'cashier', 'accountant')
+       AND p.is_active IS TRUE
+      JOIN auth.users u
+        ON u.id = p.id
+       AND lower(u.email) = lower(m.internal_auth_email)
+      WHERE m.branch_id = b.id
+        AND m.tenant_id = b.tenant_id
+        AND m.is_active IS TRUE
+        AND nullif(btrim(u.email), '') IS NOT NULL
+    ) AS has_valid_username_access,
+    EXISTS (
+      SELECT 1
+      FROM public.user_profiles p
+      JOIN auth.users u ON u.id = p.id
+      WHERE p.branch_id = b.id
+        AND p.tenant_id = b.tenant_id
+        AND p.role IN ('branch', 'manager', 'cashier', 'accountant')
+        AND p.is_active IS TRUE
+        AND nullif(btrim(u.email), '') IS NOT NULL
+        AND u.email ~ '^[^[:space:]@]+@[^[:space:]@]+$'
+    ) AS has_valid_email_access,
+    EXISTS (
+      SELECT 1
+      FROM public.user_profiles p
+      LEFT JOIN auth.users u ON u.id = p.id
+      WHERE p.branch_id = b.id
+        AND (
+          p.tenant_id IS DISTINCT FROM b.tenant_id
+          OR p.role NOT IN ('branch', 'manager', 'cashier', 'accountant')
+          OR p.is_active IS NOT TRUE
+          OR u.id IS NULL
+          OR nullif(btrim(u.email), '') IS NULL
+          OR u.email !~ '^[^[:space:]@]+@[^[:space:]@]+$'
+        )
+    ) OR EXISTS (
+      SELECT 1
+      FROM public.branch_login_usernames m
+      LEFT JOIN public.user_profiles p ON p.id = m.user_id
+      LEFT JOIN auth.users u ON u.id = m.user_id
+      WHERE m.branch_id = b.id
+        AND m.is_active IS TRUE
+        AND (
+          m.tenant_id IS DISTINCT FROM b.tenant_id
+          OR p.id IS NULL
+          OR p.branch_id IS DISTINCT FROM b.id
+          OR p.tenant_id IS DISTINCT FROM b.tenant_id
+          OR p.is_active IS NOT TRUE
+          OR u.id IS NULL
+          OR lower(u.email) IS DISTINCT FROM lower(m.internal_auth_email)
+        )
+    ) AS has_ambiguous_or_mismatched_access
+  FROM public.branches b
+)
+SELECT access_kind, affected
+FROM (
+  SELECT 1 AS sort_order, 'valid_username_login_branches' AS access_kind,
+         count(*) FILTER (WHERE is_active AND has_valid_username_access) AS affected
+  FROM branch_access
+  UNION ALL
+  SELECT 2, 'valid_email_login_branches',
+         count(*) FILTER (WHERE is_active AND has_valid_email_access)
+  FROM branch_access
+  UNION ALL
+  SELECT 3, 'branches_supporting_both',
+         count(*) FILTER (
+           WHERE is_active AND has_valid_username_access AND has_valid_email_access
+         )
+  FROM branch_access
+  UNION ALL
+  SELECT 4, 'branches_with_no_usable_access',
+         count(*) FILTER (
+           WHERE is_active
+             AND NOT has_valid_username_access
+             AND NOT has_valid_email_access
+         )
+  FROM branch_access
+  UNION ALL
+  SELECT 5, 'ambiguous_or_mismatched_branch_access',
+         count(*) FILTER (WHERE is_active AND has_ambiguous_or_mismatched_access)
+  FROM branch_access
+) access_summary
+ORDER BY sort_order;
 
 DO $$
 DECLARE v_count bigint;

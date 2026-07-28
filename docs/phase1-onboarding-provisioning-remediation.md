@@ -37,6 +37,11 @@ reassign identities automatically.
    `supabase/phase1-provisioning-readonly-checks.sql` and retain counts in the
    restricted change record. The migration deliberately stops if duplicate Main
    branches or duplicate live subscriptions exist.
+   Existing active branches pass the access check when they have either a valid
+   tenant/branch-linked username mapping or a valid active branch profile and
+   Auth identity with a usable email. Email access is a compatibility allowance
+   for existing branches only; new first-branch provisioning still requires its
+   intended username mapping before reaching `complete`.
    Review every inconsistency count, RPC ACL/search-path row, and affected
    trigger before approving the migration.
 3. Apply `20260728000000_phase1_onboarding_provisioning.sql` during a quiet
