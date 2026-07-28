@@ -130,14 +130,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             ...branchNavigation.filter(item => item.section === 'analysis'),
           ]
         : branchNavigation
-      : canViewOperations
-        ? [
-            ...ownerNav.filter(item => item.section !== 'settings' && item.section !== 'analysis'),
-            operationsNavItem,
-            ...ownerNav.filter(item => item.section === 'settings'),
-            ...ownerNav.filter(item => item.section === 'analysis'),
-          ]
-        : ownerNav
+      : ownerNav
   const subtitle = isSuperAdmin
     ? `Kubri ${t('navigation:roles.superAdmin')}`
     : resolveBusinessDisplayName(tenant, isRtl, 'Kubri')

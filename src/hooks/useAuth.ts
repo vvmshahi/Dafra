@@ -8,6 +8,10 @@ import {
   normalizeBranchUsernameInput,
   validateBranchUsernameInput,
 } from '@/lib/utils/branchUsername'
+import {
+  clearStaleAuthSessionData,
+  isInvalidRefreshTokenError,
+} from '@/lib/authSessionRecovery'
 
 function computeIsOnboarded(profile: UserProfile | null): boolean | null {
   if (profile === null) return null
@@ -65,6 +69,7 @@ function useProvideAuth() {
   const ownerSetupCompletionAttempts = useRef(new Set<string>())
   const currentUserId = useRef<string | null>(null)
   const currentProfile = useRef<UserProfile | null>(null)
+  const invalidRefreshHandled = useRef(false)
 
   useEffect(() => {
     let mounted = true
@@ -140,6 +145,18 @@ function useProvideAuth() {
       .then(({ data: { session }, error }) => {
         if (!mounted) return
         if (error) {
+          if (isInvalidRefreshTokenError(error) && !invalidRefreshHandled.current) {
+            invalidRefreshHandled.current = true
+            clearStaleAuthSessionData()
+            currentUserId.current = null
+            currentProfile.current = null
+            setUser(null)
+            setSession(null)
+            setProfile(null)
+            setTenant(null)
+            setBranch(null)
+            setAuthError(null)
+          }
           logDesktopAuthDiagnostic('INITIAL_SESSION_ERROR', null)
           setLoading(false)
           setHasBranch(true)
@@ -159,7 +176,18 @@ function useProvideAuth() {
       })
       .catch((error) => {
         if (!mounted) return
-        void error
+        if (isInvalidRefreshTokenError(error) && !invalidRefreshHandled.current) {
+          invalidRefreshHandled.current = true
+          clearStaleAuthSessionData()
+          currentUserId.current = null
+          currentProfile.current = null
+          setUser(null)
+          setSession(null)
+          setProfile(null)
+          setTenant(null)
+          setBranch(null)
+          setAuthError(null)
+        }
         logDesktopAuthDiagnostic('INITIAL_SESSION_ERROR', null)
         setLoading(false)
         setHasBranch(true)
