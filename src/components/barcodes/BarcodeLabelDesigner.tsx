@@ -1,6 +1,7 @@
-import { useDeferredValue, useMemo, useState } from 'react'
-import { AlertTriangle, Check, Printer, RotateCcw } from 'lucide-react'
+import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { AlertTriangle, Check, Eye, LayoutTemplate, Maximize2, PackageCheck, Printer, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import {
   barcodePrintDocument,
@@ -20,6 +21,11 @@ import {
   type RetailLabelPresetId,
 } from '@/lib/barcodes/labelSettings'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import {
+  DocumentStudioPreviewToolbar,
+  DocumentStudioSectionNav,
+  DocumentStudioWorkspace,
+} from '@/components/printing/DocumentStudioShell'
 
 interface Props {
   labels: BarcodeLabel[]
@@ -28,7 +34,14 @@ interface Props {
   onChange: (settings: BarcodeLabelSettings) => void
   previewDataLabel?: string
   compact?: boolean
+  studio?: {
+    actionFooter: ReactNode
+    printerAdjustment: ReactNode
+  }
 }
+
+type BarcodeStudioSection = 'layout' | 'size' | 'information' | 'appearance' | 'printer'
+const BARCODE_STUDIO_SECTIONS: readonly BarcodeStudioSection[] = ['layout', 'size', 'information', 'appearance', 'printer']
 
 const optionalContent: (keyof LabelContentSettings)[] = [
   'unitName',
@@ -47,10 +60,12 @@ export function BarcodeLabelPreview({
   document,
   title,
   dimensions,
+  bare = false,
 }: {
   document: BarcodePrintDocument | null
   title: string
   dimensions?: string
+  bare?: boolean
 }) {
   const { t } = useTranslation('printing')
   if (!document) {
@@ -66,8 +81,8 @@ export function BarcodeLabelPreview({
     : fitStatus === 'tight'
       ? 'bg-amber-50 text-amber-800'
       : 'bg-red-50 text-red-700'
-  return <div className="overflow-hidden rounded-2xl border border-gray-200 bg-[#e7ece8] shadow-inner">
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white px-3 py-2.5">
+  return <div className={`overflow-hidden bg-[#e7ece8] ${bare ? 'flex min-h-full flex-col' : 'rounded-2xl border border-gray-200 shadow-inner'}`}>
+    {!bare && <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white px-3 py-2.5">
       <div>
         <p className="text-xs font-bold text-gray-900">{title}</p>
         <p className="text-[10px] text-gray-500">
@@ -80,12 +95,12 @@ export function BarcodeLabelPreview({
         {fitStatus === 'safe' ? <Check size={11} aria-hidden="true" /> : <AlertTriangle size={11} aria-hidden="true" />}
         {t(`barcodeLabels.preview.fitStatus.${fitStatus}`)}
       </span>
-    </div>
+    </div>}
     <iframe
       title={title}
       sandbox="allow-scripts allow-modals"
       srcDoc={document.html}
-      className="h-[clamp(300px,50vh,480px)] w-full bg-white [@media(max-height:740px)]:h-[310px]"
+      className={bare ? 'min-h-[420px] w-full flex-1 bg-white' : 'h-[clamp(300px,50vh,480px)] w-full bg-white [@media(max-height:740px)]:h-[310px]'}
     />
   </div>
 }
@@ -97,11 +112,17 @@ export default function BarcodeLabelDesigner({
   onChange,
   previewDataLabel,
   compact = false,
+  studio,
 }: Props) {
   const { t, i18n } = useTranslation('printing')
   const [printing, setPrinting] = useState(false)
   const [printError, setPrintError] = useState('')
   const [resetPresetOpen, setResetPresetOpen] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedSection = searchParams.get('section') as BarcodeStudioSection | null
+  const [activeSection, setActiveSection] = useState<BarcodeStudioSection>(
+    requestedSection && BARCODE_STUDIO_SECTIONS.includes(requestedSection) ? requestedSection : 'layout',
+  )
   const deferredLabels = useDeferredValue(labels)
   const deferredSettings = useDeferredValue(settings)
   const preview = useMemo(() => {
@@ -123,6 +144,17 @@ export default function BarcodeLabelDesigner({
       return null
     }
   }, [deferredLabels, deferredSettings, calibration, t, previewDataLabel, i18n.language])
+  useEffect(() => {
+    if (!studio) return
+    const requested = searchParams.get('section') as BarcodeStudioSection | null
+    if (requested && BARCODE_STUDIO_SECTIONS.includes(requested)) {
+      setActiveSection(requested)
+      return
+    }
+    const next = new URLSearchParams(searchParams)
+    next.set('section', 'layout')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams, !!studio])
 
   const update = <K extends keyof BarcodeLabelSettings>(key: K, value: BarcodeLabelSettings[K]) =>
     onChange({ ...settings, [key]: value })
@@ -133,6 +165,13 @@ export default function BarcodeLabelDesigner({
   }
   const secondaryEnabled = settings.content.productNameAr || settings.content.productNameEn
   const applyPreset = (id: RetailLabelPresetId) => onChange(settingsFromPreset(id))
+  const selectSection = (id: string) => {
+    const nextSection = BARCODE_STUDIO_SECTIONS.includes(id as BarcodeStudioSection) ? id as BarcodeStudioSection : 'layout'
+    setActiveSection(nextSection)
+    const next = new URLSearchParams(searchParams)
+    next.set('section', nextSection)
+    setSearchParams(next)
+  }
   const printPreview = () => {
     if (!preview || printing) return
     setPrinting(true)
@@ -157,9 +196,8 @@ export default function BarcodeLabelDesigner({
     }
   }
 
-  return <div className={`grid items-start gap-5 ${compact ? '' : 'xl:grid-cols-[minmax(0,1fr)_minmax(380px,.9fr)]'}`}>
-    <div className="min-w-0 space-y-3">
-      <section className="rounded-2xl border border-gray-200 bg-[#fbfcfb] p-4">
+  const configuration = <div className="min-w-0 space-y-3">
+      <section className={`${studio && activeSection !== 'layout' ? 'hidden' : ''} rounded-xl border border-gray-200 bg-[#fbfcfb] p-4`}>
         <div className="mb-3">
           <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.design.title')}</h3>
           <p className="mt-0.5 text-xs text-gray-500">{t('barcodeLabels.design.help')}</p>
@@ -187,7 +225,7 @@ export default function BarcodeLabelDesigner({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-4">
+      <section className={`${studio && activeSection !== 'size' ? 'hidden' : ''} rounded-xl border border-gray-200 bg-white p-4`}>
         <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.size.title')}</h3>
         <p className="mt-0.5 text-[11px] text-gray-500">{t('barcodeLabels.size.help')}</p>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -202,7 +240,7 @@ export default function BarcodeLabelDesigner({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-4">
+      <section className={`${studio && activeSection !== 'information' ? 'hidden' : ''} rounded-xl border border-gray-200 bg-white p-4`}>
         <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.content.title')}</h3>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           {(['productName', 'sellingPrice', 'barcodeValue'] as const).map(key => <label key={key} className="flex min-h-10 items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/40 px-3 py-2">
@@ -225,7 +263,7 @@ export default function BarcodeLabelDesigner({
         <p className="mt-2 text-[10px] text-gray-400">{t('barcodeLabels.content.barcodeAlwaysIncluded')}</p>
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-4">
+      <section className={`${studio && activeSection !== 'appearance' ? 'hidden' : ''} rounded-xl border border-gray-200 bg-white p-4`}>
         <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.appearance.title')}</h3>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className="space-y-1.5 text-xs font-semibold text-gray-600">
@@ -257,10 +295,11 @@ export default function BarcodeLabelDesigner({
           <RotateCcw size={13} aria-hidden="true" />{t('barcodeLabels.actions.resetPreset')}
         </button>
       </section>
+      {studio && activeSection === 'printer' && <section className="rounded-xl border border-gray-200 bg-white p-3">{studio.printerAdjustment}</section>}
       <ConfirmDialog open={resetPresetOpen} kind="resetLabelPreset" onClose={() => setResetPresetOpen(false)} onConfirm={() => { applyPreset(settings.presetId as RetailLabelPresetId); setResetPresetOpen(false) }} />
     </div>
 
-    <aside className={`${compact ? '' : 'xl:sticky xl:top-4'} min-w-0`}>
+  const previewPanel = <aside className={`${compact ? '' : 'xl:sticky xl:top-4'} min-w-0`}>
       <BarcodeLabelPreview document={preview} title={t('barcodeLabels.preview.title')} dimensions={`${settings.widthMm} × ${settings.heightMm} ${t('barcodeLabels.units.mm')}`} />
       {preview?.layout.warnings.length ? <div className="mt-2 rounded-xl border border-amber-200 border-s-4 bg-[#fffaf0] p-3 text-[11px] leading-5 text-gray-700" role="status" aria-live="polite">
         <p className="flex items-start gap-1.5 font-bold"><AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />{t(preview.layout.contentFitStatus === 'overflow' ? 'barcodeLabels.preview.denseTitleOverflow' : 'barcodeLabels.preview.denseTitle')}</p>
@@ -276,5 +315,54 @@ export default function BarcodeLabelDesigner({
         {printError && <span role="alert" className="text-[11px] text-red-700">{printError}</span>}
       </div>
     </aside>
-  </div>
+
+  if (studio) {
+    const fitStatus = !preview?.layout.fits || preview.layout.contentFitStatus === 'overflow'
+      ? 'overflow'
+      : preview.layout.contentFitStatus
+    const statusClass = fitStatus === 'safe'
+      ? 'bg-emerald-50 text-emerald-700'
+      : fitStatus === 'tight'
+        ? 'bg-amber-50 text-amber-800'
+        : 'bg-red-50 text-red-700'
+    const sections = [
+      { id: 'layout', label: t('barcodeLabels.studio.sections.layout'), icon: LayoutTemplate },
+      { id: 'size', label: t('barcodeLabels.studio.sections.size'), icon: Maximize2 },
+      { id: 'information', label: t('barcodeLabels.studio.sections.information'), icon: PackageCheck },
+      { id: 'appearance', label: t('barcodeLabels.studio.sections.appearance'), icon: Eye },
+      { id: 'printer', label: t('barcodeLabels.studio.sections.printer'), icon: SlidersHorizontal },
+    ]
+    return <DocumentStudioWorkspace
+      configurationLabel={t('workspace.studio.configuration')}
+      previewLabel={t('barcodeLabels.preview.title')}
+      settingsLabel={t('workspace.studio.settings')}
+      closeSettingsLabel={t('workspace.studio.closeSettings')}
+      sectionNavigation={<DocumentStudioSectionNav sections={sections} activeSection={activeSection} onSelect={selectSection} label={t('barcodeLabels.studio.navigation')} />}
+      configuration={configuration}
+      previewToolbar={<DocumentStudioPreviewToolbar
+        title={t('barcodeLabels.preview.title')}
+        meta={<><bdi className="font-semibold tabular-nums text-gray-700" dir="ltr">{settings.widthMm} × {settings.heightMm} {t('barcodeLabels.units.mm')}</bdi><span aria-hidden="true"> · </span>{t(`barcodeLabels.presets.${settings.presetId}.name`)}</>}
+      >
+        <span className={`inline-flex h-7 items-center gap-1 rounded-full px-2 text-[10px] font-semibold ${statusClass}`} role="status">
+          {fitStatus === 'safe' ? <Check size={11} aria-hidden="true" /> : <AlertTriangle size={11} aria-hidden="true" />}
+          {t(`barcodeLabels.preview.fitStatus.${fitStatus}`)}
+        </span>
+        <Button type="button" size="sm" onClick={printPreview} loading={printing} disabled={!preview || printing} className="h-8 bg-primary-700 active:scale-[.97]">
+          <Printer size={14} aria-hidden="true" /> {t('barcodeLabels.actions.print')}
+        </Button>
+      </DocumentStudioPreviewToolbar>}
+      preview={<div className="mx-auto flex min-h-full max-w-full flex-col justify-center">
+        <BarcodeLabelPreview document={preview} title={t('barcodeLabels.preview.title')} dimensions={`${settings.widthMm} × ${settings.heightMm} ${t('barcodeLabels.units.mm')}`} bare />
+        {preview?.layout.warnings.length ? <div className="mx-auto mt-2 w-full max-w-2xl rounded-xl border border-amber-200 border-s-4 bg-[#fffaf0] p-3 text-[11px] leading-5 text-gray-700" role="status" aria-live="polite">
+          <p className="flex items-start gap-1.5 font-bold"><AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />{t(preview.layout.contentFitStatus === 'overflow' ? 'barcodeLabels.preview.denseTitleOverflow' : 'barcodeLabels.preview.denseTitle')}</p>
+          {preview.layout.warnings.map(warning => <p key={warning}>{t(`barcodeLabels.preview.warnings.${warning}`)}</p>)}
+          <p className="font-semibold">{t('barcodeLabels.preview.fitGuidance')}</p>
+        </div> : null}
+        {printError && <p role="alert" className="mx-auto mt-2 text-[11px] text-red-700">{printError}</p>}
+      </div>}
+      actionFooter={studio.actionFooter}
+    />
+  }
+
+  return <div className={`grid items-start gap-5 ${compact ? '' : 'xl:grid-cols-[minmax(0,1fr)_minmax(380px,.9fr)]'}`}>{configuration}{previewPanel}</div>
 }

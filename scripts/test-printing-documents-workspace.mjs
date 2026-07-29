@@ -9,6 +9,8 @@ const designer = read('../src/components/barcodes/BarcodeLabelDesigner.tsx')
 const labelSettings = read('../src/components/barcodes/BarcodeLabelSettingsPanel.tsx')
 const calibration = read('../src/components/barcodes/BarcodePrinterSetupPanel.tsx')
 const geometry = read('../src/lib/barcodes/labelSettings.ts')
+const studio = read('../src/components/printing/DocumentStudioShell.tsx')
+const a4Fit = read('../src/components/print/A4PreviewFit.tsx')
 const en = JSON.parse(read('../src/localization/locales/en/printing.json'))
 const ar = JSON.parse(read('../src/localization/locales/ar-SA/printing.json'))
 
@@ -26,7 +28,7 @@ test('web exposes three areas while Electron retains Printer Setup', () => {
   assert.match(workspace, /document\.documentElement\.dir === 'rtl'/)
   assert.match(workspace, /tab\.id !== 'printerSetup' \|\| electron/)
   assert.match(workspace, /electron && active === 'printerSetup'/)
-  assert.match(workspace, /!electron && <details[\s\S]*BarcodePrinterSetupPanel/)
+  assert.match(workspace, /printerAdjustment=\{<BarcodePrinterSetupPanel/)
   assert.match(workspace, /useSearchParams/)
   assert.match(workspace, /return 'receipts'/)
 })
@@ -44,14 +46,81 @@ test('receipt and invoice workspaces retain branch save, reset and preview contr
   assert.match(invoice, /disabled=\{!canEdit \|\| !isDirty \|\| saving/)
 })
 
-test('barcode preview uses localized sample fixture copy with compact branch guidance', () => {
+test('barcode preview uses localized sample fixture copy without the long branch paragraph', () => {
   assert.match(designer, /previewDataLabel/)
-  assert.match(labelSettings, /settings\.help/)
+  assert.doesNotMatch(labelSettings, /settings\.help/)
   assert.doesNotMatch(labelSettings, /Branch label default/)
   assert.equal(en.barcodeLabels.preview.sampleTitle, 'Sample preview')
   assert.equal(en.barcodeLabels.preview.sampleHelp, 'This preview uses sample product data.')
   assert.equal(ar.barcodeLabels.preview.sampleTitle, 'معاينة تجريبية')
   assert.equal(ar.barcodeLabels.preview.sampleHelp, 'تستخدم هذه المعاينة بيانات منتج تجريبية.')
+})
+
+test('one document studio shell owns bounded panes, preview chrome and the action footer', () => {
+  assert.match(invoice, /<DocumentStudioWorkspace/)
+  assert.match(designer, /<DocumentStudioWorkspace/)
+  assert.match(invoice, /<DocumentStudioActionFooter/)
+  assert.match(labelSettings, /<DocumentStudioActionFooter/)
+  assert.match(studio, /document-studio-header|document-studio-workspace/)
+  assert.match(studio, /document-studio-preview-toolbar/)
+  assert.match(studio, /document-studio-action-footer/)
+  assert.match(studio, /grid min-h-0 flex-1 overflow-hidden/)
+  assert.match(studio, /overflow-y-auto overscroll-contain/)
+  assert.match(studio, /document-studio-preview-canvas min-h-0 flex-1 overscroll-contain/)
+  assert.match(studio, /previewOverflow === 'hidden' \? 'overflow-hidden' : 'overflow-auto'/)
+  assert.doesNotMatch(studio, /calc\(100vh|h-\[[0-9]+vh\]/)
+  assert.doesNotMatch(a4Fit, /calc\(100dvh/)
+  assert.match(a4Fit, /bounded \? 'h-full min-h-0 overflow-auto'/)
+})
+
+test('secondary navigation is compact, routed, keyboard accessible and safely normalized', () => {
+  assert.match(studio, /DocumentStudioSectionNav/)
+  assert.match(studio, /ArrowUp/)
+  assert.match(studio, /ArrowDown/)
+  assert.match(studio, /ArrowLeft/)
+  assert.match(studio, /ArrowRight/)
+  assert.match(studio, /aria-current=\{selected/)
+  assert.match(invoice, /searchParams\.get\('section'\)/)
+  assert.match(invoice, /allowedSections\.includes/)
+  assert.match(invoice, /next\.set\('section', nextSection\)/)
+  assert.match(designer, /BARCODE_STUDIO_SECTIONS/)
+  assert.match(designer, /next\.set\('section', 'layout'\)/)
+})
+
+test('responsive settings drawer traps focus, supports Escape and does not duplicate preview', () => {
+  assert.match(studio, /useDialogFocus\(drawerState\.open/)
+  assert.match(studio, /role="dialog"/)
+  assert.match(studio, /aria-modal="true"/)
+  assert.match(studio, /xl:hidden/)
+  assert.match(studio, /xl:grid-cols-\[minmax\(400px,440px\)_minmax\(0,1fr\)\]/)
+  assert.match(studio, /w-\[min\(92%,440px\)\]/)
+  assert.equal((studio.match(/\{preview\}/g) ?? []).length, 1)
+})
+
+test('primary workspace changes preserve route history and confirm before discarding edits', () => {
+  assert.match(workspace, /setPendingWorkspace\(workspace\)/)
+  assert.match(workspace, /requestedWorkspace !== active/)
+  assert.match(workspace, /restored\.set\('tab', queryValue\[active\]\)/)
+  assert.match(workspace, /<ConfirmDialog open=\{pendingWorkspace !== null\} kind="discard"/)
+  assert.match(workspace, /next\.delete\('section'\)/)
+  assert.match(workspace, /setSearchParams\(next\)/)
+  assert.match(invoice, /onDirtyChange\?\.\(isDirty\)/)
+  assert.match(labelSettings, /onDirtyChange\?\.\(dirty\)/)
+})
+
+test('English and Arabic expose the same studio navigation and status contract', () => {
+  for (const locale of [en, ar]) {
+    assert.ok(locale.workspace.about)
+    assert.ok(locale.workspace.status.saved)
+    assert.ok(locale.workspace.status.unsaved)
+    assert.ok(locale.workspace.studio.configuration)
+    assert.ok(locale.workspace.studio.settings)
+    assert.ok(locale.workspace.studio.closeSettings)
+    for (const area of ['receipts', 'invoices']) assert.ok(locale.workspace.sections[area])
+    for (const section of ['layout', 'size', 'information', 'appearance', 'printer']) {
+      assert.ok(locale.barcodeLabels.studio.sections[section])
+    }
+  }
 })
 
 test('only four supported presets are selectable while deprecated values remain normalizable', () => {
