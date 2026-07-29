@@ -164,7 +164,7 @@ function legacyModel(props: LegacyThermalReceiptProps): DocumentViewModel {
       footer: { thank_you_message: null, footer_note: props.receiptFooter ?? null, refund_note: null, show_thank_you: false, show_footer: props.showFooter ?? true, show_refund_note: false },
       logo: { visible: props.showLogo ?? true, asset_path: props.logoUrl ?? null, asset_version: 1, size: 'medium' },
       thermal: { width: '80mm', density: 'standard', qr_size: 'standard', wrap_item_names: true, show_cash_change: props.showCashChange ?? true },
-      a4: { template_id: 'classic', template_version: 1, header_style: 'standard' },
+      a4: { template_id: 'classic', template_version: 1, header_style: 'standard', accent_color: '#0f766e', header_asset_path: null, header_asset_version: 1, header_asset_enabled: false, header_asset_fit: 'contain', header_asset_height: 28, header_asset_spacing: 6 },
     },
   }, {
     display_name: null,

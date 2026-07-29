@@ -1277,6 +1277,7 @@ export type A4TemplateId =
   | 'clean_ledger'
   | 'contemporary_border'
 export type A4HeaderStyle = 'standard' | 'compact' | 'branded'
+export type A4HeaderFit = 'contain' | 'cover'
 
 export interface InvoicePresentationSettings {
   schema_version: 1
@@ -1285,7 +1286,18 @@ export interface InvoicePresentationSettings {
   footer: { thank_you_message: string | null; footer_note: string | null; refund_note: string | null; bold?: boolean; show_thank_you: boolean; show_footer: boolean; show_refund_note: boolean }
   logo: { visible: boolean; asset_path: string | null; asset_version: number; size: LogoAssetSize }
   thermal: { width: ThermalWidth; density: ThermalDensity; qr_size: QrSize; qr_alignment: QrAlignment; wrap_item_names: boolean; show_cash_change: boolean }
-  a4: { template_id: A4TemplateId; template_version: 1; header_style: A4HeaderStyle }
+  a4: {
+    template_id: A4TemplateId
+    template_version: 1
+    header_style: A4HeaderStyle
+    accent_color: string
+    header_asset_path: string | null
+    header_asset_version: number
+    header_asset_enabled: boolean
+    header_asset_fit: A4HeaderFit
+    header_asset_height: number
+    header_asset_spacing: number
+  }
   after_sale_action?: 'receipt' | 'a4' | 'both'
 }
 
