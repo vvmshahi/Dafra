@@ -12,7 +12,7 @@ const geometry = read('../src/lib/barcodes/labelSettings.ts')
 const en = JSON.parse(read('../src/localization/locales/en/printing.json'))
 const ar = JSON.parse(read('../src/localization/locales/ar-SA/printing.json'))
 
-test('all four workspace areas remain in an accessible segmented tablist', () => {
+test('web exposes three areas while Electron retains Printer Setup', () => {
   for (const id of ['receipts', 'invoices', 'barcodeLabels', 'printerSetup']) {
     assert.match(workspace, new RegExp(`id: '${id}'`))
     assert.ok(en.workspace.tabs[id].label)
@@ -24,6 +24,11 @@ test('all four workspace areas remain in an accessible segmented tablist', () =>
   assert.match(workspace, /role="tabpanel"/)
   assert.match(workspace, /ArrowLeft/)
   assert.match(workspace, /document\.documentElement\.dir === 'rtl'/)
+  assert.match(workspace, /tab\.id !== 'printerSetup' \|\| electron/)
+  assert.match(workspace, /electron && active === 'printerSetup'/)
+  assert.match(workspace, /!electron && <section[\s\S]*BarcodePrinterSetupPanel/)
+  assert.match(workspace, /useSearchParams/)
+  assert.match(workspace, /return 'receipts'/)
 })
 
 test('receipt and invoice workspaces retain branch save, reset and preview contracts', () => {
