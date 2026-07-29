@@ -62,7 +62,7 @@ export interface CanonicalInvoicePresentationSettings {
   }
   footer: { message: string | null; bold: boolean }
   thermal: { width: ThermalWidth; density: ThermalDensity; qr_size: 'small' | 'medium' | 'large'; qr_alignment: QrAlignment }
-  a4: { theme: A4TemplateId }
+  a4: { theme: A4TemplateId; accent_color: string; header_asset_path: string | null; header_asset_version: number; header_asset_enabled: boolean; header_asset_fit: 'contain' | 'cover'; header_asset_height: number; header_asset_spacing: number }
   [key: string]: unknown
 }
 
@@ -94,7 +94,7 @@ export interface InvoicePresentationSaveContract {
   }
   footer: { message: string | null; bold: boolean }
   thermal: { width: ThermalWidth; density: ThermalDensity; qr_size: 'small' | 'medium' | 'large'; qr_alignment: 'center' }
-  a4: { theme: A4TemplateId }
+  a4: { theme: A4TemplateId; accent_color: string; header_asset_path: string | null; header_asset_version: number; header_asset_enabled: boolean; header_asset_fit: 'contain' | 'cover'; header_asset_height: number; header_asset_spacing: number }
 }
 
 export interface InvoicePresentationSaveInput {
@@ -150,7 +150,16 @@ export function serializeInvoicePresentationSettingsForSave(
       qr_size: qrSize,
       qr_alignment: 'center',
     },
-    a4: { theme: oneOf(p.a4.template_id, Object.keys(A4_TEMPLATE_REGISTRY) as A4TemplateId[], 'classic') },
+    a4: {
+      theme: oneOf(p.a4.template_id, Object.keys(A4_TEMPLATE_REGISTRY) as A4TemplateId[], 'classic'),
+      accent_color: p.a4.accent_color,
+      header_asset_path: p.a4.header_asset_path,
+      header_asset_version: p.a4.header_asset_version,
+      header_asset_enabled: p.a4.header_asset_enabled,
+      header_asset_fit: p.a4.header_asset_fit,
+      header_asset_height: p.a4.header_asset_height,
+      header_asset_spacing: p.a4.header_asset_spacing,
+    },
   }
 }
 
@@ -197,7 +206,7 @@ export function toCanonicalInvoicePresentationSettings(value: {
       qr_size: p.thermal.qr_size === 'standard' ? 'medium' : p.thermal.qr_size,
       qr_alignment: 'center',
     },
-    a4: { theme: p.a4.template_id },
+    a4: { theme: p.a4.template_id, accent_color: p.a4.accent_color, header_asset_path: p.a4.header_asset_path, header_asset_version: p.a4.header_asset_version, header_asset_enabled: p.a4.header_asset_enabled, header_asset_fit: p.a4.header_asset_fit, header_asset_height: p.a4.header_asset_height, header_asset_spacing: p.a4.header_asset_spacing },
   }
 }
 
@@ -336,6 +345,13 @@ export function normalizeInvoiceSettings(rawSettings: unknown, branch: InvoiceSe
         template_id: oneOf(a4.template_id ?? a4.theme, Object.keys(A4_TEMPLATE_REGISTRY) as A4TemplateId[], templateId),
         template_version: 1,
         header_style: oneOf(a4.header_style, ['standard', 'compact', 'branded'] as const, 'standard'),
+        accent_color: typeof a4.accent_color === 'string' && /^#[0-9a-f]{6}$/i.test(a4.accent_color) ? a4.accent_color.toLowerCase() : '#0f766e',
+        header_asset_path: text(a4.header_asset_path),
+        header_asset_version: positiveInt(a4.header_asset_version, 1),
+        header_asset_enabled: bool(a4.header_asset_enabled, false),
+        header_asset_fit: oneOf(a4.header_asset_fit, ['contain', 'cover'] as const, 'contain'),
+        header_asset_height: typeof a4.header_asset_height === 'number' ? Math.min(56, Math.max(18, a4.header_asset_height)) : 28,
+        header_asset_spacing: typeof a4.header_asset_spacing === 'number' ? Math.min(16, Math.max(0, a4.header_asset_spacing)) : 6,
       },
       after_sale_action: afterSaleAction,
     }, afterSaleAction,
@@ -350,7 +366,7 @@ export function canonicalPresentationDefaults(current: InvoicePresentationSettin
     footer: { thank_you_message: null, footer_note: null, refund_note: null, show_thank_you: false, show_footer: true, show_refund_note: false },
     logo: { ...current.logo, visible: !!current.logo.asset_path, size: 'medium' },
     thermal: { width: '80mm', density: 'standard', qr_size: 'standard', wrap_item_names: true, show_cash_change: true },
-    a4: { template_id: 'classic', template_version: 1, header_style: 'standard' },
+    a4: { template_id: 'classic', template_version: 1, header_style: 'standard', accent_color: '#0f766e', header_asset_path: null, header_asset_version: 1, header_asset_enabled: false, header_asset_fit: 'contain', header_asset_height: 28, header_asset_spacing: 6 },
   }
 }
 

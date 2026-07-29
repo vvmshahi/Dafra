@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { documentFontFamily, documentLabel, documentLabelLines, documentNames, documentPaymentLabel } from '@/localization/documents'
 import { formatDocumentMoney, formatDocumentQuantity, type DocumentViewModel } from '@/lib/invoices/documentViewModel'
 import { resolveA4Template } from '@/lib/invoices/a4TemplateRegistry'
 import { RiyalSymbol } from '@/components/ui/RiyalSymbol'
 import { buildVisibleTotals } from '@/lib/invoices/visibleTotals'
+import { resolveInvoiceLogoUrl } from '@/lib/invoices/runtimePresentation'
 
 export interface A4RenderOptions {
   readonly id?: string
@@ -55,7 +56,22 @@ function QrVerification({ model, options }: { model: DocumentViewModel; options:
 function Footer({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { const footer = [model.presentation.footer.thankYouVisible ? model.presentation.footer.thankYou : null, model.presentation.footer.footerVisible ? model.presentation.footer.footer : null, model.presentation.footer.refundVisible ? model.presentation.footer.refund : null].filter(Boolean); return <footer className="a4-footer">{footer.length > 0 && <><div className="a4-footer-divider" aria-hidden="true" /><div className={`a4-footer-copy ${model.presentation.footer.bold || footer.length > 0 ? 'font-bold' : ''}`}>{footer.map((line, index) => <div key={`${line}-${index}`} dir="auto">{line}</div>)}</div></>}{options.pageNumbers && <span className="a4-page-number" />}</footer> }
 function DocumentTitle({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { const credit = model.identity.kind === 'credit_note'; const debit = model.identity.kind === 'debit_note'; const key = credit ? (model.identity.invoiceType === 'standard' ? 'taxCreditNote' : 'simplifiedTaxCreditNote') : debit ? (model.identity.invoiceType === 'standard' ? 'taxDebitNote' : 'simplifiedTaxDebitNote') : (model.identity.invoiceType === 'standard' ? 'standardTaxInvoice' : 'simplifiedTaxInvoice'); const lines = options.nonFiscalDemo ? ['DEMO — NOT A TAX INVOICE', 'تجريبي — ليست فاتورة ضريبية'] : documentLabelLines(model.identity.language, key); return <section className="a4-document-title">{lines.map((line, index) => <div key={`${line}-${index}`} className={index === 0 ? 'a4-document-title__main' : 'a4-document-title__sub'} dir="auto">{line}</div>)}</section> }
 function Adjustment({ model }: { model: DocumentViewModel }) { const credit = model.identity.kind === 'credit_note'; const debit = model.identity.kind === 'debit_note'; if (!credit && !debit) return null; return <section className={`a4-credit ${debit ? 'a4-debit' : ''}`}><strong>{documentLabel(model.identity.language, debit ? 'debitNoteReference' : 'creditNoteReference')}</strong>{model.compliance.originalDocument.number && <span>{documentLabel(model.identity.language, 'originalInvoice')}: <bdi dir="ltr">{model.compliance.originalDocument.number}</bdi></span>}{model.compliance.creditReason && <span>{documentLabel(model.identity.language, 'reason')}: <span dir="auto">{model.compliance.creditReason}</span></span>}</section> }
-function Shell({ template, model, options, children }: { template: string; model: DocumentViewModel; options: A4RenderOptions; children: ReactNode }) { return <article className={`a4-document a4-document--${template} a4-header--${resolveA4Template(model).headerStyle}`} dir={model.identity.direction} lang={model.identity.language === 'both' ? undefined : model.identity.language}>{options.sampleLabel && <div className="a4-sample">{options.sampleLabel}</div>}{children}</article> }
+function Shell({ template, model, options, children }: { template: string; model: DocumentViewModel; options: A4RenderOptions; children: ReactNode }) {
+  const artwork = model.template.headerAssetEnabled ? resolveInvoiceLogoUrl(model.template.headerAssetPath) : null
+  return <article
+    className={`a4-document a4-document--${template} a4-header--${resolveA4Template(model).headerStyle}`}
+    dir={model.identity.direction}
+    lang={model.identity.language === 'both' ? undefined : model.identity.language}
+    style={{ '--a4-accent': model.template.accentColor, '--a4-on-accent': contrastForeground(model.template.accentColor), '--a4-header-height': `${model.template.headerAssetHeight}mm`, '--a4-header-spacing': `${model.template.headerAssetSpacing}mm` } as CSSProperties}
+  >{options.sampleLabel && <div className="a4-sample">{options.sampleLabel}</div>}{artwork && <div className="a4-header-artwork"><img src={artwork} alt="" style={{ objectFit: model.template.headerAssetFit }} onError={event => { event.currentTarget.parentElement!.style.display = 'none' }} /></div>}{children}</article>
+}
+
+function contrastForeground(hex: string) {
+  const value = hex.replace('#', '')
+  const [r, g, b] = [0, 2, 4].map(index => Number.parseInt(value.slice(index, index + 2), 16) / 255)
+  const luminance = [r, g, b].map(channel => channel <= .03928 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4).reduce((sum, channel, index) => sum + channel * [.2126, .7152, .0722][index], 0)
+  return luminance > .42 ? '#111827' : '#ffffff'
+}
 
 function ClassicV1({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { return <Shell template="classic" model={model} options={options}><header className="a4-classic-head"><Seller model={model} /><div><DocumentTitle model={model} options={options} /><DateMeta model={model} /></div></header><Buyer model={model} /><Adjustment model={model} /><ItemTable model={model} /><div className="a4-classic-summary"><QrVerification model={model} options={options} /><Payment model={model} /><Totals model={model} /></div><Footer model={model} options={options} /></Shell> }
 function ModernSplitV1({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { return <Shell template="modern_split" model={model} options={options}><div className="a4-split-shell"><aside className="a4-split-rail"><Seller model={model} /><DocumentTitle model={model} options={options} /><DateMeta model={model} /><QrVerification model={model} options={options} /></aside><main className="a4-split-body"><Buyer model={model} /><Adjustment model={model} /><ItemTable model={model} /><Totals model={model} /><Payment model={model} /><Footer model={model} options={options} /></main></div></Shell> }

@@ -66,7 +66,7 @@ export interface DocumentViewModel {
   readonly totals: Readonly<{ currency: 'SAR'; subtotal: number; discount: number; taxableAmount: number; vat: number; total: number; paid: number; refunded: number; balance: number | null }>
   readonly payments: Readonly<{ method: string; amount: number; cashTendered: number | null; change: number | null; reference: string | null }>[]
   readonly compliance: Readonly<{ qr: Readonly<{ source: 'stored_reference' | 'sample' | 'unavailable'; reference: string | null }>; xmlState: 'available' | 'unavailable'; originalDocument: Readonly<{ id: string | null; number: string | null }>; creditReason: string | null }>
-  readonly template: Readonly<{ rendererFamily: 'thermal' | 'a4'; requestedId: string; requestedVersion: number; resolvedId: string; resolvedVersion: number; fallback: boolean; fallbackReason: string | null; headerStyle: A4HeaderStyle | null }>
+  readonly template: Readonly<{ rendererFamily: 'thermal' | 'a4'; requestedId: string; requestedVersion: number; resolvedId: string; resolvedVersion: number; fallback: boolean; fallbackReason: string | null; headerStyle: A4HeaderStyle | null; accentColor: string; headerAssetPath: string | null; headerAssetEnabled: boolean; headerAssetFit: 'contain' | 'cover'; headerAssetHeight: number; headerAssetSpacing: number }>
   readonly format: Readonly<{ currency: 'SAR'; minimumFractionDigits: 2; maximumFractionDigits: 2; quantityMaximumFractionDigits: 6; numberDirection: 'ltr'; dateLocale: 'en-SA' | 'ar-SA' }>
 }
 
@@ -115,7 +115,7 @@ export function buildPresentationDocument(input: DocumentPresentationInput, base
       printMode: input.printMode,
       afterSaleAction: settings.after_sale_action ?? (input.printMode === 'pdf' ? 'a4' : input.printMode === 'both' ? 'both' : 'receipt'),
     },
-    template: { rendererFamily: 'a4', requestedId: template.requestedId, requestedVersion: template.requestedVersion, resolvedId: template.resolvedId, resolvedVersion: template.resolvedVersion, fallback: !template.exact, fallbackReason: template.exact ? null : 'unknown_historical_template', headerStyle: settings.a4.header_style },
+    template: { rendererFamily: 'a4', requestedId: template.requestedId, requestedVersion: template.requestedVersion, resolvedId: template.resolvedId, resolvedVersion: template.resolvedVersion, fallback: !template.exact, fallbackReason: template.exact ? null : 'unknown_historical_template', headerStyle: settings.a4.header_style, accentColor: settings.a4.accent_color, headerAssetPath: settings.a4.header_asset_path, headerAssetEnabled: settings.a4.header_asset_enabled, headerAssetFit: settings.a4.header_asset_fit, headerAssetHeight: settings.a4.header_asset_height, headerAssetSpacing: settings.a4.header_asset_spacing },
     format: { currency: 'SAR', minimumFractionDigits: 2, maximumFractionDigits: 2, quantityMaximumFractionDigits: 6, numberDirection: 'ltr', dateLocale: language === 'ar' ? 'ar-SA' : 'en-SA' },
   })
 }
