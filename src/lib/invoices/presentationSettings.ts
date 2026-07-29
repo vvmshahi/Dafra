@@ -134,6 +134,13 @@ export interface InvoicePresentationSaveInput {
   afterSaleAction?: 'receipt' | 'a4' | 'both'
 }
 
+export interface UpdateBranchInvoiceSettingsPayload {
+  branch_id: string
+  invoice_language: 'ar' | 'both'
+  print_mode: 'thermal' | 'pdf' | 'both'
+  presentation_settings: InvoicePresentationSaveContract
+}
+
 /**
  * Serialize only the hosted V1 presentation contract.  Do not replace this
  * with object spreading: the draft also contains legacy/runtime-only fields.

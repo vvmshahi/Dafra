@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { documentFromPreviewDraft, type InvoicePresentationDraft } from '@/lib/invoices/documentViewAdapters'
 import type { DocumentViewModel } from '@/lib/invoices/documentViewModel'
-import { invoiceArtworkObjectPath, resolveInvoicePresentationSettings, serializeInvoicePresentationSettingsForSave } from '@/lib/invoices/presentationSettings'
+import { invoiceArtworkObjectPath, resolveInvoicePresentationSettings, serializeInvoicePresentationSettingsForSave, type UpdateBranchInvoiceSettingsPayload } from '@/lib/invoices/presentationSettings'
 import { resolveInvoiceLogoUrl } from '@/lib/invoices/runtimePresentation'
 import { A4_TEMPLATE_IDS, A4_TEMPLATE_REGISTRY } from '@/lib/invoices/a4TemplateRegistry'
 import { A4_ACCENT_PRESETS, A4_LAYOUT_COLOR_DEFAULTS, hasSafeTextContrast } from '@/lib/invoices/a4ColorTokens'
@@ -24,7 +24,8 @@ type DocumentLanguage = 'en' | 'ar' | 'both'
 type PrintMode = 'thermal' | 'pdf' | 'both'
 type PreviewMode = 'thermal' | 'a4'
 type Tab = 'general' | 'branding' | 'contact' | 'thermal' | 'a4'
-type RpcInvoker = (name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string; code?: string } | null }>
+type PostgrestError = { message: string; code?: string; details?: string | null; hint?: string | null }
+type RpcInvoker = (name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: PostgrestError | null }>
 
 interface SettingsResponse {
   branch_id?: string
@@ -39,6 +40,19 @@ const LOGO_MAX_BYTES = 2 * 1024 * 1024
 const LOGO_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 const MAX_SHORT = 160
 const MAX_FOOTER = 500
+
+function saveErrorKey(error: PostgrestError) {
+  const message = error.message ?? ''
+  if (error.code === '42501' || error.code === 'PGRST301') return 'permissionDenied'
+  if (error.code === 'PGRST202' || error.code === 'PGRST203' || error.code === '42883') return 'settingsFormatUnsupported'
+  if (error.code === '22023') {
+    if (/after.?sale action/i.test(message)) return 'afterSaleUnsupported'
+    if (/layout/i.test(message)) return 'layoutUnavailable'
+    if (/artwork|asset path|logo path|crop|colour|A4/i.test(message)) return 'artworkValidationFailed'
+    if (/schema|unknown|format|presentation_settings|operational document defaults/i.test(message)) return 'settingsFormatUnsupported'
+  }
+  return 'saveFailed'
+}
 
 function normalizeDraft(value: InvoicePresentationDraft): InvoicePresentationDraft {
   const clean = (text: string | null) => text?.trim() || null
@@ -301,12 +315,28 @@ export default function InvoiceSettingsPage({
     const normalized = normalizeDraft(draft)
     try {
       const presentationSettings = serializeInvoicePresentationSettingsForSave(normalized, branch?.name)
-      const payload = { branch_id: branchId, invoice_language: normalized.invoiceLanguage, print_mode: normalized.printMode, presentation_settings: presentationSettings }
+      const payload: UpdateBranchInvoiceSettingsPayload = {
+        branch_id: branchId,
+        invoice_language: normalized.invoiceLanguage === 'ar' ? 'ar' : 'both',
+        print_mode: normalized.printMode,
+        presentation_settings: presentationSettings,
+      }
       const { data, error } = await rpc('update_branch_invoice_settings', { p_payload: payload })
       if (error) throw error
       const next = fromResponse(data, branch ?? ({} as Branch))
       setDraft(next); setSaved(next); setSaveOk(true)
-    } catch (error) { const rpcError = error as { code?: string; message?: string }; setSaveError(rpcError.code === '22023' && /after.?sale action/i.test(rpcError.message ?? '') ? t('printing:invoiceSettings.errors.afterSaleUnsupported') : t('printing:invoiceSettings.errors.saveFailed')) }
+    } catch (error) {
+      const rpcError = error as PostgrestError
+      if (import.meta.env.DEV) {
+        console.warn('Invoice settings RPC rejected the save', {
+          code: rpcError.code,
+          message: rpcError.message,
+          details: rpcError.details,
+          hint: rpcError.hint,
+        })
+      }
+      setSaveError(t(`printing:invoiceSettings.errors.${saveErrorKey(rpcError)}`))
+    }
     finally { setSaving(false) }
   }
   function resetChanges() { if (saved) { setDraft(saved); setSaveError(null); setSaveOk(false) } }
