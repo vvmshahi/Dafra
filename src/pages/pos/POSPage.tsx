@@ -20,7 +20,6 @@ import {
   finalizeInvoiceForZatca,
   getZatcaFinalizationCapabilities,
   getInvoiceZatcaOutputState,
-  isPermanentDemoSandboxBranch,
   requireZatcaFinalizationCapability,
   resolvePosCheckoutDocument,
   retryStoredSimplifiedArtifact,
@@ -35,7 +34,6 @@ import {
   readPendingAtomicCheckout,
   type AtomicCheckoutResult,
 } from '@/lib/zatca/atomicCheckout'
-import { selectStoredInvoiceQr } from '@/lib/zatca/qrSelector'
 import {
   renderStoredQrDataUrl,
   selectStoredOutputStateQr,
@@ -213,6 +211,7 @@ interface ReceiptData {
   sandboxGenerated: boolean
   reportingDisplayState: string
   atomicSnapshot: boolean
+  isDemo: boolean
 }
 
 function branchPosMode(value: string | null | undefined): PosMode {
@@ -598,7 +597,9 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
   const automaticSnapshotPrintRef = useRef(false)
   const documentLanguage = normalizeDocumentLanguage(receipt.documentLanguage)
   const documentViewModel = useMemo(() => documentFromPosReceipt({ ...receipt, zatcaQrCode: receipt.zatcaQrCode, presentationSettings: branch?.presentation_settings, branchDefaults: branch ?? undefined, items: receipt.items.map(item => ({ name: item.name, nameAr: item.nameAr, qty: item.qty, unitPrice: item.unitPrice, lineTotal: item.lineTotal, subtotal: item.subtotal, taxAmount: item.taxAmount, taxRate: item.taxRate, taxCategory: item.taxCategory, unitName: item.unitName, unitNameAr: item.unitNameAr, unitCode: item.unitCode, baseQuantity: item.baseQuantity, baseUnitName: item.baseUnitName, baseUnitNameAr: item.baseUnitNameAr })), payments: receipt.payments.map(payment => ({ method: payment.method, amount: payment.amount, amountReceived: payment.amountReceived, changeAmount: payment.changeAmount })) }), [receipt, branch])
-  const printReady = receipt.canPrint && qrStatus === 'ready' && Boolean(qrDataUrl)
+  const printReady = receipt.isDemo
+    ? receipt.canPrint
+    : receipt.canPrint && qrStatus === 'ready' && Boolean(qrDataUrl)
 
   useEffect(() => {
     async function genQR() {
@@ -664,7 +665,10 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
       return `${documentNames(documentLanguage, i.name, i.nameAr).join(' / ')} × ${i.qty}${unit ? ` ${unit}` : ''}  ${m(i.lineTotal)}`
     }).join('\n')
     const businessName = documentNames(documentLanguage, receipt.businessNameEn, receipt.businessNameAr).join(' / ')
-    const msg = `${documentLabel(documentLanguage, 'taxInvoice')} — ${businessName}
+    const receiptHeading = receipt.isDemo
+      ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية'
+      : documentLabel(documentLanguage, 'taxInvoice')
+    const msg = `${receiptHeading} — ${businessName}
 ━━━━━━━━━━━━━━━
 ${documentLabel(documentLanguage, 'invoiceNumber')}: ${receipt.invoiceNumber}
 ${documentLabel(documentLanguage, 'date')}: ${date}
@@ -738,7 +742,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
     setPrintingReceipt(true)
     try {
-      if (receipt.atomicSnapshot) {
+      if (receipt.atomicSnapshot || receipt.isDemo) {
         const printed = await printRenderedReceiptSnapshot()
         if (printed) {
           toast.success(t('pos:printer.receiptSent'), { duration: 1800 })
@@ -784,9 +788,9 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
   return (
     <>
-      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'pos-pdf-printable', qrImageUrl: qrDataUrl }} />
+      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'pos-pdf-printable', qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : null }} />
       {/* Hidden thermal receipt — rendered for print only */}
-      <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl }} />
+      <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : null }} />
 
       {/* Success overlay */}
       <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0F2419]/90">
@@ -794,6 +798,11 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
           {/* Banner */}
           <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 px-6 py-8 text-center text-white">
+            {receipt.isDemo && (
+              <div className="mb-3 rounded-lg border border-white/50 bg-black/20 px-3 py-2 text-sm font-black">
+                {t('pos:demo.receiptLabelBilingual')}
+              </div>
+            )}
             <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
               <Check size={32} strokeWidth={3} />
             </div>
@@ -803,7 +812,11 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
           {/* Summary */}
           <div className="p-6 space-y-3">
-            {!receipt.isStandardInvoice && (
+            {receipt.isDemo ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-900">
+                {t('pos:demo.noZatca')}
+              </div>
+            ) : !receipt.isStandardInvoice && (
               <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs">
                 <span className="text-slate-500">ZATCA</span>
                 <span className="font-semibold text-slate-700">
@@ -2677,13 +2690,13 @@ export default function POSPage() {
             }),
       }
 
-      const demoSandbox = isPermanentDemoSandboxBranch(branch.tenant_id, branch.id)
-      const documentDecision = demoSandbox
-        ? null
-        : await resolvePosCheckoutDocument(branch.id, customerId)
+      const documentDecision = await resolvePosCheckoutDocument(branch.id, customerId)
       if (documentDecision?.status === 'blocked') {
         throw new Error(documentDecision.code ?? 'CHECKOUT_DOCUMENT_BLOCKED')
       }
+      const demoSandbox = documentDecision.checkoutPath === 'demo'
+        && documentDecision.isDemo
+        && documentDecision.nonFiscal
       const standardRequested = documentDecision
         ? documentDecision.documentType === 'standard'
         : selectedCust?.customer_type === 'business'
@@ -2802,29 +2815,11 @@ export default function POSPage() {
           finalQrCode = atomicCheckoutResult.receipt.qr_code
           canPrintCustomerCopy = atomicCheckoutResult.receipt.can_print === true
         } else if (demoSandbox) {
-          preOutputSubmission = await submitInvoiceForBranch({
-            invoiceId: checkout.invoice_id,
-            tenantId: branch.tenant_id,
-            branchId: branch.id,
-            options: {
-              source: 'auto_checkout',
-              retryDelayMs: 1500,
-              documentKind: isB2BInvoice ? 'standard' : 'simplified',
-            },
-          })
-          if (preOutputSubmission.mode === 'sandbox_validation') {
-            const sandboxResult = preOutputSubmission.result
-            finalQrCode = selectStoredInvoiceQr(null, 'sandbox', {
-              sandboxGenerated: Boolean(sandboxResult.qrCode),
-              sandboxQrCode: sandboxResult.qrCode,
-            })
-            canPrintCustomerCopy = Boolean(finalQrCode)
-              && (sandboxResult.status === 'sandbox_validated'
-                || sandboxResult.status === 'sandbox_validated_with_warnings')
-            finalizationStatus = sandboxResult.status
-            artifactStage = 'sandbox'
-            documentKind = null
-          }
+          finalQrCode = null
+          canPrintCustomerCopy = true
+          finalizationStatus = 'demo_non_fiscal'
+          artifactStage = 'none'
+          documentKind = null
         } else if (productionCheckoutMode === 'legacy') {
           preOutputSubmission = await submitInvoiceForBranch({
             invoiceId: checkout.invoice_id,
@@ -2993,10 +2988,12 @@ export default function POSPage() {
         finalizationError,
         sandboxGenerated: demoSandbox,
         reportingDisplayState: atomicCheckoutResult?.reportingDisplayState
-          ?? (isB2BInvoice ? 'clearance_pending' : 'reporting_pending'),
+          ?? (demoSandbox ? 'demo_non_fiscal' : isB2BInvoice ? 'clearance_pending' : 'reporting_pending'),
         atomicSnapshot: Boolean(atomicCheckoutResult),
+        isDemo: demoSandbox,
       })
       upsertInvoiceListRow(branch.tenant_id, {
+        isDemo: demoSandbox,
         id: checkout.invoice_id,
         branchId: branch.id,
         invoiceNumber: checkout.invoice_number,
@@ -3011,9 +3008,7 @@ export default function POSPage() {
         totalAmount: serverTotal,
         paymentMethod: displayPaymentMethod,
         zatcaStatus: 'pending',
-        displayZatcaStatus: isPermanentDemoSandboxBranch(branch.tenant_id, branch.id)
-          ? 'sandbox_validation_pending'
-          : 'pending',
+        displayZatcaStatus: demoSandbox ? 'sandbox_not_validated' : 'pending',
         status: 'posted',
         documentType: checkout.zatca_invoice_type,
         invoiceReference: null,
@@ -3417,6 +3412,11 @@ export default function POSPage() {
               {resolveBranchDisplayName(branch, isRtl, t('pos:activeBranch'))}
             </h1>
             <p className="mt-0.5 text-[10px] text-white/55">{activePosMode === 'quick' ? t('pos:quickBilling') : t('pos:touchPos')}</p>
+            {tenant?.is_demo && (
+              <div className="mx-auto mt-1 w-fit rounded-full border border-amber-300/50 bg-amber-300/15 px-2 py-0.5 text-[9px] font-black text-amber-100">
+                {t('pos:demo.badge')}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">

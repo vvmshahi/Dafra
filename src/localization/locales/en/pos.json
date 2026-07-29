@@ -1,4 +1,10 @@
 {
+  "demo": {
+    "badge": "Demo · Non-fiscal",
+    "checkoutNotice": "Demo checkout only. No ZATCA tax invoice will be created.",
+    "noZatca": "Simulated commercial sale. No ZATCA reporting or clearance was requested.",
+    "receiptLabelBilingual": "DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية"
+  },
   "title": "Point of Sale",
   "touchPos": "Touch POS",
   "quickBilling": "Quick Billing",

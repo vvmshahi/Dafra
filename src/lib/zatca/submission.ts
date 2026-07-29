@@ -21,7 +21,7 @@ export const ZATCA_OUTPUT_STATE_READ_VERSION = '2.0.0'
 export const ZATCA_FINALIZATION_SCHEMA_VERSION = 2
 export type ZatcaCheckoutMode = 'legacy' | 'v2'
 export type ZatcaDocumentKind = 'simplified' | 'standard'
-export type PosCheckoutPath = 'atomic' | 'legacy'
+export type PosCheckoutPath = 'atomic' | 'legacy' | 'demo'
 export type ZatcaFunctionalityMap = '0100' | '1000' | '1100'
 
 export interface PosCheckoutDocumentDecision {
@@ -36,6 +36,8 @@ export interface PosCheckoutDocumentDecision {
   readinessStatus: string
   readinessReason: string | null
   productionConnected: boolean
+  isDemo: boolean
+  nonFiscal: boolean
 }
 export type ZatcaCapabilityAcknowledgementStatus =
   | 'written'
@@ -155,6 +157,7 @@ export async function resolvePosCheckoutDocument(
     : null
   const checkoutPath = data?.checkoutPath === 'atomic'
     || data?.checkoutPath === 'legacy'
+    || data?.checkoutPath === 'demo'
     ? data.checkoutPath
     : null
   const capability = data?.capability === '0100'
@@ -181,6 +184,8 @@ export async function resolvePosCheckoutDocument(
       ? data.readinessReason
       : null,
     productionConnected: data?.productionConnected === true,
+    isDemo: data?.isDemo === true,
+    nonFiscal: data?.nonFiscal === true,
   }
 }
 
