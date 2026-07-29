@@ -98,6 +98,12 @@ const density = {
   detailed: { font: '11px', small: '9.2px', gap: '7px', padding: '4mm', line: 1.48 },
 } as const
 
+export const THERMAL_RECEIPT_LAYOUTS = {
+  compact: { id: 'compact-retail', header: 'centered-compact', metadata: 'inline-strip', items: 'dense-rows', totals: 'grand-total-led', qr: 'center-below-totals', footer: 'short' },
+  standard: { id: 'structured-detail', header: 'seller-columns', metadata: 'bordered-summary', items: 'divided-rows', totals: 'accounting-block', qr: 'responsive-side', footer: 'contact-rich' },
+  detailed: { id: 'branded-modern', header: 'framed-brand', metadata: 'identity-card', items: 'grouped-cards', totals: 'payment-highlight', qr: 'verification-panel', footer: 'branded-thanks' },
+} as const
+
 function Money({ value, model }: { value: number; model: DocumentViewModel }) {
   return <bdi className="thermal-money" dir="ltr"><RiyalSymbol /> {formatDocumentMoney(value, model)}</bdi>
 }
@@ -240,6 +246,7 @@ export default function ThermalReceipt(props: ThermalReceiptProps) {
     : { preview: props.preview, qrImageUrl: props.qrDataUrl ?? null }
   const { presentation, identity, seller, buyer, totals, payments } = model
   const layout = density[presentation.thermal.density] ?? density.standard
+  const receiptTheme = THERMAL_RECEIPT_LAYOUTS[presentation.thermal.density] ?? THERMAL_RECEIPT_LAYOUTS.standard
   const is58 = presentation.thermal.width === '58mm'
   const isDetailed = presentation.thermal.density === 'detailed'
   const isCompact = presentation.thermal.density === 'compact'
@@ -267,7 +274,7 @@ export default function ThermalReceipt(props: ThermalReceiptProps) {
   const time = new Intl.DateTimeFormat('en-SA', { timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(identity.issueTimestamp))
   const date = new Intl.DateTimeFormat(model.format.dateLocale, { timeZone: 'Asia/Riyadh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(identity.issueTimestamp))
 
-  return <div id={options.id ?? 'thermal-receipt'} className={`thermal-receipt thermal-receipt--${presentation.thermal.width} thermal-receipt--${presentation.thermal.density}`} dir={identity.direction} lang={identity.language === 'both' ? undefined : identity.language} style={{ display: options.preview ? 'block' : 'none', '--thermal-paper-width': presentation.thermal.width, '--thermal-content-width': `${contentMm}mm`, '--thermal-font': layout.font, '--thermal-small': layout.small, '--thermal-gap': layout.gap, '--thermal-padding': layout.padding, '--thermal-line': layout.line } as CSSProperties}>
+  return <div id={options.id ?? 'thermal-receipt'} className={`thermal-receipt thermal-receipt--${presentation.thermal.width} thermal-receipt--${presentation.thermal.density} thermal-theme--${receiptTheme.id}`} data-receipt-layout={receiptTheme.id} data-qr-placement={receiptTheme.qr} dir={identity.direction} lang={identity.language === 'both' ? undefined : identity.language} style={{ display: options.preview ? 'block' : 'none', '--thermal-paper-width': presentation.thermal.width, '--thermal-content-width': `${contentMm}mm`, '--thermal-font': layout.font, '--thermal-small': layout.small, '--thermal-gap': layout.gap, '--thermal-padding': layout.padding, '--thermal-line': layout.line } as CSSProperties}>
     <style>{thermalPrintCss(presentation.thermal.width)}</style>
     <article className="thermal-receipt__paper" style={{ fontFamily: documentFontFamily(identity.language) }}>
       {options.sampleLabel && <div className="thermal-sample">{options.sampleLabel}</div>}

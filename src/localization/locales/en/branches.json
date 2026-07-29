@@ -51,6 +51,7 @@
     "method": "Method",
     "statusLabel": "Status",
     "date": "Date",
+    "time": "Time",
     "walkIn": "Walk-in Customer",
     "cash": "Cash",
     "card": "Card",

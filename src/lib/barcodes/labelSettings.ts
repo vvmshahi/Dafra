@@ -233,7 +233,12 @@ export function settingsFromPreset(id: LabelPresetId): BarcodeLabelSettings {
 
 export function normalizeBarcodeLabelSettings(value: unknown): BarcodeLabelSettings {
   const raw = object(value)
-  const presetId = oneOf(raw.presetId ?? raw.preset_id, Object.keys(LABEL_PRESETS) as LabelPresetId[], 'standard_product')
+  const storedPresetId = oneOf(raw.presetId ?? raw.preset_id, Object.keys(LABEL_PRESETS) as LabelPresetId[], 'standard_product')
+  const presetId: LabelPresetId = storedPresetId === 'a4_sheet'
+    ? 'standard_product'
+    : storedPresetId === 'custom'
+      ? 'standard_product'
+      : storedPresetId
   const defaults = settingsFromPreset(presetId)
   const rawContent = object(raw.content)
   const rawA4 = object(raw.a4)

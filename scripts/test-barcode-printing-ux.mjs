@@ -484,10 +484,10 @@ for (const tab of ['receipts', 'invoices', 'barcodeLabels', 'printerSetup']) {
 }
 assert.match(workspace, /workspace\.tabs\.\$\{tab\.id\}\.label/)
 assert.match(app, /PrintingDocumentsPage/)
-assert.match(designer, /<details[\s\S]*barcodeLabels\.advanced\.title/)
+assert.match(workspace, /<details[\s\S]*barcodeLabels\.calibration\.disclosure/)
 assert.match(designer, /barcodeLabels\.presets\./)
-assert.match(designer, /barcodeLabels\.templates\./)
 assert.match(designer, /barcodeLabels\.content\./)
+assert.match(designer, /barcodeLabels\.appearance\./)
 assert.match(settingsPanel, /updateBranchBarcodeLabelSettings/)
 assert.match(settingsPanel, /setSettings\(saved\)/)
 assert.doesNotMatch(settingsPanel, /defaultCopies|default copies/i, 'branch design settings never expose print quantity')

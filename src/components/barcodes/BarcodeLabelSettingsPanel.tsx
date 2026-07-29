@@ -27,7 +27,6 @@ export default function BarcodeLabelSettingsPanel({ branchId, businessName }: Pr
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [canEdit, setCanEdit] = useState(true)
-  const [hasSavedDefault, setHasSavedDefault] = useState(false)
   const [status, setStatus] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const [restoreOpen, setRestoreOpen] = useState(false)
   const calibration = useMemo(() => loadBarcodeDeviceCalibration(), [])
@@ -53,7 +52,6 @@ export default function BarcodeLabelSettingsPanel({ branchId, businessName }: Pr
         setSettings(result.settings)
         setSaved(result.settings)
         setCanEdit(result.canEdit)
-        setHasSavedDefault(result.hasSavedDefault)
       })
       .catch(() => setStatus({ kind: 'error', text: t('barcodeLabels.errors.loadSettings') }))
       .finally(() => setLoading(false))
@@ -66,7 +64,6 @@ export default function BarcodeLabelSettingsPanel({ branchId, businessName }: Pr
       const result = await updateBranchBarcodeLabelSettings(branchId, settings)
       setSettings(result.settings)
       setSaved(result.settings)
-      setHasSavedDefault(true)
       setStatus({ kind: 'success', text: t('barcodeLabels.settings.saved') })
     } catch {
       setStatus({ kind: 'error', text: t('barcodeLabels.errors.saveSettings') })
@@ -77,17 +74,10 @@ export default function BarcodeLabelSettingsPanel({ branchId, businessName }: Pr
 
   if (loading) return <div className="grid min-h-72 place-items-center text-sm text-gray-500">{t('barcodeLabels.loading')}</div>
   return <div className="space-y-5">
-    <section className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base font-bold text-gray-950">{t('barcodeLabels.settings.title')}</h2>
-          <p className="mt-1 max-w-2xl text-xs leading-5 text-gray-600">{t('barcodeLabels.settings.help')}</p>
-        </div>
-        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${hasSavedDefault ? 'bg-white text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-          {t(hasSavedDefault ? 'barcodeLabels.settings.branchDefaultSaved' : 'barcodeLabels.settings.builtInDefault')}
-        </span>
-      </div>
-    </section>
+    <header>
+      <p className="text-[10px] font-bold uppercase tracking-wide text-primary-700">{t('barcodeLabels.settings.scopeLabel')}</p>
+      <h2 className="mt-1 text-base font-bold text-gray-950">{t('barcodeLabels.settings.title')}</h2>
+    </header>
 
     {!canEdit && <p className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-800">{t('barcodeLabels.settings.readOnly')}</p>}
     {status && <p className={`flex items-start gap-2 rounded-xl border p-3 text-xs ${status.kind === 'success' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-red-100 bg-red-50 text-red-700'}`} role={status.kind === 'error' ? 'alert' : 'status'}>

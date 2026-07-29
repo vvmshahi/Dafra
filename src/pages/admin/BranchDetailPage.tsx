@@ -504,7 +504,7 @@ export default function BranchDetailPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-50">
-                  {(['invoice', 'customer', 'amount', 'method', 'statusLabel', 'date'] as const).map((h, i) => (
+                  {(['invoice', 'customer', 'amount', 'method', 'statusLabel', 'date', 'time'] as const).map((h, i) => (
                     <th key={h} className={`px-6 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wide ${
                       i === 2 ? 'text-right' : 'text-left'
                     }`}>{t(`detail.${h}`)}</th>
@@ -555,11 +555,11 @@ export default function BranchDetailPage() {
                       <td className="px-6 py-3.5">
                         <Badge variant={cfg.variant} dot>{t(`detail.invoiceStatus.${inv.status}`, { defaultValue: t('unknown') })}</Badge>
                       </td>
-                      <td className="px-6 py-3.5 text-xs text-gray-500">
-                        <span className="grid gap-0.5 whitespace-nowrap">
-                          <span>{formatSaudiDate(inv.created_at, i18n.language)}</span>
-                          <span className="font-medium text-gray-400" dir="ltr">{formatSaudiTime(inv.created_at, i18n.language)}</span>
-                        </span>
+                      <td className="whitespace-nowrap px-6 py-3.5 text-xs text-gray-500">
+                        {formatSaudiDate(inv.created_at, i18n.language)}
+                      </td>
+                      <td dir="ltr" className="whitespace-nowrap px-6 py-3.5 text-xs font-medium text-gray-500">
+                        {formatSaudiTime(inv.created_at, i18n.language)}
                       </td>
                     </tr>
                   )
