@@ -30,4 +30,14 @@ Use safe fixture data for visual review. Do not configure production credentials
 8. Confirm offline mode retains the unsent cart but blocks payment and never queues an invoice.
 9. Do not test production checkout, real customer data or production credentials.
 
+## Production-connected read-only build
+
+1. Configure only the public values from `apps/mobile/.env.example`; keep local values ignored.
+2. Set `VITE_MOBILE_ACCESS_MODE=read-only`, `VITE_MOBILE_PRODUCTION_CHECKOUT=false`, and `VITE_MOBILE_DEMO_MODE=false`.
+3. Install the APK and confirm sign-in is enabled and no fixture bypass appears.
+4. The authorised user types credentials directly on the phone. Never record the screen while entering credentials.
+5. Compare Owner/Branch KPIs with the web workspace for the same Riyadh date and Branch.
+6. Verify products, exact barcode resolution, customers, invoices, register state, resume, logout and Arabic/RTL.
+7. Stop before any register, product, customer, stock, return or checkout mutation unless the exact tenant and Branch have separate explicit approval.
+
 iOS later requires full Xcode. Run `npm run cap:sync` and `npm run ios:open`, then validate the equivalent camera, share, safe-area and lifecycle cases without signing or submission.
