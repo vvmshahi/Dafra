@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Check, Eye, FileText, Loader2, Minus, Plus, RotateCcw, Trash2, Upload } from 'lucide-react'
+import { AlertCircle, Check, FileText, LayoutTemplate, Loader2, Minus, Palette, Plus, ReceiptText, RotateCcw, Settings2, Trash2, Upload, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -17,8 +17,15 @@ import A4Document from '@/components/print/A4Document'
 import A4PreviewFit, { type A4PreviewZoom } from '@/components/print/A4PreviewFit'
 import LetterheadCropPanel from '@/components/print/LetterheadCropPanel'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import {
+  DocumentStudioActionFooter,
+  DocumentStudioPreviewToolbar,
+  DocumentStudioSectionNav,
+  DocumentStudioWorkspace,
+  SavedStatus,
+} from '@/components/printing/DocumentStudioShell'
 import type { A4TemplateId, Branch, InvoicePresentationSettings, ThermalDensity } from '@/types/database'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 type DocumentLanguage = 'en' | 'ar' | 'both'
 type PrintMode = 'thermal' | 'pdf' | 'both'
@@ -89,12 +96,8 @@ function fromResponse(value: unknown, branch: Branch): InvoicePresentationDraft 
   return normalizeDraft(resolveInvoicePresentationSettings({ savedSettings: value, branch }))
 }
 
-function TabButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
-  return <button type="button" role="tab" data-invoice-tab aria-selected={active} tabIndex={active ? 0 : -1} onClick={onClick} className={`min-h-9 whitespace-nowrap rounded-lg px-3.5 py-2 text-xs font-bold outline-none transition-[background-color,color,transform,box-shadow] duration-150 ease-out active:scale-[.97] focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 ${active ? 'bg-primary-700 text-white shadow-sm' : 'text-primary-900 hover:bg-primary-50'}`}>{label}</button>
-}
-
 function Choice<T extends string>({ label, value, options, onChange, help }: { label: string; value: T; options: { value: T; label: string; description?: string }[]; onChange: (value: T) => void; help?: string }) {
-  return <fieldset><legend className="text-xs font-semibold text-gray-800">{label}</legend>{help && <p className="mt-1 text-[11px] leading-4 text-gray-500">{help}</p>}<div className={`mt-2 grid gap-2 ${options.length > 3 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>{options.map(option => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} onClick={() => onChange(option.value)} className={`min-h-12 rounded-xl border px-3 py-2 text-start outline-none transition focus-visible:ring-2 focus-visible:ring-primary-500 ${value === option.value ? 'border-primary-600 bg-primary-50 text-primary-900' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'}`}><span className="block text-xs font-semibold">{option.label}</span>{option.description && <span className="mt-0.5 block text-[10px] leading-4 text-gray-500">{option.description}</span>}</button>)}</div></fieldset>
+  return <fieldset><legend className="text-xs font-semibold text-gray-800">{label}</legend>{help && <p className="mt-1 text-[11px] leading-4 text-gray-500">{help}</p>}<div className={`mt-2 grid gap-2 ${options.length > 3 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>{options.map(option => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} onClick={() => onChange(option.value)} className={`min-h-12 rounded-xl border px-3 py-2 text-start outline-none transition-[border-color,background-color,transform] duration-150 active:scale-[.98] focus-visible:ring-2 focus-visible:ring-primary-500 ${value === option.value ? 'border-primary-600 bg-primary-50 text-primary-900' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'}`}><span className="block text-xs font-semibold">{option.label}</span>{option.description && <span className="mt-0.5 block text-[10px] leading-4 text-gray-500">{option.description}</span>}</button>)}</div></fieldset>
 }
 
 function ThemeChoice({ label, value, options, onChange }: {
@@ -214,19 +217,22 @@ function ToggleRow({ label, checked, onChange, disabled = false, help }: { label
 }
 
 function TextField({ id, label, value, onChange, placeholder, disabled = false, error, multiline = false }: { id: string; label: string; value: string | null; onChange: (value: string) => void; placeholder?: string; disabled?: boolean; error?: string; multiline?: boolean }) {
-  const props = { id, value: value ?? '', disabled, placeholder, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(event.target.value), className: 'mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-100 disabled:bg-gray-50' }
-  return <div><label htmlFor={id} className="text-xs font-semibold text-gray-800">{label}</label>{multiline ? <textarea {...props} rows={3} /> : <input {...props} />}{error && <p className="mt-1 text-[11px] text-red-600">{error}</p>}</div>
+  const props = { id, value: value ?? '', disabled, placeholder, 'aria-invalid': !!error || undefined, 'aria-describedby': error ? `${id}-error` : undefined, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(event.target.value), className: 'mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none transition-[border-color,box-shadow] duration-150 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 disabled:bg-gray-50' }
+  return <div><label htmlFor={id} className="text-xs font-semibold text-gray-800">{label}</label>{multiline ? <textarea {...props} rows={3} /> : <input {...props} />}{error && <p id={`${id}-error`} className="mt-1 text-[11px] text-red-600">{error}</p>}</div>
 }
 
 export default function InvoiceSettingsPage({
   embedded = false,
   workspace = 'invoices',
+  onDirtyChange,
 }: {
   embedded?: boolean
   workspace?: 'receipts' | 'invoices'
+  onDirtyChange?: (dirty: boolean) => void
 } = {}) {
   const { t, i18n } = useTranslation(['settings', 'common', 'printing'])
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { profile, loading: authLoading } = useAuth()
   const [branches, setBranches] = useState<Branch[]>([])
   const [branchId, setBranchId] = useState<string | null>(null)
@@ -238,9 +244,16 @@ export default function InvoiceSettingsPage({
   const [canEdit, setCanEdit] = useState(false)
   const [saveOk, setSaveOk] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<Tab>(workspace === 'receipts' ? 'thermal' : 'general')
+  const allowedSections = useMemo<readonly Tab[]>(() => workspace === 'receipts'
+    ? ['general', 'branding', 'contact', 'thermal']
+    : ['general', 'branding', 'contact', 'a4'], [workspace])
+  const requestedSection = searchParams.get('section') as Tab | null
+  const [activeTab, setActiveTab] = useState<Tab>(
+    requestedSection && allowedSections.includes(requestedSection)
+      ? requestedSection
+      : workspace === 'receipts' ? 'thermal' : 'general',
+  )
   const [previewMode, setPreviewMode] = useState<PreviewMode>(workspace === 'receipts' ? 'thermal' : 'a4')
-  const [mobilePane, setMobilePane] = useState<'settings' | 'preview'>('settings')
   const [confirmRemoveLogo, setConfirmRemoveLogo] = useState(false)
   const [previewZoom, setPreviewZoom] = useState<A4PreviewZoom>('page')
   const [a4PageCount, setA4PageCount] = useState(1)
@@ -256,6 +269,23 @@ export default function InvoiceSettingsPage({
   const headerInput = useRef<HTMLInputElement>(null)
   const branch = branches.find(item => item.id === branchId) ?? null
   const isDirty = !!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved)
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty)
+    return () => onDirtyChange?.(false)
+  }, [isDirty, onDirtyChange])
+  useEffect(() => {
+    const requested = searchParams.get('section') as Tab | null
+    if (requested && allowedSections.includes(requested)) {
+      setActiveTab(requested)
+      return
+    }
+    const fallback: Tab = workspace === 'receipts' ? 'thermal' : 'general'
+    setActiveTab(fallback)
+    const next = new URLSearchParams(searchParams)
+    next.set('section', fallback)
+    setSearchParams(next, { replace: true })
+  }, [allowedSections, searchParams, setSearchParams, workspace])
 
   useEffect(() => { if (!authLoading) void loadBranches() }, [authLoading, profile?.branch_id, profile?.tenant_id])
   useEffect(() => { if (branchId && branch) void loadSettings(branch) }, [branchId, branch?.id])
@@ -457,9 +487,29 @@ export default function InvoiceSettingsPage({
   if (authLoading || loading || !draft || !previewModel) return <div className="grid h-64 place-items-center"><Loader2 className="animate-spin text-primary-600" /></div>
 
   const allTabs: { id: Tab; label: string }[] = [
-    { id: 'general', label: t('printing:invoiceSettings.tabs.general') }, { id: 'branding', label: t('printing:invoiceSettings.tabs.branding') }, { id: 'contact', label: t('printing:invoiceSettings.tabs.contact') }, { id: 'thermal', label: t('printing:invoiceSettings.tabs.thermal') }, { id: 'a4', label: t('printing:invoiceSettings.tabs.a4') },
+    { id: 'general', label: t(`printing:workspace.sections.${workspace}.general`) },
+    { id: 'branding', label: t(`printing:workspace.sections.${workspace}.branding`) },
+    { id: 'contact', label: t(`printing:workspace.sections.${workspace}.contact`) },
+    { id: 'thermal', label: t('printing:workspace.sections.receipts.thermal') },
+    { id: 'a4', label: t('printing:workspace.sections.invoices.a4') },
   ]
   const tabs = allTabs.filter(tab => workspace === 'receipts' ? tab.id !== 'a4' : tab.id !== 'thermal')
+  const sectionIcons: Record<Tab, React.ElementType> = {
+    general: Settings2,
+    branding: Palette,
+    contact: Users,
+    thermal: ReceiptText,
+    a4: LayoutTemplate,
+  }
+  const sections = tabs.map(tab => ({ ...tab, icon: sectionIcons[tab.id] }))
+  const selectSection = (id: string) => {
+    const nextSection = allowedSections.includes(id as Tab) ? id as Tab : workspace === 'receipts' ? 'thermal' : 'general'
+    setActiveTab(nextSection)
+    setPreviewMode(nextSection === 'thermal' ? 'thermal' : workspace === 'invoices' ? 'a4' : previewMode)
+    const next = new URLSearchParams(searchParams)
+    next.set('section', nextSection)
+    setSearchParams(next)
+  }
   const actionOptions = [{ value: 'receipt' as const, label: t('printing:invoiceSettings.actions.receiptOnly'), description: t('printing:invoiceSettings.actions.receiptHelp') }, { value: 'a4' as const, label: t('printing:invoiceSettings.actions.a4Only'), description: t('printing:invoiceSettings.actions.a4Help') }, { value: 'both' as const, label: t('printing:invoiceSettings.actions.both'), description: t('printing:invoiceSettings.actions.bothHelp') }]
   const themeKeys: Record<A4TemplateId, { label: string; help: string }> = {
     classic: { label: 'classic', help: 'classicHelp' },
@@ -470,23 +520,18 @@ export default function InvoiceSettingsPage({
     contemporary_border: { label: 'contemporary', help: 'contemporaryHelp' },
   }
   const themeOptions = A4_TEMPLATE_IDS.map(value => ({ value, label: t(`printing:invoiceSettings.a4.${themeKeys[value].label}`), description: t(`printing:invoiceSettings.a4.${themeKeys[value].help}`) }))
+  const validationErrors = validate(draft)
 
-  return <div className={`invoice-editor-shell mx-auto flex max-w-[1440px] flex-col ${embedded ? '' : 'min-h-[720px]'}`}>
+  return <div className={`invoice-editor-shell flex min-h-0 flex-col ${embedded ? '' : 'min-h-[720px]'}`}>
     {!embedded && <header className="border-b border-gray-200 pb-5"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-primary-700">{t('printing:invoiceSettings.eyebrow')}</p><h1 className="mt-1 text-2xl font-bold text-gray-950">{t('printing:invoiceSettings.title')}</h1><p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">{t('printing:invoiceSettings.subtitle')}</p></div>{branches.length > 1 && <label className="min-w-48 text-xs font-semibold text-gray-700">{t('printing:invoiceSettings.branch')}<select value={branchId ?? ''} onChange={event => setBranchId(event.target.value)} className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-normal"><option value="" disabled>{t('printing:invoiceSettings.selectBranch')}</option>{branches.map(item => <option key={item.id} value={item.id}>{resolveBranchDisplayName(item, i18n.resolvedLanguage?.startsWith('ar') === true)}</option>)}</select></label>}</div></header>}
-    <div className="invoice-editor-tabs shrink-0 overflow-x-auto rounded-xl border border-gray-200 bg-[#f7faf8] p-1 shadow-sm" role="tablist" aria-label={t('printing:invoiceSettings.sections')} onKeyDown={event => {
-      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-      const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-invoice-tab]'))
-      const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
-      if (current < 0) return
-      event.preventDefault()
-      const rtl = document.documentElement.dir === 'rtl'
-      const delta = event.key === 'ArrowRight' ? (rtl ? -1 : 1) : event.key === 'ArrowLeft' ? (rtl ? 1 : -1) : 0
-      const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (current + delta + buttons.length) % buttons.length
-      buttons[next]?.click(); buttons[next]?.focus()
-    }}><div className="flex min-w-max gap-1">{tabs.map(tab => <TabButton key={tab.id} active={activeTab === tab.id} label={tab.label} onClick={() => { setActiveTab(tab.id); setMobilePane('settings') }} />)}</div></div>
-    <div className="flex gap-2 lg:hidden"><button type="button" onClick={() => setMobilePane('settings')} className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold ${mobilePane === 'settings' ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600'}`}>{t('printing:invoiceSettings.settings')}</button><button type="button" onClick={() => setMobilePane('preview')} className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold ${mobilePane === 'preview' ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600'}`}>{t('printing:preview')}</button></div>
-    <div className="invoice-editor-canvas mt-3 grid min-h-0 flex-1 items-start gap-4 overflow-y-auto overscroll-contain pb-4 xl:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]">
-      <main className={`${mobilePane === 'preview' ? 'hidden xl:block' : ''} rounded-2xl border border-gray-200 bg-white p-4 shadow-sm`} role="tabpanel">
+    <DocumentStudioWorkspace
+      configurationLabel={t('workspace.studio.configuration')}
+      previewLabel={t('printing:invoiceSettings.livePreview')}
+      settingsLabel={t('workspace.studio.settings')}
+      closeSettingsLabel={t('workspace.studio.closeSettings')}
+      previewOverflow={previewMode === 'a4' ? 'hidden' : 'auto'}
+      sectionNavigation={<DocumentStudioSectionNav sections={sections} activeSection={activeTab} onSelect={selectSection} label={t('printing:invoiceSettings.sections')} />}
+      configuration={<>
         {!canEdit && <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">{t('printing:invoiceSettings.readOnly')}</div>}
         <fieldset disabled={!canEdit} className="space-y-5">
         {activeTab === 'general' && <div className="space-y-5"><div><h2 className="text-base font-bold text-gray-950">{t('printing:invoiceSettings.tabs.general')}</h2><p className="mt-1 text-xs leading-5 text-gray-500">{t('printing:invoiceSettings.general.help')}</p></div><Choice label={t('printing:invoiceSettings.general.language')} value={draft.invoiceLanguage === 'en' ? 'both' : draft.invoiceLanguage} onChange={value => updateDraft(current => ({ ...current, invoiceLanguage: value }))} options={[{ value: 'ar', label: t('printing:invoiceSettings.general.arabic') }, { value: 'both', label: t('printing:invoiceSettings.general.bilingual') }]} /><Choice label={t('printing:invoiceSettings.general.afterSale')} value={draft.afterSaleAction ?? 'receipt'} onChange={value => updateDraft(current => ({ ...current, afterSaleAction: value }))} options={actionOptions} /></div>}
@@ -518,19 +563,41 @@ export default function InvoiceSettingsPage({
         {activeTab === 'a4' && <p className="text-[11px] leading-4 text-gray-500">{t('printing:invoiceSettings.artworkDimensionsHelp')}</p>}
         {activeTab === 'branding' && <p className="mt-2 text-[11px] leading-4 text-gray-500">{t('printing:invoiceSettings.branding.legalReminder')}</p>}
         </fieldset>
-      </main>
-      <aside className={`${mobilePane === 'settings' ? 'hidden lg:block' : ''} xl:sticky xl:top-0`} aria-label={t('printing:invoiceSettings.livePreview')}>
-        <div className="rounded-2xl border border-gray-200 bg-[#f1f5f2] p-3">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2"><Eye size={16} className="text-primary-700" /><div><h2 className="text-sm font-bold text-gray-900">{t('printing:invoiceSettings.livePreview')}</h2><p className="text-[10px] text-gray-500">{t('printing:invoiceSettings.pageCount', { count: a4PageCount })}</p></div></div>
-            {previewMode === 'a4' && <div className="flex flex-wrap items-center gap-1 rounded-lg bg-white p-1 ring-1 ring-gray-200"><button type="button" onClick={() => setPreviewZoom('width')} className={`h-8 rounded px-2 text-[10px] font-bold ${previewZoom === 'width' ? 'bg-primary-50 text-primary-800' : 'text-gray-600'}`}>{t('printing:invoiceSettings.fitWidth')}</button><button type="button" onClick={() => setPreviewZoom('page')} className={`h-8 rounded px-2 text-[10px] font-bold ${previewZoom === 'page' ? 'bg-primary-50 text-primary-800' : 'text-gray-600'}`}>{t('printing:invoiceSettings.fitPage')}</button><button type="button" aria-label={t('printing:invoiceSettings.zoomOut')} onClick={() => setPreviewZoom(previewZoom === 1.25 ? 1 : previewZoom === 1 ? .75 : 'page')} className="grid h-8 w-8 place-items-center rounded hover:bg-gray-50"><Minus size={14} /></button><button type="button" aria-label={t('printing:invoiceSettings.zoomIn')} onClick={() => setPreviewZoom(previewZoom === 'page' || previewZoom === 'width' ? .75 : previewZoom === .75 ? 1 : 1.25)} className="grid h-8 w-8 place-items-center rounded hover:bg-gray-50"><Plus size={14} /></button></div>}
-          </div>
-          <label className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[10px] font-bold text-gray-700">{t('printing:invoiceSettings.a4.qrPreviewState')}<select value={previewQrState} onChange={event => setPreviewQrState(event.target.value as PreviewQrState)} className="h-8 rounded-md border border-gray-200 bg-white px-2 text-[10px] font-medium"><option value="eligible_simplified">{t('printing:invoiceSettings.a4.qrEligibleSimplified')}</option><option value="eligible_standard">{t('printing:invoiceSettings.a4.qrEligibleStandard')}</option><option value="demo">{t('printing:invoiceSettings.a4.qrDemo')}</option><option value="unavailable">{t('printing:invoiceSettings.a4.qrUnavailable')}</option></select></label>
-          {previewMode === 'thermal' ? <div className="mx-auto max-w-full overflow-x-auto rounded-xl bg-gray-100 p-3"><ThermalReceipt model={previewModel} options={{ preview: true, qrImageUrl: previewQrUrl, sampleLabel: t('printing:preview'), nonFiscalDemo: previewQrState === 'demo', qrUnavailable: previewQrState === 'unavailable' }} /></div> : <A4PreviewFit zoom={previewZoom} bounded onPageCountChange={setA4PageCount}><A4Document model={previewModel} options={{ preview: true, qrImageUrl: previewQrUrl, sampleLabel: t('printing:preview'), pageNumbers: true, nonFiscalDemo: previewQrState === 'demo' }} /></A4PreviewFit>}
-        </div>
-      </aside>
-    </div>
-    <div className="invoice-editor-actions z-20 shrink-0 border-t border-gray-200 bg-white px-3 py-2.5"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-h-5">{saveError ? <p className="flex items-center gap-2 text-xs text-red-700"><AlertCircle size={14} />{saveError}</p> : saveOk ? <p className="flex items-center gap-2 text-xs text-emerald-700"><Check size={14} />{t('printing:invoiceSettings.saved')}</p> : <p className="text-xs text-gray-500">{t(isDirty ? 'printing:invoiceSettings.unsaved' : 'printing:invoiceSettings.allSaved')}</p>}</div><div className="flex gap-2"><button type="button" onClick={resetChanges} disabled={!isDirty || saving} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 disabled:opacity-40"><RotateCcw size={14} />{t('printing:invoiceSettings.reset')}</button><button type="button" onClick={() => void saveChanges()} disabled={!canEdit || !isDirty || saving || validate(draft).length > 0} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-primary-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-40">{saving && <Loader2 size={14} className="animate-spin" />}{t('printing:invoiceSettings.save')}</button></div></div></div>
+      </>}
+      previewToolbar={<DocumentStudioPreviewToolbar
+        title={t('printing:invoiceSettings.livePreview')}
+        meta={previewMode === 'thermal' ? p.thermal.width : t('printing:invoiceSettings.pageCount', { count: a4PageCount })}
+      >
+        <label className="sr-only" htmlFor={`${workspace}-preview-state`}>{t('printing:invoiceSettings.a4.qrPreviewState')}</label>
+        <select id={`${workspace}-preview-state`} value={previewQrState} onChange={event => setPreviewQrState(event.target.value as PreviewQrState)} className="h-8 max-w-36 rounded-md border border-gray-200 bg-white px-2 text-[10px] font-medium">
+          <option value="eligible_simplified">{t('printing:invoiceSettings.a4.qrEligibleSimplified')}</option>
+          <option value="eligible_standard">{t('printing:invoiceSettings.a4.qrEligibleStandard')}</option>
+          <option value="demo">{t('printing:invoiceSettings.a4.qrDemo')}</option>
+          <option value="unavailable">{t('printing:invoiceSettings.a4.qrUnavailable')}</option>
+        </select>
+        {previewMode === 'a4' && <>
+          <button type="button" onClick={() => setPreviewZoom('width')} className={`h-8 rounded-md px-2 text-[10px] font-bold ${previewZoom === 'width' ? 'bg-primary-50 text-primary-800' : 'text-gray-600 hover:bg-gray-50'}`}>{t('printing:invoiceSettings.fitWidth')}</button>
+          <button type="button" onClick={() => setPreviewZoom('page')} className={`h-8 rounded-md px-2 text-[10px] font-bold ${previewZoom === 'page' ? 'bg-primary-50 text-primary-800' : 'text-gray-600 hover:bg-gray-50'}`}>{t('printing:invoiceSettings.fitPage')}</button>
+          <button type="button" aria-label={t('printing:invoiceSettings.zoomOut')} onClick={() => setPreviewZoom(previewZoom === 1.25 ? 1 : previewZoom === 1 ? .75 : 'page')} className="grid h-8 w-8 place-items-center rounded-md text-gray-600 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"><Minus size={14} /></button>
+          <button type="button" aria-label={t('printing:invoiceSettings.zoomIn')} onClick={() => setPreviewZoom(previewZoom === 'page' || previewZoom === 'width' ? .75 : previewZoom === .75 ? 1 : 1.25)} className="grid h-8 w-8 place-items-center rounded-md text-gray-600 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"><Plus size={14} /></button>
+        </>}
+      </DocumentStudioPreviewToolbar>}
+      preview={previewMode === 'thermal'
+        ? <div className="mx-auto flex min-h-full max-w-full items-start justify-center"><ThermalReceipt model={previewModel} options={{ preview: true, qrImageUrl: previewQrUrl, sampleLabel: t('printing:preview'), nonFiscalDemo: previewQrState === 'demo', qrUnavailable: previewQrState === 'unavailable' }} /></div>
+        : <A4PreviewFit zoom={previewZoom} bounded onPageCountChange={setA4PageCount}><A4Document model={previewModel} options={{ preview: true, qrImageUrl: previewQrUrl, sampleLabel: t('printing:preview'), pageNumbers: true, nonFiscalDemo: previewQrState === 'demo' }} /></A4PreviewFit>}
+      actionFooter={<DocumentStudioActionFooter status={
+        saveError
+          ? <span className="inline-flex items-center gap-2 text-red-700" role="alert"><AlertCircle size={14} />{saveError}</span>
+          : validationErrors.length > 0
+            ? <span className="inline-flex items-center gap-2 text-red-700" role="alert"><AlertCircle size={14} />{t('printing:workspace.studio.validation')}</span>
+          : saveOk
+            ? <SavedStatus>{t('printing:invoiceSettings.saved')}</SavedStatus>
+            : <span className={isDirty ? 'font-semibold text-amber-800' : 'text-gray-500'}>{t(isDirty ? 'printing:invoiceSettings.unsaved' : 'printing:invoiceSettings.allSaved')}</span>
+      }>
+        <button type="button" onClick={resetChanges} disabled={!isDirty || saving} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition-transform duration-150 active:scale-[.97] disabled:opacity-40"><RotateCcw size={14} />{t('printing:invoiceSettings.reset')}</button>
+        <button type="button" onClick={() => void saveChanges()} disabled={!canEdit || !isDirty || saving || validationErrors.length > 0} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-primary-700 px-4 py-2 text-xs font-semibold text-white transition-transform duration-150 active:scale-[.97] disabled:opacity-40">{saving && <Loader2 size={14} className="animate-spin" />}{t('printing:invoiceSettings.save')}</button>
+      </DocumentStudioActionFooter>}
+    />
     <ConfirmDialog open={confirmRemoveLogo} kind="removeLogo" onClose={() => setConfirmRemoveLogo(false)} onConfirm={() => { updateSection('logo', 'asset_path', null); updateSection('logo', 'visible', false); setConfirmRemoveLogo(false) }} />
     <ConfirmDialog open={pendingRoute !== null} kind="discard" onClose={() => setPendingRoute(null)} onConfirm={() => { const route = pendingRoute; setPendingRoute(null); if (route) navigate(route) }} />
   </div>

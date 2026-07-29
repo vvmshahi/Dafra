@@ -148,6 +148,31 @@
     "eyebrow": "Branch document workspace",
     "title": "Printing & Documents",
     "subtitle": "Manage invoice layouts, receipts, branding and barcode labels for this branch.",
+    "about": "About Printing & Documents",
+    "status": {
+      "saved": "All changes saved",
+      "unsaved": "Unsaved changes"
+    },
+    "studio": {
+      "configuration": "Document settings",
+      "settings": "Settings",
+      "closeSettings": "Close settings",
+      "validation": "Review the highlighted settings before saving."
+    },
+    "sections": {
+      "receipts": {
+        "general": "General",
+        "branding": "Branding",
+        "contact": "Content",
+        "thermal": "Receipt layout"
+      },
+      "invoices": {
+        "general": "General",
+        "branding": "Header & branding",
+        "contact": "Parties & footer",
+        "a4": "A4 layout"
+      }
+    },
     "tabs": {
       "receipts": { "label": "Receipts", "help": "Thermal receipt content" },
       "invoices": { "label": "Invoices", "help": "A4 and document identity" },
@@ -158,6 +183,16 @@
   "barcodeLabels": {
     "loading": "Loading label settings…",
     "copies": "Number of copies",
+    "studio": {
+      "navigation": "Barcode label sections",
+      "sections": {
+        "layout": "Layout",
+        "size": "Size",
+        "information": "Included information",
+        "appearance": "Appearance",
+        "printer": "Printer adjustment"
+      }
+    },
     "currency": {
       "accessible": "Saudi Riyals"
     },

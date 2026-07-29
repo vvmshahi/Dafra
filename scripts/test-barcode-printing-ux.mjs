@@ -531,7 +531,8 @@ for (const tab of ['receipts', 'invoices', 'barcodeLabels', 'printerSetup']) {
 }
 assert.match(workspace, /workspace\.tabs\.\$\{tab\.id\}\.label/)
 assert.match(app, /PrintingDocumentsPage/)
-assert.match(workspace, /<details[\s\S]*barcodeLabels\.calibration\.disclosure/)
+assert.match(workspace, /printerAdjustment=\{<BarcodePrinterSetupPanel/)
+assert.match(designer, /barcodeLabels\.studio\.sections\.printer/)
 assert.match(designer, /barcodeLabels\.presets\./)
 assert.match(designer, /PRIMARY_LABEL_PRESET_IDS\.map/)
 assert.match(designer, /labelSizeOptions\(settings\.presetId\)/)

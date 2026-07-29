@@ -417,3 +417,55 @@ test remain deployment-stage work. Multi-page, password-protected, and
 encrypted PDF sources remain explicitly unsupported in this first extraction
 version. Physical Electron printer validation is still deferred to the separate
 Electron release-candidate task.
+
+## Printing & Documents — shared Document Studio
+
+The previous workspace stacked a page heading, primary tabs, document-specific
+tabs, long configuration content, preview cards, and different save footers.
+That structure pushed the preview below the useful viewport, made Barcode
+Labels behave like a long settings page, and gave Receipts, Invoices, and
+Barcode Labels different navigation and save patterns.
+
+Printing & Documents now uses one bounded Document Studio architecture:
+
+- a 72 px compact header carries the title, active Branch context, primary
+  Receipts/Invoices/Barcode Labels navigation, and quiet saved/unsaved status;
+- a shared configuration panel owns compact section navigation and the only
+  configuration-body scrollbar;
+- a shared preview panel starts directly below the header and consumes the
+  remaining width and height;
+- one compact preview toolbar carries applicable dimensions/page count,
+  fixture state, fit and zoom controls;
+- one persistent action footer provides reset, save, validation and
+  saved/unsaved/error feedback at the true bottom of the studio;
+- at widths below the two-pane breakpoint, the preview remains full width and
+  Settings opens the same configuration content in an app-contained,
+  focus-trapped drawer. Escape closes the drawer without discarding edits.
+
+Receipt section navigation is General, Branding, Content, and Receipt Layout.
+Invoice navigation is General, Header & Branding, Parties & Footer, and A4
+Layout. Barcode navigation is Layout, Size, Included Information, Appearance,
+and Printer Adjustment. The selected primary workspace and secondary section
+remain query-addressable; invalid values fall back safely. Secondary
+navigation does not remount the editor or discard its draft. A primary
+workspace change with unsaved edits requires confirmation.
+
+The shell uses flex/grid sizing, `min-height: 0`, and explicit scroll ownership
+instead of viewport-height subtraction. The A4 fit viewport now measures the
+space supplied by the studio rather than guessing `100dvh` offsets. Zoom
+changes affect only preview scale, not the document model or print pagination.
+Barcode preview generation remains deferred and memoized; opening the
+responsive drawer does not render a duplicate preview.
+
+All new navigation, drawer, toolbar, action, status, and section labels are
+available in English and Arabic. Logical start/end properties mirror the
+configuration rail and preview for RTL while document direction continues to
+come from the saved document setting. Primary and secondary navigation use
+real buttons, visible focus, semantic tab/navigation state, arrow/Home/End
+keyboard movement, and screen-reader status announcements. The drawer restores
+focus and traps Tab while open.
+
+This is a UI architecture change only. Receipt, A4, and barcode document
+renderers, layouts, physical dimensions, presentation JSON, Branch-scoped
+persistence, browser print/PDF paths, and Electron-only printer capability
+remain unchanged. No migration was required.
