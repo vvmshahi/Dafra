@@ -9,6 +9,7 @@ import {
 import { products } from "../src/fixtures.ts";
 import {
   classifyIdentifier,
+  getSignInFormState,
   normalizeBranchUsername,
   safeAuthMessage,
   validateBranchUsername,
@@ -22,7 +23,7 @@ const api = read("src/mobileApi.ts").replaceAll('"', "'");
 const envExample = read(".env.example");
 const css = read("src/redesign.css");
 const pkg = read("package.json");
-const vite = read("vite.config.ts");
+const vite = read("vite.config.ts").replaceAll('"', "'");
 const storage = read("src/platform/cartStorage.ts");
 
 function test(name: string, run: () => void) {
@@ -66,6 +67,42 @@ test("identifier classification supports Owner email and Branch email/username",
   assert.equal(classifyIdentifier("branch@example.com"), "email");
   assert.equal(classifyIdentifier("branch_name"), "branch-username");
 });
+test("sign-in enablement follows credentials, validation, environment and loading only", () => {
+  assert.equal(
+    getSignInFormState("branch_name", "secret", true, false).canSubmit,
+    true,
+  );
+  assert.equal(
+    getSignInFormState("branch@example.com", "secret", true, false).canSubmit,
+    true,
+  );
+  assert.equal(getSignInFormState("", "secret", true, false).canSubmit, false);
+  assert.equal(
+    getSignInFormState("branch_name", "", true, false).canSubmit,
+    false,
+  );
+  const spaced = getSignInFormState("Kubri Trading", "secret", true, false);
+  assert.equal(spaced.canSubmit, false);
+  assert.match(spaced.identifierError ?? "", /3–32/);
+  assert.equal(
+    getSignInFormState("branch_name", "secret", false, false).canSubmit,
+    false,
+  );
+  assert.equal(
+    getSignInFormState("branch_name", "secret", true, true).canSubmit,
+    false,
+  );
+});
+test("Android input and autofill update controlled state without blur or touched state", () => {
+  assert.match(app, /name='username'/);
+  assert.match(app, /name='password'/);
+  assert.match(app, /onInput=/);
+  assert.match(app, /onChange=/);
+  assert.match(app, /autoComplete='username'/);
+  assert.match(app, /autoComplete='current-password'/);
+  assert.doesNotMatch(app, /isDirty|touched|onBlur/);
+  assert.match(app, /onAuthenticated\(await signIn\(identifier, password\)\)/);
+});
 test("Branch username normalization exactly mirrors the production web contract", () => {
   assert.equal(normalizeBranchUsername("  Branch_Name  "), "branch_name");
   assert.equal(normalizeBranchUsername("Kubri Trading"), "kubri trading");
@@ -93,6 +130,9 @@ test("safe errors distinguish resolver and post-resolution password failures", (
     safeAuthMessage("email-credentials"),
     /account exists|email found/i,
   );
+  assert.match(vite, /envDir:\s*'\.\.\/\.\.'/);
+  assert.match(auth, /authConfigured = Boolean\(url && key\)/);
+  assert.doesNotMatch(auth, /Boolean\(url && key && appEnvironment\)/);
 });
 test("session restoration, refresh and logout are supported", () => {
   assert.match(auth, /persistSession:\s*true/);
@@ -107,7 +147,11 @@ test("profile failure clears the accepted Auth session locally", () => {
 });
 test("auth diagnostics contain categories but no password or token values", () => {
   assert.match(auth, /resolver=resolved mapped-email=true/);
-  assert.doesNotMatch(auth, /console\\.(?:info|log).*password/);
+  assert.match(app, /password_length=\$\{password\.length\}/);
+  assert.doesNotMatch(
+    app + auth,
+    /password=\$\{password\}|password:\s*password.*console/,
+  );
   assert.doesNotMatch(
     auth,
     /console\\.(?:info|log).*access_token|console\\.(?:info|log).*refresh_token/,

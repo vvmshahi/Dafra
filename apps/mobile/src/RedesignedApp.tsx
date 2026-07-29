@@ -60,6 +60,7 @@ import {
   signOut,
   type MobileProfile,
 } from "./mobileAuth";
+import { getSignInFormState } from "./authContract";
 import {
   loadBranchData,
   loadOwnerData,
@@ -248,8 +249,30 @@ function Login({
   const [visible, setVisible] = useState(false),
     [loading, setLoading] = useState(false),
     [error, setError] = useState("");
+  const signInState = getSignInFormState(
+    identifier,
+    password,
+    authConfigured,
+    loading,
+  );
+  const updateIdentifier = (value: string) => setIdentifier(value);
+  const updatePassword = (value: string) => setPassword(value);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.info(
+      `[Kubri Mobile SignIn State] identifier_length=${identifier.length} password_length=${password.length} classification=${signInState.kind} validation=${signInState.identifierError ? "invalid" : "valid"} environment_ready=${authConfigured} submitting=${loading} can_submit=${signInState.canSubmit}`,
+    );
+  }, [
+    identifier.length,
+    password.length,
+    signInState.kind,
+    signInState.identifierError,
+    signInState.canSubmit,
+    loading,
+  ]);
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (!signInState.canSubmit) return;
     setLoading(true);
     setError("");
     try {
@@ -320,8 +343,10 @@ function Login({
             <div className="field">
               <Users />
               <input
+                name="username"
                 value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
+                onChange={(e) => updateIdentifier(e.currentTarget.value)}
+                onInput={(e) => updateIdentifier(e.currentTarget.value)}
                 autoComplete="username"
                 inputMode="email"
                 required
@@ -329,13 +354,20 @@ function Login({
               />
             </div>
           </label>
+          {identifier.trim() && signInState.identifierError && (
+            <p className="config-note" role="alert">
+              {signInState.identifierError}
+            </p>
+          )}
           <label>
             {t.password}
             <div className="field">
               <LockKeyhole />
               <input
+                name="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => updatePassword(e.currentTarget.value)}
+                onInput={(e) => updatePassword(e.currentTarget.value)}
                 type={visible ? "text" : "password"}
                 autoComplete="current-password"
                 required
@@ -359,7 +391,11 @@ function Login({
               {t.forgot}
             </button>
           </div>
-          <button className="gold-action" disabled={loading || !authConfigured}>
+          <button
+            type="submit"
+            className="gold-action"
+            disabled={!signInState.canSubmit}
+          >
             {loading ? "Signing in…" : t.signIn}
             <ChevronRight />
           </button>

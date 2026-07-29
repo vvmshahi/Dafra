@@ -20,8 +20,7 @@ export interface MobileProfile {
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const appEnvironment = import.meta.env.VITE_APP_ENV;
-export const authConfigured = Boolean(url && key && appEnvironment);
+export const authConfigured = Boolean(url && key);
 export const configurationError = authConfigured
   ? ""
   : "Required public mobile configuration is missing.";
