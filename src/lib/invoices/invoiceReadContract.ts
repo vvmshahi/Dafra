@@ -38,6 +38,7 @@ export const INVOICE_SAFE_COLUMNS = [
   'updated_at',
   'session_id',
   'payment_method',
+  'is_demo',
   'original_invoice_id',
   'credit_reason',
   'document_language',

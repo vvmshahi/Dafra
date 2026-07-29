@@ -703,7 +703,9 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     : isDebitNote
     ? (isStandardDocument ? 'taxDebitNote' : 'simplifiedTaxDebitNote')
     : (isStandardDocument ? 'standardTaxInvoice' : 'simplifiedTaxInvoice')
-  const documentTitle = documentLabel(documentViewModel.identity.language, documentTitleKey)
+  const documentTitle = nonFiscalDemo
+    ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية'
+    : documentLabel(documentViewModel.identity.language, documentTitleKey)
   const creditLabel = creditStatus === 'full' ? t('invoices:fullyCredited') : creditStatus === 'partial' ? t('invoices:partiallyCredited') : t('invoices:notCredited')
   const creditLabelClass = creditStatus === 'full'
     ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
@@ -760,7 +762,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
   return (
     <div className="mx-auto min-w-0 max-w-6xl space-y-3 overflow-x-clip pb-6">
-      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'invoice-printable-a4', qrImageUrl: qrDataUrl, sampleLabel: nonFiscalDemo ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية' : null }} />
+      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'invoice-printable-a4', qrImageUrl: qrDataUrl, sampleLabel: nonFiscalDemo ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية' : null, nonFiscalDemo }} />
 
       <header className="no-print overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" aria-labelledby="invoice-detail-title">
         <div className="h-1 bg-gold-500" aria-hidden="true" />
@@ -896,14 +898,14 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
         {previewMode === 'a4' ? (
           <div id="invoice-preview-panel-a4" role="tabpanel" aria-labelledby="invoice-preview-tab-a4" tabIndex={0} className="min-w-0 outline-none">
             <A4PreviewFit bounded zoom={a4PreviewZoom}>
-              <A4Document model={documentViewModel} options={{ preview: true, id: 'invoice-preview-a4', qrImageUrl: qrDataUrl, pageNumbers: true, sampleLabel: nonFiscalDemo ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية' : null }} />
+              <A4Document model={documentViewModel} options={{ preview: true, id: 'invoice-preview-a4', qrImageUrl: qrDataUrl, pageNumbers: true, sampleLabel: nonFiscalDemo ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية' : null, nonFiscalDemo }} />
             </A4PreviewFit>
           </div>
         ) : (
           <div id="invoice-preview-panel-thermal" role="tabpanel" aria-labelledby="invoice-preview-tab-thermal" tabIndex={0}
             className="h-[clamp(30rem,calc(100dvh-14.5rem),58rem)] min-h-[30rem] min-w-0 overflow-auto rounded-xl bg-gray-100 px-3 py-5 outline-none sm:px-6">
             <div className="mx-auto w-max max-w-full">
-              <ThermalReceipt model={documentViewModel} options={{ preview: true, id: 'invoice-preview-thermal', qrImageUrl: qrDataUrl, sampleLabel: nonFiscalDemo ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية' : null }} />
+              <ThermalReceipt model={documentViewModel} options={{ preview: true, id: 'invoice-preview-thermal', qrImageUrl: qrDataUrl, sampleLabel: nonFiscalDemo ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية' : null, nonFiscalDemo }} />
             </div>
           </div>
         )}

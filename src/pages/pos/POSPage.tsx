@@ -788,9 +788,9 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
   return (
     <>
-      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'pos-pdf-printable', qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : null }} />
+      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'pos-pdf-printable', qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : null, nonFiscalDemo: receipt.isDemo }} />
       {/* Hidden thermal receipt — rendered for print only */}
-      <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : null }} />
+      <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : null, nonFiscalDemo: receipt.isDemo }} />
 
       {/* Success overlay */}
       <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0F2419]/90">
