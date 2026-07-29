@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Barcode, FileText, Printer, ReceiptText } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { isElectron } from '@/lib/electron'
 import BarcodeLabelSettingsPanel from '@/components/barcodes/BarcodeLabelSettingsPanel'
@@ -10,17 +11,37 @@ import InvoiceSettingsPage from './InvoiceSettingsPage'
 
 type Workspace = 'receipts' | 'invoices' | 'barcodeLabels' | 'printerSetup'
 
-const tabs: { id: Workspace; icon: React.ElementType }[] = [
+const allTabs: { id: Workspace; icon: React.ElementType }[] = [
   { id: 'receipts', icon: ReceiptText },
   { id: 'invoices', icon: FileText },
   { id: 'barcodeLabels', icon: Barcode },
   { id: 'printerSetup', icon: Printer },
 ]
 
+const queryValue: Record<Workspace, string> = {
+  receipts: 'receipts',
+  invoices: 'invoices',
+  barcodeLabels: 'barcode-labels',
+  printerSetup: 'printer-setup',
+}
+
+function workspaceFromQuery(value: string | null, electron: boolean): Workspace {
+  if (value === 'invoices') return 'invoices'
+  if (value === 'barcode-labels' || value === 'barcodeLabels') return 'barcodeLabels'
+  if (electron && (value === 'printer-setup' || value === 'printerSetup')) return 'printerSetup'
+  return 'receipts'
+}
+
 export default function PrintingDocumentsPage() {
   const { t } = useTranslation('printing')
   const { branch, tenant, profile } = useAuth()
-  const [active, setActive] = useState<Workspace>('invoices')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const electron = isElectron()
+  const tabs = useMemo(
+    () => allTabs.filter(tab => tab.id !== 'printerSetup' || electron),
+    [electron],
+  )
+  const active = workspaceFromQuery(searchParams.get('tab'), electron)
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const branchId = branch?.id || profile?.branch_id || ''
   const businessName = tenant?.business_name_ar
@@ -31,6 +52,20 @@ export default function PrintingDocumentsPage() {
     || branch?.name_ar
     || branch?.name
     || null
+
+  useEffect(() => {
+    const requested = searchParams.get('tab')
+    if (!requested || requested === queryValue[active]) return
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', queryValue[active])
+    setSearchParams(next, { replace: true })
+  }, [active, searchParams, setSearchParams])
+
+  const selectWorkspace = (workspace: Workspace) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', queryValue[workspace])
+    setSearchParams(next)
+  }
 
   return <div className="mx-auto max-w-[1440px] space-y-5 pb-20">
     <header className="border-b border-gray-200 pb-5">
@@ -52,14 +87,14 @@ export default function PrintingDocumentsPage() {
           aria-selected={selected}
           aria-controls={`printing-panel-${tab.id}`}
           tabIndex={selected ? 0 : -1}
-          onClick={() => setActive(tab.id)}
+          onClick={() => selectWorkspace(tab.id)}
           onKeyDown={event => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
             event.preventDefault()
             const rtl = document.documentElement.dir === 'rtl'
             const delta = event.key === 'ArrowRight' ? (rtl ? -1 : 1) : event.key === 'ArrowLeft' ? (rtl ? 1 : -1) : 0
             const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + delta + tabs.length) % tabs.length
-            setActive(tabs[next].id)
+            selectWorkspace(tabs[next].id)
             tabRefs.current[next]?.focus()
           }}
           className={`flex min-h-14 items-center gap-3 rounded-xl px-3 py-2 text-start outline-none transition-[background-color,color,transform] duration-150 active:scale-[.98] focus-visible:ring-2 focus-visible:ring-primary-500 ${
@@ -75,10 +110,13 @@ export default function PrintingDocumentsPage() {
     <main id={`printing-panel-${active}`} role="tabpanel" aria-labelledby={`printing-tab-${active}`}>
     {active === 'receipts' && <InvoiceSettingsPage key="receipts" embedded workspace="receipts" />}
     {active === 'invoices' && <InvoiceSettingsPage key="invoices" embedded workspace="invoices" />}
-    {active === 'barcodeLabels' && branchId && <BarcodeLabelSettingsPanel branchId={branchId} businessName={businessName} />}
-    {active === 'printerSetup' && branchId && <div className="space-y-8">
+    {active === 'barcodeLabels' && branchId && <div className="space-y-8">
+      <BarcodeLabelSettingsPanel branchId={branchId} businessName={businessName} />
+      {!electron && <section className="border-t border-gray-200 pt-8"><BarcodePrinterSetupPanel branchId={branchId} businessName={businessName} /></section>}
+    </div>}
+    {electron && active === 'printerSetup' && branchId && <div className="space-y-8">
       <BarcodePrinterSetupPanel branchId={branchId} businessName={businessName} />
-      {isElectron() && <section className="border-t border-gray-200 pt-8"><PrinterTab /></section>}
+      <section className="border-t border-gray-200 pt-8"><PrinterTab /></section>
     </div>}
     </main>
   </div>

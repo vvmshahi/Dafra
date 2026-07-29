@@ -8,6 +8,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
+    "test": "npm run test:final-web-printing-refinements",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -91,7 +92,8 @@
     "test:barcode-workflow": "node scripts/test-barcode-workflow.mjs",
     "test:barcode-printing-ux": "node scripts/test-barcode-printing-ux.mjs",
     "test:dashboard-product-schema-compat": "node scripts/test-dashboard-product-schema-compat.mjs",
-    "test:demo-tenant-safe-checkout": "node scripts/test-demo-tenant-safe-checkout.mjs"
+    "test:demo-tenant-safe-checkout": "node scripts/test-demo-tenant-safe-checkout.mjs",
+    "test:final-web-printing-refinements": "node --experimental-strip-types scripts/test-final-web-printing-refinements.mjs"
   },
   "build": {
     "appId": "com.kubri.pos",
