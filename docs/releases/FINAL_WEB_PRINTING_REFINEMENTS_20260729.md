@@ -113,8 +113,13 @@ backgrounds while preserving borders and hierarchy in grayscale.
 
 The focused audit found that the three saved thermal density values previously
 shared one JSX composition and relied mainly on conditional CSS. They now map
-compatibly to three independent monochrome renderers:
+compatibly to independent monochrome renderers. For the manual comparison
+phase, the pre-refinement composition from parent commit `3af4277` is also
+available as the explicitly selected `classic` layout:
 
+- **Classic Receipt:** the original familiar top-to-bottom Kubri composition
+  with centred identity, linear metadata and items, stacked totals, centred QR,
+  and simple footer.
 - **Compact Retail:** centred compact identity, inline metadata, dense rows,
   grand-total-led summary, centred QR, and short footer.
 - **Structured Detail:** grouped seller data, bordered metadata, divided items,
@@ -123,29 +128,37 @@ compatibly to three independent monochrome renderers:
   dedicated plain-background verification panel, and branded thank-you footer.
 
 Thermal previews expose the use case, colour treatment, and width selection.
-All three preserve cash/card/split payments, VAT, long names, demo labels,
+All four preserve cash/card/split payments, VAT, long names, demo labels,
 Arabic/RTL, and the original QR eligibility/data.
 
-All receipt surfaces continue to use the same immutable `DocumentViewModel`:
+All four temporary receipt choices continue to use the same immutable
+`DocumentViewModel`:
 the settings preview, POS success receipt, invoice history, dedicated receipt
 route, browser print, supported PDF flow, and reprint therefore share the saved
 layout and width. The existing `compact`, `standard`, and `detailed` stored IDs
-remain unchanged and require no migration. Branch and tenant scope continue
-through the established invoice-presentation settings contract.
+remain unchanged, existing branches are not switched to Classic, and no layout
+was removed. Migration
+`20260730000300_allow_classic_thermal_receipt_layout.sql` admits only the
+explicit `classic` value in the closed presentation validator; it performs no
+row rewrite. Branch and tenant scope continue through the established
+invoice-presentation settings contract.
 
 At 80 mm, Structured Detail places verification beside the fuller footer; at
-58 mm it stacks a centred scan-safe QR. Compact Retail keeps a centred QR near
-the cut area, while Branded Modern uses a dedicated double-rule verification
-panel. Demo non-fiscal fixtures omit QR, and unavailable preview fixtures no
-longer imply a printable QR. Arabic, RTL and bilingual fixtures use isolated
-numeric/currency runs and wrapping name containers to avoid narrow-paper
-clipping.
+58 mm it stacks a centred scan-safe QR. Classic and Compact Retail keep centred
+QR blocks near the footer, while Branded Modern uses a dedicated double-rule
+verification panel. Demo non-fiscal fixtures omit QR, and unavailable preview
+fixtures no longer imply a printable QR. Arabic, RTL and bilingual fixtures use
+isolated numeric/currency runs and wrapping name containers to avoid
+narrow-paper clipping.
 
 This work is presentation-only: it does not change calculations, VAT,
 classification, QR payload/eligibility, signing, XML, checkout, finalisation,
 reporting or clearance. Browser fixture captures verify the renderer at both
 paper widths; compatibility with specific physical printer models remains
 deferred until hardware testing.
+
+The four-layout set is temporary. The final one- or two-layout reduction will
+be chosen only after manual review in the feature-branch preview.
 
 ## Persistence and safety
 

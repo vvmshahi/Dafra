@@ -13,7 +13,7 @@ const ar = JSON.parse(read('src/localization/locales/ar-SA/documents.json'))
 for (const source of calls) { assert.match(source, /<ThermalReceipt[\s\S]{0,180}model=\{/); assert.doesNotMatch(source, /<ThermalReceipt[\s\S]{0,500}(businessNameEn|invoiceNumber=|subtotal=|documentLanguage=)/) }
 assert.doesNotMatch(thermalSource, /from\('branches'\)|supabase|buildZatcaQR|QRCode|\*\s*0\.15/)
 assert.match(thermalSource, /seller\.registeredName/); assert.match(thermalSource, /seller\.vatNumber/); assert.match(thermalSource, /seller\.registeredAddress/)
-for (const mode of ['58mm', '80mm', 'compact', 'standard', 'detailed']) assert.match(renderer, new RegExp(mode))
+for (const mode of ['58mm', '80mm', 'classic', 'compact', 'standard', 'detailed']) assert.match(renderer, new RegExp(mode))
 assert.match(thermalSource, /identity\.kind === 'credit_note'/); assert.match(renderer, /thermalPrintCss/); assert.match(renderer, /@media print/)
 assert.match(thermalSource, /presentation\.logo\.previewUrl/); assert.match(thermalSource, /options\.qrImageUrl/)
 for (const key of ['taxInvoice', 'creditNoteNumber', 'debitNoteNumber', 'taxDebitNote', 'vatNumber', 'taxableAmount', 'qrCode', 'computerGeneratedCreditNote']) { assert.ok(en[key], `English document key missing: ${key}`); assert.ok(ar[key], `Arabic document key missing: ${key}`) }
