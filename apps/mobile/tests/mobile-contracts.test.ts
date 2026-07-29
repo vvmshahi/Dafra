@@ -200,6 +200,9 @@ test("production checkout remains gated while demo checkout is server-authoritat
   assert.match(api, /policy\.nonFiscal !== true/);
   assert.match(api, /\.rpc\('pos_checkout'/);
   assert.doesNotMatch(api, /is_demo:\s*true|non_fiscal:\s*true/);
+  assert.match(api, /isDemo: record\(checkoutPolicy\.data\)\.isDemo === true/);
+  assert.match(app, /live\?\.isDemo/);
+  assert.match(app, /Sandbox · non-fiscal/);
 });
 test("barcode resolution is server-scoped and does not download every product", () => {
   const resolver = api.slice(

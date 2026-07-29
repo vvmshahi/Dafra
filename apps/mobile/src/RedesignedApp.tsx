@@ -647,6 +647,12 @@ function BranchApp({
         </div>
         <button className="avatar-button">MK</button>
       </header>
+      {(live?.isDemo || isFixture) && (
+        <div className="demo-strip" role="status">
+          <strong>DEMO</strong>
+          <span>Sandbox · non-fiscal / تجريبي · بيئة تجريبية · غير ضريبي</span>
+        </div>
+      )}
       {connection === "offline" && (
         <div className="offline-strip">
           <WifiOff />

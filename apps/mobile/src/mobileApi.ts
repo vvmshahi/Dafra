@@ -275,6 +275,7 @@ export type OperationalModule =
   | "expenses";
 
 export interface BranchData {
+  isDemo: boolean;
   dashboard: Record<string, unknown>;
   register: RegisterSummary | null;
   products: Product[];
@@ -384,8 +385,12 @@ export async function loadBranchData(
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Riyadh",
   }).format(new Date());
-  const [dashboard, register, productRows, customerRows, invoiceRows] =
+  const [checkoutPolicy, dashboard, register, productRows, customerRows, invoiceRows] =
     await Promise.all([
+      db.rpc("resolve_pos_checkout_document_v1", {
+        p_branch_id: profile.branchId,
+        p_customer_id: null,
+      }),
       db.rpc("get_dashboard_summary", {
         p_start_date: today,
         p_end_date: today,
@@ -423,6 +428,7 @@ export async function loadBranchData(
         .limit(50),
     ]);
   for (const result of [
+    checkoutPolicy,
     dashboard,
     register,
     productRows,
@@ -434,6 +440,7 @@ export async function loadBranchData(
   }
   const products = (productRows.data ?? []).map(productFromRow);
   return {
+    isDemo: record(checkoutPolicy.data).isDemo === true,
     dashboard: record(dashboard.data),
     register: normalizeRegister(register.data),
     products,
