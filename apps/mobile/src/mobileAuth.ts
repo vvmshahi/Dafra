@@ -1,5 +1,6 @@
 import { createClient, type Session } from '@supabase/supabase-js'
 import { Preferences } from '@capacitor/preferences'
+import { classifyIdentifier, normalizeBranchUsername, safeAuthMessage, validateBranchUsername } from './authContract'
 
 export type AuthRole = 'owner' | 'branch'
 export interface MobileProfile {
@@ -26,23 +27,42 @@ export const supabase = authConfigured ? createClient(url, key, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: 'kubri-mobile-auth-v1', storage: nativeStorage },
 }) : null
 
-const normalizeUsername = (value: string) => value.trim().toLowerCase().replace(/\s+/g, '')
-
 export async function signIn(identifier: string, password: string): Promise<MobileProfile> {
   if (!supabase) throw new Error('Mobile authentication is not configured for this build.')
+  const kind = classifyIdentifier(identifier)
   let email = identifier.trim()
-  if (!email.includes('@')) {
+  if (kind === 'branch-username') {
+    const username = normalizeBranchUsername(email)
+    const validationError = validateBranchUsername(username)
+    if (validationError) throw new Error(validationError)
     const { data, error } = await supabase.functions.invoke('resolve-branch-username', {
-      body: { username: normalizeUsername(email) },
+      body: { username },
     })
-    if (error || data?.ok !== true || typeof data.authEmail !== 'string') {
-      throw new Error('The email, username, or password is incorrect.')
+    if (error) {
+      const diagnosticCategory = /fetch|network|offline|connection/i.test(error.message) ? 'network' : 'resolver-unavailable'
+      console.info(`[Kubri Mobile Auth] identifier=branch-username resolver=failed category=${diagnosticCategory}`)
+      throw new Error(safeAuthMessage(diagnosticCategory))
     }
+    if (data?.ok !== true || typeof data.authEmail !== 'string') {
+      console.info('[Kubri Mobile Auth] identifier=branch-username resolver=not-resolved')
+      throw new Error(safeAuthMessage('username-not-found'))
+    }
+    console.info('[Kubri Mobile Auth] identifier=branch-username resolver=resolved mapped-email=true')
     email = data.authEmail
   }
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error || !data.user) throw new Error('The email, username, or password is incorrect.')
-  return loadProfile(data.session)
+  if (error || !data.user) {
+    console.info(`[Kubri Mobile Auth] identifier=${kind} auth=rejected category=invalid-credentials`)
+    throw new Error(safeAuthMessage(kind === 'branch-username' ? 'invalid-password' : 'email-credentials'))
+  }
+  try {
+    const profile = await loadProfile(data.session)
+    console.info(`[Kubri Mobile Auth] identifier=${kind} auth=accepted profile=resolved role=${profile.role}`)
+    return profile
+  } catch (profileError) {
+    await supabase.auth.signOut({ scope: 'local' })
+    throw profileError
+  }
 }
 
 export async function loadProfile(session: Session): Promise<MobileProfile> {

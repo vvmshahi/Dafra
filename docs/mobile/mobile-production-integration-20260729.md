@@ -16,6 +16,10 @@ Never provide a service-role key, database password, JWT signing secret, ZATCA p
 
 The client reuses `resolve-branch-username` for Branch usernames and `signInWithPassword` for email/password authentication. It loads `user_profiles`, validates active state, verifies tenant active/suspension state, calls `get_tenant_subscription_access`, validates Branch state and routes from the authoritative role. Super Admin and unsupported roles are blocked.
 
+Branch identifier handling exactly mirrors the web contract: trim leading/trailing whitespace, lowercase, then accept only 3–32 ASCII lowercase letters, numbers, underscore or hyphen. Internal spaces are not removed and display names are not converted into usernames. Resolver failure, post-resolution password rejection, network failure and profile/tenant/Branch state failures now produce separate safe messages and sanitised category-only diagnostics.
+
+The July 29 authentication investigation confirmed that the spaced identifier “Kubri Trading” is not accepted by the authoritative username contract. The corresponding unspaced normalized identifier resolves through the production Edge Function, while the observed phone attempt then reached Supabase Auth and was rejected in the invalid-credentials category. No password or mapped email was captured, and no account was changed.
+
 Supabase session JSON is stored through Capacitor Preferences under `kubri-mobile-auth-v1`, in Android application-private storage. It is not a raw password and is never logged or displayed. Supabase refreshes tokens; cold start and app resume reload the profile and tenant/Branch scope. Logout clears both Supabase state and the native preference. Capacitor Preferences is application-private storage, not hardware-backed encryption; a keystore-backed storage plugin remains a hardening option before store release.
 
 ## Reused production data contracts
@@ -47,4 +51,3 @@ Real invoice cards consume server lifecycle, ZATCA state, payment methods and pr
 The production-configured read-only APK installed successfully on the authorised Xiaomi device. It displayed an enabled production sign-in with no environment warning and no fixture bypass. Credentials were not supplied, so authenticated Owner/Branch data, cold restoration and logout were not exercised physically.
 
 Remaining checks: authorised real login, KPI comparison with web for the same Riyadh date/Branch, Arabic real-data labels, secure share/print, keystore storage assessment, and all separately approved mutations.
-

@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { calculatePreview, canCheckout, resolveMobileRole } from '../src/domain.ts'
 import { products } from '../src/fixtures.ts'
+import { classifyIdentifier, normalizeBranchUsername, safeAuthMessage, validateBranchUsername } from '../src/authContract.ts'
 
 const root = path.resolve(import.meta.dirname, '..')
 const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8')
@@ -35,12 +36,48 @@ test('real auth supports email, branch username and authoritative role resolutio
   assert.match(auth, /user_profiles/)
   assert.match(auth, /data\.role === 'super_admin'/)
 })
+test('identifier classification supports Owner email and Branch email/username', () => {
+  assert.equal(classifyIdentifier('owner@example.com'), 'email')
+  assert.equal(classifyIdentifier('branch@example.com'), 'email')
+  assert.equal(classifyIdentifier('branch_name'), 'branch-username')
+})
+test('Branch username normalization exactly mirrors the production web contract', () => {
+  assert.equal(normalizeBranchUsername('  Branch_Name  '), 'branch_name')
+  assert.equal(normalizeBranchUsername('Kubri Trading'), 'kubri trading')
+  assert.equal(validateBranchUsername('kubri trading'), 'Use 3–32 lowercase letters, numbers, underscore, or hyphen.')
+  assert.equal(validateBranchUsername('branch_name'), null)
+})
+test('display names are not fuzzily converted into login usernames', () => {
+  assert.notEqual(normalizeBranchUsername('Kubri Trading'), 'kubritrading')
+  assert.notEqual(normalizeBranchUsername('Kubri Trading'), 'kubri-trading')
+})
+test('reserved, malformed and ambiguous-looking usernames fail before resolver invocation', () => {
+  assert.ok(validateBranchUsername('admin'))
+  assert.ok(validateBranchUsername('_branch'))
+  assert.ok(validateBranchUsername('branch--one'))
+  assert.ok(validateBranchUsername('فرع'))
+})
+test('safe errors distinguish resolver and post-resolution password failures', () => {
+  assert.match(safeAuthMessage('username-not-found'), /could not find/i)
+  assert.match(safeAuthMessage('invalid-password'), /password is incorrect/i)
+  assert.match(safeAuthMessage('network'), /connect/i)
+  assert.doesNotMatch(safeAuthMessage('email-credentials'), /account exists|email found/i)
+})
 test('session restoration, refresh and logout are supported', () => {
   assert.match(auth, /persistSession:\s*true/)
   assert.match(auth, /autoRefreshToken:\s*true/)
   assert.match(auth, /getSession/)
   assert.match(auth, /auth\.signOut/)
   assert.match(auth, /Preferences/)
+})
+test('profile failure clears the accepted Auth session locally', () => {
+  assert.match(auth, /catch \(profileError\)/)
+  assert.match(auth, /signOut\(\{ scope: 'local' \}\)/)
+})
+test('auth diagnostics contain categories but no password or token values', () => {
+  assert.match(auth, /resolver=resolved mapped-email=true/)
+  assert.doesNotMatch(auth, /console\\.(?:info|log).*password/)
+  assert.doesNotMatch(auth, /console\\.(?:info|log).*access_token|console\\.(?:info|log).*refresh_token/)
 })
 test('public production configuration is validated without secret credentials', () => {
   for (const key of ['VITE_SUPABASE_URL','VITE_SUPABASE_ANON_KEY','VITE_APP_ENV','VITE_MOBILE_ACCESS_MODE']) assert.match(envExample, new RegExp(key))
