@@ -69,6 +69,7 @@ import {
   loadInvoiceSessions,
   loadOperationalModule,
   closeRegister,
+  checkoutAuthoritativeDemo,
   isAuthorisedOperationalScope,
   openRegister,
   resolveProductBarcode,
@@ -77,6 +78,7 @@ import {
   type InvoiceDetail,
   type InvoiceFilters,
   type InvoiceSessionOption,
+  type DemoCheckoutResult,
   type OperationalModule,
 } from "./mobileApi";
 
@@ -727,6 +729,9 @@ function BranchApp({
           }}
           customers={customers}
           isFixture={isFixture}
+          profile={profile}
+          register={live?.register ?? null}
+          refreshed={refreshBranch}
         />
       )}
       {registerOpen && (
@@ -1222,6 +1227,9 @@ function CartFlow({
   done,
   customers,
   isFixture,
+  profile,
+  register,
+  refreshed,
 }: {
   locale: Locale;
   connection: ConnectionState;
@@ -1231,11 +1239,19 @@ function CartFlow({
   done: () => void;
   customers: import("./domain").Customer[];
   isFixture: boolean;
+  profile: MobileProfile;
+  register: import("./mobileApi").RegisterSummary | null;
+  refreshed: () => Promise<void>;
 }) {
   const [step, setStep] = useState<"cart" | "payment" | "success">("cart"),
     [payment, setPayment] = useState<Payment>("cash"),
-    [customer, setCustomer] = useState("Walk-in customer");
-  const preview = calculatePreview(cart, "mobile-review-001"),
+    [customerId, setCustomerId] = useState<string | null>(null),
+    [result, setResult] = useState<DemoCheckoutResult | null>(null),
+    [submitting, setSubmitting] = useState(false),
+    [checkoutError, setCheckoutError] = useState("");
+  const [requestId] = useState(() => crypto.randomUUID());
+  const customer = customers.find((item) => item.id === customerId);
+  const preview = calculatePreview(cart, requestId),
     printer = useMemo(() => new SystemPrintAdapter(), []);
   function change(id: string, d: number) {
     setCart(
@@ -1255,25 +1271,26 @@ function CartFlow({
           <div className="success-mark">
             <Check />
           </div>
-          <span>PAYMENT COMPLETE · SIMULATION</span>
-          <h2>{money(preview.total, locale)}</h2>
-          <p>Invoice PREVIEW-1047 · {payment.toUpperCase()}</p>
+          <span>DEMO — NOT A TAX INVOICE</span>
+          <strong className="demo-ar">تجريبي — ليست فاتورة ضريبية</strong>
+          <h2>{money(result?.total ?? preview.total, locale)}</h2>
+          <p>{result?.invoiceNumber} · {payment.toUpperCase()}</p>
           <div className="receipt-summary">
             <div>
               <small>Customer</small>
-              <b>{customer}</b>
+              <b>{customer?.name ?? "Walk-in customer"}</b>
             </div>
             <div>
               <small>Reporting</small>
-              <b className="pending">Preview only</b>
+              <b className="pending">Non-fiscal · no ZATCA request</b>
             </div>
           </div>
           <div className="success-actions">
             <button
               onClick={() =>
                 void printer.printReceipt({
-                  invoiceNumber: "PREVIEW-1047",
-                  html: "",
+                  invoiceNumber: result?.invoiceNumber ?? "DEMO",
+                  html: `<h1>DEMO — NOT A TAX INVOICE</h1><h2>تجريبي — ليست فاتورة ضريبية</h2>`,
                   paperWidth: "80mm",
                 })
               }
@@ -1284,8 +1301,8 @@ function CartFlow({
             <button
               onClick={() =>
                 void Share.share({
-                  title: "Kubri receipt preview",
-                  text: `PREVIEW-1047 · ${money(preview.total, locale)} · No invoice was issued.`,
+                  title: "Kubri demo receipt",
+                  text: `DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية · ${result?.invoiceNumber} · ${money(result?.total ?? preview.total, locale)}`,
                 })
               }
             >
@@ -1294,7 +1311,7 @@ function CartFlow({
             </button>
             <button
               onClick={() =>
-                (location.href = `https://wa.me/?text=${encodeURIComponent("Kubri receipt preview PREVIEW-1047")}`)
+                (location.href = `https://wa.me/?text=${encodeURIComponent(`DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية · ${result?.invoiceNumber}`)}`)
               }
             >
               <MessageCircle />
@@ -1331,17 +1348,13 @@ function CartFlow({
             <button
               className="customer-row"
               onClick={() =>
-                setCustomer(
-                  customer === "Walk-in customer"
-                    ? (customers[0]?.name ?? "Walk-in customer")
-                    : "Walk-in customer",
-                )
+                setCustomerId(customerId ? null : (customers[0]?.id ?? null))
               }
             >
               <Users />
               <span>
                 <small>Customer</small>
-                <b>{customer}</b>
+                <b>{customer?.name ?? "Walk-in customer"}</b>
               </span>
               <ChevronRight />
             </button>
@@ -1425,24 +1438,51 @@ function CartFlow({
               <AlertTriangle />
               <span>
                 <b>
-                  {isFixture
-                    ? "Development fixture"
-                    : "Controlled checkout required"}
+                  {isFixture ? "Development fixture" : "Demo · non-fiscal checkout"}
                 </b>
                 {isFixture
                   ? "No production invoice, payment or stock record will be created."
-                  : "Production sale confirmation is disabled until the controlled checkout phase."}
+                  : "Server authorisation is required. No ZATCA reporting, clearance or valid QR will be created."}
               </span>
             </div>
             <button
               className="gold-action"
-              disabled={!isFixture || !canCheckout(connection, false, cart)}
-              onClick={() => isFixture && setStep("success")}
+              disabled={submitting || !canCheckout(connection, false, cart)}
+              onClick={() => {
+                if (isFixture) return setStep("success");
+                setSubmitting(true);
+                setCheckoutError("");
+                void cartStorage.retainRequestId(requestId)
+                  .then(() => checkoutAuthoritativeDemo({
+                    profile,
+                    register,
+                    online: connection === "online",
+                    customerId,
+                    payment,
+                    requestId,
+                    expectedTotal: preview.total,
+                    items: cart.map((line) => ({
+                      productId: line.product.id,
+                      quantity: line.quantity,
+                    })),
+                  }))
+                  .then(async (serverResult) => {
+                    setResult(serverResult);
+                    await cartStorage.clearRequestId();
+                    await refreshed();
+                    setStep("success");
+                  })
+                  .catch((error) => setCheckoutError(
+                    error instanceof Error ? error.message : "Demo checkout failed.",
+                  ))
+                  .finally(() => setSubmitting(false));
+              }}
             >
               {isFixture
                 ? `Confirm fixture · ${money(preview.total, locale)}`
-                : "Production checkout not enabled"}
+                : submitting ? "Confirming with server…" : `Confirm demo · ${money(preview.total, locale)}`}
             </button>
+            {checkoutError && <p className="blocked-note" role="alert">{checkoutError}</p>}
           </>
         )}
       </section>

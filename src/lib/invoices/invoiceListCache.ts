@@ -4,6 +4,7 @@ import type { SandboxValidationStatus } from '@/lib/zatca/api'
 export type InvoiceListDisplayStatus = ZatcaStatus | SandboxValidationStatus | 'sandbox_not_validated'
 
 export interface InvoiceListRow {
+  isDemo?: boolean
   id: string
   branchId: string
   invoiceNumber: string

@@ -1,4 +1,10 @@
 {
+  "demo": {
+    "badge": "تجريبي · غير ضريبي",
+    "checkoutNotice": "دفع تجريبي فقط. لن يتم إنشاء فاتورة ضريبية لدى ZATCA.",
+    "noZatca": "عملية بيع تجارية محاكاة. لم يُطلب إبلاغ أو تصفية لدى ZATCA.",
+    "receiptLabelBilingual": "DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية"
+  },
   "title": "نقطة البيع",
   "touchPos": "نقطة البيع باللمس",
   "quickBilling": "الفوترة السريعة",

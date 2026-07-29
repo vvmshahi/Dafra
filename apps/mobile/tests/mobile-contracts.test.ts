@@ -190,11 +190,16 @@ test("operational writes require exact configured tenant and Branch scope", () =
   assert.match(api, /profile\.branchId === authorisedBranch/);
   assert.match(api, /accessMode !== 'read-only'/);
 });
-test("production checkout has an explicit multi-condition safety gate", () => {
+test("production checkout remains gated while demo checkout is server-authoritative", () => {
   assert.match(api, /VITE_MOBILE_PRODUCTION_CHECKOUT === 'true'/);
   assert.match(api, /accessMode !== 'production-checkout'/);
   assert.match(api, /register\?\.status !== 'open'/);
-  assert.doesNotMatch(api, /\.rpc\('pos_checkout'/);
+  assert.match(api, /\.rpc\('resolve_pos_checkout_document_v1'/);
+  assert.match(api, /policy\.checkoutPath !== 'demo'/);
+  assert.match(api, /policy\.isDemo !== true/);
+  assert.match(api, /policy\.nonFiscal !== true/);
+  assert.match(api, /\.rpc\('pos_checkout'/);
+  assert.doesNotMatch(api, /is_demo:\s*true|non_fiscal:\s*true/);
 });
 test("barcode resolution is server-scoped and does not download every product", () => {
   const resolver = api.slice(
@@ -271,7 +276,7 @@ test("cart survives tab changes and stores no invoice/payment queue", () => {
   assert.match(app, /cartStorage\.save/);
   assert.doesNotMatch(storage, /queue|invoice_number|payment|fiscal/i);
 });
-test("payment methods are Cash, Card and Split only and checkout remains disabled", () => {
+test("payment methods are Cash, Card and Split only in authoritative demo checkout", () => {
   assert.match(
     app,
     /type Payment = ["']cash["'] \| ["']card["'] \| ["']split["']/,
@@ -280,8 +285,9 @@ test("payment methods are Cash, Card and Split only and checkout remains disable
     app,
     /type Payment = .*credit|payment:\s*["']credit["']|>Credit</,
   );
-  assert.match(app, /Production checkout not enabled/);
-  assert.match(app, /disabled=\{!isFixture \|\| !canCheckout/);
+  assert.match(app, /Confirm demo/);
+  assert.match(app, /checkoutAuthoritativeDemo/);
+  assert.match(app, /disabled=\{submitting \|\| !canCheckout/);
 });
 test("offline and reconciliation boundaries prevent checkout", () => {
   const line = [{ product: products[0], quantity: 1 }];
@@ -289,11 +295,15 @@ test("offline and reconciliation boundaries prevent checkout", () => {
   assert.equal(canCheckout("online", true, line), false);
   assert.match(app, /Nothing will be queued/);
 });
-test("mobile never chooses a production fiscal path", () => {
+test("mobile demo checkout never chooses a production fiscal path", () => {
   assert.doesNotMatch(
     app + auth,
-    /pos_checkout|prepare_zatca|production_csid|service_role/i,
+    /prepare_zatca|production_csid|service_role|zatca-submit/i,
   );
+  assert.match(api, /row\.is_demo !== true/);
+  assert.match(api, /row\.non_fiscal !== true/);
+  assert.match(app, /DEMO — NOT A TAX INVOICE/);
+  assert.match(app, /تجريبي — ليست فاتورة ضريبية/);
   const preview = calculatePreview(
     [{ product: products[0], quantity: 1 }],
     "request-123",

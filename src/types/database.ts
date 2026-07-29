@@ -1182,6 +1182,7 @@ export interface Employee {
 }
 
 export interface Invoice {
+  is_demo?: boolean
   id: string
   tenant_id: string
   branch_id: string

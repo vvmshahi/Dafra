@@ -25,6 +25,7 @@ export interface RegisterSummary {
 }
 
 export interface MobileInvoice {
+  isDemo: boolean;
   id: string;
   number: string;
   createdAt: string;
@@ -118,6 +119,7 @@ function invoiceFromRow(row: any): MobileInvoice {
   const payments = Array.isArray(row.payments) ? row.payments : [];
   return {
     id: row.id,
+    isDemo: row.is_demo === true,
     number: row.invoice_number,
     createdAt: row.created_at,
     status: row.status,
@@ -134,6 +136,92 @@ function invoiceFromRow(row: any): MobileInvoice {
     printEligible:
       row.status !== "cancelled" &&
       (row.zatca_invoice_type !== "standard" || row.zatca_status === "cleared"),
+  };
+}
+
+export interface DemoCheckoutResult {
+  invoiceId: string;
+  invoiceNumber: string;
+  createdAt: string;
+  subtotal: number;
+  tax: number;
+  total: number;
+  paymentMethod: "cash" | "card" | "split";
+  isDemo: true;
+  nonFiscal: true;
+  receiptLabel: string;
+  receiptLabelAr: string;
+}
+
+export async function checkoutAuthoritativeDemo(params: {
+  profile: MobileProfile;
+  register: RegisterSummary | null;
+  online: boolean;
+  customerId: string | null;
+  payment: "cash" | "card" | "split";
+  requestId: string;
+  expectedTotal: number;
+  items: Array<{ productId: string; quantity: number }>;
+}): Promise<DemoCheckoutResult> {
+  if (!params.online) throw new Error("Connect to the internet before checkout.");
+  if (!params.profile.branchId) throw new Error("Branch scope is unavailable.");
+  if (params.register?.status !== "open") throw new Error("Open the register before checkout.");
+  if (!params.items.length) throw new Error("The cart is empty.");
+
+  const db = client();
+  const decision = await db.rpc("resolve_pos_checkout_document_v1", {
+    p_branch_id: params.profile.branchId,
+    p_customer_id: params.customerId,
+  });
+  if (decision.error) throw new Error(decision.error.message);
+  const policy = record(decision.data);
+  if (
+    policy.status !== "allowed" ||
+    policy.checkoutPath !== "demo" ||
+    policy.isDemo !== true ||
+    policy.nonFiscal !== true
+  ) {
+    throw new Error(String(policy.code || "Demo checkout is not authorised for this branch."));
+  }
+
+  const split = params.payment === "split";
+  const result = await db.rpc("pos_checkout", {
+    p_payload: {
+      branch_id: params.profile.branchId,
+      customer_id: params.customerId,
+      session_id: params.register.sessionId,
+      payment_method: split ? "other" : params.payment,
+      ...(split
+        ? {
+            payments: [
+              { method: "cash", amount: Math.round(params.expectedTotal * 50) / 100 },
+              { method: "card", amount: Math.round((params.expectedTotal - Math.round(params.expectedTotal * 50) / 100) * 100) / 100 },
+            ],
+          }
+        : {}),
+      idempotency_key: params.requestId,
+      items: params.items.map((item) => ({
+        product_id: item.productId,
+        quantity: item.quantity,
+      })),
+    },
+  });
+  if (result.error) throw new Error(result.error.message);
+  const row = record(result.data);
+  if (row.is_demo !== true || row.non_fiscal !== true || row.checkout_path !== "demo")
+    throw new Error("Server did not confirm a non-fiscal demo result.");
+  return {
+    invoiceId: String(row.invoice_id),
+    invoiceNumber: String(row.invoice_number),
+    createdAt: String(row.created_at),
+    subtotal: number(row.subtotal),
+    tax: number(row.tax_amount),
+    total: number(row.total),
+    paymentMethod: params.payment,
+    isDemo: true,
+    nonFiscal: true,
+    receiptLabel: String(row.receipt_label),
+    receiptLabelAr: String(row.receipt_label_ar),
   };
 }
 
@@ -327,7 +415,7 @@ export async function loadBranchData(
       db
         .from("invoices")
         .select(
-          "id,invoice_number,created_at,status,zatca_status,zatca_invoice_type,total_amount,tax_amount,customers(name),payments(method)",
+          "id,is_demo,invoice_number,created_at,status,zatca_status,zatca_invoice_type,total_amount,tax_amount,customers(name),payments(method)",
         )
         .eq("tenant_id", profile.tenantId)
         .eq("branch_id", profile.branchId)
@@ -424,7 +512,7 @@ export async function loadInvoices(
   let query: any = db
     .from("invoices")
     .select(
-      "id,invoice_number,invoice_reference,created_at,status,payment_status,zatca_status,zatca_invoice_type,total_amount,tax_amount,original_invoice_id,customers(name),payments(method)",
+      "id,is_demo,invoice_number,invoice_reference,created_at,status,payment_status,zatca_status,zatca_invoice_type,total_amount,tax_amount,original_invoice_id,customers(name),payments(method)",
       { count: "exact" },
     )
     .eq("tenant_id", profile.tenantId)
@@ -607,7 +695,7 @@ export async function loadInvoiceDetail(
   const { data, error } = await db
     .from("invoices")
     .select(
-      "id,invoice_number,created_at,status,zatca_status,zatca_invoice_type,subtotal,discount_amount,taxable_amount,tax_amount,total_amount,payment_status,session_id,original_invoice_id,customers(name),payments(id,method,amount,amount_received,change_amount),invoice_items(id,name,quantity,unit,unit_price,discount_amount,tax_amount,total)",
+      "id,is_demo,invoice_number,created_at,status,zatca_status,zatca_invoice_type,subtotal,discount_amount,taxable_amount,tax_amount,total_amount,payment_status,session_id,original_invoice_id,customers(name),payments(id,method,amount,amount_received,change_amount),invoice_items(id,name,quantity,unit,unit_price,discount_amount,tax_amount,total)",
     )
     .eq("tenant_id", profile.tenantId)
     .eq("branch_id", profile.branchId)
@@ -650,6 +738,7 @@ export async function loadInvoiceDetail(
           ? "fully_returned"
           : "partially_returned";
   return {
+    isDemo: row.is_demo === true,
     id: row.id,
     number: row.invoice_number,
     createdAt: row.created_at,
