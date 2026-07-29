@@ -18,6 +18,11 @@ DECLARE
   IF v IS NOT NULL AND v !~ ('^invoice-branding/'||p_tenant_id::TEXT||'/'||p_branch_id::TEXT||'/'||n::TEXT||'/header\.(png|jpg|jpeg|webp)$') THEN RAISE EXCEPTION 'Invalid immutable A4 header asset path' USING ERRCODE='22023'; END IF;
   $checks$;
 BEGIN
+  IF to_regprocedure('public.validate_invoice_presentation_settings(jsonb,uuid,uuid)') IS NULL THEN
+    RAISE NOTICE 'Legacy presentation validator is absent; 20260729000700 will install the complete branding definition';
+    RETURN;
+  END IF;
+
   v_definition := pg_get_functiondef('public.validate_invoice_presentation_settings(jsonb,uuid,uuid)'::regprocedure);
   IF strpos(v_definition,v_old_keys)=0 OR strpos(v_definition,v_old_return)=0 THEN RAISE EXCEPTION 'A4_BRANDING_VALIDATOR_ANCHOR_MISSING'; END IF;
   v_definition := replace(v_definition,v_old_keys,v_new_keys);
@@ -40,7 +45,15 @@ BEGIN
 END
 $storage_policy$;
 
-COMMENT ON FUNCTION public.validate_invoice_presentation_settings(jsonb, uuid, uuid) IS
-  'Validates branch-scoped presentation settings including A4 layout, accent colour, and immutable decorative header artwork.';
+DO $comment_a4_branding_validator$
+BEGIN
+  IF to_regprocedure('public.validate_invoice_presentation_settings(jsonb,uuid,uuid)') IS NOT NULL THEN
+    EXECUTE $comment$
+      COMMENT ON FUNCTION public.validate_invoice_presentation_settings(jsonb, uuid, uuid) IS
+        'Validates branch-scoped presentation settings including A4 layout, accent colour, and immutable decorative header artwork.'
+    $comment$;
+  END IF;
+END;
+$comment_a4_branding_validator$;
 
 COMMIT;
