@@ -90,6 +90,7 @@ assert.match(a4, /page-break-inside|Footer/)
 assert.match(css, /a4-statement-summary/)
 assert.match(migration, /validate_invoice_presentation_settings/)
 assert.match(migration, /executive_green/)
+assert.match(migration, /to_regprocedure\('public\.validate_invoice_presentation_settings\(jsonb,uuid,uuid\)'\) IS NULL[\s\S]*20260729000700/)
 assert.doesNotMatch(migration, /UPDATE public\.(invoices|payments|products|pos_stock_movements|zatca_)/)
 for (const marker of ['accent_color', 'header_asset_path', 'header_asset_enabled', 'header_asset_fit', 'header_asset_height', 'header_asset_spacing']) {
   assert.match(invoiceSettings, new RegExp(marker))
@@ -117,6 +118,7 @@ assert.match(a4, /a4-minimal-foot[\s\S]*<QrVerification/)
 assert.match(read('src/localization/locales/en/documents.json'), /"seller": "Bill From"/)
 assert.match(read('src/localization/locales/ar-SA/documents.json'), /"seller": "صادرة من"/)
 assert.doesNotMatch(brandingMigration, /UPDATE public\.(invoices|payments|products|pos_stock_movements|zatca_)/)
+assert.match(brandingMigration, /to_regprocedure\('public\.validate_invoice_presentation_settings\(jsonb,uuid,uuid\)'\) IS NULL[\s\S]*20260729000700/)
 
 // Corrective A4 registry: six valid IDs round-trip to six unique renderers,
 // landmark sets, thumbnails, and intended QR regions. Unknown IDs fall back to
