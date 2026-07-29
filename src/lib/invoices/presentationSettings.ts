@@ -292,7 +292,7 @@ export function toCanonicalInvoicePresentationSettings(value: {
 }
 
 export const THERMAL_WIDTHS: readonly ThermalWidth[] = ['58mm', '80mm']
-export const THERMAL_DENSITIES: readonly ThermalDensity[] = ['compact', 'standard', 'detailed']
+export const THERMAL_DENSITIES: readonly ThermalDensity[] = ['classic', 'compact', 'standard', 'detailed']
 export const QR_SIZES: readonly QrSize[] = ['small', 'standard', 'large']
 export const QR_ALIGNMENTS: readonly QrAlignment[] = ['left', 'center', 'right']
 export const LOGO_SIZES: readonly LogoAssetSize[] = ['small', 'medium', 'large']

@@ -97,12 +97,14 @@ export interface LegacyThermalReceiptProps {
 export type ThermalReceiptProps = ThermalReceiptModelProps | LegacyThermalReceiptProps
 
 const density = {
+  classic: { font: '10.5px', small: '8.8px', gap: '5px', padding: '3.5mm', line: 1.38 },
   compact: { font: '9.5px', small: '8px', gap: '3px', padding: '3mm', line: 1.25 },
   standard: { font: '10.5px', small: '8.8px', gap: '5px', padding: '3.5mm', line: 1.38 },
   detailed: { font: '11px', small: '9.2px', gap: '7px', padding: '4mm', line: 1.48 },
 } as const
 
 export const THERMAL_RECEIPT_LAYOUTS = {
+  classic: { id: 'classic', header: 'original-centered', metadata: 'original-list', items: 'original-linear-rows', totals: 'original-stacked', qr: 'original-center-footer', footer: 'original-message' },
   compact: { id: 'compact-retail', header: 'centered-compact', metadata: 'inline-strip', items: 'dense-rows', totals: 'grand-total-led', qr: 'center-below-totals', footer: 'short' },
   standard: { id: 'structured-detail', header: 'seller-columns', metadata: 'bordered-summary', items: 'divided-rows', totals: 'accounting-block', qr: 'responsive-side', footer: 'contact-rich' },
   detailed: { id: 'branded-modern', header: 'framed-brand', metadata: 'identity-card', items: 'grouped-cards', totals: 'payment-highlight', qr: 'verification-panel', footer: 'branded-thanks' },
