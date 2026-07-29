@@ -108,13 +108,16 @@ export function renderBarcodeSvg(
     displayValue,
     lineColor: '#000000',
     background: '#ffffff',
-    margin: 0,
+    // Preserve a library-owned white quiet zone in addition to the renderer's
+    // physical padding so printer scaling cannot erase scan clearance.
+    margin: 10,
     height,
     fontSize: 12,
     xmlDocument: document,
   })
   svg.setAttribute('role', 'img')
   svg.setAttribute('aria-label', value)
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')
   return svg.outerHTML
 }
 
@@ -192,13 +195,13 @@ export function barcodeLabelFit(
   const perNameLineLimit = Math.max(1, Math.floor(maximumNameLines / Math.max(1, names.length)))
   const preferredFontPt = NAME_FONT_BY_SIZE[settings.productNameSize]
   const barcodeHeight = Math.max(MIN_BARCODE_HEIGHT_MM, settings.barcodeHeightMm)
-  const fixedHeight =
-    (settings.content.businessName && label.businessName ? 2.8 : 0)
-    + (settings.content.unitName || (settings.content.sellingPrice && label.price) ? 4.2 : 0)
-    + barcodeHeight
-    + (settings.templateId === 'compact' ? 0.8 : 1.6)
-    + (settings.content.barcodeValue ? 2.8 : 0)
-    + (settings.content.sku || settings.content.printDate ? 2.5 : 0)
+  const fixedHeight = settings.presetId === 'carton_label'
+    ? Math.max(barcodeHeight + (settings.content.barcodeValue ? 3.4 : 0), 12)
+    : settings.presetId === 'detailed_product'
+      ? barcodeHeight + (settings.content.barcodeValue ? 2.8 : 0) + 6
+      : settings.presetId === 'compact_sticker'
+        ? barcodeHeight + (settings.content.barcodeValue ? 2.3 : 0) + (settings.content.sellingPrice && label.price ? 3.2 : 0) + .3
+        : barcodeHeight + (settings.content.barcodeValue ? 2.8 : 0) + 4.5
   const availableNameHeight = Math.max(0, innerHeight - fixedHeight)
 
   let nameFontPt = preferredFontPt
@@ -229,7 +232,21 @@ export function barcodeLabelFit(
     settings.content.sku ? label.sku ?? '' : '',
     settings.content.printDate ? label.printDate ?? '0000-00-00' : '',
   ].filter(Boolean).reduce((sum, value) => sum + estimatedTextWidthMm(value, 6.5), 0)
-  const fixedRegionsFit = innerWidth >= 18 && fixedHeight <= innerHeight + 0.01
+  const minimumBarcodeWidth = label.barcodeType === 'ean13' || label.barcodeType === 'upca'
+    ? 29.8
+    : label.barcodeType === 'ean8'
+      ? 21.4
+      : 18
+  const scanRegionWidth = settings.presetId === 'standard_product'
+    ? innerWidth * .68
+    : settings.presetId === 'detailed_product'
+      ? innerWidth * .58
+      : settings.presetId === 'carton_label'
+        ? innerWidth * .44
+        : innerWidth
+  const fixedRegionsFit = innerWidth >= 18
+    && scanRegionWidth >= minimumBarcodeWidth
+    && fixedHeight <= innerHeight + 0.01
   const horizontalOverflow = metaWidth > innerWidth * 1.35 || footerWidth > innerWidth * 1.35
   if (!fixedRegionsFit || !namesFit || horizontalOverflow) {
     return {
@@ -352,7 +369,7 @@ function expandedLabels(labels: BarcodeLabel[]): BarcodeLabel[] {
   return expanded
 }
 
-function labelNames(label: BarcodeLabel, settings: BarcodeLabelSettings): string {
+function labelNames(label: BarcodeLabel, settings: BarcodeLabelSettings, locale: string): string {
   const parts: string[] = []
   const seen = new Set<string>()
   const generic = label.productName.trim()
@@ -363,12 +380,15 @@ function labelNames(label: BarcodeLabel, settings: BarcodeLabelSettings): string
     seen.add(value)
     parts.push(`<div class="product-name ${className}" dir="${direction}">${escapeHtml(value)}</div>`)
   }
-  if (settings.content.productName) add(ar || en || generic, '', 'auto')
-  if (settings.content.productNameAr) {
-    add(ar || en || generic, ar ? 'product-name--ar' : en ? 'product-name--en' : '', ar ? 'rtl' : en ? 'ltr' : 'auto')
+  const arabicPrimary = locale.toLowerCase().startsWith('ar')
+  const primary = arabicPrimary ? ar || en || generic : en || ar || generic
+  if (settings.content.productName) {
+    add(primary, primary === ar ? 'product-name--ar' : primary === en ? 'product-name--en' : '', primary === ar ? 'rtl' : primary === en ? 'ltr' : 'auto')
   }
-  if (settings.content.productNameEn) {
-    add(en || ar || generic, en ? 'product-name--en' : ar ? 'product-name--ar' : '', en ? 'ltr' : ar ? 'rtl' : 'auto')
+  const secondaryEnabled = settings.content.productNameAr || settings.content.productNameEn
+  if (secondaryEnabled) {
+    const secondary = arabicPrimary ? en : ar
+    add(secondary, secondary === ar ? 'product-name--ar product-name--secondary' : 'product-name--en product-name--secondary', secondary === ar ? 'rtl' : 'ltr')
   }
   return parts.join('')
 }
@@ -417,6 +437,78 @@ function priceMarkup(
   </bdi>`
 }
 
+interface LabelRenderContext {
+  label: BarcodeLabel
+  settings: BarcodeLabelSettings
+  svg: string
+  locale: string
+  accessibleCurrencyName: string
+}
+
+const businessMarkup = ({ label, settings }: LabelRenderContext) =>
+  settings.content.businessName && label.businessName
+    ? `<div class="business" dir="auto">${escapeHtml(label.businessName)}</div>`
+    : ''
+
+const namesMarkup = (context: LabelRenderContext) =>
+  `<div class="product-names">${labelNames(context.label, context.settings, context.locale)}</div>`
+
+const unitMarkup = ({ label, settings }: LabelRenderContext) =>
+  settings.content.unitName && label.unitName
+    ? `<span class="unit" dir="auto">${escapeHtml(label.unitName)}</span>`
+    : ''
+
+const price = ({ label, settings, locale, accessibleCurrencyName }: LabelRenderContext) =>
+  settings.content.sellingPrice && label.price
+    ? priceMarkup(label.price, locale, accessibleCurrencyName)
+    : ''
+
+const barcodeMarkup = ({ label, settings, svg }: LabelRenderContext) => `
+  <div class="barcode-graphic barcode-graphic--${escapeHtml(label.barcodeType)}" dir="ltr">${svg}</div>
+  ${settings.content.barcodeValue ? `<div class="barcode-value" dir="ltr">${escapeHtml(label.barcode)}</div>` : ''}`
+
+const skuMarkup = ({ label, settings }: LabelRenderContext) =>
+  settings.content.sku && label.sku
+    ? `<span class="sku" dir="ltr">${escapeHtml(label.sku)}</span>`
+    : ''
+
+const LABEL_RENDERERS = {
+  compact_sticker: (context: LabelRenderContext) => `
+    <div class="compact-price-composition">
+      ${businessMarkup(context)}
+      ${namesMarkup(context)}
+      <div class="compact-price-composition__scan">${barcodeMarkup(context)}</div>
+      <div class="compact-price-composition__footer"><span>${unitMarkup(context)}</span>${price(context)}</div>
+    </div>`,
+  standard_product: (context: LabelRenderContext) => `
+    <div class="standard-product-composition">
+      <div class="standard-product-composition__info">${namesMarkup(context)}${unitMarkup(context)}</div>
+      <div class="standard-product-composition__scan">${barcodeMarkup(context)}</div>
+      <div class="standard-product-composition__price">${price(context)}</div>
+      <div class="standard-product-composition__footer">${businessMarkup(context)}${skuMarkup(context)}</div>
+    </div>`,
+  detailed_product: (context: LabelRenderContext) => `
+    <div class="detailed-product-composition">
+      <div class="detailed-product-composition__identity">${businessMarkup(context)}${namesMarkup(context)}</div>
+      <div class="detailed-product-composition__details">${unitMarkup(context)}${skuMarkup(context)}</div>
+      <div class="detailed-product-composition__scan">${barcodeMarkup(context)}</div>
+      <div class="detailed-product-composition__price">${price(context)}</div>
+    </div>`,
+  carton_label: (context: LabelRenderContext) => `
+    <div class="carton-label-composition">
+      <div class="carton-label-composition__identity">${businessMarkup(context)}${namesMarkup(context)}<div class="carton-label-composition__meta">${unitMarkup(context)}${skuMarkup(context)}</div></div>
+      <div class="carton-label-composition__scan">${barcodeMarkup(context)}</div>
+      <div class="carton-label-composition__price">${price(context)}</div>
+    </div>`,
+} as const
+
+export const BARCODE_LABEL_RENDERER_REGISTRY = Object.freeze({
+  compact_sticker: Object.freeze({ landmark: 'compact-price-composition', renderer: LABEL_RENDERERS.compact_sticker }),
+  standard_product: Object.freeze({ landmark: 'standard-product-composition', renderer: LABEL_RENDERERS.standard_product }),
+  detailed_product: Object.freeze({ landmark: 'detailed-product-composition', renderer: LABEL_RENDERERS.detailed_product }),
+  carton_label: Object.freeze({ landmark: 'carton-label-composition', renderer: LABEL_RENDERERS.carton_label }),
+})
+
 function labelMarkup(
   label: BarcodeLabel,
   settings: BarcodeLabelSettings,
@@ -425,23 +517,15 @@ function labelMarkup(
   locale: string,
   accessibleCurrencyName: string,
 ): string {
-  const c = settings.content
   const printDate = label.printDate || new Date().toLocaleDateString('en-CA')
   const fit = barcodeLabelFit(label, settings)
+  const registryEntry = BARCODE_LABEL_RENDERER_REGISTRY[settings.presetId as keyof typeof BARCODE_LABEL_RENDERER_REGISTRY]
+    ?? BARCODE_LABEL_RENDERER_REGISTRY.standard_product
+  const context = { label, settings, svg, locale, accessibleCurrencyName }
   return `<article class="label label--${settings.templateId} label--preset-${settings.presetId} label--name-${settings.productNameSize} label--price-${settings.priceStyle}" data-fit-status="${fit.status}" data-barcode-id="${escapeHtml(label.barcodeId ?? '')}" style="--fitted-name-size:${fit.nameFontPt}pt;--name-line-limit:${fit.nameLineLimit}">
     ${calibrationPattern ? '<div class="calibration-cross" aria-hidden="true"></div><i class="edge edge--tl"></i><i class="edge edge--tr"></i><i class="edge edge--bl"></i><i class="edge edge--br"></i>' : ''}
-    ${c.businessName && label.businessName ? `<div class="business" dir="auto">${escapeHtml(label.businessName)}</div>` : ''}
-    <div class="product-names">${labelNames(label, settings)}</div>
-    <div class="label-meta">
-      ${c.unitName && label.unitName ? `<span class="unit" dir="auto">${escapeHtml(label.unitName)}</span>` : ''}
-      ${c.sellingPrice && label.price ? priceMarkup(label.price, locale, accessibleCurrencyName) : ''}
-    </div>
-    <div class="barcode-graphic barcode-graphic--${escapeHtml(label.barcodeType)}" dir="ltr">${svg}</div>
-    ${c.barcodeValue ? `<div class="barcode-value" dir="ltr">${escapeHtml(label.barcode)}</div>` : ''}
-    <div class="label-footer">
-      ${c.sku && label.sku ? `<span class="sku" dir="ltr">${escapeHtml(label.sku)}</span>` : ''}
-      ${c.printDate ? `<time dir="ltr">${escapeHtml(printDate)}</time>` : ''}
-    </div>
+    ${registryEntry.renderer(context)}
+    ${settings.content.printDate ? `<time class="label-print-date" dir="ltr">${escapeHtml(printDate)}</time>` : ''}
     ${calibrationPattern ? '<div class="ruler" aria-hidden="true"><span>0</span><span>10</span><span>20</span></div>' : ''}
   </article>`
 }
@@ -563,7 +647,6 @@ export function barcodePrintDocument(
     .product-names { min-block-size:0; overflow:hidden; }
     .product-name { position:relative; z-index:1; display:-webkit-box; overflow:hidden; overflow-wrap:anywhere; word-break:normal; -webkit-box-orient:vertical; -webkit-line-clamp:var(--name-line-limit); font-size:var(--fitted-name-size); font-weight:800; line-height:${NAME_LINE_HEIGHT}; text-overflow:ellipsis; }
     .product-name--ar { padding-block:.04em .1em; font-family:"KubriArabic",Arial,"Noto Sans Arabic",sans-serif; line-height:1.38; }
-    .label-meta { display:flex; min-block-size:4.2mm; align-items:baseline; justify-content:space-between; gap:1.5mm; overflow:hidden; font-size:7.5pt; }
     .unit { min-inline-size:0; }
     .price { flex:none; font-size:10pt; direction:ltr; font-variant-numeric:tabular-nums; } .label--price-large .price { font-size:14pt; }
     .riyal-official { display:none; white-space:nowrap; } .riyal-fallback { display:inline; white-space:nowrap; }
@@ -571,30 +654,42 @@ export function barcodePrintDocument(
     .riyal-symbol { display:inline-block; font-family:"SaudiRiyal"; font-weight:400; line-height:1; vertical-align:baseline; }
     .barcode-graphic { flex:0 0 ${Math.max(MIN_BARCODE_HEIGHT_MM, settings.barcodeHeightMm)}mm; min-block-size:${Math.max(MIN_BARCODE_HEIGHT_MM, settings.barcodeHeightMm)}mm; block-size:${Math.max(MIN_BARCODE_HEIGHT_MM, settings.barcodeHeightMm)}mm; inline-size:100%; max-inline-size:100%; margin-block:${settings.templateId === 'compact' ? '.4mm' : '.8mm'}; padding-inline:2.5mm; display:flex; align-items:stretch; justify-content:center; overflow:hidden; image-rendering:${quality}; }
     .barcode-graphic--ean13,.barcode-graphic--ean8,.barcode-graphic--upca { padding-inline:3.6mm; }
-    .barcode-graphic svg { display:block; width:100%; height:100%; overflow:visible; shape-rendering:crispEdges; }
+    .barcode-graphic svg { display:block; width:auto; max-width:100%; height:100%; overflow:visible; shape-rendering:crispEdges; }
     .barcode-value { text-align:center; font-family:"Courier New",monospace; font-size:7pt; letter-spacing:.04em; font-variant-numeric:tabular-nums; }
-    .label-footer { display:flex; justify-content:space-between; gap:2mm; min-height:2.5mm; font-size:6.5pt; }
-    .label--compact .business,.label--compact .label-footer { font-size:5.5pt; }
-    .label--detailed .business { padding-block-end:.5mm; border-block-end:.15mm solid #111; }
-    .label--preset-compact_sticker .product-names { order:1; }
-    .label--preset-compact_sticker .barcode-graphic { order:2; margin-block:.2mm; }
-    .label--preset-compact_sticker .barcode-value { order:3; }
-    .label--preset-compact_sticker .label-meta { order:4; min-block-size:3.2mm; font-weight:800; }
-    .label--preset-standard_product .business { text-align:center; letter-spacing:.08em; text-transform:uppercase; }
-    .label--preset-standard_product .product-names { text-align:center; }
-    .label--preset-standard_product .barcode-graphic { margin-block:auto .6mm; }
-    .label--preset-detailed_product { border:.2mm solid #111; }
-    .label--preset-detailed_product .product-names { padding-block:.6mm; border-block-end:.15mm solid #777; }
-    .label--preset-detailed_product .label-meta { padding-block:.5mm; }
-    .label--preset-detailed_product .label-footer { margin-block-start:auto; padding-block-start:.5mm; border-block-start:.15mm solid #aaa; }
-    .label--preset-carton_label { display:grid; grid-template-columns:minmax(0,1fr) minmax(42%,.7fr); grid-template-rows:auto auto 1fr auto; gap:1.5mm 4mm; align-items:center; }
-    .label--preset-carton_label .business { grid-column:1 / -1; padding-block-end:1mm; border-block-end:.3mm solid #111; font-size:9pt; }
-    .label--preset-carton_label .product-names { grid-column:1; grid-row:2 / span 2; align-self:start; }
-    .label--preset-carton_label .product-name { font-size:max(var(--fitted-name-size),12pt); line-height:1.2; }
-    .label--preset-carton_label .label-meta { grid-column:1; grid-row:4; align-self:end; font-size:10pt; }
-    .label--preset-carton_label .barcode-graphic { grid-column:2; grid-row:2 / span 2; align-self:stretch; block-size:auto; min-block-size:22mm; margin:0; padding-inline:4mm; }
-    .label--preset-carton_label .barcode-value { grid-column:2; grid-row:4; font-size:9pt; }
-    .label--preset-carton_label .label-footer { position:absolute; inset:auto auto 2mm 3mm; }
+    .label-print-date { position:absolute; inset:auto ${settings.marginMm}mm .4mm auto; font-size:5.5pt; }
+    .compact-price-composition { display:grid; grid-template-rows:auto minmax(0,auto) 1fr auto; height:100%; min-height:0; }
+    .compact-price-composition .business { font-size:5.5pt; }
+    .compact-price-composition .product-name { line-height:1.15; }
+    .compact-price-composition__scan { min-height:0; display:flex; flex-direction:column; justify-content:center; }
+    .compact-price-composition__scan .barcode-graphic { margin-block:.15mm; }
+    .compact-price-composition__footer { display:flex; min-height:3.1mm; align-items:end; justify-content:space-between; gap:1mm; font-size:6.5pt; font-weight:700; }
+    .compact-price-composition__footer .price { margin-inline-start:auto; font-size:10pt; font-weight:900; }
+    .standard-product-composition { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto 1fr auto; column-gap:2mm; height:100%; min-height:0; }
+    .standard-product-composition__info { grid-column:1 / -1; display:flex; align-items:baseline; justify-content:space-between; gap:1.5mm; padding-block-end:.5mm; border-block-end:.18mm solid #111; }
+    .standard-product-composition__info .product-names { flex:1; }
+    .standard-product-composition__info .unit { font-size:7pt; }
+    .standard-product-composition__scan { grid-column:1; grid-row:2; min-width:0; display:flex; flex-direction:column; justify-content:center; }
+    .standard-product-composition__price { grid-column:2; grid-row:2; align-self:center; padding-inline-start:1.8mm; border-inline-start:.18mm solid #111; }
+    .standard-product-composition__price .price { font-size:14pt; font-weight:900; }
+    .standard-product-composition__footer { grid-column:1 / -1; display:flex; justify-content:space-between; gap:2mm; min-height:2.5mm; font-size:6pt; }
+    .detailed-product-composition { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(20mm,.85fr); grid-template-rows:auto auto 1fr; gap:1mm 2.5mm; height:100%; min-height:0; border:.2mm solid #111; padding:1.2mm; }
+    .detailed-product-composition__identity { grid-column:1 / -1; padding-block-end:.7mm; border-block-end:.2mm solid #111; }
+    .detailed-product-composition__identity .business { margin-block-end:.3mm; font-size:6.5pt; letter-spacing:.04em; }
+    .detailed-product-composition__details { grid-column:1; display:flex; justify-content:space-between; gap:2mm; font-size:7pt; }
+    .detailed-product-composition__scan { grid-column:1; min-height:0; display:flex; flex-direction:column; justify-content:center; border:.15mm solid #777; padding:.5mm; }
+    .detailed-product-composition__price { grid-column:2; grid-row:2 / span 2; display:grid; place-items:center; border:.25mm solid #111; text-align:center; }
+    .detailed-product-composition__price .price { font-size:13pt; font-weight:900; }
+    .carton-label-composition { display:grid; grid-template-columns:minmax(0,1fr) minmax(44%,.9fr); grid-template-rows:1fr auto; gap:2mm 5mm; height:100%; min-height:0; align-items:stretch; }
+    .carton-label-composition__identity { grid-row:1 / -1; display:flex; min-width:0; flex-direction:column; padding-inline-end:4mm; border-inline-end:.4mm solid #111; }
+    .carton-label-composition__identity .business { padding-block-end:1mm; border-block-end:.2mm solid #111; font-size:8pt; }
+    .carton-label-composition__identity .product-names { margin-block:auto; }
+    .carton-label-composition__identity .product-name { font-size:max(var(--fitted-name-size),14pt); line-height:1.18; }
+    .carton-label-composition__meta { display:flex; justify-content:space-between; gap:3mm; font-size:9pt; font-weight:700; }
+    .carton-label-composition__scan { display:flex; min-height:0; flex-direction:column; justify-content:center; }
+    .carton-label-composition__scan .barcode-graphic { min-block-size:22mm; block-size:auto; flex:1 1 auto; margin:0; padding-inline:5mm; }
+    .carton-label-composition__scan .barcode-value { font-size:10pt; font-weight:700; letter-spacing:.08em; }
+    .carton-label-composition__price { text-align:center; }
+    .carton-label-composition__price .price { font-size:15pt; font-weight:900; }
     .calibration-cross { position:absolute; z-index:2; inset:50% auto auto 50%; width:10mm; height:10mm; translate:-50% -50%; border:.15mm solid #64748b; border-radius:50%; }
     .calibration-cross::before,.calibration-cross::after { content:""; position:absolute; background:#64748b; }
     .calibration-cross::before { width:14mm; height:.15mm; inset:50% auto auto 50%; translate:-50% -50%; }

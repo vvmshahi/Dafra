@@ -6,6 +6,7 @@ export type LabelPresetId =
   | 'a4_sheet'
   | 'custom'
 
+export type RetailLabelPresetId = Exclude<LabelPresetId, 'a4_sheet' | 'custom'>
 export type LabelTemplateId = 'compact' | 'standard' | 'detailed'
 export type LabelOutputMode = 'thermal' | 'a4'
 export type LabelOrientation = 'portrait' | 'landscape'
@@ -84,12 +85,18 @@ export interface LabelPreset {
   a4: A4SheetSettings
 }
 
+export interface LabelSizeOption {
+  id: string
+  widthMm: number
+  heightMm: number
+}
+
 const content = (value: Partial<LabelContentSettings>): LabelContentSettings => ({
   productName: value.productName ?? true,
   productNameAr: value.productNameAr ?? false,
   productNameEn: value.productNameEn ?? false,
   sellingPrice: value.sellingPrice ?? true,
-  unitName: value.unitName ?? true,
+  unitName: value.unitName ?? false,
   sku: value.sku ?? false,
   businessName: value.businessName ?? false,
   barcodeValue: value.barcodeValue ?? true,
@@ -118,8 +125,8 @@ const preset = (value: LabelPreset): Readonly<LabelPreset> => Object.freeze({
 
 export const LABEL_PRESETS: Readonly<Record<LabelPresetId, Readonly<LabelPreset>>> = Object.freeze({
   compact_sticker: preset({
-    id: 'compact_sticker', widthMm: 38, heightMm: 25, marginMm: 1.2,
-    barcodeHeightMm: 10, templateId: 'compact', outputMode: 'thermal',
+    id: 'compact_sticker', widthMm: 40, heightMm: 25, marginMm: 1.2,
+    barcodeHeightMm: 9, templateId: 'compact', outputMode: 'thermal',
     orientation: 'landscape', productNameSize: 'small', priceStyle: 'normal',
     content: content({ productName: true, sellingPrice: true, unitName: false, barcodeValue: true }),
     a4: { ...defaultA4(), columns: 4, rows: 10 },
@@ -128,16 +135,17 @@ export const LABEL_PRESETS: Readonly<Record<LabelPresetId, Readonly<LabelPreset>
     id: 'standard_product', widthMm: 50, heightMm: 30, marginMm: 1.5,
     barcodeHeightMm: 12, templateId: 'standard', outputMode: 'thermal',
     orientation: 'landscape', productNameSize: 'normal', priceStyle: 'large',
-    content: content({ businessName: true, productName: true, sellingPrice: true, unitName: true, barcodeValue: true }),
+    content: content({ productName: true, sellingPrice: true, unitName: false, barcodeValue: true }),
     a4: defaultA4(),
   }),
   detailed_product: preset({
-    id: 'detailed_product', widthMm: 60, heightMm: 40, marginMm: 2,
+    id: 'detailed_product', widthMm: 70, heightMm: 40, marginMm: 2,
     barcodeHeightMm: 14, templateId: 'detailed', outputMode: 'thermal',
     orientation: 'landscape', productNameSize: 'normal', priceStyle: 'large',
     content: content({
-      businessName: true, productName: false, productNameAr: true, productNameEn: true,
-      sellingPrice: true, unitName: true, sku: true, barcodeValue: true, printDate: false,
+      productName: true, productNameAr: false, productNameEn: false,
+      sellingPrice: true, unitName: false, sku: false, businessName: false,
+      barcodeValue: true, printDate: false,
     }),
     a4: { ...defaultA4(), rows: 6 },
   }),
@@ -146,8 +154,8 @@ export const LABEL_PRESETS: Readonly<Record<LabelPresetId, Readonly<LabelPreset>
     barcodeHeightMm: 20, templateId: 'detailed', outputMode: 'thermal',
     orientation: 'landscape', productNameSize: 'large', priceStyle: 'normal',
     content: content({
-      businessName: true, productName: true, sellingPrice: false, unitName: true,
-      sku: true, barcodeValue: true,
+      businessName: false, productName: true, sellingPrice: false, unitName: false,
+      sku: false, barcodeValue: true,
     }),
     a4: {
       ...defaultA4(),
@@ -178,6 +186,52 @@ export const LABEL_PRESETS: Readonly<Record<LabelPresetId, Readonly<LabelPreset>
     a4: defaultA4(),
   }),
 })
+
+export const PRIMARY_LABEL_PRESET_IDS: readonly RetailLabelPresetId[] = Object.freeze([
+  'compact_sticker',
+  'standard_product',
+  'detailed_product',
+  'carton_label',
+])
+
+export const LABEL_SIZE_OPTIONS: Readonly<Record<RetailLabelPresetId, readonly LabelSizeOption[]>> = Object.freeze({
+  compact_sticker: Object.freeze([
+    { id: '30x20', widthMm: 30, heightMm: 20 },
+    { id: '40x25', widthMm: 40, heightMm: 25 },
+  ]),
+  standard_product: Object.freeze([
+    { id: '50x30', widthMm: 50, heightMm: 30 },
+    { id: '60x40', widthMm: 60, heightMm: 40 },
+  ]),
+  detailed_product: Object.freeze([
+    { id: '70x40', widthMm: 70, heightMm: 40 },
+    { id: '80x50', widthMm: 80, heightMm: 50 },
+  ]),
+  carton_label: Object.freeze([
+    { id: '100x50', widthMm: 100, heightMm: 50 },
+    { id: '100x75', widthMm: 100, heightMm: 75 },
+  ]),
+})
+
+export function primaryLabelPresetId(value: unknown): RetailLabelPresetId {
+  return typeof value === 'string' && PRIMARY_LABEL_PRESET_IDS.includes(value as RetailLabelPresetId)
+    ? value as RetailLabelPresetId
+    : 'standard_product'
+}
+
+export function labelSizeOptions(value: unknown): readonly LabelSizeOption[] {
+  return LABEL_SIZE_OPTIONS[primaryLabelPresetId(value)]
+}
+
+export function applyLabelSize(
+  settings: BarcodeLabelSettings,
+  size: Pick<LabelSizeOption, 'widthMm' | 'heightMm'>,
+): BarcodeLabelSettings {
+  const supported = labelSizeOptions(settings.presetId).find(option =>
+    option.widthMm === size.widthMm && option.heightMm === size.heightMm)
+  if (!supported) return settings
+  return { ...settings, widthMm: supported.widthMm, heightMm: supported.heightMm, orientation: 'landscape' }
+}
 
 export const DEFAULT_BARCODE_LABEL_SETTINGS: BarcodeLabelSettings = settingsFromPreset('standard_product')
 
@@ -240,6 +294,10 @@ export function normalizeBarcodeLabelSettings(value: unknown): BarcodeLabelSetti
       ? 'standard_product'
       : storedPresetId
   const defaults = settingsFromPreset(presetId)
+  const requestedWidth = finite(raw.widthMm ?? raw.width_mm, defaults.widthMm, 20, 200)
+  const requestedHeight = finite(raw.heightMm ?? raw.height_mm, defaults.heightMm, 15, 200)
+  const supportedSize = labelSizeOptions(presetId).find(option =>
+    option.widthMm === requestedWidth && option.heightMm === requestedHeight)
   const rawContent = object(raw.content)
   const rawA4 = object(raw.a4)
   const normalizedContent: LabelContentSettings = {
@@ -260,10 +318,12 @@ export function normalizeBarcodeLabelSettings(value: unknown): BarcodeLabelSetti
   return {
     schemaVersion: 1,
     presetId,
-    templateId: oneOf(raw.templateId ?? raw.template_id, ['compact', 'standard', 'detailed'] as const, defaults.templateId),
-    outputMode: oneOf(raw.outputMode ?? raw.output_mode, ['thermal', 'a4'] as const, defaults.outputMode),
-    widthMm: finite(raw.widthMm ?? raw.width_mm, defaults.widthMm, 20, 200),
-    heightMm: finite(raw.heightMm ?? raw.height_mm, defaults.heightMm, 15, 200),
+    // Layout identity owns the renderer family. Stored legacy/custom values are
+    // accepted, then safely resolved to the Standard retail contract.
+    templateId: defaults.templateId,
+    outputMode: 'thermal',
+    widthMm: supportedSize?.widthMm ?? defaults.widthMm,
+    heightMm: supportedSize?.heightMm ?? defaults.heightMm,
     marginMm: finite(raw.marginMm ?? raw.margin_mm, defaults.marginMm, 0, 10),
     barcodeHeightMm: finite(raw.barcodeHeightMm ?? raw.barcode_height_mm, defaults.barcodeHeightMm, 6, 40),
     orientation: oneOf(raw.orientation, ['portrait', 'landscape'] as const, defaults.orientation),
