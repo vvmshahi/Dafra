@@ -8,6 +8,11 @@ DECLARE
   v_old text := '(''classic'',''modern_split'',''minimal_professional'')';
   v_new text := '(''classic'',''modern_split'',''minimal_professional'',''executive_green'',''clean_ledger'',''contemporary_border'')';
 BEGIN
+  IF to_regprocedure('public.validate_invoice_presentation_settings(jsonb,uuid,uuid)') IS NULL THEN
+    RAISE NOTICE 'Legacy presentation validator is absent; 20260729000700 will install the complete six-layout definition';
+    RETURN;
+  END IF;
+
   v_definition := pg_get_functiondef(
     'public.validate_invoice_presentation_settings(jsonb,uuid,uuid)'::regprocedure
   );
@@ -23,7 +28,15 @@ BEGIN
 END
 $extend_a4_theme_allowlist$;
 
-COMMENT ON FUNCTION public.validate_invoice_presentation_settings(jsonb, uuid, uuid) IS
-  'Validates branch-scoped presentation settings, including the six approved A4 themes. Does not accept fiscal or calculation fields.';
+DO $comment_a4_theme_validator$
+BEGIN
+  IF to_regprocedure('public.validate_invoice_presentation_settings(jsonb,uuid,uuid)') IS NOT NULL THEN
+    EXECUTE $comment$
+      COMMENT ON FUNCTION public.validate_invoice_presentation_settings(jsonb, uuid, uuid) IS
+        'Validates branch-scoped presentation settings, including the six approved A4 themes. Does not accept fiscal or calculation fields.'
+    $comment$;
+  END IF;
+END;
+$comment_a4_theme_validator$;
 
 COMMIT;
