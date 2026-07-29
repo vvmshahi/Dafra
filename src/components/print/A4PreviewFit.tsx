@@ -63,7 +63,7 @@ export default function A4PreviewFit({
       ref={viewportRef}
       data-a4-preview-viewport
       data-preview-zoom={zoom}
-      className={`rounded-xl bg-gray-100 p-3 ${bounded ? 'h-[clamp(30rem,calc(100dvh-14.5rem),58rem)] min-h-[30rem] overflow-auto' : 'flex min-h-[520px] items-center justify-center overflow-hidden'}`}
+      className={`rounded-xl bg-gray-100 p-3 ${bounded ? 'h-full min-h-0 overflow-auto' : 'flex min-h-[520px] items-center justify-center overflow-hidden'}`}
     >
       <div className={bounded ? 'mx-auto' : undefined} style={{ width: PAGE_WIDTH * scale, height: documentHeight * scale }}>
         <div ref={documentRef} style={{ width: PAGE_WIDTH, minHeight: PAGE_HEIGHT, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
