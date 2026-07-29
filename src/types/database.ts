@@ -1278,6 +1278,7 @@ export type A4TemplateId =
   | 'contemporary_border'
 export type A4HeaderStyle = 'standard' | 'compact' | 'branded'
 export type A4HeaderFit = 'contain' | 'cover'
+export type A4ArtworkScope = 'selected' | 'all'
 
 export interface InvoicePresentationSettings {
   schema_version: 1
@@ -1291,12 +1292,27 @@ export interface InvoicePresentationSettings {
     template_version: 1
     header_style: A4HeaderStyle
     accent_color: string
+    heading_color: string
+    body_color: string
+    auto_foreground: boolean
     header_asset_path: string | null
     header_asset_version: number
     header_asset_enabled: boolean
     header_asset_fit: A4HeaderFit
     header_asset_height: number
     header_asset_spacing: number
+    header_crop_top: number
+    header_crop_height: number
+    footer_asset_path: string | null
+    footer_asset_version: number
+    footer_asset_enabled: boolean
+    footer_asset_fit: A4HeaderFit
+    footer_asset_height: number
+    footer_asset_spacing: number
+    footer_crop_top: number
+    footer_crop_height: number
+    artwork_scope: A4ArtworkScope
+    artwork_template_id: A4TemplateId
   }
   after_sale_action?: 'receipt' | 'a4' | 'both'
 }
