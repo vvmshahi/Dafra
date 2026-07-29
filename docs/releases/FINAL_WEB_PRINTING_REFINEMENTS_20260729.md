@@ -159,45 +159,128 @@ The remaining deferred check is physical Electron printer hardware
 compatibility. It requires the later dedicated Electron release-candidate task;
 no such compatibility is claimed here.
 
-## Final A4 workspace redesign
+## Corrective A4 invoice-layout editor redesign
 
-The Invoices workspace now uses compact primary and secondary segmented
-navigation, a two-pane editor with a bounded sticky preview, page-fit and zoom
-controls (including fit-page and fit-width), and a persistent save/reset status
-bar. The primary navigation, document section navigation, and actions remain
-visible while only the configuration/preview canvas scrolls. The six layouts are labelled
-Classic Business, Modern Split Panel, Minimal Editorial, Executive Frame,
-Accounting Ledger, and Contemporary Cards; each retains its distinct document
-composition and QR placement.
+### Root-cause report
 
-Classic Business uses a conventional identity/title split with QR at lower
-left and totals at lower right. Modern Split Panel uses an asymmetric branded
-side rail with its verification block in the rail. Minimal Editorial uses
-typographic rules, generous whitespace, and a centred footer QR. Executive
-Frame places QR in its upper information frame. Accounting Ledger uses dense
-party and numeric grids with a lower verification row. Contemporary Cards uses
-separate party, metadata, total, and bottom verification cards. Party headings
-use Bill From/Bill To (صادرة من/صادرة إلى) while retaining every authoritative
-seller and buyer field.
+| Symptom | Root cause | Correction |
+| --- | --- | --- |
+| Save bar appeared roughly one quarter of the viewport above the browser bottom | The invoice workspace subtracted header height from a content region whose parent had already done that sizing | The application content owns the available height once; the A4 editor uses `height: 100%`, `min-height: 0`, and one internal scrolling canvas |
+| Layouts 4–6 looked like repeated copies | The settings-facing runtime registry contained only the first three IDs, causing unsupported selections to fall through to shared/default rendering | One strict six-entry registry now maps every saved ID to a dedicated renderer, thumbnail, landmarks, and QR region |
+| QR never appeared in the editor | The live preview explicitly passed `qrImageUrl: null` | The preview now generates deterministic fixture-only QR data for eligible simplified and standard states, while demo/unavailable states intentionally render none |
+| A valid, modest JPEG reported a misleading 2 MB error | MIME, byte size, decodability, dimensions, and aspect-ratio checks were collapsed into one rejection message | The client sniffs file signatures, decodes the source, reports real filename/size/dimensions, separates hard validation from print-quality warnings, and never mislabels a dimension warning as a byte-size failure |
+| Artwork upload returned a row-level-security error | The browser attempted to upload a document header immediately to a public bucket using a path/policy contract that did not match tenant and branch authorization | Extracted derivatives use a private bucket and authoritative tenant/branch path; the forward migration contains explicit role-aware insert, read, update, and delete policies |
 
-A branch may now save an A4 accent colour independently from its layout, using
-ten presets or a validated custom hex value. Contrast-safe foreground colour is
-derived at render time and the QR remains monochrome. Optional first-page
-header artwork accepts only PNG, JPEG, and WebP up to 2 MB, uses immutable
-branch-scoped storage paths, and saves enablement, contain/cover fit, height,
-and spacing. It remains decorative: seller, buyer, tax, total, and verification
-details continue to render as document text.
+The affected source layers were the A4 presentation model and normalizer,
+settings editor, runtime renderer dispatch, shared document view model, print
+CSS, storage path helper, storage migration, and focused verification scripts.
+Receipt, barcode-label, invoice-calculation, payment, stock, customer, ZATCA,
+Electron, and fiscal-data paths were not changed.
 
-Migration `20260729000600_extend_a4_invoice_branding.sql` extends only the
-strict presentation validator and existing branch-assets insert policy for
-immutable header images. It does not change invoice issuance, fiscal data,
-customer data, QR payload generation, ZATCA behavior, or production rows.
+### Six materially distinct layouts
 
-Design research covered ZATCA’s current e-invoice specifications and QR
-requirements, W3C paged-media and fragmentation guidance, WCAG contrast
-guidance, and reputable accounting invoice examples. The applied principles
-are a fixed A4 page box, repeated table headers, non-splitting rows and summary
-blocks, a white QR quiet zone, explicit seller/buyer hierarchy, tabular numeric
-alignment, low-ink colour use, and contrast-safe accent foregrounds. PDF header
-upload remains deferred because the web application has no authoritative
-server-side PDF rasterisation path; PNG, JPEG, and WebP are supported.
+The editor and every actual A4 output surface consume the same
+`DocumentViewModel`, strict template registry, colour tokens, artwork settings,
+and QR eligibility:
+
+1. **Classic Business** — top identity accent, balanced seller and invoice
+   metadata, conventional buyer block, full table, lower-left QR, and
+   lower-right totals.
+2. **Modern Statement** — horizontal identity, statement-style metadata,
+   top-right verification QR, restrained row rules, and a highlighted total.
+3. **Minimal Editorial** — strong typographic hierarchy, open whitespace,
+   quiet rules, oversized amount due, and centred footer verification.
+4. **Executive Frame** — formal perimeter, framed seller/buyer regions,
+   upper-right verification module, and a structured contact strip.
+5. **Accounting Ledger** — dense party/metadata cells, explicit VAT columns,
+   ledger summary, and lower-left accounting verification.
+6. **Contemporary Modular** — large identity, independent buyer/metadata
+   modules, framed items, total card, and a lower verification/payment card.
+
+The card thumbnail is a compact compositional diagram of the corresponding
+renderer rather than a reduced document screenshot. The expandable comparison
+renders all six real A4 components from the same fixture, making accidental
+fallback or repetition visually obvious.
+
+`Bill From / صادرة من` remains a mandatory live-text seller section in every
+layout. Artwork may decorate the page but cannot replace seller identity, VAT,
+CR, buyer, totals, or verification data.
+
+### QR, colour, type, and print rules
+
+Preview QR content is marked `KUBRI_PREVIEW_ONLY` and can never be mistaken for
+production invoice data. Eligible simplified and standard fixtures show it in
+the layout-specific region; demo, ineligible, and unavailable fixtures do not.
+Issued invoices continue to use their existing authoritative QR data and
+eligibility contract.
+
+Accent, heading, and body colours are independent saved settings. Presets
+include Kubri green, black, white, navy, royal blue, emerald, burgundy, violet,
+orange, teal, and charcoal. Custom values are normalized six-digit hex colours.
+Unsafe heading/body contrast is blocked; accent foreground is chosen
+automatically when requested. A white accent gains visible outlines and QR
+quiet zones remain pure black on white.
+
+All layouts use a stronger company-name and invoice-title hierarchy, tabular
+numeric alignment, repeated table headers, non-splitting item/summary blocks,
+and low-ink print overrides. Long tables paginate naturally without scaling
+the entire invoice below a legible size.
+
+### Safe letterhead extraction
+
+The browser accepts source PNG, JPEG, WebP, or single-page PDF files up to
+12 MB. It validates magic bytes rather than trusting the extension, rejects
+corrupt/unsupported/encrypted PDFs and multi-page PDFs, and applies a small
+minimum-decodable-dimension threshold. Sources below the recommended
+approximately 1600 px print width receive a quality warning but remain usable.
+
+The crop workspace shows the real source name, byte size, decoded dimensions,
+zoom, and independently adjustable header/footer bands. A single-page PDF is
+rasterized locally with PDF.js before cropping. Only high-quality WebP/PNG
+derivatives are uploaded (maximum 8 MB each); the original file is never
+stored. A branch can enable or disable each band, choose contain/cover,
+height/spacing, and apply artwork to the selected layout or all layouts.
+
+This workflow deliberately does not infer an arbitrary invoice layout from
+pixels. Uploaded artwork is untrusted decorative content without reliable
+field semantics; generating a layout from it could omit or obscure structured
+seller, buyer, VAT, total, or QR information. Kubri therefore extracts only
+bounded header/footer bands and keeps the six reviewed document compositions
+authoritative.
+
+Artwork objects use immutable paths:
+
+`tenant/{tenant_id}/branch/{branch_id}/invoice-artwork/{uuid}/{header|footer}.{ext}`
+
+The private `invoice-artwork` bucket is accompanied by authenticated
+tenant/branch insert, select, update, and delete policies. The runtime resolves
+short-lived signed URLs. Removing artwork from settings clears future use
+without rewriting issued invoice snapshots; object deletion remains a separate
+authorized operation.
+
+### Persistence and issued-invoice stability
+
+Migration `20260729000700_complete_a4_letterhead_presentation.sql` is a forward
+migration and was intentionally not applied by this task. It creates the
+private bucket and policies, expands the strict presentation validator/default,
+and updates the existing branch-scoped settings RPC. It does not insert,
+update, or delete invoice business rows.
+
+New settings persist layout, language, print mode, accent/heading/body colour,
+automatic foreground preference, header and footer derivative references,
+crop/fit/size/spacing settings, and selected/all-layout scope. New invoices
+snapshot the resolved presentation in their existing immutable identity
+snapshot. Reprints use that snapshot. Existing V1 snapshots and invoices
+without a presentation snapshot retain their compatibility fallback, so a
+later branch preference change does not mutate previously issued documents.
+
+The optional runtime storage-policy script
+`npm run test:a4-artwork-rls` verifies owner insert/read/update/delete plus
+foreign-branch, cross-tenant, and anonymous rejection when explicit test
+credentials are supplied. It is not run against an unspecified environment.
+
+Applying the forward migration and executing that authenticated runtime policy
+test remain deployment-stage work. Multi-page, password-protected, and
+encrypted PDF sources remain explicitly unsupported in this first extraction
+version. Physical Electron printer validation is still deferred to the separate
+Electron release-candidate task.

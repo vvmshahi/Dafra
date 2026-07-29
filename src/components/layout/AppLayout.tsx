@@ -118,6 +118,7 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(getInitialCollapsed)
   const location = useLocation()
   const flushContent = location.pathname === '/branch'
+  const ownsInnerScroll = location.pathname === '/invoice-settings'
 
   function toggle() {
     setCollapsed(prev => {
@@ -146,7 +147,7 @@ export default function AppLayout() {
         <main
           id="main-content"
           tabIndex={-1}
-          className={`flex-1 overflow-y-auto outline-none ${flushContent ? 'p-0' : 'px-4 py-5 sm:p-6'}`}
+          className={`min-h-0 flex-1 outline-none ${ownsInnerScroll ? 'overflow-hidden' : 'overflow-y-auto'} ${flushContent ? 'p-0' : 'px-4 py-5 sm:p-6'}`}
         >
           <Outlet />
         </main>

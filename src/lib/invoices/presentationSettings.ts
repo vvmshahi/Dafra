@@ -3,6 +3,36 @@ import type {
   LogoAssetSize, QrSize, QrAlignment, ThermalDensity, ThermalWidth,
 } from '@/types/database'
 
+const DEFAULT_A4_ACCENT = '#0f766e'
+const DEFAULT_A4_HEADING = '#10251a'
+const DEFAULT_A4_BODY = '#1f2937'
+
+type SavedA4Settings = {
+  theme: A4TemplateId
+  accent_color: string
+  heading_color: string
+  body_color: string
+  auto_foreground: boolean
+  header_asset_path: string | null
+  header_asset_version: number
+  header_asset_enabled: boolean
+  header_asset_fit: 'contain' | 'cover'
+  header_asset_height: number
+  header_asset_spacing: number
+  header_crop_top: number
+  header_crop_height: number
+  footer_asset_path: string | null
+  footer_asset_version: number
+  footer_asset_enabled: boolean
+  footer_asset_fit: 'contain' | 'cover'
+  footer_asset_height: number
+  footer_asset_spacing: number
+  footer_crop_top: number
+  footer_crop_height: number
+  artwork_scope: 'selected' | 'all'
+  artwork_template_id: A4TemplateId
+}
+
 export interface InvoiceSettingsBranchDefaults {
   display_name?: string | null
   invoice_display_heading?: string | null
@@ -62,7 +92,7 @@ export interface CanonicalInvoicePresentationSettings {
   }
   footer: { message: string | null; bold: boolean }
   thermal: { width: ThermalWidth; density: ThermalDensity; qr_size: 'small' | 'medium' | 'large'; qr_alignment: QrAlignment }
-  a4: { theme: A4TemplateId; accent_color: string; header_asset_path: string | null; header_asset_version: number; header_asset_enabled: boolean; header_asset_fit: 'contain' | 'cover'; header_asset_height: number; header_asset_spacing: number }
+  a4: SavedA4Settings
   [key: string]: unknown
 }
 
@@ -72,6 +102,7 @@ export interface CanonicalInvoicePresentationSettings {
  * identity fields must never leak into a save payload.
  */
 export interface InvoicePresentationSaveContract {
+  schema_version: 1
   language: 'ar' | 'both'
   after_sale_action: 'receipt' | 'a4' | 'both'
   branding: {
@@ -94,7 +125,7 @@ export interface InvoicePresentationSaveContract {
   }
   footer: { message: string | null; bold: boolean }
   thermal: { width: ThermalWidth; density: ThermalDensity; qr_size: 'small' | 'medium' | 'large'; qr_alignment: 'center' }
-  a4: { theme: A4TemplateId; accent_color: string; header_asset_path: string | null; header_asset_version: number; header_asset_enabled: boolean; header_asset_fit: 'contain' | 'cover'; header_asset_height: number; header_asset_spacing: number }
+  a4: SavedA4Settings
 }
 
 export interface InvoicePresentationSaveInput {
@@ -123,6 +154,7 @@ export function serializeInvoicePresentationSettingsForSave(
   const afterSaleAction = oneOf(actionAlias, ['receipt', 'a4', 'both'] as const, 'receipt')
 
   return {
+    schema_version: 1,
     language,
     after_sale_action: afterSaleAction,
     branding: {
@@ -153,12 +185,27 @@ export function serializeInvoicePresentationSettingsForSave(
     a4: {
       theme: oneOf(p.a4.template_id, Object.keys(A4_TEMPLATE_REGISTRY) as A4TemplateId[], 'classic'),
       accent_color: p.a4.accent_color,
+      heading_color: p.a4.heading_color,
+      body_color: p.a4.body_color,
+      auto_foreground: p.a4.auto_foreground,
       header_asset_path: p.a4.header_asset_path,
       header_asset_version: p.a4.header_asset_version,
       header_asset_enabled: p.a4.header_asset_enabled,
       header_asset_fit: p.a4.header_asset_fit,
       header_asset_height: p.a4.header_asset_height,
       header_asset_spacing: p.a4.header_asset_spacing,
+      header_crop_top: p.a4.header_crop_top,
+      header_crop_height: p.a4.header_crop_height,
+      footer_asset_path: p.a4.footer_asset_path,
+      footer_asset_version: p.a4.footer_asset_version,
+      footer_asset_enabled: p.a4.footer_asset_enabled,
+      footer_asset_fit: p.a4.footer_asset_fit,
+      footer_asset_height: p.a4.footer_asset_height,
+      footer_asset_spacing: p.a4.footer_asset_spacing,
+      footer_crop_top: p.a4.footer_crop_top,
+      footer_crop_height: p.a4.footer_crop_height,
+      artwork_scope: p.a4.artwork_scope,
+      artwork_template_id: p.a4.artwork_template_id,
     },
   }
 }
@@ -206,7 +253,31 @@ export function toCanonicalInvoicePresentationSettings(value: {
       qr_size: p.thermal.qr_size === 'standard' ? 'medium' : p.thermal.qr_size,
       qr_alignment: 'center',
     },
-    a4: { theme: p.a4.template_id, accent_color: p.a4.accent_color, header_asset_path: p.a4.header_asset_path, header_asset_version: p.a4.header_asset_version, header_asset_enabled: p.a4.header_asset_enabled, header_asset_fit: p.a4.header_asset_fit, header_asset_height: p.a4.header_asset_height, header_asset_spacing: p.a4.header_asset_spacing },
+    a4: {
+      theme: p.a4.template_id,
+      accent_color: p.a4.accent_color,
+      heading_color: p.a4.heading_color,
+      body_color: p.a4.body_color,
+      auto_foreground: p.a4.auto_foreground,
+      header_asset_path: p.a4.header_asset_path,
+      header_asset_version: p.a4.header_asset_version,
+      header_asset_enabled: p.a4.header_asset_enabled,
+      header_asset_fit: p.a4.header_asset_fit,
+      header_asset_height: p.a4.header_asset_height,
+      header_asset_spacing: p.a4.header_asset_spacing,
+      header_crop_top: p.a4.header_crop_top,
+      header_crop_height: p.a4.header_crop_height,
+      footer_asset_path: p.a4.footer_asset_path,
+      footer_asset_version: p.a4.footer_asset_version,
+      footer_asset_enabled: p.a4.footer_asset_enabled,
+      footer_asset_fit: p.a4.footer_asset_fit,
+      footer_asset_height: p.a4.footer_asset_height,
+      footer_asset_spacing: p.a4.footer_asset_spacing,
+      footer_crop_top: p.a4.footer_crop_top,
+      footer_crop_height: p.a4.footer_crop_height,
+      artwork_scope: p.a4.artwork_scope,
+      artwork_template_id: p.a4.artwork_template_id,
+    },
   }
 }
 
@@ -219,6 +290,9 @@ export const A4_TEMPLATE_REGISTRY = {
   classic: { versions: [1], fallback: 'classic' },
   modern_split: { versions: [1], fallback: 'classic' },
   minimal_professional: { versions: [1], fallback: 'classic' },
+  executive_green: { versions: [1], fallback: 'classic' },
+  clean_ledger: { versions: [1], fallback: 'classic' },
+  contemporary_border: { versions: [1], fallback: 'classic' },
 } as const satisfies Record<A4TemplateId, { versions: readonly number[]; fallback: A4TemplateId }>
 
 export interface HistoricalTemplateResolution {
@@ -246,6 +320,8 @@ const text = (value: unknown, fallback: string | null = null): string | null => 
 const bool = (value: unknown, fallback: boolean): boolean => typeof value === 'boolean' ? value : fallback
 const positiveInt = (value: unknown, fallback: number): number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : fallback
 const oneOf = <T extends string>(value: unknown, values: readonly T[], fallback: T): T => typeof value === 'string' && values.includes(value as T) ? value as T : fallback
+const color = (value: unknown, fallback: string): string => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : fallback
+const percent = (value: unknown, fallback: number, minimum = 0): number => typeof value === 'number' && Number.isFinite(value) ? Math.min(100, Math.max(minimum, Math.round(value))) : fallback
 const has = (value: Record<string, unknown>, key: string): boolean => Object.prototype.hasOwnProperty.call(value, key)
 const nonEmptyText = (value: unknown, fallback: string | null = null): string | null => typeof value === 'string' && value.trim() ? value : fallback
 
@@ -345,13 +421,28 @@ export function normalizeInvoiceSettings(rawSettings: unknown, branch: InvoiceSe
         template_id: oneOf(a4.template_id ?? a4.theme, Object.keys(A4_TEMPLATE_REGISTRY) as A4TemplateId[], templateId),
         template_version: 1,
         header_style: oneOf(a4.header_style, ['standard', 'compact', 'branded'] as const, 'standard'),
-        accent_color: typeof a4.accent_color === 'string' && /^#[0-9a-f]{6}$/i.test(a4.accent_color) ? a4.accent_color.toLowerCase() : '#0f766e',
+        accent_color: color(a4.accent_color, DEFAULT_A4_ACCENT),
+        heading_color: color(a4.heading_color, DEFAULT_A4_HEADING),
+        body_color: color(a4.body_color, DEFAULT_A4_BODY),
+        auto_foreground: bool(a4.auto_foreground, true),
         header_asset_path: text(a4.header_asset_path),
         header_asset_version: positiveInt(a4.header_asset_version, 1),
         header_asset_enabled: bool(a4.header_asset_enabled, false),
         header_asset_fit: oneOf(a4.header_asset_fit, ['contain', 'cover'] as const, 'contain'),
         header_asset_height: typeof a4.header_asset_height === 'number' ? Math.min(56, Math.max(18, a4.header_asset_height)) : 28,
         header_asset_spacing: typeof a4.header_asset_spacing === 'number' ? Math.min(16, Math.max(0, a4.header_asset_spacing)) : 6,
+        header_crop_top: percent(a4.header_crop_top, 0),
+        header_crop_height: percent(a4.header_crop_height, 18, 1),
+        footer_asset_path: text(a4.footer_asset_path),
+        footer_asset_version: positiveInt(a4.footer_asset_version, 1),
+        footer_asset_enabled: bool(a4.footer_asset_enabled, false),
+        footer_asset_fit: oneOf(a4.footer_asset_fit, ['contain', 'cover'] as const, 'contain'),
+        footer_asset_height: typeof a4.footer_asset_height === 'number' ? Math.min(32, Math.max(6, a4.footer_asset_height)) : 10,
+        footer_asset_spacing: typeof a4.footer_asset_spacing === 'number' ? Math.min(16, Math.max(0, a4.footer_asset_spacing)) : 4,
+        footer_crop_top: percent(a4.footer_crop_top, 92),
+        footer_crop_height: percent(a4.footer_crop_height, 8, 1),
+        artwork_scope: oneOf(a4.artwork_scope, ['selected', 'all'] as const, 'all'),
+        artwork_template_id: oneOf(a4.artwork_template_id, Object.keys(A4_TEMPLATE_REGISTRY) as A4TemplateId[], oneOf(a4.template_id ?? a4.theme, Object.keys(A4_TEMPLATE_REGISTRY) as A4TemplateId[], templateId)),
       },
       after_sale_action: afterSaleAction,
     }, afterSaleAction,
@@ -366,11 +457,50 @@ export function canonicalPresentationDefaults(current: InvoicePresentationSettin
     footer: { thank_you_message: null, footer_note: null, refund_note: null, show_thank_you: false, show_footer: true, show_refund_note: false },
     logo: { ...current.logo, visible: !!current.logo.asset_path, size: 'medium' },
     thermal: { width: '80mm', density: 'standard', qr_size: 'standard', wrap_item_names: true, show_cash_change: true },
-    a4: { template_id: 'classic', template_version: 1, header_style: 'standard', accent_color: '#0f766e', header_asset_path: null, header_asset_version: 1, header_asset_enabled: false, header_asset_fit: 'contain', header_asset_height: 28, header_asset_spacing: 6 },
+    a4: {
+      template_id: 'classic',
+      template_version: 1,
+      header_style: 'standard',
+      accent_color: DEFAULT_A4_ACCENT,
+      heading_color: DEFAULT_A4_HEADING,
+      body_color: DEFAULT_A4_BODY,
+      auto_foreground: true,
+      header_asset_path: null,
+      header_asset_version: 1,
+      header_asset_enabled: false,
+      header_asset_fit: 'contain',
+      header_asset_height: 28,
+      header_asset_spacing: 6,
+      header_crop_top: 0,
+      header_crop_height: 18,
+      footer_asset_path: null,
+      footer_asset_version: 1,
+      footer_asset_enabled: false,
+      footer_asset_fit: 'contain',
+      footer_asset_height: 10,
+      footer_asset_spacing: 4,
+      footer_crop_top: 92,
+      footer_crop_height: 8,
+      artwork_scope: 'all',
+      artwork_template_id: 'classic',
+    },
   }
 }
 
 export function immutableLogoObjectPath(tenantId: string, branchId: string, assetVersion: number, extension: 'png' | 'jpg' | 'jpeg' | 'webp') {
   if (!Number.isSafeInteger(assetVersion) || assetVersion < 1) throw new Error('Invalid logo asset version')
   return `invoice-branding/${tenantId}/${branchId}/${assetVersion}/logo.${extension}`
+}
+
+export function invoiceArtworkObjectPath(
+  tenantId: string,
+  branchId: string,
+  assetId: string,
+  region: 'header' | 'footer',
+  extension: 'png' | 'jpg' | 'jpeg' | 'webp',
+) {
+  if (!/^[0-9a-f-]{36}$/i.test(tenantId) || !/^[0-9a-f-]{36}$/i.test(branchId) || !/^[0-9a-f-]{36}$/i.test(assetId)) {
+    throw new Error('Invalid invoice artwork identity')
+  }
+  return `tenant/${tenantId}/branch/${branchId}/invoice-artwork/${assetId}/${region}.${extension}`
 }

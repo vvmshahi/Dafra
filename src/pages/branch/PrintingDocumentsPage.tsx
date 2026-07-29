@@ -107,7 +107,7 @@ export default function PrintingDocumentsPage() {
       })}
     </nav>
 
-    <main className="mt-3 min-h-0 flex-1 overflow-y-auto overscroll-contain pe-1" id={`printing-panel-${active}`} role="tabpanel" aria-labelledby={`printing-tab-${active}`}>
+    <main className={`mt-3 min-h-0 flex-1 overscroll-contain pe-1 ${active === 'invoices' || active === 'receipts' ? 'overflow-hidden' : 'overflow-y-auto'}`} id={`printing-panel-${active}`} role="tabpanel" aria-labelledby={`printing-tab-${active}`}>
     {active === 'receipts' && <InvoiceSettingsPage key="receipts" embedded workspace="receipts" />}
     {active === 'invoices' && <InvoiceSettingsPage key="invoices" embedded workspace="invoices" />}
     {active === 'barcodeLabels' && branchId && <div className="space-y-8">
