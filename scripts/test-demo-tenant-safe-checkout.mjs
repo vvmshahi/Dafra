@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const migration = read('supabase/migrations/20260729000300_demo_tenant_non_fiscal_checkout.sql')
+const readGrantMigration = read('supabase/migrations/20260729000400_grant_demo_invoice_read.sql')
 const pos = read('src/pages/pos/POSPage.tsx')
 const submission = read('src/lib/zatca/submission.ts')
 const detail = read('src/pages/invoices/InvoiceDetailPage.tsx')
@@ -26,6 +27,10 @@ assert.match(migration, /standard_uses_legacy_clearance/)
 
 // Demo records cannot acquire fiscal artifacts or enter fiscal queues.
 assert.match(migration, /ADD COLUMN IF NOT EXISTS is_demo boolean NOT NULL DEFAULT false/)
+assert.match(
+  readGrantMigration,
+  /GRANT SELECT \(is_demo\) ON TABLE public\.invoices TO authenticated/,
+)
 assert.match(migration, /DEMO_FISCAL_OUTPUT_FORBIDDEN/)
 assert.match(migration, /zatca_reporting_outbox_guard_demo_v1/)
 assert.match(migration, /zatca_chain_reservations_guard_demo_v1/)
