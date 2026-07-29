@@ -73,6 +73,7 @@ const migration = read('supabase/migrations/20260729000500_extend_a4_invoice_the
 const brandingMigration = read('supabase/migrations/20260729000600_extend_a4_invoice_branding.sql')
 const letterheadMigration = read('supabase/migrations/20260729000700_complete_a4_letterhead_presentation.sql')
 const artworkPolicyHardeningMigration = read('supabase/migrations/20260729000800_harden_invoice_artwork_storage_policies.sql')
+const optionalBranchColumnsMigration = read('supabase/migrations/20260729000900_tolerate_optional_branch_presentation_columns.sql')
 const letterhead = read('src/lib/invoices/letterheadArtwork.ts')
 const colourTokens = read('src/lib/invoices/a4ColorTokens.ts')
 const presentation = read('src/lib/invoices/presentationSettings.ts')
@@ -199,6 +200,13 @@ assert.match(artworkPolicyHardeningMigration, /BEFORE UPDATE OF bucket_id, name/
 assert.match(artworkPolicyHardeningMigration, /NEW\.name IS DISTINCT FROM OLD\.name/)
 assert.match(artworkPolicyHardeningMigration, /SECURITY INVOKER[\s\S]*SET search_path = pg_catalog/)
 assert.doesNotMatch(artworkPolicyHardeningMigration, /TO anon|service_role|public\s*=\s*TRUE/i)
+for (const optionalColumn of ['invoice_display_subheading', 'show_company_display_name', 'thermal_density', 'a4_template_id']) {
+  assert.match(optionalBranchColumnsMigration, new RegExp(`branch_json->>'${optionalColumn}'`))
+  assert.doesNotMatch(optionalBranchColumnsMigration, new RegExp(`b\\.${optionalColumn}`))
+}
+assert.match(optionalBranchColumnsMigration, /REVOKE ALL ON FUNCTION public\.default_invoice_presentation_settings\(UUID\) FROM PUBLIC, anon, authenticated/)
+assert.match(optionalBranchColumnsMigration, /REVOKE ALL ON FUNCTION public\.resolve_invoice_presentation_settings\(UUID\) FROM PUBLIC, anon, authenticated/)
+assert.doesNotMatch(optionalBranchColumnsMigration, /UPDATE public\.|ALTER TABLE|INSERT INTO public\.(invoices|payments|products|customers)/)
 
 // Every saved presentation field is serialized, normalized, admitted by the
 // migration, and carried into the shared document model used by detail, PDF,
