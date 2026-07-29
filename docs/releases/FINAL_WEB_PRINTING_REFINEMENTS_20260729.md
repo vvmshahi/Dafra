@@ -258,6 +258,73 @@ short-lived signed URLs. Removing artwork from settings clears future use
 without rewriting issued invoice snapshots; object deletion remains a separate
 authorized operation.
 
+## Controlled A4 migration rollout
+
+The production rollout used branch
+`feature/final-web-printing-ui-refinements-20260729`, starting from
+`7f30ae66ede50c184f8517b4b6e421ffebd553d1`. The feature branch was not merged
+or publicly deployed.
+
+The ordered migration chain was retained rather than squashed:
+
+- `20260729000500_extend_a4_invoice_themes.sql` extends a legacy validator's
+  layout allowlist when that legacy function exists. It now safely defers to
+  the final validator when a hosted database does not contain the legacy
+  function.
+- `20260729000600_extend_a4_invoice_branding.sql` extends the legacy branding
+  validator and its historical public branding-upload policy when those
+  objects exist. Migration 007 replaces the final presentation contract.
+- `20260729000700_complete_a4_letterhead_presentation.sql` installs the complete
+  six-layout validator, defaults, resolver and Branch-scoped settings-update
+  RPC, and creates the private `invoice-artwork` bucket and initial policies.
+- `20260729000800_harden_invoice_artwork_storage_policies.sql` replaces every
+  invoice-artwork policy with one exact canonical-path expression, qualifies
+  the outer `storage.objects.name`, and prevents UPDATE-based object
+  relocation.
+- `20260729000900_tolerate_optional_branch_presentation_columns.sql` makes the
+  presentation default resolver compatible with the hosted schema's optional
+  legacy Branch columns by reading them through `to_jsonb`. It does not add,
+  drop or rewrite business data.
+
+Review found that 007's SELECT, UPDATE-USING and DELETE predicates did not all
+apply the same exact path validation as INSERT and UPDATE-WITH-CHECK. An
+unqualified `name` inside a Branch `EXISTS` subquery could also bind to
+`branches.name` instead of the Storage object name. Migration 008 applies the
+same exact seven-segment UUID/region/extension pattern to INSERT, SELECT,
+UPDATE-USING, UPDATE-WITH-CHECK and DELETE, and checks authoritative
+tenant/Branch access. Branch profiles are limited to their own Branch;
+Owner/Admin profiles may access Branches in their tenant. Anonymous,
+unrelated, sibling-Branch and cross-tenant access is denied.
+
+The relocation trigger function is `SECURITY INVOKER` with
+`search_path=pg_catalog`; execute is revoked from `PUBLIC`, `anon` and
+`authenticated`. The validator and presentation default/resolver helpers are
+not browser-callable. Only the Branch-scoped update RPC retains authenticated
+execute access.
+
+Clean-database verification passed the complete migration history through
+009. A second disposable run removed the optional hosted Branch columns before
+applying 009; validator, SQL RLS and real local Storage API tests still passed.
+The Storage matrix covered Owner and Branch create/read/replace/delete,
+sibling-Branch, cross-tenant and anonymous rejection, malformed paths, invalid
+regions/extensions, and attempted path relocation.
+
+Production project `bkbphkpqcxuejozayrsy` records migrations 005, 006, 007, 008
+and 009 in order. A post-deploy dry-run reports no pending migrations. The
+`invoice-artwork` bucket is private, limited to 8 MiB derivatives and
+JPEG/PNG/WebP MIME types. No invoice, payment, stock, customer, checkout, VAT,
+QR, reporting, clearance or finalisation data is addressed by these migrations.
+
+The local production build at `http://127.0.0.1:4173`, using source commit
+`8c382b85f6ec99916cd7ff5d64c44cf286dcd993`, loaded an authorised Branch's
+existing invoice settings and all six A4 layouts through the deployed
+presentation RPC. The saved Minimal Editorial layout and the existing
+bilingual/receipt-and-A4 settings rendered without mutation. Full production
+artwork CRUD, re-login persistence, Owner/Admin UI coverage and existing-invoice
+print/PDF/reprint checks remain live-session gates; no completion claim is made
+for those checks until authorised user-entered sessions and approved artwork
+fixtures are exercised.
+
 ### Persistence and issued-invoice stability
 
 Migration `20260729000700_complete_a4_letterhead_presentation.sql` is a forward
