@@ -201,7 +201,7 @@ function fromSnapshot(input: StoredDocumentInput, snapshot: InvoiceIdentitySnaps
     footer: { thank_you_message: null, footer_note: p.footer, refund_note: null, show_thank_you: false, show_footer: p.showFooter, show_refund_note: false },
     logo: { visible: p.showLogo, asset_path: p.logoUrl, asset_version: p.logoAssetVersion, size: 'medium' },
     thermal: { width: '80mm', density: snapshot.document.thermalDensity === 'compact' || snapshot.document.thermalDensity === 'detailed' ? snapshot.document.thermalDensity : 'standard', qr_size: 'standard', wrap_item_names: true, show_cash_change: p.showCashChange },
-    a4: { template_id: snapshot.document.a4TemplateId as InvoicePresentationSettings['a4']['template_id'], template_version: 1, header_style: 'standard' },
+    a4: { template_id: snapshot.document.a4TemplateId as InvoicePresentationSettings['a4']['template_id'], template_version: 1, header_style: 'standard', accent_color: '#0f766e', header_asset_path: null, header_asset_version: 1, header_asset_enabled: false, header_asset_fit: 'contain', header_asset_height: 28, header_asset_spacing: 6 },
   }
   const resolved = resolveRuntimeInvoicePresentation({ branch: snapshotBranch, savedSettings: settings })
   return buildPresentationDocument({ settings: resolved.presentation, language: snapshot.document.language, printMode: snapshot.document.printMode, registeredName: compliance.registeredSellerName, registeredNameAr: compliance.registeredSellerNameAr, vatNumber: compliance.vatNumber, registrationType: compliance.registrationScheme, registrationNumber: compliance.registrationIdentifier, registeredAddress: address(compliance.address), branchName: p.branchDisplayName, branchNameAr: p.branchDisplayNameAr, logoPreviewUrl: resolved.logoUrl }, b)

@@ -66,6 +66,7 @@ const registry = read('src/lib/invoices/a4TemplateRegistry.ts')
 const a4 = read('src/components/print/A4Document.tsx')
 const css = read('src/index.css')
 const migration = read('supabase/migrations/20260729000500_extend_a4_invoice_themes.sql')
+const brandingMigration = read('supabase/migrations/20260729000600_extend_a4_invoice_branding.sql')
 for (const theme of ['classic', 'modern_split', 'minimal_professional', 'executive_green', 'clean_ledger', 'contemporary_border']) {
   assert.match(registry, new RegExp(`${theme}:`))
 }
@@ -80,6 +81,15 @@ assert.match(css, /a4-document--modern_split \.a4-seller \*/)
 assert.match(migration, /validate_invoice_presentation_settings/)
 assert.match(migration, /executive_green/)
 assert.doesNotMatch(migration, /UPDATE public\.(invoices|payments|products|pos_stock_movements|zatca_)/)
+for (const marker of ['accent_color', 'header_asset_path', 'header_asset_enabled', 'header_asset_fit', 'header_asset_height', 'header_asset_spacing']) {
+  assert.match(invoiceSettings, new RegExp(marker))
+  assert.match(brandingMigration, new RegExp(marker))
+}
+assert.match(a4, /--a4-accent/)
+assert.match(a4, /a4-header-artwork/)
+assert.match(invoiceSettings, /A4PreviewFit zoom=\{previewZoom\} bounded/)
+assert.match(workspace, /inline-flex max-w-full/)
+assert.doesNotMatch(brandingMigration, /UPDATE public\.(invoices|payments|products|pos_stock_movements|zatca_)/)
 
 const barcode = read('src/components/barcodes/BarcodeBatchPrintDrawer.tsx')
 const designer = read('src/components/barcodes/BarcodeLabelDesigner.tsx')

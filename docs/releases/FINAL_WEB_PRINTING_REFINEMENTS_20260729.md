@@ -158,3 +158,25 @@ grayscale contrast.
 The remaining deferred check is physical Electron printer hardware
 compatibility. It requires the later dedicated Electron release-candidate task;
 no such compatibility is claimed here.
+
+## Final A4 workspace redesign
+
+The Invoices workspace now uses compact primary and secondary segmented
+navigation, a two-pane editor with a bounded sticky preview, page-fit and zoom
+controls, and a persistent save/reset status bar. The six layouts are labelled
+Classic Business, Modern Split Panel, Minimal Editorial, Executive Frame,
+Accounting Ledger, and Contemporary Cards; each retains its distinct document
+composition and QR placement.
+
+A branch may now save an A4 accent colour independently from its layout, using
+ten presets or a validated custom hex value. Contrast-safe foreground colour is
+derived at render time and the QR remains monochrome. Optional first-page
+header artwork accepts only PNG, JPEG, and WebP up to 2 MB, uses immutable
+branch-scoped storage paths, and saves enablement, contain/cover fit, height,
+and spacing. It remains decorative: seller, buyer, tax, total, and verification
+details continue to render as document text.
+
+Migration `20260729000600_extend_a4_invoice_branding.sql` extends only the
+strict presentation validator and existing branch-assets insert policy for
+immutable header images. It does not change invoice issuance, fiscal data,
+customer data, QR payload generation, ZATCA behavior, or production rows.

@@ -55,7 +55,7 @@ assert.deepEqual(Object.keys(saveContract.branding).sort(), ['custom_heading', '
 assert.deepEqual(Object.keys(saveContract.contact).sort(), ['address_override', 'email', 'phone_override', 'show_address', 'show_email', 'show_phone', 'show_website', 'website'])
 assert.deepEqual(Object.keys(saveContract.footer).sort(), ['bold', 'message'])
 assert.deepEqual(Object.keys(saveContract.thermal).sort(), ['density', 'qr_alignment', 'qr_size', 'width'])
-assert.deepEqual(Object.keys(saveContract.a4), ['theme'])
+assert.deepEqual(Object.keys(saveContract.a4), ['theme', 'accent_color', 'header_asset_path', 'header_asset_version', 'header_asset_enabled', 'header_asset_fit', 'header_asset_height', 'header_asset_spacing'])
 assert.equal(saveContract.language, 'both')
 assert.equal(saveContract.after_sale_action, 'both')
 assert.equal(saveContract.thermal.qr_alignment, 'center')
@@ -82,7 +82,12 @@ for (const obsolete of ['custom_display_name', 'thank_you_message', 'refund_note
 assert.doesNotMatch(JSON.stringify(canonical), /custom_display_name|thank_you_message|refund_note|show_footer|show_thank_you|show_refund_note|header_style/)
 for (const action of ['receipt', 'a4', 'both']) assert.match(page, new RegExp(`value: '${action}'`))
 
-for (const tab of ['General', 'Header & Branding', 'Contact & Footer', 'Thermal Receipt', 'A4 Themes']) assert.match(page, new RegExp(tab))
+for (const tab of ['general', 'branding', 'contact', 'thermal', 'a4']) {
+  assert.match(page, new RegExp(`printing:invoiceSettings\\.tabs\\.${tab}`))
+}
+for (const tab of ['General', 'Header & Branding', 'Contact & Footer', 'Thermal Receipt', 'A4 Layouts']) {
+  assert.match(read('src/localization/locales/en/printing.json'), new RegExp(tab))
+}
 for (const marker of ['resolveInvoicePresentationSettings', 'documentFromPreviewDraft', 'setUseBranchName', 'mobilePane', 'resetChanges', 'beforeunload', 'routeGuard', '<ThermalReceipt', '<A4Document', 'A4PreviewFit', 'role="tab"', 'role="tabpanel"']) assert.match(page, new RegExp(marker.replace(/[<>]/g, '\\$&')))
 for (const field of ['phone', 'email', 'website', 'address-override']) assert.match(page, new RegExp(`p\\.contact\\.show_${field === 'address-override' ? 'address' : field} && <TextField id="${field}"`))
 assert.match(read('src/lib/invoices/documentViewModel.ts'), /settings\.identity\.show_company_name \? input\.registeredName/)
@@ -104,7 +109,9 @@ assert.match(page, /const payload = \{ branch_id: branchId, presentation_setting
 assert.doesNotMatch(page, /p_payload:\s*\{[^}]*invoice_language/)
 assert.doesNotMatch(page, /p_payload:\s*\{[^}]*after_sale_action/)
 assert.match(page, /upsert: true/)
-assert.doesNotMatch(page, /immutableLogoObjectPath|invoice-branding\//)
+assert.match(page, /immutableLogoObjectPath\(profile\.tenant_id, branch\.id, version, extension\)/)
+assert.match(page, /replace\(\/logo\\\.\(png\|jpg\|webp\)\$\/, `header\.\$\{extension\}`\)/)
+assert.match(page, /upload\(path, file, \{ upsert: false \}\)/)
 for (const marker of ['after_sale_action', 'footer', 'bold', 'qr_alignment', 'logo_path', 'v1_canonicalize_invoice_presentation_settings', 'v1_merge_invoice_presentation_settings']) assert.match(persistenceContract, new RegExp(marker))
 assert.match(persistenceContract, /p_branch_id::text/)
 assert.match(persistenceContract, /logo\\\./)
