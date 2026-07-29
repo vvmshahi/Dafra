@@ -46,7 +46,12 @@ assert.deepEqual(saudiDateRangeUtc('2026-07-25', '2026-07-27'), {
   end: '2026-07-27T20:59:59.999Z',
 })
 
-assert.match(page, /usePosSession\(profile\?\.branch_id, profile\?\.tenant_id, undefined\)/)
+assert.match(page, /const effectiveBranchId = profile\?\.role === 'branch'[\s\S]*profile\.branch_id[\s\S]*selectedOwnerBranchId/)
+assert.match(page, /usePosSession\(effectiveBranchId \?\? undefined, profile\?\.tenant_id, undefined\)/)
+assert.match(page, /\.from\('branches'\)[\s\S]*\.select\('id, name, name_ar'\)[\s\S]*\.eq\('tenant_id', profile\.tenant_id\)/)
+assert.match(page, /setSelectedOwnerBranchId\(current =>[\s\S]*branches\[0\]\?\.id/)
+assert.match(page, /value=\{selectedOwnerBranchId \?\? ''\}[\s\S]*onChange=\{event => setSelectedOwnerBranchId/)
+assert.match(page, /branchId: effectiveBranchId/)
 assert.match(page, /\.from\('pos_sessions'\)[\s\S]*\.eq\('status', 'closed'\)[\s\S]*\.order\('closed_at', \{ ascending: false \}\)[\s\S]*\.limit\(1\)/)
 assert.match(page, /activeSession[\s\S]*setSessionShortcut\('current'\)[\s\S]*setQuickRange\(null\)/)
 assert.match(page, /else \{[\s\S]*setSessionShortcut\(null\)[\s\S]*setQuickRange\('today'\)/)
@@ -86,6 +91,10 @@ const requiredKeys = [
   'noInvoicesToday',
   'noInvoicesDateRange',
   'sessionEmptyHint',
+  'branchFilter',
+  'loadingBranches',
+  'noBranches',
+  'branchLoadFailed',
 ]
 for (const localePath of [
   'src/localization/locales/en/invoices.json',

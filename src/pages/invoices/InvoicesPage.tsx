@@ -41,6 +41,11 @@ import {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type InvoiceRow = InvoiceListRow
+type OwnerInvoiceBranch = {
+  id: string
+  name: string
+  name_ar: string | null
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -149,13 +154,20 @@ export default function InvoicesPage() {
   const { t, i18n } = useTranslation(['invoices', 'creditNotes', 'payments', 'validation', 'common'])
   const { profile } = useAuth()
   const navigate    = useNavigate()
+  const [ownerBranches, setOwnerBranches] = useState<OwnerInvoiceBranch[]>([])
+  const [selectedOwnerBranchId, setSelectedOwnerBranchId] = useState<string | null>(null)
+  const [ownerBranchesLoading, setOwnerBranchesLoading] = useState(false)
+  const [ownerBranchesError, setOwnerBranchesError] = useState(false)
+  const effectiveBranchId = profile?.role === 'branch'
+    ? profile.branch_id
+    : selectedOwnerBranchId
   const {
     session: activeSession,
     loading: activeSessionLoading,
     error: activeSessionError,
     resolvedBranchId: activeSessionBranchId,
     fetchActiveSession,
-  } = usePosSession(profile?.branch_id, profile?.tenant_id, undefined)
+  } = usePosSession(effectiveBranchId ?? undefined, profile?.tenant_id, undefined)
 
   const [rows,    setRows]    = useState<InvoiceRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -179,7 +191,7 @@ export default function InvoicesPage() {
   const [payFilter, setPayFilter] = useState('all')
   const [zatcaFilter, setZatcaFilter] = useState('all')
   const pageSize = 100
-  const filtersResolved = filterReady && initializedBranchRef.current === profile?.branch_id
+  const filtersResolved = filterReady && initializedBranchRef.current === effectiveBranchId
   const selectedSession = sessionShortcut === 'current'
     ? activeSession
     : sessionShortcut === 'previous'
@@ -187,12 +199,12 @@ export default function InvoicesPage() {
     : null
   const scope = useMemo<InvoiceListScope | null>(() => (
     profile?.tenant_id
-    && profile?.branch_id
+    && effectiveBranchId
     && filtersResolved
     && (!sessionShortcut || selectedSession)
   ) ? ({
     tenantId: profile.tenant_id,
-    branchId: profile.branch_id,
+    branchId: effectiveBranchId,
     startDate,
     endDate,
     page: 0,
@@ -200,7 +212,7 @@ export default function InvoicesPage() {
     sessionId: selectedSession?.id ?? null,
   }) : null, [
     profile?.tenant_id,
-    profile?.branch_id,
+    effectiveBranchId,
     startDate,
     endDate,
     selectedSession?.id,
@@ -240,7 +252,43 @@ export default function InvoicesPage() {
   }
 
   useEffect(() => {
-    const branchId = profile?.branch_id
+    if (profile?.role !== 'owner' || !profile.tenant_id) {
+      setOwnerBranches([])
+      setSelectedOwnerBranchId(null)
+      setOwnerBranchesLoading(false)
+      setOwnerBranchesError(false)
+      return
+    }
+
+    let cancelled = false
+    setOwnerBranchesLoading(true)
+    setOwnerBranchesError(false)
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('branches')
+        .select('id, name, name_ar')
+        .eq('tenant_id', profile.tenant_id)
+        .order('name')
+      if (cancelled) return
+      if (error) {
+        setOwnerBranches([])
+        setSelectedOwnerBranchId(null)
+        setOwnerBranchesError(true)
+      } else {
+        const branches = (data ?? []) as OwnerInvoiceBranch[]
+        setOwnerBranches(branches)
+        setSelectedOwnerBranchId(current =>
+          current && branches.some(branch => branch.id === current)
+            ? current
+            : (branches[0]?.id ?? null))
+      }
+      setOwnerBranchesLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [profile?.role, profile?.tenant_id])
+
+  useEffect(() => {
+    const branchId = effectiveBranchId
     if (!branchId) {
       initializedBranchRef.current = null
       setFilterReady(false)
@@ -269,10 +317,10 @@ export default function InvoicesPage() {
       setPreviousSessionLoading(false)
     })()
     return () => { cancelled = true }
-  }, [profile?.branch_id, profile?.tenant_id])
+  }, [effectiveBranchId, profile?.tenant_id])
 
   useEffect(() => {
-    const branchId = profile?.branch_id
+    const branchId = effectiveBranchId
     if (
       !branchId
       || activeSessionLoading
@@ -293,7 +341,7 @@ export default function InvoicesPage() {
     }
     setFilterReady(true)
   }, [
-    profile?.branch_id,
+    effectiveBranchId,
     activeSession,
     activeSessionBranchId,
     activeSessionError,
@@ -526,7 +574,7 @@ export default function InvoicesPage() {
     || search.trim() !== ''
     || payFilter !== 'all'
     || zatcaFilter !== 'all'
-  const demoSandbox = isPermanentDemoSandboxBranch(profile?.tenant_id, profile?.branch_id)
+  const demoSandbox = isPermanentDemoSandboxBranch(profile?.tenant_id, effectiveBranchId)
   const retryableZatcaCount = demoSandbox ? 0 : rows.filter(r => r.status !== 'cancelled' && (r.zatcaStatus === 'failed' || r.zatcaStatus === 'pending')).length
   const emptyTitle = sessionShortcut === 'current'
     ? t('invoices:noCurrentSessionInvoices')
@@ -589,7 +637,7 @@ export default function InvoicesPage() {
     if (!tid || retryingZatca) return
     setRetryingZatca(true)
     try {
-      const result = await retryFailedSubmissions(tid, profile?.branch_id)
+      const result = await retryFailedSubmissions(tid, effectiveBranchId)
       if (result.attempted === 0) {
         toast.info(t('invoices:noRetryableSubmissions'))
       } else if (result.failed === 0) {
@@ -638,6 +686,27 @@ export default function InvoicesPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  const ownerBranchSelector = profile?.role === 'owner' ? (
+    <label className="block max-w-sm text-xs font-semibold text-gray-700">
+      <span className="mb-1 block">{t('invoices:branchFilter')}</span>
+      <select
+        value={selectedOwnerBranchId ?? ''}
+        disabled={ownerBranchesLoading || ownerBranches.length === 0}
+        onChange={event => setSelectedOwnerBranchId(event.target.value || null)}
+        className="input min-h-10 w-full pe-8 text-sm"
+      >
+        {ownerBranches.length === 0 && (
+          <option value="">{t(ownerBranchesLoading ? 'invoices:loadingBranches' : 'invoices:noBranches')}</option>
+        )}
+        {ownerBranches.map(branch => (
+          <option key={branch.id} value={branch.id}>
+            {i18n.language.startsWith('ar') ? (branch.name_ar || branch.name) : branch.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  ) : null
+
   if (!filtersResolved) {
     return (
       <div className="min-w-0 space-y-4" aria-live="polite">
@@ -646,7 +715,16 @@ export default function InvoicesPage() {
           title={t('invoices:title')}
           description={t('invoices:subtitle')}
         />
-        {activeSessionError ? (
+        {ownerBranchSelector}
+        {ownerBranchesError ? (
+          <ContentState
+            kind="error"
+            title={t('invoices:branchLoadFailed')}
+            description={t('validation:networkUnavailable')}
+          />
+        ) : profile?.role === 'owner' && !ownerBranchesLoading && ownerBranches.length === 0 ? (
+          <ContentState kind="empty" title={t('invoices:noBranches')} />
+        ) : activeSessionError ? (
           <ContentState
             kind="error"
             title={t('invoices:sessionResolutionFailed')}
@@ -732,6 +810,7 @@ export default function InvoicesPage() {
         data-invoice-compact-filters
       >
         <h2 id="invoice-filters-heading" className="sr-only">{t('invoices:filters')}</h2>
+        {ownerBranchSelector}
         <fieldset>
           <legend className="sr-only">{t('invoices:sessionShortcuts')}</legend>
           <FilterPresetRow label={t('invoices:sessionShortcuts')}>
@@ -1128,13 +1207,13 @@ export default function InvoicesPage() {
         defaultRefundMethod={(creditModalRow?.paymentMethod === 'split' ? 'other' : (creditModalRow?.paymentMethod ?? 'cash')) as PaymentMethod}
         onClose={() => setCreditModalRow(null)}
         onCreated={(result: CreditNoteCreatedResult) => {
-          if (profile?.tenant_id && profile.branch_id) {
+          if (profile?.tenant_id && effectiveBranchId) {
             const demoStatus = demoSandbox
               ? (result.autoSubmitSucceeded ? 'sandbox_validated' : 'sandbox_validation_failed')
               : result.zatcaStatus
             upsertInvoiceListRow(profile.tenant_id, {
               id: result.creditNoteId,
-              branchId: profile.branch_id,
+              branchId: effectiveBranchId,
               invoiceNumber: result.creditNoteNumber,
               date: saudiDateStr(result.createdAt),
               createdAt: result.createdAt,
@@ -1156,7 +1235,7 @@ export default function InvoicesPage() {
               creditStatus: 'none',
               remainingRefundableQuantity: 0,
             })
-            updateCachedInvoiceRows(profile.tenant_id, profile.branch_id, cachedRows => cachedRows.map(row => row.id === result.originalInvoiceId ? {
+            updateCachedInvoiceRows(profile.tenant_id, effectiveBranchId, cachedRows => cachedRows.map(row => row.id === result.originalInvoiceId ? {
               ...row,
               linkedCreditNoteId: result.creditNoteId,
               linkedCreditNoteNumber: result.creditNoteNumber,
