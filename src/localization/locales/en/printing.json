@@ -117,6 +117,7 @@
     "previewA4": "A4",
     "zoomOut": "Zoom out",
     "zoomIn": "Zoom in",
+    "fitWidth": "Fit width",
     "fitPage": "Fit page",
     "pageCount": "{{count}} page",
     "saved": "Settings saved",
@@ -139,6 +140,7 @@
     "thermal": { "help": "Tune the receipt for the paper your counter uses.", "paperWidth": "Paper width", "density": "Content density", "qrSize": "QR size", "wrapNames": "Wrap long item names", "showChange": "Show cash change" },
     "receiptThemes": { "title": "Receipt layout", "compact": "Compact Retail", "compactUse": "High-volume counters with minimum paper use", "structured": "Structured Detail", "structuredUse": "Clear seller, item and tax information", "branded": "Branded Modern", "brandedUse": "A distinctive customer-facing receipt", "monochrome": "Monochrome · compact", "ledger": "Ledger · detailed", "kubri": "Kubri green · thermal-safe" },
     "a4": { "help": "Choose a complete print layout, accent colour, and optional decorative header artwork.", "theme": "Invoice layout", "layout": "Layout", "accent": "Accent colour", "customColour": "Custom accent colour", "hex": "Hex colour", "resetColour": "Reset", "artwork": "Header artwork", "artworkHelp": "Optional PNG, JPEG, or WebP shown decoratively on the first page. Legal invoice details remain live text.", "artworkInvalid": "Use a PNG, JPEG, or WebP no larger than 2 MB.", "uploadArtwork": "Upload artwork", "replaceArtwork": "Replace artwork", "removeArtwork": "Remove artwork", "enableArtwork": "Show header artwork", "fit": "Artwork fit", "contain": "Contain", "cover": "Cover", "height": "Artwork height", "spacing": "Space below artwork", "classic": "Classic Business", "classicHelp": "Familiar business header, full table, and grounded totals", "modern": "Modern Split Panel", "modernHelp": "Branded seller rail with a clear white document body", "minimal": "Minimal Editorial", "minimalHelp": "Typography-led hierarchy with quiet rules and generous space", "executive": "Executive Frame", "executiveHelp": "Framed parties, branded summary, and formal structure", "ledger": "Accounting Ledger", "ledgerHelp": "Dense metadata and numeric tables for accounting review", "contemporary": "Contemporary Cards", "contemporaryHelp": "Modular seller, buyer, metadata, total, and verification cards" },
+    "artworkDimensionsHelp": "Recommended header size: 1600 × 300 px or wider; minimum 1200 × 120 px.",
     "values": { "small": "Small", "medium": "Medium", "large": "Large", "compact": "Compact", "standard": "Standard", "detailed": "Detailed" },
     "errors": { "afterSaleUnsupported": "Could not save because the selected after-sale action is not supported. Refresh and try again.", "saveFailed": "Could not save invoice settings. Please try again." }
   },
