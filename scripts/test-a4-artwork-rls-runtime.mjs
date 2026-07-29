@@ -53,7 +53,11 @@ const branch = await signIn(process.env.A4_TEST_BRANCH_EMAIL, process.env.A4_TES
 const other = await signIn(process.env.A4_TEST_OTHER_TENANT_EMAIL, process.env.A4_TEST_OTHER_TENANT_PASSWORD)
 const anonymous = client()
 const ownerProfile = await profile(owner)
+const branchProfile = await profile(branch)
 const otherProfile = await profile(other)
+assert.equal(ownerProfile.role, 'owner')
+assert.equal(branchProfile.role, 'branch')
+assert.equal(branchProfile.branch_id, process.env.A4_TEST_BRANCH_ID)
 const assetId = crypto.randomUUID()
 const path = `tenant/${ownerProfile.tenant_id}/branch/${process.env.A4_TEST_BRANCH_ID}/invoice-artwork/${assetId}/header.png`
 
@@ -64,13 +68,44 @@ assert.ifError(result.error)
 result = await owner.storage.from('invoice-artwork').update(path, png())
 assert.ifError(result.error)
 
+const branchPath = `tenant/${ownerProfile.tenant_id}/branch/${process.env.A4_TEST_BRANCH_ID}/invoice-artwork/${crypto.randomUUID()}/footer.png`
+result = await branch.storage.from('invoice-artwork').upload(branchPath, png(), { upsert: false })
+assert.ifError(result.error)
+result = await branch.storage.from('invoice-artwork').download(branchPath)
+assert.ifError(result.error)
+result = await branch.storage.from('invoice-artwork').update(branchPath, png())
+assert.ifError(result.error)
+
 const foreignBranchPath = `tenant/${ownerProfile.tenant_id}/branch/${process.env.A4_TEST_FOREIGN_BRANCH_ID}/invoice-artwork/${crypto.randomUUID()}/header.png`
 await expectDenied(branch.storage.from('invoice-artwork').upload(foreignBranchPath, png(), { upsert: false }))
 const crossTenantPath = `tenant/${ownerProfile.tenant_id}/branch/${process.env.A4_TEST_BRANCH_ID}/invoice-artwork/${crypto.randomUUID()}/header.png`
 assert.notEqual(otherProfile.tenant_id, ownerProfile.tenant_id)
 await expectDenied(other.storage.from('invoice-artwork').upload(crossTenantPath, png(), { upsert: false }))
 await expectDenied(anonymous.storage.from('invoice-artwork').upload(crossTenantPath, png(), { upsert: false }))
+await expectDenied(anonymous.storage.from('invoice-artwork').download(path))
+await expectDenied(anonymous.storage.from('invoice-artwork').update(path, png()))
+await anonymous.storage.from('invoice-artwork').remove([path])
+result = await owner.storage.from('invoice-artwork').download(path)
+assert.ifError(result.error)
+await other.storage.from('invoice-artwork').remove([path])
+result = await owner.storage.from('invoice-artwork').download(path)
+assert.ifError(result.error)
+
+const malformed = [
+  `tenant/${ownerProfile.tenant_id}/branch/${process.env.A4_TEST_BRANCH_ID}/invoice-artwork/${crypto.randomUUID()}/../header.png`,
+  `tenant/${ownerProfile.tenant_id}/branch/${process.env.A4_TEST_BRANCH_ID}/invoice-artwork/${crypto.randomUUID()}/side.png`,
+  `tenant/${ownerProfile.tenant_id}/branch/${process.env.A4_TEST_BRANCH_ID}/invoice-artwork/${crypto.randomUUID()}/header.svg`,
+  `tenant/${ownerProfile.tenant_id}/branch/${process.env.A4_TEST_BRANCH_ID}/extra/invoice-artwork/${crypto.randomUUID()}/header.png`,
+]
+for (const invalidPath of malformed) {
+  await expectDenied(owner.storage.from('invoice-artwork').upload(invalidPath, png(), { upsert: false }))
+}
+
+const movedPath = `tenant/${ownerProfile.tenant_id}/branch/${process.env.A4_TEST_FOREIGN_BRANCH_ID}/invoice-artwork/${crypto.randomUUID()}/header.png`
+await expectDenied(owner.storage.from('invoice-artwork').move(path, movedPath))
 
 result = await owner.storage.from('invoice-artwork').remove([path])
 assert.ifError(result.error)
-console.log('A4 private artwork RLS insert/select/update/delete and isolation tests passed')
+result = await branch.storage.from('invoice-artwork').remove([branchPath])
+assert.ifError(result.error)
+console.log('A4 private artwork owner/branch CRUD, canonical paths, immutability, and isolation tests passed')
