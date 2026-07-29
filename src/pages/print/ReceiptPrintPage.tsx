@@ -205,18 +205,19 @@ export default function ReceiptPrintPage() {
   const [sandboxValidation, setSandboxValidation] = useState<SandboxValidationResponse | null>(null)
   const [outputState, setOutputState] = useState<ZatcaOutputState | null>(null)
   const [originalDocumentLanguage, setOriginalDocumentLanguage] = useState<string | null>(null)
+  const nonFiscalDemo = invoice?.is_demo === true
   const sandboxValidated = sandboxValidation?.invoiceId === invoice?.id
     && (sandboxValidation?.status === 'sandbox_validated'
       || sandboxValidation?.status === 'sandbox_validated_with_warnings')
   const outputStateMatchesInvoice = Boolean(invoice && outputState?.invoiceId === invoice.id)
-  const sandboxDocument = Boolean(invoice && isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id))
+  const sandboxDocument = Boolean(invoice && !nonFiscalDemo && isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id))
   const selectedQrPayload = sandboxDocument
     ? selectStoredInvoiceQr(null, 'sandbox', {
       sandboxGenerated: sandboxValidated && Boolean(sandboxValidation?.qrCode),
       sandboxQrCode: sandboxValidation?.qrCode,
     })
     : selectStoredOutputStateQr(outputStateMatchesInvoice ? outputState : null)
-  const printReady = canOpenStoredInvoicePrint(
+  const printReady = nonFiscalDemo || canOpenStoredInvoicePrint(
     sandboxDocument
       ? sandboxValidated
       : outputStateMatchesInvoice && outputState?.canPrint === true,
@@ -236,7 +237,7 @@ export default function ReceiptPrintPage() {
   useReceiptPrintStyle(receiptProfile, electronPrint)
 
   useEffect(() => {
-    if (!invoice || !isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)) {
+    if (!invoice || nonFiscalDemo || !isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)) {
       setSandboxValidation(null)
       return
     }
@@ -251,10 +252,10 @@ export default function ReceiptPrintPage() {
         }
       })
     return () => { cancelled = true }
-  }, [invoice?.id, invoice?.tenant_id, invoice?.branch_id])
+  }, [invoice?.id, invoice?.tenant_id, invoice?.branch_id, nonFiscalDemo])
 
   useEffect(() => {
-    if (!invoice || isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)) {
+    if (!invoice || nonFiscalDemo || isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)) {
       setOutputState(null)
       return
     }
@@ -270,7 +271,7 @@ export default function ReceiptPrintPage() {
         }
       })
     return () => { cancelled = true }
-  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status])
+  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status, nonFiscalDemo])
 
   useEffect(() => {
     if (!invoiceId) return
@@ -341,6 +342,11 @@ export default function ReceiptPrintPage() {
     let cancelled = false
 
     async function generateQR() {
+      if (invoice!.is_demo === true) {
+        setQrDataUrl(null)
+        setQrStatus('missing')
+        return
+      }
       const environment = isPermanentDemoSandboxBranch(invoice!.tenant_id, invoice!.branch_id) ? 'sandbox' : 'production'
       if (environment === 'production' && !outputStateMatchesInvoice) return
       if (environment === 'sandbox' && sandboxValidation?.invoiceId !== invoice!.id) return
@@ -584,7 +590,7 @@ export default function ReceiptPrintPage() {
         </div>
       </div>
 
-      {qrStatus !== 'loading' && qrStatus !== 'ready' && (
+      {!nonFiscalDemo && qrStatus !== 'loading' && qrStatus !== 'ready' && (
         <div className="no-print mx-auto mt-4 flex max-w-3xl items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
           <AlertCircle size={16} className="shrink-0" />
           {t('printing:qrUnavailable')}
@@ -592,7 +598,7 @@ export default function ReceiptPrintPage() {
       )}
 
       <main id="receipt-print-page" className="mx-auto flex min-h-[calc(100vh-64px)] max-w-3xl items-start justify-center bg-white px-3 py-5 sm:my-6 sm:min-h-0 sm:rounded-2xl sm:border sm:border-gray-100 sm:shadow-sm">
-        <ThermalReceipt model={documentViewModel} options={{ preview: true, qrImageUrl: qrDataUrl }} />
+        <ThermalReceipt model={documentViewModel} options={{ preview: true, qrImageUrl: qrDataUrl, sampleLabel: nonFiscalDemo ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية' : null, nonFiscalDemo }} />
       </main>
     </div>
   )

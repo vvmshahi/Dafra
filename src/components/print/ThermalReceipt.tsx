@@ -11,6 +11,7 @@ export interface ThermalRenderOptions {
   readonly id?: string
   readonly preview?: boolean
   readonly sampleLabel?: string | null
+  readonly nonFiscalDemo?: boolean
 }
 
 export interface ThermalReceiptModelProps { readonly model: DocumentViewModel; readonly options?: ThermalRenderOptions }
@@ -251,6 +252,9 @@ export default function ThermalReceipt(props: ThermalReceiptProps) {
     : isDebit
     ? (isStandard ? 'taxDebitNote' : 'simplifiedTaxDebitNote')
     : (isStandard ? 'standardTaxInvoice' : 'simplifiedTaxInvoice')
+  const titleLines = options.nonFiscalDemo
+    ? ['DEMO — NOT A TAX INVOICE', 'تجريبي — ليست فاتورة ضريبية']
+    : documentLabelLines(identity.language, title)
   const paymentKind = payments.length > 1 ? 'split' : payments[0]?.method ?? 'other'
   const mandatoryBuyer = isStandard || !!buyer.vatNumber
   const logoUrl = presentation.logo.previewUrl ?? presentation.logo.assetPath
@@ -280,7 +284,7 @@ export default function ThermalReceipt(props: ThermalReceiptProps) {
         {isDetailed && presentation.contact.emailVisible && presentation.contact.email && <div><bdi dir="ltr">{presentation.contact.email}</bdi></div>}
       </header>
       <Rule />
-      <section className="thermal-title">{documentLabelLines(identity.language, title).map((line, index) => <div key={`${line}-${index}`} className={index === 0 ? 'thermal-title-main' : 'thermal-title-sub'} dir="auto">{line}</div>)}</section>
+      <section className="thermal-title">{titleLines.map((line, index) => <div key={`${line}-${index}`} className={index === 0 ? 'thermal-title-main' : 'thermal-title-sub'} dir="auto">{line}</div>)}</section>
       <section className="thermal-meta"><div>{documentLabel(identity.language, isCredit ? 'creditNoteNumber' : isDebit ? 'debitNoteNumber' : 'invoiceNumber')}: <bdi dir="ltr">{identity.number}</bdi></div><div>{documentLabel(identity.language, 'date')}: <bdi dir="ltr">{date}</bdi></div><div>{documentLabel(identity.language, 'time')}: <bdi dir="ltr">{time}</bdi></div>{isAdjustment && model.compliance.originalDocument.number && <div>{documentLabel(identity.language, 'originalInvoice')}: <bdi dir="ltr">{model.compliance.originalDocument.number}</bdi></div>}{isAdjustment && model.compliance.creditReason && <div>{documentLabel(identity.language, 'reason')}: <span dir="auto">{model.compliance.creditReason}</span></div>}</section>
       {(mandatoryBuyer || (!isCompact && buyer.name)) && <><Rule /><section className="thermal-buyer"><div className="thermal-section-label">{documentLabel(identity.language, 'customer')}</div>{names(model, buyer.name, buyer.nameAr).map((name, index) => <div key={`${name}-${index}`} dir="auto">{name}</div>)}{isDetailed && names(model, buyer.address, buyer.addressAr).map((value, index) => <div key={`${value}-${index}`} dir="auto">{value}</div>)}{buyer.vatNumber && <div>{documentLabel(identity.language, 'customerVatNumber')}: <bdi dir="ltr">{buyer.vatNumber}</bdi></div>}{buyer.identifierValue && <div>{buyer.identifierType ?? documentLabel(identity.language, 'identifier')}: <bdi dir="ltr">{buyer.identifierValue}</bdi></div>}</section></>}
       <Rule />
@@ -288,7 +292,7 @@ export default function ThermalReceipt(props: ThermalReceiptProps) {
       <Rule />
       <section className="thermal-totals">{visibleTotals.map(row => <Row key={row.key} label={row.label} strong={row.emphasized}><Money value={row.value} model={model} /></Row>)}</section>
       <><Rule /><section className="thermal-payments"><div>{documentLabel(identity.language, isCredit ? 'refundMethod' : 'paymentMethod')}: <strong>{documentPaymentLabel(identity.language, paymentKind)}</strong></div>{(isDetailed || payments.length > 1) && payments.map((payment, index) => <Row key={`${payment.method}-${index}`} label={documentPaymentLabel(identity.language, payment.method)}><Money value={payment.amount} model={model} /></Row>)}{presentation.thermal.showCashChange && payments.length === 1 && payments[0]?.method === 'cash' && payments[0]?.cashTendered != null && Math.abs((payments[0]?.cashTendered ?? 0) - totals.total) > 0.005 && <Row label={documentLabel(identity.language, 'received')}><Money value={payments[0].cashTendered} model={model} /></Row>}{presentation.thermal.showCashChange && payments.length === 1 && payments[0]?.method === 'cash' && (payments[0]?.change ?? 0) > 0 && <Row label={documentLabel(identity.language, 'change')}><Money value={payments[0].change ?? 0} model={model} /></Row>}</section></>
-      <footer className="thermal-footer"><div className="thermal-qr" style={{ width: `${qrMm}mm`, textAlign: 'center' }}>{options.qrImageUrl ? <img src={options.qrImageUrl} alt={documentLabel(identity.language, 'qrCode')} dir="ltr" /> : <div className="thermal-qr-placeholder">{documentLabel(identity.language, 'qrCode')}</div>}{documentLabelLines(identity.language, 'scanToVerify').map((line, index) => <div key={`${line}-${index}`} dir="auto">{line}</div>)}</div>{optionalFooter.length > 0 && <><div className="thermal-footer-divider" aria-hidden="true" /><div className={`thermal-footer-copy ${model.presentation.footer.bold || optionalFooter.length > 0 ? 'font-bold' : ''}`} style={{ fontSize: 'calc(var(--thermal-small) + 1px)', textAlign: 'center' }}>{optionalFooter.map((line, index) => <div key={`${line}-${index}`} dir="auto">{line}</div>)}</div></>}</footer><div className="thermal-cut" aria-hidden="true" />
+      <footer className="thermal-footer">{!options.nonFiscalDemo && <div className="thermal-qr" style={{ width: `${qrMm}mm`, textAlign: 'center' }}>{options.qrImageUrl ? <img src={options.qrImageUrl} alt={documentLabel(identity.language, 'qrCode')} dir="ltr" /> : <div className="thermal-qr-placeholder">{documentLabel(identity.language, 'qrCode')}</div>}{documentLabelLines(identity.language, 'scanToVerify').map((line, index) => <div key={`${line}-${index}`} dir="auto">{line}</div>)}</div>}{optionalFooter.length > 0 && <><div className="thermal-footer-divider" aria-hidden="true" /><div className={`thermal-footer-copy ${model.presentation.footer.bold || optionalFooter.length > 0 ? 'font-bold' : ''}`} style={{ fontSize: 'calc(var(--thermal-small) + 1px)', textAlign: 'center' }}>{optionalFooter.map((line, index) => <div key={`${line}-${index}`} dir="auto">{line}</div>)}</div></>}</footer><div className="thermal-cut" aria-hidden="true" />
     </article>
   </div>
 }
