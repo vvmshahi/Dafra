@@ -1,7 +1,13 @@
 import type { A4HeaderStyle, A4TemplateId } from '@/types/database'
 import type { DocumentViewModel } from './documentViewModel'
 
-export type A4TemplateRendererId = 'classic_v1' | 'modern_split_v1' | 'minimal_professional_v1'
+export type A4TemplateRendererId =
+  | 'classic_v1'
+  | 'modern_split_v1'
+  | 'minimal_professional_v1'
+  | 'executive_green_v1'
+  | 'clean_ledger_v1'
+  | 'contemporary_border_v1'
 
 export interface A4TemplateResolution {
   readonly requestedId: string
@@ -18,6 +24,9 @@ const registry: Record<A4TemplateId, { readonly renderer: A4TemplateRendererId; 
   classic: { renderer: 'classic_v1', version: 1 },
   modern_split: { renderer: 'modern_split_v1', version: 1 },
   minimal_professional: { renderer: 'minimal_professional_v1', version: 1 },
+  executive_green: { renderer: 'executive_green_v1', version: 1 },
+  clean_ledger: { renderer: 'clean_ledger_v1', version: 1 },
+  contemporary_border: { renderer: 'contemporary_border_v1', version: 1 },
 }
 
 export function resolveA4Template(model: DocumentViewModel): A4TemplateResolution {

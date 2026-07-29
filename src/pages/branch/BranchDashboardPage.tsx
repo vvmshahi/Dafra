@@ -6,7 +6,8 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { saudiDateStr } from '@/lib/utils/date'
+import { formatSaudiDate, formatSaudiTime, saudiDateStr } from '@/lib/utils/date'
+import { isLowStockProduct } from '@/lib/products/lowStock'
 import { useAuth } from '@/hooks/useAuth'
 import { useLocale } from '@/localization/useLocale'
 import { useTranslation } from 'react-i18next'
@@ -109,6 +110,8 @@ interface RecentInvoiceRow {
   invoice_date?: string
   documentType?: string
   zatca_invoice_type?: string
+  createdAt?: string
+  created_at?: string
 }
 
 const EMPTY_DASHBOARD_SUMMARY: DashboardSummary = {
@@ -366,7 +369,7 @@ function QuickActionsPanel({ onNavigate, lowStock, lowStockLoading }: {
   lowStock: Array<{ name: string }>
   lowStockLoading: boolean
 }) {
-  const { t } = useTranslation('dashboard')
+  const { t, i18n } = useTranslation('dashboard')
   const actions = [
     { label: t('branch.newSale'), desc: t('branch.openPos'), icon: Receipt, path: '/pos', primary: true },
     { label: t('kpi.expenses'), desc: t('branch.recordCosts'), icon: CreditCard, path: '/expenses', primary: false },
@@ -519,7 +522,7 @@ function registerSessionErrorKey(error: unknown): string {
 
 export default function BranchDashboardPage() {
   const { locale, isRtl } = useLocale()
-  const { t } = useTranslation('dashboard')
+  const { t, i18n } = useTranslation('dashboard')
   const navigate = useNavigate()
   const { profile, tenant, branch } = useAuth()
 
@@ -628,17 +631,18 @@ export default function BranchDashboardPage() {
     setLowStockLoading(true)
     const { data } = await db()
       .from('products')
-      .select('id, name, stock_quantity, min_stock_alert')
+      .select('id, name, stock_quantity, min_stock_alert, track_stock, is_service, is_active, is_available')
       .eq('tenant_id', tid)
       .eq('branch_id', bid)
       .eq('is_active', true)
+      .eq('is_available', true)
+      .eq('track_stock', true)
+      .eq('is_service', false)
+      .gt('min_stock_alert', 0)
       .not('min_stock_alert', 'is', null)
       .order('stock_quantity', { ascending: true })
       .limit(50)
-    setLowStock((data ?? []).filter((p: any) =>
-      p.stock_quantity !== null && p.min_stock_alert !== null &&
-      Number(p.stock_quantity) <= Number(p.min_stock_alert)
-    ).slice(0, 5))
+    setLowStock((data ?? []).filter(isLowStockProduct).slice(0, 5))
     setLowStockLoading(false)
   }, [tid])
 
@@ -865,6 +869,7 @@ export default function BranchDashboardPage() {
                     const customerName = inv.customerName ?? inv.customer_name ?? t('recent.walkIn')
                     const amount = numberOrZero(inv.displayTotal ?? inv.display_total ?? inv.totalAmount ?? inv.total_amount)
                     const invoiceDate = inv.invoiceDate ?? inv.invoice_date ?? ''
+                    const invoiceTimestamp = inv.createdAt ?? inv.created_at
                     const documentType = inv.documentType ?? inv.zatca_invoice_type ?? 'simplified'
                     return (
                       <tr
@@ -899,7 +904,14 @@ export default function BranchDashboardPage() {
                         <td className="px-6 py-3.5">
                           <Badge variant={cfg.variant} dot>{t(cfg.labelKey)}</Badge>
                         </td>
-                        <td dir="ltr" className="px-6 py-3.5 text-xs text-gray-400">{invoiceDate}</td>
+                        <td className="px-6 py-3.5 text-xs text-gray-500">
+                          {invoiceTimestamp ? (
+                            <span className="grid gap-0.5 whitespace-nowrap">
+                              <span>{formatSaudiDate(invoiceTimestamp, i18n.language)}</span>
+                              <span className="font-medium text-gray-400" dir="ltr">{formatSaudiTime(invoiceTimestamp, i18n.language)}</span>
+                            </span>
+                          ) : <span dir="ltr">{invoiceDate}</span>}
+                        </td>
                       </tr>
                     )
                   })}

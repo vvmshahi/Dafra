@@ -1269,7 +1269,13 @@ export type ThermalWidth = '58mm' | '80mm'
 export type ThermalDensity = 'compact' | 'standard' | 'detailed'
 export type QrSize = 'small' | 'standard' | 'large'
 export type QrAlignment = 'left' | 'center' | 'right'
-export type A4TemplateId = 'classic' | 'modern_split' | 'minimal_professional'
+export type A4TemplateId =
+  | 'classic'
+  | 'modern_split'
+  | 'minimal_professional'
+  | 'executive_green'
+  | 'clean_ledger'
+  | 'contemporary_border'
 export type A4HeaderStyle = 'standard' | 'compact' | 'branded'
 
 export interface InvoicePresentationSettings {
