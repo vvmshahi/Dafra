@@ -16,6 +16,7 @@ type SavedA4Settings = {
   header_asset_path: string | null
   header_asset_version: number
   header_asset_enabled: boolean
+  show_standard_branding: boolean
   header_asset_fit: 'contain' | 'cover'
   header_asset_height: number
   header_asset_spacing: number
@@ -198,6 +199,7 @@ export function serializeInvoicePresentationSettingsForSave(
       header_asset_path: p.a4.header_asset_path,
       header_asset_version: p.a4.header_asset_version,
       header_asset_enabled: p.a4.header_asset_enabled,
+      show_standard_branding: p.a4.show_standard_branding,
       header_asset_fit: p.a4.header_asset_fit,
       header_asset_height: p.a4.header_asset_height,
       header_asset_spacing: p.a4.header_asset_spacing,
@@ -269,6 +271,7 @@ export function toCanonicalInvoicePresentationSettings(value: {
       header_asset_path: p.a4.header_asset_path,
       header_asset_version: p.a4.header_asset_version,
       header_asset_enabled: p.a4.header_asset_enabled,
+      show_standard_branding: p.a4.show_standard_branding,
       header_asset_fit: p.a4.header_asset_fit,
       header_asset_height: p.a4.header_asset_height,
       header_asset_spacing: p.a4.header_asset_spacing,
@@ -435,6 +438,7 @@ export function normalizeInvoiceSettings(rawSettings: unknown, branch: InvoiceSe
         header_asset_path: text(a4.header_asset_path),
         header_asset_version: positiveInt(a4.header_asset_version, 1),
         header_asset_enabled: bool(a4.header_asset_enabled, false),
+        show_standard_branding: bool(a4.show_standard_branding, !bool(a4.header_asset_enabled, false)),
         header_asset_fit: oneOf(a4.header_asset_fit, ['contain', 'cover'] as const, 'contain'),
         header_asset_height: typeof a4.header_asset_height === 'number' ? Math.min(56, Math.max(18, a4.header_asset_height)) : 28,
         header_asset_spacing: typeof a4.header_asset_spacing === 'number' ? Math.min(16, Math.max(0, a4.header_asset_spacing)) : 6,
@@ -475,6 +479,7 @@ export function canonicalPresentationDefaults(current: InvoicePresentationSettin
       header_asset_path: null,
       header_asset_version: 1,
       header_asset_enabled: false,
+      show_standard_branding: true,
       header_asset_fit: 'contain',
       header_asset_height: 28,
       header_asset_spacing: 6,
