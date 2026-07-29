@@ -44,14 +44,16 @@ Documents owns Branch-wide presentation defaults. Product and batch flows own
 the selected unit, copies, and per-job selection. Barcode values are never
 duplicated into presentation settings.
 
-Only four new selections are exposed:
+Only four selections are exposed:
 
-- **Compact Sticker** prioritises price and scanning in a 38 × 25 mm layout.
-- **Standard Product Sticker** balances Branch, product, unit, barcode, and
-  price in a 50 × 30 mm centred layout.
-- **Detailed Product Sticker** uses bordered information regions for SKU,
-  unit, bilingual names, price, and barcode.
-- **Carton Label** is a 100 × 50 mm landscape internal carton/package
+- **Compact Price** is a true top-to-bottom price composition at 30 × 20 or
+  40 × 25 mm.
+- **Standard Product** separates product information, a scan-safe barcode
+  region, and a side price block at 50 × 30 or 60 × 40 mm.
+- **Detailed Product** uses an identity band, details row, bordered scan panel,
+  and independent price panel at 70 × 40 or 80 × 50 mm.
+- **Carton** is a wide split composition at 100 × 50 or 100 × 75 mm for an
+  internal carton/package
   identifier with a large scan region. It does not claim courier or shipping
   support.
 
@@ -59,6 +61,19 @@ Previously saved `a4_sheet` and `custom` values normalize to Standard Product
 without deleting stored history. The large Branch-default explanation banner
 was removed. Content and appearance controls are compact; device offsets and
 scale remain behind the collapsed **Printer adjustment** disclosure.
+
+The default retail content is product name, black-on-white barcode graphic,
+human-readable barcode number, and price. Unit/package, SKU, Branch/company
+name, and secondary-language name are optional and disabled by default.
+Carton price is also disabled by default. The strict four-entry renderer
+registry is shared by preview and print; unknown/deprecated layout IDs resolve
+to Standard rather than falling through to another valid renderer.
+
+Barcode SVGs preserve their aspect ratio and include a library-owned quiet
+zone plus physical white padding. EAN/UPC output receives wider quiet-zone
+padding; barcode height never falls below the scan-safe minimum. The fit
+contract reserves the scan region before optional text, warns for undersized
+symbology/label combinations, and never applies accent colour to bars.
 
 The batch dialog is centred inside the application workspace using
 `--app-sidebar-width`, bounded in both dimensions, and keeps its branded header
@@ -72,7 +87,11 @@ the exact selected unit ID. That server contract derives tenant/Branch/product
 scope, generates a Code 128 value, enforces Branch uniqueness, and persists
 through `create_product_unit_barcode`. The queue reloads authoritative unit
 barcodes and selects the created primary value, so Product Edit sees the same
-record. Existing active barcodes are never overwritten.
+record. Migration
+`20260730000400_make_inline_barcode_generation_idempotent.sql` serializes
+generation on the exact product unit. Concurrent requests return the existing
+active barcode after the lock instead of creating duplicates; no existing
+active barcode is overwritten.
 
 ## Print-layout research and design map
 
@@ -142,6 +161,15 @@ was removed. Migration
 explicit `classic` value in the closed presentation validator; it performs no
 row rewrite. Branch and tenant scope continue through the established
 invoice-presentation settings contract.
+
+Thermal seller blocks no longer render the redundant `Bill From`, `From`, or
+`صادرة من` heading. Registered seller name, VAT, CR, address, enabled contacts,
+document title, number, date, and time remain unchanged. The buyer model now
+carries an authoritative Walk-in state derived from a null stored customer ID,
+a null atomic customer snapshot, or the absence of a selected POS customer.
+All four shared thermal compositions omit that complete buyer section without
+a divider or reserved gap. Selected Individual and Business customers remain
+visible, including applicable Business VAT and RTL content.
 
 At 80 mm, Structured Detail places verification beside the fuller footer; at
 58 mm it stacks a centred scan-safe QR. Classic and Compact Retail keep centred

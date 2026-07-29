@@ -172,6 +172,7 @@ interface ReceiptData {
   cashReceived: number
   customerName: string
   customerNameAr: string | null
+  hasSelectedCustomer: boolean
   customerAddress: string | null
   customerAddressAr: string | null
   buyerIdentifierType: string | null
@@ -2929,6 +2930,7 @@ export default function POSPage() {
           : selectedCust?.customer_type === 'business'
           ? (selectedCust?.business_name_ar ?? selectedCust?.name_ar)
           : (selectedCust?.name_ar ?? null),
+        hasSelectedCustomer: atomicCustomer != null || selectedCust != null,
         customerAddress: typeof atomicCustomer?.address === 'string' ? atomicCustomer.address : (selectedCust?.address ?? null),
         customerAddressAr: typeof atomicCustomer?.address_ar === 'string' ? atomicCustomer.address_ar : (selectedCust?.address_ar ?? null),
         buyerIdentifierType: atomicCustomer?.cr_number || selectedCust?.cr_number ? 'CR' : null,

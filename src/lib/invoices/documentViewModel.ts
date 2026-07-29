@@ -43,7 +43,7 @@ export interface DocumentViewModel {
     printMode: 'thermal' | 'pdf' | 'both'
     afterSaleAction: 'receipt' | 'a4' | 'both'
   }>
-  readonly buyer: Readonly<{ name: string | null; nameAr: string | null; vatNumber: string | null; address: string | null; addressAr: string | null; identifierType: string | null; identifierValue: string | null; type: string | null }>
+  readonly buyer: Readonly<{ name: string | null; nameAr: string | null; vatNumber: string | null; address: string | null; addressAr: string | null; identifierType: string | null; identifierValue: string | null; type: string | null; isWalkIn?: boolean }>
   readonly items: readonly Readonly<{
     description: string
     descriptionAr: string | null

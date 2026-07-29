@@ -44,9 +44,10 @@ test('receipt and invoice workspaces retain branch save, reset and preview contr
   assert.match(invoice, /disabled=\{!canEdit \|\| !isDirty \|\| saving/)
 })
 
-test('barcode preview uses localized sample fixture copy without a large scope banner', () => {
+test('barcode preview uses localized sample fixture copy with compact branch guidance', () => {
   assert.match(designer, /previewDataLabel/)
-  assert.doesNotMatch(labelSettings, /settings\.help/)
+  assert.match(labelSettings, /settings\.help/)
+  assert.doesNotMatch(labelSettings, /Branch label default/)
   assert.equal(en.barcodeLabels.preview.sampleTitle, 'Sample preview')
   assert.equal(en.barcodeLabels.preview.sampleHelp, 'This preview uses sample product data.')
   assert.equal(ar.barcodeLabels.preview.sampleTitle, 'معاينة تجريبية')
@@ -58,9 +59,10 @@ test('only four supported presets are selectable while deprecated values remain 
     assert.match(geometry, new RegExp(`${preset}:`))
   }
   for (const preset of ['compact_sticker', 'standard_product', 'detailed_product', 'carton_label']) {
-    assert.match(designer, new RegExp(`'${preset}'`))
+    assert.match(geometry, new RegExp(`'${preset}'`))
   }
-  assert.doesNotMatch(designer, /'a4_sheet'|'custom'/)
+  assert.match(designer, /PRIMARY_LABEL_PRESET_IDS\.map/)
+  assert.doesNotMatch(designer, /applyPreset\('a4_sheet'\)|applyPreset\('custom'\)/)
   assert.match(geometry, /storedPresetId === 'a4_sheet'/)
   assert.match(geometry, /storedPresetId === 'custom'/)
   for (const key of ['productName', 'sellingPrice', 'unitName', 'sku', 'businessName', 'barcodeValue']) {
@@ -81,8 +83,8 @@ test('sample label print uses the existing print document and browser adapter', 
 
 test('tight-fit guidance is compact and does not block printing', () => {
   assert.match(designer, /denseTitle/)
-  assert.match(designer, /<details/)
-  assert.match(designer, /recommendations/)
+  assert.match(designer, /preview\.layout\.warnings\.map/)
+  assert.match(designer, /fitGuidance/)
   assert.match(designer, /border-s-4 bg-\[#fffaf0\]/)
   assert.doesNotMatch(designer, /warnings\.length[\s\S]{0,500}disabled/)
 })

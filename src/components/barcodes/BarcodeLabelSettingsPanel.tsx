@@ -75,8 +75,8 @@ export default function BarcodeLabelSettingsPanel({ branchId, businessName }: Pr
   if (loading) return <div className="grid min-h-72 place-items-center text-sm text-gray-500">{t('barcodeLabels.loading')}</div>
   return <div className="space-y-5">
     <header>
-      <p className="text-[10px] font-bold uppercase tracking-wide text-primary-700">{t('barcodeLabels.settings.scopeLabel')}</p>
-      <h2 className="mt-1 text-base font-bold text-gray-950">{t('barcodeLabels.settings.title')}</h2>
+      <h2 className="text-base font-bold text-gray-950">{t('barcodeLabels.settings.title')}</h2>
+      <p className="mt-1 text-xs text-gray-500">{t('barcodeLabels.settings.help')}</p>
     </header>
 
     {!canEdit && <p className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-800">{t('barcodeLabels.settings.readOnly')}</p>}
