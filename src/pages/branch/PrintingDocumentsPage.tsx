@@ -112,7 +112,7 @@ export default function PrintingDocumentsPage() {
     {active === 'invoices' && <InvoiceSettingsPage key="invoices" embedded workspace="invoices" />}
     {active === 'barcodeLabels' && branchId && <div className="space-y-8">
       <BarcodeLabelSettingsPanel branchId={branchId} businessName={businessName} />
-      {!electron && <section className="border-t border-gray-200 pt-8"><BarcodePrinterSetupPanel branchId={branchId} businessName={businessName} /></section>}
+      {!electron && <details className="group rounded-2xl border border-gray-200 bg-white"><summary className="cursor-pointer list-none px-4 py-3 text-sm font-bold text-gray-900">{t('barcodeLabels.calibration.disclosure')}</summary><section className="border-t border-gray-200 p-4"><BarcodePrinterSetupPanel branchId={branchId} businessName={businessName} /></section></details>}
     </div>}
     {electron && active === 'printerSetup' && branchId && <div className="space-y-8">
       <BarcodePrinterSetupPanel branchId={branchId} businessName={businessName} />

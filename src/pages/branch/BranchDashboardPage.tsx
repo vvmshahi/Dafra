@@ -716,8 +716,8 @@ export default function BranchDashboardPage() {
         aria-labelledby="branch-dashboard-title"
       >
         <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gold-500" />
-        <div className="relative mx-auto flex max-w-6xl min-w-0 flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="relative z-10 min-w-0">
+        <div dir="ltr" className="relative mx-auto flex max-w-6xl min-w-0 flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div data-branch-title-block className="relative z-10 min-w-0 text-left">
             <p className="text-[11px] font-black uppercase tracking-[0.2em] text-gold-300 rtl:normal-case rtl:tracking-normal">{t('branch.operations')}</p>
             <h1
               id="branch-dashboard-title"
@@ -726,7 +726,7 @@ export default function BranchDashboardPage() {
             >
               {statsLoading ? t('branch.loading') : dashboardTitle}
             </h1>
-            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/70">
+            <div dir="auto" className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/70">
               {dashboardContextName ? (
                 <>
                   <span className="font-semibold text-white/85 [overflow-wrap:anywhere]" dir="auto">
@@ -849,7 +849,7 @@ export default function BranchDashboardPage() {
               <table className="w-full min-w-[680px]">
                 <thead>
                   <tr className="border-b border-gray-50">
-                    {[t('recent.invoice'), t('recent.customer'), t('recent.amount'), t('recent.status'), t('recent.date')].map((h, i) => (
+                    {[t('recent.invoice'), t('recent.customer'), t('recent.amount'), t('recent.status'), t('recent.date'), t('recent.time')].map((h, i) => (
                       <th
                         key={h}
                         scope="col"
@@ -904,13 +904,11 @@ export default function BranchDashboardPage() {
                         <td className="px-6 py-3.5">
                           <Badge variant={cfg.variant} dot>{t(cfg.labelKey)}</Badge>
                         </td>
-                        <td className="px-6 py-3.5 text-xs text-gray-500">
-                          {invoiceTimestamp ? (
-                            <span className="grid gap-0.5 whitespace-nowrap">
-                              <span>{formatSaudiDate(invoiceTimestamp, i18n.language)}</span>
-                              <span className="font-medium text-gray-400" dir="ltr">{formatSaudiTime(invoiceTimestamp, i18n.language)}</span>
-                            </span>
-                          ) : <span dir="ltr">{invoiceDate}</span>}
+                        <td className="whitespace-nowrap px-6 py-3.5 text-xs text-gray-500">
+                          {invoiceTimestamp ? formatSaudiDate(invoiceTimestamp, i18n.language) : <span dir="ltr">{invoiceDate}</span>}
+                        </td>
+                        <td dir="ltr" className="whitespace-nowrap px-6 py-3.5 text-xs font-medium text-gray-500">
+                          {invoiceTimestamp ? formatSaudiTime(invoiceTimestamp, i18n.language) : '—'}
                         </td>
                       </tr>
                     )

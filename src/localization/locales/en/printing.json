@@ -133,6 +133,7 @@
     "branding": { "help": "Make the first impression clear and recognisable.", "useBranch": "Use branch name", "resolvedBranch": "Resolved branch: {{name}}", "heading": "Custom display heading", "headingPlaceholder": "Shown at the top of the invoice", "subheading": "Display subheading (optional)", "optionalPlaceholder": "Leave blank to hide it", "showLegal": "Show legal company name in branded header", "legalHelp": "The mandatory legal seller name remains in the invoice information section.", "legalReminder": "Mandatory legal seller details will still appear in the invoice information section.", "logo": "Logo", "logoAlt": "Current invoice logo", "logoHelp": "Upload, replace, or remove the saved branch logo.", "uploading": "Uploading…", "replace": "Replace logo", "remove": "Remove", "logoSize": "Logo size" },
     "contact": { "help": "Only enabled, non-empty contact details appear in the document. Leave address blank to inherit from the branch profile.", "showPhone": "Show phone", "phone": "Phone override", "inheritPhone": "Inherit branch phone", "showEmail": "Show email", "email": "Email", "showWebsite": "Show website", "website": "Website", "showAddress": "Show address", "address": "Address override", "inheritAddress": "Inherit branch address", "footer": "Footer message", "footerPlaceholder": "Leave blank to hide the footer message" },
     "thermal": { "help": "Tune the receipt for the paper your counter uses.", "paperWidth": "Paper width", "density": "Content density", "qrSize": "QR size", "wrapNames": "Wrap long item names", "showChange": "Show cash change" },
+    "receiptThemes": { "title": "Receipt layout", "compact": "Compact Retail", "compactUse": "High-volume counters with minimum paper use", "structured": "Structured Detail", "structuredUse": "Clear seller, item and tax information", "branded": "Branded Modern", "brandedUse": "A distinctive customer-facing receipt", "monochrome": "Monochrome · compact", "ledger": "Ledger · detailed", "kubri": "Kubri green · thermal-safe" },
     "a4": { "help": "Choose a complete visual theme. Each theme owns its header, table, totals, and footer treatment.", "theme": "Invoice theme", "classic": "Classic", "classicHelp": "Balanced and familiar", "modern": "Modern Split", "modernHelp": "Strong visual separation", "minimal": "Minimal Professional", "minimalHelp": "Quiet, clean hierarchy", "executive": "Executive Green", "executiveHelp": "Premium Kubri identity with a restrained corporate summary", "ledger": "Clean Ledger", "ledgerHelp": "Structured accounting layout for long item and tax tables", "contemporary": "Contemporary Border", "contemporaryHelp": "Light framed sections with polished seller, buyer, and totals blocks" },
     "values": { "small": "Small", "medium": "Medium", "large": "Large", "compact": "Compact", "standard": "Standard", "detailed": "Detailed" },
     "errors": { "afterSaleUnsupported": "Could not save because the selected after-sale action is not supported. Refresh and try again.", "saveFailed": "Could not save invoice settings. Please try again." }
@@ -223,6 +224,10 @@
       "orientation": "Sticker orientation",
       "productNameSize": "Product name size"
     },
+    "appearance": {
+      "title": "Appearance",
+      "barcodeSize": "Barcode size"
+    },
     "preview": {
       "title": "Live label preview",
       "sampleData": "Preview data — not a real product",
@@ -268,6 +273,7 @@
     },
     "settings": {
       "title": "Branch label default",
+      "scopeLabel": "Branch default label design",
       "help": "This design is shared by label printing in this branch. Printer alignment remains specific to each device.",
       "branchDefaultSaved": "Branch default saved",
       "builtInDefault": "Using built-in default",
@@ -304,6 +310,10 @@
       "barcode": "Saved barcode",
       "noBarcode": "No barcode",
       "missingBarcode": "No active barcode exists for this unit. Open the product and add or create one before printing.",
+      "barcodeRequired": "Barcode required",
+      "generate": "Generate barcode",
+      "generated": "Barcode generated and selected",
+      "generateFailed": "The barcode could not be generated. Refresh and try again.",
       "remove": "Remove from print queue",
       "designAndPreview": "Label design and combined preview",
       "clear": "Clear queue",
@@ -319,6 +329,7 @@
     },
     "calibration": {
       "title": "Align this label printer",
+      "disclosure": "Printer adjustment",
       "help": "Print the test pattern, compare it with the sticker edges, then use the plain controls below.",
       "deviceOnly": "Saved only on this computer. Other branch devices are not changed.",
       "currentValues": "Current device calibration values",

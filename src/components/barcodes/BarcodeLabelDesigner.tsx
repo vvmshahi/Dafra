@@ -1,5 +1,5 @@
 import { useDeferredValue, useMemo, useState } from 'react'
-import { AlertTriangle, Check, ChevronDown, Eye, Printer, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { AlertTriangle, Check, Printer, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useTranslation } from 'react-i18next'
 import {
@@ -15,7 +15,6 @@ import {
   type BarcodeLabelSettings,
   type LabelContentSettings,
   type LabelPresetId,
-  type LabelTemplateId,
 } from '@/lib/barcodes/labelSettings'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
@@ -28,36 +27,10 @@ interface Props {
   compact?: boolean
 }
 
-const presetIds = Object.keys(LABEL_PRESETS) as LabelPresetId[]
-const templates: LabelTemplateId[] = ['compact', 'standard', 'detailed']
+const presetIds: LabelPresetId[] = ['compact_sticker', 'standard_product', 'detailed_product', 'carton_label']
 const contentKeys: (keyof LabelContentSettings)[] = [
-  'productName', 'productNameAr', 'productNameEn', 'sellingPrice', 'unitName',
-  'sku', 'businessName', 'barcodeValue', 'printDate',
+  'productName', 'sellingPrice', 'barcodeValue', 'sku', 'unitName', 'businessName',
 ]
-
-function NumberField({
-  label, value, min, max, step = 1, onChange,
-}: {
-  label: string
-  value: number
-  min: number
-  max: number
-  step?: number
-  onChange: (value: number) => void
-}) {
-  return <label className="space-y-1.5 text-xs font-semibold text-gray-600">
-    <span>{label}</span>
-    <input
-      type="number"
-      className="input h-10 tabular-nums"
-      min={min}
-      max={max}
-      step={step}
-      value={value}
-      onChange={event => onChange(Number(event.target.value))}
-    />
-  </label>
-}
 
 export function BarcodeLabelPreview({
   document,
@@ -149,10 +122,6 @@ export default function BarcodeLabelDesigner({
     if (!Object.values(next).some(Boolean)) return
     update('content', next)
   }
-  const updateA4 = <K extends keyof BarcodeLabelSettings['a4']>(
-    key: K,
-    value: BarcodeLabelSettings['a4'][K],
-  ) => update('a4', { ...settings.a4, [key]: value })
   const applyPreset = (id: LabelPresetId) => onChange(settingsFromPreset(id))
   const printPreview = () => {
     if (!preview || printing) return
@@ -178,14 +147,11 @@ export default function BarcodeLabelDesigner({
     }
   }
 
-  return <div className={`grid items-start gap-5 ${compact ? '' : 'xl:grid-cols-[minmax(0,1fr)_minmax(340px,.9fr)]'}`}>
-    <div className="min-w-0 space-y-5">
-      <section>
-        <div className="mb-3">
-          <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.design.title')}</h3>
-          <p className="mt-0.5 text-xs text-gray-500">{t('barcodeLabels.design.help')}</p>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+  return <div className={`grid items-start gap-5 ${compact ? '' : 'xl:grid-cols-[minmax(0,1fr)_minmax(360px,.9fr)]'}`}>
+    <div className="min-w-0 space-y-4">
+      <section className="rounded-2xl border border-gray-200 bg-white p-4">
+        <div className="mb-3"><h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.design.title')}</h3><p className="mt-0.5 text-xs text-gray-500">{t('barcodeLabels.design.help')}</p></div>
+        <div className="grid gap-2 sm:grid-cols-2">
           {presetIds.map(id => {
             const preset = LABEL_PRESETS[id]
             const selected = settings.presetId === id
@@ -194,17 +160,14 @@ export default function BarcodeLabelDesigner({
               type="button"
               aria-pressed={selected}
               onClick={() => applyPreset(id)}
-              className={`relative min-h-20 rounded-2xl border p-3 text-start outline-none transition-[border-color,background-color,transform] duration-150 active:scale-[.98] focus-visible:ring-2 focus-visible:ring-primary-500 ${
+              className={`relative min-h-24 rounded-xl border p-3 text-start outline-none transition-[border-color,background-color,transform] duration-150 active:scale-[.98] focus-visible:ring-2 focus-visible:ring-primary-500 ${
                 selected ? 'border-emerald-600 bg-emerald-50/70' : 'border-gray-200 bg-white hover:border-gray-300'
               }`}
             >
               {selected && <Check size={14} className="absolute end-2.5 top-2.5 text-emerald-700" aria-hidden="true" />}
               <span className="block pe-5 text-xs font-bold text-gray-900">{t(`barcodeLabels.presets.${id}.name`)}</span>
-              <span className="mt-1 block text-[10px] tabular-nums text-gray-500" dir="ltr">
-                {id === 'a4_sheet'
-                  ? t('barcodeLabels.presets.a4_sheet.dimensions')
-                  : `${preset.widthMm} × ${preset.heightMm} ${t('barcodeLabels.units.mm')}`}
-              </span>
+              <span className={`mt-2 block rounded border border-gray-200 bg-white ${id === 'compact_sticker' ? 'h-5 w-16' : id === 'standard_product' ? 'h-7 w-20' : id === 'detailed_product' ? 'h-9 w-24' : 'h-8 w-32'}`} aria-hidden="true"><span className="mx-auto mt-1 block h-1 w-3/4 bg-gray-800" /><span className="mx-auto mt-1 block h-1 w-1/2 bg-gray-300" /></span>
+              <span className="mt-1.5 block text-[10px] tabular-nums text-gray-500" dir="ltr">{preset.widthMm} × {preset.heightMm} {t('barcodeLabels.units.mm')}</span>
             </button>
           })}
         </div>
@@ -218,25 +181,6 @@ export default function BarcodeLabelDesigner({
         </button>
       </section>
       <ConfirmDialog open={resetPresetOpen} kind="resetLabelPreset" onClose={() => setResetPresetOpen(false)} onConfirm={() => { applyPreset(settings.presetId); setResetPresetOpen(false) }} />
-
-      <section className="rounded-2xl border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.templates.title')}</h3>
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          {templates.map(template => <button
-            key={template}
-            type="button"
-            aria-pressed={settings.templateId === template}
-            onClick={() => update('templateId', template)}
-            className={`rounded-xl border px-2 py-3 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary-500 ${
-              settings.templateId === template
-                ? 'border-primary-600 bg-primary-50 text-primary-800'
-                : 'border-gray-200 text-gray-600 hover:border-gray-300'
-            }`}
-          >
-            {t(`barcodeLabels.templates.${template}`)}
-          </button>)}
-        </div>
-      </section>
 
       <section className="rounded-2xl border border-gray-200 bg-white p-4">
         <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.content.title')}</h3>
@@ -256,64 +200,8 @@ export default function BarcodeLabelDesigner({
       </section>
 
       <section className="rounded-2xl border border-gray-200 bg-white p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.output.title')}</h3>
-            <p className="mt-0.5 text-[11px] text-gray-500">{t('barcodeLabels.output.help')}</p>
-          </div>
-          <Printer size={17} className="text-gray-400" aria-hidden="true" />
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          {(['thermal', 'a4'] as const).map(mode => <button
-            key={mode}
-            type="button"
-            aria-pressed={settings.outputMode === mode}
-            onClick={() => update('outputMode', mode)}
-            className={`rounded-xl border px-3 py-3 text-start outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
-              settings.outputMode === mode ? 'border-primary-600 bg-primary-50' : 'border-gray-200'
-            }`}
-          >
-            <span className="block text-xs font-bold text-gray-900">{t(`barcodeLabels.output.${mode}.name`)}</span>
-            <span className="mt-0.5 block text-[10px] text-gray-500">{t(`barcodeLabels.output.${mode}.help`)}</span>
-          </button>)}
-        </div>
-
-        {settings.outputMode === 'a4' && <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1.5 text-xs font-semibold text-gray-600">
-              <span>{t('barcodeLabels.a4.orientation')}</span>
-              <select className="input h-10" value={settings.a4.orientation} onChange={event => updateA4('orientation', event.target.value as 'portrait' | 'landscape')}>
-                <option value="portrait">{t('barcodeLabels.orientation.portrait')}</option>
-                <option value="landscape">{t('barcodeLabels.orientation.landscape')}</option>
-              </select>
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <NumberField label={t('barcodeLabels.a4.columns')} value={settings.a4.columns} min={1} max={10} onChange={value => updateA4('columns', Math.floor(value))} />
-              <NumberField label={t('barcodeLabels.a4.rows')} value={settings.a4.rows} min={1} max={20} onChange={value => updateA4('rows', Math.floor(value))} />
-            </div>
-          </div>
-          <div className="rounded-xl border border-amber-100 bg-amber-50/70 p-3">
-            <p className="text-xs font-bold text-amber-900">{t('barcodeLabels.a4.startingPosition')}</p>
-            <p className="mt-0.5 text-[10px] text-amber-800">{t('barcodeLabels.a4.startingPositionHelp')}</p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <NumberField label={t('barcodeLabels.a4.startRow')} value={settings.a4.startRow} min={1} max={settings.a4.rows} onChange={value => updateA4('startRow', Math.floor(value))} />
-              <NumberField label={t('barcodeLabels.a4.startColumn')} value={settings.a4.startColumn} min={1} max={settings.a4.columns} onChange={value => updateA4('startColumn', Math.floor(value))} />
-            </div>
-          </div>
-        </div>}
-      </section>
-
-      <details className="group rounded-2xl border border-gray-200 bg-white">
-        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-bold text-gray-900">
-          <SlidersHorizontal size={15} aria-hidden="true" />
-          {t('barcodeLabels.advanced.title')}
-          <ChevronDown size={14} className="ms-auto text-gray-400 group-open:rotate-180" aria-hidden="true" />
-        </summary>
-        <div className="grid gap-3 border-t border-gray-100 p-4 sm:grid-cols-2">
-          <NumberField label={t('barcodeLabels.advanced.width')} value={settings.widthMm} min={20} max={200} step={0.1} onChange={value => update('widthMm', value)} />
-          <NumberField label={t('barcodeLabels.advanced.height')} value={settings.heightMm} min={15} max={200} step={0.1} onChange={value => update('heightMm', value)} />
-          <NumberField label={t('barcodeLabels.advanced.margin')} value={settings.marginMm} min={0} max={10} step={0.1} onChange={value => update('marginMm', value)} />
-          <NumberField label={t('barcodeLabels.advanced.barcodeHeight')} value={settings.barcodeHeightMm} min={6} max={40} step={0.5} onChange={value => update('barcodeHeightMm', value)} />
+        <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.appearance.title')}</h3>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className="space-y-1.5 text-xs font-semibold text-gray-600">
             <span>{t('barcodeLabels.advanced.textAlignment')}</span>
             <select className="input h-10" value={settings.textAlignment} onChange={event => update('textAlignment', event.target.value as 'start' | 'center')}>
@@ -322,44 +210,28 @@ export default function BarcodeLabelDesigner({
             </select>
           </label>
           <label className="space-y-1.5 text-xs font-semibold text-gray-600">
-            <span>{t('barcodeLabels.advanced.priceStyle')}</span>
-            <select className="input h-10" value={settings.priceStyle} onChange={event => update('priceStyle', event.target.value as 'normal' | 'large')}>
-              <option value="normal">{t('barcodeLabels.priceStyle.normal')}</option>
-              <option value="large">{t('barcodeLabels.priceStyle.large')}</option>
-            </select>
-          </label>
-          <label className="space-y-1.5 text-xs font-semibold text-gray-600">
-            <span>{t('barcodeLabels.advanced.orientation')}</span>
-            <select className="input h-10" value={settings.orientation} onChange={event => update('orientation', event.target.value as 'portrait' | 'landscape')}>
-              <option value="portrait">{t('barcodeLabels.orientation.portrait')}</option>
-              <option value="landscape">{t('barcodeLabels.orientation.landscape')}</option>
-            </select>
-          </label>
-          <label className="space-y-1.5 text-xs font-semibold text-gray-600">
             <span>{t('barcodeLabels.advanced.productNameSize')}</span>
             <select className="input h-10" value={settings.productNameSize} onChange={event => update('productNameSize', event.target.value as 'small' | 'normal' | 'large')}>
-              <option value="small">{t('barcodeLabels.nameSize.small')}</option>
-              <option value="normal">{t('barcodeLabels.nameSize.normal')}</option>
-              <option value="large">{t('barcodeLabels.nameSize.large')}</option>
+              <option value="small">{t('barcodeLabels.nameSize.small')}</option><option value="normal">{t('barcodeLabels.nameSize.normal')}</option><option value="large">{t('barcodeLabels.nameSize.large')}</option>
             </select>
           </label>
-          {settings.outputMode === 'a4' && <>
-            <NumberField label={t('barcodeLabels.a4.leftMargin')} value={settings.a4.marginLeftMm} min={0} max={30} step={0.1} onChange={value => updateA4('marginLeftMm', value)} />
-            <NumberField label={t('barcodeLabels.a4.rightMargin')} value={settings.a4.marginRightMm} min={0} max={30} step={0.1} onChange={value => updateA4('marginRightMm', value)} />
-            <NumberField label={t('barcodeLabels.a4.topMargin')} value={settings.a4.marginTopMm} min={0} max={30} step={0.1} onChange={value => updateA4('marginTopMm', value)} />
-            <NumberField label={t('barcodeLabels.a4.bottomMargin')} value={settings.a4.marginBottomMm} min={0} max={30} step={0.1} onChange={value => updateA4('marginBottomMm', value)} />
-            <NumberField label={t('barcodeLabels.a4.horizontalGap')} value={settings.a4.horizontalGapMm} min={0} max={20} step={0.1} onChange={value => updateA4('horizontalGapMm', value)} />
-            <NumberField label={t('barcodeLabels.a4.verticalGap')} value={settings.a4.verticalGapMm} min={0} max={20} step={0.1} onChange={value => updateA4('verticalGapMm', value)} />
-          </>}
+          <label className="space-y-1.5 text-xs font-semibold text-gray-600">
+            <span>{t('barcodeLabels.appearance.barcodeSize')}</span>
+            <select className="input h-10" value={settings.barcodeHeightMm <= 10 ? 'compact' : settings.barcodeHeightMm >= 18 ? 'large' : 'standard'} onChange={event => update('barcodeHeightMm', event.target.value === 'compact' ? 10 : event.target.value === 'large' ? 20 : 14)}>
+              <option value="compact">{t('barcodeLabels.nameSize.small')}</option><option value="standard">{t('barcodeLabels.nameSize.normal')}</option><option value="large">{t('barcodeLabels.nameSize.large')}</option>
+            </select>
+          </label>
+          <label className="space-y-1.5 text-xs font-semibold text-gray-600">
+            <span>{t('barcodeLabels.advanced.priceStyle')}</span>
+            <select className="input h-10" value={settings.priceStyle} onChange={event => update('priceStyle', event.target.value as 'normal' | 'large')}>
+              <option value="normal">{t('barcodeLabels.priceStyle.normal')}</option><option value="large">{t('barcodeLabels.priceStyle.large')}</option>
+            </select>
+          </label>
         </div>
-      </details>
+      </section>
     </div>
 
     <aside className={`${compact ? '' : 'xl:sticky xl:top-4'} min-w-0`}>
-      {previewDataLabel && <div className="mb-2 flex items-start gap-2 rounded-xl border border-primary-200 bg-primary-50 px-3 py-2 text-[11px] text-primary-800">
-        <Eye size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-        <span><strong className="block font-semibold">{t('barcodeLabels.preview.sampleTitle')}</strong>{t('barcodeLabels.preview.sampleHelp')}</span>
-      </div>}
       <BarcodeLabelPreview document={preview} title={t('barcodeLabels.preview.title')} />
       {preview?.layout.warnings.length ? <div className="mt-2 rounded-xl border border-amber-200 border-s-4 bg-[#fffaf0] p-3 text-[11px] leading-5 text-gray-700" role="status" aria-live="polite">
         <p className="flex items-start gap-1.5 font-bold">
