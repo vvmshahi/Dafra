@@ -1298,6 +1298,7 @@ export interface InvoicePresentationSettings {
     header_asset_path: string | null
     header_asset_version: number
     header_asset_enabled: boolean
+    show_standard_branding: boolean
     header_asset_fit: A4HeaderFit
     header_asset_height: number
     header_asset_spacing: number
