@@ -428,7 +428,7 @@ function labelMarkup(
   const c = settings.content
   const printDate = label.printDate || new Date().toLocaleDateString('en-CA')
   const fit = barcodeLabelFit(label, settings)
-  return `<article class="label label--${settings.templateId} label--name-${settings.productNameSize} label--price-${settings.priceStyle}" data-fit-status="${fit.status}" data-barcode-id="${escapeHtml(label.barcodeId ?? '')}" style="--fitted-name-size:${fit.nameFontPt}pt;--name-line-limit:${fit.nameLineLimit}">
+  return `<article class="label label--${settings.templateId} label--preset-${settings.presetId} label--name-${settings.productNameSize} label--price-${settings.priceStyle}" data-fit-status="${fit.status}" data-barcode-id="${escapeHtml(label.barcodeId ?? '')}" style="--fitted-name-size:${fit.nameFontPt}pt;--name-line-limit:${fit.nameLineLimit}">
     ${calibrationPattern ? '<div class="calibration-cross" aria-hidden="true"></div><i class="edge edge--tl"></i><i class="edge edge--tr"></i><i class="edge edge--bl"></i><i class="edge edge--br"></i>' : ''}
     ${c.businessName && label.businessName ? `<div class="business" dir="auto">${escapeHtml(label.businessName)}</div>` : ''}
     <div class="product-names">${labelNames(label, settings)}</div>
@@ -576,6 +576,25 @@ export function barcodePrintDocument(
     .label-footer { display:flex; justify-content:space-between; gap:2mm; min-height:2.5mm; font-size:6.5pt; }
     .label--compact .business,.label--compact .label-footer { font-size:5.5pt; }
     .label--detailed .business { padding-block-end:.5mm; border-block-end:.15mm solid #111; }
+    .label--preset-compact_sticker .product-names { order:1; }
+    .label--preset-compact_sticker .barcode-graphic { order:2; margin-block:.2mm; }
+    .label--preset-compact_sticker .barcode-value { order:3; }
+    .label--preset-compact_sticker .label-meta { order:4; min-block-size:3.2mm; font-weight:800; }
+    .label--preset-standard_product .business { text-align:center; letter-spacing:.08em; text-transform:uppercase; }
+    .label--preset-standard_product .product-names { text-align:center; }
+    .label--preset-standard_product .barcode-graphic { margin-block:auto .6mm; }
+    .label--preset-detailed_product { border:.2mm solid #111; }
+    .label--preset-detailed_product .product-names { padding-block:.6mm; border-block-end:.15mm solid #777; }
+    .label--preset-detailed_product .label-meta { padding-block:.5mm; }
+    .label--preset-detailed_product .label-footer { margin-block-start:auto; padding-block-start:.5mm; border-block-start:.15mm solid #aaa; }
+    .label--preset-carton_label { display:grid; grid-template-columns:minmax(0,1fr) minmax(42%,.7fr); grid-template-rows:auto auto 1fr auto; gap:1.5mm 4mm; align-items:center; }
+    .label--preset-carton_label .business { grid-column:1 / -1; padding-block-end:1mm; border-block-end:.3mm solid #111; font-size:9pt; }
+    .label--preset-carton_label .product-names { grid-column:1; grid-row:2 / span 2; align-self:start; }
+    .label--preset-carton_label .product-name { font-size:max(var(--fitted-name-size),12pt); line-height:1.2; }
+    .label--preset-carton_label .label-meta { grid-column:1; grid-row:4; align-self:end; font-size:10pt; }
+    .label--preset-carton_label .barcode-graphic { grid-column:2; grid-row:2 / span 2; align-self:stretch; block-size:auto; min-block-size:22mm; margin:0; padding-inline:4mm; }
+    .label--preset-carton_label .barcode-value { grid-column:2; grid-row:4; font-size:9pt; }
+    .label--preset-carton_label .label-footer { position:absolute; inset:auto auto 2mm 3mm; }
     .calibration-cross { position:absolute; z-index:2; inset:50% auto auto 50%; width:10mm; height:10mm; translate:-50% -50%; border:.15mm solid #64748b; border-radius:50%; }
     .calibration-cross::before,.calibration-cross::after { content:""; position:absolute; background:#64748b; }
     .calibration-cross::before { width:14mm; height:.15mm; inset:50% auto auto 50%; translate:-50% -50%; }

@@ -26,7 +26,7 @@ test('web exposes three areas while Electron retains Printer Setup', () => {
   assert.match(workspace, /document\.documentElement\.dir === 'rtl'/)
   assert.match(workspace, /tab\.id !== 'printerSetup' \|\| electron/)
   assert.match(workspace, /electron && active === 'printerSetup'/)
-  assert.match(workspace, /!electron && <section[\s\S]*BarcodePrinterSetupPanel/)
+  assert.match(workspace, /!electron && <details[\s\S]*BarcodePrinterSetupPanel/)
   assert.match(workspace, /useSearchParams/)
   assert.match(workspace, /return 'receipts'/)
 })
@@ -44,25 +44,26 @@ test('receipt and invoice workspaces retain branch save, reset and preview contr
   assert.match(invoice, /disabled=\{!canEdit \|\| !isDirty \|\| saving/)
 })
 
-test('barcode sample notice is neutral Kubri styling with localized sample copy', () => {
-  assert.match(designer, /barcodeLabels\.preview\.sampleTitle/)
-  assert.match(designer, /barcodeLabels\.preview\.sampleHelp/)
-  assert.match(designer, /border-primary-200 bg-primary-50/)
-  assert.doesNotMatch(designer, /border-blue-100 bg-blue-50/)
+test('barcode preview uses localized sample fixture copy without a large scope banner', () => {
+  assert.match(designer, /previewDataLabel/)
+  assert.doesNotMatch(labelSettings, /settings\.help/)
   assert.equal(en.barcodeLabels.preview.sampleTitle, 'Sample preview')
   assert.equal(en.barcodeLabels.preview.sampleHelp, 'This preview uses sample product data.')
   assert.equal(ar.barcodeLabels.preview.sampleTitle, 'معاينة تجريبية')
   assert.equal(ar.barcodeLabels.preview.sampleHelp, 'تستخدم هذه المعاينة بيانات منتج تجريبية.')
 })
 
-test('label presets, templates, include fields and geometry remain unchanged', () => {
+test('only four supported presets are selectable while deprecated values remain normalizable', () => {
   for (const preset of ['compact_sticker', 'standard_product', 'detailed_product', 'carton_label', 'a4_sheet', 'custom']) {
     assert.match(geometry, new RegExp(`${preset}:`))
   }
-  for (const template of ['compact', 'standard', 'detailed']) {
-    assert.match(designer, new RegExp(`'${template}'`))
+  for (const preset of ['compact_sticker', 'standard_product', 'detailed_product', 'carton_label']) {
+    assert.match(designer, new RegExp(`'${preset}'`))
   }
-  for (const key of ['productName', 'productNameAr', 'productNameEn', 'sellingPrice', 'unitName', 'sku', 'businessName', 'barcodeValue', 'printDate']) {
+  assert.doesNotMatch(designer, /'a4_sheet'|'custom'/)
+  assert.match(geometry, /storedPresetId === 'a4_sheet'/)
+  assert.match(geometry, /storedPresetId === 'custom'/)
+  for (const key of ['productName', 'sellingPrice', 'unitName', 'sku', 'businessName', 'barcodeValue']) {
     assert.match(designer, new RegExp(`'${key}'`))
   }
   assert.match(designer, /barcodeAlwaysIncluded/)

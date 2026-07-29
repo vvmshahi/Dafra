@@ -55,7 +55,7 @@
   "recent": {
     "title": "Recent Invoices", "viewAll": "View all", "none": "No invoices yet",
     "startSale": "Start your first sale from the POS", "invoice": "Invoice", "customer": "Customer",
-    "amount": "Amount", "status": "Status", "date": "Date", "walkIn": "Walk-in Customer",
+    "amount": "Amount", "status": "Status", "date": "Date", "time": "Time", "walkIn": "Walk-in Customer",
     "openInvoice": "Open invoice {{number}}"
   },
   "errors": {
