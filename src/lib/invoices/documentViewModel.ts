@@ -81,6 +81,7 @@ export interface DocumentViewModel {
     autoForeground: boolean
     headerAssetPath: string | null
     headerAssetEnabled: boolean
+    showStandardBranding: boolean
     headerAssetFit: 'contain' | 'cover'
     headerAssetHeight: number
     headerAssetSpacing: number
@@ -155,6 +156,7 @@ export function buildPresentationDocument(input: DocumentPresentationInput, base
       autoForeground: settings.a4.auto_foreground,
       headerAssetPath: settings.a4.header_asset_path,
       headerAssetEnabled: settings.a4.header_asset_enabled,
+      showStandardBranding: settings.a4.show_standard_branding,
       headerAssetFit: settings.a4.header_asset_fit,
       headerAssetHeight: settings.a4.header_asset_height,
       headerAssetSpacing: settings.a4.header_asset_spacing,

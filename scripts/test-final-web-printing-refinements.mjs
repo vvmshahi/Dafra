@@ -76,6 +76,8 @@ const artworkPolicyHardeningMigration = read('supabase/migrations/20260729000800
 const optionalBranchColumnsMigration = read('supabase/migrations/20260729000900_tolerate_optional_branch_presentation_columns.sql')
 const legacyLogoCompatibilityMigration = read('supabase/migrations/20260730000000_restore_legacy_invoice_logo_path_compatibility.sql')
 const completeA4ReadMigration = read('supabase/migrations/20260730000100_preserve_complete_a4_settings_on_read.sql')
+const artworkPaginationMigration = read('supabase/migrations/20260730000200_add_a4_standard_branding_visibility.sql')
+const a4PreviewFit = read('src/components/print/A4PreviewFit.tsx')
 const letterhead = read('src/lib/invoices/letterheadArtwork.ts')
 const colourTokens = read('src/lib/invoices/a4ColorTokens.ts')
 const presentation = read('src/lib/invoices/presentationSettings.ts')
@@ -231,6 +233,40 @@ for (const safeError of ['settingsFormatUnsupported', 'layoutUnavailable', 'artw
   assert.match(invoiceSettings + read('src/localization/locales/en/printing.json'), new RegExp(safeError))
 }
 assert.match(invoiceSettings, /import\.meta\.env\.DEV[\s\S]*code:[\s\S]*details:[\s\S]*hint:/)
+
+// Custom letterhead identity is explicit and branch-persisted. The switch
+// removes only decorative branding; the authoritative legal seller remains in
+// every layout. Older custom headers default hidden while no-artwork settings
+// retain Kubri branding.
+for (const source of [presentation, read('src/types/database.ts'), read('src/lib/invoices/documentViewModel.ts')]) {
+  assert.match(source, /show_standard_branding|showStandardBranding/)
+}
+assert.match(invoiceSettings, /showStandardBranding/)
+assert.match(invoiceSettings, /header_asset_enabled \|\| current\.presentation\.a4\.header_asset_path[\s\S]*show_standard_branding[\s\S]*: false/)
+assert.match(a4, /showsStandardBranding/)
+assert.match(a4, /showBranding &&[\s\S]*a4-legal-seller/)
+assert.match(a4, /a4-document--branding-hidden/)
+assert.match(css, /a4-document--branding-hidden/)
+assert.match(read('src/localization/locales/en/printing.json'), /Show Kubri invoice branding below custom header/)
+assert.match(read('src/localization/locales/ar-SA/printing.json'), /إظهار هوية الفاتورة أسفل الترويسة المخصصة/)
+assert.match(artworkPaginationMigration, /show_standard_branding/)
+assert.match(artworkPaginationMigration, /NOT \(s#>>'\{a4,header_asset_enabled\}'\)::BOOLEAN/)
+assert.match(artworkPaginationMigration, /pg_get_functiondef/)
+assert.doesNotMatch(artworkPaginationMigration, /UPDATE public\.|ALTER TABLE|INSERT INTO public\.(invoices|payments|products|customers)|zatca|checkout|stock/i)
+
+// Preview scaling remains a viewport concern. Printable content has no fixed
+// page height or transform, while measured content height and explicit
+// unbreakable closing groups allow natural multi-page flow.
+assert.match(a4PreviewFit, /renderedDocument\.scrollHeight/)
+assert.match(a4PreviewFit, /CONTINUATION_PAGE_MARGINS/)
+assert.match(a4PreviewFit, /repeatedTableHeader/)
+assert.match(a4PreviewFit, /nextPageCount !== pageCount/)
+assert.match(a4PreviewFit, /onPageCountChange/)
+assert.match(invoiceSettings, /onPageCountChange=\{setA4PageCount\}/)
+assert.match(css, /\.a4-closing-group\s*\{\s*break-inside:\s*avoid;\s*page-break-inside:\s*avoid;/)
+assert.match(css, /\.a4-header-artwork,.a4-footer-artwork[^}]*break-inside:\s*avoid/)
+assert.match(css, /@media print[\s\S]*\.a4-document\s*\{\s*min-height:\s*0;\s*padding:\s*0 !important;/)
+assert.doesNotMatch(css.match(/@media print[\s\S]*?\/\* Snapshot-driven thermal document/)?.[0] ?? '', /transform:\s*scale|zoom:|overflow:\s*hidden|max-height:/)
 
 // Every saved presentation field is serialized, normalized, admitted by the
 // migration, and carried into the shared document model used by detail, PDF,
