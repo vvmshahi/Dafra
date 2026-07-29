@@ -74,6 +74,7 @@ const brandingMigration = read('supabase/migrations/20260729000600_extend_a4_inv
 const letterheadMigration = read('supabase/migrations/20260729000700_complete_a4_letterhead_presentation.sql')
 const artworkPolicyHardeningMigration = read('supabase/migrations/20260729000800_harden_invoice_artwork_storage_policies.sql')
 const optionalBranchColumnsMigration = read('supabase/migrations/20260729000900_tolerate_optional_branch_presentation_columns.sql')
+const legacyLogoCompatibilityMigration = read('supabase/migrations/20260730000000_restore_legacy_invoice_logo_path_compatibility.sql')
 const letterhead = read('src/lib/invoices/letterheadArtwork.ts')
 const colourTokens = read('src/lib/invoices/a4ColorTokens.ts')
 const presentation = read('src/lib/invoices/presentationSettings.ts')
@@ -207,6 +208,22 @@ for (const optionalColumn of ['invoice_display_subheading', 'show_company_displa
 assert.match(optionalBranchColumnsMigration, /REVOKE ALL ON FUNCTION public\.default_invoice_presentation_settings\(UUID\) FROM PUBLIC, anon, authenticated/)
 assert.match(optionalBranchColumnsMigration, /REVOKE ALL ON FUNCTION public\.resolve_invoice_presentation_settings\(UUID\) FROM PUBLIC, anon, authenticated/)
 assert.doesNotMatch(optionalBranchColumnsMigration, /UPDATE public\.|ALTER TABLE|INSERT INTO public\.(invoices|payments|products|customers)/)
+
+// Saving an otherwise valid A4 payload must retain the hosted V1 logo path
+// `<authoritative branch UUID>/logo.ext`. The correction does not accept an
+// arbitrary UUID prefix or broaden the private artwork path contract.
+assert.match(legacyLogoCompatibilityMigration, /\('\^'\|\|p_branch_id::TEXT\|\|'\/logo\\\.\(png\|jpg\|jpeg\|webp\)\$'\)/)
+assert.match(legacyLogoCompatibilityMigration, /pg_get_functiondef/)
+assert.match(legacyLogoCompatibilityMigration, /position\(v_old IN v_definition\) = 0/)
+assert.doesNotMatch(legacyLogoCompatibilityMigration, /\^https\?/)
+assert.doesNotMatch(legacyLogoCompatibilityMigration, /UPDATE public\.|ALTER TABLE|INSERT INTO public\.(invoices|payments|products|customers)/)
+assert.match(presentation, /interface UpdateBranchInvoiceSettingsPayload/)
+assert.match(invoiceSettings, /const payload: UpdateBranchInvoiceSettingsPayload/)
+assert.match(invoiceSettings, /p_payload: payload/)
+for (const safeError of ['settingsFormatUnsupported', 'layoutUnavailable', 'artworkValidationFailed', 'permissionDenied', 'saveFailed']) {
+  assert.match(invoiceSettings + read('src/localization/locales/en/printing.json'), new RegExp(safeError))
+}
+assert.match(invoiceSettings, /import\.meta\.env\.DEV[\s\S]*code:[\s\S]*details:[\s\S]*hint:/)
 
 // Every saved presentation field is serialized, normalized, admitted by the
 // migration, and carried into the shared document model used by detail, PDF,
