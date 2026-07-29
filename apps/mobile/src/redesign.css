@@ -1856,6 +1856,55 @@ html[dir="rtl"] .drawer {
 .operational-module .invoice-heading {
   grid-template-columns: auto 1fr;
 }
+.invoice-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 9px 0;
+}
+.invoice-filter-grid input,
+.invoice-filter-grid select {
+  min-height: 44px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 0 9px;
+  color: var(--ink);
+  font-size: 8px;
+}
+.active-filter-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 3px 0 8px;
+}
+.active-filter-chips button {
+  display: inline-flex;
+  min-height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #bdd5c5;
+  border-radius: 999px;
+  background: var(--mint);
+  padding: 0 10px;
+  color: var(--green);
+  font-size: 8px;
+  font-weight: 800;
+}
+.active-filter-chips svg {
+  width: 12px;
+}
+.invoice-detail-date {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+  text-align: center;
+}
+[dir="rtl"] .invoice-detail-sheet header svg:first-child {
+  transform: scaleX(-1);
+}
 @media (prefers-reduced-motion: reduce) {
   * {
     scroll-behavior: auto !important;

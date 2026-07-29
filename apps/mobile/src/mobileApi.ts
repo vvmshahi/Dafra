@@ -38,20 +38,145 @@ export interface MobileInvoice {
   printEligible: boolean;
 }
 
+export type InvoiceDatePreset =
+  | "today"
+  | "yesterday"
+  | "this_week"
+  | "this_month"
+  | "custom";
+
+export interface InvoiceFilters {
+  search: string;
+  datePreset: InvoiceDatePreset;
+  startDate: string;
+  endDate: string;
+  sessionId: string;
+  paymentMethod: "all" | "cash" | "card" | "split";
+  documentType: string;
+  status: string;
+  paymentStatus: string;
+  zatcaStatus: string;
+  returnStatus: "all" | "original" | "credit_note";
+}
+
+export interface InvoiceListResult {
+  rows: MobileInvoice[];
+  count: number;
+}
+
+export interface InvoiceSessionOption {
+  id: string;
+  status: string;
+  openedAt: string;
+  closedAt: string | null;
+}
+
+export interface InvoiceOutputState {
+  invoiceId: string;
+  documentKind: "simplified" | "standard" | null;
+  finalizationStatus: string;
+  reportingDisplayState: string;
+  canPrint: boolean;
+  canShare: boolean;
+  qrPresent: boolean;
+  immutableFinalizationEnabled: boolean;
+}
+
 export interface InvoiceDetail extends MobileInvoice {
   subtotal: number;
   discount: number;
   sessionId: string | null;
   paymentStatus: string;
+  taxable: number;
+  originalInvoiceId: string | null;
+  returnState:
+    | "not_returned"
+    | "partially_returned"
+    | "fully_returned"
+    | "credit_note";
+  payments: Array<{
+    id: string;
+    method: string;
+    amount: number;
+    received: number | null;
+    change: number | null;
+  }>;
+  output: InvoiceOutputState | null;
   items: Array<{
     id: string;
     name: string;
     quantity: number;
     unit: string;
     price: number;
+    discount: number;
     tax: number;
     total: number;
   }>;
+}
+
+function invoiceFromRow(row: any): MobileInvoice {
+  const payments = Array.isArray(row.payments) ? row.payments : [];
+  return {
+    id: row.id,
+    number: row.invoice_number,
+    createdAt: row.created_at,
+    status: row.status,
+    zatcaStatus: row.zatca_status || "not_applicable",
+    documentType: row.zatca_invoice_type || "simplified",
+    customer: row.customers?.name || "Walk-in Customer",
+    total: number(row.total_amount),
+    tax: number(row.tax_amount),
+    paymentMethods:
+      payments.some((payment: any) => payment.method === "cash") &&
+      payments.some((payment: any) => payment.method === "card")
+        ? ["split"]
+        : payments.map((payment: any) => String(payment.method)),
+    printEligible:
+      row.status !== "cancelled" &&
+      (row.zatca_invoice_type !== "standard" || row.zatca_status === "cleared"),
+  };
+}
+
+function escapePostgrest(value: string) {
+  return value.replace(/[(),.%]/g, " ").trim();
+}
+
+export function saudiInvoiceRange(
+  preset: InvoiceDatePreset,
+  startDate = "",
+  endDate = "",
+) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Riyadh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const today = new Date(`${parts}T00:00:00+03:00`);
+  const start = new Date(today);
+  const end = new Date(today);
+  if (preset === "yesterday") {
+    start.setUTCDate(start.getUTCDate() - 1);
+    end.setUTCDate(end.getUTCDate() - 1);
+  } else if (preset === "this_week") {
+    const weekday = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Riyadh",
+      weekday: "short",
+    }).format(today);
+    const offset = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(
+      weekday,
+    );
+    start.setUTCDate(start.getUTCDate() - offset);
+  } else if (preset === "this_month") {
+    start.setUTCDate(1);
+  } else if (preset === "custom" && startDate && endDate) {
+    return {
+      start: new Date(`${startDate}T00:00:00+03:00`).toISOString(),
+      end: new Date(`${endDate}T23:59:59.999+03:00`).toISOString(),
+    };
+  }
+  end.setUTCHours(20, 59, 59, 999);
+  return { start: start.toISOString(), end: end.toISOString() };
 }
 
 export type OperationalModule =
@@ -234,27 +359,161 @@ export async function loadBranchData(
         crNumber: row.cr_number || undefined,
       }),
     ),
-    invoices: (invoiceRows.data ?? []).map(
-      (row: any): MobileInvoice => ({
-        id: row.id,
-        number: row.invoice_number,
-        createdAt: row.created_at,
-        status: row.status,
-        zatcaStatus: row.zatca_status || "not_applicable",
-        documentType: row.zatca_invoice_type || "simplified",
-        customer: row.customers?.name || "Walk-in customer",
-        total: number(row.total_amount),
-        tax: number(row.tax_amount),
-        paymentMethods: (row.payments ?? []).map((payment: any) =>
-          String(payment.method),
-        ),
-        printEligible:
-          row.status !== "cancelled" &&
-          (row.zatca_invoice_type !== "standard" ||
-            row.zatca_status === "cleared"),
-      }),
-    ),
+    invoices: (invoiceRows.data ?? []).map(invoiceFromRow),
     lowStock: products.filter((product) => product.stock <= 5).slice(0, 5),
+  };
+}
+
+export async function loadInvoices(
+  profile: MobileProfile,
+  filters: InvoiceFilters,
+): Promise<InvoiceListResult> {
+  if (!profile.branchId) throw new Error("Branch scope is unavailable.");
+  const db = client();
+  const range = saudiInvoiceRange(
+    filters.datePreset,
+    filters.startDate,
+    filters.endDate,
+  );
+  let customerIds: string[] = [];
+  let paymentInvoiceIds: string[] | null = null;
+  const search = escapePostgrest(filters.search);
+  if (search) {
+    const customers = await db
+      .from("customers")
+      .select("id")
+      .eq("tenant_id", profile.tenantId)
+      .eq("branch_id", profile.branchId)
+      .ilike("name", `%${search}%`)
+      .limit(50);
+    if (customers.error) throw new Error("Invoice customer search failed.");
+    customerIds = (customers.data ?? []).map((row: any) => String(row.id));
+  }
+  if (filters.paymentMethod !== "all") {
+    const methods =
+      filters.paymentMethod === "split"
+        ? ["cash", "card"]
+        : [filters.paymentMethod];
+    const payments = await db
+      .from("payments")
+      .select(
+        "invoice_id,method,invoices!inner(tenant_id,branch_id,created_at)",
+      )
+      .in("method", methods)
+      .eq("invoices.tenant_id", profile.tenantId)
+      .eq("invoices.branch_id", profile.branchId)
+      .gte("invoices.created_at", range.start)
+      .lte("invoices.created_at", range.end)
+      .limit(500);
+    if (payments.error) throw new Error("Invoice payment filter failed.");
+    const byInvoice = new Map<string, Set<string>>();
+    for (const row of payments.data ?? []) {
+      const id = String((row as any).invoice_id);
+      const set = byInvoice.get(id) ?? new Set<string>();
+      set.add(String((row as any).method));
+      byInvoice.set(id, set);
+    }
+    paymentInvoiceIds = [...byInvoice]
+      .filter(([, values]) =>
+        filters.paymentMethod === "split"
+          ? values.has("cash") && values.has("card")
+          : true,
+      )
+      .map(([id]) => id);
+  }
+  let query: any = db
+    .from("invoices")
+    .select(
+      "id,invoice_number,invoice_reference,created_at,status,payment_status,zatca_status,zatca_invoice_type,total_amount,tax_amount,original_invoice_id,customers(name),payments(method)",
+      { count: "exact" },
+    )
+    .eq("tenant_id", profile.tenantId)
+    .eq("branch_id", profile.branchId)
+    .gte("created_at", range.start)
+    .lte("created_at", range.end);
+  if (filters.sessionId) query = query.eq("session_id", filters.sessionId);
+  if (search) {
+    const clauses = [
+      `invoice_number.ilike.%${search}%`,
+      `invoice_reference.ilike.%${search}%`,
+      ...customerIds.map((id) => `customer_id.eq.${id}`),
+    ];
+    query = query.or(clauses.join(","));
+  }
+  if (paymentInvoiceIds)
+    query =
+      paymentInvoiceIds.length > 0
+        ? query.in("id", paymentInvoiceIds)
+        : query.eq("id", "00000000-0000-0000-0000-000000000000");
+  if (filters.documentType !== "all")
+    query = query.eq("zatca_invoice_type", filters.documentType);
+  if (filters.status !== "all") query = query.eq("status", filters.status);
+  if (filters.paymentStatus !== "all")
+    query = query.eq("payment_status", filters.paymentStatus);
+  if (filters.zatcaStatus !== "all")
+    query = query.eq("zatca_status", filters.zatcaStatus);
+  if (filters.returnStatus === "credit_note")
+    query = query.eq("zatca_invoice_type", "credit_note");
+  if (filters.returnStatus === "original")
+    query = query.is("original_invoice_id", null);
+  const result = await query
+    .order("created_at", { ascending: false })
+    .range(0, 99);
+  if (result.error) throw new Error("Filtered invoices could not be loaded.");
+  return {
+    rows: (result.data ?? []).map(invoiceFromRow),
+    count: result.count ?? 0,
+  };
+}
+
+export async function loadInvoiceSessions(
+  profile: MobileProfile,
+): Promise<InvoiceSessionOption[]> {
+  if (!profile.branchId) throw new Error("Branch scope is unavailable.");
+  const result = await client()
+    .from("pos_sessions")
+    .select("id,status,opened_at,closed_at")
+    .eq("tenant_id", profile.tenantId)
+    .eq("branch_id", profile.branchId)
+    .order("opened_at", { ascending: false })
+    .limit(30);
+  if (result.error) throw new Error("Register sessions could not be loaded.");
+  return (result.data ?? []).map((row: any) => ({
+    id: String(row.id),
+    status: String(row.status),
+    openedAt: String(row.opened_at),
+    closedAt: row.closed_at ? String(row.closed_at) : null,
+  }));
+}
+
+async function loadInvoiceOutput(
+  invoiceId: string,
+  branchId: string,
+): Promise<InvoiceOutputState | null> {
+  const { data, error } = await client().functions.invoke("zatca-submit", {
+    body: {
+      invoiceId,
+      branchId,
+      action: "status",
+      clientVersion: "mobile-read-parity-v1",
+    },
+  });
+  if (error) return null;
+  if (String(data?.invoiceId ?? "") !== invoiceId) return null;
+  return {
+    invoiceId,
+    documentKind:
+      data?.documentKind === "simplified" || data?.documentKind === "standard"
+        ? data.documentKind
+        : null,
+    finalizationStatus: String(data?.finalizationStatus ?? "not_started"),
+    reportingDisplayState: String(
+      data?.reportingDisplayState ?? "reporting_pending",
+    ),
+    canPrint: data?.canPrint === true,
+    canShare: data?.canShare === true,
+    qrPresent: data?.canPrint === true && typeof data?.qrCode === "string",
+    immutableFinalizationEnabled: data?.immutableFinalizationEnabled === true,
   };
 }
 
@@ -344,10 +603,11 @@ export async function loadInvoiceDetail(
   invoiceId: string,
 ): Promise<InvoiceDetail> {
   if (!profile.branchId) throw new Error("Branch scope is unavailable.");
-  const { data, error } = await client()
+  const db = client();
+  const { data, error } = await db
     .from("invoices")
     .select(
-      "id,invoice_number,created_at,status,zatca_status,zatca_invoice_type,subtotal,discount_amount,tax_amount,total_amount,payment_status,session_id,customers(name),payments(method),invoice_items(id,name,quantity,unit,unit_price,tax_amount,total)",
+      "id,invoice_number,created_at,status,zatca_status,zatca_invoice_type,subtotal,discount_amount,taxable_amount,tax_amount,total_amount,payment_status,session_id,original_invoice_id,customers(name),payments(id,method,amount,amount_received,change_amount),invoice_items(id,name,quantity,unit,unit_price,discount_amount,tax_amount,total)",
     )
     .eq("tenant_id", profile.tenantId)
     .eq("branch_id", profile.branchId)
@@ -355,6 +615,40 @@ export async function loadInvoiceDetail(
     .maybeSingle();
   if (error || !data) throw new Error("Invoice details could not be loaded.");
   const row: any = data;
+  const [credits, refundable, output] = await Promise.all([
+    row.zatca_invoice_type === "credit_note"
+      ? Promise.resolve({ data: [] })
+      : db
+          .from("invoices")
+          .select("id")
+          .eq("tenant_id", profile.tenantId)
+          .eq("branch_id", profile.branchId)
+          .eq("original_invoice_id", row.id)
+          .eq("zatca_invoice_type", "credit_note")
+          .neq("status", "cancelled"),
+    row.zatca_invoice_type === "credit_note"
+      ? Promise.resolve({ data: [] })
+      : db.rpc("get_invoice_refundable_items", { p_invoice_id: row.id }),
+    loadInvoiceOutput(row.id, profile.branchId),
+  ]);
+  const refundableRows = (refundable.data ?? []) as any[];
+  const remaining = refundableRows.reduce(
+    (sum, item) => sum + number(item.remaining_quantity),
+    0,
+  );
+  const original = refundableRows.reduce(
+    (sum, item) => sum + number(item.original_quantity),
+    0,
+  );
+  const creditCount = (credits.data ?? []).length;
+  const returnState: InvoiceDetail["returnState"] =
+    row.zatca_invoice_type === "credit_note"
+      ? "credit_note"
+      : creditCount === 0
+        ? "not_returned"
+        : original > 0 && remaining <= 0.0005
+          ? "fully_returned"
+          : "partially_returned";
   return {
     id: row.id,
     number: row.invoice_number,
@@ -367,20 +661,34 @@ export async function loadInvoiceDetail(
     tax: number(row.tax_amount),
     subtotal: number(row.subtotal),
     discount: number(row.discount_amount),
+    taxable: number(row.taxable_amount),
     sessionId: row.session_id || null,
+    originalInvoiceId: row.original_invoice_id || null,
+    returnState,
     paymentStatus: row.payment_status || "unknown",
     paymentMethods: (row.payments ?? []).map((payment: any) =>
       String(payment.method),
     ),
-    printEligible:
-      row.status !== "cancelled" &&
-      (row.zatca_invoice_type !== "standard" || row.zatca_status === "cleared"),
+    printEligible: output?.canPrint === true,
+    output,
+    payments: (row.payments ?? []).map((payment: any) => ({
+      id: String(payment.id),
+      method: String(payment.method),
+      amount: number(payment.amount),
+      received:
+        payment.amount_received == null
+          ? null
+          : number(payment.amount_received),
+      change:
+        payment.change_amount == null ? null : number(payment.change_amount),
+    })),
     items: (row.invoice_items ?? []).map((item: any) => ({
       id: item.id,
       name: item.name,
       quantity: number(item.quantity),
       unit: item.unit || "",
       price: number(item.unit_price),
+      discount: number(item.discount_amount),
       tax: number(item.tax_amount),
       total: number(item.total),
     })),

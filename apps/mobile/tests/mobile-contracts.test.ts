@@ -17,7 +17,7 @@ import {
 const root = path.resolve(import.meta.dirname, "..");
 const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
 const app = read("src/RedesignedApp.tsx").replaceAll('"', "'");
-const auth = read("src/mobileAuth.ts");
+const auth = read("src/mobileAuth.ts").replaceAll('"', "'");
 const api = read("src/mobileApi.ts").replaceAll('"', "'");
 const envExample = read(".env.example");
 const css = read("src/redesign.css");
@@ -260,12 +260,66 @@ test("mobile never chooses a production fiscal path", () => {
 test("invoice screen includes mobile filters, status and actions", () => {
   for (const contract of [
     "loadInvoiceDetail",
+    "loadInvoices",
     "InvoiceDetailSheet",
     "View invoice",
-    "Share.share",
+    "Clear all",
+    "Retry",
   ])
     assert.match(app, new RegExp(contract));
   assert.match(api, /printEligible/);
+});
+test("recent Home invoices open the shared authoritative detail", () => {
+  assert.match(app, /onOpenInvoice=\{\(id\) => void openInvoice\(id\)\}/);
+  assert.match(
+    app,
+    /<InvoiceCards[\s\S]*compact[\s\S]*onOpen=\{onOpenInvoice\}/,
+  );
+  assert.match(
+    api,
+    /\.eq\('tenant_id', profile\.tenantId\)[\s\S]*\.eq\('branch_id', profile\.branchId\)[\s\S]*\.eq\('id', invoiceId\)/,
+  );
+});
+test("invoice filters are bounded and backend scoped", () => {
+  for (const value of [
+    "today",
+    "yesterday",
+    "this_week",
+    "this_month",
+    "custom",
+    "sessionId",
+    "paymentMethod",
+    "documentType",
+    "paymentStatus",
+    "zatcaStatus",
+    "returnStatus",
+  ])
+    assert.match(app + api, new RegExp(value));
+  assert.match(api, /saudiInvoiceRange/);
+  assert.match(api, /\.gte\('created_at', range\.start\)/);
+  assert.match(api, /\.lte\('created_at', range\.end\)/);
+  assert.match(api, /\.range\(0, 99\)/);
+});
+test("receipt eligibility is authoritative and Standard output stays gated", () => {
+  assert.match(api, /action: 'status'/);
+  assert.match(api, /printEligible: output\?\.canPrint === true/);
+  assert.match(api, /immutableFinalizationEnabled/);
+  assert.match(
+    app,
+    /immutable final receipt snapshot has no authenticated read contract/,
+  );
+});
+test("changed operational labels have Arabic and RTL coverage", () => {
+  for (const label of [
+    "الفواتير",
+    "هذا الأسبوع",
+    "الدفع",
+    "حالة الإرجاع",
+    "الموردون",
+    "غير متصل",
+  ])
+    assert.match(app, new RegExp(label));
+  assert.match(css, /\[dir=["']rtl["']\]/);
 });
 test("operational drawer destinations are real read-only views or clearly unavailable", () => {
   for (const module of ["products", "customers", "purchases", "suppliers"])

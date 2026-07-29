@@ -64,6 +64,8 @@ import {
   loadBranchData,
   loadOwnerData,
   loadInvoiceDetail,
+  loadInvoices,
+  loadInvoiceSessions,
   loadOperationalModule,
   closeRegister,
   isAuthorisedOperationalScope,
@@ -72,6 +74,8 @@ import {
   type BranchData,
   type MobileInvoice,
   type InvoiceDetail,
+  type InvoiceFilters,
+  type InvoiceSessionOption,
   type OperationalModule,
 } from "./mobileApi";
 
@@ -489,15 +493,25 @@ function BranchApp({
     [cart, setCart] = useState<CartLine[]>([]),
     [cartOpen, setCartOpen] = useState(false),
     [registerOpen, setRegisterOpen] = useState(false),
-    [module, setModule] = useState<BranchDestination | null>(null);
+    [module, setModule] = useState<BranchDestination | null>(null),
+    [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(null),
+    [invoiceDetailLoading, setInvoiceDetailLoading] = useState(false),
+    [invoiceDetailError, setInvoiceDetailError] = useState("");
   const [live, setLive] = useState<BranchData | null>(null),
     [loadError, setLoadError] = useState("");
   const isFixture = profile.id === "fixture";
+  useEffect(() => {
+    console.info("[Kubri Mobile Timing] authenticated_shell_rendered=true");
+  }, [profile.id]);
   async function refreshBranch() {
     if (isFixture) return;
     setLoadError("");
+    const startedAt = performance.now();
     try {
       setLive(await loadBranchData(profile));
+      console.info(
+        `[Kubri Mobile Timing] kpi_completion_ms=${Math.round(performance.now() - startedAt)}`,
+      );
     } catch {
       setLoadError(
         "Branch data could not be loaded. Check your connection and try again.",
@@ -527,6 +541,7 @@ function BranchApp({
   useEffect(() => {
     const promise = NativeApp.addListener("backButton", () => {
       if (cartOpen) return setCartOpen(false);
+      if (invoiceDetail) return setInvoiceDetail(null);
       if (registerOpen) return setRegisterOpen(false);
       if (drawer) return setDrawer(false);
       if (module) return setModule(null);
@@ -536,7 +551,24 @@ function BranchApp({
     return () => {
       void promise.then((h) => h.remove());
     };
-  }, [cartOpen, registerOpen, drawer, module, tab]);
+  }, [cartOpen, invoiceDetail, registerOpen, drawer, module, tab]);
+  async function openInvoice(id: string) {
+    if (isFixture) return;
+    setInvoiceDetail(null);
+    setInvoiceDetailError("");
+    setInvoiceDetailLoading(true);
+    try {
+      setInvoiceDetail(await loadInvoiceDetail(profile, id));
+    } catch (reason) {
+      setInvoiceDetailError(
+        reason instanceof Error
+          ? reason.message
+          : "Invoice details could not be loaded.",
+      );
+    } finally {
+      setInvoiceDetailLoading(false);
+    }
+  }
   function navigate(destination: BranchDestination) {
     if (
       destination === "home" ||
@@ -569,7 +601,9 @@ function BranchApp({
               <i className="online-dot" />
               {live?.register?.status === "open" || isFixture
                 ? COPY[locale].register
-                : "Register closed"}
+                : locale === "ar"
+                  ? "الصندوق مغلق"
+                  : "Register closed"}
             </b>
           </span>
         </div>
@@ -578,7 +612,9 @@ function BranchApp({
       {connection === "offline" && (
         <div className="offline-strip">
           <WifiOff />
-          Offline · Billing and payment are unavailable
+          {locale === "ar"
+            ? "غير متصل · الفوترة والدفع غير متاحين"
+            : "Offline · Billing and payment are unavailable"}
         </div>
       )}
       {loadError && (
@@ -600,6 +636,8 @@ function BranchApp({
             locale={locale}
             onSale={() => setTab("sale")}
             onRegister={() => setRegisterOpen(true)}
+            onInvoices={() => navigate("invoices")}
+            onOpenInvoice={(id) => void openInvoice(id)}
             live={live}
           />
         ) : tab === "sale" ? (
@@ -617,6 +655,7 @@ function BranchApp({
             locale={locale}
             profile={profile}
             invoices={isFixture ? undefined : live?.invoices}
+            onOpenInvoice={(id) => void openInvoice(id)}
           />
         )}
       </main>
@@ -661,6 +700,37 @@ function BranchApp({
           register={live?.register ?? null}
           close={() => setRegisterOpen(false)}
           refreshed={refreshBranch}
+        />
+      )}
+      {invoiceDetailLoading && (
+        <div className="sheet-backdrop">
+          <section className="cart-sheet">
+            <p className="blocked-note">
+              {locale === "ar" ? "جارٍ تحميل الفاتورة…" : "Loading invoice…"}
+            </p>
+          </section>
+        </div>
+      )}
+      {invoiceDetailError && (
+        <div className="sheet-backdrop">
+          <section className="cart-sheet">
+            <p className="blocked-note" role="alert">
+              {invoiceDetailError}
+            </p>
+            <button
+              className="green-action"
+              onClick={() => setInvoiceDetailError("")}
+            >
+              {locale === "ar" ? "إغلاق" : "Close"}
+            </button>
+          </section>
+        </div>
+      )}
+      {invoiceDetail && (
+        <InvoiceDetailSheet
+          detail={invoiceDetail}
+          locale={locale}
+          close={() => setInvoiceDetail(null)}
         />
       )}
     </div>
@@ -708,11 +778,15 @@ function BranchHome({
   locale,
   onSale,
   onRegister,
+  onInvoices,
+  onOpenInvoice,
   live,
 }: {
   locale: Locale;
   onSale: () => void;
   onRegister: () => void;
+  onInvoices: () => void;
+  onOpenInvoice: (id: string) => void;
   live: BranchData | null;
 }) {
   const summary = live?.dashboard ?? {},
@@ -751,9 +825,11 @@ function BranchHome({
           </span>
         </div>
         <div className="ledger-meta">
-          <span>{count} invoices</span>
           <span>
-            Cash{" "}
+            {count} {locale === "ar" ? "فاتورة" : "invoices"}
+          </span>
+          <span>
+            {locale === "ar" ? "نقداً" : "Cash"}{" "}
             {money(
               Number(summary.totalCash ?? summary.total_cash ?? 0),
               locale,
@@ -769,21 +845,27 @@ function BranchHome({
       <section className="quick-grid">
         <Kpi
           icon={ReceiptText}
-          label="Invoices"
+          label={locale === "ar" ? "الفواتير" : "Invoices"}
           value={String(count)}
-          note={count ? `${money(total / count, locale)} avg` : "No sales yet"}
+          note={
+            count
+              ? `${money(total / count, locale)} ${locale === "ar" ? "متوسط" : "avg"}`
+              : locale === "ar"
+                ? "لا توجد مبيعات"
+                : "No sales yet"
+          }
         />
         <Kpi
           icon={Landmark}
-          label="Expected cash"
+          label={locale === "ar" ? "النقد المتوقع" : "Expected cash"}
           value={money(register?.expectedCash ?? 0, locale)}
-          note={`Opening ${money(register?.openingCash ?? 0, locale)}`}
+          note={`${locale === "ar" ? "الافتتاحي" : "Opening"} ${money(register?.openingCash ?? 0, locale)}`}
         />
         <Kpi
           icon={CreditCard}
-          label="Card sales"
+          label={locale === "ar" ? "مبيعات البطاقة" : "Card sales"}
           value={money(register?.cardTotal ?? 0, locale)}
-          note="Current session"
+          note={locale === "ar" ? "الجلسة الحالية" : "Current session"}
         />
         <Kpi
           icon={Flame}
@@ -792,7 +874,7 @@ function BranchHome({
             Number(summary.totalVat ?? summary.total_vat ?? 0),
             locale,
           )}
-          note="Posted documents"
+          note={locale === "ar" ? "المستندات المرحلة" : "Posted documents"}
         />
       </section>
       <section className="register-card">
@@ -800,62 +882,84 @@ function BranchHome({
           <Store />
         </div>
         <div>
-          <small>REGISTER SESSION</small>
+          <small>{locale === "ar" ? "جلسة الصندوق" : "REGISTER SESSION"}</small>
           <strong>
-            {register?.status === "open" ? "Register open" : "Register closed"}
+            {register?.status === "open"
+              ? locale === "ar"
+                ? "الصندوق مفتوح"
+                : "Register open"
+              : locale === "ar"
+                ? "الصندوق مغلق"
+                : "Register closed"}
           </strong>
           <span>
             {register
-              ? `${register.invoiceCount} invoices · ${money(register.totalSales, locale)}`
-              : "No current session"}
+              ? `${register.invoiceCount} ${locale === "ar" ? "فاتورة" : "invoices"} · ${money(register.totalSales, locale)}`
+              : locale === "ar"
+                ? "لا توجد جلسة حالية"
+                : "No current session"}
           </span>
         </div>
         <button onClick={onRegister}>
-          {register?.status === "open" ? "Manage" : "Open"}
+          {register?.status === "open"
+            ? locale === "ar"
+              ? "إدارة"
+              : "Manage"
+            : locale === "ar"
+              ? "فتح"
+              : "Open"}
           <ChevronRight />
         </button>
       </section>
       <div className="section-heading">
-        <h2>Quick actions</h2>
+        <h2>{locale === "ar" ? "إجراءات سريعة" : "Quick actions"}</h2>
       </div>
       <div className="quick-actions">
         <button onClick={onSale}>
           <span>
             <ShoppingBag />
           </span>
-          New sale
+          {locale === "ar" ? "بيع جديد" : "New sale"}
         </button>
         <button onClick={onSale}>
           <span>
             <ScanLine />
           </span>
-          Scan item
+          {locale === "ar" ? "مسح صنف" : "Scan item"}
         </button>
         <button disabled title="Use New Sale to select a customer">
           <span>
             <UserPlus />
           </span>
-          Customer
+          {locale === "ar" ? "عميل" : "Customer"}
         </button>
         <button disabled title="Open Products from the menu">
           <span>
             <PackageOpen />
           </span>
-          Stock
+          {locale === "ar" ? "المخزون" : "Stock"}
         </button>
       </div>
       <div className="section-heading">
-        <h2>Recent invoices</h2>
-        <button>View all</button>
+        <h2>{locale === "ar" ? "أحدث الفواتير" : "Recent invoices"}</h2>
+        <button onClick={onInvoices}>
+          {locale === "ar" ? "عرض الكل" : "View all"}
+        </button>
       </div>
-      <InvoiceCards compact invoices={live?.invoices} />
+      <InvoiceCards compact invoices={live?.invoices} onOpen={onOpenInvoice} />
       <section className="attention-line">
         <AlertTriangle />
         <span>
           <strong>
-            {live?.lowStock.length ?? 0} products are low in stock
+            {locale === "ar"
+              ? `${live?.lowStock.length ?? 0} منتجات منخفضة المخزون`
+              : `${live?.lowStock.length ?? 0} products are low in stock`}
           </strong>
-          <small>Review before the next delivery</small>
+          <small>
+            {locale === "ar"
+              ? "راجعها قبل التوريد القادم"
+              : "Review before the next delivery"}
+          </small>
         </span>
         <ChevronRight />
       </section>
@@ -1482,102 +1586,323 @@ function Invoices({
   locale,
   profile,
   invoices,
+  onOpenInvoice,
 }: {
   locale: Locale;
   profile: MobileProfile;
   invoices?: MobileInvoice[];
+  onOpenInvoice: (id: string) => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [detail, setDetail] = useState<InvoiceDetail | null>(null);
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Riyadh",
+  }).format(new Date());
+  const defaults: InvoiceFilters = {
+    search: "",
+    datePreset: "today",
+    startDate: today,
+    endDate: today,
+    sessionId: "",
+    paymentMethod: "all",
+    documentType: "all",
+    status: "all",
+    paymentStatus: "all",
+    zatcaStatus: "all",
+    returnStatus: "all",
+  };
+  const [filters, setFilters] = useState<InvoiceFilters>(defaults);
+  const [rows, setRows] = useState<MobileInvoice[]>(invoices ?? []);
+  const [count, setCount] = useState(invoices?.length ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const filtered = invoices?.filter((invoice) =>
-    `${invoice.number} ${invoice.customer}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
+  const [retryKey, setRetryKey] = useState(0);
+  const [sessions, setSessions] = useState<InvoiceSessionOption[]>([]);
+  const update = <K extends keyof InvoiceFilters>(
+    key: K,
+    value: InvoiceFilters[K],
+  ) => setFilters((current) => ({ ...current, [key]: value }));
+  useEffect(() => {
+    if (profile.id === "fixture") return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      setError("");
+      void loadInvoices(profile, filters)
+        .then((result) => {
+          if (!active) return;
+          setRows(result.rows);
+          setCount(result.count);
+        })
+        .catch((reason) => {
+          if (active)
+            setError(
+              reason instanceof Error
+                ? reason.message
+                : "Invoices could not be loaded.",
+            );
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [filters, profile, retryKey]);
+  useEffect(() => {
+    if (profile.id === "fixture") return;
+    void loadInvoiceSessions(profile)
+      .then(setSessions)
+      .catch(() => setSessions([]));
+  }, [profile]);
+  const activeFilters = Object.entries(filters).filter(
+    ([key, value]) =>
+      value &&
+      value !== "all" &&
+      !(key === "datePreset" && value === "today") &&
+      !((key === "startDate" || key === "endDate") && value === today),
   );
   return (
     <>
       <section className="invoice-heading">
         <div>
-          <p>Sales history</p>
-          <h1>Invoices</h1>
+          <p>{locale === "ar" ? "سجل المبيعات" : "Sales history"}</p>
+          <h1>{locale === "ar" ? "الفواتير" : "Invoices"}</h1>
         </div>
-        <button disabled title="Summary export is not available in this build">
-          <BarChart3 />
-          Summary
-        </button>
+        <b>{count}</b>
       </section>
       <div className="invoice-search">
         <Search />
         <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Invoice number or customer"
+          value={filters.search}
+          onChange={(e) => update("search", e.target.value)}
+          placeholder={
+            locale === "ar"
+              ? "رقم الفاتورة أو العميل"
+              : "Invoice number or customer"
+          }
         />
-        <button
-          disabled
-          title="Advanced filters are not available in this build"
+      </div>
+      <div className="filter-pills" aria-label="Invoice date filters">
+        {(
+          ["today", "yesterday", "this_week", "this_month", "custom"] as const
+        ).map((preset) => (
+          <button
+            key={preset}
+            className={filters.datePreset === preset ? "active" : ""}
+            onClick={() => update("datePreset", preset)}
+          >
+            {
+              {
+                today: locale === "ar" ? "اليوم" : "Today",
+                yesterday: locale === "ar" ? "أمس" : "Yesterday",
+                this_week: locale === "ar" ? "هذا الأسبوع" : "This week",
+                this_month: locale === "ar" ? "هذا الشهر" : "This month",
+                custom: locale === "ar" ? "مخصص" : "Custom",
+              }[preset]
+            }
+          </button>
+        ))}
+      </div>
+      {filters.datePreset === "custom" && (
+        <div className="invoice-filter-grid">
+          <input
+            type="date"
+            value={filters.startDate}
+            onChange={(e) => update("startDate", e.target.value)}
+          />
+          <input
+            type="date"
+            value={filters.endDate}
+            onChange={(e) => update("endDate", e.target.value)}
+          />
+        </div>
+      )}
+      <div className="invoice-filter-grid">
+        <select
+          value={filters.sessionId}
+          onChange={(e) => update("sessionId", e.target.value)}
         >
-          <Settings />
-        </button>
+          <option value="">
+            {locale === "ar" ? "كل جلسات الصندوق" : "All register sessions"}
+          </option>
+          {sessions.map((session) => (
+            <option key={session.id} value={session.id}>
+              {session.status === "open"
+                ? locale === "ar"
+                  ? "الجلسة الحالية"
+                  : "Current session"
+                : new Date(session.openedAt).toLocaleString(
+                    locale === "ar" ? "ar-SA" : "en-SA",
+                    {
+                      timeZone: "Asia/Riyadh",
+                      dateStyle: "short",
+                      timeStyle: "short",
+                    },
+                  )}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filters.paymentMethod}
+          onChange={(e) =>
+            update(
+              "paymentMethod",
+              e.target.value as InvoiceFilters["paymentMethod"],
+            )
+          }
+        >
+          <option value="all">
+            {locale === "ar" ? "كل طرق الدفع" : "All payments"}
+          </option>
+          <option value="cash">{locale === "ar" ? "نقداً" : "Cash"}</option>
+          <option value="card">{locale === "ar" ? "بطاقة" : "Card"}</option>
+          <option value="split">
+            {locale === "ar" ? "دفع مقسم" : "Split"}
+          </option>
+        </select>
+        <select
+          value={filters.documentType}
+          onChange={(e) => update("documentType", e.target.value)}
+        >
+          <option value="all">
+            {locale === "ar" ? "كل المستندات" : "All documents"}
+          </option>
+          <option value="simplified">
+            {locale === "ar" ? "مبسطة" : "Simplified"}
+          </option>
+          <option value="standard">
+            {locale === "ar" ? "ضريبية" : "Standard"}
+          </option>
+          <option value="credit_note">
+            {locale === "ar" ? "إشعار دائن" : "Credit note"}
+          </option>
+        </select>
+        <select
+          value={filters.status}
+          onChange={(e) => update("status", e.target.value)}
+        >
+          <option value="all">
+            {locale === "ar" ? "كل حالات الفاتورة" : "All invoice states"}
+          </option>
+          <option value="posted">{locale === "ar" ? "مرحلة" : "Posted"}</option>
+          <option value="cancelled">
+            {locale === "ar" ? "ملغاة" : "Cancelled"}
+          </option>
+        </select>
+        <select
+          value={filters.paymentStatus}
+          onChange={(e) => update("paymentStatus", e.target.value)}
+        >
+          <option value="all">
+            {locale === "ar" ? "كل حالات الدفع" : "All payment states"}
+          </option>
+          <option value="paid">{locale === "ar" ? "مدفوعة" : "Paid"}</option>
+          <option value="partial">
+            {locale === "ar" ? "مدفوعة جزئياً" : "Partial"}
+          </option>
+          <option value="pending">
+            {locale === "ar" ? "معلقة" : "Pending"}
+          </option>
+        </select>
+        <select
+          value={filters.zatcaStatus}
+          onChange={(e) => update("zatcaStatus", e.target.value)}
+        >
+          <option value="all">
+            {locale === "ar" ? "كل حالات زاتكا" : "All ZATCA states"}
+          </option>
+          {[
+            "not_submitted",
+            "pending",
+            "reported",
+            "cleared",
+            "failed",
+            "rejected",
+          ].map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filters.returnStatus}
+          onChange={(e) =>
+            update(
+              "returnStatus",
+              e.target.value as InvoiceFilters["returnStatus"],
+            )
+          }
+        >
+          <option value="all">
+            {locale === "ar" ? "كل حالات الإرجاع" : "All return states"}
+          </option>
+          <option value="original">
+            {locale === "ar" ? "فواتير أصلية" : "Original invoices"}
+          </option>
+          <option value="credit_note">
+            {locale === "ar" ? "إشعارات دائنة" : "Credit notes"}
+          </option>
+        </select>
       </div>
-      <div className="filter-pills">
-        <button className="active">Recent</button>
-      </div>
+      {activeFilters.length > 0 && (
+        <div className="active-filter-chips">
+          {activeFilters.map(([key, value]) => (
+            <button
+              key={key}
+              onClick={() =>
+                update(
+                  key as keyof InvoiceFilters,
+                  defaults[key as keyof InvoiceFilters] as never,
+                )
+              }
+            >
+              {String(value)} <X />
+            </button>
+          ))}
+          <button onClick={() => setFilters(defaults)}>
+            {locale === "ar" ? "مسح الكل" : "Clear all"}
+          </button>
+        </div>
+      )}
       <section className="invoice-summary">
         <span>
-          <small>Loaded total</small>
+          <small>{locale === "ar" ? "إجمالي النتائج" : "Result total"}</small>
           <b>
             {money(
-              (invoices ?? []).reduce((sum, row) => sum + row.total, 0),
+              rows.reduce((sum, row) => sum + row.total, 0),
               locale,
             )}
           </b>
         </span>
         <span>
-          <small>Invoices</small>
-          <b>{invoices?.length ?? 0}</b>
+          <small>{locale === "ar" ? "النتائج" : "Results"}</small>
+          <b>{count}</b>
         </span>
         <span>
-          <small>Pending</small>
-          <b>
-            {invoices?.filter((row) => row.zatcaStatus === "pending").length ??
-              0}
-          </b>
+          <small>{locale === "ar" ? "المعلقة" : "Pending"}</small>
+          <b>{rows.filter((row) => row.zatcaStatus === "pending").length}</b>
         </span>
       </section>
       {error && (
-        <p className="blocked-note" role="alert">
-          {error}
-        </p>
+        <div className="simulation-box" role="alert">
+          <AlertTriangle />
+          <span>{error}</span>
+          <button onClick={() => setRetryKey((key) => key + 1)}>
+            {locale === "ar" ? "إعادة المحاولة" : "Retry"}
+          </button>
+        </div>
       )}
-      <InvoiceCards
-        invoices={filtered}
-        onOpen={async (id) => {
-          if (profile.id === "fixture") return;
-          setLoading(true);
-          setError("");
-          try {
-            setDetail(await loadInvoiceDetail(profile, id));
-          } catch (reason) {
-            setError(
-              reason instanceof Error
-                ? reason.message
-                : "Invoice details could not be loaded.",
-            );
-          } finally {
-            setLoading(false);
-          }
-        }}
-      />
-      {loading && <p className="blocked-note">Loading invoice…</p>}
-      {detail && (
-        <InvoiceDetailSheet
-          detail={detail}
-          locale={locale}
-          close={() => setDetail(null)}
-        />
+      {loading ? (
+        <p className="blocked-note">
+          {locale === "ar" ? "جارٍ تحميل الفواتير…" : "Loading invoices…"}
+        </p>
+      ) : rows.length === 0 && !error ? (
+        <p className="blocked-note">
+          {locale === "ar" ? "لا توجد فواتير مطابقة." : "No matching invoices."}
+        </p>
+      ) : (
+        <InvoiceCards invoices={rows} onOpen={onOpenInvoice} />
       )}
     </>
   );
@@ -1661,11 +1986,6 @@ function InvoiceDetailSheet({
   locale: Locale;
   close: () => void;
 }) {
-  const share = () =>
-    Share.share({
-      title: detail.number,
-      text: `${detail.number}\n${detail.customer}\n${money(detail.total, locale)}`,
-    });
   return (
     <div className="sheet-backdrop">
       <section className="cart-sheet invoice-detail-sheet">
@@ -1677,10 +1997,26 @@ function InvoiceDetailSheet({
             <small>{locale === "ar" ? "الفاتورة" : "Invoice"}</small>
             <b>{detail.number}</b>
           </span>
-          <button onClick={() => void share()} aria-label="Share invoice">
+          <button
+            disabled
+            title="Authoritative final receipt snapshot is not readable by mobile yet"
+            aria-label={
+              locale === "ar" ? "المشاركة غير متاحة" : "Share unavailable"
+            }
+          >
             <Share2 />
           </button>
         </header>
+        <p className="invoice-detail-date">
+          {new Date(detail.createdAt).toLocaleString(
+            locale === "ar" ? "ar-SA" : "en-SA",
+            {
+              timeZone: "Asia/Riyadh",
+              dateStyle: "medium",
+              timeStyle: "short",
+            },
+          )}
+        </p>
         <div className="register-summary-grid">
           <b>
             {locale === "ar" ? "العميل" : "Customer"}
@@ -1697,6 +2033,34 @@ function InvoiceDetailSheet({
           <b>
             ZATCA<span>{detail.zatcaStatus}</span>
           </b>
+          <b>
+            {locale === "ar" ? "نوع المستند" : "Document"}
+            <span>{detail.documentType}</span>
+          </b>
+          <b>
+            {locale === "ar" ? "حالة الدفع" : "Payment state"}
+            <span>{detail.paymentStatus}</span>
+          </b>
+          <b>
+            {locale === "ar" ? "حالة الإرجاع" : "Return state"}
+            <span>{detail.returnState}</span>
+          </b>
+          <b>
+            {locale === "ar" ? "جلسة الصندوق" : "Register session"}
+            <span>{detail.sessionId || "—"}</span>
+          </b>
+          <b>
+            {locale === "ar" ? "رمز QR النهائي" : "Final QR"}
+            <span>
+              {detail.output?.qrPresent
+                ? locale === "ar"
+                  ? "متوفر"
+                  : "Available"
+                : locale === "ar"
+                  ? "غير متوفر"
+                  : "Unavailable"}
+            </span>
+          </b>
         </div>
         <div className="invoice-detail-items">
           {detail.items.map((item) => (
@@ -1706,12 +2070,41 @@ function InvoiceDetailSheet({
                 <small>
                   {item.quantity} {item.unit} × {money(item.price, locale)}
                 </small>
+                {item.discount > 0 && (
+                  <small>
+                    {locale === "ar" ? "الخصم" : "Discount"}{" "}
+                    {money(item.discount, locale)}
+                  </small>
+                )}
               </span>
               <b>{money(item.total, locale)}</b>
             </article>
           ))}
         </div>
+        <div className="invoice-detail-items">
+          {detail.payments.map((payment) => (
+            <article key={payment.id}>
+              <span>
+                <b>{payment.method}</b>
+                <small>{locale === "ar" ? "دفعة" : "Payment"}</small>
+              </span>
+              <b>{money(payment.amount, locale)}</b>
+            </article>
+          ))}
+        </div>
         <div className="invoice-total">
+          <span>
+            {locale === "ar" ? "المجموع الفرعي" : "Subtotal"}
+            <b>{money(detail.subtotal, locale)}</b>
+          </span>
+          <span>
+            {locale === "ar" ? "الخصم" : "Discount"}
+            <b>{money(detail.discount, locale)}</b>
+          </span>
+          <span>
+            {locale === "ar" ? "الخاضع للضريبة" : "Taxable"}
+            <b>{money(detail.taxable, locale)}</b>
+          </span>
           <span>
             {locale === "ar" ? "الضريبة" : "VAT"}
             <b>{money(detail.tax, locale)}</b>
@@ -1724,10 +2117,12 @@ function InvoiceDetailSheet({
         <button
           className="green-action"
           disabled
-          title="Authoritative receipt rendering is not enabled in this build"
+          title="The immutable final receipt snapshot has no authenticated read contract"
         >
           <Printer />
-          {locale === "ar" ? "الطباعة غير مفعلة" : "Printing not enabled"}
+          {locale === "ar"
+            ? "عرض وطباعة الإيصال غير متاحين"
+            : "Receipt view and print unavailable"}
         </button>
       </section>
     </div>
@@ -1893,18 +2288,18 @@ function Drawer({
   onLogout: () => void;
 }) {
   const items = [
-    ["home", Home, "Home"],
-    ["sale", ShoppingBag, "New Sale"],
-    ["invoices", ReceiptText, "Invoices"],
-    ["products", Package, "Products"],
-    ["stock", Boxes, "Stock"],
-    ["customers", Users, "Customers"],
-    ["purchases", ShoppingCart, "Purchases"],
-    ["suppliers", Truck, "Suppliers"],
-    ["expenses", WalletCards, "Expenses"],
-    ["reports", BarChart3, "Reports"],
-    ["settings", Settings, "Settings / Profile"],
-    ["help", HelpCircle, "Help & Support"],
+    ["home", Home, "Home", "الرئيسية"],
+    ["sale", ShoppingBag, "New Sale", "بيع جديد"],
+    ["invoices", ReceiptText, "Invoices", "الفواتير"],
+    ["products", Package, "Products", "المنتجات"],
+    ["stock", Boxes, "Stock", "المخزون"],
+    ["customers", Users, "Customers", "العملاء"],
+    ["purchases", ShoppingCart, "Purchases", "المشتريات"],
+    ["suppliers", Truck, "Suppliers", "الموردون"],
+    ["expenses", WalletCards, "Expenses", "المصروفات"],
+    ["reports", BarChart3, "Reports", "التقارير"],
+    ["settings", Settings, "Settings / Profile", "الإعدادات / الملف الشخصي"],
+    ["help", HelpCircle, "Help & Support", "المساعدة والدعم"],
   ] as const;
   return (
     <div className="drawer-backdrop" onClick={close}>
@@ -1926,14 +2321,14 @@ function Drawer({
           </div>
         </section>
         <nav>
-          {items.map(([id, Icon, label]) => (
+          {items.map(([id, Icon, label, labelAr]) => (
             <button
               key={id}
               className={id === "home" ? "active" : ""}
               onClick={() => go(id)}
             >
               <Icon />
-              <span>{label}</span>
+              <span>{locale === "ar" ? labelAr : label}</span>
               <ChevronRight />
             </button>
           ))}
@@ -1945,7 +2340,7 @@ function Drawer({
           </button>
           <button onClick={onLogout}>
             <LogOut />
-            Sign out
+            {locale === "ar" ? "تسجيل الخروج" : "Sign out"}
           </button>
         </footer>
       </aside>
