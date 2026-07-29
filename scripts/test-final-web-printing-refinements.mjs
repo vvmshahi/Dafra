@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { isLowStockProduct } from '../src/lib/products/lowStock.ts'
 import { formatSaudiDate, formatSaudiTime } from '../src/lib/utils/date.ts'
+import { A4_TEMPLATE_IDS, A4_TEMPLATE_REGISTRY } from '../src/lib/invoices/a4TemplateRegistry.ts'
+import { A4_ACCENT_PRESETS, contrastRatio, hasSafeTextContrast, resolveA4ColorTokens, safeForeground } from '../src/lib/invoices/a4ColorTokens.ts'
+import { createPreviewQrDataUrl } from '../src/lib/invoices/previewQr.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const read = path => readFileSync(resolve(root, path), 'utf8')
@@ -61,12 +64,18 @@ assert.match(invoiceSettings, /border-gray-200 bg-white/)
 assert.match(invoiceSettings, /role="tablist"/)
 assert.match(invoiceSettings, /role="radio"/)
 assert.match(invoiceSettings, /ThemeChoice/)
+assert.match(invoiceSettings, /A4LayoutComparison/)
 
 const registry = read('src/lib/invoices/a4TemplateRegistry.ts')
 const a4 = read('src/components/print/A4Document.tsx')
 const css = read('src/index.css')
 const migration = read('supabase/migrations/20260729000500_extend_a4_invoice_themes.sql')
 const brandingMigration = read('supabase/migrations/20260729000600_extend_a4_invoice_branding.sql')
+const letterheadMigration = read('supabase/migrations/20260729000700_complete_a4_letterhead_presentation.sql')
+const letterhead = read('src/lib/invoices/letterheadArtwork.ts')
+const colourTokens = read('src/lib/invoices/a4ColorTokens.ts')
+const presentation = read('src/lib/invoices/presentationSettings.ts')
+const previewQr = read('src/lib/invoices/previewQr.ts')
 for (const theme of ['classic', 'modern_split', 'minimal_professional', 'executive_green', 'clean_ledger', 'contemporary_border']) {
   assert.match(registry, new RegExp(`${theme}:`))
 }
@@ -75,9 +84,9 @@ for (const className of ['classic', 'modern_split', 'minimal_professional', 'exe
 }
 assert.match(a4, /options\.nonFiscalDemo/)
 assert.doesNotMatch(a4, /SharedA4Layout/)
-for (const layout of ['a4-classic-head', 'a4-split-shell', 'a4-minimal-head', 'a4-executive-band', 'a4-ledger-head', 'a4-frame-cards']) assert.match(a4, new RegExp(layout))
+for (const layout of ['a4-classic-head', 'a4-statement-head', 'a4-minimal-head', 'a4-executive-band', 'a4-ledger-head', 'a4-modular-head']) assert.match(a4, new RegExp(layout))
 assert.match(a4, /page-break-inside|Footer/)
-assert.match(css, /a4-document--modern_split \.a4-seller \*/)
+assert.match(css, /a4-statement-summary/)
 assert.match(migration, /validate_invoice_presentation_settings/)
 assert.match(migration, /executive_green/)
 assert.doesNotMatch(migration, /UPDATE public\.(invoices|payments|products|pos_stock_movements|zatca_)/)
@@ -86,8 +95,10 @@ for (const marker of ['accent_color', 'header_asset_path', 'header_asset_enabled
   assert.match(brandingMigration, new RegExp(marker))
 }
 assert.match(a4, /--a4-accent/)
-assert.match(a4, /whiteContrast >= 4\.5/)
+assert.match(a4, /--a4-heading/)
+assert.match(a4, /--a4-body/)
 assert.match(a4, /a4-header-artwork/)
+assert.match(a4, /a4-footer-artwork/)
 assert.match(invoiceSettings, /A4PreviewFit zoom=\{previewZoom\} bounded/)
 assert.match(workspace, /printing-workspace-shell/)
 assert.match(workspace, /inline-flex w-fit max-w-full/)
@@ -96,14 +107,95 @@ assert.match(invoiceSettings, /invoice-editor-canvas/)
 assert.match(invoiceSettings, /invoice-editor-actions/)
 assert.match(invoiceSettings, /setPreviewZoom\('width'\)/)
 assert.match(invoiceSettings, /setPreviewZoom\('page'\)/)
-assert.match(invoiceSettings, /hasPrintableHeaderDimensions/)
-assert.match(invoiceSettings, /naturalWidth >= 1200/)
+assert.match(invoiceSettings, /loadLetterheadSource/)
+assert.match(invoiceSettings, /cropLetterheadRegion/)
+assert.match(invoiceSettings, /LETTERHEAD_ACCEPT/)
 for (const region of ['thumb-brand', 'thumb-title', 'thumb-from', 'thumb-to', 'thumb-meta', 'thumb-table', 'thumb-qr', 'thumb-total']) assert.match(invoiceSettings, new RegExp(region))
-assert.match(a4, /a4-executive-summary"><QrVerification/)
+assert.match(a4, /a4-executive-document[\s\S]*<QrVerification/)
 assert.match(a4, /a4-minimal-foot[\s\S]*<QrVerification/)
 assert.match(read('src/localization/locales/en/documents.json'), /"seller": "Bill From"/)
 assert.match(read('src/localization/locales/ar-SA/documents.json'), /"seller": "صادرة من"/)
 assert.doesNotMatch(brandingMigration, /UPDATE public\.(invoices|payments|products|pos_stock_movements|zatca_)/)
+
+// Corrective A4 registry: six valid IDs round-trip to six unique renderers,
+// landmark sets, thumbnails, and intended QR regions. Unknown IDs fall back to
+// Classic in the resolver instead of silently taking the Minimal renderer.
+assert.equal(A4_TEMPLATE_IDS.length, 6)
+assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].renderer)).size, 6)
+assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].thumbnailClass)).size, 6)
+assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].qrRegion)).size, 6)
+assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].landmarks.join('|'))).size, 6)
+assert.match(registry, /registry\[candidate\] \?\s*candidate\s*:\s*'classic'/)
+assert.doesNotMatch(registry, /fallback:\s*'minimal_professional'/)
+for (const id of A4_TEMPLATE_IDS.slice(3)) assert.notEqual(A4_TEMPLATE_REGISTRY[id].renderer, A4_TEMPLATE_REGISTRY.minimal_professional.renderer)
+
+// Workspace consumes the already-sized app content box; it must not subtract a
+// second guessed header height or create a lower blank quarter.
+assert.match(css, /\.printing-workspace-shell\s*\{\s*height:\s*100%;\s*min-height:\s*0/)
+assert.doesNotMatch(css, /printing-workspace-shell\s*\{[^}]*calc\(100dvh\s*-\s*7\.5rem\)/)
+assert.match(css, /@media print[^}]*@page[\s\S]*html,body\s*\{[^}]*background:\s*#fff\s*!important/)
+assert.match(css, /\.a4-sample,\.a4-page-number\s*\{\s*display:\s*none\s*!important/)
+assert.match(read('src/components/layout/AppLayout.tsx'), /ownsInnerScroll/)
+assert.match(read('src/components/layout/AppLayout.tsx'), /overflow-hidden/)
+assert.match(workspace, /active === 'invoices' \|\| active === 'receipts' \? 'overflow-hidden'/)
+
+// Independent colours, white/black handling, and contrast enforcement.
+assert.ok(A4_ACCENT_PRESETS.includes('#0f766e'))
+assert.ok(A4_ACCENT_PRESETS.includes('#000000'))
+assert.ok(A4_ACCENT_PRESETS.includes('#ffffff'))
+assert.equal(safeForeground('#ffffff'), '#111827')
+assert.equal(safeForeground('#000000'), '#ffffff')
+assert.ok(contrastRatio('#111827', '#ffffff') >= 4.5)
+assert.equal(hasSafeTextContrast('#ffffff', '#ffffff'), false)
+const whiteTokens = resolveA4ColorTokens({ templateId: 'classic', accent: '#ffffff', heading: '#10251a', body: '#1f2937', autoForeground: true })
+assert.equal(whiteTokens.tableHeader, '#ffffff')
+assert.equal(whiteTokens.tableHeaderForeground, '#111827')
+for (const marker of ['heading_color','body_color','auto_foreground','A4_LAYOUT_COLOR_DEFAULTS','hasSafeTextContrast']) assert.match(invoiceSettings + presentation + colourTokens, new RegExp(marker))
+
+// Fixture QR is deterministic, clearly non-production, and omitted for demo
+// and unavailable states. Runtime invoices still pass their authoritative QR.
+const firstPreviewQr = await createPreviewQrDataUrl('eligible_simplified')
+const secondPreviewQr = await createPreviewQrDataUrl('eligible_simplified')
+assert.equal(firstPreviewQr, secondPreviewQr)
+assert.match(firstPreviewQr ?? '', /^data:image\/png;base64,/)
+assert.equal(await createPreviewQrDataUrl('demo'), null)
+assert.equal(await createPreviewQrDataUrl('unavailable'), null)
+assert.match(previewQr, /KUBRI_PREVIEW_ONLY/)
+assert.match(invoiceSettings, /previewQrState === 'demo'/)
+assert.match(read('src/pages/invoices/InvoiceDetailPage.tsx'), /qrImageUrl: qrDataUrl/)
+
+// Letterhead source validation is byte-based and signature-aware. Images and
+// PDFs are decoded before crop derivatives are uploaded; originals are not
+// stored and multi-page/encrypted PDFs are rejected.
+for (const marker of ['file.size > LETTERHEAD_MAX_SOURCE_BYTES','isJpeg','isPng','isWebp','isPdf','file.slice\\(0, 16\\)','image.naturalWidth < 480','pdfDocument.numPages !== 1','pdf_encrypted','isEvalSupported: false','cropLetterheadRegion','canvas.toBlob']) assert.match(letterhead, new RegExp(marker))
+assert.doesNotMatch(letterhead, /file\.size\s*\/\s*1024\s*>\s*LETTERHEAD_MAX_SOURCE_BYTES/)
+assert.match(invoiceSettings, /setSaveError\(null\)[\s\S]*loadLetterheadSource/)
+assert.match(invoiceSettings, /fileName|LetterheadCropPanel/)
+assert.match(invoiceSettings, /invoiceArtworkObjectPath/)
+assert.match(invoiceSettings, /\.from\('invoice-artwork'\)\.upload/)
+assert.doesNotMatch(invoiceSettings, /\.from\('invoice-artwork'\)\.upload\([^)]*artworkSource/)
+
+// Private storage and path model cover insert/read/replace/remove while tenant,
+// branch, and anonymous isolation remain enforced by authenticated-only policy.
+assert.match(letterheadMigration, /'invoice-artwork',[\s\S]*FALSE,[\s\S]*8388608/)
+for (const operation of ['INSERT','SELECT','UPDATE','DELETE']) assert.match(letterheadMigration, new RegExp(`FOR ${operation} TO authenticated`))
+assert.match(letterheadMigration, /tenant\/\[0-9a-f-\]\{36\}\/branch/)
+assert.match(letterheadMigration, /public\.get_my_tenant_id\(\)/)
+assert.match(letterheadMigration, /public\.get_my_branch_id\(\)/)
+assert.match(letterheadMigration, /public\.get_my_role\(\)::TEXT = 'owner'/)
+assert.doesNotMatch(letterheadMigration, /TO anon|service_role/)
+assert.doesNotMatch(letterheadMigration, /UPDATE public\.(invoices|payments|products|pos_stock_movements|zatca_)/)
+assert.doesNotMatch(letterheadMigration, /^END$/m)
+
+// Every saved presentation field is serialized, normalized, admitted by the
+// migration, and carried into the shared document model used by detail, PDF,
+// POS, and reprint surfaces.
+for (const marker of ['footer_asset_path','footer_asset_enabled','footer_asset_fit','footer_asset_height','footer_asset_spacing','header_crop_top','header_crop_height','footer_crop_top','footer_crop_height','artwork_scope','artwork_template_id']) {
+  assert.match(presentation, new RegExp(marker))
+  assert.match(letterheadMigration, new RegExp(marker))
+  assert.match(read('src/lib/invoices/documentViewModel.ts'), new RegExp(marker.replace(/_([a-z])/g, (_, c) => c.toUpperCase()).replace('headerCropTop','headerAssetPath|headerAssetEnabled|headerAssetFit|headerAssetHeight|headerAssetSpacing').replace('headerCropHeight','headerAssetPath|headerAssetEnabled|headerAssetFit|headerAssetHeight|headerAssetSpacing').replace('footerCropTop','footerAssetPath|footerAssetEnabled|footerAssetFit|footerAssetHeight|footerAssetSpacing').replace('footerCropHeight','footerAssetPath|footerAssetEnabled|footerAssetFit|footerAssetHeight|footerAssetSpacing')))
+}
+assert.match(read('src/lib/invoices/runtimePresentation.ts'), /createSignedUrl\(assetPath, 10 \* 60\)/)
 
 const barcode = read('src/components/barcodes/BarcodeBatchPrintDrawer.tsx')
 const designer = read('src/components/barcodes/BarcodeLabelDesigner.tsx')

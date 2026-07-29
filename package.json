@@ -93,7 +93,8 @@
     "test:barcode-printing-ux": "node scripts/test-barcode-printing-ux.mjs",
     "test:dashboard-product-schema-compat": "node scripts/test-dashboard-product-schema-compat.mjs",
     "test:demo-tenant-safe-checkout": "node scripts/test-demo-tenant-safe-checkout.mjs",
-    "test:final-web-printing-refinements": "node --experimental-strip-types scripts/test-final-web-printing-refinements.mjs"
+    "test:final-web-printing-refinements": "node --experimental-strip-types scripts/test-final-web-printing-refinements.mjs",
+    "test:a4-artwork-rls": "node scripts/test-a4-artwork-rls-runtime.mjs"
   },
   "build": {
     "appId": "com.kubri.pos",
@@ -159,6 +160,7 @@
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "lucide-react": "^1.14.0",
+    "pdfjs-dist": "^4.10.38",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

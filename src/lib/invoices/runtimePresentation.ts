@@ -20,6 +20,19 @@ export function resolveInvoiceLogoUrl(assetPath: string | null | undefined): str
   }
 }
 
+/** Resolve private, branch-scoped letterhead derivatives for authenticated rendering. */
+export async function resolveInvoiceArtworkUrl(assetPath: string | null | undefined): Promise<string | null> {
+  if (!assetPath) return null
+  if (/^(?:https?:|data:|blob:)/i.test(assetPath)) return assetPath
+  if (assetPath.startsWith('invoice-branding/')) return resolveInvoiceLogoUrl(assetPath)
+  try {
+    const { data, error } = await supabase.storage.from('invoice-artwork').createSignedUrl(assetPath, 10 * 60)
+    return error ? null : data.signedUrl || null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Single runtime presentation resolver for stored invoices and POS output.
  * The branch row is the source of legacy defaults and, when present, the saved

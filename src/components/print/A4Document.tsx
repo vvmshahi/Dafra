@@ -1,10 +1,11 @@
-import type { CSSProperties, ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { documentFontFamily, documentLabel, documentLabelLines, documentNames, documentPaymentLabel } from '@/localization/documents'
 import { formatDocumentMoney, formatDocumentQuantity, type DocumentViewModel } from '@/lib/invoices/documentViewModel'
-import { resolveA4Template } from '@/lib/invoices/a4TemplateRegistry'
+import { A4_TEMPLATE_REGISTRY, resolveA4Template, type A4TemplateRendererId } from '@/lib/invoices/a4TemplateRegistry'
 import { RiyalSymbol } from '@/components/ui/RiyalSymbol'
 import { buildVisibleTotals } from '@/lib/invoices/visibleTotals'
-import { resolveInvoiceLogoUrl } from '@/lib/invoices/runtimePresentation'
+import { resolveInvoiceArtworkUrl } from '@/lib/invoices/runtimePresentation'
+import { resolveA4ColorTokens } from '@/lib/invoices/a4ColorTokens'
 
 export interface A4RenderOptions {
   readonly id?: string
@@ -14,6 +15,8 @@ export interface A4RenderOptions {
   readonly qrImageUrl?: string | null
   readonly sampleLabel?: string | null
   readonly nonFiscalDemo?: boolean
+  readonly headerArtworkUrl?: string | null
+  readonly footerArtworkUrl?: string | null
 }
 
 export interface A4DocumentProps { readonly model: DocumentViewModel; readonly options?: A4RenderOptions }
@@ -67,29 +70,79 @@ function QrVerification({ model, options }: { model: DocumentViewModel; options:
 function Footer({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { const footer = [model.presentation.footer.thankYouVisible ? model.presentation.footer.thankYou : null, model.presentation.footer.footerVisible ? model.presentation.footer.footer : null, model.presentation.footer.refundVisible ? model.presentation.footer.refund : null].filter(Boolean); return <footer className="a4-footer">{footer.length > 0 && <><div className="a4-footer-divider" aria-hidden="true" /><div className={`a4-footer-copy ${model.presentation.footer.bold || footer.length > 0 ? 'font-bold' : ''}`}>{footer.map((line, index) => <div key={`${line}-${index}`} dir="auto">{line}</div>)}</div></>}{options.pageNumbers && <span className="a4-page-number" />}</footer> }
 function DocumentTitle({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { const credit = model.identity.kind === 'credit_note'; const debit = model.identity.kind === 'debit_note'; const key = credit ? (model.identity.invoiceType === 'standard' ? 'taxCreditNote' : 'simplifiedTaxCreditNote') : debit ? (model.identity.invoiceType === 'standard' ? 'taxDebitNote' : 'simplifiedTaxDebitNote') : (model.identity.invoiceType === 'standard' ? 'standardTaxInvoice' : 'simplifiedTaxInvoice'); const lines = options.nonFiscalDemo ? ['DEMO — NOT A TAX INVOICE', 'تجريبي — ليست فاتورة ضريبية'] : documentLabelLines(model.identity.language, key); return <section className="a4-document-title">{lines.map((line, index) => <div key={`${line}-${index}`} className={index === 0 ? 'a4-document-title__main' : 'a4-document-title__sub'} dir="auto">{line}</div>)}</section> }
 function Adjustment({ model }: { model: DocumentViewModel }) { const credit = model.identity.kind === 'credit_note'; const debit = model.identity.kind === 'debit_note'; if (!credit && !debit) return null; return <section className={`a4-credit ${debit ? 'a4-debit' : ''}`}><strong>{documentLabel(model.identity.language, debit ? 'debitNoteReference' : 'creditNoteReference')}</strong>{model.compliance.originalDocument.number && <span>{documentLabel(model.identity.language, 'originalInvoice')}: <bdi dir="ltr">{model.compliance.originalDocument.number}</bdi></span>}{model.compliance.creditReason && <span>{documentLabel(model.identity.language, 'reason')}: <span dir="auto">{model.compliance.creditReason}</span></span>}</section> }
+function useArtworkUrl(path: string | null, override: string | null | undefined) {
+  const [url, setUrl] = useState<string | null>(override ?? (/^(?:data:|blob:|https?:)/i.test(path ?? '') ? path : null))
+  useEffect(() => {
+    let active = true
+    if (override !== undefined) {
+      setUrl(override)
+      return () => { active = false }
+    }
+    void resolveInvoiceArtworkUrl(path).then(next => { if (active) setUrl(next) })
+    return () => { active = false }
+  }, [path, override])
+  return url
+}
+
 function Shell({ template, model, options, children }: { template: string; model: DocumentViewModel; options: A4RenderOptions; children: ReactNode }) {
-  const artwork = model.template.headerAssetEnabled ? resolveInvoiceLogoUrl(model.template.headerAssetPath) : null
+  const artworkApplies = model.template.artworkScope === 'all' || model.template.artworkTemplateId === model.template.resolvedId
+  const headerArtwork = useArtworkUrl(artworkApplies && model.template.headerAssetEnabled ? model.template.headerAssetPath : null, options.headerArtworkUrl)
+  const footerArtwork = useArtworkUrl(artworkApplies && model.template.footerAssetEnabled ? model.template.footerAssetPath : null, options.footerArtworkUrl)
+  const tokens = resolveA4ColorTokens({
+    templateId: resolveA4Template(model).resolvedId,
+    accent: model.template.accentColor,
+    heading: model.template.headingColor,
+    body: model.template.bodyColor,
+    autoForeground: model.template.autoForeground,
+  })
   return <article
     className={`a4-document a4-document--${template} a4-header--${resolveA4Template(model).headerStyle}`}
     dir={model.identity.direction}
     lang={model.identity.language === 'both' ? undefined : model.identity.language}
-    style={{ '--a4-accent': model.template.accentColor, '--a4-on-accent': contrastForeground(model.template.accentColor), '--a4-header-height': `${model.template.headerAssetHeight}mm`, '--a4-header-spacing': `${model.template.headerAssetSpacing}mm` } as CSSProperties}
-  >{options.sampleLabel && <div className="a4-sample">{options.sampleLabel}</div>}{artwork && <div className="a4-header-artwork"><img src={artwork} alt="" style={{ objectFit: model.template.headerAssetFit }} onError={event => { event.currentTarget.parentElement!.style.display = 'none' }} /></div>}{children}</article>
+    style={{
+      '--a4-accent': tokens.accent,
+      '--a4-on-accent': tokens.accentForeground,
+      '--a4-heading': tokens.heading,
+      '--a4-body': tokens.body,
+      '--a4-muted': tokens.muted,
+      '--a4-border': tokens.border,
+      '--a4-surface': tokens.surfaceTint,
+      '--a4-table-head': tokens.tableHeader,
+      '--a4-table-head-fg': tokens.tableHeaderForeground,
+      '--a4-total-surface': tokens.totalSurface,
+      '--a4-total-fg': tokens.totalForeground,
+      '--a4-header-height': `${model.template.headerAssetHeight}mm`,
+      '--a4-header-spacing': `${model.template.headerAssetSpacing}mm`,
+      '--a4-footer-height': `${model.template.footerAssetHeight}mm`,
+      '--a4-footer-spacing': `${model.template.footerAssetSpacing}mm`,
+    } as CSSProperties}
+  >
+    {options.sampleLabel && <div className="a4-sample">{options.sampleLabel}</div>}
+    {headerArtwork && <div className="a4-header-artwork"><img src={headerArtwork} alt="" style={{ objectFit: model.template.headerAssetFit }} onError={event => { event.currentTarget.parentElement!.style.display = 'none' }} /></div>}
+    {children}
+    {footerArtwork && <div className="a4-footer-artwork"><img src={footerArtwork} alt="" style={{ objectFit: model.template.footerAssetFit }} onError={event => { event.currentTarget.parentElement!.style.display = 'none' }} /></div>}
+  </article>
 }
 
-function contrastForeground(hex: string) {
-  const value = hex.replace('#', '')
-  const [r, g, b] = [0, 2, 4].map(index => Number.parseInt(value.slice(index, index + 2), 16) / 255)
-  const luminance = [r, g, b].map(channel => channel <= .03928 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4).reduce((sum, channel, index) => sum + channel * [.2126, .7152, .0722][index], 0)
-  const whiteContrast = 1.05 / (luminance + .05)
-  return whiteContrast >= 4.5 ? '#ffffff' : '#111827'
+function ClassicV1({ model, options }: A4DocumentProps) { return <Shell template="classic" model={model} options={options ?? {}}><header className="a4-classic-head"><SellerBrand model={model} /><div><DocumentTitle model={model} options={options ?? {}} /><DateMeta model={model} /></div></header><div className="a4-classic-parties"><Seller model={model} /><Buyer model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-classic-summary"><QrVerification model={model} options={options ?? {}} /><Payment model={model} /><Totals model={model} /></div><Footer model={model} options={options ?? {}} /></Shell> }
+function ModernStatementV1({ model, options }: A4DocumentProps) { return <Shell template="modern_split" model={model} options={options ?? {}}><header className="a4-statement-head"><section className="a4-statement-identity"><SellerBrand model={model} /></section><section className="a4-statement-summary"><div><DocumentTitle model={model} options={options ?? {}} /><DateMeta model={model} /><strong className="a4-statement-total"><Money value={model.totals.total} model={model} /></strong></div><QrVerification model={model} options={options ?? {}} /></section></header><div className="a4-statement-parties"><Seller model={model} /><Buyer model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-statement-lower"><Payment model={model} /><Totals model={model} /></div><Footer model={model} options={options ?? {}} /></Shell> }
+function MinimalProfessionalV1({ model, options }: A4DocumentProps) { return <Shell template="minimal_professional" model={model} options={options ?? {}}><header className="a4-minimal-head"><SellerBrand model={model} /><DocumentTitle model={model} options={options ?? {}} /></header><div className="a4-minimal-parties"><Seller model={model} /><Buyer model={model} /><DateMeta model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-minimal-total"><Totals model={model} /></div><div className="a4-minimal-foot"><Payment model={model} /><QrVerification model={model} options={options ?? {}} /></div><Footer model={model} options={options ?? {}} /></Shell> }
+function ExecutiveFrameV1({ model, options }: A4DocumentProps) { return <Shell template="executive_green" model={model} options={options ?? {}}><header className="a4-executive-band"><section><SellerBrand model={model} /></section><section className="a4-executive-document"><DocumentTitle model={model} options={options ?? {}} /><QrVerification model={model} options={options ?? {}} /></section></header><section className="a4-executive-meta"><DateMeta model={model} /></section><div className="a4-executive-parties"><Seller model={model} /><Buyer model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-executive-lower"><Payment model={model} /><Totals model={model} /></div><Footer model={model} options={options ?? {}} /></Shell> }
+function AccountingLedgerV1({ model, options }: A4DocumentProps) { return <Shell template="clean_ledger" model={model} options={options ?? {}}><header className="a4-ledger-head"><SellerBrand model={model} /><DocumentTitle model={model} options={options ?? {}} /><DateMeta model={model} /></header><div className="a4-ledger-parties"><Seller model={model} /><Buyer model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-ledger-summary"><Payment model={model} /><Totals model={model} /></div><div className="a4-ledger-verification"><QrVerification model={model} options={options ?? {}} /><section className="a4-ledger-note"><Footer model={model} options={options ?? {}} /></section></div></Shell> }
+function ContemporaryModularV1({ model, options }: A4DocumentProps) { return <Shell template="contemporary_border" model={model} options={options ?? {}}><header className="a4-modular-head"><SellerBrand model={model} /><section className="a4-modular-document"><DocumentTitle model={model} options={options ?? {}} /><DateMeta model={model} /></section></header><div className="a4-modular-cards"><Seller model={model} /><Buyer model={model} /></div><Adjustment model={model} /><section className="a4-modular-table"><ItemTable model={model} /></section><div className="a4-modular-bottom"><section className="a4-modular-payment"><Payment model={model} /></section><section className="a4-modular-total"><Totals model={model} /></section><section className="a4-modular-verification"><QrVerification model={model} options={options ?? {}} /></section></div><Footer model={model} options={options ?? {}} /></Shell> }
+
+const RENDERERS: Record<A4TemplateRendererId, (props: A4DocumentProps) => ReactNode> = {
+  classic_v1: ClassicV1,
+  modern_statement_v1: ModernStatementV1,
+  minimal_professional_v1: MinimalProfessionalV1,
+  executive_frame_v1: ExecutiveFrameV1,
+  accounting_ledger_v1: AccountingLedgerV1,
+  contemporary_modular_v1: ContemporaryModularV1,
 }
 
-function ClassicV1({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { return <Shell template="classic" model={model} options={options}><header className="a4-classic-head"><Seller model={model} /><div><DocumentTitle model={model} options={options} /><DateMeta model={model} /></div></header><Buyer model={model} /><Adjustment model={model} /><ItemTable model={model} /><div className="a4-classic-summary"><QrVerification model={model} options={options} /><Payment model={model} /><Totals model={model} /></div><Footer model={model} options={options} /></Shell> }
-function ModernSplitV1({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { return <Shell template="modern_split" model={model} options={options}><div className="a4-split-shell"><aside className="a4-split-rail"><Seller model={model} /><DocumentTitle model={model} options={options} /><DateMeta model={model} /><QrVerification model={model} options={options} /></aside><main className="a4-split-body"><Buyer model={model} /><Adjustment model={model} /><ItemTable model={model} /><Totals model={model} /><Payment model={model} /><Footer model={model} options={options} /></main></div></Shell> }
-function MinimalProfessionalV1({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { return <Shell template="minimal_professional" model={model} options={options}><header className="a4-minimal-head"><Seller model={model} /><DocumentTitle model={model} options={options} /></header><div className="a4-minimal-parties"><Buyer model={model} /><DateMeta model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-minimal-total"><Totals model={model} /></div><div className="a4-minimal-foot"><DateMeta model={model} /><QrVerification model={model} options={options} /><Payment model={model} /></div><Footer model={model} options={options} /></Shell> }
-function ExecutiveGreenV1({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { return <Shell template="executive_green" model={model} options={options}><header className="a4-executive-band"><SellerBrand model={model} /><DocumentTitle model={model} options={options} /></header><section className="a4-executive-summary"><QrVerification model={model} options={options} /><DateMeta model={model} /><div className="a4-executive-grand"><span>{documentLabel(model.identity.language, 'totalIncludingVat')}</span><Money value={model.totals.total} model={model} /></div></section><div className="a4-executive-parties"><Seller model={model} /><Buyer model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-executive-lower"><Totals model={model} /><Payment model={model} /></div><Footer model={model} options={options} /></Shell> }
-function CleanLedgerV1({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { return <Shell template="clean_ledger" model={model} options={options}><header className="a4-ledger-head"><DocumentTitle model={model} options={options} /><DateMeta model={model} /></header><div className="a4-ledger-parties"><Seller model={model} /><Buyer model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-ledger-summary"><Payment model={model} /><Totals model={model} /></div><div className="a4-ledger-verification"><QrVerification model={model} options={options} /><DateMeta model={model} /><Footer model={model} options={options} /></div></Shell> }
-function ContemporaryBorderV1({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { return <Shell template="contemporary_border" model={model} options={options}><header className="a4-frame-title"><DocumentTitle model={model} options={options} /></header><div className="a4-frame-cards"><Seller model={model} /><Buyer model={model} /><DateMeta model={model} /></div><Adjustment model={model} /><section className="a4-frame-table"><ItemTable model={model} /></section><div className="a4-frame-bottom"><section><Totals model={model} /></section><section><QrVerification model={model} options={options} /><Payment model={model} /></section></div><Footer model={model} options={options} /></Shell> }
-
-export default function A4Document({ model, options = {} }: A4DocumentProps) { const resolved = resolveA4Template(model); const Template = resolved.renderer === 'modern_split_v1' ? ModernSplitV1 : resolved.renderer === 'minimal_professional_v1' ? MinimalProfessionalV1 : resolved.renderer === 'executive_green_v1' ? ExecutiveGreenV1 : resolved.renderer === 'clean_ledger_v1' ? CleanLedgerV1 : resolved.renderer === 'contemporary_border_v1' ? ContemporaryBorderV1 : ClassicV1; const target = options.pdfMode ? 'pdf' : options.preview ? 'preview' : 'print'; return <div id={options.id ?? 'a4-document'} className={`a4-document-frame ${options.preview ? '' : 'a4-document-frame--print-only'}`} data-render-target={target} data-template-requested={`${resolved.requestedId}@${resolved.requestedVersion}`} data-template-resolved={`${resolved.resolvedId}@${resolved.resolvedVersion}`} style={{ fontFamily: documentFontFamily(model.identity.language) }}><Template model={model} options={options} /></div> }
+export default function A4Document({ model, options = {} }: A4DocumentProps) {
+  const resolved = resolveA4Template(model)
+  const Template = RENDERERS[resolved.renderer] ?? RENDERERS[A4_TEMPLATE_REGISTRY.classic.renderer]
+  const target = options.pdfMode ? 'pdf' : options.preview ? 'preview' : 'print'
+  return <div id={options.id ?? 'a4-document'} className={`a4-document-frame ${options.preview ? '' : 'a4-document-frame--print-only'}`} data-render-target={target} data-template-requested={`${resolved.requestedId}@${resolved.requestedVersion}`} data-template-resolved={`${resolved.resolvedId}@${resolved.resolvedVersion}`} data-layout-landmarks={A4_TEMPLATE_REGISTRY[resolved.resolvedId].landmarks.join(' ')} data-qr-region={A4_TEMPLATE_REGISTRY[resolved.resolvedId].qrRegion} style={{ fontFamily: documentFontFamily(model.identity.language) }}><Template model={model} options={options} /></div>
+}
