@@ -129,6 +129,16 @@ function CompactItems({ receipt }: { receipt: ReceiptComposition }) {
   </article>)}</section>
 }
 
+function ClassicItems({ receipt }: { receipt: ReceiptComposition }) {
+  const { model } = receipt
+  const is58 = model.presentation.thermal.width === '58mm'
+  return <section className={`thermal-items thermal-classic-lines ${is58 ? 'thermal-items--stacked' : 'thermal-items--wide'}`}>{model.items.map((item, index) => <article className="thermal-item thermal-classic-line" key={`${item.description}-${index}`}>
+    <div className={`thermal-item-name ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>{names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}</div>
+    <div className="thermal-item-values"><span><QuantityWithUnit quantity={item.quantity} item={item} model={model} /> <span aria-hidden="true">×</span> <Money value={item.unitPrice} model={model} /></span><span><Money value={item.lineTotal} model={model} /></span></div>
+    <ItemFiscalDetail receipt={receipt} item={item} />
+  </article>)}</section>
+}
+
 function StructuredItems({ receipt }: { receipt: ReceiptComposition }) {
   const { model } = receipt
   return <section className="thermal-items thermal-structured-lines">{model.items.map((item, index) => <article className="thermal-item thermal-structured-line" key={`${item.description}-${index}`}>
@@ -179,6 +189,25 @@ function FooterCopy({ receipt }: { receipt: ReceiptComposition }) {
   return <div className={`thermal-footer-copy ${receipt.model.presentation.footer.bold ? 'font-bold' : ''}`} style={{ fontSize: 'calc(var(--thermal-small) + 1px)', textAlign: 'center' }}>{receipt.optionalFooter.map((line, index) => <div key={`${line}-${index}`} dir="auto">{line}</div>)}</div>
 }
 
+/** The pre-78c6f31 receipt composition, retained for temporary comparison. */
+export function ClassicReceipt({ receipt }: { receipt: ReceiptComposition }) {
+  return <>
+    <ReceiptLogo receipt={receipt} />
+    <header className="thermal-header thermal-classic-header"><DisplayIdentity receipt={receipt} /><LegalSeller receipt={receipt} contact /></header>
+    <Rule />
+    <ReceiptTitle receipt={receipt} />
+    <ReceiptMetadata receipt={receipt} />
+    <ReceiptBuyer receipt={receipt} />
+    <Rule />
+    <ClassicItems receipt={receipt} />
+    <Rule />
+    <Totals receipt={receipt} />
+    <Rule />
+    <Payments receipt={receipt} />
+    <footer className="thermal-footer thermal-classic-footer"><Verification receipt={receipt} /><FooterCopy receipt={receipt} /></footer>
+  </>
+}
+
 export function CompactRetailReceipt({ receipt }: { receipt: ReceiptComposition }) {
   return <>
     <header className="thermal-header thermal-compact-masthead"><ReceiptLogo receipt={receipt} /><DisplayIdentity receipt={receipt} /><LegalSeller receipt={receipt} /></header>
@@ -217,6 +246,7 @@ export function BrandedModernReceipt({ receipt }: { receipt: ReceiptComposition 
 }
 
 const THERMAL_LAYOUT_RENDERERS = {
+  classic: ClassicReceipt,
   compact: CompactRetailReceipt,
   standard: StructuredDetailReceipt,
   detailed: BrandedModernReceipt,

@@ -16,10 +16,11 @@ try {
     server.ssrLoadModule('/src/lib/invoices/presentationSettings.ts'),
   ])
   const { default: ThermalReceipt, THERMAL_RECEIPT_LAYOUTS } = thermalModule
-  assert.deepEqual(Object.keys(THERMAL_RECEIPT_LAYOUTS), ['compact', 'standard', 'detailed'])
-  assert.equal(new Set(Object.values(THERMAL_RECEIPT_LAYOUTS).map(layout => layout.id)).size, 3)
+  assert.deepEqual(Object.keys(THERMAL_RECEIPT_LAYOUTS), ['classic', 'compact', 'standard', 'detailed'])
+  assert.equal(new Set(Object.values(THERMAL_RECEIPT_LAYOUTS).map(layout => layout.id)).size, 4)
 
   const layouts = [
+    { storedId: 'classic', publicId: 'classic', landmark: 'thermal-classic-line' },
     { storedId: 'compact', publicId: 'compact-retail', landmark: 'thermal-compact-line' },
     { storedId: 'standard', publicId: 'structured-detail', landmark: 'thermal-structured-line__figures' },
     { storedId: 'detailed', publicId: 'branded-modern', landmark: 'thermal-branded-card__head' },
@@ -124,11 +125,11 @@ try {
     }
   }
 
-  assert.equal(rendered.length, 36)
-  assert.equal(new Set(rendered.map(result => result.layout)).size, 3)
+  assert.equal(rendered.length, 48)
+  assert.equal(new Set(rendered.map(result => result.layout)).size, 4)
   assert.equal(new Set(rendered.map(result => result.width)).size, 2)
-  assert.equal(new Set(layouts.map(layout => layout.landmark)).size, 3)
-  console.log('Thermal receipt runtime matrix passed (36 actual SSR renders: 3 structures × 2 widths × 6 typed fixture scenarios).')
+  assert.equal(new Set(layouts.map(layout => layout.landmark)).size, 4)
+  console.log('Thermal receipt runtime matrix passed (48 actual SSR renders: 4 structures × 2 widths × 6 typed fixture scenarios).')
 } finally {
   await server.close()
 }

@@ -860,7 +860,7 @@ export interface Branch {
   invoice_display_subheading: string | null
   show_company_display_name: boolean
   show_branch_display_name: boolean
-  thermal_density: 'compact' | 'standard' | 'detailed'
+  thermal_density: 'classic' | 'compact' | 'standard' | 'detailed'
   a4_template_id: string
   document_template_version: number
   logo_asset_version: number
@@ -1266,7 +1266,7 @@ export interface InvoiceIdentitySnapshotV1 {
 
 export type LogoAssetSize = 'small' | 'medium' | 'large'
 export type ThermalWidth = '58mm' | '80mm'
-export type ThermalDensity = 'compact' | 'standard' | 'detailed'
+export type ThermalDensity = 'classic' | 'compact' | 'standard' | 'detailed'
 export type QrSize = 'small' | 'standard' | 'large'
 export type QrAlignment = 'left' | 'center' | 'right'
 export type A4TemplateId =
