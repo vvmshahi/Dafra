@@ -14,7 +14,7 @@
   "date": "Date",
   "supplyDate": "Supply Date",
   "time": "Time",
-  "seller": "Seller",
+  "seller": "Bill From",
   "buyer": "Buyer",
   "customer": "Customer",
   "sellerVatNumber": "Seller VAT Number",

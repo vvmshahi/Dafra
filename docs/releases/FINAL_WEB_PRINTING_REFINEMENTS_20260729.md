@@ -163,10 +163,22 @@ no such compatibility is claimed here.
 
 The Invoices workspace now uses compact primary and secondary segmented
 navigation, a two-pane editor with a bounded sticky preview, page-fit and zoom
-controls, and a persistent save/reset status bar. The six layouts are labelled
+controls (including fit-page and fit-width), and a persistent save/reset status
+bar. The primary navigation, document section navigation, and actions remain
+visible while only the configuration/preview canvas scrolls. The six layouts are labelled
 Classic Business, Modern Split Panel, Minimal Editorial, Executive Frame,
 Accounting Ledger, and Contemporary Cards; each retains its distinct document
 composition and QR placement.
+
+Classic Business uses a conventional identity/title split with QR at lower
+left and totals at lower right. Modern Split Panel uses an asymmetric branded
+side rail with its verification block in the rail. Minimal Editorial uses
+typographic rules, generous whitespace, and a centred footer QR. Executive
+Frame places QR in its upper information frame. Accounting Ledger uses dense
+party and numeric grids with a lower verification row. Contemporary Cards uses
+separate party, metadata, total, and bottom verification cards. Party headings
+use Bill From/Bill To (صادرة من/صادرة إلى) while retaining every authoritative
+seller and buyer field.
 
 A branch may now save an A4 accent colour independently from its layout, using
 ten presets or a validated custom hex value. Contrast-safe foreground colour is
@@ -180,3 +192,12 @@ Migration `20260729000600_extend_a4_invoice_branding.sql` extends only the
 strict presentation validator and existing branch-assets insert policy for
 immutable header images. It does not change invoice issuance, fiscal data,
 customer data, QR payload generation, ZATCA behavior, or production rows.
+
+Design research covered ZATCA’s current e-invoice specifications and QR
+requirements, W3C paged-media and fragmentation guidance, WCAG contrast
+guidance, and reputable accounting invoice examples. The applied principles
+are a fixed A4 page box, repeated table headers, non-splitting rows and summary
+blocks, a white QR quiet zone, explicit seller/buyer hierarchy, tabular numeric
+alignment, low-ink colour use, and contrast-safe accent foregrounds. PDF header
+upload remains deferred because the web application has no authoritative
+server-side PDF rasterisation path; PNG, JPEG, and WebP are supported.

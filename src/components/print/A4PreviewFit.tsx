@@ -3,11 +3,11 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 const PAGE_WIDTH = 794
 const PAGE_HEIGHT = 1123
 
-export type A4PreviewZoom = 'fit' | 0.75 | 1 | 1.25
+export type A4PreviewZoom = 'fit' | 'page' | 'width' | 0.75 | 1 | 1.25
 
 export default function A4PreviewFit({
   children,
-  zoom = 'fit',
+  zoom = 'page',
   bounded = false,
 }: {
   children: ReactNode
@@ -15,21 +15,23 @@ export default function A4PreviewFit({
   bounded?: boolean
 }) {
   const viewportRef = useRef<HTMLDivElement>(null)
-  const [fitScale, setFitScale] = useState(1)
+  const [pageScale, setPageScale] = useState(1)
+  const [widthScale, setWidthScale] = useState(1)
   useEffect(() => {
     const viewport = viewportRef.current
     if (!viewport) return
     const measure = () => {
       const width = Math.max(1, viewport.clientWidth - 24)
       const height = Math.max(1, viewport.clientHeight - 24)
-      setFitScale(Math.min(1, width / PAGE_WIDTH, height / PAGE_HEIGHT))
+      setWidthScale(Math.min(1, width / PAGE_WIDTH))
+      setPageScale(Math.min(1, width / PAGE_WIDTH, height / PAGE_HEIGHT))
     }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(viewport)
     return () => observer.disconnect()
   }, [])
-  const scale = zoom === 'fit' ? fitScale : zoom
+  const scale = zoom === 'page' || zoom === 'fit' ? pageScale : zoom === 'width' ? widthScale : zoom
   return (
     <div
       ref={viewportRef}

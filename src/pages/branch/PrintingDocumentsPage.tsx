@@ -67,14 +67,14 @@ export default function PrintingDocumentsPage() {
     setSearchParams(next)
   }
 
-  return <div className="mx-auto max-w-[1440px] space-y-3 pb-20">
-    <header className="border-b border-gray-200 pb-3">
+  return <div className="printing-workspace-shell mx-auto flex max-w-[1440px] flex-col overflow-hidden">
+    <header className="shrink-0 border-b border-gray-200 pb-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">{t('workspace.eyebrow')}</p>
       <h1 className="mt-0.5 text-xl font-bold text-gray-950">{t('workspace.title')}</h1>
       <p className="mt-0.5 max-w-2xl text-xs leading-5 text-gray-500">{t('workspace.subtitle')}</p>
     </header>
 
-    <nav className="sticky top-0 z-30 inline-flex max-w-full gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white/95 p-1 shadow-sm backdrop-blur" role="tablist" aria-label={t('workspace.title')}>
+    <nav className="mt-3 inline-flex w-fit max-w-full shrink-0 gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1 shadow-sm" role="tablist" aria-label={t('workspace.title')}>
       {tabs.map((tab, index) => {
         const Icon = tab.icon
         const selected = active === tab.id
@@ -107,7 +107,7 @@ export default function PrintingDocumentsPage() {
       })}
     </nav>
 
-    <main id={`printing-panel-${active}`} role="tabpanel" aria-labelledby={`printing-tab-${active}`}>
+    <main className="mt-3 min-h-0 flex-1 overflow-y-auto overscroll-contain pe-1" id={`printing-panel-${active}`} role="tabpanel" aria-labelledby={`printing-tab-${active}`}>
     {active === 'receipts' && <InvoiceSettingsPage key="receipts" embedded workspace="receipts" />}
     {active === 'invoices' && <InvoiceSettingsPage key="invoices" embedded workspace="invoices" />}
     {active === 'barcodeLabels' && branchId && <div className="space-y-8">
