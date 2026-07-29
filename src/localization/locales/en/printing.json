@@ -166,13 +166,14 @@
       "help": "Start with a friendly preset. You can adjust it without changing the built-in design."
     },
     "presets": {
-      "compact_sticker": { "name": "Compact Sticker" },
-      "standard_product": { "name": "Standard Product Sticker" },
-      "detailed_product": { "name": "Detailed Product Sticker" },
-      "carton_label": { "name": "Carton Label" },
+      "compact_sticker": { "name": "Compact Price", "use": "Small products and shelf labels" },
+      "standard_product": { "name": "Standard Product", "use": "Balanced everyday retail label" },
+      "detailed_product": { "name": "Detailed Product", "use": "More identity and product detail" },
+      "carton_label": { "name": "Carton", "use": "Large packages and warehouse units" },
       "a4_sheet": { "name": "A4 Sticker Sheet", "dimensions": "Grid-based A4 layout" },
       "custom": { "name": "Custom" }
     },
+    "size": { "title": "Size", "help": "Choose a practical size for this layout." },
     "templates": {
       "title": "Label design",
       "compact": "Compact",
@@ -191,6 +192,9 @@
       "businessName": "Business name",
       "barcodeValue": "Barcode number",
       "printDate": "Print date",
+      "barcodeGraphic": "Barcode graphic",
+      "secondaryName": "Secondary language name",
+      "required": "Required",
       "barcodeAlwaysIncluded": "The barcode graphic cannot be hidden."
     },
     "output": {
@@ -201,8 +205,8 @@
     },
     "orientation": { "portrait": "Portrait", "landscape": "Landscape" },
     "alignment": { "start": "Follow the text direction", "center": "Centre" },
-    "priceStyle": { "normal": "Normal", "large": "Large and prominent" },
-    "nameSize": { "small": "Small", "normal": "Normal", "large": "Large" },
+    "priceStyle": { "normal": "Normal", "large": "Large and prominent", "strong": "Strong" },
+    "nameSize": { "small": "Small", "normal": "Normal", "medium": "Medium", "large": "Large" },
     "units": { "mm": "mm" },
     "a4": {
       "orientation": "Sheet orientation",
@@ -232,7 +236,12 @@
     },
     "appearance": {
       "title": "Appearance",
-      "barcodeSize": "Barcode size"
+      "barcodeSize": "Barcode scale",
+      "textSize": "Text size",
+      "priceEmphasis": "Price emphasis",
+      "alignment": "Text alignment",
+      "standard": "Standard",
+      "large": "Large"
     },
     "preview": {
       "title": "Live label preview",
@@ -245,6 +254,7 @@
       "sampleUnit": "Carton · 12 pieces",
       "samplePrice": "SAR 84.00",
       "pageSummary": "{{labels}} labels · {{pages}} pages · {{final}} on the last page",
+      "safeBoundary": "Safe print boundary and barcode quiet zone shown",
       "fits": "Fits selected page",
       "doesNotFit": "Does not fit",
       "fitStatus": {
@@ -278,7 +288,7 @@
       "restoreBranchDefault": "Restore branch default"
     },
     "settings": {
-      "title": "Branch label default",
+      "title": "Barcode labels",
       "scopeLabel": "Branch default label design",
       "help": "This design is shared by label printing in this branch. Printer alignment remains specific to each device.",
       "branchDefaultSaved": "Branch default saved",

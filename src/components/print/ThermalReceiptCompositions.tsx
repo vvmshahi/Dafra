@@ -69,7 +69,6 @@ function LegalSeller({ receipt, contact = false }: { receipt: ReceiptComposition
   const { seller, presentation, identity } = model
   const presentationAddress = presentation.contact.address
   return <section className="thermal-legal-info">
-    <div className="thermal-section-label">{documentLabel(identity.language, 'seller')}</div>
     {names(model, seller.registeredName, seller.registeredNameAr).map((name, index) => <div key={`${name}-${index}`} className="thermal-legal-supplier" dir="auto">{name}</div>)}
     {seller.registeredAddress && <div className="thermal-address" dir="auto">{seller.registeredAddress}</div>}
     {seller.vatNumber && <div>{documentLabel(identity.language, 'vatNumber')}: <bdi dir="ltr">{seller.vatNumber}</bdi></div>}
@@ -99,6 +98,7 @@ function ReceiptMetadata({ receipt }: { receipt: ReceiptComposition }) {
 function ReceiptBuyer({ receipt, detailed = false }: { receipt: ReceiptComposition; detailed?: boolean }) {
   const { model, mandatoryBuyer } = receipt
   const { buyer, identity } = model
+  if (buyer.isWalkIn) return null
   if (!mandatoryBuyer && !buyer.name) return null
   return <section className="thermal-buyer">
     <div className="thermal-section-label">{documentLabel(identity.language, 'customer')}</div>

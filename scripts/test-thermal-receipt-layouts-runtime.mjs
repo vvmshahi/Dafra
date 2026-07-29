@@ -110,6 +110,8 @@ try {
         assert.match(markup, new RegExp(`thermal-receipt--${width}`))
         assert.match(markup, new RegExp(layout.landmark))
         assert.match(markup, /300000000000003/)
+        assert.doesNotMatch(markup, /Bill From|صادرة من|>From</)
+        assert.doesNotMatch(markup, /thermal-legal-info[\s\S]{0,120}thermal-section-label/)
         assert.match(markup, /SAMPLE-/)
         assert.match(markup, /thermal-totals/)
         assert.match(markup, /thermal-payments/)
@@ -120,6 +122,55 @@ try {
         if (fixtureCase.qr !== 'eligible') assert.doesNotMatch(markup, /class="thermal-qr"/)
         if (fixtureCase.qr === 'demo') assert.match(markup, /DEMO — NOT A TAX INVOICE/)
         if (isCredit) assert.match(markup, /SAMPLE-CN-0042/)
+
+        const walkInMarkup = renderToStaticMarkup(createElement(ThermalReceipt, {
+          model: {
+            ...model,
+            buyer: {
+              ...model.buyer,
+              name: 'Walk-in Customer',
+              nameAr: 'عميل نقدي',
+              isWalkIn: true,
+            },
+          },
+          options: { preview: true, nonFiscalDemo: fixtureCase.qr === 'demo' },
+        }))
+        assert.doesNotMatch(walkInMarkup, /thermal-buyer|Walk-in Customer|عميل نقدي/)
+
+        const individualMarkup = renderToStaticMarkup(createElement(ThermalReceipt, {
+          model: {
+            ...model,
+            buyer: {
+              ...model.buyer,
+              name: 'Selected Individual',
+              nameAr: 'عميل فرد محدد',
+              vatNumber: null,
+              type: 'individual',
+              isWalkIn: false,
+            },
+          },
+          options: { preview: true },
+        }))
+        assert.match(individualMarkup, /thermal-buyer/)
+        assert.match(individualMarkup, /Selected Individual|عميل فرد محدد/)
+
+        const businessMarkup = renderToStaticMarkup(createElement(ThermalReceipt, {
+          model: {
+            ...model,
+            identity: { ...model.identity, invoiceType: 'standard' },
+            buyer: {
+              ...model.buyer,
+              name: 'Selected Business',
+              nameAr: 'منشأة محددة',
+              vatNumber: '399999999999993',
+              type: 'business',
+              isWalkIn: false,
+            },
+          },
+          options: { preview: true },
+        }))
+        assert.match(businessMarkup, /thermal-buyer/)
+        assert.match(businessMarkup, /399999999999993/)
         rendered.push({ layout: layout.publicId, width, caseId: fixtureCase.id, markup })
       }
     }
@@ -129,7 +180,7 @@ try {
   assert.equal(new Set(rendered.map(result => result.layout)).size, 4)
   assert.equal(new Set(rendered.map(result => result.width)).size, 2)
   assert.equal(new Set(layouts.map(layout => layout.landmark)).size, 4)
-  console.log('Thermal receipt runtime matrix passed (48 actual SSR renders: 4 structures × 2 widths × 6 typed fixture scenarios).')
+  console.log('Thermal receipt runtime matrix passed (192 SSR renders: 4 structures × 2 widths × 6 fixture scenarios × base/walk-in/individual/business buyers).')
 } finally {
   await server.close()
 }

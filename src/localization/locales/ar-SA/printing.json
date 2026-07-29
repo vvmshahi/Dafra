@@ -166,13 +166,14 @@
       "help": "ابدأ بإعداد جاهز وواضح، ثم عدّله من دون تغيير التصميم الأصلي."
     },
     "presets": {
-      "compact_sticker": { "name": "ملصق صغير" },
-      "standard_product": { "name": "ملصق منتج قياسي" },
-      "detailed_product": { "name": "ملصق منتج مفصل" },
-      "carton_label": { "name": "ملصق كرتون" },
+      "compact_sticker": { "name": "سعر مختصر", "use": "للمنتجات الصغيرة وملصقات الرف" },
+      "standard_product": { "name": "منتج قياسي", "use": "ملصق متوازن للاستخدام اليومي" },
+      "detailed_product": { "name": "منتج مفصل", "use": "هوية ومعلومات إضافية للمنتج" },
+      "carton_label": { "name": "كرتون", "use": "للعبوات الكبيرة ووحدات المستودع" },
       "a4_sheet": { "name": "ورقة ملصقات A4", "dimensions": "تخطيط شبكي على A4" },
       "custom": { "name": "مخصص" }
     },
+    "size": { "title": "المقاس", "help": "اختر مقاساً عملياً لهذا التصميم." },
     "templates": {
       "title": "تصميم الملصق",
       "compact": "مختصر",
@@ -191,6 +192,9 @@
       "businessName": "اسم المنشأة",
       "barcodeValue": "رقم الباركود",
       "printDate": "تاريخ الطباعة",
+      "barcodeGraphic": "شكل الباركود",
+      "secondaryName": "الاسم باللغة الثانية",
+      "required": "إلزامي",
       "barcodeAlwaysIncluded": "لا يمكن إخفاء شكل الباركود."
     },
     "output": {
@@ -201,8 +205,8 @@
     },
     "orientation": { "portrait": "عمودي", "landscape": "أفقي" },
     "alignment": { "start": "حسب اتجاه النص", "center": "في الوسط" },
-    "priceStyle": { "normal": "عادي", "large": "كبير وواضح" },
-    "nameSize": { "small": "صغير", "normal": "عادي", "large": "كبير" },
+    "priceStyle": { "normal": "عادي", "large": "كبير وواضح", "strong": "بارز" },
+    "nameSize": { "small": "صغير", "normal": "عادي", "medium": "متوسط", "large": "كبير" },
     "units": { "mm": "مم" },
     "a4": {
       "orientation": "اتجاه الورقة",
@@ -232,7 +236,12 @@
     },
     "appearance": {
       "title": "المظهر",
-      "barcodeSize": "حجم الباركود"
+      "barcodeSize": "مقياس الباركود",
+      "textSize": "حجم النص",
+      "priceEmphasis": "إبراز السعر",
+      "alignment": "محاذاة النص",
+      "standard": "قياسي",
+      "large": "كبير"
     },
     "preview": {
       "title": "معاينة مباشرة للملصق",
@@ -245,6 +254,7 @@
       "sampleUnit": "كرتون · 12 حبة",
       "samplePrice": "84.00 ر.س",
       "pageSummary": "{{labels}} ملصق · {{pages}} صفحة · {{final}} في الصفحة الأخيرة",
+      "safeBoundary": "تظهر حدود الطباعة الآمنة ومنطقة هدوء الباركود",
       "fits": "ملائم للصفحة المحددة",
       "doesNotFit": "غير ملائم",
       "fitStatus": {
@@ -278,7 +288,7 @@
       "restoreBranchDefault": "استعادة إعداد الفرع"
     },
     "settings": {
-      "title": "التصميم الافتراضي للفرع",
+      "title": "ملصقات الباركود",
       "scopeLabel": "تصميم الملصق الافتراضي للفرع",
       "help": "يُستخدم هذا التصميم في طباعة الملصقات بهذا الفرع. تبقى محاذاة الطابعة خاصة بكل جهاز.",
       "branchDefaultSaved": "تم حفظ إعداد الفرع",

@@ -300,11 +300,17 @@ assert.match(barcode, /useDialogFocus/)
 assert.match(barcode, /items\.some\(item => !item\.barcode\?\.isActive\)/)
 assert.match(barcode, /p_product_unit_id: item\.unit\.id/)
 assert.match(barcode, /p_is_primary: true/)
-for (const preset of ['compact_sticker', 'standard_product', 'detailed_product', 'carton_label']) assert.match(designer, new RegExp(`'${preset}'`))
+assert.match(designer, /PRIMARY_LABEL_PRESET_IDS\.map/)
 assert.doesNotMatch(designer, /'a4_sheet'|'custom'/)
 assert.match(labelSettingsSource, /storedPresetId === 'a4_sheet'/)
 assert.match(labelSettingsSource, /storedPresetId === 'custom'/)
-for (const preset of ['compact_sticker', 'standard_product', 'detailed_product', 'carton_label']) assert.match(labelPrint, new RegExp(`label--preset-${preset}`))
+for (const preset of ['compact_sticker', 'standard_product', 'detailed_product', 'carton_label']) {
+  assert.match(labelSettingsSource, new RegExp(`${preset}:`))
+  assert.match(labelPrint, new RegExp(`${preset}:`))
+}
+for (const landmark of ['compact-price-composition', 'standard-product-composition', 'detailed-product-composition', 'carton-label-composition']) {
+  assert.match(labelPrint, new RegExp(landmark))
+}
 
 const thermal = read('src/components/print/ThermalReceipt.tsx')
 const thermalCompositions = read('src/components/print/ThermalReceiptCompositions.tsx')
