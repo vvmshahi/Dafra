@@ -5,6 +5,7 @@ import { useDialogFocus } from '@/hooks/useDialogFocus'
 export interface StudioSection {
   id: string
   label: string
+  fullLabel?: string
   icon?: React.ElementType
 }
 
@@ -54,8 +55,8 @@ export function DocumentStudioSectionNav({
   width = 'default',
 }: SectionNavigationProps) {
   return <nav
-    className={`document-studio-section-nav shrink-0 border-b border-gray-200 bg-[#f5f8f6] p-2 xl:border-b-0 xl:border-e ${
-      width === 'compact' ? 'xl:w-[100px]' : 'xl:w-[124px]'
+    className={`document-studio-section-nav shrink-0 border-b border-gray-200 bg-[#f5f8f6] p-2 xl:overflow-x-hidden xl:border-b-0 xl:border-e ${
+      width === 'compact' ? 'xl:w-[100px] xl:p-1' : 'xl:w-[124px]'
     }`}
     aria-label={label}
     onKeyDown={event => {
@@ -83,22 +84,29 @@ export function DocumentStudioSectionNav({
       buttons[next]?.click()
     }}
   >
-    <div className="flex flex-wrap gap-1 xl:flex-col">
+    <div className="flex min-w-0 flex-wrap gap-1 xl:w-full xl:flex-col">
       {sections.map(section => {
         const selected = section.id === activeSection
         const Icon = section.icon
+        const fullLabel = section.fullLabel ?? section.label
         return <button
           key={section.id}
           data-studio-section
           type="button"
           aria-current={selected ? 'page' : undefined}
+          aria-label={fullLabel}
+          title={section.fullLabel}
           onClick={() => onSelect(section.id)}
-          className={`group flex min-h-9 shrink-0 items-center gap-2 rounded-lg px-2.5 py-2 text-start text-[11px] font-semibold outline-none transition-[background-color,color,transform] duration-150 active:scale-[.97] focus-visible:ring-2 focus-visible:ring-primary-500 ${
+          className={`group flex min-h-9 max-w-full shrink-0 items-center gap-2 rounded-lg px-2.5 py-2 text-start text-[11px] font-semibold outline-none transition-[background-color,color,transform] duration-150 active:scale-[.97] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500 xl:grid xl:w-full xl:min-w-0 xl:shrink xl:overflow-hidden ${
+            width === 'compact'
+              ? 'xl:grid-cols-[11px_minmax(0,1fr)] xl:gap-0.5 xl:px-0.5 xl:tracking-[-0.01em]'
+              : 'xl:grid-cols-[12px_minmax(0,1fr)] xl:gap-1 xl:px-2'
+          } ${
             selected ? 'bg-[#173d2a] text-white shadow-sm' : 'text-gray-600 hover:bg-white hover:text-gray-950'
           }`}
         >
-          {Icon && <Icon size={13} aria-hidden="true" className={selected ? 'text-emerald-200' : 'text-gray-400 group-hover:text-primary-600'} />}
-          <span className="whitespace-nowrap xl:whitespace-normal">{section.label}</span>
+          {Icon && <Icon size={width === 'compact' ? 11 : 12} aria-hidden="true" className={`shrink-0 ${selected ? 'text-emerald-200' : 'text-gray-400 group-hover:text-primary-600'}`} />}
+          <span className="min-w-0 whitespace-nowrap xl:whitespace-normal xl:leading-[1.15] xl:[overflow-wrap:anywhere]">{section.label}</span>
         </button>
       })}
     </div>

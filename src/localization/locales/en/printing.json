@@ -188,9 +188,11 @@
       "sections": {
         "layout": "Layout",
         "size": "Size",
-        "information": "Included information",
+        "information": "Information",
+        "informationFull": "Included information",
         "appearance": "Appearance",
-        "printer": "Printer adjustment"
+        "printer": "Printer setup",
+        "printerFull": "Printer adjustment"
       }
     },
     "currency": {

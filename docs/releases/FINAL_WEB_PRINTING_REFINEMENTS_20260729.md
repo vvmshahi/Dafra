@@ -496,3 +496,23 @@ Invoice and Receipt General language cards now present `Bilingual` as the title
 and `Arabic + English` as secondary copy. Arabic uses `ثنائية اللغة` with
 `العربية + الإنجليزية`; the previous em-dash construction was removed from
 display and accessible names.
+
+## Document Studio section-rail containment
+
+The compact Barcode section rail previously declared a 100 px width, but its
+buttons retained intrinsic `shrink-0` sizing and did not constrain the label
+column. Long labels could therefore paint their selected background and text
+across the divider into the configuration content.
+
+Desktop section buttons now use the full available rail width with a fixed icon
+track and `minmax(0, 1fr)` label track. Minimum-width, overflow wrapping, inset
+focus treatment, and desktop overflow containment keep text, selection, and
+focus inside the rail. The rail/configuration divider remains explicit, while
+the responsive drawer keeps its existing wrapping horizontal navigation.
+
+Barcode uses the concise visible labels `Information` and `Printer setup`, with
+the complete meanings `Included information` and `Printer adjustment` retained
+as accessible names and tooltips. Arabic uses similarly concise visible copy
+with full Arabic accessible names. The 100 px Barcode rail, 400–440 px shared
+configuration pane, preview geometry, Receipt/Invoice labels, and all document
+behavior remain unchanged.
