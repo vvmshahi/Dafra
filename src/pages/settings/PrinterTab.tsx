@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Check, FileText, Loader2, Printer, RefreshCw, RotateCcw, Save, SlidersHorizontal, TestTube2 } from 'lucide-react'
+import { AlertTriangle, Barcode, FileText, Loader2, Printer, RefreshCw, RotateCcw, Save, SlidersHorizontal, TestTube2 } from 'lucide-react'
 import {
   DEFAULT_PRINTER_SETTINGS,
   getPrinterSettings,
   getPrinters,
   isElectron,
+  printBarcode,
   receiptPresetDefaults,
   savePrinterSettings,
   testPrint,
@@ -19,8 +20,10 @@ import { documentFromPreviewDraft } from '@/lib/invoices/documentViewAdapters'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import type { InvoicePresentationDraft } from '@/lib/invoices/documentViewAdapters'
+import { barcodePrintDocument } from '@/lib/barcodes/labelPrint'
+import { DEFAULT_BARCODE_DEVICE_CALIBRATION, DEFAULT_BARCODE_LABEL_SETTINGS } from '@/lib/barcodes/labelSettings'
 
-type PrinterView = 'thermal' | 'a4'
+type PrinterView = 'thermal' | 'a4' | 'barcode'
 type Status = { type: 'success' | 'error' | 'info'; text: string } | null
 
 function statusClasses(type: NonNullable<Status>['type']) {
@@ -72,11 +75,11 @@ function SettingToggle({ title, help, checked, onChange }: {
 }
 
 function printerPreviewDraft(width: '58mm' | '80mm', density: 'compact' | 'standard' | 'detailed'): InvoicePresentationDraft {
-  return { invoiceLanguage: 'both', printMode: 'thermal', presentation: { schema_version: 1, identity: { display_heading: null, display_subheading: null, custom_display_name: null, show_company_name: true, show_branch_name: true }, contact: { phone: '+966 50 000 0000', email: null, website: null, show_phone: true, show_email: false, show_website: false, show_address: true }, footer: { thank_you_message: null, footer_note: 'Printer preview only', refund_note: null, show_thank_you: false, show_footer: true, show_refund_note: false }, logo: { visible: false, asset_path: null, asset_version: 0, size: 'medium' }, thermal: { width, density, qr_size: 'standard', wrap_item_names: true, show_cash_change: true }, a4: { template_id: 'classic', template_version: 1, header_style: 'standard', accent_color: '#0f766e', heading_color: '#10251a', body_color: '#1f2937', auto_foreground: true, header_asset_path: null, header_asset_version: 1, header_asset_enabled: false, header_asset_fit: 'contain', header_asset_height: 28, header_asset_spacing: 6, header_crop_top: 0, header_crop_height: 18, footer_asset_path: null, footer_asset_version: 1, footer_asset_enabled: false, footer_asset_fit: 'contain', footer_asset_height: 10, footer_asset_spacing: 4, footer_crop_top: 92, footer_crop_height: 8, artwork_scope: 'all', artwork_template_id: 'classic' } } }
+  return { invoiceLanguage: 'both', printMode: 'thermal', presentation: { schema_version: 1, identity: { display_heading: null, display_subheading: null, custom_display_name: null, show_company_name: true, show_branch_name: true }, contact: { phone: '+966 50 000 0000', email: null, website: null, show_phone: true, show_email: false, show_website: false, show_address: true }, footer: { thank_you_message: null, footer_note: 'Printer preview only', refund_note: null, show_thank_you: false, show_footer: true, show_refund_note: false }, logo: { visible: false, asset_path: null, asset_version: 0, size: 'medium' }, thermal: { width, density, qr_size: 'standard', qr_alignment: 'center', wrap_item_names: true, show_cash_change: true }, a4: { template_id: 'classic', template_version: 1, header_style: 'standard', accent_color: '#0f766e', heading_color: '#10251a', body_color: '#1f2937', auto_foreground: true, header_asset_path: null, header_asset_version: 1, header_asset_enabled: false, header_asset_fit: 'contain', header_asset_height: 28, header_asset_spacing: 6, header_crop_top: 0, header_crop_height: 18, footer_asset_path: null, footer_asset_version: 1, footer_asset_enabled: false, footer_asset_fit: 'contain', footer_asset_height: 10, footer_asset_spacing: 4, footer_crop_top: 92, footer_crop_height: 8, artwork_scope: 'all', artwork_template_id: 'classic', show_standard_branding: true } } }
 }
 
 export default function PrinterTab() {
-  const { t } = useTranslation(['printing', 'common'])
+  const { t, i18n } = useTranslation(['printing', 'common'])
   const [activeView, setActiveView] = useState<PrinterView>('thermal')
   const [printers, setPrinters] = useState<any[]>([])
   const [form, setForm] = useState<PrinterSettings>(DEFAULT_PRINTER_SETTINGS)
@@ -92,6 +95,7 @@ export default function PrinterTab() {
   const a4Status = form.a4PrinterName
     ? printerStatus(form.a4PrinterName, printers, t)
     : { label: t('printing:systemDefault'), tone: 'neutral' as const }
+  const barcodeStatus = printerStatus(form.barcodePrinterName, printers, t)
 
   const load = async () => {
     if (!isElectron()) { setLoading(false); return }
@@ -167,9 +171,37 @@ export default function PrinterTab() {
     setTesting(true)
     setStatus(null)
     try {
-      const result = activeView === 'thermal' ? await testPrint(form) : await testPrintA4(form)
+      let result
+      if (activeView === 'thermal') {
+        result = await testPrint(form)
+      } else if (activeView === 'a4') {
+        result = await testPrintA4(form)
+      } else {
+        const fixture = barcodePrintDocument([{
+          barcode: 'TEST-PRINTER-001',
+          barcodeType: 'code128',
+          businessName: 'Kubri',
+          productName: 'Printer calibration label',
+          productNameAr: 'ملصق معايرة الطابعة',
+          unitName: 'pcs',
+          price: '0.00',
+          sku: 'PRINTER-TEST',
+          copies: 1,
+        }], DEFAULT_BARCODE_LABEL_SETTINGS, DEFAULT_BARCODE_DEVICE_CALIBRATION, {
+          calibrationPattern: true,
+          locale: i18n.language,
+          copy: { title: 'PRINTER TEST / اختبار الطابعة', print: '', saveAsPdf: '', dialogGuidance: '' },
+        })
+        result = await printBarcode({
+          documentHtml: fixture.html,
+          pageWidthMm: fixture.layout.pageWidthMm,
+          pageHeightMm: fixture.layout.pageHeightMm,
+          printerName: form.barcodePrinterName,
+          copies: form.barcodeCopies,
+        })
+      }
       setStatus(result.success
-        ? { type: 'success', text: activeView === 'thermal' ? t('printing:testReceiptSent') : t('printing:testA4Sent') }
+        ? { type: 'success', text: activeView === 'thermal' ? t('printing:testReceiptSent') : activeView === 'a4' ? t('printing:testA4Sent') : t('printing:testBarcodeSent') }
         : (console.error('Test print failed:', result), { type: 'error', text: t('printing:testPrintFailed') }))
     } catch (error) {
       console.error('Test print failed', error)
@@ -198,12 +230,13 @@ export default function PrinterTab() {
       <section className="grid gap-3 sm:grid-cols-3">
         <div className="card flex items-center justify-between gap-3 p-4"><div><p className="text-[11px] text-gray-400">{t('printing:thermalReceipt')}</p><p className="mt-1 truncate text-sm font-semibold text-gray-900">{form.receiptPrinterName || t('printing:noPrinterSelected')}</p></div><StatusPill {...thermalStatus} /></div>
         <div className="card flex items-center justify-between gap-3 p-4"><div><p className="text-[11px] text-gray-400">{t('printing:a4Invoice')}</p><p className="mt-1 truncate text-sm font-semibold text-gray-900">{form.a4PrinterName || t('printing:systemDefault')}</p></div><StatusPill {...a4Status} /></div>
+        <div className="card flex items-center justify-between gap-3 p-4"><div><p className="text-[11px] text-gray-400">{t('printing:workspace.tabs.barcodeLabels.label')}</p><p className="mt-1 truncate text-sm font-semibold text-gray-900">{form.barcodePrinterName || t('printing:systemDefault')}</p></div><StatusPill {...barcodeStatus} /></div>
         <div className="card flex items-center justify-between gap-3 p-4"><div><p className="text-[11px] text-gray-400">{t('printing:autoPrintAfterSale')}</p><p className="mt-1 text-sm font-semibold text-gray-900">{t(`printing:${form.autoPrintReceiptAfterSale ? 'on' : 'off'}`)}</p></div><StatusPill label={t(`printing:${form.autoPrintReceiptAfterSale ? 'on' : 'off'}`)} tone={form.autoPrintReceiptAfterSale ? 'success' : 'neutral'} /></div>
       </section>
 
       <section className="card overflow-hidden">
         <div className="flex border-b border-gray-100 p-2" role="tablist" aria-label={t('printing:printerFormat')}>
-          {([['thermal', t('printing:thermalReceipt'), Printer], ['a4', t('printing:a4Invoice'), FileText]] as const).map(([value, label, Icon]) => (
+          {([['thermal', t('printing:thermalReceipt'), Printer], ['a4', t('printing:a4Invoice'), FileText], ['barcode', t('printing:workspace.tabs.barcodeLabels.label'), Barcode]] as const).map(([value, label, Icon]) => (
             <button key={value} type="button" role="tab" aria-selected={activeView === value}
               onClick={() => setActiveView(value)}
               className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${activeView === value ? 'bg-[#0F2419] text-white' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'}`}>
@@ -215,8 +248,8 @@ export default function PrinterTab() {
         <div className="p-4 sm:p-6">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-base font-bold text-gray-900">{t(`printing:${activeView === 'thermal' ? 'thermalSetup' : 'a4Setup'}`)}</h2>
-              <p className="text-xs text-gray-400">{t(`printing:${activeView === 'thermal' ? 'thermalSetupHelp' : 'a4SetupHelp'}`)}</p>
+              <h2 className="text-base font-bold text-gray-900">{t(`printing:${activeView === 'thermal' ? 'thermalSetup' : activeView === 'a4' ? 'a4Setup' : 'barcodeSetup'}`)}</h2>
+              <p className="text-xs text-gray-400">{t(`printing:${activeView === 'thermal' ? 'thermalSetupHelp' : activeView === 'a4' ? 'a4SetupHelp' : 'barcodeSetupHelp'}`)}</p>
             </div>
             <Button variant="ghost" size="sm" onClick={refreshPrinters} disabled={loading} className="gap-2"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> {t('printing:refreshPrinters')}</Button>
           </div>
@@ -266,7 +299,7 @@ export default function PrinterTab() {
                 <div className="mx-auto overflow-hidden rounded-lg bg-white py-3 shadow-sm" style={{ width: form.receiptPaperPreset === '58mm' ? '210px' : '280px', maxWidth: '100%' }}><ThermalReceipt model={thermalPreview} options={{ preview: true, id: "printer-settings-preview", sampleLabel: t('printing:liveReceiptPreview') }} /></div>
               </aside>
             </div>
-          ) : (
+          ) : activeView === 'a4' ? (
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
               <div className="space-y-5">
                 <section className="space-y-3"><h3 className="text-xs font-bold uppercase tracking-wide text-gray-400">{t('printing:printer')}</h3>
@@ -277,12 +310,26 @@ export default function PrinterTab() {
               </div>
               <aside className="rounded-2xl border border-gray-200 bg-gray-100 p-4"><div className="mb-3"><p className="text-xs font-bold text-gray-800">{t('printing:a4LayoutGuide')}</p><p className="text-[10px] text-gray-400">{t('printing:a4PreviewHelp')}</p></div><div className="mx-auto aspect-[1/1.414] w-full max-w-[240px] rounded-sm bg-white p-5 shadow-sm"><div className="border-b-2 border-[#0F2419] pb-3"><p className="text-sm font-bold text-[#0F2419]">{t('printing:a4PreviewTitle')}</p><p className="text-[8px] text-gray-400">{t('printing:a4PreviewSpecs')}</p></div><div className="mt-5 space-y-2">{[1,2,3,4].map(line => <div key={line} className="h-2 rounded bg-gray-100" />)}</div><div className="ms-auto mt-6 h-12 w-24 rounded bg-gray-100" /></div></aside>
             </div>
+          ) : (
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="space-y-5">
+                <section className="space-y-3"><h3 className="text-xs font-bold uppercase tracking-wide text-gray-400">{t('printing:printer')}</h3>
+                  <label className="space-y-1.5"><span className="text-xs font-semibold text-gray-500">{t('printing:selectedBarcodePrinter')}</span><select className="input" value={form.barcodePrinterName ?? ''} onChange={event => update('barcodePrinterName', event.target.value || null)}><option value="">{t('printing:useSystemDefault')}</option>{printers.map(printer => <option key={printer.name} value={printer.name}>{printer.name}</option>)}</select><div className="flex items-center gap-2"><StatusPill {...barcodeStatus} /><span className="text-[11px] text-gray-400">{t('printing:printersDetected', { count: printers.length })}</span></div></label>
+                </section>
+                <section className="space-y-3"><h3 className="text-xs font-bold uppercase tracking-wide text-gray-400">{t('printing:barcodePrinting')}</h3>
+                  <NumberField label={t('printing:copies')} value={form.barcodeCopies} min={1} max={500} onChange={value => update('barcodeCopies', Math.max(1, Math.min(500, Math.floor(value) || 1)))} />
+                  <p className="rounded-xl bg-blue-50 px-3 py-2 text-[11px] leading-relaxed text-blue-700">{t('printing:barcodeSetupHelp')}</p>
+                </section>
+                <section className="rounded-xl border border-gray-100 bg-gray-50 p-4"><h3 className="text-sm font-semibold text-gray-900">{t('printing:barcodeCalibration')}</h3><p className="mt-1 text-xs leading-relaxed text-gray-500">{t('printing:barcodeCalibrationHelp')}</p></section>
+              </div>
+              <aside className="rounded-2xl border border-gray-200 bg-gray-100 p-4"><div className="mb-3"><p className="text-xs font-bold text-gray-800">{t('printing:barcodeTestGuide')}</p><p className="text-[10px] text-gray-400">{t('printing:barcodeTestGuideHelp')}</p></div><div className="mx-auto flex aspect-[5/3] max-w-[240px] flex-col items-center justify-center rounded-sm border border-dashed border-gray-400 bg-white p-4 text-center"><Barcode size={34} className="mb-2 text-gray-800" /><p className="text-[10px] font-bold text-gray-800">PRINTER TEST</p><p className="text-[10px] text-gray-500">اختبار الطابعة</p></div></aside>
+            </div>
           )}
 
           <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4">
             <Button onClick={save} loading={saving} disabled={!dirty || testing} className="gap-2"><Save size={14} /> {t('printing:saveChanges')}</Button>
             <Button variant="secondary" onClick={() => { setForm(saved); setStatus({ type: 'info', text: t('printing:changesCancelled') }) }} disabled={!dirty || saving || testing}>{t('printing:cancelChanges')}</Button>
-            <Button variant="secondary" onClick={runTest} loading={testing} disabled={testing || (activeView === 'thermal' && !form.receiptPrinterName)} className="gap-2"><TestTube2 size={14} /> {activeView === 'thermal' ? t('printing:testReceipt') : t('printing:testA4')}</Button>
+            <Button variant="secondary" onClick={runTest} loading={testing} disabled={testing || (activeView === 'thermal' && !form.receiptPrinterName)} className="gap-2"><TestTube2 size={14} /> {activeView === 'thermal' ? t('printing:testReceipt') : activeView === 'a4' ? t('printing:testA4') : t('printing:testBarcode')}</Button>
             <Button variant="ghost" onClick={restoreDefaults} disabled={saving || testing} className="gap-2"><RotateCcw size={14} /> {t('printing:restoreDefaults')}</Button>
             {dirty && <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600"><AlertTriangle size={13} /> {t('printing:unsavedChanges')}</span>}
           </div>

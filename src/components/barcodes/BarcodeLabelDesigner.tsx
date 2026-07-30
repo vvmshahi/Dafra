@@ -9,6 +9,8 @@ import {
   type BarcodeLabel,
   type BarcodePrintDocument,
 } from '@/lib/barcodes/labelPrint'
+import { isElectron } from '@/lib/electron'
+import { printBarcodeDocumentNative } from '@/lib/barcodes/nativePrint'
 import {
   applyLabelSize,
   LABEL_PRESETS,
@@ -172,7 +174,7 @@ export default function BarcodeLabelDesigner({
     next.set('section', nextSection)
     setSearchParams(next)
   }
-  const printPreview = () => {
+  const printPreview = async () => {
     if (!preview || printing) return
     setPrinting(true)
     setPrintError('')
@@ -188,7 +190,12 @@ export default function BarcodeLabelDesigner({
           riyalAccessible: t('barcodeLabels.currency.accessible'),
         },
       })
-      browserBarcodePrintAdapter.print(printable.html)
+      if (!isElectron()) {
+        browserBarcodePrintAdapter.print(printable.html)
+        return
+      }
+      const result = await printBarcodeDocumentNative(printable.html, { copies: 1 })
+      if (!result.success) throw new Error(result.message || 'barcode_print_failed')
     } catch {
       setPrintError(t('barcodeLabels.errors.printFailed'))
     } finally {

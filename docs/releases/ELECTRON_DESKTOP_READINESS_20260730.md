@@ -2,16 +2,13 @@
 
 ## Verdict and authoritative source
 
-**Status: BLOCKED — provisional Electron audit complete; final desktop release
-packaging is not authorized.**
+**Status: IMPLEMENTED — native printer software scope complete; physical and
+signing gates remain open.**
 
-The audited base is provisional SHA `d9c5e7e79fd8d837027c6642b7cd9d9c116f3715`
-on `release/electron-desktop-20260730`, containing the readiness history through
-`d9c5e7e`. No locked web release SHA, release tag, or approved production web
-deployment incorporating the readiness commits exists. The primary feature
-branch remains at `7b0bd54`; readiness commits `5c0e0ac` and `d9c5e7e` have not
-been merged into it. Before final packaging, the approved web release must
-incorporate those commits and record a single locked source SHA.
+The locked web source is commit `6a81a4f47bdc128508736d6e245c347cbe2826db` on
+`release/electron-desktop-20260730`, referenced by the pushed annotated tag
+`web-production-20260730`. The implementation branch is
+`release/electron-final-20260730`, created from that exact source.
 
 This branch is not a final installer source and no Electron installer was built
 or published.
@@ -42,9 +39,9 @@ printer settings, UUID validation for invoice printing, and callback-based
 native print success.
 
 One confirmed issue was repaired: the native IPC handlers previously lacked
-sender/origin validation. All 13 handlers now require the trusted main window
-webContents and an internal packaged/dev origin. The Electron security contract
-test covers this guard and the renderer bridge.
+sender/origin validation. All 14 handlers now require the trusted main window
+webContents and an internal packaged/dev origin. The Electron security and
+native-printing contract tests cover this guard and the renderer bridge.
 
 No arbitrary shell/native command IPC was found. No production credentials are
 bundled or logged by the Electron layer.
@@ -62,10 +59,15 @@ A4 copies, silent/direct printing, test receipt/A4 actions, safe validation,
 hidden print windows, readiness timeout, callback success/failure, and retry
 without repeating checkout.
 
-Not yet complete for release: a dedicated Electron-native barcode printer
-assignment/test/copy pipeline and physical device calibration certification.
-Current barcode calibration remains part of the existing label workflow and
-must be verified as device-local before desktop release.
+The Electron-only Printer Settings workspace now has Receipts, Invoices, and
+Barcode Labels tabs. Barcode documents carry an internal geometry marker and
+are sent through a bounded, sender-validated `print-barcode` IPC contract.
+Barcode batch, quick-print, designer, and calibration actions use native
+printing in Electron and retain the browser adapter on the web.
+
+Barcode calibration remains device-local in the reviewed local calibration
+store. The barcode job passes copies once at the native boundary so expanded
+label batches are not double printed.
 
 ## Printing coverage
 
@@ -76,7 +78,8 @@ pipeline uses hidden routes for receipts and existing current-window A4 output.
 
 Native 58 mm/80 mm geometry, actual copies, Arabic shaping, QR scanability,
 hardware cut/feed, A4 pagination on devices, barcode scanability, macOS launch,
-Windows install, and offline printer behaviour were not physically verified.
+Windows install, and offline printer behaviour remain pending physical/OS
+validation.
 
 Test fixtures are clearly marked as printer tests and do not create invoices or
 fiscal QR state. No physical printer or Windows VM was available in this audit.
@@ -89,15 +92,17 @@ signing credentials are configured. Any future package must be labelled
 unsigned/internal until launch, install, uninstall, Gatekeeper, SmartScreen,
 and native-printer checks pass on both operating systems.
 
-The current `1.0.2` version is not a locked desktop release version because the
-web source SHA is not locked.
+The current `1.0.2` version is an internal implementation version; packaging
+remains pending the OS, hardware, and signing gates above.
 
 ## Tests
 
 Passed:
 
 - Electron main/preload/printer syntax checks;
-- focused Electron security contract (`13` IPC handlers);
+- focused Electron security and native barcode contract (`14` IPC handlers);
+- Electron native printing contract (local settings, safe barcode markup,
+  geometry, copies and browser fallback);
 - `npm test` with local Supabase environment variables;
 - `npm run build`;
 - `git diff --check`.
@@ -114,11 +119,9 @@ None confirmed after the IPC sender/origin guard was added.
 
 ### P1
 
-- No locked web SHA incorporating readiness commits; final desktop packaging is
-  blocked.
 - Physical printer and Windows validation are absent.
-- Native barcode printer assignment/test pipeline is not complete for the stated
-  desktop scope.
+- Signing/notarization credentials and distributable package validation are
+  absent.
 
 ### P2/P3
 
@@ -130,22 +133,28 @@ None confirmed after the IPC sender/origin guard was added.
 
 ## Files changed
 
-- `electron/main.cjs`: trusted IPC sender/origin validation.
-- `src/components/layout/Sidebar.tsx`: Electron Printer Settings visibility for
-  Owner/admin users.
-- `scripts/test-electron-security.mjs`: focused Electron security/navigation/
-  bridge/sidebar contract test.
+- `electron/main.cjs`, `electron/preload.cjs`, `electron/printer.cjs`: secure
+  native print contracts, barcode validation, copies and device settings.
+- `src/pages/settings/PrinterTab.tsx`: three-tab Electron Printer Settings
+  workspace.
+- `src/lib/barcodes/labelPrint.ts` and barcode print callers: native barcode
+  pipeline with browser fallback.
+- `src/lib/electron.ts`: typed barcode IPC bridge and local settings fields.
+- `src/lib/barcodes/nativePrint.ts`: native/browser barcode print adapter.
+- `src/localization/locales/en/printing.json`,
+  `src/localization/locales/ar-SA/printing.json`: translated printer labels and
+  statuses.
+- `scripts/test-electron-security.mjs`: focused Electron security/native
+  barcode/navigation/bridge/sidebar contract test.
+- `scripts/test-electron-native-printing.mjs`: native printing contract test.
 
 ## Remaining release gates
 
-1. Approve and lock the final web SHA after incorporating `5c0e0ac` and `d9c5e7e`.
-2. Rebase or recreate this Electron branch from that exact locked SHA.
-3. Complete native macOS and Windows launch/install/uninstall/session tests.
-4. Complete physical 58 mm, 80 mm, A4, and barcode printer certification.
-5. Complete the native barcode printer mapping/calibration pipeline.
-6. Obtain and verify signing/notarization credentials, or explicitly label
+1. Complete native macOS and Windows launch/install/uninstall/session tests.
+2. Complete physical 58 mm, 80 mm, A4, and barcode printer certification.
+3. Obtain and verify signing/notarization credentials, or explicitly label
    internal unsigned builds.
-7. Only then build clearly labelled internal release candidates.
+4. Only then build clearly labelled internal release candidates.
 
 Electron does not bypass server-side Atomic, Legacy, demo, or fiscal-readiness
 decisions. No invoice, payment, checkout, stock, customer, credential,

@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   testPrintA4: (settings) =>
     ipcRenderer.invoke('test-print-a4', settings),
 
+  printBarcode: (request) =>
+    ipcRenderer.invoke('print-barcode', request),
+
   printReceipt: (request) =>
     ipcRenderer.invoke('print-receipt', request),
 

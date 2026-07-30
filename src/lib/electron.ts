@@ -21,6 +21,8 @@ export interface PrinterSettings {
   fallbackToPreview: boolean
   a4PrinterName: string | null
   a4Copies: number
+  barcodePrinterName: string | null
+  barcodeCopies: number
   updatedAt?: string
   selectedPrinterName?: string | null
   paperWidth?: 58 | 80
@@ -38,6 +40,15 @@ export interface PrintResult {
 export interface PrintReceiptRequest {
   invoiceId: string
   options?: Partial<PrinterSettings>
+}
+
+export interface BarcodePrintRequest {
+  documentHtml: string
+  pageWidthMm: number
+  pageHeightMm: number
+  printerName?: string | null
+  copies?: number
+  settings?: Partial<PrinterSettings>
 }
 
 interface ReceiptReadyPayload {
@@ -61,6 +72,7 @@ interface ElectronApi {
   printReceipt: (request: PrintReceiptRequest) => Promise<PrintResult>
   printCurrentReceipt: () => Promise<PrintResult>
   printA4Invoice: () => Promise<PrintResult>
+  printBarcode: (request: BarcodePrintRequest) => Promise<PrintResult>
   receiptReady: (payload: ReceiptReadyPayload) => void
   receiptFailed: (payload: ReceiptReadyPayload) => void
 }
@@ -95,6 +107,8 @@ export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   fallbackToPreview: true,
   a4PrinterName: null,
   a4Copies: 1,
+  barcodePrinterName: null,
+  barcodeCopies: 1,
   selectedPrinterName: null,
   paperWidth: 80,
   autoPrintAfterSale: false,
@@ -162,6 +176,8 @@ const normalizePrinterSettings = (settings?: Partial<PrinterSettings> | null): P
     fallbackToPreview: typeof source.fallbackToPreview === 'boolean' ? source.fallbackToPreview : DEFAULT_PRINTER_SETTINGS.fallbackToPreview,
     a4PrinterName: printerName(source.a4PrinterName),
     a4Copies: copies(source.a4Copies ?? DEFAULT_PRINTER_SETTINGS.a4Copies),
+    barcodePrinterName: printerName(source.barcodePrinterName),
+    barcodeCopies: Math.max(1, Math.min(500, Math.floor(Number(source.barcodeCopies)) || 1)),
     selectedPrinterName: receiptPrinterName,
     paperWidth: paperWidth === 58 ? 58 : 80,
     autoPrintAfterSale: autoPrintReceiptAfterSale,
@@ -269,4 +285,12 @@ export const printA4Invoice = async (): Promise<PrintResult> => {
     return { success: true }
   }
   return window.electronAPI?.printA4Invoice?.() ?? { success: false, errorType: 'IPC_UNAVAILABLE', message: 'Printer bridge is unavailable.' }
+}
+
+export const printBarcode = async (request: BarcodePrintRequest): Promise<PrintResult> => {
+  if (!isElectron()) {
+    return { success: false, errorType: 'NOT_ELECTRON', message: 'Native barcode printing is available in the Kubri desktop app.' }
+  }
+  return window.electronAPI?.printBarcode?.(request)
+    ?? { success: false, errorType: 'IPC_UNAVAILABLE', message: 'Printer bridge is unavailable.' }
 }

@@ -12,6 +12,7 @@ import {
   browserBarcodePrintAdapter,
   type BarcodeLabel,
 } from '@/lib/barcodes/labelPrint'
+import { printBarcodeDocumentNative } from '@/lib/barcodes/nativePrint'
 import {
   barcodeQueueTotal,
   clearBarcodePrintQueue,
@@ -365,12 +366,16 @@ export default function BarcodeBatchPrintDrawer({
         },
       })
       if (!document.layout.fits) throw new Error('layout')
+      const printResult = await printBarcodeDocumentNative(document.html, {
+        printerName: calibration.printerName,
+        copies: 1,
+      })
+      if (!printResult.success) throw new Error(printResult.message || 'barcode_print_failed')
       await recordBarcodePrintBatch(
         items.map(item => ({ barcodeId: item.barcode!.id, copies: item.copies })),
         `${settings.presetId}:${settings.templateId}`.slice(0, 40),
         total > 50 ? reason : null,
       )
-      browserBarcodePrintAdapter.print(document.html)
       clearBarcodePrintQueue(branchId)
       setItems([])
       setReason('')

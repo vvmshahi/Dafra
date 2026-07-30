@@ -147,6 +147,8 @@ const DEFAULT_PRINTER_SETTINGS = {
   fallbackToPreview: true,
   a4PrinterName: null,
   a4Copies: 1,
+  barcodePrinterName: null,
+  barcodeCopies: 1,
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -197,6 +199,7 @@ function normalizePrinterSettings(raw = {}) {
     source.receiptPrinterName ?? source.selectedPrinterName ?? source.defaultPrinter,
   )
   const a4PrinterName = normalizePrinterName(source.a4PrinterName)
+  const barcodePrinterName = normalizePrinterName(source.barcodePrinterName)
   const legacyPaperWidth = Number(source.paperWidth) === 58 ? 58 : 80
   const derivedPreset = Number(source.receiptPaperWidthMm ?? legacyPaperWidth) === 58 ? '58mm' : '80mm'
   const receiptPaperPreset = normalizeReceiptPreset(source.receiptPaperPreset, derivedPreset)
@@ -242,6 +245,8 @@ function normalizePrinterSettings(raw = {}) {
       : DEFAULT_PRINTER_SETTINGS.fallbackToPreview,
     a4PrinterName,
     a4Copies: normalizeCopies(source.a4Copies ?? DEFAULT_PRINTER_SETTINGS.a4Copies),
+    barcodePrinterName,
+    barcodeCopies: Math.max(1, Math.min(500, Math.floor(Number(source.barcodeCopies)) || 1)),
     ...(updatedAt ? { updatedAt } : {}),
   })
 }
@@ -274,6 +279,8 @@ function validatePrinterSettingsInput(input, currentSettings = readPrinterSettin
     'autoPrintReceiptAfterSale',
     'a4PrinterName',
     'a4Copies',
+    'barcodePrinterName',
+    'barcodeCopies',
     'selectedPrinterName',
     'paperWidth',
     'autoPrintAfterSale',
@@ -295,6 +302,13 @@ function validatePrinterSettingsInput(input, currentSettings = readPrinterSettin
     ) {
       throw new Error('Invalid printer name')
     }
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(input, 'barcodePrinterName')
+    && input.barcodePrinterName !== null
+    && (typeof input.barcodePrinterName !== 'string' || !input.barcodePrinterName.trim() || input.barcodePrinterName.length > 512)
+  ) {
+    throw new Error('Invalid printer name')
   }
   if (Object.prototype.hasOwnProperty.call(input, 'receiptPaperPreset') && !['80mm', '58mm', 'custom'].includes(input.receiptPaperPreset)) {
     throw new Error('Paper preset must be 80 mm, 58 mm, or custom')
@@ -346,6 +360,10 @@ function validatePrinterSettingsInput(input, currentSettings = readPrinterSettin
       && (!Number.isFinite(Number(input.a4Copies)) || Number(input.a4Copies) < 1 || Number(input.a4Copies) > 3))
   ) {
     throw new Error('Copies must be between 1 and 3')
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'barcodeCopies')
+      && (!Number.isFinite(Number(input.barcodeCopies)) || Number(input.barcodeCopies) < 1 || Number(input.barcodeCopies) > 500)) {
+    throw new Error('Barcode copies must be between 1 and 500')
   }
   for (const key of ['autoPrintAfterSale', 'autoPrintReceiptAfterSale', 'fallbackToPreview']) {
     if (Object.prototype.hasOwnProperty.call(input, key) && typeof input[key] !== 'boolean') {
@@ -555,10 +573,10 @@ async function selectedPrinterAvailable(webContents, printerName) {
 
   try {
     const printers = await getPrinters(webContents)
-    if (!Array.isArray(printers) || printers.length === 0) return true
+    if (!Array.isArray(printers) || printers.length === 0) return false
     return printers.some((printer) => printer?.name === printerName)
   } catch {
-    return true
+    return false
   }
 }
 
@@ -800,7 +818,7 @@ function testPrintHtml(settings) {
   <body>
     <main class="receipt">
       <div class="center brand">Kubri</div>
-      <div class="center">Printer Test Receipt</div>
+      <div class="center">PRINTER TEST / اختبار الطابعة</div>
       <div class="rule"></div>
       <div class="edge">| LEFT EDGE ${' '.repeat(8)} RIGHT EDGE |</div>
       <div class="rule"></div>
@@ -926,7 +944,7 @@ function testA4Html(settings) {
     <main class="page">
       <div class="header">
         <div>
-          <div class="title">Kubri A4 Test Invoice</div>
+          <div class="title">PRINTER TEST / اختبار الطابعة</div>
           <div>System default or selected A4 printer</div>
         </div>
         <div>${escapeHtml(now)}</div>
@@ -984,6 +1002,89 @@ async function runTestA4(sender, inputSettings = null) {
   }
 }
 
+function validateBarcodePrintRequest(request, currentSettings = readPrinterSettings()) {
+  if (!request || typeof request !== 'object' || Array.isArray(request)) {
+    throw new Error('Invalid barcode print request')
+  }
+  if (typeof request.documentHtml !== 'string' || request.documentHtml.length < 1 || request.documentHtml.length > 2_000_000) {
+    throw new Error('Invalid barcode document')
+  }
+  if (!request.documentHtml.includes('data-kubri-barcode-print="v1"')) {
+    throw new Error('Unapproved barcode document')
+  }
+  if (/<\/?(?:script|iframe|object|embed|form)\b/i.test(request.documentHtml)
+    || /(?:javascript:|file:|data:text\/html)/i.test(request.documentHtml)) {
+    throw new Error('Unsafe barcode document')
+  }
+  for (const key of ['pageWidthMm', 'pageHeightMm']) {
+    const maximum = key === 'pageWidthMm' ? 300 : 500
+    if (!Number.isFinite(Number(request[key])) || Number(request[key]) < 20 || Number(request[key]) > maximum) {
+      throw new Error('Invalid barcode page dimensions')
+    }
+  }
+  const settings = validatePrinterSettingsInput(request.settings ?? null, currentSettings)
+  const printerName = request.printerName === undefined
+    ? settings.barcodePrinterName
+    : request.printerName
+  if (printerName !== null && (typeof printerName !== 'string' || !printerName.trim() || printerName.length > 512)) {
+    throw new Error('Invalid barcode printer name')
+  }
+  const copies = request.copies === undefined ? settings.barcodeCopies : Number(request.copies)
+  if (!Number.isInteger(copies) || copies < 1 || copies > 500) {
+    throw new Error('Barcode copies must be between 1 and 500')
+  }
+  return {
+    documentHtml: request.documentHtml,
+    pageWidthMm: Number(request.pageWidthMm),
+    pageHeightMm: Number(request.pageHeightMm),
+    printerName: printerName ? printerName.trim() : null,
+    copies,
+    settings,
+  }
+}
+
+async function printBarcodeDocument(sender, request) {
+  try {
+    const validated = validateBarcodePrintRequest(request)
+    if (validated.printerName) {
+      await assertSelectedPrinterAvailable(sender, validated.printerName)
+    }
+    const printWindow = createHiddenPrintWindow(
+      Math.max(320, millimetresToPrintPixels(validated.pageWidthMm)),
+      Math.max(500, millimetresToPrintPixels(validated.pageHeightMm)),
+      { allowDataUrl: true },
+    )
+    try {
+      await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(validated.documentHtml)}`)
+      await printWindow.webContents.executeJavaScript('document.fonts?.ready')
+      const result = await printCurrentWindow(printWindow.webContents, validated.printerName, {
+        silent: Boolean(validated.printerName),
+        copies: validated.copies,
+        maxCopies: 500,
+        pageSize: {
+          width: millimetresToMicrons(validated.pageWidthMm),
+          height: millimetresToMicrons(validated.pageHeightMm),
+        },
+        margins: { marginType: 'custom', top: 0, bottom: 0, left: 0, right: 0 },
+      })
+      return {
+        ...result,
+        settings: validated.settings,
+        message: result.success ? null : (result.errorType || 'Barcode print failed.'),
+      }
+    } finally {
+      if (!printWindow.isDestroyed()) printWindow.close()
+    }
+  } catch (error) {
+    return {
+      success: false,
+      errorType: 'BARCODE_PRINT_FAILED',
+      message: safeErrorMessage(error),
+      settings: readPrinterSettings(),
+    }
+  }
+}
+
 function registerPrinterIpc() {
   ipcMain.handle('print-silent', async (event) => {
     assertTrustedIpcSender(event)
@@ -1029,6 +1130,9 @@ function registerPrinterIpc() {
     if (next.a4PrinterName) {
       await assertSelectedPrinterAvailable(event.sender, next.a4PrinterName)
     }
+    if (next.barcodePrinterName) {
+      await assertSelectedPrinterAvailable(event.sender, next.barcodePrinterName)
+    }
     return {
       success: true,
       settings: writePrinterSettings(next),
@@ -1066,6 +1170,11 @@ function registerPrinterIpc() {
   ipcMain.handle('test-print-a4', async (event, settings) => {
     assertTrustedIpcSender(event)
     return runTestA4(event.sender, settings)
+  })
+
+  ipcMain.handle('print-barcode', async (event, request) => {
+    assertTrustedIpcSender(event)
+    return printBarcodeDocument(event.sender, request)
   })
 }
 

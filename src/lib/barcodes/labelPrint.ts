@@ -122,8 +122,8 @@ export function renderBarcodeSvg(
 }
 
 export const escapeHtml = (value: unknown) => String(value ?? '')
-  .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
-  .replaceAll('"', '&quot;').replaceAll("'", '&#039;')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#039;')
 
 const copies = (value: unknown) => Math.max(1, Math.min(500, Math.floor(Number(value)) || 1))
 
@@ -523,7 +523,7 @@ function labelMarkup(
     ?? BARCODE_LABEL_RENDERER_REGISTRY.standard_product
   const context = { label, settings, svg, locale, accessibleCurrencyName }
   return `<article class="label label--${settings.templateId} label--preset-${settings.presetId} label--name-${settings.productNameSize} label--price-${settings.priceStyle}" data-fit-status="${fit.status}" data-barcode-id="${escapeHtml(label.barcodeId ?? '')}" style="--fitted-name-size:${fit.nameFontPt}pt;--name-line-limit:${fit.nameLineLimit}">
-    ${calibrationPattern ? '<div class="calibration-cross" aria-hidden="true"></div><i class="edge edge--tl"></i><i class="edge edge--tr"></i><i class="edge edge--bl"></i><i class="edge edge--br"></i>' : ''}
+    ${calibrationPattern ? '<div class="calibration-title">PRINTER TEST / اختبار الطابعة</div><div class="calibration-cross" aria-hidden="true"></div><i class="edge edge--tl"></i><i class="edge edge--tr"></i><i class="edge edge--bl"></i><i class="edge edge--br"></i>' : ''}
     ${registryEntry.renderer(context)}
     ${settings.content.printDate ? `<time class="label-print-date" dir="ltr">${escapeHtml(printDate)}</time>` : ''}
     ${calibrationPattern ? '<div class="ruler" aria-hidden="true"><span>0</span><span>10</span><span>20</span></div>' : ''}
@@ -623,7 +623,9 @@ export function barcodePrintDocument(
     <small>${escapeHtml(copy.saveAsPdf)}</small>
   </nav>` : ''
 
-  const html = `<!doctype html><html lang="${escapeHtml(locale)}" class="riyal-fallback-active"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(copy.title)}</title>
+  const nativePageWidth = settings.outputMode === 'a4' ? layout.pageWidthMm : width
+  const nativePageHeight = settings.outputMode === 'a4' ? layout.pageHeightMm : height
+  const html = `<!doctype html><html lang="${escapeHtml(locale)}" class="riyal-fallback-active" data-kubri-barcode-print="v1" data-kubri-page-width-mm="${nativePageWidth}" data-kubri-page-height-mm="${nativePageHeight}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(copy.title)}</title>
   <style>
     @page { size: ${pageSize}; margin: 0; }
     @font-face { font-family:"SaudiRiyal"; src:url("/fonts/SaudiRiyal.woff2") format("woff2"); font-weight:normal; font-style:normal; font-display:block; }
@@ -691,6 +693,7 @@ export function barcodePrintDocument(
     .carton-label-composition__price { text-align:center; }
     .carton-label-composition__price .price { font-size:15pt; font-weight:900; }
     .calibration-cross { position:absolute; z-index:2; inset:50% auto auto 50%; width:10mm; height:10mm; translate:-50% -50%; border:.15mm solid #64748b; border-radius:50%; }
+    .calibration-title { position:absolute; z-index:3; inset:1.5mm 1.5mm auto; text-align:center; font-size:5.5pt; font-weight:800; }
     .calibration-cross::before,.calibration-cross::after { content:""; position:absolute; background:#64748b; }
     .calibration-cross::before { width:14mm; height:.15mm; inset:50% auto auto 50%; translate:-50% -50%; }
     .calibration-cross::after { height:14mm; width:.15mm; inset:50% auto auto 50%; translate:-50% -50%; }

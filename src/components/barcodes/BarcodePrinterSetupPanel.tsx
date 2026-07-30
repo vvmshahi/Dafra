@@ -9,6 +9,7 @@ import {
   browserBarcodePrintAdapter,
   type BarcodeLabel,
 } from '@/lib/barcodes/labelPrint'
+import { printBarcodeDocumentNative } from '@/lib/barcodes/nativePrint'
 import {
   DEFAULT_BARCODE_DEVICE_CALIBRATION,
   DEFAULT_BARCODE_LABEL_SETTINGS,
@@ -113,9 +114,9 @@ export default function BarcodePrinterSetupPanel({ branchId, businessName, compa
     setSaved(next)
     setStatus(t('barcodeLabels.calibration.resetDone'))
   }
-  const printTest = () => {
+  const printTest = async () => {
     if (!preview) return
-    browserBarcodePrintAdapter.print(barcodePrintDocument([sample], testSettings, calibration, {
+    const html = barcodePrintDocument([sample], testSettings, calibration, {
       calibrationPattern: true,
       locale: i18n.language,
       copy: {
@@ -125,7 +126,13 @@ export default function BarcodePrinterSetupPanel({ branchId, businessName, compa
         dialogGuidance: t('barcodeLabels.preview.dialogGuidance'),
         riyalAccessible: t('barcodeLabels.currency.accessible'),
       },
-    }).html)
+    }).html
+    if (!isElectron()) {
+      browserBarcodePrintAdapter.print(html)
+      return
+    }
+    const result = await printBarcodeDocumentNative(html, { printerName: calibration.printerName, copies: 1 })
+    setStatus(result.success ? t('barcodeLabels.calibration.printed') : t('barcodeLabels.errors.printFailed'))
   }
 
   return <div className={compact ? 'min-w-0' : 'grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_420px]'}>

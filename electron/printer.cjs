@@ -1,9 +1,9 @@
 'use strict'
 
-function normalizeCopies(copies) {
+function normalizeCopies(copies, maximum = 10) {
   const value = Number(copies)
   if (!Number.isFinite(value)) return 1
-  return Math.max(1, Math.min(3, Math.floor(value)))
+  return Math.max(1, Math.min(maximum, Math.floor(value)))
 }
 
 function printCurrentWindow(webContents, printerName, options = {}) {
@@ -13,7 +13,7 @@ function printCurrentWindow(webContents, printerName, options = {}) {
     deviceName: hasPrinter ? printerName.trim() : '',
     printBackground: true,
     margins: options.margins ?? { marginType: 'printableArea' },
-    copies: normalizeCopies(options.copies),
+    copies: normalizeCopies(options.copies, options.maxCopies ?? 10),
   }
 
   if (options.pageSize) printOptions.pageSize = options.pageSize
@@ -31,7 +31,13 @@ function printCurrentWindow(webContents, printerName, options = {}) {
 }
 
 function getPrinters(webContents) {
-  return webContents.getPrintersAsync()
+  return webContents.getPrintersAsync().then((printers) => (Array.isArray(printers) ? printers : []).map((printer) => ({
+    name: typeof printer?.name === 'string' ? printer.name.slice(0, 512) : '',
+    displayName: typeof printer?.displayName === 'string' ? printer.displayName.slice(0, 512) : undefined,
+    description: typeof printer?.description === 'string' ? printer.description.slice(0, 512) : undefined,
+    status: Number.isFinite(Number(printer?.status)) ? Number(printer.status) : undefined,
+    isDefault: printer?.isDefault === true,
+  })).filter(printer => printer.name))
 }
 
 module.exports = { getPrinters, printCurrentWindow }

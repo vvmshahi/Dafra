@@ -10,6 +10,7 @@ import {
   browserBarcodePrintAdapter,
   type BarcodeLabel,
 } from '@/lib/barcodes/labelPrint'
+import { printBarcodeDocumentNative } from '@/lib/barcodes/nativePrint'
 import {
   DEFAULT_BARCODE_LABEL_SETTINGS,
   loadBarcodeDeviceCalibration,
@@ -179,12 +180,16 @@ export default function BarcodeQuickPrintDialog(props: Props) {
     try {
       const document = createDocument(false)
       if (!document.layout.fits) throw new Error('layout')
+      const printResult = await printBarcodeDocumentNative(document.html, {
+        printerName: calibration.printerName,
+        copies: 1,
+      })
+      if (!printResult.success) throw new Error(printResult.message || 'barcode_print_failed')
       await recordBarcodePrintBatch(
         [{ barcodeId: activeChoice.barcodeId, copies: normalizedCopies }],
         `${settings.presetId}:${settings.templateId}`.slice(0, 40),
         normalizedCopies > 50 ? reason : null,
       )
-      browserBarcodePrintAdapter.print(document.html)
       props.onPrinted()
       props.onClose()
     } catch {
