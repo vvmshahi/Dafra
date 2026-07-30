@@ -2,19 +2,20 @@
 
 ## Verdict and authoritative source
 
-**Status: BLOCKED — provisional Electron audit complete; final desktop release
-packaging is not authorized.**
+**Status: PILOT PACKAGES AVAILABLE — public download integration verified;
+signing, OS runtime, and physical-printer gates remain open.**
 
-The audited base is provisional SHA `d9c5e7e79fd8d837027c6642b7cd9d9c116f3715`
-on `release/electron-desktop-20260730`, containing the readiness history through
-`d9c5e7e`. No locked web release SHA, release tag, or approved production web
-deployment incorporating the readiness commits exists. The primary feature
-branch remains at `7b0bd54`; readiness commits `5c0e0ac` and `d9c5e7e` have not
-been merged into it. Before final packaging, the approved web release must
-incorporate those commits and record a single locked source SHA.
+The locked production web base is commit
+`6a81a4f47bdc128508736d6e245c347cbe2826db`, tagged
+`web-production-20260730`. The Electron package source is commit
+`83eed6a218eced4c461c33c76a3c138d21e4aea7`, tagged
+`desktop-pilot-v1.0.2-20260730`. This branch records the public download
+integration on top of that locked web base; deployment remains a separate
+release operation.
 
-This branch is not a final installer source and no Electron installer was built
-or published.
+Unsigned macOS arm64 and Windows x64 pilot packages are published in the
+public release-only repository `vvmshahi/kubri-downloads`. The proprietary
+source repository remains private.
 
 ## Existing architecture
 
@@ -62,10 +63,7 @@ A4 copies, silent/direct printing, test receipt/A4 actions, safe validation,
 hidden print windows, readiness timeout, callback success/failure, and retry
 without repeating checkout.
 
-Not yet complete for release: a dedicated Electron-native barcode printer
-assignment/test/copy pipeline and physical device calibration certification.
-Current barcode calibration remains part of the existing label workflow and
-must be verified as device-local before desktop release.
+Physical device calibration and certification remain open for release.
 
 ## Printing coverage
 
@@ -81,16 +79,41 @@ Windows install, and offline printer behaviour were not physically verified.
 Test fixtures are clearly marked as printer tests and do not create invoices or
 fiscal QR state. No physical printer or Windows VM was available in this audit.
 
-## Packaging and signing
+## Packaging, signing, and public downloads
 
 Configured targets are macOS DMG/ZIP for x64 and arm64 and Windows x64 NSIS.
-No signing, notarization, publishing, auto-update, or valid Apple/Windows
-signing credentials are configured. Any future package must be labelled
-unsigned/internal until launch, install, uninstall, Gatekeeper, SmartScreen,
-and native-printer checks pass on both operating systems.
+No signing, notarization, auto-update, or valid Apple/Windows signing
+credentials are configured. Packages remain labelled unsigned/internal.
 
-The current `1.0.2` version is not a locked desktop release version because the
-web source SHA is not locked.
+The private source-repository release was confirmed inaccessible anonymously
+(all five asset URLs returned `404` without GitHub credentials). An existing
+public release-only repository, `vvmshahi/kubri-downloads`, was used instead;
+no application source or credentials were copied there.
+
+The public prerelease is published, not draft, and remains a prerelease:
+`desktop-pilot-v1.0.2-20260730`.
+
+Verified anonymous browser-download URLs:
+
+- macOS Apple Silicon DMG: `https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.2-20260730/Kubri-Desktop-1.0.2-macOS-arm64-unsigned.dmg`
+- macOS Apple Silicon ZIP: `https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.2-20260730/Kubri-Desktop-1.0.2-macOS-arm64-unsigned.zip`
+- Windows x64 installer: `https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.2-20260730/Kubri-Desktop-1.0.2-Windows-x64-unsigned-setup.exe`
+- Checksums: `https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.2-20260730/SHA256SUMS.txt`
+- Build manifest: `https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.2-20260730/build-manifest.json`
+- Release notes: `https://github.com/vvmshahi/kubri-downloads/releases/tag/desktop-pilot-v1.0.2-20260730`
+
+Unauthenticated requests returned `302` to GitHub release storage followed by
+`200`, matching the filename and exact local content length for every asset.
+No Intel Mac link is provided; macOS x64 is unavailable in this pilot.
+
+The public landing page now uses typed central configuration in
+`src/config/desktopDownloads.ts`, with visible Pilot and Unsigned badges,
+Apple Silicon DMG/ZIP and Windows x64 choices, file sizes, release notes,
+checksums, installation warnings, printer guidance, and English/Arabic copy.
+
+The current `1.0.2` version is the locked desktop pilot version. The public
+download surface does not use GitHub API URLs, credentials, or private-source
+URLs.
 
 ## Tests
 
@@ -100,11 +123,13 @@ Passed:
 - focused Electron security contract (`13` IPC handlers);
 - `npm test` with local Supabase environment variables;
 - `npm run build`;
+- `npm run test:desktop-download-links`;
+- anonymous `302` → `200` checks for all five public release assets;
 - `git diff --check`.
 
-Not run: Electron packaging, macOS notarization, Windows packaging validation,
-native printer tests, physical QR/barcode scans, authenticated lifecycle
-testing, or fiscal pilots.
+Not run or still pending: macOS notarization, Windows runtime installation and
+printer validation, physical QR/barcode scans, authenticated lifecycle testing,
+or fiscal pilots.
 
 ## Findings
 
@@ -114,11 +139,7 @@ None confirmed after the IPC sender/origin guard was added.
 
 ### P1
 
-- No locked web SHA incorporating readiness commits; final desktop packaging is
-  blocked.
 - Physical printer and Windows validation are absent.
-- Native barcode printer assignment/test pipeline is not complete for the stated
-  desktop scope.
 
 ### P2/P3
 
@@ -133,19 +154,22 @@ None confirmed after the IPC sender/origin guard was added.
 - `electron/main.cjs`: trusted IPC sender/origin validation.
 - `src/components/layout/Sidebar.tsx`: Electron Printer Settings visibility for
   Owner/admin users.
-- `scripts/test-electron-security.mjs`: focused Electron security/navigation/
-  bridge/sidebar contract test.
+- `src/config/desktopDownloads.ts`: verified public pilot asset configuration.
+- `src/pages/landing/LandingPage.tsx`: public desktop download cards, warnings,
+  checksums, release notes, and printer guidance.
+- `src/localization/locales/en/public.json`,
+  `src/localization/locales/ar-SA/public.json`: localized download copy.
+- `scripts/test-desktop-download-links.mjs`: URL, architecture, warning, and
+  English/Arabic contract test.
 
 ## Remaining release gates
 
-1. Approve and lock the final web SHA after incorporating `5c0e0ac` and `d9c5e7e`.
-2. Rebase or recreate this Electron branch from that exact locked SHA.
-3. Complete native macOS and Windows launch/install/uninstall/session tests.
-4. Complete physical 58 mm, 80 mm, A4, and barcode printer certification.
-5. Complete the native barcode printer mapping/calibration pipeline.
-6. Obtain and verify signing/notarization credentials, or explicitly label
+1. Deploy the reviewed frontend commit through the normal production process.
+2. Complete native macOS and Windows launch/install/uninstall/session tests.
+3. Complete physical 58 mm, 80 mm, A4, and barcode printer certification.
+4. Obtain and verify signing/notarization credentials, or explicitly label
    internal unsigned builds.
-7. Only then build clearly labelled internal release candidates.
+5. Only then promote beyond clearly labelled internal pilot packages.
 
 Electron does not bypass server-side Atomic, Legacy, demo, or fiscal-readiness
 decisions. No invoice, payment, checkout, stock, customer, credential,

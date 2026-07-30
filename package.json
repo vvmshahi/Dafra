@@ -95,6 +95,7 @@
     "test:dashboard-product-schema-compat": "node scripts/test-dashboard-product-schema-compat.mjs",
     "test:demo-tenant-safe-checkout": "node scripts/test-demo-tenant-safe-checkout.mjs",
     "test:final-web-printing-refinements": "node --experimental-strip-types scripts/test-final-web-printing-refinements.mjs",
+    "test:desktop-download-links": "node scripts/test-desktop-download-links.mjs",
     "test:a4-artwork-rls": "node scripts/test-a4-artwork-rls-runtime.mjs"
   },
   "build": {

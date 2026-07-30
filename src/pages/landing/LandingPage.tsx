@@ -3,19 +3,17 @@ import { MeemLogo } from '@/components/MeemLogo'
 import { supportConfig } from '@/config/support'
 import {
   Apple, ArrowRight, BarChart3, Boxes, Building2, CheckCircle2,
-  ClipboardCheck, CreditCard, Download, Mail, Menu, MessageCircle,
+  ClipboardCheck, CreditCard, Download, ExternalLink, Mail, Menu, MessageCircle,
   Package, Receipt, ShieldCheck, ShoppingCart, X,
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CompactLanguageSelector } from '@/components/localization/CompactLanguageSelector'
+import { desktopDownloads } from '@/config/desktopDownloads'
 
 const WA_LINK = supportConfig.whatsappLink
 const WA_NUMBER = supportConfig.whatsappNumber
 const EMAIL_LINK = supportConfig.emailLink
-const KUBRI_WINDOWS_DOWNLOAD_URL = 'https://github.com/vvmshahi/Dafra/releases/download/v1.0.2/Kubri-1.0.2-windows-x64.exe'
-const KUBRI_MAC_APPLE_SILICON_DOWNLOAD_URL = 'https://github.com/vvmshahi/Dafra/releases/download/v1.0.2/Kubri-1.0.2-mac-arm64.dmg'
-const KUBRI_MAC_INTEL_DOWNLOAD_URL = 'https://github.com/vvmshahi/Dafra/releases/download/v1.0.2/Kubri-1.0.2-mac-x64.dmg'
 const KUBRI_WORDMARK_SRC = '/brand/kubiri-wordmark.png?v=kubri-2'
 
 function scrollTo(id: string) {
@@ -456,41 +454,65 @@ function WhatsAppIcon({ className = '' }: { className?: string }) {
 function WindowsSection() {
   const { t } = useTranslation('public')
   const benefits = t('desktop.benefits', { returnObjects: true }) as string[]
-  const downloadButtonClass = 'group relative isolate flex min-h-[108px] flex-col items-start justify-between gap-3 overflow-hidden rounded-2xl border border-[#D8E2D8] bg-white/80 px-5 py-4 text-left text-[#071510] shadow-[0_14px_36px_rgba(7,21,16,0.08)] transition-[border-color,box-shadow,transform] duration-200 before:absolute before:inset-[-1px] before:-z-20 before:rounded-2xl before:bg-gradient-to-r before:from-primary-300/70 before:via-gold-300/80 before:to-primary-500/60 before:opacity-0 before:blur-md before:transition-opacity before:duration-200 after:absolute after:inset-[1px] after:-z-10 after:rounded-[15px] after:bg-gradient-to-br after:from-white after:to-[#F7F5EF] after:transition-colors after:duration-200 hover:-translate-y-0.5 hover:border-gold-300 hover:shadow-[0_20px_54px_rgba(7,21,16,0.12)] hover:before:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F7F5EF] active:translate-y-0 active:scale-[0.98]'
+  const downloadButtonClass = 'group relative isolate flex min-h-[118px] flex-col items-start justify-between gap-3 overflow-hidden rounded-2xl border border-[#D8E2D8] bg-white/80 px-5 py-4 text-start text-[#071510] shadow-[0_14px_36px_rgba(7,21,16,0.08)] transition-[border-color,box-shadow,transform] duration-200 before:absolute before:inset-[-1px] before:-z-20 before:rounded-2xl before:bg-gradient-to-r before:from-primary-300/70 before:via-gold-300/80 before:to-primary-500/60 before:opacity-0 before:blur-md before:transition-opacity before:duration-200 after:absolute after:inset-[1px] after:-z-10 after:rounded-[15px] after:bg-gradient-to-br after:from-white after:to-[#F7F5EF] after:transition-colors after:duration-200 hover:-translate-y-0.5 hover:border-gold-300 hover:shadow-[0_20px_54px_rgba(7,21,16,0.12)] hover:before:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F7F5EF] active:translate-y-0 active:scale-[0.98]'
+  const badgeClass = 'rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em]'
+  const externalLinkProps = { target: '_blank', rel: 'noopener noreferrer' } as const
 
   return (
     <section id="windows" className="relative scroll-mt-28 overflow-hidden bg-[#F7F5EF] px-4 py-24 sm:px-6 lg:px-8">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_16%,rgba(200,169,110,0.14),transparent_31%),radial-gradient(circle_at_86%_70%,rgba(27,107,58,0.10),transparent_34%),linear-gradient(180deg,#F7F5EF_0%,#FFFFFF_42%,#F7F5EF_100%)]" />
       <div className="relative mx-auto grid max-w-7xl gap-6 lg:grid-cols-[1fr_0.78fr] lg:items-center">
         <div className="rounded-[30px] border border-[#DDE6DD] bg-white/78 p-7 shadow-[0_22px_70px_rgba(7,21,16,0.10)] ring-1 ring-white backdrop-blur sm:p-8">
-          <h2 className="text-3xl font-black text-[#071510] sm:text-4xl">{t('desktop.title')}</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`${badgeClass} border-gold-300/70 bg-gold-100 text-gold-800`}>{t('desktop.pilotBadge')}</span>
+            <span className={`${badgeClass} border-primary-300/60 bg-primary-50 text-primary-800`}>{t('desktop.unsignedBadge')}</span>
+          </div>
+          <h2 className="mt-4 text-3xl font-black text-[#071510] sm:text-4xl">{t('desktop.title')}</h2>
           <p className="mt-4 max-w-2xl text-base leading-7 text-[#52665A]">
             {t('desktop.subtitle')}
           </p>
           <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <a href={KUBRI_MAC_APPLE_SILICON_DOWNLOAD_URL} className={downloadButtonClass}>
+            <a href={desktopDownloads.macos.dmg.href} {...externalLinkProps} className={downloadButtonClass}>
               <span className="flex items-center gap-2 text-sm font-black">
                 <Apple size={17} /> {t('desktop.apple')}
               </span>
-              <span className="text-xs font-semibold leading-5 text-[#65766B]">{t('desktop.appleHelp')}</span>
+              <span className="text-xs font-semibold leading-5 text-[#65766B]">{desktopDownloads.macos.architecture} · {desktopDownloads.macos.dmg.sizeLabel} · DMG</span>
             </a>
-            <a href={KUBRI_MAC_INTEL_DOWNLOAD_URL} className={downloadButtonClass}>
+            <a href={desktopDownloads.macos.zip.href} {...externalLinkProps} className={downloadButtonClass}>
               <span className="flex items-center gap-2 text-sm font-black">
-                <Apple size={17} /> {t('desktop.intel')}
+                <Download size={17} /> {t('desktop.appleZip')}
               </span>
-              <span className="text-xs font-semibold leading-5 text-[#65766B]">{t('desktop.intelHelp')}</span>
+              <span className="text-xs font-semibold leading-5 text-[#65766B]">{t('desktop.appleZipHelp')} · {desktopDownloads.macos.zip.sizeLabel}</span>
             </a>
-            <a href={KUBRI_WINDOWS_DOWNLOAD_URL} className={downloadButtonClass}>
+            <a href={desktopDownloads.windows.installer.href} {...externalLinkProps} className={downloadButtonClass}>
               <span className="flex items-center gap-2 text-sm font-black">
                 <Download size={17} /> {t('desktop.windows')}
               </span>
-              <span className="text-xs font-semibold leading-5 text-[#65766B]">{t('desktop.windowsHelp')}</span>
+              <span className="text-xs font-semibold leading-5 text-[#65766B]">{desktopDownloads.windows.architecture} · {desktopDownloads.windows.installer.sizeLabel}</span>
             </a>
           </div>
-          <div className="mt-4 flex flex-col gap-1 text-xs font-semibold leading-5 text-[#5D6C62] sm:flex-row sm:items-center sm:justify-between">
-            <span>{t('desktop.printer')}</span>
-            <span className="shrink-0 text-[#0F2419]">{t('desktop.version')}</span>
+          <p className="mt-4 text-xs font-semibold leading-5 text-[#5D6C62]">{t('desktop.intelUnavailable')}</p>
+          <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[#DDE6DD] pt-4 text-xs font-black text-primary-800">
+            <a href={desktopDownloads.releaseUrl} {...externalLinkProps} className="inline-flex items-center gap-1.5 hover:text-gold-700">
+              {t('desktop.releaseNotes')} <ExternalLink size={13} />
+            </a>
+            <a href={desktopDownloads.checksumsUrl} {...externalLinkProps} className="inline-flex items-center gap-1.5 hover:text-gold-700">
+              {t('desktop.checksums')} <ExternalLink size={13} />
+            </a>
+            <span className="text-[#0F2419]">{t('desktop.version')}</span>
           </div>
+          <div className="mt-5 grid gap-3 border-t border-[#DDE6DD] pt-5 md:grid-cols-2">
+            <div className="rounded-2xl border border-gold-300/45 bg-gold-50/80 p-4 text-xs leading-5 text-gold-900">
+              <p className="font-black">{t('desktop.warningTitle')}</p>
+              <p className="mt-1">{t('desktop.macWarning')}</p>
+            </div>
+            <div className="rounded-2xl border border-primary-200 bg-primary-50/75 p-4 text-xs leading-5 text-primary-900">
+              <p className="font-black">{t('desktop.windowsWarningTitle')}</p>
+              <p className="mt-1">{t('desktop.windowsWarning')}</p>
+            </div>
+          </div>
+          <p className="mt-5 text-xs font-semibold leading-5 text-[#5D6C62]">{t('desktop.printer')}</p>
+          <p className="mt-1 text-xs leading-5 text-[#65766B]">{t('desktop.printerHelp')}</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
           {benefits.map(item => (
