@@ -113,10 +113,15 @@ Built from source commit `83eed6a218eced4c461c33c76a3c138d21e4aea7`:
   claim is made; macOS reported only an ad hoc bundle signature.
 - SHA-256 values, exact byte sizes, and per-artifact validation status are in
   the external `checksums/build-manifest.json` and `checksums/SHA256SUMS.txt`.
-- The GitHub prerelease is available at
-  `https://github.com/vvmshahi/Dafra/releases/tag/desktop-pilot-v1.0.2-20260730`;
-  the external `release-notes/frontend-download-links.json` records only
-  verified asset URLs and leaves macOS x64 empty.
+
+| Artifact | Bytes | SHA-256 | Authorised release URL |
+| --- | ---: | --- | --- |
+| macOS arm64 DMG | 159850119 | `942b3da1deaa2254907e946f13539b34102c59c1da23d2bee922991682854664` | [DMG](https://github.com/vvmshahi/Dafra/releases/download/desktop-pilot-v1.0.2-20260730/Kubri-Desktop-1.0.2-macOS-arm64-unsigned.dmg) |
+| macOS arm64 ZIP | 152450404 | `1f9f7223756068fcd827361b4dc39c0b57e3508369cd54af7691cd54d7d16d5a` | [ZIP](https://github.com/vvmshahi/Dafra/releases/download/desktop-pilot-v1.0.2-20260730/Kubri-Desktop-1.0.2-macOS-arm64-unsigned.zip) |
+| Windows x64 NSIS | 121353868 | `0db1d4edf19bbd12c91f09fc1708d0143fef9a6c9c390024405a486d87d2f6f2` | [Windows installer](https://github.com/vvmshahi/Dafra/releases/download/desktop-pilot-v1.0.2-20260730/Kubri-Desktop-1.0.2-Windows-x64-unsigned-setup.exe) |
+| Checksums | 359 | — | [SHA256SUMS.txt](https://github.com/vvmshahi/Dafra/releases/download/desktop-pilot-v1.0.2-20260730/SHA256SUMS.txt) |
+
+The GitHub prerelease is [Kubri Desktop 1.0.2 Pilot](https://github.com/vvmshahi/Dafra/releases/tag/desktop-pilot-v1.0.2-20260730). The repository release requires the corresponding GitHub authorization; the external `release-notes/frontend-download-links.json` records only uploaded asset URLs and leaves macOS x64 empty.
 
 The current `1.0.2` version is an internal implementation version; packaging
 remains pending the OS, hardware, and signing gates above.
