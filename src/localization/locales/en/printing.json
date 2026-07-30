@@ -134,7 +134,7 @@
       "both": "Receipt and A4 invoice",
       "bothHelp": "Keep both document formats available"
     },
-    "general": { "help": "Choose Arabic or bilingual human-readable documents and the action after sale.", "language": "Invoice language", "arabic": "Arabic", "bilingual": "Bilingual — Arabic + English", "afterSale": "After-sale document" },
+    "general": { "help": "Choose Arabic or bilingual human-readable documents and the action after sale.", "language": "Invoice language", "arabic": "Arabic", "bilingual": "Bilingual", "bilingualLanguages": "Arabic + English", "afterSale": "After-sale document" },
     "branding": { "help": "Make the first impression clear and recognisable.", "useBranch": "Use branch name", "resolvedBranch": "Resolved branch: {{name}}", "heading": "Custom display heading", "headingPlaceholder": "Shown at the top of the invoice", "subheading": "Display subheading (optional)", "optionalPlaceholder": "Leave blank to hide it", "showLegal": "Show legal company name in branded header", "legalHelp": "The mandatory legal seller name remains in the invoice information section.", "legalReminder": "Mandatory legal seller details will still appear in the invoice information section.", "logo": "Logo", "logoAlt": "Current invoice logo", "logoHelp": "Upload, replace, or remove the saved branch logo.", "uploading": "Uploading…", "replace": "Replace logo", "remove": "Remove", "logoSize": "Logo size" },
     "contact": { "help": "Only enabled, non-empty contact details appear in the document. Leave address blank to inherit from the branch profile.", "showPhone": "Show phone", "phone": "Phone override", "inheritPhone": "Inherit branch phone", "showEmail": "Show email", "email": "Email", "showWebsite": "Show website", "website": "Website", "showAddress": "Show address", "address": "Address override", "inheritAddress": "Inherit branch address", "footer": "Footer message", "footerPlaceholder": "Leave blank to hide the footer message" },
     "thermal": { "help": "Tune the receipt for the paper your counter uses.", "paperWidth": "Paper width", "density": "Content density", "qrSize": "QR size", "wrapNames": "Wrap long item names", "showChange": "Show cash change" },
@@ -260,6 +260,8 @@
     },
     "advanced": {
       "title": "Advanced settings",
+      "show": "Show controls",
+      "hide": "Hide controls",
       "width": "Sticker width (mm)",
       "height": "Sticker height (mm)",
       "margin": "Content margin (mm)",

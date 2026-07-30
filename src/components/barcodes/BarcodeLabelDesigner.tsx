@@ -196,43 +196,49 @@ export default function BarcodeLabelDesigner({
     }
   }
 
+  const studioSectionClass = 'rounded-xl border border-gray-200 bg-white p-3'
   const configuration = <div className="min-w-0 space-y-3">
-      <section className={`${studio && activeSection !== 'layout' ? 'hidden' : ''} rounded-xl border border-gray-200 bg-[#fbfcfb] p-4`}>
-        <div className="mb-3">
+      <section className={`${studio && activeSection !== 'layout' ? 'hidden' : ''} ${studio ? studioSectionClass : 'rounded-xl border border-gray-200 bg-[#fbfcfb] p-4'}`}>
+        <div className={studio ? 'mb-2.5' : 'mb-3'}>
           <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.design.title')}</h3>
-          <p className="mt-0.5 text-xs text-gray-500">{t('barcodeLabels.design.help')}</p>
+          <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{t('barcodeLabels.design.help')}</p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className={`grid gap-2 ${studio ? 'grid-cols-1' : 'sm:grid-cols-2'}`} role="radiogroup" aria-label={t('barcodeLabels.design.title')}>
           {PRIMARY_LABEL_PRESET_IDS.map(id => {
             const selected = settings.presetId === id
             return <button
               key={id}
               type="button"
-              aria-pressed={selected}
+              role="radio"
+              aria-checked={selected}
               onClick={() => applyPreset(id)}
-              className={`relative flex min-h-24 items-center gap-3 rounded-xl border p-3 text-start outline-none transition-[border-color,background-color,transform] duration-150 active:scale-[.98] focus-visible:ring-2 focus-visible:ring-primary-500 ${
+              className={`relative flex items-center gap-3 rounded-xl border text-start outline-none transition-[border-color,background-color,transform] duration-150 active:scale-[.98] focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                studio ? 'min-h-[70px] px-2.5 py-2' : 'min-h-24 p-3'
+              } ${
                 selected ? 'border-emerald-700 bg-emerald-50/80 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300'
               }`}
             >
-              <LayoutMiniature id={id} />
+              <span className="flex w-24 shrink-0 justify-center"><LayoutMiniature id={id} /></span>
               <span className="min-w-0 flex-1">
-                <span className="block pe-5 text-xs font-bold text-gray-900">{t(`barcodeLabels.presets.${id}.name`)}</span>
-                <span className="mt-1 block text-[10px] leading-4 text-gray-500">{t(`barcodeLabels.presets.${id}.use`)}</span>
+                <span className="block pe-5 text-xs font-bold leading-4 text-gray-900">{t(`barcodeLabels.presets.${id}.name`)}</span>
+                <span className="mt-0.5 block text-[10px] leading-[1.35] text-gray-500">{t(`barcodeLabels.presets.${id}.use`)}</span>
               </span>
-              {selected && <Check size={14} className="absolute end-2.5 top-2.5 text-emerald-700" aria-hidden="true" />}
+              <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-full border ${selected ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-gray-300 bg-white'}`} aria-hidden="true">
+                {selected && <Check size={10} />}
+              </span>
             </button>
           })}
         </div>
       </section>
 
-      <section className={`${studio && activeSection !== 'size' ? 'hidden' : ''} rounded-xl border border-gray-200 bg-white p-4`}>
+      <section className={`${studio && activeSection !== 'size' ? 'hidden' : ''} ${studio ? studioSectionClass : 'rounded-xl border border-gray-200 bg-white p-4'}`}>
         <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.size.title')}</h3>
         <p className="mt-0.5 text-[11px] text-gray-500">{t('barcodeLabels.size.help')}</p>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
           {labelSizeOptions(settings.presetId).map(size => {
             const selected = settings.widthMm === size.widthMm && settings.heightMm === size.heightMm
             return <button key={size.id} type="button" aria-pressed={selected} onClick={() => onChange(applyLabelSize(settings, size))}
-              className={`rounded-xl border px-3 py-2 text-xs font-bold tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${selected ? 'border-emerald-700 bg-emerald-50 text-emerald-900' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'}`}
+              className={`min-h-9 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold tabular-nums outline-none transition-[border-color,background-color,transform] duration-150 active:scale-[.98] focus-visible:ring-2 focus-visible:ring-primary-500 ${selected ? 'border-emerald-700 bg-emerald-50 text-emerald-900' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'}`}
               dir="ltr">
               {size.widthMm} × {size.heightMm} {t('barcodeLabels.units.mm')}
             </button>
@@ -240,22 +246,22 @@ export default function BarcodeLabelDesigner({
         </div>
       </section>
 
-      <section className={`${studio && activeSection !== 'information' ? 'hidden' : ''} rounded-xl border border-gray-200 bg-white p-4`}>
+      <section className={`${studio && activeSection !== 'information' ? 'hidden' : ''} ${studio ? studioSectionClass : 'rounded-xl border border-gray-200 bg-white p-4'}`}>
         <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.content.title')}</h3>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          {(['productName', 'sellingPrice', 'barcodeValue'] as const).map(key => <label key={key} className="flex min-h-10 items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/40 px-3 py-2">
+        <div className={`mt-2.5 grid ${studio ? 'grid-cols-1 gap-1.5' : 'gap-2 sm:grid-cols-2'}`}>
+          {(['productName', 'sellingPrice', 'barcodeValue'] as const).map(key => <label key={key} className={`flex items-center justify-between gap-3 border border-emerald-100 bg-emerald-50/40 ${studio ? 'min-h-9 rounded-lg px-2.5 py-1.5' : 'min-h-10 rounded-xl px-3 py-2'}`}>
             <span className="text-xs font-semibold text-gray-800">{t(`barcodeLabels.content.${key}`)}</span>
             <input type="checkbox" checked={settings.content[key]} onChange={event => updateContent(key, event.target.checked)} className="h-4 w-4 accent-primary-700" />
           </label>)}
-          <div className="flex min-h-10 items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+          <div className={`flex items-center justify-between gap-3 border border-gray-200 bg-gray-50 ${studio ? 'min-h-9 rounded-lg px-2.5 py-1.5' : 'min-h-10 rounded-xl px-3 py-2'}`}>
             <span className="text-xs font-semibold text-gray-800">{t('barcodeLabels.content.barcodeGraphic')}</span>
             <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700"><Check size={12} />{t('barcodeLabels.content.required')}</span>
           </div>
-          {optionalContent.map(key => <label key={key} className="flex min-h-10 items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+          {optionalContent.map(key => <label key={key} className={`flex items-center justify-between gap-3 border border-gray-100 bg-gray-50 ${studio ? 'min-h-9 rounded-lg px-2.5 py-1.5' : 'min-h-10 rounded-xl px-3 py-2'}`}>
             <span className="text-xs font-medium text-gray-700">{t(`barcodeLabels.content.${key}`)}</span>
             <input type="checkbox" checked={settings.content[key]} onChange={event => updateContent(key, event.target.checked)} className="h-4 w-4 accent-primary-700" />
           </label>)}
-          <label className="flex min-h-10 items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+          <label className={`flex items-center justify-between gap-3 border border-gray-100 bg-gray-50 ${studio ? 'min-h-9 rounded-lg px-2.5 py-1.5' : 'min-h-10 rounded-xl px-3 py-2'}`}>
             <span className="text-xs font-medium text-gray-700">{t('barcodeLabels.content.secondaryName')}</span>
             <input type="checkbox" checked={secondaryEnabled} onChange={event => update('content', { ...settings.content, productNameAr: event.target.checked, productNameEn: event.target.checked })} className="h-4 w-4 accent-primary-700" />
           </label>
@@ -263,30 +269,30 @@ export default function BarcodeLabelDesigner({
         <p className="mt-2 text-[10px] text-gray-400">{t('barcodeLabels.content.barcodeAlwaysIncluded')}</p>
       </section>
 
-      <section className={`${studio && activeSection !== 'appearance' ? 'hidden' : ''} rounded-xl border border-gray-200 bg-white p-4`}>
+      <section className={`${studio && activeSection !== 'appearance' ? 'hidden' : ''} ${studio ? studioSectionClass : 'rounded-xl border border-gray-200 bg-white p-4'}`}>
         <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.appearance.title')}</h3>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="space-y-1.5 text-xs font-semibold text-gray-600">
+        <div className={`mt-2.5 grid ${studio ? 'grid-cols-1 divide-y divide-gray-100' : 'gap-3 sm:grid-cols-2'}`}>
+          <label className={studio ? 'grid min-h-11 grid-cols-[minmax(0,1fr)_minmax(112px,44%)] items-center gap-2 text-xs font-semibold text-gray-600' : 'space-y-1.5 text-xs font-semibold text-gray-600'}>
             <span>{t('barcodeLabels.appearance.textSize')}</span>
-            <select className="input h-10" value={settings.productNameSize} onChange={event => update('productNameSize', event.target.value as BarcodeLabelSettings['productNameSize'])}>
+            <select className={`input ${studio ? 'h-9 text-xs' : 'h-10'}`} value={settings.productNameSize} onChange={event => update('productNameSize', event.target.value as BarcodeLabelSettings['productNameSize'])}>
               <option value="small">{t('barcodeLabels.nameSize.small')}</option><option value="normal">{t('barcodeLabels.nameSize.medium')}</option><option value="large">{t('barcodeLabels.nameSize.large')}</option>
             </select>
           </label>
-          <label className="space-y-1.5 text-xs font-semibold text-gray-600">
+          <label className={studio ? 'grid min-h-11 grid-cols-[minmax(0,1fr)_minmax(112px,44%)] items-center gap-2 text-xs font-semibold text-gray-600' : 'space-y-1.5 text-xs font-semibold text-gray-600'}>
             <span>{t('barcodeLabels.appearance.barcodeSize')}</span>
-            <select className="input h-10" value={settings.barcodeHeightMm >= LABEL_PRESETS[settings.presetId].barcodeHeightMm + 4 ? 'large' : 'standard'} onChange={event => update('barcodeHeightMm', event.target.value === 'large' ? Math.min(40, LABEL_PRESETS[settings.presetId].barcodeHeightMm + 4) : LABEL_PRESETS[settings.presetId].barcodeHeightMm)}>
+            <select className={`input ${studio ? 'h-9 text-xs' : 'h-10'}`} value={settings.barcodeHeightMm >= LABEL_PRESETS[settings.presetId].barcodeHeightMm + 4 ? 'large' : 'standard'} onChange={event => update('barcodeHeightMm', event.target.value === 'large' ? Math.min(40, LABEL_PRESETS[settings.presetId].barcodeHeightMm + 4) : LABEL_PRESETS[settings.presetId].barcodeHeightMm)}>
               <option value="standard">{t('barcodeLabels.appearance.standard')}</option><option value="large">{t('barcodeLabels.appearance.large')}</option>
             </select>
           </label>
-          <label className="space-y-1.5 text-xs font-semibold text-gray-600">
+          <label className={studio ? 'grid min-h-11 grid-cols-[minmax(0,1fr)_minmax(112px,44%)] items-center gap-2 text-xs font-semibold text-gray-600' : 'space-y-1.5 text-xs font-semibold text-gray-600'}>
             <span>{t('barcodeLabels.appearance.priceEmphasis')}</span>
-            <select className="input h-10" value={settings.priceStyle} onChange={event => update('priceStyle', event.target.value as BarcodeLabelSettings['priceStyle'])}>
+            <select className={`input ${studio ? 'h-9 text-xs' : 'h-10'}`} value={settings.priceStyle} onChange={event => update('priceStyle', event.target.value as BarcodeLabelSettings['priceStyle'])}>
               <option value="normal">{t('barcodeLabels.priceStyle.normal')}</option><option value="large">{t('barcodeLabels.priceStyle.strong')}</option>
             </select>
           </label>
-          <label className="space-y-1.5 text-xs font-semibold text-gray-600">
+          <label className={studio ? 'grid min-h-11 grid-cols-[minmax(0,1fr)_minmax(112px,44%)] items-center gap-2 text-xs font-semibold text-gray-600' : 'space-y-1.5 text-xs font-semibold text-gray-600'}>
             <span>{t('barcodeLabels.appearance.alignment')}</span>
-            <select className="input h-10" value={settings.textAlignment} onChange={event => update('textAlignment', event.target.value as BarcodeLabelSettings['textAlignment'])}>
+            <select className={`input ${studio ? 'h-9 text-xs' : 'h-10'}`} value={settings.textAlignment} onChange={event => update('textAlignment', event.target.value as BarcodeLabelSettings['textAlignment'])}>
               <option value="start">{t('barcodeLabels.alignment.start')}</option><option value="center">{t('barcodeLabels.alignment.center')}</option>
             </select>
           </label>
@@ -295,7 +301,14 @@ export default function BarcodeLabelDesigner({
           <RotateCcw size={13} aria-hidden="true" />{t('barcodeLabels.actions.resetPreset')}
         </button>
       </section>
-      {studio && activeSection === 'printer' && <section className="rounded-xl border border-gray-200 bg-white p-3">{studio.printerAdjustment}</section>}
+      {studio && activeSection === 'printer' && <details className="group rounded-xl border border-gray-200 bg-white">
+        <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-bold text-gray-900 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500 [&::-webkit-details-marker]:hidden">
+          <span>{t('barcodeLabels.calibration.title')}</span>
+          <span className="text-[10px] font-semibold text-gray-500 group-open:hidden">{t('barcodeLabels.advanced.show')}</span>
+          <span className="hidden text-[10px] font-semibold text-gray-500 group-open:inline">{t('barcodeLabels.advanced.hide')}</span>
+        </summary>
+        <div className="border-t border-gray-100 p-3">{studio.printerAdjustment}</div>
+      </details>}
       <ConfirmDialog open={resetPresetOpen} kind="resetLabelPreset" onClose={() => setResetPresetOpen(false)} onConfirm={() => { applyPreset(settings.presetId as RetailLabelPresetId); setResetPresetOpen(false) }} />
     </div>
 
@@ -337,7 +350,8 @@ export default function BarcodeLabelDesigner({
       previewLabel={t('barcodeLabels.preview.title')}
       settingsLabel={t('workspace.studio.settings')}
       closeSettingsLabel={t('workspace.studio.closeSettings')}
-      sectionNavigation={<DocumentStudioSectionNav sections={sections} activeSection={activeSection} onSelect={selectSection} label={t('barcodeLabels.studio.navigation')} />}
+      configurationKey={activeSection}
+      sectionNavigation={<DocumentStudioSectionNav sections={sections} activeSection={activeSection} onSelect={selectSection} label={t('barcodeLabels.studio.navigation')} width="compact" />}
       configuration={configuration}
       previewToolbar={<DocumentStudioPreviewToolbar
         title={t('barcodeLabels.preview.title')}

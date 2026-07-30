@@ -469,3 +469,30 @@ This is a UI architecture change only. Receipt, A4, and barcode document
 renderers, layouts, physical dimensions, presentation JSON, Branch-scoped
 persistence, browser print/PDF paths, and Electron-only printer capability
 remain unchanged. No migration was required.
+
+## Barcode Labels configuration-density refinement
+
+The Barcode Labels studio had a pane-packing problem at the desktop boundary:
+the shared 400 px configuration pane reserved 124 px for section navigation and
+32 px for padding, while the four layout options were forced into two columns.
+That left too little horizontal room for each miniature, name, and description.
+
+Barcode Labels now opts into a 100 px section rail while Receipts and Invoices
+retain the shared 124 px rail. The layout selector uses four compact horizontal
+radio cards with the miniature at the logical start, readable copy in the
+middle, and a stable selection marker at the logical end. Size choices are
+compact dimension pills; Included Information is a dense, labelled checklist;
+and Appearance uses aligned label/control rows. These changes affect only
+studio configuration chrome: the shared 400–440 px configuration pane and the
+barcode preview/output geometry are unchanged.
+
+Printer Adjustment is closed by default inside the Barcode studio and expands
+to compact, device-local calibration controls. Native printer discovery remains
+Electron-only, and the main Printer Setup workspace keeps its full calibration
+preview. Switching Barcode sections returns the independent configuration
+scroller to the top without moving or recreating the preview.
+
+Invoice and Receipt General language cards now present `Bilingual` as the title
+and `Arabic + English` as secondary copy. Arabic uses `ثنائية اللغة` with
+`العربية + الإنجليزية`; the previous em-dash construction was removed from
+display and accessible names.
