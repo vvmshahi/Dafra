@@ -30,16 +30,27 @@ Supabase endpoint.
 ## Frontend publication and production deployment
 
 - Frontend branch: `release/electron-desktop-20260730`
-- Download integration commit: `9ff4c4b7f73d6feb1c09b60aecb75c9ddb9dfe30`
-- Production deployment: `dpl_GY3KHT7FYawuCBy3ffrXNY2bhFjg`
-- Production deployment URL: `https://dafra-drugehzi6-mohammed-shahin-v-vs-projects.vercel.app`
+- Download integration commit: `b1443e4dd0315ff7deaf8047ebb496ba3c86d66d`
+- Production deployment: `dpl_4dCoTTMtiwGv81EDVCvsZBMYbgvV`
+- Production deployment URL: `https://dafra-cbx1wr5lw-mohammed-shahin-v-vs-projects.vercel.app`
 - Production alias: `https://www.kubri.shop`
 
-The production deployment was created from the clean checkout at the pushed
-frontend commit. The production smoke confirmed Version 1.0.3, Apple Silicon
-DMG and ZIP buttons, Windows installer button, Pilot and Unsigned labels,
-checksum link, Gatekeeper and SmartScreen guidance, English/Arabic strings,
-and absence of a recommended 1.0.2 or active Intel download.
+The homepage download section was subsequently simplified to exactly two
+primary actions: `Download for Mac` (Apple Silicon DMG) and `Download for
+Windows` (Windows 10/11 installer). Pilot, unsigned, version, checksum,
+release, ZIP, Intel, warning, printer, and feature-card details remain
+available only in internal configuration/release documentation, not in the
+public section.
+
+The production deployment was created from the tested frontend commit. Its
+anonymous smoke confirmed HTTP 200, the two expected English/Arabic-capable
+download actions, responsive mobile/desktop layout, visible keyboard focus
+state, and absence of the removed technical desktop copy. Anonymous range
+requests to both public GitHub assets returned HTTP 206. No Electron packages
+were rebuilt or republished.
+
+Vercel production follows `main`; the simplified implementation was aligned
+there at `549138965417c6343abf9775590464d17c0d9f4a` without rewriting history.
 
 ## Limitations
 
@@ -50,5 +61,7 @@ and absence of a recommended 1.0.2 or active Intel download.
 - No binaries were committed to Git history.
 - Frontend links use public browser download URLs only; no private token or
   authenticated API URL is used.
+- The public homepage intentionally exposes only Mac and Windows primary
+  actions; ZIP/checksum metadata remains typed internal configuration.
 - No production invoice, payment, stock, customer, credential, ZATCA, or fiscal
   state was modified.
