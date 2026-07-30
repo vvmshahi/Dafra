@@ -113,3 +113,40 @@ Affected focused tests now verify the live composition module, early server docu
 **KUBRI_FINAL_WEB_PRODUCTION_READINESS_BLOCKED**
 
 The application has substantial source-level and deterministic contract evidence, including fiscal safety controls. It is not production-certified: the forward migration is pending, no clean reset completed, no authorised demo lifecycle was executed, and no real ZATCA pilot was authorised or attempted.
+
+## Technical blocker clearance update — 30 July 2026
+
+The migration and clean-reset blockers were subsequently cleared in the isolated
+readiness worktree. The local Supabase failure was traced to the mixed-case
+`project_id = "Dafra"` in `supabase/config.toml`: Docker service discovery
+constructed `supabase_db_Dafra`, which Storage could not resolve. The local-only
+development configuration now uses `project_id = "dafra"`.
+
+The disposable local stack was repaired without removing unrelated project
+containers or volumes. A clean reset completed the complete migration chain
+through `20260730000500_restore_v1_invoice_settings_compatibility_helpers.sql`;
+the database and all configured Supabase services remained healthy afterward.
+The three restored V1 helpers were verified locally and remotely for signatures,
+ownership, `SECURITY DEFINER` settings, safe search paths, comments, and
+service-role-only execution. Browser execution remains revoked.
+
+The linked project `bkbphkpqcxuejozayrsy` initially had exactly one pending
+migration, `20260730000500`. The supported dry run listed only that migration.
+It was applied through the supported linked migration workflow. A subsequent
+migration list shows local/remote parity, and a second dry run reports the
+remote database is up to date.
+
+Dependencies were restored with `npm ci`; package metadata and the lockfile were
+unchanged. `npm test`, `npm run build`, and `git diff --check` passed. The
+focused runtime helper harness could not complete because its cleanup command
+hard-codes the obsolete `supabase_db_Dafra` container name; its synthetic local
+fixtures were removed by a clean disposable reset. The existing invoice-settings
+source contract also has a stale expected-key assertion for the already-present
+`show_standard_branding` field. Neither issue changed migration or production
+data, and no test was weakened.
+
+The migration and clean-reset blockers are **PASSED**. Full production
+readiness remains blocked pending the authorised Owner/tenant/Branch lifecycle,
+operational CRUD and POS/demo verification, authenticated isolation checks,
+responsive Arabic/RTL verification, and separately authorised controlled
+Simplified B2C and Standard B2B ZATCA pilots.
