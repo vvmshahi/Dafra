@@ -1,9 +1,15 @@
 # Kubri Electron desktop readiness — 30 July 2026
 
+## Current 1.0.3 publication status
+
+The corrected 1.0.3 pilot publication is recorded in
+`KUBRI_DESKTOP_PILOT_PUBLICATION_20260730.md`. It supersedes the 1.0.2
+download integration documented historically below.
+
 ## Verdict and authoritative source
 
-**Status: PILOT PACKAGES AVAILABLE — public download integration verified;
-signing, OS runtime, and physical-printer gates remain open.**
+**Status: 1.0.3 PILOT PUBLISHED AND DEPLOYED — signing, Windows runtime, and
+physical-printer gates remain open.**
 
 The locked production web base is commit
 `6a81a4f47bdc128508736d6e245c347cbe2826db`, tagged
