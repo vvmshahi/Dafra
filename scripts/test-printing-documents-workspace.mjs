@@ -184,7 +184,7 @@ test('device calibration remains local with exact movement and scaling increment
 
 test('barcode configuration receives a compact rail and readable horizontal layout choices', () => {
   assert.match(studio, /width\?: 'default' \| 'compact'/)
-  assert.match(studio, /width === 'compact' \? 'xl:w-\[100px\]' : 'xl:w-\[124px\]'/)
+  assert.match(studio, /width === 'compact' \? 'xl:w-\[100px\] xl:p-1' : 'xl:w-\[124px\]'/)
   assert.match(designer, /width="compact"/)
   assert.match(designer, /studio \? 'grid-cols-1' : 'sm:grid-cols-2'/)
   assert.match(designer, /role="radiogroup"/)
@@ -230,4 +230,48 @@ test('bilingual language cards use separate primary and secondary copy in Englis
   assert.match(invoice, /description: t\('printing:invoiceSettings\.general\.bilingualLanguages'\)/)
   assert.match(workspace, /workspace="receipts"/)
   assert.match(workspace, /workspace="invoices"/)
+})
+
+test('section navigation strictly contains labels, selected state and focus inside the rail', () => {
+  assert.match(studio, /fullLabel\?: string/)
+  assert.match(studio, /flex min-w-0 flex-wrap gap-1 xl:w-full xl:flex-col/)
+  assert.match(studio, /max-w-full shrink-0/)
+  assert.match(studio, /xl:grid xl:w-full xl:min-w-0 xl:shrink/)
+  assert.match(studio, /xl:grid-cols-\[11px_minmax\(0,1fr\)\]/)
+  assert.match(studio, /xl:grid-cols-\[12px_minmax\(0,1fr\)\]/)
+  assert.match(studio, /xl:overflow-hidden/)
+  assert.match(studio, /focus-visible:ring-inset/)
+  assert.match(studio, /min-w-0 whitespace-nowrap xl:whitespace-normal/)
+  assert.match(studio, /xl:\[overflow-wrap:anywhere\]/)
+  assert.match(studio, /xl:border-e/)
+  assert.match(studio, /xl:overflow-x-hidden/)
+  assert.doesNotMatch(studio, /absolute[^"']*studio-section|studio-section[^"']*absolute/)
+})
+
+test('Barcode uses concise visible labels with complete English and Arabic accessible names', () => {
+  assert.equal(en.barcodeLabels.studio.sections.information, 'Information')
+  assert.equal(en.barcodeLabels.studio.sections.informationFull, 'Included information')
+  assert.equal(en.barcodeLabels.studio.sections.printer, 'Printer setup')
+  assert.equal(en.barcodeLabels.studio.sections.printerFull, 'Printer adjustment')
+  assert.equal(ar.barcodeLabels.studio.sections.information, 'المعلومات')
+  assert.equal(ar.barcodeLabels.studio.sections.informationFull, 'المعلومات المضمنة')
+  assert.equal(ar.barcodeLabels.studio.sections.printer, 'إعداد الطابعة')
+  assert.equal(ar.barcodeLabels.studio.sections.printerFull, 'ضبط محاذاة الطابعة')
+  assert.match(designer, /fullLabel: t\('barcodeLabels\.studio\.sections\.informationFull'\)/)
+  assert.match(designer, /fullLabel: t\('barcodeLabels\.studio\.sections\.printerFull'\)/)
+  assert.match(studio, /aria-label=\{fullLabel\}/)
+  assert.match(studio, /title=\{section\.fullLabel\}/)
+})
+
+test('drawer and Receipt/Invoice rails retain their responsive, readable contracts', () => {
+  assert.match(studio, /xl:w-\[100px\]/)
+  assert.doesNotMatch(studio, /(?<!xl:)w-\[100px\]/)
+  assert.match(studio, /flex min-w-0 flex-wrap/)
+  assert.match(studio, /whitespace-nowrap xl:whitespace-normal/)
+  for (const workspaceName of ['receipts', 'invoices']) {
+    for (const label of Object.values(en.workspace.sections[workspaceName])) assert.ok(label.length > 0)
+    for (const label of Object.values(ar.workspace.sections[workspaceName])) assert.ok(label.length > 0)
+  }
+  assert.match(invoice, /<DocumentStudioSectionNav sections=\{sections\}/)
+  assert.match(studio, /xl:grid-cols-\[minmax\(400px,440px\)_minmax\(0,1fr\)\]/)
 })

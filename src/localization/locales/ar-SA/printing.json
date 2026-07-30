@@ -188,9 +188,11 @@
       "sections": {
         "layout": "التخطيط",
         "size": "المقاس",
-        "information": "المعلومات المضمنة",
+        "information": "المعلومات",
+        "informationFull": "المعلومات المضمنة",
         "appearance": "المظهر",
-        "printer": "ضبط الطابعة"
+        "printer": "إعداد الطابعة",
+        "printerFull": "ضبط محاذاة الطابعة"
       }
     },
     "currency": {
