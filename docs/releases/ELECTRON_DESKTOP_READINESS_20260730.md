@@ -10,8 +10,13 @@ The locked web source is commit `6a81a4f47bdc128508736d6e245c347cbe2826db` on
 `web-production-20260730`. The implementation branch is
 `release/electron-final-20260730`, created from that exact source.
 
-This branch is not a final installer source and no Electron installer was built
-or published.
+The implementation source was locked at `83eed6a218eced4c461c33c76a3c138d21e4aea7`
+before packaging. The unsigned internal/pilot artifacts are retained outside
+Git at `/Users/admin/Desktop/Kubri-Pilot-Desktop-Apps/Kubri-Desktop-1.0.2-20260730`.
+
+The pushed annotated desktop tag `desktop-pilot-v1.0.2-20260730` points to that
+exact source commit. This tag identifies the package source; the subsequent
+documentation commit on this branch records the packaging outcome.
 
 ## Existing architecture
 
@@ -88,9 +93,30 @@ fiscal QR state. No physical printer or Windows VM was available in this audit.
 
 Configured targets are macOS DMG/ZIP for x64 and arm64 and Windows x64 NSIS.
 No signing, notarization, publishing, auto-update, or valid Apple/Windows
-signing credentials are configured. Any future package must be labelled
-unsigned/internal until launch, install, uninstall, Gatekeeper, SmartScreen,
-and native-printer checks pass on both operating systems.
+signing credentials are configured. Any package from this run is labelled
+unsigned/internal.
+
+### 30 July 2026 pilot package
+
+Built from source commit `83eed6a218eced4c461c33c76a3c138d21e4aea7`:
+
+- macOS arm64 DMG and ZIP were produced. The DMG integrity and bundle identity
+  were checked, and a packaged process launch smoke test passed with an
+  isolated user-data directory. Manual GUI route verification remains open.
+- Windows x64 NSIS was produced and its unpacked `Kubri.exe` payload was
+  statically verified as PE32+ x86-64. Windows install, launch, uninstall,
+  SmartScreen, and printer runtime validation remain open.
+- macOS x64 was not built in this run because the host had less than 1 GiB free
+  space after retaining the other package artifacts.
+- The package path scan found no bundled `.env`, `.git`, private-key,
+  certificate, credential, token, or log paths. No signing or notarization
+  claim is made; macOS reported only an ad hoc bundle signature.
+- SHA-256 values, exact byte sizes, and per-artifact validation status are in
+  the external `checksums/build-manifest.json` and `checksums/SHA256SUMS.txt`.
+- The GitHub prerelease is available at
+  `https://github.com/vvmshahi/Dafra/releases/tag/desktop-pilot-v1.0.2-20260730`;
+  the external `release-notes/frontend-download-links.json` records only
+  verified asset URLs and leaves macOS x64 empty.
 
 The current `1.0.2` version is an internal implementation version; packaging
 remains pending the OS, hardware, and signing gates above.
@@ -106,10 +132,14 @@ Passed:
 - `npm test` with local Supabase environment variables;
 - `npm run build`;
 - `git diff --check`.
+- Electron packaging completed for macOS arm64 DMG/ZIP and Windows x64 NSIS;
+  package inspection logs and checksums are retained in the external pilot
+  release directory.
 
-Not run: Electron packaging, macOS notarization, Windows packaging validation,
-native printer tests, physical QR/barcode scans, authenticated lifecycle
-testing, or fiscal pilots.
+Not run or still pending: macOS x64 packaging, macOS manual GUI route review,
+macOS notarization, Windows runtime installation/launch/uninstall validation,
+native printer hardware tests, physical QR/barcode scans, authenticated
+lifecycle testing, or fiscal pilots.
 
 ## Findings
 
