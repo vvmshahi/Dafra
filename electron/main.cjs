@@ -475,6 +475,17 @@ function safeErrorMessage(error) {
   return error instanceof Error ? error.message : String(error ?? 'Unknown print error')
 }
 
+function assertTrustedIpcSender(event) {
+  if (!mainWindow || event.sender !== mainWindow.webContents) {
+    throw new Error('Untrusted IPC sender')
+  }
+
+  const frameUrl = event.senderFrame?.url || event.sender.getURL()
+  if (!internalUrl(frameUrl)) {
+    throw new Error('Untrusted IPC origin')
+  }
+}
+
 function millimetresToMicrons(mm) {
   return Math.round(Number(mm) * 1000)
 }
@@ -975,6 +986,7 @@ async function runTestA4(sender, inputSettings = null) {
 
 function registerPrinterIpc() {
   ipcMain.handle('print-silent', async (event) => {
+    assertTrustedIpcSender(event)
     const printerName = getDefaultPrinterName()
     return printCurrentWindow(event.sender, printerName, {
       copies: readPrinterSettings().receiptCopies,
@@ -982,28 +994,34 @@ function registerPrinterIpc() {
   })
 
   ipcMain.handle('get-printers', async (event) => {
+    assertTrustedIpcSender(event)
     return getPrinters(event.sender)
   })
 
-  ipcMain.handle('save-printer', async (_event, printerName) => {
+  ipcMain.handle('save-printer', async (event, printerName) => {
+    assertTrustedIpcSender(event)
     saveDefaultPrinterName(printerName)
     return { success: true }
   })
 
-  ipcMain.handle('get-default-printer', async () => {
+  ipcMain.handle('get-default-printer', async (event) => {
+    assertTrustedIpcSender(event)
     return getDefaultPrinterName()
   })
 
-  ipcMain.handle('clear-printer', async () => {
+  ipcMain.handle('clear-printer', async (event) => {
+    assertTrustedIpcSender(event)
     clearDefaultPrinterName()
     return { success: true }
   })
 
-  ipcMain.handle('get-printer-settings', async () => {
+  ipcMain.handle('get-printer-settings', async (event) => {
+    assertTrustedIpcSender(event)
     return readPrinterSettings()
   })
 
   ipcMain.handle('save-printer-settings', async (event, settings) => {
+    assertTrustedIpcSender(event)
     const next = validatePrinterSettingsInput(settings, readPrinterSettings())
     if (next.receiptPrinterName) {
       await assertSelectedPrinterAvailable(event.sender, next.receiptPrinterName)
@@ -1017,7 +1035,8 @@ function registerPrinterIpc() {
     }
   })
 
-  ipcMain.handle('clear-printer-settings', async () => {
+  ipcMain.handle('clear-printer-settings', async (event) => {
+    assertTrustedIpcSender(event)
     return {
       success: true,
       settings: writePrinterSettings(DEFAULT_PRINTER_SETTINGS),
@@ -1025,22 +1044,27 @@ function registerPrinterIpc() {
   })
 
   ipcMain.handle('test-print', async (event, settings) => {
+    assertTrustedIpcSender(event)
     return runTestPrint(event.sender, settings)
   })
 
   ipcMain.handle('print-receipt', async (event, request) => {
+    assertTrustedIpcSender(event)
     return printReceiptByInvoice(event.sender, request)
   })
 
   ipcMain.handle('print-current-receipt', async (event) => {
+    assertTrustedIpcSender(event)
     return printCurrentReceiptSnapshot(event.sender)
   })
 
   ipcMain.handle('print-a4-invoice', async (event) => {
+    assertTrustedIpcSender(event)
     return printA4CurrentWindow(event.sender)
   })
 
   ipcMain.handle('test-print-a4', async (event, settings) => {
+    assertTrustedIpcSender(event)
     return runTestA4(event.sender, settings)
   })
 }
