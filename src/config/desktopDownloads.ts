@@ -6,24 +6,24 @@ export type DesktopDownload = {
 }
 
 export const desktopDownloads = {
-  version: '1.0.2',
-  releaseTag: 'desktop-pilot-v1.0.2-20260730',
+  version: '1.0.3',
+  releaseTag: 'desktop-pilot-v1.0.3-20260730',
   pilot: true,
   unsigned: true,
-  releaseUrl: 'https://github.com/vvmshahi/kubri-downloads/releases/tag/desktop-pilot-v1.0.2-20260730',
-  checksumsUrl: 'https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.2-20260730/SHA256SUMS.txt',
+  releaseUrl: 'https://github.com/vvmshahi/kubri-downloads/releases/tag/desktop-pilot-v1.0.3-20260730',
+  checksumsUrl: 'https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.3-20260730/SHA256SUMS.txt',
   macos: {
     architecture: 'Apple Silicon — M1, M2, M3, M4 and later',
     dmg: {
-      href: 'https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.2-20260730/Kubri-Desktop-1.0.2-macOS-arm64-unsigned.dmg',
-      filename: 'Kubri-Desktop-1.0.2-macOS-arm64-unsigned.dmg',
-      sizeBytes: 159850119,
-      sizeLabel: '152.4 MB',
+      href: 'https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.3-20260730/Kubri-Desktop-1.0.3-macOS-arm64-unsigned.dmg',
+      filename: 'Kubri-Desktop-1.0.3-macOS-arm64-unsigned.dmg',
+      sizeBytes: 159818962,
+      sizeLabel: '152.5 MB',
     } satisfies DesktopDownload,
     zip: {
-      href: 'https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.2-20260730/Kubri-Desktop-1.0.2-macOS-arm64-unsigned.zip',
-      filename: 'Kubri-Desktop-1.0.2-macOS-arm64-unsigned.zip',
-      sizeBytes: 152450404,
+      href: 'https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.3-20260730/Kubri-Desktop-1.0.3-macOS-arm64-unsigned.zip',
+      filename: 'Kubri-Desktop-1.0.3-macOS-arm64-unsigned.zip',
+      sizeBytes: 152450232,
       sizeLabel: '145.3 MB',
     } satisfies DesktopDownload,
     intelAvailable: false,
@@ -31,9 +31,9 @@ export const desktopDownloads = {
   windows: {
     architecture: 'Windows 10/11, 64-bit',
     installer: {
-      href: 'https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.2-20260730/Kubri-Desktop-1.0.2-Windows-x64-unsigned-setup.exe',
-      filename: 'Kubri-Desktop-1.0.2-Windows-x64-unsigned-setup.exe',
-      sizeBytes: 121353868,
+      href: 'https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.3-20260730/Kubri-Desktop-1.0.3-Windows-x64-unsigned-setup.exe',
+      filename: 'Kubri-Desktop-1.0.3-Windows-x64-unsigned-setup.exe',
+      sizeBytes: 121357998,
       sizeLabel: '115.7 MB',
     } satisfies DesktopDownload,
   },

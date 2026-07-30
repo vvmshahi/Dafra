@@ -471,25 +471,35 @@ function WindowsSection() {
           <p className="mt-4 max-w-2xl text-base leading-7 text-[#52665A]">
             {t('desktop.subtitle')}
           </p>
-          <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <a href={desktopDownloads.macos.dmg.href} {...externalLinkProps} className={downloadButtonClass}>
-              <span className="flex items-center gap-2 text-sm font-black">
-                <Apple size={17} /> {t('desktop.apple')}
-              </span>
-              <span className="text-xs font-semibold leading-5 text-[#65766B]">{desktopDownloads.macos.architecture} · {desktopDownloads.macos.dmg.sizeLabel} · DMG</span>
-            </a>
-            <a href={desktopDownloads.macos.zip.href} {...externalLinkProps} className={downloadButtonClass}>
-              <span className="flex items-center gap-2 text-sm font-black">
-                <Download size={17} /> {t('desktop.appleZip')}
-              </span>
-              <span className="text-xs font-semibold leading-5 text-[#65766B]">{t('desktop.appleZipHelp')} · {desktopDownloads.macos.zip.sizeLabel}</span>
-            </a>
-            <a href={desktopDownloads.windows.installer.href} {...externalLinkProps} className={downloadButtonClass}>
-              <span className="flex items-center gap-2 text-sm font-black">
-                <Download size={17} /> {t('desktop.windows')}
-              </span>
-              <span className="text-xs font-semibold leading-5 text-[#65766B]">{desktopDownloads.windows.architecture} · {desktopDownloads.windows.installer.sizeLabel}</span>
-            </a>
+          <div className="mt-7 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-[#D8E2D8] bg-white/70 p-4">
+              <h3 className="text-base font-black text-[#071510]">{t('desktop.macTitle')}</h3>
+              <p className="mt-1 text-xs font-semibold leading-5 text-[#65766B]">{t('desktop.macDescription')}</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <a href={desktopDownloads.macos.dmg.href} {...externalLinkProps} className={downloadButtonClass}>
+                  <span className="flex items-center gap-2 text-sm font-black">
+                    <Apple size={17} /> {t('desktop.downloadDmg')}
+                  </span>
+                  <span className="text-xs font-semibold leading-5 text-[#65766B]">DMG · {desktopDownloads.macos.dmg.sizeLabel}</span>
+                </a>
+                <a href={desktopDownloads.macos.zip.href} {...externalLinkProps} className={downloadButtonClass}>
+                  <span className="flex items-center gap-2 text-sm font-black">
+                    <Download size={17} /> {t('desktop.downloadZip')}
+                  </span>
+                  <span className="text-xs font-semibold leading-5 text-[#65766B]">ZIP · {desktopDownloads.macos.zip.sizeLabel}</span>
+                </a>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-[#D8E2D8] bg-white/70 p-4">
+              <h3 className="text-base font-black text-[#071510]">{t('desktop.windowsTitle')}</h3>
+              <p className="mt-1 text-xs font-semibold leading-5 text-[#65766B]">{t('desktop.windowsDescription')}</p>
+              <a href={desktopDownloads.windows.installer.href} {...externalLinkProps} className={`${downloadButtonClass} mt-4`}>
+                <span className="flex items-center gap-2 text-sm font-black">
+                  <Download size={17} /> {t('desktop.downloadInstaller')}
+                </span>
+                <span className="text-xs font-semibold leading-5 text-[#65766B]">{desktopDownloads.windows.installer.sizeLabel}</span>
+              </a>
+            </div>
           </div>
           <p className="mt-4 text-xs font-semibold leading-5 text-[#5D6C62]">{t('desktop.intelUnavailable')}</p>
           <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[#DDE6DD] pt-4 text-xs font-black text-primary-800">
