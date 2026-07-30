@@ -255,7 +255,7 @@ await test('18 disabled flag blocks unsafe output', () => {
   assert.match(source['01_artifact_lifecycle.sql'], /immutable_finalization_enabled boolean NOT NULL DEFAULT false/); assert.match(submission, /immutableFinalizationEnabled/)
 })
 await test('19 mismatch fails before checkout', () => {
-  const capability = pos.indexOf('await requireZatcaFinalizationCapability('); const checkout = pos.indexOf("rpc('pos_checkout'"); assert.ok(capability > 0 && capability < checkout); assert.match(edge, /FINALIZATION_VERSION_MISMATCH/)
+  const decision = pos.indexOf('await resolvePosCheckoutDocument('); const checkout = pos.indexOf("rpc('pos_checkout'"); assert.ok(decision > 0 && decision < checkout); assert.match(pos, /documentDecision\?\.status === 'blocked'/); assert.match(edge, /FINALIZATION_VERSION_MISMATCH/)
 })
 await test('20 historical rows are not auto-finalized', () => {
   assert.doesNotMatch(source['01_artifact_lifecycle.sql'], /UPDATE\s+public\.invoices/i); assert.match(source['01_artifact_lifecycle.sql'], /legacy\/unclassified/)
@@ -563,7 +563,7 @@ await test('thermal and A4 printing require the finalized rendered QR', () => {
     assert.match(page, /current === 'loading' \? 'failed' : current/)
     assert.match(page, /toast\.error\(t\('printing:qrUnavailable'\)\)/)
   }
-  assert.match(pos, /const printReady = receipt\.canPrint && qrStatus === 'ready' && Boolean\(qrDataUrl\)/)
+  assert.match(pos, /const printReady = receipt\.isDemo\s*\?\s*receipt\.canPrint\s*:\s*receipt\.canPrint && qrStatus === 'ready' && Boolean\(qrDataUrl\)/)
   assert.match(pos, /disabled=\{printingReceipt \|\| !printReady\}/)
   assert.match(pos, /disabled=\{!printReady\}/)
   assert.match(receiptPrint, /qrUnavailable/)

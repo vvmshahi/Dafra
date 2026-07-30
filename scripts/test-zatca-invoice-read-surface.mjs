@@ -14,8 +14,9 @@ const safeColumns = [
   'invoice_date', 'supply_date', 'due_date', 'status', 'payment_status',
   'notes', 'notes_ar', 'cancelled_at', 'cancellation_reason',
   'created_at', 'updated_at', 'session_id', 'payment_method',
-  'original_invoice_id', 'credit_reason', 'document_language',
+  'is_demo', 'original_invoice_id', 'credit_reason', 'document_language',
 ]
+const preDemoSafeColumns = safeColumns.filter(column => column !== 'is_demo')
 
 const rawV2Columns = [
   'zatca_finalization_version', 'zatca_artifact_provenance',
@@ -86,6 +87,7 @@ const pos = read('src/pages/pos/POSPage.tsx')
 const edge = read('supabase/functions/zatca-submit/index.ts')
 const submission = read('src/lib/zatca/submission.ts')
 const qrDisplay = read('src/lib/zatca/qrDisplay.mjs')
+const demoReadGrant = read('supabase/migrations/20260729000400_grant_demo_invoice_read.sql')
 
 const results = []
 async function test(name, callback) {
@@ -93,10 +95,11 @@ async function test(name, callback) {
   results.push(name)
 }
 
-await test('canonical typed safe list is exact and synchronized with SQL', () => {
+await test('canonical safe columns retain the later constrained demo marker grant', () => {
   assert.deepEqual(tsArray(contractSource, 'INVOICE_SAFE_COLUMNS'), safeColumns)
-  assert.deepEqual(sqlConstantArray(migration, 'v_safe_columns'), safeColumns)
-  assert.deepEqual(sqlConstantArray(verification, 'v_safe_invoice_columns'), safeColumns)
+  assert.deepEqual(sqlConstantArray(migration, 'v_safe_columns'), preDemoSafeColumns)
+  assert.deepEqual(sqlConstantArray(verification, 'v_safe_invoice_columns'), preDemoSafeColumns)
+  assert.match(demoReadGrant, /GRANT SELECT \(is_demo\) ON TABLE public\.invoices TO authenticated/)
   assert.match(contractSource, /satisfies readonly \(keyof Invoice\)\[\]/)
   assert.match(contractSource, /Pick<Invoice, InvoiceSafeColumn>/)
 })
@@ -152,7 +155,7 @@ await test('list, POS, credit-note, dashboard, and accounting selectors stay wit
     ['src/pages/day-closing/DayClosingPage.tsx', ['id, total_amount, tax_amount, zatca_invoice_type']],
     ['src/pages/customers/CustomerDetailPage.tsx', ['invoice_number, invoice_date, total_amount']],
     ['src/pages/operations/OperationsPage.tsx', ['zatca_status, zatca_submitted_at']],
-    ['src/pages/admin/BranchDetailPage.tsx', ['invoice_date, payment_method']],
+    ['src/pages/admin/BranchDetailPage.tsx', ['invoice_date', 'payment_method']],
   ])
   for (const [path, snippets] of expected) {
     const source = read(path)
