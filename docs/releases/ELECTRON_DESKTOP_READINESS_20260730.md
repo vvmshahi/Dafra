@@ -2,8 +2,9 @@
 
 ## Verdict and authoritative source
 
-**Status: IMPLEMENTED — native printer software scope complete; physical and
-signing gates remain open.**
+**Status: AUTHENTICATION FIX IMPLEMENTED — replacement package validation is
+blocked pending authorised Owner/Branch credentials; physical and signing gates
+remain open.**
 
 The locked web source is commit `6a81a4f47bdc128508736d6e245c347cbe2826db` on
 `release/electron-desktop-20260730`, referenced by the pushed annotated tag
@@ -18,6 +19,39 @@ The pushed annotated desktop tag `desktop-pilot-v1.0.2-20260730` points to that
 exact source commit. This tag identifies the package source; the subsequent
 documentation commit on this branch records the packaging outcome.
 
+## Authentication incident and fix — 30 July 2026
+
+The 1.0.2 installed macOS arm64 package was built with placeholder Vite
+variables. Its packaged `app.asar` contained `https://placeholder.supabase.co`
+and did not contain the production project host
+`bkbphkpqcxuejozayrsy.supabase.co`. The production web client and the Electron
+source login contract were not the cause. Every login request went to the
+wrong project, and `useAuth.signIn` mapped the resulting Supabase error to the
+safe invalid-credentials message, making valid Owner, Branch-email, and
+Branch-username accounts appear incorrect.
+
+The source fix:
+
+- adds `scripts/validate-electron-build-environment.mjs`, which rejects missing,
+  placeholder, or wrong-project Electron builds before Vite runs;
+- validates the expected production host at Electron runtime without logging
+  the anon key;
+- preserves the same `resolve-branch-username` and
+  `signInWithPassword` authentication contract;
+- maps invalid credentials, network failures, rate limits, configuration
+  failures, and service failures to distinct safe user messages and records
+  only operation, category, status, code, endpoint host, and environment in
+  Electron diagnostics;
+- hides the public-home Back button only in Electron, while retaining it on
+  the browser sign-in page.
+
+The corrected production build embeds the expected Supabase host. A disposable
+invalid-credential probe reached that project and returned HTTP 400 with the
+safe `invalid_credentials` code. No authorised Owner or Branch credentials
+were available in this session, so valid-account packaged login, restart
+session restoration, logout/login, and normal-user profile routing remain
+unverified. No replacement installer has been published yet.
+
 ## Existing architecture
 
 - Electron `28.3.3`; electron-builder `24.13.3`.
@@ -29,7 +63,8 @@ documentation commit on this branch records the packaging outcome.
 - React uses the same receipt/A4 document routes and renderers as the web app;
   Electron-only navigation is controlled by `isElectron()`.
 - Auto-update is intentionally absent.
-- Version is `1.0.2`, product name `Kubri`, app ID `com.kubri.pos`.
+- Version for the replacement pilot is `1.0.3`, product name `Kubri`, app ID
+  `com.kubri.pos`.
 
 Historical printer work was identified in `66d5a3c`, `9b6d3ef`, and `d9442cf`;
 the current implementation was reviewed rather than restoring old files
@@ -96,7 +131,7 @@ No signing, notarization, publishing, auto-update, or valid Apple/Windows
 signing credentials are configured. Any package from this run is labelled
 unsigned/internal.
 
-### 30 July 2026 pilot package
+### 30 July 2026 pilot package — defective 1.0.2
 
 Built from source commit `83eed6a218eced4c461c33c76a3c138d21e4aea7`:
 
@@ -123,8 +158,9 @@ Built from source commit `83eed6a218eced4c461c33c76a3c138d21e4aea7`:
 
 The GitHub prerelease is [Kubri Desktop 1.0.2 Pilot](https://github.com/vvmshahi/Dafra/releases/tag/desktop-pilot-v1.0.2-20260730). The repository release requires the corresponding GitHub authorization; the external `release-notes/frontend-download-links.json` records only uploaded asset URLs and leaves macOS x64 empty.
 
-The current `1.0.2` version is an internal implementation version; packaging
-remains pending the OS, hardware, and signing gates above.
+The `1.0.2` package is superseded for authentication purposes and must not be
+the recommended download. Replacement `1.0.3` packaging is pending completion
+of authorised packaged-account validation.
 
 ## Tests
 
@@ -140,11 +176,16 @@ Passed:
 - Electron packaging completed for macOS arm64 DMG/ZIP and Windows x64 NSIS;
   package inspection logs and checksums are retained in the external pilot
   release directory.
+- placeholder Electron build rejected by the new environment guard;
+- corrected production-host build completed;
+- `npm run test:electron-packaged-auth`;
+- Electron native printing contract remained passing.
 
-Not run or still pending: macOS x64 packaging, macOS manual GUI route review,
-macOS notarization, Windows runtime installation/launch/uninstall validation,
-native printer hardware tests, physical QR/barcode scans, authenticated
-lifecycle testing, or fiscal pilots.
+Not run or still pending: authorised packaged Owner login, authorised Branch
+email login, Branch username login, restart/session persistence, logout/login,
+macOS x64 packaging, macOS manual GUI route review, macOS notarization, Windows
+runtime installation/launch/uninstall validation, native printer hardware tests,
+physical QR/barcode scans, or fiscal pilots.
 
 ## Findings
 
@@ -154,6 +195,8 @@ None confirmed after the IPC sender/origin guard was added.
 
 ### P1
 
+- Replacement 1.0.3 package cannot be released until an authorised account
+  completes packaged authentication validation.
 - Physical printer and Windows validation are absent.
 - Signing/notarization credentials and distributable package validation are
   absent.
@@ -182,6 +225,14 @@ None confirmed after the IPC sender/origin guard was added.
 - `scripts/test-electron-security.mjs`: focused Electron security/native
   barcode/navigation/bridge/sidebar contract test.
 - `scripts/test-electron-native-printing.mjs`: native printing contract test.
+- `src/lib/authFailure.ts`: safe authentication failure classification.
+- `scripts/validate-electron-build-environment.mjs`: production Supabase build
+  guard.
+- `scripts/test-electron-packaged-auth.mjs`: packaged-auth configuration and
+  sign-in navigation contract tests.
+- `src/pages/auth/LoginPage.tsx`, `src/hooks/useAuth.ts`,
+  `src/lib/supabase.ts`: Electron auth diagnostics/configuration and Back-button
+  fix.
 
 ## Remaining release gates
 
@@ -189,7 +240,8 @@ None confirmed after the IPC sender/origin guard was added.
 2. Complete physical 58 mm, 80 mm, A4, and barcode printer certification.
 3. Obtain and verify signing/notarization credentials, or explicitly label
    internal unsigned builds.
-4. Only then build clearly labelled internal release candidates.
+4. Obtain authorised Owner and Branch credentials for packaged login validation.
+5. Only then build and publish the clearly labelled 1.0.3 internal pilot.
 
 Electron does not bypass server-side Atomic, Legacy, demo, or fiscal-readiness
 decisions. No invoice, payment, checkout, stock, customer, credential,
