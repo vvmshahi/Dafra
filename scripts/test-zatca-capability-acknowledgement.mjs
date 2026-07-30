@@ -14,7 +14,7 @@ const readinessSql = read(
   'scripts/sql/zatca-phase2-finalization-v2/09_branch_readiness_gate.sql',
 )
 const eligibilityMigration = read(
-  'supabase/migrations/20260724000300_atomic_simplified_eligibility_rollout.sql',
+  'supabase/migrations/20260727000200_recover_atomic_checkout_gate_sync_definition.sql',
 )
 
 const REQUIRED_VERSION = '2.1.0'
