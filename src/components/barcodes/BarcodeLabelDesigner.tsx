@@ -341,9 +341,9 @@ export default function BarcodeLabelDesigner({
     const sections = [
       { id: 'layout', label: t('barcodeLabels.studio.sections.layout'), icon: LayoutTemplate },
       { id: 'size', label: t('barcodeLabels.studio.sections.size'), icon: Maximize2 },
-      { id: 'information', label: t('barcodeLabels.studio.sections.information'), icon: PackageCheck },
+      { id: 'information', label: t('barcodeLabels.studio.sections.information'), fullLabel: t('barcodeLabels.studio.sections.informationFull'), icon: PackageCheck },
       { id: 'appearance', label: t('barcodeLabels.studio.sections.appearance'), icon: Eye },
-      { id: 'printer', label: t('barcodeLabels.studio.sections.printer'), icon: SlidersHorizontal },
+      { id: 'printer', label: t('barcodeLabels.studio.sections.printer'), fullLabel: t('barcodeLabels.studio.sections.printerFull'), icon: SlidersHorizontal },
     ]
     return <DocumentStudioWorkspace
       configurationLabel={t('workspace.studio.configuration')}
