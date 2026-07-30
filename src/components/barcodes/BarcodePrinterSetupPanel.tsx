@@ -23,21 +23,23 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 interface Props {
   branchId: string
   businessName: string | null
+  compact?: boolean
 }
 
 function CalibrationButton({
-  label, icon: Icon, onClick,
+  label, icon: Icon, onClick, compact = false,
 }: {
   label: string
   icon: React.ElementType
   onClick: () => void
+  compact?: boolean
 }) {
-  return <button type="button" onClick={onClick} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 outline-none transition-[transform,border-color] duration-150 active:scale-[.97] focus-visible:ring-2 focus-visible:ring-primary-500">
+  return <button type="button" onClick={onClick} className={`flex items-center justify-center gap-1.5 border border-gray-200 bg-white text-xs font-semibold text-gray-700 outline-none transition-[transform,border-color] duration-150 active:scale-[.97] focus-visible:ring-2 focus-visible:ring-primary-500 ${compact ? 'min-h-9 rounded-lg px-2' : 'min-h-11 rounded-xl px-3'}`}>
     <Icon size={14} aria-hidden="true" /> {label}
   </button>
 }
 
-export default function BarcodePrinterSetupPanel({ branchId, businessName }: Props) {
+export default function BarcodePrinterSetupPanel({ branchId, businessName, compact = false }: Props) {
   const { t, i18n } = useTranslation('printing')
   const [calibration, setCalibration] = useState<BarcodeDeviceCalibration>(DEFAULT_BARCODE_DEVICE_CALIBRATION)
   const [saved, setSaved] = useState<BarcodeDeviceCalibration>(DEFAULT_BARCODE_DEVICE_CALIBRATION)
@@ -126,15 +128,15 @@ export default function BarcodePrinterSetupPanel({ branchId, businessName }: Pro
     }).html)
   }
 
-  return <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-    <div className="space-y-5">
-      <section className="rounded-2xl border border-primary-200 bg-primary-50/70 p-4">
+  return <div className={compact ? 'min-w-0' : 'grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_420px]'}>
+    <div className={compact ? 'space-y-3' : 'space-y-5'}>
+      <section className={compact ? 'rounded-lg bg-primary-50/70 p-2.5' : 'rounded-2xl border border-primary-200 bg-primary-50/70 p-4'}>
         <div className="flex items-start gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-primary-700 shadow-sm"><Printer size={18} aria-hidden="true" /></span>
+          <span className={`grid shrink-0 place-items-center bg-white text-primary-700 shadow-sm ${compact ? 'h-8 w-8 rounded-lg' : 'h-10 w-10 rounded-xl'}`}><Printer size={compact ? 15 : 18} aria-hidden="true" /></span>
           <div>
-            <h2 className="text-base font-bold text-gray-950">{t('barcodeLabels.calibration.title')}</h2>
-            <p className="mt-1 text-xs leading-5 text-gray-600">{t('barcodeLabels.calibration.help')}</p>
-            <p className="mt-2 text-[10px] font-semibold text-primary-800">{t('barcodeLabels.calibration.deviceOnly')}</p>
+            {!compact && <h2 className="text-base font-bold text-gray-950">{t('barcodeLabels.calibration.title')}</h2>}
+            <p className={`${compact ? 'text-[11px] leading-4' : 'mt-1 text-xs leading-5'} text-gray-600`}>{t('barcodeLabels.calibration.help')}</p>
+            <p className={`${compact ? 'mt-1' : 'mt-2'} text-[10px] font-semibold text-primary-800`}>{t('barcodeLabels.calibration.deviceOnly')}</p>
           </div>
         </div>
       </section>
@@ -147,42 +149,42 @@ export default function BarcodePrinterSetupPanel({ branchId, businessName }: Pro
         </select>
       </label>}
 
-      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label={t('barcodeLabels.calibration.currentValues')}>
+      <dl className={`grid grid-cols-2 ${compact ? 'gap-1.5' : 'gap-2 sm:grid-cols-4'}`} aria-label={t('barcodeLabels.calibration.currentValues')}>
         {[
           [t('barcodeLabels.calibration.xOffset'), `${calibration.horizontalOffsetMm.toFixed(1)} ${t('barcodeLabels.units.mm')}`],
           [t('barcodeLabels.calibration.yOffset'), `${calibration.verticalOffsetMm.toFixed(1)} ${t('barcodeLabels.units.mm')}`],
           [t('barcodeLabels.calibration.widthValue'), `${calibration.widthScalePercent}%`],
           [t('barcodeLabels.calibration.heightValue'), `${calibration.heightScalePercent}%`],
-        ].map(([label, value]) => <div key={label} className="rounded-xl border border-primary-900/50 bg-white px-3 py-2">
+        ].map(([label, value]) => <div key={label} className={`border border-primary-900/50 bg-white ${compact ? 'rounded-lg px-2 py-1.5' : 'rounded-xl px-3 py-2'}`}>
           <dt className="text-[10px] text-gray-500">{label}</dt>
-          <dd className="mt-0.5 text-sm font-bold tabular-nums text-gray-900" dir="ltr">{value}</dd>
+          <dd className={`mt-0.5 font-bold tabular-nums text-gray-900 ${compact ? 'text-xs' : 'text-sm'}`} dir="ltr">{value}</dd>
         </div>)}
       </dl>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-4">
+      <section className={compact ? 'rounded-lg border border-gray-200 bg-white p-2.5' : 'rounded-2xl border border-gray-200 bg-white p-4'}>
         <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.calibration.position')}</h3>
         <p className="mt-1 text-[11px] text-gray-500">{t('barcodeLabels.calibration.positionHelp')}</p>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <CalibrationButton label={t('barcodeLabels.calibration.moveLeft')} icon={ArrowLeft} onClick={() => move('horizontalOffsetMm', -0.5)} />
-          <CalibrationButton label={t('barcodeLabels.calibration.moveRight')} icon={ArrowRight} onClick={() => move('horizontalOffsetMm', 0.5)} />
-          <CalibrationButton label={t('barcodeLabels.calibration.moveUp')} icon={ArrowUp} onClick={() => move('verticalOffsetMm', -0.5)} />
-          <CalibrationButton label={t('barcodeLabels.calibration.moveDown')} icon={ArrowDown} onClick={() => move('verticalOffsetMm', 0.5)} />
+        <div className={`${compact ? 'mt-2 gap-1.5' : 'mt-3 gap-2'} grid grid-cols-2`}>
+          <CalibrationButton compact={compact} label={t('barcodeLabels.calibration.moveLeft')} icon={ArrowLeft} onClick={() => move('horizontalOffsetMm', -0.5)} />
+          <CalibrationButton compact={compact} label={t('barcodeLabels.calibration.moveRight')} icon={ArrowRight} onClick={() => move('horizontalOffsetMm', 0.5)} />
+          <CalibrationButton compact={compact} label={t('barcodeLabels.calibration.moveUp')} icon={ArrowUp} onClick={() => move('verticalOffsetMm', -0.5)} />
+          <CalibrationButton compact={compact} label={t('barcodeLabels.calibration.moveDown')} icon={ArrowDown} onClick={() => move('verticalOffsetMm', 0.5)} />
         </div>
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-4">
+      <section className={compact ? 'rounded-lg border border-gray-200 bg-white p-2.5' : 'rounded-2xl border border-gray-200 bg-white p-4'}>
         <h3 className="text-sm font-bold text-gray-950">{t('barcodeLabels.calibration.size')}</h3>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <CalibrationButton label={t('barcodeLabels.calibration.narrower')} icon={ArrowLeft} onClick={() => scale('widthScalePercent', -1)} />
-          <CalibrationButton label={t('barcodeLabels.calibration.wider')} icon={ArrowRight} onClick={() => scale('widthScalePercent', 1)} />
-          <CalibrationButton label={t('barcodeLabels.calibration.shorter')} icon={ArrowUp} onClick={() => scale('heightScalePercent', -1)} />
-          <CalibrationButton label={t('barcodeLabels.calibration.taller')} icon={ArrowDown} onClick={() => scale('heightScalePercent', 1)} />
+        <div className={`${compact ? 'mt-2 gap-1.5' : 'mt-3 gap-2'} grid grid-cols-2`}>
+          <CalibrationButton compact={compact} label={t('barcodeLabels.calibration.narrower')} icon={ArrowLeft} onClick={() => scale('widthScalePercent', -1)} />
+          <CalibrationButton compact={compact} label={t('barcodeLabels.calibration.wider')} icon={ArrowRight} onClick={() => scale('widthScalePercent', 1)} />
+          <CalibrationButton compact={compact} label={t('barcodeLabels.calibration.shorter')} icon={ArrowUp} onClick={() => scale('heightScalePercent', -1)} />
+          <CalibrationButton compact={compact} label={t('barcodeLabels.calibration.taller')} icon={ArrowDown} onClick={() => scale('heightScalePercent', 1)} />
         </div>
       </section>
 
-      <details className="rounded-2xl border border-gray-200 bg-white">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-gray-900">{t('barcodeLabels.advanced.title')}</summary>
-        <div className="grid gap-3 border-t border-gray-100 p-4 sm:grid-cols-2">
+      <details className={compact ? 'rounded-lg border border-gray-200 bg-white' : 'rounded-2xl border border-gray-200 bg-white'}>
+        <summary className={`${compact ? 'px-3 py-2.5 text-xs' : 'px-4 py-3 text-sm'} cursor-pointer font-bold text-gray-900`}>{t('barcodeLabels.advanced.title')}</summary>
+        <div className={`grid border-t border-gray-100 ${compact ? 'gap-2 p-3' : 'gap-3 p-4 sm:grid-cols-2'}`}>
           {([
             ['horizontalOffsetMm', 'horizontalOffset', -10, 10, 0.1],
             ['verticalOffsetMm', 'verticalOffset', -10, 10, 0.1],
@@ -225,7 +227,7 @@ export default function BarcodePrinterSetupPanel({ branchId, businessName }: Pro
       <p className="rounded-xl bg-gray-50 px-3 py-2 text-[11px] leading-5 text-gray-600">{t('barcodeLabels.calibration.gapGuidance')}</p>
     </div>
 
-    <aside className="xl:sticky xl:top-4">
+    {!compact && <aside className="xl:sticky xl:top-4">
       {preview && <div className="overflow-hidden rounded-2xl border border-gray-200 bg-[#e9eeeb]">
         <div className="border-b border-gray-200 bg-white px-3 py-2">
           <p className="text-xs font-bold text-gray-900">{t('barcodeLabels.calibration.liveTest')}</p>
@@ -236,7 +238,7 @@ export default function BarcodePrinterSetupPanel({ branchId, businessName }: Pro
         <iframe title={t('barcodeLabels.calibration.liveTest')} sandbox="allow-scripts allow-modals" srcDoc={preview.html}
           className="h-[clamp(300px,52vh,520px)] w-full bg-white [@media(max-height:740px)]:h-[320px]" />
       </div>}
-    </aside>
+    </aside>}
     <ConfirmDialog open={resetOpen} kind="resetDeviceCalibration" onClose={() => setResetOpen(false)} onConfirm={() => { reset(); setResetOpen(false) }} />
   </div>
 }

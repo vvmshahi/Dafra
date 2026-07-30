@@ -143,7 +143,7 @@ export default function PrintingDocumentsPage() {
     <main className="min-h-0 flex-1 overflow-hidden" id={`printing-panel-${active}`} role="tabpanel" aria-labelledby={`printing-tab-${active}`}>
     {active === 'receipts' && <InvoiceSettingsPage key="receipts" embedded workspace="receipts" onDirtyChange={setDirty} />}
     {active === 'invoices' && <InvoiceSettingsPage key="invoices" embedded workspace="invoices" onDirtyChange={setDirty} />}
-    {active === 'barcodeLabels' && branchId && <BarcodeLabelSettingsPanel branchId={branchId} businessName={businessName} printerAdjustment={<BarcodePrinterSetupPanel branchId={branchId} businessName={businessName} />} onDirtyChange={setDirty} />}
+    {active === 'barcodeLabels' && branchId && <BarcodeLabelSettingsPanel branchId={branchId} businessName={businessName} printerAdjustment={<BarcodePrinterSetupPanel branchId={branchId} businessName={businessName} compact />} onDirtyChange={setDirty} />}
     {electron && active === 'printerSetup' && branchId && <div className="space-y-8">
       <BarcodePrinterSetupPanel branchId={branchId} businessName={businessName} />
       <section className="border-t border-gray-200 pt-8"><PrinterTab /></section>

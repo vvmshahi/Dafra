@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, Menu, X } from 'lucide-react'
 import { useDialogFocus } from '@/hooks/useDialogFocus'
 
@@ -43,6 +43,7 @@ interface SectionNavigationProps {
   activeSection: string
   onSelect: (id: string) => void
   label: string
+  width?: 'default' | 'compact'
 }
 
 export function DocumentStudioSectionNav({
@@ -50,9 +51,12 @@ export function DocumentStudioSectionNav({
   activeSection,
   onSelect,
   label,
+  width = 'default',
 }: SectionNavigationProps) {
   return <nav
-    className="document-studio-section-nav shrink-0 border-b border-gray-200 bg-[#f5f8f6] p-2 xl:w-[124px] xl:border-b-0 xl:border-e"
+    className={`document-studio-section-nav shrink-0 border-b border-gray-200 bg-[#f5f8f6] p-2 xl:border-b-0 xl:border-e ${
+      width === 'compact' ? 'xl:w-[100px]' : 'xl:w-[124px]'
+    }`}
     aria-label={label}
     onKeyDown={event => {
       if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
@@ -143,6 +147,7 @@ interface WorkspaceProps {
   settingsLabel: string
   closeSettingsLabel: string
   previewOverflow?: 'auto' | 'hidden'
+  configurationKey?: string
 }
 
 export function DocumentStudioWorkspace({
@@ -156,15 +161,23 @@ export function DocumentStudioWorkspace({
   settingsLabel,
   closeSettingsLabel,
   previewOverflow = 'auto',
+  configurationKey,
 }: WorkspaceProps) {
   const drawerState = useDrawerState()
   const dialogRef = useDialogFocus(drawerState.open, drawerState.close)
+  const desktopConfigurationRef = useRef<HTMLDivElement>(null)
+  const drawerConfigurationRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    desktopConfigurationRef.current?.scrollTo({ top: 0 })
+    drawerConfigurationRef.current?.scrollTo({ top: 0 })
+  }, [configurationKey])
 
   return <section className="document-studio-workspace relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-[0_12px_34px_rgba(15,36,25,0.08)]">
     <div className="document-studio-canvas relative grid min-h-0 flex-1 overflow-hidden xl:grid-cols-[minmax(400px,440px)_minmax(0,1fr)]">
       <aside className="hidden min-h-0 border-e border-gray-200 bg-white xl:flex" aria-label={configurationLabel}>
         {sectionNavigation}
-        <div className="min-w-0 flex-1 overflow-y-auto overscroll-contain p-4 [scrollbar-gutter:stable]">{configuration}</div>
+        <div ref={desktopConfigurationRef} className="min-w-0 flex-1 overflow-y-auto overscroll-contain p-4 [scrollbar-gutter:stable]">{configuration}</div>
       </aside>
 
       <section className="document-studio-preview flex min-h-0 min-w-0 flex-col bg-[#e9eeeb]" aria-label={previewLabel}>
@@ -199,7 +212,7 @@ export function DocumentStudioWorkspace({
             <button data-autofocus type="button" onClick={drawerState.close} aria-label={closeSettingsLabel} className="grid h-8 w-8 place-items-center rounded-lg text-gray-500 transition-transform duration-150 active:scale-[.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"><X size={16} /></button>
           </div>
           {sectionNavigation}
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">{configuration}</div>
+          <div ref={drawerConfigurationRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">{configuration}</div>
         </div>
       </>}
     </div>
