@@ -150,3 +150,92 @@ readiness remains blocked pending the authorised Owner/tenant/Branch lifecycle,
 operational CRUD and POS/demo verification, authenticated isolation checks,
 responsive Arabic/RTL verification, and separately authorised controlled
 Simplified B2C and Standard B2B ZATCA pilots.
+
+## NEW BRANCH FISCAL PATHWAY DECISION
+
+This is a non-interactive source/database-contract audit. No account, invoice,
+payment, stock, customer, credential, reporting, clearance, chain, or ZATCA
+record was created or modified.
+
+### Default state
+
+A new Branch is **not Atomic by default**. The branch-insert trigger creates:
+
+- an Atomic checkout gate with `enabled = false`;
+- a `zatca_branch_readiness_v2` row with `readiness_status = 'blocked'`,
+  `readiness_source = 'operator_block'`, and reason
+  `awaiting_production_onboarding`;
+- ordinary branch defaults including `zatca_phase = 1`, invoice counter `0`,
+  and the configured invoice language/VAT mode.
+
+The Branch RPC derives `tenant_id` from the authenticated Owner profile. It does
+not accept a client tenant override. It requires an active Owner profile,
+active/non-suspended tenant, valid payload, and branch-limit allowance. The
+Owner provisioning path uses normalized-email/request-fingerprint uniqueness,
+advisory locking, replay detection, an active plan allowlist, and resumable
+states; no manual SQL is part of the intended flow. The inspected Branch RPC
+itself has no duplicate-submit idempotency key, so duplicate UI submission is
+protected by database uniqueness/limits rather than a dedicated branch request
+record.
+
+### Pathway matrix
+
+| Branch state | Credentials/readiness/capability | Invoice type | Pathway | Checkout | QR/reporting/clearance |
+| --- | --- | --- | --- | --- | --- |
+| New or production Branch without production credentials | Missing production CSID/secret or functionality map | Simplified or Standard | Blocked | No | No fiscal output |
+| Demo tenant with active Sandbox Branch | Server-derived `tenants.is_demo = true` and `branches.zatca_environment = 'sandbox'` | Simplified or Standard classification | Demo/non-fiscal | Yes | No production QR/XML/signature/reporting/clearance/chain/outbox; bilingual demo warning |
+| Production credentials connected, Atomic readiness absent/blocked | Valid production connection and capability, but no Atomic eligibility | Simplified | Legacy Simplified | Yes | Legacy stored/reporting path; Atomic is not selected |
+| Production credentials connected, Atomic eligible | Runtime/schema/client/Edge compatibility, Atomic global switch, readiness `ready`, chain head, production credentials, active branch/tenant, valid acknowledgement, and enabled gate | Simplified | Atomic Simplified | Yes | Locally finalized immutable artifact, stored QR, durable reporting outbox; retry/reconciliation is server-controlled |
+| Simplified-only capability with Standard buyer | Capability `0100`, classified Standard | Standard | Blocked | No | No clearance |
+| Standard-only capability with Simplified buyer | Capability `1000`, classified Simplified | Simplified | Blocked | No | No reporting |
+| Fully ready Standard B2B Branch | Valid production connection and Standard capability | Standard qualified business buyer | Legacy Standard clearance | Yes, subject to clearance gate | Clearance-gated; provisional/failed states are not printable-final |
+| Mixed capability `1100` | Valid production connection; pathway depends on document kind | Simplified/Standard | Atomic only for eligible Simplified; Legacy clearance for Standard | Conditional | Document-specific QR and submission gates |
+| Expired/revoked/partial credentials, inactive branch/tenant, suspended tenant, missing chain, expired acknowledgement, incompatible runtime, or inconsistent state | Any required gate false | Any | Blocked or legacy-required before fiscal mutation | No for blocked state | No false fiscal success; reconciliation/error state is explicit |
+
+The authoritative classifier is
+`resolve_pos_checkout_document_internal_v1`, exposed to authenticated callers
+through `resolve_pos_checkout_document_v1`. It derives actor, tenant, branch,
+customer, capability, credential, environment, readiness, and Atomic eligibility
+server-side. Client payload flags such as `is_demo` and `non_fiscal` are removed
+before the commercial checkout base is called.
+
+### Atomic enablement and recovery
+
+Atomic Simplified requires schema/client/Edge version `2.1.0`, compatible runtime,
+immutable finalization, simplified and Atomic global enablement, branch readiness
+`ready`, a valid production connection, an existing chain head, active tenant and
+Branch, an unexpired authorized capability acknowledgement, serialized chain
+allocation, leased claims, and the enabled branch gate. Standard B2B does not use
+Atomic; it remains on the legacy clearance path.
+
+The client cannot force Atomic mode. The server returns `legacy_required` when
+Atomic rollout is disabled or the branch is not ready, and the database checkout
+wrapper requires an Atomic intent when the authoritative path is Atomic. Atomic
+checkout uses cart fingerprints, idempotency keys, durable response evidence,
+serialized chain allocation, replay handling, and reconciliation-required states.
+Reporting is scheduled after the committed local transaction and is not awaited
+by checkout. Legacy finalization and Standard clearance retain their own
+provisional/failed/cleared print gates.
+
+### ZATCA and demo safety
+
+Credential creation, CSR/OTP/CSID handling, production secrets, and submission
+are server-side contracts. Browser code receives capability/status data rather
+than private credentials; production onboarding and readiness are not client-set
+flags. Demo classification is derived from authoritative tenant/environment rows,
+not display names or client payloads. Demo output uses
+`DEMO — NOT A TAX INVOICE` / `تجريبي — ليست فاتورة ضريبية`; demo fiscal queue and
+chain guards reject production reporting/clearance state.
+
+### Audit evidence and remaining checks
+
+Deterministic suites covering finalization, coordinated deployment, branch
+readiness, Atomic eligibility/capabilities/acknowledgement, Atomic checkout,
+durable reporting recovery, outbox security, invoice read safety, demo checkout,
+printing/documents, barcode workflow, and artwork contracts passed. The
+authenticated artwork RLS runtime suite was not run because it is explicitly
+opt-in and no authorized credentials were available. Manual browser acceptance
+of onboarding, Branch login, CRUD, POS/register, reconciliation, isolation, and
+English/Arabic/RTL viewports remains **PENDING MANUAL ACCEPTANCE**. Real
+Simplified B2C and Standard B2B fiscal execution remains **PENDING AUTHORISED
+REAL ZATCA PILOT**.
