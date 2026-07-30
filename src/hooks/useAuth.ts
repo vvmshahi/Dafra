@@ -12,6 +12,8 @@ import {
   clearStaleAuthSessionData,
   isInvalidRefreshTokenError,
 } from '@/lib/authSessionRecovery'
+import { authFailureDiagnostic, classifyAuthFailure, safeAuthError } from '@/lib/authFailure'
+import { supabaseConfigMetadata } from '@/lib/supabase'
 
 function computeIsOnboarded(profile: UserProfile | null): boolean | null {
   if (profile === null) return null
@@ -47,6 +49,18 @@ function logDesktopAuthDiagnostic(event: string, session: Session | null) {
   ]
   if (session?.user?.id) parts.push(`userId=${session.user.id}`)
   console.info(parts.join(' '))
+}
+
+function logAuthFailure(operation: string, error: unknown) {
+  const diagnostic = authFailureDiagnostic(error)
+  console.info([
+    `[Kubri Auth] failure operation=${operation}`,
+    `category=${diagnostic.kind}`,
+    `status=${diagnostic.status ?? 'none'}`,
+    `code=${diagnostic.code || 'none'}`,
+    `endpointHost=${supabaseConfigMetadata.host}`,
+    `environment=${isElectronEnvironment() ? 'electron' : 'web'}`,
+  ].join(' '))
 }
 
 type AuthContextValue = ReturnType<typeof useProvideAuth>
@@ -321,8 +335,11 @@ function useProvideAuth() {
         body: { username },
       })
 
-      if (resolverError || data?.ok !== true || typeof data.authEmail !== 'string') {
-        console.error('[useAuth] branch username resolver failed:', resolverError?.message ?? data?.message ?? 'not resolved')
+      if (resolverError) {
+        logAuthFailure('resolve-branch-username', resolverError)
+        return { error: safeAuthError(classifyAuthFailure(resolverError)) }
+      }
+      if (data?.ok !== true || typeof data.authEmail !== 'string') {
         return { error: new Error(INVALID_LOGIN_CREDENTIALS_MESSAGE) }
       }
 
@@ -331,8 +348,8 @@ function useProvideAuth() {
 
     const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password })
     if (error) {
-      console.error('[useAuth] signIn error:', error.message, error.status)
-      return { error: new Error(INVALID_LOGIN_CREDENTIALS_MESSAGE) }
+      logAuthFailure('signInWithPassword', error)
+      return { error: safeAuthError(classifyAuthFailure(error)) }
     }
     return { error: null }
   }

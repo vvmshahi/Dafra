@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { CompactLanguageSelector } from '@/components/localization/CompactLanguageSelector'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 import { authErrorKey } from '@/localization/authErrors'
+import { isDesktopApp } from '@/lib/electron'
 
 const WA_LINK = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
@@ -93,13 +94,15 @@ export default function LoginPage() {
         </section>
 
         <section className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#F6F2E8] px-5 py-8 text-[#10291E] sm:px-8 lg:px-10">
-          <Link
-            to="/"
-            className="absolute start-5 top-5 z-20 inline-flex items-center gap-2 rounded-full border border-[#D9CBAA] bg-white/70 px-3 py-2 text-sm font-black text-[#284334] shadow-[0_10px_26px_rgba(15,36,25,0.06)] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F6F2E8] sm:start-8 sm:top-8"
-          >
-            <DirectionalIcon icon={ArrowLeft} size={15} />
-            {t('common:back')}
-          </Link>
+          {!isDesktopApp() && (
+            <Link
+              to="/"
+              className="absolute start-5 top-5 z-20 inline-flex items-center gap-2 rounded-full border border-[#D9CBAA] bg-white/70 px-3 py-2 text-sm font-black text-[#284334] shadow-[0_10px_26px_rgba(15,36,25,0.06)] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F6F2E8] sm:start-8 sm:top-8"
+            >
+              <DirectionalIcon icon={ArrowLeft} size={15} />
+              {t('common:back')}
+            </Link>
+          )}
           <CompactLanguageSelector className="absolute end-5 top-5 z-20 sm:end-8 sm:top-8" />
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute right-[-14rem] top-[-16rem] h-[32rem] w-[32rem] rounded-full bg-[#D8B76A]/25 blur-3xl" />
