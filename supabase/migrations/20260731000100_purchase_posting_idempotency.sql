@@ -448,7 +448,11 @@ BEGIN
     IF NOT FOUND
        OR v_product.product_active IS NOT TRUE
        OR v_product.unit_active IS NOT TRUE
-       OR v_product.receiving_enabled IS NOT TRUE
+       OR (
+         COALESCE(v_product.track_stock, false) IS TRUE
+         AND COALESCE(v_product.is_service, false) IS FALSE
+         AND v_product.receiving_enabled IS NOT TRUE
+       )
        OR v_product.product_unit_version IS DISTINCT FROM v_expected_product_unit_version
     THEN
       RAISE EXCEPTION USING ERRCODE = 'PPC05', MESSAGE = 'PURCHASE_INVALID_PRODUCT_UNIT';
