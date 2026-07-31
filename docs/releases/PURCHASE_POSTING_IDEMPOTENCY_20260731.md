@@ -1,6 +1,6 @@
 # Purchase Posting Idempotency — Server Contract
 
-Status: implementation prepared; local execution and remote deployment are blocked pending repair of the local Docker image store and host disk capacity.
+Status: local migration and stateful validation passed; remote parity is pending Supabase linkage and credentials. Remote deployment remains intentionally blocked.
 
 ## Root cause and scope
 
@@ -35,9 +35,9 @@ Non-stock and service products are recorded as `non_stock` / `skipped` lines and
 
 ## Verification status
 
-`node scripts/test-purchase-posting-idempotency.mjs` verifies the migration’s security, normalized idempotency, calculation, stock-ledger, reversal, and non-scope contract markers.
+`node scripts/test-purchase-posting-idempotency.mjs` verifies the migration’s security, normalized idempotency, calculation, stock-ledger, reversal, and non-scope contract markers. `supabase/tests/purchase_posting_idempotency_stateful.sql` is the executable clean-database fixture for actual purchase rows, idempotency, stock, movement, rollback, and authority assertions.
 
-Actual local migration reset, pgTAP/database state tests, remote migration parity, remote application, Android RPC integration, controlled tenant mutation tests, APK build, and Xiaomi manual purchase testing are not claimed as complete.
+Android RPC integration, controlled remote tenant mutation tests, APK build, and Xiaomi manual purchase testing are outside this server validation task and are not claimed as complete.
 
 ## 2026-07-31 local environment recovery record
 
@@ -45,6 +45,12 @@ The original hangs occurred before Supabase could create or reset a project: eve
 
 Docker Desktop 4.83.0 was recovered with its supported restart path where possible. The normal quit and `docker desktop restart` calls were themselves wedged, and the exact stale backend process ignored `TERM`; it was then force-stopped and Docker Desktop was relaunched. The new Engine 29.6.2 process responds normally and Supabase CLI is 2.109.1. No container, network, image, volume, database, migration, or production data was removed or changed during recovery.
 
-The recovery exposed a second, decisive blocker: `docker system df` fails with a containerd content-blob input/output error following the disk-full event, while the host system volume has only 1.2 GiB free (94% used). Existing local projects occupy the standard `dafra` ports and a separate temporary project occupies the 58431–58434 range. The repository configuration also still uses the legacy mixed-case local project ID `Dafra`; it was not changed because a fresh lower-case validation project could not safely be created with a corrupt image store and insufficient disk.
+The original recovery exposed a second blocker: `docker system df` failed with a containerd content-blob input/output error while the host had only 1.1 GiB free. Recovery removed only classified, reproducible data: ignored `node_modules` and build output from clean inactive worktrees; the npm, Electron, Electron Builder, Homebrew, node-gyp, pip, and TypeScript caches; and three SHA-256-verified duplicate pilot installers. No Git repository, dirty worktree, Docker container, network, image, or volume was deleted. Free space reached 15.24 GiB before Docker restart and `docker system df` subsequently succeeded (20 images, 13.23 GB total; 10 local volumes, 426.3 MB total) with no blob I/O error.
 
-Consequently, this task did not start, reset, or reuse an existing local database for migration testing. A clean disposable environment is required to prove the full migration chain, RPC compilation, row-level/stateful behavior, concurrency, security, and web compatibility. The static migration contract test continues to pass, but it is not a substitute for those database tests. No remote migration or remote parity operation was run.
+All Docker volumes were recorded and preserved: the active `dafra` certification project, a temporary migration-chain project, an unbound atomic-disposable project, and an unbound legacy mixed-case `Dafra` storage volume. The standard ports remained occupied by those projects, so validation used an additional disposable worktree with project ID `kubri_purchase_validation_20260731` and ports `59420`–`59429`. `supabase start --debug` completed, `supabase db reset --local --no-seed` completed after the recovery, and local history ends at `20260731000100`.
+
+Stateful testing found and fixed one migration defect: product lifecycle provisioning correctly creates service units with `receiving_enabled = false`, but the initial RPC rejected that non-stock line before it could be skipped. The RPC now requires `receiving_enabled` only for stock-tracked, non-service lines. A clean rebuild then verified base-unit receiving, 12x package conversion, mixed stock/service lines, exact receipt/POS/purchase movement counts, identical retry, conflicting retry (`PPC06`), atomic rollback after a first line had received stock, zero quantity, inactive and cross-tenant suppliers, unauthorized and cross-tenant users, stale unit version, and same-tenant owner scope.
+
+Two independent authenticated sessions with one operation ID produced one purchase, one receipt, one movement, final stock `41.000`, and a replay response for the second caller. Two concurrent conflicting payloads produced one purchase with package quantity `6.000`, final stock `47.000`, one receipt/movement, and `PURCHASE_IDEMPOTENCY_CONFLICT` for the loser. Anonymous and service-role execution are denied; authenticated execution without a JWT subject returns `PURCHASE_UNAUTHORIZED`. The legacy browser `simple_bill` direct insert also succeeded under the authenticated branch role and was rolled back after verification. The purchase modal and migration contract tests pass.
+
+Remote parity is the remaining preflight condition. This workstation has no linked project ref and no Supabase access token or database password, so `supabase migration list --linked` correctly stopped before remote access. No remote migration was applied and no production data was modified.
