@@ -1942,6 +1942,56 @@ html[dir="rtl"] .drawer {
   width: 100%;
   min-height: 46px;
 }
+.workflow-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.workflow-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--forest);
+  padding: 5px 8px;
+  font-size: 8px;
+  font-weight: 800;
+}
+.workflow-secondary svg {
+  width: 13px;
+  height: 13px;
+}
+.workflow-secondary.danger {
+  color: var(--error);
+}
+.workflow-history {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0;
+}
+.workflow-history h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.workflow-history article {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+.workflow-history small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 8px;
+}
 .operational-module .invoice-heading {
   grid-template-columns: auto 1fr;
 }

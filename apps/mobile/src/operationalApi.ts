@@ -49,7 +49,7 @@ function requireText(value: string, field: string) {
   return normalized;
 }
 
-function requestKey(prefix: string) {
+export function createOperationId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
@@ -70,14 +70,14 @@ export async function loadCategories(profile: MobileProfile) {
   return (result.data ?? []) as OperationalRecord[];
 }
 
-export async function saveCategory(profile: MobileProfile, input: { id?: string; name: string; nameAr?: string; color?: string; icon?: string }) {
+export async function saveCategory(profile: MobileProfile, input: { id?: string; name: string; nameAr?: string; description?: string; color?: string; icon?: string; sortOrder?: number }) {
   const scope = writeScope(profile);
   const name = requireText(input.name, "Category name");
-  const key = await once(requestKey("category"));
-  const payload = { tenant_id: scope.tenantId, branch_id: scope.branchId, name, name_ar: clean(input.nameAr), color: input.color || "#1c5c2e", icon: clean(input.icon) };
+  const key = await once(createOperationId("category"));
+  const payload = { tenant_id: scope.tenantId, branch_id: scope.branchId, name, name_ar: clean(input.nameAr), description: clean(input.description), color: input.color || "#1c5c2e", icon: clean(input.icon), sort_order: input.sortOrder ?? 0 };
   const query = input.id
     ? db().from("categories").update(payload).eq("id", input.id).eq("tenant_id", scope.tenantId).eq("branch_id", scope.branchId)
-    : db().from("categories").insert({ ...payload, sort_order: 0 });
+    : db().from("categories").insert(payload);
   const result = await query;
   await Preferences.remove({ key });
   if (result.error) throw new OperationalContractError(result.error.code === "23505" ? "duplicate" : "save_failed", "Category could not be saved.");
@@ -108,6 +108,7 @@ export interface ProductInput {
   isAvailable?: boolean;
   isService?: boolean;
   trackStock?: boolean;
+  previousTrackStock?: boolean;
   openingStockQuantity?: number;
   minStockAlert?: number;
   sku?: string;
@@ -120,7 +121,7 @@ export async function saveProduct(profile: MobileProfile, input: ProductInput) {
   const scope = writeScope(profile);
   const name = requireText(input.name, "Product name");
   if (!Number.isFinite(input.price) || input.price < 0) throw new OperationalContractError("validation", "Selling price must be zero or greater.");
-  const key = await once(requestKey("product"));
+  const key = await once(createOperationId("product"));
   const payload: Record<string, unknown> = {
     name, name_ar: clean(input.nameAr), category_id: input.categoryId || null,
     description: clean(input.description), price: input.price, vat_treatment: input.vatTreatment || "inherit",
@@ -131,9 +132,11 @@ export async function saveProduct(profile: MobileProfile, input: ProductInput) {
   const result = await db().rpc(rpc, { p_payload: input.id ? { ...payload, product_id: input.id } : { ...payload, branch_id: scope.branchId } });
   if (result.error) { await Preferences.remove({ key }); throw new OperationalContractError("save_failed", "Product could not be saved."); }
   const productId = String(result.data?.product_id ?? input.id ?? "");
-  if (productId && (input.trackStock !== undefined || input.adjustmentQuantity)) {
+  const stockTrackingChanged = input.trackStock !== undefined
+    && (!input.id || input.previousTrackStock !== input.trackStock);
+  if (productId && (stockTrackingChanged || input.adjustmentQuantity)) {
     const stockPayload: Record<string, unknown> = { product_id: productId };
-    if (input.trackStock !== undefined) {
+    if (stockTrackingChanged && input.trackStock !== undefined) {
       stockPayload.track_stock = input.trackStock;
       stockPayload.reason = input.trackStock ? "opening_stock" : "tracking_disabled";
       if (input.trackStock) stockPayload.opening_stock_quantity = input.openingStockQuantity ?? 0;
@@ -181,21 +184,22 @@ export async function saveProductBarcode(profile: MobileProfile, input: { unitId
   if (result.error) throw new OperationalContractError(result.error.code === "23505" ? "duplicate" : "save_failed", "Barcode could not be saved.");
 }
 
-export async function adjustProductStock(profile: MobileProfile, productId: string, quantity: number, reason: string) {
+export async function adjustProductStock(profile: MobileProfile, productId: string, quantity: number, operationId: string) {
   writeScope(profile);
   if (!Number.isFinite(quantity) || quantity === 0) throw new OperationalContractError("validation", "Enter a non-zero stock adjustment.");
-  const key = await once(requestKey("stock"));
-  const result = await db().rpc("update_product_stock_settings", { p_payload: { product_id: productId, adjustment_quantity: quantity, reason: requireText(reason, "Adjustment reason"), idempotency_key: key } });
-  await Preferences.remove({ key });
+  const key = requireText(operationId, "Adjustment operation id");
+  const result = await db().rpc("update_product_stock_settings", { p_payload: { product_id: productId, adjustment_quantity: quantity, reason: "manual_adjustment", idempotency_key: key } });
   if (result.error) throw new OperationalContractError("save_failed", "Stock adjustment was rejected.");
+  return result.data as OperationalRecord;
 }
 
-export async function saveCustomer(profile: MobileProfile, input: { id?: string; name: string; nameAr?: string; kind: "individual" | "business"; phone?: string; email?: string; vatNumber?: string; crNumber?: string; address?: string }) {
+export async function saveCustomer(profile: MobileProfile, input: { id?: string; name: string; nameAr?: string; businessName?: string; kind: "individual" | "business"; phone?: string; email?: string; vatNumber?: string; crNumber?: string; city?: string; address?: string; notes?: string }) {
   const scope = writeScope(profile);
   const name = requireText(input.name, "Customer name");
   if (input.kind === "business" && !clean(input.vatNumber)) throw new OperationalContractError("validation", "Business customers require a VAT number.");
-  const payload = { tenant_id: scope.tenantId, branch_id: scope.branchId, name, name_ar: clean(input.nameAr), customer_type: input.kind, business_name: input.kind === "business" ? name : null, phone: clean(input.phone), email: clean(input.email), vat_number: input.kind === "business" ? clean(input.vatNumber) : null, cr_number: input.kind === "business" ? clean(input.crNumber) : null, address: clean(input.address) };
-  const key = await once(requestKey("customer"));
+  const businessName = input.kind === "business" ? requireText(input.businessName || name, "Business name") : null;
+  const payload = { tenant_id: scope.tenantId, branch_id: scope.branchId, name, name_ar: clean(input.nameAr), customer_type: input.kind, business_name: businessName, company_name: businessName, phone: clean(input.phone), email: clean(input.email), vat_number: input.kind === "business" ? clean(input.vatNumber) : null, cr_number: input.kind === "business" ? clean(input.crNumber) : null, city: clean(input.city), address: clean(input.address), notes: clean(input.notes) };
+  const key = await once(createOperationId("customer"));
   const result = input.id ? await db().from("customers").update(payload).eq("id", input.id).eq("tenant_id", scope.tenantId).eq("branch_id", scope.branchId) : await db().from("customers").insert(payload);
   await Preferences.remove({ key });
   if (result.error) throw new OperationalContractError(result.error.code === "23505" ? "duplicate" : "save_failed", "Customer could not be saved.");
@@ -208,11 +212,13 @@ export async function setCustomerActive(profile: MobileProfile, id: string, acti
   if (result.error) throw new OperationalContractError("save_failed", "Customer state could not be changed.");
 }
 
-export async function saveSupplier(profile: MobileProfile, input: { id?: string; name: string; nameAr?: string; phone?: string; email?: string; vatNumber?: string; crNumber?: string; address?: string }) {
+export async function saveSupplier(profile: MobileProfile, input: { id?: string; name: string; nameAr?: string; contactPerson?: string; phone?: string; email?: string; vatNumber?: string; crNumber?: string; city?: string; address?: string; paymentTerms?: string; notes?: string }) {
   const scope = writeScope(profile);
   const name = requireText(input.name, "Supplier name");
-  const payload = { tenant_id: scope.tenantId, branch_id: scope.branchId, name, name_ar: clean(input.nameAr), phone: clean(input.phone), email: clean(input.email), vat_number: clean(input.vatNumber), cr_number: clean(input.crNumber), address: clean(input.address) };
-  const key = await once(requestKey("supplier"));
+  const paymentTerms = input.paymentTerms || "cash";
+  if (!["cash", "credit_30", "credit_60"].includes(paymentTerms)) throw new OperationalContractError("validation", "Payment terms are invalid.");
+  const payload = { tenant_id: scope.tenantId, branch_id: scope.branchId, name, name_ar: clean(input.nameAr), contact_person: clean(input.contactPerson), phone: clean(input.phone), email: clean(input.email), vat_number: clean(input.vatNumber), cr_number: clean(input.crNumber), city: clean(input.city), address: clean(input.address), payment_terms: paymentTerms, notes: clean(input.notes) };
+  const key = await once(createOperationId("supplier"));
   const result = input.id ? await db().from("suppliers").update(payload).eq("id", input.id).eq("tenant_id", scope.tenantId).eq("branch_id", scope.branchId) : await db().from("suppliers").insert(payload);
   await Preferences.remove({ key });
   if (result.error) throw new OperationalContractError(result.error.code === "23505" ? "duplicate" : "save_failed", "Supplier could not be saved.");
@@ -225,15 +231,53 @@ export async function setSupplierActive(profile: MobileProfile, id: string, acti
   if (result.error) throw new OperationalContractError("save_failed", "Supplier state could not be changed.");
 }
 
-export async function saveExpense(profile: MobileProfile, input: { id?: string; date: string; description: string; amount: number; paymentMethod: string; notes?: string }) {
+export async function saveExpense(profile: MobileProfile, input: { id?: string; date: string; description: string; vendorName?: string; amount: number; paymentMethod: string; notes?: string }) {
   const scope = writeScope(profile);
   const description = requireText(input.description, "Expense description");
   if (!Number.isFinite(input.amount) || input.amount <= 0) throw new OperationalContractError("validation", "Expense amount must be greater than zero.");
-  const payload = { tenant_id: scope.tenantId, branch_id: scope.branchId, added_by: profile.id, expense_date: input.date, description, amount: input.amount, vat_treatment: "none", vat_claim_status: "not_claimable", expense_before_vat: input.amount, vat_amount: 0, total_paid: input.amount, payment_method: requireText(input.paymentMethod, "Payment method"), notes: clean(input.notes) };
-  const key = await once(requestKey("expense"));
+  const payload = { tenant_id: scope.tenantId, branch_id: scope.branchId, added_by: profile.id, expense_date: input.date, description, vendor_name: clean(input.vendorName), amount: input.amount, vat_treatment: "no_vat", vat_claim_status: "not_claimable", expense_before_vat: input.amount, vat_amount: 0, total_paid: input.amount, payment_method: requireText(input.paymentMethod, "Payment method"), notes: clean(input.notes) };
+  const key = await once(createOperationId("expense"));
   const result = input.id ? await db().from("expenses").update(payload).eq("id", input.id).eq("tenant_id", scope.tenantId).eq("branch_id", scope.branchId) : await db().from("expenses").insert(payload);
   await Preferences.remove({ key });
   if (result.error) throw new OperationalContractError("save_failed", "Expense could not be saved.");
+}
+
+export async function deleteExpense(profile: MobileProfile, id: string) {
+  const scope = writeScope(profile);
+  const result = await db().from("expenses").delete().eq("id", id)
+    .eq("tenant_id", scope.tenantId).eq("branch_id", scope.branchId).select("id").maybeSingle();
+  if (result.error || result.data?.id !== id)
+    throw new OperationalContractError("delete_failed", "Expense could not be deleted.");
+}
+
+export async function loadStockMovementHistory(profile: MobileProfile) {
+  if (!profile.tenantId || !profile.branchId)
+    throw new OperationalContractError("missing_scope", "A tenant and Branch scope are required.");
+  const [inventory, purchases] = await Promise.all([
+    db().from("inventory_item_stock_movements")
+      .select("id,created_at,inventory_item_id,quantity_before,quantity_delta,quantity_after,reason,idempotency_key,inventory_items(name,unit_type)")
+      .eq("tenant_id", profile.tenantId).eq("branch_id", profile.branchId)
+      .order("created_at", { ascending: false }).limit(100),
+    db().from("purchase_stock_movements")
+      .select("id,created_at,purchase_id,purchase_item_id,inventory_item_id,quantity_delta,unit_cost,reason,purchases(purchase_date,bill_number),purchase_items(name),inventory_items(name,unit_type)")
+      .eq("tenant_id", profile.tenantId).eq("branch_id", profile.branchId)
+      .order("created_at", { ascending: false }).limit(100),
+  ]);
+  if (inventory.error && purchases.error)
+    throw new OperationalContractError("load_failed", "Stock movements could not be loaded.");
+  const inventoryRows = (inventory.data ?? []).map((row: any) => ({
+    ...row, source_type: "inventory_adjustment", source_reference: null,
+    item_name: row.inventory_items?.name ?? "Inventory item",
+    unit_name: row.inventory_items?.unit_type ?? null,
+  }));
+  const purchaseRows = (purchases.data ?? []).map((row: any) => ({
+    ...row, source_type: "purchase_receiving", source_reference: row.purchases?.bill_number ?? row.purchase_id,
+    item_name: row.purchase_items?.name ?? row.inventory_items?.name ?? "Purchase item",
+    unit_name: row.inventory_items?.unit_type ?? null,
+    quantity_before: null, quantity_after: null,
+  }));
+  return [...inventoryRows, ...purchaseRows]
+    .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at))) as OperationalRecord[];
 }
 
 export const PURCHASE_POSTING_REQUIRES_SERVER_IDEMPOTENCY = true;

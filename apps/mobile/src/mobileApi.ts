@@ -803,7 +803,7 @@ export async function loadOperationalModule(
     result = await db
       .from("products")
       .select(
-        "id,name,name_ar,barcode,sku,price,cost,stock_quantity,min_stock_alert,track_stock,is_service,is_active,is_available,vat_treatment,category_id",
+        "id,name,name_ar,description,barcode,sku,price,cost,stock_quantity,min_stock_alert,track_stock,is_service,is_active,is_available,vat_treatment,category_id,notes",
       )
       .eq("tenant_id", profile.tenantId)
       .eq("branch_id", profile.branchId)
@@ -813,7 +813,7 @@ export async function loadOperationalModule(
     result = await db
       .from("customers")
       .select(
-        "id,name,name_ar,phone,customer_type,vat_number,cr_number,is_active",
+        "id,name,name_ar,business_name,company_name,phone,email,customer_type,vat_number,cr_number,city,address,notes,is_active",
       )
       .eq("tenant_id", profile.tenantId)
       .eq("branch_id", profile.branchId)
@@ -832,17 +832,16 @@ export async function loadOperationalModule(
   else if (module === "suppliers")
     result = await db
       .from("suppliers")
-      .select("id,name,name_ar,phone,email,vat_number,cr_number,is_active")
+      .select("id,name,name_ar,contact_person,phone,email,vat_number,cr_number,city,address,payment_terms,notes,is_active")
       .eq("tenant_id", profile.tenantId)
       .eq("branch_id", profile.branchId)
-      .eq("is_active", true)
       .order("name")
       .limit(200);
   else
     result = await db
       .from("expenses")
       .select(
-        "id,expense_date,description,vendor_name,total_paid,payment_method,vat_amount",
+        "id,expense_date,description,vendor_name,amount,total_paid,payment_method,vat_amount,notes",
       )
       .eq("tenant_id", profile.tenantId)
       .eq("branch_id", profile.branchId)
