@@ -81,11 +81,14 @@ import {
   type DemoCheckoutResult,
   type OperationalModule,
 } from "./mobileApi";
+import { OperationalWorkflowScreen, isOperationalWorkflowModule } from "./OperationalWorkflowScreen";
+import type { OperationalModule as WorkflowModule } from "./operationalApi";
 
 type BranchTab = "home" | "sale" | "invoices";
 type BranchDestination =
   | BranchTab
   | OperationalModule
+  | WorkflowModule
   | "stock"
   | "reports"
   | "settings"
@@ -669,12 +672,14 @@ function BranchApp({
       )}
       <main className="branch-content">
         {module ? (
-          <OperationalModuleScreen
-            locale={locale}
-            profile={profile}
-            module={module}
-            back={() => setModule(null)}
-          />
+          isOperationalWorkflowModule(module) ? (
+            <OperationalWorkflowScreen locale={locale} profile={profile} module={module} back={() => setModule(null)} />
+          ) : <OperationalModuleScreen
+              locale={locale}
+              profile={profile}
+              module={module}
+              back={() => setModule(null)}
+            />
         ) : tab === "home" ? (
           <BranchHome
             locale={locale}
@@ -2251,8 +2256,11 @@ function OperationalModuleScreen({
     home: ["Home", "الرئيسية"],
     sale: ["New Sale", "بيع جديد"],
     invoices: ["Invoices", "الفواتير"],
+    categories: ["Categories", "الفئات"],
     products: ["Products", "المنتجات"],
     stock: ["Stock", "المخزون"],
+    units: ["Units & packages", "الوحدات والعبوات"],
+    barcodes: ["Product barcodes", "باركود المنتجات"],
     customers: ["Customers", "العملاء"],
     purchases: ["Purchases", "المشتريات"],
     suppliers: ["Suppliers", "الموردون"],
@@ -2374,6 +2382,9 @@ function Drawer({
     ["sale", ShoppingBag, "New Sale", "بيع جديد"],
     ["invoices", ReceiptText, "Invoices", "الفواتير"],
     ["products", Package, "Products", "المنتجات"],
+    ["categories", PackageOpen, "Categories", "الفئات"],
+    ["units", PackageOpen, "Units & packages", "الوحدات والعبوات"],
+    ["barcodes", ScanLine, "Product barcodes", "باركود المنتجات"],
     ["stock", Boxes, "Stock", "المخزون"],
     ["customers", Users, "Customers", "العملاء"],
     ["purchases", ShoppingCart, "Purchases", "المشتريات"],

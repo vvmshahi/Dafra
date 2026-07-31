@@ -1874,6 +1874,74 @@ html[dir="rtl"] .drawer {
 .operational-module {
   padding-bottom: 90px;
 }
+.workflow-actions {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+.workflow-actions > .green-action {
+  min-height: 48px;
+}
+.workflow-form {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: #fff;
+}
+.workflow-form h2 {
+  margin: 0 0 2px;
+  font-size: 14px;
+}
+.workflow-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 800;
+}
+.workflow-form input,
+.workflow-form select {
+  min-height: 44px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0 12px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  box-sizing: border-box;
+}
+.workflow-form label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  grid-template-columns: auto 1fr;
+}
+.workflow-form input[type="checkbox"] {
+  width: 20px;
+  min-height: 20px;
+  accent-color: var(--green);
+}
+.workflow-form-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+.workflow-form-actions button {
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 800;
+}
+.workflow-form-actions .green-action {
+  width: 100%;
+  min-height: 46px;
+}
 .operational-module .invoice-heading {
   grid-template-columns: auto 1fr;
 }

@@ -269,6 +269,7 @@ export function saudiInvoiceRange(
 
 export type OperationalModule =
   | "products"
+  | "stock"
   | "customers"
   | "purchases"
   | "suppliers"
@@ -798,11 +799,11 @@ export async function loadOperationalModule(
   if (!profile.branchId) throw new Error("Branch scope is unavailable.");
   const db = client();
   let result;
-  if (module === "products")
+  if (module === "products" || module === "stock")
     result = await db
       .from("products")
       .select(
-        "id,name,name_ar,barcode,price,stock_quantity,is_active,is_available,vat_treatment",
+        "id,name,name_ar,barcode,sku,price,cost,stock_quantity,min_stock_alert,track_stock,is_service,is_active,is_available,vat_treatment,category_id",
       )
       .eq("tenant_id", profile.tenantId)
       .eq("branch_id", profile.branchId)
