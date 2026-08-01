@@ -12,6 +12,7 @@ const invoiceDetail = read('src/pages/invoices/InvoiceDetailPage.tsx')
 const totals = read('src/lib/invoices/visibleTotals.ts')
 const thermal = read('src/components/print/ThermalReceipt.tsx')
 const a4 = read('src/components/print/A4Document.tsx')
+const studioShell = read('src/components/printing/DocumentStudioShell.tsx')
 const architecture = read('docs/invoice-presentation-architecture.md')
 const persistenceContract = read('scripts/sql/invoice-settings-ux/06_stabilize_v1_settings_contract.sql')
 const persistenceVerification = read('scripts/sql/invoice-settings-ux/07_verify_v1_settings_contract.sql')
@@ -88,7 +89,9 @@ for (const tab of ['general', 'branding', 'contact', 'thermal', 'a4']) {
 for (const tab of ['General', 'Header & Branding', 'Contact & Footer', 'Thermal Receipt', 'A4 Layouts']) {
   assert.match(read('src/localization/locales/en/printing.json'), new RegExp(tab))
 }
-for (const marker of ['resolveInvoicePresentationSettings', 'documentFromPreviewDraft', 'setUseBranchName', 'DocumentStudioWorkspace', 'resetChanges', 'beforeunload', 'routeGuard', '<ThermalReceipt', '<A4Document', 'A4PreviewFit', 'role="tab"', 'role="tabpanel"']) assert.match(page, new RegExp(marker.replace(/[<>]/g, '\\$&')))
+for (const marker of ['resolveInvoicePresentationSettings', 'documentFromPreviewDraft', 'setUseBranchName', 'DocumentStudioWorkspace', 'DocumentStudioSectionNav', 'resetChanges', 'beforeunload', 'routeGuard', '<ThermalReceipt', '<A4Document', 'A4PreviewFit']) assert.match(page, new RegExp(marker.replace(/[<>]/g, '\\$&')))
+assert.match(studioShell, /role="dialog"/)
+assert.match(studioShell, /aria-modal="true"/)
 for (const field of ['phone', 'email', 'website', 'address-override']) assert.match(page, new RegExp(`p\\.contact\\.show_${field === 'address-override' ? 'address' : field} && <TextField id="${field}"`))
 assert.match(read('src/lib/invoices/documentViewModel.ts'), /settings\.identity\.show_company_name \? input\.registeredName/)
 assert.match(read('src/components/print/ThermalReceipt.tsx'), /seller\.company\.visible/)
