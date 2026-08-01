@@ -55,7 +55,7 @@ assert.deepEqual(Object.keys(saveContract.branding).sort(), ['custom_heading', '
 assert.deepEqual(Object.keys(saveContract.contact).sort(), ['address_override', 'email', 'phone_override', 'show_address', 'show_email', 'show_phone', 'show_website', 'website'])
 assert.deepEqual(Object.keys(saveContract.footer).sort(), ['bold', 'message'])
 assert.deepEqual(Object.keys(saveContract.thermal).sort(), ['density', 'qr_alignment', 'qr_size', 'width'])
-assert.deepEqual(Object.keys(saveContract.a4).sort(), ['accent_color', 'artwork_scope', 'artwork_template_id', 'auto_foreground', 'body_color', 'footer_asset_enabled', 'footer_asset_fit', 'footer_asset_height', 'footer_asset_path', 'footer_asset_spacing', 'footer_asset_version', 'footer_crop_height', 'footer_crop_top', 'header_asset_enabled', 'header_asset_fit', 'header_asset_height', 'header_asset_path', 'header_asset_spacing', 'header_asset_version', 'header_crop_height', 'header_crop_top', 'heading_color', 'theme'])
+assert.deepEqual(Object.keys(saveContract.a4).sort(), ['accent_color', 'artwork_scope', 'artwork_template_id', 'auto_foreground', 'body_color', 'footer_asset_enabled', 'footer_asset_fit', 'footer_asset_height', 'footer_asset_path', 'footer_asset_spacing', 'footer_asset_version', 'footer_crop_height', 'footer_crop_top', 'header_asset_enabled', 'header_asset_fit', 'header_asset_height', 'header_asset_path', 'header_asset_spacing', 'header_asset_version', 'header_crop_height', 'header_crop_top', 'heading_color', 'show_standard_branding', 'theme'])
 assert.equal(saveContract.language, 'both')
 assert.equal(saveContract.after_sale_action, 'both')
 assert.equal(saveContract.thermal.qr_alignment, 'center')
