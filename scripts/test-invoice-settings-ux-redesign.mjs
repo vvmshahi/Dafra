@@ -88,7 +88,7 @@ for (const tab of ['general', 'branding', 'contact', 'thermal', 'a4']) {
 for (const tab of ['General', 'Header & Branding', 'Contact & Footer', 'Thermal Receipt', 'A4 Layouts']) {
   assert.match(read('src/localization/locales/en/printing.json'), new RegExp(tab))
 }
-for (const marker of ['resolveInvoicePresentationSettings', 'documentFromPreviewDraft', 'setUseBranchName', 'mobilePane', 'resetChanges', 'beforeunload', 'routeGuard', '<ThermalReceipt', '<A4Document', 'A4PreviewFit', 'role="tab"', 'role="tabpanel"']) assert.match(page, new RegExp(marker.replace(/[<>]/g, '\\$&')))
+for (const marker of ['resolveInvoicePresentationSettings', 'documentFromPreviewDraft', 'setUseBranchName', 'DocumentStudioWorkspace', 'resetChanges', 'beforeunload', 'routeGuard', '<ThermalReceipt', '<A4Document', 'A4PreviewFit', 'role="tab"', 'role="tabpanel"']) assert.match(page, new RegExp(marker.replace(/[<>]/g, '\\$&')))
 for (const field of ['phone', 'email', 'website', 'address-override']) assert.match(page, new RegExp(`p\\.contact\\.show_${field === 'address-override' ? 'address' : field} && <TextField id="${field}"`))
 assert.match(read('src/lib/invoices/documentViewModel.ts'), /settings\.identity\.show_company_name \? input\.registeredName/)
 assert.match(read('src/components/print/ThermalReceipt.tsx'), /seller\.company\.visible/)
