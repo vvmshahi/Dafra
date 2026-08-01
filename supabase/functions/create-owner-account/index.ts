@@ -27,6 +27,23 @@ async function findAuthUserByEmail(admin: any, email: string) {
   throw new Error('AUTH_LOOKUP_INCOMPLETE')
 }
 
+async function normalizeLegacyBlankVat(admin: any, provisioningId: string): Promise<boolean> {
+  const { data, error } = await admin.from('owner_provisioning_requests')
+    .select('request_payload')
+    .eq('id', provisioningId)
+    .maybeSingle()
+  if (error || !data) return false
+
+  const payload = data.request_payload as Record<string, unknown>
+  // Pre-fix requests persist blank VAT as an empty string. Normalize only this
+  // nullable field and retain the durable original request/fingerprint.
+  if (payload.vat_number !== '') return true
+  const { error: updateError } = await admin.from('owner_provisioning_requests')
+    .update({ request_payload: { ...payload, vat_number: null } })
+    .eq('id', provisioningId)
+  return !updateError
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   const started = Date.now()
@@ -55,7 +72,10 @@ Deno.serve(async (req: Request) => {
     const safePayload = {
       company_name: companyName,
       company_name_ar: body.company_name_ar?.trim() || null,
-      vat_number: body.vat_number?.trim() || '',
+      // Postgres UNIQUE permits multiple NULLs, but only one empty string.
+      // Keep the fingerprint's legacy empty-string representation below so a
+      // retry can acquire a request created before this normalization.
+      vat_number: body.vat_number?.trim() || null,
       cr_number: body.cr_number?.trim() || null,
       phone: body.phone?.trim() || null,
       city: body.city?.trim() || null,
@@ -70,7 +90,7 @@ Deno.serve(async (req: Request) => {
     // retry seconds later must still address the original durable request.
     const fingerprint = await sha256(JSON.stringify({
       email: normalizedEmail, plan_id: body.plan_id, company_name: safePayload.company_name,
-      company_name_ar: safePayload.company_name_ar, vat_number: safePayload.vat_number,
+      company_name_ar: safePayload.company_name_ar, vat_number: safePayload.vat_number ?? '',
       cr_number: safePayload.cr_number, phone: safePayload.phone, city: safePayload.city,
       business_type: safePayload.business_type, duration_months: safePayload.duration_months,
       pay_method: safePayload.pay_method, pay_ref: safePayload.pay_ref, notes: safePayload.notes,
@@ -100,6 +120,14 @@ Deno.serve(async (req: Request) => {
     const state = acquired[0]
     provisioningId = state.provisioning_id
     let authUserId = state.auth_user_id as string | null
+
+    if (state.state !== 'complete' && !state.tenant_id && !await normalizeLegacyBlankVat(admin, provisioningId)) {
+      console.error('[create-owner-account]', {
+        provisioningId, step: 'normalize_legacy_vat', code: 'REQUEST_RECONCILIATION_FAILED',
+        durationMs: Date.now() - started,
+      })
+      return json({ code: 'FAILED_RECOVERABLE', provisioning_id: provisioningId }, 503)
+    }
 
     if (!authUserId) {
       const existing = await findAuthUserByEmail(admin, normalizedEmail)
@@ -148,6 +176,11 @@ Deno.serve(async (req: Request) => {
       p_provisioning_id: provisioningId,
     })
     if (coreError || !core?.[0]) {
+      console.error('[create-owner-account]', {
+        provisioningId, step: 'core', code: 'CORE_DATABASE_FAILED',
+        databaseCode: typeof coreError?.code === 'string' ? coreError.code : null,
+        durationMs: Date.now() - started,
+      })
       await admin.rpc('set_owner_provisioning_result', {
         p_provisioning_id: provisioningId, p_state: 'failed_recoverable',
         p_error_code: 'CORE_DATABASE_FAILED',
