@@ -95,7 +95,8 @@
     "test:dashboard-product-schema-compat": "node scripts/test-dashboard-product-schema-compat.mjs",
     "test:demo-tenant-safe-checkout": "node scripts/test-demo-tenant-safe-checkout.mjs",
     "test:final-web-printing-refinements": "node --experimental-strip-types scripts/test-final-web-printing-refinements.mjs",
-    "test:a4-artwork-rls": "node scripts/test-a4-artwork-rls-runtime.mjs"
+    "test:a4-artwork-rls": "node scripts/test-a4-artwork-rls-runtime.mjs",
+    "test:owner-branch-entitlement": "node scripts/test-owner-branch-entitlement.mjs"
   },
   "build": {
     "appId": "com.kubri.pos",

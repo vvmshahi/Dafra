@@ -66,7 +66,11 @@ Deno.serve(async (req: Request) => {
     const body = await req.json()
     const normalizedEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
     const companyName = typeof body.company_name === 'string' ? body.company_name.trim() : ''
-    if (!companyName || !normalizedEmail || typeof body.plan_id !== 'string') {
+    const branchCount = body.branch_count
+    const paymentType = body.payment_type
+    if (!companyName || !normalizedEmail || typeof body.plan_id !== 'string'
+      || !Number.isInteger(branchCount) || branchCount < 1 || branchCount > 100
+      || !['one_time', 'monthly', 'lifetime_free'].includes(paymentType)) {
       return json({ code: 'INVALID_REQUEST' }, 400)
     }
     const safePayload = {
@@ -80,6 +84,8 @@ Deno.serve(async (req: Request) => {
       phone: body.phone?.trim() || null,
       city: body.city?.trim() || null,
       business_type: body.business_type === 'service' ? 'service' : 'trading',
+      branch_count: branchCount,
+      payment_type: paymentType,
       duration_months: Number.isInteger(body.duration_months) ? body.duration_months : 0,
       ends_at: body.ends_at || null,
       pay_method: body.pay_method || null,
@@ -92,7 +98,8 @@ Deno.serve(async (req: Request) => {
       email: normalizedEmail, plan_id: body.plan_id, company_name: safePayload.company_name,
       company_name_ar: safePayload.company_name_ar, vat_number: safePayload.vat_number ?? '',
       cr_number: safePayload.cr_number, phone: safePayload.phone, city: safePayload.city,
-      business_type: safePayload.business_type, duration_months: safePayload.duration_months,
+      business_type: safePayload.business_type, branch_count: safePayload.branch_count,
+      payment_type: safePayload.payment_type, duration_months: safePayload.duration_months,
       pay_method: safePayload.pay_method, pay_ref: safePayload.pay_ref, notes: safePayload.notes,
     }))
     const auditBase = {
@@ -114,6 +121,7 @@ Deno.serve(async (req: Request) => {
     })
     if (acquireError || !acquired?.[0]) {
       const code = /PLAN_NOT_ELIGIBLE/.test(acquireError?.message ?? '') ? 'PLAN_NOT_ELIGIBLE'
+        : /INVALID_BRANCH_ALLOWANCE/.test(acquireError?.message ?? '') ? 'INVALID_REQUEST'
         : /CONFLICT/.test(acquireError?.message ?? '') ? 'CONFLICT_REQUEST_DATA' : 'FAILED_RECOVERABLE'
       return json({ code }, code === 'FAILED_RECOVERABLE' ? 503 : 409)
     }
