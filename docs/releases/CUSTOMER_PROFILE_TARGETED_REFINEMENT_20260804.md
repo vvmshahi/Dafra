@@ -52,7 +52,13 @@ navigation, Arabic RTL, loading/empty/error states, and preserved tab behavior.
 
 ## Preview handoff
 
-The prior Preview deployment predates this targeted application commit and
-must not be treated as evidence for this exact source. Deploy the exact tested
-commit `911752b4fae333dddf78d0e8f6988d0fe381e867` to Preview only before manual
-acceptance. No production deployment or alias update is authorized.
+Preview deployment for the exact tested application commit:
+
+- URL: `https://dafra-mp6esxxhy-mohammed-shahin-v-vs-projects.vercel.app`;
+- deployment: `dpl_5FCns7WjkRMzxQLjzyDy3v21NE5W`;
+- inspector: `https://vercel.com/mohammed-shahin-v-vs-projects/dafra/5FCns7WjkRMzxQLjzyDy3v21NE5W`;
+- state: `READY`, Preview target.
+
+The existing `dafra` production alias was not updated. Authenticated manual
+acceptance remains required because anonymous access is protected by the
+project’s normal Vercel SSO.
