@@ -2,11 +2,12 @@
 
 ## Status
 
-**Deployment blocked.** The repair is reconciled, the complete local migration
-chain and stateful database certification passed, and remote parity remains
-clean. The remaining gate is local Edge gateway routing: the function registered
-and its internal health endpoint became healthy, but Kong-routed requests timed
-out. No remote change was made without that runtime evidence.
+**Deployment blocked by remote schema drift.** Local database, Edge Runtime,
+Kong routing, CORS and authenticated function-path certification now pass. The
+remote migration ledger is exact through `20260730000500` with only
+`20260803000100` pending, but metadata proves that production has a partially
+applied, unrecorded subset of its target schema. No remote migration or Edge
+Function was deployed after finding that drift.
 
 ## Baselines and provenance
 
@@ -77,30 +78,95 @@ branches, the fourth insertion/activation is rejected server-side.
 - Fresh TypeScript/Vite production build passed with the same non-secret local
   public build placeholders.
 
-## Local validation recovery
+## Local Edge/Kong diagnosis and certification
 
-The shared local Supabase project identifier (`dafra`) attached the initial
-reset to a stale unhealthy stack. Docker Desktop's engine API then stopped
-responding; its supported restart recovered the image store and daemon. A fresh
-lowercase validation project (`kubri_entitlement_validate_20260803`) used ports
-`59721`–`59729`. It ran all 47 migrations through
-`20260803000100`, including the real Storage, Auth, RLS and branch-trigger
-dependencies. Temporary local config changes were restored afterward.
+The original shared `dafra` stack was not a valid function test target: its
+Edge Runtime had exited with code 255 three days earlier and no longer had a
+Docker-network IP, while Kong remained healthy. A fresh disposable project,
+`kubri_entitlement_gatewaydiag_20260803`, used ports `59821`–`59829` and again
+applied all 47 migrations through `20260803000100`.
 
-The local Edge runtime registered `create-owner-account` and its internal health
-endpoint reached 200. The local Kong route nevertheless timed out for OPTIONS
-and unauthenticated POST, so Edge HTTP behavior and no-duplicate function-path
-provisioning are not certified. The disposable stack was stopped; no local
-fixture survives.
+Kong configuration correctly routes `/functions/v1/*` with path stripping to
+`supabase_edge_runtime_kubri_entitlement_gatewaydiag_20260803:8081`. From inside
+Kong, Docker DNS resolved that name and its `_internal/health` endpoint returned
+200. A temporary `route-diagnostic` function returned `{ "ok": true }` through
+the direct runtime path and through Kong, proving that neither Kong routing,
+Docker DNS nor CORS was an application blocker. The diagnostic source was
+removed after the test.
+
+The original timeouts were a local infrastructure/lifecycle combination:
+
+- the stale shared runtime was not attached to the network;
+- starting all services in the 3.8 GiB Docker VM alongside unrelated local
+  stacks starved health/catalog work and made the first handler requests hang;
+- `supabase functions serve` leaves a stopped disposable runtime container that
+  can conflict with its next invocation unless that task-created container is
+  cleaned up.
+
+Two small source corrections were required and recertified:
+
+- use the explicitly managed `DAFRA_SERVICE_ROLE_KEY` first and Supabase's
+  standard server-only `SUPABASE_SERVICE_ROLE_KEY` only as the local-runtime
+  fallback;
+- resolve the setup-link redirect only after the caller has been authenticated
+  and authorised, so an unauthenticated request always receives 401 rather than
+  an unrelated configuration failure.
+
+With the disposable runtime serving the reconciled function, direct runtime
+unauthenticated POST returned 401, and Kong forwarded it as 401 in 0.24 seconds.
+OPTIONS returned 200 for no Origin, a production-like Origin and localhost with
+the required allow-origin, allow-headers and allow-methods behavior. An
+authenticated disposable Super Admin completed the following function-path
+checks through Kong:
+
+- first `branch_count=3` provisioning: `200 COMPLETE`;
+- identical replay: `200 COMPLETE_SETUP_LINK_REGENERATED` with the same durable
+  provisioning id;
+- conflicting `branch_count=4` retry: `409 CONFLICT_REQUEST_DATA`;
+- blank VAT projected as NULL, `tenants.max_branches=3`, and
+  `tenant_subscriptions.paid_branch_count=3`;
+- authenticated `branch_count=0`: `400 INVALID_REQUEST` and no provisioning
+  row. The stateful database certification separately proves values 1/3/100,
+  values 0/-1/101/decimal/string/omitted, profile-only recovery, pricing, and
+  branches one through three with server-side fourth-branch rejection.
+
+No local fixture was sent externally. The non-secret diagnostic trace is kept
+in the ignored `.artifacts/` directory.
+
+## Remote preflight and deployment stop
+
+Remote read-only checks on project `bkbphkpqcxuejozayrsy` found:
+
+- the migration ledger matches local history through `20260730000500`; only
+  `20260803000100_authoritative_owner_branch_entitlement.sql` is pending;
+- the two target provisioning functions already have `SECURITY DEFINER`, safe
+  `search_path = pg_catalog, public, auth`, service-role-only execute grants,
+  and no anon/authenticated execute grant;
+- RLS is enabled on the referenced public tables. The baseline production row
+  counts are four tenants, four subscriptions and two provisioning requests;
+- **drift:** `tenant_subscriptions.paid_branch_count integer NOT NULL DEFAULT
+  1` and its `paid_branch_count >= 1` check already exist, and
+  `tenants.vat_number` is already nullable, while
+  `owner_provisioning_requests.branch_allowance` does not exist.
+
+That partial schema state is not represented by a remote migration version and
+is not safe to reconcile by blindly applying a pending migration. The release
+gate therefore requires an authorised remote schema-reconciliation decision
+before any migration or Edge deployment. The migration was not applied, the
+function remains production version 74 with `verify_jwt=false`, and no existing
+tenant, subscription, request, branch, invoice, purchase or ZATCA row changed.
+
+The existing production v74 gateway itself is healthy: a non-mutating OPTIONS
+request returned 200 and an unauthenticated POST returned controlled 401. The
+post-deployment malformed-branch-count smoke and controlled disposable-account
+acceptance are pending because deployment did not occur.
 
 ## Deployment and acceptance gate
 
-Do not apply the migration or deploy `create-owner-account` until the local Edge
-gateway can return controlled OPTIONS/401/400 responses and function-path
-provisioning is exercised. No frontend deployment is currently required because
-the existing frontend already submits `branch_count`; no production frontend,
-Edge Function, migration, tenant, subscription, branch, invoice, purchase, or
-ZATCA data was changed.
+Do not apply `20260803000100` or deploy `create-owner-account` until the remote
+partial-schema drift is reconciled and re-preflighted. No frontend deployment is
+needed because the existing frontend already submits `branch_count`.
 
-Mobile and purchase-idempotency work remained paused. No purchase migration was
-applied.
+Mobile and purchase-idempotency work remained paused. No purchase migration,
+frontend deployment, production migration, production Edge deployment, or
+unauthorised business-data mutation occurred.

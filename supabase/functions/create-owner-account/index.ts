@@ -50,9 +50,10 @@ Deno.serve(async (req: Request) => {
   let provisioningId: string | null = null
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const serviceKey = Deno.env.get('DAFRA_SERVICE_ROLE_KEY')
+    // Production retains the explicitly managed Dafra key; local Supabase
+    // workers expose the equivalent standard service-role key by default.
+    const serviceKey = Deno.env.get('DAFRA_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     if (!serviceKey?.startsWith('eyJ')) return json({ code: 'SERVER_CONFIGURATION_ERROR' }, 500)
-    const redirectTo = resolveOwnerSetupRedirectUrl()
     const admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
     const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim()
     if (!jwt) return json({ code: 'UNAUTHORIZED' }, 401)
@@ -63,6 +64,7 @@ Deno.serve(async (req: Request) => {
       return json({ code: 'FORBIDDEN' }, 403)
     }
 
+    const redirectTo = resolveOwnerSetupRedirectUrl()
     const body = await req.json()
     const normalizedEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
     const companyName = typeof body.company_name === 'string' ? body.company_name.trim() : ''
