@@ -148,3 +148,32 @@ Preview `dpl_CXiSmjKNTMRReC8PJ94yNCMFNbMy` at
 merged.
 
 Technical verdict: `KUBRI_SIMPLE_BRANCH_CREDIT_READY_FOR_MANUAL_ACCEPTANCE`.
+
+## Settings studio and eligibility diagnostics closure — 2026-08-03
+
+The Branch Settings follow-up is superseded and completed by
+[`BRANCH_AND_OWNER_SETTINGS_REDESIGN_20260803.md`](BRANCH_AND_OWNER_SETTINGS_REDESIGN_20260803.md).
+It retains the three-switch model and existing simple UI boundary while adding
+the missing effective eligibility summary and exact POS resolution routing.
+`reason_code` now distinguishes business, Branch, customer, account, and active
+state without exposing SQL errors; the legacy camelCase reason remains for
+compatibility.
+
+Branch Settings is a direct-linkable studio rather than a stacked-card
+dashboard. It exposes the existing Branch POS controls (touch/quick mode,
+split payment, and category/product arrows), a concise Branch credit section,
+the existing Printing & Documents context link, and accurate Owner-managed
+ZATCA copy. Owner Settings now links to the exact Branch credit section and the
+existing Customer Credit workspace. No authoritative settings were duplicated.
+
+The sole pending migration after 00900,
+`20260803001000_branch_settings_authority_and_credit_diagnostics_v1.sql`, was
+applied after linked parity and metadata preflight. Remote head is 01000 with
+no pending migration; the public RPCs, raw-function revokes, RLS/policies, and
+non-mutating rejection fixture were verified. Static/targeted UI tests, local
+stateful/rejection fixtures, build, and diff checks passed.
+
+The remaining gate is manual acceptance of authenticated Owner/Branch flows,
+responsive/RTL/keyboard behavior, the disposable three-Branch lifecycle,
+physical printing, and business/tax boundaries. Main merge, production web,
+mobile, purchase-idempotency, and unrelated RLS changes remain paused.

@@ -26,6 +26,7 @@ DECLARE
   report jsonb;
   preflight jsonb;
   tenant_policy jsonb;
+  pos_settings jsonb;
   v_receipt_id uuid;
   account_a uuid;
   count_value integer;
@@ -69,6 +70,9 @@ BEGIN
   )) INTO preflight;
   IF preflight->>'reasonCode' <> 'AR_CREDIT_TENANT_POLICY_DISABLED'
      OR (preflight->>'accountLinked')::boolean IS TRUE
+     OR preflight->>'reason_code' <> 'BUSINESS_CREDIT_DISABLED'
+     OR (preflight->>'business_enabled')::boolean IS TRUE
+     OR (preflight->>'account_ready')::boolean IS TRUE
      OR EXISTS (SELECT 1 FROM public.tenant_customer_credit_policies WHERE tenant_id = t) THEN
     RAISE EXCEPTION 'AR fixture: missing tenant policy was not safely disabled';
   END IF;
@@ -96,6 +100,14 @@ BEGIN
   SELECT public.set_branch_customer_credit_policy_v1(jsonb_build_object(
     'branch_id', branch_a, 'credit_enabled', true
   )) INTO preflight;
+  SELECT public.update_branch_pos_settings(branch_a, jsonb_build_object(
+    'allow_split_payments', true, 'show_pos_scroll_buttons', true, 'pos_mode', 'quick'
+  )) INTO pos_settings;
+  IF (pos_settings->>'allow_split_payments')::boolean IS NOT TRUE
+     OR (pos_settings->>'show_pos_scroll_buttons')::boolean IS NOT TRUE
+     OR pos_settings->>'pos_mode' <> 'quick' THEN
+    RAISE EXCEPTION 'AR fixture: Branch POS settings did not persist through the authoritative RPC';
+  END IF;
   PERFORM set_config('request.jwt.claim.sub', owner_id::text, true);
   SELECT public.get_branch_customer_credit_policy_v1(branch_b) INTO preflight;
   IF (preflight->>'tenantCreditEnabled')::boolean IS NOT TRUE
@@ -120,7 +132,14 @@ BEGIN
   SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
     'branch_id', branch_a, 'customer_id', customer_a, 'proposed_credit_amount', 10
   )) INTO preflight;
-  IF preflight->>'reasonCode' <> 'AR_CREDIT_ELIGIBLE' THEN
+  IF preflight->>'reasonCode' <> 'AR_CREDIT_ELIGIBLE'
+     OR preflight->>'reason_code' <> 'AR_CREDIT_ELIGIBLE'
+     OR (preflight->>'business_enabled')::boolean IS NOT TRUE
+     OR (preflight->>'branch_enabled')::boolean IS NOT TRUE
+     OR (preflight->>'customer_enabled')::boolean IS NOT TRUE
+     OR (preflight->>'account_ready')::boolean IS NOT TRUE
+     OR (preflight->>'customer_active')::boolean IS NOT TRUE
+     OR (preflight->>'eligible')::boolean IS NOT TRUE THEN
     RAISE EXCEPTION 'AR fixture: explicit customer credit approval did not become eligible';
   END IF;
 
@@ -129,7 +148,11 @@ BEGIN
   SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
     'branch_id', branch_b, 'customer_id', customer_b, 'proposed_credit_amount', 10
   )) INTO preflight;
-  IF preflight->>'reasonCode' <> 'AR_CREDIT_BRANCH_DISABLED' THEN
+  IF preflight->>'reasonCode' <> 'AR_CREDIT_BRANCH_DISABLED'
+     OR preflight->>'reason_code' <> 'BRANCH_CREDIT_DISABLED'
+     OR (preflight->>'business_enabled')::boolean IS NOT TRUE
+     OR (preflight->>'branch_enabled')::boolean IS TRUE
+     OR (preflight->>'eligible')::boolean IS TRUE THEN
     RAISE EXCEPTION 'AR fixture: disabled Branch B credit preflight was not rejected';
   END IF;
   BEGIN
@@ -183,7 +206,13 @@ BEGIN
   SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
     'branch_id', branch_a, 'customer_id', customer_a, 'proposed_credit_amount', 10
   )) INTO preflight;
-  IF preflight->>'reasonCode' <> 'AR_CREDIT_DISABLED' THEN RAISE EXCEPTION 'AR fixture: disabled customer remained eligible'; END IF;
+  IF preflight->>'reasonCode' <> 'AR_CREDIT_DISABLED'
+     OR preflight->>'reason_code' <> 'CUSTOMER_CREDIT_DISABLED'
+     OR (preflight->>'customer_enabled')::boolean IS TRUE
+     OR (preflight->>'account_ready')::boolean IS NOT TRUE
+     OR (preflight->>'eligible')::boolean IS TRUE THEN
+    RAISE EXCEPTION 'AR fixture: disabled customer remained eligible';
+  END IF;
   PERFORM public.set_customer_credit_policy_v1(jsonb_build_object(
     'customer_id', customer_a, 'credit_enabled', true, 'use_tenant_default', false,
     'credit_limit', 250, 'hold', false, 'overdue_block', false,

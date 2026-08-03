@@ -489,20 +489,44 @@ function paymentMethodLabel(method: string | null | undefined): string {
 
 function creditEligibilityMessageKey(reasonCode: string): string {
   switch (reasonCode) {
+    case 'BUSINESS_CREDIT_DISABLED': return 'creditTenantPolicyDisabled'
+    case 'BRANCH_CREDIT_DISABLED': return 'creditBranchDisabled'
+    case 'CREDIT_ACCOUNT_NOT_READY': return 'creditAccountNotReady'
+    case 'CUSTOMER_CREDIT_DISABLED': return 'creditDisabled'
+    case 'CUSTOMER_INACTIVE': return 'creditCustomerInactive'
     case 'AR_CREDIT_TENANT_POLICY_DISABLED': return 'creditTenantPolicyDisabled'
     case 'AR_CREDIT_BRANCH_DISABLED': return 'creditBranchDisabled'
     case 'AR_CREDIT_ACCOUNT_NOT_READY': return 'creditAccountNotReady'
     case 'CREDIT_NOT_ALLOWED_FOR_BUSINESS': return 'creditTenantPolicyDisabled'
     case 'CREDIT_NOT_ALLOWED_FOR_BRANCH': return 'creditBranchDisabled'
     case 'CREDIT_NOT_ALLOWED_FOR_CUSTOMER': return 'creditDisabled'
-    case 'CREDIT_ACCOUNT_NOT_READY': return 'creditAccountNotReady'
-    case 'CUSTOMER_INACTIVE': return 'creditCustomerInactive'
     case 'AR_CREDIT_HOLD': return 'creditOnHold'
     case 'AR_CREDIT_OWNER_APPROVAL_REQUIRED': return 'creditOwnerApprovalRequired'
     case 'AR_CREDIT_LIMIT_EXCEEDED': return 'creditLimitExceeded'
     case 'AR_CREDIT_OVERDUE_BLOCK': return 'creditOverdueBlocked'
     case 'AR_CREDIT_DISABLED': return 'creditDisabled'
     default: return 'creditUnavailable'
+  }
+}
+
+function creditEligibilitySettingsPath(reasonCode: string, customerId: string, branchId: string) {
+  switch (reasonCode) {
+    case 'BUSINESS_CREDIT_DISABLED':
+    case 'AR_CREDIT_TENANT_POLICY_DISABLED':
+    case 'CREDIT_NOT_ALLOWED_FOR_BUSINESS':
+      return '/settings?tab=customer-credit'
+    case 'BRANCH_CREDIT_DISABLED':
+    case 'AR_CREDIT_BRANCH_DISABLED':
+    case 'CREDIT_NOT_ALLOWED_FOR_BRANCH':
+      return `/branch-settings?section=credit`
+    case 'CUSTOMER_CREDIT_DISABLED':
+    case 'CREDIT_NOT_ALLOWED_FOR_CUSTOMER':
+    case 'CREDIT_ACCOUNT_NOT_READY':
+    case 'AR_CREDIT_ACCOUNT_NOT_READY':
+    case 'AR_CREDIT_DISABLED':
+      return `/customers/${customerId}?section=credit`
+    default:
+      return `/customers/${customerId}?section=credit`
   }
 }
 
@@ -4225,11 +4249,11 @@ export default function POSPage() {
                   {t('payments:creditAvailable', { amount: creditEligibility.availableCredit.toFixed(2) })}
                 </span>
               </button>
-            ) : creditEligibility ? (
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-                <span className="min-w-0"><span className="font-semibold text-gray-700">{t('payments:creditUnavailable')}</span> · {t(`payments:${creditEligibilityMessageKey(creditEligibility.reasonCode)}`)}</span>
-                {creditEligibility.accountLinkable && (
-                  <button type="button" onClick={() => navigate(creditEligibility.reasonCode === 'AR_CREDIT_TENANT_POLICY_DISABLED' ? '/settings?tab=customer-credit' : '/customers')} className="flex-shrink-0 font-semibold text-primary-700 hover:text-primary-900">
+              ) : creditEligibility ? (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  <span className="min-w-0"><span className="font-semibold text-gray-700">{t('payments:creditUnavailable')}</span> · {t(`payments:${creditEligibilityMessageKey(creditEligibility.reasonCode)}`)}</span>
+                {customerId && (
+                  <button type="button" onClick={() => navigate(creditEligibilitySettingsPath(creditEligibility.reasonCode, customerId, branch?.id ?? ''))} className="flex-shrink-0 font-semibold text-primary-700 hover:text-primary-900">
                     {t('payments:creditSettings')}
                   </button>
                 )}

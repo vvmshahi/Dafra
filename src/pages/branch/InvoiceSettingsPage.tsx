@@ -225,10 +225,12 @@ export default function InvoiceSettingsPage({
   embedded = false,
   workspace = 'invoices',
   onDirtyChange,
+  initialBranchId,
 }: {
   embedded?: boolean
   workspace?: 'receipts' | 'invoices'
   onDirtyChange?: (dirty: boolean) => void
+  initialBranchId?: string | null
 } = {}) {
   const { t, i18n } = useTranslation(['settings', 'common', 'printing'])
   const navigate = useNavigate()
@@ -287,7 +289,7 @@ export default function InvoiceSettingsPage({
     setSearchParams(next, { replace: true })
   }, [allowedSections, searchParams, setSearchParams, workspace])
 
-  useEffect(() => { if (!authLoading) void loadBranches() }, [authLoading, profile?.branch_id, profile?.tenant_id])
+  useEffect(() => { if (!authLoading) void loadBranches() }, [authLoading, initialBranchId, profile?.branch_id, profile?.tenant_id])
   useEffect(() => { if (branchId && branch) void loadSettings(branch) }, [branchId, branch?.id])
   useEffect(() => {
     let active = true
@@ -317,7 +319,9 @@ export default function InvoiceSettingsPage({
     if (!profile?.tenant_id) { setLoading(false); return }
     const { data } = await supabase.from('branches').select('*').eq('tenant_id', profile.tenant_id).eq('is_active', true).order('is_main_branch', { ascending: false }).order('name')
     const list = (data ?? []) as Branch[]
-    setBranches(list); setBranchId(current => current && list.some(item => item.id === current) ? current : list[0]?.id ?? null)
+    setBranches(list); setBranchId(current => initialBranchId && list.some(item => item.id === initialBranchId)
+      ? initialBranchId
+      : current && list.some(item => item.id === current) ? current : list[0]?.id ?? null)
   }
 
   async function loadSettings(selected: Branch) {

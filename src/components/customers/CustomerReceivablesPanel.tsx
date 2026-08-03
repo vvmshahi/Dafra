@@ -57,12 +57,14 @@ export function CustomerReceivablesPanel({
   customerId,
   branchId,
   isOwner,
+  canManageCustomerCredit,
   canReversePayment,
   canAdjustReceivables,
 }: {
   customerId: string
   branchId: string | null | undefined
   isOwner: boolean
+  canManageCustomerCredit: boolean
   canReversePayment: boolean
   canAdjustReceivables: boolean
 }) {
@@ -139,7 +141,7 @@ export function CustomerReceivablesPanel({
       window.removeEventListener('kubri:customer-credit-policy-changed', refreshForPolicyChange)
       window.removeEventListener('storage', refreshForStorageChange)
     }
-  }, [customerId, branchId, isOwner])
+  }, [customerId, branchId, isOwner, canManageCustomerCredit])
 
   const paymentAmount = Number(amount)
   const selectedTenders = useMemo<ReceivableTender[]>(() => splitTenders.length
@@ -315,7 +317,7 @@ export function CustomerReceivablesPanel({
   }
 
   async function savePolicy() {
-    if (!isOwner || !branchCreditSettings?.tenantCreditEnabled || !branchCreditSettings.branchCreditEnabled || savingPolicy) return
+    if (!canManageCustomerCredit || !branchCreditSettings?.tenantCreditEnabled || !branchCreditSettings.branchCreditEnabled || savingPolicy) return
     setSavingPolicy(true)
     try {
       await saveCustomerCreditAccess({ customerId, creditEnabled })
@@ -331,7 +333,7 @@ export function CustomerReceivablesPanel({
   }
 
   async function setupCreditAccount() {
-    if (!isOwner || !branchCreditSettings?.tenantCreditEnabled || !branchCreditSettings.branchCreditEnabled || settingUpAccount) return
+    if (!canManageCustomerCredit || !branchCreditSettings?.tenantCreditEnabled || !branchCreditSettings.branchCreditEnabled || settingUpAccount) return
     setSettingUpAccount(true)
     try {
       const result = await ensureCustomerReceivableAccount(customerId)
@@ -360,7 +362,7 @@ export function CustomerReceivablesPanel({
   }
 
   return (
-    <section className="space-y-4" aria-labelledby="customer-receivables-heading">
+    <section id="customer-credit-settings" className="space-y-4" aria-labelledby="customer-receivables-heading">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-600">{t('eyebrow')}</p>
@@ -462,8 +464,8 @@ export function CustomerReceivablesPanel({
           {branchCreditSettings?.tenantCreditEnabled && !branchCreditSettings.branchCreditEnabled && <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-sm text-amber-900"><p>{t('credit.branchDisabled')}</p><Link to={isOwner ? `/settings/branches/${branchId}` : '/branch-settings'} className="mt-2 inline-flex font-semibold text-primary-800 underline underline-offset-2">{t('credit.openBranchSettings')}</Link></div>}
           {branchCreditSettings?.tenantCreditEnabled && branchCreditSettings.branchCreditEnabled && workspace.policy && <p className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-900">{workspace.policy.creditEnabled ? t('credit.enabledForCustomer') : t('credit.disabledForCustomer')}</p>}
           {branchCreditSettings?.tenantCreditEnabled && branchCreditSettings.branchCreditEnabled && !workspace.customer.receivableAccountId && <Button className="mt-4" size="sm" onClick={() => void setupCreditAccount()} disabled={settingUpAccount}>{settingUpAccount && <Loader2 size={14} className="animate-spin" />}{t('credit.setupAccount')}</Button>}
-          {isOwner && branchCreditSettings?.tenantCreditEnabled && branchCreditSettings.branchCreditEnabled && workspace.customer.receivableAccountId && <Button className="mt-4" variant="secondary" size="sm" onClick={() => setCreditSettingsOpen(value => !value)}>{creditSettingsOpen ? t('credit.closeSettings') : (workspace.policy?.creditEnabled ? t('credit.stopCredit') : t('credit.allowCredit'))}</Button>}
-          {isOwner && branchCreditSettings?.tenantCreditEnabled && branchCreditSettings.branchCreditEnabled && workspace.customer.receivableAccountId && creditSettingsOpen && <div className="mt-4 space-y-3 border-t border-slate-100 pt-4"><label className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-800"><span>{t('credit.allowForCustomer')}</span><input type="checkbox" checked={creditEnabled} onChange={event => setCreditEnabled(event.target.checked)} /></label><p className="text-xs text-slate-500">{t('credit.simpleHelp')}</p><Button size="sm" disabled={savingPolicy} onClick={() => void savePolicy()}>{savingPolicy && <Loader2 size={14} className="animate-spin" />}{t('credit.save')}</Button></div>}
+          {canManageCustomerCredit && branchCreditSettings?.tenantCreditEnabled && branchCreditSettings.branchCreditEnabled && workspace.customer.receivableAccountId && <Button className="mt-4" variant="secondary" size="sm" onClick={() => setCreditSettingsOpen(value => !value)}>{creditSettingsOpen ? t('credit.closeSettings') : (workspace.policy?.creditEnabled ? t('credit.stopCredit') : t('credit.allowCredit'))}</Button>}
+          {canManageCustomerCredit && branchCreditSettings?.tenantCreditEnabled && branchCreditSettings.branchCreditEnabled && workspace.customer.receivableAccountId && creditSettingsOpen && <div className="mt-4 space-y-3 border-t border-slate-100 pt-4"><label className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-800"><span>{t('credit.allowForCustomer')}</span><input type="checkbox" checked={creditEnabled} onChange={event => setCreditEnabled(event.target.checked)} /></label><p className="text-xs text-slate-500">{t('credit.simpleHelp')}</p><Button size="sm" disabled={savingPolicy} onClick={() => void savePolicy()}>{savingPolicy && <Loader2 size={14} className="animate-spin" />}{t('credit.save')}</Button></div>}
         </article>
       </div>
 

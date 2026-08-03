@@ -31,7 +31,7 @@ const TABS = isElectron() ? [...BASE_TABS, ...ELECTRON_TABS] : BASE_TABS
 export default function SettingsPage() {
   const { t } = useTranslation('settings')
   const { profile } = useAuth()
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const role = String(profile?.role ?? '')
   const canConfigureCustomerCredit = role === 'owner' || role === 'admin'
   const tabs = canConfigureCustomerCredit ? [...TABS, { id: 'customer-credit' as const, icon: Landmark }] : TABS
@@ -49,12 +49,20 @@ export default function SettingsPage() {
 
   const canViewBusinessType = role === 'owner' || role === 'admin'
 
+  function selectTab(tab: TabId) {
+    const next = new URLSearchParams(params)
+    next.set('tab', tab)
+    setParams(next)
+  }
+
   return (
-    <div className="max-w-4xl space-y-6">
-      <PageHeader title={t('pageTitle')} description={t('pageSubtitle')} />
+    <div className="mx-auto max-w-5xl space-y-5">
+      <div className="border-b border-slate-200 pb-5">
+        <PageHeader title={t('pageTitle')} description={t('pageSubtitle')} />
+      </div>
 
       {/* Tab bar */}
-      <div className="card p-1.5 flex gap-1 overflow-x-auto" aria-label={t('pageTitle')}>
+      <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50/80 p-1.5" role="tablist" aria-label={t('pageTitle')}>
         {tabs.map(tab => {
           const Icon    = tab.icon
           const isActive = tab.id === active
@@ -63,9 +71,12 @@ export default function SettingsPage() {
               key={tab.id}
               type="button"
               data-tab={tab.id}
-              aria-pressed={isActive}
-              onClick={() => setActive(tab.id)}
-              className={`flex min-h-10 flex-1 items-center justify-center gap-2.5 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-medium transition-[background-color,color,box-shadow,transform] active:scale-[0.98] ${
+              role="tab"
+              aria-selected={isActive}
+              aria-controls={`settings-panel-${tab.id}`}
+              tabIndex={isActive ? 0 : -1}
+              onClick={() => selectTab(tab.id)}
+              className={`flex min-h-10 flex-1 items-center justify-center gap-2.5 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold outline-none transition-[background-color,color,box-shadow,transform] active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary-500 ${
                 isActive
                   ? 'bg-primary-500 text-white shadow-sm'
                   : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
@@ -79,7 +90,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Tab content */}
-      <section aria-live="polite" aria-label={t(`tabs.${active}.label`)}>
+      <section id={`settings-panel-${active}`} role="tabpanel" aria-live="polite" aria-label={t(`tabs.${active}.label`)}>
         {active === 'subscription' && <SubscriptionTab />}
         {active === 'account'      && <AccountTab />}
         {active === 'printer'      && <PrinterTab />}

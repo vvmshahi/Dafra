@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, Barcode, CheckCircle2, FileText, Printer, ReceiptText } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
+import { supabase } from '@/lib/supabase'
+import type { Branch } from '@/types'
 import { isElectron } from '@/lib/electron'
 import BarcodeLabelSettingsPanel from '@/components/barcodes/BarcodeLabelSettingsPanel'
 import BarcodePrinterSetupPanel from '@/components/barcodes/BarcodePrinterSetupPanel'
@@ -37,6 +39,7 @@ function workspaceFromQuery(value: string | null, electron: boolean): Workspace 
 export default function PrintingDocumentsPage() {
   const { t } = useTranslation('printing')
   const { branch, tenant, profile } = useAuth()
+  const { branchId: routeBranchId } = useParams<{ branchId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const electron = isElectron()
   const tabs = useMemo(
@@ -48,14 +51,24 @@ export default function PrintingDocumentsPage() {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const [dirty, setDirty] = useState(false)
   const [pendingWorkspace, setPendingWorkspace] = useState<Workspace | null>(null)
-  const branchId = branch?.id || profile?.branch_id || ''
+  const [contextBranch, setContextBranch] = useState<Branch | null>(branch)
+  const contextBranchId = routeBranchId || profile?.branch_id || branch?.id || ''
+  useEffect(() => {
+    if (branch) { setContextBranch(branch); return }
+    if (!routeBranchId) return
+    let cancelled = false
+    void (supabase as any).from('branches').select('*').eq('id', routeBranchId).maybeSingle()
+      .then(({ data }: { data: Branch | null }) => { if (!cancelled) setContextBranch(data) })
+    return () => { cancelled = true }
+  }, [branch, routeBranchId])
+  const branchId = contextBranch?.id || contextBranchId
   const businessName = tenant?.business_name_ar
     || tenant?.business_name
     || tenant?.name
-    || branch?.business_name_ar
-    || branch?.business_name
-    || branch?.name_ar
-    || branch?.name
+    || contextBranch?.business_name_ar
+    || contextBranch?.business_name
+    || contextBranch?.name_ar
+    || contextBranch?.name
     || null
 
   useEffect(() => {
@@ -93,7 +106,7 @@ export default function PrintingDocumentsPage() {
     commitWorkspace(workspace)
   }
 
-  const branchName = branch?.name_ar || branch?.name || ''
+  const branchName = contextBranch?.name_ar || contextBranch?.name || ''
 
   return <div className="printing-workspace-shell mx-auto flex max-w-[1600px] flex-col overflow-hidden">
     <DocumentStudioHeader
@@ -141,8 +154,8 @@ export default function PrintingDocumentsPage() {
     />
 
     <main className="min-h-0 flex-1 overflow-hidden" id={`printing-panel-${active}`} role="tabpanel" aria-labelledby={`printing-tab-${active}`}>
-    {active === 'receipts' && <InvoiceSettingsPage key="receipts" embedded workspace="receipts" onDirtyChange={setDirty} />}
-    {active === 'invoices' && <InvoiceSettingsPage key="invoices" embedded workspace="invoices" onDirtyChange={setDirty} />}
+    {active === 'receipts' && <InvoiceSettingsPage key="receipts" embedded workspace="receipts" initialBranchId={contextBranch?.id ?? routeBranchId} onDirtyChange={setDirty} />}
+    {active === 'invoices' && <InvoiceSettingsPage key="invoices" embedded workspace="invoices" initialBranchId={contextBranch?.id ?? routeBranchId} onDirtyChange={setDirty} />}
     {active === 'barcodeLabels' && branchId && <BarcodeLabelSettingsPanel branchId={branchId} businessName={businessName} printerAdjustment={<BarcodePrinterSetupPanel branchId={branchId} businessName={businessName} compact />} onDirtyChange={setDirty} />}
     {electron && active === 'printerSetup' && branchId && <div className="space-y-8">
       <BarcodePrinterSetupPanel branchId={branchId} businessName={businessName} />

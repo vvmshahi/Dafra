@@ -3,11 +3,11 @@
   "pageSubtitle": "Manage your account, subscription, and device preferences.",
   "tabs": { "subscription": { "label": "Subscription", "description": "Plan, billing, and usage limits" }, "account": { "label": "Account", "description": "Profile, name, phone, and password" }, "printer": { "label": "Printer", "description": "Default receipt printer for silent printing" }, "customer-credit": { "label": "Customer credit", "description": "Tenant-wide customer credit controls" } },
   "customerCredit": {
-    "eyebrow": "Customer credit", "title": "Allow customer credit", "description": "Turn this on to allow Branches to use customer credit.",
+    "workspaceLabel": "Business policy", "eyebrow": "Customer credit", "title": "Allow customer credit", "description": "Turn this on to allow Branches to use customer credit.",
     "statusEnabled": "Credit enabled", "statusDisabled": "Credit disabled", "statusMissing": "Setup required",
     "setupTitle": "Set up customer credit", "setupBody": "Saving this switch does not approve any customer or create historical balances. Each Branch and customer is enabled separately.",
     "enabled": "Allow customer credit", "enabledHelp": "Branches can use customer credit only when this business switch, the Branch switch, and the customer switch are on.",
-    "save": "Save", "setup": "Set up customer credit", "reload": "Reload", "saved": "Customer credit setting saved. POS eligibility has been refreshed.", "loadFailed": "Customer credit setting could not be loaded.", "saveFailed": "Customer credit setting could not be saved."
+    "save": "Save", "setup": "Set up customer credit", "reload": "Reload", "viewBranchSettings": "View Branch credit settings", "openWorkspace": "Open Customer Credit", "saved": "Customer credit setting saved. POS eligibility has been refreshed.", "loadFailed": "Customer credit setting could not be loaded.", "saveFailed": "Customer credit setting could not be saved."
   },
   "businessType": { "title": "Business Type", "readOnly": "Read only", "trading": { "label": "Trading business", "description": "Products, stock, and purchase tracking." }, "service": { "label": "Service business", "description": "Services, produced items, materials, and simple profit estimates." } },
   "language": "Language",

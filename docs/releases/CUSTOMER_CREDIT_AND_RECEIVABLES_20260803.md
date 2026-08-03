@@ -619,3 +619,28 @@ was pushed to `feature/customer-credit-receivables-20260803` and deployed as
 Preview `dpl_CXiSmjKNTMRReC8PJ94yNCMFNbMy`,
 `https://dafra-qpl30l3q0-mohammed-shahin-v-vs-projects.vercel.app`, with Vercel
 state `READY` and target `preview`. No production alias was updated.
+
+## Branch and Owner Settings redesign closure — 2026-08-03
+
+The later focused correction is recorded in
+[`BRANCH_AND_OWNER_SETTINGS_REDESIGN_20260803.md`](BRANCH_AND_OWNER_SETTINGS_REDESIGN_20260803.md).
+It traced the POS account-not-ready message to missing effective eligibility
+diagnostics and corrected route selection for business, Branch, customer, and
+account failures. It introduced no second settings source: existing Branch POS
+preferences remain stored in `branches` through the authoritative RPC, and the
+new URL-addressable Branch Settings studio links to the existing printing,
+receivables, customer, and Owner ZATCA workspaces.
+
+After exact parity through `20260803000900`, the sole intended pending
+`20260803001000_branch_settings_authority_and_credit_diagnostics_v1.sql` was
+applied to `bkbphkpqcxuejozayrsy`. Linked history now has no pending migration.
+Remote metadata confirms the effective eligibility wrapper and Branch POS RPC
+are postgres-owned, `SECURITY DEFINER`, `search_path = public, pg_temp`,
+`row_security = off`, authenticated-only, with the raw compatibility function
+denying client execution. The linked rejection fixture returned no rows.
+
+Static, focused UI, direct local stateful/rejection, build, and diff checks
+passed. Owner/Branch authenticated walkthroughs, responsive/RTL/keyboard
+acceptance, disposable three-Branch lifecycle, physical printing, and tax
+acceptance remain manual gates. Mobile, purchase-idempotency, main merge,
+production frontend, and unrelated RLS remediation remain paused.

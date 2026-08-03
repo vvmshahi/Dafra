@@ -40,7 +40,7 @@
   "creditCustomerRequired": "اختر عميلاً نشطاً قبل استخدام البيع الآجل.",
   "creditChecking": "جارٍ التحقق من أهلية ائتمان العميل",
   "creditDisabled": "الائتمان غير مفعّل لهذا العميل.",
-  "creditTenantPolicyDisabled": "لم يتم تفعيل ائتمان العملاء في إعدادات المنشأة.",
+  "creditTenantPolicyDisabled": "ائتمان العملاء متوقف لهذا النشاط.",
   "creditBranchDisabled": "ائتمان العملاء متوقف لهذا الفرع.",
   "creditAccountNotReady": "أعد حساب ائتمان العميل أولاً.",
   "creditCustomerInactive": "هذا العميل غير نشط.",

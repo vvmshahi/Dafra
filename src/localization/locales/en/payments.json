@@ -40,7 +40,7 @@
   "creditCustomerRequired": "Select an active customer before using credit.",
   "creditChecking": "Checking customer credit eligibility",
   "creditDisabled": "Credit is not enabled for this customer.",
-  "creditTenantPolicyDisabled": "Customer credit has not been enabled in tenant settings.",
+  "creditTenantPolicyDisabled": "Customer credit is turned off for this business.",
   "creditBranchDisabled": "Customer credit is turned off for this Branch.",
   "creditAccountNotReady": "Set up the customer credit account first.",
   "creditCustomerInactive": "This customer is inactive.",

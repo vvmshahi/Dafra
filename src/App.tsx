@@ -367,6 +367,7 @@ export default function App() {
               <Route path="/employees"   element={<EmployeesPage />} />
               <Route path="/settings"  element={<SettingsPage />} />
               <Route path="/settings/branches/:branchId" element={<BranchSettingsPage />} />
+              <Route path="/settings/branches/:branchId/printing" element={<PrintingDocumentsPage />} />
               {ENABLE_OFFICIAL_SELLER_IDENTITY && <Route path="/settings/official-seller" element={<OfficialSellerProfilePage />} />}
             </Route>
 

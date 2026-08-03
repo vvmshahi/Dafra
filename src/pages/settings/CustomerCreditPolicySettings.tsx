@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Landmark, Loader2, RefreshCw, Save } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { useAuth } from '@/hooks/useAuth'
+import { supabase } from '@/lib/supabase'
 import {
   loadTenantCustomerCreditPolicy,
   notifyCustomerCreditPolicyChanged,
@@ -11,12 +14,14 @@ import { Button } from '@/components/ui/Button'
 
 export default function CustomerCreditPolicySettings() {
   const { t } = useTranslation('settings')
+  const { profile } = useAuth()
   const [policy, setPolicy] = useState<TenantCustomerCreditPolicy | null>(null)
   const [creditEnabled, setCreditEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [firstBranchId, setFirstBranchId] = useState<string | null>(null)
 
   async function reload() {
     setLoading(true)
@@ -34,6 +39,11 @@ export default function CustomerCreditPolicySettings() {
   }
 
   useEffect(() => { void reload() }, [])
+  useEffect(() => {
+    if (!profile?.tenant_id) return
+    void (supabase as any).from('branches').select('id').eq('tenant_id', profile.tenant_id).eq('is_active', true).order('name').limit(1).maybeSingle()
+      .then(({ data }: { data: { id?: string } | null }) => setFirstBranchId(data?.id ?? null))
+  }, [profile?.tenant_id])
 
   async function save() {
     if (saving) return
@@ -59,7 +69,9 @@ export default function CustomerCreditPolicySettings() {
   }
 
   return (
-    <section className="card p-5 sm:p-6" aria-labelledby="customer-credit-policy-heading">
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-labelledby="customer-credit-policy-heading">
+      <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-4 text-xs font-semibold text-slate-500 sm:px-6">{t('customerCredit.workspaceLabel')}</div>
+      <div className="p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 gap-3">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary-50 text-primary-700"><Landmark size={18} /></div>
@@ -86,6 +98,9 @@ export default function CustomerCreditPolicySettings() {
       <div className="mt-5 flex flex-wrap items-center gap-2">
         <Button onClick={() => void save()} disabled={saving}>{saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}{t('customerCredit.save')}</Button>
         <Button variant="secondary" onClick={() => void reload()} disabled={saving}><RefreshCw size={14} />{t('customerCredit.reload')}</Button>
+        {firstBranchId && <Link to={`/settings/branches/${firstBranchId}?section=credit`} className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">{t('customerCredit.viewBranchSettings')}</Link>}
+        <Link to="/reports/receivables" className="inline-flex min-h-10 items-center rounded-xl px-3 text-sm font-semibold text-primary-700 hover:bg-primary-50">{t('customerCredit.openWorkspace')}</Link>
+      </div>
       </div>
     </section>
   )

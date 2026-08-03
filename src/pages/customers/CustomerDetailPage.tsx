@@ -154,6 +154,11 @@ export default function CustomerDetailPage() {
   const canChooseBranch = profile?.role !== 'branch'
 
   useEffect(() => {
+    if (searchParams.get('section') !== 'credit' || !data) return
+    window.requestAnimationFrame(() => document.getElementById('customer-credit-settings')?.scrollIntoView({ block: 'start' }))
+  }, [data, searchParams])
+
+  useEffect(() => {
     if (!profile?.tenant_id) return
     let cancelled = false
     void supabase
@@ -535,7 +540,8 @@ export default function CustomerDetailPage() {
       <CustomerReceivablesPanel
         customerId={id}
         branchId={data.customer.branchId}
-        isOwner={profile?.role === 'owner' || profile?.role === 'admin' || profile?.role === 'branch'}
+        isOwner={profile?.role === 'owner' || profile?.role === 'admin'}
+        canManageCustomerCredit={['owner', 'admin', 'branch'].includes(profile?.role ?? '')}
         canReversePayment={['owner', 'admin', 'accountant', 'manager'].includes(profile?.role ?? '')}
         canAdjustReceivables={['owner', 'admin', 'accountant'].includes(profile?.role ?? '')}
       />

@@ -219,6 +219,34 @@ The remaining gates are authenticated/disposable-tenant, device/print,
 responsive/accessibility, and Saudi tax-adviser manual acceptance—not another
 automated migration or production deployment.
 
+## Branch and Owner Settings redesign update — 2026-08-03
+
+The separate settings correction is now documented in
+[`BRANCH_AND_OWNER_SETTINGS_REDESIGN_20260803.md`](BRANCH_AND_OWNER_SETTINGS_REDESIGN_20260803.md).
+The POS eligibility defect was wiring/diagnostic ambiguity: Owner and Branch
+switches persisted, but POS received the old raw denial shape and sent every
+resolution action to the generic Customers route. The new wrapper adds
+business/Branch/customer/account/active diagnostics while preserving the legacy
+`reasonCode`, and POS routes each normalized denial to the exact resolving page.
+
+The Branch Settings page is now a compact General, POS & Payments, Customer
+Credit, Printing & Documents, and ZATCA studio with direct section URLs,
+browser history, unsaved-change protection, Arabic locale parity, and the
+existing Branch POS storage/RPC. Owner Settings uses the same visual language;
+no credit, receivables, printing, ZATCA, or fiscal source was duplicated.
+
+The only intended pending migration after 00900,
+`20260803001000_branch_settings_authority_and_credit_diagnostics_v1.sql`, was
+applied to `bkbphkpqcxuejozayrsy` after exact parity and metadata preflight.
+Remote head is 01000 with no pending migration. Function security, safe search
+path, grants, RLS/policies, and linked non-mutating rejection checks passed.
+
+The final redesign Preview is recorded after the focused commit/deployment
+below. Manual authenticated browser/device/RTL, disposable three-Branch,
+physical-printing, and tax-adviser checks remain required. No main merge,
+production alias update, mobile/purchase work, or unauthorized data mutation
+occurred.
+
 ## Customer-credit configuration correction — 00800 rollout complete
 
 The later Preview acceptance found that the historical per-customer policy was

@@ -97,6 +97,13 @@ export interface CustomerReceivableWorkspace {
 export interface CustomerCreditCheckoutEligibility {
   allowed: boolean
   reasonCode: string
+  businessEnabled: boolean
+  branchEnabled: boolean
+  customerEnabled: boolean
+  accountReady: boolean
+  customerActive: boolean
+  branchActive: boolean
+  eligible: boolean
   creditEnabled: boolean
   accountLinked: boolean
   accountLinkable: boolean
@@ -284,7 +291,14 @@ export async function loadCustomerCreditCheckoutEligibility(input: {
   const value = data as any
   return {
     allowed: value?.allowed === true,
-    reasonCode: String(value?.reasonCode ?? 'AR_CREDIT_DISABLED'),
+    reasonCode: String(value?.reason_code ?? value?.effectiveReasonCode ?? value?.reasonCode ?? 'CREDIT_UNAVAILABLE'),
+    businessEnabled: value?.businessEnabled === true || value?.business_enabled === true,
+    branchEnabled: value?.branchEnabled === true || value?.branch_enabled === true,
+    customerEnabled: value?.customerEnabled === true || value?.customer_enabled === true,
+    accountReady: value?.accountReady === true || value?.account_ready === true,
+    customerActive: value?.customerActive !== false && value?.customer_active !== false,
+    branchActive: value?.branchActive !== false && value?.branch_active !== false,
+    eligible: value?.eligible === true || value?.allowed === true,
     creditEnabled: value?.creditEnabled === true,
     accountLinked: value?.accountLinked === true,
     accountLinkable: value?.accountLinkable === true,
