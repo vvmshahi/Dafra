@@ -2,12 +2,13 @@
 
 ## Status
 
-**Deployment blocked by remote schema drift.** Local database, Edge Runtime,
-Kong routing, CORS and authenticated function-path certification now pass. The
-remote migration ledger is exact through `20260730000500` with only
-`20260803000100` pending, but metadata proves that production has a partially
-applied, unrecorded subset of its target schema. No remote migration or Edge
-Function was deployed after finding that drift.
+**Production migration and Edge rollout complete; controlled acceptance pending.**
+The previously unrecorded partial DDL state was definition-equivalent to the
+intended migration, so `20260803000100` was conservatively revised, certified
+against clean, equivalent-drift and incompatible fixtures, then applied once to
+production. `create-owner-account` is active as Edge Function v75. No frontend
+deployment was needed. Production three-branch acceptance remains pending an
+explicitly authorised disposable Super Admin/account.
 
 ## Baselines and provenance
 
@@ -64,8 +65,8 @@ branches, the fourth insertion/activation is rejected server-side.
 
 ## Evidence
 
-- Remote parity: exact match through `20260730000500`; only
-  `20260803000100` is pending.
+- Clean-schema and production migration parity now match through
+  `20260803000100`.
 - `npm run test:owner-branch-entitlement`: passed.
 - `node scripts/test-phase1-provisioning-security.mjs`: passed.
 - `npm run test:owner-branch-entitlement-runtime`: passed against the real
@@ -133,9 +134,9 @@ checks through Kong:
 No local fixture was sent externally. The non-secret diagnostic trace is kept
 in the ignored `.artifacts/` directory.
 
-## Remote preflight and deployment stop
+## Initial remote drift preflight
 
-Remote read-only checks on project `bkbphkpqcxuejozayrsy` found:
+The original read-only checks on project `bkbphkpqcxuejozayrsy` found:
 
 - the migration ledger matches local history through `20260730000500`; only
   `20260803000100_authoritative_owner_branch_entitlement.sql` is pending;
@@ -149,24 +150,93 @@ Remote read-only checks on project `bkbphkpqcxuejozayrsy` found:
   `tenants.vat_number` is already nullable, while
   `owner_provisioning_requests.branch_allowance` does not exist.
 
-That partial schema state is not represented by a remote migration version and
-is not safe to reconcile by blindly applying a pending migration. The release
-gate therefore requires an authorised remote schema-reconciliation decision
-before any migration or Edge deployment. The migration was not applied, the
-function remains production version 74 with `verify_jwt=false`, and no existing
-tenant, subscription, request, branch, invoice, purchase or ZATCA row changed.
+That partial schema state was not represented by a remote migration version and
+was not safe to reconcile by blindly applying the original pending file. The
+following reconciliation records the conservative compatibility strategy and
+the resulting authorised rollout.
 
-The existing production v74 gateway itself is healthy: a non-mutating OPTIONS
-request returned 200 and an unauthenticated POST returned controlled 401. The
-post-deployment malformed-branch-count smoke and controlled disposable-account
-acceptance are pending because deployment did not occur.
+## Drift reconciliation and production rollout
 
-## Deployment and acceptance gate
+### Shared-checksum and compatibility decision
 
-Do not apply `20260803000100` or deploy `create-owner-account` until the remote
-partial-schema drift is reconciled and re-preflighted. No frontend deployment is
-needed because the existing frontend already submits `branch_count`.
+- Previous pending-file SHA-256:
+  `cc1a40d1eb1bcb14f47b6d521a72524db8274c1c87387965ef2961baf7330179`.
+- Revised applied-file SHA-256:
+  `2800767161c8a6b7baaf257b79ca37e24540e1511775d49b3b52a2fb8ef45447`.
+- Supabase CLI exposed one accessible shared project,
+  `bkbphkpqcxuejozayrsy`; its ledger had no applied `20260803000100` entry.
+  The migration commit existed only on
+  `origin/hotfix/phase2-branch-entitlement-20260803`. No accessible shared
+  environment had applied the old checksum, so revising the still-pending file
+  was safe.
 
-Mobile and purchase-idempotency work remained paused. No purchase migration,
-frontend deployment, production migration, production Edge deployment, or
-unauthorised business-data mutation occurred.
+The production definitions were classified as follows:
+
+- **A — already present and equivalent:**
+  `tenant_subscriptions.paid_branch_count integer NOT NULL DEFAULT 1`, its
+  exact `CHECK ((paid_branch_count >= 1))` constraint, and nullable
+  `tenants.vat_number character varying(15)` with no default.
+- **B — existing functions intentionally replaced:** the two provisioning
+  functions had the certified signatures, `SECURITY DEFINER`, safe search path,
+  and service-role-only execute grants, but required the new durable allowance
+  behavior.
+- **C — missing and added:** nullable integer
+  `owner_provisioning_requests.branch_allowance` plus its 1–100-or-NULL check
+  and documentation comment.
+- **D — unrelated:** all other production drift was left untouched.
+
+The revised migration uses catalog checks rather than exception swallowing. It
+accepts only the equivalent paid-count/check/VAT definitions above, adds only
+missing entitlement objects, and clearly fails for incompatible paid-count
+type, null/default, check range, branch-allowance column, or function signature.
+It does not update `tenants` or `tenant_subscriptions` rows.
+
+### Local certification
+
+- A fresh disposable clean chain applied all 47 migrations through the revised
+  `20260803000100`; the stateful runtime suite passed.
+- `test:owner-branch-entitlement-migration-compatibility` constructed the exact
+  partial production state, applied the revised migration, preserved a fixture
+  tenant/subscription's values, added only `branch_allowance`, retained the
+  compatible paid/VAT definitions, and compiled the functions.
+- The same suite proved explicit failure for incompatible paid-count type,
+  nullable/default, check range, branch-allowance type, and entitlement function
+  signature fixtures.
+- Contract, provisioning-security, stateful entitlement, full `npm test`,
+  TypeScript, and Vite production build all passed. Public build placeholders
+  were intentionally supplied for `npm test` and `npm run build`.
+- Direct Edge and Kong OPTIONS/unauthenticated paths were rechecked after the
+  revised migration: OPTIONS 200 and POST 401. The local Docker worker again
+  cancelled a newly started authenticated flow under its CPU limit; the handler
+  and full authenticated replay/conflict/three-branch flow had already passed
+  on the same source before this migration-only revision, and the database suite
+  independently revalidated its complete state transitions.
+
+### Production result
+
+- Final migration ledger: `20260803000100` recorded once; no pending migration.
+- Aggregate rows before and after deployment: four tenants, four subscriptions,
+  and two provisioning requests. No existing tenant or subscription value was
+  rewritten.
+- Final entitlement schema: nullable integer `branch_allowance` with no default
+  and its documented 1–100-or-NULL check; existing integer NOT NULL default-1
+  `paid_branch_count` and its check preserved; VAT remains nullable.
+- Final functions: both target RPCs remain `SECURITY DEFINER` with
+  `search_path = pg_catalog, public, auth`, execute granted only to
+  `service_role`, and no anon/authenticated execute grant.
+- Only `create-owner-account` was deployed. It is active as version **75** with
+  `verify_jwt=false`; blank-VAT recovery, Super Admin authorisation, durable
+  retry, setup-link, and structured-error behavior are retained.
+- Post-deploy public smoke: OPTIONS `200` (4.59s) and unauthenticated POST
+  `401` (0.34s); aggregate counts remained unchanged. No platform 503 occurred.
+
+Authenticated production validation requests for branch counts 0, 101, decimal,
+and malformed payload require an authorised Super Admin bearer token. None was
+provided, so those checks were not simulated. Likewise, no explicitly
+authorised disposable email/tenant was provided for controlled three-branch
+acceptance. These are the remaining acceptance gate, not a migration or Edge
+deployment block.
+
+No frontend deployment was made or is needed: the current production frontend
+already sends `branch_count`. Mobile and purchase-idempotency work remained
+paused. No unauthorised production business data was modified.
