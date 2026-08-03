@@ -219,7 +219,7 @@ The remaining gates are authenticated/disposable-tenant, device/print,
 responsive/accessibility, and Saudi tax-adviser manual acceptance—not another
 automated migration or production deployment.
 
-## Customer-credit configuration correction — pending 00800 rollout
+## Customer-credit configuration correction — 00800 rollout complete
 
 The later Preview acceptance found that the historical per-customer policy was
 not a usable Owner configuration journey. The correction is documented in
@@ -227,9 +227,18 @@ not a usable Owner configuration journey. The correction is documented in
 tenant-wide disabled-by-default policy, visible owner setup, controlled legacy
 account linking, explicit customer approval and POS refresh. It is forward-only
 configuration work; no historical balance, customer policy, fiscal record,
-production frontend deployment or main merge has occurred. The documented
-final state supersedes this paragraph only after 00800 parity, metadata and
-non-mutating rejection verification complete.
+production frontend deployment or main merge has occurred.
+
+The exact parity check found 00800 as the sole pending migration, and the
+targeted catalog preflight found all prerequisite contracts with the expected
+pre-apply absence of the tenant-policy table. `20260803000800` then applied to
+project `bkbphkpqcxuejozayrsy`; linked history now matches through 00800. Live
+metadata confirms the new RLS-protected table, no authenticated direct writes,
+and the intended authenticated-only, `postgres`-owned `SECURITY DEFINER` RPCs
+with `search_path = public, pg_temp`. A malformed-payload rejection fixture
+passed without changing aggregate configuration, account, operation, receipt,
+allocation, ledger, or adjustment state. No real policy/customer setting was
+changed without authorisation.
 
 ## Credit POS and Demo/Sandbox correction update — 2026-08-03
 
@@ -330,3 +339,22 @@ fiscal mutation was performed for this correction.
   fixture. Exercise accepted/rejected/retry only with explicit authorisation.
 - [ ] Confirm responsive layouts at 1024×768, 1366×768, 1440×900 and narrow
   widths, then complete English/Arabic print/device review.
+
+## Customer-credit configuration interruption recovery — 2026-08-03
+
+The implementation and remote 00800 rollout were complete when the prior
+verification model reached capacity. Recovery inspection found no merge,
+rebase, cherry-pick or test process left running. The interrupted
+rollback-only three-branch fixture completed directly in the disposable local
+database with exit status 0, and its post-fixture preflight completed. It
+covered absent-policy setup, Owner/customer configuration, account linking,
+hold/limit state, cashier denial, and rollback. Aggregate retained rows are
+zero for all customer-credit configuration and AR fixture tables.
+
+`npm test` and `npm run build` passed on the completed source tree. The combined
+receivables certification command reached the Supabase CLI SQL step but the
+local container health-check timeout prevented that CLI wrapper from connecting;
+the rejection and stateful SQL assertions themselves passed when executed
+inside the same disposable container. Remote parity, 00800 metadata and the
+non-mutating rejection fixture are complete. The remaining acceptance gate is
+the authorised manual Preview walkthrough listed above.

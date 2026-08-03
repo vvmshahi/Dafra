@@ -104,7 +104,9 @@ production ZATCA endpoint/credential is selected.
 Migration 00600 was applied after exact parity and catalog preflight. The
 source was then kept immutable and the public POS/credit rebind plus
 credit-checkout contract registration were placed in forward-only migration
-00700. Migration history now matches through 00700. The public preflight/mode,
+00700. Migration history now matches through 00700 at that historical point.
+The later owner-credit configuration rollout is applied separately as 00800.
+The public preflight/mode,
 POS, and credit-checkout contracts are authenticated `SECURITY DEFINER`
 functions with `search_path = public, pg_temp`; internal evaluators are
 service-role-only. The matching `zatca-validate-sandbox-demo` Edge Function is

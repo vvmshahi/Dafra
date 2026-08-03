@@ -93,14 +93,28 @@ longer presents a dead-end message:
   denial. Rejection coverage adds invalid tenant-policy/account-setup payloads
   and confirms no retained AR/configuration row.
 
-## Remote gate
+## Remote rollout completion
 
-Remote read-only parity is exact through `20260803000700`; the only pending
-migration is `20260803000800`. Metadata preflight confirmed all required
-tables, fields, roles and public/internal AR functions, safe function settings,
-RLS and revoked authenticated direct writes. The tenant policy relation is
-absent as expected before application. No real customer policy, account,
-invoice, payment, stock, fiscal or ZATCA record has been changed.
+Remote parity was exact through `20260803000700`, with only
+`20260803000800_customer_credit_policy_configuration_v1.sql` pending. After
+the targeted metadata preflight passed, that sole forward-only migration was
+applied to `bkbphkpqcxuejozayrsy`. Linked history now matches through 00800
+with no pending or remote-only migration.
+
+Post-application metadata confirms the tenant policy relation, its RLS and
+revoked authenticated direct writes, and all reviewed public configuration,
+workspace, eligibility, checkout, and receipt RPCs. The public RPCs are
+`postgres`-owned `SECURITY DEFINER` functions with
+`search_path = public, pg_temp`; `anon` is denied and `authenticated` has only
+the intended public execution surface. The internal helpers and raw receipt
+body remain unavailable to client roles.
+
+The remote guaranteed-rejection fixture submitted only malformed or empty
+payloads. It completed successfully and asserted unchanged aggregate counts
+across configuration, account, operation, receipt, allocation, ledger, and
+adjustment rows. No real customer policy, account, invoice, payment, stock,
+fiscal, Atomic, Legacy, or ZATCA record was created, enabled, altered, or
+backfilled.
 
 The migration execution creates configuration schema/functions and normalizes
 existing **policy metadata only**. It does not insert or update an invoice,
@@ -108,3 +122,15 @@ payment, stock row, AR ledger entry, receipt, allocation, Atomic contract,
 Legacy checkout path or ZATCA credential/artifact. Its credit-checkout wrapper
 adds the required global guard while retaining the reviewed commercial/AR
 checkout as final authority.
+
+## Interruption recovery
+
+The verification run was interrupted by model capacity after the web build and
+remote rollout. No task process was left running: the direct local
+rollback-only three-branch fixture later exited 0, and its preflight completed.
+The Supabase CLI path still reports a local Postgres connection timeout because
+the disposable database container is unhealthy during catalog health checks;
+the same rejection and stateful fixtures passed directly inside that container.
+The final aggregate count is zero for tenant policies, customer policies,
+accounts, operations, receipts, allocations, entries and adjustments. The
+protected checkout remains unchanged.
