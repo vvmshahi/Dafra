@@ -298,3 +298,25 @@ them with owner-approved policies; enabling RLS alone would break their callers.
 **Updated automated verdict: `KUBRI_CUSTOMER_RECEIVABLES_AUTOMATED_READY`.**
 Production readiness, production deployment, and merge to `main` remain
 pending the combined human acceptance above.
+
+## Final pre-production audit update — 2026-08-03
+
+This historical rollout record is superseded for release decisions by
+[`CUSTOMER_CREDIT_FINAL_PREPRODUCTION_AUDIT_20260803.md`](CUSTOMER_CREDIT_FINAL_PREPRODUCTION_AUDIT_20260803.md).
+
+The final audit found and locally remediated a P1 compatibility gap: malformed
+JSONB values could escape a public AR RPC as a raw PostgreSQL conversion error.
+The new forward-only migration
+`20260803000500_harden_customer_receivables_payload_errors.sql` preserves the
+existing public signatures and business logic while converting only malformed
+UUID/date/number inputs to stable `AR_*` errors. Its local rejection fixture
+proves no AR business row is retained. The linked production project matches
+every prior migration through `20260803000400` and has exactly this one pending
+migration. It was deliberately **not** applied in this audit.
+
+Accordingly, the former automated-ready statement is historical only. Current
+release verdict: **`KUBRI_CUSTOMER_RECEIVABLES_BLOCKED`**, pending separately
+authorised remote application of migration 00500, a Preview built from the
+post-00500 source, and the controlled manual acceptance checklist in the final
+audit record. No production frontend, production data, `main` branch, or
+customer fiscal transaction was changed by the final audit.
