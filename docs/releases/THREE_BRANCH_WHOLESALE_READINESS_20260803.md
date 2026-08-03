@@ -2,9 +2,11 @@
 
 ## Status
 
-**Deployment blocked.** The repair is reconciled onto the authoritative
-migration source and remote parity is clean, but the required isolated local
-reset/runtime certification did not reach a usable database schema.
+**Deployment blocked.** The repair is reconciled, the complete local migration
+chain and stateful database certification passed, and remote parity remains
+clean. The remaining gate is local Edge gateway routing: the function registered
+and its internal health endpoint became healthy, but Kong-routed requests timed
+out. No remote change was made without that runtime evidence.
 
 ## Baselines and provenance
 
@@ -44,6 +46,9 @@ Only the owner-provisioning repair was ported:
 - durable `owner_provisioning_requests.branch_allowance` storage;
 - idempotency identity including branch count and payment type;
 - new-tenant `max_branches` and new-subscription `paid_branch_count` projection;
+- null-VAT compatibility: the new migration makes `tenants.vat_number` nullable
+  and the core projection uses `nullif(btrim(...), '')`, matching the deployed
+  v74 blank-VAT normalization without changing existing values;
 - focused contract test and the additive migration
   `20260803000100_authoritative_owner_branch_entitlement.sql`.
 
@@ -62,26 +67,40 @@ branches, the fourth insertion/activation is rejected server-side.
   `20260803000100` is pending.
 - `npm run test:owner-branch-entitlement`: passed.
 - `node scripts/test-phase1-provisioning-security.mjs`: passed.
-- The previous Phase A web build had passed before reconciliation; a fresh
-  reconciled build could not complete while the local Docker host was stalled.
+- `npm run test:owner-branch-entitlement-runtime`: passed against the real
+  disposable Postgres/Auth/RLS/trigger schema. It proves 1/3/100 allowances,
+  null VAT, replay/conflict, invalid/tampered values, legacy review,
+  profile-only recovery, pricing for three branches, and branches 1–3 with a
+  server-side fourth-branch rejection; the transaction rolls its fixtures back.
+- Fresh `npm test` passed using non-secret local public build placeholders:
+  192 thermal SSR render combinations passed.
+- Fresh TypeScript/Vite production build passed with the same non-secret local
+  public build placeholders.
 
-## Local reset failure
+## Local validation recovery
 
 The shared local Supabase project identifier (`dafra`) attached the initial
-reset to a stale unhealthy stack. A unique, port-isolated temporary stack was
-then attempted; it failed to create a healthy database/schema and the startup
-process remained stuck in local image initialization. Temporary config changes
-were restored and only the unique local process/container was stopped. This is
-not a production failure, but it prevents certification of database runtime,
-branch 1–3 creation, fourth-branch rejection, or legacy/retry fixtures.
+reset to a stale unhealthy stack. Docker Desktop's engine API then stopped
+responding; its supported restart recovered the image store and daemon. A fresh
+lowercase validation project (`kubri_entitlement_validate_20260803`) used ports
+`59721`–`59729`. It ran all 47 migrations through
+`20260803000100`, including the real Storage, Auth, RLS and branch-trigger
+dependencies. Temporary local config changes were restored afterward.
+
+The local Edge runtime registered `create-owner-account` and its internal health
+endpoint reached 200. The local Kong route nevertheless timed out for OPTIONS
+and unauthenticated POST, so Edge HTTP behavior and no-duplicate function-path
+provisioning are not certified. The disposable stack was stopped; no local
+fixture survives.
 
 ## Deployment and acceptance gate
 
-Do not apply the migration or deploy `create-owner-account` until a clean local
-reset completes and the requested runtime fixture suite passes. No frontend
-deployment is currently required because the existing frontend already submits
-`branch_count`; no production frontend, Edge Function, migration, tenant,
-subscription, branch, invoice, purchase, or ZATCA data was changed.
+Do not apply the migration or deploy `create-owner-account` until the local Edge
+gateway can return controlled OPTIONS/401/400 responses and function-path
+provisioning is exercised. No frontend deployment is currently required because
+the existing frontend already submits `branch_count`; no production frontend,
+Edge Function, migration, tenant, subscription, branch, invoice, purchase, or
+ZATCA data was changed.
 
 Mobile and purchase-idempotency work remained paused. No purchase migration was
 applied.

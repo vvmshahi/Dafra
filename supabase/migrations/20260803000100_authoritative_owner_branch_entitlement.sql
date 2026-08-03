@@ -5,6 +5,12 @@
 ALTER TABLE public.owner_provisioning_requests
   ADD COLUMN IF NOT EXISTS branch_allowance integer;
 
+-- The deployed owner-provisioning recovery path canonicalizes blank VAT values
+-- to NULL.  Keep the tenant projection compatible with that durable contract;
+-- existing non-empty VAT values are not changed.
+ALTER TABLE public.tenants
+  ALTER COLUMN vat_number DROP NOT NULL;
+
 ALTER TABLE public.tenant_subscriptions
   ADD COLUMN IF NOT EXISTS paid_branch_count integer NOT NULL DEFAULT 1;
 
@@ -173,7 +179,7 @@ BEGIN
       country, is_active, max_branches, business_type
     ) VALUES (
       btrim(v_payload->>'company_name'), nullif(btrim(v_payload->>'company_name_ar'), ''),
-      btrim(v_payload->>'vat_number'), nullif(btrim(v_payload->>'cr_number'), ''),
+      nullif(btrim(v_payload->>'vat_number'), ''), nullif(btrim(v_payload->>'cr_number'), ''),
       v_req.normalized_email, nullif(btrim(v_payload->>'phone'), ''),
       nullif(btrim(v_payload->>'city'), ''), nullif(btrim(v_payload->>'notes'), ''),
       'SA', true, v_branch_allowance,

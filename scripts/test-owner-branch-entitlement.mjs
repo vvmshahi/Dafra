@@ -18,6 +18,7 @@ for (const paymentType of ['lifetime_free', 'one_time', 'monthly']) {
 
 for (const fragment of [
   'branch_allowance integer',
+  'ALTER COLUMN vat_number DROP NOT NULL',
   'branch_allowance BETWEEN 1 AND 100',
   "p_request_payload -> 'branch_count'",
   'INVALID_BRANCH_ALLOWANCE',
@@ -36,6 +37,7 @@ for (const fragment of [
 ]) assert.ok(migration.includes(fragment), fragment)
 
 assert.doesNotMatch(migration, /greatest\(1,\s*v_plan\.max_branches\)/i)
+assert.ok(migration.includes("nullif(btrim(v_payload->>'vat_number'), '')"))
 assert.ok(owner.includes('Number.isInteger(branchCount)'))
 assert.ok(owner.includes('branchCount < 1 || branchCount > 100'))
 assert.ok(owner.includes('branch_count: branchCount'))
