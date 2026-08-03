@@ -117,14 +117,99 @@ and acceptance test are added.
 - Stateful authenticated cases, report/document acceptance, XLSX export, and
   controlled disposable-tenant lifecycle tests remain required.
 
+## Remote rollout record
+
+The worktree was linked to Supabase project `bkbphkpqcxuejozayrsy`. Before the
+rollout, linked migration history matched every migration through
+`20260803000100_authoritative_owner_branch_entitlement.sql`, with no
+remote-only versions and exactly these reviewed pending migrations:
+
+1. `20260803000200_customer_receivables_schema_v1.sql` — schema, constraints,
+   indexes, RLS, and server-only table-write surface;
+2. `20260803000300_customer_receivables_rpcs_v1.sql` — settlement, receipt,
+   workspace, and document RPCs; and
+3. `20260803000400_customer_receivables_controls_reports_v1.sql` — authority
+   controls, append-only synchronization triggers, allocation controls, and
+   reports.
+
+Their source SHA-256 values were respectively
+`26111d231e7d686313bfb9b5f459e82319d94d3e67c12894b1c4b523a5fd20e9`,
+`ede07041ef5d15af61bd54f805a1f99e7cbdec4857eb85cd8de82351efabfced`, and
+`57d50235dbe330776cc8fc85930b72756a67c771628663bef6da96024832003e`.
+The Phase 2 entitlement migration has the same Git blob in the authoritative
+base and this branch (`a924d3db54bf6bd13098e98ac8049fac887b9fbe`).
+
+Targeted remote catalog preflight confirmed the required customer, invoice,
+payment, refund, tenant, branch, user-profile, POS-session, fiscal guard, and
+authority-helper contracts. The existing system represents credit notes as
+`invoices.zatca_invoice_type = 'credit_note'` and register state as
+`pos_sessions`; the receivables migration uses those existing contracts and
+does not require separate `credit_notes` or `register_sessions` tables.
+`pgcrypto` and `uuid-ossp` are installed. The remote invoice ZATCA compliance
+write guard was present before rollout.
+
+The three migrations were applied successfully and linked history now ends at
+`20260803000400`. The CLI emitted a post-apply local catalog-cache certificate
+warning, but remote migration history and the live catalog independently
+confirmed all three migrations. The migrations contain additive DDL and
+function/trigger definitions only; they execute no historical invoice,
+payment, customer, or fiscal-row backfill. Immediately after rollout, every
+new receivables table had zero rows.
+
+Remote verification found eight receivables tables with RLS enabled, expected
+foreign keys/check constraints, operation/receipt/source/allocation uniqueness,
+and the two reviewed `AFTER INSERT` synchronization triggers on `invoices` and
+`payments`. `anon` has neither table access nor function execution; authenticated
+users retain scoped SELECT only and have no direct INSERT, UPDATE, or DELETE
+rights on receivables tables.
+
+The reviewed public receivables API contains eleven (not ten) authenticated
+SECURITY DEFINER entry points. All are owned by `postgres`, set
+`search_path = public, pg_temp` and `row_security = off`, deny `anon` execute,
+and do not accept a payload tenant ID or authoritative balance. The additional
+entry point is `link_customer_receivable_account_v1(jsonb)`, an owner/admin-only
+compatibility operation. This corrected count must be retained in future
+certification records rather than silently dropping a reviewed grant.
+
+Remote empty-payload rejection paths returned only their expected validation or
+authority errors: `AR_CHECKOUT_IDENTIFIERS_REQUIRED`,
+`AR_RECEIPT_FIELDS_REQUIRED`, `AR_REALLOCATION_PAYLOAD_INVALID`,
+`AR_REVERSAL_FIELDS_REQUIRED`, and `AR_ACTOR_NOT_ACTIVE`. A subsequent
+aggregate check found zero AR accounts, policies, operations, receipts,
+allocations, ledger entries, and adjustments.
+
+Preview deployment `dpl_4aqxnb9cPnTHgu5AciBvwYQVJcaB` is Ready at
+`https://dafra-mluncvpc5-mohammed-shahin-v-vs-projects.vercel.app` with a
+Preview-only alias. It was uploaded from reviewed source commit
+`bcef7d5b1a8e288564c08e55b7d624ca5c6077ec`; no production deployment, alias,
+or main-branch update occurred. The deployment is Vercel-SSO protected, so no
+authenticated product walkthrough was inferred from the unauthenticated smoke.
+
+## Tax-boundary adviser review checklist
+
+- [ ] Later payment receipts are recorded as non-fiscal settlement documents
+  and do not modify the original fiscal invoice identity.
+- [ ] Returned goods or value reductions use the established fiscal credit-note
+  pathway; settlement may reduce AR, refund excess, or leave account credit.
+- [ ] Advance payments before supply remain outside this receivables settlement
+  decision and require separate adviser review.
+- [ ] Optional internal due dates are neither required nor printed by default
+  on fiscal documents.
+
+Saudi tax-adviser sign-off is **pending**. This checklist is a technical review
+record, not legal or tax certification.
+
 ## Release gates
 
-This worktree is not authorized to apply the receivables migrations to the
-remote project, deploy web, merge to main, or perform a real customer purchase.
-Before production certification, the owner must provide an explicitly
-disposable tenant and branch for controlled mutation tests, and a tax adviser
-must sign off the fiscal/settlement boundary. Required sequence is local reset,
-metadata/RPC preflight, migration, function verification, preview tests,
-disposable-tenant acceptance, then separately approved deployment.
+The remote database rollout and a Preview-only frontend deployment are complete.
+This worktree is not authorized to merge to main, deploy production web, or
+perform a real customer purchase. Before production certification, the owner
+must provide an explicitly authorized disposable tenant with three branch IDs,
+owner/branch test accounts, a disposable customer/products, and open register
+state. The complete stateful scenarios, idempotency/concurrency cases,
+owner/branch scope checks, authenticated Preview walkthrough, 58/80 mm and A4
+document checks, XLSX implementation/acceptance, responsive English/Arabic RTL
+acceptance, and adviser sign-off must then pass before a reviewed main merge
+and separately approved production deployment.
 
 Current verdict: **KUBRI_CUSTOMER_RECEIVABLES_BLOCKED**
