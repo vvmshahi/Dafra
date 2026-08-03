@@ -43,6 +43,17 @@ lookup in `post_customer_credit_checkout_v1`: no policy, or a policy with
 of `customers.customer_type` and does not mean every Business customer should
 receive credit.
 
+## Tenant policy configuration completion
+
+The former customer Credit Settings message was a configuration-path defect:
+the existing table was per customer receivable account, no tenant-level policy
+model existed, legacy customers could be unlinked, and the only writer was
+hidden in a collapsed customer-panel control. Migration 00800 adds a safe,
+lazy Owner/admin tenant policy, visible account setup and explicit customer
+approval. It does not auto-approve a Business customer or backfill debt.
+Details and local/remote evidence are recorded in
+[`CUSTOMER_CREDIT_POLICY_CONFIGURATION_20260803.md`](CUSTOMER_CREDIT_POLICY_CONFIGURATION_20260803.md).
+
 `20260803000600_credit_preflight_and_server_demo_modes.sql`, followed by the
 forward-only `20260803000700_rebind_credit_and_sandbox_mode_contracts.sql`,
 adds

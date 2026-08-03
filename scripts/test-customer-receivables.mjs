@@ -6,9 +6,13 @@ const schema = read('supabase/migrations/20260803000200_customer_receivables_sch
 const rpcs = read('supabase/migrations/20260803000300_customer_receivables_rpcs_v1.sql')
 const controls = read('supabase/migrations/20260803000400_customer_receivables_controls_reports_v1.sql')
 const hardening = read('supabase/migrations/20260803000500_harden_customer_receivables_payload_errors.sql')
-const allSql = `${schema}\n${rpcs}\n${controls}\n${hardening}`
+const creditPolicyConfiguration = read('supabase/migrations/20260803000800_customer_credit_policy_configuration_v1.sql')
+const allSql = `${schema}\n${rpcs}\n${controls}\n${hardening}\n${creditPolicyConfiguration}`
 const panel = read('src/components/customers/CustomerReceivablesPanel.tsx')
 const client = read('src/lib/customers/receivables.ts')
+const creditSettings = read('src/pages/settings/CustomerCreditPolicySettings.tsx')
+const settingsPage = read('src/pages/settings/SettingsPage.tsx')
+const posPage = read('src/pages/pos/POSPage.tsx')
 const receipt = read('src/pages/print/PaymentReceiptPrintPage.tsx')
 const statement = read('src/pages/print/CustomerStatementPrintPage.tsx')
 const reportPage = read('src/pages/reports/CustomerReceivablesReportPage.tsx')
@@ -18,12 +22,15 @@ const statefulFixture = read('scripts/certify-customer-receivables-stateful.sql'
 const rejectionFixture = read('scripts/certify-customer-receivables-rejection-paths.sql')
 const enLocale = read('src/localization/locales/en/receivables.json')
 const arLocale = read('src/localization/locales/ar-SA/receivables.json')
+const enSettingsLocale = read('src/localization/locales/en/settings.json')
+const arSettingsLocale = read('src/localization/locales/ar-SA/settings.json')
 
 for (const migration of [
   'supabase/migrations/20260803000200_customer_receivables_schema_v1.sql',
   'supabase/migrations/20260803000300_customer_receivables_rpcs_v1.sql',
   'supabase/migrations/20260803000400_customer_receivables_controls_reports_v1.sql',
   'supabase/migrations/20260803000500_harden_customer_receivables_payload_errors.sql',
+  'supabase/migrations/20260803000800_customer_credit_policy_configuration_v1.sql',
 ]) assert.ok(fs.existsSync(migration), `migration exists: ${migration}`)
 
 const cases = [
@@ -71,17 +78,28 @@ const cases = [
   ['stateful certification creates and rolls back three branch fixtures', /AR branch A[\s\S]*AR branch B[\s\S]*AR branch C[\s\S]*AR_CERTIFICATION_ROLLBACK/],
   ['rejection certification covers malformed payloads without AR writes', /not-a-uuid[\s\S]*invalid payment receipt[\s\S]*v_after <> v_before/],
   ['payload hardening wraps conversion errors without exposing raw internal RPCs', /_raw_20260803[\s\S]*invalid_text_representation[\s\S]*REVOKE ALL ON FUNCTION public\.%I\(jsonb\) FROM PUBLIC, anon, authenticated, service_role/],
+  ['tenant policy is distinct from per-customer approval', /tenant_customer_credit_policies[\s\S]*credit_enabled boolean NOT NULL DEFAULT false[\s\S]*customer_credit_policies IS\n  'Per-customer/],
+  ['missing tenant policy remains safely disabled without a read-created row', /No row means credit is disabled[\s\S]*get_tenant_customer_credit_policy_v1\(\)[\s\S]*'exists', FOUND/],
+  ['tenant policy is owner/admin-only and server-derived', /AR_CREDIT_TENANT_POLICY_OWNER_ONLY[\s\S]*auth\.uid\(\)/],
+  ['customer policy requires tenant policy before an approval can be enabled', /AR_CREDIT_TENANT_POLICY_REQUIRED[\s\S]*AR_CREDIT_TENANT_POLICY_DISABLED/],
+  ['customer account setup is explicit, idempotent, and does not backfill debt', /ensure_customer_receivable_account_v1[\s\S]*historicalBalanceBackfilled', false/],
+  ['tenant policy governs preflight and checkout before account creation', /AR_CREDIT_TENANT_POLICY_DISABLED[\s\S]*get_customer_credit_checkout_eligibility_v1[\s\S]*post_customer_credit_checkout_v1[\s\S]*before any AR account can be created/],
+  ['cashier-capable scope is explicit while policy writers remain owner/admin-only', /'owner', 'admin', 'manager', 'accountant', 'cashier', 'branch'[\s\S]*AR_CREDIT_POLICY_OWNER_ONLY/],
+  ['owner policy settings are reachable outside an individual customer page', /customer-credit[\s\S]*CustomerCreditPolicySettings/],
+  ['customer screen exposes tenant setup and credit-account setup actions', /setupTenant[\s\S]*setupCreditAccount[\s\S]*setupCustomer/],
+  ['POS refreshes policy eligibility and retains the server preflight', /CUSTOMER_CREDIT_POLICY_CHANGED_EVENT[\s\S]*creditPolicyRevision[\s\S]*loadCustomerCreditCheckoutEligibility/],
   ['Arabic statement direction is supported', /dir=\{locale === 'ar-SA' \? 'rtl' : 'ltr'\}/],
 ]
 
 for (const [name, pattern] of cases) {
-  if (pattern instanceof RegExp) assert.match(allSql + panel + client + receipt + statement + reportPage + creditNoteModal + xlsx + statefulFixture + rejectionFixture + enLocale + arLocale, pattern, name)
+  if (pattern instanceof RegExp) assert.match(allSql + panel + client + creditSettings + settingsPage + posPage + receipt + statement + reportPage + creditNoteModal + xlsx + statefulFixture + rejectionFixture + enLocale + arLocale + enSettingsLocale + arSettingsLocale, pattern, name)
   else assert.ok(pattern, name)
 }
 
 assert.doesNotMatch(controls, /INSERT\s+INTO\s+public\.invoices/i, 'controls migration must not create invoices directly')
 assert.doesNotMatch(controls, /INSERT\s+INTO\s+public\.payments/i, 'controls migration must not create payments directly')
 assert.doesNotMatch(client, /\.from\(['"]customer_(?:receivable|payment)[\s\S]{0,500}\.(?:insert|update|delete)\(/, 'client has no direct receivable table writes')
+assert.doesNotMatch(client, /\.from\(['"]tenant_customer_credit_policies['"]\)[\s\S]{0,500}\.(?:insert|update|delete)/, 'client has no direct tenant credit-policy writes')
 assert.match(rpcs, /DELETE FROM public\.payments WHERE invoice_id = v_invoice_id/, 'credit bridge cleanup is scoped to its own temporary payment')
 assert.match(rpcs, /SET payment_method = CASE[\s\S]*due_date = v_due_date[\s\S]*payment_status = CASE/, 'settlement updates only non-fiscal settlement state')
 assert.match(client + panel, /loadUnappliedCustomerPaymentReceipts[\s\S]*reallocateCustomerPayment[\s\S]*payment-reallocation/, 'unapplied receipt credit can be applied later through the authorized RPC')

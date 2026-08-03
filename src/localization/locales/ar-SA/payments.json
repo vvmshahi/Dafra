@@ -40,6 +40,7 @@
   "creditCustomerRequired": "اختر عميلاً نشطاً قبل استخدام البيع الآجل.",
   "creditChecking": "جارٍ التحقق من أهلية ائتمان العميل",
   "creditDisabled": "الائتمان غير مفعّل لهذا العميل.",
+  "creditTenantPolicyDisabled": "لم يتم تفعيل ائتمان العملاء في إعدادات المنشأة.",
   "creditOnHold": "حساب العميل موقوف للائتمان.",
   "creditOwnerApprovalRequired": "يتطلب ائتمان العميل موافقة المالك.",
   "creditLimitExceeded": "تتجاوز هذه العملية الائتمان المتاح للعميل.",

@@ -37,6 +37,25 @@ export interface ReceivablePolicy {
   overdueBlock: boolean
   warnThresholdPercent: number
   requiresOwnerApproval: boolean
+  useTenantDefault: boolean
+  dueDateDays: number | null
+  hardLimitEnforced: boolean
+  tenantCreditEnabled: boolean
+}
+
+export interface TenantCustomerCreditPolicy {
+  exists: boolean
+  creditEnabled: boolean
+  allowUnpaidInvoices: boolean
+  allowPartialInitialPayments: boolean
+  defaultCreditLimit: number
+  hardLimitEnforced: boolean
+  warnThresholdPercent: number
+  enforceCustomerHold: boolean
+  allowManagerOverride: boolean
+  defaultAllocationMode: 'oldest_first' | 'manual'
+  internalTerms: string | null
+  dueDateDays: number | null
 }
 
 export interface CustomerReceivableWorkspace {
@@ -74,6 +93,9 @@ export interface CustomerCreditCheckoutEligibility {
   availableCredit: number
   overdueAmount: number
   requiresOwnerApproval: boolean
+  tenantCreditEnabled: boolean
+  tenantPolicyConfigured: boolean
+  hardLimitEnforced: boolean
 }
 
 export interface PaymentReceiptResult {
@@ -100,6 +122,46 @@ export interface UnappliedCustomerPaymentReceipt {
 const numberValue = (value: unknown) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+function nullableWholeNumber(value: unknown) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+}
+
+function normalizeTenantCustomerCreditPolicy(value: any): TenantCustomerCreditPolicy {
+  return {
+    exists: value?.exists === true,
+    creditEnabled: value?.creditEnabled === true,
+    allowUnpaidInvoices: value?.allowUnpaidInvoices !== false,
+    allowPartialInitialPayments: value?.allowPartialInitialPayments !== false,
+    defaultCreditLimit: numberValue(value?.defaultCreditLimit),
+    hardLimitEnforced: value?.hardLimitEnforced !== false,
+    warnThresholdPercent: numberValue(value?.warnThresholdPercent ?? 80),
+    enforceCustomerHold: value?.enforceCustomerHold !== false,
+    allowManagerOverride: value?.allowManagerOverride === true,
+    defaultAllocationMode: value?.defaultAllocationMode === 'manual' ? 'manual' : 'oldest_first',
+    internalTerms: typeof value?.internalTerms === 'string' && value.internalTerms.trim() ? value.internalTerms : null,
+    dueDateDays: nullableWholeNumber(value?.dueDateDays),
+  }
+}
+
+export const CUSTOMER_CREDIT_POLICY_CHANGED_EVENT = 'kubri:customer-credit-policy-changed'
+const CUSTOMER_CREDIT_POLICY_CHANGED_STORAGE_KEY = 'kubri:customer-credit-policy-changed'
+
+export function notifyCustomerCreditPolicyChanged(detail: { customerId?: string | null } = {}) {
+  if (typeof window === 'undefined') return
+  const change = { customerId: detail.customerId ?? null, at: Date.now() }
+  window.dispatchEvent(new CustomEvent(CUSTOMER_CREDIT_POLICY_CHANGED_EVENT, { detail: change }))
+  try {
+    window.localStorage.setItem(CUSTOMER_CREDIT_POLICY_CHANGED_STORAGE_KEY, JSON.stringify(change))
+  } catch {
+    // Storage is only a cross-tab refresh hint; server preflight remains authoritative.
+  }
+}
+
+export function isCustomerCreditPolicyStorageChange(event: StorageEvent) {
+  return event.key === CUSTOMER_CREDIT_POLICY_CHANGED_STORAGE_KEY
 }
 
 function normalizeWorkspace(value: any): CustomerReceivableWorkspace {
@@ -129,6 +191,10 @@ function normalizeWorkspace(value: any): CustomerReceivableWorkspace {
           overdueBlock: Boolean(value.policy.overdueBlock),
           warnThresholdPercent: numberValue(value.policy.warnThresholdPercent ?? 80),
           requiresOwnerApproval: Boolean(value.policy.requiresOwnerApproval),
+          useTenantDefault: Boolean(value.policy.useTenantDefault),
+          dueDateDays: nullableWholeNumber(value.policy.dueDateDays),
+          hardLimitEnforced: value.policy.hardLimitEnforced !== false,
+          tenantCreditEnabled: value.policy.tenantCreditEnabled !== false,
         }
       : null,
     openInvoices: (value?.openInvoices ?? []).map((row: any) => ({
@@ -215,7 +281,56 @@ export async function loadCustomerCreditCheckoutEligibility(input: {
     availableCredit: numberValue(value?.availableCredit),
     overdueAmount: numberValue(value?.overdueAmount),
     requiresOwnerApproval: value?.requiresOwnerApproval === true,
+    tenantCreditEnabled: value?.tenantCreditEnabled === true,
+    tenantPolicyConfigured: value?.tenantPolicyConfigured === true,
+    hardLimitEnforced: value?.hardLimitEnforced !== false,
   }
+}
+
+export async function loadTenantCustomerCreditPolicy() : Promise<TenantCustomerCreditPolicy> {
+  const { data, error } = await supabase.rpc('get_tenant_customer_credit_policy_v1' as never)
+  if (error) throw error
+  return normalizeTenantCustomerCreditPolicy(data)
+}
+
+export async function saveTenantCustomerCreditPolicy(input: {
+  creditEnabled: boolean
+  allowUnpaidInvoices: boolean
+  allowPartialInitialPayments: boolean
+  defaultCreditLimit: number
+  hardLimitEnforced: boolean
+  warnThresholdPercent: number
+  enforceCustomerHold: boolean
+  allowManagerOverride: boolean
+  defaultAllocationMode: 'oldest_first' | 'manual'
+  internalTerms?: string | null
+  dueDateDays?: number | null
+}) : Promise<TenantCustomerCreditPolicy> {
+  const { data, error } = await supabase.rpc('set_tenant_customer_credit_policy_v1' as never, {
+    p_payload: {
+      credit_enabled: input.creditEnabled,
+      allow_unpaid_invoices: input.allowUnpaidInvoices,
+      allow_partial_initial_payments: input.allowPartialInitialPayments,
+      default_credit_limit: input.defaultCreditLimit,
+      hard_limit_enforced: input.hardLimitEnforced,
+      warn_threshold_percent: input.warnThresholdPercent,
+      enforce_customer_hold: input.enforceCustomerHold,
+      allow_manager_override: input.allowManagerOverride,
+      default_allocation_mode: input.defaultAllocationMode,
+      internal_terms: input.internalTerms ?? null,
+      due_date_days: input.dueDateDays ?? null,
+    },
+  } as never)
+  if (error) throw error
+  return normalizeTenantCustomerCreditPolicy(data)
+}
+
+export async function ensureCustomerReceivableAccount(customerId: string) {
+  const { data, error } = await supabase.rpc('ensure_customer_receivable_account_v1' as never, {
+    p_payload: { customer_id: customerId },
+  } as never)
+  if (error) throw error
+  return data as { customerId: string; receivableAccountId: string; created: boolean; historicalBalanceBackfilled: false }
 }
 
 export async function recordCustomerPaymentReceipt(input: {
@@ -268,24 +383,28 @@ export async function saveCustomerCreditPolicy(input: {
   customerId: string
   creditEnabled: boolean
   creditLimit: number
+  useTenantDefault?: boolean
   hold: boolean
   holdReason?: string | null
   terms?: string | null
   overdueBlock?: boolean
   warnThresholdPercent?: number
   requiresOwnerApproval: boolean
+  dueDateDays?: number | null
 }) {
   const { data, error } = await supabase.rpc('set_customer_credit_policy_v1' as never, {
     p_payload: {
       customer_id: input.customerId,
       credit_enabled: input.creditEnabled,
       credit_limit: input.creditLimit,
+      use_tenant_default: input.useTenantDefault ?? false,
       hold: input.hold,
       hold_reason: input.holdReason ?? null,
       terms: input.terms ?? null,
       overdue_block: input.overdueBlock ?? false,
       warn_threshold_percent: input.warnThresholdPercent ?? 80,
       requires_owner_approval: input.requiresOwnerApproval,
+      due_date_days: input.dueDateDays ?? null,
     },
   } as never)
   if (error) throw error

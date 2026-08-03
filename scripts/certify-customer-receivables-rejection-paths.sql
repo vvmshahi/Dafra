@@ -9,6 +9,7 @@ BEGIN
   FROM (
     SELECT id FROM public.customer_receivable_accounts
     UNION ALL SELECT id FROM public.customer_credit_policies
+    UNION ALL SELECT tenant_id FROM public.tenant_customer_credit_policies
     UNION ALL SELECT id FROM public.customer_receivable_operations
     UNION ALL SELECT id FROM public.customer_payment_receipts
     UNION ALL SELECT id FROM public.customer_receivable_entries
@@ -31,6 +32,18 @@ BEGIN
   BEGIN
     PERFORM public.set_customer_credit_policy_v1('[]'::jsonb);
     RAISE EXCEPTION 'AR rejection fixture: invalid credit-policy payload unexpectedly succeeded';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM !~ '^AR_' THEN RAISE; END IF;
+  END;
+  BEGIN
+    PERFORM public.set_tenant_customer_credit_policy_v1('[]'::jsonb);
+    RAISE EXCEPTION 'AR rejection fixture: invalid tenant credit-policy payload unexpectedly succeeded';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM !~ '^AR_' THEN RAISE; END IF;
+  END;
+  BEGIN
+    PERFORM public.ensure_customer_receivable_account_v1('{"customer_id":"not-a-uuid"}'::jsonb);
+    RAISE EXCEPTION 'AR rejection fixture: malformed account setup payload unexpectedly succeeded';
   EXCEPTION WHEN others THEN
     IF SQLERRM !~ '^AR_' THEN RAISE; END IF;
   END;
@@ -81,6 +94,7 @@ BEGIN
   FROM (
     SELECT id FROM public.customer_receivable_accounts
     UNION ALL SELECT id FROM public.customer_credit_policies
+    UNION ALL SELECT tenant_id FROM public.tenant_customer_credit_policies
     UNION ALL SELECT id FROM public.customer_receivable_operations
     UNION ALL SELECT id FROM public.customer_payment_receipts
     UNION ALL SELECT id FROM public.customer_receivable_entries

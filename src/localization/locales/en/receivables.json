@@ -58,8 +58,19 @@
     "limit": "Credit limit",
     "available": "Available credit",
     "notConfigured": "Credit is unavailable until an owner configures a policy.",
+    "tenantSetupRequired": "Set up tenant customer credit before approving this customer.",
+    "tenantDisabled": "Customer credit is currently unavailable.",
+    "setupTenant": "Set up customer credit",
+    "setupAccount": "Set up credit account",
+    "accountReady": "A safe empty credit account is ready. No historical balance was created.",
+    "accountAlreadyReady": "The customer credit account is already ready.",
+    "setupCustomer": "Set up credit for this customer",
+    "closeSettings": "Close credit settings",
     "settings": "Manage credit policy",
     "enabled": "Allow credit checkout",
+    "useTenantDefault": "Use tenant default credit limit",
+    "dueDateDays": "Due date (days, optional)",
+    "dueDateDisabled": "No default",
     "terms": "Internal terms (optional)",
     "warnThreshold": "Warn at limit (%)",
     "overdueBlock": "Block credit when overdue",
@@ -169,6 +180,7 @@
     "reversal": "The payment receipt could not be reversed. The original receipt was kept unchanged.",
     "credit": "The credit policy could not be saved.",
     "holdReason": "A hold reason is required.",
-    "threshold": "The warning threshold must be between 0 and 100."
+    "threshold": "The warning threshold must be between 0 and 100.",
+    "accountSetup": "The customer credit account could not be set up."
   }
 }

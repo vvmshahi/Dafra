@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { CreditCard, UserCircle, Printer } from 'lucide-react'
+import { CreditCard, Landmark, UserCircle, Printer } from 'lucide-react'
 import SubscriptionTab from './SubscriptionTab'
 import AccountTab      from './AccountTab'
 import PrinterTab      from './PrinterTab'
+import CustomerCreditPolicySettings from './CustomerCreditPolicySettings'
 import { isElectron }  from '@/lib/electron'
 import { useAuth } from '@/hooks/useAuth'
 import { useTranslation } from 'react-i18next'
@@ -13,7 +14,7 @@ import { PageHeader } from '@/components/ui/PageHeader'
 
 /* ── Tab config ─────────────────────────────────────────────── */
 
-type TabId = 'subscription' | 'account' | 'printer'
+type TabId = 'subscription' | 'account' | 'printer' | 'customer-credit'
 
 const BASE_TABS: { id: TabId; icon: React.ElementType }[] = [
   { id: 'subscription', icon: CreditCard }, { id: 'account', icon: UserCircle },
@@ -31,19 +32,21 @@ export default function SettingsPage() {
   const { t } = useTranslation('settings')
   const { profile } = useAuth()
   const [params] = useSearchParams()
+  const role = String(profile?.role ?? '')
+  const canConfigureCustomerCredit = role === 'owner' || role === 'admin'
+  const tabs = canConfigureCustomerCredit ? [...TABS, { id: 'customer-credit' as const, icon: Landmark }] : TABS
   const requestedTab = params.get('tab')
-  const initialTab = requestedTab && TABS.some(tab => tab.id === requestedTab) ? requestedTab as TabId : 'subscription'
+  const initialTab = requestedTab && tabs.some(tab => tab.id === requestedTab) ? requestedTab as TabId : 'subscription'
   const [active, setActive] = useState<TabId>(initialTab)
 
   useEffect(() => {
-    if (requestedTab && TABS.some(tab => tab.id === requestedTab)) {
+    if (requestedTab && tabs.some(tab => tab.id === requestedTab)) {
       setActive(requestedTab as TabId)
     } else if (requestedTab) {
       setActive('subscription')
     }
-  }, [requestedTab])
+  }, [requestedTab, canConfigureCustomerCredit])
 
-  const role = String(profile?.role ?? '')
   const canViewBusinessType = role === 'owner' || role === 'admin'
 
   return (
@@ -52,7 +55,7 @@ export default function SettingsPage() {
 
       {/* Tab bar */}
       <div className="card p-1.5 flex gap-1 overflow-x-auto" aria-label={t('pageTitle')}>
-        {TABS.map(tab => {
+        {tabs.map(tab => {
           const Icon    = tab.icon
           const isActive = tab.id === active
           return (
@@ -80,6 +83,7 @@ export default function SettingsPage() {
         {active === 'subscription' && <SubscriptionTab />}
         {active === 'account'      && <AccountTab />}
         {active === 'printer'      && <PrinterTab />}
+        {active === 'customer-credit' && canConfigureCustomerCredit && <CustomerCreditPolicySettings />}
       </section>
       {active === 'subscription' && ENABLE_OFFICIAL_SELLER_IDENTITY && canViewBusinessType && <ComplianceReadinessCard manage />}
     </div>

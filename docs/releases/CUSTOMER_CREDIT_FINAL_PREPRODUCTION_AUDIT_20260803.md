@@ -219,6 +219,18 @@ The remaining gates are authenticated/disposable-tenant, device/print,
 responsive/accessibility, and Saudi tax-adviser manual acceptance—not another
 automated migration or production deployment.
 
+## Customer-credit configuration correction — pending 00800 rollout
+
+The later Preview acceptance found that the historical per-customer policy was
+not a usable Owner configuration journey. The correction is documented in
+[`CUSTOMER_CREDIT_POLICY_CONFIGURATION_20260803.md`](CUSTOMER_CREDIT_POLICY_CONFIGURATION_20260803.md):
+tenant-wide disabled-by-default policy, visible owner setup, controlled legacy
+account linking, explicit customer approval and POS refresh. It is forward-only
+configuration work; no historical balance, customer policy, fiscal record,
+production frontend deployment or main merge has occurred. The documented
+final state supersedes this paragraph only after 00800 parity, metadata and
+non-mutating rejection verification complete.
+
 ## Credit POS and Demo/Sandbox correction update — 2026-08-03
 
 This update addresses the subsequent manual-acceptance findings without

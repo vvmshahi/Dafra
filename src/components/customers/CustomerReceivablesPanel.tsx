@@ -8,15 +8,20 @@ import { Rial } from '@/components/ui/RiyalSymbol'
 import {
   clearPersistentReceivableOperation,
   createReceivableOperationId,
+  ensureCustomerReceivableAccount,
   getPersistentReceivableOperation,
+  isCustomerCreditPolicyStorageChange,
   loadCustomerReceivableWorkspace,
+  loadTenantCustomerCreditPolicy,
   loadUnappliedCustomerPaymentReceipts,
+  notifyCustomerCreditPolicyChanged,
   postCustomerReceivableAdjustment,
   reallocateCustomerPayment,
   recordCustomerPaymentReceipt,
   reverseCustomerPaymentReceipt,
   saveCustomerCreditPolicy,
   type CustomerReceivableWorkspace,
+  type TenantCustomerCreditPolicy,
   type ReceivableTender,
   type ReceivableTenderMethod,
   type UnappliedCustomerPaymentReceipt,
@@ -79,6 +84,8 @@ export function CustomerReceivablesPanel({
   const [submitting, setSubmitting] = useState(false)
   const [lastReceipt, setLastReceipt] = useState<{ id: string; number: string } | null>(null)
   const [creditLimit, setCreditLimit] = useState('0')
+  const [useTenantDefault, setUseTenantDefault] = useState(false)
+  const [dueDateDays, setDueDateDays] = useState('')
   const [terms, setTerms] = useState('')
   const [creditEnabled, setCreditEnabled] = useState(false)
   const [hold, setHold] = useState(false)
@@ -86,6 +93,9 @@ export function CustomerReceivablesPanel({
   const [overdueBlock, setOverdueBlock] = useState(false)
   const [warnThresholdPercent, setWarnThresholdPercent] = useState('80')
   const [savingPolicy, setSavingPolicy] = useState(false)
+  const [settingUpAccount, setSettingUpAccount] = useState(false)
+  const [creditSettingsOpen, setCreditSettingsOpen] = useState(false)
+  const [tenantCreditPolicy, setTenantCreditPolicy] = useState<TenantCustomerCreditPolicy | null>(null)
   const [reversalOpen, setReversalOpen] = useState(false)
   const [reversalReason, setReversalReason] = useState('')
   const [reversing, setReversing] = useState(false)
@@ -106,10 +116,16 @@ export function CustomerReceivablesPanel({
     setLoading(true)
     setError(null)
     try {
-      const result = await loadCustomerReceivableWorkspace({ customerId, branchId: branchId ?? null })
+      const [result, tenantPolicy] = await Promise.all([
+        loadCustomerReceivableWorkspace({ customerId, branchId: branchId ?? null }),
+        isOwner ? loadTenantCustomerCreditPolicy() : Promise.resolve(null),
+      ])
       setWorkspace(result)
+      setTenantCreditPolicy(tenantPolicy)
       setCreditEnabled(result.policy?.creditEnabled ?? false)
       setCreditLimit(String(result.policy?.creditLimit ?? 0))
+      setUseTenantDefault(result.policy?.useTenantDefault ?? false)
+      setDueDateDays(result.policy?.dueDateDays ? String(result.policy.dueDateDays) : '')
       setTerms(result.policy?.terms ?? '')
       setHold(result.policy?.hold ?? false)
       setHoldReason(result.policy?.holdReason ?? '')
@@ -124,6 +140,22 @@ export function CustomerReceivablesPanel({
   }
 
   useEffect(() => { void refresh() }, [customerId, branchId])
+
+  useEffect(() => {
+    const refreshForPolicyChange = (event: Event) => {
+      const changedCustomerId = (event as CustomEvent<{ customerId?: string | null }>).detail?.customerId
+      if (!changedCustomerId || changedCustomerId === customerId) void refresh()
+    }
+    const refreshForStorageChange = (event: StorageEvent) => {
+      if (isCustomerCreditPolicyStorageChange(event)) void refresh()
+    }
+    window.addEventListener('kubri:customer-credit-policy-changed', refreshForPolicyChange)
+    window.addEventListener('storage', refreshForStorageChange)
+    return () => {
+      window.removeEventListener('kubri:customer-credit-policy-changed', refreshForPolicyChange)
+      window.removeEventListener('storage', refreshForStorageChange)
+    }
+  }, [customerId, branchId, isOwner])
 
   const paymentAmount = Number(amount)
   const selectedTenders = useMemo<ReceivableTender[]>(() => splitTenders.length
@@ -306,7 +338,9 @@ export function CustomerReceivablesPanel({
   async function savePolicy() {
     const limit = Number(creditLimit)
     const threshold = Number(warnThresholdPercent)
-    if (!isOwner || savingPolicy || !Number.isFinite(limit) || limit < 0 || !Number.isFinite(threshold) || threshold < 0 || threshold > 100) {
+    const parsedDueDateDays = dueDateDays.trim() ? Number(dueDateDays) : null
+    if (!isOwner || !tenantCreditPolicy?.creditEnabled || savingPolicy || !Number.isFinite(limit) || limit < 0 || !Number.isFinite(threshold) || threshold < 0 || threshold > 100
+      || (parsedDueDateDays !== null && (!Number.isInteger(parsedDueDateDays) || parsedDueDateDays < 1 || parsedDueDateDays > 365))) {
       if (isOwner && Number.isFinite(threshold) && (threshold < 0 || threshold > 100)) toast.error(t('errors.threshold'))
       return
     }
@@ -320,20 +354,40 @@ export function CustomerReceivablesPanel({
         customerId,
         creditEnabled,
         creditLimit: limit,
+        useTenantDefault,
         terms: terms.trim() || null,
         hold,
         holdReason: holdReason.trim() || null,
         overdueBlock,
         warnThresholdPercent: threshold,
         requiresOwnerApproval: false,
+        dueDateDays: parsedDueDateDays,
       })
       toast.success(t('credit.saved'))
       await refresh()
+      notifyCustomerCreditPolicyChanged({ customerId })
     } catch (saveError) {
       console.error('Unable to save customer credit policy', saveError)
       toast.error(t('errors.credit'))
     } finally {
       setSavingPolicy(false)
+    }
+  }
+
+  async function setupCreditAccount() {
+    if (!isOwner || settingUpAccount) return
+    setSettingUpAccount(true)
+    try {
+      const result = await ensureCustomerReceivableAccount(customerId)
+      toast.success(result.created ? t('credit.accountReady') : t('credit.accountAlreadyReady'))
+      setCreditSettingsOpen(true)
+      await refresh()
+      notifyCustomerCreditPolicyChanged({ customerId })
+    } catch (setupError) {
+      console.error('Unable to set up customer receivable account', setupError)
+      toast.error(t('errors.accountSetup'))
+    } finally {
+      setSettingUpAccount(false)
     }
   }
 
@@ -448,11 +502,15 @@ export function CustomerReceivablesPanel({
 
         <article className="rounded-2xl border border-slate-100 bg-white p-4">
           <div className="flex items-center gap-2 text-sm font-bold text-slate-900"><CreditCard size={16} className="text-primary-600" /> {t('credit.title')}</div>
-          {workspace.policy ? <>
+          {!tenantCreditPolicy?.creditEnabled && <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-sm text-amber-900"><p>{isOwner ? t('credit.tenantSetupRequired') : t('credit.tenantDisabled')}</p>{isOwner && <Link to="/settings?tab=customer-credit" className="mt-2 inline-flex font-semibold text-primary-800 underline underline-offset-2">{t('credit.setupTenant')}</Link>}</div>}
+          {tenantCreditPolicy?.creditEnabled && workspace.policy ? <>
             <div className="mt-4 space-y-2 text-sm"><div className="flex justify-between gap-3"><span className="text-slate-500">{t('credit.limit')}</span><span className="font-semibold tabular-nums">{money(workspace.policy.creditLimit)}</span></div><div className="flex justify-between gap-3"><span className="text-slate-500">{t('credit.available')}</span><span className="font-semibold tabular-nums">{money(availableCredit ?? 0)}</span></div></div>
             {workspace.policy.hold && <p className="mt-3 rounded-lg bg-amber-50 p-2 text-xs font-medium text-amber-800">{workspace.policy.holdReason || t('credit.hold')}</p>}
-          </> : <p className="mt-3 text-sm text-slate-500">{t('credit.notConfigured')}</p>}
-          {isOwner && <details className="mt-4 border-t border-slate-100 pt-3"><summary className="cursor-pointer text-xs font-semibold text-primary-700">{t('credit.settings')}</summary><div className="mt-3 space-y-2"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={creditEnabled} onChange={event => setCreditEnabled(event.target.checked)} /> {t('credit.enabled')}</label><label className="block text-xs font-semibold text-slate-700">{t('credit.limit')}<input inputMode="decimal" value={creditLimit} onChange={event => setCreditLimit(event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-slate-200 px-2 text-sm" /></label><label className="block text-xs font-semibold text-slate-700">{t('credit.terms')}<textarea value={terms} onChange={event => setTerms(event.target.value)} className="mt-1 block min-h-16 w-full rounded-lg border border-slate-200 px-2 py-1 text-sm" /></label><label className="block text-xs font-semibold text-slate-700">{t('credit.warnThreshold')}<input inputMode="decimal" value={warnThresholdPercent} onChange={event => setWarnThresholdPercent(event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-slate-200 px-2 text-sm" /></label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={overdueBlock} onChange={event => setOverdueBlock(event.target.checked)} /> {t('credit.overdueBlock')}</label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={hold} onChange={event => setHold(event.target.checked)} /> {t('credit.hold')}</label>{hold && <input value={holdReason} onChange={event => setHoldReason(event.target.value)} className="block h-9 w-full rounded-lg border border-slate-200 px-2 text-sm" placeholder={t('credit.holdReason')} />}<Button size="sm" disabled={savingPolicy} onClick={() => void savePolicy()}>{savingPolicy && <Loader2 size={14} className="animate-spin" />}{t('credit.save')}</Button></div></details>}
+          </> : tenantCreditPolicy?.creditEnabled ? <p className="mt-3 text-sm text-slate-500">{t('credit.notConfigured')}</p> : null}
+          {isOwner && tenantCreditPolicy?.creditEnabled && !workspace.customer.receivableAccountId && <Button className="mt-4" size="sm" onClick={() => void setupCreditAccount()} disabled={settingUpAccount}>{settingUpAccount && <Loader2 size={14} className="animate-spin" />}{t('credit.setupAccount')}</Button>}
+          {isOwner && tenantCreditPolicy?.creditEnabled && workspace.customer.receivableAccountId && !workspace.policy && <Button className="mt-4" size="sm" onClick={() => setCreditSettingsOpen(true)}>{t('credit.setupCustomer')}</Button>}
+          {isOwner && tenantCreditPolicy?.creditEnabled && workspace.customer.receivableAccountId && workspace.policy && <Button className="mt-4" variant="secondary" size="sm" onClick={() => setCreditSettingsOpen(value => !value)}>{creditSettingsOpen ? t('credit.closeSettings') : t('credit.settings')}</Button>}
+          {isOwner && tenantCreditPolicy?.creditEnabled && workspace.customer.receivableAccountId && (workspace.policy || creditSettingsOpen) && creditSettingsOpen && <div className="mt-4 space-y-3 border-t border-slate-100 pt-4"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={creditEnabled} onChange={event => setCreditEnabled(event.target.checked)} /> {t('credit.enabled')}</label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={useTenantDefault} onChange={event => setUseTenantDefault(event.target.checked)} /> {t('credit.useTenantDefault')}</label><label className="block text-xs font-semibold text-slate-700">{t('credit.limit')}<input inputMode="decimal" value={creditLimit} disabled={useTenantDefault} onChange={event => setCreditLimit(event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-slate-200 px-2 text-sm disabled:bg-slate-50" /></label><label className="block text-xs font-semibold text-slate-700">{t('credit.dueDateDays')}<input inputMode="numeric" value={dueDateDays} onChange={event => setDueDateDays(event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-slate-200 px-2 text-sm" placeholder={t('credit.dueDateDisabled')} /></label><label className="block text-xs font-semibold text-slate-700">{t('credit.terms')}<textarea value={terms} onChange={event => setTerms(event.target.value)} className="mt-1 block min-h-16 w-full rounded-lg border border-slate-200 px-2 py-1 text-sm" /></label><label className="block text-xs font-semibold text-slate-700">{t('credit.warnThreshold')}<input inputMode="decimal" value={warnThresholdPercent} onChange={event => setWarnThresholdPercent(event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-slate-200 px-2 text-sm" /></label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={overdueBlock} onChange={event => setOverdueBlock(event.target.checked)} /> {t('credit.overdueBlock')}</label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={hold} onChange={event => setHold(event.target.checked)} /> {t('credit.hold')}</label>{hold && <input value={holdReason} onChange={event => setHoldReason(event.target.value)} className="block h-9 w-full rounded-lg border border-slate-200 px-2 text-sm" placeholder={t('credit.holdReason')} />}<Button size="sm" disabled={savingPolicy} onClick={() => void savePolicy()}>{savingPolicy && <Loader2 size={14} className="animate-spin" />}{t('credit.save')}</Button></div>}
         </article>
       </div>
 

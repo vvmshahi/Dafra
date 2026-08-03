@@ -5,12 +5,14 @@ DECLARE
   owner_id uuid := '20000000-0000-4000-8000-000000000001';
   branch_a_user uuid := '20000000-0000-4000-8000-000000000002';
   branch_b_user uuid := '20000000-0000-4000-8000-000000000003';
+  cashier_a_user uuid := '20000000-0000-4000-8000-000000000004';
   branch_a uuid := '30000000-0000-4000-8000-000000000001';
   branch_b uuid := '30000000-0000-4000-8000-000000000002';
   branch_c uuid := '30000000-0000-4000-8000-000000000003';
   customer_a uuid := '40000000-0000-4000-8000-000000000001';
   customer_b uuid := '40000000-0000-4000-8000-000000000002';
   customer_c uuid := '40000000-0000-4000-8000-000000000003';
+  legacy_customer uuid := '40000000-0000-4000-8000-000000000004';
   invoice_a1 uuid := '50000000-0000-4000-8000-000000000001';
   invoice_a2 uuid := '50000000-0000-4000-8000-000000000002';
   invoice_b uuid := '50000000-0000-4000-8000-000000000003';
@@ -22,6 +24,8 @@ DECLARE
   receipt jsonb;
   replay jsonb;
   report jsonb;
+  preflight jsonb;
+  tenant_policy jsonb;
   v_receipt_id uuid;
   account_a uuid;
   count_value integer;
@@ -32,16 +36,19 @@ BEGIN
   INSERT INTO auth.users (id, aud, role, email, created_at, updated_at) VALUES
     (owner_id, 'authenticated', 'authenticated', 'ar-owner@example.test', now(), now()),
     (branch_a_user, 'authenticated', 'authenticated', 'ar-a@example.test', now(), now()),
-    (branch_b_user, 'authenticated', 'authenticated', 'ar-b@example.test', now(), now());
+    (branch_b_user, 'authenticated', 'authenticated', 'ar-b@example.test', now(), now()),
+    (cashier_a_user, 'authenticated', 'authenticated', 'ar-cashier-a@example.test', now(), now());
   INSERT INTO public.tenants (id, name, vat_number) VALUES (t, 'AR certification fixture', '300000000000003');
   INSERT INTO public.branches (id, tenant_id, name, branch_code, is_main_branch) VALUES
     (branch_a, t, 'AR branch A', 'AR-A', true), (branch_b, t, 'AR branch B', 'AR-B', false), (branch_c, t, 'AR branch C', 'AR-C', false);
   INSERT INTO public.user_profiles (id, tenant_id, branch_id, role, full_name, is_active) VALUES
     (owner_id, t, NULL, 'owner', 'AR Owner', true),
     (branch_a_user, t, branch_a, 'branch', 'AR Branch A', true),
-    (branch_b_user, t, branch_b, 'branch', 'AR Branch B', true);
+    (branch_b_user, t, branch_b, 'branch', 'AR Branch B', true),
+    (cashier_a_user, t, branch_a, 'cashier', 'AR Cashier A', true);
   INSERT INTO public.customers (id, tenant_id, branch_id, name, is_active) VALUES
-    (customer_a, t, branch_a, 'Customer A', true), (customer_b, t, branch_b, 'Customer B', true), (customer_c, t, branch_c, 'Customer C', true);
+    (customer_a, t, branch_a, 'Customer A', true), (customer_b, t, branch_b, 'Customer B', true), (customer_c, t, branch_c, 'Customer C', true),
+    (legacy_customer, t, branch_a, 'Legacy Customer', true);
 
   -- Posted-invoice trigger establishes AR accounts and append-only debits.
   PERFORM set_config('request.jwt.claim.sub', owner_id::text, true);
@@ -54,6 +61,101 @@ BEGIN
   IF account_a IS NULL THEN RAISE EXCEPTION 'AR fixture: invoice trigger did not establish account'; END IF;
   SELECT count(*) INTO count_value FROM public.customer_receivable_entries WHERE tenant_id = t AND source_kind = 'invoice';
   IF count_value <> 4 THEN RAISE EXCEPTION 'AR fixture: expected 4 invoice ledger rows, got %', count_value; END IF;
+
+  -- No tenant policy is a safe disabled state. The read does not create a
+  -- policy or a legacy customer's empty receivable account.
+  SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
+    'branch_id', branch_a, 'customer_id', legacy_customer, 'proposed_credit_amount', 10
+  )) INTO preflight;
+  IF preflight->>'reasonCode' <> 'AR_CREDIT_TENANT_POLICY_DISABLED'
+     OR (preflight->>'accountLinked')::boolean IS TRUE
+     OR EXISTS (SELECT 1 FROM public.tenant_customer_credit_policies WHERE tenant_id = t) THEN
+    RAISE EXCEPTION 'AR fixture: missing tenant policy was not safely disabled';
+  END IF;
+
+  -- Only the owner creates the tenant policy. This does not approve a customer.
+  SELECT public.set_tenant_customer_credit_policy_v1(jsonb_build_object(
+    'credit_enabled', true, 'allow_unpaid_invoices', true,
+    'allow_partial_initial_payments', true, 'default_credit_limit', 125,
+    'hard_limit_enforced', true, 'warn_threshold_percent', 80,
+    'enforce_customer_hold', true, 'allow_manager_override', false,
+    'default_allocation_mode', 'oldest_first', 'due_date_days', null
+  )) INTO tenant_policy;
+  IF tenant_policy->>'creditEnabled' <> 'true'
+     OR (SELECT count(*) FROM public.customer_credit_policies WHERE tenant_id = t) <> 0 THEN
+    RAISE EXCEPTION 'AR fixture: tenant policy unexpectedly approved a customer';
+  END IF;
+
+  -- Explicit setup creates only a safe empty account for a legacy customer.
+  PERFORM public.ensure_customer_receivable_account_v1(jsonb_build_object('customer_id', legacy_customer));
+  IF (SELECT receivable_account_id FROM public.customers WHERE id = legacy_customer) IS NULL
+     OR EXISTS (SELECT 1 FROM public.customer_receivable_entries WHERE customer_id = legacy_customer)
+     OR EXISTS (SELECT 1 FROM public.invoices WHERE customer_id = legacy_customer) THEN
+    RAISE EXCEPTION 'AR fixture: legacy setup fabricated customer history';
+  END IF;
+
+  -- A customer requires an explicit approval after tenant setup. A custom
+  -- limit is enforced by the server and can then be disabled immediately.
+  PERFORM public.set_customer_credit_policy_v1(jsonb_build_object(
+    'customer_id', customer_a, 'credit_enabled', true, 'use_tenant_default', false,
+    'credit_limit', 250, 'hold', false, 'overdue_block', false,
+    'warn_threshold_percent', 80, 'requires_owner_approval', false
+  ));
+  SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
+    'branch_id', branch_a, 'customer_id', customer_a, 'proposed_credit_amount', 10
+  )) INTO preflight;
+  IF preflight->>'reasonCode' <> 'AR_CREDIT_ELIGIBLE' THEN
+    RAISE EXCEPTION 'AR fixture: explicit customer credit approval did not become eligible';
+  END IF;
+
+  -- A cashier can read/use an approved preflight but cannot configure either
+  -- tenant or customer policy. Branch scoping remains server-side.
+  PERFORM set_config('request.jwt.claim.sub', cashier_a_user::text, true);
+  SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
+    'branch_id', branch_a, 'customer_id', customer_a, 'proposed_credit_amount', 10
+  )) INTO preflight;
+  IF preflight->>'reasonCode' <> 'AR_CREDIT_ELIGIBLE' THEN
+    RAISE EXCEPTION 'AR fixture: cashier could not read approved credit eligibility';
+  END IF;
+  BEGIN
+    PERFORM public.set_tenant_customer_credit_policy_v1(jsonb_build_object('credit_enabled', false));
+    RAISE EXCEPTION 'AR fixture: cashier configured tenant policy';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM NOT LIKE 'AR_CREDIT_TENANT_POLICY_OWNER_ONLY%' THEN RAISE; END IF;
+  END;
+  BEGIN
+    PERFORM public.set_customer_credit_policy_v1(jsonb_build_object('customer_id', customer_a, 'credit_enabled', false));
+    RAISE EXCEPTION 'AR fixture: cashier configured customer policy';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM NOT LIKE 'AR_CREDIT_POLICY_OWNER_ONLY%' THEN RAISE; END IF;
+  END;
+
+  -- Owner disable and hold changes refresh to a safe denied response before a
+  -- checkout can reach the reviewed financial path.
+  PERFORM set_config('request.jwt.claim.sub', owner_id::text, true);
+  PERFORM public.set_customer_credit_policy_v1(jsonb_build_object(
+    'customer_id', customer_a, 'credit_enabled', true, 'use_tenant_default', false,
+    'credit_limit', 250, 'hold', true, 'hold_reason', 'Disposable hold',
+    'overdue_block', false, 'warn_threshold_percent', 80, 'requires_owner_approval', false
+  ));
+  SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
+    'branch_id', branch_a, 'customer_id', customer_a, 'proposed_credit_amount', 10
+  )) INTO preflight;
+  IF preflight->>'reasonCode' <> 'AR_CREDIT_HOLD' THEN RAISE EXCEPTION 'AR fixture: hold was not enforced'; END IF;
+  PERFORM public.set_customer_credit_policy_v1(jsonb_build_object(
+    'customer_id', customer_a, 'credit_enabled', false, 'use_tenant_default', false,
+    'credit_limit', 250, 'hold', false, 'overdue_block', false,
+    'warn_threshold_percent', 80, 'requires_owner_approval', false
+  ));
+  SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
+    'branch_id', branch_a, 'customer_id', customer_a, 'proposed_credit_amount', 10
+  )) INTO preflight;
+  IF preflight->>'reasonCode' <> 'AR_CREDIT_DISABLED' THEN RAISE EXCEPTION 'AR fixture: disabled customer remained eligible'; END IF;
+  PERFORM public.set_customer_credit_policy_v1(jsonb_build_object(
+    'customer_id', customer_a, 'credit_enabled', true, 'use_tenant_default', false,
+    'credit_limit', 250, 'hold', false, 'overdue_block', false,
+    'warn_threshold_percent', 80, 'requires_owner_approval', false
+  ));
 
   -- Branch A: split tender, manual allocation, then an exact idempotent replay.
   PERFORM set_config('request.jwt.claim.sub', branch_a_user::text, true);

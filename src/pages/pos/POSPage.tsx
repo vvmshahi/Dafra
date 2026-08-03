@@ -84,7 +84,9 @@ import {
 import { PosCustomerQuickCreateModal } from './PosCustomerQuickCreateModal'
 import {
   clearPersistentReceivableOperation,
+  CUSTOMER_CREDIT_POLICY_CHANGED_EVENT,
   getPersistentReceivableOperation,
+  isCustomerCreditPolicyStorageChange,
   loadCustomerCreditCheckoutEligibility,
   type CustomerCreditCheckoutEligibility,
 } from '@/lib/customers/receivables'
@@ -412,6 +414,9 @@ function safeCheckoutErrorKey(err: unknown): string {
   if (/AR_CREDIT_DISABLED/.test(message)) {
     return 'payments:creditDisabled'
   }
+  if (/AR_CREDIT_TENANT_POLICY_DISABLED/.test(message)) {
+    return 'payments:creditTenantPolicyDisabled'
+  }
   if (/AR_CREDIT_HOLD/.test(message)) {
     return 'payments:creditOnHold'
   }
@@ -478,6 +483,7 @@ function paymentMethodLabel(method: string | null | undefined): string {
 
 function creditEligibilityMessageKey(reasonCode: string): string {
   switch (reasonCode) {
+    case 'AR_CREDIT_TENANT_POLICY_DISABLED': return 'creditTenantPolicyDisabled'
     case 'AR_CREDIT_HOLD': return 'creditOnHold'
     case 'AR_CREDIT_OWNER_APPROVAL_REQUIRED': return 'creditOwnerApprovalRequired'
     case 'AR_CREDIT_LIMIT_EXCEEDED': return 'creditLimitExceeded'
@@ -1986,6 +1992,7 @@ export default function POSPage() {
   const [creditInitialMethod, setCreditInitialMethod] = useState<'cash' | 'card'>('cash')
   const [creditEligibility, setCreditEligibility] = useState<CustomerCreditCheckoutEligibility | null>(null)
   const [creditEligibilityLoading, setCreditEligibilityLoading] = useState(false)
+  const [creditPolicyRevision, setCreditPolicyRevision] = useState(0)
   const [submitting,   setSubmitting]   = useState(false)
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [unitChooserProduct, setUnitChooserProduct] = useState<PosProduct | null>(null)
@@ -2475,6 +2482,22 @@ export default function POSPage() {
   const exactCustomerMobile = normalizeSaudiMobile(custSearch)
 
   useEffect(() => {
+    const refreshForPolicyChange = (event: Event) => {
+      const changedCustomerId = (event as CustomEvent<{ customerId?: string | null }>).detail?.customerId
+      if (!changedCustomerId || changedCustomerId === customerId) setCreditPolicyRevision(value => value + 1)
+    }
+    const refreshForStorageChange = (event: StorageEvent) => {
+      if (isCustomerCreditPolicyStorageChange(event)) setCreditPolicyRevision(value => value + 1)
+    }
+    window.addEventListener(CUSTOMER_CREDIT_POLICY_CHANGED_EVENT, refreshForPolicyChange)
+    window.addEventListener('storage', refreshForStorageChange)
+    return () => {
+      window.removeEventListener(CUSTOMER_CREDIT_POLICY_CHANGED_EVENT, refreshForPolicyChange)
+      window.removeEventListener('storage', refreshForStorageChange)
+    }
+  }, [customerId])
+
+  useEffect(() => {
     if (!branch || !customerId) {
       setCreditEligibility(null)
       setCreditEligibilityLoading(false)
@@ -2498,7 +2521,7 @@ export default function POSPage() {
       if (!cancelled) setCreditEligibilityLoading(false)
     })
     return () => { cancelled = true }
-  }, [branch?.id, customerId, creditInitialAmount, creditInitialWithinInvoice, creditOutstandingAmount, totals.total])
+  }, [branch?.id, customerId, creditInitialAmount, creditInitialWithinInvoice, creditOutstandingAmount, totals.total, creditPolicyRevision])
 
   useEffect(() => {
     if (payMethod === 'credit' && creditEligibility && !creditEligibility.allowed) {
@@ -4193,7 +4216,7 @@ export default function POSPage() {
               <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
                 <span className="min-w-0"><span className="font-semibold text-gray-700">{t('payments:creditUnavailable')}</span> · {t(`payments:${creditEligibilityMessageKey(creditEligibility.reasonCode)}`)}</span>
                 {creditEligibility.accountLinkable && (
-                  <button type="button" onClick={() => navigate('/customers')} className="flex-shrink-0 font-semibold text-primary-700 hover:text-primary-900">
+                  <button type="button" onClick={() => navigate(creditEligibility.reasonCode === 'AR_CREDIT_TENANT_POLICY_DISABLED' ? '/settings?tab=customer-credit' : '/customers')} className="flex-shrink-0 font-semibold text-primary-700 hover:text-primary-900">
                     {t('payments:creditSettings')}
                   </button>
                 )}
