@@ -7,7 +7,10 @@ import { Rial } from '@/components/ui/RiyalSymbol'
 import { loadCustomerPaymentReceiptDocument } from '@/lib/customers/receivables'
 
 function displayDate(value: string, locale: string) {
-  return new Date(value).toLocaleString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', { dateStyle: 'medium', timeStyle: 'short' })
+  const date = new Date(value)
+  return Number.isFinite(date.getTime())
+    ? date.toLocaleString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', { dateStyle: 'medium', timeStyle: 'short' })
+    : '—'
 }
 
 export default function PaymentReceiptPrintPage() {

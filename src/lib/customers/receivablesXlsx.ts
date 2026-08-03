@@ -41,13 +41,24 @@ function excelDate(value: Date) {
   return (value.getTime() - Date.UTC(1899, 11, 30)) / 86_400_000
 }
 
+function spreadsheetText(value: unknown) {
+  const text = String(value ?? '')
+  // Keep untrusted text as an inline string and additionally neutralize the
+  // formula-leading characters understood by spreadsheet applications.
+  return /^[=+\-@]/.test(text) ? `\u200B${text}` : text
+}
+
 function cellXml(ref: string, cell: SheetCell) {
-  if (cell.kind === 'number') return `<c r="${ref}" s="${cell.style ?? 2}" t="n"><v>${Number(cell.value).toFixed(2)}</v></c>`
+  if (cell.kind === 'number') {
+    const value = Number(cell.value)
+    return `<c r="${ref}" s="${cell.style ?? 2}" t="n"><v>${Number.isFinite(value) ? value.toFixed(2) : '0.00'}</v></c>`
+  }
   if (cell.kind === 'date') {
     const date = cell.value instanceof Date ? cell.value : new Date(cell.value)
-    return `<c r="${ref}" s="${cell.style ?? 1}" t="n"><v>${excelDate(date)}</v></c>`
+    if (Number.isFinite(date.getTime())) return `<c r="${ref}" s="${cell.style ?? 1}" t="n"><v>${excelDate(date)}</v></c>`
+    return `<c r="${ref}" s="${cell.style ?? 0}" t="inlineStr"><is><t>—</t></is></c>`
   }
-  return `<c r="${ref}" s="${cell.style ?? 0}" t="inlineStr"><is><t xml:space="preserve">${xml(cell.value)}</t></is></c>`
+  return `<c r="${ref}" s="${cell.style ?? 0}" t="inlineStr"><is><t xml:space="preserve">${xml(spreadsheetText(cell.value))}</t></is></c>`
 }
 
 function rowXml(index: number, cells: SheetCell[]) {
@@ -72,7 +83,7 @@ function transactionLabel(type: string, locale: Locale) {
   return (labels[type] ?? [type, type])[locale === 'ar' ? 1 : 0]
 }
 
-function workbookXml(sheetName: string, rightToLeft: boolean) {
+function workbookXml(sheetName: string) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="${XML_NS}" xmlns:r="${REL_NS}"><bookViews><workbookView/></bookViews><sheets><sheet name="${xml(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`
 }
@@ -130,7 +141,7 @@ export function buildCustomerStatementXlsx(input: ReceivablesWorkbookInput) {
   const files: Record<string, Uint8Array> = {
     '[Content_Types].xml': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`),
     '_rels/.rels': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`),
-    'xl/workbook.xml': strToU8(workbookXml(isArabic ? 'كشف حساب' : 'Statement', isArabic)),
+    'xl/workbook.xml': strToU8(workbookXml(isArabic ? 'كشف حساب' : 'Statement')),
     'xl/_rels/workbook.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`),
     'xl/styles.xml': strToU8(stylesheetXml()),
     'xl/worksheets/sheet1.xml': strToU8(worksheet),

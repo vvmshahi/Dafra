@@ -36,9 +36,12 @@ function Metric({ label, value, tone = 'slate' }: { label: string; value: React.
   )
 }
 
-function dateLabel(value: string, locale: string) {
+function dateLabel(value: string | null | undefined, locale: string) {
   if (!value) return '—'
-  return new Date(value).toLocaleDateString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', { dateStyle: 'medium' })
+  const date = new Date(value)
+  return Number.isFinite(date.getTime())
+    ? date.toLocaleDateString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', { dateStyle: 'medium' })
+    : '—'
 }
 
 export function CustomerReceivablesPanel({

@@ -27,6 +27,18 @@ assert.match(sheet, /t="n"><v>3000\.00<\/v>/)
 assert.match(styles, /yyyy-mm-dd hh:mm/)
 assert.equal(customerStatementFilename('Al Noor Wholesale', 'en', new Date('2026-08-03T00:00:00.000Z')), 'customer-statement-Al-Noor-Wholesale-2026-08-03.xlsx')
 
+const defensiveFiles = unzipSync(buildCustomerStatementXlsx({
+  customerName: '=HYPERLINK("https://example.test", "unsafe")', locale: 'en', workspace: {
+    statement: { openingBalance: 0, closingBalance: 0, startDate: '2026-08-01', endDate: '2026-08-03' },
+    ledger: [{ id: 'entry-unsafe', type: 'unknown', sourceKind: 'legacy', sourceId: 'legacy-1', branchId: 'branch-1', debit: 0, credit: 0, effectiveAt: 'not-a-date', description: '@unsafe formula', runningBalance: 0 }],
+  },
+}))
+const defensiveSheet = strFromU8(defensiveFiles['xl/worksheets/sheet1.xml'])
+assert.match(defensiveSheet, /\u200B=HYPERLINK/)
+assert.match(defensiveSheet, /\u200B@unsafe formula/)
+assert.doesNotMatch(defensiveSheet, /NaN/)
+assert.match(defensiveSheet, />—<\/t>/)
+
 const arabicFiles = unzipSync(buildCustomerStatementXlsx({
   customerName: 'النور', locale: 'ar', workspace: { statement: { openingBalance: 0, closingBalance: 0, startDate: '2026-08-01', endDate: '2026-08-03' }, ledger: [] },
 }))

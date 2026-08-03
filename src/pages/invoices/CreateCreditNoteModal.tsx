@@ -258,7 +258,9 @@ function money(amount: number): string {
 
 function invoiceDate(value: string | null | undefined, isRtl: boolean): string {
   if (!value) return '—'
-  return new Date(value).toLocaleDateString(isRtl ? 'ar-SA-u-nu-latn' : 'en-GB', {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return '—'
+  return date.toLocaleDateString(isRtl ? 'ar-SA-u-nu-latn' : 'en-GB', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',

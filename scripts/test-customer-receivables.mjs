@@ -57,6 +57,7 @@ const cases = [
   ['credit-note settlement is idempotent and server-authoritative', /create_customer_credit_note_settlement_v1[\s\S]*AR_OPERATION_CONFLICT/],
   ['statement is a dedicated print surface', /CustomerStatementPrintPage/],
   ['statement exports a genuine workbook with frozen headers and autofilter', /zipSync[\s\S]*state="frozen"[\s\S]*autoFilter/],
+  ['statement export neutralizes formula-leading text and invalid values', /spreadsheetText[\s\S]*\^\[=\+\\-@\][\s\S]*Number\.isFinite\(date\.getTime\(\)\)/],
   ['receipt provides 58 mm, 80 mm, and A4 print formats', /size: 58mm[\s\S]*size: 80mm[\s\S]*size: A4/],
   ['receipt documents explicitly exclude ZATCA QR', /contains no ZATCA QR code/],
   ['client financial operations persist operation identity', /kubri:ar-/],
@@ -78,5 +79,8 @@ assert.doesNotMatch(controls, /INSERT\s+INTO\s+public\.payments/i, 'controls mig
 assert.doesNotMatch(client, /\.from\(['"]customer_(?:receivable|payment)/, 'client has no direct receivable table inserts')
 assert.match(rpcs, /DELETE FROM public\.payments WHERE invoice_id = v_invoice_id/, 'credit bridge cleanup is scoped to its own temporary payment')
 assert.match(rpcs, /SET payment_method = CASE[\s\S]*due_date = v_due_date[\s\S]*payment_status = CASE/, 'settlement updates only non-fiscal settlement state')
+for (const page of [panel, receipt, statement, creditNoteModal]) {
+  assert.match(page, /Number\.isFinite\(date\.getTime\(\)\)/, 'date renderers reject malformed legacy values safely')
+}
 
-console.log(`customer receivables contract tests passed (${cases.length + 4} checks)`)
+console.log(`customer receivables contract tests passed (${cases.length + 8} checks)`)
