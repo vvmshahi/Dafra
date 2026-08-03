@@ -42,6 +42,18 @@ BEGIN
     IF SQLERRM !~ '^AR_' THEN RAISE; END IF;
   END;
   BEGIN
+    PERFORM public.set_branch_customer_credit_policy_v1('[]'::jsonb);
+    RAISE EXCEPTION 'AR rejection fixture: invalid Branch credit payload unexpectedly succeeded';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM !~ '^AR_' THEN RAISE; END IF;
+  END;
+  BEGIN
+    PERFORM public.set_customer_credit_access_v1('[]'::jsonb);
+    RAISE EXCEPTION 'AR rejection fixture: invalid simple customer credit payload unexpectedly succeeded';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM !~ '^AR_' THEN RAISE; END IF;
+  END;
+  BEGIN
     PERFORM public.ensure_customer_receivable_account_v1('{"customer_id":"not-a-uuid"}'::jsonb);
     RAISE EXCEPTION 'AR rejection fixture: malformed account setup payload unexpectedly succeeded';
   EXCEPTION WHEN others THEN

@@ -1479,6 +1479,7 @@ export interface SyncQueueItem {
   last_attempt_at: string | null
   last_error: string | null
   processed_at: string | null
+  customer_credit_enabled: boolean | null
   created_at: string
   updated_at: string
 }
@@ -1520,6 +1521,7 @@ export interface BranchInsert {
   show_logo?: boolean
   invoice_language?: string | null
   zatca_phase?: number | null
+  customer_credit_enabled?: boolean | null
   display_name?: string | null
   show_website?: boolean
   show_email?: boolean

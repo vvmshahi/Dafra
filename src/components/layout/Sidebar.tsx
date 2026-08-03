@@ -28,6 +28,7 @@ const ownerNav: NavItem[] = [
   { labelKey: 'dashboard', path: '/dashboard', icon: LayoutDashboard, section: 'daily' },
   { labelKey: 'branches', path: '/branches', icon: Building2, section: 'administration' },
   { labelKey: 'employees', path: '/employees', icon: UserSquare2, section: 'administration' },
+  { labelKey: 'customerCredit', path: '/reports/receivables', icon: CreditCard, section: 'business' },
   { labelKey: 'zatca', path: '/zatca', icon: ShieldCheck, section: 'settings' },
   { labelKey: 'settings', path: '/settings', icon: Settings, section: 'settings' },
   { labelKey: 'reports', path: '/reports', icon: BarChart2, section: 'analysis' },
@@ -42,7 +43,9 @@ const branchNav: NavItem[] = [
   { labelKey: 'purchases', path: '/purchases', icon: Truck, section: 'catalogue' },
   { labelKey: 'suppliers', path: '/suppliers', icon: Truck, section: 'catalogue' },
   { labelKey: 'customers', path: '/customers', icon: Users, section: 'business' },
+  { labelKey: 'customerCredit', path: '/reports/receivables', icon: CreditCard, section: 'business' },
   { labelKey: 'expenses', path: '/expenses', icon: CreditCard, section: 'business' },
+  { labelKey: 'branchSettings', path: '/branch-settings', icon: Settings, section: 'settings' },
   { labelKey: 'invoiceSettings', path: '/invoice-settings', icon: Settings2, section: 'settings' },
   { labelKey: 'reports', path: '/reports', icon: BarChart2, section: 'analysis' },
 ]

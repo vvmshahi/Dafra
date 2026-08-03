@@ -414,7 +414,13 @@ function safeCheckoutErrorKey(err: unknown): string {
   if (/AR_CREDIT_DISABLED/.test(message)) {
     return 'payments:creditDisabled'
   }
-  if (/AR_CREDIT_TENANT_POLICY_DISABLED/.test(message)) {
+  if (/AR_CREDIT_BRANCH_DISABLED|CREDIT_NOT_ALLOWED_FOR_BRANCH/.test(message)) {
+    return 'payments:creditBranchDisabled'
+  }
+  if (/AR_CREDIT_ACCOUNT_NOT_READY|CREDIT_ACCOUNT_NOT_READY/.test(message)) {
+    return 'payments:creditAccountNotReady'
+  }
+  if (/AR_CREDIT_TENANT_POLICY_DISABLED|CREDIT_NOT_ALLOWED_FOR_BUSINESS/.test(message)) {
     return 'payments:creditTenantPolicyDisabled'
   }
   if (/AR_CREDIT_HOLD/.test(message)) {
@@ -484,6 +490,13 @@ function paymentMethodLabel(method: string | null | undefined): string {
 function creditEligibilityMessageKey(reasonCode: string): string {
   switch (reasonCode) {
     case 'AR_CREDIT_TENANT_POLICY_DISABLED': return 'creditTenantPolicyDisabled'
+    case 'AR_CREDIT_BRANCH_DISABLED': return 'creditBranchDisabled'
+    case 'AR_CREDIT_ACCOUNT_NOT_READY': return 'creditAccountNotReady'
+    case 'CREDIT_NOT_ALLOWED_FOR_BUSINESS': return 'creditTenantPolicyDisabled'
+    case 'CREDIT_NOT_ALLOWED_FOR_BRANCH': return 'creditBranchDisabled'
+    case 'CREDIT_NOT_ALLOWED_FOR_CUSTOMER': return 'creditDisabled'
+    case 'CREDIT_ACCOUNT_NOT_READY': return 'creditAccountNotReady'
+    case 'CUSTOMER_INACTIVE': return 'creditCustomerInactive'
     case 'AR_CREDIT_HOLD': return 'creditOnHold'
     case 'AR_CREDIT_OWNER_APPROVAL_REQUIRED': return 'creditOwnerApprovalRequired'
     case 'AR_CREDIT_LIMIT_EXCEEDED': return 'creditLimitExceeded'

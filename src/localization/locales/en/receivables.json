@@ -1,8 +1,8 @@
 {
-  "eyebrow": "Accounts receivable",
+  "eyebrow": "Customer credit",
   "title": "Customer account",
-  "consolidated": "Owner consolidated account view",
-  "branchScope": "Branch-scoped customer account",
+  "consolidated": "All branches",
+  "branchScope": "This Branch",
   "actions": {
     "receivePayment": "Receive payment",
     "printStatement": "Print statement",
@@ -12,14 +12,14 @@
     "cancel": "Cancel"
   },
   "metrics": {
-    "balance": "Receivable balance",
+    "balance": "Balance due",
     "totalInvoiced": "Total invoiced",
     "totalCollected": "Total collected",
     "unpaid": "Unpaid",
     "partial": "Partially paid",
     "openInvoices": "Open invoices",
     "unappliedCredit": "Unapplied credit",
-    "overdue": "Overdue receivables"
+    "overdue": "Overdue balance"
   },
   "payment": {
     "title": "Receive payment",
@@ -54,20 +54,29 @@
     "overdue": "Overdue"
   },
   "credit": {
-    "title": "Credit settings",
+    "title": "Customer Credit",
     "limit": "Credit limit",
     "available": "Available credit",
-    "notConfigured": "Credit is unavailable until an owner configures a policy.",
-    "tenantSetupRequired": "Set up tenant customer credit before approving this customer.",
-    "tenantDisabled": "Customer credit is currently unavailable.",
+    "notConfigured": "Credit is not enabled for this customer.",
+    "tenantSetupRequired": "Allow customer credit for the business first.",
+    "tenantDisabled": "Customer credit is turned off for this business.",
+    "businessDisabled": "Customer credit is turned off for this business.",
+    "branchDisabled": "Customer credit is turned off for this Branch.",
+    "openBranchSettings": "Open Branch Settings",
     "setupTenant": "Set up customer credit",
     "setupAccount": "Set up credit account",
     "accountReady": "A safe empty credit account is ready. No historical balance was created.",
     "accountAlreadyReady": "The customer credit account is already ready.",
     "setupCustomer": "Set up credit for this customer",
     "closeSettings": "Close credit settings",
-    "settings": "Manage credit policy",
-    "enabled": "Allow credit checkout",
+    "settings": "Customer credit settings",
+    "enabled": "Allow credit for this customer",
+    "allowForCustomer": "Allow credit for this customer",
+    "allowCredit": "Allow credit",
+    "stopCredit": "Stop credit",
+    "enabledForCustomer": "Credit is enabled for this customer.",
+    "disabledForCustomer": "Credit is not enabled for this customer.",
+    "simpleHelp": "A linked credit account is required. No credit limit or due date is needed.",
     "useTenantDefault": "Use tenant default credit limit",
     "dueDateDays": "Due date (days, optional)",
     "dueDateDisabled": "No default",
@@ -76,13 +85,13 @@
     "overdueBlock": "Block credit when overdue",
     "hold": "Place account on credit hold",
     "holdReason": "Hold reason",
-    "save": "Save policy",
-    "saved": "Credit policy saved."
+    "save": "Save",
+    "saved": "Customer credit setting saved."
   },
   "ledger": {
-    "title": "Customer ledger",
+    "title": "Account history",
     "opening": "Opening balance: {{amount}}",
-    "empty": "No receivable ledger entries exist for this statement period."
+    "empty": "No account history entries exist for this statement period."
   },
   "settlement": {
     "title": "Settlement controls",
@@ -119,28 +128,28 @@
     "disclaimer": "This statement is an internal settlement record. Fiscal invoices remain immutable and are not replaced by this statement."
   },
   "report": {
-    "title": "Receivables report",
-    "subtitle": "Scoped customer balances, collections, credit and overdue exposure.",
+    "title": "Customer Credit",
+    "subtitle": "Customer balances, payments, credit invoices and Branch details.",
     "back": "Back to reports",
-    "filters": "Receivables report filters",
+    "filters": "Customer Credit filters",
     "from": "From",
     "to": "To",
     "branch": "Branch",
     "allBranches": "All branches",
     "refresh": "Refresh",
-    "summary": "Receivables summary",
-    "totalReceivables": "Total receivables",
+    "summary": "Customer Credit summary",
+    "totalReceivables": "Total balance due",
     "customerCredit": "Customer credit",
-    "overdue": "Overdue exposure",
+    "overdue": "Overdue balance",
     "paymentsReceived": "Payments received",
     "unappliedCredit": "Unapplied credit",
     "customerCount": "Customers with balance",
     "customerBalances": "Customer balances",
     "customer": "Customer",
     "balance": "Balance",
-    "consolidated": "Consolidated tenant scope",
-    "branchScoped": "Branch-scoped results",
-    "empty": "No customer receivable balances match this scope.",
+    "consolidated": "All branches",
+    "branchScoped": "This Branch",
+    "empty": "No customer balances match this scope.",
     "previous": "Previous",
     "next": "Next",
     "branchComparison": "Branch comparison",
@@ -148,7 +157,7 @@
     "credits": "Credits",
     "noBranchActivity": "No receivable activity exists for this period.",
     "invalidRange": "Choose a valid report date range.",
-    "loadFailed": "The receivables report could not be loaded."
+    "loadFailed": "The Customer Credit page could not be loaded."
   },
   "document": {
     "title": "Payment receipt",

@@ -7,7 +7,8 @@ const rpcs = read('supabase/migrations/20260803000300_customer_receivables_rpcs_
 const controls = read('supabase/migrations/20260803000400_customer_receivables_controls_reports_v1.sql')
 const hardening = read('supabase/migrations/20260803000500_harden_customer_receivables_payload_errors.sql')
 const creditPolicyConfiguration = read('supabase/migrations/20260803000800_customer_credit_policy_configuration_v1.sql')
-const allSql = `${schema}\n${rpcs}\n${controls}\n${hardening}\n${creditPolicyConfiguration}`
+const simpleBranchCredit = read('supabase/migrations/20260803000900_simple_branch_customer_credit_v1.sql')
+const allSql = `${schema}\n${rpcs}\n${controls}\n${hardening}\n${creditPolicyConfiguration}\n${simpleBranchCredit}`
 const panel = read('src/components/customers/CustomerReceivablesPanel.tsx')
 const client = read('src/lib/customers/receivables.ts')
 const creditSettings = read('src/pages/settings/CustomerCreditPolicySettings.tsx')
@@ -24,6 +25,10 @@ const enLocale = read('src/localization/locales/en/receivables.json')
 const arLocale = read('src/localization/locales/ar-SA/receivables.json')
 const enSettingsLocale = read('src/localization/locales/en/settings.json')
 const arSettingsLocale = read('src/localization/locales/ar-SA/settings.json')
+const branchSettingsPage = read('src/pages/branch/BranchSettingsPage.tsx')
+const sidebar = read('src/components/layout/Sidebar.tsx')
+const app = read('src/App.tsx')
+const branchesTab = read('src/pages/settings/BranchesTab.tsx')
 
 for (const migration of [
   'supabase/migrations/20260803000200_customer_receivables_schema_v1.sql',
@@ -31,6 +36,7 @@ for (const migration of [
   'supabase/migrations/20260803000400_customer_receivables_controls_reports_v1.sql',
   'supabase/migrations/20260803000500_harden_customer_receivables_payload_errors.sql',
   'supabase/migrations/20260803000800_customer_credit_policy_configuration_v1.sql',
+  'supabase/migrations/20260803000900_simple_branch_customer_credit_v1.sql',
 ]) assert.ok(fs.existsSync(migration), `migration exists: ${migration}`)
 
 const cases = [
@@ -89,10 +95,19 @@ const cases = [
   ['customer screen exposes tenant setup and credit-account setup actions', /setupTenant[\s\S]*setupCreditAccount[\s\S]*setupCustomer/],
   ['POS refreshes policy eligibility and retains the server preflight', /CUSTOMER_CREDIT_POLICY_CHANGED_EVENT[\s\S]*creditPolicyRevision[\s\S]*loadCustomerCreditCheckoutEligibility/],
   ['Arabic statement direction is supported', /dir=\{locale === 'ar-SA' \? 'rtl' : 'ltr'\}/],
+  ['Branch credit is a minimal nullable switch with safe new-Branch default', /ALTER TABLE public\.branches[\s\S]*customer_credit_enabled boolean DEFAULT false[\s\S]*legacy rows inherit/],
+  ['Branch credit read and write are server-authoritative and branch scoped', /get_branch_customer_credit_policy_v1[\s\S]*set_branch_customer_credit_policy_v1[\s\S]*v_actor\.role = 'branch'[\s\S]*v_actor\.branch_id IS DISTINCT FROM v_branch\.id/],
+  ['simple customer access is restricted to Owner/admin/Branch and preserves empty setup', /set_customer_credit_access_v1[\s\S]*v_scope\.actor_role NOT IN \('owner', 'admin', 'branch'\)[\s\S]*historicalBalanceBackfilled', false/],
+  ['checkout preflight and posting enforce the Branch switch', /AR_CREDIT_BRANCH_DISABLED[\s\S]*post_customer_credit_checkout_v1[\s\S]*coalesce\(v_branch_credit_enabled, true\)/],
+  ['Branch Settings uses the same page for Branch and Owner routes', /BranchSettingsPage[\s\S]*\/branch-settings[\s\S]*\/settings\/branches\/:branchId/],
+  ['Branch users have Branch Settings and Customer Credit navigation', /branchSettings[\s\S]*\/branch-settings[\s\S]*customerCredit[\s\S]*\/reports\/receivables/],
+  ['Owner can open a Branch Settings view from the Branch directory', /navigate\(\`\/settings\/branches\/\$\{branch\.id\}\`/],
+  ['simple settings do not expose advanced customer-credit controls', /allowForCustomer[\s\S]*saveCustomerCreditAccess/],
+  ['stateful fixture exercises Branch A/C enabled and Branch B disabled', /set_branch_customer_credit_policy_v1[\s\S]*branch_c[\s\S]*branch_a[\s\S]*AR_CREDIT_BRANCH_DISABLED/],
 ]
 
 for (const [name, pattern] of cases) {
-  if (pattern instanceof RegExp) assert.match(allSql + panel + client + creditSettings + settingsPage + posPage + receipt + statement + reportPage + creditNoteModal + xlsx + statefulFixture + rejectionFixture + enLocale + arLocale + enSettingsLocale + arSettingsLocale, pattern, name)
+  if (pattern instanceof RegExp) assert.match(allSql + panel + client + creditSettings + settingsPage + posPage + receipt + statement + reportPage + creditNoteModal + xlsx + statefulFixture + rejectionFixture + enLocale + arLocale + enSettingsLocale + arSettingsLocale + branchSettingsPage + sidebar + app + branchesTab, pattern, name)
   else assert.ok(pattern, name)
 }
 

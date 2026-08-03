@@ -86,6 +86,23 @@ BEGIN
     RAISE EXCEPTION 'AR fixture: tenant policy unexpectedly approved a customer';
   END IF;
 
+  -- Existing Branches inherit the enabled tenant setting only when their
+  -- Branch switch is NULL. New Branch rows default off, so enable Branch A
+  -- and Branch C explicitly while Branch B remains disabled.
+  SELECT public.set_branch_customer_credit_policy_v1(jsonb_build_object(
+    'branch_id', branch_c, 'credit_enabled', true
+  )) INTO preflight;
+  PERFORM set_config('request.jwt.claim.sub', branch_a_user::text, true);
+  SELECT public.set_branch_customer_credit_policy_v1(jsonb_build_object(
+    'branch_id', branch_a, 'credit_enabled', true
+  )) INTO preflight;
+  PERFORM set_config('request.jwt.claim.sub', owner_id::text, true);
+  SELECT public.get_branch_customer_credit_policy_v1(branch_b) INTO preflight;
+  IF (preflight->>'tenantCreditEnabled')::boolean IS NOT TRUE
+     OR (preflight->>'branchCreditEnabled')::boolean IS TRUE THEN
+    RAISE EXCEPTION 'AR fixture: disabled Branch B was not reported safely';
+  END IF;
+
   -- Explicit setup creates only a safe empty account for a legacy customer.
   PERFORM public.ensure_customer_receivable_account_v1(jsonb_build_object('customer_id', legacy_customer));
   IF (SELECT receivable_account_id FROM public.customers WHERE id = legacy_customer) IS NULL
@@ -94,12 +111,11 @@ BEGIN
     RAISE EXCEPTION 'AR fixture: legacy setup fabricated customer history';
   END IF;
 
-  -- A customer requires an explicit approval after tenant setup. A custom
-  -- limit is enforced by the server and can then be disabled immediately.
-  PERFORM public.set_customer_credit_policy_v1(jsonb_build_object(
-    'customer_id', customer_a, 'credit_enabled', true, 'use_tenant_default', false,
-    'credit_limit', 250, 'hold', false, 'overdue_block', false,
-    'warn_threshold_percent', 80, 'requires_owner_approval', false
+  -- A customer requires an explicit simple approval after tenant and Branch
+  -- setup. The Branch user can make this change in its own Branch.
+  PERFORM set_config('request.jwt.claim.sub', branch_a_user::text, true);
+  PERFORM public.set_customer_credit_access_v1(jsonb_build_object(
+    'customer_id', customer_a, 'credit_enabled', true
   ));
   SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
     'branch_id', branch_a, 'customer_id', customer_a, 'proposed_credit_amount', 10
@@ -107,6 +123,23 @@ BEGIN
   IF preflight->>'reasonCode' <> 'AR_CREDIT_ELIGIBLE' THEN
     RAISE EXCEPTION 'AR fixture: explicit customer credit approval did not become eligible';
   END IF;
+
+  -- Branch B is denied before customer policy or checkout logic can run.
+  PERFORM set_config('request.jwt.claim.sub', branch_b_user::text, true);
+  SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
+    'branch_id', branch_b, 'customer_id', customer_b, 'proposed_credit_amount', 10
+  )) INTO preflight;
+  IF preflight->>'reasonCode' <> 'AR_CREDIT_BRANCH_DISABLED' THEN
+    RAISE EXCEPTION 'AR fixture: disabled Branch B credit preflight was not rejected';
+  END IF;
+  BEGIN
+    PERFORM public.post_customer_credit_checkout_v1(jsonb_build_object(
+      'branch_id', branch_b, 'customer_id', customer_b, 'settlement_mode', 'credit'
+    ));
+    RAISE EXCEPTION 'AR fixture: disabled Branch B credit checkout unexpectedly succeeded';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM NOT LIKE 'AR_CREDIT_BRANCH_DISABLED%' THEN RAISE; END IF;
+  END;
 
   -- A cashier can read/use an approved preflight but cannot configure either
   -- tenant or customer policy. Branch scoping remains server-side.

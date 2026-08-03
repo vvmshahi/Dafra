@@ -362,3 +362,64 @@ the authorised manual Preview walkthrough listed above.
 A clean Preview-only deployment reached `READY` from the final feature source.
 It is not a production deployment and no production alias or `main` branch was
 updated. Exact deployment metadata is recorded in the handoff report.
+
+## Follow-up: simplified Branch Settings and customer-credit navigation
+
+This follow-up is limited to ordinary Owner/Branch configuration. It does not
+add manager, cashier, accountant, approval, override, limit, threshold,
+overdue-blocking or payment-governance systems.
+
+The only user-facing switches are the business `Allow customer credit`, Branch
+`Allow customer credit in this Branch`, and customer `Allow credit for this
+customer`. Legacy Branches inherit the tenant setting while new Branches default
+off. Server preflight and checkout enforce all three switches; existing AR
+settlement, payment, ledger, statement, printing, ZATCA and POS mechanics stay
+in their reviewed paths.
+
+`20260803000900_simple_branch_customer_credit_v1.sql` is the forward-only
+migration. It adds a safe Branch column, server-authoritative Branch read/write
+RPCs, Branch-authorised empty account setup/simple customer access RPCs, and a
+Branch gate in the existing credit preflight/post wrapper. RLS remains enabled
+on `branches`; the new functions are `postgres`-owned, `SECURITY DEFINER`,
+`search_path = public, pg_temp`, and authenticated-only. The client performs no
+direct writes to credit or AR tables.
+
+The shared Branch Settings page is available at `/branch-settings` for Branch
+users and `/settings/branches/:branchId` for Owners/admins. Customer Credit is
+linked from both role sidebars to the existing Customer Credit report. The
+Printing & Documents and ZATCA cards link to the existing areas rather than
+duplicating either workspace. English and natural Arabic copy use everyday
+terms such as balance due, account history, and customer credit.
+
+Follow-up local evidence: the clean local migration reached
+`20260803000900`; direct metadata checks confirmed the Branch column, RLS,
+function ownership/security settings and authenticated grants; the rejection
+fixture passed without AR rows; the three-Branch rollback fixture passed; 72
+static contract checks, credit/POS, XLSX and build passed. The remote migration
+has not been applied and no Preview has been redeployed yet. Manual browser,
+responsive/RTL, disposable-tenant lifecycle, physical printing and tax-adviser
+acceptance remain gates. Main merge, production frontend deployment, mobile,
+purchase-idempotency and real customer/financial mutations remain paused.
+
+### Remote rollout completion — 2026-08-03
+
+After exact parity through `20260803000800`, the sole pending migration
+`20260803000900_simple_branch_customer_credit_v1.sql` was applied to
+`bkbphkpqcxuejozayrsy`. Linked history now ends at `20260803000900` with no
+pending or remote-only version. The CLI emitted only its known pg-delta
+certificate-cache warning after a successful `Finished supabase db push`.
+
+Catalog verification confirmed the nullable/default-false Branch column,
+Branch and credit-table RLS/no direct authenticated writes, the expected unique
+policy constraints/indexes, six `postgres`-owned `SECURITY DEFINER` RPCs with
+`search_path = public, pg_temp` and authenticated-only execution, and the
+Branch gate in both eligibility and posting definitions. The linked
+non-mutating rejection fixture passed with no returned rows and no business
+mutation. No real customer setting, invoice, payment, stock, ledger or fiscal
+row was changed.
+
+The remaining release gates are Preview deployment from the final pushed SHA,
+authenticated browser/RTL/responsive/manual three-Branch acceptance, physical
+printing and business/tax acceptance. Main merge, production frontend
+deployment, mobile, purchase-idempotency and real customer/financial mutation
+remain paused.

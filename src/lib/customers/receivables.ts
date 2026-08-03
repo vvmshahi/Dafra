@@ -58,6 +58,19 @@ export interface TenantCustomerCreditPolicy {
   dueDateDays: number | null
 }
 
+export interface BranchCustomerCreditSettings {
+  branchId: string
+  branchName: string
+  branchNameAr: string | null
+  tenantCreditEnabled: boolean
+  branchChoice: boolean | null
+  branchCreditEnabled: boolean
+  explicit: boolean
+  inherited: boolean
+  tenantPolicyConfigured: boolean
+  canEdit: boolean
+}
+
 export interface CustomerReceivableWorkspace {
   customer: { id: string; name: string; nameAr: string | null; receivableAccountId?: string | null }
   summary: {
@@ -295,42 +308,59 @@ export async function loadTenantCustomerCreditPolicy() : Promise<TenantCustomerC
 
 export async function saveTenantCustomerCreditPolicy(input: {
   creditEnabled: boolean
-  allowUnpaidInvoices: boolean
-  allowPartialInitialPayments: boolean
-  defaultCreditLimit: number
-  hardLimitEnforced: boolean
-  warnThresholdPercent: number
-  enforceCustomerHold: boolean
-  allowManagerOverride: boolean
-  defaultAllocationMode: 'oldest_first' | 'manual'
-  internalTerms?: string | null
-  dueDateDays?: number | null
 }) : Promise<TenantCustomerCreditPolicy> {
   const { data, error } = await supabase.rpc('set_tenant_customer_credit_policy_v1' as never, {
-    p_payload: {
-      credit_enabled: input.creditEnabled,
-      allow_unpaid_invoices: input.allowUnpaidInvoices,
-      allow_partial_initial_payments: input.allowPartialInitialPayments,
-      default_credit_limit: input.defaultCreditLimit,
-      hard_limit_enforced: input.hardLimitEnforced,
-      warn_threshold_percent: input.warnThresholdPercent,
-      enforce_customer_hold: input.enforceCustomerHold,
-      allow_manager_override: input.allowManagerOverride,
-      default_allocation_mode: input.defaultAllocationMode,
-      internal_terms: input.internalTerms ?? null,
-      due_date_days: input.dueDateDays ?? null,
-    },
+    p_payload: { credit_enabled: input.creditEnabled },
   } as never)
   if (error) throw error
   return normalizeTenantCustomerCreditPolicy(data)
 }
 
+function normalizeBranchCustomerCreditSettings(value: any): BranchCustomerCreditSettings {
+  return {
+    branchId: String(value?.branchId ?? ''),
+    branchName: String(value?.branchName ?? ''),
+    branchNameAr: typeof value?.branchNameAr === 'string' && value.branchNameAr.trim() ? value.branchNameAr : null,
+    tenantCreditEnabled: value?.tenantCreditEnabled === true,
+    branchChoice: typeof value?.branchChoice === 'boolean' ? value.branchChoice : null,
+    branchCreditEnabled: value?.branchCreditEnabled === true,
+    explicit: value?.explicit === true,
+    inherited: value?.inherited === true,
+    tenantPolicyConfigured: value?.tenantPolicyConfigured === true,
+    canEdit: value?.canEdit !== false,
+  }
+}
+
+export async function loadBranchCustomerCreditSettings(branchId: string): Promise<BranchCustomerCreditSettings> {
+  const { data, error } = await supabase.rpc('get_branch_customer_credit_policy_v1' as never, {
+    p_branch_id: branchId,
+  } as never)
+  if (error) throw error
+  return normalizeBranchCustomerCreditSettings(data)
+}
+
+export async function saveBranchCustomerCreditSettings(input: { branchId: string; creditEnabled: boolean }): Promise<BranchCustomerCreditSettings> {
+  const { data, error } = await supabase.rpc('set_branch_customer_credit_policy_v1' as never, {
+    p_payload: { branch_id: input.branchId, credit_enabled: input.creditEnabled },
+  } as never)
+  if (error) throw error
+  return normalizeBranchCustomerCreditSettings(data)
+}
+
 export async function ensureCustomerReceivableAccount(customerId: string) {
-  const { data, error } = await supabase.rpc('ensure_customer_receivable_account_v1' as never, {
+  const { data, error } = await supabase.rpc('ensure_customer_credit_account_v1' as never, {
     p_payload: { customer_id: customerId },
   } as never)
   if (error) throw error
   return data as { customerId: string; receivableAccountId: string; created: boolean; historicalBalanceBackfilled: false }
+}
+
+export async function saveCustomerCreditAccess(input: { customerId: string; creditEnabled: boolean }) {
+  const { data, error } = await supabase.rpc('set_customer_credit_access_v1' as never, {
+    p_payload: { customer_id: input.customerId, credit_enabled: input.creditEnabled },
+  } as never)
+  if (error) throw error
+  return data as { customerId: string; receivableAccountId: string; creditEnabled: boolean; historicalBalanceBackfilled: false }
 }
 
 export async function recordCustomerPaymentReceipt(input: {

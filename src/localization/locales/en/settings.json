@@ -3,13 +3,11 @@
   "pageSubtitle": "Manage your account, subscription, and device preferences.",
   "tabs": { "subscription": { "label": "Subscription", "description": "Plan, billing, and usage limits" }, "account": { "label": "Account", "description": "Profile, name, phone, and password" }, "printer": { "label": "Printer", "description": "Default receipt printer for silent printing" }, "customer-credit": { "label": "Customer credit", "description": "Tenant-wide customer credit controls" } },
   "customerCredit": {
-    "eyebrow": "Accounts receivable", "title": "Customer credit policy", "description": "Set the tenant-wide rules first. Each customer still requires a separate, explicit approval.",
+    "eyebrow": "Customer credit", "title": "Allow customer credit", "description": "Turn this on to allow Branches to use customer credit.",
     "statusEnabled": "Credit enabled", "statusDisabled": "Credit disabled", "statusMissing": "Setup required",
-    "setupTitle": "Set up customer credit", "setupBody": "Credit is disabled until you save this tenant policy. Saving does not approve any customer or create historical balances.",
-    "enabled": "Enable customer credit", "enabledHelp": "Customer credit remains unavailable until this policy and that customer are both enabled.",
-    "defaultLimit": "Default credit limit (SAR)", "defaultLimitHelp": "A customer may use this default or receive a custom limit.",
-    "advanced": "Advanced safeguards", "allowUnpaid": "Allow fully unpaid credit invoices", "allowPartial": "Allow partial initial payments", "hardLimit": "Enforce credit limits", "enforceHold": "Enforce customer holds", "managerOverride": "Allow manager override with a reason", "warningThreshold": "Warning threshold (%)", "allocation": "Default payment allocation", "oldestFirst": "Oldest invoice first", "manual": "Manual allocation", "dueDateDays": "Default due date (days)", "disabledByDefault": "Disabled by default", "terms": "Internal terms (optional)",
-    "save": "Save policy", "setup": "Set up customer credit", "reload": "Reload", "saved": "Customer credit policy saved. POS eligibility has been refreshed.", "loadFailed": "Customer credit policy could not be loaded.", "saveFailed": "Customer credit policy could not be saved.", "invalid": "Enter valid limits, a warning threshold from 0 to 100, and an optional due date from 1 to 365 days."
+    "setupTitle": "Set up customer credit", "setupBody": "Saving this switch does not approve any customer or create historical balances. Each Branch and customer is enabled separately.",
+    "enabled": "Allow customer credit", "enabledHelp": "Branches can use customer credit only when this business switch, the Branch switch, and the customer switch are on.",
+    "save": "Save", "setup": "Set up customer credit", "reload": "Reload", "saved": "Customer credit setting saved. POS eligibility has been refreshed.", "loadFailed": "Customer credit setting could not be loaded.", "saveFailed": "Customer credit setting could not be saved."
   },
   "businessType": { "title": "Business Type", "readOnly": "Read only", "trading": { "label": "Trading business", "description": "Products, stock, and purchase tracking." }, "service": { "label": "Service business", "description": "Services, produced items, materials, and simple profit estimates." } },
   "language": "Language",

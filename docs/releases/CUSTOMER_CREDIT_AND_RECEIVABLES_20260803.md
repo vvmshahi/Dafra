@@ -564,3 +564,52 @@ open P0/P1 technical blocker. Do not merge `main` or deploy production frontend
 until the controlled checklist and tax-adviser sign-off are complete. Mobile
 remained paused, purchase-idempotency migration was not applied, and no
 unauthorized customer/fiscal data was modified.
+
+## Simple Branch Settings and customer-credit navigation — 2026-08-03
+
+The follow-up implementation keeps the completed AR/POS/payment/statement,
+printing and ZATCA contracts intact and simplifies only the configuration and
+navigation journey.
+
+- Owner setting: `Allow customer credit`.
+- Branch setting: `Allow customer credit in this Branch`.
+- Customer setting: `Allow credit for this customer`.
+- Effective eligibility is business enabled AND Branch enabled AND customer
+  enabled, plus an active customer, linked AR account, active Branch and
+  authenticated server scope.
+- Legacy Branch rows keep `NULL` and inherit an enabled tenant setting; newly
+  created Branch rows default to `false`, so credit is never silently enabled
+  for a new Branch.
+- Migration `20260803000900_simple_branch_customer_credit_v1.sql` adds the
+  nullable Branch switch, `get_branch_customer_credit_policy_v1`,
+  `set_branch_customer_credit_policy_v1`, and role-scoped simple customer
+  account/access RPCs. Existing advanced columns remain only as a compatibility
+  layer; no advanced controls are exposed by the new UI.
+- The existing checkout preflight and post wrapper reject a disabled Branch
+  before the reviewed fiscal/AR path. UI messages map business, Branch,
+  customer, account and inactive-customer failures to simple wording.
+- Branch users receive one Branch Settings route; Owners open the same page for
+  any Branch from the Branch directory. Printing & Documents and ZATCA remain
+  links to their existing workspaces.
+- Customer Credit is now a simple sidebar destination backed by the existing
+  server report/workspace RPCs. No duplicate ledger, payment or statement logic
+  was introduced.
+
+Local verification for this follow-up: build passed; 72 static receivables
+contract checks passed; malformed-input rejection passed; rollback-only
+three-Branch stateful checks passed; credit/POS and XLSX suites passed; and the
+new migration reached the local migration head. Remote parity, targeted
+preflight, and Preview deployment remain intentionally pending until the
+focused change is committed and pushed. No real customer, financial or fiscal
+row was modified.
+
+Remote completion: parity was exact through `20260803000800`, with only
+`20260803000900_simple_branch_customer_credit_v1.sql` pending. That migration
+was applied to `bkbphkpqcxuejozayrsy`; linked history now ends at `20260803000900`
+with no pending or remote-only migration. Catalog-only verification confirmed
+the Branch column/default, RLS and grants, policy constraints/indexes, safe
+`postgres`-owned authenticated RPC metadata and the Branch gate in eligibility
+and posting. The linked malformed-input rejection fixture returned no rows.
+The CLI emitted only its known pg-delta certificate-cache warning after the
+successful push. Preview redeployment and manual browser/device/tax acceptance
+remain pending; no real customer or financial row was modified.

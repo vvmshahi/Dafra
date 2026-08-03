@@ -49,6 +49,7 @@ import ProfilePage          from '@/pages/profile/ProfilePage'
 import DayClosingPage       from '@/pages/day-closing/DayClosingPage'
 import BranchDashboardPage  from '@/pages/branch/BranchDashboardPage'
 import PrintingDocumentsPage from '@/pages/branch/PrintingDocumentsPage'
+import BranchSettingsPage   from '@/pages/branch/BranchSettingsPage'
 import ForgotPasswordPage   from '@/pages/auth/ForgotPasswordPage'
 import ResetPasswordPage    from '@/pages/auth/ResetPasswordPage'
 import TermsPage            from '@/pages/legal/TermsPage'
@@ -344,6 +345,7 @@ export default function App() {
             {/* Branch dashboard — inside AppLayout so sidebar shows */}
             <Route element={<RequireBranch />}>
               <Route path="/branch"            element={<BranchDashboardPage />} />
+              <Route path="/branch-settings"  element={<BranchSettingsPage />} />
               <Route path="/invoice-settings"  element={<PrintingDocumentsPage />} />
             </Route>
 
@@ -364,6 +366,7 @@ export default function App() {
               <Route path="/zatca"      element={<ZatcaPage />} />
               <Route path="/employees"   element={<EmployeesPage />} />
               <Route path="/settings"  element={<SettingsPage />} />
+              <Route path="/settings/branches/:branchId" element={<BranchSettingsPage />} />
               {ENABLE_OFFICIAL_SELLER_IDENTITY && <Route path="/settings/official-seller" element={<OfficialSellerProfilePage />} />}
             </Route>
 

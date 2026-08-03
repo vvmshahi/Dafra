@@ -24,6 +24,7 @@ import { branchIdFromRpcResult } from '@/lib/utils/branchCreation'
 import { resolveBusinessType } from '@/lib/utils/businessType'
 import { useTranslation, type TFunction } from 'react-i18next'
 import { useLocale } from '@/localization/useLocale'
+import { useNavigate } from 'react-router-dom'
 
 /* ── Types ──────────────────────────────────────────────────── */
 
@@ -1270,6 +1271,7 @@ function BranchCard({
   branch: BranchWithLogin; onEdit: () => void; onResetPassword: () => void
 }) {
   const { t } = useTranslation('branches')
+  const navigate = useNavigate()
   const loginCredential = branchLoginCredential(branch)
   const contactItems = [
     branch.city ? { icon: MapPin, label: t('card.city'), value: branch.city } : null,
@@ -1360,6 +1362,13 @@ function BranchCard({
           >
             {t('card.contactSupport')}
           </a>
+          <button
+            type="button"
+            onClick={() => navigate(`/settings/branches/${branch.id}`)}
+            className="mt-2 block text-xs font-semibold text-primary-700 hover:text-primary-900"
+          >
+            {t('card.branchSettings')}
+          </button>
         </div>
       </div>
     </div>
