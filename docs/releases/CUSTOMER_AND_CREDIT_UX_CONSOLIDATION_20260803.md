@@ -39,16 +39,19 @@ the posting boundary.
 
 - Customer directory remains the single customer entry point; the separate
   Customer Reports sidebar/header path was removed.
-- Customer profiles use Overview, Invoices, Products, Documents, Customer
-  Report, and—only for eligible Business/B2B customers with Branch visibility
-  or historical AR activity—Customer Credit.
+- Customer profiles use Overview, Invoices, Products, and—only for eligible
+  Business/B2B customers with Branch visibility or historical AR activity—
+  Customer Credit. Legacy Documents and Customer Report URLs are retained only
+  as compatibility redirects to Invoices and Overview respectively.
 - Customer Credit is one workspace with Overview, Customers, Payments, and
   Statements tabs.
 - The Customers table is scoped to active Business/B2B customers and shows
   phone, last credit invoice, last payment, total invoiced, total paid,
   balance due, status, and statement/customer actions.
-- Overview uses compact receivables KPIs. Today, 7-day, 30-day, 90-day, and
-  custom date filters are available.
+- Overview uses four compact KPIs: Total purchases, Credit notes/Returns, Net
+  purchases, and Total invoices. Today, Yesterday, Last 7 days, This month,
+  Last month, This year, and Custom date filters are available; custom From/To
+  controls appear only for Custom.
 - Payment receipt and statement routes retain their existing server RPC,
   print/reprint, A4, XLSX, Arabic/RTL, and date-range behavior.
 - POS renders Customer credit as the visible payment method while preserving

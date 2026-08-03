@@ -2,7 +2,10 @@
 
 ## Decision
 
-**Verdict: `KUBRI_CUSTOMER_CREDIT_FINAL_UI_READY_FOR_MANUAL_ACCEPTANCE`.**
+**Superseded by the targeted profile refinement record below.** The Customer
+Credit workspace evidence remains valid; the profile and directory scope was
+subsequently refined in application commit
+`911752b4fae333dddf78d0e8f6988d0fe381e867`.
 
 The focused Customer, Customer Profile, Customer Credit, Branch/Owner Settings,
 statement, receipt, and POS-success refinement is implemented and deployed to a
@@ -94,6 +97,18 @@ Passed on the clean application commit:
 
 The production build retains the existing large-main-chunk warning (about
 814.55 kB gzip); no new build error was introduced.
+
+## Targeted profile follow-up
+
+The later profile pass changes only the customer directory/profile surface:
+the directory is a compact invoice-style table with City and Last purchase,
+business styling uses Kubri teal/info treatment, and the final profile tabs are
+Overview, Invoices, Products, and eligible Customer Credit. Legacy Documents
+and Customer Report URLs normalize to Invoices and Overview. Overview visibly
+contains only Total purchases, Credit notes/Returns, Net purchases, and Total
+invoices; the timeline, recent activity, insights, average-invoice, and
+last-purchase KPI blocks are not rendered. Last purchase is supplied by the
+existing scoped customer-intelligence RPC; no migration was required.
 
 ## Preview handoff
 
