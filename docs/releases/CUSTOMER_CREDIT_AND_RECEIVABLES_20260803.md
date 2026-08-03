@@ -665,3 +665,10 @@ removed. Only active Business/B2B customers in the active authorized Branch
 qualify; the account is created automatically and idempotently with no
 historical backfill. Remote parity/application and manual acceptance remain
 gates; no real financial mutation was performed.
+
+Remote migration 011 is now applied and verified with no pending migration.
+The exact tested application source is `4160ea12dd4f7a6c6d0db283b6d5efa0289be2d9`.
+Preview `dpl_Geefbgu3Un8ocbRRwkdCNx3BVv3m` is `READY` at
+`https://dafra-363ety7jy-mohammed-shahin-v-vs-projects.vercel.app`; it is a
+Preview only. Manual authenticated, responsive/RTL, physical-print, and
+explicit disposable-tenant acceptance remain required.

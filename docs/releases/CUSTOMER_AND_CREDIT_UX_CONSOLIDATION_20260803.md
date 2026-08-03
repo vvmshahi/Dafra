@@ -92,8 +92,29 @@ Afterward, manual authenticated browser/RTL/responsive/printing acceptance and
 a controlled disposable-tenant lifecycle remain required. No production alias,
 `main`, mobile package, Electron package, or real customer mutation is in scope.
 
+## Remote rollout and Preview handoff
+
+Remote parity was exact through `20260803001000`, with exactly one intended
+pending migration. Migration `20260803001100_branch_only_b2b_customer_credit_v1.sql`
+was applied alone to `bkbphkpqcxuejozayrsy`. Linked history now ends at 011 with
+no pending or remote-only migration. The CLI emitted only its known
+post-apply pg-delta certificate-cache warning; live catalog verification passed.
+
+Remote verification confirmed the five public Branch-only RPCs are
+PostgreSQL-owned `SECURITY DEFINER`, use `search_path = public, pg_temp`, deny
+anon execution, and grant authenticated execution only to the intended public
+surface. Legacy tenant/customer writers are revoked. Target AR tables have RLS
+and scoped policies; authenticated users have SELECT only and no direct table
+INSERT/UPDATE/DELETE. Unique policy, operation, and receipt constraints remain
+present. The linked malformed-payload fixture passed with no successful
+business operation and no changed aggregate rows.
+
+The exact tested application source is commit `4160ea12dd4f7a6c6d0db283b6d5efa0289be2d9`
+on `feature/customer-credit-receivables-20260803`. Preview
+`dpl_Geefbgu3Un8ocbRRwkdCNx3BVv3m` is `READY` at
+`https://dafra-363ety7jy-mohammed-shahin-v-vs-projects.vercel.app`, target
+`preview`; no production alias was updated.
+
 ## Current verdict
 
-`KUBRI_BRANCH_ONLY_B2B_CREDIT_UX_READY_FOR_MANUAL_ACCEPTANCE` is the intended
-post-remote verdict. Until remote parity, preflight, application, and live
-metadata verification complete, the technical rollout remains blocked.
+`KUBRI_BRANCH_ONLY_B2B_CREDIT_UX_READY_FOR_MANUAL_ACCEPTANCE`

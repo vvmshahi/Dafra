@@ -200,3 +200,9 @@ policy switch, limit, hold, approval, or setup action.
 
 See [`CUSTOMER_AND_CREDIT_UX_CONSOLIDATION_20260803.md`](CUSTOMER_AND_CREDIT_UX_CONSOLIDATION_20260803.md)
 for the current profile/workspace/report/POS contract and local evidence.
+
+Remote migration 011 is now applied with no pending migration. The exact
+tested application source is `4160ea12dd4f7a6c6d0db283b6d5efa0289be2d9`.
+Preview `dpl_Geefbgu3Un8ocbRRwkdCNx3BVv3m` is `READY` at
+`https://dafra-363ety7jy-mohammed-shahin-v-vs-projects.vercel.app`, target
+`preview`; no production alias changed.
