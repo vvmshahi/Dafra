@@ -166,7 +166,7 @@ Passed evidence includes:
 - clean local migration application through 010;
 - `npm run build` and `git diff --check`.
 
-The exact final tested SHA is `f6d0a55` (`f6d0a55b6a1be1b728cd0d63af4b70d1c9e88b68`).
+The exact final tested SHA is `f6d0a55` (`f6d0a552351a8583bd85ff0710a1d64a28389be3`).
 It is pushed to `feature/customer-credit-receivables-20260803` and deployed as
 Vercel Preview `dpl_EX51CwSPY1vB3nXzSbtntj1pjP3K` at
 `https://dafra-bxf8vychq-mohammed-shahin-v-vs-projects.vercel.app`. Vercel

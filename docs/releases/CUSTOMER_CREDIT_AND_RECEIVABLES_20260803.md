@@ -645,7 +645,7 @@ acceptance, disposable three-Branch lifecycle, physical printing, and tax
 acceptance remain manual gates. Mobile, purchase-idempotency, main merge,
 production frontend, and unrelated RLS remediation remain paused.
 
-The final focused source is `f6d0a55b6a1be1b728cd0d63af4b70d1c9e88b68`.
+The final focused source is `f6d0a552351a8583bd85ff0710a1d64a28389be3`.
 Preview `dpl_EX51CwSPY1vB3nXzSbtntj1pjP3K` is `READY` at
 `https://dafra-bxf8vychq-mohammed-shahin-v-vs-projects.vercel.app`, target
 `preview`, with no production alias change.
