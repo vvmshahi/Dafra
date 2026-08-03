@@ -5,7 +5,8 @@ const read = relative => fs.readFileSync(relative, 'utf8')
 const schema = read('supabase/migrations/20260803000200_customer_receivables_schema_v1.sql')
 const rpcs = read('supabase/migrations/20260803000300_customer_receivables_rpcs_v1.sql')
 const controls = read('supabase/migrations/20260803000400_customer_receivables_controls_reports_v1.sql')
-const allSql = `${schema}\n${rpcs}\n${controls}`
+const hardening = read('supabase/migrations/20260803000500_harden_customer_receivables_payload_errors.sql')
+const allSql = `${schema}\n${rpcs}\n${controls}\n${hardening}`
 const panel = read('src/components/customers/CustomerReceivablesPanel.tsx')
 const client = read('src/lib/customers/receivables.ts')
 const receipt = read('src/pages/print/PaymentReceiptPrintPage.tsx')
@@ -14,6 +15,7 @@ const reportPage = read('src/pages/reports/CustomerReceivablesReportPage.tsx')
 const creditNoteModal = read('src/pages/invoices/CreateCreditNoteModal.tsx')
 const xlsx = read('src/lib/customers/receivablesXlsx.ts')
 const statefulFixture = read('scripts/certify-customer-receivables-stateful.sql')
+const rejectionFixture = read('scripts/certify-customer-receivables-rejection-paths.sql')
 const enLocale = read('src/localization/locales/en/receivables.json')
 const arLocale = read('src/localization/locales/ar-SA/receivables.json')
 
@@ -21,6 +23,7 @@ for (const migration of [
   'supabase/migrations/20260803000200_customer_receivables_schema_v1.sql',
   'supabase/migrations/20260803000300_customer_receivables_rpcs_v1.sql',
   'supabase/migrations/20260803000400_customer_receivables_controls_reports_v1.sql',
+  'supabase/migrations/20260803000500_harden_customer_receivables_payload_errors.sql',
 ]) assert.ok(fs.existsSync(migration), `migration exists: ${migration}`)
 
 const cases = [
@@ -66,11 +69,13 @@ const cases = [
   ['credit-note AR settlement is explicit and keeps the normal atomic path separate', /settleWithReceivables[\s\S]*createCustomerCreditNoteSettlement[\s\S]*atomicSimplifiedCreditEligible/],
   ['receivables reporting is a dedicated scoped RPC route', /loadCustomerReceivablesReport[\s\S]*branchComparison[\s\S]*totalReceivables/],
   ['stateful certification creates and rolls back three branch fixtures', /AR branch A[\s\S]*AR branch B[\s\S]*AR branch C[\s\S]*AR_CERTIFICATION_ROLLBACK/],
+  ['rejection certification covers malformed payloads without AR writes', /not-a-uuid[\s\S]*invalid payment receipt[\s\S]*v_after <> v_before/],
+  ['payload hardening wraps conversion errors without exposing raw internal RPCs', /_raw_20260803[\s\S]*invalid_text_representation[\s\S]*REVOKE ALL ON FUNCTION public\.%I\(jsonb\) FROM PUBLIC, anon, authenticated, service_role/],
   ['Arabic statement direction is supported', /dir=\{locale === 'ar-SA' \? 'rtl' : 'ltr'\}/],
 ]
 
 for (const [name, pattern] of cases) {
-  if (pattern instanceof RegExp) assert.match(allSql + panel + client + receipt + statement + reportPage + creditNoteModal + xlsx + statefulFixture + enLocale + arLocale, pattern, name)
+  if (pattern instanceof RegExp) assert.match(allSql + panel + client + receipt + statement + reportPage + creditNoteModal + xlsx + statefulFixture + rejectionFixture + enLocale + arLocale, pattern, name)
   else assert.ok(pattern, name)
 }
 
