@@ -486,6 +486,7 @@ export default function InvoicesPage() {
             && payments.some((payment: any) => payment.method === 'card')
           return {
           isDemo:        inv.is_demo === true,
+          isSandboxDemo: demoSandbox && inv.is_demo !== true,
           id:            inv.id,
           branchId:      inv.branch_id,
           invoiceNumber: inv.invoice_number,
@@ -501,7 +502,7 @@ export default function InvoicesPage() {
             ? (isSplitPayment ? 'split' : payments[0].method)
             : null,
           zatcaStatus: inv.zatca_status as ZatcaStatus,
-          displayZatcaStatus: demoSandbox
+          displayZatcaStatus: demoSandbox && inv.is_demo !== true
             ? (sandboxAttempts[inv.id]?.status ?? 'sandbox_not_validated')
             : inv.zatca_status as ZatcaStatus,
           status:      inv.status,
@@ -1133,6 +1134,7 @@ export default function InvoicesPage() {
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span dir="ltr" className="font-mono text-sm font-black text-gray-950 [overflow-wrap:anywhere]">{row.invoiceNumber}</span>
                           {row.isDemo && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[9px] font-black text-amber-900 ring-1 ring-inset ring-amber-300">DEMO · NOT A TAX INVOICE</span>}
+                          {row.isSandboxDemo && <span className="rounded-md bg-primary-50 px-1.5 py-0.5 text-[9px] font-black text-primary-800 ring-1 ring-inset ring-primary-200">SANDBOX</span>}
                           <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold ring-1 ring-inset ${
                             isCreditNote
                               ? 'bg-amber-50 text-amber-700 ring-amber-600/20'

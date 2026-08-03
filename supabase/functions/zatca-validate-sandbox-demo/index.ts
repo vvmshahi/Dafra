@@ -290,7 +290,8 @@ async function loadScope(db: any, invoiceId: string, branchId: typeof DEMO_BRANC
       last_successful_onboarding_status,encrypted_private_key,
       encrypted_compliance_csid,encrypted_compliance_secret
     `).eq('tenant_id', DEMO_TENANT_ID).eq('branch_id', branchId)
-      .eq('environment', 'sandbox').eq('compliance_demo_status', 'active').maybeSingle(),
+      .eq('environment', 'sandbox').eq('status', 'compliance')
+      .eq('compliance_demo_status', 'active').maybeSingle(),
   ])
   if (
     tenantResult.error || !tenantResult.data || branchResult.error || !branchResult.data ||
@@ -429,7 +430,8 @@ async function connectionStatus(db: any, branchId: typeof DEMO_BRANCH_IDS[number
   const { data, error } = await db.from('zatca_sandbox_credentials')
     .select('id,compliance_demo_status,last_successful_onboarding_status,compliance_sample_results')
     .eq('tenant_id', DEMO_TENANT_ID).eq('branch_id', branchId)
-    .eq('environment', 'sandbox').eq('compliance_demo_status', 'active').maybeSingle()
+    .eq('environment', 'sandbox').eq('status', 'compliance')
+    .eq('compliance_demo_status', 'active').maybeSingle()
   if (error) throw new Error('Unable to load Sandbox compliance-validation status')
   const passed = Array.isArray(data?.compliance_sample_results)
     ? data.compliance_sample_results.filter((sample: any) => sample?.status === 'accepted').length

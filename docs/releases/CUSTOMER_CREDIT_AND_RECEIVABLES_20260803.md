@@ -33,6 +33,78 @@ for historical rows. New ordinary posted customer invoices and payments are
 mirrored by controlled server triggers; the credit-checkout RPC suppresses that
 temporary legacy payment bridge and writes its AR entries exactly once.
 
+## Credit POS eligibility and tender boundary update
+
+The manual `AR_CREDIT_DISABLED` outcome is intentional server behaviour, but
+the former POS offered Credit before showing that authoritative condition. The
+failure occurs after `ar_ensure_customer_account_v1` and the scoped policy
+lookup in `post_customer_credit_checkout_v1`: no policy, or a policy with
+`credit_enabled = false`, is a financial-permission denial. It is independent
+of `customers.customer_type` and does not mean every Business customer should
+receive credit.
+
+`20260803000600_credit_preflight_and_server_demo_modes.sql`, followed by the
+forward-only `20260803000700_rebind_credit_and_sandbox_mode_contracts.sql`,
+adds
+`get_customer_credit_checkout_eligibility_v1(jsonb)`. It is a read-only
+security-definer preflight with safe values only: account link state, enabled
+state, hold, limit, current balance, available credit, overdue amount,
+owner-approval requirement and stable `AR_*` reason code. It never invokes
+`ar_ensure_customer_account_v1`, inserts no account, and never changes a
+policy. POS loads it when selecting a customer and immediately before Charge;
+the posting RPC performs its original authoritative checks again.
+
+The POS treatment is deliberately compact:
+
+- Cash, Card and enabled Split remain the primary selector.
+- Customer credit is a separate action shown only after a selected customer has
+  a server result. Known ineligible customers cannot dispatch a credit checkout
+  request; account linking/settings is offered only to owner/admin users.
+- Initial payment starts blank. Valid input is exactly `0` or a non-negative
+  decimal with no more than two places and less than the total, leaving a real
+  AR balance. Blank, whitespace, malformed, negative, excessive-precision and
+  over-total values keep Charge disabled. Full normal settlement uses the
+  primary tender controls.
+- A positive initial payment permits **Cash** or **Card** only. Bank Transfer
+  is hidden at this POS boundary because it is not separately reconciled in the
+  original initial-credit register bridge. Later AR receipts retain the
+  explicit Bank Transfer tender, optional reference, branch attribution,
+  allocation and reversal records; it remains distinct from Cash/Card.
+
+## Server-derived Demo and Sandbox modes
+
+The non-fiscal demo guard remains intact. The new server evaluator uses only
+tenant/branch state and active **compliance** credential metadata to select:
+
+| Branch | Derived mode | Behaviour |
+| --- | --- | --- |
+| Kubri Trading Demo | `non_fiscal` | Demo label; no QR, ZATCA request, chain, outbox, reporting or clearance. |
+| Kubri Service Demo | `sandbox_compliance` | Sandbox label; Simplified-only developer-portal compliance validation, Phase 2 signed QR, status ledger and Sandbox test output. |
+
+Historical metadata showed validation activity for both branches, but only
+Service has a current active/unexpired compliance record with successful
+onboarding. Trading's current record is failed and its historical
+Sandbox-production record is revoked. Service has no active Sandbox-production
+credential material, so full Sandbox reporting/clearance is not available and
+is never attempted. The server blocks Standard Sandbox checkout rather than
+pretending to clear it. Neither route reads or returns secret values, and no
+production ZATCA endpoint/credential is selected.
+
+Migration 00600 was applied after exact parity and catalog preflight. The
+source was then kept immutable and the public POS/credit rebind plus
+credit-checkout contract registration were placed in forward-only migration
+00700. Migration history now matches through 00700. The public preflight/mode,
+POS, and credit-checkout contracts are authenticated `SECURITY DEFINER`
+functions with `search_path = public, pg_temp`; internal evaluators are
+service-role-only. The matching `zatca-validate-sandbox-demo` Edge Function is
+active at version 21. Neither migration modifies customer policies, credential
+values, invoices, payments, stock, fiscal output, or historical business rows.
+
+The remaining required evidence is an explicitly authorised disposable-tenant
+manual lifecycle: policy states, explicit-zero/partial/retry cases, normal
+register/report reconciliation, and Service Sandbox accepted/rejected/retry QR
+validation. No such financial or fiscal mutation was performed in this update.
+
 ## Forward-only migrations
 
 1. `20260803000200_customer_receivables_schema_v1.sql`
@@ -52,6 +124,12 @@ temporary legacy payment bridge and writes its AR entries exactly once.
    - new-invoice/payment synchronization without historical backfill;
    - locked allocation replacement, approved adjustments, cross-branch account
      linking, and read-only receivables reports.
+4. `20260803000600_credit_preflight_and_server_demo_modes.sql`
+   - read-only credit eligibility and server-derived Demo/Sandbox mode
+     classification.
+5. `20260803000700_rebind_credit_and_sandbox_mode_contracts.sql`
+   - forward-only public POS/credit wrapper rebind and immutable-function
+     contract fingerprint registration.
 
 No migration rewrites historical invoices, payments, stock, ZATCA artifacts, or
 business rows. The only invoice updates are derived settlement state (`due_date`,

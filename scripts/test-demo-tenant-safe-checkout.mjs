@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const migration = read('supabase/migrations/20260729000300_demo_tenant_non_fiscal_checkout.sql')
+const demoModes = read('supabase/migrations/20260803000600_credit_preflight_and_server_demo_modes.sql')
 const readGrantMigration = read('supabase/migrations/20260729000400_grant_demo_invoice_read.sql')
 const pos = read('src/pages/pos/POSPage.tsx')
 const submission = read('src/lib/zatca/submission.ts')
@@ -42,16 +43,25 @@ assert.match(migration, /zatca_chain_reservations_guard_demo_v1/)
 assert.match(migration, /zatca_qr_code = NULL/)
 assert.match(migration, /zatca_status = 'not_submitted'/)
 
-// Web and Capacitor share this POS. It consumes the server decision and the
-// demo branch performs no submission/finalization call.
-assert.match(submission, /PosCheckoutPath = 'atomic' \| 'legacy' \| 'demo'/)
+// Web and Capacitor share this POS. The server chooses either a non-fiscal
+// boundary or the separately scoped Sandbox-compliance route.
+assert.match(submission, /PosCheckoutPath = 'atomic' \| 'legacy' \| 'demo' \| 'sandbox'/)
 assert.match(pos, /await resolvePosCheckoutDocument\(branch\.id, customerId\)/)
 assert.match(pos, /documentDecision\.checkoutPath === 'demo'/)
-const demoBlock = pos.match(/else if \(demoSandbox\) \{[\s\S]*?\n        \} else if \(productionCheckoutMode/)
+assert.match(pos, /documentDecision\.checkoutPath === 'sandbox'/)
+assert.match(demoModes, /zatca_demo_checkout_mode_internal_v1/)
+assert.match(demoModes, /c\.status = 'compliance'/)
+assert.match(demoModes, /'checkoutPath', 'sandbox'/)
+assert.match(demoModes, /SANDBOX_STANDARD_CLEARANCE_UNAVAILABLE/)
+const demoBlock = pos.match(/else if \(nonFiscalDemo\) \{[\s\S]*?\n        \} else if \(sandboxDemo\)/)
 assert.ok(demoBlock)
 assert.doesNotMatch(demoBlock[0], /submitInvoiceForBranch|validateInvoiceInSandbox|finalizeInvoiceForZatca/)
 assert.match(pos, /finalQrCode = null/)
 assert.match(pos, /canPrintCustomerCopy = true/)
+const sandboxBlock = pos.match(/else if \(sandboxDemo\) \{[\s\S]*?\n        \} else if \(productionCheckoutMode/)
+assert.ok(sandboxBlock)
+assert.match(sandboxBlock[0], /submitInvoiceForBranch/)
+assert.match(sandboxBlock[0], /sandbox_validated/)
 
 // Existing cart/customer/barcode and all payment choices remain in the flow.
 assert.match(pos, /type PosPaymentChoice = 'cash' \| 'card' \| 'split'/)

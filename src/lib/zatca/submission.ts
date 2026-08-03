@@ -21,7 +21,7 @@ export const ZATCA_OUTPUT_STATE_READ_VERSION = '2.0.0'
 export const ZATCA_FINALIZATION_SCHEMA_VERSION = 2
 export type ZatcaCheckoutMode = 'legacy' | 'v2'
 export type ZatcaDocumentKind = 'simplified' | 'standard'
-export type PosCheckoutPath = 'atomic' | 'legacy' | 'demo'
+export type PosCheckoutPath = 'atomic' | 'legacy' | 'demo' | 'sandbox'
 export type ZatcaFunctionalityMap = '0100' | '1000' | '1100'
 
 export interface PosCheckoutDocumentDecision {
@@ -38,6 +38,7 @@ export interface PosCheckoutDocumentDecision {
   productionConnected: boolean
   isDemo: boolean
   nonFiscal: boolean
+  demoMode: 'not_demo' | 'non_fiscal' | 'sandbox_compliance'
 }
 export type ZatcaCapabilityAcknowledgementStatus =
   | 'written'
@@ -158,6 +159,7 @@ export async function resolvePosCheckoutDocument(
   const checkoutPath = data?.checkoutPath === 'atomic'
     || data?.checkoutPath === 'legacy'
     || data?.checkoutPath === 'demo'
+    || data?.checkoutPath === 'sandbox'
     ? data.checkoutPath
     : null
   const capability = data?.capability === '0100'
@@ -186,7 +188,22 @@ export async function resolvePosCheckoutDocument(
     productionConnected: data?.productionConnected === true,
     isDemo: data?.isDemo === true,
     nonFiscal: data?.nonFiscal === true,
+    demoMode: data?.demoMode === 'non_fiscal' || data?.demoMode === 'sandbox_compliance'
+      ? data.demoMode
+      : 'not_demo',
   }
+}
+
+export type ZatcaDemoCheckoutMode = 'not_demo' | 'non_fiscal' | 'sandbox_compliance'
+
+export async function getZatcaDemoCheckoutMode(branchId: string): Promise<ZatcaDemoCheckoutMode> {
+  const { data, error } = await (supabase as any).rpc('get_zatca_demo_checkout_mode_v1', {
+    p_branch_id: branchId,
+  })
+  if (error) throw new Error(error.message)
+  return data?.mode === 'non_fiscal' || data?.mode === 'sandbox_compliance'
+    ? data.mode
+    : 'not_demo'
 }
 
 export async function getZatcaFinalizationCapabilities(branchId: string): Promise<ZatcaFinalizationCapabilities> {
@@ -416,7 +433,7 @@ export async function submitInvoiceForBranch(params: {
   branchId: string
   options: ZatcaSubmitOptions & { retryDelayMs?: number }
 }): Promise<RoutedZatcaResult> {
-  if (isPermanentDemoSandboxBranch(params.tenantId, params.branchId)) {
+  if (await getZatcaDemoCheckoutMode(params.branchId) === 'sandbox_compliance') {
     return { mode: 'sandbox_validation', result: await validateInvoiceInSandbox(params.invoiceId) }
   }
   return {

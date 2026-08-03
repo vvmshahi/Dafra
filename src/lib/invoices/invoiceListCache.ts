@@ -5,6 +5,7 @@ export type InvoiceListDisplayStatus = ZatcaStatus | SandboxValidationStatus | '
 
 export interface InvoiceListRow {
   isDemo?: boolean
+  isSandboxDemo?: boolean
   id: string
   branchId: string
   invoiceNumber: string

@@ -85,6 +85,8 @@ import { PosCustomerQuickCreateModal } from './PosCustomerQuickCreateModal'
 import {
   clearPersistentReceivableOperation,
   getPersistentReceivableOperation,
+  loadCustomerCreditCheckoutEligibility,
+  type CustomerCreditCheckoutEligibility,
 } from '@/lib/customers/receivables'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -217,6 +219,7 @@ interface ReceiptData {
   reportingDisplayState: string
   atomicSnapshot: boolean
   isDemo: boolean
+  sandboxDemo: boolean
 }
 
 function branchPosMode(value: string | null | undefined): PosMode {
@@ -330,6 +333,12 @@ function amountInput(value: number): string {
   return Math.max(0, round2(value)).toFixed(2)
 }
 
+function parseExplicitMoneyInput(value: string): number | null {
+  if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,2})?$/.test(value)) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 function formatSessionDateTimeLocalized(utcString: string, locale: string): string {
   return new Date(utcString).toLocaleString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', {
     timeZone: 'Asia/Riyadh',
@@ -400,8 +409,26 @@ function safeCheckoutErrorKey(err: unknown): string {
   if (/ATOMIC_NOT_READY|ATOMIC_CHECKOUT_REQUIRED/.test(message)) {
     return 'validation:atomicNotReady'
   }
+  if (/AR_CREDIT_DISABLED/.test(message)) {
+    return 'payments:creditDisabled'
+  }
+  if (/AR_CREDIT_HOLD/.test(message)) {
+    return 'payments:creditOnHold'
+  }
+  if (/AR_CREDIT_OWNER_APPROVAL_REQUIRED/.test(message)) {
+    return 'payments:creditOwnerApprovalRequired'
+  }
+  if (/AR_CREDIT_LIMIT_EXCEEDED/.test(message)) {
+    return 'payments:creditLimitExceeded'
+  }
+  if (/AR_CREDIT_OVERDUE_BLOCK/.test(message)) {
+    return 'payments:creditOverdueBlocked'
+  }
   if (/STANDARD_CUSTOMER_DETAILS_REQUIRED/.test(message)) {
     return 'validation:standardCustomerDetailsRequired'
+  }
+  if (/SANDBOX_STANDARD_CLEARANCE_UNAVAILABLE/.test(message)) {
+    return 'validation:sandboxStandardUnavailable'
   }
   if (/not available/i.test(message)) {
     return 'validation:unavailableItem'
@@ -447,6 +474,17 @@ function paymentMethodLabel(method: string | null | undefined): string {
   if (method === 'card') return 'Card / POS'
   if (method === 'bank_transfer') return 'Bank Transfer'
   return 'Other'
+}
+
+function creditEligibilityMessageKey(reasonCode: string): string {
+  switch (reasonCode) {
+    case 'AR_CREDIT_HOLD': return 'creditOnHold'
+    case 'AR_CREDIT_OWNER_APPROVAL_REQUIRED': return 'creditOwnerApprovalRequired'
+    case 'AR_CREDIT_LIMIT_EXCEEDED': return 'creditLimitExceeded'
+    case 'AR_CREDIT_OVERDUE_BLOCK': return 'creditOverdueBlocked'
+    case 'AR_CREDIT_DISABLED': return 'creditDisabled'
+    default: return 'creditUnavailable'
+  }
 }
 
 function isSplitPaymentRows(payments: ReceiptPayment[]): boolean {
@@ -672,7 +710,9 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
     const businessName = documentNames(documentLanguage, receipt.businessNameEn, receipt.businessNameAr).join(' / ')
     const receiptHeading = receipt.isDemo
       ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية'
-      : documentLabel(documentLanguage, 'taxInvoice')
+      : receipt.sandboxDemo
+        ? t('pos:sandbox.receiptLabelBilingual')
+        : documentLabel(documentLanguage, 'taxInvoice')
     const msg = `${receiptHeading} — ${businessName}
 ━━━━━━━━━━━━━━━
 ${documentLabel(documentLanguage, 'invoiceNumber')}: ${receipt.invoiceNumber}
@@ -747,7 +787,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
     setPrintingReceipt(true)
     try {
-      if (receipt.atomicSnapshot || receipt.isDemo) {
+      if (receipt.atomicSnapshot || receipt.isDemo || receipt.sandboxDemo) {
         const printed = await printRenderedReceiptSnapshot()
         if (printed) {
           toast.success(t('pos:printer.receiptSent'), { duration: 1800 })
@@ -793,9 +833,9 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
   return (
     <>
-      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'pos-pdf-printable', qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : null, nonFiscalDemo: receipt.isDemo }} />
+      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'pos-pdf-printable', qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : receipt.sandboxDemo ? t('pos:sandbox.receiptLabelBilingual') : null, nonFiscalDemo: receipt.isDemo }} />
       {/* Hidden thermal receipt — rendered for print only */}
-      <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : null, nonFiscalDemo: receipt.isDemo }} />
+      <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : receipt.sandboxDemo ? t('pos:sandbox.receiptLabelBilingual') : null, nonFiscalDemo: receipt.isDemo }} />
 
       {/* Success overlay */}
       <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0F2419]/90">
@@ -806,6 +846,11 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
             {receipt.isDemo && (
               <div className="mb-3 rounded-lg border border-white/50 bg-black/20 px-3 py-2 text-sm font-black">
                 {t('pos:demo.receiptLabelBilingual')}
+              </div>
+            )}
+            {receipt.sandboxDemo && (
+              <div className="mb-3 rounded-lg border border-white/50 bg-black/20 px-3 py-2 text-sm font-black">
+                {t('pos:sandbox.receiptLabelBilingual')}
               </div>
             )}
             <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -820,6 +865,11 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
             {receipt.isDemo ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-900">
                 {t('pos:demo.noZatca')}
+              </div>
+            ) : receipt.sandboxDemo ? (
+              <div className="flex items-center justify-between rounded-lg border border-primary-100 bg-primary-50 px-3 py-2 text-xs">
+                <span className="font-semibold text-primary-800">{t('pos:sandbox.label')}</span>
+                <span className="font-semibold text-primary-900">{t(`pos:zatca.${receipt.reportingDisplayState}`)}</span>
               </div>
             ) : !receipt.isStandardInvoice && (
               <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs">
@@ -1933,7 +1983,9 @@ export default function POSPage() {
   const [splitOpen,    setSplitOpen]    = useState(false)
   const [splitLastEdited, setSplitLastEdited] = useState<'cash' | 'card'>('cash')
   const [creditInitialPayment, setCreditInitialPayment] = useState('')
-  const [creditInitialMethod, setCreditInitialMethod] = useState<'cash' | 'card' | 'bank_transfer'>('cash')
+  const [creditInitialMethod, setCreditInitialMethod] = useState<'cash' | 'card'>('cash')
+  const [creditEligibility, setCreditEligibility] = useState<CustomerCreditCheckoutEligibility | null>(null)
+  const [creditEligibilityLoading, setCreditEligibilityLoading] = useState(false)
   const [submitting,   setSubmitting]   = useState(false)
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [unitChooserProduct, setUnitChooserProduct] = useState<PosProduct | null>(null)
@@ -2406,12 +2458,54 @@ export default function POSPage() {
     && splitCardAmount <= totals.total + 0.01
     && splitBalanced
   const isAccountSuspended = sub.status === 'suspended'
-  const creditInitialAmount = parseFloat(creditInitialPayment) || 0
-  const creditInitialValid = creditInitialAmount >= 0 && creditInitialAmount < totals.total - 0.001
+  const creditInitialAmount = parseExplicitMoneyInput(creditInitialPayment)
+  const creditInitialNumeric = creditInitialAmount ?? 0
+  const creditInitialWithinInvoice = creditInitialAmount !== null
+    && creditInitialAmount >= 0
+    && creditInitialAmount <= totals.total + 0.001
+  const creditHasOutstanding = creditInitialAmount !== null
+    && totals.total - creditInitialAmount > 0.001
+  const creditInitialValid = creditInitialWithinInvoice && creditHasOutstanding
+  const creditOutstandingAmount = creditInitialAmount === null
+    ? totals.total
+    : Math.max(0, round2(totals.total - creditInitialAmount))
 
   const filteredCusts = useMemo(() => searchCustomers(customers, custSearch), [customers, custSearch])
   const selectedCust = customers.find(c => c.id === customerId)
   const exactCustomerMobile = normalizeSaudiMobile(custSearch)
+
+  useEffect(() => {
+    if (!branch || !customerId) {
+      setCreditEligibility(null)
+      setCreditEligibilityLoading(false)
+      return
+    }
+    let cancelled = false
+    const proposedCreditAmount = creditInitialAmount !== null && creditInitialWithinInvoice
+      ? creditOutstandingAmount
+      : totals.total
+    setCreditEligibilityLoading(true)
+    void loadCustomerCreditCheckoutEligibility({
+      branchId: branch.id,
+      customerId,
+      proposedCreditAmount,
+    }).then(result => {
+      if (!cancelled) setCreditEligibility(result)
+    }).catch(error => {
+      console.warn('[POSPage] credit eligibility preflight failed', error)
+      if (!cancelled) setCreditEligibility(null)
+    }).finally(() => {
+      if (!cancelled) setCreditEligibilityLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [branch?.id, customerId, creditInitialAmount, creditInitialWithinInvoice, creditOutstandingAmount, totals.total])
+
+  useEffect(() => {
+    if (payMethod === 'credit' && creditEligibility && !creditEligibility.allowed) {
+      setPayMethod('cash')
+      setCreditInitialPayment('')
+    }
+  }, [creditEligibility, payMethod])
 
   function getScrollState(el: HTMLElement | null) {
     if (!el) return { atStart: true, atEnd: true }
@@ -2675,6 +2769,16 @@ export default function POSPage() {
           toast.error(t('payments:creditInitialInvalid'))
           return
         }
+        const freshEligibility = await loadCustomerCreditCheckoutEligibility({
+          branchId: branch.id,
+          customerId,
+          proposedCreditAmount: creditOutstandingAmount,
+        })
+        setCreditEligibility(freshEligibility)
+        if (!freshEligibility.allowed) {
+          toast.error(t(`payments:${creditEligibilityMessageKey(freshEligibility.reasonCode)}`))
+          return
+        }
       }
 
       const splitUsesBothMethods = payMethod === 'split' && splitCashAmount > 0 && splitCardAmount > 0
@@ -2714,14 +2818,18 @@ export default function POSPage() {
       if (documentDecision?.status === 'blocked') {
         throw new Error(documentDecision.code ?? 'CHECKOUT_DOCUMENT_BLOCKED')
       }
-      const demoSandbox = documentDecision.checkoutPath === 'demo'
+      const nonFiscalDemo = documentDecision.checkoutPath === 'demo'
         && documentDecision.isDemo
         && documentDecision.nonFiscal
+      const sandboxDemo = documentDecision.checkoutPath === 'sandbox'
+        && documentDecision.isDemo === false
+        && documentDecision.nonFiscal === false
       const standardRequested = documentDecision
         ? documentDecision.documentType === 'standard'
         : selectedCust?.customer_type === 'business'
           && /^3[0-9]{13}3$/.test(selectedCust.vat_number ?? '')
-      const atomicRequested = !demoSandbox
+      const atomicRequested = !nonFiscalDemo
+        && !sandboxDemo
         && payMethod !== 'credit'
         && documentDecision?.documentType === 'simplified'
         && documentDecision.checkoutPath === 'atomic'
@@ -2778,7 +2886,7 @@ export default function POSPage() {
         }
       }
       if (!checkout) {
-        if (!demoSandbox) {
+        if (!nonFiscalDemo && !sandboxDemo) {
           // The authenticated server classifier has already selected the
           // document kind. Standard and non-eligible Simplified transactions
           // retain the approved legacy path without changing fiscal type.
@@ -2792,8 +2900,8 @@ export default function POSPage() {
                 branch_id: branch.id,
                 customer_id: customerId,
                 items: payload.items,
-                initial_payments: creditInitialAmount > 0
-                  ? [{ method: creditInitialMethod, amount: round2(creditInitialAmount) }]
+                initial_payments: creditInitialNumeric > 0
+                  ? [{ method: creditInitialMethod, amount: round2(creditInitialNumeric) }]
                   : [],
               }),
             }))
@@ -2803,9 +2911,9 @@ export default function POSPage() {
           ? {
               ...payload,
               operation_id: creditOperationId,
-              settlement_mode: creditInitialAmount > 0 ? 'partial' : 'credit',
-              initial_payments: creditInitialAmount > 0
-                ? [{ method: creditInitialMethod, amount: round2(creditInitialAmount) }]
+              settlement_mode: creditInitialNumeric > 0 ? 'partial' : 'credit',
+              initial_payments: creditInitialNumeric > 0
+                ? [{ method: creditInitialMethod, amount: round2(creditInitialNumeric) }]
                 : [],
             }
           : null
@@ -2863,12 +2971,38 @@ export default function POSPage() {
           documentKind = atomicCheckoutResult.documentKind
           finalQrCode = atomicCheckoutResult.receipt.qr_code
           canPrintCustomerCopy = atomicCheckoutResult.receipt.can_print === true
-        } else if (demoSandbox) {
+        } else if (nonFiscalDemo) {
           finalQrCode = null
           canPrintCustomerCopy = true
           finalizationStatus = 'demo_non_fiscal'
           artifactStage = 'none'
           documentKind = null
+        } else if (sandboxDemo) {
+          preOutputSubmission = await submitInvoiceForBranch({
+            invoiceId: checkout.invoice_id,
+            tenantId: branch.tenant_id,
+            branchId: branch.id,
+            options: {
+              source: 'auto_checkout',
+              retryDelayMs: 1500,
+              contractMode: 'legacy',
+              documentKind: 'simplified',
+            },
+          })
+          if (preOutputSubmission.mode !== 'sandbox_validation') {
+            throw new Error('SANDBOX_SUBMISSION_ROUTE_UNAVAILABLE')
+          }
+          const sandboxResult = preOutputSubmission.result
+          const validated = sandboxResult.status === 'sandbox_validated'
+            || sandboxResult.status === 'sandbox_validated_with_warnings'
+          finalizationStatus = sandboxResult.status ?? 'sandbox_validation_failed'
+          artifactStage = validated ? 'sandbox_compliance_validated' : 'sandbox_compliance_pending'
+          documentKind = 'simplified'
+          finalQrCode = sandboxResult.qrCode ?? null
+          canPrintCustomerCopy = validated && Boolean(finalQrCode)
+          if (!canPrintCustomerCopy) {
+            finalizationError = sandboxResult.message ?? 'Sandbox compliance validation did not produce a printable QR.'
+          }
         } else if (productionCheckoutMode === 'legacy') {
           preOutputSubmission = await submitInvoiceForBranch({
             invoiceId: checkout.invoice_id,
@@ -3036,14 +3170,16 @@ export default function POSPage() {
         artifactStage,
         documentKind,
         finalizationError,
-        sandboxGenerated: demoSandbox,
+        sandboxGenerated: sandboxDemo,
         reportingDisplayState: atomicCheckoutResult?.reportingDisplayState
-          ?? (demoSandbox ? 'demo_non_fiscal' : isB2BInvoice ? 'clearance_pending' : 'reporting_pending'),
+          ?? (nonFiscalDemo ? 'demo_non_fiscal' : sandboxDemo ? finalizationStatus : isB2BInvoice ? 'clearance_pending' : 'reporting_pending'),
         atomicSnapshot: Boolean(atomicCheckoutResult),
-        isDemo: demoSandbox,
+        isDemo: nonFiscalDemo,
+        sandboxDemo,
       })
       upsertInvoiceListRow(branch.tenant_id, {
-        isDemo: demoSandbox,
+        isDemo: nonFiscalDemo,
+        isSandboxDemo: sandboxDemo,
         id: checkout.invoice_id,
         branchId: branch.id,
         invoiceNumber: checkout.invoice_number,
@@ -3058,7 +3194,7 @@ export default function POSPage() {
         totalAmount: serverTotal,
         paymentMethod: displayPaymentMethod,
         zatcaStatus: 'pending',
-        displayZatcaStatus: demoSandbox ? 'sandbox_not_validated' : 'pending',
+        displayZatcaStatus: sandboxDemo ? 'sandbox_not_validated' : nonFiscalDemo ? 'not_submitted' : 'pending',
         status: 'posted',
         documentType: checkout.zatca_invoice_type,
         invoiceReference: null,
@@ -3274,6 +3410,41 @@ export default function POSPage() {
   async function retryReceiptFinalization() {
     if (!receipt || !branch) return
     try {
+      if (receipt.sandboxDemo) {
+        const routed = await submitInvoiceForBranch({
+          invoiceId: receipt.invoiceId,
+          tenantId: branch.tenant_id,
+          branchId: branch.id,
+          options: {
+            source: 'manual_retry',
+            retryDelayMs: 1500,
+            contractMode: 'legacy',
+            documentKind: 'simplified',
+          },
+        })
+        if (routed.mode !== 'sandbox_validation') {
+          throw new Error('SANDBOX_SUBMISSION_ROUTE_UNAVAILABLE')
+        }
+        const sandboxResult = routed.result
+        const validated = sandboxResult.status === 'sandbox_validated'
+          || sandboxResult.status === 'sandbox_validated_with_warnings'
+        const qrCode = sandboxResult.qrCode ?? ''
+        setReceipt(current => current ? {
+          ...current,
+          zatcaQrCode: qrCode,
+          canPrint: validated && Boolean(qrCode),
+          finalizationStatus: sandboxResult.status ?? 'sandbox_validation_failed',
+          artifactStage: validated ? 'sandbox_compliance_validated' : 'sandbox_compliance_pending',
+          documentKind: 'simplified',
+          finalizationError: validated && qrCode
+            ? null
+            : (sandboxResult.message ?? 'Sandbox compliance validation did not produce a printable QR.'),
+          reportingDisplayState: sandboxResult.status ?? 'sandbox_validation_failed',
+        } : current)
+        if (validated && qrCode) toast.success(t('pos:zatca.success'))
+        else toast.warning(t('pos:zatca.saleCompletedAttention'))
+        return
+      }
       const currentOutput = await getInvoiceZatcaOutputState({
         invoiceId: receipt.invoiceId,
         branchId: branch.id,
@@ -3354,7 +3525,7 @@ export default function POSPage() {
     (payMethod === 'split'
       ? splitReady
       : payMethod === 'credit'
-        ? Boolean(customerId) && creditInitialValid
+        ? Boolean(customerId) && creditEligibility?.allowed === true && creditInitialValid
       : !(payMethod === 'cash' && cashReceived !== '' && cashAmt < totals.total - 0.001))
 
   return (
@@ -3969,27 +4140,25 @@ export default function POSPage() {
 
         {/* Payment method */}
         <div className="px-4 pb-2 flex-shrink-0 space-y-2">
-          <div className="flex gap-2">
-            {(['cash', 'card', 'credit'] as const).map(m => (
-              <button key={m} disabled={m === 'credit' && !customerId} onClick={() => { setPayMethod(m); setSplitOpen(false) }}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
+          <div className={`grid gap-2 ${splitPaymentsEnabled ? 'grid-cols-3' : 'grid-cols-2'}`}>
+            {(['cash', 'card'] as const).map(m => (
+              <button key={m} onClick={() => { setPayMethod(m); setSplitOpen(false) }}
+                className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
                   payMethod === m
                     ? m === 'cash'
                       ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
-                      : m === 'credit'
-                        ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
-                        : 'bg-indigo-500 text-white border-indigo-500 shadow-sm'
+                      : 'bg-indigo-500 text-white border-indigo-500 shadow-sm'
                     : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                } disabled:cursor-not-allowed disabled:opacity-45`}>
-                {m === 'cash' ? <Banknote size={13} /> : m === 'credit' ? <Landmark size={13} /> : <CreditCard size={13} />}
-                {m === 'cash' ? t('payments:cash') : m === 'credit' ? t('payments:credit') : t('payments:card')}
+                }`}>
+                {m === 'cash' ? <Banknote size={13} /> : <CreditCard size={13} />}
+                {m === 'cash' ? t('payments:cash') : t('payments:card')}
               </button>
             ))}
             {splitPaymentsEnabled && (
               <button
                 type="button"
                 onClick={openSplitPayment}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
                   payMethod === 'split'
                     ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
                     : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
@@ -4001,6 +4170,36 @@ export default function POSPage() {
               </button>
             )}
           </div>
+
+          {customerId && (
+            creditEligibilityLoading ? (
+              <div className="h-10 animate-pulse rounded-xl border border-gray-100 bg-gray-50" aria-label={t('payments:creditChecking')} />
+            ) : creditEligibility?.allowed ? (
+              <button
+                type="button"
+                onClick={() => { setPayMethod('credit'); setSplitOpen(false) }}
+                className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-xs font-semibold transition-all ${
+                  payMethod === 'credit'
+                    ? 'border-primary-700 bg-primary-700 text-white shadow-sm'
+                    : 'border-primary-200 bg-primary-50 text-primary-800 hover:border-primary-300 hover:bg-primary-100'
+                }`}
+              >
+                <span className="flex items-center gap-1.5"><Landmark size={13} /> {t('payments:sellOnCredit')}</span>
+                <span className="tabular-nums text-[10px] opacity-85" dir="ltr">
+                  {t('payments:creditAvailable', { amount: creditEligibility.availableCredit.toFixed(2) })}
+                </span>
+              </button>
+            ) : creditEligibility ? (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                <span className="min-w-0"><span className="font-semibold text-gray-700">{t('payments:creditUnavailable')}</span> · {t(`payments:${creditEligibilityMessageKey(creditEligibility.reasonCode)}`)}</span>
+                {creditEligibility.accountLinkable && (
+                  <button type="button" onClick={() => navigate('/customers')} className="flex-shrink-0 font-semibold text-primary-700 hover:text-primary-900">
+                    {t('payments:creditSettings')}
+                  </button>
+                )}
+              </div>
+            ) : null
+          )}
 
           {payMethod === 'cash' && cart.length > 0 && (
             <div className="space-y-1">
@@ -4048,19 +4247,30 @@ export default function POSPage() {
           )}
 
           {payMethod === 'credit' && cart.length > 0 && (
-            <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5 space-y-2">
-              <p className="text-[11px] font-semibold text-amber-900">{t('payments:creditCheckout')}</p>
-              <p className="text-[10px] leading-relaxed text-amber-800">{t('payments:creditCheckoutHint')}</p>
-              <div className="grid grid-cols-[1fr_116px] gap-2">
-                <div className="relative">
-                  <span className="absolute start-3 top-1/2 -translate-y-1/2 text-xs text-amber-700" dir="ltr">SAR</span>
-                  <MoneyInput value={creditInitialPayment} onValueChange={setCreditInitialPayment} placeholder={t('payments:creditNoInitialPayment')} className="input border-amber-200 bg-white ps-10 py-1.5 text-sm tabular-nums" />
-                </div>
-                <select value={creditInitialMethod} onChange={event => setCreditInitialMethod(event.target.value as 'cash' | 'card' | 'bank_transfer')} className="rounded-lg border border-amber-200 bg-white px-2 text-xs font-medium text-slate-700">
-                  <option value="cash">{t('payments:cash')}</option><option value="card">{t('payments:card')}</option><option value="bank_transfer">{t('payments:bankTransfer')}</option>
-                </select>
+            <div className="rounded-xl border border-primary-100 bg-primary-50/70 px-3 py-2.5 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] font-semibold text-primary-950">{t('payments:creditCheckout')}</p>
+                <span className="text-[10px] font-medium text-primary-800" dir="ltr">{t('payments:creditInvoiceTotal', { amount: totals.total.toFixed(2) })}</span>
               </div>
-              {creditInitialAmount > 0 && <p className="text-[10px] text-amber-800">{t('payments:creditOutstanding', { amount: (totals.total - creditInitialAmount).toFixed(2) })}</p>}
+              <label className="block text-[10px] font-medium text-primary-900" htmlFor="credit-initial-payment">
+                {t('payments:creditInitialPayment')}
+                <span className="ms-1 font-normal text-primary-700">{t('payments:creditExplicitZero')}</span>
+              </label>
+              <div className={`grid gap-2 ${creditInitialNumeric > 0 ? 'grid-cols-[1fr_116px]' : 'grid-cols-1'}`}>
+                <div className="relative">
+                  <span className="absolute start-3 top-1/2 -translate-y-1/2 text-xs text-primary-700" dir="ltr">SAR</span>
+                  <MoneyInput id="credit-initial-payment" value={creditInitialPayment} onValueChange={setCreditInitialPayment} placeholder="0.00" className="input border-primary-200 bg-white ps-10 py-1.5 text-sm tabular-nums" />
+                </div>
+                {creditInitialNumeric > 0 && <select value={creditInitialMethod} onChange={event => setCreditInitialMethod(event.target.value as 'cash' | 'card')} className="rounded-lg border border-primary-200 bg-white px-2 text-xs font-medium text-slate-700">
+                  <option value="cash">{t('payments:cash')}</option><option value="card">{t('payments:card')}</option>
+                </select>}
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-primary-900">
+                <span>{t('payments:creditOutstandingLabel')}</span>
+                <span className="font-semibold tabular-nums" dir="ltr">SAR {creditOutstandingAmount.toFixed(2)}</span>
+              </div>
+              {creditInitialPayment !== '' && !creditInitialWithinInvoice && <p className="text-[10px] text-red-600">{t('payments:creditInitialInvalid')}</p>}
+              {creditInitialWithinInvoice && !creditHasOutstanding && <p className="text-[10px] text-gray-600">{t('payments:creditFullPaymentUseTender')}</p>}
             </div>
           )}
         </div>

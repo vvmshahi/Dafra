@@ -218,3 +218,103 @@ Current technical verdict: **`KUBRI_CUSTOMER_RECEIVABLES_READY_FOR_MANUAL_ACCEPT
 The remaining gates are authenticated/disposable-tenant, device/print,
 responsive/accessibility, and Saudi tax-adviser manual acceptance—not another
 automated migration or production deployment.
+
+## Credit POS and Demo/Sandbox correction update — 2026-08-03
+
+This update addresses the subsequent manual-acceptance findings without
+changing the financial policy model or production fiscal routing.
+
+- `AR_CREDIT_DISABLED` was traced to the authoritative
+  `post_customer_credit_checkout_v1(jsonb)` policy lookup: a receivable account
+  may be linked/created by the checkout bridge, but a missing policy or
+  `credit_enabled = false` is rejected. Business customer classification is
+  deliberately not credit approval.
+- Migration `20260803000600_credit_preflight_and_server_demo_modes.sql` adds a
+  read-only, authenticated `get_customer_credit_checkout_eligibility_v1` RPC;
+  forward-only migration `20260803000700_rebind_credit_and_sandbox_mode_contracts.sql`
+  preserves 00600's immutable source while rebinding the public POS/credit
+  contracts to it.
+  It returns only safe policy/balance fields and an `AR_*` reason code; it never
+  creates an account or enables credit. POS rechecks the same RPC immediately
+  before posting; the checkout RPC remains final authority.
+- POS now keeps **Cash / Card / Split** in the primary selector and shows a
+  separate full-width customer-credit action only after server preflight. The
+  action is disabled with a concise reason for known ineligible customers. An
+  owner/admin may open credit settings for an unlinked account; no cashier or
+  client flow can auto-enable a policy.
+- The initial-payment field begins blank and is not interpreted as zero.
+  Only an explicit non-negative number with at most two decimals is accepted;
+  explicit `0` creates a fully unpaid credit sale, while a positive initial
+  payment reveals the Cash/Card method selector. A full payment is redirected
+  to normal Cash/Card/Split settlement rather than sending a known-rejected
+  credit request.
+- Bank Transfer is intentionally hidden for the **initial POS credit payment**.
+  The prior bridge used a temporary bank-transfer commercial tender and then
+  replaced it with AR records; it does not provide a separately reconciled POS
+  register tender total. Bank Transfer remains available for later AR payment
+  receipts, where tender/reference/reversal/allocation records are explicit;
+  it is not mapped to Card or Cash.
+
+### Safe Demo/Sandbox result
+
+The aggregate-only remote audit found one active demo tenant with two active
+Sandbox-environment branches. Both had historical compliance-validation
+attempts. Only **Kubri Service Demo** currently has active, unexpired,
+compliance credential material with a successful compliance onboarding state.
+**Kubri Trading Demo** has a failed current record and a revoked historical
+record, so it is retained as the general **Demo** (non-fiscal) branch.
+
+The same migration adds a server-only mode evaluator. It derives
+`non_fiscal` or `sandbox_compliance` from tenant/branch state and active
+compliance credential metadata; no client-supplied demo or environment flag is
+accepted. It leaves normal-tenant Atomic/Legacy selection, production
+credential selection, production chain/outbox routing, document classification,
+and QR rules unchanged.
+
+- **Demo / Trading**: concise Demo status, no ZATCA request, QR, outbox, chain,
+  reporting, or clearance. It is not rendered as a failed “Not submitted”
+  Sandbox invoice.
+- **Sandbox / Service**: only the existing ZATCA developer-portal
+  compliance-validation endpoint is used. A validated Simplified invoice uses
+  the existing Phase 2 signed-QR extractor and renders the QR in thermal/A4
+  output with a visible Sandbox test label. Validation state is displayed as
+  Sandbox pending/submitted/warnings/rejected/retry required.
+- This project currently has no active Sandbox production CSID/secret for the
+  Service branch. Full Sandbox reporting and Standard clearance are therefore
+  not claimed or attempted; Standard Sandbox checkout is server-blocked with a
+  controlled message. No production endpoint or production credential is used.
+
+Remote parity was exact through `20260803000500` and initially contained only
+00600 pending. All referenced tables/functions were present. Migration 00600
+was applied successfully. A later source refinement was deliberately moved to
+the sole forward-only 00700 migration rather than changing applied history;
+00700 was then the only pending migration and applied successfully. Live
+catalog checks confirm the public preflight/mode functions and public
+POS/credit checkout wrappers are `SECURITY DEFINER`, use
+`search_path = public, pg_temp`, and expose only intended authenticated grants.
+Both public contract hashes match their remote definitions. The matching
+`zatca-validate-sandbox-demo` Edge Function is active at version 21. The
+post-apply pg-delta cache warning was non-blocking; linked history and catalog
+verification are authoritative.
+
+Automated source/build evidence now includes the credit POS/Sandbox contract
+suite, the existing customer-receivables and non-fiscal boundary suites,
+thermal SSR (192 renders), `npm test` with inert non-secret SSR variables,
+`npm run build`, and `git diff --check`. No authenticated financial, stock, or
+fiscal mutation was performed for this correction.
+
+### Updated manual acceptance gate
+
+- [ ] Confirm ineligible, held, over-limit, overdue, unlinked, and eligible
+  customer states with an authorised disposable tenant; no checkout request is
+  sent for a known ineligible state.
+- [ ] Confirm blank initial payment disables Charge; explicit `0`, Cash partial,
+  Card partial, full amount, duplicate/retry, and restart recovery behave as
+  documented.
+- [ ] Confirm normal register/report totals for Cash/Card/Split and later
+  separately-labelled Bank Transfer receipt/reversal/reporting.
+- [ ] Confirm Trading Demo remains QR-free/non-fiscal and Service Sandbox
+  Simplified validation produces a QR plus sandbox status using a disposable
+  fixture. Exercise accepted/rejected/retry only with explicit authorisation.
+- [ ] Confirm responsive layouts at 1024×768, 1366×768, 1440×900 and narrow
+  widths, then complete English/Arabic print/device review.

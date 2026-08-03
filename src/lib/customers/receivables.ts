@@ -62,6 +62,20 @@ export interface CustomerReceivableWorkspace {
   scope: { tenantId: string; branchId: string | null; ownerConsolidated: boolean }
 }
 
+export interface CustomerCreditCheckoutEligibility {
+  allowed: boolean
+  reasonCode: string
+  creditEnabled: boolean
+  accountLinked: boolean
+  accountLinkable: boolean
+  onHold: boolean
+  creditLimit: number
+  currentBalance: number
+  availableCredit: number
+  overdueAmount: number
+  requiresOwnerApproval: boolean
+}
+
 export interface PaymentReceiptResult {
   receiptId: string
   receiptNumber: string
@@ -173,6 +187,35 @@ export async function loadCustomerReceivableWorkspace(input: {
   } as never)
   if (error) throw error
   return normalizeWorkspace(data)
+}
+
+export async function loadCustomerCreditCheckoutEligibility(input: {
+  branchId: string
+  customerId: string
+  proposedCreditAmount: number
+}) : Promise<CustomerCreditCheckoutEligibility> {
+  const { data, error } = await supabase.rpc('get_customer_credit_checkout_eligibility_v1' as never, {
+    p_payload: {
+      branch_id: input.branchId,
+      customer_id: input.customerId,
+      proposed_credit_amount: input.proposedCreditAmount.toFixed(2),
+    },
+  } as never)
+  if (error) throw error
+  const value = data as any
+  return {
+    allowed: value?.allowed === true,
+    reasonCode: String(value?.reasonCode ?? 'AR_CREDIT_DISABLED'),
+    creditEnabled: value?.creditEnabled === true,
+    accountLinked: value?.accountLinked === true,
+    accountLinkable: value?.accountLinkable === true,
+    onHold: value?.onHold === true,
+    creditLimit: numberValue(value?.creditLimit),
+    currentBalance: numberValue(value?.currentBalance),
+    availableCredit: numberValue(value?.availableCredit),
+    overdueAmount: numberValue(value?.overdueAmount),
+    requiresOwnerApproval: value?.requiresOwnerApproval === true,
+  }
 }
 
 export async function recordCustomerPaymentReceipt(input: {

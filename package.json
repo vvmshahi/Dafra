@@ -8,7 +8,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "test": "npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:customer-receivables && npm run test:receivables-xlsx",
+    "test": "npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -101,6 +101,7 @@
     "test:owner-branch-entitlement-runtime": "node scripts/test-owner-branch-entitlement-runtime.mjs",
     "test:owner-branch-entitlement-migration-compatibility": "node scripts/test-owner-branch-entitlement-migration-compatibility.mjs",
     "test:customer-receivables": "node scripts/test-customer-receivables.mjs",
+    "test:credit-pos-sandbox-demo": "node scripts/test-credit-pos-sandbox-demo.mjs",
     "test:receivables-xlsx": "node --experimental-strip-types scripts/test-receivables-xlsx.mjs",
     "test:receivables-stateful": "supabase db query --local --file scripts/certify-customer-receivables-stateful.sql",
     "test:receivables-rejection": "supabase db query --local --file scripts/certify-customer-receivables-rejection-paths.sql",

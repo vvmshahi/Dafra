@@ -1,9 +1,13 @@
 {
   "demo": {
-    "badge": "Demo · Non-fiscal",
-    "checkoutNotice": "Demo checkout only. No ZATCA tax invoice will be created.",
-    "noZatca": "Simulated commercial sale. No ZATCA reporting or clearance was requested.",
+    "badge": "Demo",
+    "checkoutNotice": "Demo sale. No ZATCA invoice is created.",
+    "noZatca": "Demo invoice — ZATCA submission is not used.",
     "receiptLabelBilingual": "DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية"
+  },
+  "sandbox": {
+    "label": "Sandbox",
+    "receiptLabelBilingual": "SANDBOX — TEST INVOICE / بيئة تجريبية — فاتورة اختبار"
   },
   "title": "Point of Sale",
   "touchPos": "Touch POS",
@@ -119,6 +123,11 @@
     "saleCompletedAttention": "Sale completed — invoice finalization requires attention",
     "retryFinalization": "Retry finalization",
     "reporting_pending": "Reporting pending",
+    "sandbox_validation_pending": "Sandbox pending",
+    "sandbox_validated": "Sandbox submitted",
+    "sandbox_validated_with_warnings": "Sandbox submitted with warnings",
+    "sandbox_validation_rejected": "Sandbox rejected",
+    "sandbox_validation_failed": "Sandbox retry required",
     "reported": "Reported",
     "reported_with_warnings": "Reported with warnings",
     "rejected": "Rejected",
