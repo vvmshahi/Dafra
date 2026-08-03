@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { AlertCircle, CreditCard, FileText, Landmark, Loader2, ReceiptText, RefreshCw, WalletCards } from 'lucide-react'
+import { AlertCircle, CreditCard, FileText, Landmark, Loader2, Plus, ReceiptText, RefreshCw, Trash2, Undo2, WalletCards } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import {
   clearPersistentReceivableOperation,
+  createReceivableOperationId,
   getPersistentReceivableOperation,
   loadCustomerReceivableWorkspace,
   recordCustomerPaymentReceipt,
+  reverseCustomerPaymentReceipt,
   saveCustomerCreditPolicy,
   type CustomerReceivableWorkspace,
+  type ReceivableTender,
   type ReceivableTenderMethod,
 } from '@/lib/customers/receivables'
 
@@ -42,10 +45,12 @@ export function CustomerReceivablesPanel({
   customerId,
   branchId,
   isOwner,
+  canReversePayment,
 }: {
   customerId: string
   branchId: string | null | undefined
   isOwner: boolean
+  canReversePayment: boolean
 }) {
   const { t, i18n } = useTranslation('receivables')
   const navigate = useNavigate()
@@ -56,6 +61,9 @@ export function CustomerReceivablesPanel({
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [amount, setAmount] = useState('')
   const [method, setMethod] = useState<ReceivableTenderMethod>('cash')
+  const [splitTenders, setSplitTenders] = useState<Array<ReceivableTender>>([])
+  const [manualAllocation, setManualAllocation] = useState(false)
+  const [allocationAmounts, setAllocationAmounts] = useState<Record<string, string>>({})
   const [reference, setReference] = useState('')
   const [notes, setNotes] = useState('')
   const [operationId, setOperationId] = useState<string | null>(null)
@@ -69,6 +77,9 @@ export function CustomerReceivablesPanel({
   const [overdueBlock, setOverdueBlock] = useState(false)
   const [warnThresholdPercent, setWarnThresholdPercent] = useState('80')
   const [savingPolicy, setSavingPolicy] = useState(false)
+  const [reversalOpen, setReversalOpen] = useState(false)
+  const [reversalReason, setReversalReason] = useState('')
+  const [reversing, setReversing] = useState(false)
 
   const refresh = async () => {
     setLoading(true)
@@ -94,7 +105,17 @@ export function CustomerReceivablesPanel({
   useEffect(() => { void refresh() }, [customerId, branchId])
 
   const paymentAmount = Number(amount)
+  const selectedTenders = useMemo<ReceivableTender[]>(() => splitTenders.length
+    ? splitTenders.map(tender => ({ ...tender, amount: Number(tender.amount) }))
+    : [{ method, amount: paymentAmount, reference: reference.trim() || null }], [splitTenders, method, paymentAmount, reference])
+  const tenderTotal = selectedTenders.reduce((sum, tender) => sum + (Number.isFinite(tender.amount) ? tender.amount : 0), 0)
+  const selectedAllocations = useMemo(() => workspace?.openInvoices
+    .map(invoice => ({ invoiceId: invoice.id, amount: Number(allocationAmounts[invoice.id] ?? 0), outstanding: invoice.outstanding }))
+    .filter(row => Number.isFinite(row.amount) && row.amount > 0) ?? [], [allocationAmounts, workspace?.openInvoices])
+  const allocationTotal = selectedAllocations.reduce((sum, row) => sum + row.amount, 0)
   const validPayment = Number.isFinite(paymentAmount) && paymentAmount > 0 && Boolean(branchId)
+    && Math.abs(tenderTotal - paymentAmount) < 0.01
+    && (!manualAllocation || (selectedAllocations.length > 0 && allocationTotal <= paymentAmount + 0.01 && selectedAllocations.every(row => row.amount <= row.outstanding + 0.01)))
   const availableCredit = useMemo(() => {
     if (!workspace?.policy) return null
     return Math.max(0, workspace.policy.creditLimit - Math.max(workspace.summary.balance, 0))
@@ -106,7 +127,7 @@ export function CustomerReceivablesPanel({
       branchId,
       customerId,
       kind: 'payment-receipt',
-      fingerprint: JSON.stringify({ branchId, customerId, amount: paymentAmount, method, reference: reference.trim() || null, notes: notes.trim() || null }),
+      fingerprint: JSON.stringify({ branchId, customerId, amount: paymentAmount, tenders: selectedTenders, reference: reference.trim() || null, notes: notes.trim() || null, manualAllocation, allocations: selectedAllocations }),
     })
     setOperationId(stableOperationId)
     setSubmitting(true)
@@ -116,16 +137,20 @@ export function CustomerReceivablesPanel({
         branchId,
         customerId,
         amount: paymentAmount,
-        method,
+        tenders: selectedTenders,
         reference: reference.trim() || null,
         notes: notes.trim() || null,
-        autoAllocate: true,
+        autoAllocate: !manualAllocation,
+        allocations: selectedAllocations.map(row => ({ invoiceId: row.invoiceId, amount: row.amount })),
       })
       setLastReceipt({ id: result.receiptId, number: result.receiptNumber })
       toast.success(t('payment.saved'))
       setAmount('')
       setReference('')
       setNotes('')
+      setSplitTenders([])
+      setManualAllocation(false)
+      setAllocationAmounts({})
       setOperationId(null)
       setPaymentOpen(false)
       clearPersistentReceivableOperation(branchId, customerId, 'payment-receipt')
@@ -135,6 +160,34 @@ export function CustomerReceivablesPanel({
       toast.error(t('errors.payment'))
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  function addSplitTender() {
+    const used = new Set((splitTenders.length ? splitTenders : [{ method }]).map(tender => tender.method))
+    const next = (['cash', 'card', 'bank_transfer', 'other'] as ReceivableTenderMethod[]).find(candidate => !used.has(candidate))
+    if (!next) return
+    setSplitTenders(current => [...(current.length ? current : [{ method, amount: paymentAmount || 0, reference: reference.trim() || null }]), { method: next, amount: 0, reference: null }])
+  }
+
+  function updateSplitTender(index: number, patch: Partial<ReceivableTender>) {
+    setSplitTenders(current => current.map((tender, tenderIndex) => tenderIndex === index ? { ...tender, ...patch } : tender))
+  }
+
+  async function reverseLastReceipt() {
+    if (!lastReceipt || !reversalReason.trim() || reversing) return
+    setReversing(true)
+    try {
+      await reverseCustomerPaymentReceipt({ operationId: createReceivableOperationId(), receiptId: lastReceipt.id, reason: reversalReason.trim() })
+      toast.success(t('payment.reversed'))
+      setReversalOpen(false)
+      setReversalReason('')
+      await refresh()
+    } catch (reverseError) {
+      console.error('Unable to reverse customer payment receipt', reverseError)
+      toast.error(t('errors.reversal'))
+    } finally {
+      setReversing(false)
     }
   }
 
@@ -210,9 +263,12 @@ export function CustomerReceivablesPanel({
       </div>
 
       {lastReceipt && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
-          <span>{t('payment.receiptCreated', { number: lastReceipt.number })}</span>
-          <Link className="font-semibold underline underline-offset-2" to={`/print/payment-receipt/${lastReceipt.id}`}>{t('actions.openReceipt')}</Link>
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span>{t('payment.receiptCreated', { number: lastReceipt.number })}</span>
+            <div className="flex items-center gap-3"><Link className="font-semibold underline underline-offset-2" to={`/print/payment-receipt/${lastReceipt.id}`}>{t('actions.openReceipt')}</Link>{canReversePayment && <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold underline underline-offset-2" onClick={() => setReversalOpen(value => !value)}><Undo2 size={13} /> {t('payment.reverse')}</button>}</div>
+          </div>
+          {reversalOpen && <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-emerald-200 pt-3"><label className="min-w-[220px] flex-1 text-xs font-semibold">{t('payment.reversalReason')}<input value={reversalReason} onChange={event => setReversalReason(event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-emerald-200 bg-white px-2 text-sm text-slate-900" /></label><Button size="sm" variant="danger" disabled={reversing || !reversalReason.trim()} onClick={() => void reverseLastReceipt()}>{reversing && <Loader2 size={14} className="animate-spin" />}{t('payment.reverse')}</Button></div>}
         </div>
       )}
 
@@ -236,10 +292,17 @@ export function CustomerReceivablesPanel({
               <input value={notes} onChange={event => setNotes(event.target.value)} className="mt-1 block h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm" />
             </label>
           </div>
+          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-600">
+            <label className="flex items-center gap-2 font-semibold"><input type="checkbox" checked={splitTenders.length > 0} onChange={event => { if (event.target.checked) setSplitTenders([{ method, amount: paymentAmount || 0, reference: reference.trim() || null }]); else setSplitTenders([]) }} /> {t('payment.splitTender')}</label>
+            <label className="flex items-center gap-2 font-semibold"><input type="checkbox" checked={manualAllocation} onChange={event => setManualAllocation(event.target.checked)} /> {t('payment.manualAllocation')}</label>
+            <span className={Math.abs(tenderTotal - paymentAmount) < 0.01 ? 'text-slate-500' : 'font-semibold text-amber-700'}>{t('payment.tenderTotal', { amount: tenderTotal.toFixed(2) })}</span>
+          </div>
+          {splitTenders.length > 0 && <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3"><div className="flex items-center justify-between gap-2"><p className="text-xs font-bold text-slate-800">{t('payment.tenders')}</p><Button size="sm" variant="secondary" disabled={splitTenders.length >= 4} onClick={addSplitTender}><Plus size={14} /> {t('payment.addTender')}</Button></div><div className="mt-3 space-y-2">{splitTenders.map((tender, index) => <div key={`${tender.method}-${index}`} className="grid gap-2 sm:grid-cols-[1fr_120px_1fr_auto]"><select value={tender.method} onChange={event => updateSplitTender(index, { method: event.target.value as ReceivableTenderMethod })} className="h-9 rounded-lg border border-slate-200 px-2 text-sm"><option value="cash">{t('methods.cash')}</option><option value="card">{t('methods.card')}</option><option value="bank_transfer">{t('methods.bank')}</option><option value="other">{t('methods.other')}</option></select><input inputMode="decimal" value={tender.amount || ''} onChange={event => updateSplitTender(index, { amount: Number(event.target.value) || 0 })} className="h-9 rounded-lg border border-slate-200 px-2 text-sm" placeholder="0.00" /><input value={tender.reference ?? ''} onChange={event => updateSplitTender(index, { reference: event.target.value || null })} className="h-9 rounded-lg border border-slate-200 px-2 text-sm" placeholder={t('payment.reference')} />{splitTenders.length > 1 && <button type="button" className="grid h-9 w-9 place-items-center rounded-lg border border-red-100 text-red-700" onClick={() => setSplitTenders(current => current.filter((_, tenderIndex) => tenderIndex !== index))} aria-label={t('payment.removeTender')}><Trash2 size={14} /></button>}</div>)}</div></div>}
+          {manualAllocation && <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-bold text-slate-800">{t('payment.manualAllocation')}</p><span className={allocationTotal <= paymentAmount + 0.01 ? 'text-xs text-slate-500' : 'text-xs font-semibold text-amber-700'}>{t('payment.allocationTotal', { amount: allocationTotal.toFixed(2) })}</span></div><div className="mt-3 divide-y divide-slate-100">{workspace.openInvoices.map(invoice => <label key={invoice.id} className="grid grid-cols-[1fr_120px] items-center gap-3 py-2 text-sm"><span><span className="font-semibold text-slate-900">{invoice.invoiceNumber}</span><span className="ms-2 text-xs text-slate-500">{t('payment.outstanding', { amount: invoice.outstanding.toFixed(2) })}</span></span><input inputMode="decimal" value={allocationAmounts[invoice.id] ?? ''} onChange={event => setAllocationAmounts(current => ({ ...current, [invoice.id]: event.target.value }))} className="h-9 rounded-lg border border-slate-200 px-2 text-sm" placeholder="0.00" /></label>)}</div></div>}
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button size="sm" disabled={!validPayment || submitting} onClick={() => void submitPayment()}>{submitting ? <Loader2 size={14} className="animate-spin" /> : <ReceiptText size={14} />}{t('payment.submit')}</Button>
             <Button size="sm" variant="secondary" disabled={submitting} onClick={() => { setPaymentOpen(false); setOperationId(null) }}>{t('actions.cancel')}</Button>
-            <span className="text-xs text-slate-500">{t('payment.autoAllocate')}</span>
+            <span className="text-xs text-slate-500">{manualAllocation ? t('payment.manualHint') : t('payment.autoAllocate')}</span>
           </div>
         </div>
       )}

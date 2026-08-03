@@ -8,7 +8,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "test": "npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:customer-receivables",
+    "test": "npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:customer-receivables && npm run test:receivables-xlsx",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -99,7 +99,10 @@
     "test:owner-branch-entitlement": "node scripts/test-owner-branch-entitlement.mjs",
     "test:owner-branch-entitlement-runtime": "node scripts/test-owner-branch-entitlement-runtime.mjs",
     "test:owner-branch-entitlement-migration-compatibility": "node scripts/test-owner-branch-entitlement-migration-compatibility.mjs",
-    "test:customer-receivables": "node scripts/test-customer-receivables.mjs"
+    "test:customer-receivables": "node scripts/test-customer-receivables.mjs",
+    "test:receivables-xlsx": "node --experimental-strip-types scripts/test-receivables-xlsx.mjs",
+    "test:receivables-stateful": "supabase db query --local --file scripts/certify-customer-receivables-stateful.sql",
+    "test:receivables-certification": "npm run test:customer-receivables && npm run test:receivables-xlsx && npm run test:receivables-stateful"
   },
   "build": {
     "appId": "com.kubri.pos",
@@ -160,6 +163,7 @@
     "@types/jsbarcode": "^3.11.4",
     "@types/qrcode": "^1.5.6",
     "emoji-picker-react": "^4.19.1",
+    "fflate": "0.8.2",
     "i18next": "^26.3.6",
     "jsbarcode": "^3.12.1",
     "jspdf": "^4.2.1",

@@ -213,3 +213,88 @@ acceptance, and adviser sign-off must then pass before a reviewed main merge
 and separately approved production deployment.
 
 Current verdict: **KUBRI_CUSTOMER_RECEIVABLES_BLOCKED**
+
+## Completion update — automated certification and Preview preparation
+
+### Implemented additive client completion
+
+- The customer workspace now captures one receipt through the server RPC with
+  either one tender or a distinct split-tender breakdown, and supports explicit
+  per-invoice manual allocation. The same persistent operation identity is
+  retained for an uncertain retry and cleared only after a successful response.
+- An authorized owner, admin, accountant, or manager can reverse the newly
+  recorded receipt from the workspace. The server remains the authority for the
+  reversal reason, scope, immutable original receipt, compensating ledger entry,
+  and invoice settlement refresh.
+- The established Credit Note modal has an explicit AR-settlement choice. That
+  choice uses `create_customer_credit_note_settlement_v1`, retains a persistent
+  settlement operation identity across restart/retry, applies the credit to the
+  original outstanding amount first, and only records an optional external
+  refund from excess credit. The normal fiscal/Atomic credit-note route remains
+  unchanged unless this explicit mode is selected.
+- Customer statements now download a real OOXML `.xlsx` workbook, generated
+  locally with `fflate`: typed dates/numbers, frozen transaction header,
+  autofilter, currency formatting, safe filename, Arabic RTL sheet direction,
+  and opening/closing balances. It does not use a CSV renamed as XLSX.
+- Payment-receipt printing supports 58 mm, 80 mm, and A4 print styles, browser
+  Save-as-PDF, and native/copy-link sharing. Receipts remain explicitly
+  non-fiscal and QR-free.
+- `/reports/receivables` is a dedicated read-only dashboard using
+  `get_customer_receivables_report_v1`, with server-scoped date/branch filters,
+  KPI cards, customer balances, pagination, and branch comparison. Client
+  filtering does not expand the server's role/branch authority.
+
+### Automated evidence — passed
+
+| Check | Result |
+| --- | --- |
+| Migration parity, linked project | Local and remote histories match through `20260803000400`; no AR migration is pending. |
+| Remote AR function metadata | All 11 reviewed entry points are `SECURITY DEFINER`, owned by `postgres`, have `search_path = public, pg_temp` and `row_security = off`. |
+| Remote AR table safety | All eight AR tables have RLS enabled; `anon` has no table privilege and `authenticated` has no direct AR write privilege. |
+| Static AR safety/UI contract | `npm run test:customer-receivables` passed, 46 checks. |
+| Genuine XLSX contract | `npm run test:receivables-xlsx` passed; validates OOXML ZIP parts, typed number/date cells, frozen header, autofilter, and Arabic sheet direction. |
+| Stateful local three-branch certification | `npm run test:receivables-stateful` passed. A nested transaction creates and rolls back all local fixtures. It proves posted-invoice AR sync, split/manual receipt allocation, exact replay, cross-branch rejection without rows, owner reallocation without ledger mutation, immutable reversal/compensating balance restoration, and consolidated report/overdue results. |
+| Combined AR automated certification | `npm run test:receivables-certification` passed. |
+| Application typecheck/build | `npm run build` passed. Vite emitted only the existing large main-chunk warning. |
+| Patch hygiene | `git diff --check` passed. |
+
+No remote business row, customer, invoice, receipt, stock movement, fiscal
+artifact, ZATCA credential, reporting/clearance state, production alias, or
+main branch was modified by this completion update. No migration was created or
+applied: the remote schema already contained the reviewed RPC/data contracts.
+
+### Combined final manual acceptance checklist
+
+The following acceptance is intentionally still required in an explicitly
+authorised disposable three-branch tenant before production merge/deployment:
+
+1. Owner creates/enables a customer policy with credit limit, terms, hold,
+   warning, and overdue behavior; branch user confirms allowed/blocked credit
+   checkout, partial tender, due date and server conflict/retry UX.
+2. On three branches, create real disposable invoices; receive cash, card,
+   bank-transfer/other and split tenders; exercise auto/manual allocation,
+   overpayment/account credit, reallocation, receipt reprint and authorized
+   reversal. Reconcile invoices, allocations, receipt state and ledger.
+3. Create an eligible credit note using the explicit AR-settlement mode; verify
+   original-balance offset, residual account credit, optional excess refund,
+   fiscal status/print gate, and retry without a duplicate credit note.
+4. Verify the statement and receipt in English and Arabic RTL at mobile,
+   desktop, 58 mm, 80 mm and A4 print/PDF targets. Open the exported XLSX in
+   Excel/LibreOffice and verify filters, date/amount cells, headers and totals.
+5. Verify the read-only report for owner, branch, manager/accountant, a sibling
+   branch, another tenant and anonymous user; retain the approved evidence.
+6. Obtain the pending Saudi tax-adviser confirmation for the settlement and
+   advance-payment boundary. Conduct no real fiscal pilot without separately
+   authorised seller/buyer credentials and controlled written approval.
+
+### Environment note
+
+The local Supabase adviser reports pre-existing, unrelated RLS-disabled tables
+`barcode_function_contracts_v1`, `product_sku_counters`, and
+`product_units_commercial_function_contracts_v1`. They are outside this AR
+change and were not modified. Platform-wide production approval should resolve
+them with owner-approved policies; enabling RLS alone would break their callers.
+
+**Updated automated verdict: `KUBRI_CUSTOMER_RECEIVABLES_AUTOMATED_READY`.**
+Production readiness, production deployment, and merge to `main` remain
+pending the combined human acceptance above.

@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 
 export type ReceivableTenderMethod = 'cash' | 'card' | 'bank_transfer' | 'other'
+export interface ReceivableTender { method: ReceivableTenderMethod; amount: number; reference?: string | null }
 
 export interface ReceivableLedgerRow {
   id: string
@@ -170,19 +171,23 @@ export async function recordCustomerPaymentReceipt(input: {
   branchId: string
   customerId: string
   amount: number
-  method: ReceivableTenderMethod
+  method?: ReceivableTenderMethod
+  tenders?: ReceivableTender[]
   reference?: string | null
   notes?: string | null
   autoAllocate?: boolean
   allocations?: Array<{ invoiceId: string; amount: number }>
 }) {
+  const tenders = input.tenders?.length
+    ? input.tenders
+    : [{ method: input.method ?? 'cash', amount: input.amount, reference: input.reference ?? null }]
   const { data, error } = await supabase.rpc('record_customer_payment_receipt_v1' as never, {
     p_payload: {
       operation_id: input.operationId,
       branch_id: input.branchId,
       customer_id: input.customerId,
       amount: input.amount,
-      tenders: [{ method: input.method, amount: input.amount, reference: input.reference ?? null }],
+      tenders: tenders.map(tender => ({ method: tender.method, amount: tender.amount, reference: tender.reference ?? null })),
       reference: input.reference ?? null,
       notes: input.notes ?? null,
       auto_allocate: input.autoAllocate ?? true,
@@ -254,7 +259,7 @@ export function getPersistentReceivableOperation(input: {
   branchId: string
   customerId: string
   fingerprint: string
-  kind?: 'credit-checkout' | 'payment-receipt'
+  kind?: 'credit-checkout' | 'payment-receipt' | 'credit-note-settlement'
 }) {
   if (typeof localStorage === 'undefined') return createReceivableOperationId()
   const key = `kubri:ar-${input.kind ?? 'credit-checkout'}:${input.branchId}:${input.customerId}`
@@ -269,7 +274,7 @@ export function getPersistentReceivableOperation(input: {
   }
 }
 
-export function clearPersistentReceivableOperation(branchId: string, customerId: string, kind: 'credit-checkout' | 'payment-receipt' = 'credit-checkout') {
+export function clearPersistentReceivableOperation(branchId: string, customerId: string, kind: 'credit-checkout' | 'payment-receipt' | 'credit-note-settlement' = 'credit-checkout') {
   if (typeof localStorage === 'undefined') return
   try { localStorage.removeItem(`kubri:ar-${kind}:${branchId}:${customerId}`) } catch { /* storage may be unavailable */ }
 }
@@ -312,6 +317,52 @@ export async function postCustomerReceivableAdjustment(input: {
   } as never)
   if (error) throw error
   return data as any
+}
+
+export async function reverseCustomerPaymentReceipt(input: {
+  operationId: string
+  receiptId: string
+  reason: string
+}) {
+  const { data, error } = await supabase.rpc('reverse_customer_payment_receipt_v1' as never, {
+    p_payload: { operation_id: input.operationId, receipt_id: input.receiptId, reason: input.reason },
+  } as never)
+  if (error) throw error
+  return data as { receipt_id: string; receipt_number: string; status: 'reversed'; balance: number }
+}
+
+export async function createCustomerCreditNoteSettlement(input: {
+  operationId: string
+  originalInvoiceId: string
+  reason: string
+  returnStock: boolean
+  items: Array<{ originalInvoiceItemId: string; quantity: number }>
+  refundTenders?: ReceivableTender[]
+}) {
+  const { data, error } = await supabase.rpc('create_customer_credit_note_settlement_v1' as never, {
+    p_payload: {
+      operation_id: input.operationId,
+      original_invoice_id: input.originalInvoiceId,
+      reason: input.reason,
+      return_stock: input.returnStock,
+      items: input.items.map(item => ({ original_invoice_item_id: item.originalInvoiceItemId, quantity: item.quantity })),
+      refund_tenders: (input.refundTenders ?? []).map(tender => ({ method: tender.method, amount: tender.amount })),
+    },
+  } as never)
+  if (error) throw error
+  return data as {
+    credit_note_invoice_id: string
+    credit_note_invoice_number: string
+    created_at?: string
+    total?: number
+    refund_status?: string
+    refund_method?: ReceivableTenderMethod | 'split'
+    zatca_status?: 'pending' | 'reported' | 'cleared' | 'failed'
+    idempotent_replay?: boolean
+    applied_to_original_invoice: number
+    refunded_amount: number
+    unapplied_customer_credit: number
+  }
 }
 
 export async function loadCustomerReceivablesReport(input: {

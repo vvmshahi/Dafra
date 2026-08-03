@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Loader2, Printer } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Printer } from 'lucide-react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { loadCustomerReceivableWorkspace, type CustomerReceivableWorkspace } from '@/lib/customers/receivables'
+import { downloadCustomerStatementXlsx } from '@/lib/customers/receivablesXlsx'
+import { useAuth } from '@/hooks/useAuth'
 
 function dateLabel(value: string | null | undefined, locale: string) {
   if (!value) return '—'
@@ -15,6 +17,7 @@ export default function CustomerStatementPrintPage() {
   const { customerId } = useParams<{ customerId: string }>()
   const [searchParams] = useSearchParams()
   const { t, i18n } = useTranslation('receivables')
+  const { tenant, branch } = useAuth()
   const locale = i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA' : 'en'
   const [workspace, setWorkspace] = useState<CustomerReceivableWorkspace | null>(null)
   const [error, setError] = useState(false)
@@ -39,12 +42,24 @@ export default function CustomerStatementPrintPage() {
   if (error || !workspace) return <div className="min-h-screen grid place-items-center p-6 text-center text-sm text-slate-600">{t('statement.notFound')}</div>
 
   const customerName = locale === 'ar-SA' ? (workspace.customer.nameAr || workspace.customer.name) : workspace.customer.name
+  const exportXlsx = () => downloadCustomerStatementXlsx({
+    customerName,
+    companyName: tenant?.name ?? null,
+    branchLabel: workspace.scope.ownerConsolidated
+      ? (locale === 'ar-SA' ? 'موحد' : 'Consolidated')
+      : (locale === 'ar-SA' ? (branch?.name_ar || branch?.name) : branch?.name) ?? workspace.scope.branchId,
+    locale: locale === 'ar-SA' ? 'ar' : 'en',
+    workspace,
+  })
   return (
     <main className="min-h-screen bg-slate-100 p-4 print:bg-white print:p-0" dir={locale === 'ar-SA' ? 'rtl' : 'ltr'}>
       <style>{`@media print { @page { size: A4; margin: 12mm; } .statement-actions { display:none!important; } }`}</style>
       <div className="statement-actions mx-auto mb-4 flex max-w-[900px] justify-between gap-3">
         <Link to={`/customers/${customerId}`} className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-950"><ArrowLeft size={15} /> {t('statement.back')}</Link>
-        <Button size="sm" onClick={() => window.print()}><Printer size={14} /> {t('statement.print')}</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="secondary" onClick={exportXlsx}><Download size={14} /> {t('statement.exportXlsx')}</Button>
+          <Button size="sm" onClick={() => window.print()}><Printer size={14} /> {t('statement.print')}</Button>
+        </div>
       </div>
       <article className="mx-auto max-w-[900px] rounded-sm bg-white p-7 shadow-sm print:max-w-none print:shadow-none sm:p-10">
         <header className="flex items-start justify-between gap-6 border-b-2 border-slate-900 pb-5">

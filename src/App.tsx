@@ -26,6 +26,7 @@ import InventoryPage       from '@/pages/inventory/InventoryPage'
 import PurchasesPage       from '@/pages/purchases/PurchasesPage'
 import ReportsPage         from '@/pages/reports/ReportsPage'
 import CustomerIntelligenceReportsPage from '@/pages/reports/CustomerIntelligenceReportsPage'
+import CustomerReceivablesReportPage from '@/pages/reports/CustomerReceivablesReportPage'
 import PaymentReceiptPrintPage from '@/pages/print/PaymentReceiptPrintPage'
 import CustomerStatementPrintPage from '@/pages/print/CustomerStatementPrintPage'
 import SupplierIntelligenceReportsPage from '@/pages/reports/SupplierIntelligenceReportsPage'
@@ -379,6 +380,7 @@ export default function App() {
             <Route path="/day-closing" element={<DayClosingPage />} />
             <Route path="/reports"   element={<ReportsPage />} />
             <Route path="/reports/customers" element={<CustomerIntelligenceReportsPage />} />
+            <Route path="/reports/receivables" element={<CustomerReceivablesReportPage />} />
             <Route path="/reports/suppliers" element={<SupplierIntelligenceReportsPage />} />
             <Route path="/suppliers" element={<SuppliersPage />} />
             <Route path="/suppliers/:id" element={<SupplierDetailPage />} />

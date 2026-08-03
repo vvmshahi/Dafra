@@ -10,6 +10,10 @@ const panel = read('src/components/customers/CustomerReceivablesPanel.tsx')
 const client = read('src/lib/customers/receivables.ts')
 const receipt = read('src/pages/print/PaymentReceiptPrintPage.tsx')
 const statement = read('src/pages/print/CustomerStatementPrintPage.tsx')
+const reportPage = read('src/pages/reports/CustomerReceivablesReportPage.tsx')
+const creditNoteModal = read('src/pages/invoices/CreateCreditNoteModal.tsx')
+const xlsx = read('src/lib/customers/receivablesXlsx.ts')
+const statefulFixture = read('scripts/certify-customer-receivables-stateful.sql')
 const enLocale = read('src/localization/locales/en/receivables.json')
 const arLocale = read('src/localization/locales/ar-SA/receivables.json')
 
@@ -48,15 +52,24 @@ const cases = [
   ['oldest-first allocation is deterministic', /ORDER BY i\.invoice_date, i\.created_at, i\.id/],
   ['overpayment remains unapplied', /'unapplied_amount', v_remaining/],
   ['receipt reversal is a separate operation', /action <> 'payment_reversal'/],
+  ['reversal preserves an immutable original receipt', /Reversal of receipt/],
   ['credit notes use the existing fiscal engine', /create_partial_credit_note\(v_base_payload\)/],
+  ['credit-note settlement is idempotent and server-authoritative', /create_customer_credit_note_settlement_v1[\s\S]*AR_OPERATION_CONFLICT/],
   ['statement is a dedicated print surface', /CustomerStatementPrintPage/],
+  ['statement exports a genuine workbook with frozen headers and autofilter', /zipSync[\s\S]*state="frozen"[\s\S]*autoFilter/],
+  ['receipt provides 58 mm, 80 mm, and A4 print formats', /size: 58mm[\s\S]*size: 80mm[\s\S]*size: A4/],
   ['receipt documents explicitly exclude ZATCA QR', /contains no ZATCA QR code/],
   ['client financial operations persist operation identity', /kubri:ar-/],
+  ['manual allocation and split tender controls use the receipt RPC', /manualAllocation[\s\S]*splitTenders[\s\S]*recordCustomerPaymentReceipt/],
+  ['payment reversal is exposed only to an authorized UI capability', /canReversePayment[\s\S]*reverseCustomerPaymentReceipt/],
+  ['credit-note AR settlement is explicit and keeps the normal atomic path separate', /settleWithReceivables[\s\S]*createCustomerCreditNoteSettlement[\s\S]*atomicSimplifiedCreditEligible/],
+  ['receivables reporting is a dedicated scoped RPC route', /loadCustomerReceivablesReport[\s\S]*branchComparison[\s\S]*totalReceivables/],
+  ['stateful certification creates and rolls back three branch fixtures', /AR branch A[\s\S]*AR branch B[\s\S]*AR branch C[\s\S]*AR_CERTIFICATION_ROLLBACK/],
   ['Arabic statement direction is supported', /dir=\{locale === 'ar-SA' \? 'rtl' : 'ltr'\}/],
 ]
 
 for (const [name, pattern] of cases) {
-  if (pattern instanceof RegExp) assert.match(allSql + panel + client + receipt + statement + enLocale + arLocale, pattern, name)
+  if (pattern instanceof RegExp) assert.match(allSql + panel + client + receipt + statement + reportPage + creditNoteModal + xlsx + statefulFixture + enLocale + arLocale, pattern, name)
   else assert.ok(pattern, name)
 }
 

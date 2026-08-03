@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { TrendingUp, BarChart2, FileText, CreditCard, Users, ShoppingCart, Download, Clock3, Loader2, Truck } from 'lucide-react'
+import { TrendingUp, BarChart2, FileText, CreditCard, Users, ShoppingCart, Download, Clock3, Loader2, Truck, WalletCards } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -200,6 +200,13 @@ export default function ReportsPage() {
           >
             <Truck size={14} />
             {t('tabs.suppliers')}
+          </Link>
+          <Link
+            to="/reports/receivables"
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+          >
+            <WalletCards size={14} />
+            {t('tabs.receivables')}
           </Link>
           {exportSupported && (
             <button

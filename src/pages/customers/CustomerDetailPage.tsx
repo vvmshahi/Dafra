@@ -536,6 +536,7 @@ export default function CustomerDetailPage() {
         customerId={id}
         branchId={data.customer.branchId}
         isOwner={profile?.role === 'owner' || profile?.role === 'admin'}
+        canReversePayment={['owner', 'admin', 'accountant', 'manager'].includes(profile?.role ?? '')}
       />
 
       <CustomerIntelligenceFiltersPanel
