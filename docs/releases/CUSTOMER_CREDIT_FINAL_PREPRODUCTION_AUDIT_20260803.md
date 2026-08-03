@@ -247,6 +247,12 @@ physical-printing, and tax-adviser checks remain required. No main merge,
 production alias update, mobile/purchase work, or unauthorized data mutation
 occurred.
 
+Final source is `f6d0a55b6a1be1b728cd0d63af4b70d1c9e88b68` on
+`feature/customer-credit-receivables-20260803`. Preview
+`dpl_EX51CwSPY1vB3nXzSbtntj1pjP3K` is `READY` at
+`https://dafra-bxf8vychq-mohammed-shahin-v-vs-projects.vercel.app`, target
+`preview`; no production alias was changed.
+
 ## Customer-credit configuration correction — 00800 rollout complete
 
 The later Preview acceptance found that the historical per-customer policy was
