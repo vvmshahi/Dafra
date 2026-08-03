@@ -423,3 +423,18 @@ authenticated browser/RTL/responsive/manual three-Branch acceptance, physical
 printing and business/tax acceptance. Main merge, production frontend
 deployment, mobile, purchase-idempotency and real customer/financial mutation
 remain paused.
+
+### Preview handoff — 2026-08-03
+
+The tested commit `97a7054fcc01e31bbe588991734c0e322e946920` was pushed to
+`feature/customer-credit-receivables-20260803` and deployed to Preview as
+`dpl_CXiSmjKNTMRReC8PJ94yNCMFNbMy`:
+`https://dafra-qpl30l3q0-mohammed-shahin-v-vs-projects.vercel.app`. Vercel
+reported `READY` with target `preview`; there was no `--prod` deployment and no
+production alias change.
+
+Final technical recommendation: `KUBRI_SIMPLE_BRANCH_CREDIT_READY_FOR_MANUAL_ACCEPTANCE`.
+Remaining gates are authenticated browser/RTL/responsive/keyboard review,
+explicitly disposable three-Branch lifecycle acceptance, physical printing and
+business/tax acceptance. Mobile, purchase-idempotency, main merge and real
+customer/financial mutations remain paused.

@@ -613,3 +613,9 @@ and posting. The linked malformed-input rejection fixture returned no rows.
 The CLI emitted only its known pg-delta certificate-cache warning after the
 successful push. Preview redeployment and manual browser/device/tax acceptance
 remain pending; no real customer or financial row was modified.
+
+Final focused Preview handoff: commit `97a7054fcc01e31bbe588991734c0e322e946920`
+was pushed to `feature/customer-credit-receivables-20260803` and deployed as
+Preview `dpl_CXiSmjKNTMRReC8PJ94yNCMFNbMy`,
+`https://dafra-qpl30l3q0-mohammed-shahin-v-vs-projects.vercel.app`, with Vercel
+state `READY` and target `preview`. No production alias was updated.

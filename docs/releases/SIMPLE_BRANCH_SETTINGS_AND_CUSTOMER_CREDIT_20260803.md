@@ -136,3 +136,15 @@ Still required before the final manual-acceptance verdict:
 
 No main merge, production frontend deployment, mobile or purchase work was
 performed.
+
+## Preview handoff
+
+The exact tested commit is
+`97a7054fcc01e31bbe588991734c0e322e946920` on
+`feature/customer-credit-receivables-20260803`. It is deployed as Vercel
+Preview `dpl_CXiSmjKNTMRReC8PJ94yNCMFNbMy` at
+`https://dafra-qpl30l3q0-mohammed-shahin-v-vs-projects.vercel.app` with state
+`READY` and target `preview`. Production was not deployed and `main` was not
+merged.
+
+Technical verdict: `KUBRI_SIMPLE_BRANCH_CREDIT_READY_FOR_MANUAL_ACCEPTANCE`.
