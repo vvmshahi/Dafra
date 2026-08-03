@@ -358,3 +358,7 @@ the rejection and stateful SQL assertions themselves passed when executed
 inside the same disposable container. Remote parity, 00800 metadata and the
 non-mutating rejection fixture are complete. The remaining acceptance gate is
 the authorised manual Preview walkthrough listed above.
+
+A clean Preview-only deployment reached `READY` from the final feature source.
+It is not a production deployment and no production alias or `main` branch was
+updated. Exact deployment metadata is recorded in the handoff report.

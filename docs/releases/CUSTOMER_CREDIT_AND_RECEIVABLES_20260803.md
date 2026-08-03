@@ -305,6 +305,10 @@ and separately approved production deployment.
 
 Current verdict: **KUBRI_CUSTOMER_RECEIVABLES_BLOCKED**
 
+The later customer-credit configuration correction has a clean, Ready
+Preview-only deployment from the feature branch. It does not update the
+production alias; exact final deployment metadata is recorded in the handoff.
+
 ## Completion update — automated certification and Preview preparation
 
 ### Implemented additive client completion

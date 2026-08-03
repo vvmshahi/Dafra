@@ -134,3 +134,10 @@ the same rejection and stateful fixtures passed directly inside that container.
 The final aggregate count is zero for tenant policies, customer policies,
 accounts, operations, receipts, allocations, entries and adjustments. The
 protected checkout remains unchanged.
+
+## Preview status
+
+A clean Preview-only deployment was built from this feature branch and reached
+`READY`. The deployment is not production-targeted and no production alias was
+updated. The exact final deployment ID, URL and source SHA are recorded in the
+handoff report.
