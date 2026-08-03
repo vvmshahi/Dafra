@@ -2,11 +2,11 @@
 
 ## Decision
 
-**Verdict: `BLOCKED` — `KUBRI_CUSTOMER_RECEIVABLES_BLOCKED`.** Local source is
-certified for the next controlled release step, but production is one explicitly
-unapproved compatibility migration behind it. No remote schema/data mutation,
-production web deployment, `main` merge, mobile/purchase work, desktop build,
-or fiscal test transaction occurred.
+**Verdict: `READY_FOR_MANUAL_ACCEPTANCE` —
+`KUBRI_CUSTOMER_RECEIVABLES_READY_FOR_MANUAL_ACCEPTANCE`.** Migration 00500
+has been applied and independently verified. A matching Preview is Ready. No
+production frontend deployment, `main` merge, mobile/purchase work, desktop
+build, historical backfill, or fiscal test transaction occurred.
 
 | Item | Evidence |
 | --- | --- |
@@ -14,9 +14,10 @@ or fiscal test transaction occurred.
 | Reviewed starting SHA | `1e176b9828e77aa712b6c92ee2e53bbd68f92854` |
 | Final audited code SHA | `846ca7b6d382a401d632edfe16d49cf97094142d` |
 | Production project | `bkbphkpqcxuejozayrsy` |
-| Existing Preview, unchanged | `dpl_GdtVxerRpNd4sjBmpannYTuqffcd` — `https://dafra-pmhb10f80-mohammed-shahin-v-vs-projects.vercel.app` (source `1e176…`) |
-| Production migration head | `20260803000400` |
-| Sole intended pending migration | `20260803000500_harden_customer_receivables_payload_errors.sql` |
+| Acceptance Preview | `dpl_9cB9AKuMqpcnhpyDyDUa3d6jXQXj` — `https://dafra-j0u5qd6sc-mohammed-shahin-v-vs-projects.vercel.app` |
+| Preview source metadata | `feature/customer-credit-receivables-20260803` / `f674f8e4802f0f9b0142db32e82430dd2400214a` |
+| Production migration head | `20260803000500` |
+| Pending AR migration | None |
 
 ## Lineage, scope, and production boundary
 
@@ -182,3 +183,38 @@ transaction, or apply 00500 without separate authorization. The existing
 Preview is pre-hardening source and is not suitable for final acceptance. After
 remote 00500 verification, push/deploy only a matching new Preview; production
 release still depends on the checklist above.
+
+## Final rollout completion update — 2026-08-03
+
+This section supersedes the former “do not apply 00500” release handoff. After
+fresh exact parity/preflight, the only pending migration
+`20260803000500_harden_customer_receivables_payload_errors.sql` was applied to
+`bkbphkpqcxuejozayrsy` with `supabase db push --linked --yes`. Linked history
+now matches through 00500 with no pending migration. A benign post-apply
+pg-delta catalog-cache certificate-file warning did not affect the successful
+CLI result; live migration history, function metadata, grants, RLS, triggers
+and aggregate-only counts were then independently verified.
+
+All aggregate baselines are unchanged after application and rejection testing:
+six customers, 4,302 invoices, 4,318 payments, 110 credit-note invoices, and
+zero AR accounts, operations, receipts, allocations, ledger entries and
+adjustments. The ten public wrappers are `postgres`-owned, JSONB-to-JSONB,
+`SECURITY DEFINER`, safe-search-path, anon-denied and authenticated-executable;
+their internal raw bodies deny all client execution. The eight AR tables retain
+RLS and no direct authenticated writes. The invoice/payment AR sync triggers
+remain enabled. The remote rejection fixture passed without a retained business
+row, and the no-key RPC boundary returned HTTP 401.
+
+Acceptance Preview `dpl_9cB9AKuMqpcnhpyDyDUa3d6jXQXj` is Ready at
+`https://dafra-j0u5qd6sc-mohammed-shahin-v-vs-projects.vercel.app`. Its Vercel
+metadata records branch `feature/customer-credit-receivables-20260803` and
+exact SHA `f674f8e4802f0f9b0142db32e82430dd2400214a`. It is a Preview only and
+does not alter the production alias. A read-only merge-tree rehearsal with
+current main was conflict-free and produced the exact feature tree; no merge
+occurred. The detailed remote evidence and consolidated owner checklist are in
+[`CUSTOMER_CREDIT_AND_RECEIVABLES_20260803.md`](CUSTOMER_CREDIT_AND_RECEIVABLES_20260803.md).
+
+Current technical verdict: **`KUBRI_CUSTOMER_RECEIVABLES_READY_FOR_MANUAL_ACCEPTANCE`**.
+The remaining gates are authenticated/disposable-tenant, device/print,
+responsive/accessibility, and Saudi tax-adviser manual acceptance—not another
+automated migration or production deployment.

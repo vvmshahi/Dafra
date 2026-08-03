@@ -320,3 +320,152 @@ authorised remote application of migration 00500, a Preview built from the
 post-00500 source, and the controlled manual acceptance checklist in the final
 audit record. No production frontend, production data, `main` branch, or
 customer fiscal transaction was changed by the final audit.
+
+## Final remote hardening rollout — 2026-08-03
+
+This update supersedes the historical blocked status above and the earlier
+automated-ready wording for release decisions. The sole authorized migration,
+`20260803000500_harden_customer_receivables_payload_errors.sql`, was applied
+to project `bkbphkpqcxuejozayrsy`. No other migration was pending or applied.
+
+### Migration review and remote compatibility
+
+00500 changes only the public JSONB AR RPC boundary. It renames the existing
+ten implementations to internal `*_raw_20260803` bodies, recreates each exact
+public signature/return type as a `SECURITY DEFINER` wrapper with
+`search_path = public, pg_temp` and `row_security = off`, catches malformed
+UUID/numeric/date conversion classes, and emits stable `AR_*` errors. It does
+not alter invoice totals, VAT, XML, QR, signature, ZATCA state, receipts,
+allocations, balances, financial history, table RLS, triggers, or direct table
+grants. No table DDL, row DML, backfill, fiscal routing, tenant/branch authority
+change, or direct client write grant appears in the migration.
+
+Before application, local/remote migration history matched exactly through
+`20260803000400`; 00500 was the single pending version and the remote public
+function source hashes matched the locally preserved raw bodies for all ten
+functions. The applied CLI command was `supabase db push --linked --yes` and
+reported 00500 applied with exit status 0. The CLI emitted a post-apply
+pg-delta catalog-cache certificate-file warning; linked migration history and
+live function metadata independently verified successful application.
+
+### Aggregate-only non-mutation evidence
+
+| Aggregate | Before 00500 | After 00500 and rejection checks |
+| --- | ---: | ---: |
+| Receivable accounts / operations / receipts / allocations / ledger / adjustments | 0 / 0 / 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 / 0 / 0 |
+| Customers | 6 | 6 |
+| Invoices | 4,302 | 4,302 |
+| Payments | 4,318 | 4,318 |
+| Credit-note invoices | 110 | 110 |
+
+No customer, invoice, payment, credit-note, AR, stock, XML, QR, signature or
+ZATCA row was selected individually, created, modified, or backfilled.
+
+### Post-application security and rejection verification
+
+Remote history now ends at `20260803000500` with no pending migration. The ten
+public JSONB functions retain `jsonb` input and `jsonb` return types,
+`postgres` ownership, `SECURITY DEFINER`, safe `search_path`, authenticated
+execute, and denied anon/service-role execution. The ten raw bodies retain the
+same safe configuration but deny authenticated/anon/service-role execution.
+
+All eight AR tables remain RLS-enabled; anon and authenticated direct
+INSERT/UPDATE/DELETE privileges remain false, while scoped authenticated SELECT
+remains available. The expected `AFTER INSERT` invoice and payment
+synchronization triggers remain enabled. Existing constraints still enforce
+positive amounts, allowed tender/origin/action values, tenant/branch foreign
+keys, and operation/receipt/allocation uniqueness.
+
+The remote guaranteed-rejection fixture passed and compared AR aggregates
+before/after inside its check. It covers empty/object-shape errors, blank and
+missing identifiers, malformed UUID/numeric input, invalid allocation shape,
+invalid adjustment direction and whitespace-only reason. The wrapper vocabulary
+is: `AR_POLICY_VALUE_INVALID`, `AR_CHECKOUT_IDENTIFIER_INVALID`,
+`AR_RECEIPT_VALUE_INVALID`, `AR_CREDIT_NOTE_IDENTIFIER_INVALID`,
+`AR_REVERSAL_FIELDS_REQUIRED`, `AR_WORKSPACE_FILTER_INVALID`,
+`AR_REALLOCATION_PAYLOAD_INVALID`, `AR_ADJUSTMENT_PAYLOAD_INVALID`,
+`AR_ACCOUNT_LINK_PAYLOAD_INVALID`, and `AR_REPORT_FILTER_INVALID`. No raw
+PostgreSQL conversion error escaped. An unauthenticated PostgREST RPC request
+returned HTTP 401. Authorized cross-branch testing remains in the controlled
+manual tenant checklist; no real user fixture was created for this rollout.
+
+### Regression and acceptance Preview
+
+`npm test` (non-secret local SSR placeholders),
+`npm run test:receivables-certification`, and `npm run build` passed after
+remote application; `git diff --check` passed. This includes 53 AR contracts,
+rollback-only three-branch allocation/replay/reallocation/reversal/report
+fixtures, rejection/no-mutation checks, 192 thermal SSR renders, genuine XLSX
+generation, and independent SheetJS parsing of neutralized hostile text.
+
+A new non-production Preview was deployed from the clean exact tested source:
+
+| Field | Value |
+| --- | --- |
+| Deployment | `dpl_9cB9AKuMqpcnhpyDyDUa3d6jXQXj` |
+| URL | `https://dafra-j0u5qd6sc-mohammed-shahin-v-vs-projects.vercel.app` |
+| Target / state | Preview / Ready |
+| Metadata source | `feature/customer-credit-receivables-20260803` at `f674f8e4802f0f9b0142db32e82430dd2400214a` |
+
+The Preview header request returns its protected redirect (HTTP 302), so the
+deployment is live but cannot truthfully stand in for an authenticated browser
+walkthrough. No Playwright/Cypress or authorized disposable user credentials
+are installed in this worktree. The local deterministic fixtures and deployed
+metadata are the completed automated Preview preflight; workspace tabs,
+checkout/payment/return UI, responsive viewport, accessibility and physical
+print acceptance remain human gates below.
+
+### Main rehearsal and RLS advisory
+
+No merge was performed. A read-only merge-tree rehearsal of current
+`origin/main` (`5491389`) with this feature branch produced tree
+`b9178a53168e91264843ec6813e067a82df39571`, exactly equal to the feature
+tree, with no conflict. Main's only exclusive change is the desktop-download
+correction already included as `7c17286`; tests/build therefore apply to the
+hypothetical merge content. A later merge still requires manual acceptance and
+normal review of printing/documents, owner provisioning, branch entitlement,
+auth/routing, invoice/ZATCA, customer and report surfaces.
+
+The local-only RLS adviser mismatch remains P2 and is excluded from this
+release. Locally it reports RLS disabled for
+`barcode_function_contracts_v1`, `product_sku_counters`, and
+`product_units_commercial_function_contracts_v1`; no source migration enables
+RLS for them. Production reports RLS enabled, no policies, no anon or
+authenticated grants, postgres administration, service-role read access to the
+two immutable contract tables, and service-role write access only to the
+tenant-scoped SKU counter. The first/third are immutable function-definition
+fingerprints; the counter is used by `next_product_sku` and `peek_product_sku`.
+Treat this as out-of-band/local-baseline drift requiring separate policy and
+fixture-lineage review. Do not apply an unrelated RLS change here.
+
+### Consolidated owner manual acceptance checklist
+
+**Authentication and scope**
+
+- [ ] Owner and branch login; owner consolidated view; branch isolation; no sibling-branch financial access.
+
+**Customer credit scenario**
+
+- [ ] Invoice 1 SAR 10,000; initial payment SAR 2,000; outstanding SAR 8,000.
+- [ ] Later payment SAR 3,000; outstanding SAR 5,000.
+- [ ] Invoice 2 SAR 3,000; initial payment SAR 1,000; total customer balance SAR 7,000.
+- [ ] Fiscal credit note SAR 2,000; adjusted outstanding SAR 5,000; stock restored.
+
+**Payments and documents**
+
+- [ ] Oldest-first/manual/one-payment-across-invoices allocation; overpayment; unapplied credit; apply later; authorized reversal; ledger source links.
+- [ ] 58 mm, 80 mm, A4 receipt; no ZATCA QR; statement PDF; XLSX opened in Excel/LibreOffice; fully paid invoice uncluttered; partial invoice paid/outstanding; due date hidden; Arabic RTL.
+
+**Fiscal, responsive and human gates**
+
+- [ ] Payments leave invoice totals, QR, XML, signature and ZATCA status unchanged; credit note follows the established fiscal route.
+- [ ] Verify Customer Workspace tabs, checkout, payments, credit-note options, reports and documents at 375 px, 430 px, 768 px, 1024×768, 1366×768, 1440×900 and 1920×1080 without blank panel/loading/overflow or inaccessible action.
+- [ ] Thermal and A4 printers; written Saudi tax-adviser confirmation for settlement/refund/account-credit/advance-payment boundaries.
+
+### Current recommendation
+
+**`KUBRI_CUSTOMER_RECEIVABLES_READY_FOR_MANUAL_ACCEPTANCE`**. There is no
+open P0/P1 technical blocker. Do not merge `main` or deploy production frontend
+until the controlled checklist and tax-adviser sign-off are complete. Mobile
+remained paused, purchase-idempotency migration was not applied, and no
+unauthorized customer/fiscal data was modified.
