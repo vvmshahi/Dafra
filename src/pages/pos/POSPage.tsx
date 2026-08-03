@@ -411,29 +411,23 @@ function safeCheckoutErrorKey(err: unknown): string {
   if (/ATOMIC_NOT_READY|ATOMIC_CHECKOUT_REQUIRED/.test(message)) {
     return 'validation:atomicNotReady'
   }
-  if (/AR_CREDIT_DISABLED/.test(message)) {
-    return 'payments:creditDisabled'
-  }
-  if (/AR_CREDIT_BRANCH_DISABLED|CREDIT_NOT_ALLOWED_FOR_BRANCH/.test(message)) {
+  if (/BRANCH_CREDIT_DISABLED|AR_CREDIT_BRANCH_DISABLED|CREDIT_NOT_ALLOWED_FOR_BRANCH/.test(message)) {
     return 'payments:creditBranchDisabled'
   }
-  if (/AR_CREDIT_ACCOUNT_NOT_READY|CREDIT_ACCOUNT_NOT_READY/.test(message)) {
-    return 'payments:creditAccountNotReady'
+  if (/BUSINESS_CUSTOMER_REQUIRED|CREDIT_NOT_ALLOWED_FOR_BUSINESS/.test(message)) {
+    return 'payments:businessCustomerRequired'
   }
-  if (/AR_CREDIT_TENANT_POLICY_DISABLED|CREDIT_NOT_ALLOWED_FOR_BUSINESS/.test(message)) {
-    return 'payments:creditTenantPolicyDisabled'
+  if (/CUSTOMER_INACTIVE/.test(message)) {
+    return 'payments:customerInactive'
   }
-  if (/AR_CREDIT_HOLD/.test(message)) {
-    return 'payments:creditOnHold'
+  if (/BRANCH_INACTIVE/.test(message)) {
+    return 'payments:branchInactive'
   }
-  if (/AR_CREDIT_OWNER_APPROVAL_REQUIRED/.test(message)) {
-    return 'payments:creditOwnerApprovalRequired'
+  if (/CREDIT_UNAUTHORIZED/.test(message)) {
+    return 'payments:creditUnauthorized'
   }
-  if (/AR_CREDIT_LIMIT_EXCEEDED/.test(message)) {
-    return 'payments:creditLimitExceeded'
-  }
-  if (/AR_CREDIT_OVERDUE_BLOCK/.test(message)) {
-    return 'payments:creditOverdueBlocked'
+  if (/CREDIT_ACCOUNT_SETUP_FAILED/.test(message)) {
+    return 'payments:creditUnavailable'
   }
   if (/STANDARD_CUSTOMER_DETAILS_REQUIRED/.test(message)) {
     return 'validation:standardCustomerDetailsRequired'
@@ -476,6 +470,7 @@ function localizedPaymentMethod(method: string | null | undefined, t: (key: stri
   if (method === 'cash') return t('payments:cash')
   if (method === 'card') return t('payments:cardPos')
   if (method === 'bank_transfer') return t('payments:bankTransfer')
+  if (method === 'credit' || method === 'partial_credit') return t('payments:customerCredit')
   return t('payments:other')
 }
 
@@ -489,44 +484,25 @@ function paymentMethodLabel(method: string | null | undefined): string {
 
 function creditEligibilityMessageKey(reasonCode: string): string {
   switch (reasonCode) {
-    case 'BUSINESS_CREDIT_DISABLED': return 'creditTenantPolicyDisabled'
+    case 'BUSINESS_CUSTOMER_REQUIRED': return 'businessCustomerRequired'
+    case 'CUSTOMER_NOT_FOUND': return 'creditCustomerRequired'
+    case 'CREDIT_UNAUTHORIZED': return 'creditUnauthorized'
+    case 'BRANCH_INACTIVE': return 'branchInactive'
     case 'BRANCH_CREDIT_DISABLED': return 'creditBranchDisabled'
-    case 'CREDIT_ACCOUNT_NOT_READY': return 'creditAccountNotReady'
-    case 'CUSTOMER_CREDIT_DISABLED': return 'creditDisabled'
-    case 'CUSTOMER_INACTIVE': return 'creditCustomerInactive'
-    case 'AR_CREDIT_TENANT_POLICY_DISABLED': return 'creditTenantPolicyDisabled'
-    case 'AR_CREDIT_BRANCH_DISABLED': return 'creditBranchDisabled'
-    case 'AR_CREDIT_ACCOUNT_NOT_READY': return 'creditAccountNotReady'
-    case 'CREDIT_NOT_ALLOWED_FOR_BUSINESS': return 'creditTenantPolicyDisabled'
-    case 'CREDIT_NOT_ALLOWED_FOR_BRANCH': return 'creditBranchDisabled'
-    case 'CREDIT_NOT_ALLOWED_FOR_CUSTOMER': return 'creditDisabled'
-    case 'AR_CREDIT_HOLD': return 'creditOnHold'
-    case 'AR_CREDIT_OWNER_APPROVAL_REQUIRED': return 'creditOwnerApprovalRequired'
-    case 'AR_CREDIT_LIMIT_EXCEEDED': return 'creditLimitExceeded'
-    case 'AR_CREDIT_OVERDUE_BLOCK': return 'creditOverdueBlocked'
-    case 'AR_CREDIT_DISABLED': return 'creditDisabled'
+    case 'CUSTOMER_INACTIVE': return 'customerInactive'
+    case 'AR_CREDIT_ELIGIBLE': return 'creditEligible'
     default: return 'creditUnavailable'
   }
 }
 
 function creditEligibilitySettingsPath(reasonCode: string, customerId: string, branchId: string) {
   switch (reasonCode) {
-    case 'BUSINESS_CREDIT_DISABLED':
-    case 'AR_CREDIT_TENANT_POLICY_DISABLED':
-    case 'CREDIT_NOT_ALLOWED_FOR_BUSINESS':
-      return '/settings?tab=customer-credit'
     case 'BRANCH_CREDIT_DISABLED':
     case 'AR_CREDIT_BRANCH_DISABLED':
     case 'CREDIT_NOT_ALLOWED_FOR_BRANCH':
       return `/branch-settings?section=credit`
-    case 'CUSTOMER_CREDIT_DISABLED':
-    case 'CREDIT_NOT_ALLOWED_FOR_CUSTOMER':
-    case 'CREDIT_ACCOUNT_NOT_READY':
-    case 'AR_CREDIT_ACCOUNT_NOT_READY':
-    case 'AR_CREDIT_DISABLED':
-      return `/customers/${customerId}?section=credit`
     default:
-      return `/customers/${customerId}?section=credit`
+      return branchId ? `/branch-settings?section=credit` : '/branch-settings'
   }
 }
 
@@ -2989,7 +2965,11 @@ export default function POSPage() {
       const serverTax = num(checkout.tax_amount)
       const serverSubtotal = num(checkout.subtotal)
       const createdAt = checkout.created_at
-      const receiptPaymentMethod: PaymentMethod = checkout.payment_method ?? (payMethod === 'split' ? 'other' : payMethod)
+      // Credit is a business posting mode, not a database tender enum. Keep
+      // the persisted tender compatible while preserving the visible mode.
+      const receiptPaymentMethod: PaymentMethod = payMethod === 'credit'
+        ? 'other'
+        : checkout.payment_method ?? (payMethod === 'split' ? 'other' : payMethod)
       const receiptPayments: ReceiptPayment[] = Array.isArray(checkout.payments) && checkout.payments.length > 0
         ? checkout.payments.map(payment => ({
             method: payment.method,
@@ -3007,8 +2987,9 @@ export default function POSPage() {
               ? num(checkout.change_amount ?? 0)
               : 0,
           }]
-      const displayPaymentMethod = checkout.display_payment_method
-        ?? (isSplitPaymentRows(receiptPayments) ? 'split' : receiptPaymentMethod)
+      const displayPaymentMethod = payMethod === 'credit'
+        ? (checkout.display_payment_method ?? 'credit')
+        : checkout.display_payment_method ?? (isSplitPaymentRows(receiptPayments) ? 'split' : receiptPaymentMethod)
       const serverAmountReceived = num(checkout.amount_received ?? serverTotal)
       const serverChangeAmount = num(checkout.change_amount ?? Math.max(0, serverAmountReceived - serverTotal))
       const receiptCashReceived = displayPaymentMethod !== 'split' && receiptPaymentMethod === 'cash'
@@ -4245,14 +4226,12 @@ export default function POSPage() {
                 }`}
               >
                 <span className="flex items-center gap-1.5"><Landmark size={13} /> {t('payments:sellOnCredit')}</span>
-                <span className="tabular-nums text-[10px] opacity-85" dir="ltr">
-                  {t('payments:creditAvailable', { amount: creditEligibility.availableCredit.toFixed(2) })}
-                </span>
+                <span className="text-[10px] opacity-85">{t('payments:businessCustomerCredit')}</span>
               </button>
               ) : creditEligibility ? (
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
                   <span className="min-w-0"><span className="font-semibold text-gray-700">{t('payments:creditUnavailable')}</span> · {t(`payments:${creditEligibilityMessageKey(creditEligibility.reasonCode)}`)}</span>
-                {customerId && (
+                {creditEligibility.reasonCode === 'BRANCH_CREDIT_DISABLED' && customerId && (
                   <button type="button" onClick={() => navigate(creditEligibilitySettingsPath(creditEligibility.reasonCode, customerId, branch?.id ?? ''))} className="flex-shrink-0 font-semibold text-primary-700 hover:text-primary-900">
                     {t('payments:creditSettings')}
                   </button>

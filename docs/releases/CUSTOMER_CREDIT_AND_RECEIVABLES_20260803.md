@@ -649,3 +649,19 @@ The final focused source is `f6d0a552351a8583bd85ff0710a1d64a28389be3`.
 Preview `dpl_EX51CwSPY1vB3nXzSbtntj1pjP3K` is `READY` at
 `https://dafra-bxf8vychq-mohammed-shahin-v-vs-projects.vercel.app`, target
 `preview`, with no production alias change.
+
+## Superseding Branch-only UX consolidation — 2026-08-03
+
+The historical configuration sections above describe an earlier tenant and
+customer-policy model. They are retained as lineage, but are superseded for
+the current certification by migration
+`20260803001100_branch_only_b2b_customer_credit_v1.sql` and
+[`CUSTOMER_AND_CREDIT_UX_CONSOLIDATION_20260803.md`](CUSTOMER_AND_CREDIT_UX_CONSOLIDATION_20260803.md).
+
+The current product has exactly one operational gate: `Allow customer credit
+in this Branch`. Owner/business and customer switches, manual setup, limits,
+holds, approvals, overdue blocks, terms, due dates, and available-credit UI are
+removed. Only active Business/B2B customers in the active authorized Branch
+qualify; the account is created automatically and idempotently with no
+historical backfill. Remote parity/application and manual acceptance remain
+gates; no real financial mutation was performed.

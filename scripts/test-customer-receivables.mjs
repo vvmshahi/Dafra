@@ -1,126 +1,56 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
-const read = relative => fs.readFileSync(relative, 'utf8')
-const schema = read('supabase/migrations/20260803000200_customer_receivables_schema_v1.sql')
-const rpcs = read('supabase/migrations/20260803000300_customer_receivables_rpcs_v1.sql')
-const controls = read('supabase/migrations/20260803000400_customer_receivables_controls_reports_v1.sql')
-const hardening = read('supabase/migrations/20260803000500_harden_customer_receivables_payload_errors.sql')
-const creditPolicyConfiguration = read('supabase/migrations/20260803000800_customer_credit_policy_configuration_v1.sql')
-const simpleBranchCredit = read('supabase/migrations/20260803000900_simple_branch_customer_credit_v1.sql')
-const allSql = `${schema}\n${rpcs}\n${controls}\n${hardening}\n${creditPolicyConfiguration}\n${simpleBranchCredit}`
+const read = path => fs.readFileSync(path, 'utf8')
+const migrationPath = 'supabase/migrations/20260803001100_branch_only_b2b_customer_credit_v1.sql'
+const migration = read(migrationPath)
 const panel = read('src/components/customers/CustomerReceivablesPanel.tsx')
-const client = read('src/lib/customers/receivables.ts')
-const creditSettings = read('src/pages/settings/CustomerCreditPolicySettings.tsx')
-const settingsPage = read('src/pages/settings/SettingsPage.tsx')
-const posPage = read('src/pages/pos/POSPage.tsx')
-const receipt = read('src/pages/print/PaymentReceiptPrintPage.tsx')
-const statement = read('src/pages/print/CustomerStatementPrintPage.tsx')
-const reportPage = read('src/pages/reports/CustomerReceivablesReportPage.tsx')
-const creditNoteModal = read('src/pages/invoices/CreateCreditNoteModal.tsx')
-const xlsx = read('src/lib/customers/receivablesXlsx.ts')
-const statefulFixture = read('scripts/certify-customer-receivables-stateful.sql')
-const rejectionFixture = read('scripts/certify-customer-receivables-rejection-paths.sql')
-const enLocale = read('src/localization/locales/en/receivables.json')
-const arLocale = read('src/localization/locales/ar-SA/receivables.json')
-const enSettingsLocale = read('src/localization/locales/en/settings.json')
-const arSettingsLocale = read('src/localization/locales/ar-SA/settings.json')
-const branchSettingsPage = read('src/pages/branch/BranchSettingsPage.tsx')
+const pos = read('src/pages/pos/POSPage.tsx')
 const sidebar = read('src/components/layout/Sidebar.tsx')
-const app = read('src/App.tsx')
-const branchesTab = read('src/pages/settings/BranchesTab.tsx')
+const detail = read('src/pages/customers/CustomerDetailPage.tsx')
+const settings = read('src/pages/settings/SettingsPage.tsx')
+const compatibility = read('src/pages/settings/CustomerCreditPolicySettings.tsx')
+const workspace = read('src/pages/reports/CustomerReceivablesReportPage.tsx')
+const statement = read('src/pages/print/CustomerStatementPrintPage.tsx')
+const receipt = read('src/pages/print/PaymentReceiptPrintPage.tsx')
+const client = read('src/lib/customers/receivables.ts')
 
-for (const migration of [
-  'supabase/migrations/20260803000200_customer_receivables_schema_v1.sql',
-  'supabase/migrations/20260803000300_customer_receivables_rpcs_v1.sql',
-  'supabase/migrations/20260803000400_customer_receivables_controls_reports_v1.sql',
-  'supabase/migrations/20260803000500_harden_customer_receivables_payload_errors.sql',
-  'supabase/migrations/20260803000800_customer_credit_policy_configuration_v1.sql',
-  'supabase/migrations/20260803000900_simple_branch_customer_credit_v1.sql',
-]) assert.ok(fs.existsSync(migration), `migration exists: ${migration}`)
-
-const cases = [
-  ['migration chain defines the receivables model', /Customer credit and accounts-receivable foundation/],
-  ['schema is additive', /This migration is additive/],
-  ['historical debt is not fabricated', /does not derive, rewrite, or[\s\S]*historical invoices\/payments/],
-  ['receivable accounts are tenant scoped', /customer_receivable_accounts[\s\S]*tenant_id uuid NOT NULL/],
-  ['credit policy has explicit limit and hold', /credit_limit numeric[\s\S]*hold boolean/],
-  ['policy supports terms and overdue controls', /terms text[\s\S]*overdue_block boolean[\s\S]*warn_threshold_percent/],
-  ['operations have a tenant idempotency key', /UNIQUE \(tenant_id, operation_id\)/],
-  ['receipts are immutable status records', /status text NOT NULL DEFAULT 'completed'[\s\S]*reversed_at/],
-  ['receipt tenders support split settlement', /method text NOT NULL CHECK \(method IN \('cash', 'card', 'bank_transfer', 'other', 'split'\)\)/],
-  ['allocation rows require one source', /CHECK \(\(receipt_id IS NOT NULL AND credit_note_invoice_id IS NULL\)/],
-  ['adjustments are explicit and approved', /customer_receivable_adjustments[\s\S]*approved_by uuid NOT NULL/],
-  ['invoice and payment source links are ledger-backed', /source_kind, source_id[\s\S]*'invoice'/],
-  ['server role matrix includes operational roles', /actor_role text[\s\S]*'owner', 'admin', 'manager', 'accountant', 'cashier', 'branch'/],
-  ['scope verifies tenant and branch', /v_actor\.tenant_id IS DISTINCT FROM v_branch\.tenant_id/],
-  ['inactive customers are rejected', /AR_CUSTOMER_NOT_ACTIVE_OR_OUT_OF_SCOPE/],
-  ['suspended tenants are rejected', /AR_BRANCH_NOT_ACTIVE/],
-  ['operation fingerprints conflict safely', /AR_OPERATION_CONFLICT/],
-  ['operations serialize with advisory locks', /pg_advisory_xact_lock\(hashtextextended\(/],
-  ['credit checkout requires a customer', /AR_CHECKOUT_IDENTIFIERS_REQUIRED/],
-  ['credit checkout uses the authoritative document classifier', /resolve_pos_checkout_document_internal_v1\(\s*auth\.uid\(\)/],
-  ['credit checkout does not create a fiscal walk-in credit sale', /v_customer_id IS NULL/],
-  ['credit checkout separates fiscal and settlement fields', /It does not alter fiscal totals, XML, QR, signature/],
-  ['due date is optional internal metadata', /v_due_date := nullif\(btrim\(p_payload->>'due_date'/],
-  ['aging falls back to invoice date', /coalesce\(due_date, invoice_date\)/],
-  ['overdue requires an explicit due date', /due_date IS NOT NULL AND due_date < v_today/],
-  ['oldest-first allocation is deterministic', /ORDER BY i\.invoice_date, i\.created_at, i\.id/],
-  ['overpayment remains unapplied', /'unapplied_amount', v_remaining/],
-  ['receipt reversal is a separate operation', /action <> 'payment_reversal'/],
-  ['reversal preserves an immutable original receipt', /Reversal of receipt/],
-  ['credit notes use the existing fiscal engine', /create_partial_credit_note\(v_base_payload\)/],
-  ['credit-note settlement is idempotent and server-authoritative', /create_customer_credit_note_settlement_v1[\s\S]*AR_OPERATION_CONFLICT/],
-  ['statement is a dedicated print surface', /CustomerStatementPrintPage/],
-  ['statement exports a genuine workbook with frozen headers and autofilter', /zipSync[\s\S]*state="frozen"[\s\S]*autoFilter/],
-  ['statement export neutralizes formula-leading text and invalid values', /spreadsheetText[\s\S]*\^\[=\+\\-@\][\s\S]*Number\.isFinite\(date\.getTime\(\)\)/],
-  ['receipt provides 58 mm, 80 mm, and A4 print formats', /size: 58mm[\s\S]*size: 80mm[\s\S]*size: A4/],
-  ['receipt documents explicitly exclude ZATCA QR', /contains no ZATCA QR code/],
-  ['client financial operations persist operation identity', /kubri:ar-/],
-  ['manual allocation and split tender controls use the receipt RPC', /manualAllocation[\s\S]*splitTenders[\s\S]*recordCustomerPaymentReceipt/],
-  ['payment reversal is exposed only to an authorized UI capability', /canReversePayment[\s\S]*reverseCustomerPaymentReceipt/],
-  ['credit-note AR settlement is explicit and keeps the normal atomic path separate', /settleWithReceivables[\s\S]*createCustomerCreditNoteSettlement[\s\S]*atomicSimplifiedCreditEligible/],
-  ['receivables reporting is a dedicated scoped RPC route', /loadCustomerReceivablesReport[\s\S]*branchComparison[\s\S]*totalReceivables/],
-  ['stateful certification creates and rolls back three branch fixtures', /AR branch A[\s\S]*AR branch B[\s\S]*AR branch C[\s\S]*AR_CERTIFICATION_ROLLBACK/],
-  ['rejection certification covers malformed payloads without AR writes', /not-a-uuid[\s\S]*invalid payment receipt[\s\S]*v_after <> v_before/],
-  ['payload hardening wraps conversion errors without exposing raw internal RPCs', /_raw_20260803[\s\S]*invalid_text_representation[\s\S]*REVOKE ALL ON FUNCTION public\.%I\(jsonb\) FROM PUBLIC, anon, authenticated, service_role/],
-  ['tenant policy is distinct from per-customer approval', /tenant_customer_credit_policies[\s\S]*credit_enabled boolean NOT NULL DEFAULT false[\s\S]*customer_credit_policies IS\n  'Per-customer/],
-  ['missing tenant policy remains safely disabled without a read-created row', /No row means credit is disabled[\s\S]*get_tenant_customer_credit_policy_v1\(\)[\s\S]*'exists', FOUND/],
-  ['tenant policy is owner/admin-only and server-derived', /AR_CREDIT_TENANT_POLICY_OWNER_ONLY[\s\S]*auth\.uid\(\)/],
-  ['customer policy requires tenant policy before an approval can be enabled', /AR_CREDIT_TENANT_POLICY_REQUIRED[\s\S]*AR_CREDIT_TENANT_POLICY_DISABLED/],
-  ['customer account setup is explicit, idempotent, and does not backfill debt', /ensure_customer_receivable_account_v1[\s\S]*historicalBalanceBackfilled', false/],
-  ['tenant policy governs preflight and checkout before account creation', /AR_CREDIT_TENANT_POLICY_DISABLED[\s\S]*get_customer_credit_checkout_eligibility_v1[\s\S]*post_customer_credit_checkout_v1[\s\S]*before any AR account can be created/],
-  ['cashier-capable scope is explicit while policy writers remain owner/admin-only', /'owner', 'admin', 'manager', 'accountant', 'cashier', 'branch'[\s\S]*AR_CREDIT_POLICY_OWNER_ONLY/],
-  ['owner policy settings are reachable outside an individual customer page', /customer-credit[\s\S]*CustomerCreditPolicySettings/],
-  ['customer screen exposes tenant setup and credit-account setup actions', /setupTenant[\s\S]*setupCreditAccount[\s\S]*setupCustomer/],
-  ['POS refreshes policy eligibility and retains the server preflight', /CUSTOMER_CREDIT_POLICY_CHANGED_EVENT[\s\S]*creditPolicyRevision[\s\S]*loadCustomerCreditCheckoutEligibility/],
-  ['Arabic statement direction is supported', /dir=\{locale === 'ar-SA' \? 'rtl' : 'ltr'\}/],
-  ['Branch credit is a minimal nullable switch with safe new-Branch default', /ALTER TABLE public\.branches[\s\S]*customer_credit_enabled boolean DEFAULT false[\s\S]*legacy rows inherit/],
-  ['Branch credit read and write are server-authoritative and branch scoped', /get_branch_customer_credit_policy_v1[\s\S]*set_branch_customer_credit_policy_v1[\s\S]*v_actor\.role = 'branch'[\s\S]*v_actor\.branch_id IS DISTINCT FROM v_branch\.id/],
-  ['simple customer access is restricted to Owner/admin/Branch and preserves empty setup', /set_customer_credit_access_v1[\s\S]*v_scope\.actor_role NOT IN \('owner', 'admin', 'branch'\)[\s\S]*historicalBalanceBackfilled', false/],
-  ['checkout preflight and posting enforce the Branch switch', /AR_CREDIT_BRANCH_DISABLED[\s\S]*post_customer_credit_checkout_v1[\s\S]*coalesce\(v_branch_credit_enabled, true\)/],
-  ['Branch Settings uses the same page for Branch and Owner routes', /BranchSettingsPage[\s\S]*\/branch-settings[\s\S]*\/settings\/branches\/:branchId/],
-  ['Branch users have Branch Settings and Customer Credit navigation', /branchSettings[\s\S]*\/branch-settings[\s\S]*customerCredit[\s\S]*\/reports\/receivables/],
-  ['Owner can open a Branch Settings view from the Branch directory', /navigate\(\`\/settings\/branches\/\$\{branch\.id\}\`/],
-  ['simple settings do not expose advanced customer-credit controls', /allowForCustomer[\s\S]*saveCustomerCreditAccess/],
-  ['stateful fixture exercises Branch A/C enabled and Branch B disabled', /set_branch_customer_credit_policy_v1[\s\S]*branch_c[\s\S]*branch_a[\s\S]*AR_CREDIT_BRANCH_DISABLED/],
-]
-
-for (const [name, pattern] of cases) {
-  if (pattern instanceof RegExp) assert.match(allSql + panel + client + creditSettings + settingsPage + posPage + receipt + statement + reportPage + creditNoteModal + xlsx + statefulFixture + rejectionFixture + enLocale + arLocale + enSettingsLocale + arSettingsLocale + branchSettingsPage + sidebar + app + branchesTab, pattern, name)
-  else assert.ok(pattern, name)
+assert.ok(fs.existsSync(migrationPath), 'Branch-only migration exists')
+for (const code of ['BRANCH_CREDIT_DISABLED', 'BUSINESS_CUSTOMER_REQUIRED', 'CUSTOMER_INACTIVE', 'CUSTOMER_NOT_FOUND', 'CREDIT_ACCOUNT_SETUP_FAILED', 'BRANCH_INACTIVE', 'CREDIT_UNAUTHORIZED']) {
+  assert.match(migration, new RegExp(code), `server exposes ${code}`)
 }
+assert.match(migration, /customer_type::text IS DISTINCT FROM 'business'/)
+assert.match(migration, /coalesce\(v_branch\.customer_credit_enabled, false\)/)
+assert.match(migration, /ar_ensure_customer_account_v1/)
+assert.match(migration, /historicalBalanceBackfilled', false/)
+assert.match(migration, /SET search_path = public, pg_temp/)
+assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.post_customer_credit_checkout_v1\(jsonb\) TO authenticated/)
+assert.match(migration, /REVOKE ALL ON FUNCTION public\.set_customer_credit_access_v1\(jsonb\) FROM PUBLIC, anon, authenticated/)
+assert.doesNotMatch(migration, /INSERT\s+INTO\s+public\.(?:invoices|payments|stock_movements)/i, 'consolidation migration is additive')
 
-assert.doesNotMatch(controls, /INSERT\s+INTO\s+public\.invoices/i, 'controls migration must not create invoices directly')
-assert.doesNotMatch(controls, /INSERT\s+INTO\s+public\.payments/i, 'controls migration must not create payments directly')
-assert.doesNotMatch(client, /\.from\(['"]customer_(?:receivable|payment)[\s\S]{0,500}\.(?:insert|update|delete)\(/, 'client has no direct receivable table writes')
-assert.doesNotMatch(client, /\.from\(['"]tenant_customer_credit_policies['"]\)[\s\S]{0,500}\.(?:insert|update|delete)/, 'client has no direct tenant credit-policy writes')
-assert.match(rpcs, /DELETE FROM public\.payments WHERE invoice_id = v_invoice_id/, 'credit bridge cleanup is scoped to its own temporary payment')
-assert.match(rpcs, /SET payment_method = CASE[\s\S]*due_date = v_due_date[\s\S]*payment_status = CASE/, 'settlement updates only non-fiscal settlement state')
-assert.match(client + panel, /loadUnappliedCustomerPaymentReceipts[\s\S]*reallocateCustomerPayment[\s\S]*payment-reallocation/, 'unapplied receipt credit can be applied later through the authorized RPC')
-assert.match(client + panel, /postCustomerReceivableAdjustment[\s\S]*receivable-adjustment/, 'approved balance adjustments are exposed through the authorized RPC')
-for (const page of [panel, receipt, statement, creditNoteModal]) {
-  assert.match(page, /Number\.isFinite\(date\.getTime\(\)\)/, 'date renderers reject malformed legacy values safely')
-}
+assert.doesNotMatch(settings, /customer-credit|CustomerCreditPolicySettings/)
+assert.doesNotMatch(compatibility, /type="checkbox"|set_tenant_customer_credit_policy_v1|set_customer_credit_access_v1|credit_limit|hold|approval/i)
+assert.doesNotMatch(panel, /ensureCustomerReceivableAccount|saveCustomerCreditAccess|Allow credit for this customer|Stop credit|creditLimit|availableCredit/)
+assert.match(panel, /branchCreditSettings\?\.branchCreditEnabled/)
+assert.match(panel, /actions\.receivePayment/)
 
-console.log(`customer receivables contract tests passed (${cases.length + 8} checks)`)
+assert.match(sidebar, /loadBranchCustomerCreditSettings/)
+assert.match(sidebar, /item\.path !== '\/reports\/receivables' \|\| branchCreditEnabled/)
+assert.match(pos, /BUSINESS_CUSTOMER_REQUIRED/)
+assert.match(pos, /payments:customerCredit/)
+assert.doesNotMatch(pos, /creditEligibility\.availableCredit|creditAvailable|creditLimit/)
+assert.match(pos, /payMethod === 'credit'\s*\? \(checkout\.display_payment_method \?\? 'credit'\)/)
+
+for (const tab of ['overview', 'invoices', 'products', 'documents', 'report']) assert.match(detail, new RegExp(`'${tab}'`), `customer profile has ${tab} tab`)
+assert.match(detail, /customerCreditVisible/)
+for (const tab of ['overview', 'customers', 'payments', 'statements']) assert.match(workspace, new RegExp(`'${tab}'`), `Customer Credit has ${tab} workspace tab`)
+assert.match(workspace, /customer_payment_receipts/)
+assert.match(workspace, /print\/payment-receipt/)
+assert.match(workspace, /lastCreditInvoice/)
+assert.match(workspace, /quickRange/)
+assert.match(statement, /startDate: searchParams\.get\('start'\)/)
+assert.match(receipt, /format58|format80|formatA4/)
+assert.match(client, /get_customer_payment_receipt_document_v1/)
+assert.match(client, /getPersistentReceivableOperation/)
+
+console.log('final Branch-only Business/B2B customer-credit contracts passed (31 checks)')

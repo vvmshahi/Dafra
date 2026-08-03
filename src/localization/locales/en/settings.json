@@ -1,7 +1,7 @@
 {
   "pageTitle": "Settings",
   "pageSubtitle": "Manage your account, subscription, and device preferences.",
-  "tabs": { "subscription": { "label": "Subscription", "description": "Plan, billing, and usage limits" }, "account": { "label": "Account", "description": "Profile, name, phone, and password" }, "printer": { "label": "Printer", "description": "Default receipt printer for silent printing" }, "customer-credit": { "label": "Customer credit", "description": "Tenant-wide customer credit controls" } },
+  "tabs": { "subscription": { "label": "Subscription", "description": "Plan, billing, and usage limits" }, "account": { "label": "Account", "description": "Profile, name, phone, and password" }, "printer": { "label": "Printer", "description": "Default receipt printer for silent printing" } },
   "customerCredit": {
     "workspaceLabel": "Business policy", "eyebrow": "Customer credit", "title": "Allow customer credit", "description": "Turn this on to allow Branches to use customer credit.",
     "statusEnabled": "Credit enabled", "statusDisabled": "Credit disabled", "statusMissing": "Setup required",

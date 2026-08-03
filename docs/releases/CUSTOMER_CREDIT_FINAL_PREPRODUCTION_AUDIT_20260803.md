@@ -472,3 +472,17 @@ Remaining gates are authenticated browser/RTL/responsive/keyboard review,
 explicitly disposable three-Branch lifecycle acceptance, physical printing and
 business/tax acceptance. Mobile, purchase-idempotency, main merge and real
 customer/financial mutations remain paused.
+
+## Superseding certification state — 2026-08-03
+
+This older audit recorded the former tenant/customer-policy design. It is not
+the current product contract. The current certification is Branch-only and
+Business/B2B-only: see
+[`CUSTOMER_AND_CREDIT_UX_CONSOLIDATION_20260803.md`](CUSTOMER_AND_CREDIT_UX_CONSOLIDATION_20260803.md).
+
+Migration `20260803001100_branch_only_b2b_customer_credit_v1.sql` is the
+current additive change. Its local reset, rejection fixture, stateful
+disposable fixture, typecheck, focused suites, aggregate `npm test`, and build
+pass. Remote parity/preflight/application and manual authenticated acceptance
+are still required. No real customer or fiscal mutation, production deploy,
+main merge, mobile, purchase-idempotency, or Electron work occurred.

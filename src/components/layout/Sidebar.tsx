@@ -14,8 +14,9 @@ import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 import { useLocale } from '@/localization/useLocale'
 import { AuthenticatedLanguageSwitch } from '@/components/localization/AuthenticatedLanguageSwitch'
 import { toast } from 'sonner'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { resolveBusinessDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
+import { loadBranchCustomerCreditSettings, isCustomerCreditPolicyStorageChange, CUSTOMER_CREDIT_POLICY_CHANGED_EVENT } from '@/lib/customers/receivables'
 
 interface NavItem {
   labelKey: string
@@ -115,12 +116,38 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const isSuperAdmin = profile?.role === 'super_admin'
   const isBranch     = profile?.role === 'branch'
+  const [branchCreditEnabled, setBranchCreditEnabled] = useState(false)
   const stockVisible = isStockModuleVisible({
     businessType: tenant?.business_type,
     stockEnabled: branch?.stock_enabled,
   })
+  useEffect(() => {
+    if (!isBranch || !branch?.id) {
+      setBranchCreditEnabled(false)
+      return
+    }
+    let cancelled = false
+    void loadBranchCustomerCreditSettings(branch.id)
+      .then(settings => { if (!cancelled) setBranchCreditEnabled(settings.branchCreditEnabled) })
+      .catch(() => { if (!cancelled) setBranchCreditEnabled(false) })
+    const refresh = () => {
+      void loadBranchCustomerCreditSettings(branch.id)
+        .then(settings => { if (!cancelled) setBranchCreditEnabled(settings.branchCreditEnabled) })
+        .catch(() => { if (!cancelled) setBranchCreditEnabled(false) })
+    }
+    const refreshStorage = (event: StorageEvent) => { if (isCustomerCreditPolicyStorageChange(event)) refresh() }
+    window.addEventListener(CUSTOMER_CREDIT_POLICY_CHANGED_EVENT, refresh)
+    window.addEventListener('storage', refreshStorage)
+    return () => {
+      cancelled = true
+      window.removeEventListener(CUSTOMER_CREDIT_POLICY_CHANGED_EVENT, refresh)
+      window.removeEventListener('storage', refreshStorage)
+    }
+  }, [branch?.id, isBranch])
+
   const branchNavigation = branchNav.filter(item => (
-    item.path !== '/inventory' || stockVisible
+    (item.path !== '/inventory' || stockVisible)
+      && (item.path !== '/reports/receivables' || branchCreditEnabled)
   ))
 
   const navItems = isSuperAdmin

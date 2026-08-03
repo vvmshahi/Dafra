@@ -29,6 +29,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { CustomerIntelligenceFiltersPanel } from '@/components/customers/CustomerIntelligenceFilters'
 import { CustomerReceivablesPanel } from '@/components/customers/CustomerReceivablesPanel'
+import { loadBranchCustomerCreditSettings, loadCustomerReceivableWorkspace } from '@/lib/customers/receivables'
 import CustomerModal from './CustomerModal'
 import type { CustomerWithStats } from './CustomersPage'
 import type { Branch } from '@/types'
@@ -61,6 +62,8 @@ interface FilterOption {
   name: string
   nameAr: string | null
 }
+
+type CustomerProfileSection = 'overview' | 'invoices' | 'products' | 'documents' | 'report' | 'credit'
 
 function formatDate(value: string | null, locale: string, withTime = false) {
   if (!value) return '—'
@@ -150,8 +153,43 @@ export default function CustomerDetailPage() {
   const [units, setUnits] = useState<FilterOption[]>([])
   const [editingCustomer, setEditingCustomer] = useState<CustomerWithStats | null>(null)
   const [preparingPdf, setPreparingPdf] = useState(false)
+  const [customerCreditVisible, setCustomerCreditVisible] = useState(false)
+  const requestedProfileSection = searchParams.get('section') as CustomerProfileSection | null
+  const [activeProfileSection, setActiveProfileSection] = useState<CustomerProfileSection>(
+    requestedProfileSection === 'credit' || requestedProfileSection === 'products' || requestedProfileSection === 'documents' || requestedProfileSection === 'invoices' || requestedProfileSection === 'report'
+      ? requestedProfileSection
+      : 'overview',
+  )
 
   const canChooseBranch = profile?.role !== 'branch'
+
+  useEffect(() => {
+    const next = requestedProfileSection === 'credit' || requestedProfileSection === 'products' || requestedProfileSection === 'documents' || requestedProfileSection === 'invoices' || requestedProfileSection === 'report'
+      ? requestedProfileSection
+      : 'overview'
+    setActiveProfileSection(data?.customer.customerType !== 'business' || (next === 'credit' && !customerCreditVisible) ? 'overview' : next)
+  }, [customerCreditVisible, data?.customer.customerType, requestedProfileSection])
+
+  useEffect(() => {
+    if (!data?.customer.branchId || data.customer.customerType !== 'business') {
+      setCustomerCreditVisible(false)
+      return
+    }
+    let cancelled = false
+    void Promise.all([
+      loadBranchCustomerCreditSettings(data.customer.branchId),
+      loadCustomerReceivableWorkspace({ customerId: data.customer.id, branchId: data.customer.branchId, page: 1, pageSize: 1 }),
+    ]).then(([settings, workspace]) => {
+      if (!cancelled) setCustomerCreditVisible(settings.branchCreditEnabled || workspace.ledger.length > 0)
+    }).catch(() => { if (!cancelled) setCustomerCreditVisible(false) })
+    return () => { cancelled = true }
+  }, [data?.customer.branchId, data?.customer.customerType, data?.customer.id])
+
+  function selectProfileSection(section: CustomerProfileSection) {
+    const next = new URLSearchParams(searchParams)
+    next.set('section', section)
+    setSearchParams(next)
+  }
 
   useEffect(() => {
     if (searchParams.get('section') !== 'credit' || !data) return
@@ -455,12 +493,6 @@ export default function CustomerDetailPage() {
   const displayName = customerDisplayName(data.customer, isRtl)
   const secondaryName = isRtl ? data.customer.name : data.customer.nameAr
   const maxTimeline = Math.max(...data.timeline.map(point => Math.abs(point.netPurchases)), 1)
-  const reportQuery = new URLSearchParams({
-    start: filters.startDate,
-    end: filters.endDate,
-  })
-  if (filters.branchId) reportQuery.set('branch', filters.branchId)
-
   return (
     <div className="space-y-5 max-w-[1500px]">
       <button
@@ -526,27 +558,34 @@ export default function CustomerDetailPage() {
               <Download size={14} />
               {t('customerIntelligence:pdf.action')}
             </Button>
-            <Link
-              to={`/reports/customers?${reportQuery.toString()}`}
-              className="btn-primary px-3 py-1.5 text-xs rounded-lg"
-            >
-              <BarChart3 size={14} />
-              {t('customerIntelligence:reports.openDedicated')}
-            </Link>
           </div>
         </div>
       </header>
 
-      <CustomerReceivablesPanel
+      <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200 bg-gray-50/80 p-1.5" role="tablist" aria-label={t('customerIntelligence:profileTabs.label')}>
+        {(['overview', 'invoices', 'products', 'documents', 'report', ...(customerCreditVisible ? ['credit' as const] : [])] as CustomerProfileSection[]).map(section => (
+          <button
+            key={section}
+            type="button"
+            role="tab"
+            aria-selected={activeProfileSection === section}
+            onClick={() => selectProfileSection(section)}
+            className={`min-h-10 flex-1 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${activeProfileSection === section ? 'bg-primary-600 text-white shadow-sm' : 'text-gray-500 hover:bg-white hover:text-gray-800'}`}
+          >
+            {t(`customerIntelligence:profileTabs.${section}`)}
+          </button>
+        ))}
+      </nav>
+
+      {activeProfileSection === 'credit' && customerCreditVisible && <CustomerReceivablesPanel
         customerId={id}
         branchId={data.customer.branchId}
         isOwner={profile?.role === 'owner' || profile?.role === 'admin'}
-        canManageCustomerCredit={['owner', 'admin', 'branch'].includes(profile?.role ?? '')}
         canReversePayment={['owner', 'admin', 'accountant', 'manager'].includes(profile?.role ?? '')}
         canAdjustReceivables={['owner', 'admin', 'accountant'].includes(profile?.role ?? '')}
-      />
+      />}
 
-      <CustomerIntelligenceFiltersPanel
+      {(activeProfileSection === 'overview' || activeProfileSection === 'report') && <div className="space-y-5"><CustomerIntelligenceFiltersPanel
         filters={filters}
         preset={preset}
         branches={branches.map(branch => ({ id: branch.id, name: branch.name, nameAr: branch.name_ar }))}
@@ -722,8 +761,9 @@ export default function CustomerDetailPage() {
           </p>
         </section>
       </div>
+      </div>}
 
-      <section className="card overflow-hidden" aria-labelledby="top-products-title">
+      {(activeProfileSection === 'products' || activeProfileSection === 'report') && <section className="card overflow-hidden" aria-labelledby="top-products-title">
         <div className="px-4 py-3 border-b border-gray-100">
           <h2 id="top-products-title" className="text-sm font-bold text-gray-900">
             {t('customerIntelligence:products.title')}
@@ -776,9 +816,9 @@ export default function CustomerDetailPage() {
         ) : (
           <div className="py-12 text-center text-sm text-gray-400">{t('customerIntelligence:empty.noProducts')}</div>
         )}
-      </section>
+      </section>}
 
-      <section className="card p-4" aria-labelledby="insights-title">
+      {(activeProfileSection === 'overview' || activeProfileSection === 'report') && <section className="card p-4" aria-labelledby="insights-title">
         <div className="flex items-start gap-3">
           <div className="w-9 h-9 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center flex-shrink-0">
             <Sparkles size={17} />
@@ -797,9 +837,9 @@ export default function CustomerDetailPage() {
             </ul>
           </div>
         </div>
-      </section>
+      </section>}
 
-      <section className="card overflow-hidden" aria-labelledby="history-title">
+      {(activeProfileSection === 'invoices' || activeProfileSection === 'documents') && <section className="card overflow-hidden" aria-labelledby="history-title">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1">
             <h2 id="history-title" className="text-sm font-bold text-gray-900">
@@ -916,9 +956,9 @@ export default function CustomerDetailPage() {
             </Button>
           </div>
         )}
-      </section>
+      </section>}
 
-      <p className="text-xs text-gray-400 leading-relaxed">{t('customerIntelligence:pdf.disclaimer')}</p>
+      {(activeProfileSection === 'overview' || activeProfileSection === 'report') && <p className="text-xs text-gray-400 leading-relaxed">{t('customerIntelligence:pdf.disclaimer')}</p>}
 
       <CustomerModal
         open={editingCustomer !== null}

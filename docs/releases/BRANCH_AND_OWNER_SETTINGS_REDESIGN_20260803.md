@@ -189,3 +189,14 @@ deployment was uploaded from this exact clean SHA; no production alias,
 ## Verdict
 
 `KUBRI_BRANCH_OWNER_SETTINGS_REDESIGN_READY_FOR_MANUAL_ACCEPTANCE`
+
+## Superseding Branch-only customer-credit state — 2026-08-03
+
+The earlier Owner/business and customer-policy wording in this historical
+document is superseded. The only current credit gate is the Branch setting;
+only active Business/B2B customers qualify, and account setup is automatic and
+idempotent. The compatibility route is navigation-only and does not expose a
+policy switch, limit, hold, approval, or setup action.
+
+See [`CUSTOMER_AND_CREDIT_UX_CONSOLIDATION_20260803.md`](CUSTOMER_AND_CREDIT_UX_CONSOLIDATION_20260803.md)
+for the current profile/workspace/report/POS contract and local evidence.

@@ -1,7 +1,7 @@
 {
   "pageTitle": "الإعدادات",
   "pageSubtitle": "إدارة الحساب والاشتراك وتفضيلات الجهاز.",
-  "tabs": { "subscription": { "label": "الاشتراك", "description": "الخطة والفوترة وحدود الاستخدام" }, "account": { "label": "الحساب", "description": "الملف الشخصي والاسم والهاتف وكلمة المرور" }, "printer": { "label": "الطابعة", "description": "طابعة الإيصالات الافتراضية للطباعة الصامتة" }, "customer-credit": { "label": "ائتمان العملاء", "description": "ضوابط ائتمان العملاء على مستوى المنشأة" } },
+  "tabs": { "subscription": { "label": "الاشتراك", "description": "الخطة والفوترة وحدود الاستخدام" }, "account": { "label": "الحساب", "description": "الملف الشخصي والاسم والهاتف وكلمة المرور" }, "printer": { "label": "الطابعة", "description": "طابعة الإيصالات الافتراضية للطباعة الصامتة" } },
   "customerCredit": {
     "workspaceLabel": "سياسة النشاط", "eyebrow": "ائتمان العملاء", "title": "السماح بائتمان العملاء", "description": "فعّل هذا الخيار للسماح للفروع باستخدام ائتمان العملاء.",
     "statusEnabled": "الائتمان مفعّل", "statusDisabled": "الائتمان معطّل", "statusMissing": "الإعداد مطلوب",

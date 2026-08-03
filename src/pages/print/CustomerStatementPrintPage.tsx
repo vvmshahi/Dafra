@@ -31,6 +31,8 @@ export default function CustomerStatementPrintPage() {
     void loadCustomerReceivableWorkspace({
       customerId,
       branchId: searchParams.get('branch'),
+      startDate: searchParams.get('start') || undefined,
+      endDate: searchParams.get('end') || undefined,
       page: 1,
       pageSize: 200,
     }).then(value => {

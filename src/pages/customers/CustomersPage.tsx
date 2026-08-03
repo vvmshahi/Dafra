@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, Pencil, Eye, Archive, Users, X, Building2, User, BarChart3, Loader2 } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Plus, Search, Pencil, Eye, Archive, Users, X, Building2, User, Loader2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
@@ -282,10 +282,6 @@ export default function CustomersPage() {
               <Plus size={14} />
               {t('add')}
             </Button>
-            <Link to="/reports/customers" className="btn-secondary px-3 py-1.5 text-xs rounded-lg">
-              <BarChart3 size={14} />
-              {t('customerIntelligence:reports.openDedicated')}
-            </Link>
           </>
         )}
       />
@@ -360,9 +356,6 @@ export default function CustomersPage() {
             <Building2 size={14} className="text-gold-500" />
             <span>{t('businessCount', { count: counts.business })}</span>
           </div>
-          <Link to="/reports/customers" className="ms-auto font-semibold text-primary-600 hover:text-primary-700">
-            {t('customerIntelligence:reports.openDedicated')}
-          </Link>
         </div>
       )}
 

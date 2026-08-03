@@ -1,293 +1,228 @@
--- Disposable three-branch AR certification. All fixture data is rolled back.
+-- Disposable Branch-only Business/B2B credit certification. The complete
+-- fixture is transactional and is rolled back before the success marker.
 DO $certification$
 DECLARE
-  t uuid := '10000000-0000-4000-8000-000000000001';
-  owner_id uuid := '20000000-0000-4000-8000-000000000001';
-  branch_a_user uuid := '20000000-0000-4000-8000-000000000002';
-  branch_b_user uuid := '20000000-0000-4000-8000-000000000003';
-  cashier_a_user uuid := '20000000-0000-4000-8000-000000000004';
-  branch_a uuid := '30000000-0000-4000-8000-000000000001';
-  branch_b uuid := '30000000-0000-4000-8000-000000000002';
-  branch_c uuid := '30000000-0000-4000-8000-000000000003';
-  customer_a uuid := '40000000-0000-4000-8000-000000000001';
-  customer_b uuid := '40000000-0000-4000-8000-000000000002';
-  customer_c uuid := '40000000-0000-4000-8000-000000000003';
-  legacy_customer uuid := '40000000-0000-4000-8000-000000000004';
-  invoice_a1 uuid := '50000000-0000-4000-8000-000000000001';
-  invoice_a2 uuid := '50000000-0000-4000-8000-000000000002';
-  invoice_b uuid := '50000000-0000-4000-8000-000000000003';
-  invoice_c uuid := '50000000-0000-4000-8000-000000000004';
-  payment_op uuid := '60000000-0000-4000-8000-000000000001';
-  reallocation_op uuid := '60000000-0000-4000-8000-000000000002';
-  reversal_op uuid := '60000000-0000-4000-8000-000000000003';
-  rejected_op uuid := '60000000-0000-4000-8000-000000000004';
-  receipt jsonb;
-  replay jsonb;
-  report jsonb;
-  preflight jsonb;
-  tenant_policy jsonb;
-  pos_settings jsonb;
-  v_receipt_id uuid;
-  account_a uuid;
-  count_value integer;
-  amount_value numeric;
-  status_value text;
+  v_tenant uuid := '10000000-0000-4000-8000-000000000001';
+  v_owner uuid := '20000000-0000-4000-8000-000000000001';
+  v_branch_user uuid := '20000000-0000-4000-8000-000000000002';
+  v_sibling_user uuid := '20000000-0000-4000-8000-000000000003';
+  v_branch_a uuid := '30000000-0000-4000-8000-000000000001';
+  v_branch_b uuid := '30000000-0000-4000-8000-000000000002';
+  v_business uuid := '40000000-0000-4000-8000-000000000001';
+  v_individual uuid := '40000000-0000-4000-8000-000000000002';
+  v_inactive_business uuid := '40000000-0000-4000-8000-000000000003';
+  v_off_preflight jsonb;
+  v_enabled_preflight jsonb;
+  v_account_first jsonb;
+  v_account_second jsonb;
+  v_before bigint;
+  v_after bigint;
+  v_account_id uuid;
 BEGIN
-  BEGIN
+  IF EXISTS (SELECT 1 FROM public.tenants WHERE id = v_tenant)
+     OR EXISTS (SELECT 1 FROM public.branches WHERE id IN (v_branch_a, v_branch_b))
+     OR EXISTS (SELECT 1 FROM public.customers WHERE id IN (v_business, v_individual, v_inactive_business))
+     OR EXISTS (SELECT 1 FROM auth.users WHERE id IN (v_owner, v_branch_user, v_sibling_user)) THEN
+    RAISE EXCEPTION 'AR fixture IDs already exist; refusing to touch existing data';
+  END IF;
+
   INSERT INTO auth.users (id, aud, role, email, created_at, updated_at) VALUES
-    (owner_id, 'authenticated', 'authenticated', 'ar-owner@example.test', now(), now()),
-    (branch_a_user, 'authenticated', 'authenticated', 'ar-a@example.test', now(), now()),
-    (branch_b_user, 'authenticated', 'authenticated', 'ar-b@example.test', now(), now()),
-    (cashier_a_user, 'authenticated', 'authenticated', 'ar-cashier-a@example.test', now(), now());
-  INSERT INTO public.tenants (id, name, vat_number) VALUES (t, 'AR certification fixture', '300000000000003');
-  INSERT INTO public.branches (id, tenant_id, name, branch_code, is_main_branch) VALUES
-    (branch_a, t, 'AR branch A', 'AR-A', true), (branch_b, t, 'AR branch B', 'AR-B', false), (branch_c, t, 'AR branch C', 'AR-C', false);
-  INSERT INTO public.user_profiles (id, tenant_id, branch_id, role, full_name, is_active) VALUES
-    (owner_id, t, NULL, 'owner', 'AR Owner', true),
-    (branch_a_user, t, branch_a, 'branch', 'AR Branch A', true),
-    (branch_b_user, t, branch_b, 'branch', 'AR Branch B', true),
-    (cashier_a_user, t, branch_a, 'cashier', 'AR Cashier A', true);
-  INSERT INTO public.customers (id, tenant_id, branch_id, name, is_active) VALUES
-    (customer_a, t, branch_a, 'Customer A', true), (customer_b, t, branch_b, 'Customer B', true), (customer_c, t, branch_c, 'Customer C', true),
-    (legacy_customer, t, branch_a, 'Legacy Customer', true);
+    (v_owner, 'authenticated', 'authenticated', 'branch-only-owner@example.test', now(), now()),
+    (v_branch_user, 'authenticated', 'authenticated', 'branch-only-a@example.test', now(), now()),
+    (v_sibling_user, 'authenticated', 'authenticated', 'branch-only-b@example.test', now(), now());
+  INSERT INTO public.tenants (id, name, vat_number)
+  VALUES (v_tenant, 'Branch-only credit fixture', '300000000000003');
+  INSERT INTO public.branches (id, tenant_id, name, branch_code, is_main_branch, customer_credit_enabled)
+  VALUES
+    (v_branch_a, v_tenant, 'Branch-only A', 'BO-A', true, false),
+    (v_branch_b, v_tenant, 'Branch-only B', 'BO-B', false, false);
+  INSERT INTO public.user_profiles (id, tenant_id, branch_id, role, full_name, is_active)
+  VALUES
+    (v_owner, v_tenant, NULL, 'owner', 'Branch-only owner', true),
+    (v_branch_user, v_tenant, v_branch_a, 'branch', 'Branch-only A user', true),
+    (v_sibling_user, v_tenant, v_branch_b, 'branch', 'Branch-only B user', true);
+  INSERT INTO public.customers (id, tenant_id, branch_id, name, business_name, company_name, customer_type, is_active)
+  VALUES
+    (v_business, v_tenant, v_branch_a, 'Business customer', 'Business customer LLC', 'Business customer LLC', 'business', true),
+    (v_individual, v_tenant, v_branch_a, 'Individual customer', NULL, NULL, 'individual', true),
+    (v_inactive_business, v_tenant, v_branch_a, 'Inactive business', 'Inactive business LLC', 'Inactive business LLC', 'business', false);
 
-  -- Posted-invoice trigger establishes AR accounts and append-only debits.
-  PERFORM set_config('request.jwt.claim.sub', owner_id::text, true);
-  INSERT INTO public.invoices (id, tenant_id, branch_id, customer_id, created_by, invoice_number, subtotal, taxable_amount, tax_amount, total_amount, status, zatca_invoice_type, payment_status, invoice_date, due_date) VALUES
-    (invoice_a1, t, branch_a, customer_a, owner_id, 'AR-A-001', 100, 100, 0, 100, 'posted', 'simplified', 'pending', current_date - 2, current_date + 30),
-    (invoice_a2, t, branch_a, customer_a, owner_id, 'AR-A-002', 60, 60, 0, 60, 'posted', 'simplified', 'pending', current_date - 5, current_date - 1),
-    (invoice_b, t, branch_b, customer_b, owner_id, 'AR-B-001', 200, 200, 0, 200, 'posted', 'simplified', 'pending', current_date - 2, current_date + 30),
-    (invoice_c, t, branch_c, customer_c, owner_id, 'AR-C-001', 300, 300, 0, 300, 'posted', 'simplified', 'pending', current_date - 2, current_date + 30);
-  SELECT receivable_account_id INTO account_a FROM public.customers WHERE id = customer_a;
-  IF account_a IS NULL THEN RAISE EXCEPTION 'AR fixture: invoice trigger did not establish account'; END IF;
-  SELECT count(*) INTO count_value FROM public.customer_receivable_entries WHERE tenant_id = t AND source_kind = 'invoice';
-  IF count_value <> 4 THEN RAISE EXCEPTION 'AR fixture: expected 4 invoice ledger rows, got %', count_value; END IF;
+  PERFORM set_config('request.jwt.claim.sub', v_branch_user::text, true);
 
-  -- No tenant policy is a safe disabled state. The read does not create a
-  -- policy or a legacy customer's empty receivable account.
   SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
-    'branch_id', branch_a, 'customer_id', legacy_customer, 'proposed_credit_amount', 10
-  )) INTO preflight;
-  IF preflight->>'reasonCode' <> 'AR_CREDIT_TENANT_POLICY_DISABLED'
-     OR (preflight->>'accountLinked')::boolean IS TRUE
-     OR preflight->>'reason_code' <> 'BUSINESS_CREDIT_DISABLED'
-     OR (preflight->>'business_enabled')::boolean IS TRUE
-     OR (preflight->>'account_ready')::boolean IS TRUE
-     OR EXISTS (SELECT 1 FROM public.tenant_customer_credit_policies WHERE tenant_id = t) THEN
-    RAISE EXCEPTION 'AR fixture: missing tenant policy was not safely disabled';
+    'branch_id', v_branch_a, 'customer_id', v_business
+  )) INTO v_off_preflight;
+  IF v_off_preflight->>'reasonCode' <> 'BRANCH_CREDIT_DISABLED'
+     OR (v_off_preflight->>'eligible')::boolean IS TRUE
+     OR (v_off_preflight->>'account_ready')::boolean IS TRUE
+     OR EXISTS (SELECT 1 FROM public.customers WHERE id = v_business AND receivable_account_id IS NOT NULL) THEN
+    RAISE EXCEPTION 'AR fixture: disabled Branch was not rejected without account setup';
   END IF;
 
-  -- Only the owner creates the tenant policy. This does not approve a customer.
-  SELECT public.set_tenant_customer_credit_policy_v1(jsonb_build_object(
-    'credit_enabled', true, 'allow_unpaid_invoices', true,
-    'allow_partial_initial_payments', true, 'default_credit_limit', 125,
-    'hard_limit_enforced', true, 'warn_threshold_percent', 80,
-    'enforce_customer_hold', true, 'allow_manager_override', false,
-    'default_allocation_mode', 'oldest_first', 'due_date_days', null
-  )) INTO tenant_policy;
-  IF tenant_policy->>'creditEnabled' <> 'true'
-     OR (SELECT count(*) FROM public.customer_credit_policies WHERE tenant_id = t) <> 0 THEN
-    RAISE EXCEPTION 'AR fixture: tenant policy unexpectedly approved a customer';
-  END IF;
-
-  -- Existing Branches inherit the enabled tenant setting only when their
-  -- Branch switch is NULL. New Branch rows default off, so enable Branch A
-  -- and Branch C explicitly while Branch B remains disabled.
-  SELECT public.set_branch_customer_credit_policy_v1(jsonb_build_object(
-    'branch_id', branch_c, 'credit_enabled', true
-  )) INTO preflight;
-  PERFORM set_config('request.jwt.claim.sub', branch_a_user::text, true);
-  SELECT public.set_branch_customer_credit_policy_v1(jsonb_build_object(
-    'branch_id', branch_a, 'credit_enabled', true
-  )) INTO preflight;
-  SELECT public.update_branch_pos_settings(branch_a, jsonb_build_object(
-    'allow_split_payments', true, 'show_pos_scroll_buttons', true, 'pos_mode', 'quick'
-  )) INTO pos_settings;
-  IF (pos_settings->>'allow_split_payments')::boolean IS NOT TRUE
-     OR (pos_settings->>'show_pos_scroll_buttons')::boolean IS NOT TRUE
-     OR pos_settings->>'pos_mode' <> 'quick' THEN
-    RAISE EXCEPTION 'AR fixture: Branch POS settings did not persist through the authoritative RPC';
-  END IF;
-  PERFORM set_config('request.jwt.claim.sub', owner_id::text, true);
-  SELECT public.get_branch_customer_credit_policy_v1(branch_b) INTO preflight;
-  IF (preflight->>'tenantCreditEnabled')::boolean IS NOT TRUE
-     OR (preflight->>'branchCreditEnabled')::boolean IS TRUE THEN
-    RAISE EXCEPTION 'AR fixture: disabled Branch B was not reported safely';
-  END IF;
-
-  -- Explicit setup creates only a safe empty account for a legacy customer.
-  PERFORM public.ensure_customer_receivable_account_v1(jsonb_build_object('customer_id', legacy_customer));
-  IF (SELECT receivable_account_id FROM public.customers WHERE id = legacy_customer) IS NULL
-     OR EXISTS (SELECT 1 FROM public.customer_receivable_entries WHERE customer_id = legacy_customer)
-     OR EXISTS (SELECT 1 FROM public.invoices WHERE customer_id = legacy_customer) THEN
-    RAISE EXCEPTION 'AR fixture: legacy setup fabricated customer history';
-  END IF;
-
-  -- A customer requires an explicit simple approval after tenant and Branch
-  -- setup. The Branch user can make this change in its own Branch.
-  PERFORM set_config('request.jwt.claim.sub', branch_a_user::text, true);
-  PERFORM public.set_customer_credit_access_v1(jsonb_build_object(
-    'customer_id', customer_a, 'credit_enabled', true
+  PERFORM public.set_branch_customer_credit_policy_v1(jsonb_build_object(
+    'branch_id', v_branch_a, 'credit_enabled', true
   ));
-  SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
-    'branch_id', branch_a, 'customer_id', customer_a, 'proposed_credit_amount', 10
-  )) INTO preflight;
-  IF preflight->>'reasonCode' <> 'AR_CREDIT_ELIGIBLE'
-     OR preflight->>'reason_code' <> 'AR_CREDIT_ELIGIBLE'
-     OR (preflight->>'business_enabled')::boolean IS NOT TRUE
-     OR (preflight->>'branch_enabled')::boolean IS NOT TRUE
-     OR (preflight->>'customer_enabled')::boolean IS NOT TRUE
-     OR (preflight->>'account_ready')::boolean IS NOT TRUE
-     OR (preflight->>'customer_active')::boolean IS NOT TRUE
-     OR (preflight->>'eligible')::boolean IS NOT TRUE THEN
-    RAISE EXCEPTION 'AR fixture: explicit customer credit approval did not become eligible';
+  SELECT public.get_branch_customer_credit_policy_v1(v_branch_a) INTO v_enabled_preflight;
+  IF (v_enabled_preflight->>'branchCreditEnabled')::boolean IS NOT TRUE
+     OR (v_enabled_preflight->>'tenantPolicyConfigured')::boolean IS NOT FALSE THEN
+    RAISE EXCEPTION 'AR fixture: Branch-only gate did not persist';
   END IF;
 
-  -- Branch B is denied before customer policy or checkout logic can run.
-  PERFORM set_config('request.jwt.claim.sub', branch_b_user::text, true);
   SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
-    'branch_id', branch_b, 'customer_id', customer_b, 'proposed_credit_amount', 10
-  )) INTO preflight;
-  IF preflight->>'reasonCode' <> 'AR_CREDIT_BRANCH_DISABLED'
-     OR preflight->>'reason_code' <> 'BRANCH_CREDIT_DISABLED'
-     OR (preflight->>'business_enabled')::boolean IS NOT TRUE
-     OR (preflight->>'branch_enabled')::boolean IS TRUE
-     OR (preflight->>'eligible')::boolean IS TRUE THEN
-    RAISE EXCEPTION 'AR fixture: disabled Branch B credit preflight was not rejected';
+    'branch_id', v_branch_a, 'customer_id', v_business
+  )) INTO v_enabled_preflight;
+  IF v_enabled_preflight->>'reasonCode' <> 'AR_CREDIT_ELIGIBLE'
+     OR (v_enabled_preflight->>'eligible')::boolean IS NOT TRUE
+     OR (v_enabled_preflight->>'account_ready')::boolean IS TRUE
+     OR (v_enabled_preflight->>'account_auto_create')::boolean IS NOT TRUE
+     OR v_enabled_preflight->>'creditLimit' IS NOT NULL
+     OR v_enabled_preflight->>'availableCredit' IS NOT NULL THEN
+    RAISE EXCEPTION 'AR fixture: active Business customer did not pass Branch-only preflight: %', v_enabled_preflight;
   END IF;
+
+  SELECT count(*) INTO v_before FROM public.customer_receivable_entries WHERE customer_id = v_business;
+  SELECT public.ensure_customer_credit_account_v1(jsonb_build_object('customer_id', v_business)) INTO v_account_first;
+  SELECT public.ensure_customer_credit_account_v1(jsonb_build_object('customer_id', v_business)) INTO v_account_second;
+  v_account_id := (v_account_first->>'receivableAccountId')::uuid;
+  SELECT count(*) INTO v_after FROM public.customer_receivable_entries WHERE customer_id = v_business;
+  IF (v_account_first->>'created')::boolean IS NOT TRUE
+     OR (v_account_second->>'created')::boolean IS TRUE
+     OR (v_account_first->>'automatic')::boolean IS NOT TRUE
+     OR (v_account_first->>'historicalBalanceBackfilled')::boolean IS TRUE
+     OR v_account_id IS NULL
+     OR v_account_id IS DISTINCT FROM (v_account_second->>'receivableAccountId')::uuid
+     OR v_after <> v_before THEN
+    RAISE EXCEPTION 'AR fixture: automatic account setup was not idempotent: % / %', v_account_first, v_account_second;
+  END IF;
+
+  SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
+    'branch_id', v_branch_a, 'customer_id', v_business
+  )) INTO v_enabled_preflight;
+  IF (v_enabled_preflight->>'account_ready')::boolean IS NOT TRUE
+     OR (v_enabled_preflight->>'account_auto_create')::boolean IS TRUE THEN
+    RAISE EXCEPTION 'AR fixture: account-ready preflight did not update';
+  END IF;
+
+  SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
+    'branch_id', v_branch_a, 'customer_id', v_individual
+  )) INTO v_enabled_preflight;
+  IF v_enabled_preflight->>'reasonCode' <> 'BUSINESS_CUSTOMER_REQUIRED'
+     OR (v_enabled_preflight->>'eligible')::boolean IS TRUE THEN
+    RAISE EXCEPTION 'AR fixture: individual customer was eligible';
+  END IF;
+  SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
+    'branch_id', v_branch_a, 'customer_id', v_inactive_business
+  )) INTO v_enabled_preflight;
+  IF v_enabled_preflight->>'reasonCode' <> 'CUSTOMER_INACTIVE'
+     OR (v_enabled_preflight->>'eligible')::boolean IS TRUE THEN
+    RAISE EXCEPTION 'AR fixture: inactive Business customer was eligible';
+  END IF;
+
+  PERFORM set_config('request.jwt.claim.sub', v_sibling_user::text, true);
+  BEGIN
+    PERFORM public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
+      'branch_id', v_branch_a, 'customer_id', v_business
+    ));
+    RAISE EXCEPTION 'AR fixture: sibling Branch read unexpectedly succeeded';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM <> 'CREDIT_UNAUTHORIZED' THEN RAISE; END IF;
+  END;
+  PERFORM set_config('request.jwt.claim.sub', v_branch_user::text, true);
+
+  SELECT count(*) INTO v_before
+  FROM (
+    SELECT id FROM public.invoices
+    UNION ALL SELECT id FROM public.invoice_items
+    UNION ALL SELECT id FROM public.customer_receivable_operations
+    UNION ALL SELECT id FROM public.customer_receivable_entries
+    UNION ALL SELECT id FROM public.customer_payment_receipts
+    UNION ALL SELECT id FROM public.pos_stock_movements
+  ) unchanged_before;
+  PERFORM public.set_branch_customer_credit_policy_v1(jsonb_build_object(
+    'branch_id', v_branch_a, 'credit_enabled', false
+  ));
   BEGIN
     PERFORM public.post_customer_credit_checkout_v1(jsonb_build_object(
-      'branch_id', branch_b, 'customer_id', customer_b, 'settlement_mode', 'credit'
+      'operation_id', '70000000-0000-4000-8000-000000000001',
+      'branch_id', v_branch_a,
+      'customer_id', v_business,
+      'settlement_mode', 'credit',
+      'items', '[]'::jsonb
     ));
-    RAISE EXCEPTION 'AR fixture: disabled Branch B credit checkout unexpectedly succeeded';
+    RAISE EXCEPTION 'AR fixture: disabled Branch checkout unexpectedly succeeded';
   EXCEPTION WHEN others THEN
-    IF SQLERRM NOT LIKE 'AR_CREDIT_BRANCH_DISABLED%' THEN RAISE; END IF;
+    IF SQLERRM <> 'BRANCH_CREDIT_DISABLED' THEN RAISE; END IF;
   END;
-
-  -- A cashier can read/use an approved preflight but cannot configure either
-  -- tenant or customer policy. Branch scoping remains server-side.
-  PERFORM set_config('request.jwt.claim.sub', cashier_a_user::text, true);
-  SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
-    'branch_id', branch_a, 'customer_id', customer_a, 'proposed_credit_amount', 10
-  )) INTO preflight;
-  IF preflight->>'reasonCode' <> 'AR_CREDIT_ELIGIBLE' THEN
-    RAISE EXCEPTION 'AR fixture: cashier could not read approved credit eligibility';
+  SELECT count(*) INTO v_after
+  FROM (
+    SELECT id FROM public.invoices
+    UNION ALL SELECT id FROM public.invoice_items
+    UNION ALL SELECT id FROM public.customer_receivable_operations
+    UNION ALL SELECT id FROM public.customer_receivable_entries
+    UNION ALL SELECT id FROM public.customer_payment_receipts
+    UNION ALL SELECT id FROM public.pos_stock_movements
+  ) unchanged_after;
+  IF v_after <> v_before THEN
+    RAISE EXCEPTION 'AR fixture: rejected checkout changed business rows (% -> %)', v_before, v_after;
   END IF;
-  BEGIN
-    PERFORM public.set_tenant_customer_credit_policy_v1(jsonb_build_object('credit_enabled', false));
-    RAISE EXCEPTION 'AR fixture: cashier configured tenant policy';
-  EXCEPTION WHEN others THEN
-    IF SQLERRM NOT LIKE 'AR_CREDIT_TENANT_POLICY_OWNER_ONLY%' THEN RAISE; END IF;
-  END;
-  BEGIN
-    PERFORM public.set_customer_credit_policy_v1(jsonb_build_object('customer_id', customer_a, 'credit_enabled', false));
-    RAISE EXCEPTION 'AR fixture: cashier configured customer policy';
-  EXCEPTION WHEN others THEN
-    IF SQLERRM NOT LIKE 'AR_CREDIT_POLICY_OWNER_ONLY%' THEN RAISE; END IF;
-  END;
-
-  -- Owner disable and hold changes refresh to a safe denied response before a
-  -- checkout can reach the reviewed financial path.
-  PERFORM set_config('request.jwt.claim.sub', owner_id::text, true);
-  PERFORM public.set_customer_credit_policy_v1(jsonb_build_object(
-    'customer_id', customer_a, 'credit_enabled', true, 'use_tenant_default', false,
-    'credit_limit', 250, 'hold', true, 'hold_reason', 'Disposable hold',
-    'overdue_block', false, 'warn_threshold_percent', 80, 'requires_owner_approval', false
-  ));
-  SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
-    'branch_id', branch_a, 'customer_id', customer_a, 'proposed_credit_amount', 10
-  )) INTO preflight;
-  IF preflight->>'reasonCode' <> 'AR_CREDIT_HOLD' THEN RAISE EXCEPTION 'AR fixture: hold was not enforced'; END IF;
-  PERFORM public.set_customer_credit_policy_v1(jsonb_build_object(
-    'customer_id', customer_a, 'credit_enabled', false, 'use_tenant_default', false,
-    'credit_limit', 250, 'hold', false, 'overdue_block', false,
-    'warn_threshold_percent', 80, 'requires_owner_approval', false
-  ));
-  SELECT public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
-    'branch_id', branch_a, 'customer_id', customer_a, 'proposed_credit_amount', 10
-  )) INTO preflight;
-  IF preflight->>'reasonCode' <> 'AR_CREDIT_DISABLED'
-     OR preflight->>'reason_code' <> 'CUSTOMER_CREDIT_DISABLED'
-     OR (preflight->>'customer_enabled')::boolean IS TRUE
-     OR (preflight->>'account_ready')::boolean IS NOT TRUE
-     OR (preflight->>'eligible')::boolean IS TRUE THEN
-    RAISE EXCEPTION 'AR fixture: disabled customer remained eligible';
+  RAISE EXCEPTION 'AR_CERTIFICATION_CLEANUP';
+EXCEPTION WHEN raise_exception THEN
+  IF SQLERRM <> 'AR_CERTIFICATION_CLEANUP' THEN
+    DELETE FROM public.customer_payment_allocations WHERE tenant_id = v_tenant;
+    DELETE FROM public.customer_payment_receipt_tenders WHERE receipt_id IN (SELECT id FROM public.customer_payment_receipts WHERE tenant_id = v_tenant);
+    DELETE FROM public.customer_payment_receipts WHERE tenant_id = v_tenant;
+    DELETE FROM public.customer_receivable_adjustments WHERE tenant_id = v_tenant;
+    DELETE FROM public.customer_receivable_entries WHERE tenant_id = v_tenant;
+    DELETE FROM public.customer_receivable_operations WHERE tenant_id = v_tenant;
+    DELETE FROM public.invoice_items WHERE tenant_id = v_tenant;
+    DELETE FROM public.invoices WHERE tenant_id = v_tenant;
+    DELETE FROM public.pos_stock_movements WHERE tenant_id = v_tenant;
+    DELETE FROM public.customer_credit_policies WHERE tenant_id = v_tenant;
+    UPDATE public.customers SET receivable_account_id = NULL WHERE tenant_id = v_tenant;
+    DELETE FROM public.customer_receivable_accounts WHERE tenant_id = v_tenant;
+    DELETE FROM public.customers WHERE tenant_id = v_tenant;
+    DELETE FROM public.user_profiles WHERE tenant_id = v_tenant;
+    DELETE FROM public.branches WHERE tenant_id = v_tenant;
+    DELETE FROM public.tenants WHERE id = v_tenant;
+    DELETE FROM auth.users WHERE id IN (v_owner, v_branch_user, v_sibling_user);
+    RAISE;
   END IF;
-  PERFORM public.set_customer_credit_policy_v1(jsonb_build_object(
-    'customer_id', customer_a, 'credit_enabled', true, 'use_tenant_default', false,
-    'credit_limit', 250, 'hold', false, 'overdue_block', false,
-    'warn_threshold_percent', 80, 'requires_owner_approval', false
-  ));
-
-  -- Branch A: split tender, manual allocation, then an exact idempotent replay.
-  PERFORM set_config('request.jwt.claim.sub', branch_a_user::text, true);
-  SELECT public.record_customer_payment_receipt_v1(jsonb_build_object(
-    'operation_id', payment_op, 'branch_id', branch_a, 'customer_id', customer_a, 'amount', 70, 'auto_allocate', false,
-    'tenders', jsonb_build_array(jsonb_build_object('method', 'cash', 'amount', 40), jsonb_build_object('method', 'card', 'amount', 30)),
-    'allocations', jsonb_build_array(jsonb_build_object('invoice_id', invoice_a1, 'amount', 10), jsonb_build_object('invoice_id', invoice_a2, 'amount', 60))
-  )) INTO receipt;
-  SELECT public.record_customer_payment_receipt_v1(jsonb_build_object(
-    'operation_id', payment_op, 'branch_id', branch_a, 'customer_id', customer_a, 'amount', 70, 'auto_allocate', false,
-    'tenders', jsonb_build_array(jsonb_build_object('method', 'cash', 'amount', 40), jsonb_build_object('method', 'card', 'amount', 30)),
-    'allocations', jsonb_build_array(jsonb_build_object('invoice_id', invoice_a1, 'amount', 10), jsonb_build_object('invoice_id', invoice_a2, 'amount', 60))
-  )) INTO replay;
-  IF receipt IS DISTINCT FROM replay THEN RAISE EXCEPTION 'AR fixture: replay response changed'; END IF;
-  v_receipt_id := (receipt->>'receipt_id')::uuid;
-  SELECT count(*) INTO count_value FROM public.customer_payment_receipts WHERE operation_id = payment_op;
-  IF count_value <> 1 THEN RAISE EXCEPTION 'AR fixture: replay duplicated receipt'; END IF;
-  SELECT count(*) INTO count_value FROM public.customer_payment_receipt_tenders t WHERE t.receipt_id = v_receipt_id;
-  IF count_value <> 2 THEN RAISE EXCEPTION 'AR fixture: split tender count mismatch'; END IF;
-  SELECT public.ar_invoice_outstanding_v1(invoice_a1) INTO amount_value;
-  IF amount_value <> 90 THEN RAISE EXCEPTION 'AR fixture: A1 outstanding expected 90, got %', amount_value; END IF;
-  SELECT public.ar_invoice_outstanding_v1(invoice_a2) INTO amount_value;
-  IF amount_value <> 0 THEN RAISE EXCEPTION 'AR fixture: A2 outstanding expected 0, got %', amount_value; END IF;
-
-  -- Branch B is forbidden from changing Branch A's customer or receipts.
-  PERFORM set_config('request.jwt.claim.sub', branch_b_user::text, true);
-  BEGIN
-    PERFORM public.record_customer_payment_receipt_v1(jsonb_build_object(
-      'operation_id', rejected_op, 'branch_id', branch_a, 'customer_id', customer_a, 'amount', 1, 'auto_allocate', true,
-      'tenders', jsonb_build_array(jsonb_build_object('method', 'cash', 'amount', 1)), 'allocations', '[]'::jsonb
-    ));
-    RAISE EXCEPTION 'AR fixture: cross-branch receipt unexpectedly succeeded';
-  EXCEPTION WHEN others THEN
-    IF SQLERRM NOT LIKE 'AR_BRANCH_FORBIDDEN%' THEN RAISE; END IF;
-  END;
-  SELECT count(*) INTO count_value FROM public.customer_payment_receipts WHERE tenant_id = t;
-  IF count_value <> 1 THEN RAISE EXCEPTION 'AR fixture: rejected cross-branch request wrote a receipt'; END IF;
-
-  -- Owner can reallocate but this does not change the AR ledger balance.
-  PERFORM set_config('request.jwt.claim.sub', owner_id::text, true);
-  PERFORM public.reallocate_customer_payment_v1(jsonb_build_object(
-    'operation_id', reallocation_op, 'receipt_id', v_receipt_id,
-    'allocations', jsonb_build_array(jsonb_build_object('invoice_id', invoice_a1, 'amount', 70))
-  ));
-  SELECT public.ar_invoice_outstanding_v1(invoice_a1) INTO amount_value;
-  IF amount_value <> 30 THEN RAISE EXCEPTION 'AR fixture: reallocation A1 expected 30, got %', amount_value; END IF;
-  SELECT public.ar_invoice_outstanding_v1(invoice_a2) INTO amount_value;
-  IF amount_value <> 60 THEN RAISE EXCEPTION 'AR fixture: reallocation A2 expected 60, got %', amount_value; END IF;
-  SELECT public.ar_account_balance_v1(account_a) INTO amount_value;
-  IF amount_value <> 90 THEN RAISE EXCEPTION 'AR fixture: reallocation changed balance'; END IF;
-
-  -- Reversal retains the receipt, restores invoice settlement, and appends its offset.
-  PERFORM public.reverse_customer_payment_receipt_v1(jsonb_build_object('operation_id', reversal_op, 'receipt_id', v_receipt_id, 'reason', 'Disposable certification reversal'));
-  SELECT status INTO status_value FROM public.customer_payment_receipts WHERE id = v_receipt_id;
-  IF status_value <> 'reversed' THEN RAISE EXCEPTION 'AR fixture: receipt not reversed'; END IF;
-  SELECT public.ar_invoice_outstanding_v1(invoice_a1) INTO amount_value;
-  IF amount_value <> 100 THEN RAISE EXCEPTION 'AR fixture: reversal did not restore A1'; END IF;
-  SELECT public.ar_invoice_outstanding_v1(invoice_a2) INTO amount_value;
-  IF amount_value <> 60 THEN RAISE EXCEPTION 'AR fixture: reversal did not restore A2'; END IF;
-  SELECT public.ar_account_balance_v1(account_a) INTO amount_value;
-  IF amount_value <> 160 THEN RAISE EXCEPTION 'AR fixture: reversal did not restore ledger balance'; END IF;
-
-  -- The owner report is tenant-consolidated across all three branches.
-  SELECT public.get_customer_receivables_report_v1(jsonb_build_object('start_date', current_date - 30, 'end_date', current_date, 'page_size', 50)) INTO report;
-  IF (report->'summary'->>'totalReceivables')::numeric <> 660 THEN RAISE EXCEPTION 'AR fixture: report total mismatch'; END IF;
-  IF (report->'summary'->>'overdueReceivables')::numeric <> 60 THEN RAISE EXCEPTION 'AR fixture: report overdue mismatch'; END IF;
-  IF jsonb_array_length(report->'branchComparison') <> 3 THEN RAISE EXCEPTION 'AR fixture: report branch comparison mismatch'; END IF;
-  RAISE EXCEPTION 'AR_CERTIFICATION_ROLLBACK';
-  EXCEPTION WHEN raise_exception THEN
-    IF SQLERRM <> 'AR_CERTIFICATION_ROLLBACK' THEN RAISE; END IF;
-  END;
+  DELETE FROM public.customer_payment_allocations WHERE tenant_id = v_tenant;
+  DELETE FROM public.customer_payment_receipt_tenders WHERE receipt_id IN (SELECT id FROM public.customer_payment_receipts WHERE tenant_id = v_tenant);
+  DELETE FROM public.customer_payment_receipts WHERE tenant_id = v_tenant;
+  DELETE FROM public.customer_receivable_adjustments WHERE tenant_id = v_tenant;
+  DELETE FROM public.customer_receivable_entries WHERE tenant_id = v_tenant;
+  DELETE FROM public.customer_receivable_operations WHERE tenant_id = v_tenant;
+  DELETE FROM public.invoice_items WHERE tenant_id = v_tenant;
+  DELETE FROM public.invoices WHERE tenant_id = v_tenant;
+  DELETE FROM public.pos_stock_movements WHERE tenant_id = v_tenant;
+  DELETE FROM public.customer_credit_policies WHERE tenant_id = v_tenant;
+  UPDATE public.customers SET receivable_account_id = NULL WHERE tenant_id = v_tenant;
+  DELETE FROM public.customer_receivable_accounts WHERE tenant_id = v_tenant;
+  DELETE FROM public.customers WHERE tenant_id = v_tenant;
+  DELETE FROM public.user_profiles WHERE tenant_id = v_tenant;
+  DELETE FROM public.branches WHERE tenant_id = v_tenant;
+  DELETE FROM public.tenants WHERE id = v_tenant;
+  DELETE FROM auth.users WHERE id IN (v_owner, v_branch_user, v_sibling_user);
+  RAISE NOTICE 'BRANCH_ONLY_STATEFUL_OK';
+WHEN others THEN
+  DELETE FROM public.customer_payment_allocations WHERE tenant_id = v_tenant;
+  DELETE FROM public.customer_payment_receipt_tenders WHERE receipt_id IN (SELECT id FROM public.customer_payment_receipts WHERE tenant_id = v_tenant);
+  DELETE FROM public.customer_payment_receipts WHERE tenant_id = v_tenant;
+  DELETE FROM public.customer_receivable_adjustments WHERE tenant_id = v_tenant;
+  DELETE FROM public.customer_receivable_entries WHERE tenant_id = v_tenant;
+  DELETE FROM public.customer_receivable_operations WHERE tenant_id = v_tenant;
+  DELETE FROM public.invoice_items WHERE tenant_id = v_tenant;
+  DELETE FROM public.invoices WHERE tenant_id = v_tenant;
+  DELETE FROM public.pos_stock_movements WHERE tenant_id = v_tenant;
+  DELETE FROM public.customer_credit_policies WHERE tenant_id = v_tenant;
+  UPDATE public.customers SET receivable_account_id = NULL WHERE tenant_id = v_tenant;
+  DELETE FROM public.customer_receivable_accounts WHERE tenant_id = v_tenant;
+  DELETE FROM public.customers WHERE tenant_id = v_tenant;
+  DELETE FROM public.user_profiles WHERE tenant_id = v_tenant;
+  DELETE FROM public.branches WHERE tenant_id = v_tenant;
+  DELETE FROM public.tenants WHERE id = v_tenant;
+  DELETE FROM auth.users WHERE id IN (v_owner, v_branch_user, v_sibling_user);
+  RAISE;
 END
 $certification$;

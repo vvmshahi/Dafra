@@ -30,7 +30,7 @@ export interface ReceivableOpenInvoice {
 
 export interface ReceivablePolicy {
   creditEnabled: boolean
-  creditLimit: number
+  creditLimit: number | null
   terms: string | null
   hold: boolean
   holdReason: string | null
@@ -108,9 +108,9 @@ export interface CustomerCreditCheckoutEligibility {
   accountLinked: boolean
   accountLinkable: boolean
   onHold: boolean
-  creditLimit: number
+  creditLimit: number | null
   currentBalance: number
-  availableCredit: number
+  availableCredit: number | null
   overdueAmount: number
   requiresOwnerApproval: boolean
   tenantCreditEnabled: boolean
@@ -303,9 +303,9 @@ export async function loadCustomerCreditCheckoutEligibility(input: {
     accountLinked: value?.accountLinked === true,
     accountLinkable: value?.accountLinkable === true,
     onHold: value?.onHold === true,
-    creditLimit: numberValue(value?.creditLimit),
+    creditLimit: value?.creditLimit == null ? null : numberValue(value.creditLimit),
     currentBalance: numberValue(value?.currentBalance),
-    availableCredit: numberValue(value?.availableCredit),
+    availableCredit: value?.availableCredit == null ? null : numberValue(value.availableCredit),
     overdueAmount: numberValue(value?.overdueAmount),
     requiresOwnerApproval: value?.requiresOwnerApproval === true,
     tenantCreditEnabled: value?.tenantCreditEnabled === true,

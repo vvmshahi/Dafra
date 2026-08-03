@@ -1,5 +1,6 @@
 {
   "title": "Customer Intelligence",
+  "profileTabs": {"label": "Customer profile sections", "overview": "Overview", "invoices": "Invoices", "products": "Products", "documents": "Documents", "report": "Customer Report", "credit": "Customer Credit"},
   "subtitle": "Completed sales and credit-note activity, explained clearly.",
   "detailTitle": "Customer activity",
   "commercialActivity": "Commercial purchase activity",
