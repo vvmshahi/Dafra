@@ -6,6 +6,7 @@
   "actions": {
     "receivePayment": "Receive payment",
     "printStatement": "Print statement",
+    "applyPriorCredit": "Apply prior credit",
     "openReceipt": "Open receipt",
     "retry": "Retry",
     "cancel": "Cancel"
@@ -71,6 +72,26 @@
     "title": "Customer ledger",
     "opening": "Opening balance: {{amount}}",
     "empty": "No receivable ledger entries exist for this statement period."
+  },
+  "settlement": {
+    "title": "Settlement controls",
+    "hint": "Apply an existing unapplied receipt to open invoices. The server keeps the receipt and customer balance immutable.",
+    "empty": "No unapplied payment receipts are available for this customer in the selected Branch.",
+    "availableReceipts": "Unapplied payment receipts",
+    "allocateReceipt": "Allocate receipt {{number}}",
+    "availableAmount": "Available: SAR {{amount}}",
+    "selectReceipt": "Select an unapplied receipt to allocate it to open invoices.",
+    "allocationTotal": "Selected allocation: SAR {{amount}}",
+    "apply": "Apply receipt credit",
+    "applied": "The prior receipt was allocated safely.",
+    "adjustment": "Post approved balance adjustment",
+    "adjustmentHint": "This creates an audited, non-fiscal ledger adjustment. It does not change a tax invoice, payment receipt, stock, or register cash.",
+    "direction": "Direction",
+    "credit": "Reduce customer balance (credit)",
+    "debit": "Increase customer balance (debit)",
+    "reason": "Approval reason",
+    "saveAdjustment": "Post approved adjustment",
+    "adjustmentSaved": "The approved balance adjustment was posted."
   },
   "statement": {
     "eyebrow": "Accounts receivable",
@@ -143,6 +164,8 @@
   "errors": {
     "load": "The customer account could not be loaded.",
     "payment": "The payment was not recorded. You can retry safely; the same operation will not create a duplicate receipt.",
+    "reallocation": "The prior receipt was not reallocated. Its existing allocation was kept unchanged.",
+    "adjustment": "The approved balance adjustment was not posted.",
     "reversal": "The payment receipt could not be reversed. The original receipt was kept unchanged.",
     "credit": "The credit policy could not be saved.",
     "holdReason": "A hold reason is required.",

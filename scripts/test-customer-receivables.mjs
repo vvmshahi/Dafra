@@ -76,9 +76,11 @@ for (const [name, pattern] of cases) {
 
 assert.doesNotMatch(controls, /INSERT\s+INTO\s+public\.invoices/i, 'controls migration must not create invoices directly')
 assert.doesNotMatch(controls, /INSERT\s+INTO\s+public\.payments/i, 'controls migration must not create payments directly')
-assert.doesNotMatch(client, /\.from\(['"]customer_(?:receivable|payment)/, 'client has no direct receivable table inserts')
+assert.doesNotMatch(client, /\.from\(['"]customer_(?:receivable|payment)[\s\S]{0,500}\.(?:insert|update|delete)\(/, 'client has no direct receivable table writes')
 assert.match(rpcs, /DELETE FROM public\.payments WHERE invoice_id = v_invoice_id/, 'credit bridge cleanup is scoped to its own temporary payment')
 assert.match(rpcs, /SET payment_method = CASE[\s\S]*due_date = v_due_date[\s\S]*payment_status = CASE/, 'settlement updates only non-fiscal settlement state')
+assert.match(client + panel, /loadUnappliedCustomerPaymentReceipts[\s\S]*reallocateCustomerPayment[\s\S]*payment-reallocation/, 'unapplied receipt credit can be applied later through the authorized RPC')
+assert.match(client + panel, /postCustomerReceivableAdjustment[\s\S]*receivable-adjustment/, 'approved balance adjustments are exposed through the authorized RPC')
 for (const page of [panel, receipt, statement, creditNoteModal]) {
   assert.match(page, /Number\.isFinite\(date\.getTime\(\)\)/, 'date renderers reject malformed legacy values safely')
 }

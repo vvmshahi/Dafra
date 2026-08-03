@@ -10,12 +10,16 @@ import {
   createReceivableOperationId,
   getPersistentReceivableOperation,
   loadCustomerReceivableWorkspace,
+  loadUnappliedCustomerPaymentReceipts,
+  postCustomerReceivableAdjustment,
+  reallocateCustomerPayment,
   recordCustomerPaymentReceipt,
   reverseCustomerPaymentReceipt,
   saveCustomerCreditPolicy,
   type CustomerReceivableWorkspace,
   type ReceivableTender,
   type ReceivableTenderMethod,
+  type UnappliedCustomerPaymentReceipt,
 } from '@/lib/customers/receivables'
 
 function money(value: number) {
@@ -49,11 +53,13 @@ export function CustomerReceivablesPanel({
   branchId,
   isOwner,
   canReversePayment,
+  canAdjustReceivables,
 }: {
   customerId: string
   branchId: string | null | undefined
   isOwner: boolean
   canReversePayment: boolean
+  canAdjustReceivables: boolean
 }) {
   const { t, i18n } = useTranslation('receivables')
   const navigate = useNavigate()
@@ -83,6 +89,18 @@ export function CustomerReceivablesPanel({
   const [reversalOpen, setReversalOpen] = useState(false)
   const [reversalReason, setReversalReason] = useState('')
   const [reversing, setReversing] = useState(false)
+  const [settlementOpen, setSettlementOpen] = useState(false)
+  const [unappliedReceipts, setUnappliedReceipts] = useState<UnappliedCustomerPaymentReceipt[]>([])
+  const [loadingReceipts, setLoadingReceipts] = useState(false)
+  const [selectedUnappliedReceipt, setSelectedUnappliedReceipt] = useState<UnappliedCustomerPaymentReceipt | null>(null)
+  const [reallocationAmounts, setReallocationAmounts] = useState<Record<string, string>>({})
+  const [reallocating, setReallocating] = useState(false)
+  const [adjustmentOpen, setAdjustmentOpen] = useState(false)
+  const [adjustmentDirection, setAdjustmentDirection] = useState<'debit' | 'credit'>('credit')
+  const [adjustmentAmount, setAdjustmentAmount] = useState('')
+  const [adjustmentReason, setAdjustmentReason] = useState('')
+  const [adjustmentReference, setAdjustmentReference] = useState('')
+  const [adjusting, setAdjusting] = useState(false)
 
   const refresh = async () => {
     setLoading(true)
@@ -194,6 +212,97 @@ export function CustomerReceivablesPanel({
     }
   }
 
+  async function openSettlementControls() {
+    if (!branchId || loadingReceipts) return
+    setSettlementOpen(true)
+    setLoadingReceipts(true)
+    try {
+      setUnappliedReceipts(await loadUnappliedCustomerPaymentReceipts({ customerId, branchId }))
+    } catch (receiptError) {
+      console.error('Unable to load unapplied customer receipts', receiptError)
+      toast.error(t('errors.load'))
+    } finally {
+      setLoadingReceipts(false)
+    }
+  }
+
+  const reallocationAdditions = useMemo(() => workspace?.openInvoices
+    .map(invoice => ({ invoiceId: invoice.id, amount: Number(reallocationAmounts[invoice.id] ?? 0), outstanding: invoice.outstanding }))
+    .filter(row => Number.isFinite(row.amount) && row.amount > 0) ?? [], [reallocationAmounts, workspace?.openInvoices])
+  const reallocationRows = useMemo(() => {
+    const amounts = new Map<string, number>()
+    for (const allocation of selectedUnappliedReceipt?.allocations ?? []) amounts.set(allocation.invoiceId, allocation.amount)
+    for (const allocation of reallocationAdditions) amounts.set(allocation.invoiceId, (amounts.get(allocation.invoiceId) ?? 0) + allocation.amount)
+    return [...amounts].map(([invoiceId, amount]) => ({ invoiceId, amount }))
+  }, [reallocationAdditions, selectedUnappliedReceipt])
+  const reallocationTotal = reallocationAdditions.reduce((sum, row) => sum + row.amount, 0)
+  const validReallocation = Boolean(selectedUnappliedReceipt) && reallocationAdditions.length > 0
+    && reallocationTotal <= (selectedUnappliedReceipt?.unappliedAmount ?? 0) + 0.01
+    && reallocationAdditions.every(row => row.amount <= row.outstanding + 0.01)
+
+  async function applyPriorReceipt() {
+    if (!branchId || !selectedUnappliedReceipt || !validReallocation || reallocating) return
+    const fingerprint = JSON.stringify({ receiptId: selectedUnappliedReceipt.id, allocations: reallocationRows })
+    const stableOperationId = getPersistentReceivableOperation({
+      branchId,
+      customerId,
+      kind: 'payment-reallocation',
+      fingerprint,
+    })
+    setReallocating(true)
+    try {
+      await reallocateCustomerPayment({
+        operationId: stableOperationId,
+        receiptId: selectedUnappliedReceipt.id,
+        allocations: reallocationRows.map(row => ({ invoiceId: row.invoiceId, amount: row.amount })),
+      })
+      toast.success(t('settlement.applied'))
+      clearPersistentReceivableOperation(branchId, customerId, 'payment-reallocation')
+      setSelectedUnappliedReceipt(null)
+      setReallocationAmounts({})
+      setUnappliedReceipts(current => current.filter(receipt => receipt.id !== selectedUnappliedReceipt.id))
+      await refresh()
+    } catch (reallocationError) {
+      console.error('Unable to apply prior customer receipt', reallocationError)
+      toast.error(t('errors.reallocation'))
+    } finally {
+      setReallocating(false)
+    }
+  }
+
+  const parsedAdjustmentAmount = Number(adjustmentAmount)
+  const validAdjustment = Boolean(branchId) && Number.isFinite(parsedAdjustmentAmount) && parsedAdjustmentAmount > 0 && adjustmentReason.trim().length >= 3
+
+  async function submitAdjustment() {
+    if (!branchId || !validAdjustment || adjusting) return
+    const fingerprint = JSON.stringify({ branchId, customerId, direction: adjustmentDirection, amount: parsedAdjustmentAmount, reason: adjustmentReason.trim(), reference: adjustmentReference.trim() || null })
+    const stableOperationId = getPersistentReceivableOperation({ branchId, customerId, kind: 'receivable-adjustment', fingerprint })
+    setAdjusting(true)
+    try {
+      await postCustomerReceivableAdjustment({
+        operationId: stableOperationId,
+        branchId,
+        customerId,
+        direction: adjustmentDirection,
+        amount: parsedAdjustmentAmount,
+        reason: adjustmentReason.trim(),
+        reference: adjustmentReference.trim() || null,
+      })
+      toast.success(t('settlement.adjustmentSaved'))
+      clearPersistentReceivableOperation(branchId, customerId, 'receivable-adjustment')
+      setAdjustmentAmount('')
+      setAdjustmentReason('')
+      setAdjustmentReference('')
+      setAdjustmentOpen(false)
+      await refresh()
+    } catch (adjustmentError) {
+      console.error('Unable to post approved receivables adjustment', adjustmentError)
+      toast.error(t('errors.adjustment'))
+    } finally {
+      setAdjusting(false)
+    }
+  }
+
   async function savePolicy() {
     const limit = Number(creditLimit)
     const threshold = Number(warnThresholdPercent)
@@ -250,6 +359,7 @@ export function CustomerReceivablesPanel({
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" size="sm" onClick={() => navigate(`/print/customer-statement/${customerId}${branchId ? `?branch=${encodeURIComponent(branchId)}` : ''}`)}><FileText size={14} /> {t('actions.printStatement')}</Button>
+          {canReversePayment && <Button variant="secondary" size="sm" disabled={!branchId} onClick={() => void openSettlementControls()}><CreditCard size={14} /> {t('actions.applyPriorCredit')}</Button>}
           <Button size="sm" disabled={!branchId} onClick={() => { setLastReceipt(null); setPaymentOpen(value => !value) }}><ReceiptText size={14} /> {t('actions.receivePayment')}</Button>
         </div>
       </div>
@@ -307,6 +417,14 @@ export function CustomerReceivablesPanel({
             <Button size="sm" variant="secondary" disabled={submitting} onClick={() => { setPaymentOpen(false); setOperationId(null) }}>{t('actions.cancel')}</Button>
             <span className="text-xs text-slate-500">{manualAllocation ? t('payment.manualHint') : t('payment.autoAllocate')}</span>
           </div>
+        </div>
+      )}
+
+      {settlementOpen && (
+        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4 shadow-sm" aria-label={t('settlement.title')}>
+          <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-bold text-slate-900">{t('settlement.title')}</p><p className="mt-1 text-xs text-slate-600">{t('settlement.hint')}</p></div><Button size="sm" variant="secondary" disabled={loadingReceipts} onClick={() => void openSettlementControls()}><RefreshCw size={14} className={loadingReceipts ? 'animate-spin' : ''} /> {t('actions.refresh')}</Button></div>
+          {loadingReceipts ? <div className="grid place-items-center py-6"><Loader2 size={18} className="animate-spin text-primary-600" /></div> : unappliedReceipts.length === 0 ? <p className="mt-4 rounded-xl bg-white px-3 py-4 text-sm text-slate-600">{t('settlement.empty')}</p> : <div className="mt-4 grid gap-4 lg:grid-cols-[0.75fr_1.25fr]"><div className="overflow-hidden rounded-xl border border-emerald-100 bg-white"><p className="border-b border-emerald-100 px-3 py-2 text-xs font-bold text-slate-700">{t('settlement.availableReceipts')}</p><div className="divide-y divide-slate-100">{unappliedReceipts.map(receipt => <button type="button" key={receipt.id} onClick={() => { setSelectedUnappliedReceipt(receipt); setReallocationAmounts({}) }} className={`flex w-full items-center justify-between gap-3 px-3 py-3 text-start text-sm hover:bg-emerald-50 ${selectedUnappliedReceipt?.id === receipt.id ? 'bg-emerald-50' : ''}`}><span><span className="block font-semibold text-slate-900">{receipt.number}</span><span className="block text-xs text-slate-500">{dateLabel(receipt.receivedAt, locale)}</span></span><span className="font-bold tabular-nums text-emerald-800">{money(receipt.unappliedAmount)}</span></button>)}</div></div><div className="rounded-xl border border-emerald-100 bg-white p-3">{selectedUnappliedReceipt ? <><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-bold text-slate-800">{t('settlement.allocateReceipt', { number: selectedUnappliedReceipt.number })}</p><span className={reallocationTotal <= selectedUnappliedReceipt.unappliedAmount + 0.01 ? 'text-xs text-slate-500' : 'text-xs font-semibold text-amber-700'}>{t('settlement.availableAmount', { amount: selectedUnappliedReceipt.unappliedAmount.toFixed(2) })}</span></div><div className="mt-3 divide-y divide-slate-100">{workspace.openInvoices.map(invoice => <label key={invoice.id} className="grid grid-cols-[1fr_120px] items-center gap-3 py-2 text-sm"><span><span className="font-semibold text-slate-900">{invoice.invoiceNumber}</span><span className="ms-2 text-xs text-slate-500">{t('payment.outstanding', { amount: invoice.outstanding.toFixed(2) })}</span></span><input inputMode="decimal" value={reallocationAmounts[invoice.id] ?? ''} onChange={event => setReallocationAmounts(current => ({ ...current, [invoice.id]: event.target.value }))} className="h-9 rounded-lg border border-slate-200 px-2 text-sm" placeholder="0.00" /></label>)}</div><div className="mt-3 flex flex-wrap items-center gap-2"><Button size="sm" disabled={!validReallocation || reallocating} onClick={() => void applyPriorReceipt()}>{reallocating && <Loader2 size={14} className="animate-spin" />}{t('settlement.apply')}</Button><span className="text-xs text-slate-500">{t('settlement.allocationTotal', { amount: reallocationTotal.toFixed(2) })}</span></div></> : <p className="py-6 text-center text-sm text-slate-500">{t('settlement.selectReceipt')}</p>}</div></div>}
+          {canAdjustReceivables && <details className="mt-4 border-t border-emerald-100 pt-3"><summary className="cursor-pointer text-xs font-semibold text-primary-700" onClick={() => setAdjustmentOpen(value => !value)}>{t('settlement.adjustment')}</summary>{adjustmentOpen && <div className="mt-3 grid gap-3 rounded-xl border border-amber-100 bg-amber-50/50 p-3 sm:grid-cols-2"><p className="sm:col-span-2 text-xs text-amber-800">{t('settlement.adjustmentHint')}</p><label className="text-xs font-semibold text-slate-700">{t('settlement.direction')}<select value={adjustmentDirection} onChange={event => setAdjustmentDirection(event.target.value as 'debit' | 'credit')} className="mt-1 block h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm"><option value="credit">{t('settlement.credit')}</option><option value="debit">{t('settlement.debit')}</option></select></label><label className="text-xs font-semibold text-slate-700">{t('payment.amount')}<input inputMode="decimal" value={adjustmentAmount} onChange={event => setAdjustmentAmount(event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm" placeholder="0.00" /></label><label className="text-xs font-semibold text-slate-700">{t('settlement.reason')}<input value={adjustmentReason} onChange={event => setAdjustmentReason(event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm" /></label><label className="text-xs font-semibold text-slate-700">{t('payment.reference')}<input value={adjustmentReference} onChange={event => setAdjustmentReference(event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm" /></label><div className="sm:col-span-2"><Button size="sm" variant="secondary" disabled={!validAdjustment || adjusting} onClick={() => void submitAdjustment()}>{adjusting && <Loader2 size={14} className="animate-spin" />}{t('settlement.saveAdjustment')}</Button></div></div>}</details>}
         </div>
       )}
 

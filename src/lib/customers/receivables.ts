@@ -74,6 +74,15 @@ export interface PaymentReceiptResult {
   balance: number
 }
 
+export interface UnappliedCustomerPaymentReceipt {
+  id: string
+  number: string
+  amount: number
+  receivedAt: string | null
+  unappliedAmount: number
+  allocations: Array<{ invoiceId: string; amount: number }>
+}
+
 const numberValue = (value: unknown) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
@@ -248,6 +257,42 @@ export async function loadCustomerPaymentReceiptDocument(receiptId: string) {
   return data as any
 }
 
+/**
+ * Read-only, RLS-scoped receipt headers used to apply an existing unapplied
+ * receipt after the original payment screen has closed. Financial writes stay
+ * exclusively inside the reallocation RPC.
+ */
+export async function loadUnappliedCustomerPaymentReceipts(input: {
+  customerId: string
+  branchId?: string | null
+}) {
+  let query = (supabase as any)
+    .from('customer_payment_receipts')
+    .select('id, receipt_number, amount, received_at, customer_payment_allocations(invoice_id, amount)')
+    .eq('customer_id', input.customerId)
+    .eq('status', 'completed')
+    .order('received_at', { ascending: false })
+    .limit(100)
+  if (input.branchId) query = query.eq('branch_id', input.branchId)
+  const { data, error } = await query
+  if (error) throw error
+  return ((data ?? []) as any[]).map(receipt => {
+    const allocations = (receipt.customer_payment_allocations ?? []).map((allocation: any) => ({
+      invoiceId: String(allocation?.invoice_id ?? ''),
+      amount: numberValue(allocation?.amount),
+    })).filter((allocation: { invoiceId: string; amount: number }) => allocation.invoiceId && allocation.amount > 0)
+    const allocated = allocations.reduce((sum: number, allocation: { amount: number }) => sum + allocation.amount, 0)
+    return {
+      id: String(receipt.id ?? ''),
+      number: String(receipt.receipt_number ?? '—'),
+      amount: numberValue(receipt.amount),
+      receivedAt: typeof receipt.received_at === 'string' ? receipt.received_at : null,
+      unappliedAmount: Math.max(0, numberValue(receipt.amount) - allocated),
+      allocations,
+    } satisfies UnappliedCustomerPaymentReceipt
+  }).filter(receipt => receipt.id && receipt.unappliedAmount > 0.01)
+}
+
 export function createReceivableOperationId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   throw new Error('Secure operation IDs are unavailable in this browser.')
@@ -259,7 +304,7 @@ export function getPersistentReceivableOperation(input: {
   branchId: string
   customerId: string
   fingerprint: string
-  kind?: 'credit-checkout' | 'payment-receipt' | 'credit-note-settlement'
+  kind?: 'credit-checkout' | 'payment-receipt' | 'credit-note-settlement' | 'payment-reallocation' | 'receivable-adjustment'
 }) {
   if (typeof localStorage === 'undefined') return createReceivableOperationId()
   const key = `kubri:ar-${input.kind ?? 'credit-checkout'}:${input.branchId}:${input.customerId}`
@@ -274,7 +319,7 @@ export function getPersistentReceivableOperation(input: {
   }
 }
 
-export function clearPersistentReceivableOperation(branchId: string, customerId: string, kind: 'credit-checkout' | 'payment-receipt' | 'credit-note-settlement' = 'credit-checkout') {
+export function clearPersistentReceivableOperation(branchId: string, customerId: string, kind: 'credit-checkout' | 'payment-receipt' | 'credit-note-settlement' | 'payment-reallocation' | 'receivable-adjustment' = 'credit-checkout') {
   if (typeof localStorage === 'undefined') return
   try { localStorage.removeItem(`kubri:ar-${kind}:${branchId}:${customerId}`) } catch { /* storage may be unavailable */ }
 }
