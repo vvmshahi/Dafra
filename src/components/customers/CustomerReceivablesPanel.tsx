@@ -319,7 +319,7 @@ export function CustomerReceivablesPanel({
   }
 
   return (
-    <section id="customer-credit-settings" className="space-y-4" aria-labelledby="customer-receivables-heading">
+    <section className="space-y-4" aria-labelledby="customer-receivables-heading">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-600">{t('eyebrow')}</p>

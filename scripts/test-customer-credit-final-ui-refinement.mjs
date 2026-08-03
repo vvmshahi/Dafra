@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+
+const read = path => fs.readFileSync(path, 'utf8')
+const detail = read('src/pages/customers/CustomerDetailPage.tsx')
+const report = read('src/pages/reports/CustomerReceivablesReportPage.tsx')
+const pos = read('src/pages/pos/POSPage.tsx')
+const branchSettings = read('src/pages/branch/BranchSettingsPage.tsx')
+const ownerSettings = read('src/pages/settings/SettingsPage.tsx')
+const dates = read('src/lib/utils/date.ts')
+const receivables = read('src/lib/customers/receivables.ts')
+
+assert.match(detail, /useSearchParams/)
+assert.match(detail, /WorkspaceTabNav/)
+assert.match(detail, /id=\{`workspace-panel-\$\{activeProfileSection\}`\}/)
+assert.doesNotMatch(detail, /insights-title/)
+assert.match(report, /last7/)
+assert.match(report, /this_year/)
+assert.match(report, /debouncedSearch/)
+assert.match(report, /StatementPreview/)
+assert.match(report, /sourceKind.*sourceId/)
+assert.match(report, /paymentsTab\.reference/)
+assert.match(pos, /max-w-2xl/)
+assert.match(pos, /localizedPaymentMethod\(receipt\.displayPaymentMethod/)
+assert.match(branchSettings, /bg-\[#173d2a\]/)
+assert.match(ownerSettings, /bg-\[#173d2a\]/)
+assert.match(dates, /'last7'/)
+assert.match(dates, /'this_year'/)
+assert.match(receivables, /recordCustomerPaymentReceipt/)
+assert.doesNotMatch(read('src/pages/reports/CustomerReport.tsx'), /openDedicated/)
+
+console.log('Customer Credit final UI refinement contract passed')

@@ -130,16 +130,18 @@
     "debit": "Debit",
     "credit": "Credit",
     "balanceColumn": "Balance",
-    "disclaimer": "This statement is an internal settlement record. Fiscal invoices remain immutable and are not replaced by this statement."
+    "disclaimer": "This statement is an internal settlement record. Fiscal invoices remain immutable and are not replaced by this statement.",
+    "branch": "Branch",
+    "reference": "Reference"
   },
   "report": {
     "title": "Customer Credit",
     "subtitle": "Customer balances, payments, credit invoices and Branch details.",
     "workspaceTabs": {"label": "Customer Credit workspace", "overview": "Overview", "customers": "Customers", "payments": "Payments", "statements": "Statements"},
-    "quick": {"label": "Quick range", "today": "Today", "7d": "7 days", "30d": "30 days", "90d": "90 days"},
+    "quick": {"label": "Quick range", "today": "Today", "yesterday": "Yesterday", "last7": "Last 7 days", "thisMonth": "This month", "lastMonth": "Last month", "thisYear": "This year", "custom": "Custom", "7d": "7 days", "30d": "30 days", "90d": "90 days"},
     "customersTab": {"title": "Customers", "customer": "Customer", "phone": "Phone", "lastCreditInvoice": "Last credit invoice", "lastPayment": "Last payment", "totalInvoiced": "Total invoiced", "totalPaid": "Total paid", "branch": "Branch", "balance": "Balance due", "status": "Status", "actions": "Actions", "active": "Active", "inactive": "Inactive", "statement": "Open statement"},
-    "paymentsTab": {"title": "Payments", "subtitle": "Receipts recorded in the selected date range.", "receipt": "Receipt", "method": "Method", "amount": "Amount", "date": "Date", "openReceipt": "Open receipt", "empty": "No payment receipts match this scope."},
-    "statementsTab": {"title": "Statements", "subtitle": "Open a scoped customer statement without leaving the Customer Credit workspace.", "range": "{{start}} – {{end}}", "open": "Open statement", "empty": "No customer statements are available for this scope."},
+    "paymentsTab": {"title": "Payments", "subtitle": "Receipts recorded in the selected date range.", "receipt": "Receipt", "method": "Method", "reference": "Reference", "branch": "Branch", "amount": "Amount", "date": "Date & time", "status": "Status", "openReceipt": "Open receipt", "empty": "No payment receipts match this scope."},
+    "statementsTab": {"title": "Statements", "subtitle": "Review a bank-statement-style customer ledger without leaving the Customer Credit workspace.", "range": "{{start}} – {{end}}", "open": "Open statement", "print": "Print / PDF", "preview": "Statement preview", "loading": "Loading statement…", "error": "The statement could not be loaded.", "empty": "No customer statements are available for this scope.", "emptyLedger": "No statement entries exist for this period."},
     "back": "Back to reports",
     "filters": "Customer Credit filters",
     "from": "From",
@@ -148,6 +150,7 @@
     "allBranches": "All branches",
     "refresh": "Refresh",
     "summary": "Customer Credit summary",
+    "balanceDefinition": "Server-calculated receivable balance",
     "totalReceivables": "Total balance due",
     "customerCredit": "Customer credit",
     "overdue": "Overdue balance",
@@ -168,6 +171,7 @@
     "noBranchActivity": "No receivable activity exists for this period.",
     "invalidRange": "Choose a valid report date range.",
     "loadFailed": "The Customer Credit page could not be loaded."
+    ,"retry": "Retry", "search": "Search customers, receipts or references", "searchPlaceholder": "Name, phone, receipt or reference", "searchNoMatch": "Try a different name, phone or reference."
   },
   "document": {
     "title": "Payment receipt",

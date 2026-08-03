@@ -14,7 +14,6 @@ import {
   RefreshCw,
   RotateCcw,
   ShoppingBag,
-  Sparkles,
   TrendingUp,
   User,
 } from 'lucide-react'
@@ -27,6 +26,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
+import { WorkspaceTabNav } from '@/components/ui/WorkspaceTabNav'
 import { CustomerIntelligenceFiltersPanel } from '@/components/customers/CustomerIntelligenceFilters'
 import { CustomerReceivablesPanel } from '@/components/customers/CustomerReceivablesPanel'
 import { loadBranchCustomerCreditSettings, loadCustomerReceivableWorkspace } from '@/lib/customers/receivables'
@@ -65,6 +65,12 @@ interface FilterOption {
 
 type CustomerProfileSection = 'overview' | 'invoices' | 'products' | 'documents' | 'report' | 'credit'
 
+const PROFILE_SECTIONS: CustomerProfileSection[] = ['overview', 'invoices', 'products', 'documents', 'report', 'credit']
+
+function isCustomerProfileSection(value: string | null): value is CustomerProfileSection {
+  return value !== null && PROFILE_SECTIONS.includes(value as CustomerProfileSection)
+}
+
 function formatDate(value: string | null, locale: string, withTime = false) {
   if (!value) return '—'
   return new Date(value).toLocaleString(
@@ -87,17 +93,17 @@ function MetricCard({
   icon: React.ElementType
 }) {
   const styles = tone === 'emerald'
-    ? 'border-emerald-200 bg-emerald-50/70 text-emerald-800'
+    ? 'bg-gradient-to-br from-[#1B6B3A] to-[#0F2419] text-white'
     : tone === 'amber'
       ? 'border-amber-200 bg-amber-50/60 text-amber-800'
-      : 'border-gray-100 bg-white text-gray-900'
+      : 'bg-gradient-to-br from-[#334155] to-[#1e293b] text-white'
   const iconStyles = tone === 'emerald'
-    ? 'bg-emerald-100 text-emerald-700'
+    ? 'bg-white/15 text-emerald-100'
     : tone === 'amber'
       ? 'bg-amber-100 text-amber-700'
-      : 'bg-gray-100 text-gray-500'
+      : 'bg-white/10 text-white/70'
   return (
-    <article className={`rounded-xl border p-3.5 shadow-card min-w-0 ${styles}`} aria-label={label}>
+    <article className={`min-w-0 rounded-xl p-3.5 shadow-card ${styles}`} aria-label={label}>
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs font-semibold opacity-70 leading-snug">{label}</p>
         <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${iconStyles}`}>
@@ -154,21 +160,13 @@ export default function CustomerDetailPage() {
   const [editingCustomer, setEditingCustomer] = useState<CustomerWithStats | null>(null)
   const [preparingPdf, setPreparingPdf] = useState(false)
   const [customerCreditVisible, setCustomerCreditVisible] = useState(false)
-  const requestedProfileSection = searchParams.get('section') as CustomerProfileSection | null
-  const [activeProfileSection, setActiveProfileSection] = useState<CustomerProfileSection>(
-    requestedProfileSection === 'credit' || requestedProfileSection === 'products' || requestedProfileSection === 'documents' || requestedProfileSection === 'invoices' || requestedProfileSection === 'report'
-      ? requestedProfileSection
-      : 'overview',
-  )
+  const requestedProfileSection = searchParams.get('section')
+  const activeProfileSection = isCustomerProfileSection(requestedProfileSection)
+    && (requestedProfileSection !== 'credit' || customerCreditVisible)
+    ? requestedProfileSection
+    : 'overview'
 
   const canChooseBranch = profile?.role !== 'branch'
-
-  useEffect(() => {
-    const next = requestedProfileSection === 'credit' || requestedProfileSection === 'products' || requestedProfileSection === 'documents' || requestedProfileSection === 'invoices' || requestedProfileSection === 'report'
-      ? requestedProfileSection
-      : 'overview'
-    setActiveProfileSection(data?.customer.customerType !== 'business' || (next === 'credit' && !customerCreditVisible) ? 'overview' : next)
-  }, [customerCreditVisible, data?.customer.customerType, requestedProfileSection])
 
   useEffect(() => {
     if (!data?.customer.branchId || data.customer.customerType !== 'business') {
@@ -187,14 +185,10 @@ export default function CustomerDetailPage() {
 
   function selectProfileSection(section: CustomerProfileSection) {
     const next = new URLSearchParams(searchParams)
-    next.set('section', section)
+    if (section === 'overview') next.delete('section')
+    else next.set('section', section)
     setSearchParams(next)
   }
-
-  useEffect(() => {
-    if (searchParams.get('section') !== 'credit' || !data) return
-    window.requestAnimationFrame(() => document.getElementById('customer-credit-settings')?.scrollIntoView({ block: 'start' }))
-  }, [data, searchParams])
 
   useEffect(() => {
     if (!profile?.tenant_id) return
@@ -325,14 +319,16 @@ export default function CustomerDetailPage() {
 
   useEffect(() => {
     setHistoryPage(1)
-    const next = new URLSearchParams()
+    const next = new URLSearchParams(searchParams)
     next.set('start', filters.startDate)
     next.set('end', filters.endDate)
     if (filters.branchId) next.set('branch', filters.branchId)
     if (filters.productId) next.set('product', filters.productId)
+    else next.delete('product')
     if (filters.productUnitId) next.set('unit', filters.productUnitId)
+    else next.delete('unit')
     setSearchParams(next, { replace: true })
-  }, [filters, setSearchParams])
+  }, [filters, searchParams, setSearchParams])
 
   const handlePreset = (nextPreset: IntelligenceDatePreset) => {
     setPreset(nextPreset)
@@ -493,8 +489,11 @@ export default function CustomerDetailPage() {
   const displayName = customerDisplayName(data.customer, isRtl)
   const secondaryName = isRtl ? data.customer.name : data.customer.nameAr
   const maxTimeline = Math.max(...data.timeline.map(point => Math.abs(point.netPurchases)), 1)
+  const profileTabItems = PROFILE_SECTIONS
+    .filter(section => section !== 'credit' || customerCreditVisible)
+    .map(section => ({ id: section, label: t(`customerIntelligence:profileTabs.${section}`) }))
   return (
-    <div className="space-y-5 max-w-[1500px]">
+    <div className="mx-auto max-w-[1500px] space-y-4">
       <button
         type="button"
         onClick={() => navigate('/customers')}
@@ -505,10 +504,10 @@ export default function CustomerDetailPage() {
       </button>
 
       <header className="card overflow-hidden">
-        <div className="h-1 bg-gradient-to-r from-emerald-500 via-primary-500 to-teal-400" />
-        <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-start gap-5">
+        <div className="h-1 bg-gradient-to-r from-[#173d2a] via-[#1B6B3A] to-[#285e61]" />
+        <div className="flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-center">
           <div className="flex items-start gap-4 flex-1 min-w-0">
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${
+            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
               data.customer.customerType === 'business'
                 ? 'bg-amber-50 text-amber-700'
                 : 'bg-emerald-50 text-emerald-700'
@@ -517,7 +516,7 @@ export default function CustomerDetailPage() {
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 break-words" dir="auto">
+                <h1 className="break-words text-lg font-bold text-gray-900 sm:text-xl" dir="auto">
                   {displayName}
                 </h1>
                 <Badge variant={data.customer.isActive ? 'success' : 'neutral'} dot>
@@ -530,7 +529,7 @@ export default function CustomerDetailPage() {
               {secondaryName?.trim() && secondaryName.trim() !== displayName && (
                 <p className="text-sm text-gray-400 mt-1" dir="auto">{secondaryName}</p>
               )}
-              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm text-gray-500">
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-500">
                 {data.customer.phone && (
                   <span className="inline-flex items-center gap-1.5" dir="ltr"><Phone size={14} />{data.customer.phone}</span>
                 )}
@@ -543,7 +542,7 @@ export default function CustomerDetailPage() {
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
             <Button variant="secondary" size="sm" onClick={() => void handleEdit()}>
               <Pencil size={14} />
               {t('customerIntelligence:actions.edit')}
@@ -562,28 +561,21 @@ export default function CustomerDetailPage() {
         </div>
       </header>
 
-      <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200 bg-gray-50/80 p-1.5" role="tablist" aria-label={t('customerIntelligence:profileTabs.label')}>
-        {(['overview', 'invoices', 'products', 'documents', 'report', ...(customerCreditVisible ? ['credit' as const] : [])] as CustomerProfileSection[]).map(section => (
-          <button
-            key={section}
-            type="button"
-            role="tab"
-            aria-selected={activeProfileSection === section}
-            onClick={() => selectProfileSection(section)}
-            className={`min-h-10 flex-1 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${activeProfileSection === section ? 'bg-primary-600 text-white shadow-sm' : 'text-gray-500 hover:bg-white hover:text-gray-800'}`}
-          >
-            {t(`customerIntelligence:profileTabs.${section}`)}
-          </button>
-        ))}
-      </nav>
+      <WorkspaceTabNav
+        items={profileTabItems}
+        activeId={activeProfileSection === 'credit' && !customerCreditVisible ? 'overview' : activeProfileSection}
+        onSelect={section => selectProfileSection(section as CustomerProfileSection)}
+        label={t('customerIntelligence:profileTabs.label')}
+      />
 
-      {activeProfileSection === 'credit' && customerCreditVisible && <CustomerReceivablesPanel
+      <div id={`workspace-panel-${activeProfileSection}`} role="tabpanel" aria-label={t(`customerIntelligence:profileTabs.${activeProfileSection}`)}>
+      {activeProfileSection === 'credit' && customerCreditVisible && <div id="customer-credit-settings"><CustomerReceivablesPanel
         customerId={id}
         branchId={data.customer.branchId}
         isOwner={profile?.role === 'owner' || profile?.role === 'admin'}
         canReversePayment={['owner', 'admin', 'accountant', 'manager'].includes(profile?.role ?? '')}
         canAdjustReceivables={['owner', 'admin', 'accountant'].includes(profile?.role ?? '')}
-      />}
+      /></div>}
 
       {(activeProfileSection === 'overview' || activeProfileSection === 'report') && <div className="space-y-5"><CustomerIntelligenceFiltersPanel
         filters={filters}
@@ -818,27 +810,6 @@ export default function CustomerDetailPage() {
         )}
       </section>}
 
-      {(activeProfileSection === 'overview' || activeProfileSection === 'report') && <section className="card p-4" aria-labelledby="insights-title">
-        <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center flex-shrink-0">
-            <Sparkles size={17} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h2 id="insights-title" className="text-sm font-bold text-gray-900">
-              {t('customerIntelligence:insights.title')}
-            </h2>
-            <p className="text-xs text-gray-400 mt-0.5">{t('customerIntelligence:insights.subtitle')}</p>
-            <ul className="mt-3 grid sm:grid-cols-2 gap-2">
-              {insights.map((insight, index) => (
-                <li key={`${insight.key}:${index}`} className="rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-600 leading-relaxed">
-                  {insightText(insight, t)}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </section>}
-
       {(activeProfileSection === 'invoices' || activeProfileSection === 'documents') && <section className="card overflow-hidden" aria-labelledby="history-title">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1">
@@ -959,6 +930,7 @@ export default function CustomerDetailPage() {
       </section>}
 
       {(activeProfileSection === 'overview' || activeProfileSection === 'report') && <p className="text-xs text-gray-400 leading-relaxed">{t('customerIntelligence:pdf.disclaimer')}</p>}
+      </div>
 
       <CustomerModal
         open={editingCustomer !== null}

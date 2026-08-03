@@ -7,12 +7,13 @@ import { Rial } from '@/components/ui/RiyalSymbol'
 import { loadCustomerReceivableWorkspace, type CustomerReceivableWorkspace } from '@/lib/customers/receivables'
 import { downloadCustomerStatementXlsx } from '@/lib/customers/receivablesXlsx'
 import { useAuth } from '@/hooks/useAuth'
+import { formatSaudiDateTime } from '@/lib/utils/date'
 
 function dateLabel(value: string | null | undefined, locale: string) {
   if (!value) return '—'
   const date = new Date(value)
   return Number.isFinite(date.getTime())
-    ? date.toLocaleDateString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-SA', { dateStyle: 'medium' })
+    ? formatSaudiDateTime(value, locale)
     : '—'
 }
 
@@ -80,8 +81,8 @@ export default function CustomerStatementPrintPage() {
         <section>
           <h2 className="mb-3 text-sm font-bold text-slate-900">{t('ledger.title')}</h2>
           <div className="overflow-hidden border border-slate-200">
-            <div className="grid grid-cols-[1fr_86px_86px_100px] gap-2 bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-600"><span>{t('statement.entry')}</span><span className="text-right">{t('statement.debit')}</span><span className="text-right">{t('statement.credit')}</span><span className="text-right">{t('statement.balanceColumn')}</span></div>
-            {workspace.ledger.length === 0 ? <p className="px-3 py-8 text-center text-sm text-slate-500">{t('ledger.empty')}</p> : workspace.ledger.map(row => <div className="grid grid-cols-[1fr_86px_86px_100px] gap-2 border-t border-slate-100 px-3 py-2 text-xs" key={row.id}><span><span className="block text-slate-800">{row.description}</span><span className="block text-slate-500">{dateLabel(row.effectiveAt, locale)}</span></span><span className="text-right tabular-nums">{row.debit > 0 ? <Rial amount={row.debit} /> : '—'}</span><span className="text-right tabular-nums">{row.credit > 0 ? <Rial amount={row.credit} /> : '—'}</span><span className="text-right font-semibold tabular-nums"><Rial amount={row.runningBalance} /></span></div>)}
+            <div className="grid min-w-[720px] grid-cols-[1.45fr_90px_120px_86px_86px_100px] gap-2 bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-600"><span>{t('statement.entry')}</span><span>{t('statement.branch')}</span><span>{t('statement.reference')}</span><span className="text-right">{t('statement.debit')}</span><span className="text-right">{t('statement.credit')}</span><span className="text-right">{t('statement.balanceColumn')}</span></div>
+            {workspace.ledger.length === 0 ? <p className="px-3 py-8 text-center text-sm text-slate-500">{t('ledger.empty')}</p> : workspace.ledger.map(row => <div className="grid min-w-[720px] grid-cols-[1.45fr_90px_120px_86px_86px_100px] gap-2 border-t border-slate-100 px-3 py-2 text-xs" key={row.id}><span><span className="block text-slate-800">{row.description}</span><span className="block text-slate-500">{dateLabel(row.effectiveAt, locale)}</span></span><span className="truncate text-slate-600">{row.branchId}</span><span className="truncate text-slate-500">{row.sourceKind} · {row.sourceId.slice(0, 8)}</span><span className="text-right tabular-nums">{row.debit > 0 ? <Rial amount={row.debit} /> : '—'}</span><span className="text-right tabular-nums">{row.credit > 0 ? <Rial amount={row.credit} /> : '—'}</span><span className="text-right font-semibold tabular-nums"><Rial amount={row.runningBalance} /></span></div>)}
           </div>
         </section>
         <footer className="mt-8 border-t border-slate-200 pt-4 text-xs leading-relaxed text-slate-500">{t('statement.disclaimer')}</footer>

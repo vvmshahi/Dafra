@@ -76,8 +76,8 @@ export default function SettingsPage() {
               onClick={() => selectTab(tab.id)}
               className={`flex min-h-10 flex-1 items-center justify-center gap-2.5 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold outline-none transition-[background-color,color,box-shadow,transform] active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary-500 ${
                 isActive
-                  ? 'bg-primary-500 text-white shadow-sm'
-                  : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                  ? 'bg-[#173d2a] text-white shadow-sm'
+                  : 'text-gray-500 hover:bg-white hover:text-gray-700'
               }`}
             >
               <Icon size={15} />

@@ -857,11 +857,11 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
       <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : receipt.sandboxDemo ? t('pos:sandbox.receiptLabelBilingual') : null, nonFiscalDemo: receipt.isDemo }} />
 
       {/* Success overlay */}
-      <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0F2419]/90">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+      <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-[#0F2419]/90 p-4 sm:p-6">
+        <div className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
 
           {/* Banner */}
-          <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 px-6 py-8 text-center text-white">
+          <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 px-5 py-6 text-center text-white sm:px-8">
             {receipt.isDemo && (
               <div className="mb-3 rounded-lg border border-white/50 bg-black/20 px-3 py-2 text-sm font-black">
                 {t('pos:demo.receiptLabelBilingual')}
@@ -872,15 +872,15 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                 {t('pos:sandbox.receiptLabelBilingual')}
               </div>
             )}
-            <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
               <Check size={32} strokeWidth={3} />
             </div>
-            <p className="text-2xl font-bold">{t('payments:paymentReceived')}</p>
+            <p className="text-xl font-bold sm:text-2xl">{t('payments:paymentReceived')}</p>
             <p className="text-emerald-100 text-sm mt-1"><bdi dir="ltr">{receipt.invoiceNumber}</bdi></p>
           </div>
 
           {/* Summary */}
-          <div className="p-6 space-y-3">
+          <div className="space-y-4 p-5 sm:p-7">
             {receipt.isDemo ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-900">
                 {t('pos:demo.noZatca')}
@@ -898,13 +898,9 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                 </span>
               </div>
             )}
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">{t('payments:customer')}</span>
-              <span className="font-medium text-gray-800" dir="auto">{receipt.customerName}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">{t('payments:method')}</span>
-              <span className="font-medium text-gray-800">{localizedPaymentMethod(receipt.displayPaymentMethod, t)}</span>
+            <div className="grid gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-3 sm:grid-cols-2">
+              <div><p className="text-xs text-gray-500">{t('payments:customer')}</p><p className="mt-1 font-semibold text-gray-800" dir="auto">{receipt.customerName}</p></div>
+              <div className="sm:text-end"><p className="text-xs text-gray-500">{t('payments:method')}</p><p className={`mt-1 font-semibold ${receipt.displayPaymentMethod === 'credit' || receipt.displayPaymentMethod === 'partial_credit' ? 'text-primary-800' : 'text-gray-800'}`}>{localizedPaymentMethod(receipt.displayPaymentMethod, t)}</p></div>
             </div>
             <div className="border-t border-gray-100 pt-3 space-y-1.5">
               <div className="flex justify-between text-sm text-gray-500">
@@ -964,13 +960,13 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
           )}
 
           {/* Actions */}
-          <div className="px-6 pb-6 space-y-2">
-            <div className="flex gap-2">
+          <div className="space-y-3 border-t border-gray-100 px-5 pb-6 pt-5 sm:px-7">
+            <div className="grid gap-2 sm:grid-cols-2">
               {afterSaleAction !== 'a4' && (
                 <button
                   onClick={() => void openReceiptPrintPage()}
                   disabled={printingReceipt || !printReady}
-                  className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
+                  className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
                 >
                   {printingReceipt ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
                   {printingReceipt ? t('payments:printing') : t('payments:printReceipt')}
@@ -980,7 +976,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                 <button
                   onClick={printPosA4}
                   disabled={!printReady}
-                  className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
+                  className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
                 >
                   <Printer size={14} />
                   {t('payments:printInvoice')}
@@ -990,7 +986,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                 <button
                   onClick={shareWhatsApp}
                   disabled={!printReady}
-                  className="flex-1 py-2.5 bg-[#25D366] text-white text-sm font-semibold rounded-xl hover:bg-[#22c55e] transition-colors flex items-center justify-center gap-1.5"
+                  className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-[#25D366] px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#22c55e]"
                 >
                   <WhatsAppIcon size={14} />
                   {t('payments:whatsapp')}
@@ -1028,10 +1024,15 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                 {t('printing:qrUnavailable')}
               </div>
             )}
-            <button onClick={onNewSale}
-              className="w-full py-3 bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity">
+            <div className="grid gap-2 sm:grid-cols-[1fr_1.4fr]">
+              <button type="button" onClick={onOpenInvoiceStatus} className="min-h-11 rounded-xl border border-primary-200 px-3 py-2.5 text-sm font-semibold text-primary-800 transition-colors hover:bg-primary-50">
+                {t('pos:zatca.viewInvoice')}
+              </button>
+              <button onClick={onNewSale}
+                className="min-h-11 rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90">
               {t('payments:newSale')}
-            </button>
+              </button>
+            </div>
           </div>
         </div>
       </div>
