@@ -11,6 +11,7 @@ DECLARE
   v_business uuid := '40000000-0000-4000-8000-000000000001';
   v_individual uuid := '40000000-0000-4000-8000-000000000002';
   v_inactive_business uuid := '40000000-0000-4000-8000-000000000003';
+  v_walk_in uuid := '40000000-0000-4000-8000-000000000004';
   v_off_preflight jsonb;
   v_enabled_preflight jsonb;
   v_account_first jsonb;
@@ -117,6 +118,14 @@ BEGIN
      OR (v_enabled_preflight->>'eligible')::boolean IS TRUE THEN
     RAISE EXCEPTION 'AR fixture: inactive Business customer was eligible';
   END IF;
+  BEGIN
+    PERFORM public.get_customer_credit_checkout_eligibility_v1(jsonb_build_object(
+      'branch_id', v_branch_a, 'customer_id', v_walk_in
+    ));
+    RAISE EXCEPTION 'AR fixture: walk-in/missing customer unexpectedly resolved';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM <> 'CUSTOMER_NOT_FOUND' THEN RAISE; END IF;
+  END;
 
   PERFORM set_config('request.jwt.claim.sub', v_sibling_user::text, true);
   BEGIN
