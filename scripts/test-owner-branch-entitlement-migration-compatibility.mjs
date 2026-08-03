@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+const localConfig = readFileSync(resolve('supabase/config.toml'), 'utf8')
+const localDbPort = localConfig.match(/^\[db\][\s\S]*?^port\s*=\s*(\d+)\s*$/m)?.[1] ?? '54322'
 const databaseUrl = process.env.KUBRI_ENTITLEMENT_DATABASE_URL
-  ?? 'postgresql://postgres:postgres@127.0.0.1:59722/postgres'
+  ?? `postgresql://postgres:postgres@127.0.0.1:${localDbPort}/postgres`
 const psql = process.env.PSQL_BIN
   ?? ['/opt/homebrew/opt/libpq/bin/psql', '/opt/homebrew/bin/psql', '/usr/local/bin/psql', 'psql']
     .find(candidate => candidate === 'psql' || existsSync(candidate))

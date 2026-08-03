@@ -36,6 +36,7 @@
     "audit:phase4d-document-view-model": "node scripts/audit-phase4d-document-view-model.mjs",
     "test:phase4e-thermal-receipts": "node scripts/test-phase4e-thermal-receipts.mjs",
     "test:thermal-receipt-layouts": "node scripts/test-thermal-receipt-layouts-runtime.mjs",
+    "test:sales-report-local-fix": "node scripts/test-sales-report-local-fix.mjs",
     "audit:phase4e-thermal-receipts": "node scripts/audit-phase4e-thermal-receipts.mjs",
     "test:phase4f-a4-templates": "node scripts/test-phase4f-a4-templates.mjs",
     "audit:phase4f-a4-templates": "node scripts/audit-phase4f-a4-templates.mjs",
@@ -102,7 +103,8 @@
     "test:customer-receivables": "node scripts/test-customer-receivables.mjs",
     "test:receivables-xlsx": "node --experimental-strip-types scripts/test-receivables-xlsx.mjs",
     "test:receivables-stateful": "supabase db query --local --file scripts/certify-customer-receivables-stateful.sql",
-    "test:receivables-certification": "npm run test:customer-receivables && npm run test:receivables-xlsx && npm run test:receivables-stateful"
+    "test:receivables-rejection": "supabase db query --local --file scripts/certify-customer-receivables-rejection-paths.sql",
+    "test:receivables-certification": "npm run test:customer-receivables && npm run test:receivables-xlsx && npm run test:receivables-rejection && npm run test:receivables-stateful"
   },
   "build": {
     "appId": "com.kubri.pos",
