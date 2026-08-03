@@ -122,8 +122,9 @@ Deno.serve(async (req: Request) => {
     if (acquireError || !acquired?.[0]) {
       const code = /PLAN_NOT_ELIGIBLE/.test(acquireError?.message ?? '') ? 'PLAN_NOT_ELIGIBLE'
         : /INVALID_BRANCH_ALLOWANCE/.test(acquireError?.message ?? '') ? 'INVALID_REQUEST'
+        : /LEGACY_BRANCH_ALLOWANCE_REVIEW_REQUIRED/.test(acquireError?.message ?? '') ? 'BRANCH_ENTITLEMENT_REVIEW_REQUIRED'
         : /CONFLICT/.test(acquireError?.message ?? '') ? 'CONFLICT_REQUEST_DATA' : 'FAILED_RECOVERABLE'
-      return json({ code }, code === 'FAILED_RECOVERABLE' ? 503 : 409)
+      return json({ code }, code === 'FAILED_RECOVERABLE' ? 503 : code === 'INVALID_REQUEST' ? 400 : 409)
     }
     const state = acquired[0]
     provisioningId = state.provisioning_id
@@ -184,6 +185,13 @@ Deno.serve(async (req: Request) => {
       p_provisioning_id: provisioningId,
     })
     if (coreError || !core?.[0]) {
+      if (/(BRANCH_ALLOWANCE_MISSING|BRANCH_ENTITLEMENT_CONFLICT|ACTIVE_SUBSCRIPTION_CONFLICT)/.test(coreError?.message ?? '')) {
+        await admin.rpc('set_owner_provisioning_result', {
+          p_provisioning_id: provisioningId, p_state: 'failed_manual_review',
+          p_error_code: 'BRANCH_ENTITLEMENT_REVIEW_REQUIRED',
+        })
+        return json({ code: 'BRANCH_ENTITLEMENT_REVIEW_REQUIRED', provisioning_id: provisioningId }, 409)
+      }
       console.error('[create-owner-account]', {
         provisioningId, step: 'core', code: 'CORE_DATABASE_FAILED',
         databaseCode: typeof coreError?.code === 'string' ? coreError.code : null,

@@ -83,6 +83,11 @@ BEGIN
   WHERE normalized_email = p_normalized_email FOR UPDATE;
 
   IF FOUND THEN
+    IF v_row.branch_allowance IS NULL THEN
+      -- A request created before this contract cannot safely be assigned a
+      -- branch entitlement retrospectively; retain it for human review.
+      RAISE EXCEPTION 'LEGACY_BRANCH_ALLOWANCE_REVIEW_REQUIRED' USING ERRCODE = '55000';
+    END IF;
     IF v_row.request_fingerprint <> p_request_fingerprint
        OR v_row.plan_id <> p_plan_id
        OR v_row.branch_allowance IS DISTINCT FROM v_branch_allowance THEN
