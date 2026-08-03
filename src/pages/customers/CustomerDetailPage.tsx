@@ -8,6 +8,7 @@ import {
   Download,
   FileText,
   Mail,
+  MapPin,
   Pencil,
   Phone,
   Receipt,
@@ -63,12 +64,16 @@ interface FilterOption {
   nameAr: string | null
 }
 
-type CustomerProfileSection = 'overview' | 'invoices' | 'products' | 'documents' | 'report' | 'credit'
+type CustomerProfileSection = 'overview' | 'invoices' | 'products' | 'credit'
 
-const PROFILE_SECTIONS: CustomerProfileSection[] = ['overview', 'invoices', 'products', 'documents', 'report', 'credit']
+const PROFILE_SECTIONS: CustomerProfileSection[] = ['overview', 'invoices', 'products', 'credit']
 
-function isCustomerProfileSection(value: string | null): value is CustomerProfileSection {
+function normalizeProfileSection(value: string | null): CustomerProfileSection {
+  if (value === 'documents') return 'invoices'
+  if (value === 'report') return 'overview'
   return value !== null && PROFILE_SECTIONS.includes(value as CustomerProfileSection)
+    ? value as CustomerProfileSection
+    : 'overview'
 }
 
 function formatDate(value: string | null, locale: string, withTime = false) {
@@ -133,10 +138,10 @@ export default function CustomerDetailPage() {
   const locale = i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA' : 'en'
   const queryStart = searchParams.get('start')
   const queryEnd = searchParams.get('end')
-  const defaultRange = intelligenceDateRange('last30')
+  const defaultRange = intelligenceDateRange('thisMonth')
 
   const [preset, setPreset] = useState<IntelligenceDatePreset>(
-    queryStart && queryEnd ? 'custom' : 'last30',
+    queryStart && queryEnd ? 'custom' : 'thisMonth',
   )
   const [filters, setFilters] = useState<CustomerIntelligenceFilters>({
     startDate: queryStart || defaultRange.startDate,
@@ -160,13 +165,30 @@ export default function CustomerDetailPage() {
   const [editingCustomer, setEditingCustomer] = useState<CustomerWithStats | null>(null)
   const [preparingPdf, setPreparingPdf] = useState(false)
   const [customerCreditVisible, setCustomerCreditVisible] = useState(false)
+  const [customerMeta, setCustomerMeta] = useState<{ city: string | null; cityAr: string | null; crNumber: string | null } | null>(null)
   const requestedProfileSection = searchParams.get('section')
-  const activeProfileSection = isCustomerProfileSection(requestedProfileSection)
-    && (requestedProfileSection !== 'credit' || customerCreditVisible)
-    ? requestedProfileSection
+  const activeProfileSection = (normalizeProfileSection(requestedProfileSection) !== 'credit' || customerCreditVisible)
+    ? normalizeProfileSection(requestedProfileSection)
     : 'overview'
 
+  useEffect(() => {
+    if (requestedProfileSection === 'documents' || requestedProfileSection === 'report') {
+      const next = new URLSearchParams(searchParams)
+      next.set('section', normalizeProfileSection(requestedProfileSection))
+      setSearchParams(next, { replace: true })
+    }
+  }, [requestedProfileSection, searchParams, setSearchParams])
+
   const canChooseBranch = profile?.role !== 'branch'
+
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    void supabase.from('customers').select('city, city_ar, cr_number').eq('id', id).maybeSingle().then(({ data: row }) => {
+      if (!cancelled) setCustomerMeta(row ? { city: row.city, cityAr: row.city_ar, crNumber: row.cr_number } : null)
+    })
+    return () => { cancelled = true }
+  }, [id])
 
   useEffect(() => {
     if (!data?.customer.branchId || data.customer.customerType !== 'business') {
@@ -503,13 +525,12 @@ export default function CustomerDetailPage() {
         {t('customerIntelligence:actions.back')}
       </button>
 
-      <header className="card overflow-hidden">
-        <div className="h-1 bg-gradient-to-r from-[#173d2a] via-[#1B6B3A] to-[#285e61]" />
-        <div className="flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-center">
+      <header className="border-b border-gray-200 pb-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="flex items-start gap-4 flex-1 min-w-0">
-            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
               data.customer.customerType === 'business'
-                ? 'bg-amber-50 text-amber-700'
+                ? 'bg-teal-50 text-teal-700'
                 : 'bg-emerald-50 text-emerald-700'
             }`}>
               {data.customer.customerType === 'business' ? <Building2 size={21} /> : <User size={21} />}
@@ -522,7 +543,7 @@ export default function CustomerDetailPage() {
                 <Badge variant={data.customer.isActive ? 'success' : 'neutral'} dot>
                   {t(`customerIntelligence:status.${data.customer.isActive ? 'active' : 'inactive'}`)}
                 </Badge>
-                <Badge variant="neutral">
+                <Badge variant={data.customer.customerType === 'business' ? 'info' : 'neutral'}>
                   {t(`customers:${data.customer.customerType}`)}
                 </Badge>
               </div>
@@ -536,8 +557,11 @@ export default function CustomerDetailPage() {
                 {data.customer.email && (
                   <span className="inline-flex items-center gap-1.5"><Mail size={14} />{data.customer.email}</span>
                 )}
-                {data.customer.vatNumber && (
-                  <span className="inline-flex items-center gap-1.5" dir="ltr"><FileText size={14} />{data.customer.vatNumber}</span>
+                {(data.customer.vatNumber || customerMeta?.crNumber) && (
+                  <span className="inline-flex items-center gap-1.5" dir="ltr"><FileText size={14} />{data.customer.vatNumber || customerMeta?.crNumber}</span>
+                )}
+                {(customerMeta?.crNumber || customerMeta?.city || customerMeta?.cityAr) && (
+                  <span className="inline-flex items-center gap-1.5"><MapPin size={14} />{isRtl ? customerMeta?.cityAr || customerMeta?.city : customerMeta?.city || customerMeta?.cityAr}</span>
                 )}
               </div>
             </div>
@@ -577,7 +601,7 @@ export default function CustomerDetailPage() {
         canAdjustReceivables={['owner', 'admin', 'accountant'].includes(profile?.role ?? '')}
       /></div>}
 
-      {(activeProfileSection === 'overview' || activeProfileSection === 'report') && <div className="space-y-5"><CustomerIntelligenceFiltersPanel
+      {activeProfileSection === 'overview' && <div className="space-y-5"><div className="hidden"><CustomerIntelligenceFiltersPanel
         filters={filters}
         preset={preset}
         branches={branches.map(branch => ({ id: branch.id, name: branch.name, nameAr: branch.name_ar }))}
@@ -588,6 +612,7 @@ export default function CustomerDetailPage() {
         onPreset={handlePreset}
         onChange={handleFilterChange}
       />
+      </div>
 
       <div className="flex items-center justify-between gap-3">
         <div>
@@ -641,22 +666,22 @@ export default function CustomerDetailPage() {
             detail={t('customerIntelligence:metrics.grossDefinition')}
             icon={Receipt}
           />
-          <MetricCard
+          {false && <MetricCard
             label={t('customerIntelligence:metrics.averageInvoice')}
             value={<Rial amount={data.summary.averageInvoiceValue} />}
             detail={data.summary.invoiceCount
               ? t('customerIntelligence:metrics.invoiceCount')
               : t('customerIntelligence:metrics.notEnoughFrequency')}
             icon={BarChart3}
-          />
-          <MetricCard
+          />}
+          {false && <MetricCard
             label={t('customerIntelligence:metrics.lastPurchase')}
             value={formatDate(data.summary.lastPurchase?.createdAt ?? null, locale)}
             detail={data.summary.lastPurchase?.reference ?? '—'}
             icon={CalendarClock}
-          />
+          />}
         </div>
-        <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="hidden mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <p className="text-sm text-gray-600">
             <span className="font-semibold text-gray-900">{t('customerIntelligence:metrics.purchaseFrequency')}:</span>{' '}
             {data.summary.averageDaysBetweenPurchases == null
@@ -671,7 +696,20 @@ export default function CustomerDetailPage() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <CustomerIntelligenceFiltersPanel
+        filters={filters}
+        preset={preset}
+        branches={branches.map(branch => ({ id: branch.id, name: branch.name, nameAr: branch.name_ar }))}
+        products={products}
+        units={units}
+        canChooseBranch={canChooseBranch}
+        isArabic={isRtl}
+        onPreset={handlePreset}
+        onChange={handleFilterChange}
+        className="p-3"
+      />
+
+      <div className="hidden grid grid-cols-1 xl:grid-cols-3 gap-4">
         <section className="card p-4 xl:col-span-2" aria-labelledby="timeline-title">
           <div className="mb-4">
             <h2 id="timeline-title" className="text-sm font-bold text-gray-900">
@@ -755,7 +793,7 @@ export default function CustomerDetailPage() {
       </div>
       </div>}
 
-      {(activeProfileSection === 'products' || activeProfileSection === 'report') && <section className="card overflow-hidden" aria-labelledby="top-products-title">
+      {activeProfileSection === 'products' && <section className="card overflow-hidden" aria-labelledby="top-products-title">
         <div className="px-4 py-3 border-b border-gray-100">
           <h2 id="top-products-title" className="text-sm font-bold text-gray-900">
             {t('customerIntelligence:products.title')}
@@ -810,7 +848,7 @@ export default function CustomerDetailPage() {
         )}
       </section>}
 
-      {(activeProfileSection === 'invoices' || activeProfileSection === 'documents') && <section className="card overflow-hidden" aria-labelledby="history-title">
+      {activeProfileSection === 'invoices' && <section className="card overflow-hidden" aria-labelledby="history-title">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1">
             <h2 id="history-title" className="text-sm font-bold text-gray-900">
@@ -929,7 +967,7 @@ export default function CustomerDetailPage() {
         )}
       </section>}
 
-      {(activeProfileSection === 'overview' || activeProfileSection === 'report') && <p className="text-xs text-gray-400 leading-relaxed">{t('customerIntelligence:pdf.disclaimer')}</p>}
+      {activeProfileSection === 'overview' && <p className="text-xs text-gray-400 leading-relaxed">{t('customerIntelligence:pdf.disclaimer')}</p>}
       </div>
 
       <CustomerModal

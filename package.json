@@ -103,6 +103,7 @@
     "test:customer-receivables": "node scripts/test-customer-receivables.mjs",
     "test:branch-owner-settings-redesign": "node scripts/test-branch-owner-settings-redesign.mjs",
     "test:customer-credit-final-ui-refinement": "node scripts/test-customer-credit-final-ui-refinement.mjs",
+    "test:customer-profile-targeted-refinement": "node scripts/test-customer-profile-targeted-refinement.mjs",
     "test:credit-pos-sandbox-demo": "node scripts/test-credit-pos-sandbox-demo.mjs",
     "test:receivables-xlsx": "node --experimental-strip-types scripts/test-receivables-xlsx.mjs",
     "test:receivables-stateful": "supabase db query --local --file scripts/certify-customer-receivables-stateful.sql",
