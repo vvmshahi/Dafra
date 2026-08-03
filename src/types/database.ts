@@ -1,7 +1,7 @@
 // Auto-generated types matching supabase/schema.sql
 // Run `supabase gen types typescript` to regenerate after schema changes.
 
-export type UserRole = 'super_admin' | 'owner' | 'branch'
+export type UserRole = 'super_admin' | 'owner' | 'admin' | 'manager' | 'accountant' | 'cashier' | 'branch'
 export type BusinessType = 'trading' | 'service'
 export type BranchPosMode = 'touch' | 'quick'
 export type ZatcaEnvironment = 'production' | 'sandbox'
@@ -1155,6 +1155,7 @@ export interface Customer {
   postal_code: string | null
   notes: string | null
   is_active: boolean
+  receivable_account_id?: string | null
   created_at: string
   updated_at: string
 }

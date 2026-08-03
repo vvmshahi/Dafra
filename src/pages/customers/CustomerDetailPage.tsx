@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { CustomerIntelligenceFiltersPanel } from '@/components/customers/CustomerIntelligenceFilters'
+import { CustomerReceivablesPanel } from '@/components/customers/CustomerReceivablesPanel'
 import CustomerModal from './CustomerModal'
 import type { CustomerWithStats } from './CustomersPage'
 import type { Branch } from '@/types'
@@ -530,6 +531,12 @@ export default function CustomerDetailPage() {
           </div>
         </div>
       </header>
+
+      <CustomerReceivablesPanel
+        customerId={id}
+        branchId={data.customer.branchId}
+        isOwner={profile?.role === 'owner' || profile?.role === 'admin'}
+      />
 
       <CustomerIntelligenceFiltersPanel
         filters={filters}

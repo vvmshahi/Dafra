@@ -1,6 +1,7 @@
 {
   "cash": "نقداً",
   "card": "بطاقة",
+  "credit": "آجل",
   "cardPos": "بطاقة / شبكة",
   "split": "مقسّم",
   "splitPayment": "دفع مقسّم",
@@ -35,5 +36,11 @@
   "whatsapp": "WhatsApp",
   "newSale": "عملية بيع جديدة",
   "viewInvoice": "عرض الفاتورة",
-  "shortBy": "ناقص بمقدار"
+  "shortBy": "ناقص بمقدار",
+  "creditCustomerRequired": "اختر عميلاً نشطاً قبل استخدام البيع الآجل.",
+  "creditInitialInvalid": "يجب أن يكون مبلغ الدفعة الأولى أقل من إجمالي الفاتورة.",
+  "creditCheckout": "بيع آجل",
+  "creditCheckoutHint": "اترك الدفعة الأولى فارغة لفاتورة غير مدفوعة. يسجل الخادم الرصيد المتبقي في حساب العميل.",
+  "creditNoInitialPayment": "بدون دفعة أولى",
+  "creditOutstanding": "الرصيد بعد البيع: {{amount}} ريال"
 }

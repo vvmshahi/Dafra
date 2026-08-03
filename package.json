@@ -8,7 +8,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "test": "npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts",
+    "test": "npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:customer-receivables",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -98,7 +98,8 @@
     "test:a4-artwork-rls": "node scripts/test-a4-artwork-rls-runtime.mjs",
     "test:owner-branch-entitlement": "node scripts/test-owner-branch-entitlement.mjs",
     "test:owner-branch-entitlement-runtime": "node scripts/test-owner-branch-entitlement-runtime.mjs",
-    "test:owner-branch-entitlement-migration-compatibility": "node scripts/test-owner-branch-entitlement-migration-compatibility.mjs"
+    "test:owner-branch-entitlement-migration-compatibility": "node scripts/test-owner-branch-entitlement-migration-compatibility.mjs",
+    "test:customer-receivables": "node scripts/test-customer-receivables.mjs"
   },
   "build": {
     "appId": "com.kubri.pos",

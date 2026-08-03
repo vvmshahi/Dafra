@@ -1,6 +1,7 @@
 {
   "cash": "Cash",
   "card": "Card",
+  "credit": "Credit",
   "cardPos": "Card / POS",
   "split": "Split",
   "splitPayment": "Split payment",
@@ -35,5 +36,11 @@
   "whatsapp": "WhatsApp",
   "newSale": "New sale",
   "viewInvoice": "View invoice",
-  "shortBy": "Short by"
+  "shortBy": "Short by",
+  "creditCustomerRequired": "Select an active customer before using credit.",
+  "creditInitialInvalid": "The initial payment must be less than the invoice total.",
+  "creditCheckout": "Credit checkout",
+  "creditCheckoutHint": "Leave the initial payment empty for a fully unpaid invoice. The remaining balance is posted to the customer account by the server.",
+  "creditNoInitialPayment": "No initial payment",
+  "creditOutstanding": "Outstanding after checkout: SAR {{amount}}"
 }

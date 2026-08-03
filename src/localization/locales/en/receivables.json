@@ -1,0 +1,99 @@
+{
+  "eyebrow": "Accounts receivable",
+  "title": "Customer account",
+  "consolidated": "Owner consolidated account view",
+  "branchScope": "Branch-scoped customer account",
+  "actions": {
+    "receivePayment": "Receive payment",
+    "printStatement": "Print statement",
+    "openReceipt": "Open receipt",
+    "retry": "Retry",
+    "cancel": "Cancel"
+  },
+  "metrics": {
+    "balance": "Receivable balance",
+    "totalInvoiced": "Total invoiced",
+    "totalCollected": "Total collected",
+    "unpaid": "Unpaid",
+    "partial": "Partially paid",
+    "openInvoices": "Open invoices",
+    "unappliedCredit": "Unapplied credit",
+    "overdue": "Overdue receivables"
+  },
+  "payment": {
+    "title": "Receive payment",
+    "hint": "The server allocates this payment oldest-first. Any remainder stays as customer credit.",
+    "amount": "Amount",
+    "method": "Method",
+    "reference": "Reference",
+    "notes": "Notes",
+    "submit": "Record receipt",
+    "autoAllocate": "Automatic oldest-first allocation is active.",
+    "saved": "Payment receipt recorded.",
+    "receiptCreated": "Receipt {{number}} is ready."
+  },
+  "methods": { "cash": "Cash", "card": "Card", "bank": "Bank transfer", "other": "Other" },
+  "openInvoices": {
+    "title": "Open invoices",
+    "count": "{{count}} open",
+    "empty": "There are no receivable-managed open invoices.",
+    "due": "Due {{date}}",
+    "overdue": "Overdue"
+  },
+  "credit": {
+    "title": "Credit settings",
+    "limit": "Credit limit",
+    "available": "Available credit",
+    "notConfigured": "Credit is unavailable until an owner configures a policy.",
+    "settings": "Manage credit policy",
+    "enabled": "Allow credit checkout",
+    "terms": "Internal terms (optional)",
+    "warnThreshold": "Warn at limit (%)",
+    "overdueBlock": "Block credit when overdue",
+    "hold": "Place account on credit hold",
+    "holdReason": "Hold reason",
+    "save": "Save policy",
+    "saved": "Credit policy saved."
+  },
+  "ledger": {
+    "title": "Customer ledger",
+    "opening": "Opening balance: {{amount}}",
+    "empty": "No receivable ledger entries exist for this statement period."
+  },
+  "statement": {
+    "eyebrow": "Accounts receivable",
+    "title": "Customer statement",
+    "back": "Back to customer",
+    "print": "Print / Save PDF",
+    "notFound": "This customer statement could not be loaded.",
+    "period": "Statement period",
+    "entry": "Entry",
+    "debit": "Debit",
+    "credit": "Credit",
+    "balanceColumn": "Balance",
+    "disclaimer": "This statement is an internal settlement record. Fiscal invoices remain immutable and are not replaced by this statement."
+  },
+  "document": {
+    "title": "Payment receipt",
+    "back": "Back to customer",
+    "print": "Print / Save PDF",
+    "notFound": "This payment receipt could not be found.",
+    "receivedFrom": "Received from",
+    "amountReceived": "Amount received",
+    "tenders": "Payment method",
+    "allocations": "Invoice allocations",
+    "previousBalance": "Balance before receipt",
+    "remainingBalance": "Balance after receipt",
+    "unappliedCredit": "Unapplied credit",
+    "unapplied": "This receipt remains available as unapplied customer credit.",
+    "notes": "Notes",
+    "disclaimer": "This is a payment receipt for settlement purposes. It is not a tax invoice and contains no ZATCA QR code."
+  },
+  "errors": {
+    "load": "The customer account could not be loaded.",
+    "payment": "The payment was not recorded. You can retry safely; the same operation will not create a duplicate receipt.",
+    "credit": "The credit policy could not be saved.",
+    "holdReason": "A hold reason is required.",
+    "threshold": "The warning threshold must be between 0 and 100."
+  }
+}

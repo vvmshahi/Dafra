@@ -26,6 +26,8 @@ import InventoryPage       from '@/pages/inventory/InventoryPage'
 import PurchasesPage       from '@/pages/purchases/PurchasesPage'
 import ReportsPage         from '@/pages/reports/ReportsPage'
 import CustomerIntelligenceReportsPage from '@/pages/reports/CustomerIntelligenceReportsPage'
+import PaymentReceiptPrintPage from '@/pages/print/PaymentReceiptPrintPage'
+import CustomerStatementPrintPage from '@/pages/print/CustomerStatementPrintPage'
 import SupplierIntelligenceReportsPage from '@/pages/reports/SupplierIntelligenceReportsPage'
 import OperationsPage      from '@/pages/operations/OperationsPage'
 import ZatcaPage           from '@/pages/zatca/ZatcaPage'
@@ -327,6 +329,8 @@ export default function App() {
 
           {/* Receipt print view — full-screen, no app shell or checkout modal */}
           <Route path="/print/receipt/:invoiceId" element={<ReceiptPrintPage />} />
+          <Route path="/print/payment-receipt/:receiptId" element={<PaymentReceiptPrintPage />} />
+          <Route path="/print/customer-statement/:customerId" element={<CustomerStatementPrintPage />} />
 
           {/* POS — full-screen, no sidebar, branch role only */}
           <Route element={<RequirePOS />}>

@@ -6,7 +6,7 @@ import {
   Receipt, X, ChevronDown, User, Check, Loader2,
   ShoppingBag, AlertCircle, Zap, Printer, PackageOpen, ArrowLeft, Lock,
   ChevronLeft, ChevronRight, ChevronUp, RotateCcw,
-  ScanLine,
+  ScanLine, Landmark,
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
@@ -82,10 +82,14 @@ import {
   type PosCustomerRecord,
 } from '@/lib/pos/customerSearch'
 import { PosCustomerQuickCreateModal } from './PosCustomerQuickCreateModal'
+import {
+  clearPersistentReceivableOperation,
+  getPersistentReceivableOperation,
+} from '@/lib/customers/receivables'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type PosPaymentChoice = 'cash' | 'card' | 'split'
+type PosPaymentChoice = 'cash' | 'card' | 'split' | 'credit'
 type PosMode = BranchPosMode
 
 interface ReceiptPayment {
@@ -1928,6 +1932,8 @@ export default function POSPage() {
   const [splitCard,    setSplitCard]    = useState('')
   const [splitOpen,    setSplitOpen]    = useState(false)
   const [splitLastEdited, setSplitLastEdited] = useState<'cash' | 'card'>('cash')
+  const [creditInitialPayment, setCreditInitialPayment] = useState('')
+  const [creditInitialMethod, setCreditInitialMethod] = useState<'cash' | 'card' | 'bank_transfer'>('cash')
   const [submitting,   setSubmitting]   = useState(false)
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [unitChooserProduct, setUnitChooserProduct] = useState<PosProduct | null>(null)
@@ -1943,6 +1949,7 @@ export default function POSPage() {
     productsAtEnd: true,
   })
   const checkoutKeyRef = useRef<string | null>(null)
+  const creditOperationRef = useRef<string | null>(null)
   const autoPrintedReceiptIdRef = useRef<string | null>(null)
   const resolvedBarcodeCacheRef = useRef(new Map<string, ScannerIndexEntry<PosProduct, PosSellingUnit>>())
   const businessType = resolveBusinessType(tenant?.business_type)
@@ -2399,6 +2406,8 @@ export default function POSPage() {
     && splitCardAmount <= totals.total + 0.01
     && splitBalanced
   const isAccountSuspended = sub.status === 'suspended'
+  const creditInitialAmount = parseFloat(creditInitialPayment) || 0
+  const creditInitialValid = creditInitialAmount >= 0 && creditInitialAmount < totals.total - 0.001
 
   const filteredCusts = useMemo(() => searchCustomers(customers, custSearch), [customers, custSearch])
   const selectedCust = customers.find(c => c.id === customerId)
@@ -2657,11 +2666,21 @@ export default function POSPage() {
           return
         }
       }
+      if (payMethod === 'credit') {
+        if (!customerId) {
+          toast.error(t('payments:creditCustomerRequired'))
+          return
+        }
+        if (!creditInitialValid) {
+          toast.error(t('payments:creditInitialInvalid'))
+          return
+        }
+      }
 
       const splitUsesBothMethods = payMethod === 'split' && splitCashAmount > 0 && splitCardAmount > 0
       const effectivePaymentMethod: PaymentMethod = payMethod === 'split'
         ? splitCashAmount > 0 && splitCardAmount <= 0 ? 'cash' : splitCardAmount > 0 && splitCashAmount <= 0 ? 'card' : 'other'
-        : payMethod
+        : payMethod === 'credit' ? 'other' : payMethod
       const cashTenderProvided = (effectivePaymentMethod === 'cash' && payMethod === 'split') || (payMethod === 'cash' && cashReceived.trim() !== '')
       const splitPayments = splitUsesBothMethods
         ? [
@@ -2703,6 +2722,7 @@ export default function POSPage() {
         : selectedCust?.customer_type === 'business'
           && /^3[0-9]{13}3$/.test(selectedCust.vat_number ?? '')
       const atomicRequested = !demoSandbox
+        && payMethod !== 'credit'
         && documentDecision?.documentType === 'simplified'
         && documentDecision.checkoutPath === 'atomic'
       let productionCheckoutMode: ZatcaCheckoutMode = 'legacy'
@@ -2764,7 +2784,35 @@ export default function POSPage() {
           // retain the approved legacy path without changing fiscal type.
           productionCheckoutMode = 'legacy'
         }
-        const { data, error } = await (supabase as any).rpc('pos_checkout', { p_payload: payload })
+        const creditOperationId = payMethod === 'credit' && customerId
+          ? (creditOperationRef.current ?? getPersistentReceivableOperation({
+              branchId: branch.id,
+              customerId,
+              fingerprint: JSON.stringify({
+                branch_id: branch.id,
+                customer_id: customerId,
+                items: payload.items,
+                initial_payments: creditInitialAmount > 0
+                  ? [{ method: creditInitialMethod, amount: round2(creditInitialAmount) }]
+                  : [],
+              }),
+            }))
+          : null
+        if (creditOperationId) creditOperationRef.current = creditOperationId
+        const creditPayload = payMethod === 'credit'
+          ? {
+              ...payload,
+              operation_id: creditOperationId,
+              settlement_mode: creditInitialAmount > 0 ? 'partial' : 'credit',
+              initial_payments: creditInitialAmount > 0
+                ? [{ method: creditInitialMethod, amount: round2(creditInitialAmount) }]
+                : [],
+            }
+          : null
+        const { data, error } = await (supabase as any).rpc(
+          payMethod === 'credit' ? 'post_customer_credit_checkout_v1' : 'pos_checkout',
+          { p_payload: payMethod === 'credit' ? creditPayload : payload },
+        )
         if (error) throw error
         checkout = data as PosCheckoutResult
       }
@@ -3028,6 +3076,12 @@ export default function POSPage() {
       setCustomerId(null)
       setNote('')
       setCashReceived('')
+      setCreditInitialPayment('')
+      setCreditInitialMethod('cash')
+      if (payMethod === 'credit' && customerId) {
+        clearPersistentReceivableOperation(branch.id, customerId, 'credit-checkout')
+      }
+      creditOperationRef.current = null
       setSplitCash('')
       setSplitCard('')
       setSplitOpen(false)
@@ -3299,6 +3353,8 @@ export default function POSPage() {
   const canCharge = !isAccountSuspended && cart.length > 0 && !submitting &&
     (payMethod === 'split'
       ? splitReady
+      : payMethod === 'credit'
+        ? Boolean(customerId) && creditInitialValid
       : !(payMethod === 'cash' && cashReceived !== '' && cashAmt < totals.total - 0.001))
 
   return (
@@ -3914,17 +3970,19 @@ export default function POSPage() {
         {/* Payment method */}
         <div className="px-4 pb-2 flex-shrink-0 space-y-2">
           <div className="flex gap-2">
-            {(['cash', 'card'] as const).map(m => (
-              <button key={m} onClick={() => { setPayMethod(m); setSplitOpen(false) }}
+            {(['cash', 'card', 'credit'] as const).map(m => (
+              <button key={m} disabled={m === 'credit' && !customerId} onClick={() => { setPayMethod(m); setSplitOpen(false) }}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
                   payMethod === m
                     ? m === 'cash'
                       ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
-                      : 'bg-indigo-500 text-white border-indigo-500 shadow-sm'
+                      : m === 'credit'
+                        ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                        : 'bg-indigo-500 text-white border-indigo-500 shadow-sm'
                     : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                }`}>
-                {m === 'cash' ? <Banknote size={13} /> : <CreditCard size={13} />}
-                {m === 'cash' ? t('payments:cash') : t('payments:card')}
+                } disabled:cursor-not-allowed disabled:opacity-45`}>
+                {m === 'cash' ? <Banknote size={13} /> : m === 'credit' ? <Landmark size={13} /> : <CreditCard size={13} />}
+                {m === 'cash' ? t('payments:cash') : m === 'credit' ? t('payments:credit') : t('payments:card')}
               </button>
             ))}
             {splitPaymentsEnabled && (
@@ -3988,6 +4046,23 @@ export default function POSPage() {
               </button>
             </div>
           )}
+
+          {payMethod === 'credit' && cart.length > 0 && (
+            <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5 space-y-2">
+              <p className="text-[11px] font-semibold text-amber-900">{t('payments:creditCheckout')}</p>
+              <p className="text-[10px] leading-relaxed text-amber-800">{t('payments:creditCheckoutHint')}</p>
+              <div className="grid grid-cols-[1fr_116px] gap-2">
+                <div className="relative">
+                  <span className="absolute start-3 top-1/2 -translate-y-1/2 text-xs text-amber-700" dir="ltr">SAR</span>
+                  <MoneyInput value={creditInitialPayment} onValueChange={setCreditInitialPayment} placeholder={t('payments:creditNoInitialPayment')} className="input border-amber-200 bg-white ps-10 py-1.5 text-sm tabular-nums" />
+                </div>
+                <select value={creditInitialMethod} onChange={event => setCreditInitialMethod(event.target.value as 'cash' | 'card' | 'bank_transfer')} className="rounded-lg border border-amber-200 bg-white px-2 text-xs font-medium text-slate-700">
+                  <option value="cash">{t('payments:cash')}</option><option value="card">{t('payments:card')}</option><option value="bank_transfer">{t('payments:bankTransfer')}</option>
+                </select>
+              </div>
+              {creditInitialAmount > 0 && <p className="text-[10px] text-amber-800">{t('payments:creditOutstanding', { amount: (totals.total - creditInitialAmount).toFixed(2) })}</p>}
+            </div>
+          )}
         </div>
 
         {isAccountSuspended && (
@@ -4011,7 +4086,7 @@ export default function POSPage() {
               : isAccountSuspended
                 ? <><AlertCircle size={16} /> {t('pos:billingDisabled')}</>
               : <>
-                  {payMethod === 'cash' ? <Banknote size={16} /> : <CreditCard size={16} />}
+                  {payMethod === 'cash' ? <Banknote size={16} /> : payMethod === 'credit' ? <Landmark size={16} /> : <CreditCard size={16} />}
                   {t('pos:charge')} — <span dir="ltr"><Rial amount={totals.total} /></span>
                 </>
             }
