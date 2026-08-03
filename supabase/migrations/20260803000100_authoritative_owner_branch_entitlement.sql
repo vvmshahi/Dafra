@@ -1,39 +1,137 @@
 -- Preserve the Super Admin's selected branch allowance as the authoritative
--- provisioning contract.  Plan capacity is catalogue metadata and must never
--- override this per-tenant entitlement.
-
-ALTER TABLE public.owner_provisioning_requests
-  ADD COLUMN IF NOT EXISTS branch_allowance integer;
-
--- The deployed owner-provisioning recovery path canonicalizes blank VAT values
--- to NULL.  Keep the tenant projection compatible with that durable contract;
--- existing non-empty VAT values are not changed.
-ALTER TABLE public.tenants
-  ALTER COLUMN vat_number DROP NOT NULL;
-
-ALTER TABLE public.tenant_subscriptions
-  ADD COLUMN IF NOT EXISTS paid_branch_count integer NOT NULL DEFAULT 1;
-
+-- provisioning contract. Plan capacity is catalogue metadata and must never
+-- override this per-tenant entitlement. This migration has not been applied to
+-- a shared database, but production contains a compatible partial DDL state.
+-- Validate that state explicitly: accept equivalent objects, add only missing
+-- objects, and stop before changing a semantically different entitlement.
 DO $$
+DECLARE
+  v_type text;
+  v_not_null boolean;
+  v_default text;
+  v_definition text;
+  v_normalized_definition text;
+  v_equivalent_check boolean;
+  v_incompatible_check boolean;
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conrelid = 'public.owner_provisioning_requests'::regclass
-      AND conname = 'owner_provisioning_requests_branch_allowance_check'
-  ) THEN
+  IF to_regclass('public.owner_provisioning_requests') IS NULL
+     OR to_regclass('public.tenant_subscriptions') IS NULL
+     OR to_regclass('public.tenants') IS NULL THEN
+    RAISE EXCEPTION 'ENTITLEMENT_PREREQUISITE_RELATION_MISSING';
+  END IF;
+
+  SELECT format_type(a.atttypid, a.atttypmod), a.attnotnull,
+         pg_get_expr(d.adbin, d.adrelid)
+    INTO v_type, v_not_null, v_default
+  FROM pg_attribute a
+  LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+  WHERE a.attrelid = 'public.owner_provisioning_requests'::regclass
+    AND a.attname = 'branch_allowance'
+    AND a.attnum > 0 AND NOT a.attisdropped;
+  IF NOT FOUND THEN
+    ALTER TABLE public.owner_provisioning_requests
+      ADD COLUMN branch_allowance integer;
+  ELSIF v_type <> 'integer' OR v_not_null OR v_default IS NOT NULL THEN
+    RAISE EXCEPTION 'INCOMPATIBLE_BRANCH_ALLOWANCE_DEFINITION: type %, not_null %, default %',
+      v_type, v_not_null, coalesce(v_default, '<NULL>');
+  END IF;
+
+  SELECT format_type(a.atttypid, a.atttypmod), a.attnotnull,
+         pg_get_expr(d.adbin, d.adrelid)
+    INTO v_type, v_not_null, v_default
+  FROM pg_attribute a
+  LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+  WHERE a.attrelid = 'public.tenant_subscriptions'::regclass
+    AND a.attname = 'paid_branch_count'
+    AND a.attnum > 0 AND NOT a.attisdropped;
+  IF NOT FOUND THEN
+    ALTER TABLE public.tenant_subscriptions
+      ADD COLUMN paid_branch_count integer NOT NULL DEFAULT 1;
+  ELSIF v_type <> 'integer' OR NOT v_not_null OR v_default IS DISTINCT FROM '1' THEN
+    RAISE EXCEPTION 'INCOMPATIBLE_PAID_BRANCH_COUNT_DEFINITION: type %, not_null %, default %',
+      v_type, v_not_null, coalesce(v_default, '<NULL>');
+  END IF;
+
+  SELECT format_type(a.atttypid, a.atttypmod), a.attnotnull,
+         pg_get_expr(d.adbin, d.adrelid)
+    INTO v_type, v_not_null, v_default
+  FROM pg_attribute a
+  LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+  WHERE a.attrelid = 'public.tenants'::regclass
+    AND a.attname = 'vat_number'
+    AND a.attnum > 0 AND NOT a.attisdropped;
+  IF NOT FOUND OR v_type NOT IN ('character varying(15)', 'character varying', 'text')
+     OR v_default IS NOT NULL THEN
+    RAISE EXCEPTION 'INCOMPATIBLE_TENANT_VAT_DEFINITION: type %, default %',
+      coalesce(v_type, '<MISSING>'), coalesce(v_default, '<NULL>');
+  END IF;
+  IF v_not_null THEN
+    -- v74 canonicalises a blank VAT to NULL; this changes no existing value.
+    ALTER TABLE public.tenants ALTER COLUMN vat_number DROP NOT NULL;
+  END IF;
+
+  v_equivalent_check := false;
+  v_incompatible_check := false;
+  FOR v_definition IN
+    SELECT pg_get_constraintdef(c.oid)
+    FROM pg_constraint c
+    WHERE c.conrelid = 'public.tenant_subscriptions'::regclass
+      AND c.contype = 'c'
+      AND pg_get_constraintdef(c.oid) ILIKE '%paid_branch_count%'
+  LOOP
+    v_normalized_definition := regexp_replace(lower(v_definition), '[[:space:]()]', '', 'g');
+    IF v_normalized_definition = 'checkpaid_branch_count>=1' THEN
+      v_equivalent_check := true;
+    ELSE
+      v_incompatible_check := true;
+    END IF;
+  END LOOP;
+  IF v_incompatible_check THEN
+    RAISE EXCEPTION 'INCOMPATIBLE_PAID_BRANCH_COUNT_CHECK';
+  ELSIF NOT v_equivalent_check THEN
+    ALTER TABLE public.tenant_subscriptions
+      ADD CONSTRAINT tenant_subscriptions_paid_branch_count_check
+      CHECK (paid_branch_count >= 1);
+  END IF;
+
+  v_equivalent_check := false;
+  v_incompatible_check := false;
+  FOR v_definition IN
+    SELECT pg_get_constraintdef(c.oid)
+    FROM pg_constraint c
+    WHERE c.conrelid = 'public.owner_provisioning_requests'::regclass
+      AND c.contype = 'c'
+      AND pg_get_constraintdef(c.oid) ILIKE '%branch_allowance%'
+  LOOP
+    v_normalized_definition := regexp_replace(lower(v_definition), '[[:space:]()]', '', 'g');
+    IF v_normalized_definition IN (
+      'checkbranch_allowanceisnullorbranch_allowancebetween1and100',
+      'checkbranch_allowanceisnullorbranch_allowance>=1andbranch_allowance<=100'
+    ) THEN
+      v_equivalent_check := true;
+    ELSE
+      v_incompatible_check := true;
+    END IF;
+  END LOOP;
+  IF v_incompatible_check THEN
+    RAISE EXCEPTION 'INCOMPATIBLE_BRANCH_ALLOWANCE_CHECK';
+  ELSIF NOT v_equivalent_check THEN
     ALTER TABLE public.owner_provisioning_requests
       ADD CONSTRAINT owner_provisioning_requests_branch_allowance_check
       CHECK (branch_allowance IS NULL OR branch_allowance BETWEEN 1 AND 100);
   END IF;
 
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conrelid = 'public.tenant_subscriptions'::regclass
-      AND conname = 'tenant_subscriptions_paid_branch_count_check'
-  ) THEN
-    ALTER TABLE public.tenant_subscriptions
-      ADD CONSTRAINT tenant_subscriptions_paid_branch_count_check
-      CHECK (paid_branch_count >= 1);
+  IF to_regprocedure('public.acquire_owner_provisioning(uuid,text,uuid,text,jsonb)') IS NULL
+     OR to_regprocedure('public.complete_owner_provisioning_core(uuid)') IS NULL
+     OR to_regprocedure('public.attach_owner_provisioning_auth(uuid,uuid)') IS NULL
+     OR to_regprocedure('public.set_owner_provisioning_result(uuid,text,text)') IS NULL THEN
+    RAISE EXCEPTION 'INCOMPATIBLE_ENTITLEMENT_FUNCTION_SIGNATURE';
+  END IF;
+  IF pg_get_function_result(to_regprocedure('public.acquire_owner_provisioning(uuid,text,uuid,text,jsonb)'))
+       <> 'TABLE(provisioning_id uuid, state text, auth_user_id uuid, tenant_id uuid, subscription_id uuid, is_replay boolean)'
+     OR pg_get_function_result(to_regprocedure('public.complete_owner_provisioning_core(uuid)'))
+       <> 'TABLE(state text, auth_user_id uuid, tenant_id uuid, subscription_id uuid)' THEN
+    RAISE EXCEPTION 'INCOMPATIBLE_ENTITLEMENT_FUNCTION_RETURN_SIGNATURE';
   END IF;
 END
 $$;

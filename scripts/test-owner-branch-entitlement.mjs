@@ -34,6 +34,10 @@ for (const fragment of [
   'SET search_path = pg_catalog, public, auth',
   'REVOKE ALL ON FUNCTION public.acquire_owner_provisioning',
   'GRANT EXECUTE ON FUNCTION public.acquire_owner_provisioning',
+  'INCOMPATIBLE_BRANCH_ALLOWANCE_DEFINITION',
+  'INCOMPATIBLE_PAID_BRANCH_COUNT_DEFINITION',
+  'INCOMPATIBLE_PAID_BRANCH_COUNT_CHECK',
+  'INCOMPATIBLE_ENTITLEMENT_FUNCTION_SIGNATURE',
 ]) assert.ok(migration.includes(fragment), fragment)
 
 assert.doesNotMatch(migration, /greatest\(1,\s*v_plan\.max_branches\)/i)
