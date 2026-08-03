@@ -21,6 +21,7 @@ for (const fragment of [
   'branch_allowance BETWEEN 1 AND 100',
   "p_request_payload -> 'branch_count'",
   'INVALID_BRANCH_ALLOWANCE',
+  'LEGACY_BRANCH_ALLOWANCE_REVIEW_REQUIRED',
   'v_row.branch_allowance IS DISTINCT FROM v_branch_allowance',
   'BRANCH_ALLOWANCE_MISSING',
   'BRANCH_ENTITLEMENT_CONFLICT',
@@ -40,6 +41,7 @@ assert.ok(owner.includes('branchCount < 1 || branchCount > 100'))
 assert.ok(owner.includes('branch_count: branchCount'))
 assert.ok(owner.includes('payment_type: paymentType'))
 assert.ok(owner.includes('branch_count: safePayload.branch_count'))
+assert.ok(owner.includes('BRANCH_ENTITLEMENT_REVIEW_REQUIRED'))
 assert.ok(clients.includes('MAX_OWNER_BRANCH_ALLOWANCE = 100'))
 assert.ok(clients.includes('max={MAX_OWNER_BRANCH_ALLOWANCE}'))
 assert.ok(clients.includes('branch_count:    branchCount'))
