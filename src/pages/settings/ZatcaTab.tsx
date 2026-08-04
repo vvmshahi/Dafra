@@ -142,13 +142,12 @@ function TradingSandboxReconnect({
 }) {
   const { t } = useTranslation('zatca')
   const [open, setOpen] = useState(false)
-  const [otp, setOtp] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
   const statusLabel = status?.status ?? 'not_started'
-  const canResume = !connectionActive && (!status || ['not_started', 'csr_ready', 'failed', 'compliance_csid_ready', 'compliance_passed'].includes(statusLabel))
+  const canResume = !connectionActive && (!status || ['not_started', 'csr_ready', 'compliance_csid_ready', 'compliance_checks_pending', 'compliance_passed', 'sandbox_production_csid_ready'].includes(statusLabel))
 
   async function reconnect() {
     setError(null)
@@ -161,28 +160,31 @@ function TradingSandboxReconnect({
         onStatusChange(next)
       }
 
-      if (next.status === 'csr_ready' || (next.status === 'failed' && next.failedStep === 'request_compliance_csid')) {
-        if (!/^\d{6}$/.test(otp)) {
-          setError(t('sandbox.reconnectOtpRequired'))
-          return
-        }
-        const submittedOtp = otp
-        setOtp('')
+      if (next.status === 'csr_ready') {
         next = await runSandboxDemoOnboarding({
-          action: next.status === 'failed' ? 'retry_failed_step' : 'request_compliance_csid',
-          otp: submittedOtp,
+          action: 'request_compliance_csid',
         })
         onStatusChange(next)
       }
 
-      if (next.status === 'compliance_csid_ready' || (next.status === 'failed' && next.failedStep === 'submit_compliance_documents')) {
+      if (next.status === 'compliance_csid_ready') {
         next = await runSandboxDemoOnboarding({
-          action: next.status === 'failed' ? 'retry_failed_step' : 'submit_compliance_documents',
+          action: 'submit_compliance_documents',
         })
         onStatusChange(next)
       }
 
       if (next.status === 'compliance_passed') {
+        next = await runSandboxDemoOnboarding({ action: 'request_sandbox_production_csid' })
+        onStatusChange(next)
+      }
+
+      if (next.status === 'sandbox_production_csid_ready') {
+        next = await runSandboxDemoOnboarding({ action: 'activate' })
+        onStatusChange(next)
+      }
+
+      if (next.status === 'active') {
         const connection = await activateSandboxDemoConnection()
         onConnectionChange(connection)
         setSuccess(t('sandbox.reconnectSuccess'))
@@ -192,15 +194,12 @@ function TradingSandboxReconnect({
 
       if (next.status === 'failed') {
         setError(next.lastError || t('sandbox.reconnectFailed'))
-      } else if (next.status === 'csr_ready') {
-        setSuccess(t('sandbox.reconnectOtpReady'))
-      } else if (next.status === 'compliance_csid_ready' || next.status === 'compliance_checks_pending') {
+      } else if (next.status === 'csr_ready' || next.status === 'compliance_csid_ready' || next.status === 'compliance_checks_pending' || next.status === 'compliance_passed' || next.status === 'sandbox_production_csid_ready') {
         setSuccess(t('sandbox.reconnectChecksRunning'))
-      } else if (!['active', 'compliance_passed'].includes(next.status)) {
+      } else if (next.status !== 'active') {
         setError(t('sandbox.reconnectNeedsReview'))
       }
     } catch (cause) {
-      setOtp('')
       setError(cause instanceof Error ? cause.message : t('sandbox.reconnectFailed'))
     } finally {
       setBusy(false)
@@ -237,29 +236,12 @@ function TradingSandboxReconnect({
       </div>
       {open && (
         <div className="border-t border-amber-100 bg-gray-50/70 px-5 py-4">
-          <p className="text-xs font-semibold text-gray-900">{t('sandbox.reconnectOtpTitle')}</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.reconnectOtpHelp')}</p>
-          <a href={FATOORA_PORTAL_URL} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-sky-700 hover:text-sky-800">
-            <ExternalLink size={12} /> {t('sandbox.openDeveloperPortal')}
-          </a>
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <input
-              type="password"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              value={otp}
-              onChange={event => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder={t('sandbox.reconnectOtpPlaceholder')}
-              aria-label={t('sandbox.reconnectOtpTitle')}
-              disabled={busy}
-              className="min-h-10 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-sm tracking-[0.3em] outline-none focus:border-[#0F2419] focus:ring-2 focus:ring-[#0F2419]/10 disabled:bg-gray-100"
-            />
-            <button type="button" onClick={() => void reconnect()} disabled={busy} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-4 text-xs font-bold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-50">
-              {busy && <Loader2 size={13} className="animate-spin" />}
-              {busy ? t('sandbox.reconnectSubmitting') : t('sandbox.reconnectSubmit')}
-            </button>
-          </div>
+          <p className="text-xs font-semibold text-gray-900">{t('sandbox.reconnectTitle')}</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.reconnectHelp')}</p>
+          <button type="button" onClick={() => void reconnect()} disabled={busy} className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-4 text-xs font-bold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-50">
+            {busy && <Loader2 size={13} className="animate-spin" />}
+            {busy ? t('sandbox.reconnectSubmitting') : t('sandbox.reconnectSubmit')}
+          </button>
           {error && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}
         </div>
       )}

@@ -19,10 +19,11 @@ This release-candidate patch is limited to the requested web functional repairs:
   invoice detail, reprints, A4, and thermal output;
 - present Customer credit as a translated payment badge independently of ZATCA status.
 
-No checkout, invoice posting, inventory, payment, migration, Electron, mobile,
+No checkout, invoice posting, inventory, payment, Electron, mobile,
 production deployment, or main-branch changes were made. The focused
-`zatca-onboard-sandbox-demo` Edge Function was repaired and redeployed; no
-production ZATCA function or endpoint was called.
+Sandbox onboarding/validation Edge Functions and one function-only migration
+were repaired and redeployed; no production ZATCA function or endpoint was
+called.
 
 ## Remote Demo metadata and routing
 
@@ -97,23 +98,30 @@ Trading Demo is tenant `ebf1144b-55ed-472a-99c9-23b5ee915351`, Branch
 `c30094d7-40ca-4d2e-833a-07aa18c4fa46` in the same tenant.
 
 Trading's authoritative state remains `non_fiscal` because its current Sandbox
-credential is failed and its historical credential is revoked. No failed
-credential was reactivated, deleted, or copied from Service Demo. The existing
-backend onboarding function now accepts only an authenticated Owner or Super
-Admin for the exact Demo tenant and Trading Branch, while retaining its fixed
-Sandbox endpoint and server-owned CSR/device/credential handling.
+credential is failed and its historical credential is revoked. The read-only
+remote count is zero active Trading credentials, one historical row with a
+compliance-demo flag, and two failed/revoked historical rows overall. No failed
+credential was reactivated, deleted, renewed, or copied from Service Demo. The
+backend onboarding function accepts only an authenticated Owner or Super Admin
+for the exact Demo tenant and Trading Branch, while retaining its fixed Sandbox
+endpoint and server-owned CSR/device/credential handling.
 
 The Owner-area `Reconnect Sandbox` control shows safe business, Branch,
 environment, and credential state. It never accepts an environment, endpoint,
-credential, CSR owner, or Service Demo material from the browser. A fresh OTP
-is entered interactively, never prefilled, logged, persisted, returned, or sent
-to production; the field clears immediately after submission and duplicate
-submits are disabled. The flow generates Trading's own simplified-capability
-CSR when needed, obtains the compliance credential, submits compliance samples,
-and activates the compliance-demo state only after successful server checks.
+credential, CSR owner, or Service Demo material from the browser. For this
+Integration Sandbox repair, the official Sandbox OTP is held only in the
+server-side Edge Function configuration and is never accepted from, returned
+to, logged, or displayed by the browser. Production endpoints cannot receive
+that value. The flow excludes failed/revoked rows, generates a fresh Trading
+device keypair and CSR, verifies that the CSR public key belongs to that exact
+private key before storage, obtains the compliance credential, submits
+compliance samples, requests the Sandbox Production credential only after
+compliance passes, verifies the returned certificate against the same fresh
+private key, and activates only the complete chain.
 
-No current OTP was available in this environment, so onboarding, QR generation,
-Sandbox response, status persistence, and retry acceptance remain owner-gated.
+No authenticated owner session was available in this environment, so onboarding,
+QR generation, Sandbox response, status persistence, and retry acceptance remain
+owner-gated. The fixed server-side OTP was not printed or used by this audit.
 
 ### Follow-up reconnect defect repair
 
@@ -132,18 +140,32 @@ unauthorized scope returns `SANDBOX_RECONNECT_UNAUTHORIZED`, and malformed OTP
 returns `SANDBOX_OTP_INVALID`. No stack trace or sensitive upstream material is
 returned or logged.
 
-Normal reconnect status selection excludes revoked/expired credentials. Failed
-and revoked rows remain audit history and are not selected by the onboarding
-function’s current reconnect target. No historical credential was deleted,
-copied, or submitted. The separate validator was not deployed in this repair;
-the owner-gated activation path remains a distinct follow-up verification gate.
+Normal reconnect status selection excludes failed, revoked, and expired
+credentials. Failed and revoked rows remain audit history and are not selected
+by the onboarding function’s reconnect target. An explicit history ID is only
+accepted for reconciliation inspection, never as a fresh renewal target. No
+historical credential was deleted, copied, renewed, or submitted.
+
+The reconnect failure was the upstream certificate/CSR signing-key mismatch
+persisted on the failed Trading row during Sandbox Production credential
+request. The repair adds safe server-side key-association checks at both fresh
+CSR creation and returned-certificate acceptance. Mismatches fail closed with
+`SANDBOX_DEVICE_IDENTITY_MISMATCH` or the existing production-key mismatch
+error, before a credential can be stored or activated. The new migration keeps
+the existing compliance-only mode and additionally recognizes only an active,
+non-expired, complete Sandbox chain; it does not alter business rows.
+
+The validator now treats a fully active Trading credential as an idempotent
+successful connection and the UI completes the server-owned sequence through
+Sandbox Production CSID and activation. Service Demo credentials remain
+outside the exact Trading tenant/Branch scope.
 
 Changed Edge Functions:
 
 | Function | Before | After | JWT |
 | --- | ---: | ---: | --- |
-| `zatca-onboard-sandbox-demo` | 20 | 21 | enabled |
-| `zatca-validate-sandbox-demo` | 21 | 22 | enabled |
+| `zatca-onboard-sandbox-demo` | 20 | 22 | enabled |
+| `zatca-validate-sandbox-demo` | 21 | 23 | enabled |
 | `zatca-submit-sandbox-demo` | 16 | 16 | unchanged |
 | `zatca-compliance` | 71 | 71 | unchanged |
 | `zatca-submit` | 130 | 130 | unchanged |
@@ -197,9 +219,16 @@ Passed:
 - unauthenticated HTTP 401 checks for both changed Sandbox Edge Functions
 - controlled reconnect configuration, scope, OTP, and historical-credential
   regression contracts
+- fresh private-key/public-key/CSR association checks and production-certificate
+  key-match rejection contracts
+- local/remote migration parity through `20260804000200`
+- remote application of `20260804000200_trading_sandbox_active_credential_mode.sql`
+- function-only migration diff review: no invoice, checkout, ZATCA business,
+  Atomic, Legacy, or existing business-row changes
+- active credential mode contract and server-side production-CSID flow
 
-No migration changed for this patch. The existing QR
-path remains authoritative: Sandbox QR content comes only from the stored
+The existing QR path remains authoritative: Sandbox QR content comes only from
+the stored
 Sandbox validation result, and production QR content comes only from the stored
 output state.
 
@@ -234,11 +263,10 @@ The focused reconnect repair Preview also reached `READY`:
 This is not a production certification or a claim that either Demo branch
 has completed an authenticated Sandbox submission.
 
-Owner OTP stop condition: open Kubri → Settings → ZATCA for the exact `Kubri
-Demo` business, select the `Kubri Trading Demo` Sandbox reconnect card, open
-`Reconnect Sandbox`, and obtain a fresh current 6-digit OTP from the ZATCA
-Developer Portal for the Trading Demo device. Enter it only in that control;
-never paste it into chat or add it to code.
+Owner stop condition: open Kubri → Settings → ZATCA for the exact `Kubri Demo`
+business, select the `Kubri Trading Demo` Sandbox reconnect card, and run the
+server-owned reconnect flow from an authenticated Owner or Super Admin session.
+Do not paste the official Sandbox OTP into chat or add it to client code.
 
 After OTP, verify Trading's own onboarding response, active compliance-demo
 mode, QR, factual stored Sandbox response, refresh persistence, and safe retry.

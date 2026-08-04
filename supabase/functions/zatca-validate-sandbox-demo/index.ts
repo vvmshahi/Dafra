@@ -288,11 +288,11 @@ async function loadScope(db: any, invoiceId: string, branchId: typeof DEMO_BRANC
       invoice_items(id,name,quantity,selling_unit_code,unit_price,discount_amount,subtotal,tax_rate,tax_amount,total)
     `).eq('id', invoiceId).eq('tenant_id', DEMO_TENANT_ID).eq('branch_id', branchId).maybeSingle(),
     db.from('zatca_sandbox_credentials').select(`
-      id,tenant_id,branch_id,device_id,environment,compliance_demo_status,
+      id,tenant_id,branch_id,device_id,environment,status,compliance_demo_status,
       last_successful_onboarding_status,encrypted_private_key,
       encrypted_compliance_csid,encrypted_compliance_secret
     `).eq('tenant_id', DEMO_TENANT_ID).eq('branch_id', branchId)
-      .eq('environment', 'sandbox').eq('status', 'compliance')
+      .eq('environment', 'sandbox').in('status', ['compliance', 'active'])
       .eq('compliance_demo_status', 'active').maybeSingle(),
   ])
   if (
@@ -432,7 +432,7 @@ async function connectionStatus(db: any, branchId: typeof DEMO_BRANCH_IDS[number
   const { data, error } = await db.from('zatca_sandbox_credentials')
     .select('id,compliance_demo_status,last_successful_onboarding_status,compliance_sample_results')
     .eq('tenant_id', DEMO_TENANT_ID).eq('branch_id', branchId)
-    .eq('environment', 'sandbox').eq('status', 'compliance')
+    .eq('environment', 'sandbox').in('status', ['compliance', 'active'])
     .eq('compliance_demo_status', 'active').maybeSingle()
   if (error) throw new Error('Unable to load Sandbox compliance-validation status')
   const passed = Array.isArray(data?.compliance_sample_results)
@@ -453,9 +453,12 @@ async function connectionStatus(db: any, branchId: typeof DEMO_BRANCH_IDS[number
 
 async function activateComplianceDemo(db: any, branchId: typeof DEMO_BRANCH_IDS[number]): Promise<Record<string, unknown>> {
   const { data: credential, error } = await db.from('zatca_sandbox_credentials')
-    .select('id,last_successful_onboarding_status,compliance_sample_results,encrypted_private_key,encrypted_compliance_csid,encrypted_compliance_secret')
+    .select('id,status,compliance_demo_status,last_successful_onboarding_status,compliance_sample_results,encrypted_private_key,encrypted_compliance_csid,encrypted_compliance_secret')
     .eq('tenant_id', DEMO_TENANT_ID).eq('branch_id', branchId).eq('environment', 'sandbox')
-    .in('status', ['compliance', 'failed']).order('created_at', { ascending: false }).limit(1).maybeSingle()
+    .in('status', ['compliance', 'active', 'failed']).order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (!error && credential?.status === 'active' && credential.compliance_demo_status === 'active' && credential.last_successful_onboarding_status === 'active') {
+    return connectionStatus(db, branchId)
+  }
   const acceptedSamples = Array.isArray(credential?.compliance_sample_results)
     ? credential.compliance_sample_results.filter((sample: any) => sample?.status === 'accepted')
     : []

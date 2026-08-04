@@ -68,7 +68,7 @@ assert.match(pos, /if \(receipt\.sandboxDemo\)[\s\S]*?routed\.mode !== 'sandbox_
 assert.match(submission, /PosCheckoutPath = 'atomic' \| 'legacy' \| 'demo' \| 'sandbox'/)
 assert.match(submission, /getZatcaDemoCheckoutMode/)
 assert.match(submission, /await getZatcaDemoCheckoutMode\(params\.branchId\) === 'sandbox_compliance'/)
-assert.match(sandboxValidator, /\.eq\('status', 'compliance'\)/)
+assert.match(sandboxValidator, /\.in\('status', \['compliance', 'active'\]\)/)
 
 for (const locale of [enPayments, arPayments]) {
   for (const key of [

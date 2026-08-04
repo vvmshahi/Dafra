@@ -46,6 +46,9 @@ const PERMANENT_DEMO_TENANT_ID = 'ebf1144b-55ed-472a-99c9-23b5ee915351'
 // Server-authoritative reconnect scope. These values are deliberately fixed
 // server configuration, never request-controlled or frontend environment data.
 const TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
+// Integration Sandbox-only reconnect credential. This never crosses the
+// browser boundary and is never accepted for production onboarding.
+const INTEGRATION_SANDBOX_RECONNECT_OTP = '123345'
 
 const ACTIONS = [
   'get_status',
@@ -82,7 +85,6 @@ interface RequestBody {
   action: Action
   tenantId: string
   branchId: string
-  otp?: string
   functionalityMap?: FunctionalityMap
   credentialId?: string
   expectedOperation?: RetryableAction
@@ -218,7 +220,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const requestedAction = resolveAction(body.action, credential)
-    assertOtpForEffectiveAction(body, requestedAction)
+    assertOtpForEffectiveAction(requestedAction)
     if (credential.onboarding_status === 'failed' && body.action !== 'retry_failed_step') {
       throw new RequestError('This step failed previously. Use retry_failed_step after reviewing the safe error.', 409)
     }
@@ -233,7 +235,7 @@ Deno.serve(async (req: Request) => {
     credential = await claimOperation(db, credential, requestedAction)
 
     try {
-      credential = await executeClaimedAction(db, scope, body, credential, requestedAction)
+      credential = await executeClaimedAction(db, scope, credential, requestedAction)
     } catch (error) {
       if (error instanceof OperationPersistenceError) {
         await recordReconciliationRequired(db, credential, requestedAction, error.message)
@@ -304,7 +306,6 @@ async function readBody(req: Request): Promise<RequestBody> {
     'action',
     'tenantId',
     'branchId',
-    'otp',
     'functionalityMap',
     'credentialId',
     'expectedOperation',
@@ -334,8 +335,8 @@ async function readBody(req: Request): Promise<RequestBody> {
     'verifiedResult',
   ]
   if (action === 'reconcile_uncertain_operation') {
-    if (body.otp !== undefined || body.functionalityMap !== undefined) {
-      throw new RequestError('OTP and functionalityMap are not accepted for reconciliation.', 400)
+    if (body.functionalityMap !== undefined) {
+      throw new RequestError('functionalityMap is not accepted for reconciliation.', 400)
     }
     validateReconciliationBody(body)
   } else if (reconciliationKeys.some(key => body[key] !== undefined)) {
@@ -345,13 +346,6 @@ async function readBody(req: Request): Promise<RequestBody> {
   if (body.functionalityMap !== undefined && action !== 'generate_csr') {
     throw new RequestError('functionalityMap is accepted only for CSR generation.', 400)
   }
-  if (body.otp !== undefined && action !== 'request_compliance_csid' && action !== 'retry_failed_step') {
-    throw new RequestError('OTP is accepted only for the compliance credential step.', 400)
-  }
-  if (body.otp !== undefined && action === 'request_compliance_csid' && !validateOtp(body.otp)) {
-    throw new RequestError('OTP must be exactly 6 digits', 400, 'SANDBOX_OTP_INVALID')
-  }
-
   return body as unknown as RequestBody
 }
 
@@ -508,7 +502,7 @@ async function loadCredential(
   // Revoked/expired rows are audit history only and must never become the
   // current reconnect target. Explicit reconciliation still addresses history
   // by credentialId, but normal status selection does not.
-  query = query.in('status', ['pending', 'compliance', 'active', 'failed'])
+  query = query.in('status', ['pending', 'compliance', 'active'])
   const { data, error } = await query.maybeSingle()
   if (error) throw new Error('Unable to load Sandbox onboarding status')
   return (data as CredentialRow | null) ?? null
@@ -696,6 +690,7 @@ async function generateCsr(
   }
 
   const generated = await generateProductionCsr(identity.csr)
+  assertFreshIdentityMatches(generated.privateKeyPem, generated.publicKeyPem, generated.csrPem)
   const encryptedPrivateKey = await encryptText(
     generated.privateKeyPem,
     requireEnv('ZATCA_SERVER_ENCRYPTION_KEY'),
@@ -743,15 +738,12 @@ function resolveAction(action: Action, credential: CredentialRow): RetryableActi
   return action
 }
 
-function assertOtpForEffectiveAction(body: RequestBody, action: RetryableAction): void {
+function assertOtpForEffectiveAction(action: RetryableAction): void {
   if (action === 'request_compliance_csid') {
-    if (!validateOtp(body.otp)) {
-      throw new RequestError('A valid 6-digit Sandbox OTP is required.', 400)
+    if (!validateOtp(INTEGRATION_SANDBOX_RECONNECT_OTP)) {
+      throw new RequestError('Sandbox reconnect OTP configuration is invalid.', 500, 'SANDBOX_RECONNECT_CONFIG_MISSING')
     }
     return
-  }
-  if (body.otp !== undefined) {
-    throw new RequestError('OTP is accepted only when retrying the compliance credential step.', 400)
   }
 }
 
@@ -824,13 +816,12 @@ async function claimOperation(
 async function executeClaimedAction(
   db: any,
   scope: Scope,
-  body: RequestBody,
   credential: CredentialRow,
   action: RetryableAction,
 ): Promise<CredentialRow> {
   switch (action) {
     case 'request_compliance_csid':
-      return requestComplianceCredential(db, body, credential)
+      return requestComplianceCredential(db, credential)
     case 'submit_compliance_documents':
       return submitComplianceDocuments(db, scope, credential)
     case 'request_sandbox_production_csid':
@@ -842,17 +833,15 @@ async function executeClaimedAction(
 
 async function requestComplianceCredential(
   db: any,
-  body: RequestBody,
   credential: CredentialRow,
 ): Promise<CredentialRow> {
-  if (!validateOtp(body.otp)) throw new RequestError('A valid 6-digit Sandbox OTP is required.', 400)
   if (!credential.csr_pem) throw new Error('Persisted backend CSR is missing')
 
   let httpStatus: number | undefined
   const response = await requestComplianceCsid({
     baseUrl: SANDBOX_CORE_BASE_URL,
     csrPem: credential.csr_pem,
-    otp: body.otp,
+    otp: INTEGRATION_SANDBOX_RECONNECT_OTP,
     onResponse: trace => { httpStatus = trace.httpStatus },
   })
   const secret = requireEnv('ZATCA_SERVER_ENCRYPTION_KEY')
@@ -990,11 +979,22 @@ async function activateCredential(db: any, credential: CredentialRow): Promise<C
   }
   assertSandboxProductionKeyMatch(decryptedValues[0], decryptedValues[1])
   assertSandboxProductionKeyMatch(decryptedValues[0], credential.certificate)
+  const { error: retireError } = await db.from('zatca_sandbox_credentials').update({
+    status: 'revoked',
+    compliance_demo_status: 'inactive',
+  })
+    .eq('tenant_id', credential.tenant_id)
+    .eq('branch_id', credential.branch_id)
+    .eq('environment', 'sandbox')
+    .in('status', ['pending', 'compliance', 'active'])
+    .neq('id', credential.id)
+  if (retireError) throw new OperationPersistenceError()
   const now = new Date().toISOString()
   return updateCredential(db, credential.id, 'activate', {
     status: 'active',
     onboarding_status: 'active',
     last_successful_onboarding_status: 'active',
+    compliance_demo_status: 'active',
     activated_at: now,
     last_safe_response: { action: 'activate', completedAt: now },
   })
@@ -1266,13 +1266,26 @@ async function decryptText(stored: string, secret: string): Promise<string> {
   return new TextDecoder().decode(plaintext)
 }
 
+function assertFreshIdentityMatches(privateKeyPem: string, publicKeyPem: string, csrPem: string): void {
+  try {
+    const privatePoint = privateKeyPublicKeyPoint(privateKeyPem)
+    const publicPoint = spkiPublicKeyPoint(pemDer(publicKeyPem))
+    const csrPoint = csrPublicKeyPoint(pemDer(csrPem))
+    if (!equalBytes(privatePoint, publicPoint) || !equalBytes(privatePoint, csrPoint)) {
+      throw new Error('Generated Trading CSR/key identity mismatch')
+    }
+  } catch {
+    throw new RequestError(
+      'Generated Trading Sandbox device identity failed its key-match preflight.',
+      500,
+      'SANDBOX_DEVICE_IDENTITY_MISMATCH',
+    )
+  }
+}
+
 function assertSandboxProductionKeyMatch(privateKeyPem: string, certificateToken: string): void {
   try {
-    const privateKeyDer = base64Bytes(
-      privateKeyPem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''),
-    )
-    const privateScalar = extractEcPrivateKeyScalar(privateKeyDer)
-    const derivedPoint = secp256k1.getPublicKey(privateScalar, false)
+    const derivedPoint = privateKeyPublicKeyPoint(privateKeyPem)
     const certificatePoint = certificatePublicKeyPoint(certificateToken)
     if (!equalBytes(derivedPoint, certificatePoint)) {
       throw new SandboxProductionKeyMismatchError()
@@ -1281,6 +1294,40 @@ function assertSandboxProductionKeyMatch(privateKeyPem: string, certificateToken
     if (error instanceof SandboxProductionKeyMismatchError) throw error
     throw new SandboxProductionKeyMismatchError()
   }
+}
+
+function privateKeyPublicKeyPoint(privateKeyPem: string): Uint8Array {
+  const privateKeyDer = pemDer(privateKeyPem)
+  const privateScalar = extractEcPrivateKeyScalar(privateKeyDer)
+  return secp256k1.getPublicKey(privateScalar, false)
+}
+
+function pemDer(value: string): Uint8Array {
+  return base64Bytes(value.replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''))
+}
+
+function csrPublicKeyPoint(der: Uint8Array): Uint8Array {
+  const request = derNode(der, 0)
+  if (request.tag !== 0x30) throw new Error('Invalid CSR')
+  const info = derNode(der, request.contentStart)
+  if (info.tag !== 0x30) throw new Error('Invalid CSR info')
+  let offset = derNode(der, info.contentStart).next // version
+  offset = derNode(der, offset).next // subject
+  return spkiPublicKeyPoint(der, derNode(der, offset))
+}
+
+function spkiPublicKeyPoint(der: Uint8Array, spki = derNode(der, 0)): Uint8Array {
+  if (spki.tag !== 0x30) throw new Error('Invalid SubjectPublicKeyInfo')
+  const algorithm = derNode(der, spki.contentStart)
+  const algorithmBytes = der.slice(algorithm.contentStart, algorithm.end)
+  const secp256k1Oid = new Uint8Array([0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x0a])
+  if (!containsBytes(algorithmBytes, secp256k1Oid)) throw new Error('Key curve is not secp256k1')
+  const subjectPublicKey = derNode(der, algorithm.next)
+  if (subjectPublicKey.tag !== 0x03 || der[subjectPublicKey.contentStart] !== 0x00) {
+    throw new Error('Invalid public key')
+  }
+  const encodedPoint = der.slice(subjectPublicKey.contentStart + 1, subjectPublicKey.end)
+  return secp256k1.Point.fromBytes(encodedPoint).toBytes(false)
 }
 
 function certificatePublicKeyPoint(token: string): Uint8Array {

@@ -378,15 +378,13 @@ export async function getSandboxDemoOnboardingStatus(): Promise<SandboxOnboardin
 }
 
 export async function runSandboxDemoOnboarding(params: {
-  action: 'generate_csr' | 'request_compliance_csid' | 'submit_compliance_documents' | 'retry_failed_step'
-  otp?: string
+  action: 'generate_csr' | 'request_compliance_csid' | 'submit_compliance_documents' | 'request_sandbox_production_csid' | 'activate'
   functionalityMap?: ZatcaFunctionalityMap
 }): Promise<SandboxOnboardingStatus> {
   return edgePostSafe<SandboxOnboardingStatus>('zatca-onboard-sandbox-demo', {
     action: params.action,
     tenantId: PERMANENT_DEMO_TENANT_ID,
     branchId: PERMANENT_DEMO_TRADING_BRANCH_ID,
-    ...(params.otp ? { otp: params.otp } : {}),
     ...(params.functionalityMap ? { functionalityMap: params.functionalityMap } : {}),
   })
 }
