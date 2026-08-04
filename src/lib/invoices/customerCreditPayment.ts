@@ -10,6 +10,7 @@ export interface CustomerCreditPaymentSummary {
 }
 
 export interface CustomerCreditLedgerEntry { readonly sourceKind?: string | null; readonly sourceId?: string | null; readonly debitAmount?: number | string | null }
+export interface CustomerCreditOperation { readonly action?: string | null; readonly invoiceId?: string | null }
 export interface CustomerCreditAllocation { readonly receiptId?: string | null; readonly amount?: number | string | null }
 export interface CustomerCreditReceipt { readonly id: string; readonly origin?: string | null; readonly method?: string | null }
 export interface CustomerCreditTender { readonly receiptId?: string | null; readonly method?: string | null }
@@ -21,12 +22,13 @@ export function resolveCustomerCreditPaymentSummary(input: {
   invoiceId: string
   totalAmount: number | string
   paymentStatus?: string | null
+  creditOperations: readonly CustomerCreditOperation[]
   ledgerEntries: readonly CustomerCreditLedgerEntry[]
   allocations: readonly CustomerCreditAllocation[]
   receipts: readonly CustomerCreditReceipt[]
   tenders: readonly CustomerCreditTender[]
 }): CustomerCreditPaymentSummary | null {
-  const isCustomerCredit = input.ledgerEntries.some(entry => entry.sourceKind === 'invoice' && entry.sourceId === input.invoiceId && numberValue(entry.debitAmount) > 0.005)
+  const isCustomerCredit = input.creditOperations.some(operation => operation.action === 'credit_checkout' && operation.invoiceId === input.invoiceId)
   if (!isCustomerCredit) return null
   const receiptById = new Map(input.receipts.map(receipt => [receipt.id, receipt]))
   const initialReceiptIds = new Set(input.receipts.filter(receipt => receipt.origin === 'checkout_initial').map(receipt => receipt.id))

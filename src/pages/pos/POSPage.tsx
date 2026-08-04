@@ -659,6 +659,36 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
   const printReady = receipt.isDemo
     ? receipt.canPrint
     : receipt.canPrint && qrStatus === 'ready' && Boolean(qrDataUrl)
+  const showReceiptAction = afterSaleAction !== 'a4'
+  const showInvoiceAction = afterSaleAction === 'a4' || afterSaleAction === 'both'
+  const receiptPrintButton = showReceiptAction ? (
+    <button
+      type="button"
+      onClick={() => void openReceiptPrintPage()}
+      disabled={printingReceipt || !printReady}
+      className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {printingReceipt ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
+      {printingReceipt ? t('payments:printing') : t('payments:printReceipt')}
+    </button>
+  ) : null
+  const invoicePrintButton = showInvoiceAction ? (
+    <button
+      type="button"
+      onClick={printPosA4}
+      disabled={!printReady}
+      className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <Printer size={14} />
+      {t('payments:printInvoice')}
+    </button>
+  ) : null
+  const newSaleButton = (
+    <button type="button" onClick={onNewSale}
+      className="flex min-h-11 w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 py-2.5 text-sm font-semibold text-white outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-[#B5943E] focus-visible:ring-offset-2">
+      {t('payments:newSale')}
+    </button>
+  )
 
   useEffect(() => {
     async function genQR() {
@@ -945,10 +975,16 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
                 {t('printing:qrUnavailable')}
               </div>
             )}
-            <button onClick={onNewSale}
-              className="flex min-h-11 w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 py-2.5 text-sm font-semibold text-white outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-[#B5943E] focus-visible:ring-offset-2">
-              {t('payments:newSale')}
-            </button>
+            {showReceiptAction && showInvoiceAction ? (
+              <>
+                <div className="grid gap-2 sm:grid-cols-2">{receiptPrintButton}{invoicePrintButton}</div>
+                {newSaleButton}
+              </>
+            ) : showReceiptAction ? (
+              <div className="grid gap-2 sm:grid-cols-2">{receiptPrintButton}{newSaleButton}</div>
+            ) : showInvoiceAction ? (
+              <div className="grid gap-2 sm:grid-cols-2">{invoicePrintButton}{newSaleButton}</div>
+            ) : newSaleButton}
           </div>
         </div>
       </div>
@@ -2409,6 +2445,7 @@ export default function POSPage() {
 
   const filteredCusts = useMemo(() => searchCustomers(customers, custSearch), [customers, custSearch])
   const selectedCust = customers.find(c => c.id === customerId)
+  const selectedCustomerIsBusiness = selectedCust?.customer_type === 'business'
   const exactCustomerMobile = normalizeSaudiMobile(custSearch)
 
   useEffect(() => {
@@ -2428,7 +2465,7 @@ export default function POSPage() {
   }, [customerId])
 
   useEffect(() => {
-    if (!branch || !customerId) {
+    if (!branch || !customerId || !selectedCustomerIsBusiness) {
       setCreditEligibility(null)
       setCreditEligibilityLoading(false)
       return
@@ -2451,7 +2488,14 @@ export default function POSPage() {
       if (!cancelled) setCreditEligibilityLoading(false)
     })
     return () => { cancelled = true }
-  }, [branch?.id, customerId, creditInitialAmount, creditInitialWithinInvoice, creditOutstandingAmount, totals.total, creditPolicyRevision])
+  }, [branch?.id, customerId, selectedCustomerIsBusiness, creditInitialAmount, creditInitialWithinInvoice, creditOutstandingAmount, totals.total, creditPolicyRevision])
+
+  useEffect(() => {
+    if (!selectedCustomerIsBusiness && payMethod === 'credit') {
+      setPayMethod('cash')
+      setCreditInitialPayment('')
+    }
+  }, [selectedCustomerIsBusiness, payMethod])
 
   useEffect(() => {
     if (payMethod === 'credit' && creditEligibility && !creditEligibility.allowed) {
@@ -4151,7 +4195,7 @@ export default function POSPage() {
             )}
           </div>
 
-          {customerId && (
+          {selectedCustomerIsBusiness && (
             creditEligibilityLoading ? (
               <div className="h-10 animate-pulse rounded-xl border border-gray-100 bg-gray-50" aria-label={t('payments:creditChecking')} />
             ) : creditEligibility?.allowed ? (

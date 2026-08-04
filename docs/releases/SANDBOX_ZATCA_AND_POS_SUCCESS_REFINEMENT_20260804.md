@@ -9,8 +9,12 @@ This release-candidate patch is limited to the requested web functional repairs:
 - make the POS success receipt compact and vertical;
 - remove View invoice and WhatsApp from the POS success modal, leaving conditional
   print actions and one full-width New sale action;
-- project Customer Credit from the authoritative receivables ledger, receipts,
-  tenders, and allocations;
+- project Customer Credit only from the invoice-specific `credit_checkout`
+  operation, then use authoritative receipts, tenders, and allocations for its
+  payment summary;
+- show Customer Credit controls only for active Business/B2B customers;
+- keep ordinary Individual, Cash, Card, and Split sales out of the Customer
+  Credit projection even when legacy AR rows exist;
 - show Customer Credit status, initial payment, amount paid, and balance due in
   invoice detail, reprints, A4, and thermal output;
 - present Customer credit as a translated payment badge independently of ZATCA status.
@@ -45,6 +49,37 @@ No authenticated operator profile was available in this environment, so no real
 Sandbox invoice mutation or submission was executed. No `Submitted`, `Reported`,
 `Cleared`, or `Sandbox validated` claim is made without the stored Sandbox response.
 
+## Focused repair
+
+The previous client projection treated any positive invoice debit in
+`customer_receivable_entries` as Customer Credit. The legacy
+`ar_sync_posted_invoice_v1` trigger intentionally creates that invoice debit
+for ordinary posted customer invoices as well, so this misclassified ordinary
+Cash/Card/Split history.
+
+The repaired discriminator is an exact row in
+`customer_receivable_operations` with `action = 'credit_checkout'` and a
+matching `response->>'invoice_id'`. The existing server RPC remains the
+authoritative writer and already enforces active Business/B2B customer and
+branch eligibility. No migration, RPC, or Edge Function was changed.
+
+The POS now resolves customer type before rendering Customer Credit controls:
+Walk-in and Individual customers do not see the credit panel and cannot retain
+the credit payment method; Business customers continue through the existing
+server eligibility result, including the disabled-policy state.
+
+The success action matrix is now:
+
+| Available output | Actions |
+| --- | --- |
+| Receipt and invoice | two equal print buttons on row one; full New sale on row two |
+| Receipt only | Receipt and New sale as equal buttons |
+| Invoice only | Invoice and New sale as equal buttons |
+| No print action | full New sale |
+
+View invoice, WhatsApp, raw mode text, and repeated Demo warnings remain absent
+from the success modal.
+
 ## UI changes
 
 - POS success modal: `max-w-md`, single-column customer/method summary, existing
@@ -56,9 +91,9 @@ Sandbox invoice mutation or submission was executed. No `Submitted`, `Reported`,
   remains available in its existing invoice-detail context.
 - Removed the repeated bilingual Demo warning title from A4 and thermal
   rendering; Demo remains a concise non-print status badge in invoice detail.
-- Invoice list payment badges now use a receivable ledger entry to distinguish
-  Customer credit even when the checkout RPC intentionally leaves no normal
-  payment rows. Ordinary `other` payments remain Other.
+- Invoice list payment badges now use the exact invoice-specific credit
+  operation. Ordinary AR ledger rows no longer turn Individual or ordinary
+  Cash/Card/Split invoices into Customer credit.
 - Detail and document adapters consume the same read model. Initial settlement is
   limited to `checkout_initial` receipts; later allocations contribute to amount
   paid and balance due.
@@ -76,6 +111,8 @@ Passed:
 - `npm test` with non-secret placeholder Supabase environment
 - `npm run build`
 - `git diff --check`
+- mixed-history projection checks for ordinary Cash/Card/Split and genuine
+  Customer Credit invoices
 
 No migration or Edge Function version changed for this patch. The existing QR
 path remains authoritative: Sandbox QR content comes only from the stored
@@ -88,11 +125,11 @@ remain manual acceptance items.
 
 ## Release state
 
-The previous focused application commit `6e455649a4796302adf9d5b3282a7310f2458fda`
+The previous focused application commit `bf6c497dfea71c5d3eb4d37459228b43caeac2dd`
 was deployed to Vercel Preview and reached `READY`:
 
-- URL: https://dafra-spptfqq56-mohammed-shahin-v-vs-projects.vercel.app
-- deployment: `dpl_G2CoKw6xY8gLGYeFouuBt9AzG6pk`
+- URL: https://dafra-4oea7ehyz-mohammed-shahin-v-vs-projects.vercel.app
+- deployment: `dpl_FFsXjVxyyn3ppRFtu9rn5UDetamB`
 - target: `preview`
 
 The current projection/print repair is tested locally but is not yet represented
@@ -103,7 +140,9 @@ authenticated Sandbox submission.
 Remaining manual gate: sign in as an authorized Demo operator, verify Service
 Demo routing/status in the UI, exercise one disposable simplified cash Sandbox
 validation and one disposable Customer Credit Sandbox validation where
-authorized, confirm stored response/QR/retry behavior, and verify POS success
-modal, invoice detail, reprint, A4, and thermal output at mobile and desktop
-widths. Trading Demo remains blocked until an approved owner-authorized
-credential repair exists.
+authorized, confirm stored response/QR/retry behavior, and verify Walk-in,
+Individual, and Business customer visibility plus POS success modal, invoice
+detail, reprint, A4, and thermal output at mobile and desktop widths. Trading
+Demo remains blocked until an approved owner-authorized credential repair
+exists. Arabic/RTL behavior is covered by the existing translation/layout
+paths but still needs visual manual confirmation.

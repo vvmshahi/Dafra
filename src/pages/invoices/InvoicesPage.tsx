@@ -407,15 +407,16 @@ export default function InvoicesPage() {
 
         const invoices = data ?? []
         const customerCreditInvoiceIds = new Set<string>()
-        if (invoices.length > 0) {
-          const { data: receivableEntries } = await (supabase as any)
-            .from('customer_receivable_entries')
-            .select('source_id, debit_amount')
-            .eq('source_kind', 'invoice')
-            .in('source_id', invoices.map((invoice: any) => invoice.id))
-          for (const entry of receivableEntries ?? []) {
-            if (Number(entry.debit_amount ?? 0) > 0.005) customerCreditInvoiceIds.add(String(entry.source_id))
-          }
+        const { data: creditOperations } = await (supabase as any)
+          .from('customer_receivable_operations')
+          .select('action, response')
+          .eq('branch_id', activeScope.branchId)
+          .eq('action', 'credit_checkout')
+          .limit(1000)
+        const invoiceIds = new Set(invoices.map((invoice: any) => String(invoice.id)))
+        for (const operation of creditOperations ?? []) {
+          const invoiceId = String(operation?.response?.invoice_id ?? '')
+          if (invoiceIds.has(invoiceId)) customerCreditInvoiceIds.add(invoiceId)
         }
         const demoSandbox = isPermanentDemoSandboxBranch(tid, activeScope.branchId)
         const sandboxAttempts = demoSandbox
