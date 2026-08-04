@@ -126,7 +126,7 @@ function CustomerRow({
           title={t('actions.archive')}
           aria-label={archiving ? t('actions.archiving') : t('actions.archive')}
           disabled={archiving}
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-amber-600 hover:bg-amber-50 hover:text-amber-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-wait disabled:opacity-50"
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-wait disabled:opacity-50"
         >
           {archiving ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
         </button>
@@ -302,44 +302,22 @@ export default function CustomersPage() {
             {customers.length}
           </span>
         ) : undefined}
-        actions={(
-          <>
-            <Button size="sm" onClick={openAdd}>
-              <Plus size={14} />
-              {t('add')}
-            </Button>
-          </>
-        )}
+        actions={undefined}
       />
 
       {/* ── Filter tabs ─────────────────────────────────────── */}
-      <div className="flex items-center gap-2">
-        <FilterTab label={t('all')} count={counts.all} active={filterType === 'all'} onClick={() => setFilterType('all')} />
-        <FilterTab label={t('individual')} count={counts.individual} active={filterType === 'individual'} onClick={() => setFilterType('individual')} />
-        <FilterTab label={t('business')} count={counts.business} active={filterType === 'business'} onClick={() => setFilterType('business')} />
-      </div>
-
-      {/* ── Search ──────────────────────────────────────────── */}
-      <div className="relative max-w-sm">
-        <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-        <input
-          type="text"
-          placeholder={t('search')}
-          aria-label={t('search')}
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="input ps-9 pe-9 py-2 text-sm"
-        />
-        {search && (
-          <button
-            type="button"
-            onClick={() => setSearch('')}
-            aria-label={t('common:clearSearch')}
-            className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <X size={13} />
-          </button>
-        )}
+      <div className="card flex flex-wrap items-center gap-2 p-2.5">
+        <div className="relative min-w-[220px] flex-1 basis-[280px]">
+          <Search size={15} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="text" placeholder={t('search')} aria-label={t('search')} value={search} onChange={e => setSearch(e.target.value)} className="input h-9 w-full py-1.5 ps-9 pe-9 text-sm" />
+          {search && <button type="button" onClick={() => setSearch('')} aria-label={t('common:clearSearch')} className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={13} /></button>}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <FilterTab label={t('all')} count={counts.all} active={filterType === 'all'} onClick={() => setFilterType('all')} />
+          <FilterTab label={t('individual')} count={counts.individual} active={filterType === 'individual'} onClick={() => setFilterType('individual')} />
+          <FilterTab label={t('business')} count={counts.business} active={filterType === 'business'} onClick={() => setFilterType('business')} />
+        </div>
+        <Button size="sm" className="ms-auto" onClick={openAdd}><Plus size={14} />{t('add')}</Button>
       </div>
 
       {/* ── Content ─────────────────────────────────────────── */}

@@ -67,7 +67,7 @@ function rowXml(index: number, cells: SheetCell[]) {
 
 function sourceLabel(row: ReceivableLedgerRow) {
   if (row.description?.trim()) return row.description.trim()
-  return `${row.sourceKind} · ${row.sourceId}`
+  return row.sourceKind.replaceAll('_', ' ')
 }
 
 function transactionLabel(type: string, locale: Locale) {

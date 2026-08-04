@@ -79,6 +79,8 @@
   "products": {
     "title": "Top Products",
     "subtitle": "Gross finalized sales, with each selling unit kept separate.",
+    "search": "Search products…",
+    "allUnits": "All units",
     "product": "Product",
     "unit": "Unit",
     "quantity": "Quantity",

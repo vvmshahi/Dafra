@@ -104,6 +104,7 @@
     "test:branch-owner-settings-redesign": "node scripts/test-branch-owner-settings-redesign.mjs",
     "test:customer-credit-final-ui-refinement": "node scripts/test-customer-credit-final-ui-refinement.mjs",
     "test:customer-profile-targeted-refinement": "node scripts/test-customer-profile-targeted-refinement.mjs",
+    "test:customer-statement-final-ui-polish": "node scripts/test-customer-statement-final-ui-polish.mjs",
     "test:customer-credit-targeted-simplification": "node scripts/test-customer-credit-targeted-simplification.mjs",
     "test:customer-credit-visual-consistency": "node scripts/test-customer-credit-visual-consistency.mjs",
     "test:credit-pos-sandbox-demo": "node scripts/test-credit-pos-sandbox-demo.mjs",

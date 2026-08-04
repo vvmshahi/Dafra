@@ -160,6 +160,8 @@ export default function CustomerDetailPage() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [products, setProducts] = useState<FilterOption[]>([])
   const [units, setUnits] = useState<FilterOption[]>([])
+  const [productSearch, setProductSearch] = useState('')
+  const [productUnitFilter, setProductUnitFilter] = useState('')
   const [editingCustomer, setEditingCustomer] = useState<CustomerWithStats | null>(null)
   const [preparingPdf, setPreparingPdf] = useState(false)
   const [customerCreditVisible, setCustomerCreditVisible] = useState(false)
@@ -629,7 +631,7 @@ export default function CustomerDetailPage() {
             <p className="text-xs text-gray-400">{t('customerIntelligence:notBalance')}</p>
           </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             label={t('customerIntelligence:metrics.grossPurchases')}
             value={<Rial amount={data.summary.grossPurchases} />}
@@ -771,11 +773,13 @@ export default function CustomerDetailPage() {
       </div>}
 
       {activeProfileSection === 'products' && <section className="card overflow-hidden" aria-labelledby="top-products-title">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h2 id="top-products-title" className="text-sm font-bold text-gray-900">
-            {t('customerIntelligence:products.title')}
-          </h2>
-          <p className="text-xs text-gray-400 mt-0.5">{t('customerIntelligence:products.subtitle')}</p>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl bg-[#173d2a] px-4 py-2.5 text-white">
+          <div><h2 id="top-products-title" className="text-sm font-bold">{t('customerIntelligence:products.title')}</h2><p className="text-xs text-emerald-100/75">{data.topProducts.length} · <Rial amount={data.topProducts.reduce((sum, product) => sum + product.grossAmount, 0)} /></p></div>
+          <div className="flex flex-wrap gap-2">
+            <label className="sr-only" htmlFor="customer-products-search">{t('customerIntelligence:products.search')}</label>
+            <input id="customer-products-search" className="h-8 w-44 rounded-lg border border-white/20 bg-white/10 px-2.5 text-xs text-white placeholder:text-emerald-100/60" placeholder={t('customerIntelligence:products.search')} value={productSearch} onChange={event => setProductSearch(event.target.value)} />
+            {[...new Set(data.topProducts.map(product => product.unitName).filter(Boolean))].length > 1 && <><label className="sr-only" htmlFor="customer-products-unit">{t('customerIntelligence:products.unit')}</label><select id="customer-products-unit" className="h-8 rounded-lg border border-white/20 bg-white/10 px-2 text-xs text-white" value={productUnitFilter} onChange={event => setProductUnitFilter(event.target.value)}><option value="" className="text-slate-900">{t('customerIntelligence:products.allUnits')}</option>{[...new Set(data.topProducts.map(product => product.unitName).filter(Boolean))].map(unit => <option value={unit} key={unit} className="text-slate-900">{unit}</option>)}</select></>}
+          </div>
         </div>
         {data.topProducts.length ? (
           <div className="overflow-x-auto">
@@ -791,7 +795,7 @@ export default function CustomerDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.topProducts.map(product => (
+                {data.topProducts.filter(product => (!productSearch || `${product.name} ${product.nameAr ?? ''}`.toLocaleLowerCase().includes(productSearch.toLocaleLowerCase())) && (!productUnitFilter || product.unitName === productUnitFilter)).map(product => (
                   <tr key={`${product.productId}:${product.productUnitId}:${product.unitName}`} className="border-t border-gray-100 hover:bg-gray-50/60">
                     <td className="px-4 py-3">
                       <button
@@ -826,19 +830,16 @@ export default function CustomerDetailPage() {
       </section>}
 
       {activeProfileSection === 'overview' && <section className="order-3 card overflow-hidden" aria-labelledby="history-title">
-        <div className="px-4 py-2.5 rounded-t-xl bg-[#173d2a] text-white flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="px-4 py-2 rounded-t-xl bg-[#173d2a] text-white flex flex-col sm:flex-row sm:items-center gap-2">
           <div className="flex-1">
             <h2 id="history-title" className="text-sm font-bold">
               {t('customerIntelligence:history.title')}
             </h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {t('customerIntelligence:history.subtitle', { count: history?.totalCount ?? 0 })}
-            </p>
           </div>
           <label>
             <span className="sr-only">{t('customerIntelligence:filters.activityType')}</span>
               <select
-              className="h-8 rounded-lg border border-white/20 bg-white/10 px-2 text-xs text-white"
+              className="h-7 rounded-lg border border-white/20 bg-white/10 px-2 text-xs text-white"
               value={historyType}
               onChange={event => {
                 setHistoryType(event.target.value as CustomerActivityType)

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { AlertCircle, CreditCard, FileText, Landmark, Loader2, Plus, ReceiptText, RefreshCw, Trash2, Undo2, WalletCards, X } from 'lucide-react'
+import { AlertCircle, CreditCard, Download, FileText, Landmark, Loader2, Plus, Printer, ReceiptText, RefreshCw, Trash2, Undo2, WalletCards, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { saudiDatePresetRange, saudiDateStr, type SaudiDatePreset } from '@/lib/utils/date'
@@ -51,6 +51,10 @@ function dateLabel(value: string | null | undefined, locale: string) {
     : '—'
 }
 
+function ledgerTypeLabel(type: string) {
+  return ({ invoice: 'Invoice', payment_receipt: 'Payment', credit_note: 'Credit note', payment_reversal: 'Payment reversal', adjustment: 'Adjustment' } as Record<string, string>)[type] ?? 'Transaction'
+}
+
 export function CustomerReceivablesPanel({
   customerId,
   branchId,
@@ -80,7 +84,7 @@ export function CustomerReceivablesPanel({
   const [notes, setNotes] = useState('')
   const [operationId, setOperationId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [lastReceipt, setLastReceipt] = useState<{ id: string; number: string } | null>(null)
+  const [lastReceipt, setLastReceipt] = useState<{ id: string; number: string; amount: number; method: string; balance: number } | null>(null)
   const [branchCreditSettings, setBranchCreditSettings] = useState<BranchCustomerCreditSettings | null>(null)
   const [reversalOpen, setReversalOpen] = useState(false)
   const [reversalReason, setReversalReason] = useState('')
@@ -101,6 +105,9 @@ export function CustomerReceivablesPanel({
   const [statementPreset, setStatementPreset] = useState<'this_month' | 'last_month' | 'last3' | 'this_year' | 'custom' | 'all'>('this_month')
   const [statementStart, setStatementStart] = useState(() => saudiDatePresetRange('this_month').start)
   const [statementEnd, setStatementEnd] = useState(() => saudiDateStr())
+  const [statementPreview, setStatementPreview] = useState<CustomerReceivableWorkspace | null>(null)
+  const [statementLoading, setStatementLoading] = useState(false)
+  const [statementError, setStatementError] = useState(false)
 
   useEffect(() => {
     if (!paymentOpen) return
@@ -110,6 +117,35 @@ export function CustomerReceivablesPanel({
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [paymentOpen, submitting])
+
+  useEffect(() => {
+    if (!statementOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !statementLoading) setStatementOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [statementOpen, statementLoading])
+
+  useEffect(() => {
+    const label = paymentOpen ? 'receive-payment-title' : statementOpen ? 'statement-range-title' : null
+    if (!label) return
+    const dialog = document.querySelector<HTMLElement>(`[aria-labelledby="${label}"]`)
+    if (!dialog) return
+    const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]'))
+    focusable()[0]?.focus()
+    const trap = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return
+      const items = focusable()
+      if (!items.length) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    dialog.addEventListener('keydown', trap)
+    return () => dialog.removeEventListener('keydown', trap)
+  }, [paymentOpen, statementOpen, statementPreview])
 
   const refresh = async () => {
     setLoading(true)
@@ -181,7 +217,7 @@ export function CustomerReceivablesPanel({
         autoAllocate: !manualAllocation,
         allocations: selectedAllocations.map(row => ({ invoiceId: row.invoiceId, amount: row.amount })),
       })
-      setLastReceipt({ id: result.receiptId, number: result.receiptNumber })
+      setLastReceipt({ id: result.receiptId, number: result.receiptNumber, amount: result.amount, method: selectedTenders.map(tender => tender.method).join(', '), balance: result.balance })
       toast.success(t('payment.saved'))
       setAmount('')
       setReference('')
@@ -322,6 +358,8 @@ export function CustomerReceivablesPanel({
 
   function updateStatementPreset(value: typeof statementPreset) {
     setStatementPreset(value)
+    setStatementPreview(null)
+    setStatementError(false)
     if (value === 'custom' || value === 'all') return
     if (value === 'last3') {
       const end = saudiDateStr()
@@ -334,6 +372,29 @@ export function CustomerReceivablesPanel({
     const range = saudiDatePresetRange(value as SaudiDatePreset)
     setStatementStart(range.start)
     setStatementEnd(range.end)
+  }
+
+  async function previewStatement() {
+    if (statementLoading || (!branchId && !isOwner)) return
+    setStatementLoading(true)
+    setStatementError(false)
+    try {
+      const result = await loadCustomerReceivableWorkspace({
+        customerId,
+        branchId,
+        startDate: statementPreset === 'all' ? undefined : statementStart,
+        endDate: statementPreset === 'all' ? undefined : statementEnd,
+        page: 1,
+        pageSize: 200,
+      })
+      setStatementPreview(result)
+    } catch (previewError) {
+      console.error('Unable to preview customer statement', previewError)
+      setStatementPreview(null)
+      setStatementError(true)
+    } finally {
+      setStatementLoading(false)
+    }
   }
 
   const statementPath = `/print/customer-statement/${customerId}${branchId ? `?branch=${encodeURIComponent(branchId)}&` : '?'}${statementPreset === 'all' ? '' : `start=${encodeURIComponent(statementStart)}&end=${encodeURIComponent(statementEnd)}`}`
@@ -365,13 +426,17 @@ export function CustomerReceivablesPanel({
         </div>
       </div>
 
-      {statementOpen && <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm" role="dialog" aria-modal="false" aria-labelledby="statement-range-title">
-        <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 id="statement-range-title" className="text-sm font-bold text-slate-900">{t('statement.period')}</h3><p className="mt-0.5 text-xs text-slate-500">{t('statement.rangeHint')}</p></div><Button variant="ghost" size="sm" onClick={() => setStatementOpen(false)}>{t('actions.cancel')}</Button></div>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {(['this_month', 'last_month', 'last3', 'this_year', 'custom', 'all'] as const).map(value => <button key={value} type="button" aria-pressed={statementPreset === value} onClick={() => updateStatementPreset(value)} className={`min-h-8 rounded-lg border px-2.5 text-xs font-semibold ${statementPreset === value ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{t(`statement.presets.${value}`)}</button>)}
+      {statementOpen && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-3 sm:p-6" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !statementLoading) setStatementOpen(false) }}>
+        <div className="max-h-[92vh] w-full overflow-y-auto rounded-2xl bg-white shadow-2xl sm:max-w-2xl" role="dialog" aria-modal="true" aria-labelledby="statement-range-title">
+          <div className="flex items-start justify-between gap-3 rounded-t-2xl bg-[#173d2a] px-4 py-3 text-white"><div><h3 id="statement-range-title" className="text-sm font-bold">{t('statement.title')}</h3><p className="mt-0.5 text-xs text-emerald-100/80">{workspace.customer.name} · {t('statement.rangeHint')}</p></div><button type="button" aria-label={t('actions.cancel')} onClick={() => { if (!statementLoading) setStatementOpen(false) }} className="rounded-lg p-1.5 text-emerald-100 hover:bg-white/10"><X size={17} /></button></div>
+          <div className="space-y-3 p-4">
+            <div className="flex flex-wrap gap-1.5">{(['this_month', 'last_month', 'last3', 'this_year', 'custom', 'all'] as const).map(value => <button key={value} type="button" aria-pressed={statementPreset === value} onClick={() => updateStatementPreset(value)} className={`min-h-8 rounded-lg border px-2.5 text-xs font-semibold ${statementPreset === value ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{t(`statement.presets.${value}`)}</button>)}</div>
+            {statementPreset === 'custom' && <div className="grid gap-2 sm:grid-cols-2"><label className="label">{t('statement.from')}<input type="date" className="input mt-1" value={statementStart} onChange={event => { setStatementStart(event.target.value); setStatementPreview(null) }} /></label><label className="label">{t('statement.to')}<input type="date" className="input mt-1" value={statementEnd} onChange={event => { setStatementEnd(event.target.value); setStatementPreview(null) }} /></label></div>}
+            {statementError && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">{t('statement.error')}<button type="button" className="ms-2 font-semibold underline" onClick={() => void previewStatement()}>{t('statement.retry')}</button></div>}
+            {statementPreview && <div className="grid gap-2 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 sm:grid-cols-3" aria-live="polite"><div><p className="text-xs text-slate-500">{t('statement.opening')}</p><p className="font-bold tabular-nums">{money(statementPreview.statement.openingBalance)}</p></div><div><p className="text-xs text-slate-500">{t('statement.totalSales')}</p><p className="font-bold tabular-nums">{money(statementPreview.summary.totalInvoiced)}</p></div><div><p className="text-xs text-slate-500">{t('statement.totalPayments')}</p><p className="font-bold tabular-nums">{money(statementPreview.summary.totalCollected)}</p></div><div><p className="text-xs text-slate-500">{t('statement.closing')}</p><p className="font-bold tabular-nums">{money(statementPreview.statement.closingBalance)}</p></div><div><p className="text-xs text-slate-500">{t('statement.transactions')}</p><p className="font-bold tabular-nums">{statementPreview.ledger.length}</p></div></div>}
+          </div>
+          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 px-4 py-3"><Button variant="ghost" size="sm" onClick={() => setStatementOpen(false)} disabled={statementLoading}>{t('actions.cancel')}</Button><Button size="sm" onClick={() => void previewStatement()} disabled={statementLoading || (!branchId && !isOwner)}>{statementLoading && <Loader2 size={14} className="animate-spin" />}{t('statement.preview')}</Button><Button size="sm" variant="secondary" disabled={!statementPreview || statementLoading} onClick={() => window.open(statementPath, '_blank', 'noopener,noreferrer')}><Printer size={14} />{t('statement.print')}</Button><Button size="sm" variant="secondary" disabled={!statementPreview || statementLoading} onClick={() => window.open(`${statementPath}&download=pdf`, '_blank', 'noopener,noreferrer')}><Download size={14} />{t('statement.pdf')}</Button><Button size="sm" variant="secondary" disabled={!statementPreview || statementLoading} onClick={() => window.open(`${statementPath}&download=xlsx`, '_blank', 'noopener,noreferrer')}><FileText size={14} />{t('statement.exportXlsx')}</Button></div>
         </div>
-        {statementPreset === 'custom' && <div className="mt-3 grid gap-2 sm:grid-cols-2"><label className="label">{t('statement.from')}<input type="date" className="input mt-1" value={statementStart} onChange={event => setStatementStart(event.target.value)} /></label><label className="label">{t('statement.to')}<input type="date" className="input mt-1" value={statementEnd} onChange={event => setStatementEnd(event.target.value)} /></label></div>}
-        <div className="mt-3 flex flex-wrap gap-2"><Button size="sm" onClick={() => navigate(statementPath)}><FileText size={14} />{t('statement.preview')}</Button><Button size="sm" variant="secondary" onClick={() => navigate(statementPath)}>{t('statement.print')}</Button><Button size="sm" variant="secondary" onClick={() => navigate(statementPath)}>{t('statement.exportXlsx')}</Button></div>
       </div>}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -384,8 +449,8 @@ export function CustomerReceivablesPanel({
       {lastReceipt && (
         <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span>{t('payment.receiptCreated', { number: lastReceipt.number })}</span>
-            <div className="flex items-center gap-3"><Link className="font-semibold underline underline-offset-2" to={`/print/payment-receipt/${lastReceipt.id}`}>{t('actions.openReceipt')}</Link>{canReversePayment && <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold underline underline-offset-2" onClick={() => setReversalOpen(value => !value)}><Undo2 size={13} /> {t('payment.reverse')}</button>}</div>
+            <div><p>{t('payment.receiptCreated', { number: lastReceipt.number })}</p><p className="mt-1 text-xs text-emerald-800">{t('payment.amount')}: <Rial amount={lastReceipt.amount} /> · {t('payment.method')}: {lastReceipt.method} · {t('metrics.balance')}: <Rial amount={lastReceipt.balance} /></p></div>
+            <div className="flex flex-wrap items-center gap-3"><Link className="font-semibold underline underline-offset-2" to={`/print/payment-receipt/${lastReceipt.id}`}>{t('actions.openReceipt')}</Link><Link className="text-xs font-semibold underline underline-offset-2" to={`/print/payment-receipt/${lastReceipt.id}`} target="_blank" rel="noreferrer">{t('statement.print')}</Link><Link className="text-xs font-semibold underline underline-offset-2" to={`/print/payment-receipt/${lastReceipt.id}`} target="_blank" rel="noreferrer">{t('statement.pdf')}</Link>{canReversePayment && <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold underline underline-offset-2" onClick={() => setReversalOpen(value => !value)}><Undo2 size={13} /> {t('payment.reverse')}</button>}</div>
           </div>
           {reversalOpen && <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-emerald-200 pt-3"><label className="min-w-[220px] flex-1 text-xs font-semibold">{t('payment.reversalReason')}<input value={reversalReason} onChange={event => setReversalReason(event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-emerald-200 bg-white px-2 text-sm text-slate-900" /></label><Button size="sm" variant="danger" disabled={reversing || !reversalReason.trim()} onClick={() => void reverseLastReceipt()}>{reversing && <Loader2 size={14} className="animate-spin" />}{t('payment.reverse')}</Button></div>}
         </div>
@@ -464,7 +529,7 @@ export function CustomerReceivablesPanel({
 
       <article className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-2xl bg-[#173d2a] px-4 py-2.5 text-white"><div className="flex items-center gap-2 text-sm font-bold"><ReceiptText size={16} className="text-emerald-100" /> {t('ledger.title')}</div><span className="text-xs text-emerald-100/80">{t('ledger.opening', { amount: workspace.statement.openingBalance.toFixed(2) })}</span></div>
-        {workspace.ledger.length === 0 ? <p className="px-4 py-8 text-center text-sm text-slate-500">{t('ledger.empty')}</p> : <div className="divide-y divide-slate-100">{workspace.ledger.map(row => { const href = row.sourceKind === 'invoice' || row.sourceKind === 'credit_note' ? `/invoices/${row.sourceId}` : row.sourceKind === 'payment_receipt' ? `/print/payment-receipt/${row.sourceId}` : null; const content = <div className="grid grid-cols-[1fr_auto] gap-3 px-4 py-3 sm:grid-cols-[1fr_100px_100px_110px]"><div className="min-w-0"><p className="truncate text-sm font-medium text-slate-900">{row.description}</p><p className="text-xs text-slate-500">{dateLabel(row.effectiveAt, locale)} · {row.branchId}</p></div><span className="hidden text-right text-sm tabular-nums text-slate-600 sm:block">{row.debit > 0 ? money(row.debit) : '—'}</span><span className="hidden text-right text-sm tabular-nums text-emerald-700 sm:block">{row.credit > 0 ? money(row.credit) : '—'}</span><span className="text-right text-sm font-semibold tabular-nums text-slate-900">{money(row.runningBalance)}</span></div>; return href ? <Link className="block hover:bg-slate-50" to={href} key={row.id}>{content}</Link> : <div key={row.id}>{content}</div> })}</div>}
+        {workspace.ledger.length === 0 ? <p className="px-4 py-8 text-center text-sm text-slate-500">{t('ledger.empty')}</p> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-xs"><thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-2.5 text-start font-bold">{t('ledger.date')}</th><th className="px-4 py-2.5 text-start font-bold">{t('ledger.description')}</th><th className="px-4 py-2.5 text-start font-bold">{t('ledger.reference')}</th><th className="px-4 py-2.5 text-end font-bold">{t('statement.debit')}</th><th className="px-4 py-2.5 text-end font-bold">{t('statement.credit')}</th><th className="px-4 py-2.5 text-end font-bold">{t('statement.balanceColumn')}</th><th className="px-4 py-2.5 text-end font-bold">{t('ledger.actions')}</th></tr></thead><tbody>{workspace.ledger.map(row => { const href = row.sourceKind === 'invoice' || row.sourceKind === 'credit_note' ? `/invoices/${row.sourceId}` : row.sourceKind === 'payment_receipt' || row.sourceKind === 'payment_reversal' ? `/print/payment-receipt/${row.sourceId}` : null; const actionLabel = row.sourceKind === 'payment_receipt' ? t('ledger.openReceipt') : row.sourceKind === 'invoice' || row.sourceKind === 'credit_note' ? t('ledger.openSource') : null; return <tr className="border-t border-slate-100 hover:bg-slate-50/70" key={row.id}><td className="px-4 py-3 whitespace-nowrap text-slate-600">{dateLabel(row.effectiveAt, locale)}</td><td className="px-4 py-3"><p className="font-semibold text-slate-900">{row.description || ledgerTypeLabel(row.type)}</p><p className="mt-0.5 text-[11px] text-slate-500">{ledgerTypeLabel(row.type)}{workspace.scope.ownerConsolidated && row.branchId ? ` · ${row.branchId}` : ''}</p></td><td className="px-4 py-3 text-slate-600">{ledgerTypeLabel(row.type)}</td><td className="px-4 py-3 text-end tabular-nums">{row.debit > 0 ? money(row.debit) : '—'}</td><td className="px-4 py-3 text-end tabular-nums text-emerald-700">{row.credit > 0 ? money(row.credit) : '—'}</td><td className="px-4 py-3 text-end font-bold tabular-nums">{money(row.runningBalance)}</td><td className="px-4 py-3 text-end">{href && actionLabel ? <Link className="font-semibold text-primary-700 hover:text-primary-900" to={href}>{actionLabel}</Link> : '—'}</td></tr> })}</tbody></table></div>}
       </article>
     </section>
   )
