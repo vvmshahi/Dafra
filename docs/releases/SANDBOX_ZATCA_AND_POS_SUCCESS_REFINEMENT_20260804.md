@@ -279,10 +279,10 @@ The focused reconnect repair Preview also reached `READY`:
 
 The visible-OTP reconnect UI and safe-error repair Preview reached `READY`:
 
-- URL: https://dafra-nrh17g0qj-mohammed-shahin-v-vs-projects.vercel.app
-- deployment: `dpl_3Pa4PgBbHkFV8dib1EWf7QGCE6Z7`
+- URL: https://dafra-ed4eica3t-mohammed-shahin-v-vs-projects.vercel.app
+- deployment: `dpl_Coycjvzf4Fa1odcaepuPedSCUzur`
 - target: preview
-- application source SHA: `4a184cc`
+- application source SHA: `a13e7f5`
 
 The final fresh-identity reconnect repair Preview reached `READY`:
 
