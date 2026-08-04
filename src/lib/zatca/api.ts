@@ -406,6 +406,40 @@ export async function runSandboxDemoOnboarding(params: {
   })
 }
 
+export interface TradingSandboxV2Event {
+  session_id?: string
+  event_at: string
+  stage: string
+  status: 'pending' | 'success' | 'failed'
+  http_status?: number | null
+  safe_code?: string | null
+  safe_message?: string | null
+  request_id?: string | null
+  non_secret_response_fields?: string[]
+  required_fields_present?: Record<string, boolean>
+  public_key_fingerprint_prefixes?: Record<string, string>
+}
+
+export interface TradingSandboxV2Status {
+  ok: boolean
+  onboardingVersion: 2
+  environment: 'integration_sandbox'
+  sessionId: string | null
+  status: 'not_started' | 'in_progress' | 'failed' | 'completed'
+  stage: string
+  functionalityMap: '0100'
+  productionCertificateField: 'binarySecurityToken'
+  errorCode?: string | null
+  errorMessage?: string | null
+  requestId?: string
+  events: TradingSandboxV2Event[]
+}
+
+/** Owner-only, isolated Trading Demo Integration Sandbox V2 onboarding. */
+export async function runTradingSandboxV2Onboarding(otp: string): Promise<TradingSandboxV2Status> {
+  return edgePostSafe<TradingSandboxV2Status>('zatca-onboard-trading-sandbox-v2', { otp })
+}
+
 export async function resetSandboxDemoOnboarding(): Promise<SandboxResetResult & SandboxOnboardingStatus> {
   return edgePostSafe<SandboxResetResult & SandboxOnboardingStatus>('zatca-onboard-sandbox-demo', {
     action: 'reset_sandbox_onboarding',

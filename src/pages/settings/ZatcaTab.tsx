@@ -40,6 +40,9 @@ import {
   type SandboxDemoConnectionStatus,
   type SandboxOnboardingStatus,
   type SandboxResetResult,
+  runTradingSandboxV2Onboarding,
+  type TradingSandboxV2Event,
+  type TradingSandboxV2Status,
 } from '@/lib/zatca/api'
 import { getCachedProductionStatus, readCachedProductionStatus, writeCachedProductionStatus } from '@/lib/zatca/status'
 import type { Branch } from '@/types'
@@ -54,6 +57,7 @@ const FATOORA_PORTAL_URL = 'https://fatoora.zatca.gov.sa/'
 const DEMO_TENANT_ID = 'ebf1144b-55ed-472a-99c9-23b5ee915351'
 const TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
 const SERVICE_BRANCH_ID = 'c30094d7-40ca-4d2e-833a-07aa18c4fa46'
+const SHOW_TRADING_SANDBOX_DEBUG = import.meta.env.DEV || import.meta.env.VITE_ENABLE_TRADING_SANDBOX_DEBUG === 'true'
 
 /* ── Tiny helpers ────────────────────────────────────────────────────────── */
 
@@ -358,6 +362,91 @@ function debugDetails(value: unknown): Partial<SandboxDebugEvent> {
   details.onboardingUid = debugSafeId(payload.onboardingUid ?? payload.onboarding_uid)
   if (typeof payload.upstreamStatus === 'number') details.httpStatus = payload.upstreamStatus
   return Object.fromEntries(Object.entries(details).filter(([, item]) => item !== undefined))
+}
+
+function TradingSandboxV2Connector() {
+  const { t } = useTranslation('zatca')
+  const [otp, setOtp] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState<TradingSandboxV2Status | null>(null)
+  const [events, setEvents] = useState<TradingSandboxV2Event[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [autoScroll, setAutoScroll] = useState(true)
+  const endRef = useRef<HTMLDivElement>(null)
+  const otpValid = /^\d{6}$/.test(otp)
+
+  useEffect(() => {
+    if (autoScroll) endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [events, autoScroll])
+
+  async function submit() {
+    if (!otpValid) {
+      setError(t('sandbox.v2.otpRequired'))
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const next = await runTradingSandboxV2Onboarding(otp)
+      setStatus(next)
+      setEvents(next.events ?? [])
+      setOtp('')
+    } catch (cause) {
+      const payload = (cause as { payload?: { events?: TradingSandboxV2Event[]; error?: string; code?: string; stage?: string } })?.payload
+      if (Array.isArray(payload?.events)) setEvents(payload.events)
+      if (payload?.stage && !Array.isArray(payload?.events)) {
+        setEvents(previous => [...previous, {
+          event_at: new Date().toISOString(), stage: payload.stage!, status: 'failed',
+          safe_code: payload.code ?? null, safe_message: payload.error ?? null,
+        }])
+      }
+      setError(cause instanceof Error ? cause.message : t('sandbox.v2.failed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function copyLog() {
+    if (navigator.clipboard) await navigator.clipboard.writeText(events.map(event => JSON.stringify(event)).join('\n'))
+  }
+
+  return (
+    <section className="overflow-hidden rounded-[1.35rem] border border-sky-200/80 bg-white shadow-card">
+      <div className="border-b border-sky-100 bg-[linear-gradient(120deg,#eff8ff,#f7fbff_55%,#fffaf0)] px-5 py-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-950 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-sky-100"><Cpu size={11} /> V2</span>
+              <h3 className="text-sm font-black text-gray-950">{t('sandbox.v2.title')}</h3>
+              <Badge variant={status?.ok ? 'success' : busy ? 'warning' : 'neutral'} dot>{status?.ok ? t('status.active') : busy ? t('status.checking') : t('sandbox.v2.ready')}</Badge>
+            </div>
+            <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-gray-600">{t('sandbox.v2.help')}</p>
+          </div>
+          <div className="rounded-xl border border-sky-100 bg-white/80 px-3 py-2 text-right text-[10px] font-bold text-sky-950">
+            <p>{t('sandbox.v2.environment')}</p>
+            <p className="mt-1 font-mono text-sky-700">0100 · V2</p>
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-2 p-5 sm:grid-cols-3">
+        <InfoRow label={t('fields.business')} value="Kubri Demo" />
+        <InfoRow label={t('fields.branch')} value="Kubri Trading Demo" />
+        <InfoRow label={t('fields.environment')} value={t('sandbox.v2.environment')} />
+      </div>
+      <div className="border-t border-sky-100 bg-slate-50/70 px-5 py-4">
+        <label htmlFor="trading-sandbox-v2-otp" className="block text-xs font-black text-gray-900">{t('sandbox.v2.otpTitle')}</label>
+        <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.v2.otpHelp')}</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+          <input id="trading-sandbox-v2-otp" type="password" inputMode="numeric" pattern="[0-9]*" autoComplete="off" maxLength={6} value={otp} onChange={event => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={t('sandbox.v2.otpPlaceholder')} className="min-h-11 rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold tracking-[0.3em] text-gray-900 outline-none focus:ring-2 focus:ring-sky-800" />
+          <button type="button" onClick={() => void submit()} disabled={busy || !otpValid} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-sky-950 px-4 text-xs font-black text-white transition-colors hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50">{busy && <Loader2 size={13} className="animate-spin" />}{busy ? t('sandbox.v2.submitting') : t('sandbox.v2.submit')}</button>
+          <button type="button" onClick={() => setOtp('')} disabled={busy || otp.length === 0} className="min-h-11 rounded-xl border border-gray-200 bg-white px-4 text-xs font-black text-gray-700 disabled:opacity-50">{t('sandbox.v2.clearOtp')}</button>
+        </div>
+        {error && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}
+        {status && <div className="mt-3 grid gap-2 sm:grid-cols-3"><InfoRow label={t('sandbox.v2.stage')} value={status.stage} mono /><InfoRow label={t('sandbox.v2.certificateField')} value={status.productionCertificateField} mono /><InfoRow label={t('sandbox.v2.session')} value={status.sessionId ?? '—'} mono /></div>}
+      </div>
+      {events.length > 0 && <div className="border-t border-sky-100 bg-[#07131f] px-5 py-4 text-slate-100"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-black tracking-wide text-sky-100">{t('sandbox.v2.debugTitle')}</p><p className="mt-1 text-[11px] text-slate-400">{t('sandbox.v2.latestStage')}: {events[events.length - 1].stage}</p></div><label className="flex items-center gap-2 text-[11px] text-slate-300"><input type="checkbox" checked={autoScroll} onChange={event => setAutoScroll(event.target.checked)} />{t('sandbox.debugAutoScroll')}</label></div><div className="mt-3 max-h-80 space-y-1 overflow-y-auto rounded-xl bg-slate-950 p-2 font-mono text-[10px]" aria-live="polite">{events.map((event, index) => <div key={`${event.event_at}-${index}`} className="rounded-lg border border-slate-800 px-2 py-1.5"><div className="flex flex-wrap gap-x-2"><span className="text-slate-500">{event.event_at}</span><span className="text-slate-200">{event.stage}</span><span className={event.status === 'success' ? 'text-emerald-400' : event.status === 'failed' ? 'text-red-400' : 'text-amber-300'}>{event.status}</span>{event.safe_code && <span className="text-fuchsia-300">{event.safe_code}</span>}{event.http_status && <span className="text-sky-300">HTTP {event.http_status}</span>}</div><p className="mt-0.5 text-slate-500">session={event.session_id ?? status?.sessionId ?? '—'}{event.request_id ? ` · request=${event.request_id}` : ''}</p>{event.safe_message && <p className="mt-0.5 text-slate-400">{event.safe_message}</p>}{event.non_secret_response_fields?.length ? <p className="mt-0.5 text-sky-300">fields: {event.non_secret_response_fields.join(', ')}</p> : null}{event.required_fields_present && <p className="mt-0.5 text-slate-500">required: {Object.entries(event.required_fields_present).map(([key, value]) => `${key}=${value ? 'yes' : 'no'}`).join(' · ')}</p>}{event.public_key_fingerprint_prefixes && Object.keys(event.public_key_fingerprint_prefixes).length > 0 && <p className="mt-0.5 text-amber-300">fingerprint prefixes: {Object.entries(event.public_key_fingerprint_prefixes).map(([key, value]) => `${key}=${value}`).join(' · ')}</p>}</div>)}<div ref={endRef} /></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void copyLog()} className="rounded-lg border border-slate-700 px-3 py-1.5 text-[11px] font-black hover:bg-slate-800">{t('sandbox.v2.copyLog')}</button><button type="button" onClick={() => setEvents([])} className="rounded-lg border border-slate-700 px-3 py-1.5 text-[11px] font-black hover:bg-slate-800">{t('sandbox.debugClear')}</button></div></div>}
+    </section>
+  )
 }
 
 function TradingSandboxReconnectDebug({
@@ -1489,13 +1578,19 @@ export default function ZatcaTab() {
   }, [])
 
   const isPermanentDemoOwner = isPermanentDemo && ['owner', 'super_admin'].includes(profile?.role ?? '')
+  const canShowTradingSandboxDebug = isPermanentDemoOwner
+    && data.some(branch => branch.id === TRADING_BRANCH_ID)
+    && SHOW_TRADING_SANDBOX_DEBUG
+
+  const tradingSandboxV2Panel = canShowTradingSandboxDebug ? <TradingSandboxV2Connector /> : null
 
   /*
-   * The reconnect control is intentionally scoped to the exact permanent-demo
-   * tenant/Trading branch. The Edge Function repeats the same authorization and
-   * scope checks, so this client condition is only a visibility gate.
+   * These temporary controls are visible only in development/Preview for the
+   * exact permanent-demo tenant and Trading branch. The Edge Functions repeat
+   * the same authorization and scope checks; this client condition is only a
+   * visibility gate and is false in ordinary production builds.
    */
-  const reconnectPanel = isPermanentDemoOwner ? (
+  const reconnectPanel = canShowTradingSandboxDebug ? (
     <TradingSandboxReconnectDebug
       status={tradingSandboxOnboardingStatus}
       connectionActive={sandboxStatuses[TRADING_BRANCH_ID]?.active === true}
@@ -1559,6 +1654,8 @@ export default function ZatcaTab() {
         </button>
         </div>
       </div>
+
+      {tradingSandboxV2Panel}
 
       {reconnectPanel}
 

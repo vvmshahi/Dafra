@@ -101,6 +101,16 @@ const PERMANENT_DEMO_TENANT_ID = 'ebf1144b-55ed-472a-99c9-23b5ee915351'
 // Server-authoritative reconnect scope. These values are deliberately fixed
 // server configuration, never request-controlled or frontend environment data.
 const TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
+const CURRENT_TRADING_SANDBOX_STATUSES = ['pending', 'compliance', 'active'] as const
+const RESUMABLE_TRADING_SANDBOX_STATES = [
+  'not_started',
+  'csr_ready',
+  'compliance_csid_ready',
+  'compliance_checks_pending',
+  'compliance_passed',
+  'sandbox_production_csid_ready',
+  'active',
+] as const
 const ACTIONS = [
   'get_status',
   'generate_csr',
@@ -630,7 +640,10 @@ async function loadCredential(
   // Revoked/expired rows are audit history only and must never become the
   // current reconnect target. Explicit reconciliation still addresses history
   // by credentialId, but normal status selection does not.
-  query = query.in('status', ['pending', 'compliance', 'active'])
+  query = query
+    .in('status', [...CURRENT_TRADING_SANDBOX_STATUSES])
+    .in('onboarding_status', [...RESUMABLE_TRADING_SANDBOX_STATES])
+    .is('reconciliation_decision', null)
   const { data, error } = await query.maybeSingle()
   if (error) throw new Error('Unable to load Sandbox onboarding status')
   return (data as CredentialRow | null) ?? null

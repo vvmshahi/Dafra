@@ -6,6 +6,7 @@ declare const __BUILD_COMMIT__: string
 interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL: string
   readonly VITE_SUPABASE_ANON_KEY: string
+  readonly VITE_ENABLE_TRADING_SANDBOX_DEBUG?: string
 }
 
 interface ImportMeta {
