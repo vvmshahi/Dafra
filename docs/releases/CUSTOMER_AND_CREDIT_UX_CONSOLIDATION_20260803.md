@@ -121,3 +121,7 @@ on `feature/customer-credit-receivables-20260803`. Preview
 ## Current verdict
 
 `KUBRI_BRANCH_ONLY_B2B_CREDIT_UX_READY_FOR_MANUAL_ACCEPTANCE`
+
+The later 2026-08-04 targeted simplification is tracked separately. Its
+profile/sidebar UI changes must not be conflated with this earlier deployment
+record.

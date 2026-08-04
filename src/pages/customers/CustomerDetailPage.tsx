@@ -5,7 +5,6 @@ import {
   BarChart3,
   Building2,
   CalendarClock,
-  Download,
   FileText,
   Mail,
   MapPin,
@@ -64,13 +63,12 @@ interface FilterOption {
   nameAr: string | null
 }
 
-type CustomerProfileSection = 'overview' | 'invoices' | 'products' | 'credit'
+type CustomerProfileSection = 'overview' | 'products' | 'credit'
 
-const PROFILE_SECTIONS: CustomerProfileSection[] = ['overview', 'invoices', 'products', 'credit']
+const PROFILE_SECTIONS: CustomerProfileSection[] = ['overview', 'products', 'credit']
 
 function normalizeProfileSection(value: string | null): CustomerProfileSection {
-  if (value === 'documents') return 'invoices'
-  if (value === 'report') return 'overview'
+  if (value === 'documents' || value === 'report' || value === 'invoices') return 'overview'
   return value !== null && PROFILE_SECTIONS.includes(value as CustomerProfileSection)
     ? value as CustomerProfileSection
     : 'overview'
@@ -172,7 +170,7 @@ export default function CustomerDetailPage() {
     : 'overview'
 
   useEffect(() => {
-    if (requestedProfileSection === 'documents' || requestedProfileSection === 'report') {
+    if (requestedProfileSection === 'documents' || requestedProfileSection === 'report' || requestedProfileSection === 'invoices') {
       const next = new URLSearchParams(searchParams)
       next.set('section', normalizeProfileSection(requestedProfileSection))
       setSearchParams(next, { replace: true })
@@ -525,19 +523,19 @@ export default function CustomerDetailPage() {
         {t('customerIntelligence:actions.back')}
       </button>
 
-      <header className="border-b border-gray-200 pb-3">
+      <header className="rounded-2xl bg-[#173d2a] px-4 py-3 text-white shadow-card sm:px-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="flex items-start gap-4 flex-1 min-w-0">
             <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
               data.customer.customerType === 'business'
-                ? 'bg-teal-50 text-teal-700'
-                : 'bg-emerald-50 text-emerald-700'
+                ? 'bg-white/15 text-emerald-100'
+                : 'bg-white/15 text-emerald-100'
             }`}>
               {data.customer.customerType === 'business' ? <Building2 size={21} /> : <User size={21} />}
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="break-words text-lg font-bold text-gray-900 sm:text-xl" dir="auto">
+                <h1 className="break-words text-lg font-bold text-white sm:text-xl" dir="auto">
                   {displayName}
                 </h1>
                 <Badge variant={data.customer.isActive ? 'success' : 'neutral'} dot>
@@ -548,9 +546,9 @@ export default function CustomerDetailPage() {
                 </Badge>
               </div>
               {secondaryName?.trim() && secondaryName.trim() !== displayName && (
-                <p className="text-sm text-gray-400 mt-1" dir="auto">{secondaryName}</p>
+                <p className="text-sm text-emerald-100/75 mt-1" dir="auto">{secondaryName}</p>
               )}
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-500">
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-emerald-50/85">
                 {data.customer.phone && (
                   <span className="inline-flex items-center gap-1.5" dir="ltr"><Phone size={14} />{data.customer.phone}</span>
                 )}
@@ -571,16 +569,6 @@ export default function CustomerDetailPage() {
               <Pencil size={14} />
               {t('customerIntelligence:actions.edit')}
             </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={preparingPdf}
-              aria-label={t('customerIntelligence:pdf.action')}
-              onClick={() => void handlePdf()}
-            >
-              <Download size={14} />
-              {t('customerIntelligence:pdf.action')}
-            </Button>
           </div>
         </div>
       </header>
@@ -590,6 +578,7 @@ export default function CustomerDetailPage() {
         activeId={activeProfileSection === 'credit' && !customerCreditVisible ? 'overview' : activeProfileSection}
         onSelect={section => selectProfileSection(section as CustomerProfileSection)}
         label={t('customerIntelligence:profileTabs.label')}
+        className="mx-auto w-fit max-w-full"
       />
 
       <div id={`workspace-panel-${activeProfileSection}`} role="tabpanel" aria-label={t(`customerIntelligence:profileTabs.${activeProfileSection}`)}>
@@ -601,7 +590,7 @@ export default function CustomerDetailPage() {
         canAdjustReceivables={['owner', 'admin', 'accountant'].includes(profile?.role ?? '')}
       /></div>}
 
-      {activeProfileSection === 'overview' && <div className="space-y-5"><div className="hidden"><CustomerIntelligenceFiltersPanel
+      {activeProfileSection === 'overview' && <div className="space-y-5"><div className="contents"><CustomerIntelligenceFiltersPanel
         filters={filters}
         preset={preset}
         branches={branches.map(branch => ({ id: branch.id, name: branch.name, nameAr: branch.name_ar }))}
@@ -695,19 +684,6 @@ export default function CustomerDetailPage() {
           </p>
         </div>
       </section>
-
-      <CustomerIntelligenceFiltersPanel
-        filters={filters}
-        preset={preset}
-        branches={branches.map(branch => ({ id: branch.id, name: branch.name, nameAr: branch.name_ar }))}
-        products={products}
-        units={units}
-        canChooseBranch={canChooseBranch}
-        isArabic={isRtl}
-        onPreset={handlePreset}
-        onChange={handleFilterChange}
-        className="p-3"
-      />
 
       <div className="hidden grid grid-cols-1 xl:grid-cols-3 gap-4">
         <section className="card p-4 xl:col-span-2" aria-labelledby="timeline-title">
@@ -848,7 +824,7 @@ export default function CustomerDetailPage() {
         )}
       </section>}
 
-      {activeProfileSection === 'invoices' && <section className="card overflow-hidden" aria-labelledby="history-title">
+      {activeProfileSection === 'overview' && <section className="card overflow-hidden" aria-labelledby="history-title">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1">
             <h2 id="history-title" className="text-sm font-bold text-gray-900">

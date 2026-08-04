@@ -1,6 +1,7 @@
 {
   "eyebrow": "Customer credit",
-  "title": "Customer account",
+  "title": "Customer Credit",
+  "subtitle": "Customer balances, payments, and credit sales.",
   "consolidated": "All branches",
   "branchScope": "This Branch",
   "actions": {
@@ -14,10 +15,8 @@
   },
   "metrics": {
     "balance": "Balance due",
-    "totalInvoiced": "Total invoiced",
-    "totalCollected": "Total collected",
-    "unpaid": "Unpaid",
-    "partial": "Partially paid",
+    "totalInvoiced": "Total sales",
+    "totalCollected": "Total paid",
     "openInvoices": "Open invoices",
     "unappliedCredit": "Unapplied credit",
     "overdue": "Overdue balance"
@@ -132,11 +131,16 @@
     "balanceColumn": "Balance",
     "disclaimer": "This statement is an internal settlement record. Fiscal invoices remain immutable and are not replaced by this statement.",
     "branch": "Branch",
-    "reference": "Reference"
+    "reference": "Reference",
+    "rangeHint": "Choose a statement period before previewing or printing.",
+    "preview": "Preview",
+    "from": "From",
+    "to": "To",
+    "presets": {"this_month": "This month", "last_month": "Last month", "last3": "Last 3 months", "this_year": "This year", "custom": "Custom range", "all": "All activity"}
   },
   "report": {
     "title": "Customer Credit",
-    "subtitle": "Customer balances, payments, credit invoices and Branch details.",
+    "subtitle": "Customer balances, payments, and credit sales.",
     "workspaceTabs": {"label": "Customer Credit workspace", "overview": "Overview", "customers": "Customers", "payments": "Payments", "statements": "Statements"},
     "quick": {"label": "Quick range", "today": "Today", "yesterday": "Yesterday", "last7": "Last 7 days", "thisMonth": "This month", "lastMonth": "Last month", "thisYear": "This year", "custom": "Custom", "7d": "7 days", "30d": "30 days", "90d": "90 days"},
     "customersTab": {"title": "Customers", "customer": "Customer", "phone": "Phone", "lastCreditInvoice": "Last credit invoice", "lastPayment": "Last payment", "totalInvoiced": "Total invoiced", "totalPaid": "Total paid", "branch": "Branch", "balance": "Balance due", "status": "Status", "actions": "Actions", "active": "Active", "inactive": "Inactive", "statement": "Open statement"},
@@ -166,6 +170,8 @@
     "previous": "Previous",
     "next": "Next",
     "branchComparison": "Branch comparison",
+    "activityPeriod": "Activity period",
+    "balanceAsOfToday": "Balances as of today",
     "debits": "Debits",
     "credits": "Credits",
     "noBranchActivity": "No receivable activity exists for this period.",

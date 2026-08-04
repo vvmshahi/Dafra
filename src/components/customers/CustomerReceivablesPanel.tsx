@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { AlertCircle, CreditCard, FileText, Landmark, Loader2, Plus, ReceiptText, RefreshCw, Trash2, Undo2, WalletCards } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
+import { saudiDatePresetRange, saudiDateStr, type SaudiDatePreset } from '@/lib/utils/date'
 import { Button } from '@/components/ui/Button'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import {
@@ -96,6 +97,10 @@ export function CustomerReceivablesPanel({
   const [adjustmentReason, setAdjustmentReason] = useState('')
   const [adjustmentReference, setAdjustmentReference] = useState('')
   const [adjusting, setAdjusting] = useState(false)
+  const [statementOpen, setStatementOpen] = useState(false)
+  const [statementPreset, setStatementPreset] = useState<'this_month' | 'last_month' | 'last3' | 'this_year' | 'custom' | 'all'>('this_month')
+  const [statementStart, setStatementStart] = useState(() => saudiDatePresetRange('this_month').start)
+  const [statementEnd, setStatementEnd] = useState(() => saudiDateStr())
 
   const refresh = async () => {
     setLoading(true)
@@ -306,6 +311,24 @@ export function CustomerReceivablesPanel({
     }
   }
 
+  function updateStatementPreset(value: typeof statementPreset) {
+    setStatementPreset(value)
+    if (value === 'custom' || value === 'all') return
+    if (value === 'last3') {
+      const end = saudiDateStr()
+      const date = new Date(`${end}T00:00:00Z`)
+      date.setUTCMonth(date.getUTCMonth() - 3)
+      setStatementStart(date.toISOString().slice(0, 10))
+      setStatementEnd(end)
+      return
+    }
+    const range = saudiDatePresetRange(value as SaudiDatePreset)
+    setStatementStart(range.start)
+    setStatementEnd(range.end)
+  }
+
+  const statementPath = `/print/customer-statement/${customerId}${branchId ? `?branch=${encodeURIComponent(branchId)}&` : '?'}${statementPreset === 'all' ? '' : `start=${encodeURIComponent(statementStart)}&end=${encodeURIComponent(statementEnd)}`}`
+
   if (loading) {
     return <div className="flex items-center justify-center rounded-2xl border border-slate-100 bg-white py-10"><Loader2 className="animate-spin text-primary-500" size={20} /></div>
   }
@@ -324,25 +347,29 @@ export function CustomerReceivablesPanel({
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-600">{t('eyebrow')}</p>
           <h2 id="customer-receivables-heading" className="mt-1 text-xl font-bold text-slate-950">{t('title')}</h2>
-          <p className="mt-1 text-sm text-slate-500">{workspace.scope.ownerConsolidated ? t('consolidated') : t('branchScope')}</p>
+          <p className="mt-1 text-sm text-slate-500">{t('subtitle')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 text-xs font-semibold text-primary-800 hover:bg-primary-100" to="/reports/receivables?tab=customers">{t('actions.openWorkspace')}</Link>
-          <Button variant="secondary" size="sm" onClick={() => navigate(`/print/customer-statement/${customerId}${branchId ? `?branch=${encodeURIComponent(branchId)}` : ''}`)}><FileText size={14} /> {t('actions.printStatement')}</Button>
+          <Button variant="secondary" size="sm" onClick={() => setStatementOpen(true)}><FileText size={14} /> {t('actions.printStatement')}</Button>
           {canReversePayment && <Button variant="secondary" size="sm" disabled={!branchId} onClick={() => void openSettlementControls()}><CreditCard size={14} /> {t('actions.applyPriorCredit')}</Button>}
           <Button size="sm" disabled={!branchId} onClick={() => { setLastReceipt(null); setPaymentOpen(value => !value) }}><ReceiptText size={14} /> {t('actions.receivePayment')}</Button>
         </div>
       </div>
 
+      {statementOpen && <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm" role="dialog" aria-modal="false" aria-labelledby="statement-range-title">
+        <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 id="statement-range-title" className="text-sm font-bold text-slate-900">{t('statement.period')}</h3><p className="mt-0.5 text-xs text-slate-500">{t('statement.rangeHint')}</p></div><Button variant="ghost" size="sm" onClick={() => setStatementOpen(false)}>{t('actions.cancel')}</Button></div>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {(['this_month', 'last_month', 'last3', 'this_year', 'custom', 'all'] as const).map(value => <button key={value} type="button" aria-pressed={statementPreset === value} onClick={() => updateStatementPreset(value)} className={`min-h-8 rounded-lg border px-2.5 text-xs font-semibold ${statementPreset === value ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{t(`statement.presets.${value}`)}</button>)}
+        </div>
+        {statementPreset === 'custom' && <div className="mt-3 grid gap-2 sm:grid-cols-2"><label className="label">{t('statement.from')}<input type="date" className="input mt-1" value={statementStart} onChange={event => setStatementStart(event.target.value)} /></label><label className="label">{t('statement.to')}<input type="date" className="input mt-1" value={statementEnd} onChange={event => setStatementEnd(event.target.value)} /></label></div>}
+        <div className="mt-3 flex flex-wrap gap-2"><Button size="sm" onClick={() => navigate(statementPath)}><FileText size={14} />{t('statement.preview')}</Button><Button size="sm" variant="secondary" onClick={() => navigate(statementPath)}>{t('statement.print')}</Button><Button size="sm" variant="secondary" onClick={() => navigate(statementPath)}>{t('statement.exportXlsx')}</Button></div>
+      </div>}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label={t('metrics.balance')} value={money(workspace.summary.balance)} tone={workspace.summary.balance > 0 ? 'amber' : 'emerald'} />
         <Metric label={t('metrics.totalInvoiced')} value={money(workspace.summary.totalInvoiced)} />
         <Metric label={t('metrics.totalCollected')} value={money(workspace.summary.totalCollected)} tone="emerald" />
-        <Metric label={t('metrics.unpaid')} value={money(workspace.summary.unpaidAmount)} tone={workspace.summary.unpaidAmount > 0 ? 'amber' : 'slate'} />
-        <Metric label={t('metrics.partial')} value={money(workspace.summary.partialAmount)} />
         <Metric label={t('metrics.openInvoices')} value={workspace.summary.openInvoiceCount} />
-        <Metric label={t('metrics.unappliedCredit')} value={money(workspace.summary.unappliedReceipts)} tone="emerald" />
-        <Metric label={t('metrics.overdue')} value={money(workspace.aging.overdue)} tone={workspace.aging.overdue > 0 ? 'amber' : 'slate'} />
       </div>
 
       {lastReceipt && (
@@ -398,7 +425,7 @@ export function CustomerReceivablesPanel({
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+      <div className="hidden grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
         <article className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <div className="flex items-center gap-2 text-sm font-bold text-slate-900"><Landmark size={16} className="text-primary-600" /> {t('openInvoices.title')}</div>

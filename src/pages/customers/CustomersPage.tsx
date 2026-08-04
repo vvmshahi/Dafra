@@ -55,7 +55,7 @@ function CustomerRow({
   const city = (customer as CustomerWithStats & { city_ar?: string | null }).city_ar
     ? (customer as CustomerWithStats & { city_ar?: string | null }).city_ar
     : customer.city
-  const identifier = customer.vat_number || customer.cr_number
+  const identifier = customer.vat_number
 
   return (
     <tr className="group border-t border-gray-100 hover:bg-gray-50/70 transition-colors">
@@ -91,7 +91,7 @@ function CustomerRow({
       <td className="px-4 py-3 text-sm text-gray-600 max-w-[150px] truncate"><span className="inline-flex items-center gap-1"><MapPin size={12} className="text-gray-400" />{city ?? '—'}</span></td>
 
       {/* Type */}
-      <td className="px-4 py-3"><Badge variant={isBusiness ? 'info' : 'neutral'}>
+      <td className="px-4 py-3"><Badge variant={isBusiness ? 'success' : 'neutral'}>
           {t(isBusiness ? 'business' : 'individual')}
         </Badge></td>
 
@@ -360,7 +360,7 @@ export default function CustomersPage() {
                   <th className="px-4 py-2.5 text-start font-semibold">{t('fields.mobile')}</th>
                   <th className="px-4 py-2.5 text-start font-semibold">{t('fields.city')}</th>
                   <th className="px-4 py-2.5 text-start font-semibold">{t('fields.type')}</th>
-                  <th className="px-4 py-2.5 text-start font-semibold">{t('fields.vatCr')}</th>
+                  <th className="px-4 py-2.5 text-start font-semibold">{t('fields.vatNumber')}</th>
                   <th className="px-4 py-2.5 text-start font-semibold">{t('fields.lastPurchase')}</th>
                   <th className="px-3 py-2.5" />
                 </tr>

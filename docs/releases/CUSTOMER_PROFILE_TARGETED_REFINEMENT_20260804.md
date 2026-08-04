@@ -62,3 +62,7 @@ Preview deployment for the exact tested application commit:
 The existing `dafra` production alias was not updated. Authenticated manual
 acceptance remains required because anonymous access is protected by the
 project’s normal Vercel SSO.
+
+The later credit/sidebar simplification is recorded separately in
+`CUSTOMER_AND_CREDIT_TARGETED_SIMPLIFICATION_20260804.md` and must not be
+certified by this earlier profile-only verdict.

@@ -6,8 +6,8 @@
   "commercialActivity": "Commercial purchase activity",
   "notBalance": "This is not an outstanding balance.",
   "metrics": {
-    "grossPurchases": "Gross Purchases",
-    "creditedAmount": "Credited Amount",
+    "grossPurchases": "Total Purchases",
+    "creditedAmount": "Credit Notes",
     "netPurchases": "Net Purchases",
     "invoiceCount": "Invoices",
     "creditNoteCount": "Credit Notes",
@@ -72,7 +72,7 @@
     "simplified": "Simplified invoice",
     "standard": "Standard invoice",
     "credit_note": "Credit note",
-    "posted": "Posted",
+    "posted": "Completed",
     "openDocument": "Open {{reference}}",
     "page": "Page {{page}} of {{pages}}"
   },
