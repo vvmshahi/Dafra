@@ -57,6 +57,7 @@ import { useLocale } from '@/localization/useLocale'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 import { AuthenticatedLanguageSwitch } from '@/components/localization/AuthenticatedLanguageSwitch'
 import { documentFromPosReceipt } from '@/lib/invoices/documentViewAdapters'
+import type { CustomerCreditPaymentSummary } from '@/lib/invoices/customerCreditPayment'
 import { resolveInvoicePresentationSettings } from '@/lib/invoices/presentationSettings'
 import {
   normalizeDocumentLanguage,
@@ -207,6 +208,7 @@ interface ReceiptData {
   showLogo: boolean
   payments: ReceiptPayment[]
   displayPaymentMethod: string
+  customerCredit: CustomerCreditPaymentSummary | null
   zatcaQrCode: string
   canPrint: boolean
   finalizationStatus: string
@@ -266,6 +268,7 @@ interface PosCheckoutResult {
   payment_status: string
   amount_received?: number | string | null
   change_amount?: number | string | null
+  outstanding_amount?: number | string | null
   display_payment_method?: string | null
   payments?: {
     method: PaymentMethod
@@ -637,13 +640,12 @@ function QuickExpenseModal({
 
 // ── Receipt overlay ───────────────────────────────────────────────────────────
 
-function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetryFinalization, onOpenInvoiceStatus, afterSaleAction }: {
+function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetryFinalization, afterSaleAction }: {
   receipt: ReceiptData
   branch: Branch | null
   onNewSale: () => void
   onOpenPrinterSettings: () => void
   onRetryFinalization: () => Promise<void>
-  onOpenInvoiceStatus: () => void
   afterSaleAction: 'receipt' | 'a4' | 'both'
 }) {
   const { t } = useTranslation(['pos', 'payments', 'printing', 'common'])
@@ -831,24 +833,6 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
 
           {/* Summary */}
           <div className="space-y-3 p-5 sm:p-6">
-            {receipt.isDemo ? (
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-                <span className="font-semibold text-slate-700">{t('pos:demo.badge')}</span>
-                <span className="text-slate-500">{t('pos:zatca.demo_non_fiscal')}</span>
-              </div>
-            ) : receipt.sandboxDemo ? (
-              <div className="flex items-center justify-between rounded-lg border border-primary-100 bg-primary-50 px-3 py-2 text-xs">
-                <span className="font-semibold text-primary-800">{t('pos:sandbox.label')}</span>
-                <span className="font-semibold text-primary-900">{t(`pos:zatca.${receipt.reportingDisplayState}`)}</span>
-              </div>
-            ) : !receipt.isStandardInvoice && (
-              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs">
-                <span className="text-slate-500">ZATCA</span>
-                <span className="font-semibold text-slate-700">
-                  {t(`pos:zatca.${receipt.reportingDisplayState}`)}
-                </span>
-              </div>
-            )}
             <div className="grid gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-3">
               <div><p className="text-xs text-gray-500">{t('payments:customer')}</p><p className="mt-1 font-semibold text-gray-800" dir="auto">{receipt.customerName}</p></div>
               <div className="sm:text-end"><p className="text-xs text-gray-500">{t('payments:method')}</p><p className={`mt-1 font-semibold ${receipt.displayPaymentMethod === 'credit' || receipt.displayPaymentMethod === 'partial_credit' ? 'text-primary-800' : 'text-gray-800'}`}>{localizedPaymentMethod(receipt.displayPaymentMethod, t)}</p></div>
@@ -952,10 +936,6 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
                   >
                     {retryingFinalization ? t('common:loading') : t('pos:zatca.retryFinalization')}
                   </button>
-                  <button type="button" onClick={onOpenInvoiceStatus}
-                    className="rounded-lg bg-white px-2.5 py-1.5 font-semibold shadow-sm hover:bg-amber-100">
-                    {t('pos:zatca.viewInvoice')}
-                  </button>
                 </div>
               </div>
             )}
@@ -965,15 +945,10 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
                 {t('printing:qrUnavailable')}
               </div>
             )}
-            <div className="grid gap-2 sm:grid-cols-[1fr_1.4fr]">
-              <button type="button" onClick={onOpenInvoiceStatus} className="min-h-11 rounded-xl border border-primary-200 px-3 py-2.5 text-sm font-semibold text-primary-800 transition-colors hover:bg-primary-50">
-                {t('pos:zatca.viewInvoice')}
-              </button>
-              <button onClick={onNewSale}
-                className="min-h-11 rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90">
+            <button onClick={onNewSale}
+              className="flex min-h-11 w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 py-2.5 text-sm font-semibold text-white outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-[#B5943E] focus-visible:ring-offset-2">
               {t('payments:newSale')}
-              </button>
-            </div>
+            </button>
           </div>
         </div>
       </div>
@@ -2938,6 +2913,28 @@ export default function POSPage() {
         ? serverAmountReceived
         : serverTotal
       const receiptChange = displayPaymentMethod !== 'split' && receiptPaymentMethod === 'cash' ? serverChangeAmount : 0
+      const creditInitialPayment = payMethod === 'credit' ? num(checkout.amount_received ?? 0) : 0
+      const creditBalanceDue = payMethod === 'credit' && checkout.outstanding_amount != null
+        ? Math.max(0, num(checkout.outstanding_amount))
+        : payMethod === 'credit' ? Math.max(0, serverTotal - creditInitialPayment) : 0
+      const creditAmountPaid = payMethod === 'credit' ? Math.max(0, serverTotal - creditBalanceDue) : 0
+      const creditInitialMethods = payMethod === 'credit'
+        ? [...new Set((checkout.payments ?? []).map(payment => payment.method).filter(Boolean))]
+        : []
+      const customerCredit: CustomerCreditPaymentSummary | null = payMethod === 'credit'
+        ? {
+            isCustomerCredit: true,
+            paymentStatus: creditBalanceDue <= 0.005 || checkout.payment_status === 'paid'
+              ? 'paid'
+              : creditInitialPayment > 0.005 || checkout.payment_status === 'partial'
+              ? 'partial'
+              : 'unpaid',
+            initialPayment: creditInitialPayment,
+            initialPaymentMethod: creditInitialMethods.length > 1 ? 'split' : creditInitialMethods[0] ?? null,
+            amountPaid: creditAmountPaid,
+            balanceDue: creditBalanceDue,
+          }
+        : null
       const isB2BInvoice = checkout.zatca_invoice_type === 'standard'
       let preOutputSubmission: Awaited<ReturnType<typeof submitInvoiceForBranch>> | null = null
       let finalQrCode: string | null = null
@@ -3147,6 +3144,7 @@ export default function POSPage() {
         showLogo:        typeof atomicSeller?.show_logo === 'boolean' ? atomicSeller.show_logo : (branch.show_logo ?? true),
         payments:        receiptPayments,
         displayPaymentMethod,
+        customerCredit,
         zatcaQrCode:    finalQrCode ?? '',
         canPrint:       canPrintCustomerCopy,
         finalizationStatus,
@@ -3522,7 +3520,6 @@ export default function POSPage() {
           onNewSale={() => setReceipt(null)}
           onOpenPrinterSettings={() => navigate(DEVICE_PRINTER_PATH)}
           onRetryFinalization={retryReceiptFinalization}
-          onOpenInvoiceStatus={() => navigate(`/invoices/${receipt.invoiceId}`)}
           afterSaleAction={resolvedInvoiceSettings.afterSaleAction}
         />
       )}

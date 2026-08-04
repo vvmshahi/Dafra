@@ -168,6 +168,18 @@ function Totals({ receipt }: { receipt: ReceiptComposition }) {
 function Payments({ receipt }: { receipt: ReceiptComposition }) {
   const { model, paymentKind, isCredit } = receipt
   const { payments, totals, presentation, identity } = model
+  const customerCredit = model.customerCredit
+  if (customerCredit?.isCustomerCredit) {
+    const statusKey = customerCredit.paymentStatus === 'paid' ? 'paid' : customerCredit.paymentStatus === 'partial' ? 'partiallyPaid' : 'unpaid'
+    return <section className="thermal-payments">
+      <div className="thermal-payment-kind">{documentLabel(identity.language, 'paymentMethod')}: <strong>{documentLabel(identity.language, 'customerCredit')}</strong></div>
+      <Row label={documentLabel(identity.language, 'paymentStatus')}>{documentLabel(identity.language, statusKey)}</Row>
+      {customerCredit.initialPaymentMethod && <Row label={documentLabel(identity.language, 'initialPaymentMethod')}>{documentPaymentLabel(identity.language, customerCredit.initialPaymentMethod)}</Row>}
+      <Row label={documentLabel(identity.language, 'initialPayment')}><Money value={customerCredit.initialPayment} model={model} /></Row>
+      <Row label={documentLabel(identity.language, 'amountPaid')}><Money value={customerCredit.amountPaid} model={model} /></Row>
+      <Row label={documentLabel(identity.language, 'balanceDue')}><Money value={customerCredit.balanceDue} model={model} /></Row>
+    </section>
+  }
   return <section className="thermal-payments">
     <div className="thermal-payment-kind">{documentLabel(identity.language, isCredit ? 'refundMethod' : 'paymentMethod')}: <strong>{documentPaymentLabel(identity.language, paymentKind)}</strong></div>
     {payments.map((payment, index) => <Row key={`${payment.method}-${index}`} label={documentPaymentLabel(identity.language, payment.method)}><Money value={payment.amount} model={model} /></Row>)}

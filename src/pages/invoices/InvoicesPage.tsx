@@ -385,7 +385,7 @@ export default function InvoicesPage() {
           .from('invoices')
           .select(`
             id, branch_id, session_id, invoice_number, invoice_reference, zatca_invoice_type, invoice_date, created_at, status, is_demo,
-            subtotal, tax_amount, total_amount, zatca_status,
+            subtotal, tax_amount, total_amount, payment_method, payment_status, zatca_status,
             customers(name),
             invoice_items(id, quantity),
             payments(method)
@@ -406,6 +406,17 @@ export default function InvoicesPage() {
         if (cancelled) return
 
         const invoices = data ?? []
+        const customerCreditInvoiceIds = new Set<string>()
+        if (invoices.length > 0) {
+          const { data: receivableEntries } = await (supabase as any)
+            .from('customer_receivable_entries')
+            .select('source_id, debit_amount')
+            .eq('source_kind', 'invoice')
+            .in('source_id', invoices.map((invoice: any) => invoice.id))
+          for (const entry of receivableEntries ?? []) {
+            if (Number(entry.debit_amount ?? 0) > 0.005) customerCreditInvoiceIds.add(String(entry.source_id))
+          }
+        }
         const demoSandbox = isPermanentDemoSandboxBranch(tid, activeScope.branchId)
         const sandboxAttempts = demoSandbox
           ? await getSandboxValidationStatuses(invoices.map((invoice: any) => invoice.id)).catch(() => ({}))
@@ -467,6 +478,7 @@ export default function InvoicesPage() {
         const processed: InvoiceRow[] = invoices.map((inv: any) => {
           const linkedCreditNote = creditByOriginal.get(inv.id) ?? null
           const payments = Array.isArray(inv.payments) ? inv.payments : []
+          const isCustomerCredit = inv.zatca_invoice_type !== 'credit_note' && customerCreditInvoiceIds.has(inv.id)
           const invoiceItems = Array.isArray(inv.invoice_items) ? inv.invoice_items : []
           let originalQuantityTotal = 0
           let remainingRefundableQuantity = 0
@@ -500,9 +512,11 @@ export default function InvoicesPage() {
           subtotal:      Number(inv.subtotal),
           taxAmount:     Number(inv.tax_amount),
           totalAmount:   Number(inv.total_amount),
-          paymentMethod: payments.length > 0
+          paymentMethod: isCustomerCredit
+            ? 'credit'
+            : payments.length > 0
             ? (isSplitPayment ? 'split' : payments[0].method)
-            : null,
+            : inv.payment_method ?? null,
           zatcaStatus: inv.zatca_status as ZatcaStatus,
           displayZatcaStatus: demoSandbox && inv.is_demo !== true
             ? (sandboxAttempts[inv.id]?.status ?? 'sandbox_not_validated')

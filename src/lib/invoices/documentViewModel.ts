@@ -1,5 +1,6 @@
 import { documentDirection, normalizeDocumentLanguage, type DocumentLanguage } from '@/localization/documents'
 import { resolveHistoricalA4Template } from './presentationSettings'
+import type { CustomerCreditPaymentSummary } from './customerCreditPayment'
 import type { A4HeaderStyle, InvoicePresentationSettings, LogoAssetSize, QrSize, QrAlignment, ThermalDensity, ThermalWidth } from '@/types/database'
 
 export type DocumentKind = 'invoice' | 'credit_note' | 'debit_note'
@@ -65,6 +66,7 @@ export interface DocumentViewModel {
   }>[]
   readonly totals: Readonly<{ currency: 'SAR'; subtotal: number; discount: number; taxableAmount: number; vat: number; total: number; paid: number; refunded: number; balance: number | null }>
   readonly payments: Readonly<{ method: string; amount: number; cashTendered: number | null; change: number | null; reference: string | null }>[]
+  readonly customerCredit?: CustomerCreditPaymentSummary | null
   readonly compliance: Readonly<{ qr: Readonly<{ source: 'stored_reference' | 'sample' | 'unavailable'; reference: string | null }>; xmlState: 'available' | 'unavailable'; originalDocument: Readonly<{ id: string | null; number: string | null }>; creditReason: string | null }>
   readonly template: Readonly<{
     rendererFamily: 'thermal' | 'a4'
