@@ -86,6 +86,14 @@ Passed:
 - `git diff --check`
 - remote migration parity and RPC metadata inspection
 
+The rollback-only local stateful harness passed after a recoverable local
+Supabase stop/start. It verified Branch-only enable/disable, automatic account
+setup idempotency, Business/Individual/inactive rejection, sibling-Branch
+isolation, and rejected-checkout no-mutation; all reserved fixture rows were
+confirmed absent afterward. It does not cover the requested invoice/payment,
+credit-note, reversal, register, stock, report, or three-Branch lifecycle
+matrix.
+
 The first unconfigured `npm test` attempt stopped because local Vite Supabase
 environment variables were absent; rerunning with non-secret placeholders
 passed. No lint command is defined in this package.
@@ -98,6 +106,13 @@ available in this non-interactive pass. Manual acceptance must still cover
 Branch toggle, POS eligibility and checkout variants, payment/reversal,
 credit-note return, Branch isolation, all statement periods, Print/PDF/XLSX,
 Arabic/RTL, responsive layouts, and rollback/concurrency scenarios.
+
+The local Supabase diagnostic also reported pre-existing RLS-disabled tables
+`barcode_function_contracts_v1`, `product_sku_counters`, and
+`product_units_commercial_function_contracts_v1`. These are outside Customer
+Credit scope; no remediation was applied because enabling RLS without reviewed
+policies could block unrelated functionality. Customer Credit referenced tables
+and remote RPC security checks passed.
 
 ## Recommendation
 
