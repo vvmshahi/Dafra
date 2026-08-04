@@ -94,6 +94,14 @@ confirmed absent afterward. It does not cover the requested invoice/payment,
 credit-note, reversal, register, stock, report, or three-Branch lifecycle
 matrix.
 
+The exact command was `npm run test:receivables-stateful`; it completed with
+`DO`, and the reserved tenant/Branch/customer counts were subsequently zero.
+Attempts to continue with direct local schema/RPC inspection used
+`supabase db query --local` and received `LegacyDbConnectError` / failed to
+connect after the local `supabase_db_dafra` container exited. `supabase start`
+reported the database as starting from backup, but the connection was not
+stable enough to run the broader fixture safely.
+
 The first unconfigured `npm test` attempt stopped because local Vite Supabase
 environment variables were absent; rerunning with non-secret placeholders
 passed. No lint command is defined in this package.
@@ -106,6 +114,10 @@ available in this non-interactive pass. Manual acceptance must still cover
 Branch toggle, POS eligibility and checkout variants, payment/reversal,
 credit-note return, Branch isolation, all statement periods, Print/PDF/XLSX,
 Arabic/RTL, responsive layouts, and rollback/concurrency scenarios.
+
+No Playwright, Cypress, Puppeteer, Chromium, or Chrome runner is installed in
+the worktree/environment, so browser acceptance and screenshots were not
+executed.
 
 The local Supabase diagnostic also reported pre-existing RLS-disabled tables
 `barcode_function_contracts_v1`, `product_sku_counters`, and
