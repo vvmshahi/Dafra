@@ -46,10 +46,6 @@ const PERMANENT_DEMO_TENANT_ID = 'ebf1144b-55ed-472a-99c9-23b5ee915351'
 // Server-authoritative reconnect scope. These values are deliberately fixed
 // server configuration, never request-controlled or frontend environment data.
 const TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
-// Integration Sandbox-only reconnect credential. This never crosses the
-// browser boundary and is never accepted for production onboarding.
-const INTEGRATION_SANDBOX_RECONNECT_OTP = '123345'
-
 const ACTIONS = [
   'get_status',
   'generate_csr',
@@ -83,8 +79,7 @@ type OnboardingStatus =
 
 interface RequestBody {
   action: Action
-  tenantId: string
-  branchId: string
+  otp?: string
   functionalityMap?: FunctionalityMap
   credentialId?: string
   expectedOperation?: RetryableAction
@@ -189,30 +184,30 @@ Deno.serve(async (req: Request) => {
     const serviceRoleKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY')
     const body = await readBody(req)
     const db = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
-    await authorizeOnboardingCaller(db, req, body.tenantId, body.branchId)
-    const scope = await loadDemoScope(db, body.tenantId, body.branchId)
+    await authorizeOnboardingCaller(db, req)
+    const scope = await loadDemoScope(db)
 
     if (body.action === 'reconcile_uncertain_operation') {
       const reconciliation = await reconcileUncertainOperation(db, body)
-      const credential = await loadCredentialById(db, body.credentialId as string, body.tenantId, body.branchId)
+      const credential = await loadCredentialById(db, body.credentialId as string)
       return jsonResponse({
         ok: true,
-        ...safeStatus(body.branchId, credential),
+        ...safeStatus(TRADING_BRANCH_ID, credential),
         reconciliation,
       })
     }
 
     if (body.action === 'get_status') {
-      const credential = await loadCredential(db, body.tenantId, body.branchId)
-      return jsonResponse({ ok: true, ...safeStatus(body.branchId, credential) })
+      const credential = await loadCredential(db)
+      return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential) })
     }
 
-    let credential = await loadCredential(db, body.tenantId, body.branchId)
+    let credential = await loadCredential(db)
 
     if (body.action === 'generate_csr') {
       const idempotent = !!credential
       credential = await generateCsr(db, scope, body, credential)
-      return jsonResponse({ ok: true, ...safeStatus(body.branchId, credential), idempotent })
+      return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential), idempotent })
     }
 
     if (!credential) {
@@ -220,13 +215,13 @@ Deno.serve(async (req: Request) => {
     }
 
     const requestedAction = resolveAction(body.action, credential)
-    assertOtpForEffectiveAction(requestedAction)
+    assertOtpForEffectiveAction(requestedAction, body.otp)
     if (credential.onboarding_status === 'failed' && body.action !== 'retry_failed_step') {
       throw new RequestError('This step failed previously. Use retry_failed_step after reviewing the safe error.', 409)
     }
 
     if (isActionAlreadyComplete(requestedAction, credential)) {
-      return jsonResponse({ ok: true, ...safeStatus(body.branchId, credential), idempotent: true })
+      return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential), idempotent: true })
     }
 
     assertSellerIdentityUnchanged(scope, credential)
@@ -235,7 +230,7 @@ Deno.serve(async (req: Request) => {
     credential = await claimOperation(db, credential, requestedAction)
 
     try {
-      credential = await executeClaimedAction(db, scope, credential, requestedAction)
+      credential = await executeClaimedAction(db, scope, credential, requestedAction, body.otp)
     } catch (error) {
       if (error instanceof OperationPersistenceError) {
         await recordReconciliationRequired(db, credential, requestedAction, error.message)
@@ -251,14 +246,14 @@ Deno.serve(async (req: Request) => {
       if (requiresExternalReconciliation(requestedAction, error)) {
         const message = 'The Sandbox response was uncertain. Manual reconciliation is required before retrying.'
         await recordReconciliationRequired(db, credential, requestedAction, message)
-        throw new RequestError(message, 502)
+        throw new RequestError(message, 502, 'SANDBOX_UPSTREAM_UNAVAILABLE')
       }
-      const safeMessage = safeError(error)
-      await markFailed(db, credential, requestedAction, safeMessage, error)
-      throw new RequestError(safeMessage, upstreamStatus(error))
+      const failure = classifySandboxFailure(requestedAction, error)
+      await markFailed(db, credential, requestedAction, failure.message, error)
+      throw new RequestError(failure.message, failure.status, failure.code)
     }
 
-    return jsonResponse({ ok: true, ...safeStatus(body.branchId, credential) })
+    return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential) })
   } catch (error) {
     const status = error instanceof RequestError ? error.status : 503
     const message = error instanceof RequestError
@@ -304,8 +299,7 @@ async function readBody(req: Request): Promise<RequestBody> {
   const body = value as Record<string, unknown>
   const allowedKeys = new Set([
     'action',
-    'tenantId',
-    'branchId',
+    'otp',
     'functionalityMap',
     'credentialId',
     'expectedOperation',
@@ -318,8 +312,8 @@ async function readBody(req: Request): Promise<RequestBody> {
     throw new RequestError('Unsupported request field', 400)
   }
   if (!ACTIONS.includes(body.action as Action)) throw new RequestError('Unsupported onboarding action', 400)
-  if (!isUuid(body.tenantId) || !isUuid(body.branchId)) {
-    throw new RequestError('Valid tenantId and branchId are required', 400)
+  if (body.otp !== undefined && typeof body.otp !== 'string') {
+    throw new RequestError('Sandbox OTP must be a string.', 400, 'SANDBOX_OTP_INVALID')
   }
   if (body.functionalityMap !== undefined && !isFunctionalityMap(body.functionalityMap)) {
     throw new RequestError('Invalid invoice functionality map', 400)
@@ -428,13 +422,8 @@ function jwtRole(jwt: string): string | null {
 async function authorizeOnboardingCaller(
   db: any,
   req: Request,
-  tenantId: string,
-  branchId: string,
 ): Promise<void> {
   const jwt = bearerToken(req)
-  if (tenantId !== PERMANENT_DEMO_TENANT_ID || branchId !== TRADING_BRANCH_ID) {
-    throw new RequestError('Forbidden: authorized Trading Demo Sandbox owner scope required', 403, 'SANDBOX_RECONNECT_UNAUTHORIZED')
-  }
   if (jwtRole(jwt) === 'service_role') return
 
   const { data: { user }, error: authError } = await db.auth.getUser(jwt)
@@ -449,7 +438,7 @@ async function authorizeOnboardingCaller(
 
   const ownerAuthorized = profile.role === 'owner'
     && profile.tenant_id === PERMANENT_DEMO_TENANT_ID
-    && (!profile.branch_id || profile.branch_id === branchId)
+    && (!profile.branch_id || profile.branch_id === TRADING_BRANCH_ID)
   const superAdminAuthorized = profile.role === 'super_admin'
     && (!profile.tenant_id || profile.tenant_id === PERMANENT_DEMO_TENANT_ID)
   if (!ownerAuthorized && !superAdminAuthorized) {
@@ -457,10 +446,9 @@ async function authorizeOnboardingCaller(
   }
 }
 
-async function loadDemoScope(db: any, tenantId: string, branchId: string): Promise<Scope> {
-  if (tenantId !== PERMANENT_DEMO_TENANT_ID || branchId !== TRADING_BRANCH_ID) {
-    throw new RequestError('Forbidden: authorized Trading Demo Sandbox branch required', 403, 'SANDBOX_RECONNECT_UNAUTHORIZED')
-  }
+async function loadDemoScope(db: any): Promise<Scope> {
+  const tenantId = PERMANENT_DEMO_TENANT_ID
+  const branchId = TRADING_BRANCH_ID
   const [tenantResult, branchResult] = await Promise.all([
     db.from('tenants')
       .select('id,name,business_type,is_demo,is_active')
@@ -488,13 +476,11 @@ async function loadDemoScope(db: any, tenantId: string, branchId: string): Promi
 
 async function loadCredential(
   db: any,
-  tenantId: string,
-  branchId: string,
 ): Promise<CredentialRow | null> {
   let query = db.from('zatca_sandbox_credentials')
     .select('*')
-    .eq('tenant_id', tenantId)
-    .eq('branch_id', branchId)
+    .eq('tenant_id', PERMANENT_DEMO_TENANT_ID)
+    .eq('branch_id', TRADING_BRANCH_ID)
     .eq('environment', 'sandbox')
     .order('created_at', { ascending: false })
     .limit(1)
@@ -511,14 +497,12 @@ async function loadCredential(
 async function loadCredentialById(
   db: any,
   credentialId: string,
-  tenantId: string,
-  branchId: string,
 ): Promise<CredentialRow> {
   const { data, error } = await db.from('zatca_sandbox_credentials')
     .select('*')
     .eq('id', credentialId)
-    .eq('tenant_id', tenantId)
-    .eq('branch_id', branchId)
+    .eq('tenant_id', PERMANENT_DEMO_TENANT_ID)
+    .eq('branch_id', TRADING_BRANCH_ID)
     .eq('environment', 'sandbox')
     .maybeSingle()
   if (error || !data) throw new Error('Unable to load reconciled Sandbox onboarding status')
@@ -533,8 +517,6 @@ async function reconcileUncertainOperation(
     const credential = await loadCredentialById(
       db,
       body.credentialId as string,
-      body.tenantId,
-      body.branchId,
     )
     if (
       credential.status === 'active' &&
@@ -551,8 +533,8 @@ async function reconcileUncertainOperation(
     : {}
   const { data, error } = await db.rpc('reconcile_zatca_sandbox_onboarding', {
     p_credential_id: body.credentialId,
-    p_tenant_id: body.tenantId,
-    p_branch_id: body.branchId,
+    p_tenant_id: PERMANENT_DEMO_TENANT_ID,
+    p_branch_id: TRADING_BRANCH_ID,
     p_expected_operation: body.expectedOperation,
     p_decision: body.reconciliationDecision,
     p_reconciled_by: body.reconciledBy,
@@ -738,10 +720,13 @@ function resolveAction(action: Action, credential: CredentialRow): RetryableActi
   return action
 }
 
-function assertOtpForEffectiveAction(action: RetryableAction): void {
+function assertOtpForEffectiveAction(action: RetryableAction, otp: string | undefined): void {
   if (action === 'request_compliance_csid') {
-    if (!validateOtp(INTEGRATION_SANDBOX_RECONNECT_OTP)) {
-      throw new RequestError('Sandbox reconnect OTP configuration is invalid.', 500, 'SANDBOX_RECONNECT_CONFIG_MISSING')
+    if (otp === undefined || otp.trim() === '') {
+      throw new RequestError('Enter the six-digit Integration Sandbox OTP.', 400, 'SANDBOX_OTP_REQUIRED')
+    }
+    if (!validateOtp(otp)) {
+      throw new RequestError('The Sandbox OTP must contain exactly six digits.', 400, 'SANDBOX_OTP_INVALID')
     }
     return
   }
@@ -818,10 +803,11 @@ async function executeClaimedAction(
   scope: Scope,
   credential: CredentialRow,
   action: RetryableAction,
+  otp?: string,
 ): Promise<CredentialRow> {
   switch (action) {
     case 'request_compliance_csid':
-      return requestComplianceCredential(db, credential)
+      return requestComplianceCredential(db, credential, otp as string)
     case 'submit_compliance_documents':
       return submitComplianceDocuments(db, scope, credential)
     case 'request_sandbox_production_csid':
@@ -834,6 +820,7 @@ async function executeClaimedAction(
 async function requestComplianceCredential(
   db: any,
   credential: CredentialRow,
+  otp: string,
 ): Promise<CredentialRow> {
   if (!credential.csr_pem) throw new Error('Persisted backend CSR is missing')
 
@@ -841,7 +828,7 @@ async function requestComplianceCredential(
   const response = await requestComplianceCsid({
     baseUrl: SANDBOX_CORE_BASE_URL,
     csrPem: credential.csr_pem,
-    otp: INTEGRATION_SANDBOX_RECONNECT_OTP,
+    otp,
     onResponse: trace => { httpStatus = trace.httpStatus },
   })
   const secret = requireEnv('ZATCA_SERVER_ENCRYPTION_KEY')
@@ -1452,6 +1439,82 @@ function parseAsn1Time(value: string): string | null {
 
 function base64Bytes(value: string): Uint8Array {
   return Uint8Array.from(atob(value), character => character.charCodeAt(0))
+}
+
+type SandboxFailure = {
+  code:
+    | 'SANDBOX_CONFIG_MISSING'
+    | 'SANDBOX_IDENTITY_GENERATION_FAILED'
+    | 'SANDBOX_COMPLIANCE_REQUEST_FAILED'
+    | 'SANDBOX_PRODUCTION_REQUEST_FAILED'
+    | 'SANDBOX_CERTIFICATE_KEY_MISMATCH'
+    | 'SANDBOX_UPSTREAM_UNAVAILABLE'
+    | 'SANDBOX_ONBOARDING_UNAVAILABLE'
+  status: number
+  message: string
+}
+
+function classifySandboxFailure(action: RetryableAction, error: unknown): SandboxFailure {
+  if (error instanceof RequestError) {
+    return {
+      code: error.code as SandboxFailure['code'],
+      status: error.status,
+      message: error.message,
+    }
+  }
+
+  if (error instanceof SandboxProductionKeyMismatchError) {
+    return {
+      code: 'SANDBOX_CERTIFICATE_KEY_MISMATCH',
+      status: 422,
+      message: SANDBOX_PRODUCTION_KEY_MISMATCH_ERROR,
+    }
+  }
+
+  if (action === 'generate_csr') {
+    const raw = error instanceof Error ? error.message : String(error ?? '')
+    if (/SUPABASE_|ZATCA_SERVER_ENCRYPTION_KEY|configuration|environment/i.test(raw)) {
+      return {
+        code: 'SANDBOX_CONFIG_MISSING',
+        status: 503,
+        message: 'Sandbox onboarding configuration is unavailable. Contact Kubri support before retrying.',
+      }
+    }
+    return {
+      code: 'SANDBOX_IDENTITY_GENERATION_FAILED',
+      status: 500,
+      message: 'Trading Sandbox device identity could not be generated. Contact Kubri support before retrying.',
+    }
+  }
+
+  if (isZatcaHttpError(error)) {
+    if (error.httpStatus >= 500) {
+      return {
+        code: 'SANDBOX_UPSTREAM_UNAVAILABLE',
+        status: 503,
+        message: 'The Integration Sandbox is temporarily unavailable. Retry after checking the Sandbox status.',
+      }
+    }
+    return {
+      code: action === 'request_sandbox_production_csid'
+        ? 'SANDBOX_PRODUCTION_REQUEST_FAILED'
+        : 'SANDBOX_COMPLIANCE_REQUEST_FAILED',
+      status: error.httpStatus >= 400 ? error.httpStatus : 502,
+      message: action === 'request_sandbox_production_csid'
+        ? 'Sandbox Production credential request failed. Review the safe status before retrying.'
+        : 'Sandbox Compliance request failed. Verify the six-digit OTP and review the safe status before retrying.',
+    }
+  }
+
+  return {
+    code: action === 'request_sandbox_production_csid'
+      ? 'SANDBOX_PRODUCTION_REQUEST_FAILED'
+      : 'SANDBOX_ONBOARDING_UNAVAILABLE',
+    status: 503,
+    message: action === 'request_sandbox_production_csid'
+      ? 'Sandbox Production credential request is unavailable. Contact Kubri support before retrying.'
+      : 'Sandbox onboarding is unavailable. Contact Kubri support before retrying.',
+  }
 }
 
 function upstreamStatus(error: unknown): number {

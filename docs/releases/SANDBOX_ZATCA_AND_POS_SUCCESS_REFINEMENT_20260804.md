@@ -108,11 +108,12 @@ endpoint and server-owned CSR/device/credential handling.
 
 The Owner-area `Reconnect Sandbox` control shows safe business, Branch,
 environment, and credential state. It never accepts an environment, endpoint,
-credential, CSR owner, or Service Demo material from the browser. For this
-Integration Sandbox repair, the official Sandbox OTP is held only in the
-server-side Edge Function configuration and is never accepted from, returned
-to, logged, or displayed by the browser. Production endpoints cannot receive
-that value. The flow excludes failed/revoked rows, generates a fresh Trading
+credential, CSR owner, or Service Demo material from the browser. The card now
+shows a visible `Sandbox OTP` field with six-digit validation, disabled submit
+until valid input, a clear action, and no browser persistence or autofill. The
+owner-entered OTP is sent only to the server-side Compliance request, cleared
+before that request, never logged or returned, and never used by Production
+onboarding. The flow excludes failed/revoked rows, generates a fresh Trading
 device keypair and CSR, verifies that the CSR public key belongs to that exact
 private key before storage, obtains the compliance credential, submits
 compliance samples, requests the Sandbox Production credential only after
@@ -121,11 +122,20 @@ private key, and activates only the complete chain.
 
 No authenticated owner session was available in this environment, so onboarding,
 QR generation, Sandbox response, status persistence, and retry acceptance remain
-owner-gated. The fixed server-side OTP was not printed or used by this audit.
+owner-gated. No OTP was printed or used by this audit.
 
 ### Follow-up reconnect defect repair
 
-The latest Preview exposed `TRADING_BRANCH_ID is not defined` from
+The latest reconnect attempt exposed a second contract defect: the Preview card
+had no OTP control while the onboarding function still depended on a hidden
+server-side OTP path. The onboarding request now accepts only the action,
+functionality map where applicable, and explicitly entered OTP; the server
+resolves and validates the exact Demo tenant and Trading Branch itself. No
+client tenant, Branch, environment, endpoint, or credential identifier is used
+for ordinary reconnect actions. Missing or malformed OTP is rejected before
+CSR/Compliance work with `SANDBOX_OTP_REQUIRED` or `SANDBOX_OTP_INVALID`.
+
+The earlier Preview exposed `TRADING_BRANCH_ID is not defined` from
 `zatca-onboard-sandbox-demo` as HTTP 500. The authorization guard referenced the
 identifier, but the function only declared the broader historical branch set;
 it was neither an environment variable nor a request field. The server now
@@ -137,8 +147,10 @@ scope-checked before its bypass.
 Unexpected implementation/configuration failures now return controlled
 `SANDBOX_ONBOARDING_UNAVAILABLE` or `SANDBOX_RECONNECT_CONFIG_MISSING` results;
 unauthorized scope returns `SANDBOX_RECONNECT_UNAUTHORIZED`, and malformed OTP
-returns `SANDBOX_OTP_INVALID`. No stack trace or sensitive upstream material is
-returned or logged.
+returns `SANDBOX_OTP_INVALID`. CSR/configuration, Compliance upstream,
+Production upstream, certificate/key mismatch, and upstream availability paths
+now return distinct safe classifications. No stack trace or sensitive upstream
+material is returned or logged.
 
 Normal reconnect status selection excludes failed, revoked, and expired
 credentials. Failed and revoked rows remain audit history and are not selected
@@ -219,6 +231,11 @@ Passed:
 - unauthenticated HTTP 401 checks for both changed Sandbox Edge Functions
 - controlled reconnect configuration, scope, OTP, and historical-credential
   regression contracts
+- visible Trading OTP input, six-digit submit gating, clear-after-submit,
+  duplicate-submit, and no-browser-persistence contracts
+- typed OTP request contract with server-resolved Trading tenant/Branch
+- safe missing/malformed OTP and action-specific 503 classification contracts
+- English and Arabic reconnect localization JSON validation
 - fresh private-key/public-key/CSR association checks and production-certificate
   key-match rejection contracts
 - local/remote migration parity through `20260804000200`
@@ -271,9 +288,10 @@ This is not a production certification or a claim that either Demo branch
 has completed an authenticated Sandbox submission.
 
 Owner stop condition: open Kubri → Settings → ZATCA for the exact `Kubri Demo`
-business, select the `Kubri Trading Demo` Sandbox reconnect card, and run the
-server-owned reconnect flow from an authenticated Owner or Super Admin session.
-Do not paste the official Sandbox OTP into chat or add it to client code.
+business, select the `Kubri Trading Demo` Sandbox reconnect card, confirm the
+visible `Sandbox OTP` field is present and Submit remains disabled until exactly
+six digits are entered, then run the flow from an authenticated Owner or Super
+Admin session. Do not paste the OTP into chat or add it to client code.
 
 After OTP, verify Trading's own onboarding response, active compliance-demo
 mode, QR, factual stored Sandbox response, refresh persistence, and safe retry.

@@ -143,31 +143,46 @@ function TradingSandboxReconnect({
   const { t } = useTranslation('zatca')
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [otp, setOtp] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [progress, setProgress] = useState<string | null>(null)
 
   const statusLabel = status?.status ?? 'not_started'
   const canResume = !connectionActive && (!status || ['not_started', 'csr_ready', 'compliance_csid_ready', 'compliance_checks_pending', 'compliance_passed', 'sandbox_production_csid_ready'].includes(statusLabel))
+  const requiresOtp = !status || statusLabel === 'not_started' || statusLabel === 'csr_ready'
+  const otpValid = /^\d{6}$/.test(otp)
 
   async function reconnect() {
     setError(null)
     setSuccess(null)
+    setProgress(null)
+    if (requiresOtp && !otpValid) {
+      setError(t('sandbox.reconnectOtpRequired'))
+      return
+    }
+    const enteredOtp = otp
     let next = status
     try {
       setBusy(true)
+      setProgress(t('sandbox.reconnectProgressIdentity'))
       if (!next || next.status === 'not_started') {
         next = await runSandboxDemoOnboarding({ action: 'generate_csr', functionalityMap: '0100' })
         onStatusChange(next)
       }
 
       if (next.status === 'csr_ready') {
+        setProgress(t('sandbox.reconnectProgressCompliance'))
+        setOtp('')
         next = await runSandboxDemoOnboarding({
           action: 'request_compliance_csid',
+          reconnect: { otp: enteredOtp },
         })
         onStatusChange(next)
       }
 
       if (next.status === 'compliance_csid_ready') {
+        setProgress(t('sandbox.reconnectProgressValidation'))
         next = await runSandboxDemoOnboarding({
           action: 'submit_compliance_documents',
         })
@@ -175,6 +190,7 @@ function TradingSandboxReconnect({
       }
 
       if (next.status === 'compliance_passed') {
+        setProgress(t('sandbox.reconnectProgressProduction'))
         next = await runSandboxDemoOnboarding({ action: 'request_sandbox_production_csid' })
         onStatusChange(next)
       }
@@ -188,19 +204,24 @@ function TradingSandboxReconnect({
         const connection = await activateSandboxDemoConnection()
         onConnectionChange(connection)
         setSuccess(t('sandbox.reconnectSuccess'))
+        setProgress(null)
         setOpen(false)
         return
       }
 
       if (next.status === 'failed') {
         setError(next.lastError || t('sandbox.reconnectFailed'))
+        setProgress(null)
       } else if (next.status === 'csr_ready' || next.status === 'compliance_csid_ready' || next.status === 'compliance_checks_pending' || next.status === 'compliance_passed' || next.status === 'sandbox_production_csid_ready') {
         setSuccess(t('sandbox.reconnectChecksRunning'))
+        setProgress(null)
       } else if (next.status !== 'active') {
         setError(t('sandbox.reconnectNeedsReview'))
+        setProgress(null)
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('sandbox.reconnectFailed'))
+      setProgress(null)
     } finally {
       setBusy(false)
     }
@@ -213,7 +234,7 @@ function TradingSandboxReconnect({
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-black text-gray-950">{t('sandbox.reconnectTitle')}</h3>
             <Badge variant={connectionActive ? 'success' : 'warning'} dot>
-              {connectionActive ? t('status.active') : status?.status ? t(`sandbox.onboardingStatus.${status.status}`, { defaultValue: status.status }) : t('status.checking')}
+              {connectionActive ? t('status.active') : t(`sandbox.onboardingStatus.${statusLabel}`, { defaultValue: statusLabel })}
             </Badge>
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.reconnectHelp')}</p>
@@ -238,10 +259,48 @@ function TradingSandboxReconnect({
         <div className="border-t border-amber-100 bg-gray-50/70 px-5 py-4">
           <p className="text-xs font-semibold text-gray-900">{t('sandbox.reconnectTitle')}</p>
           <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.reconnectHelp')}</p>
-          <button type="button" onClick={() => void reconnect()} disabled={busy} className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-4 text-xs font-bold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-50">
+          {requiresOtp && (
+            <div className="mt-4">
+              <label htmlFor="trading-sandbox-otp" className="block text-xs font-bold text-gray-900">
+                {t('sandbox.reconnectOtpTitle')}
+              </label>
+              <p className="mt-1 text-[11px] leading-relaxed text-gray-600">
+                {t('sandbox.reconnectOtpHelp')}
+              </p>
+              <input
+                id="trading-sandbox-otp"
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="off"
+                maxLength={6}
+                value={otp}
+                onChange={event => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder={t('sandbox.reconnectOtpPlaceholder')}
+                aria-describedby="trading-sandbox-otp-help"
+                className="mt-2 min-h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold tracking-[0.25em] text-gray-900 outline-none ring-[#0F2419] placeholder:tracking-normal focus:ring-2"
+              />
+              <p id="trading-sandbox-otp-help" className="mt-1 text-[11px] text-gray-500">
+                {t('sandbox.reconnectOtpFormat')}
+              </p>
+            </div>
+          )}
+          {busy && progress && (
+            <p role="status" className="mt-3 flex items-center gap-2 text-xs font-semibold text-gray-700">
+              <Loader2 size={13} className="animate-spin" /> {progress}
+            </p>
+          )}
+          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+            <button type="button" onClick={() => void reconnect()} disabled={busy || (requiresOtp && !otpValid)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-4 text-xs font-bold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-50">
             {busy && <Loader2 size={13} className="animate-spin" />}
             {busy ? t('sandbox.reconnectSubmitting') : t('sandbox.reconnectSubmit')}
-          </button>
+            </button>
+            {requiresOtp && (
+              <button type="button" onClick={() => setOtp('')} disabled={busy || otp.length === 0} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-gray-200 bg-white px-4 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50">
+                {t('sandbox.reconnectOtpClear')}
+              </button>
+            )}
+          </div>
           {error && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}
         </div>
       )}
