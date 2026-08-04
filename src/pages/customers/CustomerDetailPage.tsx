@@ -590,6 +590,8 @@ export default function CustomerDetailPage() {
         isOwner={profile?.role === 'owner' || profile?.role === 'admin'}
         canReversePayment={['owner', 'admin', 'accountant', 'manager'].includes(profile?.role ?? '')}
         canAdjustReceivables={['owner', 'admin', 'accountant'].includes(profile?.role ?? '')}
+        openStatement={searchParams.get('statement') === 'open'}
+        openPayment={searchParams.get('payment') === 'open'}
       /></div>}
 
       {activeProfileSection === 'overview' && <div className="flex flex-col gap-4"><div className="contents"><CustomerIntelligenceFiltersPanel

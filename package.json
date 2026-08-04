@@ -108,6 +108,7 @@
     "test:customer-modal-save-label": "node scripts/test-customer-modal-save-label.mjs",
     "test:customer-credit-targeted-simplification": "node scripts/test-customer-credit-targeted-simplification.mjs",
     "test:customer-credit-visual-consistency": "node scripts/test-customer-credit-visual-consistency.mjs",
+    "test:customer-credit-filters-and-statement-repair": "node scripts/test-customer-credit-filters-and-statement-repair.mjs",
     "test:credit-pos-sandbox-demo": "node scripts/test-credit-pos-sandbox-demo.mjs",
     "test:receivables-xlsx": "node --experimental-strip-types scripts/test-receivables-xlsx.mjs",
     "test:receivables-stateful": "supabase db query --local --file scripts/certify-customer-receivables-stateful.sql",

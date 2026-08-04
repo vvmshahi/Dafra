@@ -61,12 +61,16 @@ export function CustomerReceivablesPanel({
   isOwner,
   canReversePayment,
   canAdjustReceivables,
+  openStatement = false,
+  openPayment = false,
 }: {
   customerId: string
   branchId: string | null | undefined
   isOwner: boolean
   canReversePayment: boolean
   canAdjustReceivables: boolean
+  openStatement?: boolean
+  openPayment?: boolean
 }) {
   const { t, i18n } = useTranslation('receivables')
   const navigate = useNavigate()
@@ -166,6 +170,11 @@ export function CustomerReceivablesPanel({
   }
 
   useEffect(() => { void refresh() }, [customerId, branchId])
+
+  useEffect(() => {
+    if (openStatement) setStatementOpen(true)
+    if (openPayment) setPaymentOpen(true)
+  }, [openPayment, openStatement])
 
   useEffect(() => {
     const refreshForPolicyChange = (event: Event) => {

@@ -620,6 +620,7 @@ export async function loadCustomerReceivablesReport(input: {
   branchId?: string | null
   startDate?: string
   endDate?: string
+  asOfDate?: string
   page?: number
   pageSize?: number
 }) {

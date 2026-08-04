@@ -329,6 +329,7 @@ export default function CustomersPage() {
         <EmptyState filtered={isFiltered} onAdd={openAdd} />
       ) : (
         <div className="card overflow-hidden">
+          <div className="flex items-center justify-between gap-3 bg-[#173d2a] px-4 py-2.5 text-white"><div><h2 className="text-sm font-bold">{t('title')}</h2><p className="text-xs text-emerald-100/75">{filtered.length}</p></div><User size={17} className="text-emerald-100" /></div>
           <div className="hidden lg:block overflow-x-auto">
             <table className="w-full min-w-[1050px] text-sm">
               <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500">
