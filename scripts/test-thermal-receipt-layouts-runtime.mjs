@@ -120,7 +120,7 @@ try {
         if (fixtureCase.payment === 'split') assert.match(markup, /cash[\s\S]*card|نقد[\s\S]*بطاقة/i)
         if (fixtureCase.qr === 'eligible') assert.match(markup, /class="thermal-qr"/)
         if (fixtureCase.qr !== 'eligible') assert.doesNotMatch(markup, /class="thermal-qr"/)
-        if (fixtureCase.qr === 'demo') assert.match(markup, /DEMO — NOT A TAX INVOICE/)
+        if (fixtureCase.qr === 'demo') assert.doesNotMatch(markup, /DEMO — NOT A TAX INVOICE/)
         if (isCredit) assert.match(markup, /SAMPLE-CN-0042/)
 
         const walkInMarkup = renderToStaticMarkup(createElement(ThermalReceipt, {

@@ -263,9 +263,7 @@ export default function ThermalReceiptCompositions({ model, options }: { model: 
     : isDebit
     ? (isStandard ? 'taxDebitNote' : 'simplifiedTaxDebitNote')
     : (isStandard ? 'standardTaxInvoice' : 'simplifiedTaxInvoice')
-  const titleLines = options.nonFiscalDemo
-    ? ['DEMO — NOT A TAX INVOICE', 'تجريبي — ليست فاتورة ضريبية']
-    : documentLabelLines(identity.language, title)
+  const titleLines = documentLabelLines(identity.language, title)
   const optionalFooter = [presentation.footer.thankYouVisible ? presentation.footer.thankYou : null, presentation.footer.footerVisible ? presentation.footer.footer : null, presentation.footer.refundVisible ? presentation.footer.refund : null].filter((line): line is string => !!line)
   const receipt: ReceiptComposition = {
     model,

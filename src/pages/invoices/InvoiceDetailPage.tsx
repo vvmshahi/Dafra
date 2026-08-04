@@ -703,9 +703,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     : isDebitNote
     ? (isStandardDocument ? 'taxDebitNote' : 'simplifiedTaxDebitNote')
     : (isStandardDocument ? 'standardTaxInvoice' : 'simplifiedTaxInvoice')
-  const documentTitle = nonFiscalDemo
-    ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية'
-    : documentLabel(documentViewModel.identity.language, documentTitleKey)
+  const documentTitle = documentLabel(documentViewModel.identity.language, documentTitleKey)
   const creditLabel = creditStatus === 'full' ? t('invoices:fullyCredited') : creditStatus === 'partial' ? t('invoices:partiallyCredited') : t('invoices:notCredited')
   const creditLabelClass = creditStatus === 'full'
     ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
@@ -762,7 +760,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
   return (
     <div className="mx-auto min-w-0 max-w-6xl space-y-3 overflow-x-clip pb-6">
-      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'invoice-printable-a4', qrImageUrl: qrDataUrl, sampleLabel: nonFiscalDemo ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية' : null, nonFiscalDemo }} />
+      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'invoice-printable-a4', qrImageUrl: qrDataUrl, nonFiscalDemo }} />
 
       <header className="no-print overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" aria-labelledby="invoice-detail-title">
         <div className="h-1 bg-gold-500" aria-hidden="true" />
@@ -780,7 +778,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                 <span className="font-mono text-base font-semibold text-gray-600 sm:text-lg" dir="ltr">{invoice.invoice_number}</span>
               </h1>
               <div className="mt-1.5 flex flex-wrap gap-1.5" aria-label={t('invoices:documentStatus')}>
-                {nonFiscalDemo && <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-900">DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية</span>}
+                {nonFiscalDemo && <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-700">{t('pos:demo.badge')}</span>}
                 <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">{t('invoices:zatcaStatus')}: {zatcaStatusLabel}</span>
                 {!isCreditNote && <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${creditLabelClass}`}>{creditLabel}</span>}
               </div>
@@ -898,14 +896,14 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
         {previewMode === 'a4' ? (
           <div id="invoice-preview-panel-a4" role="tabpanel" aria-labelledby="invoice-preview-tab-a4" tabIndex={0} className="min-w-0 outline-none">
             <A4PreviewFit bounded zoom={a4PreviewZoom}>
-              <A4Document model={documentViewModel} options={{ preview: true, id: 'invoice-preview-a4', qrImageUrl: qrDataUrl, pageNumbers: true, sampleLabel: nonFiscalDemo ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية' : null, nonFiscalDemo }} />
+              <A4Document model={documentViewModel} options={{ preview: true, id: 'invoice-preview-a4', qrImageUrl: qrDataUrl, pageNumbers: true, nonFiscalDemo }} />
             </A4PreviewFit>
           </div>
         ) : (
           <div id="invoice-preview-panel-thermal" role="tabpanel" aria-labelledby="invoice-preview-tab-thermal" tabIndex={0}
             className="h-[clamp(30rem,calc(100dvh-14.5rem),58rem)] min-h-[30rem] min-w-0 overflow-auto rounded-xl bg-gray-100 px-3 py-5 outline-none sm:px-6">
             <div className="mx-auto w-max max-w-full">
-              <ThermalReceipt model={documentViewModel} options={{ preview: true, id: 'invoice-preview-thermal', qrImageUrl: qrDataUrl, sampleLabel: nonFiscalDemo ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية' : null, nonFiscalDemo }} />
+              <ThermalReceipt model={documentViewModel} options={{ preview: true, id: 'invoice-preview-thermal', qrImageUrl: qrDataUrl, nonFiscalDemo }} />
             </div>
           </div>
         )}

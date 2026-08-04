@@ -90,6 +90,8 @@ const PAY_BADGE: Record<string, DocumentBadgeConfig> = {
   card: { label: 'Card', bg: 'bg-indigo-50', text: 'text-indigo-700', ring: 'ring-indigo-600/20', dot: 'bg-indigo-500' },
   split: { label: 'Split', bg: 'bg-teal-50', text: 'text-teal-700', ring: 'ring-teal-600/20', dot: 'bg-teal-500' },
   bank_transfer: { label: 'Bank', bg: 'bg-sky-50', text: 'text-sky-700', ring: 'ring-sky-600/20', dot: 'bg-sky-500' },
+  credit: { label: 'Customer credit', bg: 'bg-rose-50', text: 'text-rose-800', ring: 'ring-rose-700/20', dot: 'bg-rose-700' },
+  partial_credit: { label: 'Customer credit', bg: 'bg-rose-50', text: 'text-rose-800', ring: 'ring-rose-700/20', dot: 'bg-rose-700' },
   other: { label: 'Other', bg: 'bg-gray-50', text: 'text-gray-600', ring: 'ring-gray-500/20', dot: 'bg-gray-400' },
 }
 
@@ -621,6 +623,7 @@ export default function InvoicesPage() {
         : r.paymentMethod === 'card' ? t('payments:card')
         : r.paymentMethod === 'split' ? t('payments:split')
         : r.paymentMethod === 'bank_transfer' ? t('payments:bankTransfer')
+        : r.paymentMethod === 'credit' || r.paymentMethod === 'partial_credit' ? t('payments:customerCredit')
         : t('payments:other'),
     } : null
     return {

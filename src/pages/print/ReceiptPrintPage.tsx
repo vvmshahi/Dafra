@@ -598,7 +598,7 @@ export default function ReceiptPrintPage() {
       )}
 
       <main id="receipt-print-page" className="mx-auto flex min-h-[calc(100vh-64px)] max-w-3xl items-start justify-center bg-white px-3 py-5 sm:my-6 sm:min-h-0 sm:rounded-2xl sm:border sm:border-gray-100 sm:shadow-sm">
-        <ThermalReceipt model={documentViewModel} options={{ preview: true, qrImageUrl: qrDataUrl, sampleLabel: nonFiscalDemo ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية' : null, nonFiscalDemo }} />
+        <ThermalReceipt model={documentViewModel} options={{ preview: true, qrImageUrl: qrDataUrl, nonFiscalDemo }} />
       </main>
     </div>
   )

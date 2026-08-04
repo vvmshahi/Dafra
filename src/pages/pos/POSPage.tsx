@@ -59,10 +59,6 @@ import { AuthenticatedLanguageSwitch } from '@/components/localization/Authentic
 import { documentFromPosReceipt } from '@/lib/invoices/documentViewAdapters'
 import { resolveInvoicePresentationSettings } from '@/lib/invoices/presentationSettings'
 import {
-  documentDate,
-  documentLabel,
-  documentNames,
-  documentPaymentLabel,
   normalizeDocumentLanguage,
   type DocumentLanguage,
 } from '@/localization/documents'
@@ -657,7 +653,6 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
   const [printErrorKey, setPrintErrorKey] = useState<string | null>(null)
   const [retryingFinalization, setRetryingFinalization] = useState(false)
   const automaticSnapshotPrintRef = useRef(false)
-  const documentLanguage = normalizeDocumentLanguage(receipt.documentLanguage)
   const documentViewModel = useMemo(() => documentFromPosReceipt({ ...receipt, zatcaQrCode: receipt.zatcaQrCode, presentationSettings: branch?.presentation_settings, branchDefaults: branch ?? undefined, items: receipt.items.map(item => ({ name: item.name, nameAr: item.nameAr, qty: item.qty, unitPrice: item.unitPrice, lineTotal: item.lineTotal, subtotal: item.subtotal, taxAmount: item.taxAmount, taxRate: item.taxRate, taxCategory: item.taxCategory, unitName: item.unitName, unitNameAr: item.unitNameAr, unitCode: item.unitCode, baseQuantity: item.baseQuantity, baseUnitName: item.baseUnitName, baseUnitNameAr: item.baseUnitNameAr })), payments: receipt.payments.map(payment => ({ method: payment.method, amount: payment.amount, amountReceived: payment.amountReceived, changeAmount: payment.changeAmount })) }), [receipt, branch])
   const printReady = receipt.isDemo
     ? receipt.canPrint
@@ -711,41 +706,6 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
       void openReceiptPrintPage()
     })
   }, [receipt.atomicSnapshot, receipt.invoiceId, printReady])
-
-  function shareWhatsApp() {
-    if (!printReady) {
-      toast.error(t('printing:qrUnavailable'))
-      return
-    }
-    if (!receipt.customerPhone) return
-    const digits = receipt.customerPhone.replace(/\D/g, '')
-    const wa = digits.startsWith('966') ? digits : digits.startsWith('0') ? '966' + digits.slice(1) : digits
-    const date = documentDate(receipt.createdAt, documentLanguage, { month: '2-digit' })
-    const m = (n: number) => `SAR ${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-    const lines = receipt.items.map(i => {
-      const unit = documentNames(documentLanguage, i.unitName, i.unitNameAr).join(' / ')
-      return `${documentNames(documentLanguage, i.name, i.nameAr).join(' / ')} × ${i.qty}${unit ? ` ${unit}` : ''}  ${m(i.lineTotal)}`
-    }).join('\n')
-    const businessName = documentNames(documentLanguage, receipt.businessNameEn, receipt.businessNameAr).join(' / ')
-    const receiptHeading = receipt.isDemo
-      ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية'
-      : receipt.sandboxDemo
-        ? t('pos:sandbox.receiptLabelBilingual')
-        : documentLabel(documentLanguage, 'taxInvoice')
-    const msg = `${receiptHeading} — ${businessName}
-━━━━━━━━━━━━━━━
-${documentLabel(documentLanguage, 'invoiceNumber')}: ${receipt.invoiceNumber}
-${documentLabel(documentLanguage, 'date')}: ${date}
-━━━━━━━━━━━━━━━
-${lines}
-━━━━━━━━━━━━━━━
-${documentLabel(documentLanguage, 'amountBeforeVat')}: ${m(receipt.subtotal)}
-${documentLabel(documentLanguage, 'vatAmount')}: ${m(receipt.taxAmount)}
-${documentLabel(documentLanguage, 'totalIncludingVat')}: ${m(receipt.total)}
-━━━━━━━━━━━━━━━
-${documentLabel(documentLanguage, 'thankYou')} 🌿`
-    window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank')
-  }
 
   async function printPosA4() {
     if (!printReady) {
@@ -852,26 +812,16 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
   return (
     <>
-      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'pos-pdf-printable', qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : receipt.sandboxDemo ? t('pos:sandbox.receiptLabelBilingual') : null, nonFiscalDemo: receipt.isDemo }} />
+      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'pos-pdf-printable', qrImageUrl: qrDataUrl, nonFiscalDemo: receipt.isDemo }} />
       {/* Hidden thermal receipt — rendered for print only */}
-      <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : receipt.sandboxDemo ? t('pos:sandbox.receiptLabelBilingual') : null, nonFiscalDemo: receipt.isDemo }} />
+      <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl, nonFiscalDemo: receipt.isDemo }} />
 
       {/* Success overlay */}
       <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-[#0F2419]/90 p-4 sm:p-6">
-        <div className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="my-auto w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
 
           {/* Banner */}
           <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 px-5 py-6 text-center text-white sm:px-8">
-            {receipt.isDemo && (
-              <div className="mb-3 rounded-lg border border-white/50 bg-black/20 px-3 py-2 text-sm font-black">
-                {t('pos:demo.receiptLabelBilingual')}
-              </div>
-            )}
-            {receipt.sandboxDemo && (
-              <div className="mb-3 rounded-lg border border-white/50 bg-black/20 px-3 py-2 text-sm font-black">
-                {t('pos:sandbox.receiptLabelBilingual')}
-              </div>
-            )}
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
               <Check size={32} strokeWidth={3} />
             </div>
@@ -880,10 +830,11 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
           </div>
 
           {/* Summary */}
-          <div className="space-y-4 p-5 sm:p-7">
+          <div className="space-y-3 p-5 sm:p-6">
             {receipt.isDemo ? (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-900">
-                {t('pos:demo.noZatca')}
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                <span className="font-semibold text-slate-700">{t('pos:demo.badge')}</span>
+                <span className="text-slate-500">{t('pos:zatca.demo_non_fiscal')}</span>
               </div>
             ) : receipt.sandboxDemo ? (
               <div className="flex items-center justify-between rounded-lg border border-primary-100 bg-primary-50 px-3 py-2 text-xs">
@@ -898,7 +849,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                 </span>
               </div>
             )}
-            <div className="grid gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-3 sm:grid-cols-2">
+            <div className="grid gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-3">
               <div><p className="text-xs text-gray-500">{t('payments:customer')}</p><p className="mt-1 font-semibold text-gray-800" dir="auto">{receipt.customerName}</p></div>
               <div className="sm:text-end"><p className="text-xs text-gray-500">{t('payments:method')}</p><p className={`mt-1 font-semibold ${receipt.displayPaymentMethod === 'credit' || receipt.displayPaymentMethod === 'partial_credit' ? 'text-primary-800' : 'text-gray-800'}`}>{localizedPaymentMethod(receipt.displayPaymentMethod, t)}</p></div>
             </div>
@@ -982,16 +933,6 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                   {t('payments:printInvoice')}
                 </button>
               ) : null}
-              {receipt.customerPhone && (
-                <button
-                  onClick={shareWhatsApp}
-                  disabled={!printReady}
-                  className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-[#25D366] px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#22c55e]"
-                >
-                  <WhatsAppIcon size={14} />
-                  {t('payments:whatsapp')}
-                </button>
-              )}
             </div>
             {!receipt.canPrint && (
               <div className="rounded-lg bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">
