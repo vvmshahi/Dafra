@@ -1,4 +1,5 @@
-import { printCurrentReceipt, type PrintResult } from '@/lib/electron'
+import { isElectron, printCurrentReceipt, type PrintResult } from '@/lib/electron'
+import { printCurrentDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
 
 export interface AtomicReceiptPrintRequest {
   invoiceId: string
@@ -51,7 +52,10 @@ export async function printAtomicReceiptSnapshot({
   })
   const removeStyle = installAtomicReceiptPrintStyle(receiptElementId)
   try {
-    const result = await printCurrentReceipt()
+    await waitForPrintableAssets(document.getElementById(receiptElementId) ?? document.body)
+    const result = !isElectron()
+      ? await printCurrentDocument().then(() => ({ success: true } as PrintResult))
+      : await printCurrentReceipt()
     if (result.success) {
       console.info('[zatca-timing]', {
         event: 'printer_started',

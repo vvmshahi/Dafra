@@ -21,6 +21,7 @@ import A4PreviewFit, { type A4PreviewZoom } from '@/components/print/A4PreviewFi
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
+import { openPrintPopup, printCurrentDocument, waitForPrintableAssets, PRINT_POPUP_BLOCKED } from '@/lib/print/browserPrint'
 import { getInvoiceZatcaOutputState, submitInvoiceToZatca, type ZatcaOutputState } from '@/lib/zatca/submission'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 import AtomicCreditNoteReceiptView from './AtomicCreditNoteReceiptView'
@@ -127,7 +128,7 @@ function usePrintStyle() {
     style.id = 'invoice-print-style'
     style.textContent = `
       @media print {
-        @page { size: A4; margin: 15mm; }
+        @page { size: A4; margin: 0; }
         html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         body { visibility: hidden !important; }
         #invoice-printable-a4, #invoice-printable-a4 * { visibility: visible !important; }
@@ -135,7 +136,8 @@ function usePrintStyle() {
           position: fixed !important;
           top: 0 !important;
           left: 0 !important;
-          width: 100% !important;
+          width: 210mm !important;
+          min-width: 210mm !important;
           background: white !important;
           z-index: 99999 !important;
           padding: 0 !important;
@@ -400,12 +402,9 @@ export default function InvoiceDetailPage() {
     if (!autoPrint || autoPrintRef.current || loading || !invoice || !branch || !printReady) return
     autoPrintRef.current = true
     const t = setTimeout(() => {
-      if (isElectron()) {
-        void printA4Invoice()
-      } else {
-        window.print()
-      }
-    }, 500)
+      void waitForPrintableAssets(document.getElementById('invoice-printable-a4') ?? document.body)
+        .then(() => printCurrentDocument())
+    }, 0)
     return () => clearTimeout(t)
   }, [autoPrint, loading, invoice, branch, printReady])
 
@@ -420,30 +419,16 @@ export default function InvoiceDetailPage() {
     setA4Printing(true)
     try {
       if (!isElectron()) {
-        await new Promise<void>((resolve, reject) => {
-          let settled = false
-          const finish = () => {
-            if (settled) return
-            settled = true
-            window.removeEventListener('afterprint', finish)
-            resolve()
-          }
-          window.addEventListener('afterprint', finish, { once: true })
-          try {
-            window.print()
-            window.setTimeout(finish, 1_500)
-          } catch (error) {
-            window.removeEventListener('afterprint', finish)
-            reject(error)
-          }
-        })
+        openPrintPopup(`/invoices/${encodeURIComponent(invoice.id)}?print=1`)
         return
       }
       const result = await printA4Invoice()
       if (!result.success) throw new Error(result.message ?? 'A4 print failed')
     } catch (error) {
       console.error('A4 invoice print failed:', error)
-      toast.error(t('printing:a4Failed'))
+      toast.error(error instanceof Error && error.message === PRINT_POPUP_BLOCKED
+        ? t('printing:popupBlocked')
+        : t('printing:a4Failed'))
     } finally {
       setA4Printing(false)
     }
@@ -472,7 +457,9 @@ export default function InvoiceDetailPage() {
       }
     } catch (error) {
       console.error('Thermal receipt print failed:', error)
-      toast.error(t('printing:receiptFailed'))
+      toast.error(error instanceof Error && error.message === PRINT_POPUP_BLOCKED
+        ? t('printing:popupBlocked')
+        : t('printing:receiptFailed'))
     } finally {
       setThermalPrinting(false)
     }

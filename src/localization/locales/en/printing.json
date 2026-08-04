@@ -24,6 +24,7 @@
   "printingFailed": "Printing failed.",
   "receiptFailed": "Receipt print failed.",
   "a4Failed": "A4 print failed.",
+  "popupBlocked": "Printing could not be opened. Allow pop-ups for Kubri and try again.",
   "qrUnavailable": "The finalized QR code is unavailable. Printing is blocked until it is ready.",
   "receiptSent": "Receipt sent to printer",
   "tryAgain": "Try Again",

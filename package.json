@@ -59,6 +59,7 @@
     "test:atomic-default-new-retail": "node scripts/test-atomic-default-new-retail-branches.mjs",
     "test:atomic-default-new-retail-runtime": "node scripts/test-atomic-default-new-retail-branches-runtime.mjs",
     "test:credit-note-modal-identity": "node scripts/test-credit-note-modal-invoice-identity.mjs",
+    "test:android-print-a4-preview": "node scripts/test-android-print-a4-preview.mjs",
     "test:credit-note-ux": "node scripts/test-credit-note-ux.mjs",
     "test:invoice-session-filters": "node --experimental-strip-types scripts/test-invoice-session-filters.mjs",
     "test:invoice-detail-ui": "node scripts/test-invoice-detail-ui.mjs",

@@ -265,7 +265,7 @@ assert.match(a4PreviewFit, /onPageCountChange/)
 assert.match(invoiceSettings, /onPageCountChange=\{setA4PageCount\}/)
 assert.match(css, /\.a4-closing-group\s*\{\s*break-inside:\s*avoid;\s*page-break-inside:\s*avoid;/)
 assert.match(css, /\.a4-header-artwork,.a4-footer-artwork[^}]*break-inside:\s*avoid/)
-assert.match(css, /@media print[\s\S]*\.a4-document\s*\{\s*min-height:\s*0;\s*padding:\s*0 !important;/)
+assert.match(css, /@media print[\s\S]*\.a4-document\s*\{[\s\S]*width:\s*210mm[\s\S]*padding:\s*10mm 14mm !important;/)
 assert.doesNotMatch(css.match(/@media print[\s\S]*?\/\* Snapshot-driven thermal document/)?.[0] ?? '', /transform:\s*scale|zoom:|overflow:\s*hidden|max-height:/)
 
 // Every saved presentation field is serialized, normalized, admitted by the

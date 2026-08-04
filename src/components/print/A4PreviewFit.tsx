@@ -30,7 +30,7 @@ export default function A4PreviewFit({
     if (!viewport || !renderedDocument) return
     const measure = () => {
       const width = Math.max(1, viewport.clientWidth - 24)
-      const height = Math.max(1, viewport.clientHeight - 24)
+      const height = Math.max(320, viewport.clientHeight || window.innerHeight - 280)
       const nextDocumentHeight = Math.max(PAGE_HEIGHT, renderedDocument.scrollHeight)
       // CSS millimetres land on fractional device pixels. Ignore the rounding
       // seam so an exact 297 mm sheet is not reported as a second page.
@@ -63,10 +63,10 @@ export default function A4PreviewFit({
       ref={viewportRef}
       data-a4-preview-viewport
       data-preview-zoom={zoom}
-      className={`rounded-xl bg-gray-100 p-3 ${bounded ? 'h-full min-h-0 overflow-auto' : 'flex min-h-[520px] items-center justify-center overflow-hidden'}`}
+      className={`rounded-xl bg-gray-100 p-3 ${bounded ? 'h-[clamp(30rem,calc(100dvh-18rem),58rem)] min-h-0 overflow-auto' : 'flex min-h-[520px] items-center justify-center overflow-hidden'}`}
     >
-      <div className={bounded ? 'mx-auto' : undefined} style={{ width: PAGE_WIDTH * scale, height: documentHeight * scale }}>
-        <div ref={documentRef} style={{ width: PAGE_WIDTH, minHeight: PAGE_HEIGHT, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+      <div className={bounded ? 'mx-auto' : undefined} data-a4-preview-canvas style={{ width: PAGE_WIDTH * scale, height: Math.max(PAGE_HEIGHT, documentHeight) * scale }}>
+        <div ref={documentRef} data-a4-preview-document style={{ width: PAGE_WIDTH, minHeight: PAGE_HEIGHT, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
           {children}
         </div>
       </div>

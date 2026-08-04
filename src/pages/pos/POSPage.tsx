@@ -51,6 +51,7 @@ import { useSubscription } from '@/hooks/useSubscription'
 import { getPrinterSettings, getPrinters, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printAtomicReceiptSnapshot } from '@/lib/atomicReceiptPrint'
 import { openReceiptPreview, printReceiptInHiddenFrame } from '@/lib/receiptPrint'
+import { openPrintPopup, PRINT_POPUP_BLOCKED } from '@/lib/print/browserPrint'
 import { supportConfig } from '@/config/support'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
@@ -754,6 +755,16 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
       toast.error(t('printing:qrUnavailable'))
       return
     }
+    if (!isElectron()) {
+      try {
+        openPrintPopup(`/invoices/${encodeURIComponent(receipt.invoiceId)}?print=1`)
+      } catch (error) {
+        console.warn('[ReceiptView] A4 print popup failed', error)
+        toast.error(t('printing:popupBlocked'))
+      }
+      return
+    }
+
     console.info('[zatca-timing]', {
       event: 'print_requested',
       invoiceId: receipt.invoiceId,
@@ -765,7 +776,7 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
     s.id = 'pos-pdf-print-style'
     s.textContent = `
       @media print {
-        @page { size: A4; margin: 15mm; }
+        @page { size: A4; margin: 0; }
         html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         body { visibility: hidden !important; }
         #thermal-receipt { display: none !important; visibility: hidden !important; }
@@ -774,7 +785,8 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
           visibility: visible !important;
           position: fixed !important;
           top: 0 !important; left: 0 !important;
-          width: 100% !important;
+          width: 210mm !important;
+          min-width: 210mm !important;
           background: white !important;
           z-index: 999999 !important;
           padding: 10mm !important;
@@ -844,7 +856,9 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
       if (settings.fallbackToPreview) await printReceiptInHiddenFrame(receipt.invoiceId)
     } catch (error) {
       console.warn('[ReceiptView] receipt print failed', error)
-      const message = t('pos:printer.receiptFailed')
+      const message = error instanceof Error && error.message === PRINT_POPUP_BLOCKED
+        ? t('printing:popupBlocked')
+        : t('pos:printer.receiptFailed')
       setPrintErrorKey('printer.receiptFailed')
       toast.error(message)
     } finally {
