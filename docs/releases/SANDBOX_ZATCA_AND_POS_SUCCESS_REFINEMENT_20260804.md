@@ -176,7 +176,7 @@ Changed Edge Functions:
 
 | Function | Before | After | JWT |
 | --- | ---: | ---: | --- |
-| `zatca-onboard-sandbox-demo` | 20 | 22 | enabled |
+| `zatca-onboard-sandbox-demo` | 22 | 23 | enabled |
 | `zatca-validate-sandbox-demo` | 21 | 23 | enabled |
 | `zatca-submit-sandbox-demo` | 16 | 16 | unchanged |
 | `zatca-compliance` | 71 | 71 | unchanged |
@@ -276,6 +276,13 @@ The focused reconnect repair Preview also reached `READY`:
 - deployment: `dpl_uxuEAp7kdmpqAaKajcQuQibfu6fP`
 - target: preview
 - application source SHA: `72a2c70`
+
+The visible-OTP reconnect UI and safe-error repair Preview reached `READY`:
+
+- URL: https://dafra-nrh17g0qj-mohammed-shahin-v-vs-projects.vercel.app
+- deployment: `dpl_3Pa4PgBbHkFV8dib1EWf7QGCE6Z7`
+- target: preview
+- application source SHA: `4a184cc`
 
 The final fresh-identity reconnect repair Preview reached `READY`:
 
