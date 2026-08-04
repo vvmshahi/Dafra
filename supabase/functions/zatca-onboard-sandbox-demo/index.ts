@@ -64,6 +64,7 @@ type SandboxFailureCode =
   | 'SANDBOX_PRODUCTION_REQUEST_FAILED'
   | 'SANDBOX_CERTIFICATE_KEY_MISMATCH'
   | 'SANDBOX_CREDENTIAL_PERSIST_FAILED'
+  | 'SANDBOX_CREDENTIAL_CURRENT_CONFLICT'
   | 'SANDBOX_ACTIVATION_FAILED'
   | 'SANDBOX_UPSTREAM_UNAVAILABLE'
 
@@ -203,9 +204,14 @@ class RequestError extends Error {
 }
 
 class OperationPersistenceError extends Error {
-  constructor() {
+  readonly databaseCode?: string
+  readonly databaseConstraint?: string
+
+  constructor(error?: unknown) {
     super('Onboarding result could not be persisted; manual reconciliation is required before retrying.')
     this.name = 'OperationPersistenceError'
+    this.databaseCode = safeDatabaseCode(error)
+    this.databaseConstraint = safeDatabaseConstraint(error)
   }
 }
 
@@ -759,30 +765,28 @@ async function generateCsr(
   }
   const now = new Date().toISOString()
   try {
-    const { data, error } = await db.from('zatca_sandbox_credentials').insert({
-      tenant_id: scope.tenant.id,
-      branch_id: scope.branch.id,
-      environment: 'sandbox',
-      device_id: crypto.randomUUID(),
-      status: 'pending',
-      onboarding_status: 'csr_ready',
-      last_successful_onboarding_status: 'csr_ready',
-      functionality_map: body.functionalityMap,
-      egs_serial_number: generated.egsSerialNumber,
-      csr_common_name: identity.csr.commonName,
-      csr_organization_name: identity.csr.businessName,
-      csr_organizational_unit_name: identity.csr.branchName,
-      csr_location: identity.csr.location,
-      csr_industry: identity.csr.industry,
-      csr_pem: generated.csrPem,
-      public_key_pem: generated.publicKeyPem,
-      encrypted_private_key: encryptedPrivateKey,
-      csr_generated_at: now,
-      last_safe_response: { action: 'generate_csr', completedAt: now },
-    }).select('*').single()
+    const { data, error } = await db.rpc('create_zatca_sandbox_credential', {
+      p_tenant_id: scope.tenant.id,
+      p_branch_id: scope.branch.id,
+      p_device_id: crypto.randomUUID(),
+      p_functionality_map: body.functionalityMap,
+      p_egs_serial_number: generated.egsSerialNumber,
+      p_csr_common_name: identity.csr.commonName,
+      p_csr_organization_name: identity.csr.businessName,
+      p_csr_organizational_unit_name: identity.csr.branchName,
+      p_csr_location: identity.csr.location,
+      p_csr_industry: identity.csr.industry,
+      p_csr_pem: generated.csrPem,
+      p_public_key_pem: generated.publicKeyPem,
+      p_encrypted_private_key: encryptedPrivateKey,
+      p_csr_generated_at: now,
+      p_last_safe_response: { action: 'generate_csr', completedAt: now },
+    })
 
-    if (error || !data) throw new Error('Unable to persist backend-generated Sandbox CSR')
-    return data as CredentialRow
+    if (error || !data?.[0]?.credential_id) {
+      throw error ?? new Error('Unable to persist backend-generated Sandbox CSR')
+    }
+    return await loadCredentialById(db, data[0].credential_id as string)
   } catch (error) {
     throw new ClassifiedStageError(classifyStageFailure('credential_persist', error))
   }
@@ -1096,25 +1100,13 @@ async function activateCredential(db: any, credential: CredentialRow): Promise<C
   } catch (error) {
     throw new ClassifiedStageError(classifyStageFailure('certificate_key_match', error))
   }
-  const { error: retireError } = await db.from('zatca_sandbox_credentials').update({
-    status: 'revoked',
-    compliance_demo_status: 'inactive',
+  const { data, error } = await db.rpc('activate_zatca_sandbox_credential', {
+    p_tenant_id: credential.tenant_id,
+    p_branch_id: credential.branch_id,
+    p_credential_id: credential.id,
   })
-    .eq('tenant_id', credential.tenant_id)
-    .eq('branch_id', credential.branch_id)
-    .eq('environment', 'sandbox')
-    .in('status', ['pending', 'compliance', 'active'])
-    .neq('id', credential.id)
-  if (retireError) throw new OperationPersistenceError()
-  const now = new Date().toISOString()
-  return updateCredential(db, credential.id, 'activate', {
-    status: 'active',
-    onboarding_status: 'active',
-    last_successful_onboarding_status: 'active',
-    compliance_demo_status: 'active',
-    activated_at: now,
-    last_safe_response: { action: 'activate', completedAt: now },
-  })
+  if (error || data !== credential.id) throw new OperationPersistenceError(error)
+  return loadCredentialById(db, credential.id)
 }
 
 async function updateCredential(
@@ -1136,7 +1128,7 @@ async function updateCredential(
     .eq('onboarding_operation', claimedAction)
     .select('*')
     .maybeSingle()
-  if (error || !data) throw new OperationPersistenceError()
+  if (error || !data) throw new OperationPersistenceError(error)
   return data as CredentialRow
 }
 
@@ -1586,6 +1578,28 @@ function classifyStageFailure(
   const upstreamStatus = isZatcaHttpError(error) ? error.httpStatus : undefined
   if (error instanceof ClassifiedStageError) return error.failure
 
+  if (isCurrentCredentialConflict(error)) {
+    return {
+      code: 'SANDBOX_CREDENTIAL_CURRENT_CONFLICT',
+      stage,
+      status: 409,
+      message: ownerMessage('SANDBOX_CREDENTIAL_CURRENT_CONFLICT'),
+    }
+  }
+
+  if (error instanceof OperationPersistenceError) {
+    const code = error.databaseCode === '23505' &&
+        error.databaseConstraint === 'zatca_sandbox_credentials_one_current_onboarding_uidx'
+      ? 'SANDBOX_CREDENTIAL_CURRENT_CONFLICT'
+      : 'SANDBOX_CREDENTIAL_PERSIST_FAILED'
+    return {
+      code,
+      stage,
+      status: statusForCode(code),
+      message: ownerMessage(code),
+    }
+  }
+
   if (error instanceof RequestError) {
     const knownCode = isSandboxFailureCode(error.code) ? error.code : codeForStage(stage, error)
     return {
@@ -1622,6 +1636,7 @@ function isSandboxFailureCode(value: string): value is SandboxFailureCode {
     'SANDBOX_PRODUCTION_REQUEST_FAILED',
     'SANDBOX_CERTIFICATE_KEY_MISMATCH',
     'SANDBOX_CREDENTIAL_PERSIST_FAILED',
+    'SANDBOX_CREDENTIAL_CURRENT_CONFLICT',
     'SANDBOX_ACTIVATION_FAILED',
     'SANDBOX_UPSTREAM_UNAVAILABLE',
   ].includes(value as SandboxFailureCode)
@@ -1658,6 +1673,7 @@ function statusForCode(code: SandboxFailureCode): number {
   if (code === 'SANDBOX_RECONNECT_UNAUTHORIZED') return 403
   if (code === 'SANDBOX_OTP_REQUIRED' || code === 'SANDBOX_OTP_INVALID') return 400
   if (code === 'SANDBOX_CSR_KEY_MISMATCH' || code === 'SANDBOX_CERTIFICATE_KEY_MISMATCH') return 422
+  if (code === 'SANDBOX_CREDENTIAL_CURRENT_CONFLICT') return 409
   if (code === 'SANDBOX_UPSTREAM_UNAVAILABLE' || code === 'SANDBOX_RECONNECT_CONFIG_MISSING') return 503
   return 500
 }
@@ -1677,10 +1693,28 @@ function ownerMessage(code: SandboxFailureCode): string {
     SANDBOX_PRODUCTION_REQUEST_FAILED: 'Sandbox Production credential request failed. Review the safe status before retrying.',
     SANDBOX_CERTIFICATE_KEY_MISMATCH: 'Sandbox Production certificate key validation failed. Start a fresh onboarding attempt.',
     SANDBOX_CREDENTIAL_PERSIST_FAILED: 'Sandbox credential state could not be saved. Contact Kubri support before retrying.',
+    SANDBOX_CREDENTIAL_CURRENT_CONFLICT: 'A current Trading Sandbox onboarding record already exists. Resume that record instead of starting another.',
     SANDBOX_ACTIVATION_FAILED: 'Sandbox profile activation failed. Review the safe status before retrying.',
     SANDBOX_UPSTREAM_UNAVAILABLE: 'The Integration Sandbox is temporarily unavailable. Retry after checking the Sandbox status.',
   }
   return messages[code]
+}
+
+function safeDatabaseCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const value = (error as { code?: unknown }).code
+  return typeof value === 'string' && /^[0-9A-Z]{5}$/.test(value) ? value : undefined
+}
+
+function safeDatabaseConstraint(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const value = (error as { constraint?: unknown }).constraint
+  return typeof value === 'string' && /^[a-z0-9_]+$/.test(value) ? value : undefined
+}
+
+function isCurrentCredentialConflict(error: unknown): boolean {
+  return safeDatabaseCode(error) === '23505' &&
+    safeDatabaseConstraint(error) === 'zatca_sandbox_credentials_one_current_onboarding_uidx'
 }
 
 function upstreamStatus(error: unknown): number {
