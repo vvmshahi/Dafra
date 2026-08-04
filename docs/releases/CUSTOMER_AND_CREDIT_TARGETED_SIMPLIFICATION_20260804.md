@@ -64,11 +64,17 @@ remains required at 375, 430, 768, 1024, 1366, 1440, and 1920 widths in English
 and Arabic/RTL, including URL compatibility, keyboard focus, statement preview,
 empty/error/retry states, and source links.
 
-## Deployment gate
+## Deployment handoff
 
-The previously recorded Preview
-`dpl_5FCns7WjkRMzxQLjzyDy3v21NE5W` is from the prior tested application SHA and
-must not be treated as evidence for this follow-up. Preview deployment is
-blocked until the exact current application commit is finalized and the
-As-of-contract decision is resolved. No production alias or main merge was
+The exact tested application source is commit
+`636c153d353cef8c6a5890539e021c3578961f78` on
+`feature/customer-credit-receivables-20260803`.
+
+- Preview deployment: `dpl_79objRmihMxwmw3GtZPvPN1pSJ8U`;
+- Preview URL: `https://dafra-4rt8v510n-mohammed-shahin-v-vs-projects.vercel.app`;
+- state: `READY`;
+- inspector: `https://vercel.com/mohammed-shahin-v-vs-projects/dafra/79objRmihMxwmw3GtZPvPN1pSJ8U`.
+
+This Preview is available for manual review, but it is not certified until
+the As-of contract is resolved. No production alias or main merge was
 performed.
