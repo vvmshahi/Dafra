@@ -43,10 +43,9 @@ const corsHeaders = {
 }
 
 const PERMANENT_DEMO_TENANT_ID = 'ebf1144b-55ed-472a-99c9-23b5ee915351'
-const PERMANENT_DEMO_BRANCH_IDS = new Set([
-  '14271653-b404-44bf-9f39-7e9927569c02',
-  'c30094d7-40ca-4d2e-833a-07aa18c4fa46',
-])
+// Server-authoritative reconnect scope. These values are deliberately fixed
+// server configuration, never request-controlled or frontend environment data.
+const TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
 
 const ACTIONS = [
   'get_status',
@@ -147,11 +146,13 @@ interface Scope {
 
 class RequestError extends Error {
   status: number
+  code: string
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code = 'SANDBOX_ONBOARDING_REJECTED') {
     super(message)
     this.name = 'RequestError'
     this.status = status
+    this.code = code
   }
 }
 
@@ -181,6 +182,7 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405)
 
   try {
+    assertTradingDemoConfiguration()
     const supabaseUrl = requireEnv('SUPABASE_URL')
     const serviceRoleKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY')
     const body = await readBody(req)
@@ -199,11 +201,11 @@ Deno.serve(async (req: Request) => {
     }
 
     if (body.action === 'get_status') {
-      const credential = await loadCredential(db, body.tenantId, body.branchId, true)
+      const credential = await loadCredential(db, body.tenantId, body.branchId)
       return jsonResponse({ ok: true, ...safeStatus(body.branchId, credential) })
     }
 
-    let credential = await loadCredential(db, body.tenantId, body.branchId, false)
+    let credential = await loadCredential(db, body.tenantId, body.branchId)
 
     if (body.action === 'generate_csr') {
       const idempotent = !!credential
@@ -256,15 +258,34 @@ Deno.serve(async (req: Request) => {
 
     return jsonResponse({ ok: true, ...safeStatus(body.branchId, credential) })
   } catch (error) {
-    const status = error instanceof RequestError ? error.status : 500
-    const message = error instanceof RequestError ? error.message : safeError(error)
+    const status = error instanceof RequestError ? error.status : 503
+    const message = error instanceof RequestError
+      ? error.message
+      : 'Sandbox onboarding is temporarily unavailable. Contact Kubri support before retrying.'
+    const code = error instanceof RequestError ? error.code : 'SANDBOX_ONBOARDING_UNAVAILABLE'
     console.error('[zatca-onboard-sandbox-demo] request failed:', {
       status,
+      code,
       message: safeLogText(message),
     })
-    return jsonResponse({ error: message }, status)
+    return jsonResponse({ error: message, code }, status)
   }
 })
+
+function assertTradingDemoConfiguration(): void {
+  if (
+    !isUuid(PERMANENT_DEMO_TENANT_ID) ||
+    !isUuid(TRADING_BRANCH_ID) ||
+    PERMANENT_DEMO_TENANT_ID !== 'ebf1144b-55ed-472a-99c9-23b5ee915351' ||
+    TRADING_BRANCH_ID !== '14271653-b404-44bf-9f39-7e9927569c02'
+  ) {
+    throw new RequestError(
+      'Sandbox reconnect configuration is unavailable. Contact Kubri support before retrying.',
+      500,
+      'SANDBOX_RECONNECT_CONFIG_MISSING',
+    )
+  }
+}
 
 async function readBody(req: Request): Promise<RequestBody> {
   let value: unknown
@@ -328,7 +349,7 @@ async function readBody(req: Request): Promise<RequestBody> {
     throw new RequestError('OTP is accepted only for the compliance credential step.', 400)
   }
   if (body.otp !== undefined && action === 'request_compliance_csid' && !validateOtp(body.otp)) {
-    throw new RequestError('OTP must be exactly 6 digits', 400)
+    throw new RequestError('OTP must be exactly 6 digits', 400, 'SANDBOX_OTP_INVALID')
   }
 
   return body as unknown as RequestBody
@@ -393,7 +414,7 @@ function isSafeReconciliationSummary(value: unknown): value is string {
 function bearerToken(req: Request): string {
   const authorization = req.headers.get('Authorization') ?? ''
   const match = authorization.match(/^Bearer\s+([^\s]+)$/i)
-  if (!match) throw new RequestError('Unauthorized', 401)
+  if (!match) throw new RequestError('Unauthorized', 401, 'SANDBOX_RECONNECT_UNAUTHORIZED')
   return match[1]
 }
 
@@ -417,16 +438,19 @@ async function authorizeOnboardingCaller(
   branchId: string,
 ): Promise<void> {
   const jwt = bearerToken(req)
+  if (tenantId !== PERMANENT_DEMO_TENANT_ID || branchId !== TRADING_BRANCH_ID) {
+    throw new RequestError('Forbidden: authorized Trading Demo Sandbox owner scope required', 403, 'SANDBOX_RECONNECT_UNAUTHORIZED')
+  }
   if (jwtRole(jwt) === 'service_role') return
 
   const { data: { user }, error: authError } = await db.auth.getUser(jwt)
-  if (authError || !user) throw new RequestError('Unauthorized', 401)
+  if (authError || !user) throw new RequestError('Unauthorized', 401, 'SANDBOX_RECONNECT_UNAUTHORIZED')
   const { data: profile, error: profileError } = await db.from('user_profiles')
     .select('id,role,tenant_id,branch_id,is_active')
     .eq('id', user.id)
     .maybeSingle()
   if (profileError || !profile?.id || profile.is_active !== true) {
-    throw new RequestError('Forbidden: active Owner or Super Admin profile required', 403)
+    throw new RequestError('Forbidden: active Owner or Super Admin profile required', 403, 'SANDBOX_RECONNECT_UNAUTHORIZED')
   }
 
   const ownerAuthorized = profile.role === 'owner'
@@ -434,14 +458,14 @@ async function authorizeOnboardingCaller(
     && (!profile.branch_id || profile.branch_id === branchId)
   const superAdminAuthorized = profile.role === 'super_admin'
     && (!profile.tenant_id || profile.tenant_id === PERMANENT_DEMO_TENANT_ID)
-  if (tenantId !== PERMANENT_DEMO_TENANT_ID || branchId !== TRADING_BRANCH_ID || (!ownerAuthorized && !superAdminAuthorized)) {
-    throw new RequestError('Forbidden: authorized Trading Demo Sandbox owner scope required', 403)
+  if (!ownerAuthorized && !superAdminAuthorized) {
+    throw new RequestError('Forbidden: authorized Trading Demo Sandbox owner scope required', 403, 'SANDBOX_RECONNECT_UNAUTHORIZED')
   }
 }
 
 async function loadDemoScope(db: any, tenantId: string, branchId: string): Promise<Scope> {
-  if (tenantId !== PERMANENT_DEMO_TENANT_ID || !PERMANENT_DEMO_BRANCH_IDS.has(branchId)) {
-    throw new RequestError('Forbidden: authorized permanent-demo Sandbox branch required', 403)
+  if (tenantId !== PERMANENT_DEMO_TENANT_ID || branchId !== TRADING_BRANCH_ID) {
+    throw new RequestError('Forbidden: authorized Trading Demo Sandbox branch required', 403, 'SANDBOX_RECONNECT_UNAUTHORIZED')
   }
   const [tenantResult, branchResult] = await Promise.all([
     db.from('tenants')
@@ -472,7 +496,6 @@ async function loadCredential(
   db: any,
   tenantId: string,
   branchId: string,
-  includeInactive: boolean,
 ): Promise<CredentialRow | null> {
   let query = db.from('zatca_sandbox_credentials')
     .select('*')
@@ -482,7 +505,10 @@ async function loadCredential(
     .order('created_at', { ascending: false })
     .limit(1)
 
-  if (!includeInactive) query = query.in('status', ['pending', 'compliance', 'active', 'failed'])
+  // Revoked/expired rows are audit history only and must never become the
+  // current reconnect target. Explicit reconciliation still addresses history
+  // by credentialId, but normal status selection does not.
+  query = query.in('status', ['pending', 'compliance', 'active', 'failed'])
   const { data, error } = await query.maybeSingle()
   if (error) throw new Error('Unable to load Sandbox onboarding status')
   return (data as CredentialRow | null) ?? null

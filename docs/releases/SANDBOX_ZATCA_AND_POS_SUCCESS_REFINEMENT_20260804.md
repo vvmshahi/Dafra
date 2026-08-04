@@ -19,8 +19,10 @@ This release-candidate patch is limited to the requested web functional repairs:
   invoice detail, reprints, A4, and thermal output;
 - present Customer credit as a translated payment badge independently of ZATCA status.
 
-No checkout, invoice posting, inventory, payment, ZATCA Edge Function, migration,
-Electron, mobile, production deployment, or main-branch changes were made.
+No checkout, invoice posting, inventory, payment, migration, Electron, mobile,
+production deployment, or main-branch changes were made. The focused
+`zatca-onboard-sandbox-demo` Edge Function was repaired and redeployed; no
+production ZATCA function or endpoint was called.
 
 ## Remote Demo metadata and routing
 
@@ -113,11 +115,34 @@ and activates the compliance-demo state only after successful server checks.
 No current OTP was available in this environment, so onboarding, QR generation,
 Sandbox response, status persistence, and retry acceptance remain owner-gated.
 
+### Follow-up reconnect defect repair
+
+The latest Preview exposed `TRADING_BRANCH_ID is not defined` from
+`zatca-onboard-sandbox-demo` as HTTP 500. The authorization guard referenced the
+identifier, but the function only declared the broader historical branch set;
+it was neither an environment variable nor a request field. The server now
+declares and validates the exact Trading Branch as trusted configuration, checks
+the exact Demo tenant and active Sandbox Branch in the database, and rejects
+every other tenant/Branch before onboarding. The service-role path is also
+scope-checked before its bypass.
+
+Unexpected implementation/configuration failures now return controlled
+`SANDBOX_ONBOARDING_UNAVAILABLE` or `SANDBOX_RECONNECT_CONFIG_MISSING` results;
+unauthorized scope returns `SANDBOX_RECONNECT_UNAUTHORIZED`, and malformed OTP
+returns `SANDBOX_OTP_INVALID`. No stack trace or sensitive upstream material is
+returned or logged.
+
+Normal reconnect status selection excludes revoked/expired credentials. Failed
+and revoked rows remain audit history and are not selected by the onboarding
+function’s current reconnect target. No historical credential was deleted,
+copied, or submitted. The separate validator was not deployed in this repair;
+the owner-gated activation path remains a distinct follow-up verification gate.
+
 Changed Edge Functions:
 
 | Function | Before | After | JWT |
 | --- | ---: | ---: | --- |
-| `zatca-onboard-sandbox-demo` | 19 | 20 | enabled |
+| `zatca-onboard-sandbox-demo` | 20 | 21 | enabled |
 | `zatca-validate-sandbox-demo` | 21 | 22 | enabled |
 | `zatca-submit-sandbox-demo` | 16 | 16 | unchanged |
 | `zatca-compliance` | 71 | 71 | unchanged |
@@ -170,6 +195,8 @@ Passed:
   Customer Credit invoices
 - `npm run test:trading-sandbox-reconnect`
 - unauthenticated HTTP 401 checks for both changed Sandbox Edge Functions
+- controlled reconnect configuration, scope, OTP, and historical-credential
+  regression contracts
 
 No migration changed for this patch. The existing QR
 path remains authoritative: Sandbox QR content comes only from the stored
@@ -196,6 +223,14 @@ reached `READY`:
 - deployment: `dpl_styeE7tfNjBJ3njvQP1h8XeWn1GU`
 - target: `preview`
 - application source SHA: `709f4fbe2a3638392e57d3c166330cdd03520f6f`
+
+The focused reconnect repair Preview also reached `READY`:
+
+- URL: https://dafra-ojk1mrn2u-mohammed-shahin-v-vs-projects.vercel.app
+- deployment: `dpl_6htU36b2EbiRvP3Y7a7Dr28PFFbJ`
+- target: preview
+- source was the tested focused repair working tree; the post-commit source SHA
+  is recorded below after the release-note commit.
 
 This is not a production certification or a claim that either Demo branch
 has completed an authenticated Sandbox submission.

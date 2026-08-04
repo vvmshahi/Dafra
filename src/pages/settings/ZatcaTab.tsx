@@ -1237,11 +1237,17 @@ export default function ZatcaTab() {
               <ShieldCheck size={18} />
             </div>
             <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-black text-gray-950">{t('sandbox.tradingTitle')}</h3>
-                <Badge variant={tradingSandboxStatus?.active ? 'success' : 'neutral'} dot>
-                  {t(tradingSandboxStatus?.active ? 'status.active' : 'status.checking')}
-                </Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-black text-gray-950">{t('sandbox.tradingTitle')}</h3>
+              <Badge variant={tradingSandboxStatus?.active ? 'success' : 'neutral'} dot>
+                {tradingSandboxStatus?.active
+                  ? t('status.active')
+                  : tradingSandboxOnboardingStatus?.status
+                    ? t(`sandbox.onboardingStatus.${tradingSandboxOnboardingStatus.status}`, { defaultValue: tradingSandboxOnboardingStatus.status })
+                    : tradingSandboxStatus
+                      ? t('status.notConnected')
+                      : t('status.checking')}
+              </Badge>
               </div>
               <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
                 {t('sandbox.demoHelp')}
