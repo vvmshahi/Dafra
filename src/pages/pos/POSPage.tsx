@@ -4220,6 +4220,8 @@ export default function POSPage() {
               <button
                 type="button"
                 onClick={() => { setPayMethod('credit'); setSplitOpen(false) }}
+                title={t('payments:sellOnCreditTooltip')}
+                aria-label={t('payments:sellOnCreditTooltip')}
                 className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-xs font-semibold transition-all ${
                   payMethod === 'credit'
                     ? 'border-primary-700 bg-primary-700 text-white shadow-sm'
@@ -4227,7 +4229,6 @@ export default function POSPage() {
                 }`}
               >
                 <span className="flex items-center gap-1.5"><Landmark size={13} /> {t('payments:sellOnCredit')}</span>
-                <span className="text-[10px] opacity-85">{t('payments:businessCustomerCredit')}</span>
               </button>
               ) : creditEligibility ? (
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">

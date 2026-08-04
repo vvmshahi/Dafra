@@ -57,7 +57,7 @@
   "creditOverdueBlocked": "Overdue customer credit must be resolved before this sale.",
   "creditUnavailable": "Customer credit is unavailable.",
   "creditSettings": "Credit settings",
-  "sellOnCredit": "Sell on customer credit",
+  "sellOnCredit": "Sell on customer credit", "sellOnCreditTooltip": "Sell this invoice on customer credit",
   "creditAvailable": "Available SAR {{amount}}",
   "creditInitialInvalid": "Enter a valid initial payment from 0 up to the invoice total.",
   "creditCheckout": "Customer credit",

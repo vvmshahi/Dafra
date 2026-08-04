@@ -57,7 +57,7 @@
   "creditOverdueBlocked": "يجب تسوية الائتمان المتأخر للعميل قبل هذه العملية.",
   "creditUnavailable": "ائتمان العميل غير متاح.",
   "creditSettings": "إعدادات الائتمان",
-  "sellOnCredit": "بيع على ائتمان العميل",
+  "sellOnCredit": "بيع على ائتمان العميل", "sellOnCreditTooltip": "بيع هذه الفاتورة على ائتمان العميل",
   "creditAvailable": "المتاح {{amount}} ر.س",
   "creditInitialInvalid": "أدخل دفعة أولى صحيحة من 0 حتى إجمالي الفاتورة.",
   "creditCheckout": "ائتمان العميل",

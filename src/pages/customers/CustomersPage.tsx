@@ -75,7 +75,7 @@ function CustomerRow({
 
       {/* Name */}
       <td className="px-4 py-3 min-w-[220px]">
-        <p className="text-sm font-medium text-gray-900 truncate" dir="auto">{primary}</p>
+        <button type="button" onClick={onView} title={t('actions.viewDetails')} className="block max-w-full truncate text-start text-sm font-medium text-gray-900 underline-offset-2 hover:text-primary-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500" dir="auto">{primary}</button>
         {secondary && (
           <p
             className="text-xs text-gray-400 truncate"
@@ -107,8 +107,8 @@ function CustomerRow({
       <td className="px-3 py-2"><div className="flex items-center gap-0.5">
         <button
           onClick={onView}
-          title={t('actions.view')}
-          aria-label={t('actions.view')}
+          title={t('actions.viewDetails')}
+          aria-label={t('actions.viewDetails')}
           className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-primary-50 hover:text-primary-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
         >
           <Eye size={14} />
@@ -348,7 +348,7 @@ export default function CustomersPage() {
             </table>
           </div>
           <div className="grid gap-2 p-2 lg:hidden">
-            {filtered.map(c => <div key={c.id} className="rounded-xl border border-gray-100 p-3"><div className="flex items-start gap-3"><div className="h-8 w-8 shrink-0 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center text-sm font-bold">{c.customer_type === 'business' ? <Building2 size={15} /> : displayName(c).charAt(0).toUpperCase()}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-gray-900" dir="auto">{displayName(c)}</p><p className="mt-1 text-xs text-gray-500" dir="ltr">{c.phone ?? '—'} · {(c as CustomerWithStats & { city_ar?: string | null }).city_ar || c.city || '—'}</p><p className="mt-1 text-xs text-gray-400" dir="ltr">{c.last_purchase_date ? formatSaudiDate(c.last_purchase_date, 'en') : '—'}</p></div><div className="flex items-center gap-0.5"><button type="button" onClick={() => navigate(`/customers/${c.id}`)} aria-label={t('actions.view')} className="h-8 w-8 rounded-lg text-gray-400 hover:bg-primary-50 hover:text-primary-600"><Eye size={14} /></button><button type="button" onClick={() => openEdit(c)} aria-label={t('actions.edit')} className="h-8 w-8 rounded-lg text-gray-400 hover:bg-gray-100"><Pencil size={14} /></button></div></div></div>)}
+            {filtered.map(c => <div key={c.id} className="rounded-xl border border-gray-100 p-3"><div className="flex items-start gap-3"><div className="h-8 w-8 shrink-0 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center text-sm font-bold">{c.customer_type === 'business' ? <Building2 size={15} /> : displayName(c).charAt(0).toUpperCase()}</div><div className="min-w-0 flex-1"><button type="button" onClick={() => navigate(`/customers/${c.id}`)} title={t('actions.viewDetails')} className="block max-w-full truncate text-start text-sm font-semibold text-gray-900 hover:text-primary-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500" dir="auto">{displayName(c)}</button><p className="mt-1 text-xs text-gray-500" dir="ltr">{c.phone ?? '—'} · {(c as CustomerWithStats & { city_ar?: string | null }).city_ar || c.city || '—'}</p><p className="mt-1 text-xs text-gray-400" dir="ltr">{c.last_purchase_date ? formatSaudiDate(c.last_purchase_date, 'en') : '—'}</p></div><div className="flex items-center gap-0.5"><button type="button" onClick={() => navigate(`/customers/${c.id}`)} aria-label={t('actions.viewDetails')} title={t('actions.viewDetails')} className="h-8 w-8 rounded-lg text-gray-400 hover:bg-primary-50 hover:text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"><Eye size={14} /></button><button type="button" onClick={() => openEdit(c)} aria-label={t('actions.edit')} className="h-8 w-8 rounded-lg text-gray-400 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"><Pencil size={14} /></button></div></div></div>)}
           </div>
         </div>
       )}
