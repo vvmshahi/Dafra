@@ -98,12 +98,12 @@ function MetricCard({
   const styles = tone === 'emerald'
     ? 'bg-gradient-to-br from-[#1B6B3A] to-[#0F2419] text-white'
     : tone === 'amber'
-      ? 'border-amber-200 bg-amber-50/60 text-amber-800'
+      ? 'bg-gradient-to-br from-[#9a3412] to-[#5c1d0b] text-white'
       : 'bg-gradient-to-br from-[#334155] to-[#1e293b] text-white'
   const iconStyles = tone === 'emerald'
     ? 'bg-white/15 text-emerald-100'
     : tone === 'amber'
-      ? 'bg-amber-100 text-amber-700'
+      ? 'bg-white/15 text-orange-100'
       : 'bg-white/10 text-white/70'
   return (
     <article className={`min-w-0 rounded-xl p-3.5 shadow-card ${styles}`} aria-label={label}>
@@ -590,7 +590,7 @@ export default function CustomerDetailPage() {
         canAdjustReceivables={['owner', 'admin', 'accountant'].includes(profile?.role ?? '')}
       /></div>}
 
-      {activeProfileSection === 'overview' && <div className="space-y-5"><div className="contents"><CustomerIntelligenceFiltersPanel
+      {activeProfileSection === 'overview' && <div className="flex flex-col gap-4"><div className="contents"><CustomerIntelligenceFiltersPanel
         filters={filters}
         preset={preset}
         branches={branches.map(branch => ({ id: branch.id, name: branch.name, nameAr: branch.name_ar }))}
@@ -600,10 +600,11 @@ export default function CustomerDetailPage() {
         isArabic={isRtl}
         onPreset={handlePreset}
         onChange={handleFilterChange}
+        className="order-2"
       />
       </div>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="order-2 flex items-center justify-between gap-3">
         <div>
           <p className="text-xs text-gray-500">
             {t('customerIntelligence:filters.activeRange', {
@@ -619,7 +620,7 @@ export default function CustomerDetailPage() {
         {loading && <LoadingSpinner size="sm" />}
       </div>
 
-      <section aria-labelledby="customer-summary-title">
+      <section className="order-1" aria-labelledby="customer-summary-title">
         <div className="flex items-end justify-between gap-3 mb-3">
           <div>
             <h2 id="customer-summary-title" className="text-sm font-bold text-gray-900">
@@ -824,10 +825,10 @@ export default function CustomerDetailPage() {
         )}
       </section>}
 
-      {activeProfileSection === 'overview' && <section className="card overflow-hidden" aria-labelledby="history-title">
-        <div className="px-4 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center gap-3">
+      {activeProfileSection === 'overview' && <section className="order-3 card overflow-hidden" aria-labelledby="history-title">
+        <div className="px-4 py-2.5 rounded-t-xl bg-[#173d2a] text-white flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1">
-            <h2 id="history-title" className="text-sm font-bold text-gray-900">
+            <h2 id="history-title" className="text-sm font-bold">
               {t('customerIntelligence:history.title')}
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">
@@ -836,8 +837,8 @@ export default function CustomerDetailPage() {
           </div>
           <label>
             <span className="sr-only">{t('customerIntelligence:filters.activityType')}</span>
-            <select
-              className="input py-2 text-sm"
+              <select
+              className="h-8 rounded-lg border border-white/20 bg-white/10 px-2 text-xs text-white"
               value={historyType}
               onChange={event => {
                 setHistoryType(event.target.value as CustomerActivityType)

@@ -64,6 +64,7 @@ export function CustomerIntelligenceFiltersPanel({
       description={t('commercialActivity')}
       icon={SlidersHorizontal}
       className={className}
+      compact
     >
       <fieldset>
         <legend className="sr-only">{t('filters.dateRange')}</legend>
