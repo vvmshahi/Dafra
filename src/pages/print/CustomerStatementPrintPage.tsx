@@ -4,7 +4,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import { loadCustomerReceivableWorkspace, type CustomerReceivableWorkspace } from '@/lib/customers/receivables'
+import { loadCustomerStatementWorkspace, type CustomerReceivableWorkspace } from '@/lib/customers/receivables'
 import { downloadCustomerStatementXlsx } from '@/lib/customers/receivablesXlsx'
 import { useAuth } from '@/hooks/useAuth'
 import { formatSaudiDateTime } from '@/lib/utils/date'
@@ -34,13 +34,12 @@ export default function CustomerStatementPrintPage() {
   useEffect(() => {
     if (!customerId) return
     let stale = false
-    void loadCustomerReceivableWorkspace({
+    void loadCustomerStatementWorkspace({
       customerId,
       branchId: searchParams.get('branch'),
       startDate: searchParams.get('start') || undefined,
       endDate: searchParams.get('end') || undefined,
-      page: 1,
-      pageSize: 200,
+      allActivity: !searchParams.get('start') && !searchParams.get('end'),
     }).then(value => {
       if (!stale) setWorkspace(value)
     }).catch(() => {

@@ -26,6 +26,29 @@ applied to project `bkbphkpqcxuejozayrsy`. Remote head is
 `authenticated`, and no PUBLIC/anon execute grant. Referenced receivables
 tables retain RLS and authenticated SELECT policies.
 
+### Statement preview repair
+
+The authenticated Preview failure was reproduced from the source contract:
+both the modal and print page requested `page_size: 200`, while
+`get_customer_receivable_workspace_v1(jsonb)` accepts only page sizes 1–100.
+The 20260803 wrapper surfaced that validation as
+`AR_WORKSPACE_FILTER_INVALID` with SQLSTATE 22023. The customer and date values
+were otherwise in the expected fields; the failing field was `page_size`.
+
+This was fixed client-side with `buildCustomerStatementRequest` and
+`loadCustomerStatementWorkspace`. Preview, Print, PDF, and XLSX now share the
+same request path. The builder sends only `customer_id`, normalized optional
+`branch_id`, canonical `start_date`/`end_date` when a bounded period is chosen,
+`page: 1`, and `page_size: 100`. All activity omits date keys. Invalid UUIDs,
+invalid dates, and reversed ranges are rejected before the RPC. The approved
+modal and navigation were not redesigned.
+
+Period mapping is Saudi-calendar based: This month is the first day of the
+current month through today; Last month is the complete previous calendar
+month; Last 3 months is the same calendar date three months earlier through
+today; This year is January 1 through today; Custom validates From ≤ To; All
+activity omits the date range.
+
 ## UI behavior
 
 - Overview exposes compact Balance as Of and Activity Period controls, with a
@@ -53,6 +76,10 @@ Passed:
 - Production Vite build
 - `git diff --check`
 - Remote migration parity and metadata preflight
+
+The focused statement-filter-repair contract test also passed. Stateful
+disposable-tenant fixture certification and authenticated browser acceptance
+remain manual; no real customer financial rows were created or changed.
 
 No live customer payment, invoice, stock, or other business mutation was
 performed. Manual browser acceptance remains required for filter interaction,

@@ -12,6 +12,7 @@ import {
   getPersistentReceivableOperation,
   isCustomerCreditPolicyStorageChange,
   loadCustomerReceivableWorkspace,
+  loadCustomerStatementWorkspace,
   loadBranchCustomerCreditSettings,
   loadUnappliedCustomerPaymentReceipts,
   postCustomerReceivableAdjustment,
@@ -388,17 +389,16 @@ export function CustomerReceivablesPanel({
     setStatementLoading(true)
     setStatementError(false)
     try {
-      const result = await loadCustomerReceivableWorkspace({
+      const result = await loadCustomerStatementWorkspace({
         customerId,
         branchId,
         startDate: statementPreset === 'all' ? undefined : statementStart,
         endDate: statementPreset === 'all' ? undefined : statementEnd,
-        page: 1,
-        pageSize: 200,
+        allActivity: statementPreset === 'all',
       })
       setStatementPreview(result)
     } catch (previewError) {
-      console.error('Unable to preview customer statement', previewError)
+      if (import.meta.env.DEV) console.error('Unable to preview customer statement', previewError)
       setStatementPreview(null)
       setStatementError(true)
     } finally {

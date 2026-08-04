@@ -275,6 +275,43 @@ export async function loadCustomerReceivableWorkspace(input: {
   return normalizeWorkspace(data)
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+export type CustomerStatementRequestInput = {
+  customerId: string
+  branchId?: string | null
+  startDate?: string
+  endDate?: string
+  allActivity?: boolean
+}
+
+export function buildCustomerStatementRequest(input: CustomerStatementRequestInput) {
+  const customerId = input.customerId.trim()
+  if (!UUID_RE.test(customerId)) throw new Error('INVALID_CUSTOMER_ID')
+  const branchId = input.branchId?.trim() || null
+  if (branchId && !UUID_RE.test(branchId)) throw new Error('INVALID_BRANCH_ID')
+  const allActivity = input.allActivity === true
+  const startDate = input.startDate?.trim() || null
+  const endDate = input.endDate?.trim() || null
+  if (!allActivity && (!startDate || !endDate || !ISO_DATE_RE.test(startDate) || !ISO_DATE_RE.test(endDate) || startDate > endDate)) throw new Error('INVALID_STATEMENT_RANGE')
+  return {
+    customer_id: customerId,
+    branch_id: branchId,
+    ...(allActivity ? {} : { start_date: startDate, end_date: endDate }),
+    page: 1,
+    page_size: 100,
+  }
+}
+
+export async function loadCustomerStatementWorkspace(input: CustomerStatementRequestInput) {
+  const { data, error } = await supabase.rpc('get_customer_receivable_workspace_v1' as never, {
+    p_payload: buildCustomerStatementRequest(input),
+  } as never)
+  if (error) throw error
+  return normalizeWorkspace(data)
+}
+
 export async function loadCustomerCreditCheckoutEligibility(input: {
   branchId: string
   customerId: string
