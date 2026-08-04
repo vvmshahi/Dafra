@@ -63,9 +63,15 @@ remain manual acceptance items.
 
 ## Release state
 
-This is ready for a Preview deployment after the focused commit is pushed. It is
-not a production certification or a claim that either Demo branch has completed
-an authenticated Sandbox submission.
+The focused application commit `6e455649a4796302adf9d5b3282a7310f2458fda` was
+deployed to Vercel Preview and reached `READY`:
+
+- URL: https://dafra-spptfqq56-mohammed-shahin-v-vs-projects.vercel.app
+- deployment: `dpl_G2CoKw6xY8gLGYeFouuBt9AzG6pk`
+- target: `preview`
+
+This is not a production certification or a claim that either Demo branch has
+completed an authenticated Sandbox submission.
 
 Remaining manual gate: sign in as an authorized Demo operator, verify Service
 Demo and Trading Demo routing/status in the UI, exercise one disposable Sandbox
