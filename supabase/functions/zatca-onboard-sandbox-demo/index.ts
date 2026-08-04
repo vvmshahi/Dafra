@@ -53,6 +53,7 @@ type SandboxStage =
 type SandboxFailureCode =
   | 'SANDBOX_RECONNECT_UNAUTHORIZED'
   | 'SANDBOX_RECONNECT_CONFIG_MISSING'
+  | 'SANDBOX_RECONNECT_SCOPE_UNAVAILABLE'
   | 'SANDBOX_OTP_REQUIRED'
   | 'SANDBOX_OTP_INVALID'
   | 'SANDBOX_IDENTITY_GENERATION_FAILED'
@@ -517,31 +518,26 @@ async function authorizeOnboardingCaller(
 }
 
 async function loadDemoScope(db: any): Promise<Scope> {
-  const tenantId = PERMANENT_DEMO_TENANT_ID
-  const branchId = TRADING_BRANCH_ID
-  const [tenantResult, branchResult] = await Promise.all([
-    db.from('tenants')
-      .select('id,name,business_type,is_demo,is_active')
-      .eq('id', tenantId)
-      .eq('is_demo', true)
-      .eq('is_active', true)
-      .maybeSingle(),
-    db.from('branches')
-      .select(`
-        id,tenant_id,name,business_name,vat_number,cr_number,building_number,
-        street,district,city,postal_code,country,zatca_phase,zatca_environment,is_active
-      `)
-      .eq('id', branchId)
-      .eq('tenant_id', tenantId)
-      .eq('zatca_environment', 'sandbox')
-      .eq('is_active', true)
-      .maybeSingle(),
-  ])
-
-  if (tenantResult.error || branchResult.error || !tenantResult.data || !branchResult.data) {
-    throw new RequestError('Forbidden: authorized demo Sandbox branch required', 403)
+  const { data, error } = await db.rpc('resolve_zatca_trading_sandbox_scope')
+  if (error || !data?.tenant || !data?.branch) {
+    throw new RequestError(
+      'Trading Demo Sandbox scope is unavailable. Contact Kubri support.',
+      503,
+      'SANDBOX_RECONNECT_SCOPE_UNAVAILABLE',
+    )
   }
-  return { tenant: tenantResult.data, branch: branchResult.data }
+  if (
+    data.tenant.id !== PERMANENT_DEMO_TENANT_ID ||
+    data.branch.id !== TRADING_BRANCH_ID ||
+    data.branch.tenant_id !== PERMANENT_DEMO_TENANT_ID
+  ) {
+    throw new RequestError(
+      'Trading Demo Sandbox scope is invalid. Contact Kubri support.',
+      503,
+      'SANDBOX_RECONNECT_SCOPE_UNAVAILABLE',
+    )
+  }
+  return { tenant: data.tenant, branch: data.branch }
 }
 
 async function loadCredential(
@@ -1625,6 +1621,7 @@ function isSandboxFailureCode(value: string): value is SandboxFailureCode {
   return [
     'SANDBOX_RECONNECT_UNAUTHORIZED',
     'SANDBOX_RECONNECT_CONFIG_MISSING',
+    'SANDBOX_RECONNECT_SCOPE_UNAVAILABLE',
     'SANDBOX_OTP_REQUIRED',
     'SANDBOX_OTP_INVALID',
     'SANDBOX_IDENTITY_GENERATION_FAILED',
@@ -1644,7 +1641,7 @@ function isSandboxFailureCode(value: string): value is SandboxFailureCode {
 
 function codeForStage(stage: SandboxStage, error: unknown): SandboxFailureCode {
   if (stage === 'authorize_caller') return 'SANDBOX_RECONNECT_UNAUTHORIZED'
-  if (stage === 'resolve_trading_scope') return 'SANDBOX_RECONNECT_CONFIG_MISSING'
+  if (stage === 'resolve_trading_scope') return 'SANDBOX_RECONNECT_SCOPE_UNAVAILABLE'
   if (stage === 'generate_private_key') return 'SANDBOX_IDENTITY_GENERATION_FAILED'
   if (stage === 'generate_csr') return 'SANDBOX_CSR_GENERATION_FAILED'
   if (stage === 'validate_csr_key_match') return 'SANDBOX_CSR_KEY_MISMATCH'
@@ -1674,7 +1671,9 @@ function statusForCode(code: SandboxFailureCode): number {
   if (code === 'SANDBOX_OTP_REQUIRED' || code === 'SANDBOX_OTP_INVALID') return 400
   if (code === 'SANDBOX_CSR_KEY_MISMATCH' || code === 'SANDBOX_CERTIFICATE_KEY_MISMATCH') return 422
   if (code === 'SANDBOX_CREDENTIAL_CURRENT_CONFLICT') return 409
-  if (code === 'SANDBOX_UPSTREAM_UNAVAILABLE' || code === 'SANDBOX_RECONNECT_CONFIG_MISSING') return 503
+  if (code === 'SANDBOX_UPSTREAM_UNAVAILABLE' ||
+      code === 'SANDBOX_RECONNECT_CONFIG_MISSING' ||
+      code === 'SANDBOX_RECONNECT_SCOPE_UNAVAILABLE') return 503
   return 500
 }
 
@@ -1682,6 +1681,7 @@ function ownerMessage(code: SandboxFailureCode): string {
   const messages: Record<SandboxFailureCode, string> = {
     SANDBOX_RECONNECT_UNAUTHORIZED: 'Authorized Trading Demo Sandbox owner access is required.',
     SANDBOX_RECONNECT_CONFIG_MISSING: 'Sandbox onboarding configuration is unavailable. Contact Kubri support.',
+    SANDBOX_RECONNECT_SCOPE_UNAVAILABLE: 'Trading Demo Sandbox scope is unavailable. Contact Kubri support.',
     SANDBOX_OTP_REQUIRED: 'Enter the six-digit Integration Sandbox OTP.',
     SANDBOX_OTP_INVALID: 'The Sandbox OTP must contain exactly six digits.',
     SANDBOX_IDENTITY_GENERATION_FAILED: 'Trading Sandbox device identity generation failed. Contact Kubri support.',

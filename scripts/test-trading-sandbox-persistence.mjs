@@ -4,6 +4,7 @@ import fs from 'node:fs'
 const read = path => fs.readFileSync(path, 'utf8')
 const functionSource = read('supabase/functions/zatca-onboard-sandbox-demo/index.ts')
 const migration = read('supabase/migrations/20260804000300_fix_trading_sandbox_credential_persistence.sql')
+const scopeMigration = read('supabase/migrations/20260804000400_canonical_trading_sandbox_scope.sql')
 
 assert.match(migration, /DROP INDEX IF EXISTS public\.zatca_sandbox_credentials_one_current_onboarding_uidx/)
 assert.match(migration, /CREATE UNIQUE INDEX zatca_sandbox_credentials_one_current_onboarding_uidx[\s\S]*?WHERE status IN \('pending', 'compliance', 'active'\)/)
@@ -19,11 +20,20 @@ assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.activate_zatca_sandbo
 
 assert.match(functionSource, /db\.rpc\('create_zatca_sandbox_credential'/)
 assert.match(functionSource, /db\.rpc\('activate_zatca_sandbox_credential'/)
+assert.match(functionSource, /db\.rpc\('resolve_zatca_trading_sandbox_scope'/)
+assert.doesNotMatch(functionSource, /db\.from\('tenants'\)/)
+assert.match(functionSource, /SANDBOX_RECONNECT_SCOPE_UNAVAILABLE/)
 assert.doesNotMatch(functionSource, /from\('zatca_sandbox_credentials'\)[\s\S]{0,160}\.insert\(/)
 assert.match(functionSource, /SANDBOX_CREDENTIAL_CURRENT_CONFLICT/)
 assert.match(functionSource, /zatca_sandbox_credentials_one_current_onboarding_uidx/)
 assert.match(functionSource, /safeDatabaseCode/)
 assert.match(functionSource, /safeDatabaseConstraint/)
 assert.doesNotMatch(functionSource, /console\.(?:log|info|warn|error)[\s\S]{0,180}(?:private[_ -]?key|certificate|csid|token|otp|authorization|encrypted_)/i)
+
+assert.match(scopeMigration, /CREATE OR REPLACE FUNCTION public\.resolve_zatca_trading_sandbox_scope\(\)/)
+assert.match(scopeMigration, /ebf1144b-55ed-472a-99c9-23b5ee915351/)
+assert.match(scopeMigration, /14271653-b404-44bf-9f39-7e9927569c02/)
+assert.match(scopeMigration, /zatca_environment = 'sandbox'/)
+assert.match(scopeMigration, /GRANT EXECUTE ON FUNCTION public\.resolve_zatca_trading_sandbox_scope\(\)/)
 
 console.log('Trading Sandbox credential persistence contracts passed')
