@@ -40,8 +40,8 @@ real Android Chrome acceptance.
 
 ## Deployment
 
-- Preview deployment: `dpl_72ztWb2n9FN94Yx4Jrpf5bV7pdxC`
-- Preview URL: https://dafra-29h01gbib-mohammed-shahin-v-vs-projects.vercel.app
+- Preview deployment: `dpl_8b3Wrka2XJLXkGoYFAmvWbMRbHkf`
+- Preview URL: https://dafra-rbel8wk1n-mohammed-shahin-v-vs-projects.vercel.app
 - Production deployment: not performed.
 - Production aliases: unchanged.
 - Release tag: not created.
