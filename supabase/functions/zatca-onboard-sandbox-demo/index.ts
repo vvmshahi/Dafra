@@ -277,6 +277,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const requestedAction = resolveAction(body.action, credential)
+    currentStage = stageForAction(requestedAction)
     assertOtpForEffectiveAction(requestedAction, body.otp)
     if (credential.onboarding_status === 'failed' && body.action !== 'retry_failed_step') {
       throw new RequestError('This step failed previously. Use retry_failed_step after reviewing the safe error.', 409)
@@ -289,7 +290,6 @@ Deno.serve(async (req: Request) => {
     assertSellerIdentityUnchanged(scope, credential)
 
     assertActionState(requestedAction, credential)
-    currentStage = stageForAction(requestedAction)
     credential = await claimOperation(db, credential, requestedAction)
 
     try {
