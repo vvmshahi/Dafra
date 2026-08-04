@@ -146,3 +146,14 @@ source or migration repair:
 `b31295f78ccffcd5355aa0c835a62f403214437f` is the exact tested and deployed
 application commit. This release record is a follow-up documentation-only
 commit and must not be substituted for the deployed application SHA.
+
+## Visual-consistency follow-up
+
+The later pass keeps the existing RPC-backed payment, receipt, reversal,
+statement, and checkout behavior intact while standardizing the Customer Credit
+workspace: compact centered Overview/Payments tabs, compact filter treatment,
+dark KPI tones, dark-green Customers/Payments/statement headers, and neutral
+column headers. Receive Payment is presented as a proper accessible modal while
+the existing idempotent backend path remains authoritative. See
+`CUSTOMER_CREDIT_VISUAL_CONSISTENCY_REFINEMENT_20260804.md` for the focused
+application evidence.

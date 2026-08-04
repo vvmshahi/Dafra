@@ -66,3 +66,12 @@ project’s normal Vercel SSO.
 The later credit/sidebar simplification is recorded separately in
 `CUSTOMER_AND_CREDIT_TARGETED_SIMPLIFICATION_20260804.md` and must not be
 certified by this earlier profile-only verdict.
+
+## Visual-consistency follow-up
+
+The subsequent 2026-08-04 pass preserves the profile tab architecture and
+refines its visual hierarchy: context/header, compact centered tabs, KPI row,
+compact filters, then Document History. KPI cards use the shared dark visual
+family, and Document History uses the dark-green section treatment with a
+neutral table header. The focused visual contract is recorded in
+`CUSTOMER_CREDIT_VISUAL_CONSISTENCY_REFINEMENT_20260804.md`.

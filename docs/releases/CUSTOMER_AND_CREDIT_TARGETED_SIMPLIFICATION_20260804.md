@@ -78,3 +78,11 @@ The exact tested application source is commit
 This Preview is available for manual review, but it is not certified until
 the As-of contract is resolved. No production alias or main merge was
 performed.
+
+## Visual-consistency follow-up
+
+This later UI-only pass does not resolve or alter the previously documented
+as-of accounting limitation. It only improves ordering, compact filter reuse,
+KPI contrast, section headers, workspace tab width, and Receive Payment modal
+presentation. No migration was created, no financial rows were changed, and
+the accounting/eligibility/payment-allocation contracts remain unchanged.
