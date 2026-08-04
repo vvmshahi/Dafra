@@ -87,7 +87,8 @@ The repair started from application SHA
 `feature/customer-credit-receivables-20260803`. The current main SHA captured
 before the repair was `549138965417c6343abf9775590464d17c0d9f4a`. Local and
 remote migration history was already at `20260804000100`; no migration change
-was required.
+was required. The fully tested application SHA is
+`709f4fbe2a3638392e57d3c166330cdd03520f6f`.
 
 Trading Demo is tenant `ebf1144b-55ed-472a-99c9-23b5ee915351`, Branch
 `14271653-b404-44bf-9f39-7e9927569c02`. Service Demo is Branch
@@ -188,10 +189,16 @@ was deployed to Vercel Preview and reached `READY`:
 - deployment: `dpl_FFsXjVxyyn3ppRFtu9rn5UDetamB`
 - target: `preview`
 
-The current projection/print/reconnect repair is tested locally but is not yet
-represented by that Preview deployment until the new verified commit is
-deployed. This is not a production certification or a claim that either Demo
-branch has completed an authenticated Sandbox submission.
+The final tested application source is represented by Vercel Preview and
+reached `READY`:
+
+- URL: https://dafra-9m468lo97-mohammed-shahin-v-vs-projects.vercel.app
+- deployment: `dpl_styeE7tfNjBJ3njvQP1h8XeWn1GU`
+- target: `preview`
+- application source SHA: `709f4fbe2a3638392e57d3c166330cdd03520f6f`
+
+This is not a production certification or a claim that either Demo branch
+has completed an authenticated Sandbox submission.
 
 Owner OTP stop condition: open Kubri → Settings → ZATCA for the exact `Kubri
 Demo` business, select the `Kubri Trading Demo` Sandbox reconnect card, open
