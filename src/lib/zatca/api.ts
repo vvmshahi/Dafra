@@ -344,6 +344,60 @@ export interface SandboxDemoConnectionStatus {
   active: boolean
 }
 
+export interface SandboxOnboardingStatus {
+  ok: boolean
+  branchId: string
+  environment: 'sandbox'
+  status: string
+  functionalityMap?: ZatcaFunctionalityMap | null
+  completedSteps: string[]
+  requiredComplianceDocuments: string[]
+  certificateExists: boolean
+  publicKeyExists: boolean
+  complianceCredentialExists: boolean
+  sandboxProductionCredentialExists: boolean
+  expiresAt?: string | null
+  lastError?: string | null
+  failedStep?: string | null
+  operationInProgress?: string | null
+  reconciliationStatus?: string | null
+  restartRequired?: boolean
+  activatedAt?: string | null
+  updatedAt?: string | null
+}
+
+const PERMANENT_DEMO_TENANT_ID = 'ebf1144b-55ed-472a-99c9-23b5ee915351'
+const PERMANENT_DEMO_TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
+
+export async function getSandboxDemoOnboardingStatus(): Promise<SandboxOnboardingStatus> {
+  return edgePostSafe<SandboxOnboardingStatus>('zatca-onboard-sandbox-demo', {
+    action: 'get_status',
+    tenantId: PERMANENT_DEMO_TENANT_ID,
+    branchId: PERMANENT_DEMO_TRADING_BRANCH_ID,
+  })
+}
+
+export async function runSandboxDemoOnboarding(params: {
+  action: 'generate_csr' | 'request_compliance_csid' | 'submit_compliance_documents' | 'retry_failed_step'
+  otp?: string
+  functionalityMap?: ZatcaFunctionalityMap
+}): Promise<SandboxOnboardingStatus> {
+  return edgePostSafe<SandboxOnboardingStatus>('zatca-onboard-sandbox-demo', {
+    action: params.action,
+    tenantId: PERMANENT_DEMO_TENANT_ID,
+    branchId: PERMANENT_DEMO_TRADING_BRANCH_ID,
+    ...(params.otp ? { otp: params.otp } : {}),
+    ...(params.functionalityMap ? { functionalityMap: params.functionalityMap } : {}),
+  })
+}
+
+export async function activateSandboxDemoConnection(): Promise<SandboxDemoConnectionStatus> {
+  return edgePostSafe<SandboxDemoConnectionStatus>('zatca-validate-sandbox-demo', {
+    action: 'activate_compliance_demo',
+    branchId: PERMANENT_DEMO_TRADING_BRANCH_ID,
+  })
+}
+
 export async function getSandboxValidationStatus(invoiceId: string): Promise<SandboxValidationResponse> {
   return edgePostSafe<SandboxValidationResponse>('zatca-validate-sandbox-demo', {
     action: 'status',

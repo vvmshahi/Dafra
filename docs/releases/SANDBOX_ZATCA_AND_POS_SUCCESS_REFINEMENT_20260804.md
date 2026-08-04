@@ -61,7 +61,7 @@ The repaired discriminator is an exact row in
 `customer_receivable_operations` with `action = 'credit_checkout'` and a
 matching `response->>'invoice_id'`. The existing server RPC remains the
 authoritative writer and already enforces active Business/B2B customer and
-branch eligibility. No migration, RPC, or Edge Function was changed.
+branch eligibility. No migration or RPC was changed.
 
 The POS now resolves customer type before rendering Customer Credit controls:
 Walk-in and Individual customers do not see the credit panel and cannot retain
@@ -80,11 +80,59 @@ The success action matrix is now:
 View invoice, WhatsApp, raw mode text, and repeated Demo warnings remain absent
 from the success modal.
 
+## Trading reconnect
+
+The repair started from application SHA
+`db207936598b8fb36e3e3b2914a6419f2e61c69f` on
+`feature/customer-credit-receivables-20260803`. The current main SHA captured
+before the repair was `549138965417c6343abf9775590464d17c0d9f4a`. Local and
+remote migration history was already at `20260804000100`; no migration change
+was required.
+
+Trading Demo is tenant `ebf1144b-55ed-472a-99c9-23b5ee915351`, Branch
+`14271653-b404-44bf-9f39-7e9927569c02`. Service Demo is Branch
+`c30094d7-40ca-4d2e-833a-07aa18c4fa46` in the same tenant.
+
+Trading's authoritative state remains `non_fiscal` because its current Sandbox
+credential is failed and its historical credential is revoked. No failed
+credential was reactivated, deleted, or copied from Service Demo. The existing
+backend onboarding function now accepts only an authenticated Owner or Super
+Admin for the exact Demo tenant and Trading Branch, while retaining its fixed
+Sandbox endpoint and server-owned CSR/device/credential handling.
+
+The Owner-area `Reconnect Sandbox` control shows safe business, Branch,
+environment, and credential state. It never accepts an environment, endpoint,
+credential, CSR owner, or Service Demo material from the browser. A fresh OTP
+is entered interactively, never prefilled, logged, persisted, returned, or sent
+to production; the field clears immediately after submission and duplicate
+submits are disabled. The flow generates Trading's own simplified-capability
+CSR when needed, obtains the compliance credential, submits compliance samples,
+and activates the compliance-demo state only after successful server checks.
+
+No current OTP was available in this environment, so onboarding, QR generation,
+Sandbox response, status persistence, and retry acceptance remain owner-gated.
+
+Changed Edge Functions:
+
+| Function | Before | After | JWT |
+| --- | ---: | ---: | --- |
+| `zatca-onboard-sandbox-demo` | 19 | 20 | enabled |
+| `zatca-validate-sandbox-demo` | 21 | 22 | enabled |
+| `zatca-submit-sandbox-demo` | 16 | 16 | unchanged |
+| `zatca-compliance` | 71 | 71 | unchanged |
+| `zatca-submit` | 130 | 130 | unchanged |
+
+Unauthenticated requests to both changed functions returned HTTP 401. No
+production ZATCA function or endpoint was deployed or called.
+
 ## UI changes
 
 - POS success modal: `max-w-md`, single-column customer/method summary, existing
-  duplicate-submit/retry protection retained, conditional print actions, and one
-  full-width New sale action.
+  duplicate-submit/retry protection retained, one normalized unique action
+  model, conditional print actions, and one full-width New sale action.
+- The duplicate buttons came from the legacy print-action row rendering beside
+  the newer conditional action matrix. The legacy row was removed; action IDs
+  are deduplicated before the single matrix is rendered.
 - Removed View invoice and the raw `zatca_demo_non_fiscal`/mode row from the
   success modal. Toast failure actions may still link to invoice detail.
 - Removed the success-modal WhatsApp button, handler, and icon path. WhatsApp
@@ -98,7 +146,13 @@ from the success modal.
   limited to `checkout_initial` receipts; later allocations contribute to amount
   paid and balance due.
 - A4 and thermal templates render translated Customer credit, payment status,
-  initial payment/method, amount paid, and balance due without changing QR source.
+  Paid via, one Amount paid value, and Balance due without changing QR source.
+- The duplicate Customer Credit amount was the customer-facing Initial payment
+  amount repeated beside Amount paid. The Initial payment amount row was
+  removed from detail, thermal, A4, preview/reprint, and PDF paths; the useful
+  issuance tender remains as translated Paid via. The existing read model's
+  allocation-state Amount paid and Balance due remain consistent across detail
+  and reprint outputs.
 
 ## Verification
 
@@ -113,8 +167,10 @@ Passed:
 - `git diff --check`
 - mixed-history projection checks for ordinary Cash/Card/Split and genuine
   Customer Credit invoices
+- `npm run test:trading-sandbox-reconnect`
+- unauthenticated HTTP 401 checks for both changed Sandbox Edge Functions
 
-No migration or Edge Function version changed for this patch. The existing QR
+No migration changed for this patch. The existing QR
 path remains authoritative: Sandbox QR content comes only from the stored
 Sandbox validation result, and production QR content comes only from the stored
 output state.
@@ -132,17 +188,21 @@ was deployed to Vercel Preview and reached `READY`:
 - deployment: `dpl_FFsXjVxyyn3ppRFtu9rn5UDetamB`
 - target: `preview`
 
-The current projection/print repair is tested locally but is not yet represented
-by that Preview deployment until the new verified commit is deployed. This is not
-a production certification or a claim that either Demo branch has completed an
-authenticated Sandbox submission.
+The current projection/print/reconnect repair is tested locally but is not yet
+represented by that Preview deployment until the new verified commit is
+deployed. This is not a production certification or a claim that either Demo
+branch has completed an authenticated Sandbox submission.
 
-Remaining manual gate: sign in as an authorized Demo operator, verify Service
-Demo routing/status in the UI, exercise one disposable simplified cash Sandbox
-validation and one disposable Customer Credit Sandbox validation where
-authorized, confirm stored response/QR/retry behavior, and verify Walk-in,
-Individual, and Business customer visibility plus POS success modal, invoice
-detail, reprint, A4, and thermal output at mobile and desktop widths. Trading
-Demo remains blocked until an approved owner-authorized credential repair
-exists. Arabic/RTL behavior is covered by the existing translation/layout
-paths but still needs visual manual confirmation.
+Owner OTP stop condition: open Kubri → Settings → ZATCA for the exact `Kubri
+Demo` business, select the `Kubri Trading Demo` Sandbox reconnect card, open
+`Reconnect Sandbox`, and obtain a fresh current 6-digit OTP from the ZATCA
+Developer Portal for the Trading Demo device. Enter it only in that control;
+never paste it into chat or add it to code.
+
+After OTP, verify Trading's own onboarding response, active compliance-demo
+mode, QR, factual stored Sandbox response, refresh persistence, and safe retry.
+Then use only authorized/disposable simplified Cash, Card, and Customer Credit
+Sandbox invoices; verify thermal, A4, preview, reprint, PDF, mobile/desktop
+widths, Arabic/RTL, and exact success-modal button counts. Service Demo must
+remain unchanged. Standard/production clearance is not claimed because the
+supported scope is simplified compliance validation.

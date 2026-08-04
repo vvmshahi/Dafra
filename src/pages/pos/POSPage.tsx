@@ -640,6 +640,8 @@ function QuickExpenseModal({
 
 // ── Receipt overlay ───────────────────────────────────────────────────────────
 
+type ReceiptActionId = 'print_receipt' | 'print_invoice' | 'new_sale'
+
 function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetryFinalization, afterSaleAction }: {
   receipt: ReceiptData
   branch: Branch | null
@@ -661,6 +663,14 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
     : receipt.canPrint && qrStatus === 'ready' && Boolean(qrDataUrl)
   const showReceiptAction = afterSaleAction !== 'a4'
   const showInvoiceAction = afterSaleAction === 'a4' || afterSaleAction === 'both'
+  const actionIdCandidates: ReceiptActionId[] = [
+    ...(showReceiptAction ? ['print_receipt' as const] : []),
+    ...(showInvoiceAction ? ['print_invoice' as const] : []),
+    'new_sale',
+  ]
+  const uniqueActionIds = [...new Set(actionIdCandidates)]
+  const hasReceiptAction = uniqueActionIds.includes('print_receipt')
+  const hasInvoiceAction = uniqueActionIds.includes('print_invoice')
   const receiptPrintButton = showReceiptAction ? (
     <button
       type="button"
@@ -926,28 +936,6 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
 
           {/* Actions */}
           <div className="space-y-3 border-t border-gray-100 px-5 pb-6 pt-5 sm:px-7">
-            <div className="grid gap-2 sm:grid-cols-2">
-              {afterSaleAction !== 'a4' && (
-                <button
-                  onClick={() => void openReceiptPrintPage()}
-                  disabled={printingReceipt || !printReady}
-                  className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-                >
-                  {printingReceipt ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
-                  {printingReceipt ? t('payments:printing') : t('payments:printReceipt')}
-                </button>
-              )}
-              {afterSaleAction === 'a4' || afterSaleAction === 'both' ? (
-                <button
-                  onClick={printPosA4}
-                  disabled={!printReady}
-                  className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-                >
-                  <Printer size={14} />
-                  {t('payments:printInvoice')}
-                </button>
-              ) : null}
-            </div>
             {!receipt.canPrint && (
               <div className="rounded-lg bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">
                 <p>{receipt.finalizationError
@@ -975,14 +963,14 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
                 {t('printing:qrUnavailable')}
               </div>
             )}
-            {showReceiptAction && showInvoiceAction ? (
+            {hasReceiptAction && hasInvoiceAction ? (
               <>
                 <div className="grid gap-2 sm:grid-cols-2">{receiptPrintButton}{invoicePrintButton}</div>
                 {newSaleButton}
               </>
-            ) : showReceiptAction ? (
+            ) : hasReceiptAction ? (
               <div className="grid gap-2 sm:grid-cols-2">{receiptPrintButton}{newSaleButton}</div>
-            ) : showInvoiceAction ? (
+            ) : hasInvoiceAction ? (
               <div className="grid gap-2 sm:grid-cols-2">{invoicePrintButton}{newSaleButton}</div>
             ) : newSaleButton}
           </div>

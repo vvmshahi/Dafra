@@ -85,7 +85,6 @@ function Payment({ model }: { model: DocumentViewModel }) {
       <div><span>{documentLabel(model.identity.language, 'paymentMethod')}</span><strong>{documentLabel(model.identity.language, 'customerCredit')}</strong></div>
       <div><span>{documentLabel(model.identity.language, 'paymentStatus')}</span><strong>{documentLabel(model.identity.language, statusKey)}</strong></div>
       {customerCredit.initialPaymentMethod && <div><span>{documentLabel(model.identity.language, 'initialPaymentMethod')}</span><span>{documentPaymentLabel(model.identity.language, customerCredit.initialPaymentMethod)}</span></div>}
-      <div><span>{documentLabel(model.identity.language, 'initialPayment')}</span><Money value={customerCredit.initialPayment} model={model} /></div>
       <div><span>{documentLabel(model.identity.language, 'amountPaid')}</span><Money value={customerCredit.amountPaid} model={model} /></div>
       <div><span>{documentLabel(model.identity.language, 'balanceDue')}</span><Money value={customerCredit.balanceDue} model={model} /></div>
     </section>

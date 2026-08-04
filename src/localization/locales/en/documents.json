@@ -45,7 +45,7 @@
   "unpaid": "Unpaid",
   "partiallyPaid": "Partially paid",
   "initialPayment": "Initial payment",
-  "initialPaymentMethod": "Initial payment method",
+  "initialPaymentMethod": "Paid via",
   "amountPaid": "Amount paid",
   "balanceDue": "Balance due",
   "refundMethod": "Refund Method",

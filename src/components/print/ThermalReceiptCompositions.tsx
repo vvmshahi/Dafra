@@ -175,7 +175,6 @@ function Payments({ receipt }: { receipt: ReceiptComposition }) {
       <div className="thermal-payment-kind">{documentLabel(identity.language, 'paymentMethod')}: <strong>{documentLabel(identity.language, 'customerCredit')}</strong></div>
       <Row label={documentLabel(identity.language, 'paymentStatus')}>{documentLabel(identity.language, statusKey)}</Row>
       {customerCredit.initialPaymentMethod && <Row label={documentLabel(identity.language, 'initialPaymentMethod')}>{documentPaymentLabel(identity.language, customerCredit.initialPaymentMethod)}</Row>}
-      <Row label={documentLabel(identity.language, 'initialPayment')}><Money value={customerCredit.initialPayment} model={model} /></Row>
       <Row label={documentLabel(identity.language, 'amountPaid')}><Money value={customerCredit.amountPaid} model={model} /></Row>
       <Row label={documentLabel(identity.language, 'balanceDue')}><Money value={customerCredit.balanceDue} model={model} /></Row>
     </section>

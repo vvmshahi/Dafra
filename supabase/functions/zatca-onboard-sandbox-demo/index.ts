@@ -183,10 +183,9 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = requireEnv('SUPABASE_URL')
     const serviceRoleKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY')
-    requireServiceRole(req)
-
     const body = await readBody(req)
     const db = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
+    await authorizeOnboardingCaller(db, req, body.tenantId, body.branchId)
     const scope = await loadDemoScope(db, body.tenantId, body.branchId)
 
     if (body.action === 'reconcile_uncertain_operation') {
@@ -391,21 +390,52 @@ function isSafeReconciliationSummary(value: unknown): value is string {
     !/(otp|secret|csid|token|certificate|private[ _-]?key|authorization|csr|xml)/i.test(summary)
 }
 
-function requireServiceRole(req: Request): void {
+function bearerToken(req: Request): string {
   const authorization = req.headers.get('Authorization') ?? ''
   const match = authorization.match(/^Bearer\s+([^\s]+)$/i)
   if (!match) throw new RequestError('Unauthorized', 401)
+  return match[1]
+}
 
+function jwtRole(jwt: string): string | null {
   try {
-    const segments = match[1].split('.')
-    if (segments.length !== 3) throw new Error('Malformed JWT')
-
+    const segments = jwt.split('.')
+    if (segments.length !== 3) return null
     const base64 = segments[1].replace(/-/g, '+').replace(/_/g, '/')
     const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
     const claims = JSON.parse(atob(padded)) as { role?: unknown }
-    if (claims.role !== 'service_role') throw new Error('Invalid role')
+    return typeof claims.role === 'string' ? claims.role : null
   } catch {
-    throw new RequestError('Unauthorized', 401)
+    return null
+  }
+}
+
+async function authorizeOnboardingCaller(
+  db: any,
+  req: Request,
+  tenantId: string,
+  branchId: string,
+): Promise<void> {
+  const jwt = bearerToken(req)
+  if (jwtRole(jwt) === 'service_role') return
+
+  const { data: { user }, error: authError } = await db.auth.getUser(jwt)
+  if (authError || !user) throw new RequestError('Unauthorized', 401)
+  const { data: profile, error: profileError } = await db.from('user_profiles')
+    .select('id,role,tenant_id,branch_id,is_active')
+    .eq('id', user.id)
+    .maybeSingle()
+  if (profileError || !profile?.id || profile.is_active !== true) {
+    throw new RequestError('Forbidden: active Owner or Super Admin profile required', 403)
+  }
+
+  const ownerAuthorized = profile.role === 'owner'
+    && profile.tenant_id === PERMANENT_DEMO_TENANT_ID
+    && (!profile.branch_id || profile.branch_id === branchId)
+  const superAdminAuthorized = profile.role === 'super_admin'
+    && (!profile.tenant_id || profile.tenant_id === PERMANENT_DEMO_TENANT_ID)
+  if (tenantId !== PERMANENT_DEMO_TENANT_ID || branchId !== TRADING_BRANCH_ID || (!ownerAuthorized && !superAdminAuthorized)) {
+    throw new RequestError('Forbidden: authorized Trading Demo Sandbox owner scope required', 403)
   }
 }
 

@@ -25,6 +25,9 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import {
   getProductionOnboardingStatus,
   getSandboxDemoConnectionStatus,
+  getSandboxDemoOnboardingStatus,
+  runSandboxDemoOnboarding,
+  activateSandboxDemoConnection,
   disconnectProductionZatca,
   isZatcaOtpRejection,
   onboardProductionZatca,
@@ -34,6 +37,7 @@ import {
   type ProductionOnboardingStatus,
   type ZatcaFunctionalityMap,
   type SandboxDemoConnectionStatus,
+  type SandboxOnboardingStatus,
 } from '@/lib/zatca/api'
 import { getCachedProductionStatus, readCachedProductionStatus, writeCachedProductionStatus } from '@/lib/zatca/status'
 import type { Branch } from '@/types'
@@ -122,6 +126,145 @@ function GuideModal({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
+  )
+}
+
+function TradingSandboxReconnect({
+  status,
+  connectionActive,
+  onStatusChange,
+  onConnectionChange,
+}: {
+  status: SandboxOnboardingStatus | null
+  connectionActive: boolean
+  onStatusChange: (status: SandboxOnboardingStatus) => void
+  onConnectionChange: (status: SandboxDemoConnectionStatus) => void
+}) {
+  const { t } = useTranslation('zatca')
+  const [open, setOpen] = useState(false)
+  const [otp, setOtp] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+
+  const statusLabel = status?.status ?? 'not_started'
+  const canResume = !connectionActive && (!status || ['not_started', 'csr_ready', 'failed', 'compliance_csid_ready', 'compliance_passed'].includes(statusLabel))
+
+  async function reconnect() {
+    setError(null)
+    setSuccess(null)
+    let next = status
+    try {
+      setBusy(true)
+      if (!next || next.status === 'not_started') {
+        next = await runSandboxDemoOnboarding({ action: 'generate_csr', functionalityMap: '0100' })
+        onStatusChange(next)
+      }
+
+      if (next.status === 'csr_ready' || (next.status === 'failed' && next.failedStep === 'request_compliance_csid')) {
+        if (!/^\d{6}$/.test(otp)) {
+          setError(t('sandbox.reconnectOtpRequired'))
+          return
+        }
+        const submittedOtp = otp
+        setOtp('')
+        next = await runSandboxDemoOnboarding({
+          action: next.status === 'failed' ? 'retry_failed_step' : 'request_compliance_csid',
+          otp: submittedOtp,
+        })
+        onStatusChange(next)
+      }
+
+      if (next.status === 'compliance_csid_ready' || (next.status === 'failed' && next.failedStep === 'submit_compliance_documents')) {
+        next = await runSandboxDemoOnboarding({
+          action: next.status === 'failed' ? 'retry_failed_step' : 'submit_compliance_documents',
+        })
+        onStatusChange(next)
+      }
+
+      if (next.status === 'compliance_passed') {
+        const connection = await activateSandboxDemoConnection()
+        onConnectionChange(connection)
+        setSuccess(t('sandbox.reconnectSuccess'))
+        setOpen(false)
+        return
+      }
+
+      if (next.status === 'failed') {
+        setError(next.lastError || t('sandbox.reconnectFailed'))
+      } else if (next.status === 'csr_ready') {
+        setSuccess(t('sandbox.reconnectOtpReady'))
+      } else if (next.status === 'compliance_csid_ready' || next.status === 'compliance_checks_pending') {
+        setSuccess(t('sandbox.reconnectChecksRunning'))
+      } else if (!['active', 'compliance_passed'].includes(next.status)) {
+        setError(t('sandbox.reconnectNeedsReview'))
+      }
+    } catch (cause) {
+      setOtp('')
+      setError(cause instanceof Error ? cause.message : t('sandbox.reconnectFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-amber-100 bg-white shadow-card">
+      <div className="flex flex-col gap-4 border-b border-amber-100 bg-amber-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-black text-gray-950">{t('sandbox.reconnectTitle')}</h3>
+            <Badge variant={connectionActive ? 'success' : 'warning'} dot>
+              {connectionActive ? t('status.active') : status?.status ? t(`sandbox.onboardingStatus.${status.status}`, { defaultValue: status.status }) : t('status.checking')}
+            </Badge>
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.reconnectHelp')}</p>
+        </div>
+        {canResume && (
+          <button
+            type="button"
+            onClick={() => { setError(null); setSuccess(null); setOpen(value => !value) }}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#1a3a28] disabled:opacity-50"
+          >
+            <Wifi size={13} /> {t('sandbox.reconnectButton')}
+          </button>
+        )}
+      </div>
+      <div className="grid gap-2 p-5 sm:grid-cols-2">
+        <InfoRow label={t('fields.business')} value="Kubri Demo" />
+        <InfoRow label={t('fields.branch')} value="Kubri Trading Demo" />
+        <InfoRow label={t('fields.environment')} value={t('sandbox.zatcaSandbox')} />
+        <InfoRow label={t('sandbox.currentCredential')} value={status?.lastError || statusLabel} />
+      </div>
+      {open && (
+        <div className="border-t border-amber-100 bg-gray-50/70 px-5 py-4">
+          <p className="text-xs font-semibold text-gray-900">{t('sandbox.reconnectOtpTitle')}</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.reconnectOtpHelp')}</p>
+          <a href={FATOORA_PORTAL_URL} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-sky-700 hover:text-sky-800">
+            <ExternalLink size={12} /> {t('sandbox.openDeveloperPortal')}
+          </a>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <input
+              type="password"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={otp}
+              onChange={event => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder={t('sandbox.reconnectOtpPlaceholder')}
+              aria-label={t('sandbox.reconnectOtpTitle')}
+              disabled={busy}
+              className="min-h-10 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-sm tracking-[0.3em] outline-none focus:border-[#0F2419] focus:ring-2 focus:ring-[#0F2419]/10 disabled:bg-gray-100"
+            />
+            <button type="button" onClick={() => void reconnect()} disabled={busy} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-4 text-xs font-bold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-50">
+              {busy && <Loader2 size={13} className="animate-spin" />}
+              {busy ? t('sandbox.reconnectSubmitting') : t('sandbox.reconnectSubmit')}
+            </button>
+          </div>
+          {error && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}
+        </div>
+      )}
+      {success && <p className="border-t border-emerald-100 bg-emerald-50 px-5 py-3 text-xs font-semibold text-emerald-800">{success}</p>}
+    </section>
   )
 }
 
@@ -945,6 +1088,7 @@ export default function ZatcaTab() {
   const [data, setData]         = useState<BranchWithCert[]>([])
   const [loading, setLoading]   = useState(true)
   const [sandboxStatuses, setSandboxStatuses] = useState<Record<string, SandboxDemoConnectionStatus | null>>({})
+  const [tradingSandboxOnboardingStatus, setTradingSandboxOnboardingStatus] = useState<SandboxOnboardingStatus | null>(null)
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
   const modalTriggerRef = useRef<HTMLButtonElement | null>(null)
   const [showGuide, setShowGuide]   = useState(false)
@@ -983,18 +1127,50 @@ export default function ZatcaTab() {
 
   useEffect(() => { load() }, [load])
 
+  const isPermanentDemo = profile?.tenant_id === DEMO_TENANT_ID
+
   useEffect(() => {
-    if (profile?.tenant_id !== DEMO_TENANT_ID || profile.role !== 'owner') return
+    if (profile?.tenant_id !== DEMO_TENANT_ID || !['owner', 'super_admin'].includes(profile?.role ?? '')) return
     let mounted = true
-    Promise.all([TRADING_BRANCH_ID, SERVICE_BRANCH_ID].map(async branchId => {
-      try {
-        return [branchId, await getSandboxDemoConnectionStatus(branchId)] as const
-      } catch {
-        return [branchId, null] as const
+    Promise.all([
+      ...[TRADING_BRANCH_ID, SERVICE_BRANCH_ID].map(async branchId => {
+        try {
+          return [branchId, await getSandboxDemoConnectionStatus(branchId)] as const
+        } catch {
+          return [branchId, null] as const
+        }
+      }),
+      getSandboxDemoOnboardingStatus().then(status => ['onboarding', status] as const).catch(() => ['onboarding', null] as const),
+    ]).then(entries => {
+      if (!mounted) return
+      const onboarding = entries.find(entry => entry[0] === 'onboarding')?.[1]
+      if (onboarding && typeof onboarding === 'object' && 'status' in onboarding) {
+        setTradingSandboxOnboardingStatus(onboarding as SandboxOnboardingStatus)
       }
-    })).then(entries => { if (mounted) setSandboxStatuses(Object.fromEntries(entries)) })
+      setSandboxStatuses(Object.fromEntries(entries.filter(entry => entry[0] !== 'onboarding')))
+    })
     return () => { mounted = false }
   }, [profile?.tenant_id, profile?.role])
+
+  const updateTradingSandboxConnection = useCallback((status: SandboxDemoConnectionStatus) => {
+    setSandboxStatuses(prev => ({ ...prev, [TRADING_BRANCH_ID]: status }))
+  }, [])
+
+  const isPermanentDemoOwner = isPermanentDemo && ['owner', 'super_admin'].includes(profile?.role ?? '')
+
+  /*
+   * The reconnect control is intentionally scoped to the exact permanent-demo
+   * tenant/Trading branch. The Edge Function repeats the same authorization and
+   * scope checks, so this client condition is only a visibility gate.
+   */
+  const reconnectPanel = isPermanentDemoOwner ? (
+    <TradingSandboxReconnect
+      status={tradingSandboxOnboardingStatus}
+      connectionActive={sandboxStatuses[TRADING_BRANCH_ID]?.active === true}
+      onStatusChange={setTradingSandboxOnboardingStatus}
+      onConnectionChange={updateTradingSandboxConnection}
+    />
+  ) : null
 
   const handleProductionStatusUpdate = useCallback((branchId: string, status: ProductionOnboardingResponse) => {
     writeCachedProductionStatus(branchId, status)
@@ -1019,7 +1195,6 @@ export default function ZatcaTab() {
   const activeCount = data.filter(b =>
     b.productionStatus?.onboardingStatus === 'production_connected'
   ).length
-  const isPermanentDemo = profile?.tenant_id === DEMO_TENANT_ID
   const tradingSandboxStatus = sandboxStatuses[TRADING_BRANCH_ID]
   const serviceSandboxStatus = sandboxStatuses[SERVICE_BRANCH_ID]
   const regularBranches = isPermanentDemo
@@ -1053,7 +1228,9 @@ export default function ZatcaTab() {
         </div>
       </div>
 
-      {isPermanentDemo && profile?.role === 'owner' && (
+      {reconnectPanel}
+
+      {isPermanentDemoOwner && (
         <section className="overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-card">
           <div className="flex items-start gap-3 border-b border-sky-100 bg-sky-50/70 px-5 py-4">
             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">

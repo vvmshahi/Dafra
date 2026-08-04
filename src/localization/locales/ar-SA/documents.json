@@ -45,7 +45,7 @@
   "unpaid": "غير مدفوع",
   "partiallyPaid": "مدفوع جزئياً",
   "initialPayment": "الدفعة الأولى",
-  "initialPaymentMethod": "طريقة الدفعة الأولى",
+  "initialPaymentMethod": "تم الدفع عبر",
   "amountPaid": "المبلغ المدفوع",
   "balanceDue": "الرصيد المستحق",
   "refundMethod": "طريقة الاسترداد",

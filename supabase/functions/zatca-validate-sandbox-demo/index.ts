@@ -102,6 +102,7 @@ function jwtRole(jwt: string): string | null {
 interface CallerScope {
   serviceRole: boolean
   assignedBranchId: string | null
+  role: string | null
 }
 
 function isDemoBranchId(value: unknown): value is typeof DEMO_BRANCH_IDS[number] {
@@ -117,7 +118,7 @@ function requireAuthorizedBranch(branchId: unknown, caller: CallerScope): typeof
 
 async function authorizeCaller(db: any, req: Request): Promise<CallerScope> {
   const jwt = bearerToken(req)
-  if (jwtRole(jwt) === 'service_role') return { serviceRole: true, assignedBranchId: null }
+  if (jwtRole(jwt) === 'service_role') return { serviceRole: true, assignedBranchId: null, role: 'service_role' }
 
   const { data: { user }, error: authError } = await db.auth.getUser(jwt)
   if (authError || !user) throw new RequestError('Unauthorized', 401)
@@ -125,12 +126,13 @@ async function authorizeCaller(db: any, req: Request): Promise<CallerScope> {
     .select('id,role,tenant_id,branch_id,is_active').eq('id', user.id).maybeSingle()
   if (error || !data?.id || data.is_active !== true) throw new RequestError('Forbidden', 403)
   const profile = data as CallerProfile
-  const tenantRole = profile.role === 'owner' || profile.role === 'admin'
+  const tenantRole = (profile.role === 'owner' || profile.role === 'admin') && profile.tenant_id === DEMO_TENANT_ID
+  const superAdmin = profile.role === 'super_admin' && (!profile.tenant_id || profile.tenant_id === DEMO_TENANT_ID)
   const assignedBranchUser = profile.role === 'branch' && isDemoBranchId(profile.branch_id)
-  if (profile.tenant_id !== DEMO_TENANT_ID || (!tenantRole && !assignedBranchUser)) {
+  if ((!superAdmin && profile.tenant_id !== DEMO_TENANT_ID) || (!tenantRole && !superAdmin && !assignedBranchUser)) {
     throw new RequestError('Invoice not found or access denied', 404)
   }
-  return { serviceRole: false, assignedBranchId: assignedBranchUser ? profile.branch_id : null }
+  return { serviceRole: false, assignedBranchId: assignedBranchUser ? profile.branch_id : null, role: profile.role }
 }
 
 async function decryptServerEnvelope(stored: string, secret: string): Promise<string> {
@@ -633,7 +635,9 @@ Deno.serve(async (req: Request) => {
     if (action === 'connection_status' || action === 'activate_compliance_demo') {
       const branchId = requireAuthorizedBranch(body.branchId, caller)
       if (action === 'activate_compliance_demo') {
-        if (!caller.serviceRole) throw new RequestError('Forbidden', 403)
+        if (!caller.serviceRole && (branchId !== TRADING_BRANCH_ID || !['owner', 'super_admin'].includes(caller.role ?? ''))) {
+          throw new RequestError('Forbidden', 403)
+        }
         return jsonResponse(await activateComplianceDemo(db, branchId))
       }
       return jsonResponse(await connectionStatus(db, branchId))
