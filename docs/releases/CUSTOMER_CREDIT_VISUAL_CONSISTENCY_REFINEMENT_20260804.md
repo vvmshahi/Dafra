@@ -65,3 +65,11 @@ Preview deployment:
 The deployment remained a Preview URL; the production alias was not promoted.
 No `main` merge, mobile work, purchase-idempotency work, Electron build, or
 real financial mutation was performed by this pass.
+
+## Final statement/UI follow-up
+
+The subsequent application commit `801151701a7592a7729f2a13361f03071d3b0dd4`
+extends this visual pass with the Customers toolbar, Products presentation,
+statement-style Account History, and functional Customer Statement outputs.
+The focused final record is
+`CUSTOMER_STATEMENT_AND_FINAL_UI_POLISH_20260804.md`.

@@ -79,6 +79,14 @@ This Preview is available for manual review, but it is not certified until
 the As-of contract is resolved. No production alias or main merge was
 performed.
 
+## Final UI and statement follow-up
+
+The final follow-up does not alter the previously documented as-of accounting
+limitation. It repairs the statement client flow against the existing
+`get_customer_receivable_workspace_v1` contract and adds only presentation,
+output, and accessibility behavior. No migration or financial mutation was
+performed.
+
 ## Visual-consistency follow-up
 
 This later UI-only pass does not resolve or alter the previously documented

@@ -147,6 +147,14 @@ source or migration repair:
 application commit. This release record is a follow-up documentation-only
 commit and must not be substituted for the deployed application SHA.
 
+## Final statement/UI follow-up
+
+The final follow-up preserves the credit workspace tabs and server-authoritative
+payment behavior while repairing Customer Statement preview/output gating and
+adding the directory, Products, and Account History polish. See
+`CUSTOMER_STATEMENT_AND_FINAL_UI_POLISH_20260804.md` for the exact tested SHA
+and Preview deployment.
+
 ## Visual-consistency follow-up
 
 The later pass keeps the existing RPC-backed payment, receipt, reversal,

@@ -67,6 +67,14 @@ The later credit/sidebar simplification is recorded separately in
 `CUSTOMER_AND_CREDIT_TARGETED_SIMPLIFICATION_20260804.md` and must not be
 certified by this earlier profile-only verdict.
 
+## Final UI and statement follow-up
+
+The later application pass keeps the approved Overview / Products / Customer
+Credit architecture and adds the Customer directory toolbar alignment, equal
+responsive KPI grid, Products search/unit presentation, and readable account
+history treatment. The statement repair and final UI evidence are recorded in
+`CUSTOMER_STATEMENT_AND_FINAL_UI_POLISH_20260804.md`.
+
 ## Visual-consistency follow-up
 
 The subsequent 2026-08-04 pass preserves the profile tab architecture and
