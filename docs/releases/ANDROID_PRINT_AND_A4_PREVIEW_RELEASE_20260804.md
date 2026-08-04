@@ -2,7 +2,7 @@
 
 ## Status
 
-Preview is ready from hotfix commit `420d6cd6f3858bb3ff01156e1460927a7b527f23`.
+Preview is ready from hotfix commit `adf61c0686c6c5eef00c59ca718d38359b78c2be`.
 Production promotion and release tagging are intentionally blocked pending
 real Android Chrome acceptance.
 
@@ -40,8 +40,8 @@ real Android Chrome acceptance.
 
 ## Deployment
 
-- Preview deployment: `dpl_53cBHjPB9dDdV7FaEGC9Fzcxx2Y3`
-- Preview URL: https://dafra-1joqrr6ax-mohammed-shahin-v-vs-projects.vercel.app
+- Preview deployment: `dpl_72ztWb2n9FN94Yx4Jrpf5bV7pdxC`
+- Preview URL: https://dafra-29h01gbib-mohammed-shahin-v-vs-projects.vercel.app
 - Production deployment: not performed.
 - Production aliases: unchanged.
 - Release tag: not created.
