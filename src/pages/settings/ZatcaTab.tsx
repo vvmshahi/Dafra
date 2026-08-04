@@ -149,8 +149,8 @@ function TradingSandboxReconnect({
   const [progress, setProgress] = useState<string | null>(null)
 
   const statusLabel = status?.status ?? 'not_started'
-  const canResume = !connectionActive && (!status || ['not_started', 'csr_ready', 'compliance_csid_ready', 'compliance_checks_pending', 'compliance_passed', 'sandbox_production_csid_ready'].includes(statusLabel))
-  const requiresOtp = !status || statusLabel === 'not_started' || statusLabel === 'csr_ready'
+  const canResume = !connectionActive && (!status || ['not_started', 'csr_ready', 'compliance_csid_ready', 'compliance_checks_pending', 'compliance_passed', 'sandbox_production_csid_ready', 'failed'].includes(statusLabel))
+  const requiresOtp = !status || ['not_started', 'csr_ready', 'failed'].includes(statusLabel)
   const otpValid = /^\d{6}$/.test(otp)
 
   async function reconnect() {
@@ -163,6 +163,7 @@ function TradingSandboxReconnect({
     }
     const enteredOtp = otp
     let next = status
+    if (next?.status === 'failed') next = null
     try {
       setBusy(true)
       setProgress(t('sandbox.reconnectProgressIdentity'))
