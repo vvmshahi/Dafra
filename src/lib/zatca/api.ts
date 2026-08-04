@@ -349,6 +349,8 @@ export interface SandboxOnboardingStatus {
   branchId: string
   environment: 'sandbox'
   status: string
+  operationId?: string | null
+  onboardingUid?: string | null
   functionalityMap?: ZatcaFunctionalityMap | null
   completedSteps: string[]
   requiredComplianceDocuments: string[]
@@ -364,6 +366,7 @@ export interface SandboxOnboardingStatus {
   restartRequired?: boolean
   activatedAt?: string | null
   updatedAt?: string | null
+  lastSafeResponse?: Record<string, unknown> | null
 }
 
 export async function getSandboxDemoOnboardingStatus(): Promise<SandboxOnboardingStatus> {
@@ -374,6 +377,19 @@ export async function getSandboxDemoOnboardingStatus(): Promise<SandboxOnboardin
 
 export type SandboxReconnectRequest = {
   otp: string
+}
+
+export interface SandboxResetResult {
+  ok: boolean
+  reset: boolean
+  already_reset: boolean
+  credential_id?: string
+  onboarding_uid?: string
+  previous_stage?: string
+  previous_operation?: string | null
+  status: string
+  reason: string
+  reset_at?: string
 }
 
 const PERMANENT_DEMO_TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
@@ -387,6 +403,13 @@ export async function runSandboxDemoOnboarding(params: {
     action: params.action,
     ...(params.functionalityMap ? { functionalityMap: params.functionalityMap } : {}),
     ...(params.reconnect ?? {}),
+  })
+}
+
+export async function resetSandboxDemoOnboarding(): Promise<SandboxResetResult & SandboxOnboardingStatus> {
+  return edgePostSafe<SandboxResetResult & SandboxOnboardingStatus>('zatca-onboard-sandbox-demo', {
+    action: 'reset_sandbox_onboarding',
+    confirmation: 'RESET SANDBOX',
   })
 }
 

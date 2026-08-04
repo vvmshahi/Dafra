@@ -37,6 +37,7 @@ const SANDBOX_PRODUCTION_KEY_MISMATCH_ERROR =
   'Sandbox Production certificate does not match the CSR signing key.'
 
 type SandboxStage =
+  | 'reset_sandbox_onboarding'
   | 'authorize_caller'
   | 'resolve_trading_scope'
   | 'generate_private_key'
@@ -67,6 +68,9 @@ type SandboxFailureCode =
   | 'SANDBOX_CREDENTIAL_PERSIST_FAILED'
   | 'SANDBOX_CREDENTIAL_CURRENT_CONFLICT'
   | 'SANDBOX_ACTIVATION_FAILED'
+  | 'SANDBOX_RESET_CONFIRMATION_REQUIRED'
+  | 'SANDBOX_RESET_ACTIVE_CREDENTIAL'
+  | 'SANDBOX_RESET_FAILED'
   | 'SANDBOX_UPSTREAM_UNAVAILABLE'
 
 type SandboxFailure = {
@@ -106,12 +110,13 @@ const ACTIONS = [
   'activate',
   'retry_failed_step',
   'reconcile_uncertain_operation',
+  'reset_sandbox_onboarding',
 ] as const
 
 type Action = typeof ACTIONS[number]
 type RetryableAction = Exclude<
   Action,
-  'get_status' | 'generate_csr' | 'retry_failed_step' | 'reconcile_uncertain_operation'
+  'get_status' | 'generate_csr' | 'retry_failed_step' | 'reconcile_uncertain_operation' | 'reset_sandbox_onboarding'
 >
 type ReconciliationDecision =
   | 'mark_verified_success'
@@ -131,6 +136,7 @@ type OnboardingStatus =
 interface RequestBody {
   action: Action
   otp?: string
+  confirmation?: string
   functionalityMap?: FunctionalityMap
   credentialId?: string
   expectedOperation?: RetryableAction
@@ -153,7 +159,7 @@ interface CredentialRow {
   onboarding_operation: RetryableAction | null
   operation_started_at: string | null
   reconciliation_status: 'not_required' | 'required' | 'resolved'
-  reconciliation_decision: ReconciliationDecision | null
+  reconciliation_decision: ReconciliationDecision | 'abandoned_by_owner_reset' | null
   reconciled_at: string | null
   reconciled_by: string | null
   reconciliation_summary: Record<string, unknown> | null
@@ -223,6 +229,11 @@ class ExternalReconciliationRequiredError extends Error {
   }
 }
 
+interface AuthorizedCaller {
+  userId: string | null
+  role: 'owner' | 'super_admin' | 'service_role'
+}
+
 class SandboxProductionKeyMismatchError extends Error {
   constructor() {
     super(SANDBOX_PRODUCTION_KEY_MISMATCH_ERROR)
@@ -244,9 +255,28 @@ Deno.serve(async (req: Request) => {
     const body = await readBody(req)
     const db = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
     currentStage = 'authorize_caller'
-    await authorizeOnboardingCaller(db, req)
+    const caller = await authorizeOnboardingCaller(db, req)
     currentStage = 'resolve_trading_scope'
     const scope = await loadDemoScope(db)
+
+    if (body.action === 'reset_sandbox_onboarding') {
+      currentStage = 'reset_sandbox_onboarding'
+      if (!caller.userId) {
+        throw new RequestError(
+          'Owner reset requires an authenticated Owner or Super Admin session.',
+          403,
+          'SANDBOX_RECONNECT_UNAUTHORIZED',
+        )
+      }
+      const reset = await resetSandboxOnboarding(db, caller.userId)
+      const credential = await loadCredential(db)
+      return jsonResponse({
+        ok: true,
+        ...safeStatus(TRADING_BRANCH_ID, credential),
+        reset,
+        requestId,
+      })
+    }
 
     if (body.action === 'reconcile_uncertain_operation') {
       const reconciliation = await reconcileUncertainOperation(db, body)
@@ -255,12 +285,13 @@ Deno.serve(async (req: Request) => {
         ok: true,
         ...safeStatus(TRADING_BRANCH_ID, credential),
         reconciliation,
+        requestId,
       })
     }
 
     if (body.action === 'get_status') {
       const credential = await loadCredential(db)
-      return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential) })
+      return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential), requestId })
     }
 
     let credential = await loadCredential(db)
@@ -269,7 +300,7 @@ Deno.serve(async (req: Request) => {
       const idempotent = !!credential
       currentStage = 'generate_csr'
       credential = await generateCsr(db, scope, body, credential)
-      return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential), idempotent })
+      return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential), idempotent, requestId })
     }
 
     if (!credential) {
@@ -284,7 +315,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (isActionAlreadyComplete(requestedAction, credential)) {
-      return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential), idempotent: true })
+      return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential), idempotent: true, requestId })
     }
 
     assertSellerIdentityUnchanged(scope, credential)
@@ -318,7 +349,7 @@ Deno.serve(async (req: Request) => {
       throw new RequestError(failure.message, failure.status, failure.code)
     }
 
-    return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential) })
+    return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential), requestId })
   } catch (error) {
     const failure = error instanceof ClassifiedStageError
       ? error.failure
@@ -371,6 +402,7 @@ async function readBody(req: Request): Promise<RequestBody> {
   const allowedKeys = new Set([
     'action',
     'otp',
+    'confirmation',
     'functionalityMap',
     'credentialId',
     'expectedOperation',
@@ -386,11 +418,27 @@ async function readBody(req: Request): Promise<RequestBody> {
   if (body.otp !== undefined && typeof body.otp !== 'string') {
     throw new RequestError('Sandbox OTP must be a string.', 400, 'SANDBOX_OTP_INVALID')
   }
+  if (body.confirmation !== undefined && typeof body.confirmation !== 'string') {
+    throw new RequestError('Reset confirmation is invalid.', 400, 'SANDBOX_RESET_CONFIRMATION_REQUIRED')
+  }
   if (body.functionalityMap !== undefined && !isFunctionalityMap(body.functionalityMap)) {
     throw new RequestError('Invalid invoice functionality map', 400)
   }
 
   const action = body.action as Action
+  if (action === 'reset_sandbox_onboarding') {
+    if (body.confirmation !== 'RESET SANDBOX') {
+      throw new RequestError(
+        'Type RESET SANDBOX to confirm the Trading Sandbox reset.',
+        400,
+        'SANDBOX_RESET_CONFIRMATION_REQUIRED',
+      )
+    }
+    if (body.otp !== undefined || body.functionalityMap !== undefined) {
+      throw new RequestError('Reset accepts confirmation only.', 400, 'SANDBOX_RESET_CONFIRMATION_REQUIRED')
+    }
+    return body as unknown as RequestBody
+  }
   const reconciliationKeys = [
     'credentialId',
     'expectedOperation',
@@ -493,9 +541,9 @@ function jwtRole(jwt: string): string | null {
 async function authorizeOnboardingCaller(
   db: any,
   req: Request,
-): Promise<void> {
+): Promise<AuthorizedCaller> {
   const jwt = bearerToken(req)
-  if (jwtRole(jwt) === 'service_role') return
+  if (jwtRole(jwt) === 'service_role') return { userId: null, role: 'service_role' }
 
   const { data: { user }, error: authError } = await db.auth.getUser(jwt)
   if (authError || !user) throw new RequestError('Unauthorized', 401, 'SANDBOX_RECONNECT_UNAUTHORIZED')
@@ -515,6 +563,34 @@ async function authorizeOnboardingCaller(
   if (!ownerAuthorized && !superAdminAuthorized) {
     throw new RequestError('Forbidden: authorized Trading Demo Sandbox owner scope required', 403, 'SANDBOX_RECONNECT_UNAUTHORIZED')
   }
+  return {
+    userId: user.id,
+    role: ownerAuthorized ? 'owner' : 'super_admin',
+  }
+}
+
+async function resetSandboxOnboarding(db: any, actorId: string): Promise<Record<string, unknown>> {
+  const { data, error } = await db.rpc('reset_zatca_sandbox_onboarding', {
+    p_tenant_id: PERMANENT_DEMO_TENANT_ID,
+    p_branch_id: TRADING_BRANCH_ID,
+    p_actor_id: actorId,
+  })
+  if (error || !data) {
+    const message = typeof error?.message === 'string' ? error.message : ''
+    if (message === 'Active Trading Sandbox credential cannot be reset') {
+      throw new RequestError(
+        'An active Trading Sandbox credential cannot be reset.',
+        409,
+        'SANDBOX_RESET_ACTIVE_CREDENTIAL',
+      )
+    }
+    throw new RequestError(
+      'Trading Sandbox reset could not be completed. Contact Kubri support.',
+      500,
+      'SANDBOX_RESET_FAILED',
+    )
+  }
+  return data as Record<string, unknown>
 }
 
 async function loadDemoScope(db: any): Promise<Scope> {
@@ -1278,6 +1354,8 @@ function safeStatus(branchId: string, credential: CredentialRow | null): Record<
       branchId,
       environment: 'sandbox',
       status: 'not_started',
+      operationId: null,
+      onboardingUid: null,
       completedSteps: [],
       certificateExists: false,
       complianceCredentialExists: false,
@@ -1293,6 +1371,8 @@ function safeStatus(branchId: string, credential: CredentialRow | null): Record<
   return {
     branchId: credential.branch_id,
     deviceId: credential.device_id,
+    operationId: credential.id,
+    onboardingUid: credential.device_id,
     environment: 'sandbox',
     status,
     functionalityMap: credential.functionality_map,
@@ -1316,9 +1396,23 @@ function safeStatus(branchId: string, credential: CredentialRow | null): Record<
     reconciledAt: credential.reconciled_at,
     restartRequired: credential.reconciliation_decision === 'revoke_and_restart_device' ||
       credential.last_safe_response?.restartRequired === true,
+    lastSafeResponse: safeStatusResponse(credential.last_safe_response),
     activatedAt: credential.activated_at,
     updatedAt: credential.updated_at,
   }
+}
+
+function safeStatusResponse(value: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object') return null
+  const allowed = new Set([
+    'action', 'operation', 'decision', 'resultingStatus', 'httpStatus',
+    'completedAt', 'uncertainAt', 'failedAt', 'restartRequired', 'reason',
+  ])
+  return Object.fromEntries(Object.entries(value).filter(([key, entry]) => (
+    allowed.has(key) && (
+      typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean'
+    )
+  )))
 }
 
 function completedSteps(credential: CredentialRow): string[] {
@@ -1619,6 +1713,9 @@ function classifyStageFailure(
 
 function isSandboxFailureCode(value: string): value is SandboxFailureCode {
   return [
+    'SANDBOX_RESET_CONFIRMATION_REQUIRED',
+    'SANDBOX_RESET_ACTIVE_CREDENTIAL',
+    'SANDBOX_RESET_FAILED',
     'SANDBOX_RECONNECT_UNAUTHORIZED',
     'SANDBOX_RECONNECT_CONFIG_MISSING',
     'SANDBOX_RECONNECT_SCOPE_UNAVAILABLE',
@@ -1640,6 +1737,7 @@ function isSandboxFailureCode(value: string): value is SandboxFailureCode {
 }
 
 function codeForStage(stage: SandboxStage, error: unknown): SandboxFailureCode {
+  if (stage === 'reset_sandbox_onboarding') return 'SANDBOX_RESET_FAILED'
   if (stage === 'authorize_caller') return 'SANDBOX_RECONNECT_UNAUTHORIZED'
   if (stage === 'resolve_trading_scope') return 'SANDBOX_RECONNECT_SCOPE_UNAVAILABLE'
   if (stage === 'generate_private_key') return 'SANDBOX_IDENTITY_GENERATION_FAILED'
@@ -1667,6 +1765,8 @@ function codeForStage(stage: SandboxStage, error: unknown): SandboxFailureCode {
 }
 
 function statusForCode(code: SandboxFailureCode): number {
+  if (code === 'SANDBOX_RESET_CONFIRMATION_REQUIRED') return 400
+  if (code === 'SANDBOX_RESET_ACTIVE_CREDENTIAL') return 409
   if (code === 'SANDBOX_RECONNECT_UNAUTHORIZED') return 403
   if (code === 'SANDBOX_OTP_REQUIRED' || code === 'SANDBOX_OTP_INVALID') return 400
   if (code === 'SANDBOX_CSR_KEY_MISMATCH' || code === 'SANDBOX_CERTIFICATE_KEY_MISMATCH') return 422
@@ -1679,6 +1779,9 @@ function statusForCode(code: SandboxFailureCode): number {
 
 function ownerMessage(code: SandboxFailureCode): string {
   const messages: Record<SandboxFailureCode, string> = {
+    SANDBOX_RESET_CONFIRMATION_REQUIRED: 'Type RESET SANDBOX to confirm this controlled restart.',
+    SANDBOX_RESET_ACTIVE_CREDENTIAL: 'An active Trading Sandbox credential cannot be reset.',
+    SANDBOX_RESET_FAILED: 'Trading Sandbox reset could not be completed. Contact Kubri support.',
     SANDBOX_RECONNECT_UNAUTHORIZED: 'Authorized Trading Demo Sandbox owner access is required.',
     SANDBOX_RECONNECT_CONFIG_MISSING: 'Sandbox onboarding configuration is unavailable. Contact Kubri support.',
     SANDBOX_RECONNECT_SCOPE_UNAVAILABLE: 'Trading Demo Sandbox scope is unavailable. Contact Kubri support.',

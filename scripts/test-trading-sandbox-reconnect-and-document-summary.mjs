@@ -49,8 +49,8 @@ assert.doesNotMatch(tradingReconnect, /localStorage|sessionStorage|one-time-code
 assert.match(tradingReconnect, /sandbox\.reconnectHelp/)
 assert.match(settings, /runSandboxDemoOnboarding/)
 assert.doesNotMatch(settings, /localStorage[\s\S]{0,200}otp/i)
-assert.match(english, /"reconnectOtpTitle":"Sandbox OTP"/)
-assert.match(english, /"reconnectOtpHelp":"Enter the six-digit Integration Sandbox OTP\./)
+assert.match(english, /"reconnectOtpTitle"\s*:\s*"Sandbox OTP"/)
+assert.match(english, /"reconnectOtpHelp"\s*:\s*"Enter the six-digit Integration Sandbox OTP\./)
 assert.match(arabic, /reconnectOtpTitle/)
 
 assert.match(api, /zatca-onboard-sandbox-demo/)

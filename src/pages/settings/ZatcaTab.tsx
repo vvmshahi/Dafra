@@ -27,6 +27,7 @@ import {
   getSandboxDemoConnectionStatus,
   getSandboxDemoOnboardingStatus,
   runSandboxDemoOnboarding,
+  resetSandboxDemoOnboarding,
   activateSandboxDemoConnection,
   disconnectProductionZatca,
   isZatcaOtpRejection,
@@ -38,6 +39,7 @@ import {
   type ZatcaFunctionalityMap,
   type SandboxDemoConnectionStatus,
   type SandboxOnboardingStatus,
+  type SandboxResetResult,
 } from '@/lib/zatca/api'
 import { getCachedProductionStatus, readCachedProductionStatus, writeCachedProductionStatus } from '@/lib/zatca/status'
 import type { Branch } from '@/types'
@@ -306,6 +308,294 @@ function TradingSandboxReconnect({
         </div>
       )}
       {success && <p className="border-t border-emerald-100 bg-emerald-50 px-5 py-3 text-xs font-semibold text-emerald-800">{success}</p>}
+    </section>
+  )
+}
+
+type SandboxDebugStage =
+  | 'reset_started' | 'previous_state_archived' | 'reset_completed' | 'otp_ready'
+  | 'submit_started' | 'caller_authorized' | 'trading_scope_resolved'
+  | 'fresh_identity_started' | 'private_key_generated' | 'csr_generated'
+  | 'csr_key_match_verified' | 'credential_draft_saved'
+  | 'compliance_csid_request_started' | 'compliance_csid_response_received'
+  | 'compliance_validation_started' | 'compliance_validation_completed'
+  | 'production_csid_request_started' | 'production_csid_response_received'
+  | 'certificate_key_match_verified' | 'credential_activation_started'
+  | 'credential_activation_completed' | 'trading_mode_updated'
+  | 'onboarding_completed' | 'onboarding_failed'
+
+type SandboxDebugEvent = {
+  id: number
+  timestamp: string
+  stage: SandboxDebugStage
+  status: 'pending' | 'success' | 'failed'
+  code?: string
+  message?: string
+  httpStatus?: number
+  requestId?: string
+  operationId?: string
+  onboardingUid?: string
+}
+
+function debugSafeId(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[0-9a-f-]{20,}$/i.test(value) ? value : undefined
+}
+
+function debugSafeMessage(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.length > 240) return undefined
+  if (/private[_ -]?key|secret|csid|token|cookie|authorization|encrypted|xml body|raw response/i.test(value)) return undefined
+  return value.replace(/[\r\t]+/g, ' ')
+}
+
+function debugDetails(value: unknown): Partial<SandboxDebugEvent> {
+  const root = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const payload = root.payload && typeof root.payload === 'object' ? root.payload as Record<string, unknown> : root
+  const details: Partial<SandboxDebugEvent> = {}
+  if (typeof payload.code === 'string' && /^[A-Z0-9_]+$/.test(payload.code)) details.code = payload.code
+  details.message = debugSafeMessage(payload.error)
+  details.requestId = debugSafeId(payload.requestId)
+  details.operationId = debugSafeId(payload.operationId ?? payload.credential_id)
+  details.onboardingUid = debugSafeId(payload.onboardingUid ?? payload.onboarding_uid)
+  if (typeof payload.upstreamStatus === 'number') details.httpStatus = payload.upstreamStatus
+  return Object.fromEntries(Object.entries(details).filter(([, item]) => item !== undefined))
+}
+
+function TradingSandboxReconnectDebug({
+  status,
+  connectionActive,
+  onStatusChange,
+  onConnectionChange,
+}: {
+  status: SandboxOnboardingStatus | null
+  connectionActive: boolean
+  onStatusChange: (status: SandboxOnboardingStatus) => void
+  onConnectionChange: (status: SandboxDemoConnectionStatus) => void
+}) {
+  const { t } = useTranslation('zatca')
+  const [open, setOpen] = useState(!connectionActive)
+  const [busy, setBusy] = useState(false)
+  const [otp, setOtp] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+  const [progress, setProgress] = useState<string | null>(null)
+  const [events, setEvents] = useState<SandboxDebugEvent[]>([])
+  const [autoScroll, setAutoScroll] = useState(true)
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetPhrase, setResetPhrase] = useState('')
+  const [resetBusy, setResetBusy] = useState(false)
+  const [resetError, setResetError] = useState<string | null>(null)
+  const sequence = useRef(0)
+  const endRef = useRef<HTMLDivElement>(null)
+
+  const statusLabel = status?.status ?? 'not_started'
+  const canResume = !connectionActive && status?.reconciliationStatus !== 'required' && (!status || ['not_started', 'csr_ready', 'compliance_csid_ready', 'compliance_checks_pending', 'compliance_passed', 'sandbox_production_csid_ready', 'failed'].includes(statusLabel))
+  const requiresOtp = !status || ['not_started', 'csr_ready', 'failed'].includes(statusLabel)
+  const otpValid = /^\d{6}$/.test(otp)
+
+  const addEvent = useCallback((stage: SandboxDebugStage, eventStatus: SandboxDebugEvent['status'], extra: Partial<SandboxDebugEvent> = {}) => {
+    const id = ++sequence.current
+    setEvents(previous => [...previous, { id, timestamp: new Date().toISOString(), stage, status: eventStatus, ...extra }])
+    return id
+  }, [])
+
+  const finishEvent = useCallback((id: number, eventStatus: SandboxDebugEvent['status'], extra: Partial<SandboxDebugEvent> = {}) => {
+    setEvents(previous => previous.map(event => event.id === id ? { ...event, status: eventStatus, ...extra } : event))
+  }, [])
+
+  useEffect(() => {
+    if (autoScroll) endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [events, autoScroll])
+
+  function statusDetails(value: unknown): Partial<SandboxDebugEvent> {
+    const root = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+    return {
+      ...debugDetails(value),
+      operationId: debugSafeId(root.operationId) ?? status?.operationId ?? undefined,
+      onboardingUid: debugSafeId(root.onboardingUid) ?? status?.onboardingUid ?? undefined,
+      requestId: debugSafeId(root.requestId) ?? debugDetails(value).requestId,
+    }
+  }
+
+  async function trace<T>(stage: SandboxDebugStage, task: () => Promise<T>): Promise<T> {
+    const id = addEvent(stage, 'pending', { operationId: status?.operationId ?? undefined, onboardingUid: status?.onboardingUid ?? undefined })
+    try {
+      const result = await task()
+      finishEvent(id, 'success', statusDetails(result))
+      return result
+    } catch (cause) {
+      finishEvent(id, 'failed', debugDetails(cause))
+      throw cause
+    }
+  }
+
+  function prepareOtp() {
+    if (!events.some(event => event.stage === 'otp_ready')) {
+      addEvent('otp_ready', 'success', { message: t('sandbox.debugOtpReady') })
+    }
+  }
+
+  async function resetSandbox() {
+    const startId = addEvent('reset_started', 'pending', { operationId: status?.operationId ?? undefined, onboardingUid: status?.onboardingUid ?? undefined })
+    setResetBusy(true)
+    setResetError(null)
+    try {
+      const result = await resetSandboxDemoOnboarding()
+      const reset = result as SandboxResetResult & SandboxOnboardingStatus
+      finishEvent(startId, 'success', statusDetails(reset))
+      addEvent('previous_state_archived', 'success', { operationId: debugSafeId(reset.credential_id), onboardingUid: debugSafeId(reset.onboarding_uid), message: t('sandbox.debugPreviousArchived') })
+      addEvent('reset_completed', 'success', { message: t('sandbox.debugResetCompleted') })
+      onStatusChange(reset)
+      setOtp('')
+      setOpen(true)
+      setResetOpen(false)
+      setResetPhrase('')
+      setSuccess(t('sandbox.resetCompleted'))
+      prepareOtp()
+    } catch (cause) {
+      finishEvent(startId, 'failed', debugDetails(cause))
+      setResetError(debugDetails(cause).message ?? t('sandbox.resetFailed'))
+    } finally {
+      setResetBusy(false)
+    }
+  }
+
+  async function reconnect() {
+    setError(null)
+    setSuccess(null)
+    setProgress(null)
+    if (requiresOtp && !otpValid) {
+      setError(t('sandbox.reconnectOtpRequired'))
+      return
+    }
+    const enteredOtp = otp
+    let next = status
+    let authorityRecorded = false
+    const submitId = addEvent('submit_started', 'pending', { operationId: status?.operationId ?? undefined, onboardingUid: status?.onboardingUid ?? undefined })
+    try {
+      setBusy(true)
+      if (!next || next.status === 'not_started' || next.status === 'failed') {
+        setProgress(t('sandbox.reconnectProgressIdentity'))
+        next = await trace('fresh_identity_started', () => runSandboxDemoOnboarding({ action: 'generate_csr', functionalityMap: '0100' }))
+        if (!authorityRecorded) {
+          addEvent('caller_authorized', 'success', statusDetails(next))
+          addEvent('trading_scope_resolved', 'success', statusDetails(next))
+          authorityRecorded = true
+        }
+        addEvent('private_key_generated', 'success', statusDetails(next))
+        addEvent('csr_generated', 'success', statusDetails(next))
+        addEvent('csr_key_match_verified', 'success', statusDetails(next))
+        addEvent('credential_draft_saved', 'success', statusDetails(next))
+        onStatusChange(next)
+      }
+      if (next.status === 'csr_ready') {
+        setProgress(t('sandbox.reconnectProgressCompliance'))
+        setOtp('')
+        next = await trace('compliance_csid_request_started', () => runSandboxDemoOnboarding({ action: 'request_compliance_csid', reconnect: { otp: enteredOtp } }))
+        if (!authorityRecorded) {
+          addEvent('caller_authorized', 'success', statusDetails(next))
+          addEvent('trading_scope_resolved', 'success', statusDetails(next))
+          authorityRecorded = true
+        }
+        addEvent('compliance_csid_response_received', 'success', statusDetails(next))
+        onStatusChange(next)
+      }
+      if (next.status === 'compliance_csid_ready') {
+        setProgress(t('sandbox.reconnectProgressValidation'))
+        next = await trace('compliance_validation_started', () => runSandboxDemoOnboarding({ action: 'submit_compliance_documents' }))
+        if (!authorityRecorded) {
+          addEvent('caller_authorized', 'success', statusDetails(next))
+          addEvent('trading_scope_resolved', 'success', statusDetails(next))
+          authorityRecorded = true
+        }
+        addEvent('compliance_validation_completed', 'success', statusDetails(next))
+        onStatusChange(next)
+      }
+      if (next.status === 'compliance_passed') {
+        setProgress(t('sandbox.reconnectProgressProduction'))
+        next = await trace('production_csid_request_started', () => runSandboxDemoOnboarding({ action: 'request_sandbox_production_csid' }))
+        if (!authorityRecorded) {
+          addEvent('caller_authorized', 'success', statusDetails(next))
+          addEvent('trading_scope_resolved', 'success', statusDetails(next))
+          authorityRecorded = true
+        }
+        addEvent('production_csid_response_received', 'success', statusDetails(next))
+        addEvent('certificate_key_match_verified', 'success', statusDetails(next))
+        onStatusChange(next)
+      }
+      if (next.status === 'sandbox_production_csid_ready') {
+        next = await trace('credential_activation_started', () => runSandboxDemoOnboarding({ action: 'activate' }))
+        if (!authorityRecorded) {
+          addEvent('caller_authorized', 'success', statusDetails(next))
+          addEvent('trading_scope_resolved', 'success', statusDetails(next))
+          authorityRecorded = true
+        }
+        addEvent('credential_activation_completed', 'success', statusDetails(next))
+        onStatusChange(next)
+      }
+      if (next.status === 'active') {
+        const connection = await activateSandboxDemoConnection()
+        onConnectionChange(connection)
+        addEvent('trading_mode_updated', 'success', statusDetails(connection))
+        addEvent('onboarding_completed', 'success', statusDetails(next))
+        finishEvent(submitId, 'success', statusDetails(next))
+        setSuccess(t('sandbox.reconnectSuccess'))
+        setProgress(null)
+        setOpen(false)
+        return
+      }
+      finishEvent(submitId, 'success', statusDetails(next))
+      setSuccess(next.status === 'failed' ? (next.lastError || t('sandbox.reconnectFailed')) : t('sandbox.reconnectChecksRunning'))
+      setProgress(null)
+    } catch (cause) {
+      const details = debugDetails(cause)
+      addEvent('onboarding_failed', 'failed', details)
+      finishEvent(submitId, 'failed', details)
+      setError(details.message ?? t('sandbox.reconnectFailed'))
+      setProgress(null)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function copyDebugLog() {
+    const text = events.map(event => JSON.stringify(event)).join('\n')
+    if (navigator.clipboard) await navigator.clipboard.writeText(text)
+  }
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-amber-100 bg-white shadow-card">
+      <div className="flex flex-col gap-4 border-b border-amber-100 bg-amber-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-black text-gray-950">{t('sandbox.reconnectTitle')}</h3>
+            <Badge variant={connectionActive ? 'success' : 'warning'} dot>{connectionActive ? t('status.active') : t(`sandbox.onboardingStatus.${statusLabel}`, { defaultValue: statusLabel })}</Badge>
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.reconnectHelp')}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canResume && <button type="button" onClick={() => { setOpen(value => !value); if (!open && requiresOtp) prepareOtp() }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-4 py-2 text-xs font-bold text-white hover:bg-[#1a3a28]"><Wifi size={13} /> {t('sandbox.reconnectButton')}</button>}
+          {!connectionActive && <button type="button" onClick={() => { setResetPhrase(''); setResetError(null); setResetOpen(true) }} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-200 bg-white px-4 py-2 text-xs font-bold text-amber-900 hover:bg-amber-50">{t('sandbox.resetButton')}</button>}
+        </div>
+      </div>
+      <div className="grid gap-2 p-5 sm:grid-cols-2">
+        <InfoRow label={t('fields.business')} value="Kubri Demo" />
+        <InfoRow label={t('fields.branch')} value="Kubri Trading Demo" />
+        <InfoRow label={t('fields.environment')} value={t('sandbox.zatcaSandbox')} />
+        <InfoRow label={t('sandbox.currentCredential')} value={status?.lastError || statusLabel} />
+      </div>
+      {open && (
+        <div className="border-t border-amber-100 bg-gray-50/70 px-5 py-4">
+          <p className="text-xs font-semibold text-gray-900">{t('sandbox.reconnectTitle')}</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.reconnectHelp')}</p>
+          {requiresOtp && <div className="mt-4"><label htmlFor="trading-sandbox-otp" className="block text-xs font-bold text-gray-900">{t('sandbox.reconnectOtpTitle')}</label><p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.reconnectOtpHelp')}</p><input id="trading-sandbox-otp" type="password" inputMode="numeric" pattern="[0-9]*" autoComplete="off" maxLength={6} value={otp} onChange={event => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={t('sandbox.reconnectOtpPlaceholder')} className="mt-2 min-h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold tracking-[0.25em] text-gray-900 outline-none focus:ring-2 focus:ring-[#0F2419]" /><p className="mt-1 text-[11px] text-gray-500">{t('sandbox.reconnectOtpFormat')}</p></div>}
+          {busy && progress && <p role="status" className="mt-3 flex items-center gap-2 text-xs font-semibold text-gray-700"><Loader2 size={13} className="animate-spin" /> {progress}</p>}
+          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]"><button type="button" onClick={() => void reconnect()} disabled={busy || (requiresOtp && !otpValid)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-4 text-xs font-bold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-50">{busy && <Loader2 size={13} className="animate-spin" />}{busy ? t('sandbox.reconnectSubmitting') : t('sandbox.reconnectSubmit')}</button>{requiresOtp && <button type="button" onClick={() => setOtp('')} disabled={busy || otp.length === 0} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-gray-200 bg-white px-4 text-xs font-bold text-gray-700 disabled:opacity-50">{t('sandbox.reconnectOtpClear')}</button>}</div>
+          {error && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}
+        </div>
+      )}
+      {events.length > 0 && <div className="border-t border-amber-100 bg-slate-950 px-5 py-4 text-slate-100"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-bold">{t('sandbox.debugTitle')}</p><p className="mt-1 text-[11px] text-slate-400">{t('sandbox.debugLatestStage')}: {events[events.length - 1].stage}</p></div><label className="flex items-center gap-2 text-[11px] text-slate-300"><input type="checkbox" checked={autoScroll} onChange={event => setAutoScroll(event.target.checked)} />{t('sandbox.debugAutoScroll')}</label></div><div className="mt-3 max-h-72 space-y-1 overflow-y-auto rounded-lg bg-slate-900 p-2 font-mono text-[10px]" aria-live="polite">{events.map(event => <div key={event.id} className="rounded border border-slate-800 px-2 py-1"><div className="flex flex-wrap gap-x-2"><span className="text-slate-500">{event.timestamp}</span><span className="text-slate-200">{event.stage}</span><span className={event.status === 'success' ? 'text-emerald-400' : event.status === 'failed' ? 'text-red-400' : 'text-amber-300'}>{event.status}</span>{event.code && <span className="text-fuchsia-300">{event.code}</span>}{event.httpStatus && <span className="text-sky-300">HTTP {event.httpStatus}</span>}</div>{(event.message || event.requestId || event.operationId || event.onboardingUid) && <div className="mt-0.5 break-all text-slate-400">{event.message} {event.requestId && `request=${event.requestId} `}{event.operationId && `operation=${event.operationId} `}{event.onboardingUid && `uid=${event.onboardingUid}`}</div>}</div>)}<div ref={endRef} /></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void copyDebugLog()} className="rounded-lg border border-slate-700 px-3 py-1.5 text-[11px] font-bold hover:bg-slate-800">{t('sandbox.debugCopy')}</button><button type="button" onClick={() => setEvents([])} className="rounded-lg border border-slate-700 px-3 py-1.5 text-[11px] font-bold hover:bg-slate-800">{t('sandbox.debugClear')}</button></div></div>}
+      {success && <p className="border-t border-emerald-100 bg-emerald-50 px-5 py-3 text-xs font-semibold text-emerald-800">{success}</p>}
+      {resetOpen && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4"><section className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="sandbox-reset-title"><h2 id="sandbox-reset-title" className="text-base font-bold text-gray-900">{t('sandbox.resetTitle')}</h2><p className="mt-2 text-sm leading-6 text-gray-600">{t('sandbox.resetBody')}</p><label htmlFor="sandbox-reset-confirmation" className="mt-4 block text-xs font-bold text-gray-900">{t('sandbox.resetConfirmationLabel')}</label><input id="sandbox-reset-confirmation" value={resetPhrase} onChange={event => setResetPhrase(event.target.value)} autoComplete="off" className="mt-2 min-h-10 w-full rounded-xl border border-gray-200 px-3 text-sm font-semibold uppercase tracking-wide outline-none focus:ring-2 focus:ring-amber-700" />{resetError && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{resetError}</p>}<div className="mt-5 flex justify-end gap-2"><button type="button" disabled={resetBusy} onClick={() => setResetOpen(false)} className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-bold text-gray-700">{t('common:cancel')}</button><button type="button" disabled={resetBusy || resetPhrase !== 'RESET SANDBOX'} onClick={() => void resetSandbox()} className="rounded-xl bg-amber-800 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{resetBusy ? t('sandbox.resetSubmitting') : t('sandbox.resetConfirm')}</button></div></section></div>}
     </section>
   )
 }
@@ -1206,7 +1496,7 @@ export default function ZatcaTab() {
    * scope checks, so this client condition is only a visibility gate.
    */
   const reconnectPanel = isPermanentDemoOwner ? (
-    <TradingSandboxReconnect
+    <TradingSandboxReconnectDebug
       status={tradingSandboxOnboardingStatus}
       connectionActive={sandboxStatuses[TRADING_BRANCH_ID]?.active === true}
       onStatusChange={setTradingSandboxOnboardingStatus}
