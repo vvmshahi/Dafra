@@ -226,11 +226,10 @@ reached `READY`:
 
 The focused reconnect repair Preview also reached `READY`:
 
-- URL: https://dafra-ojk1mrn2u-mohammed-shahin-v-vs-projects.vercel.app
-- deployment: `dpl_6htU36b2EbiRvP3Y7a7Dr28PFFbJ`
+- URL: https://dafra-4a85ttqkc-mohammed-shahin-v-vs-projects.vercel.app
+- deployment: `dpl_uxuEAp7kdmpqAaKajcQuQibfu6fP`
 - target: preview
-- source was the tested focused repair working tree; the post-commit source SHA
-  is recorded below after the release-note commit.
+- application source SHA: `72a2c70`
 
 This is not a production certification or a claim that either Demo branch
 has completed an authenticated Sandbox submission.
