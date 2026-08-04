@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { TrendingUp, BarChart2, FileText, CreditCard, Users, ShoppingCart, Download, Clock3, Loader2, Truck } from 'lucide-react'
+import { TrendingUp, BarChart2, FileText, CreditCard, ShoppingCart, Download, Clock3, Loader2, Truck, WalletCards } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -16,7 +16,6 @@ import SalesReport      from './SalesReport'
 import ProfitLossReport from './ProfitLossReport'
 import VatReport        from './VatReport'
 import ExpenseReport    from './ExpenseReport'
-import CustomerReport   from './CustomerReport'
 import PurchaseReport   from './PurchaseReport'
 import RegisterSessionsReport from './RegisterSessionsReport'
 import type { PhaseAReportKind } from './pdf/reportPdfExporters'
@@ -26,11 +25,11 @@ import { resolveBranchDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type TabId = 'sessions' | 'sales' | 'pl' | 'vat' | 'expenses' | 'customers' | 'purchases'
+export type TabId = 'sessions' | 'sales' | 'pl' | 'vat' | 'expenses' | 'purchases'
 
 export const REPORT_TABS: { id: TabId; icon: React.ElementType }[] = [
   { id: 'sessions', icon: Clock3 }, { id: 'sales', icon: TrendingUp }, { id: 'pl', icon: BarChart2 },
-  { id: 'vat', icon: FileText }, { id: 'expenses', icon: CreditCard }, { id: 'customers', icon: Users }, { id: 'purchases', icon: ShoppingCart },
+  { id: 'vat', icon: FileText }, { id: 'expenses', icon: CreditCard }, { id: 'purchases', icon: ShoppingCart },
 ]
 
 export function ReportTabs({ active, onSelect }: { active: TabId; onSelect: (tab: TabId) => void }) {
@@ -201,6 +200,13 @@ export default function ReportsPage() {
             <Truck size={14} />
             {t('tabs.suppliers')}
           </Link>
+          <Link
+            to="/reports/receivables"
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+          >
+            <WalletCards size={14} />
+            {t('tabs.receivables')}
+          </Link>
           {exportSupported && (
             <button
               type="button"
@@ -269,7 +275,6 @@ export default function ReportsPage() {
           {tab === 'pl'        && <ProfitLossReport  {...reportProps} />}
           {tab === 'vat'       && <VatReport         {...reportProps} />}
           {tab === 'expenses'  && <ExpenseReport     {...reportProps} />}
-          {tab === 'customers' && <CustomerReport    {...reportProps} />}
           {tab === 'purchases' && <PurchaseReport    {...reportProps} />}
         </section>
       )}

@@ -1,6 +1,6 @@
 export const SAUDI_TIME_ZONE = 'Asia/Riyadh'
 
-export type SaudiDatePreset = 'today' | 'yesterday' | 'this_month' | 'last_month'
+export type SaudiDatePreset = 'today' | 'yesterday' | 'last7' | 'this_month' | 'last_month' | 'this_year'
 
 const saudiPartsFormatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: SAUDI_TIME_ZONE,
@@ -84,9 +84,11 @@ export function saudiDatePresetRange(preset: SaudiDatePreset, now: Date | string
     const yesterday = shiftCalendarDate(today, -1)
     return { start: yesterday, end: yesterday }
   }
+  if (preset === 'last7') return { start: shiftCalendarDate(today, -6), end: today }
   if (preset === 'this_month') {
     return { start: dateFromCalendarParts(year, month, 1), end: today }
   }
+  if (preset === 'this_year') return { start: dateFromCalendarParts(year, 1, 1), end: today }
   const previousMonthLastDay = shiftCalendarDate(dateFromCalendarParts(year, month, 1), -1)
   const [previousYear, previousMonth] = previousMonthLastDay.split('-').map(Number)
   return {

@@ -115,12 +115,17 @@
     "previewHelp": "Updates as you edit; save when ready.",
     "previewThermal": "Thermal",
     "previewA4": "A4",
+    "zoomOut": "Zoom out",
+    "zoomIn": "Zoom in",
+    "fitWidth": "Fit width",
+    "fitPage": "Fit page",
+    "pageCount": "{{count}} page",
     "saved": "Settings saved",
     "unsaved": "Unsaved changes",
     "allSaved": "All changes saved",
     "reset": "Reset changes",
     "save": "Save settings",
-    "tabs": { "general": "General", "branding": "Header & Branding", "contact": "Contact & Footer", "thermal": "Thermal Receipt", "a4": "A4 Themes" },
+    "tabs": { "general": "General", "branding": "Header & Branding", "contact": "Contact & Footer", "thermal": "Thermal Receipt", "a4": "A4 Layouts" },
     "actions": {
       "receiptOnly": "Receipt only",
       "receiptHelp": "Use the thermal receipt path",
@@ -129,18 +134,45 @@
       "both": "Receipt and A4 invoice",
       "bothHelp": "Keep both document formats available"
     },
-    "general": { "help": "Choose Arabic or bilingual human-readable documents and the action after sale.", "language": "Invoice language", "arabic": "Arabic", "bilingual": "Bilingual — Arabic + English", "afterSale": "After-sale document" },
+    "general": { "help": "Choose Arabic or bilingual human-readable documents and the action after sale.", "language": "Invoice language", "arabic": "Arabic", "bilingual": "Bilingual", "bilingualLanguages": "Arabic + English", "afterSale": "After-sale document" },
     "branding": { "help": "Make the first impression clear and recognisable.", "useBranch": "Use branch name", "resolvedBranch": "Resolved branch: {{name}}", "heading": "Custom display heading", "headingPlaceholder": "Shown at the top of the invoice", "subheading": "Display subheading (optional)", "optionalPlaceholder": "Leave blank to hide it", "showLegal": "Show legal company name in branded header", "legalHelp": "The mandatory legal seller name remains in the invoice information section.", "legalReminder": "Mandatory legal seller details will still appear in the invoice information section.", "logo": "Logo", "logoAlt": "Current invoice logo", "logoHelp": "Upload, replace, or remove the saved branch logo.", "uploading": "Uploading…", "replace": "Replace logo", "remove": "Remove", "logoSize": "Logo size" },
     "contact": { "help": "Only enabled, non-empty contact details appear in the document. Leave address blank to inherit from the branch profile.", "showPhone": "Show phone", "phone": "Phone override", "inheritPhone": "Inherit branch phone", "showEmail": "Show email", "email": "Email", "showWebsite": "Show website", "website": "Website", "showAddress": "Show address", "address": "Address override", "inheritAddress": "Inherit branch address", "footer": "Footer message", "footerPlaceholder": "Leave blank to hide the footer message" },
     "thermal": { "help": "Tune the receipt for the paper your counter uses.", "paperWidth": "Paper width", "density": "Content density", "qrSize": "QR size", "wrapNames": "Wrap long item names", "showChange": "Show cash change" },
-    "a4": { "help": "Choose a complete visual theme. Each theme owns its header, table, totals, and footer treatment.", "theme": "Invoice theme", "classic": "Classic", "classicHelp": "Balanced and familiar", "modern": "Modern Split", "modernHelp": "Strong visual separation", "minimal": "Minimal Professional", "minimalHelp": "Quiet, clean hierarchy" },
+    "receiptThemes": { "title": "Receipt layout", "classic": "Classic Receipt", "classicUse": "The original Kubri receipt layout with a familiar, simple structure.", "compact": "Compact Retail", "compactUse": "High-volume counters with minimum paper use", "structured": "Structured Detail", "structuredUse": "Clear seller, item and tax information", "branded": "Branded Modern", "brandedUse": "A distinctive customer-facing receipt", "original": "Original · simple", "monochrome": "Monochrome · compact", "ledger": "Ledger · detailed", "kubri": "Monochrome · framed" },
+    "a4": { "help": "Choose a complete print composition, independent document colours, and optional extracted letterhead artwork.", "theme": "Invoice layout", "layout": "Layout", "accent": "Accent colour", "headingColour": "Heading colour", "bodyColour": "Body text colour", "customColour": "Custom accent colour", "hex": "Hex colour", "resetColour": "Reset", "unsafeColour": "That text colour does not have enough contrast on white. Choose a darker colour.", "autoForeground": "Auto text colour", "autoForegroundHelp": "Keeps required headings and text readable when the accent changes.", "artwork": "Letterhead artwork", "artworkHelp": "Select a PNG, JPEG, WebP, or single-page PDF, then extract safe header and optional footer regions. Legal invoice details remain live text.", "artworkInvalid": "Use a valid PNG, JPEG, WebP, or single-page PDF.", "uploadArtwork": "Choose letterhead", "replaceArtwork": "Replace letterhead", "removeArtwork": "Remove artwork", "enableArtwork": "Show header artwork", "enableHeader": "Show extracted header", "showStandardBranding": "Show Kubri invoice branding below custom header", "showStandardBrandingHelp": "Keeps the standard logo and display identity visible in addition to the custom header. Legal seller and tax details always remain visible.", "enableFooter": "Show extracted footer", "headerHeight": "Header height", "footerHeight": "Footer height", "applyScope": "Apply artwork to", "allLayouts": "All A4 layouts", "selectedLayout": "Selected layout only", "fit": "Artwork fit", "contain": "Contain", "cover": "Cover", "height": "Artwork height", "spacing": "Artwork spacing", "classic": "Classic Business", "classicHelp": "Authoritative identity, balanced parties, full table, and grounded totals", "modern": "Modern Statement", "modernHelp": "Horizontal identity, invoice summary, top QR, and highlighted total", "minimal": "Minimal Editorial", "minimalHelp": "Dramatic typography, quiet rules, oversized total, and centred verification", "executive": "Executive Frame", "executiveHelp": "Formal perimeter, framed parties, top-right QR, and contact strip", "ledger": "Accounting Ledger", "ledgerHelp": "Dense metadata, precise VAT columns, and accounting verification row", "contemporary": "Contemporary Modular", "contemporaryHelp": "Large identity, print modules, total panel, and lower verification card", "compareLayouts": "Compare all six layouts", "qrPreviewState": "Fixture QR state", "qrEligibleSimplified": "Eligible simplified", "qrEligibleStandard": "Eligible standard", "qrDemo": "Demo — no QR", "qrUnavailable": "QR unavailable", "cropPanel": "Letterhead extraction", "pdfRasterPreview": "single-page PDF raster preview", "imageSource": "image", "qualityWarning": "This source is usable, but a wider image will print more sharply.", "clearSource": "Clear selected source", "sourcePreview": "Letterhead source preview", "header": "Header", "footer": "Footer", "sourceZoom": "Source preview zoom · {{value}}%", "headerCrop": "Header crop", "footerCrop": "Footer crop", "cropTop": "Top %", "cropHeight": "Height %", "extractFooter": "Extract footer too", "resetCrops": "Reset crops", "extractUpload": "Extract & upload safe artwork", "errors": { "sourceSize": "The selected file is {{size}}; the maximum source size is {{max}}.", "derivativeSize": "The extracted artwork is above 8 MB. Reduce the crop before uploading.", "type": "The browser file type does not match the file’s actual content.", "signature": "Use a genuine PNG, JPEG, WebP, or single-page PDF file.", "decode": "The selected file could not be decoded safely.", "dimensions": "The image is below the 480 × 80 px minimum needed for safe print artwork.", "pdf_pages": "This version accepts a single-page PDF only.", "pdf_encrypted": "Password-protected or encrypted PDFs are not supported.", "inspect": "The selected letterhead could not be inspected safely.", "extract": "The artwork could not be extracted safely.", "storage": "Artwork storage is not configured for this branch yet. An administrator must apply the pending private-storage migration." } },
+    "artworkDimensionsHelp": "For sharp print, use a source around 1600 px wide or more. Lower-resolution sources receive a quality warning instead of an incorrect size rejection.",
     "values": { "small": "Small", "medium": "Medium", "large": "Large", "compact": "Compact", "standard": "Standard", "detailed": "Detailed" },
-    "errors": { "afterSaleUnsupported": "Could not save because the selected after-sale action is not supported. Refresh and try again.", "saveFailed": "Could not save invoice settings. Please try again." }
+    "errors": { "afterSaleUnsupported": "Could not save because the selected after-sale action is not supported. Refresh and try again.", "settingsFormatUnsupported": "Settings format is not supported.", "layoutUnavailable": "This layout is not available.", "artworkValidationFailed": "Artwork settings could not be validated.", "permissionDenied": "You do not have permission to update this branch.", "saveFailed": "Invoice settings could not be saved." }
   },
   "workspace": {
     "eyebrow": "Branch document workspace",
     "title": "Printing & Documents",
-    "subtitle": "Keep customer documents, barcode labels, and printer setup consistent for this branch.",
+    "subtitle": "Manage invoice layouts, receipts, branding and barcode labels for this branch.",
+    "about": "About Printing & Documents",
+    "status": {
+      "saved": "All changes saved",
+      "unsaved": "Unsaved changes"
+    },
+    "studio": {
+      "configuration": "Document settings",
+      "settings": "Settings",
+      "closeSettings": "Close settings",
+      "validation": "Review the highlighted settings before saving."
+    },
+    "sections": {
+      "receipts": {
+        "general": "General",
+        "branding": "Branding",
+        "contact": "Content",
+        "thermal": "Receipt layout"
+      },
+      "invoices": {
+        "general": "General",
+        "branding": "Header & branding",
+        "contact": "Parties & footer",
+        "a4": "A4 layout"
+      }
+    },
     "tabs": {
       "receipts": { "label": "Receipts", "help": "Thermal receipt content" },
       "invoices": { "label": "Invoices", "help": "A4 and document identity" },
@@ -151,6 +183,18 @@
   "barcodeLabels": {
     "loading": "Loading label settings…",
     "copies": "Number of copies",
+    "studio": {
+      "navigation": "Barcode label sections",
+      "sections": {
+        "layout": "Layout",
+        "size": "Size",
+        "information": "Information",
+        "informationFull": "Included information",
+        "appearance": "Appearance",
+        "printer": "Printer setup",
+        "printerFull": "Printer adjustment"
+      }
+    },
     "currency": {
       "accessible": "Saudi Riyals"
     },
@@ -159,13 +203,14 @@
       "help": "Start with a friendly preset. You can adjust it without changing the built-in design."
     },
     "presets": {
-      "compact_sticker": { "name": "Compact Sticker" },
-      "standard_product": { "name": "Standard Product Sticker" },
-      "detailed_product": { "name": "Detailed Product Sticker" },
-      "carton_label": { "name": "Carton Label" },
+      "compact_sticker": { "name": "Compact Price", "use": "Small products and shelf labels" },
+      "standard_product": { "name": "Standard Product", "use": "Balanced everyday retail label" },
+      "detailed_product": { "name": "Detailed Product", "use": "More identity and product detail" },
+      "carton_label": { "name": "Carton", "use": "Large packages and warehouse units" },
       "a4_sheet": { "name": "A4 Sticker Sheet", "dimensions": "Grid-based A4 layout" },
       "custom": { "name": "Custom" }
     },
+    "size": { "title": "Size", "help": "Choose a practical size for this layout." },
     "templates": {
       "title": "Label design",
       "compact": "Compact",
@@ -184,6 +229,9 @@
       "businessName": "Business name",
       "barcodeValue": "Barcode number",
       "printDate": "Print date",
+      "barcodeGraphic": "Barcode graphic",
+      "secondaryName": "Secondary language name",
+      "required": "Required",
       "barcodeAlwaysIncluded": "The barcode graphic cannot be hidden."
     },
     "output": {
@@ -194,8 +242,8 @@
     },
     "orientation": { "portrait": "Portrait", "landscape": "Landscape" },
     "alignment": { "start": "Follow the text direction", "center": "Centre" },
-    "priceStyle": { "normal": "Normal", "large": "Large and prominent" },
-    "nameSize": { "small": "Small", "normal": "Normal", "large": "Large" },
+    "priceStyle": { "normal": "Normal", "large": "Large and prominent", "strong": "Strong" },
+    "nameSize": { "small": "Small", "normal": "Normal", "medium": "Medium", "large": "Large" },
     "units": { "mm": "mm" },
     "a4": {
       "orientation": "Sheet orientation",
@@ -214,6 +262,8 @@
     },
     "advanced": {
       "title": "Advanced settings",
+      "show": "Show controls",
+      "hide": "Hide controls",
       "width": "Sticker width (mm)",
       "height": "Sticker height (mm)",
       "margin": "Content margin (mm)",
@@ -222,6 +272,15 @@
       "priceStyle": "Price emphasis",
       "orientation": "Sticker orientation",
       "productNameSize": "Product name size"
+    },
+    "appearance": {
+      "title": "Appearance",
+      "barcodeSize": "Barcode scale",
+      "textSize": "Text size",
+      "priceEmphasis": "Price emphasis",
+      "alignment": "Text alignment",
+      "standard": "Standard",
+      "large": "Large"
     },
     "preview": {
       "title": "Live label preview",
@@ -234,6 +293,7 @@
       "sampleUnit": "Carton · 12 pieces",
       "samplePrice": "SAR 84.00",
       "pageSummary": "{{labels}} labels · {{pages}} pages · {{final}} on the last page",
+      "safeBoundary": "Safe print boundary and barcode quiet zone shown",
       "fits": "Fits selected page",
       "doesNotFit": "Does not fit",
       "fitStatus": {
@@ -267,7 +327,8 @@
       "restoreBranchDefault": "Restore branch default"
     },
     "settings": {
-      "title": "Branch label default",
+      "title": "Barcode labels",
+      "scopeLabel": "Branch default label design",
       "help": "This design is shared by label printing in this branch. Printer alignment remains specific to each device.",
       "branchDefaultSaved": "Branch default saved",
       "builtInDefault": "Using built-in default",
@@ -304,6 +365,10 @@
       "barcode": "Saved barcode",
       "noBarcode": "No barcode",
       "missingBarcode": "No active barcode exists for this unit. Open the product and add or create one before printing.",
+      "barcodeRequired": "Barcode required",
+      "generate": "Generate barcode",
+      "generated": "Barcode generated and selected",
+      "generateFailed": "The barcode could not be generated. Refresh and try again.",
       "remove": "Remove from print queue",
       "designAndPreview": "Label design and combined preview",
       "clear": "Clear queue",
@@ -319,6 +384,7 @@
     },
     "calibration": {
       "title": "Align this label printer",
+      "disclosure": "Printer adjustment",
       "help": "Print the test pattern, compare it with the sticker edges, then use the plain controls below.",
       "deviceOnly": "Saved only on this computer. Other branch devices are not changed.",
       "currentValues": "Current device calibration values",

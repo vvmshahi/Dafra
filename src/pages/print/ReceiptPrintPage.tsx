@@ -24,6 +24,8 @@ import { toSaudiTime } from '@/lib/utils/date'
 import type { Branch, Invoice, InvoiceItem, Payment } from '@/types/database'
 import { documentDate, resolveCreditNoteDocumentLanguage, resolveInvoiceDocumentLanguage } from '@/localization/documents'
 import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
+import type { CustomerCreditPaymentSummary } from '@/lib/invoices/customerCreditPayment'
+import { loadCustomerCreditPaymentSummary } from '@/lib/invoices/customerCreditReadModel'
 
 interface Tenant {
   name: string
@@ -195,6 +197,7 @@ export default function ReceiptPrintPage() {
   const [invoice, setInvoice] = useState<Invoice | null>(null)
   const [items, setItems] = useState<InvoiceItem[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
+  const [customerCredit, setCustomerCredit] = useState<CustomerCreditPaymentSummary | null>(null)
   const [branch, setBranch] = useState<Branch | null>(null)
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [customer, setCustomer] = useState<Customer | null>(null)
@@ -309,19 +312,23 @@ export default function ReceiptPrintPage() {
         const customerFetch = inv.customer_id
           ? fetches[2]
           : Promise.resolve({ data: null })
-        const [branchResult, tenantResult, customerResult, originalResult] = await Promise.all([
+        const [branchResult, tenantResult, customerResult, originalResult, customerCreditSummary] = await Promise.all([
           fetches[0],
           fetches[1],
           customerFetch,
           inv.original_invoice_id
             ? supabase.from('invoices').select('document_language').eq('id', inv.original_invoice_id).maybeSingle()
             : Promise.resolve({ data: null }),
+          inv.zatca_invoice_type === 'credit_note'
+            ? Promise.resolve(null)
+            : loadCustomerCreditPaymentSummary({ invoiceId: inv.id, totalAmount: inv.total_amount, paymentStatus: inv.payment_status }),
         ])
         if (cancelled) return
 
         setInvoice(inv as Invoice)
         setItems((itemData ?? []) as InvoiceItem[])
         setPayments((paymentData ?? []) as Payment[])
+        setCustomerCredit(customerCreditSummary)
         setBranch(branchResult.data as Branch)
         setTenant(tenantResult.data as Tenant)
         setCustomer((customerResult?.data ?? null) as Customer | null)
@@ -497,9 +504,10 @@ export default function ReceiptPrintPage() {
       items,
       payments,
       customer: customer ? { name: customerDisplayName(customer) ?? customer.name, nameAr: customer.name_ar, vatNumber: customer.vat_number, address: customer.address, addressAr: customer.address_ar, identifierType: customer.cr_number ? 'CR' : null, identifierValue: customer.cr_number, type: customer.customer_type } : null,
+      customerCredit,
       authoritativeDocumentKind: outputStateMatchesInvoice ? outputState?.documentKind : null,
     })
-  }, [invoice, branch, tenant, items, payments, customer, outputStateMatchesInvoice, outputState?.documentKind])
+  }, [invoice, branch, tenant, items, payments, customer, customerCredit, outputStateMatchesInvoice, outputState?.documentKind])
 
   useEffect(() => {
     if (!electronPrint || electronReadyRef.current || loading || error || !invoice || !branch || !tenant || !receipt || !printReady) return
@@ -598,7 +606,7 @@ export default function ReceiptPrintPage() {
       )}
 
       <main id="receipt-print-page" className="mx-auto flex min-h-[calc(100vh-64px)] max-w-3xl items-start justify-center bg-white px-3 py-5 sm:my-6 sm:min-h-0 sm:rounded-2xl sm:border sm:border-gray-100 sm:shadow-sm">
-        <ThermalReceipt model={documentViewModel} options={{ preview: true, qrImageUrl: qrDataUrl, sampleLabel: nonFiscalDemo ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية' : null, nonFiscalDemo }} />
+        <ThermalReceipt model={documentViewModel} options={{ preview: true, qrImageUrl: qrDataUrl, nonFiscalDemo }} />
       </main>
     </div>
   )

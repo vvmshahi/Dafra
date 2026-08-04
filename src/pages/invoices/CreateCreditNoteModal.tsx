@@ -38,6 +38,11 @@ import { creditNotePresentationState } from '@/lib/zatca/creditNotePresentation.
 import { useAuth } from '@/hooks/useAuth'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
+import {
+  clearPersistentReceivableOperation,
+  createCustomerCreditNoteSettlement,
+  getPersistentReceivableOperation,
+} from '@/lib/customers/receivables'
 
 export interface CreditNoteSourceInvoice {
   id: string
@@ -253,7 +258,9 @@ function money(amount: number): string {
 
 function invoiceDate(value: string | null | undefined, isRtl: boolean): string {
   if (!value) return '—'
-  return new Date(value).toLocaleDateString(isRtl ? 'ar-SA-u-nu-latn' : 'en-GB', {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return '—'
+  return date.toLocaleDateString(isRtl ? 'ar-SA-u-nu-latn' : 'en-GB', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -428,6 +435,7 @@ export default function CreateCreditNoteModal({
   const [cartFingerprint, setCartFingerprint] = useState('')
   const [modalInvoiceIdentity, setModalInvoiceIdentity] = useState<CreditNoteModalInvoiceIdentity | null>(null)
   const [refundMode, setRefundMode] = useState<'' | 'cash' | 'card' | 'split'>('')
+  const [settleWithReceivables, setSettleWithReceivables] = useState(false)
   const [refundCash, setRefundCash] = useState('')
   const [refundCard, setRefundCard] = useState('')
   const [stockReturnChoice, setStockReturnChoice] = useState<boolean | null>(null)
@@ -489,6 +497,7 @@ export default function CreateCreditNoteModal({
     setCartFingerprint('')
     setModalInvoiceIdentity(null)
     setRefundMode('')
+    setSettleWithReceivables(false)
     setRefundCash('')
     setRefundCard('')
     setStockReturnChoice(null)
@@ -696,9 +705,9 @@ export default function CreateCreditNoteModal({
   }, [hasEligibleStockLines])
 
   useEffect(() => {
-    if (refundMode === 'cash') setRefundCash(totals.total.toFixed(2))
-    if (refundMode === 'card') setRefundCard(totals.total.toFixed(2))
-  }, [refundMode, totals.total])
+    if (!settleWithReceivables && refundMode === 'cash') setRefundCash(totals.total.toFixed(2))
+    if (!settleWithReceivables && refundMode === 'card') setRefundCard(totals.total.toFixed(2))
+  }, [refundMode, settleWithReceivables, totals.total])
 
   if (!open || !invoice) return null
 
@@ -765,7 +774,7 @@ export default function CreateCreditNoteModal({
       return
     }
 
-    if (!refundMode) {
+    if (!settleWithReceivables && !refundMode) {
       setError(t('creditNotes:refundMethodRequired'))
       refundSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       refundSectionRef.current?.querySelector<HTMLElement>('[role="radio"]')?.focus()
@@ -773,7 +782,9 @@ export default function CreateCreditNoteModal({
     }
     const cashRefund = refundMode === 'card' ? 0 : Number(refundCash || 0)
     const cardRefund = refundMode === 'cash' ? 0 : Number(refundCard || 0)
-    if (cashRefund < 0 || cardRefund < 0 || cashRefund + cardRefund <= 0 || Math.abs(cashRefund + cardRefund - totals.total) > 0.01) {
+    const refundTotal = cashRefund + cardRefund
+    if ((!settleWithReceivables && (cashRefund < 0 || cardRefund < 0 || refundTotal <= 0 || Math.abs(refundTotal - totals.total) > 0.01))
+      || (settleWithReceivables && refundMode !== '' && (cashRefund < 0 || cardRefund < 0 || refundTotal <= 0 || refundTotal - totals.total > 0.01))) {
       setError(t('validation:refundAllocationMismatch'))
       refundSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       refundSectionRef.current?.querySelector<HTMLInputElement>('input')?.focus()
@@ -806,9 +817,28 @@ export default function CreateCreditNoteModal({
       const atomicSimplifiedCreditEligible = !demoSandbox
         && invoice.zatca_document_kind === 'simplified'
       let usedAtomicSimplifiedCredit = false
+      let usedReceivableSettlement = false
       let atomicReceipt: AtomicReceiptPayload | undefined
       let result: RpcCreditNoteResult | null = null
-      if (atomicSimplifiedCreditEligible) {
+      if (settleWithReceivables) {
+        const settlementOperationId = getPersistentReceivableOperation({
+          branchId: invoice.branch_id,
+          // The invoice id is a local storage namespace only. The server
+          // resolves and authorizes the actual customer from the invoice.
+          customerId: originalInvoiceId,
+          kind: 'credit-note-settlement',
+          fingerprint: JSON.stringify({ originalInvoiceId, finalReason, returnStock: payload.return_stock, items: payload.items, refundAllocations }),
+        })
+        result = await createCustomerCreditNoteSettlement({
+          operationId: settlementOperationId,
+          originalInvoiceId,
+          reason: finalReason,
+          returnStock: payload.return_stock,
+          items: payload.items.map(item => ({ originalInvoiceItemId: item.original_invoice_item_id, quantity: item.quantity })),
+          refundTenders: refundAllocations as Array<{ method: 'cash' | 'card'; amount: number }>,
+        })
+        usedReceivableSettlement = true
+      } else if (atomicSimplifiedCreditEligible) {
         cleanupObsoleteCreditNotePendingCheckouts()
         const pendingInspection = inspectPendingAtomicCheckout(
           invoice.branch_id,
@@ -1048,6 +1078,9 @@ export default function CreateCreditNoteModal({
         retryAvailable: outputState.retryAvailable,
         reconciliationRequired: outputState.reconciliationRequired,
         atomicReceipt,
+      }
+      if (usedReceivableSettlement) {
+        clearPersistentReceivableOperation(invoice.branch_id, originalInvoiceId, 'credit-note-settlement')
       }
       onCreated(createdResult)
       onClose()
@@ -1550,8 +1583,28 @@ export default function CreateCreditNoteModal({
                     </p>
                   </div>
 
+                  <fieldset className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3">
+                    <legend className="px-1 text-[11px] font-bold text-emerald-900">{t('creditNotes:receivablesSettlementTitle')}</legend>
+                    <label className="flex cursor-pointer items-start gap-2 text-[11px] leading-relaxed text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={settleWithReceivables}
+                        disabled={busy}
+                        onChange={event => {
+                          setSettleWithReceivables(event.target.checked)
+                          setRefundMode('')
+                          setRefundCash('')
+                          setRefundCard('')
+                        }}
+                        className="mt-0.5 h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                      />
+                      <span>{t('creditNotes:receivablesSettlementToggle')}</span>
+                    </label>
+                    {settleWithReceivables && <p className="mt-2 text-[10px] leading-relaxed text-emerald-900">{t('creditNotes:receivablesSettlementHint')}</p>}
+                  </fieldset>
+
                   <fieldset ref={refundSectionRef} className="space-y-2">
-                    <legend className="text-[11px] font-bold text-slate-800">{t('refunds:method')}</legend>
+                    <legend className="text-[11px] font-bold text-slate-800">{settleWithReceivables ? t('creditNotes:receivablesRefundTitle') : t('refunds:method')}</legend>
                     <div className="grid grid-cols-3 gap-1.5">
                       {(['cash', 'card', 'split'] as const).map(method => (
                         <button
@@ -1562,9 +1615,9 @@ export default function CreateCreditNoteModal({
                           disabled={busy || totals.total <= 0}
                           onClick={() => {
                             setRefundMode(method)
-                            if (method === 'cash') { setRefundCash(totals.total.toFixed(2)); setRefundCard('') }
-                            if (method === 'card') { setRefundCash(''); setRefundCard(totals.total.toFixed(2)) }
-                            if (method === 'split') {
+                            if (!settleWithReceivables && method === 'cash') { setRefundCash(totals.total.toFixed(2)); setRefundCard('') }
+                            if (!settleWithReceivables && method === 'card') { setRefundCash(''); setRefundCard(totals.total.toFixed(2)) }
+                            if (!settleWithReceivables && method === 'split') {
                               const cashPart = roundMoney(totals.total / 2)
                               setRefundCash(cashPart.toFixed(2))
                               setRefundCard(roundMoney(totals.total - cashPart).toFixed(2))
@@ -1587,6 +1640,20 @@ export default function CreateCreditNoteModal({
                       <p className="text-[10px] leading-relaxed text-slate-500">
                         {t('creditNotes:nonCashRefundHint')}
                       </p>
+                    )}
+                    {settleWithReceivables && refundMode !== '' && (
+                      <p className="text-[10px] leading-relaxed text-amber-800">{t('creditNotes:receivablesRefundHint')}</p>
+                    )}
+                    {settleWithReceivables && (refundMode === 'cash' || refundMode === 'card') && (
+                      <label className="block space-y-1">
+                        <span className="text-[10px] font-medium text-slate-500">{refundMode === 'cash' ? t('refunds:cashAmount') : t('creditNotes:nonCashAmount')}</span>
+                        <MoneyInput
+                          value={refundMode === 'cash' ? refundCash : refundCard}
+                          onValueChange={refundMode === 'cash' ? setRefundCash : setRefundCard}
+                          className="input"
+                          placeholder="0.00"
+                        />
+                      </label>
                     )}
                     {refundMode === 'split' && (
                       <div className="grid grid-cols-2 gap-2">

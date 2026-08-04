@@ -5,6 +5,7 @@ node_modules/
 dist/
 dist-ssr/
 dist-electron/
+.artifacts/
 
 # Environment — never commit real keys
 .env

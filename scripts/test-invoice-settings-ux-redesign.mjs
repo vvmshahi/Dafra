@@ -50,12 +50,12 @@ const failingDraft = {
   preservedSettings: { legalSeller: { registeredName: 'must not be persisted' }, previewOnly: true },
 }
 const saveContract = serializeInvoicePresentationSettingsForSave(failingDraft, branch.name)
-assert.deepEqual(Object.keys(saveContract).sort(), ['a4', 'after_sale_action', 'branding', 'contact', 'footer', 'language', 'thermal'])
+assert.deepEqual(Object.keys(saveContract).sort(), ['a4', 'after_sale_action', 'branding', 'contact', 'footer', 'language', 'schema_version', 'thermal'])
 assert.deepEqual(Object.keys(saveContract.branding).sort(), ['custom_heading', 'heading_mode', 'logo_path', 'logo_size', 'show_company_name', 'subheading'])
 assert.deepEqual(Object.keys(saveContract.contact).sort(), ['address_override', 'email', 'phone_override', 'show_address', 'show_email', 'show_phone', 'show_website', 'website'])
 assert.deepEqual(Object.keys(saveContract.footer).sort(), ['bold', 'message'])
 assert.deepEqual(Object.keys(saveContract.thermal).sort(), ['density', 'qr_alignment', 'qr_size', 'width'])
-assert.deepEqual(Object.keys(saveContract.a4), ['theme'])
+assert.deepEqual(Object.keys(saveContract.a4).sort(), ['accent_color', 'artwork_scope', 'artwork_template_id', 'auto_foreground', 'body_color', 'footer_asset_enabled', 'footer_asset_fit', 'footer_asset_height', 'footer_asset_path', 'footer_asset_spacing', 'footer_asset_version', 'footer_crop_height', 'footer_crop_top', 'header_asset_enabled', 'header_asset_fit', 'header_asset_height', 'header_asset_path', 'header_asset_spacing', 'header_asset_version', 'header_crop_height', 'header_crop_top', 'heading_color', 'theme'])
 assert.equal(saveContract.language, 'both')
 assert.equal(saveContract.after_sale_action, 'both')
 assert.equal(saveContract.thermal.qr_alignment, 'center')
@@ -82,7 +82,12 @@ for (const obsolete of ['custom_display_name', 'thank_you_message', 'refund_note
 assert.doesNotMatch(JSON.stringify(canonical), /custom_display_name|thank_you_message|refund_note|show_footer|show_thank_you|show_refund_note|header_style/)
 for (const action of ['receipt', 'a4', 'both']) assert.match(page, new RegExp(`value: '${action}'`))
 
-for (const tab of ['General', 'Header & Branding', 'Contact & Footer', 'Thermal Receipt', 'A4 Themes']) assert.match(page, new RegExp(tab))
+for (const tab of ['general', 'branding', 'contact', 'thermal', 'a4']) {
+  assert.match(page, new RegExp(`printing:invoiceSettings\\.tabs\\.${tab}`))
+}
+for (const tab of ['General', 'Header & Branding', 'Contact & Footer', 'Thermal Receipt', 'A4 Layouts']) {
+  assert.match(read('src/localization/locales/en/printing.json'), new RegExp(tab))
+}
 for (const marker of ['resolveInvoicePresentationSettings', 'documentFromPreviewDraft', 'setUseBranchName', 'mobilePane', 'resetChanges', 'beforeunload', 'routeGuard', '<ThermalReceipt', '<A4Document', 'A4PreviewFit', 'role="tab"', 'role="tabpanel"']) assert.match(page, new RegExp(marker.replace(/[<>]/g, '\\$&')))
 for (const field of ['phone', 'email', 'website', 'address-override']) assert.match(page, new RegExp(`p\\.contact\\.show_${field === 'address-override' ? 'address' : field} && <TextField id="${field}"`))
 assert.match(read('src/lib/invoices/documentViewModel.ts'), /settings\.identity\.show_company_name \? input\.registeredName/)
@@ -100,11 +105,12 @@ assert.match(a4, /model\.presentation\.footer\.bold/)
 assert.doesNotMatch(page, /officialSeller|Official Seller|ComplianceReadiness|manageOfficial/)
 assert.match(page, /serializeInvoicePresentationSettingsForSave\(normalized/)
 assert.doesNotMatch(page, /presentation_settings:\s*normalized\.presentation/)
-assert.match(page, /const payload = \{ branch_id: branchId, presentation_settings: presentationSettings \}/)
-assert.doesNotMatch(page, /p_payload:\s*\{[^}]*invoice_language/)
+assert.match(page, /const payload = \{ branch_id: branchId, invoice_language: normalized\.invoiceLanguage, print_mode: normalized\.printMode, presentation_settings: presentationSettings \}/)
 assert.doesNotMatch(page, /p_payload:\s*\{[^}]*after_sale_action/)
 assert.match(page, /upsert: true/)
-assert.doesNotMatch(page, /immutableLogoObjectPath|invoice-branding\//)
+assert.match(page, /invoiceArtworkObjectPath\(profile\.tenant_id, branch\.id, assetId, 'header'/)
+assert.match(page, /\.from\('invoice-artwork'\)\.upload\(headerPath, header\.blob/)
+assert.match(page, /cropLetterheadRegion\(artworkSource, headerCrop\)/)
 for (const marker of ['after_sale_action', 'footer', 'bold', 'qr_alignment', 'logo_path', 'v1_canonicalize_invoice_presentation_settings', 'v1_merge_invoice_presentation_settings']) assert.match(persistenceContract, new RegExp(marker))
 assert.match(persistenceContract, /p_branch_id::text/)
 assert.match(persistenceContract, /logo\\\./)

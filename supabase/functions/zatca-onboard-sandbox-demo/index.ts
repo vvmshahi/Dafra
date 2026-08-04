@@ -36,6 +36,61 @@ const SANDBOX_CORE_BASE_URL =
 const SANDBOX_PRODUCTION_KEY_MISMATCH_ERROR =
   'Sandbox Production certificate does not match the CSR signing key.'
 
+type SandboxStage =
+  | 'reset_sandbox_onboarding'
+  | 'authorize_caller'
+  | 'resolve_trading_scope'
+  | 'generate_private_key'
+  | 'generate_csr'
+  | 'validate_csr_key_match'
+  | 'compliance_csid_request'
+  | 'compliance_csid_response'
+  | 'compliance_validation'
+  | 'production_csid_request'
+  | 'certificate_key_match'
+  | 'credential_persist'
+  | 'activate_sandbox_profile'
+
+type SandboxFailureCode =
+  | 'SANDBOX_RECONNECT_UNAUTHORIZED'
+  | 'SANDBOX_RECONNECT_CONFIG_MISSING'
+  | 'SANDBOX_RECONNECT_SCOPE_UNAVAILABLE'
+  | 'SANDBOX_OTP_REQUIRED'
+  | 'SANDBOX_OTP_INVALID'
+  | 'SANDBOX_IDENTITY_GENERATION_FAILED'
+  | 'SANDBOX_CSR_GENERATION_FAILED'
+  | 'SANDBOX_CSR_KEY_MISMATCH'
+  | 'SANDBOX_COMPLIANCE_REQUEST_FAILED'
+  | 'SANDBOX_COMPLIANCE_REJECTED'
+  | 'SANDBOX_COMPLIANCE_VALIDATION_FAILED'
+  | 'SANDBOX_PRODUCTION_REQUEST_FAILED'
+  | 'SANDBOX_CERTIFICATE_KEY_MISMATCH'
+  | 'SANDBOX_CREDENTIAL_PERSIST_FAILED'
+  | 'SANDBOX_CREDENTIAL_CURRENT_CONFLICT'
+  | 'SANDBOX_ACTIVATION_FAILED'
+  | 'SANDBOX_RESET_CONFIRMATION_REQUIRED'
+  | 'SANDBOX_RESET_ACTIVE_CREDENTIAL'
+  | 'SANDBOX_RESET_FAILED'
+  | 'SANDBOX_UPSTREAM_UNAVAILABLE'
+
+type SandboxFailure = {
+  code: SandboxFailureCode
+  stage: SandboxStage
+  status: number
+  message: string
+  upstreamStatus?: number
+}
+
+class ClassifiedStageError extends Error {
+  readonly failure: SandboxFailure
+
+  constructor(failure: SandboxFailure) {
+    super(failure.message)
+    this.name = 'ClassifiedStageError'
+    this.failure = failure
+  }
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -43,11 +98,19 @@ const corsHeaders = {
 }
 
 const PERMANENT_DEMO_TENANT_ID = 'ebf1144b-55ed-472a-99c9-23b5ee915351'
-const PERMANENT_DEMO_BRANCH_IDS = new Set([
-  '14271653-b404-44bf-9f39-7e9927569c02',
-  'c30094d7-40ca-4d2e-833a-07aa18c4fa46',
-])
-
+// Server-authoritative reconnect scope. These values are deliberately fixed
+// server configuration, never request-controlled or frontend environment data.
+const TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
+const CURRENT_TRADING_SANDBOX_STATUSES = ['pending', 'compliance', 'active'] as const
+const RESUMABLE_TRADING_SANDBOX_STATES = [
+  'not_started',
+  'csr_ready',
+  'compliance_csid_ready',
+  'compliance_checks_pending',
+  'compliance_passed',
+  'sandbox_production_csid_ready',
+  'active',
+] as const
 const ACTIONS = [
   'get_status',
   'generate_csr',
@@ -57,12 +120,13 @@ const ACTIONS = [
   'activate',
   'retry_failed_step',
   'reconcile_uncertain_operation',
+  'reset_sandbox_onboarding',
 ] as const
 
 type Action = typeof ACTIONS[number]
 type RetryableAction = Exclude<
   Action,
-  'get_status' | 'generate_csr' | 'retry_failed_step' | 'reconcile_uncertain_operation'
+  'get_status' | 'generate_csr' | 'retry_failed_step' | 'reconcile_uncertain_operation' | 'reset_sandbox_onboarding'
 >
 type ReconciliationDecision =
   | 'mark_verified_success'
@@ -81,9 +145,8 @@ type OnboardingStatus =
 
 interface RequestBody {
   action: Action
-  tenantId: string
-  branchId: string
   otp?: string
+  confirmation?: string
   functionalityMap?: FunctionalityMap
   credentialId?: string
   expectedOperation?: RetryableAction
@@ -106,7 +169,7 @@ interface CredentialRow {
   onboarding_operation: RetryableAction | null
   operation_started_at: string | null
   reconciliation_status: 'not_required' | 'required' | 'resolved'
-  reconciliation_decision: ReconciliationDecision | null
+  reconciliation_decision: ReconciliationDecision | 'abandoned_by_owner_reset' | null
   reconciled_at: string | null
   reconciled_by: string | null
   reconciliation_summary: Record<string, unknown> | null
@@ -147,18 +210,25 @@ interface Scope {
 
 class RequestError extends Error {
   status: number
+  code: string
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code = 'SANDBOX_ONBOARDING_REJECTED') {
     super(message)
     this.name = 'RequestError'
     this.status = status
+    this.code = code
   }
 }
 
 class OperationPersistenceError extends Error {
-  constructor() {
+  readonly databaseCode?: string
+  readonly databaseConstraint?: string
+
+  constructor(error?: unknown) {
     super('Onboarding result could not be persisted; manual reconciliation is required before retrying.')
     this.name = 'OperationPersistenceError'
+    this.databaseCode = safeDatabaseCode(error)
+    this.databaseConstraint = safeDatabaseConstraint(error)
   }
 }
 
@@ -167,6 +237,11 @@ class ExternalReconciliationRequiredError extends Error {
     super('The Sandbox response was uncertain. Manual reconciliation is required before retrying.')
     this.name = 'ExternalReconciliationRequiredError'
   }
+}
+
+interface AuthorizedCaller {
+  userId: string | null
+  role: 'owner' | 'super_admin' | 'service_role'
 }
 
 class SandboxProductionKeyMismatchError extends Error {
@@ -180,36 +255,62 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { status: 200, headers: corsHeaders })
   if (req.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405)
 
+  const requestId = crypto.randomUUID()
+  let currentStage: SandboxStage = 'authorize_caller'
   try {
+    currentStage = 'resolve_trading_scope'
+    assertTradingDemoConfiguration()
     const supabaseUrl = requireEnv('SUPABASE_URL')
     const serviceRoleKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY')
-    requireServiceRole(req)
-
     const body = await readBody(req)
     const db = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
-    const scope = await loadDemoScope(db, body.tenantId, body.branchId)
+    currentStage = 'authorize_caller'
+    const caller = await authorizeOnboardingCaller(db, req)
+    currentStage = 'resolve_trading_scope'
+    const scope = await loadDemoScope(db)
+
+    if (body.action === 'reset_sandbox_onboarding') {
+      currentStage = 'reset_sandbox_onboarding'
+      if (!caller.userId) {
+        throw new RequestError(
+          'Owner reset requires an authenticated Owner or Super Admin session.',
+          403,
+          'SANDBOX_RECONNECT_UNAUTHORIZED',
+        )
+      }
+      const reset = await resetSandboxOnboarding(db, caller.userId)
+      const credential = await loadCredential(db)
+      return jsonResponse({
+        ok: true,
+        ...safeStatus(TRADING_BRANCH_ID, credential),
+        reset,
+        requestId,
+      })
+    }
 
     if (body.action === 'reconcile_uncertain_operation') {
       const reconciliation = await reconcileUncertainOperation(db, body)
-      const credential = await loadCredentialById(db, body.credentialId as string, body.tenantId, body.branchId)
+      const credential = await loadCredentialById(db, body.credentialId as string)
       return jsonResponse({
         ok: true,
-        ...safeStatus(body.branchId, credential),
+        ...safeStatus(TRADING_BRANCH_ID, credential),
         reconciliation,
+        requestId,
       })
     }
 
     if (body.action === 'get_status') {
-      const credential = await loadCredential(db, body.tenantId, body.branchId, true)
-      return jsonResponse({ ok: true, ...safeStatus(body.branchId, credential) })
+      const credential = await loadCredential(db)
+      return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential), requestId })
     }
 
-    let credential = await loadCredential(db, body.tenantId, body.branchId, false)
+    let credential = await loadCredential(db)
 
     if (body.action === 'generate_csr') {
       const idempotent = !!credential
+      currentStage = 'generate_csr'
       credential = await generateCsr(db, scope, body, credential)
-      return jsonResponse({ ok: true, ...safeStatus(body.branchId, credential), idempotent })
+      return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential), idempotent, requestId })
     }
 
     if (!credential) {
@@ -217,13 +318,14 @@ Deno.serve(async (req: Request) => {
     }
 
     const requestedAction = resolveAction(body.action, credential)
-    assertOtpForEffectiveAction(body, requestedAction)
+    currentStage = stageForAction(requestedAction)
+    assertOtpForEffectiveAction(requestedAction, body.otp)
     if (credential.onboarding_status === 'failed' && body.action !== 'retry_failed_step') {
       throw new RequestError('This step failed previously. Use retry_failed_step after reviewing the safe error.', 409)
     }
 
     if (isActionAlreadyComplete(requestedAction, credential)) {
-      return jsonResponse({ ok: true, ...safeStatus(body.branchId, credential), idempotent: true })
+      return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential), idempotent: true, requestId })
     }
 
     assertSellerIdentityUnchanged(scope, credential)
@@ -232,40 +334,67 @@ Deno.serve(async (req: Request) => {
     credential = await claimOperation(db, credential, requestedAction)
 
     try {
-      credential = await executeClaimedAction(db, scope, body, credential, requestedAction)
+      credential = await executeClaimedAction(db, scope, credential, requestedAction, body.otp)
     } catch (error) {
       if (error instanceof OperationPersistenceError) {
         await recordReconciliationRequired(db, credential, requestedAction, error.message)
-        throw new RequestError(error.message, 500)
+        throw new ClassifiedStageError(classifyStageFailure('credential_persist', error))
       }
       if (error instanceof ExternalReconciliationRequiredError) {
-        throw new RequestError(error.message, 502)
+        throw new ClassifiedStageError(classifyStageFailure('compliance_validation', error))
       }
       if (error instanceof SandboxProductionKeyMismatchError) {
         await markFailed(db, credential, requestedAction, error.message, error)
-        throw new RequestError(error.message, 422)
+        throw new ClassifiedStageError(classifyStageFailure('certificate_key_match', error))
       }
       if (requiresExternalReconciliation(requestedAction, error)) {
         const message = 'The Sandbox response was uncertain. Manual reconciliation is required before retrying.'
         await recordReconciliationRequired(db, credential, requestedAction, message)
-        throw new RequestError(message, 502)
+        throw new ClassifiedStageError(classifyStageFailure(currentStage, error, message))
       }
-      const safeMessage = safeError(error)
-      await markFailed(db, credential, requestedAction, safeMessage, error)
-      throw new RequestError(safeMessage, upstreamStatus(error))
+      const failure = error instanceof ClassifiedStageError
+        ? error.failure
+        : classifyStageFailure(currentStage, error)
+      await markFailed(db, credential, requestedAction, failure.message, error)
+      throw new RequestError(failure.message, failure.status, failure.code)
     }
 
-    return jsonResponse({ ok: true, ...safeStatus(body.branchId, credential) })
+    return jsonResponse({ ok: true, ...safeStatus(TRADING_BRANCH_ID, credential), requestId })
   } catch (error) {
-    const status = error instanceof RequestError ? error.status : 500
-    const message = error instanceof RequestError ? error.message : safeError(error)
+    const failure = error instanceof ClassifiedStageError
+      ? error.failure
+      : classifyStageFailure(currentStage, error)
     console.error('[zatca-onboard-sandbox-demo] request failed:', {
-      status,
-      message: safeLogText(message),
+      requestId,
+      stage: failure.stage,
+      status: failure.status,
+      code: failure.code,
+      upstreamStatus: failure.upstreamStatus,
     })
-    return jsonResponse({ error: message }, status)
+    return jsonResponse({
+      error: failure.message,
+      code: failure.code,
+      stage: failure.stage,
+      requestId,
+      ...(failure.upstreamStatus ? { upstreamStatus: failure.upstreamStatus } : {}),
+    }, failure.status)
   }
 })
+
+function assertTradingDemoConfiguration(): void {
+  if (
+    !isUuid(PERMANENT_DEMO_TENANT_ID) ||
+    !isUuid(TRADING_BRANCH_ID) ||
+    PERMANENT_DEMO_TENANT_ID !== 'ebf1144b-55ed-472a-99c9-23b5ee915351' ||
+    TRADING_BRANCH_ID !== '14271653-b404-44bf-9f39-7e9927569c02'
+  ) {
+    throw new RequestError(
+      'Sandbox reconnect configuration is unavailable. Contact Kubri support before retrying.',
+      500,
+      'SANDBOX_RECONNECT_CONFIG_MISSING',
+    )
+  }
+}
 
 async function readBody(req: Request): Promise<RequestBody> {
   let value: unknown
@@ -282,9 +411,8 @@ async function readBody(req: Request): Promise<RequestBody> {
   const body = value as Record<string, unknown>
   const allowedKeys = new Set([
     'action',
-    'tenantId',
-    'branchId',
     'otp',
+    'confirmation',
     'functionalityMap',
     'credentialId',
     'expectedOperation',
@@ -297,14 +425,30 @@ async function readBody(req: Request): Promise<RequestBody> {
     throw new RequestError('Unsupported request field', 400)
   }
   if (!ACTIONS.includes(body.action as Action)) throw new RequestError('Unsupported onboarding action', 400)
-  if (!isUuid(body.tenantId) || !isUuid(body.branchId)) {
-    throw new RequestError('Valid tenantId and branchId are required', 400)
+  if (body.otp !== undefined && typeof body.otp !== 'string') {
+    throw new RequestError('Sandbox OTP must be a string.', 400, 'SANDBOX_OTP_INVALID')
+  }
+  if (body.confirmation !== undefined && typeof body.confirmation !== 'string') {
+    throw new RequestError('Reset confirmation is invalid.', 400, 'SANDBOX_RESET_CONFIRMATION_REQUIRED')
   }
   if (body.functionalityMap !== undefined && !isFunctionalityMap(body.functionalityMap)) {
     throw new RequestError('Invalid invoice functionality map', 400)
   }
 
   const action = body.action as Action
+  if (action === 'reset_sandbox_onboarding') {
+    if (body.confirmation !== 'RESET SANDBOX') {
+      throw new RequestError(
+        'Type RESET SANDBOX to confirm the Trading Sandbox reset.',
+        400,
+        'SANDBOX_RESET_CONFIRMATION_REQUIRED',
+      )
+    }
+    if (body.otp !== undefined || body.functionalityMap !== undefined) {
+      throw new RequestError('Reset accepts confirmation only.', 400, 'SANDBOX_RESET_CONFIRMATION_REQUIRED')
+    }
+    return body as unknown as RequestBody
+  }
   const reconciliationKeys = [
     'credentialId',
     'expectedOperation',
@@ -314,8 +458,8 @@ async function readBody(req: Request): Promise<RequestBody> {
     'verifiedResult',
   ]
   if (action === 'reconcile_uncertain_operation') {
-    if (body.otp !== undefined || body.functionalityMap !== undefined) {
-      throw new RequestError('OTP and functionalityMap are not accepted for reconciliation.', 400)
+    if (body.functionalityMap !== undefined) {
+      throw new RequestError('functionalityMap is not accepted for reconciliation.', 400)
     }
     validateReconciliationBody(body)
   } else if (reconciliationKeys.some(key => body[key] !== undefined)) {
@@ -325,13 +469,6 @@ async function readBody(req: Request): Promise<RequestBody> {
   if (body.functionalityMap !== undefined && action !== 'generate_csr') {
     throw new RequestError('functionalityMap is accepted only for CSR generation.', 400)
   }
-  if (body.otp !== undefined && action !== 'request_compliance_csid' && action !== 'retry_failed_step') {
-    throw new RequestError('OTP is accepted only for the compliance credential step.', 400)
-  }
-  if (body.otp !== undefined && action === 'request_compliance_csid' && !validateOtp(body.otp)) {
-    throw new RequestError('OTP must be exactly 6 digits', 400)
-  }
-
   return body as unknown as RequestBody
 }
 
@@ -391,68 +528,122 @@ function isSafeReconciliationSummary(value: unknown): value is string {
     !/(otp|secret|csid|token|certificate|private[ _-]?key|authorization|csr|xml)/i.test(summary)
 }
 
-function requireServiceRole(req: Request): void {
+function bearerToken(req: Request): string {
   const authorization = req.headers.get('Authorization') ?? ''
   const match = authorization.match(/^Bearer\s+([^\s]+)$/i)
-  if (!match) throw new RequestError('Unauthorized', 401)
+  if (!match) throw new RequestError('Unauthorized', 401, 'SANDBOX_RECONNECT_UNAUTHORIZED')
+  return match[1]
+}
 
+function jwtRole(jwt: string): string | null {
   try {
-    const segments = match[1].split('.')
-    if (segments.length !== 3) throw new Error('Malformed JWT')
-
+    const segments = jwt.split('.')
+    if (segments.length !== 3) return null
     const base64 = segments[1].replace(/-/g, '+').replace(/_/g, '/')
     const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
     const claims = JSON.parse(atob(padded)) as { role?: unknown }
-    if (claims.role !== 'service_role') throw new Error('Invalid role')
+    return typeof claims.role === 'string' ? claims.role : null
   } catch {
-    throw new RequestError('Unauthorized', 401)
+    return null
   }
 }
 
-async function loadDemoScope(db: any, tenantId: string, branchId: string): Promise<Scope> {
-  if (tenantId !== PERMANENT_DEMO_TENANT_ID || !PERMANENT_DEMO_BRANCH_IDS.has(branchId)) {
-    throw new RequestError('Forbidden: authorized permanent-demo Sandbox branch required', 403)
-  }
-  const [tenantResult, branchResult] = await Promise.all([
-    db.from('tenants')
-      .select('id,name,business_type,is_demo,is_active')
-      .eq('id', tenantId)
-      .eq('is_demo', true)
-      .eq('is_active', true)
-      .maybeSingle(),
-    db.from('branches')
-      .select(`
-        id,tenant_id,name,business_name,vat_number,cr_number,building_number,
-        street,district,city,postal_code,country,zatca_phase,zatca_environment,is_active
-      `)
-      .eq('id', branchId)
-      .eq('tenant_id', tenantId)
-      .eq('zatca_environment', 'sandbox')
-      .eq('is_active', true)
-      .maybeSingle(),
-  ])
+async function authorizeOnboardingCaller(
+  db: any,
+  req: Request,
+): Promise<AuthorizedCaller> {
+  const jwt = bearerToken(req)
+  if (jwtRole(jwt) === 'service_role') return { userId: null, role: 'service_role' }
 
-  if (tenantResult.error || branchResult.error || !tenantResult.data || !branchResult.data) {
-    throw new RequestError('Forbidden: authorized demo Sandbox branch required', 403)
+  const { data: { user }, error: authError } = await db.auth.getUser(jwt)
+  if (authError || !user) throw new RequestError('Unauthorized', 401, 'SANDBOX_RECONNECT_UNAUTHORIZED')
+  const { data: profile, error: profileError } = await db.from('user_profiles')
+    .select('id,role,tenant_id,branch_id,is_active')
+    .eq('id', user.id)
+    .maybeSingle()
+  if (profileError || !profile?.id || profile.is_active !== true) {
+    throw new RequestError('Forbidden: active Owner or Super Admin profile required', 403, 'SANDBOX_RECONNECT_UNAUTHORIZED')
   }
-  return { tenant: tenantResult.data, branch: branchResult.data }
+
+  const ownerAuthorized = profile.role === 'owner'
+    && profile.tenant_id === PERMANENT_DEMO_TENANT_ID
+    && (!profile.branch_id || profile.branch_id === TRADING_BRANCH_ID)
+  const superAdminAuthorized = profile.role === 'super_admin'
+    && (!profile.tenant_id || profile.tenant_id === PERMANENT_DEMO_TENANT_ID)
+  if (!ownerAuthorized && !superAdminAuthorized) {
+    throw new RequestError('Forbidden: authorized Trading Demo Sandbox owner scope required', 403, 'SANDBOX_RECONNECT_UNAUTHORIZED')
+  }
+  return {
+    userId: user.id,
+    role: ownerAuthorized ? 'owner' : 'super_admin',
+  }
+}
+
+async function resetSandboxOnboarding(db: any, actorId: string): Promise<Record<string, unknown>> {
+  const { data, error } = await db.rpc('reset_zatca_sandbox_onboarding', {
+    p_tenant_id: PERMANENT_DEMO_TENANT_ID,
+    p_branch_id: TRADING_BRANCH_ID,
+    p_actor_id: actorId,
+  })
+  if (error || !data) {
+    const message = typeof error?.message === 'string' ? error.message : ''
+    if (message === 'Active Trading Sandbox credential cannot be reset') {
+      throw new RequestError(
+        'An active Trading Sandbox credential cannot be reset.',
+        409,
+        'SANDBOX_RESET_ACTIVE_CREDENTIAL',
+      )
+    }
+    throw new RequestError(
+      'Trading Sandbox reset could not be completed. Contact Kubri support.',
+      500,
+      'SANDBOX_RESET_FAILED',
+    )
+  }
+  return data as Record<string, unknown>
+}
+
+async function loadDemoScope(db: any): Promise<Scope> {
+  const { data, error } = await db.rpc('resolve_zatca_trading_sandbox_scope')
+  if (error || !data?.tenant || !data?.branch) {
+    throw new RequestError(
+      'Trading Demo Sandbox scope is unavailable. Contact Kubri support.',
+      503,
+      'SANDBOX_RECONNECT_SCOPE_UNAVAILABLE',
+    )
+  }
+  if (
+    data.tenant.id !== PERMANENT_DEMO_TENANT_ID ||
+    data.branch.id !== TRADING_BRANCH_ID ||
+    data.branch.tenant_id !== PERMANENT_DEMO_TENANT_ID
+  ) {
+    throw new RequestError(
+      'Trading Demo Sandbox scope is invalid. Contact Kubri support.',
+      503,
+      'SANDBOX_RECONNECT_SCOPE_UNAVAILABLE',
+    )
+  }
+  return { tenant: data.tenant, branch: data.branch }
 }
 
 async function loadCredential(
   db: any,
-  tenantId: string,
-  branchId: string,
-  includeInactive: boolean,
 ): Promise<CredentialRow | null> {
   let query = db.from('zatca_sandbox_credentials')
     .select('*')
-    .eq('tenant_id', tenantId)
-    .eq('branch_id', branchId)
+    .eq('tenant_id', PERMANENT_DEMO_TENANT_ID)
+    .eq('branch_id', TRADING_BRANCH_ID)
     .eq('environment', 'sandbox')
     .order('created_at', { ascending: false })
     .limit(1)
 
-  if (!includeInactive) query = query.in('status', ['pending', 'compliance', 'active', 'failed'])
+  // Revoked/expired rows are audit history only and must never become the
+  // current reconnect target. Explicit reconciliation still addresses history
+  // by credentialId, but normal status selection does not.
+  query = query
+    .in('status', [...CURRENT_TRADING_SANDBOX_STATUSES])
+    .in('onboarding_status', [...RESUMABLE_TRADING_SANDBOX_STATES])
+    .is('reconciliation_decision', null)
   const { data, error } = await query.maybeSingle()
   if (error) throw new Error('Unable to load Sandbox onboarding status')
   return (data as CredentialRow | null) ?? null
@@ -461,14 +652,12 @@ async function loadCredential(
 async function loadCredentialById(
   db: any,
   credentialId: string,
-  tenantId: string,
-  branchId: string,
 ): Promise<CredentialRow> {
   const { data, error } = await db.from('zatca_sandbox_credentials')
     .select('*')
     .eq('id', credentialId)
-    .eq('tenant_id', tenantId)
-    .eq('branch_id', branchId)
+    .eq('tenant_id', PERMANENT_DEMO_TENANT_ID)
+    .eq('branch_id', TRADING_BRANCH_ID)
     .eq('environment', 'sandbox')
     .maybeSingle()
   if (error || !data) throw new Error('Unable to load reconciled Sandbox onboarding status')
@@ -483,8 +672,6 @@ async function reconcileUncertainOperation(
     const credential = await loadCredentialById(
       db,
       body.credentialId as string,
-      body.tenantId,
-      body.branchId,
     )
     if (
       credential.status === 'active' &&
@@ -501,8 +688,8 @@ async function reconcileUncertainOperation(
     : {}
   const { data, error } = await db.rpc('reconcile_zatca_sandbox_onboarding', {
     p_credential_id: body.credentialId,
-    p_tenant_id: body.tenantId,
-    p_branch_id: body.branchId,
+    p_tenant_id: PERMANENT_DEMO_TENANT_ID,
+    p_branch_id: TRADING_BRANCH_ID,
     p_expected_operation: body.expectedOperation,
     p_decision: body.reconciliationDecision,
     p_reconciled_by: body.reconciledBy,
@@ -639,36 +826,55 @@ async function generateCsr(
     throw new RequestError(`Missing required seller fields: ${missing.join(', ')}`, 422)
   }
 
-  const generated = await generateProductionCsr(identity.csr)
-  const encryptedPrivateKey = await encryptText(
-    generated.privateKeyPem,
-    requireEnv('ZATCA_SERVER_ENCRYPTION_KEY'),
-  )
+  let generated: Awaited<ReturnType<typeof generateProductionCsr>>
+  try {
+    // generateProductionCsr creates the private key, public key, and CSR as one
+    // backend-only identity operation.
+    generated = await generateProductionCsr(identity.csr)
+  } catch (error) {
+    throw new ClassifiedStageError(classifyStageFailure('generate_private_key', error))
+  }
+  try {
+    assertFreshIdentityMatches(generated.privateKeyPem, generated.publicKeyPem, generated.csrPem)
+  } catch (error) {
+    throw new ClassifiedStageError(classifyStageFailure('validate_csr_key_match', error))
+  }
+  let encryptedPrivateKey: string
+  try {
+    encryptedPrivateKey = await encryptText(
+      generated.privateKeyPem,
+      requireEnv('ZATCA_SERVER_ENCRYPTION_KEY'),
+    )
+  } catch (error) {
+    throw new ClassifiedStageError(classifyStageFailure('credential_persist', error))
+  }
   const now = new Date().toISOString()
-  const { data, error } = await db.from('zatca_sandbox_credentials').insert({
-    tenant_id: scope.tenant.id,
-    branch_id: scope.branch.id,
-    environment: 'sandbox',
-    device_id: crypto.randomUUID(),
-    status: 'pending',
-    onboarding_status: 'csr_ready',
-    last_successful_onboarding_status: 'csr_ready',
-    functionality_map: body.functionalityMap,
-    egs_serial_number: generated.egsSerialNumber,
-    csr_common_name: identity.csr.commonName,
-    csr_organization_name: identity.csr.businessName,
-    csr_organizational_unit_name: identity.csr.branchName,
-    csr_location: identity.csr.location,
-    csr_industry: identity.csr.industry,
-    csr_pem: generated.csrPem,
-    public_key_pem: generated.publicKeyPem,
-    encrypted_private_key: encryptedPrivateKey,
-    csr_generated_at: now,
-    last_safe_response: { action: 'generate_csr', completedAt: now },
-  }).select('*').single()
+  try {
+    const { data, error } = await db.rpc('create_zatca_sandbox_credential', {
+      p_tenant_id: scope.tenant.id,
+      p_branch_id: scope.branch.id,
+      p_device_id: crypto.randomUUID(),
+      p_functionality_map: body.functionalityMap,
+      p_egs_serial_number: generated.egsSerialNumber,
+      p_csr_common_name: identity.csr.commonName,
+      p_csr_organization_name: identity.csr.businessName,
+      p_csr_organizational_unit_name: identity.csr.branchName,
+      p_csr_location: identity.csr.location,
+      p_csr_industry: identity.csr.industry,
+      p_csr_pem: generated.csrPem,
+      p_public_key_pem: generated.publicKeyPem,
+      p_encrypted_private_key: encryptedPrivateKey,
+      p_csr_generated_at: now,
+      p_last_safe_response: { action: 'generate_csr', completedAt: now },
+    })
 
-  if (error || !data) throw new Error('Unable to persist backend-generated Sandbox CSR')
-  return data as CredentialRow
+    if (error || !data?.[0]?.credential_id) {
+      throw error ?? new Error('Unable to persist backend-generated Sandbox CSR')
+    }
+    return await loadCredentialById(db, data[0].credential_id as string)
+  } catch (error) {
+    throw new ClassifiedStageError(classifyStageFailure('credential_persist', error))
+  }
 }
 
 function resolveAction(action: Action, credential: CredentialRow): RetryableAction {
@@ -687,15 +893,15 @@ function resolveAction(action: Action, credential: CredentialRow): RetryableActi
   return action
 }
 
-function assertOtpForEffectiveAction(body: RequestBody, action: RetryableAction): void {
+function assertOtpForEffectiveAction(action: RetryableAction, otp: string | undefined): void {
   if (action === 'request_compliance_csid') {
-    if (!validateOtp(body.otp)) {
-      throw new RequestError('A valid 6-digit Sandbox OTP is required.', 400)
+    if (otp === undefined || otp.trim() === '') {
+      throw new RequestError('Enter the six-digit Integration Sandbox OTP.', 400, 'SANDBOX_OTP_REQUIRED')
+    }
+    if (!validateOtp(otp)) {
+      throw new RequestError('The Sandbox OTP must contain exactly six digits.', 400, 'SANDBOX_OTP_INVALID')
     }
     return
-  }
-  if (body.otp !== undefined) {
-    throw new RequestError('OTP is accepted only when retrying the compliance credential step.', 400)
   }
 }
 
@@ -768,13 +974,13 @@ async function claimOperation(
 async function executeClaimedAction(
   db: any,
   scope: Scope,
-  body: RequestBody,
   credential: CredentialRow,
   action: RetryableAction,
+  otp?: string,
 ): Promise<CredentialRow> {
   switch (action) {
     case 'request_compliance_csid':
-      return requestComplianceCredential(db, body, credential)
+      return requestComplianceCredential(db, credential, otp as string)
     case 'submit_compliance_documents':
       return submitComplianceDocuments(db, scope, credential)
     case 'request_sandbox_production_csid':
@@ -786,31 +992,43 @@ async function executeClaimedAction(
 
 async function requestComplianceCredential(
   db: any,
-  body: RequestBody,
   credential: CredentialRow,
+  otp: string,
 ): Promise<CredentialRow> {
-  if (!validateOtp(body.otp)) throw new RequestError('A valid 6-digit Sandbox OTP is required.', 400)
   if (!credential.csr_pem) throw new Error('Persisted backend CSR is missing')
 
   let httpStatus: number | undefined
-  const response = await requestComplianceCsid({
-    baseUrl: SANDBOX_CORE_BASE_URL,
-    csrPem: credential.csr_pem,
-    otp: body.otp,
-    onResponse: trace => { httpStatus = trace.httpStatus },
-  })
-  const secret = requireEnv('ZATCA_SERVER_ENCRYPTION_KEY')
-  const now = new Date().toISOString()
-  return updateCredential(db, credential.id, 'request_compliance_csid', {
-    status: 'compliance',
-    onboarding_status: 'compliance_csid_ready',
-    last_successful_onboarding_status: 'compliance_csid_ready',
-    compliance_request_id: response.requestID,
-    encrypted_compliance_csid: await encryptText(response.binarySecurityToken, secret),
-    encrypted_compliance_secret: await encryptText(response.secret, secret),
-    compliance_csid_received_at: now,
-    last_safe_response: { action: 'request_compliance_csid', httpStatus, completedAt: now },
-  })
+  let response
+  try {
+    response = await requestComplianceCsid({
+      baseUrl: SANDBOX_CORE_BASE_URL,
+      csrPem: credential.csr_pem,
+      otp,
+      onResponse: trace => { httpStatus = trace.httpStatus },
+    })
+  } catch (error) {
+    const raw = error instanceof Error ? error.message : ''
+    const stage: SandboxStage = /missing required fields/i.test(raw)
+      ? 'compliance_csid_response'
+      : 'compliance_csid_request'
+    throw new ClassifiedStageError(classifyStageFailure(stage, error))
+  }
+  try {
+    const secret = requireEnv('ZATCA_SERVER_ENCRYPTION_KEY')
+    const now = new Date().toISOString()
+    return await updateCredential(db, credential.id, 'request_compliance_csid', {
+      status: 'compliance',
+      onboarding_status: 'compliance_csid_ready',
+      last_successful_onboarding_status: 'compliance_csid_ready',
+      compliance_request_id: response.requestID,
+      encrypted_compliance_csid: await encryptText(response.binarySecurityToken, secret),
+      encrypted_compliance_secret: await encryptText(response.secret, secret),
+      compliance_csid_received_at: now,
+      last_safe_response: { action: 'request_compliance_csid', httpStatus, completedAt: now },
+    })
+  } catch (error) {
+    throw new ClassifiedStageError(classifyStageFailure('credential_persist', error))
+  }
 }
 
 async function submitComplianceDocuments(
@@ -822,21 +1040,27 @@ async function submitComplianceDocuments(
   if (!map || !credential.encrypted_compliance_csid || !credential.encrypted_compliance_secret) {
     throw new Error('Persisted compliance material is incomplete')
   }
-  const secret = requireEnv('ZATCA_SERVER_ENCRYPTION_KEY')
-  const privateKeyPem = await decryptText(credential.encrypted_private_key, secret)
-  const complianceCsid = await decryptText(credential.encrypted_compliance_csid, secret)
-  const complianceSecret = await decryptText(credential.encrypted_compliance_secret, secret)
-  const identity = sellerIdentity(scope.branch, scope.tenant, map)
+  let results: ComplianceSampleResult[]
+  try {
+    const secret = requireEnv('ZATCA_SERVER_ENCRYPTION_KEY')
+    const privateKeyPem = await decryptText(credential.encrypted_private_key, secret)
+    const complianceCsid = await decryptText(credential.encrypted_compliance_csid, secret)
+    const complianceSecret = await decryptText(credential.encrypted_compliance_secret, secret)
+    const identity = sellerIdentity(scope.branch, scope.tenant, map)
 
-  const results = stripComplianceSampleDebug(await submitComplianceSamples({
-    baseUrl: SANDBOX_CORE_BASE_URL,
-    functionalityMap: map,
-    complianceCsid,
-    complianceSecret,
-    complianceCertificate: complianceCsid,
-    privateKeyPem,
-    seller: identity.seller,
-  }))
+    results = stripComplianceSampleDebug(await submitComplianceSamples({
+      baseUrl: SANDBOX_CORE_BASE_URL,
+      functionalityMap: map,
+      complianceCsid,
+      complianceSecret,
+      complianceCertificate: complianceCsid,
+      privateKeyPem,
+      seller: identity.seller,
+    }))
+  } catch (error) {
+    if (error instanceof ExternalReconciliationRequiredError) throw error
+    throw new ClassifiedStageError(classifyStageFailure('compliance_validation', error))
+  }
   const now = new Date().toISOString()
   if (results.some(isAmbiguousComplianceResult)) {
     await recordReconciliationRequired(
@@ -868,14 +1092,18 @@ async function submitComplianceDocuments(
     throw new RequestError('One or more required compliance documents were not accepted.', 422)
   }
 
-  return updateCredential(db, credential.id, 'submit_compliance_documents', {
-    status: 'compliance',
-    onboarding_status: 'compliance_passed',
-    last_successful_onboarding_status: 'compliance_passed',
-    compliance_sample_results: results,
-    compliance_checked_at: now,
-    last_safe_response: safeComplianceSummary(results, now),
-  })
+  try {
+    return await updateCredential(db, credential.id, 'submit_compliance_documents', {
+      status: 'compliance',
+      onboarding_status: 'compliance_passed',
+      last_successful_onboarding_status: 'compliance_passed',
+      compliance_sample_results: results,
+      compliance_checked_at: now,
+      last_safe_response: safeComplianceSummary(results, now),
+    })
+  } catch (error) {
+    throw new ClassifiedStageError(classifyStageFailure('credential_persist', error))
+  }
 }
 
 async function requestSandboxProductionCredential(db: any, credential: CredentialRow): Promise<CredentialRow> {
@@ -886,29 +1114,43 @@ async function requestSandboxProductionCredential(db: any, credential: Credentia
   const complianceCsid = await decryptText(credential.encrypted_compliance_csid, secret)
   const complianceSecret = await decryptText(credential.encrypted_compliance_secret, secret)
   let httpStatus: number | undefined
-  const response = await requestProductionCsid({
-    baseUrl: SANDBOX_CORE_BASE_URL,
-    complianceCsid,
-    complianceSecret,
-    complianceRequestId: credential.compliance_request_id,
-    onResponse: trace => { httpStatus = trace.httpStatus },
-  })
-  const privateKeyPem = await decryptText(credential.encrypted_private_key, secret)
-  assertSandboxProductionKeyMatch(privateKeyPem, response.binarySecurityToken)
+  let response
+  try {
+    response = await requestProductionCsid({
+      baseUrl: SANDBOX_CORE_BASE_URL,
+      complianceCsid,
+      complianceSecret,
+      complianceRequestId: credential.compliance_request_id,
+      onResponse: trace => { httpStatus = trace.httpStatus },
+    })
+  } catch (error) {
+    throw new ClassifiedStageError(classifyStageFailure('production_csid_request', error))
+  }
+  let privateKeyPem: string
+  try {
+    privateKeyPem = await decryptText(credential.encrypted_private_key, secret)
+    assertSandboxProductionKeyMatch(privateKeyPem, response.binarySecurityToken)
+  } catch (error) {
+    throw new ClassifiedStageError(classifyStageFailure('certificate_key_match', error))
+  }
   const validity = certificateValidity(response.binarySecurityToken)
   const now = new Date().toISOString()
-  return updateCredential(db, credential.id, 'request_sandbox_production_csid', {
-    status: 'compliance',
-    onboarding_status: 'sandbox_production_csid_ready',
-    last_successful_onboarding_status: 'sandbox_production_csid_ready',
-    encrypted_production_csid: await encryptText(response.binarySecurityToken, secret),
-    encrypted_production_secret: await encryptText(response.secret, secret),
-    certificate: response.binarySecurityToken,
-    certificate_valid_from: validity.validFrom,
-    expires_at: validity.validTo,
-    sandbox_production_csid_received_at: now,
-    last_safe_response: { action: 'request_sandbox_production_csid', httpStatus, completedAt: now },
-  })
+  try {
+    return await updateCredential(db, credential.id, 'request_sandbox_production_csid', {
+      status: 'compliance',
+      onboarding_status: 'sandbox_production_csid_ready',
+      last_successful_onboarding_status: 'sandbox_production_csid_ready',
+      encrypted_production_csid: await encryptText(response.binarySecurityToken, secret),
+      encrypted_production_secret: await encryptText(response.secret, secret),
+      certificate: response.binarySecurityToken,
+      certificate_valid_from: validity.validFrom,
+      expires_at: validity.validTo,
+      sandbox_production_csid_received_at: now,
+      last_safe_response: { action: 'request_sandbox_production_csid', httpStatus, completedAt: now },
+    })
+  } catch (error) {
+    throw new ClassifiedStageError(classifyStageFailure('credential_persist', error))
+  }
 }
 
 async function activateCredential(db: any, credential: CredentialRow): Promise<CredentialRow> {
@@ -923,25 +1165,33 @@ async function activateCredential(db: any, credential: CredentialRow): Promise<C
   if (credential.expires_at && new Date(credential.expires_at).getTime() <= Date.now()) {
     throw new RequestError('Sandbox credential has expired and cannot be activated.', 409)
   }
-  const encryptionSecret = requireEnv('ZATCA_SERVER_ENCRYPTION_KEY')
-  const decryptedValues = await Promise.all([
-    decryptText(credential.encrypted_private_key, encryptionSecret),
-    decryptText(credential.encrypted_production_csid, encryptionSecret),
-    decryptText(credential.encrypted_production_secret, encryptionSecret),
-  ])
-  if (decryptedValues.some(value => !value.trim())) {
-    throw new Error('Sandbox credential validation failed')
+  let decryptedValues: string[]
+  try {
+    const encryptionSecret = requireEnv('ZATCA_SERVER_ENCRYPTION_KEY')
+    decryptedValues = await Promise.all([
+      decryptText(credential.encrypted_private_key, encryptionSecret),
+      decryptText(credential.encrypted_production_csid, encryptionSecret),
+      decryptText(credential.encrypted_production_secret, encryptionSecret),
+    ])
+    if (decryptedValues.some(value => !value.trim())) {
+      throw new Error('Sandbox credential validation failed')
+    }
+  } catch (error) {
+    throw new ClassifiedStageError(classifyStageFailure('activate_sandbox_profile', error))
   }
-  assertSandboxProductionKeyMatch(decryptedValues[0], decryptedValues[1])
-  assertSandboxProductionKeyMatch(decryptedValues[0], credential.certificate)
-  const now = new Date().toISOString()
-  return updateCredential(db, credential.id, 'activate', {
-    status: 'active',
-    onboarding_status: 'active',
-    last_successful_onboarding_status: 'active',
-    activated_at: now,
-    last_safe_response: { action: 'activate', completedAt: now },
+  try {
+    assertSandboxProductionKeyMatch(decryptedValues[0], decryptedValues[1])
+    assertSandboxProductionKeyMatch(decryptedValues[0], credential.certificate)
+  } catch (error) {
+    throw new ClassifiedStageError(classifyStageFailure('certificate_key_match', error))
+  }
+  const { data, error } = await db.rpc('activate_zatca_sandbox_credential', {
+    p_tenant_id: credential.tenant_id,
+    p_branch_id: credential.branch_id,
+    p_credential_id: credential.id,
   })
+  if (error || data !== credential.id) throw new OperationPersistenceError(error)
+  return loadCredentialById(db, credential.id)
 }
 
 async function updateCredential(
@@ -963,7 +1213,7 @@ async function updateCredential(
     .eq('onboarding_operation', claimedAction)
     .select('*')
     .maybeSingle()
-  if (error || !data) throw new OperationPersistenceError()
+  if (error || !data) throw new OperationPersistenceError(error)
   return data as CredentialRow
 }
 
@@ -1117,6 +1367,8 @@ function safeStatus(branchId: string, credential: CredentialRow | null): Record<
       branchId,
       environment: 'sandbox',
       status: 'not_started',
+      operationId: null,
+      onboardingUid: null,
       completedSteps: [],
       certificateExists: false,
       complianceCredentialExists: false,
@@ -1132,6 +1384,8 @@ function safeStatus(branchId: string, credential: CredentialRow | null): Record<
   return {
     branchId: credential.branch_id,
     deviceId: credential.device_id,
+    operationId: credential.id,
+    onboardingUid: credential.device_id,
     environment: 'sandbox',
     status,
     functionalityMap: credential.functionality_map,
@@ -1155,9 +1409,23 @@ function safeStatus(branchId: string, credential: CredentialRow | null): Record<
     reconciledAt: credential.reconciled_at,
     restartRequired: credential.reconciliation_decision === 'revoke_and_restart_device' ||
       credential.last_safe_response?.restartRequired === true,
+    lastSafeResponse: safeStatusResponse(credential.last_safe_response),
     activatedAt: credential.activated_at,
     updatedAt: credential.updated_at,
   }
+}
+
+function safeStatusResponse(value: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object') return null
+  const allowed = new Set([
+    'action', 'operation', 'decision', 'resultingStatus', 'httpStatus',
+    'completedAt', 'uncertainAt', 'failedAt', 'restartRequired', 'reason',
+  ])
+  return Object.fromEntries(Object.entries(value).filter(([key, entry]) => (
+    allowed.has(key) && (
+      typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean'
+    )
+  )))
 }
 
 function completedSteps(credential: CredentialRow): string[] {
@@ -1210,13 +1478,26 @@ async function decryptText(stored: string, secret: string): Promise<string> {
   return new TextDecoder().decode(plaintext)
 }
 
+function assertFreshIdentityMatches(privateKeyPem: string, publicKeyPem: string, csrPem: string): void {
+  try {
+    const privatePoint = privateKeyPublicKeyPoint(privateKeyPem)
+    const publicPoint = spkiPublicKeyPoint(pemDer(publicKeyPem))
+    const csrPoint = csrPublicKeyPoint(pemDer(csrPem))
+    if (!equalBytes(privatePoint, publicPoint) || !equalBytes(privatePoint, csrPoint)) {
+      throw new Error('Generated Trading CSR/key identity mismatch')
+    }
+  } catch {
+    throw new RequestError(
+      'Generated Trading Sandbox device identity failed its key-match preflight.',
+      500,
+      'SANDBOX_CSR_KEY_MISMATCH',
+    )
+  }
+}
+
 function assertSandboxProductionKeyMatch(privateKeyPem: string, certificateToken: string): void {
   try {
-    const privateKeyDer = base64Bytes(
-      privateKeyPem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''),
-    )
-    const privateScalar = extractEcPrivateKeyScalar(privateKeyDer)
-    const derivedPoint = secp256k1.getPublicKey(privateScalar, false)
+    const derivedPoint = privateKeyPublicKeyPoint(privateKeyPem)
     const certificatePoint = certificatePublicKeyPoint(certificateToken)
     if (!equalBytes(derivedPoint, certificatePoint)) {
       throw new SandboxProductionKeyMismatchError()
@@ -1225,6 +1506,40 @@ function assertSandboxProductionKeyMatch(privateKeyPem: string, certificateToken
     if (error instanceof SandboxProductionKeyMismatchError) throw error
     throw new SandboxProductionKeyMismatchError()
   }
+}
+
+function privateKeyPublicKeyPoint(privateKeyPem: string): Uint8Array {
+  const privateKeyDer = pemDer(privateKeyPem)
+  const privateScalar = extractEcPrivateKeyScalar(privateKeyDer)
+  return secp256k1.getPublicKey(privateScalar, false)
+}
+
+function pemDer(value: string): Uint8Array {
+  return base64Bytes(value.replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''))
+}
+
+function csrPublicKeyPoint(der: Uint8Array): Uint8Array {
+  const request = derNode(der, 0)
+  if (request.tag !== 0x30) throw new Error('Invalid CSR')
+  const info = derNode(der, request.contentStart)
+  if (info.tag !== 0x30) throw new Error('Invalid CSR info')
+  let offset = derNode(der, info.contentStart).next // version
+  offset = derNode(der, offset).next // subject
+  return spkiPublicKeyPoint(der, derNode(der, offset))
+}
+
+function spkiPublicKeyPoint(der: Uint8Array, spki = derNode(der, 0)): Uint8Array {
+  if (spki.tag !== 0x30) throw new Error('Invalid SubjectPublicKeyInfo')
+  const algorithm = derNode(der, spki.contentStart)
+  const algorithmBytes = der.slice(algorithm.contentStart, algorithm.end)
+  const secp256k1Oid = new Uint8Array([0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x0a])
+  if (!containsBytes(algorithmBytes, secp256k1Oid)) throw new Error('Key curve is not secp256k1')
+  const subjectPublicKey = derNode(der, algorithm.next)
+  if (subjectPublicKey.tag !== 0x03 || der[subjectPublicKey.contentStart] !== 0x00) {
+    throw new Error('Invalid public key')
+  }
+  const encodedPoint = der.slice(subjectPublicKey.contentStart + 1, subjectPublicKey.end)
+  return secp256k1.Point.fromBytes(encodedPoint).toBytes(false)
 }
 
 function certificatePublicKeyPoint(token: string): Uint8Array {
@@ -1349,6 +1664,173 @@ function parseAsn1Time(value: string): string | null {
 
 function base64Bytes(value: string): Uint8Array {
   return Uint8Array.from(atob(value), character => character.charCodeAt(0))
+}
+
+function stageForAction(action: RetryableAction): SandboxStage {
+  if (action === 'request_compliance_csid') return 'compliance_csid_request'
+  if (action === 'submit_compliance_documents') return 'compliance_validation'
+  if (action === 'request_sandbox_production_csid') return 'production_csid_request'
+  return 'activate_sandbox_profile'
+}
+
+function classifyStageFailure(
+  stage: SandboxStage,
+  error: unknown,
+  safeMessageOverride?: string,
+): SandboxFailure {
+  const upstreamStatus = isZatcaHttpError(error) ? error.httpStatus : undefined
+  if (error instanceof ClassifiedStageError) return error.failure
+
+  if (isCurrentCredentialConflict(error)) {
+    return {
+      code: 'SANDBOX_CREDENTIAL_CURRENT_CONFLICT',
+      stage,
+      status: 409,
+      message: ownerMessage('SANDBOX_CREDENTIAL_CURRENT_CONFLICT'),
+    }
+  }
+
+  if (error instanceof OperationPersistenceError) {
+    const code = error.databaseCode === '23505' &&
+        error.databaseConstraint === 'zatca_sandbox_credentials_one_current_onboarding_uidx'
+      ? 'SANDBOX_CREDENTIAL_CURRENT_CONFLICT'
+      : 'SANDBOX_CREDENTIAL_PERSIST_FAILED'
+    return {
+      code,
+      stage,
+      status: statusForCode(code),
+      message: ownerMessage(code),
+    }
+  }
+
+  if (error instanceof RequestError) {
+    const knownCode = isSandboxFailureCode(error.code) ? error.code : codeForStage(stage, error)
+    return {
+      code: knownCode,
+      stage,
+      status: error.status,
+      message: ownerMessage(knownCode),
+      ...(upstreamStatus ? { upstreamStatus } : {}),
+    }
+  }
+
+  const code = codeForStage(stage, error)
+  return {
+    code,
+    stage,
+    status: upstreamStatus && upstreamStatus >= 400 ? upstreamStatus : statusForCode(code),
+    message: safeMessageOverride ?? ownerMessage(code),
+    ...(upstreamStatus ? { upstreamStatus } : {}),
+  }
+}
+
+function isSandboxFailureCode(value: string): value is SandboxFailureCode {
+  return [
+    'SANDBOX_RESET_CONFIRMATION_REQUIRED',
+    'SANDBOX_RESET_ACTIVE_CREDENTIAL',
+    'SANDBOX_RESET_FAILED',
+    'SANDBOX_RECONNECT_UNAUTHORIZED',
+    'SANDBOX_RECONNECT_CONFIG_MISSING',
+    'SANDBOX_RECONNECT_SCOPE_UNAVAILABLE',
+    'SANDBOX_OTP_REQUIRED',
+    'SANDBOX_OTP_INVALID',
+    'SANDBOX_IDENTITY_GENERATION_FAILED',
+    'SANDBOX_CSR_GENERATION_FAILED',
+    'SANDBOX_CSR_KEY_MISMATCH',
+    'SANDBOX_COMPLIANCE_REQUEST_FAILED',
+    'SANDBOX_COMPLIANCE_REJECTED',
+    'SANDBOX_COMPLIANCE_VALIDATION_FAILED',
+    'SANDBOX_PRODUCTION_REQUEST_FAILED',
+    'SANDBOX_CERTIFICATE_KEY_MISMATCH',
+    'SANDBOX_CREDENTIAL_PERSIST_FAILED',
+    'SANDBOX_CREDENTIAL_CURRENT_CONFLICT',
+    'SANDBOX_ACTIVATION_FAILED',
+    'SANDBOX_UPSTREAM_UNAVAILABLE',
+  ].includes(value as SandboxFailureCode)
+}
+
+function codeForStage(stage: SandboxStage, error: unknown): SandboxFailureCode {
+  if (stage === 'reset_sandbox_onboarding') return 'SANDBOX_RESET_FAILED'
+  if (stage === 'authorize_caller') return 'SANDBOX_RECONNECT_UNAUTHORIZED'
+  if (stage === 'resolve_trading_scope') return 'SANDBOX_RECONNECT_SCOPE_UNAVAILABLE'
+  if (stage === 'generate_private_key') return 'SANDBOX_IDENTITY_GENERATION_FAILED'
+  if (stage === 'generate_csr') return 'SANDBOX_CSR_GENERATION_FAILED'
+  if (stage === 'validate_csr_key_match') return 'SANDBOX_CSR_KEY_MISMATCH'
+  if (stage === 'compliance_csid_request') {
+    return isZatcaHttpError(error) && error.httpStatus >= 500
+      ? 'SANDBOX_UPSTREAM_UNAVAILABLE'
+      : 'SANDBOX_COMPLIANCE_REQUEST_FAILED'
+  }
+  if (stage === 'compliance_csid_response') return 'SANDBOX_COMPLIANCE_REJECTED'
+  if (stage === 'compliance_validation') {
+    return isZatcaHttpError(error) && error.httpStatus >= 500
+      ? 'SANDBOX_UPSTREAM_UNAVAILABLE'
+      : 'SANDBOX_COMPLIANCE_VALIDATION_FAILED'
+  }
+  if (stage === 'production_csid_request') {
+    return isZatcaHttpError(error) && error.httpStatus >= 500
+      ? 'SANDBOX_UPSTREAM_UNAVAILABLE'
+      : 'SANDBOX_PRODUCTION_REQUEST_FAILED'
+  }
+  if (stage === 'certificate_key_match') return 'SANDBOX_CERTIFICATE_KEY_MISMATCH'
+  if (stage === 'credential_persist') return 'SANDBOX_CREDENTIAL_PERSIST_FAILED'
+  return 'SANDBOX_ACTIVATION_FAILED'
+}
+
+function statusForCode(code: SandboxFailureCode): number {
+  if (code === 'SANDBOX_RESET_CONFIRMATION_REQUIRED') return 400
+  if (code === 'SANDBOX_RESET_ACTIVE_CREDENTIAL') return 409
+  if (code === 'SANDBOX_RECONNECT_UNAUTHORIZED') return 403
+  if (code === 'SANDBOX_OTP_REQUIRED' || code === 'SANDBOX_OTP_INVALID') return 400
+  if (code === 'SANDBOX_CSR_KEY_MISMATCH' || code === 'SANDBOX_CERTIFICATE_KEY_MISMATCH') return 422
+  if (code === 'SANDBOX_CREDENTIAL_CURRENT_CONFLICT') return 409
+  if (code === 'SANDBOX_UPSTREAM_UNAVAILABLE' ||
+      code === 'SANDBOX_RECONNECT_CONFIG_MISSING' ||
+      code === 'SANDBOX_RECONNECT_SCOPE_UNAVAILABLE') return 503
+  return 500
+}
+
+function ownerMessage(code: SandboxFailureCode): string {
+  const messages: Record<SandboxFailureCode, string> = {
+    SANDBOX_RESET_CONFIRMATION_REQUIRED: 'Type RESET SANDBOX to confirm this controlled restart.',
+    SANDBOX_RESET_ACTIVE_CREDENTIAL: 'An active Trading Sandbox credential cannot be reset.',
+    SANDBOX_RESET_FAILED: 'Trading Sandbox reset could not be completed. Contact Kubri support.',
+    SANDBOX_RECONNECT_UNAUTHORIZED: 'Authorized Trading Demo Sandbox owner access is required.',
+    SANDBOX_RECONNECT_CONFIG_MISSING: 'Sandbox onboarding configuration is unavailable. Contact Kubri support.',
+    SANDBOX_RECONNECT_SCOPE_UNAVAILABLE: 'Trading Demo Sandbox scope is unavailable. Contact Kubri support.',
+    SANDBOX_OTP_REQUIRED: 'Enter the six-digit Integration Sandbox OTP.',
+    SANDBOX_OTP_INVALID: 'The Sandbox OTP must contain exactly six digits.',
+    SANDBOX_IDENTITY_GENERATION_FAILED: 'Trading Sandbox device identity generation failed. Contact Kubri support.',
+    SANDBOX_CSR_GENERATION_FAILED: 'Trading Sandbox CSR generation failed. Contact Kubri support.',
+    SANDBOX_CSR_KEY_MISMATCH: 'Trading Sandbox CSR key validation failed. Start a fresh onboarding attempt.',
+    SANDBOX_COMPLIANCE_REQUEST_FAILED: 'Sandbox Compliance CSID request failed. Review the safe status before retrying.',
+    SANDBOX_COMPLIANCE_REJECTED: 'Sandbox Compliance rejected the request. Review the safe status before retrying.',
+    SANDBOX_COMPLIANCE_VALIDATION_FAILED: 'Sandbox Compliance validation failed. Review the safe status before retrying.',
+    SANDBOX_PRODUCTION_REQUEST_FAILED: 'Sandbox Production credential request failed. Review the safe status before retrying.',
+    SANDBOX_CERTIFICATE_KEY_MISMATCH: 'Sandbox Production certificate key validation failed. Start a fresh onboarding attempt.',
+    SANDBOX_CREDENTIAL_PERSIST_FAILED: 'Sandbox credential state could not be saved. Contact Kubri support before retrying.',
+    SANDBOX_CREDENTIAL_CURRENT_CONFLICT: 'A current Trading Sandbox onboarding record already exists. Resume that record instead of starting another.',
+    SANDBOX_ACTIVATION_FAILED: 'Sandbox profile activation failed. Review the safe status before retrying.',
+    SANDBOX_UPSTREAM_UNAVAILABLE: 'The Integration Sandbox is temporarily unavailable. Retry after checking the Sandbox status.',
+  }
+  return messages[code]
+}
+
+function safeDatabaseCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const value = (error as { code?: unknown }).code
+  return typeof value === 'string' && /^[0-9A-Z]{5}$/.test(value) ? value : undefined
+}
+
+function safeDatabaseConstraint(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const value = (error as { constraint?: unknown }).constraint
+  return typeof value === 'string' && /^[a-z0-9_]+$/.test(value) ? value : undefined
+}
+
+function isCurrentCredentialConflict(error: unknown): boolean {
+  return safeDatabaseCode(error) === '23505' &&
+    safeDatabaseConstraint(error) === 'zatca_sandbox_credentials_one_current_onboarding_uidx'
 }
 
 function upstreamStatus(error: unknown): number {

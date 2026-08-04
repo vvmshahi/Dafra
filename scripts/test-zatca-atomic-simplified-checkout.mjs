@@ -557,7 +557,11 @@ await test('rollout fallback is write-free and committed replay wins even after 
   assert.match(edge, /reason: 'existing_legacy_idempotency'/)
   assert.match(edge, /credit_note_idempotency_key[\s\S]*checkout_idempotency_key/)
   assert.match(atomicClient, /AtomicCheckoutLegacyRequired/)
-  assert.match(pos, /if \(!checkout\)[\s\S]*rpc\('pos_checkout'/)
+  const fallbackStart = pos.indexOf('if (!checkout)')
+  const fallbackEnd = pos.indexOf("if (!checkout) throw new Error('Checkout did not return an invoice')", fallbackStart)
+  const fallbackPath = pos.slice(fallbackStart, fallbackEnd)
+  assert.match(fallbackPath, /payMethod === 'credit' \? 'post_customer_credit_checkout_v1' : 'pos_checkout'/)
+  assert.match(fallbackPath, /payMethod === 'credit' \? creditPayload : payload/)
 })
 
 await test('reporting is scheduled after commit and never awaited by checkout', () => {

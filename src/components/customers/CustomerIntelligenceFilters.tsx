@@ -26,12 +26,13 @@ interface Props {
   isArabic: boolean
   onPreset: (preset: IntelligenceDatePreset) => void
   onChange: (filters: CustomerIntelligenceFilters) => void
+  className?: string
 }
 
 const PRESETS: IntelligenceDatePreset[] = [
   'today',
+  'yesterday',
   'last7',
-  'last30',
   'thisMonth',
   'previousMonth',
   'thisYear',
@@ -52,6 +53,7 @@ export function CustomerIntelligenceFiltersPanel({
   isArabic,
   onPreset,
   onChange,
+  className,
 }: Props) {
   const { t } = useTranslation('customerIntelligence')
 
@@ -61,6 +63,8 @@ export function CustomerIntelligenceFiltersPanel({
       title={t('filters.title')}
       description={t('commercialActivity')}
       icon={SlidersHorizontal}
+      className={className}
+      compact
     >
       <fieldset>
         <legend className="sr-only">{t('filters.dateRange')}</legend>
@@ -84,7 +88,7 @@ export function CustomerIntelligenceFiltersPanel({
       </fieldset>
 
       <ResponsiveFilterGrid columns={4}>
-        <label className="space-y-1">
+        {preset === 'custom' && <label className="space-y-1">
           <span className="label">{t('filters.startDate')}</span>
           <span className="relative block">
             <CalendarRange size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -96,8 +100,8 @@ export function CustomerIntelligenceFiltersPanel({
               onChange={event => onChange({ ...filters, startDate: event.target.value })}
             />
           </span>
-        </label>
-        <label className="space-y-1">
+        </label>}
+        {preset === 'custom' && <label className="space-y-1">
           <span className="label">{t('filters.endDate')}</span>
           <span className="relative block">
             <CalendarRange size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -109,7 +113,7 @@ export function CustomerIntelligenceFiltersPanel({
               onChange={event => onChange({ ...filters, endDate: event.target.value })}
             />
           </span>
-        </label>
+        </label>}
         {canChooseBranch && (
           <label className="space-y-1">
             <span className="label">{t('filters.branch')}</span>

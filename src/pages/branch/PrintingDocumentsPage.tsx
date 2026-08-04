@@ -1,46 +1,121 @@
-import { useRef, useState } from 'react'
-import { Barcode, FileText, Printer, ReceiptText } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AlertCircle, Barcode, CheckCircle2, FileText, Printer, ReceiptText } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
+import { supabase } from '@/lib/supabase'
+import type { Branch } from '@/types'
 import { isElectron } from '@/lib/electron'
 import BarcodeLabelSettingsPanel from '@/components/barcodes/BarcodeLabelSettingsPanel'
 import BarcodePrinterSetupPanel from '@/components/barcodes/BarcodePrinterSetupPanel'
 import PrinterTab from '@/pages/settings/PrinterTab'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { DocumentStudioHeader } from '@/components/printing/DocumentStudioShell'
 import InvoiceSettingsPage from './InvoiceSettingsPage'
 
 type Workspace = 'receipts' | 'invoices' | 'barcodeLabels' | 'printerSetup'
 
-const tabs: { id: Workspace; icon: React.ElementType }[] = [
+const allTabs: { id: Workspace; icon: React.ElementType }[] = [
   { id: 'receipts', icon: ReceiptText },
   { id: 'invoices', icon: FileText },
   { id: 'barcodeLabels', icon: Barcode },
   { id: 'printerSetup', icon: Printer },
 ]
 
+const queryValue: Record<Workspace, string> = {
+  receipts: 'receipts',
+  invoices: 'invoices',
+  barcodeLabels: 'barcode-labels',
+  printerSetup: 'printer-setup',
+}
+
+function workspaceFromQuery(value: string | null, electron: boolean): Workspace {
+  if (value === 'invoices') return 'invoices'
+  if (value === 'barcode-labels' || value === 'barcodeLabels') return 'barcodeLabels'
+  if (electron && (value === 'printer-setup' || value === 'printerSetup')) return 'printerSetup'
+  return 'receipts'
+}
+
 export default function PrintingDocumentsPage() {
   const { t } = useTranslation('printing')
   const { branch, tenant, profile } = useAuth()
-  const [active, setActive] = useState<Workspace>('invoices')
+  const { branchId: routeBranchId } = useParams<{ branchId: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const electron = isElectron()
+  const tabs = useMemo(
+    () => allTabs.filter(tab => tab.id !== 'printerSetup' || electron),
+    [electron],
+  )
+  const requestedWorkspace = workspaceFromQuery(searchParams.get('tab'), electron)
+  const [active, setActive] = useState<Workspace>(requestedWorkspace)
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
-  const branchId = branch?.id || profile?.branch_id || ''
+  const [dirty, setDirty] = useState(false)
+  const [pendingWorkspace, setPendingWorkspace] = useState<Workspace | null>(null)
+  const [contextBranch, setContextBranch] = useState<Branch | null>(branch)
+  const contextBranchId = routeBranchId || profile?.branch_id || branch?.id || ''
+  useEffect(() => {
+    if (branch) { setContextBranch(branch); return }
+    if (!routeBranchId) return
+    let cancelled = false
+    void (supabase as any).from('branches').select('*').eq('id', routeBranchId).maybeSingle()
+      .then(({ data }: { data: Branch | null }) => { if (!cancelled) setContextBranch(data) })
+    return () => { cancelled = true }
+  }, [branch, routeBranchId])
+  const branchId = contextBranch?.id || contextBranchId
   const businessName = tenant?.business_name_ar
     || tenant?.business_name
     || tenant?.name
-    || branch?.business_name_ar
-    || branch?.business_name
-    || branch?.name_ar
-    || branch?.name
+    || contextBranch?.business_name_ar
+    || contextBranch?.business_name
+    || contextBranch?.name_ar
+    || contextBranch?.name
     || null
 
-  return <div className="mx-auto max-w-[1440px] space-y-5 pb-20">
-    <header className="border-b border-gray-200 pb-5">
-      <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">{t('workspace.eyebrow')}</p>
-      <h1 className="mt-1 text-2xl font-bold text-gray-950">{t('workspace.title')}</h1>
-      <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">{t('workspace.subtitle')}</p>
-    </header>
+  useEffect(() => {
+    const requested = searchParams.get('tab')
+    if (requestedWorkspace !== active) {
+      if (dirty) {
+        setPendingWorkspace(requestedWorkspace)
+        const restored = new URLSearchParams(searchParams)
+        restored.set('tab', queryValue[active])
+        setSearchParams(restored, { replace: true })
+      } else {
+        setActive(requestedWorkspace)
+      }
+      return
+    }
+    if (!requested || requested === queryValue[requestedWorkspace]) return
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', queryValue[requestedWorkspace])
+    setSearchParams(next, { replace: true })
+  }, [active, dirty, requestedWorkspace, searchParams, setSearchParams])
 
-    <nav className="grid grid-cols-2 gap-2 rounded-2xl border border-primary-900/60 bg-white p-2 lg:grid-cols-4" role="tablist" aria-label={t('workspace.title')}>
-      {tabs.map((tab, index) => {
+  const commitWorkspace = (workspace: Workspace) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', queryValue[workspace])
+    next.delete('section')
+    setActive(workspace)
+    setSearchParams(next)
+  }
+  const selectWorkspace = (workspace: Workspace) => {
+    if (workspace === active) return
+    if (dirty) {
+      setPendingWorkspace(workspace)
+      return
+    }
+    commitWorkspace(workspace)
+  }
+
+  const branchName = contextBranch?.name_ar || contextBranch?.name || ''
+
+  return <div className="printing-workspace-shell mx-auto flex max-w-[1600px] flex-col overflow-hidden">
+    <DocumentStudioHeader
+      title={t('workspace.title')}
+      context={branchName}
+      helpLabel={t('workspace.about')}
+      helpText={t('workspace.subtitle')}
+      navigation={<nav className="inline-flex max-w-full shrink-0 gap-1 overflow-x-auto rounded-lg bg-[#edf3ef] p-1" role="tablist" aria-label={t('workspace.title')}>
+        {tabs.map((tab, index) => {
         const Icon = tab.icon
         const selected = active === tab.id
         return <button
@@ -52,34 +127,46 @@ export default function PrintingDocumentsPage() {
           aria-selected={selected}
           aria-controls={`printing-panel-${tab.id}`}
           tabIndex={selected ? 0 : -1}
-          onClick={() => setActive(tab.id)}
+          onClick={() => selectWorkspace(tab.id)}
           onKeyDown={event => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
             event.preventDefault()
             const rtl = document.documentElement.dir === 'rtl'
             const delta = event.key === 'ArrowRight' ? (rtl ? -1 : 1) : event.key === 'ArrowLeft' ? (rtl ? 1 : -1) : 0
             const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + delta + tabs.length) % tabs.length
-            setActive(tabs[next].id)
+            selectWorkspace(tabs[next].id)
+            if (dirty && tabs[next].id !== active) return
             tabRefs.current[next]?.focus()
           }}
-          className={`flex min-h-14 items-center gap-3 rounded-xl px-3 py-2 text-start outline-none transition-[background-color,color,transform] duration-150 active:scale-[.98] focus-visible:ring-2 focus-visible:ring-primary-500 ${
-            selected ? 'bg-[#10261a] text-white shadow-sm ring-2 ring-primary-200 ring-offset-1' : 'text-gray-600 hover:bg-gray-50'
+          className={`flex min-h-9 shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-start outline-none transition-[background-color,color,transform] duration-150 active:scale-[.97] focus-visible:ring-2 focus-visible:ring-primary-500 ${
+            selected ? 'bg-[#173d2a] text-white shadow-sm' : 'text-gray-600 hover:bg-white'
           }`}
         >
-          <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${selected ? 'bg-white/10' : 'bg-gray-100'}`}><Icon size={15} aria-hidden="true" /></span>
-          <span className="min-w-0"><span className="block text-xs font-bold">{t(`workspace.tabs.${tab.id}.label`)}</span><span className={`mt-0.5 block text-[10px] ${selected ? 'text-white/65' : 'text-gray-400'}`}>{t(`workspace.tabs.${tab.id}.help`)}</span></span>
+          <Icon size={14} aria-hidden="true" />
+          <span className="whitespace-nowrap text-xs font-bold">{t(`workspace.tabs.${tab.id}.label`)}</span>
         </button>
       })}
-    </nav>
+      </nav>}
+      status={<div className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-semibold ${dirty ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`} role="status">
+        {dirty ? <AlertCircle size={12} aria-hidden="true" /> : <CheckCircle2 size={12} aria-hidden="true" />}
+        {t(dirty ? 'workspace.status.unsaved' : 'workspace.status.saved')}
+      </div>}
+    />
 
-    <main id={`printing-panel-${active}`} role="tabpanel" aria-labelledby={`printing-tab-${active}`}>
-    {active === 'receipts' && <InvoiceSettingsPage key="receipts" embedded workspace="receipts" />}
-    {active === 'invoices' && <InvoiceSettingsPage key="invoices" embedded workspace="invoices" />}
-    {active === 'barcodeLabels' && branchId && <BarcodeLabelSettingsPanel branchId={branchId} businessName={businessName} />}
-    {active === 'printerSetup' && branchId && <div className="space-y-8">
+    <main className="min-h-0 flex-1 overflow-hidden" id={`printing-panel-${active}`} role="tabpanel" aria-labelledby={`printing-tab-${active}`}>
+    {active === 'receipts' && <InvoiceSettingsPage key="receipts" embedded workspace="receipts" initialBranchId={contextBranch?.id ?? routeBranchId} onDirtyChange={setDirty} />}
+    {active === 'invoices' && <InvoiceSettingsPage key="invoices" embedded workspace="invoices" initialBranchId={contextBranch?.id ?? routeBranchId} onDirtyChange={setDirty} />}
+    {active === 'barcodeLabels' && branchId && <BarcodeLabelSettingsPanel branchId={branchId} businessName={businessName} printerAdjustment={<BarcodePrinterSetupPanel branchId={branchId} businessName={businessName} compact />} onDirtyChange={setDirty} />}
+    {electron && active === 'printerSetup' && branchId && <div className="space-y-8">
       <BarcodePrinterSetupPanel branchId={branchId} businessName={businessName} />
-      {isElectron() && <section className="border-t border-gray-200 pt-8"><PrinterTab /></section>}
+      <section className="border-t border-gray-200 pt-8"><PrinterTab /></section>
     </div>}
     </main>
+    <ConfirmDialog open={pendingWorkspace !== null} kind="discard" onClose={() => setPendingWorkspace(null)} onConfirm={() => {
+      const next = pendingWorkspace
+      setPendingWorkspace(null)
+      setDirty(false)
+      if (next) commitWorkspace(next)
+    }} />
   </div>
 }

@@ -13,6 +13,7 @@ export type CustomerSortKey =
 export type SortDirection = 'asc' | 'desc'
 export type IntelligenceDatePreset =
   | 'today'
+  | 'yesterday'
   | 'last7'
   | 'last30'
   | 'thisMonth'
@@ -356,6 +357,10 @@ export function intelligenceDateRange(
   const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
   const start = new Date(end)
   switch (preset) {
+    case 'yesterday':
+      end.setUTCDate(end.getUTCDate() - 1)
+      start.setTime(end.getTime())
+      break
     case 'last7':
       start.setUTCDate(start.getUTCDate() - 6)
       break

@@ -102,6 +102,7 @@ function jwtRole(jwt: string): string | null {
 interface CallerScope {
   serviceRole: boolean
   assignedBranchId: string | null
+  role: string | null
 }
 
 function isDemoBranchId(value: unknown): value is typeof DEMO_BRANCH_IDS[number] {
@@ -117,7 +118,7 @@ function requireAuthorizedBranch(branchId: unknown, caller: CallerScope): typeof
 
 async function authorizeCaller(db: any, req: Request): Promise<CallerScope> {
   const jwt = bearerToken(req)
-  if (jwtRole(jwt) === 'service_role') return { serviceRole: true, assignedBranchId: null }
+  if (jwtRole(jwt) === 'service_role') return { serviceRole: true, assignedBranchId: null, role: 'service_role' }
 
   const { data: { user }, error: authError } = await db.auth.getUser(jwt)
   if (authError || !user) throw new RequestError('Unauthorized', 401)
@@ -125,12 +126,13 @@ async function authorizeCaller(db: any, req: Request): Promise<CallerScope> {
     .select('id,role,tenant_id,branch_id,is_active').eq('id', user.id).maybeSingle()
   if (error || !data?.id || data.is_active !== true) throw new RequestError('Forbidden', 403)
   const profile = data as CallerProfile
-  const tenantRole = profile.role === 'owner' || profile.role === 'admin'
+  const tenantRole = (profile.role === 'owner' || profile.role === 'admin') && profile.tenant_id === DEMO_TENANT_ID
+  const superAdmin = profile.role === 'super_admin' && (!profile.tenant_id || profile.tenant_id === DEMO_TENANT_ID)
   const assignedBranchUser = profile.role === 'branch' && isDemoBranchId(profile.branch_id)
-  if (profile.tenant_id !== DEMO_TENANT_ID || (!tenantRole && !assignedBranchUser)) {
+  if ((!superAdmin && profile.tenant_id !== DEMO_TENANT_ID) || (!tenantRole && !superAdmin && !assignedBranchUser)) {
     throw new RequestError('Invoice not found or access denied', 404)
   }
-  return { serviceRole: false, assignedBranchId: assignedBranchUser ? profile.branch_id : null }
+  return { serviceRole: false, assignedBranchId: assignedBranchUser ? profile.branch_id : null, role: profile.role }
 }
 
 async function decryptServerEnvelope(stored: string, secret: string): Promise<string> {
@@ -286,11 +288,12 @@ async function loadScope(db: any, invoiceId: string, branchId: typeof DEMO_BRANC
       invoice_items(id,name,quantity,selling_unit_code,unit_price,discount_amount,subtotal,tax_rate,tax_amount,total)
     `).eq('id', invoiceId).eq('tenant_id', DEMO_TENANT_ID).eq('branch_id', branchId).maybeSingle(),
     db.from('zatca_sandbox_credentials').select(`
-      id,tenant_id,branch_id,device_id,environment,compliance_demo_status,
+      id,tenant_id,branch_id,device_id,environment,status,compliance_demo_status,
       last_successful_onboarding_status,encrypted_private_key,
       encrypted_compliance_csid,encrypted_compliance_secret
     `).eq('tenant_id', DEMO_TENANT_ID).eq('branch_id', branchId)
-      .eq('environment', 'sandbox').eq('compliance_demo_status', 'active').maybeSingle(),
+      .eq('environment', 'sandbox').in('status', ['compliance', 'active'])
+      .eq('compliance_demo_status', 'active').maybeSingle(),
   ])
   if (
     tenantResult.error || !tenantResult.data || branchResult.error || !branchResult.data ||
@@ -429,7 +432,8 @@ async function connectionStatus(db: any, branchId: typeof DEMO_BRANCH_IDS[number
   const { data, error } = await db.from('zatca_sandbox_credentials')
     .select('id,compliance_demo_status,last_successful_onboarding_status,compliance_sample_results')
     .eq('tenant_id', DEMO_TENANT_ID).eq('branch_id', branchId)
-    .eq('environment', 'sandbox').eq('compliance_demo_status', 'active').maybeSingle()
+    .eq('environment', 'sandbox').in('status', ['compliance', 'active'])
+    .eq('compliance_demo_status', 'active').maybeSingle()
   if (error) throw new Error('Unable to load Sandbox compliance-validation status')
   const passed = Array.isArray(data?.compliance_sample_results)
     ? data.compliance_sample_results.filter((sample: any) => sample?.status === 'accepted').length
@@ -449,9 +453,12 @@ async function connectionStatus(db: any, branchId: typeof DEMO_BRANCH_IDS[number
 
 async function activateComplianceDemo(db: any, branchId: typeof DEMO_BRANCH_IDS[number]): Promise<Record<string, unknown>> {
   const { data: credential, error } = await db.from('zatca_sandbox_credentials')
-    .select('id,last_successful_onboarding_status,compliance_sample_results,encrypted_private_key,encrypted_compliance_csid,encrypted_compliance_secret')
+    .select('id,status,compliance_demo_status,last_successful_onboarding_status,compliance_sample_results,encrypted_private_key,encrypted_compliance_csid,encrypted_compliance_secret')
     .eq('tenant_id', DEMO_TENANT_ID).eq('branch_id', branchId).eq('environment', 'sandbox')
-    .in('status', ['compliance', 'failed']).order('created_at', { ascending: false }).limit(1).maybeSingle()
+    .in('status', ['compliance', 'active', 'failed']).order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (!error && credential?.status === 'active' && credential.compliance_demo_status === 'active' && credential.last_successful_onboarding_status === 'active') {
+    return connectionStatus(db, branchId)
+  }
   const acceptedSamples = Array.isArray(credential?.compliance_sample_results)
     ? credential.compliance_sample_results.filter((sample: any) => sample?.status === 'accepted')
     : []
@@ -631,7 +638,9 @@ Deno.serve(async (req: Request) => {
     if (action === 'connection_status' || action === 'activate_compliance_demo') {
       const branchId = requireAuthorizedBranch(body.branchId, caller)
       if (action === 'activate_compliance_demo') {
-        if (!caller.serviceRole) throw new RequestError('Forbidden', 403)
+        if (!caller.serviceRole && (branchId !== TRADING_BRANCH_ID || !['owner', 'super_admin'].includes(caller.role ?? ''))) {
+          throw new RequestError('Forbidden', 403)
+        }
         return jsonResponse(await activateComplianceDemo(db, branchId))
       }
       return jsonResponse(await connectionStatus(db, branchId))

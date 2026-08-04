@@ -6,7 +6,7 @@ import {
   Receipt, X, ChevronDown, User, Check, Loader2,
   ShoppingBag, AlertCircle, Zap, Printer, PackageOpen, ArrowLeft, Lock,
   ChevronLeft, ChevronRight, ChevronUp, RotateCcw,
-  ScanLine,
+  ScanLine, Landmark,
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
@@ -57,12 +57,9 @@ import { useLocale } from '@/localization/useLocale'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 import { AuthenticatedLanguageSwitch } from '@/components/localization/AuthenticatedLanguageSwitch'
 import { documentFromPosReceipt } from '@/lib/invoices/documentViewAdapters'
+import type { CustomerCreditPaymentSummary } from '@/lib/invoices/customerCreditPayment'
 import { resolveInvoicePresentationSettings } from '@/lib/invoices/presentationSettings'
 import {
-  documentDate,
-  documentLabel,
-  documentNames,
-  documentPaymentLabel,
   normalizeDocumentLanguage,
   type DocumentLanguage,
 } from '@/localization/documents'
@@ -82,10 +79,18 @@ import {
   type PosCustomerRecord,
 } from '@/lib/pos/customerSearch'
 import { PosCustomerQuickCreateModal } from './PosCustomerQuickCreateModal'
+import {
+  clearPersistentReceivableOperation,
+  CUSTOMER_CREDIT_POLICY_CHANGED_EVENT,
+  getPersistentReceivableOperation,
+  isCustomerCreditPolicyStorageChange,
+  loadCustomerCreditCheckoutEligibility,
+  type CustomerCreditCheckoutEligibility,
+} from '@/lib/customers/receivables'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type PosPaymentChoice = 'cash' | 'card' | 'split'
+type PosPaymentChoice = 'cash' | 'card' | 'split' | 'credit'
 type PosMode = BranchPosMode
 
 interface ReceiptPayment {
@@ -172,6 +177,7 @@ interface ReceiptData {
   cashReceived: number
   customerName: string
   customerNameAr: string | null
+  hasSelectedCustomer: boolean
   customerAddress: string | null
   customerAddressAr: string | null
   buyerIdentifierType: string | null
@@ -202,6 +208,7 @@ interface ReceiptData {
   showLogo: boolean
   payments: ReceiptPayment[]
   displayPaymentMethod: string
+  customerCredit: CustomerCreditPaymentSummary | null
   zatcaQrCode: string
   canPrint: boolean
   finalizationStatus: string
@@ -212,6 +219,7 @@ interface ReceiptData {
   reportingDisplayState: string
   atomicSnapshot: boolean
   isDemo: boolean
+  sandboxDemo: boolean
 }
 
 function branchPosMode(value: string | null | undefined): PosMode {
@@ -260,6 +268,7 @@ interface PosCheckoutResult {
   payment_status: string
   amount_received?: number | string | null
   change_amount?: number | string | null
+  outstanding_amount?: number | string | null
   display_payment_method?: string | null
   payments?: {
     method: PaymentMethod
@@ -323,6 +332,12 @@ function round2(value: number): number {
 
 function amountInput(value: number): string {
   return Math.max(0, round2(value)).toFixed(2)
+}
+
+function parseExplicitMoneyInput(value: string): number | null {
+  if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,2})?$/.test(value)) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 function formatSessionDateTimeLocalized(utcString: string, locale: string): string {
@@ -395,8 +410,29 @@ function safeCheckoutErrorKey(err: unknown): string {
   if (/ATOMIC_NOT_READY|ATOMIC_CHECKOUT_REQUIRED/.test(message)) {
     return 'validation:atomicNotReady'
   }
+  if (/BRANCH_CREDIT_DISABLED|AR_CREDIT_BRANCH_DISABLED|CREDIT_NOT_ALLOWED_FOR_BRANCH/.test(message)) {
+    return 'payments:creditBranchDisabled'
+  }
+  if (/BUSINESS_CUSTOMER_REQUIRED|CREDIT_NOT_ALLOWED_FOR_BUSINESS/.test(message)) {
+    return 'payments:businessCustomerRequired'
+  }
+  if (/CUSTOMER_INACTIVE/.test(message)) {
+    return 'payments:customerInactive'
+  }
+  if (/BRANCH_INACTIVE/.test(message)) {
+    return 'payments:branchInactive'
+  }
+  if (/CREDIT_UNAUTHORIZED/.test(message)) {
+    return 'payments:creditUnauthorized'
+  }
+  if (/CREDIT_ACCOUNT_SETUP_FAILED/.test(message)) {
+    return 'payments:creditUnavailable'
+  }
   if (/STANDARD_CUSTOMER_DETAILS_REQUIRED/.test(message)) {
     return 'validation:standardCustomerDetailsRequired'
+  }
+  if (/SANDBOX_STANDARD_CLEARANCE_UNAVAILABLE/.test(message)) {
+    return 'validation:sandboxStandardUnavailable'
   }
   if (/not available/i.test(message)) {
     return 'validation:unavailableItem'
@@ -433,6 +469,7 @@ function localizedPaymentMethod(method: string | null | undefined, t: (key: stri
   if (method === 'cash') return t('payments:cash')
   if (method === 'card') return t('payments:cardPos')
   if (method === 'bank_transfer') return t('payments:bankTransfer')
+  if (method === 'credit' || method === 'partial_credit') return t('payments:customerCredit')
   return t('payments:other')
 }
 
@@ -442,6 +479,30 @@ function paymentMethodLabel(method: string | null | undefined): string {
   if (method === 'card') return 'Card / POS'
   if (method === 'bank_transfer') return 'Bank Transfer'
   return 'Other'
+}
+
+function creditEligibilityMessageKey(reasonCode: string): string {
+  switch (reasonCode) {
+    case 'BUSINESS_CUSTOMER_REQUIRED': return 'businessCustomerRequired'
+    case 'CUSTOMER_NOT_FOUND': return 'creditCustomerRequired'
+    case 'CREDIT_UNAUTHORIZED': return 'creditUnauthorized'
+    case 'BRANCH_INACTIVE': return 'branchInactive'
+    case 'BRANCH_CREDIT_DISABLED': return 'creditBranchDisabled'
+    case 'CUSTOMER_INACTIVE': return 'customerInactive'
+    case 'AR_CREDIT_ELIGIBLE': return 'creditEligible'
+    default: return 'creditUnavailable'
+  }
+}
+
+function creditEligibilitySettingsPath(reasonCode: string, customerId: string, branchId: string) {
+  switch (reasonCode) {
+    case 'BRANCH_CREDIT_DISABLED':
+    case 'AR_CREDIT_BRANCH_DISABLED':
+    case 'CREDIT_NOT_ALLOWED_FOR_BRANCH':
+      return `/branch-settings?section=credit`
+    default:
+      return branchId ? `/branch-settings?section=credit` : '/branch-settings'
+  }
 }
 
 function isSplitPaymentRows(payments: ReceiptPayment[]): boolean {
@@ -579,13 +640,14 @@ function QuickExpenseModal({
 
 // ── Receipt overlay ───────────────────────────────────────────────────────────
 
-function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetryFinalization, onOpenInvoiceStatus, afterSaleAction }: {
+type ReceiptActionId = 'print_receipt' | 'print_invoice' | 'new_sale'
+
+function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetryFinalization, afterSaleAction }: {
   receipt: ReceiptData
   branch: Branch | null
   onNewSale: () => void
   onOpenPrinterSettings: () => void
   onRetryFinalization: () => Promise<void>
-  onOpenInvoiceStatus: () => void
   afterSaleAction: 'receipt' | 'a4' | 'both'
 }) {
   const { t } = useTranslation(['pos', 'payments', 'printing', 'common'])
@@ -595,11 +657,48 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
   const [printErrorKey, setPrintErrorKey] = useState<string | null>(null)
   const [retryingFinalization, setRetryingFinalization] = useState(false)
   const automaticSnapshotPrintRef = useRef(false)
-  const documentLanguage = normalizeDocumentLanguage(receipt.documentLanguage)
   const documentViewModel = useMemo(() => documentFromPosReceipt({ ...receipt, zatcaQrCode: receipt.zatcaQrCode, presentationSettings: branch?.presentation_settings, branchDefaults: branch ?? undefined, items: receipt.items.map(item => ({ name: item.name, nameAr: item.nameAr, qty: item.qty, unitPrice: item.unitPrice, lineTotal: item.lineTotal, subtotal: item.subtotal, taxAmount: item.taxAmount, taxRate: item.taxRate, taxCategory: item.taxCategory, unitName: item.unitName, unitNameAr: item.unitNameAr, unitCode: item.unitCode, baseQuantity: item.baseQuantity, baseUnitName: item.baseUnitName, baseUnitNameAr: item.baseUnitNameAr })), payments: receipt.payments.map(payment => ({ method: payment.method, amount: payment.amount, amountReceived: payment.amountReceived, changeAmount: payment.changeAmount })) }), [receipt, branch])
   const printReady = receipt.isDemo
     ? receipt.canPrint
     : receipt.canPrint && qrStatus === 'ready' && Boolean(qrDataUrl)
+  const showReceiptAction = afterSaleAction !== 'a4'
+  const showInvoiceAction = afterSaleAction === 'a4' || afterSaleAction === 'both'
+  const actionIdCandidates: ReceiptActionId[] = [
+    ...(showReceiptAction ? ['print_receipt' as const] : []),
+    ...(showInvoiceAction ? ['print_invoice' as const] : []),
+    'new_sale',
+  ]
+  const uniqueActionIds = [...new Set(actionIdCandidates)]
+  const hasReceiptAction = uniqueActionIds.includes('print_receipt')
+  const hasInvoiceAction = uniqueActionIds.includes('print_invoice')
+  const receiptPrintButton = showReceiptAction ? (
+    <button
+      type="button"
+      onClick={() => void openReceiptPrintPage()}
+      disabled={printingReceipt || !printReady}
+      className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {printingReceipt ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
+      {printingReceipt ? t('payments:printing') : t('payments:printReceipt')}
+    </button>
+  ) : null
+  const invoicePrintButton = showInvoiceAction ? (
+    <button
+      type="button"
+      onClick={printPosA4}
+      disabled={!printReady}
+      className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <Printer size={14} />
+      {t('payments:printInvoice')}
+    </button>
+  ) : null
+  const newSaleButton = (
+    <button type="button" onClick={onNewSale}
+      className="flex min-h-11 w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 py-2.5 text-sm font-semibold text-white outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-[#B5943E] focus-visible:ring-offset-2">
+      {t('payments:newSale')}
+    </button>
+  )
 
   useEffect(() => {
     async function genQR() {
@@ -649,39 +748,6 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
       void openReceiptPrintPage()
     })
   }, [receipt.atomicSnapshot, receipt.invoiceId, printReady])
-
-  function shareWhatsApp() {
-    if (!printReady) {
-      toast.error(t('printing:qrUnavailable'))
-      return
-    }
-    if (!receipt.customerPhone) return
-    const digits = receipt.customerPhone.replace(/\D/g, '')
-    const wa = digits.startsWith('966') ? digits : digits.startsWith('0') ? '966' + digits.slice(1) : digits
-    const date = documentDate(receipt.createdAt, documentLanguage, { month: '2-digit' })
-    const m = (n: number) => `SAR ${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-    const lines = receipt.items.map(i => {
-      const unit = documentNames(documentLanguage, i.unitName, i.unitNameAr).join(' / ')
-      return `${documentNames(documentLanguage, i.name, i.nameAr).join(' / ')} × ${i.qty}${unit ? ` ${unit}` : ''}  ${m(i.lineTotal)}`
-    }).join('\n')
-    const businessName = documentNames(documentLanguage, receipt.businessNameEn, receipt.businessNameAr).join(' / ')
-    const receiptHeading = receipt.isDemo
-      ? 'DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية'
-      : documentLabel(documentLanguage, 'taxInvoice')
-    const msg = `${receiptHeading} — ${businessName}
-━━━━━━━━━━━━━━━
-${documentLabel(documentLanguage, 'invoiceNumber')}: ${receipt.invoiceNumber}
-${documentLabel(documentLanguage, 'date')}: ${date}
-━━━━━━━━━━━━━━━
-${lines}
-━━━━━━━━━━━━━━━
-${documentLabel(documentLanguage, 'amountBeforeVat')}: ${m(receipt.subtotal)}
-${documentLabel(documentLanguage, 'vatAmount')}: ${m(receipt.taxAmount)}
-${documentLabel(documentLanguage, 'totalIncludingVat')}: ${m(receipt.total)}
-━━━━━━━━━━━━━━━
-${documentLabel(documentLanguage, 'thankYou')} 🌿`
-    window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank')
-  }
 
   async function printPosA4() {
     if (!printReady) {
@@ -742,7 +808,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
     setPrintingReceipt(true)
     try {
-      if (receipt.atomicSnapshot || receipt.isDemo) {
+      if (receipt.atomicSnapshot || receipt.isDemo || receipt.sandboxDemo) {
         const printed = await printRenderedReceiptSnapshot()
         if (printed) {
           toast.success(t('pos:printer.receiptSent'), { duration: 1800 })
@@ -788,49 +854,28 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
   return (
     <>
-      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'pos-pdf-printable', qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : null, nonFiscalDemo: receipt.isDemo }} />
+      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'pos-pdf-printable', qrImageUrl: qrDataUrl, nonFiscalDemo: receipt.isDemo }} />
       {/* Hidden thermal receipt — rendered for print only */}
-      <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl, sampleLabel: receipt.isDemo ? t('pos:demo.receiptLabelBilingual') : null, nonFiscalDemo: receipt.isDemo }} />
+      <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl, nonFiscalDemo: receipt.isDemo }} />
 
       {/* Success overlay */}
-      <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0F2419]/90">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+      <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-[#0F2419]/90 p-4 sm:p-6">
+        <div className="my-auto w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
 
           {/* Banner */}
-          <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 px-6 py-8 text-center text-white">
-            {receipt.isDemo && (
-              <div className="mb-3 rounded-lg border border-white/50 bg-black/20 px-3 py-2 text-sm font-black">
-                {t('pos:demo.receiptLabelBilingual')}
-              </div>
-            )}
-            <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
+          <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 px-5 py-6 text-center text-white sm:px-8">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
               <Check size={32} strokeWidth={3} />
             </div>
-            <p className="text-2xl font-bold">{t('payments:paymentReceived')}</p>
+            <p className="text-xl font-bold sm:text-2xl">{t('payments:paymentReceived')}</p>
             <p className="text-emerald-100 text-sm mt-1"><bdi dir="ltr">{receipt.invoiceNumber}</bdi></p>
           </div>
 
           {/* Summary */}
-          <div className="p-6 space-y-3">
-            {receipt.isDemo ? (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-900">
-                {t('pos:demo.noZatca')}
-              </div>
-            ) : !receipt.isStandardInvoice && (
-              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs">
-                <span className="text-slate-500">ZATCA</span>
-                <span className="font-semibold text-slate-700">
-                  {t(`pos:zatca.${receipt.reportingDisplayState}`)}
-                </span>
-              </div>
-            )}
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">{t('payments:customer')}</span>
-              <span className="font-medium text-gray-800" dir="auto">{receipt.customerName}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">{t('payments:method')}</span>
-              <span className="font-medium text-gray-800">{localizedPaymentMethod(receipt.displayPaymentMethod, t)}</span>
+          <div className="space-y-3 p-5 sm:p-6">
+            <div className="grid gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-3">
+              <div><p className="text-xs text-gray-500">{t('payments:customer')}</p><p className="mt-1 font-semibold text-gray-800" dir="auto">{receipt.customerName}</p></div>
+              <div className="sm:text-end"><p className="text-xs text-gray-500">{t('payments:method')}</p><p className={`mt-1 font-semibold ${receipt.displayPaymentMethod === 'credit' || receipt.displayPaymentMethod === 'partial_credit' ? 'text-primary-800' : 'text-gray-800'}`}>{localizedPaymentMethod(receipt.displayPaymentMethod, t)}</p></div>
             </div>
             <div className="border-t border-gray-100 pt-3 space-y-1.5">
               <div className="flex justify-between text-sm text-gray-500">
@@ -890,39 +935,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
           )}
 
           {/* Actions */}
-          <div className="px-6 pb-6 space-y-2">
-            <div className="flex gap-2">
-              {afterSaleAction !== 'a4' && (
-                <button
-                  onClick={() => void openReceiptPrintPage()}
-                  disabled={printingReceipt || !printReady}
-                  className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
-                >
-                  {printingReceipt ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
-                  {printingReceipt ? t('payments:printing') : t('payments:printReceipt')}
-                </button>
-              )}
-              {afterSaleAction === 'a4' || afterSaleAction === 'both' ? (
-                <button
-                  onClick={printPosA4}
-                  disabled={!printReady}
-                  className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <Printer size={14} />
-                  {t('payments:printInvoice')}
-                </button>
-              ) : null}
-              {receipt.customerPhone && (
-                <button
-                  onClick={shareWhatsApp}
-                  disabled={!printReady}
-                  className="flex-1 py-2.5 bg-[#25D366] text-white text-sm font-semibold rounded-xl hover:bg-[#22c55e] transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <WhatsAppIcon size={14} />
-                  {t('payments:whatsapp')}
-                </button>
-              )}
-            </div>
+          <div className="space-y-3 border-t border-gray-100 px-5 pb-6 pt-5 sm:px-7">
             {!receipt.canPrint && (
               <div className="rounded-lg bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">
                 <p>{receipt.finalizationError
@@ -941,10 +954,6 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                   >
                     {retryingFinalization ? t('common:loading') : t('pos:zatca.retryFinalization')}
                   </button>
-                  <button type="button" onClick={onOpenInvoiceStatus}
-                    className="rounded-lg bg-white px-2.5 py-1.5 font-semibold shadow-sm hover:bg-amber-100">
-                    {t('pos:zatca.viewInvoice')}
-                  </button>
                 </div>
               </div>
             )}
@@ -954,10 +963,16 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                 {t('printing:qrUnavailable')}
               </div>
             )}
-            <button onClick={onNewSale}
-              className="w-full py-3 bg-gradient-to-r from-[#1a3a28] to-primary-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity">
-              {t('payments:newSale')}
-            </button>
+            {hasReceiptAction && hasInvoiceAction ? (
+              <>
+                <div className="grid gap-2 sm:grid-cols-2">{receiptPrintButton}{invoicePrintButton}</div>
+                {newSaleButton}
+              </>
+            ) : hasReceiptAction ? (
+              <div className="grid gap-2 sm:grid-cols-2">{receiptPrintButton}{newSaleButton}</div>
+            ) : hasInvoiceAction ? (
+              <div className="grid gap-2 sm:grid-cols-2">{invoicePrintButton}{newSaleButton}</div>
+            ) : newSaleButton}
           </div>
         </div>
       </div>
@@ -1927,6 +1942,11 @@ export default function POSPage() {
   const [splitCard,    setSplitCard]    = useState('')
   const [splitOpen,    setSplitOpen]    = useState(false)
   const [splitLastEdited, setSplitLastEdited] = useState<'cash' | 'card'>('cash')
+  const [creditInitialPayment, setCreditInitialPayment] = useState('')
+  const [creditInitialMethod, setCreditInitialMethod] = useState<'cash' | 'card'>('cash')
+  const [creditEligibility, setCreditEligibility] = useState<CustomerCreditCheckoutEligibility | null>(null)
+  const [creditEligibilityLoading, setCreditEligibilityLoading] = useState(false)
+  const [creditPolicyRevision, setCreditPolicyRevision] = useState(0)
   const [submitting,   setSubmitting]   = useState(false)
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [unitChooserProduct, setUnitChooserProduct] = useState<PosProduct | null>(null)
@@ -1942,6 +1962,7 @@ export default function POSPage() {
     productsAtEnd: true,
   })
   const checkoutKeyRef = useRef<string | null>(null)
+  const creditOperationRef = useRef<string | null>(null)
   const autoPrintedReceiptIdRef = useRef<string | null>(null)
   const resolvedBarcodeCacheRef = useRef(new Map<string, ScannerIndexEntry<PosProduct, PosSellingUnit>>())
   const businessType = resolveBusinessType(tenant?.business_type)
@@ -2398,10 +2419,78 @@ export default function POSPage() {
     && splitCardAmount <= totals.total + 0.01
     && splitBalanced
   const isAccountSuspended = sub.status === 'suspended'
+  const creditInitialAmount = parseExplicitMoneyInput(creditInitialPayment)
+  const creditInitialNumeric = creditInitialAmount ?? 0
+  const creditInitialWithinInvoice = creditInitialAmount !== null
+    && creditInitialAmount >= 0
+    && creditInitialAmount <= totals.total + 0.001
+  const creditHasOutstanding = creditInitialAmount !== null
+    && totals.total - creditInitialAmount > 0.001
+  const creditInitialValid = creditInitialWithinInvoice && creditHasOutstanding
+  const creditOutstandingAmount = creditInitialAmount === null
+    ? totals.total
+    : Math.max(0, round2(totals.total - creditInitialAmount))
 
   const filteredCusts = useMemo(() => searchCustomers(customers, custSearch), [customers, custSearch])
   const selectedCust = customers.find(c => c.id === customerId)
+  const selectedCustomerIsBusiness = selectedCust?.customer_type === 'business'
   const exactCustomerMobile = normalizeSaudiMobile(custSearch)
+
+  useEffect(() => {
+    const refreshForPolicyChange = (event: Event) => {
+      const changedCustomerId = (event as CustomEvent<{ customerId?: string | null }>).detail?.customerId
+      if (!changedCustomerId || changedCustomerId === customerId) setCreditPolicyRevision(value => value + 1)
+    }
+    const refreshForStorageChange = (event: StorageEvent) => {
+      if (isCustomerCreditPolicyStorageChange(event)) setCreditPolicyRevision(value => value + 1)
+    }
+    window.addEventListener(CUSTOMER_CREDIT_POLICY_CHANGED_EVENT, refreshForPolicyChange)
+    window.addEventListener('storage', refreshForStorageChange)
+    return () => {
+      window.removeEventListener(CUSTOMER_CREDIT_POLICY_CHANGED_EVENT, refreshForPolicyChange)
+      window.removeEventListener('storage', refreshForStorageChange)
+    }
+  }, [customerId])
+
+  useEffect(() => {
+    if (!branch || !customerId || !selectedCustomerIsBusiness) {
+      setCreditEligibility(null)
+      setCreditEligibilityLoading(false)
+      return
+    }
+    let cancelled = false
+    const proposedCreditAmount = creditInitialAmount !== null && creditInitialWithinInvoice
+      ? creditOutstandingAmount
+      : totals.total
+    setCreditEligibilityLoading(true)
+    void loadCustomerCreditCheckoutEligibility({
+      branchId: branch.id,
+      customerId,
+      proposedCreditAmount,
+    }).then(result => {
+      if (!cancelled) setCreditEligibility(result)
+    }).catch(error => {
+      console.warn('[POSPage] credit eligibility preflight failed', error)
+      if (!cancelled) setCreditEligibility(null)
+    }).finally(() => {
+      if (!cancelled) setCreditEligibilityLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [branch?.id, customerId, selectedCustomerIsBusiness, creditInitialAmount, creditInitialWithinInvoice, creditOutstandingAmount, totals.total, creditPolicyRevision])
+
+  useEffect(() => {
+    if (!selectedCustomerIsBusiness && payMethod === 'credit') {
+      setPayMethod('cash')
+      setCreditInitialPayment('')
+    }
+  }, [selectedCustomerIsBusiness, payMethod])
+
+  useEffect(() => {
+    if (payMethod === 'credit' && creditEligibility && !creditEligibility.allowed) {
+      setPayMethod('cash')
+      setCreditInitialPayment('')
+    }
+  }, [creditEligibility, payMethod])
 
   function getScrollState(el: HTMLElement | null) {
     if (!el) return { atStart: true, atEnd: true }
@@ -2656,11 +2745,31 @@ export default function POSPage() {
           return
         }
       }
+      if (payMethod === 'credit') {
+        if (!customerId) {
+          toast.error(t('payments:creditCustomerRequired'))
+          return
+        }
+        if (!creditInitialValid) {
+          toast.error(t('payments:creditInitialInvalid'))
+          return
+        }
+        const freshEligibility = await loadCustomerCreditCheckoutEligibility({
+          branchId: branch.id,
+          customerId,
+          proposedCreditAmount: creditOutstandingAmount,
+        })
+        setCreditEligibility(freshEligibility)
+        if (!freshEligibility.allowed) {
+          toast.error(t(`payments:${creditEligibilityMessageKey(freshEligibility.reasonCode)}`))
+          return
+        }
+      }
 
       const splitUsesBothMethods = payMethod === 'split' && splitCashAmount > 0 && splitCardAmount > 0
       const effectivePaymentMethod: PaymentMethod = payMethod === 'split'
         ? splitCashAmount > 0 && splitCardAmount <= 0 ? 'cash' : splitCardAmount > 0 && splitCashAmount <= 0 ? 'card' : 'other'
-        : payMethod
+        : payMethod === 'credit' ? 'other' : payMethod
       const cashTenderProvided = (effectivePaymentMethod === 'cash' && payMethod === 'split') || (payMethod === 'cash' && cashReceived.trim() !== '')
       const splitPayments = splitUsesBothMethods
         ? [
@@ -2694,14 +2803,19 @@ export default function POSPage() {
       if (documentDecision?.status === 'blocked') {
         throw new Error(documentDecision.code ?? 'CHECKOUT_DOCUMENT_BLOCKED')
       }
-      const demoSandbox = documentDecision.checkoutPath === 'demo'
+      const nonFiscalDemo = documentDecision.checkoutPath === 'demo'
         && documentDecision.isDemo
         && documentDecision.nonFiscal
+      const sandboxDemo = documentDecision.checkoutPath === 'sandbox'
+        && documentDecision.isDemo === false
+        && documentDecision.nonFiscal === false
       const standardRequested = documentDecision
         ? documentDecision.documentType === 'standard'
         : selectedCust?.customer_type === 'business'
           && /^3[0-9]{13}3$/.test(selectedCust.vat_number ?? '')
-      const atomicRequested = !demoSandbox
+      const atomicRequested = !nonFiscalDemo
+        && !sandboxDemo
+        && payMethod !== 'credit'
         && documentDecision?.documentType === 'simplified'
         && documentDecision.checkoutPath === 'atomic'
       let productionCheckoutMode: ZatcaCheckoutMode = 'legacy'
@@ -2757,13 +2871,41 @@ export default function POSPage() {
         }
       }
       if (!checkout) {
-        if (!demoSandbox) {
+        if (!nonFiscalDemo && !sandboxDemo) {
           // The authenticated server classifier has already selected the
           // document kind. Standard and non-eligible Simplified transactions
           // retain the approved legacy path without changing fiscal type.
           productionCheckoutMode = 'legacy'
         }
-        const { data, error } = await (supabase as any).rpc('pos_checkout', { p_payload: payload })
+        const creditOperationId = payMethod === 'credit' && customerId
+          ? (creditOperationRef.current ?? getPersistentReceivableOperation({
+              branchId: branch.id,
+              customerId,
+              fingerprint: JSON.stringify({
+                branch_id: branch.id,
+                customer_id: customerId,
+                items: payload.items,
+                initial_payments: creditInitialNumeric > 0
+                  ? [{ method: creditInitialMethod, amount: round2(creditInitialNumeric) }]
+                  : [],
+              }),
+            }))
+          : null
+        if (creditOperationId) creditOperationRef.current = creditOperationId
+        const creditPayload = payMethod === 'credit'
+          ? {
+              ...payload,
+              operation_id: creditOperationId,
+              settlement_mode: creditInitialNumeric > 0 ? 'partial' : 'credit',
+              initial_payments: creditInitialNumeric > 0
+                ? [{ method: creditInitialMethod, amount: round2(creditInitialNumeric) }]
+                : [],
+            }
+          : null
+        const { data, error } = await (supabase as any).rpc(
+          payMethod === 'credit' ? 'post_customer_credit_checkout_v1' : 'pos_checkout',
+          { p_payload: payMethod === 'credit' ? creditPayload : payload },
+        )
         if (error) throw error
         checkout = data as PosCheckoutResult
       }
@@ -2772,7 +2914,11 @@ export default function POSPage() {
       const serverTax = num(checkout.tax_amount)
       const serverSubtotal = num(checkout.subtotal)
       const createdAt = checkout.created_at
-      const receiptPaymentMethod: PaymentMethod = checkout.payment_method ?? (payMethod === 'split' ? 'other' : payMethod)
+      // Credit is a business posting mode, not a database tender enum. Keep
+      // the persisted tender compatible while preserving the visible mode.
+      const receiptPaymentMethod: PaymentMethod = payMethod === 'credit'
+        ? 'other'
+        : checkout.payment_method ?? (payMethod === 'split' ? 'other' : payMethod)
       const receiptPayments: ReceiptPayment[] = Array.isArray(checkout.payments) && checkout.payments.length > 0
         ? checkout.payments.map(payment => ({
             method: payment.method,
@@ -2790,14 +2936,37 @@ export default function POSPage() {
               ? num(checkout.change_amount ?? 0)
               : 0,
           }]
-      const displayPaymentMethod = checkout.display_payment_method
-        ?? (isSplitPaymentRows(receiptPayments) ? 'split' : receiptPaymentMethod)
+      const displayPaymentMethod = payMethod === 'credit'
+        ? (checkout.display_payment_method ?? 'credit')
+        : checkout.display_payment_method ?? (isSplitPaymentRows(receiptPayments) ? 'split' : receiptPaymentMethod)
       const serverAmountReceived = num(checkout.amount_received ?? serverTotal)
       const serverChangeAmount = num(checkout.change_amount ?? Math.max(0, serverAmountReceived - serverTotal))
       const receiptCashReceived = displayPaymentMethod !== 'split' && receiptPaymentMethod === 'cash'
         ? serverAmountReceived
         : serverTotal
       const receiptChange = displayPaymentMethod !== 'split' && receiptPaymentMethod === 'cash' ? serverChangeAmount : 0
+      const creditInitialPayment = payMethod === 'credit' ? num(checkout.amount_received ?? 0) : 0
+      const creditBalanceDue = payMethod === 'credit' && checkout.outstanding_amount != null
+        ? Math.max(0, num(checkout.outstanding_amount))
+        : payMethod === 'credit' ? Math.max(0, serverTotal - creditInitialPayment) : 0
+      const creditAmountPaid = payMethod === 'credit' ? Math.max(0, serverTotal - creditBalanceDue) : 0
+      const creditInitialMethods = payMethod === 'credit'
+        ? [...new Set((checkout.payments ?? []).map(payment => payment.method).filter(Boolean))]
+        : []
+      const customerCredit: CustomerCreditPaymentSummary | null = payMethod === 'credit'
+        ? {
+            isCustomerCredit: true,
+            paymentStatus: creditBalanceDue <= 0.005 || checkout.payment_status === 'paid'
+              ? 'paid'
+              : creditInitialPayment > 0.005 || checkout.payment_status === 'partial'
+              ? 'partial'
+              : 'unpaid',
+            initialPayment: creditInitialPayment,
+            initialPaymentMethod: creditInitialMethods.length > 1 ? 'split' : creditInitialMethods[0] ?? null,
+            amountPaid: creditAmountPaid,
+            balanceDue: creditBalanceDue,
+          }
+        : null
       const isB2BInvoice = checkout.zatca_invoice_type === 'standard'
       let preOutputSubmission: Awaited<ReturnType<typeof submitInvoiceForBranch>> | null = null
       let finalQrCode: string | null = null
@@ -2814,12 +2983,38 @@ export default function POSPage() {
           documentKind = atomicCheckoutResult.documentKind
           finalQrCode = atomicCheckoutResult.receipt.qr_code
           canPrintCustomerCopy = atomicCheckoutResult.receipt.can_print === true
-        } else if (demoSandbox) {
+        } else if (nonFiscalDemo) {
           finalQrCode = null
           canPrintCustomerCopy = true
           finalizationStatus = 'demo_non_fiscal'
           artifactStage = 'none'
           documentKind = null
+        } else if (sandboxDemo) {
+          preOutputSubmission = await submitInvoiceForBranch({
+            invoiceId: checkout.invoice_id,
+            tenantId: branch.tenant_id,
+            branchId: branch.id,
+            options: {
+              source: 'auto_checkout',
+              retryDelayMs: 1500,
+              contractMode: 'legacy',
+              documentKind: 'simplified',
+            },
+          })
+          if (preOutputSubmission.mode !== 'sandbox_validation') {
+            throw new Error('SANDBOX_SUBMISSION_ROUTE_UNAVAILABLE')
+          }
+          const sandboxResult = preOutputSubmission.result
+          const validated = sandboxResult.status === 'sandbox_validated'
+            || sandboxResult.status === 'sandbox_validated_with_warnings'
+          finalizationStatus = sandboxResult.status ?? 'sandbox_validation_failed'
+          artifactStage = validated ? 'sandbox_compliance_validated' : 'sandbox_compliance_pending'
+          documentKind = 'simplified'
+          finalQrCode = sandboxResult.qrCode ?? null
+          canPrintCustomerCopy = validated && Boolean(finalQrCode)
+          if (!canPrintCustomerCopy) {
+            finalizationError = sandboxResult.message ?? 'Sandbox compliance validation did not produce a printable QR.'
+          }
         } else if (productionCheckoutMode === 'legacy') {
           preOutputSubmission = await submitInvoiceForBranch({
             invoiceId: checkout.invoice_id,
@@ -2929,6 +3124,7 @@ export default function POSPage() {
           : selectedCust?.customer_type === 'business'
           ? (selectedCust?.business_name_ar ?? selectedCust?.name_ar)
           : (selectedCust?.name_ar ?? null),
+        hasSelectedCustomer: atomicCustomer != null || selectedCust != null,
         customerAddress: typeof atomicCustomer?.address === 'string' ? atomicCustomer.address : (selectedCust?.address ?? null),
         customerAddressAr: typeof atomicCustomer?.address_ar === 'string' ? atomicCustomer.address_ar : (selectedCust?.address_ar ?? null),
         buyerIdentifierType: atomicCustomer?.cr_number || selectedCust?.cr_number ? 'CR' : null,
@@ -2980,20 +3176,23 @@ export default function POSPage() {
         showLogo:        typeof atomicSeller?.show_logo === 'boolean' ? atomicSeller.show_logo : (branch.show_logo ?? true),
         payments:        receiptPayments,
         displayPaymentMethod,
+        customerCredit,
         zatcaQrCode:    finalQrCode ?? '',
         canPrint:       canPrintCustomerCopy,
         finalizationStatus,
         artifactStage,
         documentKind,
         finalizationError,
-        sandboxGenerated: demoSandbox,
+        sandboxGenerated: sandboxDemo,
         reportingDisplayState: atomicCheckoutResult?.reportingDisplayState
-          ?? (demoSandbox ? 'demo_non_fiscal' : isB2BInvoice ? 'clearance_pending' : 'reporting_pending'),
+          ?? (nonFiscalDemo ? 'demo_non_fiscal' : sandboxDemo ? finalizationStatus : isB2BInvoice ? 'clearance_pending' : 'reporting_pending'),
         atomicSnapshot: Boolean(atomicCheckoutResult),
-        isDemo: demoSandbox,
+        isDemo: nonFiscalDemo,
+        sandboxDemo,
       })
       upsertInvoiceListRow(branch.tenant_id, {
-        isDemo: demoSandbox,
+        isDemo: nonFiscalDemo,
+        isSandboxDemo: sandboxDemo,
         id: checkout.invoice_id,
         branchId: branch.id,
         invoiceNumber: checkout.invoice_number,
@@ -3008,7 +3207,7 @@ export default function POSPage() {
         totalAmount: serverTotal,
         paymentMethod: displayPaymentMethod,
         zatcaStatus: 'pending',
-        displayZatcaStatus: demoSandbox ? 'sandbox_not_validated' : 'pending',
+        displayZatcaStatus: sandboxDemo ? 'sandbox_not_validated' : nonFiscalDemo ? 'not_submitted' : 'pending',
         status: 'posted',
         documentType: checkout.zatca_invoice_type,
         invoiceReference: null,
@@ -3026,6 +3225,12 @@ export default function POSPage() {
       setCustomerId(null)
       setNote('')
       setCashReceived('')
+      setCreditInitialPayment('')
+      setCreditInitialMethod('cash')
+      if (payMethod === 'credit' && customerId) {
+        clearPersistentReceivableOperation(branch.id, customerId, 'credit-checkout')
+      }
+      creditOperationRef.current = null
       setSplitCash('')
       setSplitCard('')
       setSplitOpen(false)
@@ -3218,6 +3423,41 @@ export default function POSPage() {
   async function retryReceiptFinalization() {
     if (!receipt || !branch) return
     try {
+      if (receipt.sandboxDemo) {
+        const routed = await submitInvoiceForBranch({
+          invoiceId: receipt.invoiceId,
+          tenantId: branch.tenant_id,
+          branchId: branch.id,
+          options: {
+            source: 'manual_retry',
+            retryDelayMs: 1500,
+            contractMode: 'legacy',
+            documentKind: 'simplified',
+          },
+        })
+        if (routed.mode !== 'sandbox_validation') {
+          throw new Error('SANDBOX_SUBMISSION_ROUTE_UNAVAILABLE')
+        }
+        const sandboxResult = routed.result
+        const validated = sandboxResult.status === 'sandbox_validated'
+          || sandboxResult.status === 'sandbox_validated_with_warnings'
+        const qrCode = sandboxResult.qrCode ?? ''
+        setReceipt(current => current ? {
+          ...current,
+          zatcaQrCode: qrCode,
+          canPrint: validated && Boolean(qrCode),
+          finalizationStatus: sandboxResult.status ?? 'sandbox_validation_failed',
+          artifactStage: validated ? 'sandbox_compliance_validated' : 'sandbox_compliance_pending',
+          documentKind: 'simplified',
+          finalizationError: validated && qrCode
+            ? null
+            : (sandboxResult.message ?? 'Sandbox compliance validation did not produce a printable QR.'),
+          reportingDisplayState: sandboxResult.status ?? 'sandbox_validation_failed',
+        } : current)
+        if (validated && qrCode) toast.success(t('pos:zatca.success'))
+        else toast.warning(t('pos:zatca.saleCompletedAttention'))
+        return
+      }
       const currentOutput = await getInvoiceZatcaOutputState({
         invoiceId: receipt.invoiceId,
         branchId: branch.id,
@@ -3297,6 +3537,8 @@ export default function POSPage() {
   const canCharge = !isAccountSuspended && cart.length > 0 && !submitting &&
     (payMethod === 'split'
       ? splitReady
+      : payMethod === 'credit'
+        ? Boolean(customerId) && creditEligibility?.allowed === true && creditInitialValid
       : !(payMethod === 'cash' && cashReceived !== '' && cashAmt < totals.total - 0.001))
 
   return (
@@ -3310,7 +3552,6 @@ export default function POSPage() {
           onNewSale={() => setReceipt(null)}
           onOpenPrinterSettings={() => navigate(DEVICE_PRINTER_PATH)}
           onRetryFinalization={retryReceiptFinalization}
-          onOpenInvoiceStatus={() => navigate(`/invoices/${receipt.invoiceId}`)}
           afterSaleAction={resolvedInvoiceSettings.afterSaleAction}
         />
       )}
@@ -3911,10 +4152,10 @@ export default function POSPage() {
 
         {/* Payment method */}
         <div className="px-4 pb-2 flex-shrink-0 space-y-2">
-          <div className="flex gap-2">
+          <div className={`grid gap-2 ${splitPaymentsEnabled ? 'grid-cols-3' : 'grid-cols-2'}`}>
             {(['cash', 'card'] as const).map(m => (
               <button key={m} onClick={() => { setPayMethod(m); setSplitOpen(false) }}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
                   payMethod === m
                     ? m === 'cash'
                       ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
@@ -3929,7 +4170,7 @@ export default function POSPage() {
               <button
                 type="button"
                 onClick={openSplitPayment}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
                   payMethod === 'split'
                     ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
                     : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
@@ -3941,6 +4182,35 @@ export default function POSPage() {
               </button>
             )}
           </div>
+
+          {selectedCustomerIsBusiness && (
+            creditEligibilityLoading ? (
+              <div className="h-10 animate-pulse rounded-xl border border-gray-100 bg-gray-50" aria-label={t('payments:creditChecking')} />
+            ) : creditEligibility?.allowed ? (
+              <button
+                type="button"
+                onClick={() => { setPayMethod('credit'); setSplitOpen(false) }}
+                title={t('payments:sellOnCreditTooltip')}
+                aria-label={t('payments:sellOnCreditTooltip')}
+                className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-xs font-semibold transition-all ${
+                  payMethod === 'credit'
+                    ? 'border-primary-700 bg-primary-700 text-white shadow-sm'
+                    : 'border-primary-200 bg-primary-50 text-primary-800 hover:border-primary-300 hover:bg-primary-100'
+                }`}
+              >
+                <span className="flex items-center gap-1.5"><Landmark size={13} /> {t('payments:sellOnCredit')}</span>
+              </button>
+              ) : creditEligibility ? (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  <span className="min-w-0"><span className="font-semibold text-gray-700">{t('payments:creditUnavailable')}</span> · {t(`payments:${creditEligibilityMessageKey(creditEligibility.reasonCode)}`)}</span>
+                {creditEligibility.reasonCode === 'BRANCH_CREDIT_DISABLED' && customerId && (
+                  <button type="button" onClick={() => navigate(creditEligibilitySettingsPath(creditEligibility.reasonCode, customerId, branch?.id ?? ''))} className="flex-shrink-0 font-semibold text-primary-700 hover:text-primary-900">
+                    {t('payments:creditSettings')}
+                  </button>
+                )}
+              </div>
+            ) : null
+          )}
 
           {payMethod === 'cash' && cart.length > 0 && (
             <div className="space-y-1">
@@ -3986,6 +4256,34 @@ export default function POSPage() {
               </button>
             </div>
           )}
+
+          {payMethod === 'credit' && cart.length > 0 && (
+            <div className="rounded-xl border border-primary-100 bg-primary-50/70 px-3 py-2.5 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] font-semibold text-primary-950">{t('payments:creditCheckout')}</p>
+                <span className="text-[10px] font-medium text-primary-800" dir="ltr">{t('payments:creditInvoiceTotal', { amount: totals.total.toFixed(2) })}</span>
+              </div>
+              <label className="block text-[10px] font-medium text-primary-900" htmlFor="credit-initial-payment">
+                {t('payments:creditInitialPayment')}
+                <span className="ms-1 font-normal text-primary-700">{t('payments:creditExplicitZero')}</span>
+              </label>
+              <div className={`grid gap-2 ${creditInitialNumeric > 0 ? 'grid-cols-[1fr_116px]' : 'grid-cols-1'}`}>
+                <div className="relative">
+                  <span className="absolute start-3 top-1/2 -translate-y-1/2 text-xs text-primary-700" dir="ltr">SAR</span>
+                  <MoneyInput id="credit-initial-payment" value={creditInitialPayment} onValueChange={setCreditInitialPayment} placeholder="0.00" className="input border-primary-200 bg-white ps-10 py-1.5 text-sm tabular-nums" />
+                </div>
+                {creditInitialNumeric > 0 && <select value={creditInitialMethod} onChange={event => setCreditInitialMethod(event.target.value as 'cash' | 'card')} className="rounded-lg border border-primary-200 bg-white px-2 text-xs font-medium text-slate-700">
+                  <option value="cash">{t('payments:cash')}</option><option value="card">{t('payments:card')}</option>
+                </select>}
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-primary-900">
+                <span>{t('payments:creditOutstandingLabel')}</span>
+                <span className="font-semibold tabular-nums" dir="ltr">SAR {creditOutstandingAmount.toFixed(2)}</span>
+              </div>
+              {creditInitialPayment !== '' && !creditInitialWithinInvoice && <p className="text-[10px] text-red-600">{t('payments:creditInitialInvalid')}</p>}
+              {creditInitialWithinInvoice && !creditHasOutstanding && <p className="text-[10px] text-gray-600">{t('payments:creditFullPaymentUseTender')}</p>}
+            </div>
+          )}
         </div>
 
         {isAccountSuspended && (
@@ -4009,7 +4307,7 @@ export default function POSPage() {
               : isAccountSuspended
                 ? <><AlertCircle size={16} /> {t('pos:billingDisabled')}</>
               : <>
-                  {payMethod === 'cash' ? <Banknote size={16} /> : <CreditCard size={16} />}
+                  {payMethod === 'cash' ? <Banknote size={16} /> : payMethod === 'credit' ? <Landmark size={16} /> : <CreditCard size={16} />}
                   {t('pos:charge')} — <span dir="ltr"><Rial amount={totals.total} /></span>
                 </>
             }

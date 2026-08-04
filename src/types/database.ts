@@ -1,7 +1,7 @@
 // Auto-generated types matching supabase/schema.sql
 // Run `supabase gen types typescript` to regenerate after schema changes.
 
-export type UserRole = 'super_admin' | 'owner' | 'branch'
+export type UserRole = 'super_admin' | 'owner' | 'admin' | 'manager' | 'accountant' | 'cashier' | 'branch'
 export type BusinessType = 'trading' | 'service'
 export type BranchPosMode = 'touch' | 'quick'
 export type ZatcaEnvironment = 'production' | 'sandbox'
@@ -860,7 +860,7 @@ export interface Branch {
   invoice_display_subheading: string | null
   show_company_display_name: boolean
   show_branch_display_name: boolean
-  thermal_density: 'compact' | 'standard' | 'detailed'
+  thermal_density: 'classic' | 'compact' | 'standard' | 'detailed'
   a4_template_id: string
   document_template_version: number
   logo_asset_version: number
@@ -1155,6 +1155,7 @@ export interface Customer {
   postal_code: string | null
   notes: string | null
   is_active: boolean
+  receivable_account_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -1266,11 +1267,19 @@ export interface InvoiceIdentitySnapshotV1 {
 
 export type LogoAssetSize = 'small' | 'medium' | 'large'
 export type ThermalWidth = '58mm' | '80mm'
-export type ThermalDensity = 'compact' | 'standard' | 'detailed'
+export type ThermalDensity = 'classic' | 'compact' | 'standard' | 'detailed'
 export type QrSize = 'small' | 'standard' | 'large'
 export type QrAlignment = 'left' | 'center' | 'right'
-export type A4TemplateId = 'classic' | 'modern_split' | 'minimal_professional'
+export type A4TemplateId =
+  | 'classic'
+  | 'modern_split'
+  | 'minimal_professional'
+  | 'executive_green'
+  | 'clean_ledger'
+  | 'contemporary_border'
 export type A4HeaderStyle = 'standard' | 'compact' | 'branded'
+export type A4HeaderFit = 'contain' | 'cover'
+export type A4ArtworkScope = 'selected' | 'all'
 
 export interface InvoicePresentationSettings {
   schema_version: 1
@@ -1279,7 +1288,34 @@ export interface InvoicePresentationSettings {
   footer: { thank_you_message: string | null; footer_note: string | null; refund_note: string | null; bold?: boolean; show_thank_you: boolean; show_footer: boolean; show_refund_note: boolean }
   logo: { visible: boolean; asset_path: string | null; asset_version: number; size: LogoAssetSize }
   thermal: { width: ThermalWidth; density: ThermalDensity; qr_size: QrSize; qr_alignment: QrAlignment; wrap_item_names: boolean; show_cash_change: boolean }
-  a4: { template_id: A4TemplateId; template_version: 1; header_style: A4HeaderStyle }
+  a4: {
+    template_id: A4TemplateId
+    template_version: 1
+    header_style: A4HeaderStyle
+    accent_color: string
+    heading_color: string
+    body_color: string
+    auto_foreground: boolean
+    header_asset_path: string | null
+    header_asset_version: number
+    header_asset_enabled: boolean
+    show_standard_branding: boolean
+    header_asset_fit: A4HeaderFit
+    header_asset_height: number
+    header_asset_spacing: number
+    header_crop_top: number
+    header_crop_height: number
+    footer_asset_path: string | null
+    footer_asset_version: number
+    footer_asset_enabled: boolean
+    footer_asset_fit: A4HeaderFit
+    footer_asset_height: number
+    footer_asset_spacing: number
+    footer_crop_top: number
+    footer_crop_height: number
+    artwork_scope: A4ArtworkScope
+    artwork_template_id: A4TemplateId
+  }
   after_sale_action?: 'receipt' | 'a4' | 'both'
 }
 
@@ -1443,6 +1479,7 @@ export interface SyncQueueItem {
   last_attempt_at: string | null
   last_error: string | null
   processed_at: string | null
+  customer_credit_enabled: boolean | null
   created_at: string
   updated_at: string
 }
@@ -1484,6 +1521,7 @@ export interface BranchInsert {
   show_logo?: boolean
   invoice_language?: string | null
   zatca_phase?: number | null
+  customer_credit_enabled?: boolean | null
   display_name?: string | null
   show_website?: boolean
   show_email?: boolean

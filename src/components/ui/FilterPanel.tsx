@@ -9,6 +9,7 @@ interface FilterPanelProps {
   children: ReactNode
   accentClassName?: string
   className?: string
+  compact?: boolean
 }
 
 export function FilterPanel({
@@ -19,9 +20,10 @@ export function FilterPanel({
   children,
   accentClassName = 'bg-gray-100 text-gray-500',
   className = '',
+  compact = false,
 }: FilterPanelProps) {
   return (
-    <section className={`card space-y-4 p-4 ${className}`} aria-labelledby={id}>
+    <section className={`card ${compact ? 'space-y-2 p-2.5' : 'space-y-4 p-4'} ${className}`} aria-labelledby={id}>
       <div className="flex min-w-0 items-center gap-2">
         <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${accentClassName}`}>
           <Icon size={15} aria-hidden="true" />

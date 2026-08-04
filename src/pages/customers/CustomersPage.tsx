@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, Pencil, Eye, Archive, Users, X, Building2, User, BarChart3, Loader2 } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Plus, Search, Pencil, Eye, Archive, Users, X, Building2, User, Loader2, MapPin, CalendarDays } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
@@ -13,6 +13,8 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { archiveEntity, type ArchiveEntityClient } from '@/lib/archiveEntity'
+import { loadCustomerReport } from '@/lib/customers/customerIntelligence'
+import { saudiDateStr, formatSaudiDate } from '@/lib/utils/date'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -47,15 +49,21 @@ function CustomerRow({
   const { t } = useTranslation('customers')
   const isBusiness = customer.customer_type === 'business'
   const primary    = displayName(customer)
-  const secondary  = isBusiness && (customer.business_name ?? customer.company_name) ? customer.name : customer.name_ar
+  const secondary  = isBusiness && (customer.business_name ?? customer.company_name)
+    ? (customer.name !== primary ? customer.name : customer.name_ar)
+    : customer.name_ar !== primary ? customer.name_ar : null
+  const city = (customer as CustomerWithStats & { city_ar?: string | null }).city_ar
+    ? (customer as CustomerWithStats & { city_ar?: string | null }).city_ar
+    : customer.city
+  const identifier = customer.vat_number
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50/70 transition-colors border-b border-gray-100 last:border-0">
+    <tr className="group border-t border-gray-100 hover:bg-gray-50/70 transition-colors">
       {/* Avatar */}
-      <div
-        className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold ${
+      <td className="px-4 py-3"><div
+        className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold ${
           isBusiness
-            ? 'bg-gold-500/10 text-gold-700'
+            ? 'bg-teal-50 text-teal-700'
             : 'bg-primary-50 text-primary-600'
         }`}
       >
@@ -63,11 +71,11 @@ function CustomerRow({
           ? <Building2 size={15} />
           : primary.charAt(0).toUpperCase()
         }
-      </div>
+      </div></td>
 
       {/* Name */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 truncate" dir="auto">{primary}</p>
+      <td className="px-4 py-3 min-w-[220px]">
+        <button type="button" onClick={onView} title={t('actions.viewDetails')} className="block max-w-full truncate text-start text-sm font-medium text-gray-900 underline-offset-2 hover:text-primary-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500" dir="auto">{primary}</button>
         {secondary && (
           <p
             className="text-xs text-gray-400 truncate"
@@ -76,34 +84,32 @@ function CustomerRow({
             {secondary}
           </p>
         )}
-      </div>
+      </td>
 
       {/* Mobile */}
-      <div className="w-32 flex-shrink-0 hidden sm:block">
-        <p className="text-sm text-gray-600 tabular-nums" dir="ltr">{customer.phone ?? '—'}</p>
-      </div>
+      <td className="px-4 py-3 text-sm text-gray-600 tabular-nums whitespace-nowrap" dir="ltr">{customer.phone ?? '—'}</td>
+      <td className="px-4 py-3 text-sm text-gray-600 max-w-[150px] truncate"><span className="inline-flex items-center gap-1"><MapPin size={12} className="text-gray-400" />{city ?? '—'}</span></td>
 
       {/* Type */}
-      <div className="w-24 flex-shrink-0 hidden md:block">
-        <Badge variant={isBusiness ? 'gold' : 'neutral'}>
+      <td className="px-4 py-3"><Badge variant={isBusiness ? 'success' : 'neutral'}>
           {t(isBusiness ? 'business' : 'individual')}
-        </Badge>
-      </div>
+        </Badge></td>
 
       {/* VAT */}
-      <div className="w-36 flex-shrink-0 hidden lg:block">
+      <td className="px-4 py-3 text-xs text-gray-500 font-mono whitespace-nowrap" dir="ltr">
         <p className="text-xs text-gray-500 font-mono truncate" dir="ltr">
-          {customer.vat_number ?? '—'}
+          {identifier ?? '—'}
         </p>
-      </div>
+      </td>
+      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap" dir="ltr"><span className="inline-flex items-center gap-1"><CalendarDays size={12} className="text-gray-400" />{customer.last_purchase_date ? formatSaudiDate(customer.last_purchase_date, 'en') : '—'}</span></td>
 
       {/* Actions */}
-      <div className="flex items-center gap-1 flex-shrink-0">
+      <td className="px-3 py-2"><div className="flex items-center gap-0.5">
         <button
           onClick={onView}
-          title={t('actions.view')}
-          aria-label={t('actions.view')}
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-primary-50 hover:text-primary-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+          title={t('actions.viewDetails')}
+          aria-label={t('actions.viewDetails')}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-primary-50 hover:text-primary-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
         >
           <Eye size={14} />
         </button>
@@ -111,7 +117,7 @@ function CustomerRow({
           onClick={onEdit}
           title={t('actions.edit')}
           aria-label={t('actions.edit')}
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
         >
           <Pencil size={14} />
         </button>
@@ -120,12 +126,12 @@ function CustomerRow({
           title={t('actions.archive')}
           aria-label={archiving ? t('actions.archiving') : t('actions.archive')}
           disabled={archiving}
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-amber-600 hover:bg-amber-50 hover:text-amber-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-wait disabled:opacity-50"
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-wait disabled:opacity-50"
         >
           {archiving ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
         </button>
-      </div>
-    </div>
+      </div></td>
+    </tr>
   )
 }
 
@@ -185,6 +191,7 @@ export default function CustomersPage() {
 
   const [customers,   setCustomers]   = useState<CustomerWithStats[]>([])
   const [loading,     setLoading]     = useState(true)
+  const [loadError,   setLoadError]   = useState<string | null>(null)
   const [search,      setSearch]      = useState('')
   const [filterType,  setFilterType]  = useState<FilterType>('all')
   const [drawerOpen,  setDrawerOpen]  = useState(false)
@@ -196,25 +203,44 @@ export default function CustomersPage() {
     const bid = profile?.branch_id
     if (!bid) { setLoading(false); return }
 
-    const { data: custs } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('branch_id', bid)
-      .eq('is_active', true)
-      .order('name', { ascending: true })
-
-    // Financial metrics are intentionally not calculated from browser-loaded
-    // invoice rows. The dedicated report and detail RPCs own those totals.
-    const withStats: CustomerWithStats[] = ((custs ?? []) as unknown as Customer[]).map(c => ({
-      ...c,
-      total_purchases: 0,
-      last_purchase_date: null,
-      purchase_count: 0,
-    }))
-
-    setCustomers(withStats)
-    setLoading(false)
-  }, [profile?.branch_id])
+    setLoading(true)
+    setLoadError(null)
+    try {
+      const endDate = saudiDateStr()
+      const start = new Date(`${endDate}T00:00:00Z`)
+      start.setUTCFullYear(start.getUTCFullYear() - 10)
+      const [customerResult, firstReport] = await Promise.all([
+        supabase.from('customers').select('*').eq('branch_id', bid).eq('is_active', true).order('name', { ascending: true }),
+        loadCustomerReport({
+          filters: { startDate: start.toISOString().slice(0, 10), endDate, branchId: bid, productId: null, productUnitId: null },
+          search: '', activity: 'all', minNet: null, sort: 'customer_name', direction: 'asc', page: 1, pageSize: 50,
+        }),
+      ])
+      if (customerResult.error) throw customerResult.error
+      const reportRows = [...firstReport.rows]
+      for (let page = 2; page <= firstReport.totalPages; page += 1) {
+        const result = await loadCustomerReport({
+          filters: { startDate: start.toISOString().slice(0, 10), endDate, branchId: bid, productId: null, productUnitId: null },
+          search: '', activity: 'all', minNet: null, sort: 'customer_name', direction: 'asc', page, pageSize: 50,
+        })
+        reportRows.push(...result.rows)
+      }
+      const lastPurchaseByCustomer = new Map(reportRows.map(row => [row.customerId, row.lastPurchase]))
+      const withStats: CustomerWithStats[] = ((customerResult.data ?? []) as unknown as Customer[]).map(c => ({
+        ...c,
+        total_purchases: 0,
+        last_purchase_date: lastPurchaseByCustomer.get(c.id) ?? null,
+        purchase_count: 0,
+      }))
+      setCustomers(withStats)
+    } catch (error) {
+      console.error('Unable to load customers directory', error)
+      setCustomers([])
+      setLoadError(t('errors.loadFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }, [profile?.branch_id, t])
 
   useEffect(() => { load() }, [load])
 
@@ -276,76 +302,54 @@ export default function CustomersPage() {
             {customers.length}
           </span>
         ) : undefined}
-        actions={(
-          <>
-            <Button size="sm" onClick={openAdd}>
-              <Plus size={14} />
-              {t('add')}
-            </Button>
-            <Link to="/reports/customers" className="btn-secondary px-3 py-1.5 text-xs rounded-lg">
-              <BarChart3 size={14} />
-              {t('customerIntelligence:reports.openDedicated')}
-            </Link>
-          </>
-        )}
+        actions={undefined}
       />
 
       {/* ── Filter tabs ─────────────────────────────────────── */}
-      <div className="flex items-center gap-2">
-        <FilterTab label={t('all')} count={counts.all} active={filterType === 'all'} onClick={() => setFilterType('all')} />
-        <FilterTab label={t('individual')} count={counts.individual} active={filterType === 'individual'} onClick={() => setFilterType('individual')} />
-        <FilterTab label={t('business')} count={counts.business} active={filterType === 'business'} onClick={() => setFilterType('business')} />
-      </div>
-
-      {/* ── Search ──────────────────────────────────────────── */}
-      <div className="relative max-w-sm">
-        <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-        <input
-          type="text"
-          placeholder={t('search')}
-          aria-label={t('search')}
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="input ps-9 pe-9 py-2 text-sm"
-        />
-        {search && (
-          <button
-            type="button"
-            onClick={() => setSearch('')}
-            aria-label={t('common:clearSearch')}
-            className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <X size={13} />
-          </button>
-        )}
+      <div className="card flex flex-wrap items-center gap-2 p-2.5">
+        <div className="relative min-w-[220px] flex-1 basis-[280px]">
+          <Search size={15} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="text" placeholder={t('search')} aria-label={t('search')} value={search} onChange={e => setSearch(e.target.value)} className="input h-9 w-full py-1.5 ps-9 pe-9 text-sm" />
+          {search && <button type="button" onClick={() => setSearch('')} aria-label={t('common:clearSearch')} className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={13} /></button>}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <FilterTab label={t('all')} count={counts.all} active={filterType === 'all'} onClick={() => setFilterType('all')} />
+          <FilterTab label={t('individual')} count={counts.individual} active={filterType === 'individual'} onClick={() => setFilterType('individual')} />
+          <FilterTab label={t('business')} count={counts.business} active={filterType === 'business'} onClick={() => setFilterType('business')} />
+        </div>
+        <Button size="sm" className="ms-auto" onClick={openAdd}><Plus size={14} />{t('add')}</Button>
       </div>
 
       {/* ── Content ─────────────────────────────────────────── */}
       {loading ? (
         <ContentState kind="loading" className="py-24" />
+      ) : loadError ? (
+        <ContentState kind="error" title={loadError} action={<Button variant="secondary" onClick={() => void load()}>{t('common:retry')}</Button>} className="py-24" />
       ) : filtered.length === 0 ? (
         <EmptyState filtered={isFiltered} onAdd={openAdd} />
       ) : (
         <div className="card overflow-hidden">
-          {/* Table header */}
-          <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-            <div className="w-9 flex-shrink-0" />
-            <div className="flex-1">{t('fields.name')}</div>
-            <div className="w-32 flex-shrink-0 hidden sm:block">{t('fields.mobile')}</div>
-            <div className="w-24 flex-shrink-0 hidden md:block">{t('fields.type')}</div>
-            <div className="w-36 flex-shrink-0 hidden lg:block">{t('fields.vatNumber')}</div>
-            <div className="w-24 flex-shrink-0" />
+          <div className="flex items-center justify-between gap-3 bg-[#173d2a] px-4 py-2.5 text-white"><div><h2 className="text-sm font-bold">{t('title')}</h2><p className="text-xs text-emerald-100/75">{filtered.length}</p></div><User size={17} className="text-emerald-100" /></div>
+          <div className="hidden lg:block overflow-x-auto">
+            <table className="w-full min-w-[1050px] text-sm">
+              <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="w-14 px-4 py-2.5" />
+                  <th className="px-4 py-2.5 text-start font-semibold">{t('fields.name')}</th>
+                  <th className="px-4 py-2.5 text-start font-semibold">{t('fields.mobile')}</th>
+                  <th className="px-4 py-2.5 text-start font-semibold">{t('fields.city')}</th>
+                  <th className="px-4 py-2.5 text-start font-semibold">{t('fields.type')}</th>
+                  <th className="px-4 py-2.5 text-start font-semibold">{t('fields.vatNumber')}</th>
+                  <th className="px-4 py-2.5 text-start font-semibold">{t('fields.lastPurchase')}</th>
+                  <th className="px-3 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>{filtered.map(c => <CustomerRow key={c.id} customer={c} onEdit={() => openEdit(c)} onView={() => navigate(`/customers/${c.id}`)} onArchive={() => setArchiveTarget(c)} archiving={archivingIds.has(c.id)} />)}</tbody>
+            </table>
           </div>
-          {filtered.map(c => (
-            <CustomerRow
-              key={c.id}
-              customer={c}
-              onEdit={() => openEdit(c)}
-              onView={() => navigate(`/customers/${c.id}`)}
-              onArchive={() => setArchiveTarget(c)}
-              archiving={archivingIds.has(c.id)}
-            />
-          ))}
+          <div className="grid gap-2 p-2 lg:hidden">
+            {filtered.map(c => <div key={c.id} className="rounded-xl border border-gray-100 p-3"><div className="flex items-start gap-3"><div className="h-8 w-8 shrink-0 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center text-sm font-bold">{c.customer_type === 'business' ? <Building2 size={15} /> : displayName(c).charAt(0).toUpperCase()}</div><div className="min-w-0 flex-1"><button type="button" onClick={() => navigate(`/customers/${c.id}`)} title={t('actions.viewDetails')} className="block max-w-full truncate text-start text-sm font-semibold text-gray-900 hover:text-primary-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500" dir="auto">{displayName(c)}</button><p className="mt-1 text-xs text-gray-500" dir="ltr">{c.phone ?? '—'} · {(c as CustomerWithStats & { city_ar?: string | null }).city_ar || c.city || '—'}</p><p className="mt-1 text-xs text-gray-400" dir="ltr">{c.last_purchase_date ? formatSaudiDate(c.last_purchase_date, 'en') : '—'}</p></div><div className="flex items-center gap-0.5"><button type="button" onClick={() => navigate(`/customers/${c.id}`)} aria-label={t('actions.viewDetails')} title={t('actions.viewDetails')} className="h-8 w-8 rounded-lg text-gray-400 hover:bg-primary-50 hover:text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"><Eye size={14} /></button><button type="button" onClick={() => openEdit(c)} aria-label={t('actions.edit')} className="h-8 w-8 rounded-lg text-gray-400 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"><Pencil size={14} /></button></div></div></div>)}
+          </div>
         </div>
       )}
 
@@ -357,12 +361,9 @@ export default function CustomersPage() {
             <span>{t('individualCount', { count: counts.individual })}</span>
           </div>
           <div className="flex items-center gap-2 text-gray-500">
-            <Building2 size={14} className="text-gold-500" />
+            <Building2 size={14} className="text-teal-600" />
             <span>{t('businessCount', { count: counts.business })}</span>
           </div>
-          <Link to="/reports/customers" className="ms-auto font-semibold text-primary-600 hover:text-primary-700">
-            {t('customerIntelligence:reports.openDedicated')}
-          </Link>
         </div>
       )}
 

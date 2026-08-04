@@ -90,6 +90,8 @@ const PAY_BADGE: Record<string, DocumentBadgeConfig> = {
   card: { label: 'Card', bg: 'bg-indigo-50', text: 'text-indigo-700', ring: 'ring-indigo-600/20', dot: 'bg-indigo-500' },
   split: { label: 'Split', bg: 'bg-teal-50', text: 'text-teal-700', ring: 'ring-teal-600/20', dot: 'bg-teal-500' },
   bank_transfer: { label: 'Bank', bg: 'bg-sky-50', text: 'text-sky-700', ring: 'ring-sky-600/20', dot: 'bg-sky-500' },
+  credit: { label: 'Customer credit', bg: 'bg-rose-50', text: 'text-rose-800', ring: 'ring-rose-700/20', dot: 'bg-rose-700' },
+  partial_credit: { label: 'Customer credit', bg: 'bg-rose-50', text: 'text-rose-800', ring: 'ring-rose-700/20', dot: 'bg-rose-700' },
   other: { label: 'Other', bg: 'bg-gray-50', text: 'text-gray-600', ring: 'ring-gray-500/20', dot: 'bg-gray-400' },
 }
 
@@ -383,7 +385,7 @@ export default function InvoicesPage() {
           .from('invoices')
           .select(`
             id, branch_id, session_id, invoice_number, invoice_reference, zatca_invoice_type, invoice_date, created_at, status, is_demo,
-            subtotal, tax_amount, total_amount, zatca_status,
+            subtotal, tax_amount, total_amount, payment_method, payment_status, zatca_status,
             customers(name),
             invoice_items(id, quantity),
             payments(method)
@@ -404,6 +406,18 @@ export default function InvoicesPage() {
         if (cancelled) return
 
         const invoices = data ?? []
+        const customerCreditInvoiceIds = new Set<string>()
+        const { data: creditOperations } = await (supabase as any)
+          .from('customer_receivable_operations')
+          .select('action, response')
+          .eq('branch_id', activeScope.branchId)
+          .eq('action', 'credit_checkout')
+          .limit(1000)
+        const invoiceIds = new Set(invoices.map((invoice: any) => String(invoice.id)))
+        for (const operation of creditOperations ?? []) {
+          const invoiceId = String(operation?.response?.invoice_id ?? '')
+          if (invoiceIds.has(invoiceId)) customerCreditInvoiceIds.add(invoiceId)
+        }
         const demoSandbox = isPermanentDemoSandboxBranch(tid, activeScope.branchId)
         const sandboxAttempts = demoSandbox
           ? await getSandboxValidationStatuses(invoices.map((invoice: any) => invoice.id)).catch(() => ({}))
@@ -465,6 +479,7 @@ export default function InvoicesPage() {
         const processed: InvoiceRow[] = invoices.map((inv: any) => {
           const linkedCreditNote = creditByOriginal.get(inv.id) ?? null
           const payments = Array.isArray(inv.payments) ? inv.payments : []
+          const isCustomerCredit = inv.zatca_invoice_type !== 'credit_note' && customerCreditInvoiceIds.has(inv.id)
           const invoiceItems = Array.isArray(inv.invoice_items) ? inv.invoice_items : []
           let originalQuantityTotal = 0
           let remainingRefundableQuantity = 0
@@ -486,6 +501,7 @@ export default function InvoicesPage() {
             && payments.some((payment: any) => payment.method === 'card')
           return {
           isDemo:        inv.is_demo === true,
+          isSandboxDemo: demoSandbox && inv.is_demo !== true,
           id:            inv.id,
           branchId:      inv.branch_id,
           invoiceNumber: inv.invoice_number,
@@ -497,11 +513,13 @@ export default function InvoicesPage() {
           subtotal:      Number(inv.subtotal),
           taxAmount:     Number(inv.tax_amount),
           totalAmount:   Number(inv.total_amount),
-          paymentMethod: payments.length > 0
+          paymentMethod: isCustomerCredit
+            ? 'credit'
+            : payments.length > 0
             ? (isSplitPayment ? 'split' : payments[0].method)
-            : null,
+            : inv.payment_method ?? null,
           zatcaStatus: inv.zatca_status as ZatcaStatus,
-          displayZatcaStatus: demoSandbox
+          displayZatcaStatus: demoSandbox && inv.is_demo !== true
             ? (sandboxAttempts[inv.id]?.status ?? 'sandbox_not_validated')
             : inv.zatca_status as ZatcaStatus,
           status:      inv.status,
@@ -620,6 +638,7 @@ export default function InvoicesPage() {
         : r.paymentMethod === 'card' ? t('payments:card')
         : r.paymentMethod === 'split' ? t('payments:split')
         : r.paymentMethod === 'bank_transfer' ? t('payments:bankTransfer')
+        : r.paymentMethod === 'credit' || r.paymentMethod === 'partial_credit' ? t('payments:customerCredit')
         : t('payments:other'),
     } : null
     return {
@@ -1133,6 +1152,7 @@ export default function InvoicesPage() {
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span dir="ltr" className="font-mono text-sm font-black text-gray-950 [overflow-wrap:anywhere]">{row.invoiceNumber}</span>
                           {row.isDemo && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[9px] font-black text-amber-900 ring-1 ring-inset ring-amber-300">DEMO · NOT A TAX INVOICE</span>}
+                          {row.isSandboxDemo && <span className="rounded-md bg-primary-50 px-1.5 py-0.5 text-[9px] font-black text-primary-800 ring-1 ring-inset ring-primary-200">SANDBOX</span>}
                           <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold ring-1 ring-inset ${
                             isCreditNote
                               ? 'bg-amber-50 text-amber-700 ring-amber-600/20'

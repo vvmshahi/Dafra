@@ -1,9 +1,13 @@
 {
   "demo": {
-    "badge": "تجريبي · غير ضريبي",
-    "checkoutNotice": "دفع تجريبي فقط. لن يتم إنشاء فاتورة ضريبية لدى ZATCA.",
-    "noZatca": "عملية بيع تجارية محاكاة. لم يُطلب إبلاغ أو تصفية لدى ZATCA.",
+    "badge": "تجريبي",
+    "checkoutNotice": "بيع تجريبي. لا يتم إنشاء فاتورة ZATCA.",
+    "noZatca": "فاتورة تجريبية — لا يُستخدم إرسال ZATCA.",
     "receiptLabelBilingual": "DEMO — NOT A TAX INVOICE / تجريبي — ليست فاتورة ضريبية"
+  },
+  "sandbox": {
+    "label": "بيئة تجريبية",
+    "receiptLabelBilingual": "SANDBOX — TEST INVOICE / بيئة تجريبية — فاتورة اختبار"
   },
   "title": "نقطة البيع",
   "touchPos": "نقطة البيع باللمس",
@@ -119,6 +123,11 @@
     "saleCompletedAttention": "اكتمل البيع — اعتماد الفاتورة يحتاج إلى متابعة",
     "retryFinalization": "إعادة محاولة الاعتماد",
     "reporting_pending": "الإبلاغ قيد الانتظار",
+    "sandbox_validation_pending": "بيئة تجريبية قيد الانتظار",
+    "sandbox_validated": "تم الإرسال للبيئة التجريبية",
+    "sandbox_validated_with_warnings": "تم الإرسال للبيئة التجريبية مع تنبيهات",
+    "sandbox_validation_rejected": "رُفضت في البيئة التجريبية",
+    "sandbox_validation_failed": "تتطلب البيئة التجريبية إعادة محاولة",
     "reported": "تم الإبلاغ",
     "reported_with_warnings": "تم الإبلاغ مع تنبيهات",
     "rejected": "مرفوضة",

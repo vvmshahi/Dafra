@@ -1,8 +1,11 @@
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { documentFontFamily, documentLabel, documentLabelLines, documentNames, documentPaymentLabel } from '@/localization/documents'
 import { formatDocumentMoney, formatDocumentQuantity, type DocumentViewModel } from '@/lib/invoices/documentViewModel'
-import { resolveA4Template } from '@/lib/invoices/a4TemplateRegistry'
+import { A4_TEMPLATE_REGISTRY, resolveA4Template, type A4TemplateRendererId } from '@/lib/invoices/a4TemplateRegistry'
 import { RiyalSymbol } from '@/components/ui/RiyalSymbol'
 import { buildVisibleTotals } from '@/lib/invoices/visibleTotals'
+import { resolveInvoiceArtworkUrl } from '@/lib/invoices/runtimePresentation'
+import { resolveA4ColorTokens } from '@/lib/invoices/a4ColorTokens'
 
 export interface A4RenderOptions {
   readonly id?: string
@@ -12,6 +15,8 @@ export interface A4RenderOptions {
   readonly qrImageUrl?: string | null
   readonly sampleLabel?: string | null
   readonly nonFiscalDemo?: boolean
+  readonly headerArtworkUrl?: string | null
+  readonly footerArtworkUrl?: string | null
 }
 
 export interface A4DocumentProps { readonly model: DocumentViewModel; readonly options?: A4RenderOptions }
@@ -35,11 +40,33 @@ function DateMeta({ model }: { model: DocumentViewModel }) {
   </dl>
 }
 
-function Seller({ model }: { model: DocumentViewModel }) {
+function hasConfiguredHeaderArtwork(model: DocumentViewModel, options: A4RenderOptions) {
+  const applies = model.template.artworkScope === 'all' || model.template.artworkTemplateId === model.template.resolvedId
+  if (options.headerArtworkUrl !== undefined) return Boolean(options.headerArtworkUrl)
+  return applies && model.template.headerAssetEnabled && Boolean(model.template.headerAssetPath)
+}
+
+function showsStandardBranding(model: DocumentViewModel, options: A4RenderOptions) {
+  return !hasConfiguredHeaderArtwork(model, options) || model.template.showStandardBranding
+}
+
+function Seller({ model, showBranding = true }: { model: DocumentViewModel; showBranding?: boolean }) {
   const { seller, presentation } = model
   const logo = presentation.logo.previewUrl ?? presentation.logo.assetPath
   const presentationAddress = presentation.contact.address
-  return <section className="a4-seller">{presentation.logo.visible && logo && <img className={`a4-logo a4-logo--${presentation.logo.size ?? 'medium'}`} src={logo} alt="" onError={event => { event.currentTarget.style.display = 'none' }} />}{seller.displayHeading && <div className="a4-display-heading" dir="auto">{seller.displayHeading}</div>}{seller.displaySubheading && <div className="a4-display-subheading" dir="auto">{seller.displaySubheading}</div>}{seller.company.visible && names(model, seller.registeredName, seller.registeredNameAr).map((value, index) => <div className="a4-registered-name" key={`${value}-${index}`} dir="auto">{value}</div>)}{seller.branch.visible && names(model, seller.branch.name, seller.branch.nameAr).map((value, index) => <div className="a4-branch" key={`${value}-${index}`} dir="auto">{value}</div>)}<section className="a4-legal-seller"><div className="a4-section-title">{documentLabel(model.identity.language, 'seller')}</div>{names(model, seller.registeredName, seller.registeredNameAr).map((value, index) => <div className="a4-legal-seller__name" key={`${value}-${index}`} dir="auto">{value}</div>)}{seller.registeredAddress && <div className="a4-address" dir="auto">{seller.registeredAddress}</div>}{seller.vatNumber && <div>{documentLabel(model.identity.language, 'vatNumber')}: <bdi dir="ltr">{seller.vatNumber}</bdi></div>}{seller.registrationNumber && <div>{seller.registrationType === 'CR' ? documentLabel(model.identity.language, 'crNumber') : seller.registrationType ?? documentLabel(model.identity.language, 'identifier')}: <bdi dir="ltr">{seller.registrationNumber}</bdi></div>}</section>{presentation.contact.addressVisible && presentationAddress && presentationAddress !== seller.registeredAddress && <div className="a4-address a4-address--presentation" dir="auto">{presentationAddress}</div>}{presentation.contact.phoneVisible && presentation.contact.phone && <div>{documentLabel(model.identity.language, 'phone')}: <bdi dir="ltr">{presentation.contact.phone}</bdi></div>}{presentation.contact.websiteVisible && presentation.contact.website && <div>{documentLabel(model.identity.language, 'website')}: <bdi dir="ltr">{presentation.contact.website}</bdi></div>}{presentation.contact.emailVisible && presentation.contact.email && <div>{documentLabel(model.identity.language, 'email')}: <bdi dir="ltr">{presentation.contact.email}</bdi></div>}</section>
+  return <section className="a4-seller">{showBranding && <>{presentation.logo.visible && logo && <img className={`a4-logo a4-logo--${presentation.logo.size ?? 'medium'}`} src={logo} alt="" onError={event => { event.currentTarget.style.display = 'none' }} />}{seller.displayHeading && <div className="a4-display-heading" dir="auto">{seller.displayHeading}</div>}{seller.displaySubheading && <div className="a4-display-subheading" dir="auto">{seller.displaySubheading}</div>}{seller.company.visible && names(model, seller.registeredName, seller.registeredNameAr).map((value, index) => <div className="a4-registered-name" key={`${value}-${index}`} dir="auto">{value}</div>)}{seller.branch.visible && names(model, seller.branch.name, seller.branch.nameAr).map((value, index) => <div className="a4-branch" key={`${value}-${index}`} dir="auto">{value}</div>)}</>}<section className="a4-legal-seller"><div className="a4-section-title">{documentLabel(model.identity.language, 'seller')}</div>{names(model, seller.registeredName, seller.registeredNameAr).map((value, index) => <div className="a4-legal-seller__name" key={`${value}-${index}`} dir="auto">{value}</div>)}{seller.registeredAddress && <div className="a4-address" dir="auto">{seller.registeredAddress}</div>}{seller.vatNumber && <div>{documentLabel(model.identity.language, 'vatNumber')}: <bdi dir="ltr">{seller.vatNumber}</bdi></div>}{seller.registrationNumber && <div>{seller.registrationType === 'CR' ? documentLabel(model.identity.language, 'crNumber') : seller.registrationType ?? documentLabel(model.identity.language, 'identifier')}: <bdi dir="ltr">{seller.registrationNumber}</bdi></div>}</section>{presentation.contact.addressVisible && presentationAddress && presentationAddress !== seller.registeredAddress && <div className="a4-address a4-address--presentation" dir="auto">{presentationAddress}</div>}{presentation.contact.phoneVisible && presentation.contact.phone && <div>{documentLabel(model.identity.language, 'phone')}: <bdi dir="ltr">{presentation.contact.phone}</bdi></div>}{presentation.contact.websiteVisible && presentation.contact.website && <div>{documentLabel(model.identity.language, 'website')}: <bdi dir="ltr">{presentation.contact.website}</bdi></div>}{presentation.contact.emailVisible && presentation.contact.email && <div>{documentLabel(model.identity.language, 'email')}: <bdi dir="ltr">{presentation.contact.email}</bdi></div>}</section>
+}
+
+function SellerBrand({ model, visible = true }: { model: DocumentViewModel; visible?: boolean }) {
+  if (!visible) return null
+  const { seller, presentation } = model
+  const logo = presentation.logo.previewUrl ?? presentation.logo.assetPath
+  return <section className="a4-seller a4-seller--brand">
+    {presentation.logo.visible && logo && <img className={`a4-logo a4-logo--${presentation.logo.size ?? 'medium'}`} src={logo} alt="" onError={event => { event.currentTarget.style.display = 'none' }} />}
+    {seller.displayHeading && <div className="a4-display-heading" dir="auto">{seller.displayHeading}</div>}
+    {seller.displaySubheading && <div className="a4-display-subheading" dir="auto">{seller.displaySubheading}</div>}
+    {!seller.displayHeading && names(model, seller.registeredName, seller.registeredNameAr).map((value, index) => <div className="a4-registered-name" key={`${value}-${index}`} dir="auto">{value}</div>)}
+  </section>
 }
 
 function Buyer({ model }: { model: DocumentViewModel }) { const { buyer } = model; return <section className="a4-buyer"><div className="a4-section-title">{documentLabel(model.identity.language, 'billTo')}</div>{names(model, buyer.name, buyer.nameAr).map((value, index) => <div className="a4-buyer-name" key={`${value}-${index}`} dir="auto">{value}</div>)}{names(model, buyer.address, buyer.addressAr).map((value, index) => <div key={`${value}-${index}`} dir="auto">{value}</div>)}{buyer.vatNumber && <div>{documentLabel(model.identity.language, 'customerVatNumber')}: <bdi dir="ltr">{buyer.vatNumber}</bdi></div>}{buyer.identifierValue && <div>{buyer.identifierType ?? documentLabel(model.identity.language, 'identifier')}: <bdi dir="ltr">{buyer.identifierValue}</bdi></div>}</section> }
@@ -48,14 +75,100 @@ function ItemTable({ model }: { model: DocumentViewModel }) { const credit = mod
 
 function Totals({ model }: { model: DocumentViewModel }) { return <section className="a4-totals">{buildVisibleTotals(model).map(row => <div className={row.emphasized ? 'a4-totals__grand' : undefined} key={row.key}><span>{row.label}</span><Money value={row.value} model={model} /></div>)}</section> }
 
-function Payment({ model }: { model: DocumentViewModel }) { const credit = model.identity.kind === 'credit_note'; return <section className="a4-payment"><div className="a4-section-title">{documentLabel(model.identity.language, credit ? 'refundIssued' : 'paymentMethod')}</div>{model.payments.length > 0 ? model.payments.map((payment, index) => <div key={`${payment.method}-${index}`}><span>{documentPaymentLabel(model.identity.language, payment.method)}</span><Money value={payment.amount} model={model} />{payment.method === 'cash' && payment.cashTendered != null && Math.abs(payment.cashTendered - model.totals.total) > 0.005 && <span>{documentLabel(model.identity.language, 'received')}: <Money value={payment.cashTendered} model={model} /></span>}{payment.method === 'cash' && model.presentation.thermal.showCashChange && (payment.change ?? 0) > 0 && <span>{documentLabel(model.identity.language, 'change')}: <Money value={payment.change ?? 0} model={model} /></span>}</div>) : <div><span>{documentPaymentLabel(model.identity.language, 'other')}</span></div>}</section> }
+function Payment({ model }: { model: DocumentViewModel }) {
+  const credit = model.identity.kind === 'credit_note'
+  const customerCredit = model.customerCredit
+  if (customerCredit?.isCustomerCredit) {
+    const statusKey = customerCredit.paymentStatus === 'paid' ? 'paid' : customerCredit.paymentStatus === 'partial' ? 'partiallyPaid' : 'unpaid'
+    return <section className="a4-payment">
+      <div className="a4-section-title">{documentLabel(model.identity.language, 'customerCredit')}</div>
+      <div><span>{documentLabel(model.identity.language, 'paymentMethod')}</span><strong>{documentLabel(model.identity.language, 'customerCredit')}</strong></div>
+      <div><span>{documentLabel(model.identity.language, 'paymentStatus')}</span><strong>{documentLabel(model.identity.language, statusKey)}</strong></div>
+      {customerCredit.initialPaymentMethod && <div><span>{documentLabel(model.identity.language, 'initialPaymentMethod')}</span><span>{documentPaymentLabel(model.identity.language, customerCredit.initialPaymentMethod)}</span></div>}
+      <div><span>{documentLabel(model.identity.language, 'amountPaid')}</span><Money value={customerCredit.amountPaid} model={model} /></div>
+      <div><span>{documentLabel(model.identity.language, 'balanceDue')}</span><Money value={customerCredit.balanceDue} model={model} /></div>
+    </section>
+  }
+  return <section className="a4-payment"><div className="a4-section-title">{documentLabel(model.identity.language, credit ? 'refundIssued' : 'paymentMethod')}</div>{model.payments.length > 0 ? model.payments.map((payment, index) => <div key={`${payment.method}-${index}`}><span>{documentPaymentLabel(model.identity.language, payment.method)}</span><Money value={payment.amount} model={model} />{payment.method === 'cash' && payment.cashTendered != null && Math.abs(payment.cashTendered - model.totals.total) > 0.005 && <span>{documentLabel(model.identity.language, 'received')}: <Money value={payment.cashTendered} model={model} /></span>}{payment.method === 'cash' && model.presentation.thermal.showCashChange && (payment.change ?? 0) > 0 && <span>{documentLabel(model.identity.language, 'change')}: <Money value={payment.change ?? 0} model={model} /></span>}</div>) : <div><span>{documentPaymentLabel(model.identity.language, 'other')}</span></div>}</section>
+}
 
-function Footer({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { const footer = [model.presentation.footer.thankYouVisible ? model.presentation.footer.thankYou : null, model.presentation.footer.footerVisible ? model.presentation.footer.footer : null, model.presentation.footer.refundVisible ? model.presentation.footer.refund : null].filter(Boolean); const qr = options.qrImageUrl; return <footer className="a4-footer">{!options.nonFiscalDemo && <div className="a4-qr">{qr ? <img src={qr} alt={documentLabel(model.identity.language, 'qrCode')} /> : <div className="a4-qr-placeholder">{documentLabel(model.identity.language, 'qrCode')}</div>}{documentLabelLines(model.identity.language, 'scanToVerify').map((line, index) => <div key={`${line}-${index}`} dir="auto">{line}</div>)}</div>}{footer.length > 0 && <><div className="a4-footer-divider" aria-hidden="true" /><div className={`a4-footer-copy ${model.presentation.footer.bold || footer.length > 0 ? 'font-bold' : ''}`}>{footer.map((line, index) => <div key={`${line}-${index}`} dir="auto">{line}</div>)}</div></>}{options.pageNumbers && <span className="a4-page-number" />}</footer> }
+function QrVerification({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { if (options.nonFiscalDemo) return null; return <section className="a4-qr">{options.qrImageUrl ? <img src={options.qrImageUrl} alt={documentLabel(model.identity.language, 'qrCode')} /> : <div className="a4-qr-placeholder">{documentLabel(model.identity.language, 'qrCode')}</div>}{documentLabelLines(model.identity.language, 'scanToVerify').map((line, index) => <div key={`${line}-${index}`} dir="auto">{line}</div>)}</section> }
+function Footer({ model, options }: { model: DocumentViewModel; options: A4RenderOptions }) { const footer = [model.presentation.footer.thankYouVisible ? model.presentation.footer.thankYou : null, model.presentation.footer.footerVisible ? model.presentation.footer.footer : null, model.presentation.footer.refundVisible ? model.presentation.footer.refund : null].filter(Boolean); return <footer className="a4-footer">{footer.length > 0 && <><div className="a4-footer-divider" aria-hidden="true" /><div className={`a4-footer-copy ${model.presentation.footer.bold || footer.length > 0 ? 'font-bold' : ''}`}>{footer.map((line, index) => <div key={`${line}-${index}`} dir="auto">{line}</div>)}</div></>}{options.pageNumbers && <span className="a4-page-number" />}</footer> }
+function DocumentTitle({ model }: { model: DocumentViewModel }) { const credit = model.identity.kind === 'credit_note'; const debit = model.identity.kind === 'debit_note'; const key = credit ? (model.identity.invoiceType === 'standard' ? 'taxCreditNote' : 'simplifiedTaxCreditNote') : debit ? (model.identity.invoiceType === 'standard' ? 'taxDebitNote' : 'simplifiedTaxDebitNote') : (model.identity.invoiceType === 'standard' ? 'standardTaxInvoice' : 'simplifiedTaxInvoice'); const lines = documentLabelLines(model.identity.language, key); return <section className="a4-document-title">{lines.map((line, index) => <div key={`${line}-${index}`} className={index === 0 ? 'a4-document-title__main' : 'a4-document-title__sub'} dir="auto">{line}</div>)}</section> }
+function Adjustment({ model }: { model: DocumentViewModel }) { const credit = model.identity.kind === 'credit_note'; const debit = model.identity.kind === 'debit_note'; if (!credit && !debit) return null; return <section className={`a4-credit ${debit ? 'a4-debit' : ''}`}><strong>{documentLabel(model.identity.language, debit ? 'debitNoteReference' : 'creditNoteReference')}</strong>{model.compliance.originalDocument.number && <span>{documentLabel(model.identity.language, 'originalInvoice')}: <bdi dir="ltr">{model.compliance.originalDocument.number}</bdi></span>}{model.compliance.creditReason && <span>{documentLabel(model.identity.language, 'reason')}: <span dir="auto">{model.compliance.creditReason}</span></span>}</section> }
+function useArtworkUrl(path: string | null, override: string | null | undefined) {
+  const [url, setUrl] = useState<string | null>(override ?? (/^(?:data:|blob:|https?:)/i.test(path ?? '') ? path : null))
+  useEffect(() => {
+    let active = true
+    if (override !== undefined) {
+      setUrl(override)
+      return () => { active = false }
+    }
+    void resolveInvoiceArtworkUrl(path).then(next => { if (active) setUrl(next) })
+    return () => { active = false }
+  }, [path, override])
+  return url
+}
 
-function SharedA4Layout({ model, options, template }: { model: DocumentViewModel; options: A4RenderOptions; template: 'classic' | 'modern_split' | 'minimal_professional' }) { const credit = model.identity.kind === 'credit_note'; const debit = model.identity.kind === 'debit_note'; const adjustment = credit || debit; const style = resolveA4Template(model).headerStyle; const title = credit ? (model.identity.invoiceType === 'standard' ? 'taxCreditNote' : 'simplifiedTaxCreditNote') : debit ? (model.identity.invoiceType === 'standard' ? 'taxDebitNote' : 'simplifiedTaxDebitNote') : (model.identity.invoiceType === 'standard' ? 'standardTaxInvoice' : 'simplifiedTaxInvoice'); const titleLines = options.nonFiscalDemo ? ['DEMO — NOT A TAX INVOICE', 'تجريبي — ليست فاتورة ضريبية'] : documentLabelLines(model.identity.language, title); return <article className={`a4-document a4-document--${template} a4-header--${style}`} dir={model.identity.direction} lang={model.identity.language === 'both' ? undefined : model.identity.language}>{options.sampleLabel && <div className="a4-sample">{options.sampleLabel}</div>}<header className="a4-header"><Seller model={model} /><section className="a4-document-title">{titleLines.map((line, index) => <div key={`${line}-${index}`} className={index === 0 ? 'a4-document-title__main' : 'a4-document-title__sub'} dir="auto">{line}</div>)}<DateMeta model={model} /></section></header><Buyer model={model} />{adjustment && <section className={`a4-credit ${debit ? 'a4-debit' : ''}`}><strong>{documentLabel(model.identity.language, debit ? 'debitNoteReference' : 'creditNoteReference')}</strong>{model.compliance.originalDocument.number && <span>{documentLabel(model.identity.language, 'originalInvoice')}: <bdi dir="ltr">{model.compliance.originalDocument.number}</bdi></span>}{model.compliance.creditReason && <span>{documentLabel(model.identity.language, 'reason')}: <span dir="auto">{model.compliance.creditReason}</span></span>}</section>}<ItemTable model={model} /><div className="a4-lower"><Payment model={model} /><Totals model={model} /></div><Footer model={model} options={options} /></article> }
+function Shell({ template, model, options, children }: { template: string; model: DocumentViewModel; options: A4RenderOptions; children: ReactNode }) {
+  const artworkApplies = model.template.artworkScope === 'all' || model.template.artworkTemplateId === model.template.resolvedId
+  const headerArtwork = useArtworkUrl(artworkApplies && model.template.headerAssetEnabled ? model.template.headerAssetPath : null, options.headerArtworkUrl)
+  const footerArtwork = useArtworkUrl(artworkApplies && model.template.footerAssetEnabled ? model.template.footerAssetPath : null, options.footerArtworkUrl)
+  const tokens = resolveA4ColorTokens({
+    templateId: resolveA4Template(model).resolvedId,
+    accent: model.template.accentColor,
+    heading: model.template.headingColor,
+    body: model.template.bodyColor,
+    autoForeground: model.template.autoForeground,
+  })
+  return <article
+    className={`a4-document a4-document--${template} a4-header--${resolveA4Template(model).headerStyle} ${showsStandardBranding(model, options) ? '' : 'a4-document--branding-hidden'}`}
+    dir={model.identity.direction}
+    lang={model.identity.language === 'both' ? undefined : model.identity.language}
+    style={{
+      '--a4-accent': tokens.accent,
+      '--a4-on-accent': tokens.accentForeground,
+      '--a4-heading': tokens.heading,
+      '--a4-body': tokens.body,
+      '--a4-muted': tokens.muted,
+      '--a4-border': tokens.border,
+      '--a4-surface': tokens.surfaceTint,
+      '--a4-table-head': tokens.tableHeader,
+      '--a4-table-head-fg': tokens.tableHeaderForeground,
+      '--a4-total-surface': tokens.totalSurface,
+      '--a4-total-fg': tokens.totalForeground,
+      '--a4-header-height': `${model.template.headerAssetHeight}mm`,
+      '--a4-header-spacing': `${model.template.headerAssetSpacing}mm`,
+      '--a4-footer-height': `${model.template.footerAssetHeight}mm`,
+      '--a4-footer-spacing': `${model.template.footerAssetSpacing}mm`,
+    } as CSSProperties}
+  >
+    {options.sampleLabel && <div className="a4-sample">{options.sampleLabel}</div>}
+    {headerArtwork && <div className="a4-header-artwork"><img src={headerArtwork} alt="" style={{ objectFit: model.template.headerAssetFit }} onError={event => { event.currentTarget.parentElement!.style.display = 'none' }} /></div>}
+    {children}
+    {footerArtwork && <div className="a4-footer-artwork"><img src={footerArtwork} alt="" style={{ objectFit: model.template.footerAssetFit }} onError={event => { event.currentTarget.parentElement!.style.display = 'none' }} /></div>}
+  </article>
+}
 
-function ClassicV1(props: { model: DocumentViewModel; options: A4RenderOptions }) { return <SharedA4Layout {...props} template="classic" /> }
-function ModernSplitV1(props: { model: DocumentViewModel; options: A4RenderOptions }) { return <SharedA4Layout {...props} template="modern_split" /> }
-function MinimalProfessionalV1(props: { model: DocumentViewModel; options: A4RenderOptions }) { return <SharedA4Layout {...props} template="minimal_professional" /> }
+function ClassicV1({ model, options = {} }: A4DocumentProps) { const branding = showsStandardBranding(model, options); return <Shell template="classic" model={model} options={options}><header className="a4-classic-head"><SellerBrand model={model} visible={branding} /><div><DocumentTitle model={model} options={options} /><DateMeta model={model} /></div></header><div className="a4-classic-parties"><Seller model={model} showBranding={branding} /><Buyer model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-classic-summary a4-closing-group"><QrVerification model={model} options={options} /><Payment model={model} /><Totals model={model} /></div><Footer model={model} options={options} /></Shell> }
+function ModernStatementV1({ model, options = {} }: A4DocumentProps) { const branding = showsStandardBranding(model, options); return <Shell template="modern_split" model={model} options={options}><header className="a4-statement-head"><section className="a4-statement-identity"><SellerBrand model={model} visible={branding} /></section><section className="a4-statement-summary"><div><DocumentTitle model={model} options={options} /><DateMeta model={model} /><strong className="a4-statement-total"><Money value={model.totals.total} model={model} /></strong></div><QrVerification model={model} options={options} /></section></header><div className="a4-statement-parties"><Seller model={model} showBranding={branding} /><Buyer model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-statement-lower a4-closing-group"><Payment model={model} /><Totals model={model} /></div><Footer model={model} options={options} /></Shell> }
+function MinimalProfessionalV1({ model, options = {} }: A4DocumentProps) { const branding = showsStandardBranding(model, options); return <Shell template="minimal_professional" model={model} options={options}><header className="a4-minimal-head"><SellerBrand model={model} visible={branding} /><DocumentTitle model={model} options={options} /></header><div className="a4-minimal-parties"><Seller model={model} showBranding={branding} /><Buyer model={model} /><DateMeta model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-closing-group"><div className="a4-minimal-total"><Totals model={model} /></div><div className="a4-minimal-foot"><Payment model={model} /><QrVerification model={model} options={options} /></div></div><Footer model={model} options={options} /></Shell> }
+function ExecutiveFrameV1({ model, options = {} }: A4DocumentProps) { const branding = showsStandardBranding(model, options); return <Shell template="executive_green" model={model} options={options}><header className="a4-executive-band"><section><SellerBrand model={model} visible={branding} /></section><section className="a4-executive-document"><DocumentTitle model={model} options={options} /><QrVerification model={model} options={options} /></section></header><section className="a4-executive-meta"><DateMeta model={model} /></section><div className="a4-executive-parties"><Seller model={model} showBranding={branding} /><Buyer model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-executive-lower a4-closing-group"><Payment model={model} /><Totals model={model} /></div><Footer model={model} options={options} /></Shell> }
+function AccountingLedgerV1({ model, options = {} }: A4DocumentProps) { const branding = showsStandardBranding(model, options); return <Shell template="clean_ledger" model={model} options={options}><header className="a4-ledger-head"><SellerBrand model={model} visible={branding} /><DocumentTitle model={model} options={options} /><DateMeta model={model} /></header><div className="a4-ledger-parties"><Seller model={model} showBranding={branding} /><Buyer model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-closing-group"><div className="a4-ledger-summary"><Payment model={model} /><Totals model={model} /></div><div className="a4-ledger-verification"><QrVerification model={model} options={options} /><section className="a4-ledger-note"><Footer model={model} options={options} /></section></div></div></Shell> }
+function ContemporaryModularV1({ model, options = {} }: A4DocumentProps) { const branding = showsStandardBranding(model, options); return <Shell template="contemporary_border" model={model} options={options}><header className="a4-modular-head"><SellerBrand model={model} visible={branding} /><section className="a4-modular-document"><DocumentTitle model={model} options={options} /><DateMeta model={model} /></section></header><div className="a4-modular-cards"><Seller model={model} showBranding={branding} /><Buyer model={model} /></div><Adjustment model={model} /><section className="a4-modular-table"><ItemTable model={model} /></section><div className="a4-modular-bottom a4-closing-group"><section className="a4-modular-payment"><Payment model={model} /></section><section className="a4-modular-total"><Totals model={model} /></section><section className="a4-modular-verification"><QrVerification model={model} options={options} /></section></div><Footer model={model} options={options} /></Shell> }
 
-export default function A4Document({ model, options = {} }: A4DocumentProps) { const resolved = resolveA4Template(model); const Template = resolved.renderer === 'modern_split_v1' ? ModernSplitV1 : resolved.renderer === 'minimal_professional_v1' ? MinimalProfessionalV1 : ClassicV1; const target = options.pdfMode ? 'pdf' : options.preview ? 'preview' : 'print'; return <div id={options.id ?? 'a4-document'} className={`a4-document-frame ${options.preview ? '' : 'a4-document-frame--print-only'}`} data-render-target={target} data-template-requested={`${resolved.requestedId}@${resolved.requestedVersion}`} data-template-resolved={`${resolved.resolvedId}@${resolved.resolvedVersion}`} style={{ fontFamily: documentFontFamily(model.identity.language) }}><Template model={model} options={options} /></div> }
+const RENDERERS: Record<A4TemplateRendererId, (props: A4DocumentProps) => ReactNode> = {
+  classic_v1: ClassicV1,
+  modern_statement_v1: ModernStatementV1,
+  minimal_professional_v1: MinimalProfessionalV1,
+  executive_frame_v1: ExecutiveFrameV1,
+  accounting_ledger_v1: AccountingLedgerV1,
+  contemporary_modular_v1: ContemporaryModularV1,
+}
+
+export default function A4Document({ model, options = {} }: A4DocumentProps) {
+  const resolved = resolveA4Template(model)
+  const Template = RENDERERS[resolved.renderer] ?? RENDERERS[A4_TEMPLATE_REGISTRY.classic.renderer]
+  const target = options.pdfMode ? 'pdf' : options.preview ? 'preview' : 'print'
+  return <div id={options.id ?? 'a4-document'} className={`a4-document-frame ${options.preview ? '' : 'a4-document-frame--print-only'}`} data-render-target={target} data-template-requested={`${resolved.requestedId}@${resolved.requestedVersion}`} data-template-resolved={`${resolved.resolvedId}@${resolved.resolvedVersion}`} data-layout-landmarks={A4_TEMPLATE_REGISTRY[resolved.resolvedId].landmarks.join(' ')} data-qr-region={A4_TEMPLATE_REGISTRY[resolved.resolvedId].qrRegion} style={{ fontFamily: documentFontFamily(model.identity.language) }}><Template model={model} options={options} /></div>
+}

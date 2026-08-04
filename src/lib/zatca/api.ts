@@ -344,6 +344,116 @@ export interface SandboxDemoConnectionStatus {
   active: boolean
 }
 
+export interface SandboxOnboardingStatus {
+  ok: boolean
+  branchId: string
+  environment: 'sandbox'
+  status: string
+  operationId?: string | null
+  onboardingUid?: string | null
+  functionalityMap?: ZatcaFunctionalityMap | null
+  completedSteps: string[]
+  requiredComplianceDocuments: string[]
+  certificateExists: boolean
+  publicKeyExists: boolean
+  complianceCredentialExists: boolean
+  sandboxProductionCredentialExists: boolean
+  expiresAt?: string | null
+  lastError?: string | null
+  failedStep?: string | null
+  operationInProgress?: string | null
+  reconciliationStatus?: string | null
+  restartRequired?: boolean
+  activatedAt?: string | null
+  updatedAt?: string | null
+  lastSafeResponse?: Record<string, unknown> | null
+}
+
+export async function getSandboxDemoOnboardingStatus(): Promise<SandboxOnboardingStatus> {
+  return edgePostSafe<SandboxOnboardingStatus>('zatca-onboard-sandbox-demo', {
+    action: 'get_status',
+  })
+}
+
+export type SandboxReconnectRequest = {
+  otp: string
+}
+
+export interface SandboxResetResult {
+  ok: boolean
+  reset: boolean
+  already_reset: boolean
+  credential_id?: string
+  onboarding_uid?: string
+  previous_stage?: string
+  previous_operation?: string | null
+  status: string
+  reason: string
+  reset_at?: string
+}
+
+const PERMANENT_DEMO_TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
+
+export async function runSandboxDemoOnboarding(params: {
+  action: 'generate_csr' | 'request_compliance_csid' | 'submit_compliance_documents' | 'request_sandbox_production_csid' | 'activate'
+  functionalityMap?: ZatcaFunctionalityMap
+  reconnect?: SandboxReconnectRequest
+}): Promise<SandboxOnboardingStatus> {
+  return edgePostSafe<SandboxOnboardingStatus>('zatca-onboard-sandbox-demo', {
+    action: params.action,
+    ...(params.functionalityMap ? { functionalityMap: params.functionalityMap } : {}),
+    ...(params.reconnect ?? {}),
+  })
+}
+
+export interface TradingSandboxV2Event {
+  session_id?: string
+  event_at: string
+  stage: string
+  status: 'pending' | 'success' | 'failed'
+  http_status?: number | null
+  safe_code?: string | null
+  safe_message?: string | null
+  request_id?: string | null
+  non_secret_response_fields?: string[]
+  required_fields_present?: Record<string, boolean>
+  public_key_fingerprint_prefixes?: Record<string, string>
+}
+
+export interface TradingSandboxV2Status {
+  ok: boolean
+  onboardingVersion: 2
+  environment: 'integration_sandbox'
+  sessionId: string | null
+  status: 'not_started' | 'in_progress' | 'failed' | 'completed'
+  stage: string
+  functionalityMap: '0100'
+  productionCertificateField: 'binarySecurityToken'
+  errorCode?: string | null
+  errorMessage?: string | null
+  requestId?: string
+  events: TradingSandboxV2Event[]
+}
+
+/** Owner-only, isolated Trading Demo Integration Sandbox V2 onboarding. */
+export async function runTradingSandboxV2Onboarding(otp: string): Promise<TradingSandboxV2Status> {
+  return edgePostSafe<TradingSandboxV2Status>('zatca-onboard-trading-sandbox-v2', { otp })
+}
+
+export async function resetSandboxDemoOnboarding(): Promise<SandboxResetResult & SandboxOnboardingStatus> {
+  return edgePostSafe<SandboxResetResult & SandboxOnboardingStatus>('zatca-onboard-sandbox-demo', {
+    action: 'reset_sandbox_onboarding',
+    confirmation: 'RESET SANDBOX',
+  })
+}
+
+export async function activateSandboxDemoConnection(): Promise<SandboxDemoConnectionStatus> {
+  return edgePostSafe<SandboxDemoConnectionStatus>('zatca-validate-sandbox-demo', {
+    action: 'activate_compliance_demo',
+    branchId: PERMANENT_DEMO_TRADING_BRANCH_ID,
+  })
+}
+
 export async function getSandboxValidationStatus(invoiceId: string): Promise<SandboxValidationResponse> {
   return edgePostSafe<SandboxValidationResponse>('zatca-validate-sandbox-demo', {
     action: 'status',

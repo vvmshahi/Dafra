@@ -9,10 +9,12 @@ const designer = read('../src/components/barcodes/BarcodeLabelDesigner.tsx')
 const labelSettings = read('../src/components/barcodes/BarcodeLabelSettingsPanel.tsx')
 const calibration = read('../src/components/barcodes/BarcodePrinterSetupPanel.tsx')
 const geometry = read('../src/lib/barcodes/labelSettings.ts')
+const studio = read('../src/components/printing/DocumentStudioShell.tsx')
+const a4Fit = read('../src/components/print/A4PreviewFit.tsx')
 const en = JSON.parse(read('../src/localization/locales/en/printing.json'))
 const ar = JSON.parse(read('../src/localization/locales/ar-SA/printing.json'))
 
-test('all four workspace areas remain in an accessible segmented tablist', () => {
+test('web exposes three areas while Electron retains Printer Setup', () => {
   for (const id of ['receipts', 'invoices', 'barcodeLabels', 'printerSetup']) {
     assert.match(workspace, new RegExp(`id: '${id}'`))
     assert.ok(en.workspace.tabs[id].label)
@@ -24,6 +26,11 @@ test('all four workspace areas remain in an accessible segmented tablist', () =>
   assert.match(workspace, /role="tabpanel"/)
   assert.match(workspace, /ArrowLeft/)
   assert.match(workspace, /document\.documentElement\.dir === 'rtl'/)
+  assert.match(workspace, /tab\.id !== 'printerSetup' \|\| electron/)
+  assert.match(workspace, /electron && active === 'printerSetup'/)
+  assert.match(workspace, /printerAdjustment=\{<BarcodePrinterSetupPanel/)
+  assert.match(workspace, /useSearchParams/)
+  assert.match(workspace, /return 'receipts'/)
 })
 
 test('receipt and invoice workspaces retain branch save, reset and preview contracts', () => {
@@ -39,25 +46,95 @@ test('receipt and invoice workspaces retain branch save, reset and preview contr
   assert.match(invoice, /disabled=\{!canEdit \|\| !isDirty \|\| saving/)
 })
 
-test('barcode sample notice is neutral Kubri styling with localized sample copy', () => {
-  assert.match(designer, /barcodeLabels\.preview\.sampleTitle/)
-  assert.match(designer, /barcodeLabels\.preview\.sampleHelp/)
-  assert.match(designer, /border-primary-200 bg-primary-50/)
-  assert.doesNotMatch(designer, /border-blue-100 bg-blue-50/)
+test('barcode preview uses localized sample fixture copy without the long branch paragraph', () => {
+  assert.match(designer, /previewDataLabel/)
+  assert.doesNotMatch(labelSettings, /settings\.help/)
+  assert.doesNotMatch(labelSettings, /Branch label default/)
   assert.equal(en.barcodeLabels.preview.sampleTitle, 'Sample preview')
   assert.equal(en.barcodeLabels.preview.sampleHelp, 'This preview uses sample product data.')
   assert.equal(ar.barcodeLabels.preview.sampleTitle, 'معاينة تجريبية')
   assert.equal(ar.barcodeLabels.preview.sampleHelp, 'تستخدم هذه المعاينة بيانات منتج تجريبية.')
 })
 
-test('label presets, templates, include fields and geometry remain unchanged', () => {
+test('one document studio shell owns bounded panes, preview chrome and the action footer', () => {
+  assert.match(invoice, /<DocumentStudioWorkspace/)
+  assert.match(designer, /<DocumentStudioWorkspace/)
+  assert.match(invoice, /<DocumentStudioActionFooter/)
+  assert.match(labelSettings, /<DocumentStudioActionFooter/)
+  assert.match(studio, /document-studio-header|document-studio-workspace/)
+  assert.match(studio, /document-studio-preview-toolbar/)
+  assert.match(studio, /document-studio-action-footer/)
+  assert.match(studio, /grid min-h-0 flex-1 overflow-hidden/)
+  assert.match(studio, /overflow-y-auto overscroll-contain/)
+  assert.match(studio, /document-studio-preview-canvas min-h-0 flex-1 overscroll-contain/)
+  assert.match(studio, /previewOverflow === 'hidden' \? 'overflow-hidden' : 'overflow-auto'/)
+  assert.doesNotMatch(studio, /calc\(100vh|h-\[[0-9]+vh\]/)
+  assert.doesNotMatch(a4Fit, /calc\(100dvh/)
+  assert.match(a4Fit, /bounded \? 'h-full min-h-0 overflow-auto'/)
+})
+
+test('secondary navigation is compact, routed, keyboard accessible and safely normalized', () => {
+  assert.match(studio, /DocumentStudioSectionNav/)
+  assert.match(studio, /ArrowUp/)
+  assert.match(studio, /ArrowDown/)
+  assert.match(studio, /ArrowLeft/)
+  assert.match(studio, /ArrowRight/)
+  assert.match(studio, /aria-current=\{selected/)
+  assert.match(invoice, /searchParams\.get\('section'\)/)
+  assert.match(invoice, /allowedSections\.includes/)
+  assert.match(invoice, /next\.set\('section', nextSection\)/)
+  assert.match(designer, /BARCODE_STUDIO_SECTIONS/)
+  assert.match(designer, /next\.set\('section', 'layout'\)/)
+})
+
+test('responsive settings drawer traps focus, supports Escape and does not duplicate preview', () => {
+  assert.match(studio, /useDialogFocus\(drawerState\.open/)
+  assert.match(studio, /role="dialog"/)
+  assert.match(studio, /aria-modal="true"/)
+  assert.match(studio, /xl:hidden/)
+  assert.match(studio, /xl:grid-cols-\[minmax\(400px,440px\)_minmax\(0,1fr\)\]/)
+  assert.match(studio, /w-\[min\(92%,440px\)\]/)
+  assert.equal((studio.match(/\{preview\}/g) ?? []).length, 1)
+})
+
+test('primary workspace changes preserve route history and confirm before discarding edits', () => {
+  assert.match(workspace, /setPendingWorkspace\(workspace\)/)
+  assert.match(workspace, /requestedWorkspace !== active/)
+  assert.match(workspace, /restored\.set\('tab', queryValue\[active\]\)/)
+  assert.match(workspace, /<ConfirmDialog open=\{pendingWorkspace !== null\} kind="discard"/)
+  assert.match(workspace, /next\.delete\('section'\)/)
+  assert.match(workspace, /setSearchParams\(next\)/)
+  assert.match(invoice, /onDirtyChange\?\.\(isDirty\)/)
+  assert.match(labelSettings, /onDirtyChange\?\.\(dirty\)/)
+})
+
+test('English and Arabic expose the same studio navigation and status contract', () => {
+  for (const locale of [en, ar]) {
+    assert.ok(locale.workspace.about)
+    assert.ok(locale.workspace.status.saved)
+    assert.ok(locale.workspace.status.unsaved)
+    assert.ok(locale.workspace.studio.configuration)
+    assert.ok(locale.workspace.studio.settings)
+    assert.ok(locale.workspace.studio.closeSettings)
+    for (const area of ['receipts', 'invoices']) assert.ok(locale.workspace.sections[area])
+    for (const section of ['layout', 'size', 'information', 'appearance', 'printer']) {
+      assert.ok(locale.barcodeLabels.studio.sections[section])
+    }
+  }
+})
+
+test('only four supported presets are selectable while deprecated values remain normalizable', () => {
   for (const preset of ['compact_sticker', 'standard_product', 'detailed_product', 'carton_label', 'a4_sheet', 'custom']) {
     assert.match(geometry, new RegExp(`${preset}:`))
   }
-  for (const template of ['compact', 'standard', 'detailed']) {
-    assert.match(designer, new RegExp(`'${template}'`))
+  for (const preset of ['compact_sticker', 'standard_product', 'detailed_product', 'carton_label']) {
+    assert.match(geometry, new RegExp(`'${preset}'`))
   }
-  for (const key of ['productName', 'productNameAr', 'productNameEn', 'sellingPrice', 'unitName', 'sku', 'businessName', 'barcodeValue', 'printDate']) {
+  assert.match(designer, /PRIMARY_LABEL_PRESET_IDS\.map/)
+  assert.doesNotMatch(designer, /applyPreset\('a4_sheet'\)|applyPreset\('custom'\)/)
+  assert.match(geometry, /storedPresetId === 'a4_sheet'/)
+  assert.match(geometry, /storedPresetId === 'custom'/)
+  for (const key of ['productName', 'sellingPrice', 'unitName', 'sku', 'businessName', 'barcodeValue']) {
     assert.match(designer, new RegExp(`'${key}'`))
   }
   assert.match(designer, /barcodeAlwaysIncluded/)
@@ -75,8 +152,8 @@ test('sample label print uses the existing print document and browser adapter', 
 
 test('tight-fit guidance is compact and does not block printing', () => {
   assert.match(designer, /denseTitle/)
-  assert.match(designer, /<details/)
-  assert.match(designer, /recommendations/)
+  assert.match(designer, /preview\.layout\.warnings\.map/)
+  assert.match(designer, /fitGuidance/)
   assert.match(designer, /border-s-4 bg-\[#fffaf0\]/)
   assert.doesNotMatch(designer, /warnings\.length[\s\S]{0,500}disabled/)
 })
@@ -103,4 +180,98 @@ test('device calibration remains local with exact movement and scaling increment
   assert.match(calibration, /browserBarcodePrintAdapter\.print/)
   assert.doesNotMatch(calibration, /updateBranchBarcodeLabelSettings/)
   assert.doesNotMatch(calibration, /bg-blue-50/)
+})
+
+test('barcode configuration receives a compact rail and readable horizontal layout choices', () => {
+  assert.match(studio, /width\?: 'default' \| 'compact'/)
+  assert.match(studio, /width === 'compact' \? 'xl:w-\[100px\] xl:p-1' : 'xl:w-\[124px\]'/)
+  assert.match(designer, /width="compact"/)
+  assert.match(designer, /studio \? 'grid-cols-1' : 'sm:grid-cols-2'/)
+  assert.match(designer, /role="radiogroup"/)
+  assert.match(designer, /role="radio"/)
+  assert.match(designer, /aria-checked=\{selected\}/)
+  assert.match(designer, /min-h-\[70px\]/)
+  assert.match(designer, /flex w-24 shrink-0 justify-center/)
+  assert.equal((designer.match(/<LayoutMiniature id=\{id\}/g) ?? []).length, 1)
+  assert.match(designer, /PRIMARY_LABEL_PRESET_IDS\.map/)
+  assert.match(studio, /xl:grid-cols-\[minmax\(400px,440px\)_minmax\(0,1fr\)\]/, 'shared preview split stays unchanged')
+})
+
+test('barcode sections use compact controls and collapsed device adjustment without changing persistence', () => {
+  assert.match(designer, /min-h-9 rounded-lg border px-2\.5 py-1\.5 text-\[11px\]/)
+  assert.match(designer, /studio \? 'grid-cols-1 gap-1\.5'/)
+  assert.match(designer, /grid min-h-11 grid-cols-\[minmax\(0,1fr\)_minmax\(112px,44%\)\]/)
+  assert.match(designer, /activeSection === 'printer' && <details/)
+  assert.doesNotMatch(designer, /activeSection === 'printer' && <details[^>]*open/)
+  assert.match(workspace, /<BarcodePrinterSetupPanel branchId=\{branchId\} businessName=\{businessName\} compact/)
+  assert.match(calibration, /isElectron\(\) && <label/)
+  assert.match(calibration, /!compact && <aside/)
+  assert.match(labelSettings, /updateBranchBarcodeLabelSettings\(branchId, settings\)/)
+  assert.match(labelSettings, /setSaved\(result\.settings\)/)
+})
+
+test('configuration scroll resets per selected section while remaining independent of preview and footer', () => {
+  assert.match(studio, /configurationKey\?: string/)
+  assert.match(studio, /desktopConfigurationRef\.current\?\.scrollTo\(\{ top: 0 \}\)/)
+  assert.match(studio, /drawerConfigurationRef\.current\?\.scrollTo\(\{ top: 0 \}\)/)
+  assert.match(studio, /\[configurationKey\]/)
+  assert.match(designer, /configurationKey=\{activeSection\}/)
+  assert.match(studio, /document-studio-preview-canvas min-h-0 flex-1/)
+  assert.match(studio, /document-studio-action-footer/)
+})
+
+test('bilingual language cards use separate primary and secondary copy in English and Arabic', () => {
+  assert.equal(en.invoiceSettings.general.bilingual, 'Bilingual')
+  assert.equal(en.invoiceSettings.general.bilingualLanguages, 'Arabic + English')
+  assert.equal(ar.invoiceSettings.general.bilingual, 'ثنائية اللغة')
+  assert.equal(ar.invoiceSettings.general.bilingualLanguages, 'العربية + الإنجليزية')
+  assert.ok(!JSON.stringify(en).includes(['Bilingual', 'Arabic + English'].join(' — ')))
+  assert.ok(!JSON.stringify(ar).includes(['ثنائية اللغة', 'العربية والإنجليزية'].join(' — ')))
+  assert.match(invoice, /description: t\('printing:invoiceSettings\.general\.bilingualLanguages'\)/)
+  assert.match(workspace, /workspace="receipts"/)
+  assert.match(workspace, /workspace="invoices"/)
+})
+
+test('section navigation strictly contains labels, selected state and focus inside the rail', () => {
+  assert.match(studio, /fullLabel\?: string/)
+  assert.match(studio, /flex min-w-0 flex-wrap gap-1 xl:w-full xl:flex-col/)
+  assert.match(studio, /max-w-full shrink-0/)
+  assert.match(studio, /xl:grid xl:w-full xl:min-w-0 xl:shrink/)
+  assert.match(studio, /xl:grid-cols-\[11px_minmax\(0,1fr\)\]/)
+  assert.match(studio, /xl:grid-cols-\[12px_minmax\(0,1fr\)\]/)
+  assert.match(studio, /xl:overflow-hidden/)
+  assert.match(studio, /focus-visible:ring-inset/)
+  assert.match(studio, /min-w-0 whitespace-nowrap xl:whitespace-normal/)
+  assert.match(studio, /xl:\[overflow-wrap:anywhere\]/)
+  assert.match(studio, /xl:border-e/)
+  assert.match(studio, /xl:overflow-x-hidden/)
+  assert.doesNotMatch(studio, /absolute[^"']*studio-section|studio-section[^"']*absolute/)
+})
+
+test('Barcode uses concise visible labels with complete English and Arabic accessible names', () => {
+  assert.equal(en.barcodeLabels.studio.sections.information, 'Information')
+  assert.equal(en.barcodeLabels.studio.sections.informationFull, 'Included information')
+  assert.equal(en.barcodeLabels.studio.sections.printer, 'Printer setup')
+  assert.equal(en.barcodeLabels.studio.sections.printerFull, 'Printer adjustment')
+  assert.equal(ar.barcodeLabels.studio.sections.information, 'المعلومات')
+  assert.equal(ar.barcodeLabels.studio.sections.informationFull, 'المعلومات المضمنة')
+  assert.equal(ar.barcodeLabels.studio.sections.printer, 'إعداد الطابعة')
+  assert.equal(ar.barcodeLabels.studio.sections.printerFull, 'ضبط محاذاة الطابعة')
+  assert.match(designer, /fullLabel: t\('barcodeLabels\.studio\.sections\.informationFull'\)/)
+  assert.match(designer, /fullLabel: t\('barcodeLabels\.studio\.sections\.printerFull'\)/)
+  assert.match(studio, /aria-label=\{fullLabel\}/)
+  assert.match(studio, /title=\{section\.fullLabel\}/)
+})
+
+test('drawer and Receipt/Invoice rails retain their responsive, readable contracts', () => {
+  assert.match(studio, /xl:w-\[100px\]/)
+  assert.doesNotMatch(studio, /(?<!xl:)w-\[100px\]/)
+  assert.match(studio, /flex min-w-0 flex-wrap/)
+  assert.match(studio, /whitespace-nowrap xl:whitespace-normal/)
+  for (const workspaceName of ['receipts', 'invoices']) {
+    for (const label of Object.values(en.workspace.sections[workspaceName])) assert.ok(label.length > 0)
+    for (const label of Object.values(ar.workspace.sections[workspaceName])) assert.ok(label.length > 0)
+  }
+  assert.match(invoice, /<DocumentStudioSectionNav sections=\{sections\}/)
+  assert.match(studio, /xl:grid-cols-\[minmax\(400px,440px\)_minmax\(0,1fr\)\]/)
 })

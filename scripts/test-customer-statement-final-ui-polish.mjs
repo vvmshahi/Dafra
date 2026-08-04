@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+
+const read = path => fs.readFileSync(path, 'utf8')
+const customers = read('src/pages/customers/CustomersPage.tsx')
+const detail = read('src/pages/customers/CustomerDetailPage.tsx')
+const panel = read('src/components/customers/CustomerReceivablesPanel.tsx')
+const print = read('src/pages/print/CustomerStatementPrintPage.tsx')
+const pdf = read('src/lib/customers/receivablesPdf.ts')
+
+assert.match(customers, /card flex flex-wrap items-center gap-2 p-2\.5/)
+assert.match(customers, /basis-\[280px\]/)
+assert.match(customers, /title=\{t\('actions\.archive'\)\}/)
+assert.match(detail, /grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4/)
+assert.match(detail, /bg-\[#173d2a\].*top-products-title/s)
+assert.match(detail, /customer-products-search/)
+assert.match(panel, /statementPreview/)
+assert.match(panel, /aria-labelledby="statement-range-title"/)
+assert.match(panel, /statementLoading/)
+assert.match(panel, /statement\.pdf/)
+assert.match(panel, /ledger\.date/)
+assert.match(panel, /ledger\.openReceipt/)
+assert.match(print, /downloadStatementPdf/)
+assert.match(panel, /download=pdf/)
+assert.match(panel, /download=xlsx/)
+assert.match(pdf, /new jsPDF\(\{ orientation: 'portrait', unit: 'mm', format: 'a4' \}\)/)
+assert.match(pdf, /autoTable/)
+assert.match(pdf, /registerPdfFonts/)
+
+console.log('Customer Statement and final UI polish contract passed')

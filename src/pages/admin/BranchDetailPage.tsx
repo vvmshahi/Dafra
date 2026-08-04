@@ -10,7 +10,8 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
-import { saudiNow, saudiDateStr } from '@/lib/utils/date'
+import { formatSaudiDate, formatSaudiTime, saudiNow, saudiDateStr } from '@/lib/utils/date'
+import { isLowStockProduct } from '@/lib/products/lowStock'
 import { Badge } from '@/components/ui/Badge'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { getCachedProductionStatus, productionStatusLabel, readCachedProductionStatus } from '@/lib/zatca/status'
@@ -183,7 +184,7 @@ export default function BranchDetailPage() {
     setInvLoading(true)
     const { data } = await db()
       .from('invoices')
-      .select('id, invoice_number, total_amount, status, invoice_date, payment_method, customers(name), payments(method)')
+      .select('id, invoice_number, total_amount, status, invoice_date, created_at, payment_method, customers(name), payments(method)')
       .eq('tenant_id', tid)
       .eq('branch_id', branchId)
       .order('created_at', { ascending: false })
@@ -223,17 +224,18 @@ export default function BranchDetailPage() {
     setLowStockLoading(true)
     const { data } = await db()
       .from('products')
-      .select('id, name, stock_quantity, min_stock_alert')
+      .select('id, name, stock_quantity, min_stock_alert, track_stock, is_service, is_active, is_available')
       .eq('tenant_id', tid)
       .eq('branch_id', branchId)
       .eq('is_active', true)
+      .eq('is_available', true)
+      .eq('track_stock', true)
+      .eq('is_service', false)
+      .gt('min_stock_alert', 0)
       .not('min_stock_alert', 'is', null)
       .order('stock_quantity', { ascending: true })
       .limit(50)
-    setLowStock((data ?? []).filter((p: any) =>
-      p.stock_quantity !== null && p.min_stock_alert !== null &&
-      Number(p.stock_quantity) <= Number(p.min_stock_alert)
-    ).slice(0, 5))
+    setLowStock((data ?? []).filter(isLowStockProduct).slice(0, 5))
     setLowStockLoading(false)
   }, [tid])
 
@@ -502,7 +504,7 @@ export default function BranchDetailPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-50">
-                  {(['invoice', 'customer', 'amount', 'method', 'statusLabel', 'date'] as const).map((h, i) => (
+                  {(['invoice', 'customer', 'amount', 'method', 'statusLabel', 'date', 'time'] as const).map((h, i) => (
                     <th key={h} className={`px-6 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wide ${
                       i === 2 ? 'text-right' : 'text-left'
                     }`}>{t(`detail.${h}`)}</th>
@@ -553,7 +555,12 @@ export default function BranchDetailPage() {
                       <td className="px-6 py-3.5">
                         <Badge variant={cfg.variant} dot>{t(`detail.invoiceStatus.${inv.status}`, { defaultValue: t('unknown') })}</Badge>
                       </td>
-                      <td className="px-6 py-3.5 text-xs text-gray-400">{inv.invoice_date}</td>
+                      <td className="whitespace-nowrap px-6 py-3.5 text-xs text-gray-500">
+                        {formatSaudiDate(inv.created_at, i18n.language)}
+                      </td>
+                      <td dir="ltr" className="whitespace-nowrap px-6 py-3.5 text-xs font-medium text-gray-500">
+                        {formatSaudiTime(inv.created_at, i18n.language)}
+                      </td>
                     </tr>
                   )
                 })}

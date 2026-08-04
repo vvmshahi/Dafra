@@ -5,16 +5,15 @@ import {
   BarChart3,
   Building2,
   CalendarClock,
-  Download,
   FileText,
   Mail,
+  MapPin,
   Pencil,
   Phone,
   Receipt,
   RefreshCw,
   RotateCcw,
   ShoppingBag,
-  Sparkles,
   TrendingUp,
   User,
 } from 'lucide-react'
@@ -27,7 +26,10 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
+import { WorkspaceTabNav } from '@/components/ui/WorkspaceTabNav'
 import { CustomerIntelligenceFiltersPanel } from '@/components/customers/CustomerIntelligenceFilters'
+import { CustomerReceivablesPanel } from '@/components/customers/CustomerReceivablesPanel'
+import { loadBranchCustomerCreditSettings, loadCustomerReceivableWorkspace } from '@/lib/customers/receivables'
 import CustomerModal from './CustomerModal'
 import type { CustomerWithStats } from './CustomersPage'
 import type { Branch } from '@/types'
@@ -61,6 +63,17 @@ interface FilterOption {
   nameAr: string | null
 }
 
+type CustomerProfileSection = 'overview' | 'products' | 'credit'
+
+const PROFILE_SECTIONS: CustomerProfileSection[] = ['overview', 'products', 'credit']
+
+function normalizeProfileSection(value: string | null): CustomerProfileSection {
+  if (value === 'documents' || value === 'report' || value === 'invoices') return 'overview'
+  return value !== null && PROFILE_SECTIONS.includes(value as CustomerProfileSection)
+    ? value as CustomerProfileSection
+    : 'overview'
+}
+
 function formatDate(value: string | null, locale: string, withTime = false) {
   if (!value) return '—'
   return new Date(value).toLocaleString(
@@ -83,17 +96,17 @@ function MetricCard({
   icon: React.ElementType
 }) {
   const styles = tone === 'emerald'
-    ? 'border-emerald-200 bg-emerald-50/70 text-emerald-800'
+    ? 'bg-gradient-to-br from-[#1B6B3A] to-[#0F2419] text-white'
     : tone === 'amber'
-      ? 'border-amber-200 bg-amber-50/60 text-amber-800'
-      : 'border-gray-100 bg-white text-gray-900'
+      ? 'bg-gradient-to-br from-[#9a3412] to-[#5c1d0b] text-white'
+      : 'bg-gradient-to-br from-[#334155] to-[#1e293b] text-white'
   const iconStyles = tone === 'emerald'
-    ? 'bg-emerald-100 text-emerald-700'
+    ? 'bg-white/15 text-emerald-100'
     : tone === 'amber'
-      ? 'bg-amber-100 text-amber-700'
-      : 'bg-gray-100 text-gray-500'
+      ? 'bg-white/15 text-orange-100'
+      : 'bg-white/10 text-white/70'
   return (
-    <article className={`rounded-xl border p-3.5 shadow-card min-w-0 ${styles}`} aria-label={label}>
+    <article className={`min-w-0 rounded-xl p-3.5 shadow-card ${styles}`} aria-label={label}>
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs font-semibold opacity-70 leading-snug">{label}</p>
         <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${iconStyles}`}>
@@ -123,10 +136,10 @@ export default function CustomerDetailPage() {
   const locale = i18n.resolvedLanguage === 'ar-SA' ? 'ar-SA' : 'en'
   const queryStart = searchParams.get('start')
   const queryEnd = searchParams.get('end')
-  const defaultRange = intelligenceDateRange('last30')
+  const defaultRange = intelligenceDateRange('thisMonth')
 
   const [preset, setPreset] = useState<IntelligenceDatePreset>(
-    queryStart && queryEnd ? 'custom' : 'last30',
+    queryStart && queryEnd ? 'custom' : 'thisMonth',
   )
   const [filters, setFilters] = useState<CustomerIntelligenceFilters>({
     startDate: queryStart || defaultRange.startDate,
@@ -147,10 +160,57 @@ export default function CustomerDetailPage() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [products, setProducts] = useState<FilterOption[]>([])
   const [units, setUnits] = useState<FilterOption[]>([])
+  const [productSearch, setProductSearch] = useState('')
+  const [productUnitFilter, setProductUnitFilter] = useState('')
   const [editingCustomer, setEditingCustomer] = useState<CustomerWithStats | null>(null)
   const [preparingPdf, setPreparingPdf] = useState(false)
+  const [customerCreditVisible, setCustomerCreditVisible] = useState(false)
+  const [customerMeta, setCustomerMeta] = useState<{ city: string | null; cityAr: string | null; crNumber: string | null } | null>(null)
+  const requestedProfileSection = searchParams.get('section')
+  const activeProfileSection = (normalizeProfileSection(requestedProfileSection) !== 'credit' || customerCreditVisible)
+    ? normalizeProfileSection(requestedProfileSection)
+    : 'overview'
+
+  useEffect(() => {
+    if (requestedProfileSection === 'documents' || requestedProfileSection === 'report' || requestedProfileSection === 'invoices') {
+      const next = new URLSearchParams(searchParams)
+      next.set('section', normalizeProfileSection(requestedProfileSection))
+      setSearchParams(next, { replace: true })
+    }
+  }, [requestedProfileSection, searchParams, setSearchParams])
 
   const canChooseBranch = profile?.role !== 'branch'
+
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    void supabase.from('customers').select('city, city_ar, cr_number').eq('id', id).maybeSingle().then(({ data: row }) => {
+      if (!cancelled) setCustomerMeta(row ? { city: row.city, cityAr: row.city_ar, crNumber: row.cr_number } : null)
+    })
+    return () => { cancelled = true }
+  }, [id])
+
+  useEffect(() => {
+    if (!data?.customer.branchId || data.customer.customerType !== 'business') {
+      setCustomerCreditVisible(false)
+      return
+    }
+    let cancelled = false
+    void Promise.all([
+      loadBranchCustomerCreditSettings(data.customer.branchId),
+      loadCustomerReceivableWorkspace({ customerId: data.customer.id, branchId: data.customer.branchId, page: 1, pageSize: 1 }),
+    ]).then(([settings, workspace]) => {
+      if (!cancelled) setCustomerCreditVisible(settings.branchCreditEnabled || workspace.ledger.length > 0)
+    }).catch(() => { if (!cancelled) setCustomerCreditVisible(false) })
+    return () => { cancelled = true }
+  }, [data?.customer.branchId, data?.customer.customerType, data?.customer.id])
+
+  function selectProfileSection(section: CustomerProfileSection) {
+    const next = new URLSearchParams(searchParams)
+    if (section === 'overview') next.delete('section')
+    else next.set('section', section)
+    setSearchParams(next)
+  }
 
   useEffect(() => {
     if (!profile?.tenant_id) return
@@ -281,14 +341,16 @@ export default function CustomerDetailPage() {
 
   useEffect(() => {
     setHistoryPage(1)
-    const next = new URLSearchParams()
+    const next = new URLSearchParams(searchParams)
     next.set('start', filters.startDate)
     next.set('end', filters.endDate)
     if (filters.branchId) next.set('branch', filters.branchId)
     if (filters.productId) next.set('product', filters.productId)
+    else next.delete('product')
     if (filters.productUnitId) next.set('unit', filters.productUnitId)
+    else next.delete('unit')
     setSearchParams(next, { replace: true })
-  }, [filters, setSearchParams])
+  }, [filters, searchParams, setSearchParams])
 
   const handlePreset = (nextPreset: IntelligenceDatePreset) => {
     setPreset(nextPreset)
@@ -449,14 +511,11 @@ export default function CustomerDetailPage() {
   const displayName = customerDisplayName(data.customer, isRtl)
   const secondaryName = isRtl ? data.customer.name : data.customer.nameAr
   const maxTimeline = Math.max(...data.timeline.map(point => Math.abs(point.netPurchases)), 1)
-  const reportQuery = new URLSearchParams({
-    start: filters.startDate,
-    end: filters.endDate,
-  })
-  if (filters.branchId) reportQuery.set('branch', filters.branchId)
-
+  const profileTabItems = PROFILE_SECTIONS
+    .filter(section => section !== 'credit' || customerCreditVisible)
+    .map(section => ({ id: section, label: t(`customerIntelligence:profileTabs.${section}`) }))
   return (
-    <div className="space-y-5 max-w-[1500px]">
+    <div className="mx-auto max-w-[1500px] space-y-4">
       <button
         type="button"
         onClick={() => navigate('/customers')}
@@ -466,72 +525,76 @@ export default function CustomerDetailPage() {
         {t('customerIntelligence:actions.back')}
       </button>
 
-      <header className="card overflow-hidden">
-        <div className="h-1 bg-gradient-to-r from-emerald-500 via-primary-500 to-teal-400" />
-        <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-start gap-5">
+      <header className="rounded-2xl bg-[#173d2a] px-4 py-3 text-white shadow-card sm:px-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="flex items-start gap-4 flex-1 min-w-0">
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${
+            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
               data.customer.customerType === 'business'
-                ? 'bg-amber-50 text-amber-700'
-                : 'bg-emerald-50 text-emerald-700'
+                ? 'bg-white/15 text-emerald-100'
+                : 'bg-white/15 text-emerald-100'
             }`}>
               {data.customer.customerType === 'business' ? <Building2 size={21} /> : <User size={21} />}
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 break-words" dir="auto">
+                <h1 className="break-words text-lg font-bold text-white sm:text-xl" dir="auto">
                   {displayName}
                 </h1>
                 <Badge variant={data.customer.isActive ? 'success' : 'neutral'} dot>
                   {t(`customerIntelligence:status.${data.customer.isActive ? 'active' : 'inactive'}`)}
                 </Badge>
-                <Badge variant="neutral">
+                <Badge variant={data.customer.customerType === 'business' ? 'info' : 'neutral'}>
                   {t(`customers:${data.customer.customerType}`)}
                 </Badge>
               </div>
               {secondaryName?.trim() && secondaryName.trim() !== displayName && (
-                <p className="text-sm text-gray-400 mt-1" dir="auto">{secondaryName}</p>
+                <p className="text-sm text-emerald-100/75 mt-1" dir="auto">{secondaryName}</p>
               )}
-              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm text-gray-500">
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-emerald-50/85">
                 {data.customer.phone && (
                   <span className="inline-flex items-center gap-1.5" dir="ltr"><Phone size={14} />{data.customer.phone}</span>
                 )}
                 {data.customer.email && (
                   <span className="inline-flex items-center gap-1.5"><Mail size={14} />{data.customer.email}</span>
                 )}
-                {data.customer.vatNumber && (
-                  <span className="inline-flex items-center gap-1.5" dir="ltr"><FileText size={14} />{data.customer.vatNumber}</span>
+                {(data.customer.vatNumber || customerMeta?.crNumber) && (
+                  <span className="inline-flex items-center gap-1.5" dir="ltr"><FileText size={14} />{data.customer.vatNumber || customerMeta?.crNumber}</span>
+                )}
+                {(customerMeta?.crNumber || customerMeta?.city || customerMeta?.cityAr) && (
+                  <span className="inline-flex items-center gap-1.5"><MapPin size={14} />{isRtl ? customerMeta?.cityAr || customerMeta?.city : customerMeta?.city || customerMeta?.cityAr}</span>
                 )}
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
             <Button variant="secondary" size="sm" onClick={() => void handleEdit()}>
               <Pencil size={14} />
               {t('customerIntelligence:actions.edit')}
             </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={preparingPdf}
-              aria-label={t('customerIntelligence:pdf.action')}
-              onClick={() => void handlePdf()}
-            >
-              <Download size={14} />
-              {t('customerIntelligence:pdf.action')}
-            </Button>
-            <Link
-              to={`/reports/customers?${reportQuery.toString()}`}
-              className="btn-primary px-3 py-1.5 text-xs rounded-lg"
-            >
-              <BarChart3 size={14} />
-              {t('customerIntelligence:reports.openDedicated')}
-            </Link>
           </div>
         </div>
       </header>
 
-      <CustomerIntelligenceFiltersPanel
+      <WorkspaceTabNav
+        items={profileTabItems}
+        activeId={activeProfileSection === 'credit' && !customerCreditVisible ? 'overview' : activeProfileSection}
+        onSelect={section => selectProfileSection(section as CustomerProfileSection)}
+        label={t('customerIntelligence:profileTabs.label')}
+        className="mx-auto w-fit max-w-full"
+      />
+
+      <div id={`workspace-panel-${activeProfileSection}`} role="tabpanel" aria-label={t(`customerIntelligence:profileTabs.${activeProfileSection}`)}>
+      {activeProfileSection === 'credit' && customerCreditVisible && <div id="customer-credit-settings"><CustomerReceivablesPanel
+        customerId={id}
+        branchId={data.customer.branchId}
+        isOwner={profile?.role === 'owner' || profile?.role === 'admin'}
+        canReversePayment={['owner', 'admin', 'accountant', 'manager'].includes(profile?.role ?? '')}
+        canAdjustReceivables={['owner', 'admin', 'accountant'].includes(profile?.role ?? '')}
+        openStatement={searchParams.get('statement') === 'open'}
+        openPayment={searchParams.get('payment') === 'open'}
+      /></div>}
+
+      {activeProfileSection === 'overview' && <div className="flex flex-col gap-4"><div className="contents"><CustomerIntelligenceFiltersPanel
         filters={filters}
         preset={preset}
         branches={branches.map(branch => ({ id: branch.id, name: branch.name, nameAr: branch.name_ar }))}
@@ -541,9 +604,11 @@ export default function CustomerDetailPage() {
         isArabic={isRtl}
         onPreset={handlePreset}
         onChange={handleFilterChange}
+        className="order-2"
       />
+      </div>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="order-2 flex items-center justify-between gap-3">
         <div>
           <p className="text-xs text-gray-500">
             {t('customerIntelligence:filters.activeRange', {
@@ -559,7 +624,7 @@ export default function CustomerDetailPage() {
         {loading && <LoadingSpinner size="sm" />}
       </div>
 
-      <section aria-labelledby="customer-summary-title">
+      <section className="order-1" aria-labelledby="customer-summary-title">
         <div className="flex items-end justify-between gap-3 mb-3">
           <div>
             <h2 id="customer-summary-title" className="text-sm font-bold text-gray-900">
@@ -568,7 +633,7 @@ export default function CustomerDetailPage() {
             <p className="text-xs text-gray-400">{t('customerIntelligence:notBalance')}</p>
           </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             label={t('customerIntelligence:metrics.grossPurchases')}
             value={<Rial amount={data.summary.grossPurchases} />}
@@ -595,22 +660,22 @@ export default function CustomerDetailPage() {
             detail={t('customerIntelligence:metrics.grossDefinition')}
             icon={Receipt}
           />
-          <MetricCard
+          {false && <MetricCard
             label={t('customerIntelligence:metrics.averageInvoice')}
             value={<Rial amount={data.summary.averageInvoiceValue} />}
             detail={data.summary.invoiceCount
               ? t('customerIntelligence:metrics.invoiceCount')
               : t('customerIntelligence:metrics.notEnoughFrequency')}
             icon={BarChart3}
-          />
-          <MetricCard
+          />}
+          {false && <MetricCard
             label={t('customerIntelligence:metrics.lastPurchase')}
             value={formatDate(data.summary.lastPurchase?.createdAt ?? null, locale)}
             detail={data.summary.lastPurchase?.reference ?? '—'}
             icon={CalendarClock}
-          />
+          />}
         </div>
-        <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="hidden mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <p className="text-sm text-gray-600">
             <span className="font-semibold text-gray-900">{t('customerIntelligence:metrics.purchaseFrequency')}:</span>{' '}
             {data.summary.averageDaysBetweenPurchases == null
@@ -625,7 +690,7 @@ export default function CustomerDetailPage() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <div className="hidden grid grid-cols-1 xl:grid-cols-3 gap-4">
         <section className="card p-4 xl:col-span-2" aria-labelledby="timeline-title">
           <div className="mb-4">
             <h2 id="timeline-title" className="text-sm font-bold text-gray-900">
@@ -707,13 +772,16 @@ export default function CustomerDetailPage() {
           </p>
         </section>
       </div>
+      </div>}
 
-      <section className="card overflow-hidden" aria-labelledby="top-products-title">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h2 id="top-products-title" className="text-sm font-bold text-gray-900">
-            {t('customerIntelligence:products.title')}
-          </h2>
-          <p className="text-xs text-gray-400 mt-0.5">{t('customerIntelligence:products.subtitle')}</p>
+      {activeProfileSection === 'products' && <section className="card overflow-hidden" aria-labelledby="top-products-title">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl bg-[#173d2a] px-4 py-2.5 text-white">
+          <div><h2 id="top-products-title" className="text-sm font-bold">{t('customerIntelligence:products.title')}</h2><p className="text-xs text-emerald-100/75">{data.topProducts.length} · <Rial amount={data.topProducts.reduce((sum, product) => sum + product.grossAmount, 0)} /></p></div>
+          <div className="flex flex-wrap gap-2">
+            <label className="sr-only" htmlFor="customer-products-search">{t('customerIntelligence:products.search')}</label>
+            <input id="customer-products-search" className="h-8 w-44 rounded-lg border border-white/20 bg-white/10 px-2.5 text-xs text-white placeholder:text-emerald-100/60" placeholder={t('customerIntelligence:products.search')} value={productSearch} onChange={event => setProductSearch(event.target.value)} />
+            {[...new Set(data.topProducts.map(product => product.unitName).filter(Boolean))].length > 1 && <><label className="sr-only" htmlFor="customer-products-unit">{t('customerIntelligence:products.unit')}</label><select id="customer-products-unit" className="h-8 rounded-lg border border-white/20 bg-white/10 px-2 text-xs text-white" value={productUnitFilter} onChange={event => setProductUnitFilter(event.target.value)}><option value="" className="text-slate-900">{t('customerIntelligence:products.allUnits')}</option>{[...new Set(data.topProducts.map(product => product.unitName).filter(Boolean))].map(unit => <option value={unit} key={unit} className="text-slate-900">{unit}</option>)}</select></>}
+          </div>
         </div>
         {data.topProducts.length ? (
           <div className="overflow-x-auto">
@@ -729,7 +797,7 @@ export default function CustomerDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.topProducts.map(product => (
+                {data.topProducts.filter(product => (!productSearch || `${product.name} ${product.nameAr ?? ''}`.toLocaleLowerCase().includes(productSearch.toLocaleLowerCase())) && (!productUnitFilter || product.unitName === productUnitFilter)).map(product => (
                   <tr key={`${product.productId}:${product.productUnitId}:${product.unitName}`} className="border-t border-gray-100 hover:bg-gray-50/60">
                     <td className="px-4 py-3">
                       <button
@@ -761,43 +829,19 @@ export default function CustomerDetailPage() {
         ) : (
           <div className="py-12 text-center text-sm text-gray-400">{t('customerIntelligence:empty.noProducts')}</div>
         )}
-      </section>
+      </section>}
 
-      <section className="card p-4" aria-labelledby="insights-title">
-        <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center flex-shrink-0">
-            <Sparkles size={17} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h2 id="insights-title" className="text-sm font-bold text-gray-900">
-              {t('customerIntelligence:insights.title')}
-            </h2>
-            <p className="text-xs text-gray-400 mt-0.5">{t('customerIntelligence:insights.subtitle')}</p>
-            <ul className="mt-3 grid sm:grid-cols-2 gap-2">
-              {insights.map((insight, index) => (
-                <li key={`${insight.key}:${index}`} className="rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-600 leading-relaxed">
-                  {insightText(insight, t)}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      <section className="card overflow-hidden" aria-labelledby="history-title">
-        <div className="px-4 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center gap-3">
+      {activeProfileSection === 'overview' && <section className="order-3 card overflow-hidden" aria-labelledby="history-title">
+          <div className="px-4 py-2 rounded-t-xl bg-[#173d2a] text-white flex flex-col sm:flex-row sm:items-center gap-2">
           <div className="flex-1">
-            <h2 id="history-title" className="text-sm font-bold text-gray-900">
+            <h2 id="history-title" className="text-sm font-bold">
               {t('customerIntelligence:history.title')}
             </h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {t('customerIntelligence:history.subtitle', { count: history?.totalCount ?? 0 })}
-            </p>
           </div>
           <label>
             <span className="sr-only">{t('customerIntelligence:filters.activityType')}</span>
-            <select
-              className="input py-2 text-sm"
+              <select
+              className="h-7 rounded-lg border border-white/20 bg-white/10 px-2 text-xs text-white"
               value={historyType}
               onChange={event => {
                 setHistoryType(event.target.value as CustomerActivityType)
@@ -901,9 +945,10 @@ export default function CustomerDetailPage() {
             </Button>
           </div>
         )}
-      </section>
+      </section>}
 
-      <p className="text-xs text-gray-400 leading-relaxed">{t('customerIntelligence:pdf.disclaimer')}</p>
+      {activeProfileSection === 'overview' && <p className="text-xs text-gray-400 leading-relaxed">{t('customerIntelligence:pdf.disclaimer')}</p>}
+      </div>
 
       <CustomerModal
         open={editingCustomer !== null}

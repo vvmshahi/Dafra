@@ -544,7 +544,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
               onClick={requestClose} disabled={saving}>{t('common:cancel')}</Button>
             <Button type="submit" className="w-full bg-[#173f2a] hover:bg-[#22563b] active:scale-[0.97] sm:w-auto"
               loading={saving} disabled={saving || !formCanSubmit}>
-              {t(customer ? 'common:saveChanges' : 'customers:add')}
+              {saving ? t('common:saving') : t(customer ? 'common:saveChanges' : 'customers:add')}
             </Button>
           </footer>
         </form>

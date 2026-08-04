@@ -1,15 +1,9 @@
-import { Link } from 'react-router-dom'
-import { ArrowRight, BarChart3, Users } from 'lucide-react'
+import { BarChart3, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useLocale } from '@/localization/useLocale'
 import type { ReportProps } from './reportUtils'
 
-export default function CustomerReport({ startDate, endDate, branchId }: ReportProps) {
+export default function CustomerReport(_: ReportProps) {
   const { t } = useTranslation('customerIntelligence')
-  const { isRtl } = useLocale()
-  const params = new URLSearchParams({ start: startDate, end: endDate })
-  if (branchId) params.set('branch', branchId)
-
   return (
     <section className="card overflow-hidden">
       <div className="h-1 bg-gradient-to-r from-emerald-500 via-primary-500 to-teal-400" />
@@ -29,13 +23,9 @@ export default function CustomerReport({ startDate, endDate, branchId }: ReportP
             </div>
           </div>
         </div>
-        <Link
-          to={`/reports/customers?${params.toString()}`}
-          className="btn-primary px-4 py-2.5 text-sm rounded-xl flex-shrink-0"
-        >
-          {t('reports.openDedicated')}
-          <ArrowRight size={15} className={isRtl ? 'rotate-180' : ''} />
-        </Link>
+        <div className="shrink-0 rounded-lg border border-primary-100 bg-primary-50 px-3 py-2 text-xs font-semibold text-primary-800">
+          {t('reports.subtitle')}
+        </div>
       </div>
     </section>
   )

@@ -56,6 +56,7 @@ type StatusFilter   = 'all' | 'active' | 'grace_period' | 'lifetime_free' | 'sus
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const GRACE_MS = 7 * 86_400_000
+const MAX_OWNER_BRANCH_ALLOWANCE = 100
 
 function getStatus(c: ClientRow): ComputedStatus {
   if (c.suspended_at) return 'suspended'
@@ -293,6 +294,10 @@ function CreateAccountModal({ onCreated, onCancel }: {
     if (!companyName.trim()) { setError(t('validation.companyRequired')); return }
     if (!email.trim())       { setError(t('validation.ownerEmailRequired')); return }
     if (!planId)             { setError(t('validation.planRequired')); return }
+    if (!Number.isInteger(branchCount) || branchCount < 1 || branchCount > MAX_OWNER_BRANCH_ALLOWANCE) {
+      setError(`Branch allowance must be a whole number from 1 to ${MAX_OWNER_BRANCH_ALLOWANCE}.`)
+      return
+    }
 
     setSaving(true)
     try {
@@ -481,8 +486,13 @@ function CreateAccountModal({ onCreated, onCancel }: {
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('create.branchesAllowed')}</label>
                   <input
-                    type="number" min={1} value={branchCount}
-                    onChange={e => setBranchCount(Math.max(1, Number(e.target.value)))}
+                    type="number" min={1} max={MAX_OWNER_BRANCH_ALLOWANCE} step={1} value={branchCount}
+                    onChange={e => {
+                      const value = Number(e.target.value)
+                      setBranchCount(Number.isInteger(value)
+                        ? Math.min(MAX_OWNER_BRANCH_ALLOWANCE, Math.max(1, value))
+                        : 1)
+                    }}
                     className="input w-full text-sm h-9"
                   />
                 </div>

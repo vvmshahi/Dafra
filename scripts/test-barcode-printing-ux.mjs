@@ -41,7 +41,11 @@ const printModule = await importSource(printModuleSource)
 
 const {
   DEFAULT_BARCODE_DEVICE_CALIBRATION,
+  LABEL_SIZE_OPTIONS,
   LABEL_PRESETS,
+  PRIMARY_LABEL_PRESET_IDS,
+  applyLabelSize,
+  labelSizeOptions,
   loadBarcodeDeviceCalibration,
   normalizeBarcodeLabelSettings,
   resetBarcodeDeviceCalibration,
@@ -53,6 +57,7 @@ const {
   barcodeLabelFit,
   barcodePrintLayout,
   barcodePrintDocument,
+  BARCODE_LABEL_RENDERER_REGISTRY,
   formatBarcodeLabelCurrency,
 } = printModule
 const {
@@ -76,7 +81,22 @@ assert.deepEqual(Object.keys(LABEL_PRESETS), [
 ])
 assert.deepEqual(
   Object.values(LABEL_PRESETS).map(value => [value.widthMm, value.heightMm]),
-  [[38, 25], [50, 30], [60, 40], [100, 50], [63.5, 33.9], [50, 30]],
+  [[40, 25], [50, 30], [70, 40], [100, 50], [63.5, 33.9], [50, 30]],
+)
+assert.deepEqual(PRIMARY_LABEL_PRESET_IDS, [
+  'compact_sticker', 'standard_product', 'detailed_product', 'carton_label',
+])
+assert.deepEqual(
+  Object.fromEntries(Object.entries(LABEL_SIZE_OPTIONS).map(([id, sizes]) => [
+    id,
+    sizes.map(size => [size.widthMm, size.heightMm]),
+  ])),
+  {
+    compact_sticker: [[30, 20], [40, 25]],
+    standard_product: [[50, 30], [60, 40]],
+    detailed_product: [[70, 40], [80, 50]],
+    carton_label: [[100, 50], [100, 75]],
+  },
 )
 assert.ok(Object.values(LABEL_PRESETS).every(Object.isFrozen))
 assert.ok(Object.values(LABEL_PRESETS).every(value => Object.isFrozen(value.content) && Object.isFrozen(value.a4)))
@@ -84,8 +104,33 @@ const customized = settingsFromPreset('standard_product')
 customized.widthMm = 75
 customized.content.businessName = false
 assert.equal(LABEL_PRESETS.standard_product.widthMm, 50)
-assert.equal(LABEL_PRESETS.standard_product.content.businessName, true)
+assert.equal(LABEL_PRESETS.standard_product.content.businessName, false)
 assert.equal(settingsFromPreset('standard_product').widthMm, 50, 'reset recreates preset defaults')
+for (const id of PRIMARY_LABEL_PRESET_IDS.slice(0, 3)) {
+  const defaults = settingsFromPreset(id)
+  assert.equal(defaults.content.productName, true)
+  assert.equal(defaults.content.sellingPrice, true)
+  assert.equal(defaults.content.barcodeValue, true)
+  assert.equal(defaults.content.unitName, false)
+  assert.equal(defaults.content.sku, false)
+  assert.equal(defaults.content.businessName, false)
+  assert.equal(defaults.content.productNameAr, false)
+  assert.equal(defaults.content.productNameEn, false)
+}
+assert.equal(settingsFromPreset('carton_label').content.sellingPrice, false)
+for (const id of PRIMARY_LABEL_PRESET_IDS) {
+  for (const size of labelSizeOptions(id)) {
+    const sized = applyLabelSize(settingsFromPreset(id), size)
+    assert.deepEqual([sized.widthMm, sized.heightMm], [size.widthMm, size.heightMm])
+    const layout = barcodePrintLayout(1, sized)
+    assert.deepEqual([layout.pageWidthMm, layout.pageHeightMm], [size.widthMm, size.heightMm])
+  }
+}
+assert.deepEqual(
+  applyLabelSize(settingsFromPreset('compact_sticker'), { widthMm: 80, heightMm: 50 }),
+  settingsFromPreset('compact_sticker'),
+  'incompatible sizes are rejected without mutating the selected layout',
+)
 for (const id of Object.keys(LABEL_PRESETS)) {
   const presetSettings = settingsFromPreset(id)
   const presetLayout = barcodePrintLayout(1, { ...presetSettings, outputMode: 'a4' })
@@ -113,7 +158,7 @@ const normalized = normalizeBarcodeLabelSettings({
     print_date: false,
   },
 })
-assert.equal(normalized.widthMm, 200)
+assert.equal(normalized.widthMm, 100)
 assert.equal(normalized.defaultCopies, 1, 'persisted copy defaults are compatibility-only')
 assert.equal(normalized.content.productName, true, 'an empty visible-content configuration is repaired')
 assert.equal(normalized.orientation, 'landscape')
@@ -182,7 +227,7 @@ assert.match(portraitDocument.html, /@page \{ size: 30mm 50mm;/)
 assert.match(portraitDocument.html, /print-page--thermal/)
 assert.match(portraitDocument.html, /transform:translate\(0mm,0mm\) scale\(1,1\)/)
 
-// A4 page distribution includes partial-sheet start position and final-page count.
+// Deprecated A4/custom values remain readable but resolve to one safe Standard renderer.
 const sheet = normalizeBarcodeLabelSettings({
   ...settingsFromPreset('a4_sheet'),
   outputMode: 'a4',
@@ -194,44 +239,37 @@ const sheet = normalizeBarcodeLabelSettings({
     startColumn: 3,
   },
 })
-const a4Layout = barcodePrintLayout(35, sheet)
-assert.equal(a4Layout.leadingEmptyCells, 5)
-assert.equal(a4Layout.labelsPerPage, 24)
-assert.equal(a4Layout.pageCount, 2)
-assert.equal(a4Layout.labelsOnFinalPage, 16)
-assert.equal(a4Layout.pageWidthMm, 210)
-assert.equal(barcodePrintLayout(1, {
-  ...sheet,
-  a4: { ...sheet.a4, orientation: 'landscape' },
-}).pageWidthMm, 297)
-assert.equal(barcodePrintLayout(1, {
-  ...sheet,
-  widthMm: 200,
-  heightMm: 200,
-}).fits, false)
+assert.equal(sheet.presetId, 'standard_product')
+assert.equal(sheet.templateId, 'standard')
+assert.equal(sheet.outputMode, 'thermal')
+assert.deepEqual([sheet.widthMm, sheet.heightMm], [50, 30])
 const a4Preview = barcodePrintDocument(
   [{ ...sampleLabel, copies: 35 }],
   sheet,
   DEFAULT_BARCODE_DEVICE_CALIBRATION,
   { preview: true },
 )
-assert.match(a4Preview.html, /print-page--a4/)
-assert.match(a4Preview.html, /empty-cell/)
-assert.match(a4Preview.html, /\.is-preview \.print-page \{ zoom:0\./)
+assert.match(a4Preview.html, /print-page--thermal/)
+assert.doesNotMatch(a4Preview.html, /<section class="print-page print-page--a4"|<div class="empty-cell"/)
 
-// Renderer covers templates, RTL/LTR, safe escaping, exact copies, and the 500-label ceiling.
-for (const templateId of ['compact', 'standard', 'detailed']) {
+// Every supported ID owns a dedicated renderer and structural landmark.
+assert.deepEqual(Object.keys(BARCODE_LABEL_RENDERER_REGISTRY), PRIMARY_LABEL_PRESET_IDS)
+assert.equal(new Set(Object.values(BARCODE_LABEL_RENDERER_REGISTRY).map(entry => entry.renderer)).size, 4)
+assert.equal(new Set(Object.values(BARCODE_LABEL_RENDERER_REGISTRY).map(entry => entry.landmark)).size, 4)
+for (const presetId of PRIMARY_LABEL_PRESET_IDS) {
+  const presetSettings = settingsFromPreset(presetId)
   const output = barcodePrintDocument([sampleLabel], {
-    ...standard,
-    templateId,
+    ...presetSettings,
     content: {
-      ...standard.content,
-      productName: false,
+      ...presetSettings.content,
+      productName: true,
       productNameAr: true,
       productNameEn: true,
+      businessName: true,
     },
   }).html
-  assert.match(output, new RegExp(`label--${templateId}`))
+  assert.match(output, new RegExp(`label--preset-${presetId}`))
+  assert.match(output, new RegExp(BARCODE_LABEL_RENDERER_REGISTRY[presetId].landmark))
   assert.match(output, /dir="rtl">قهوة/)
   assert.match(output, /dir="ltr">Coffee/)
   assert.match(output, /&lt;Dafra&gt;/)
@@ -241,11 +279,10 @@ for (const templateId of ['compact', 'standard', 'detailed']) {
   assert.match(output, /shape-rendering:crispEdges/)
 }
 const bilingualSettings = {
-  ...standard,
-  templateId: 'detailed',
+  ...settingsFromPreset('detailed_product'),
   content: {
-    ...standard.content,
-    productName: false,
+    ...settingsFromPreset('detailed_product').content,
+    productName: true,
     productNameAr: true,
     productNameEn: true,
   },
@@ -271,7 +308,10 @@ assert.match(
     ...sampleLabel,
     barcode: '000012345678901234',
     unitName: 'Carton · 12 pieces',
-  }], settingsFromPreset('carton_label')).html,
+  }], {
+    ...settingsFromPreset('carton_label'),
+    content: { ...settingsFromPreset('carton_label').content, unitName: true },
+  }).html,
   /000012345678901234[\s\S]*Carton · 12 pieces|Carton · 12 pieces[\s\S]*000012345678901234/,
 )
 
@@ -307,8 +347,10 @@ assert.ok(compactOverflowDocument.layout.warnings.includes('contentOverflow'))
 assert.match(compactOverflowDocument.html, /--fitted-name-size:7pt/)
 assert.match(compactOverflowDocument.html, /overflow-wrap:anywhere/)
 assert.match(compactOverflowDocument.html, /product-name--ar[\s\S]*line-height:1\.38/)
-assert.match(compactOverflowDocument.html, /flex:0 0 10mm/)
+assert.match(compactOverflowDocument.html, /flex:0 0 9mm/)
 assert.match(compactOverflowDocument.html, /padding-inline:3\.6mm/)
+assert.match(compactOverflowDocument.html, /preserveAspectRatio="xMidYMid meet"/)
+assert.match(compactOverflowDocument.html, /width:auto; max-width:100%; height:100%/)
 assert.doesNotMatch(compactOverflowDocument.html, /\.product-name[^}]*white-space:nowrap/)
 
 const hierarchyLabel = {
@@ -434,6 +476,7 @@ clearBarcodePrintQueue('branch-1', storage)
 assert.deepEqual(loadBarcodePrintQueue('branch-1', storage), [])
 
 const migration = read('supabase/migrations/20260726000300_barcode_label_printing_settings.sql')
+const idempotentGenerationMigration = read('supabase/migrations/20260730000400_make_inline_barcode_generation_idempotent.sql')
 const originalBarcodeMigration = read('supabase/migrations/20260726000100_product_unit_barcodes.sql')
 const api = read('src/lib/barcodes/labelApi.ts')
 const designer = read('src/components/barcodes/BarcodeLabelDesigner.tsx')
@@ -469,6 +512,10 @@ assert.match(migration, /CONSTRAINT branch_barcode_label_settings_valid/)
 assert.match(migration, /item \?& ARRAY\['barcode_id', 'copies'\]/)
 assert.match(migration, /public\.record_product_barcode_print\(/, 'batch audit delegates classification to the established server function')
 assert.match(originalBarcodeMigration, /first_print[\s\S]*reprint/)
+assert.match(idempotentGenerationMigration, /FROM public\.product_units[\s\S]*FOR UPDATE/)
+assert.match(idempotentGenerationMigration, /IF FOUND THEN[\s\S]*RETURN to_jsonb\(v_existing\)/)
+assert.match(idempotentGenerationMigration, /product_barcode_scope\(p_product_unit_id\)/)
+assert.doesNotMatch(idempotentGenerationMigration, /invoice|payment|stock|zatca/i)
 assert.match(originalBarcodeMigration, /copies > 50[\s\S]*reason/)
 assert.match(api, /serializeBarcodeLabelSettings/)
 assert.match(api, /record_product_barcode_print_batch/)
@@ -484,10 +531,15 @@ for (const tab of ['receipts', 'invoices', 'barcodeLabels', 'printerSetup']) {
 }
 assert.match(workspace, /workspace\.tabs\.\$\{tab\.id\}\.label/)
 assert.match(app, /PrintingDocumentsPage/)
-assert.match(designer, /<details[\s\S]*barcodeLabels\.advanced\.title/)
+assert.match(workspace, /printerAdjustment=\{<BarcodePrinterSetupPanel/)
+assert.match(designer, /barcodeLabels\.studio\.sections\.printer/)
 assert.match(designer, /barcodeLabels\.presets\./)
-assert.match(designer, /barcodeLabels\.templates\./)
+assert.match(designer, /PRIMARY_LABEL_PRESET_IDS\.map/)
+assert.match(designer, /labelSizeOptions\(settings\.presetId\)/)
+assert.doesNotMatch(designer, /a4_sheet|custom/)
+assert.match(designer, /barcodeLabels\.content\.barcodeGraphic/)
 assert.match(designer, /barcodeLabels\.content\./)
+assert.match(designer, /barcodeLabels\.appearance\./)
 assert.match(settingsPanel, /updateBranchBarcodeLabelSettings/)
 assert.match(settingsPanel, /setSettings\(saved\)/)
 assert.doesNotMatch(settingsPanel, /defaultCopies|default copies/i, 'branch design settings never expose print quantity')
@@ -505,6 +557,7 @@ assert.match(quickPrint, /previewDataLabel=\{t\('barcodeLabels\.preview\.actualD
 assert.match(quickPrint, /overflowAcknowledged/)
 assert.match(batch, /overflowAcknowledged/)
 assert.match(labelPrintSource, /formatBarcodeLabelCurrency/)
+assert.match(labelPrintSource, /margin:\s*10/)
 assert.match(labelPrintSource, /MIN_PRODUCT_NAME_FONT_PT = 7/)
 assert.match(labelPrintSource, /NAME_LINES_BY_TEMPLATE = \{ compact: 1, standard: 2, detailed: 4 \}/)
 assert.match(labelPrintSource, /MIN_BARCODE_HEIGHT_MM = 8/)
@@ -524,6 +577,9 @@ assert.match(batch, /item\.barcode\?\.isActive/)
 assert.match(batch, /total > 500/)
 assert.match(batch, /recordBarcodePrintBatch/)
 assert.match(batch, /role="dialog"/)
+assert.match(batch, /md:left-\[var\(--app-sidebar-width\)\]/)
+assert.match(batch, /max-h-\[min\(860px,calc\(100dvh-2rem\)\)\]/)
+assert.match(batch, /min-h-0 flex-1 overflow-y-auto/)
 assert.match(productBarcodes, /getProductBarcodePrintStatus/)
 assert.match(productBarcodes, /BarcodeQuickPrintDialog/)
 assert.doesNotMatch(productBarcodes, /print_kind:\s*'reprint'/)

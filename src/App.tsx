@@ -26,6 +26,9 @@ import InventoryPage       from '@/pages/inventory/InventoryPage'
 import PurchasesPage       from '@/pages/purchases/PurchasesPage'
 import ReportsPage         from '@/pages/reports/ReportsPage'
 import CustomerIntelligenceReportsPage from '@/pages/reports/CustomerIntelligenceReportsPage'
+import CustomerReceivablesReportPage from '@/pages/reports/CustomerReceivablesReportPage'
+import PaymentReceiptPrintPage from '@/pages/print/PaymentReceiptPrintPage'
+import CustomerStatementPrintPage from '@/pages/print/CustomerStatementPrintPage'
 import SupplierIntelligenceReportsPage from '@/pages/reports/SupplierIntelligenceReportsPage'
 import OperationsPage      from '@/pages/operations/OperationsPage'
 import ZatcaPage           from '@/pages/zatca/ZatcaPage'
@@ -46,6 +49,7 @@ import ProfilePage          from '@/pages/profile/ProfilePage'
 import DayClosingPage       from '@/pages/day-closing/DayClosingPage'
 import BranchDashboardPage  from '@/pages/branch/BranchDashboardPage'
 import PrintingDocumentsPage from '@/pages/branch/PrintingDocumentsPage'
+import BranchSettingsPage   from '@/pages/branch/BranchSettingsPage'
 import ForgotPasswordPage   from '@/pages/auth/ForgotPasswordPage'
 import ResetPasswordPage    from '@/pages/auth/ResetPasswordPage'
 import TermsPage            from '@/pages/legal/TermsPage'
@@ -327,6 +331,8 @@ export default function App() {
 
           {/* Receipt print view — full-screen, no app shell or checkout modal */}
           <Route path="/print/receipt/:invoiceId" element={<ReceiptPrintPage />} />
+          <Route path="/print/payment-receipt/:receiptId" element={<PaymentReceiptPrintPage />} />
+          <Route path="/print/customer-statement/:customerId" element={<CustomerStatementPrintPage />} />
 
           {/* POS — full-screen, no sidebar, branch role only */}
           <Route element={<RequirePOS />}>
@@ -339,6 +345,7 @@ export default function App() {
             {/* Branch dashboard — inside AppLayout so sidebar shows */}
             <Route element={<RequireBranch />}>
               <Route path="/branch"            element={<BranchDashboardPage />} />
+              <Route path="/branch-settings"  element={<BranchSettingsPage />} />
               <Route path="/invoice-settings"  element={<PrintingDocumentsPage />} />
             </Route>
 
@@ -359,6 +366,8 @@ export default function App() {
               <Route path="/zatca"      element={<ZatcaPage />} />
               <Route path="/employees"   element={<EmployeesPage />} />
               <Route path="/settings"  element={<SettingsPage />} />
+              <Route path="/settings/branches/:branchId" element={<BranchSettingsPage />} />
+              <Route path="/settings/branches/:branchId/printing" element={<PrintingDocumentsPage />} />
               {ENABLE_OFFICIAL_SELLER_IDENTITY && <Route path="/settings/official-seller" element={<OfficialSellerProfilePage />} />}
             </Route>
 
@@ -375,6 +384,7 @@ export default function App() {
             <Route path="/day-closing" element={<DayClosingPage />} />
             <Route path="/reports"   element={<ReportsPage />} />
             <Route path="/reports/customers" element={<CustomerIntelligenceReportsPage />} />
+            <Route path="/reports/receivables" element={<CustomerReceivablesReportPage />} />
             <Route path="/reports/suppliers" element={<SupplierIntelligenceReportsPage />} />
             <Route path="/suppliers" element={<SuppliersPage />} />
             <Route path="/suppliers/:id" element={<SupplierDetailPage />} />
