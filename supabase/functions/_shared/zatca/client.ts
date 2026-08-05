@@ -7,6 +7,7 @@ interface ComplianceResponse {
 interface ProductionResponse {
   binarySecurityToken: string
   secret: string
+  functionalityMap?: '0100' | '1000' | '1100'
 }
 
 interface ZatcaResponseTrace {

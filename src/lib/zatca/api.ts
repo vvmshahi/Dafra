@@ -19,6 +19,7 @@ import {
   clearStaleAuthSessionData,
   isInvalidRefreshTokenError,
 } from '@/lib/authSessionRecovery'
+import type { ZatcaFunctionalityMap } from '../../../shared/zatcaCapability'
 
 const EDGE = (name: string) =>
   `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`
@@ -173,7 +174,7 @@ function safeUiText(value: unknown, maxLength = 240): string | undefined {
 
 // ── Production onboarding orchestrator ───────────────────────────────────────
 
-export type ZatcaFunctionalityMap = '0100' | '1000' | '1100'
+export type { ZatcaFunctionalityMap } from '../../../shared/zatcaCapability'
 
 export type ProductionOnboardingStatus =
   | 'not_started'
@@ -232,6 +233,8 @@ export interface ProductionOnboardingResponse {
   onboardingStatus: ProductionOnboardingStatus
   steps?: ProductionOnboardingStatus[]
   functionalityMap?: ZatcaFunctionalityMap
+  requestedFunctionalityMap?: ZatcaFunctionalityMap | null
+  issuedFunctionalityMap?: ZatcaFunctionalityMap | null
   complianceSampleResults?: ProductionComplianceSampleResult[]
   connectedAt?: string | null
   disconnectedAt?: string | null
@@ -283,6 +286,13 @@ export async function preflightProductionZatca(params: {
 export async function getProductionOnboardingStatus(branchId: string): Promise<ProductionOnboardingResponse> {
   return edgePostSafe<ProductionOnboardingResponse>('zatca-onboard-production', {
     action: 'status',
+    branchId,
+  })
+}
+
+export async function resetFailedProductionOnboarding(branchId: string): Promise<ProductionOnboardingResponse> {
+  return edgePostSafe<ProductionOnboardingResponse>('zatca-onboard-production', {
+    action: 'reset_failed',
     branchId,
   })
 }

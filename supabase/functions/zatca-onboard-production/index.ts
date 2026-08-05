@@ -48,7 +48,7 @@ import { loadSafeOnboardingStatus, saveOnboardingState } from '../_shared/zatca/
 import { auditEvent, enforceRateLimit, hashRequestIp, rateLimitBody, requestId } from '../_shared/security.ts'
 
 interface RequestBody {
-  action?: 'onboard' | 'status' | 'preflight'
+  action?: 'onboard' | 'status' | 'preflight' | 'reset_failed'
   branchId?: unknown
   otp?: unknown
   functionalityMap?: unknown
@@ -197,6 +197,24 @@ Deno.serve(async (req: Request) => {
       targetId: branch.id,
       ipHash,
       requestId: reqId,
+    }
+
+    if (body.action === 'reset_failed') {
+      const reset = await db.rpc('reset_failed_zatca_onboarding', {
+        p_branch_id: branch.id,
+        p_actor_id: owner.userId,
+        p_reason: 'Owner requested a fresh Production onboarding attempt.',
+      })
+      if (reset.error) throw new Error(reset.error.message)
+      return jsonResponse({
+        ok: true,
+        branchId: branch.id,
+        environment: 'production',
+        onboardingStatus: 'not_started',
+        reset: rpcObject(reset.data),
+        message: 'Failed onboarding was archived. This branch is ready for new onboarding.',
+        trace,
+      })
     }
 
     if (body.action === 'preflight') {
@@ -655,6 +673,19 @@ Deno.serve(async (req: Request) => {
 
     const encryptedProductionCsid = await encryptText(production.binarySecurityToken, encryptionSecret)
     const encryptedProductionSecret = await encryptText(production.secret, encryptionSecret)
+    const issuedFunctionalityMap = production.functionalityMap
+    if (issuedFunctionalityMap !== undefined && issuedFunctionalityMap !== csrParams.functionalityMap) {
+      await saveState(db, owner, csrParams, generated, {
+        status: 'compliance_failed',
+        encryptedPrivateKey,
+        complianceRequestId: compliance.requestID,
+        encryptedComplianceCsid,
+        encryptedComplianceSecret,
+        complianceSampleResults,
+        lastError: 'ZATCA_FUNCTIONALITY_MAP_MISMATCH',
+      })
+      throw new Error('ZATCA_FUNCTIONALITY_MAP_MISMATCH')
+    }
     const connectedAt = new Date().toISOString()
 
     await saveState(db, owner, csrParams, generated, {
@@ -665,6 +696,7 @@ Deno.serve(async (req: Request) => {
       encryptedComplianceSecret,
       encryptedProductionCsid,
       encryptedProductionSecret,
+      issuedFunctionalityMap,
       complianceSampleResults,
       connectedAt,
     })
@@ -896,6 +928,7 @@ async function saveState(
     encryptedComplianceSecret?: string
     encryptedProductionCsid?: string
     encryptedProductionSecret?: string
+    issuedFunctionalityMap?: FunctionalityMap | null
     complianceSampleResults?: ComplianceSampleResult[]
     lastError?: string
     connectedAt?: string
@@ -907,6 +940,7 @@ async function saveState(
     userId: owner.userId,
     status: update.status,
     functionalityMap: csrParams.functionalityMap,
+    requestedFunctionalityMap: csrParams.functionalityMap,
     egsSerialNumber: generated.egsSerialNumber,
     csrCommonName: csrParams.commonName,
     csrOrganizationName: csrParams.businessName,
@@ -924,6 +958,7 @@ async function saveState(
     complianceSampleResults: update.complianceSampleResults,
     lastError: update.lastError,
     connectedAt: update.connectedAt,
+    issuedFunctionalityMap: update.issuedFunctionalityMap,
   })
 }
 

@@ -32,6 +32,7 @@ import {
   disconnectProductionZatca,
   isZatcaOtpRejection,
   onboardProductionZatca,
+  resetFailedProductionOnboarding,
   ZatcaAuthError,
   type ProductionOnboardingResponse,
   type ProductionOnboardingTraceEntry,
@@ -46,6 +47,12 @@ import {
 } from '@/lib/zatca/api'
 import { getCachedProductionStatus, readCachedProductionStatus, writeCachedProductionStatus } from '@/lib/zatca/status'
 import type { Branch } from '@/types'
+import {
+  capabilityForFunctionalityMap,
+  functionalityMapForCapability,
+  NORMAL_ONBOARDING_CAPABILITIES,
+  type ZatcaInvoiceCapability,
+} from '../../../shared/zatcaCapability'
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 
@@ -697,17 +704,22 @@ const PRODUCTION_STEPS: Array<{ key: ProductionOnboardingStatus }> = [
 ]
 
 const FUNCTIONALITY_OPTIONS: Array<{
-  value: ZatcaFunctionalityMap
-  key: 'simplified' | 'standard' | 'both'
+  value: ZatcaInvoiceCapability
+  key: 'simplified' | 'both'
 }> = [
-  { value: '0100', key: 'simplified' }, { value: '1000', key: 'standard' }, { value: '1100', key: 'both' },
+  { value: NORMAL_ONBOARDING_CAPABILITIES[0], key: 'simplified' },
+  { value: NORMAL_ONBOARDING_CAPABILITIES[1], key: 'both' },
 ]
 
 const DISCONNECT_CONFIRMATION = 'DELETE ZATCA CONNECTION'
 const SHOW_ZATCA_TRACE = import.meta.env.DEV && import.meta.env.VITE_SHOW_ZATCA_DEBUG_TRACE === 'true'
 
 function functionalityLabel(value: ZatcaFunctionalityMap | string | undefined, t: ReturnType<typeof useTranslation>['t']): string {
-  const option = FUNCTIONALITY_OPTIONS.find(item => item.value === value)
+  const capability = value === '0100' || value === '1000' || value === '1100'
+    ? capabilityForFunctionalityMap(value)
+    : null
+  const option = FUNCTIONALITY_OPTIONS.find(item => item.value === capability)
+  if (value === '1000') return `${t('functionality.standard.label')} (1000)`
   return option ? t(`functionality.${option.key}.label`) : t('functionality.notSelected')
 }
 
@@ -982,10 +994,13 @@ function ProductionOnboardingPanel({
   const { t } = useTranslation('zatca')
   const { profile } = useAuth()
   const [otp, setOtp] = useState('')
-  const [functionalityMap, setFunctionalityMap] = useState<ZatcaFunctionalityMap | ''>('')
+  const [capability, setCapability] = useState<ZatcaInvoiceCapability | ''>('')
   const [status, setStatus] = useState<ProductionOnboardingResponse | null>(initialStatus ?? null)
   const [loading, setLoading] = useState(false)
   const [statusLoading, setStatusLoading] = useState(false)
+  const [resetBusy, setResetBusy] = useState(false)
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetPhrase, setResetPhrase] = useState('')
   const [showReconnect, setShowReconnect] = useState(false)
   const [reconnectConfirmOpen, setReconnectConfirmOpen] = useState(false)
   const [showDisconnect, setShowDisconnect] = useState(false)
@@ -1002,7 +1017,9 @@ function ProductionOnboardingPanel({
 
   useEffect(() => {
     setStatus(initialStatus ?? null)
-    if (initialStatus?.functionalityMap) setFunctionalityMap(initialStatus.functionalityMap)
+    if (initialStatus?.functionalityMap && initialStatus.functionalityMap !== '1000') {
+      setCapability(capabilityForFunctionalityMap(initialStatus.functionalityMap))
+    }
   }, [initialStatus])
 
   useEffect(() => {
@@ -1015,7 +1032,9 @@ function ProductionOnboardingPanel({
         const res = await getProductionOnboardingStatus(branch.id)
         if (mounted) {
           setStatus(res)
-          if (res.functionalityMap) setFunctionalityMap(res.functionalityMap)
+          if (res.functionalityMap && res.functionalityMap !== '1000') {
+            setCapability(capabilityForFunctionalityMap(res.functionalityMap))
+          }
           onStatusChange(res)
         }
       } catch (err: any) {
@@ -1049,7 +1068,7 @@ function ProductionOnboardingPanel({
       setError(t('errors.otp'))
       return
     }
-    if (!functionalityMap) {
+    if (!capability) {
       setError(t('errors.capability'))
       return
     }
@@ -1059,7 +1078,7 @@ function ProductionOnboardingPanel({
       const res = await onboardProductionZatca({
         branchId: branch.id,
         otp,
-        functionalityMap,
+        functionalityMap: functionalityMapForCapability(capability),
         dryRun: false,
         forceReconnect: isConnected && showReconnect,
       })
@@ -1075,7 +1094,7 @@ function ProductionOnboardingPanel({
           branchId: branch.id,
           environment: 'production',
           onboardingStatus: payload.onboardingStatus ?? 'failed',
-          functionalityMap: payload.functionalityMap ?? (functionalityMap || undefined),
+          functionalityMap: payload.functionalityMap ?? (capability ? functionalityMapForCapability(capability) : undefined),
           complianceSampleResults: payload.complianceSampleResults,
           trace: payload.trace,
         }
@@ -1092,6 +1111,23 @@ function ProductionOnboardingPanel({
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const resetFailed = async () => {
+    if (resetPhrase !== 'RESET ONBOARDING') return
+    setResetBusy(true)
+    try {
+      const next = await resetFailedProductionOnboarding(branch.id)
+      setStatus(next)
+      setCapability('')
+      setResetOpen(false)
+      setResetPhrase('')
+      onStatusChange(next)
+    } catch (err: any) {
+      setError(err?.message ?? t('errors.resetFailed'))
+    } finally {
+      setResetBusy(false)
     }
   }
 
@@ -1199,16 +1235,16 @@ function ProductionOnboardingPanel({
             <p className="text-[11px] text-gray-500 leading-relaxed">
               {t('onboarding.capabilityHelp')}
             </p>
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-2">
               {FUNCTIONALITY_OPTIONS.map(option => (
                 <button
                   key={option.value}
                   type="button"
-                  onClick={() => setFunctionalityMap(option.value)}
+                  onClick={() => setCapability(option.value)}
                   role="radio"
-                  aria-checked={functionalityMap === option.value}
+                  aria-checked={capability === option.value}
                   className={`text-start rounded-xl border px-3 py-3 transition-[border-color,background-color,transform] duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
-                    functionalityMap === option.value
+                    capability === option.value
                       ? 'border-primary-300 bg-primary-50'
                       : 'border-gray-200 bg-white hover:border-gray-300'
                   }`}
@@ -1218,6 +1254,7 @@ function ProductionOnboardingPanel({
                 </button>
               ))}
             </div>
+            <p className="text-[10px] leading-relaxed text-amber-700">{t('functionality.activationNote')}</p>
           </div>
 
           <div className="space-y-2.5">
@@ -1264,11 +1301,30 @@ function ProductionOnboardingPanel({
         </div>
       )}
 
+      {isOwner && currentStatus === 'compliance_failed' && !status?.productionCsidExists && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5">
+          <p className="text-xs font-semibold text-amber-900">{t('reset.title')}</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-amber-800">{t('reset.help')}</p>
+          {!resetOpen ? (
+            <button type="button" onClick={() => setResetOpen(true)} className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-[11px] font-bold text-amber-900">{t('reset.open')}</button>
+          ) : (
+            <div className="mt-3 space-y-2">
+              <label htmlFor={`zatca-reset-${branch.id}`} className="text-[10px] font-bold text-amber-900">{t('reset.confirmLabel')}</label>
+              <input id={`zatca-reset-${branch.id}`} value={resetPhrase} onChange={event => setResetPhrase(event.target.value)} autoComplete="off" className="input bg-white text-xs uppercase" placeholder="RESET ONBOARDING" />
+              <div className="flex gap-2">
+                <button type="button" onClick={() => { setResetOpen(false); setResetPhrase('') }} disabled={resetBusy} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-bold text-gray-700">{t('reset.cancel')}</button>
+                <button type="button" onClick={() => void resetFailed()} disabled={resetBusy || resetPhrase !== 'RESET ONBOARDING'} className="rounded-lg bg-amber-800 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50">{resetBusy ? t('reset.working') : t('reset.confirm')}</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {showOnboardingForm && !(statusLoading && !status) && (
         <div>
           <button
             onClick={() => void connect()}
-            disabled={!isOwner || loading || otp.length !== 6 || !functionalityMap}
+            disabled={!isOwner || loading || otp.length !== 6 || !capability}
             className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}

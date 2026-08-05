@@ -31,6 +31,8 @@ export function writeCachedProductionStatus(branchId: string, status: Production
       onboardingStatus: status.onboardingStatus,
       steps: status.steps,
       functionalityMap: status.functionalityMap,
+      requestedFunctionalityMap: status.requestedFunctionalityMap,
+      issuedFunctionalityMap: status.issuedFunctionalityMap,
       connectedAt: status.connectedAt,
       disconnectedAt: status.disconnectedAt,
       updatedAt: status.updatedAt,

@@ -96,7 +96,7 @@
     "advancedReconnect": "Advanced reconnect / re-onboard",
     "connectHelp": "Connect this branch to your ZATCA account using a fresh OTP from the Fatoora portal.",
     "reconnectHelp": "Re-onboarding may replace this branch's production credentials and can affect invoice submission. Continue only when you intentionally created a new OTP in FATOORA.",
-    "capabilityHelp": "Choose what this billing system will issue. For normal retail/POS invoices, usually choose Simplified/B2C only. If you issue tax invoices to VAT-registered businesses, choose Standard/B2B or Both.",
+    "capabilityHelp": "Choose what this billing system will issue: Retail only or Retail + Business.",
     "setupStep1": "Open Fatoora and generate a 6-digit OTP for this branch device.",
     "setupStep2": "Paste the OTP below. It connects this Kubri branch/device with your ZATCA account.",
     "setupStep3": "Start production setup and wait for Kubri to confirm the connection.",
@@ -113,7 +113,17 @@
     "sessionExpired": "Your session has expired. Sign in again.",
     "invalidOrExpiredOtp": "The ZATCA OTP is invalid or expired. Generate a fresh OTP and try again.",
     "onboardingFailed": "ZATCA production onboarding failed.",
-    "disconnectFailed": "Unable to remove local ZATCA connection."
+    "disconnectFailed": "Unable to remove local ZATCA connection.",
+    "resetFailed": "Unable to reset the failed onboarding attempt."
+  },
+  "reset": {
+    "title": "Failed onboarding",
+    "help": "This will archive the failed onboarding attempt and allow a fresh ZATCA onboarding. It will not contact ZATCA, change the Branch, or affect any active credential.",
+    "open": "Reset failed onboarding",
+    "confirmLabel": "Type RESET ONBOARDING to confirm",
+    "cancel": "Cancel",
+    "confirm": "Archive and reset",
+    "working": "Resetting…"
   },
   "disconnect": {
     "title": "Remove local ZATCA connection",
@@ -127,14 +137,18 @@
   "functionality": {
     "notSelected": "Not selected",
     "simplified": {
-      "label": "Simplified/B2C only",
-      "hint": "POS and retail invoices"
+      "label": "Retail only",
+      "hint": "For businesses that issue Simplified Tax Invoices to consumers. (0100)"
     },
     "standard": {
-      "label": "Standard/B2B only",
-      "hint": "Tax invoices for business buyers"
+      "label": "Standard only",
+      "hint": "Supported for previously onboarded devices only. (1000)"
     },
-    "both": { "label": "Both", "hint": "Standard and simplified invoices" }
+    "both": {
+      "label": "Retail + Business",
+      "hint": "For businesses that issue both Simplified Tax Invoices to consumers and Standard Tax Invoices to qualifying business customers. (1100)"
+    },
+    "activationNote": "This selection is used when creating the ZATCA device credential and cannot be changed as a normal Branch setting after activation."
   },
   "steps": {
     "generating_csr": "Generate CSR",

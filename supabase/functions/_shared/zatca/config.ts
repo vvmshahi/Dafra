@@ -15,7 +15,14 @@ export type OnboardingStatus =
   | 'compliance_failed'
   | 'failed'
 
-export type FunctionalityMap = '0100' | '1000' | '1100'
+import {
+  isZatcaFunctionalityMap,
+  validateZatcaFunctionalityMap,
+  type ZatcaFunctionalityMap,
+} from '../../../../shared/zatcaCapability.ts'
+
+export type FunctionalityMap = ZatcaFunctionalityMap
+export { isZatcaFunctionalityMap, validateZatcaFunctionalityMap }
 
 export const PRODUCTION_CORE_BASE_URL =
   Deno.env.get('ZATCA_PRODUCTION_BASE_URL') ??
@@ -54,7 +61,7 @@ export function isUuid(value: unknown): value is string {
 }
 
 export function isFunctionalityMap(value: unknown): value is FunctionalityMap {
-  return value === '0100' || value === '1000' || value === '1100'
+  return isZatcaFunctionalityMap(value)
 }
 
 export function validateOtp(value: unknown): value is string {

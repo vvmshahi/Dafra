@@ -7,6 +7,8 @@ interface OnboardingUpdate {
   userId: string
   status: OnboardingStatus
   functionalityMap: FunctionalityMap
+  requestedFunctionalityMap?: FunctionalityMap
+  issuedFunctionalityMap?: FunctionalityMap | null
   egsSerialNumber: string
   csrCommonName?: string
   csrOrganizationName?: string
@@ -35,6 +37,12 @@ export async function saveOnboardingState(db: any, update: OnboardingUpdate): Pr
     egs_serial_number: update.egsSerialNumber,
     onboarding_status: update.status,
     functionality_map: update.functionalityMap,
+    ...(update.requestedFunctionalityMap !== undefined
+      ? { requested_functionality_map: update.requestedFunctionalityMap }
+      : {}),
+    ...(update.issuedFunctionalityMap !== undefined
+      ? { issued_functionality_map: update.issuedFunctionalityMap }
+      : {}),
     updated_by: update.userId,
     last_error: update.lastError ?? null,
   }
@@ -74,6 +82,8 @@ export async function loadSafeOnboardingStatus(db: any, branchId: string, tenant
       environment,
       onboarding_status,
       functionality_map,
+      requested_functionality_map,
+      issued_functionality_map,
       compliance_sample_results,
       certificate_valid_from,
       certificate_valid_to,
@@ -112,7 +122,11 @@ export async function loadSafeOnboardingStatus(db: any, branchId: string, tenant
     branchId: data.branch_id,
     environment: data.environment,
     onboardingStatus: data.onboarding_status,
-    functionalityMap: data.functionality_map,
+    functionalityMap: data.onboarding_status === 'not_started'
+      ? null
+      : data.issued_functionality_map ?? data.functionality_map,
+    requestedFunctionalityMap: data.requested_functionality_map ?? data.functionality_map,
+    issuedFunctionalityMap: data.issued_functionality_map,
     complianceSampleResults: data.compliance_sample_results ?? [],
     certificateValidFrom: data.certificate_valid_from,
     certificateValidTo: data.certificate_valid_to,

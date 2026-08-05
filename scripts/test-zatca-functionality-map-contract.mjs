@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+
+const read = file => fs.readFileSync(file, 'utf8')
+const contract = read('shared/zatcaCapability.ts')
+const config = read('supabase/functions/_shared/zatca/config.ts')
+const csr = read('supabase/functions/_shared/zatca/csr.ts')
+const samples = read('supabase/functions/_shared/zatca/samples.ts')
+const onboarding = read('supabase/functions/zatca-onboard-production/index.ts')
+const ui = read('src/pages/settings/ZatcaTab.tsx')
+
+assert.match(contract, /simplified_only:\s*'0100'/)
+assert.match(contract, /standard_and_simplified:\s*'1100'/)
+assert.match(contract, /standard_only:\s*'1000'/)
+assert.match(contract, /NORMAL_ONBOARDING_CAPABILITIES/)
+assert.match(contract, /validateZatcaFunctionalityMap/)
+assert.match(config, /isZatcaFunctionalityMap\(value\)/)
+assert.match(contract, /value === '0100'.*value === '1000'.*value === '1100'/s)
+assert.match(csr, /title, params\.functionalityMap/)
+assert.match(samples, /if \(map === '0100'\) return SIMPLIFIED/)
+assert.match(samples, /if \(map === '1000'\) return STANDARD/)
+assert.match(samples, /return \[\.\.\.STANDARD, \.\.\.SIMPLIFIED\]/)
+assert.match(onboarding, /functionalityMap: csrParams\.functionalityMap/)
+assert.match(onboarding, /ZATCA_FUNCTIONALITY_MAP_MISMATCH/)
+assert.match(ui, /NORMAL_ONBOARDING_CAPABILITIES\[0\]/)
+assert.match(ui, /NORMAL_ONBOARDING_CAPABILITIES\[1\]/)
+assert.doesNotMatch(ui, /\{ value: '1000', key: 'standard' \}/)
+assert.match(ui, /functionalityMapForCapability\(capability\)/)
+
+console.log('ZATCA functionality-map contract and onboarding wiring checks passed')
