@@ -3,6 +3,7 @@ import fs from 'node:fs'
 
 const ui = fs.readFileSync('src/pages/settings/ZatcaTab.tsx', 'utf8')
 const api = fs.readFileSync('src/lib/zatca/api.ts', 'utf8')
+const resetEdge = fs.readFileSync('supabase/functions/zatca-reset-failed-onboarding/index.ts', 'utf8')
 
 const resetSection = ui.slice(ui.indexOf("currentStatus === 'compliance_failed'"), ui.indexOf("{showOnboardingForm && !(statusLoading && !status) && (", ui.indexOf("currentStatus === 'compliance_failed'")))
 assert.ok(resetSection.length > 0, 'reset section must exist')
@@ -13,8 +14,12 @@ assert.match(resetSection, /void resetFailed\(\)/)
 assert.doesNotMatch(resetSection, /onboardProductionZatca|connect\(\)/)
 
 const resetApi = api.slice(api.indexOf('export async function resetFailedProductionOnboarding'), api.indexOf('export async function disconnectProductionZatca'))
-assert.match(resetApi, /action: 'reset_failed'/)
+assert.match(resetApi, /edgePostSafe<ProductionOnboardingResponse>\('zatca-reset-failed-onboarding'/)
+assert.doesNotMatch(resetApi, /zatca-onboard-production/)
 assert.doesNotMatch(resetApi, /otp|onboardProductionZatca|generateProductionCsr/i)
 assert.match(ui, /setStatus\(next\)[\s\S]*setCapability\(''\)[\s\S]*onStatusChange\(next\)/)
+
+assert.equal((resetEdge.match(/\.rpc\('reset_failed_zatca_onboarding'/g) ?? []).length, 1)
+assert.doesNotMatch(resetEdge, /zatca-onboard-production|validateOtp|generateProductionCsr|ZATCA_PRODUCTION_BASE_URL/)
 
 console.log('ZATCA reset event-chain contract passed')

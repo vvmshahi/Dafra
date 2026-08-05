@@ -291,8 +291,7 @@ export async function getProductionOnboardingStatus(branchId: string): Promise<P
 }
 
 export async function resetFailedProductionOnboarding(branchId: string): Promise<ProductionOnboardingResponse> {
-  return edgePostSafe<ProductionOnboardingResponse>('zatca-onboard-production', {
-    action: 'reset_failed',
+  return edgePostSafe<ProductionOnboardingResponse>('zatca-reset-failed-onboarding', {
     branchId,
   })
 }
