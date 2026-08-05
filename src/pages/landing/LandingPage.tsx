@@ -153,8 +153,6 @@ function Header() {
           <Link to="/" className="z-10 flex-shrink-0 transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.98] md:absolute md:left-0">
             <MeemLogo size="md" />
           </Link>
-          <CompactLanguageSelector inverse className="hidden md:absolute md:left-28 md:inline-flex" />
-
           <div className="hidden items-center justify-center rounded-[26px] border border-white/[0.13] bg-[#06120D]/[0.72] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_24px_80px_rgba(0,0,0,0.30)] ring-1 ring-white/[0.035] backdrop-blur-2xl md:flex">
             {navLinks.map(link => (
               link.type === 'section' ? (
@@ -172,7 +170,8 @@ function Header() {
           </div>
 
           <div className="hidden items-center gap-1.5 rounded-full border border-white/[0.12] bg-[#06120D]/[0.66] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_62px_rgba(0,0,0,0.24)] ring-1 ring-white/[0.035] backdrop-blur-2xl md:absolute md:right-0 md:flex">
-            <Link to="/login" className={`${actionBaseClass} border border-white/[0.10] bg-white/[0.06] text-white/[0.90] hover:border-white/[0.18] hover:bg-white/[0.10] hover:text-white`}>
+            <CompactLanguageSelector inverse className="shrink-0" />
+            <Link to="/login" state={{ from: '/' }} className={`${actionBaseClass} border border-white/[0.10] bg-white/[0.06] text-white/[0.90] hover:border-white/[0.18] hover:bg-white/[0.10] hover:text-white`}>
               <span className="absolute inset-0 -z-10 translate-x-[-105%] rounded-full bg-white/[0.08] opacity-0 transition-[opacity,transform] duration-300 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
               <span className="relative pr-0 transition-transform duration-200 group-hover:-translate-x-1.5">{t('nav.signIn')}</span>
               <ArrowRight size={14} className="absolute right-3 translate-x-2 opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
@@ -207,7 +206,7 @@ function Header() {
             )
           ))}
           <div className="mt-2 grid grid-cols-2 gap-2 border-t border-white/10 pt-3">
-            <button onClick={() => navigate('/login')} className="rounded-xl border border-white/10 px-3 py-2.5 text-sm font-semibold text-white/80">{t('nav.signIn')}</button>
+            <button onClick={() => navigate('/login', { state: { from: '/' } })} className="rounded-xl border border-white/10 px-3 py-2.5 text-sm font-semibold text-white/80">{t('nav.signIn')}</button>
             <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="rounded-xl bg-gold-500 px-3 py-2.5 text-center text-sm font-black text-[#0F2419]">{t('nav.getStarted')}</a>
           </div>
         </div>

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
 const login = fs.readFileSync('src/pages/auth/LoginPage.tsx', 'utf8')
+const landing = fs.readFileSync('src/pages/landing/LandingPage.tsx', 'utf8')
 const navigation = fs.readFileSync('src/lib/loginNavigation.ts', 'utf8')
 const selector = fs.readFileSync('src/components/localization/CompactLanguageSelector.tsx', 'utf8')
 const locale = fs.readFileSync('src/localization/locale.ts', 'utf8')
@@ -13,7 +14,8 @@ assert.match(login, /\{loginReturnPath && \(/)
 assert.doesNotMatch(login, /to="\/"[\s\S]{0,300}common:back/)
 
 assert.match(navigation, /from\.startsWith\('\/'\)/)
-assert.match(navigation, /from === '\/' \|\| from === '\/login'/)
+assert.match(navigation, /from === '\/login'/)
+assert.match(landing, /to="\/login" state=\{\{ from: '\/' \}\}/)
 assert.match(navigation, /from\.startsWith\('\/login\?'\)/)
 assert.doesNotMatch(navigation, /window\.history|history\.length/)
 

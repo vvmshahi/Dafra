@@ -10,10 +10,9 @@ const dates = fs.readFileSync('src/lib/utils/date.ts', 'utf8')
 const adminDashboard = fs.readFileSync('src/pages/admin/DashboardPage.tsx', 'utf8')
 const branchDashboard = fs.readFileSync('src/pages/branch/BranchDashboardPage.tsx', 'utf8')
 
-assert.match(sidebar, /<AuthenticatedLanguageSwitch inverse collapsed=\{collapsed\}/)
-assert.doesNotMatch(sidebar, /AuthenticatedLanguageSwitch[^\n]*w-full/)
-assert.match(switcher, /aria-pressed="true"/)
-assert.match(switcher, /collapsed \? 'w-10 px-0' : 'w-fit'/)
+assert.match(sidebar, /<AuthenticatedLanguageSwitch inverse className=\{`w-full/)
+assert.match(switcher, /const label = locale === 'en' \? 'العربية' : 'English'/)
+assert.doesNotMatch(switcher, /collapsed|aria-pressed|currentLabel/)
 assert.match(switcher, /focus-visible:ring-2/)
 assert.match(switcher, /Switch interface language to/)
 
@@ -33,8 +32,12 @@ assert.match(branchDashboard, /formatSaudiDateTime\(session\.openedAt, i18n\.lan
 
 const arabic = new Intl.NumberFormat('ar-SA').format(2873.5)
 const english = new Intl.NumberFormat('en-SA').format(2873.5)
+const arabicCurrency = new Intl.NumberFormat('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(2873.5)
 assert.equal(arabic, '٢٬٨٧٣٫٥')
+assert.equal(arabicCurrency, '٢٬٨٧٣٫٥٠')
+assert.ok(arabicCurrency.includes('\u066c'))
+assert.ok(arabicCurrency.includes('\u066b'))
 assert.equal(english, '2,873.5')
 assert.match(new Intl.DateTimeFormat('ar-SA', { timeZone: 'Asia/Riyadh', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date('2026-08-05T13:01:00Z')), /٥ أغسطس ٢٠٢٦/)
 
-console.log('Dashboard compact language switch and Arabic display-format contract passed')
+console.log('Dashboard language-control restoration and Arabic display-format contract passed')

@@ -296,9 +296,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
         )}
 
-        <div className="flex justify-center px-1 py-0.5">
-          <AuthenticatedLanguageSwitch inverse collapsed={collapsed} className="border-sidebar-border hover:bg-sidebar-hover" />
-        </div>
+        <AuthenticatedLanguageSwitch inverse className={`w-full border-sidebar-border hover:bg-sidebar-hover ${collapsed ? 'px-1 text-[10px]' : ''}`} />
 
         <div className={collapsed ? 'space-y-0.5' : 'grid grid-cols-2 gap-1'}>
           <NavLink

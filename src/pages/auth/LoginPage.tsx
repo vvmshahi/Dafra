@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { UserRound, Mail, Lock, ArrowRight, CheckCircle2, MessageCircle } from 'lucide-react'
+import { UserRound, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, MessageCircle } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -102,6 +102,7 @@ export default function LoginPage() {
               replace
               className="absolute start-5 top-5 z-20 inline-flex items-center gap-2 rounded-full border border-[#D9CBAA] bg-white/70 px-3 py-2 text-sm font-black text-[#284334] shadow-[0_10px_26px_rgba(15,36,25,0.06)] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F6F2E8] sm:start-8 sm:top-8"
             >
+              <DirectionalIcon icon={ArrowLeft} size={15} />
               {t('common:back')}
             </Link>
           )}
