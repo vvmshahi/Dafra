@@ -1,0 +1,61 @@
+{
+  "appId": "com.kubri.pos",
+  "productName": "Kubri POS",
+  "copyright": "Copyright 2026 Kubri",
+  "directories": {
+    "output": "dist-electron-store",
+    "buildResources": "electron/assets"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "package.json"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "appx",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "icon": "electron/assets/icon.ico"
+  },
+  "appx": {
+    "identityName": "KUBRI.KubriPOS",
+    "publisher": "CN=E9C57ECD-3011-4C9C-B22E-9239DA9BA2CC",
+    "publisherDisplayName": "KUBRI",
+    "displayName": "Kubri POS",
+    "applicationId": "KubriPOS",
+    "artifactName": "Kubri-POS-${version}-${arch}.${ext}",
+    "electronUpdaterAware": false
+  },
+  "mac": {
+    "target": [
+      {
+        "target": "dmg",
+        "arch": [
+          "x64",
+          "arm64"
+        ]
+      },
+      {
+        "target": "zip",
+        "arch": [
+          "x64",
+          "arm64"
+        ]
+      }
+    ],
+    "icon": "electron/assets/icon.icns",
+    "artifactName": "Kubri-${version}-${arch}.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": false,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Kubri"
+  }
+}

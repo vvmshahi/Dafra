@@ -1,0 +1,84 @@
+name: Windows Store AppX Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-store-build
+  cancel-in-progress: false
+
+jobs:
+  windows-store-build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Verify Store configuration
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath "electron-builder.store.json" -PathType Leaf)) {
+            throw "electron-builder.store.json was not found."
+          }
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Print tool versions
+        shell: pwsh
+        run: |
+          Write-Host "Node: $(node --version)"
+          Write-Host "npm: $(npm --version)"
+          Write-Host "Electron Builder: $(npx electron-builder --version)"
+
+      - name: Build production renderer
+        run: npm run build
+
+      - name: Build Windows Store AppX
+        run: npx electron-builder --config electron-builder.store.json --win appx --x64 --publish never
+
+      - name: Verify AppX output
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath "dist-electron-store" -PathType Container)) {
+            throw "dist-electron-store was not created."
+          }
+
+          $packages = @(Get-ChildItem -LiteralPath "dist-electron-store" -Filter "*.appx" -File -Recurse)
+          if ($packages.Count -eq 0) {
+            throw "No .appx package was generated in dist-electron-store."
+          }
+
+          $packages | Select-Object FullName, Length | Format-Table -AutoSize
+
+      - name: Upload Store build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubri-windows-store-appx
+          path: dist-electron-store
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Store build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubri-windows-store-diagnostics
+          path: |
+            dist-electron-store
+            **/builder-debug.*
+            **/builder-effective-config.*
+            **/*.log
+          if-no-files-found: ignore
+          retention-days: 14
