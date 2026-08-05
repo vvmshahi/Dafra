@@ -487,8 +487,8 @@ const requiredKeys = [
   'invalidUnitFraction',
   'returnQuantityMaximum',
   'refundMethodRequired',
-  'nonCashRefund',
-  'nonCashRefundHint',
+  'bankTransferRefund',
+  'bankTransferRefundHint',
   'completionChecklist',
   'checkReason',
   'checkItems',
@@ -503,6 +503,12 @@ for (const key of requiredKeys) {
 }
 assert.equal(en.created, 'Credit note created')
 assert.notEqual(ar.created, en.created)
+
+assert.doesNotMatch(creditModal, /Customer receivables settlement|settleWithReceivables|createCustomerCreditNoteSettlement/)
+assert.doesNotMatch(JSON.stringify(en), /Customer receivables settlement/i)
+assert.doesNotMatch(JSON.stringify(ar), /تسوية الذمم المدينة للعميل/i)
+assert.equal(en.bankTransferRefund, 'Bank transfer')
+assert.equal(typeof ar.bankTransferRefund, 'string')
 
 for (const source of [
   creditModal,

@@ -48,6 +48,7 @@
     "test:zatca-branch-readiness-v2": "node scripts/test-zatca-branch-readiness-v2.mjs",
     "test:zatca-functionality-map-contract": "node scripts/test-zatca-functionality-map-contract.mjs",
     "test:zatca-failed-onboarding-reset": "node scripts/test-zatca-failed-onboarding-reset.mjs",
+    "test:zatca-reset-event-chain": "node scripts/test-zatca-reset-event-chain.mjs",
     "test:zatca-release-package": "node scripts/test-zatca-release-package.mjs",
     "test:zatca-phase2-qr": "node scripts/test-zatca-phase2-qr.mjs",
     "test:zatca-invoice-read-surface": "node scripts/test-zatca-invoice-read-surface.mjs",

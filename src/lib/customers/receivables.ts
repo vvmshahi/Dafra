@@ -619,40 +619,6 @@ export async function reverseCustomerPaymentReceipt(input: {
   return data as { receipt_id: string; receipt_number: string; status: 'reversed'; balance: number }
 }
 
-export async function createCustomerCreditNoteSettlement(input: {
-  operationId: string
-  originalInvoiceId: string
-  reason: string
-  returnStock: boolean
-  items: Array<{ originalInvoiceItemId: string; quantity: number }>
-  refundTenders?: ReceivableTender[]
-}) {
-  const { data, error } = await supabase.rpc('create_customer_credit_note_settlement_v1' as never, {
-    p_payload: {
-      operation_id: input.operationId,
-      original_invoice_id: input.originalInvoiceId,
-      reason: input.reason,
-      return_stock: input.returnStock,
-      items: input.items.map(item => ({ original_invoice_item_id: item.originalInvoiceItemId, quantity: item.quantity })),
-      refund_tenders: (input.refundTenders ?? []).map(tender => ({ method: tender.method, amount: tender.amount })),
-    },
-  } as never)
-  if (error) throw error
-  return data as {
-    credit_note_invoice_id: string
-    credit_note_invoice_number: string
-    created_at?: string
-    total?: number
-    refund_status?: string
-    refund_method?: ReceivableTenderMethod | 'split'
-    zatca_status?: 'pending' | 'reported' | 'cleared' | 'failed'
-    idempotent_replay?: boolean
-    applied_to_original_invoice: number
-    refunded_amount: number
-    unapplied_customer_credit: number
-  }
-}
-
 export async function loadCustomerReceivablesReport(input: {
   branchId?: string | null
   startDate?: string
