@@ -6,34 +6,34 @@ export type DesktopDownload = {
 }
 
 export const desktopDownloads = {
-  version: '1.0.3',
-  releaseTag: 'desktop-pilot-v1.0.3-20260730',
-  pilot: true,
-  unsigned: true,
-  releaseUrl: 'https://github.com/vvmshahi/kubri-downloads/releases/tag/desktop-pilot-v1.0.3-20260730',
-  checksumsUrl: 'https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.3-20260730/SHA256SUMS.txt',
+  version: '1.0.5',
+  releaseTag: 'v1.0.5',
+  pilot: false,
+  unsigned: false,
+  releaseUrl: 'https://github.com/vvmshahi/Dafra/releases/tag/v1.0.5',
+  checksumsUrl: 'https://github.com/vvmshahi/Dafra/releases/download/v1.0.5/SHA256SUMS.txt',
   macos: {
     architecture: 'Apple Silicon — M1, M2, M3, M4 and later',
     dmg: {
-      href: 'https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.3-20260730/Kubri-Desktop-1.0.3-macOS-arm64-unsigned.dmg',
-      filename: 'Kubri-Desktop-1.0.3-macOS-arm64-unsigned.dmg',
-      sizeBytes: 159818962,
-      sizeLabel: '152.5 MB',
+      href: 'https://github.com/vvmshahi/Dafra/releases/download/v1.0.5/Kubri-Desktop-1.0.5-macOS-arm64.dmg',
+      filename: 'Kubri-Desktop-1.0.5-macOS-arm64.dmg',
+      sizeBytes: 159872741,
+      sizeLabel: '152.4 MB',
     } satisfies DesktopDownload,
-    zip: {
-      href: 'https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.3-20260730/Kubri-Desktop-1.0.3-macOS-arm64-unsigned.zip',
-      filename: 'Kubri-Desktop-1.0.3-macOS-arm64-unsigned.zip',
-      sizeBytes: 152450232,
-      sizeLabel: '145.3 MB',
+    intel: {
+      href: 'https://github.com/vvmshahi/Dafra/releases/download/v1.0.5/Kubri-Desktop-1.0.5-macOS-x64.dmg',
+      filename: 'Kubri-Desktop-1.0.5-macOS-x64.dmg',
+      sizeBytes: 164937698,
+      sizeLabel: '157.3 MB',
     } satisfies DesktopDownload,
-    intelAvailable: false,
+    intelAvailable: true,
   },
   windows: {
     architecture: 'Windows 10/11, 64-bit',
     installer: {
-      href: 'https://github.com/vvmshahi/kubri-downloads/releases/download/desktop-pilot-v1.0.3-20260730/Kubri-Desktop-1.0.3-Windows-x64-unsigned-setup.exe',
-      filename: 'Kubri-Desktop-1.0.3-Windows-x64-unsigned-setup.exe',
-      sizeBytes: 121357998,
+      href: 'https://github.com/vvmshahi/Dafra/releases/download/v1.0.5/Kubri-Desktop-1.0.5-Windows-x64-Setup.exe',
+      filename: 'Kubri-Desktop-1.0.5-Windows-x64-Setup.exe',
+      sizeBytes: 121301344,
       sizeLabel: '115.7 MB',
     } satisfies DesktopDownload,
   },

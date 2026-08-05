@@ -453,7 +453,17 @@ function WhatsAppIcon({ className = '' }: { className?: string }) {
 
 function WindowsSection() {
   const { t } = useTranslation('public')
+  const [isMacModalOpen, setIsMacModalOpen] = useState(false)
   const downloadButtonClass = 'group flex min-h-36 flex-1 flex-col items-start justify-between gap-6 rounded-[24px] border border-[#D8E2D8] bg-white/80 p-6 text-left text-[#071510] shadow-[0_18px_48px_rgba(7,21,16,0.08)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-gold-300 hover:shadow-[0_24px_60px_rgba(7,21,16,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/80 focus-visible:ring-offset-2 active:translate-y-0 active:scale-[0.99] sm:p-7'
+
+  useEffect(() => {
+    if (!isMacModalOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsMacModalOpen(false)
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isMacModalOpen])
 
   return (
     <section id="windows" className="relative scroll-mt-28 overflow-hidden bg-[#F7F5EF] px-4 py-20 sm:px-6 lg:px-8">
@@ -464,12 +474,12 @@ function WindowsSection() {
           <p className="mt-3 text-base leading-7 text-[#52665A]">{t('desktop.subtitle')}</p>
         </div>
         <div className="mx-auto mt-8 flex max-w-3xl flex-col gap-4 md:flex-row">
-          <a href={desktopDownloads.macos.dmg.href} download className={downloadButtonClass} aria-label={t('desktop.macDownloadLabel')}>
+          <button type="button" onClick={() => setIsMacModalOpen(true)} className={downloadButtonClass} aria-label={t('desktop.macDownloadLabel')}>
             <span className="flex items-center gap-3 text-lg font-black">
               <Apple size={24} aria-hidden="true" /> {t('desktop.downloadMac')}
             </span>
             <span className="text-sm font-semibold text-[#65766B]">{t('desktop.macPlatform')}</span>
-          </a>
+          </button>
           <a href={desktopDownloads.windows.installer.href} download className={downloadButtonClass} aria-label={t('desktop.windowsDownloadLabel')}>
             <span className="flex items-center gap-3 text-lg font-black">
               <Monitor size={24} aria-hidden="true" /> {t('desktop.downloadWindows')}
@@ -478,6 +488,51 @@ function WindowsSection() {
           </a>
         </div>
       </div>
+
+      {isMacModalOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-[#071510]/80 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mac-download-title"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) setIsMacModalOpen(false)
+          }}
+        >
+          <div className="relative my-auto w-full max-w-2xl rounded-[28px] border border-white/10 bg-[#10281B] p-6 text-white shadow-[0_28px_100px_rgba(0,0,0,0.42)] sm:p-8" onMouseDown={event => event.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setIsMacModalOpen(false)}
+              className="absolute right-4 top-4 rounded-xl p-2 text-white/60 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300"
+              aria-label={t('nav.closeMenu')}
+            >
+              <X size={20} />
+            </button>
+            <div className="pr-10">
+              <h3 id="mac-download-title" className="text-2xl font-black sm:text-3xl">{t('desktop.macModalTitle')}</h3>
+              <p className="mt-2 text-sm leading-6 text-white/65">{t('desktop.macModalSubtitle')}</p>
+            </div>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl border border-gold-300/45 bg-white/[0.07] p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <h4 className="text-lg font-black">{t('desktop.appleSilicon')}</h4>
+                  <span className="rounded-full bg-gold-300 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-[#071510]">{t('desktop.recommended')}</span>
+                </div>
+                <p className="mt-3 min-h-16 text-sm leading-6 text-white/65">{t('desktop.appleSiliconDescription')}</p>
+                <a href={desktopDownloads.macos.dmg.href} download className="mt-5 inline-flex w-full items-center justify-center rounded-xl bg-gold-300 px-4 py-3 text-sm font-black text-[#071510] transition-colors hover:bg-gold-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-200 focus-visible:ring-offset-2 focus-visible:ring-offset-[#10281B]">{t('desktop.downloadAppleSilicon')}</a>
+              </div>
+              <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-5">
+                <h4 className="text-lg font-black">{t('desktop.intelMac')}</h4>
+                <p className="mt-3 min-h-16 text-sm leading-6 text-white/65">{t('desktop.intelDescription')}</p>
+                <a href={desktopDownloads.macos.intel.href} download className="mt-5 inline-flex w-full items-center justify-center rounded-xl border border-white/20 bg-white/[0.07] px-4 py-3 text-sm font-black text-white transition-colors hover:bg-white/[0.13] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-200 focus-visible:ring-offset-2 focus-visible:ring-offset-[#10281B]">{t('desktop.downloadIntel')}</a>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end border-t border-white/10 pt-5">
+              <button type="button" onClick={() => setIsMacModalOpen(false)} autoFocus className="rounded-xl border border-white/15 px-4 py-2.5 text-sm font-bold text-white/75 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-200">{t('desktop.cancel')}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </section>
   )
