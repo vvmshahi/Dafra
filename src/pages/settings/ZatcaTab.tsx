@@ -1313,7 +1313,7 @@ function ProductionOnboardingPanel({
               <input id={`zatca-reset-${branch.id}`} value={resetPhrase} onChange={event => setResetPhrase(event.target.value)} autoComplete="off" className="input bg-white text-xs uppercase" placeholder="RESET ONBOARDING" />
               <div className="flex gap-2">
                 <button type="button" onClick={() => { setResetOpen(false); setResetPhrase('') }} disabled={resetBusy} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-bold text-gray-700">{t('reset.cancel')}</button>
-                <button type="button" onClick={() => void resetFailed()} disabled={resetBusy || resetPhrase !== 'RESET ONBOARDING'} className="rounded-lg bg-amber-800 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50">{resetBusy ? t('reset.working') : t('reset.confirm')}</button>
+                <button type="button" onClick={event => { event.preventDefault(); event.stopPropagation(); void resetFailed() }} disabled={resetBusy || resetPhrase !== 'RESET ONBOARDING'} className="rounded-lg bg-amber-800 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50">{resetBusy ? t('reset.working') : t('reset.confirm')}</button>
               </div>
             </div>
           )}
