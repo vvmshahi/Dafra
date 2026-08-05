@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CompactLanguageSelector } from '@/components/localization/CompactLanguageSelector'
+import { PublicLanguageToggle } from '@/components/localization/PublicLanguageToggle'
 import { desktopDownloads } from '@/config/desktopDownloads'
 
 const WA_LINK = supportConfig.whatsappLink
@@ -149,8 +149,11 @@ function Header() {
   return (
     <header className={`fixed left-0 right-0 top-0 z-50 transition-[background,box-shadow] duration-300 ${scrolled ? 'bg-[#071510]/75 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl' : 'bg-transparent'}`}>
       <div className="mx-auto max-w-7xl px-4 pt-4 sm:px-6 lg:px-8">
-        <nav className="relative grid h-[62px] grid-cols-1 items-center md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:gap-4">
-          <Link to="/" className="z-10 flex-shrink-0 transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.98] md:justify-self-start">
+        <nav className="relative grid h-[62px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 md:grid-cols-[auto_auto_minmax(0,1fr)_auto] md:gap-4">
+          <div className="justify-self-start">
+            <PublicLanguageToggle />
+          </div>
+          <Link to="/" className="z-10 flex-shrink-0 justify-self-start transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.98]">
             <MeemLogo size="md" />
           </Link>
           <div className="hidden items-center justify-center rounded-[26px] border border-white/[0.13] bg-[#06120D]/[0.72] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_24px_80px_rgba(0,0,0,0.30)] ring-1 ring-white/[0.035] backdrop-blur-2xl md:flex md:justify-self-center">
@@ -170,7 +173,6 @@ function Header() {
           </div>
 
           <div className="hidden items-center justify-end gap-1.5 rounded-full border border-white/[0.12] bg-[#06120D]/[0.66] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_62px_rgba(0,0,0,0.24)] ring-1 ring-white/[0.035] backdrop-blur-2xl md:flex md:justify-self-end">
-            <CompactLanguageSelector inverse className="shrink-0" />
             <Link to="/login" state={{ from: '/' }} className={`${actionBaseClass} border border-white/[0.10] bg-white/[0.06] text-white/[0.90] hover:border-white/[0.18] hover:bg-white/[0.10] hover:text-white`}>
               <span className="absolute inset-0 -z-10 translate-x-[-105%] rounded-full bg-white/[0.08] opacity-0 transition-[opacity,transform] duration-300 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100" />
               <span className="relative pr-0 transition-transform duration-200 group-hover:-translate-x-1.5">{t('nav.signIn')}</span>
@@ -191,7 +193,6 @@ function Header() {
       </div>
       {open && (
         <div className="mx-4 mt-2 rounded-[22px] border border-white/10 bg-[#071510]/95 p-3 shadow-2xl shadow-black/30 backdrop-blur-2xl md:hidden">
-          <CompactLanguageSelector inverse className="mb-2 px-1" />
           {navLinks.map(link => (
             link.type === 'section' ? (
               <button key={link.label} onClick={() => { setOpen(false); scrollTo(link.target) }}
