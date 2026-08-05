@@ -94,7 +94,6 @@
   "creditNote": "Credit note",
   "fullyCredited": "Fully credited",
   "partiallyCredited": "Partially credited",
-  "notCredited": "Not credited",
   "latest": "latest {{number}}",
   "latestCreditNote": "Latest credit note: {{number}}",
   "notesCount_one": "{{count}} note",

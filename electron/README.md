@@ -8,6 +8,8 @@ It does not load the public marketing website in production.
 - Browser users keep the normal public website flow.
 - Electron users start at the desktop app entry route.
 - Logged-out Electron users are sent to `/login`.
+
+<!-- TODO(Electron v1.0.5): when the Sign In screen is shown, provide browser-style Back navigation. -->
 - Logged-in Electron users are redirected by existing role behavior:
   - branch users: `/branch`
   - owners/admins: `/dashboard`

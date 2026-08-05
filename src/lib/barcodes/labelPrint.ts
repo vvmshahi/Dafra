@@ -765,27 +765,7 @@ export const browserBarcodePrintAdapter: BarcodePrintAdapter = {
     return openDocument(documentHtml, false)
   },
   print(documentHtml) {
-    const frame = document.createElement('iframe')
-    frame.title = new DOMParser().parseFromString(documentHtml, 'text/html').title || document.title
-    frame.style.position = 'fixed'
-    frame.style.inset = '0'
-    frame.style.width = '1px'
-    frame.style.height = '1px'
-    frame.style.opacity = '0'
-    frame.style.pointerEvents = 'none'
-    frame.srcdoc = documentHtml
-    document.body.appendChild(frame)
-    frame.onload = () => {
-      const print = () => {
-        frame.contentWindow?.focus()
-        frame.contentWindow?.print()
-        window.setTimeout(() => frame.remove(), 1000)
-      }
-      const fontsReady = frame.contentDocument?.fonts?.ready
-      if (fontsReady) void fontsReady.finally(print)
-      else print()
-    }
-    return null
+    return openDocument(documentHtml, true)
   },
   silentPrintingSupported: false,
 }

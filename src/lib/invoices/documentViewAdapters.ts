@@ -47,7 +47,9 @@ export function documentFromAtomicReceipt(receipt: AtomicReceiptPayload): Docume
   })
   const isCredit = receipt.zatca_invoice_type === 'credit_note'
   const payments = receipt.payments.map(payment => ({
-    method: payment.method,
+    // Credit-note card rows retain their historical stored value, while the
+    // document surface uses the current customer-facing refund vocabulary.
+    method: isCredit && payment.method === 'card' ? 'bank_transfer' : payment.method,
     amount: n(payment.amount),
     cashTendered: payment.method === 'cash' && payment.amount_received != null
       ? n(payment.amount_received)
@@ -179,7 +181,7 @@ function base(input: StoredDocumentInput, source: DocumentViewModel['source'], s
     buyer: { name: customer?.name ?? null, nameAr: customer?.nameAr ?? null, vatNumber: customer?.vatNumber ?? null, address: customer?.address ?? null, addressAr: customer?.addressAr ?? null, identifierType: customer?.identifierType ?? null, identifierValue: customer?.identifierValue ?? null, type: customer?.type ?? null, isWalkIn: !invoice.customer_id },
     items: items.map(item => ({ description: item.name, descriptionAr: item.name_ar, quantity: n(item.quantity), unitName: item.selling_unit_name ?? null, unitNameAr: item.selling_unit_name_ar ?? null, unitCode: item.selling_unit_code ?? null, baseQuantity: item.base_quantity == null ? null : n(item.base_quantity), baseUnitName: item.base_unit_name ?? null, baseUnitNameAr: item.base_unit_name_ar ?? null, unitPrice: n(item.unit_price), discount: n(item.discount_amount), taxableAmount: n(item.subtotal), vatRate: rate(item.tax_rate), vatAmount: n(item.tax_amount), vatCategory: item.tax_category, lineTotal: n(item.total), creditedQuantity: isCredit ? n(item.quantity) : null })),
     totals: { currency: 'SAR', subtotal: n(invoice.subtotal), discount: n(invoice.discount_amount), taxableAmount: n(invoice.taxable_amount), vat: n(invoice.tax_amount), total: n(invoice.total_amount), paid: isCredit ? 0 : paid, refunded: isCredit ? paid : 0, balance: isCredit ? null : n(invoice.total_amount) - paid },
-    payments: payments.map(payment => ({ method: payment.method, amount: n(payment.amount), cashTendered: payment.method === 'cash' && payment.amount_received != null ? n(payment.amount_received) : null, change: payment.method === 'cash' && payment.change_amount != null ? n(payment.change_amount) : null, reference: payment.reference })),
+    payments: payments.map(payment => ({ method: isCredit && payment.method === 'card' ? 'bank_transfer' : payment.method, amount: n(payment.amount), cashTendered: payment.method === 'cash' && payment.amount_received != null ? n(payment.amount_received) : null, change: payment.method === 'cash' && payment.change_amount != null ? n(payment.change_amount) : null, reference: payment.reference })),
     customerCredit: input.customerCredit ?? null,
     compliance: { qr: { source: invoice.zatca_qr_code ? 'stored_reference' : 'unavailable', reference: invoice.zatca_qr_code ?? null }, xmlState: invoice.zatca_xml ? 'available' : 'unavailable', originalDocument: { id: invoice.original_invoice_id, number: invoice.invoice_reference ?? input.originalInvoiceNumber ?? null }, creditReason: invoice.credit_reason },
   }

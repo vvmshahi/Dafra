@@ -94,7 +94,6 @@
   "creditNote": "إشعار دائن",
   "fullyCredited": "مُعاد بالكامل",
   "partiallyCredited": "مُعاد جزئياً",
-  "notCredited": "غير مُعاد",
   "latest": "الأحدث {{number}}",
   "latestCreditNote": "أحدث إشعار دائن: {{number}}",
   "notesCount_zero": "لا إشعارات",

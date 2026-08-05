@@ -133,11 +133,13 @@ function usePrintStyle() {
         body { visibility: hidden !important; }
         #invoice-printable-a4, #invoice-printable-a4 * { visibility: visible !important; }
         #invoice-printable-a4 {
-          position: fixed !important;
+          display: block !important;
+          position: absolute !important;
           top: 0 !important;
           left: 0 !important;
           width: 210mm !important;
           min-width: 210mm !important;
+          min-height: 297mm !important;
           background: white !important;
           z-index: 99999 !important;
           padding: 0 !important;
@@ -703,7 +705,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     ? (isStandardDocument ? 'taxDebitNote' : 'simplifiedTaxDebitNote')
     : (isStandardDocument ? 'standardTaxInvoice' : 'simplifiedTaxInvoice')
   const documentTitle = documentLabel(documentViewModel.identity.language, documentTitleKey)
-  const creditLabel = creditStatus === 'full' ? t('invoices:fullyCredited') : creditStatus === 'partial' ? t('invoices:partiallyCredited') : t('invoices:notCredited')
+  const creditLabel = creditStatus === 'full' ? t('invoices:fullyCredited') : t('invoices:partiallyCredited')
   const creditLabelClass = creditStatus === 'full'
     ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
     : creditStatus === 'partial'
@@ -791,7 +793,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
               <div className="mt-1.5 flex flex-wrap gap-1.5" aria-label={t('invoices:documentStatus')}>
                 {nonFiscalDemo && <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-700">{t('pos:demo.badge')}</span>}
                 <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">{t('invoices:zatcaStatus')}: {zatcaStatusLabel}</span>
-                {!isCreditNote && <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${creditLabelClass}`}>{creditLabel}</span>}
+                {!isCreditNote && creditStatus !== 'none' && <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${creditLabelClass}`}>{creditLabel}</span>}
               </div>
               {customerCredit?.isCustomerCredit && (
                 <div className="mt-3 grid max-w-2xl gap-x-5 gap-y-1.5 rounded-xl border border-rose-100 bg-rose-50/50 px-3 py-2.5 text-xs sm:grid-cols-2" aria-label={t('documents:customerCredit')}>
@@ -899,7 +901,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
               <span>{t('creditNotes:creditsOriginal', { number: invoice.invoice_reference ?? originalInvoiceLink?.invoice_number ?? '—' })}</span>
               {invoice.credit_reason && <span><strong className="text-gray-800">{t('refunds:reason')}:</strong> {invoice.credit_reason}</span>}
               <span dir="ltr"><Rial amount={Number(invoice.total_amount)} /></span>
-              {refunds.length > 0 && <span>{t('creditNotes:refundAllocationTitle')}: {refunds.map(refund => `${refund.method} · ${refund.status}`).join(', ')}</span>}
+              {refunds.length > 0 && <span>{t('creditNotes:refundAllocationTitle')}: {refunds.map(refund => `${refund.method === 'card' ? t('creditNotes:bankTransferRefund') : refund.method} · ${refund.status}`).join(', ')}</span>}
               {originalInvoiceLink && <button type="button" onClick={() => navigate(`/invoices/${originalInvoiceLink.id}`)} className="font-semibold text-[#0F2419] underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F2419]">{t('creditNotes:openOriginal')}</button>}
             </div>
           ) : (

@@ -881,7 +881,7 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
               <Check size={32} strokeWidth={3} />
             </div>
-            <p className="text-xl font-bold sm:text-2xl">{t('payments:paymentReceived')}</p>
+            <p className="text-xl font-bold sm:text-2xl">{receipt.customerCredit?.paymentStatus === 'unpaid' ? t('payments:creditSaleRecorded') : t('payments:paymentReceived')}</p>
             <p className="text-emerald-100 text-sm mt-1"><bdi dir="ltr">{receipt.invoiceNumber}</bdi></p>
           </div>
 
@@ -901,10 +901,21 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
                 <span className="tabular-nums" dir="ltr"><Rial amount={receipt.taxAmount} /></span>
               </div>
               <div className="flex justify-between font-bold text-gray-900 text-lg pt-1.5 border-t border-gray-100">
-                <span>{t('payments:amountDue')}</span>
+                <span>{t('payments:invoiceTotal')}</span>
                 <span className="tabular-nums text-emerald-600" dir="ltr"><Rial amount={receipt.total} /></span>
               </div>
             </div>
+            {receipt.customerCredit && receipt.customerCredit.paymentStatus !== 'paid' && (
+              <div className="grid grid-cols-2 gap-3 rounded-xl border border-rose-100 bg-rose-50/60 px-3 py-2.5 text-sm">
+                <div><p className="text-xs text-gray-500">{t('payments:amountPaid')}</p><p className="mt-1 font-semibold text-gray-800" dir="ltr"><Rial amount={receipt.customerCredit.amountPaid} /></p></div>
+                <div className="text-end"><p className="text-xs text-gray-500">{t('payments:balanceDue')}</p><p className="mt-1 font-semibold text-rose-800" dir="ltr"><Rial amount={receipt.customerCredit.balanceDue} /></p></div>
+              </div>
+            )}
+            {qrStatus === 'ready' && qrDataUrl && (
+              <div className="flex justify-center border-t border-gray-100 pt-3" aria-label={t('payments:invoiceQr')}>
+                <img src={qrDataUrl} alt={t('payments:invoiceQr')} width={128} height={128} className="h-32 w-32 rounded-lg" />
+              </div>
+            )}
             {receipt.paymentMethod === 'cash' && receipt.change > 0.005 && (
               <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex justify-between">
                 <span className="text-sm font-semibold text-amber-700">{t('payments:changeDue')}</span>

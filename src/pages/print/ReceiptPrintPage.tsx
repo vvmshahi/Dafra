@@ -53,7 +53,7 @@ interface Customer {
 function isSplitPaymentRows(payments: Payment[]): boolean {
   return payments.length > 1
     && payments.some(payment => payment.method === 'cash' && Number(payment.amount) > 0)
-    && payments.some(payment => payment.method === 'card' && Number(payment.amount) > 0)
+    && payments.some(payment => (payment.method === 'card' || payment.method === 'bank_transfer') && Number(payment.amount) > 0)
 }
 
 function customerDisplayName(customer: Customer | null): string | null {
@@ -460,15 +460,19 @@ export default function ReceiptPrintPage() {
       taxAmount: Number(item.tax_amount),
       total: Number(item.total),
     }))
-    const splitPayment = isSplitPaymentRows(payments)
-    const payment = payments[0] ?? null
+    const isCreditNote = invoice.zatca_invoice_type === 'credit_note'
+    const displayPayments = payments.map(payment => ({
+      ...payment,
+      method: isCreditNote && payment.method === 'card' ? 'bank_transfer' as const : payment.method,
+    }))
+    const splitPayment = isSplitPaymentRows(displayPayments)
+    const payment = displayPayments[0] ?? null
     const cashReceived = !splitPayment && payment?.method === 'cash'
       ? Number(payment.amount_received ?? payment.amount ?? invoice.total_amount)
       : null
     const changeAmount = !splitPayment && payment?.method === 'cash'
       ? Number(payment.change_amount ?? 0)
       : null
-    const isCreditNote = invoice.zatca_invoice_type === 'credit_note'
     const isStandardDocument = invoice.zatca_invoice_type === 'standard'
       || (isCreditNote && customer?.customer_type === 'business' && !!customer?.vat_number)
 
@@ -484,6 +488,7 @@ export default function ReceiptPrintPage() {
       items: thermalItems,
       splitPayment,
       payment,
+      payments: displayPayments,
       cashReceived,
       changeAmount,
       customerName: customerDisplayName(customer),

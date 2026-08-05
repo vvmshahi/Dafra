@@ -131,6 +131,26 @@ class ZatcaSubmitAssertionError extends Error {
   }
 }
 
+class AtomicDatabaseError extends Error {
+  readonly sqlState?: string
+  readonly constraint?: string
+  readonly functionName: string
+  readonly stage: string
+
+  constructor(error: any, functionName: string, stage: string) {
+    super(safeZatcaText(error?.message, 220) ?? 'Atomic checkout database operation failed')
+    this.name = 'AtomicDatabaseError'
+    this.sqlState = typeof error?.code === 'string' && /^[0-9A-Z]{5}$/.test(error.code)
+      ? error.code
+      : undefined
+    this.constraint = typeof error?.constraint === 'string' && /^[A-Za-z0-9_.-]{1,120}$/.test(error.constraint)
+      ? error.constraint
+      : undefined
+    this.functionName = functionName
+    this.stage = stage
+  }
+}
+
 interface CallerProfile {
   id: string
   role: string
@@ -2736,9 +2756,10 @@ async function processAtomicSimplifiedCheckoutV2(params: {
     p_ttl_seconds: 120,
   })
   if (preparedResult.error) {
-    throw new Error(
-      safeZatcaText(preparedResult.error.message, 220)
-        ?? 'Unable to prepare atomic simplified checkout',
+    throw new AtomicDatabaseError(
+      preparedResult.error,
+      'prepare_zatca_atomic_checkout_v2',
+      'atomic_checkout_prepare',
     )
   }
   const prepared = rpcObject(preparedResult.data)
@@ -2896,9 +2917,10 @@ async function processAtomicSimplifiedCheckoutV2(params: {
     p_claim_token: claimToken,
   })
   if (committedResult.error) {
-    throw new Error(
-      safeZatcaText(committedResult.error.message, 220)
-        ?? 'Unable to commit atomic simplified checkout',
+    throw new AtomicDatabaseError(
+      committedResult.error,
+      'commit_zatca_atomic_checkout_v2',
+      'atomic_checkout_commit',
     )
   }
   const committed = rpcObject(committedResult.data)
@@ -4213,9 +4235,17 @@ Deno.serve(async (req: Request) => {
         })
         return jsonResponse({
           error: message,
-          code: error instanceof ZatcaSubmitAssertionError
+          code: error instanceof AtomicDatabaseError
+            ? 'ATOMIC_UNEXPECTED_DATABASE_FAILURE'
+            : error instanceof ZatcaSubmitAssertionError
             ? error.statusString
             : 'ATOMIC_SIMPLIFIED_CHECKOUT_FAILED',
+          category: error instanceof AtomicDatabaseError ? 'unexpected_database_failure' : undefined,
+          stage: error instanceof AtomicDatabaseError ? error.stage : 'atomic_checkout',
+          sqlState: error instanceof AtomicDatabaseError ? error.sqlState : undefined,
+          constraint: error instanceof AtomicDatabaseError ? error.constraint : undefined,
+          functionName: error instanceof AtomicDatabaseError ? error.functionName : undefined,
+          requestId: reqId,
         }, 409)
       }
     }

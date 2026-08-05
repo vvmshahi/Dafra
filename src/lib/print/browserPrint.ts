@@ -59,12 +59,23 @@ export async function waitForPrintableAssets(
 export function printCurrentDocument(): Promise<void> {
   return new Promise((resolve, reject) => {
     let settled = false
+    let afterPrintDelayId: number | null = null
     const finish = () => {
       if (settled) return
-      settled = true
-      window.removeEventListener('afterprint', finish)
-      if (fallbackId !== null) window.clearTimeout(fallbackId)
-      resolve()
+      // Android Chrome can dispatch afterprint while its preview is still
+      // taking the snapshot. Keep the print-only DOM and CSS alive briefly.
+      afterPrintDelayId = window.setTimeout(() => {
+        if (settled) return
+        settled = true
+        window.removeEventListener('afterprint', finish)
+        if (fallbackId !== null) window.clearTimeout(fallbackId)
+        const temporaryPrintContext = window.opener && window.opener !== window
+          && (window.location.pathname.startsWith('/print/') || window.location.search.includes('print=1'))
+        if (temporaryPrintContext) {
+          try { window.close() } catch { /* browser may refuse to close it */ }
+        }
+        resolve()
+      }, 750)
     }
     let fallbackId: number | null = null
     window.addEventListener('afterprint', finish, { once: true })
@@ -73,6 +84,7 @@ export function printCurrentDocument(): Promise<void> {
       fallbackId = window.setTimeout(finish, 15_000)
     } catch (error) {
       window.removeEventListener('afterprint', finish)
+      if (afterPrintDelayId !== null) window.clearTimeout(afterPrintDelayId)
       reject(error)
     }
   })
