@@ -18,30 +18,28 @@ export function CompactLanguageSelector({ className = '', inverse = false }: Com
     <div
       role="group"
       aria-label={t('interfaceLanguage')}
-      className={`inline-flex min-h-11 items-center whitespace-nowrap text-xs ${inverse ? 'text-white/55' : 'text-gray-400'} ${className}`}
+      className={`inline-flex min-h-11 items-center overflow-hidden rounded-xl border p-1 text-xs ${inverse ? 'border-white/15 bg-white/10' : 'border-[#D9CBAA] bg-white/70'} ${className}`}
       dir="ltr"
     >
-      {choices.map((choice, index) => {
+      {choices.map(choice => {
         const active = locale === choice.value
         return (
-          <span key={choice.value} className="inline-flex items-center">
-            {index > 0 && <span aria-hidden="true" className={`px-1.5 ${inverse ? 'text-white/25' : 'text-gray-300'}`}>|</span>}
-            <button
-              type="button"
-              lang={choice.lang}
-              dir={choice.dir}
-              aria-label={active ? `${choice.accessible}. ${t('currentLanguage')}` : choice.accessible}
-              aria-current={active ? 'true' : undefined}
-              onClick={() => void setLocale(choice.value)}
-              className={`min-h-11 rounded px-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/80 focus-visible:ring-offset-2 ${
-                active
-                  ? inverse ? 'font-bold text-white' : 'font-bold text-gray-900'
-                  : inverse ? 'font-medium hover:text-white' : 'font-medium hover:text-gray-700'
-              }`}
-            >
-              {choice.label}
-            </button>
-          </span>
+          <button
+            key={choice.value}
+            type="button"
+            lang={choice.lang}
+            dir={choice.dir}
+            aria-label={active ? `${choice.accessible}. ${t('currentLanguage')}` : choice.accessible}
+            aria-pressed={active}
+            onClick={() => void setLocale(choice.value)}
+            className={`min-h-9 min-w-[88px] rounded-lg px-3 py-2 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/80 focus-visible:ring-offset-1 ${
+              active
+                ? inverse ? 'bg-[#D8B76A] text-[#10291E] shadow-sm' : 'bg-[#D8B76A] text-[#10291E] shadow-sm'
+                : inverse ? 'text-white/70 hover:bg-white/10 hover:text-white' : 'text-gray-600 hover:bg-white hover:text-gray-900'
+            }`}
+          >
+            {choice.label}
+          </button>
         )
       })}
     </div>
