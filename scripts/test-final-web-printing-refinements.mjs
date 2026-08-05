@@ -10,6 +10,20 @@ import { createPreviewQrDataUrl } from '../src/lib/invoices/previewQr.ts'
 const root = resolve(import.meta.dirname, '..')
 const read = path => readFileSync(resolve(root, path), 'utf8')
 
+const browserPrint = read('src/lib/print/browserPrint.ts')
+const barcodePrint = read('src/lib/barcodes/labelPrint.ts')
+const posPage = read('src/pages/pos/POSPage.tsx')
+const invoiceDetailPage = read('src/pages/invoices/InvoiceDetailPage.tsx')
+const posDocumentResolver = read('supabase/migrations/20260803000700_rebind_credit_and_sandbox_mode_contracts.sql')
+assert.match(browserPrint, /afterprint[\s\S]*750/)
+assert.doesNotMatch(barcodePrint, /createElement\('iframe'\)/)
+assert.match(posPage, /payments:invoiceTotal/)
+assert.match(posPage, /payments:invoiceQr/)
+assert.match(posPage, /creditSaleRecorded/)
+assert.match(invoiceDetailPage, /creditStatus !== 'none'/)
+assert.doesNotMatch(invoiceDetailPage, /invoices:notCredited/)
+assert.match(posDocumentResolver, /resolve_pos_checkout_document_internal_v1/)
+
 const tracked = {
   stock_quantity: 4,
   min_stock_alert: 5,
@@ -40,8 +54,8 @@ for (const source of [branchDashboard, ownerBranch]) {
 const instant = '2026-07-29T12:42:00.000Z'
 assert.match(formatSaudiDate(instant, 'en'), /29 Jul 2026/)
 assert.match(formatSaudiTime(instant, 'en'), /03:42\s*pm/i)
-assert.match(formatSaudiDate(instant, 'ar-SA'), /29/)
-assert.match(formatSaudiTime(instant, 'ar-SA'), /03:42/)
+assert.match(formatSaudiDate(instant, 'ar-SA'), /(?:29|٢٩)/)
+assert.match(formatSaudiTime(instant, 'ar-SA'), /(?:03:42|٠٣:٤٢)/)
 
 const workspace = read('src/pages/branch/PrintingDocumentsPage.tsx')
 assert.match(branchDashboard, /\[t\('recent\.invoice'\), t\('recent\.customer'\), t\('recent\.amount'\), t\('recent\.status'\), t\('recent\.date'\), t\('recent\.time'\)\]/)

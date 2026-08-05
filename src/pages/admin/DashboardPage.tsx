@@ -8,9 +8,10 @@ import { Badge } from '@/components/ui/Badge'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { saudiDateStr } from '@/lib/utils/date'
+import { formatSaudiDateTime, saudiDateStr } from '@/lib/utils/date'
 import { useAuth } from '@/hooks/useAuth'
 import { useTranslation } from 'react-i18next'
+import { formatDisplayInteger } from '@/lib/utils/localeFormat'
 import { productionStatusLabel } from '@/lib/zatca/status'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
@@ -265,6 +266,7 @@ function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onVie
   )
   const zatca = productionStatusLabel(branch.productionStatus)
   const session = branch.registerSession ?? null
+  const formatSessionTime = (value: string) => formatSaudiDateTime(value, i18n.language)
   const hasSession = !!session?.sessionId
   const isOpen = session?.status === 'open'
   const sessionPrefix = isOpen ? t('register.currentShort') : t('register.lastShort')
@@ -335,10 +337,10 @@ function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onVie
               {!session?.openedAt
                 ? t('register.noneYet')
                 : session.status === 'open'
-                ? t('register.timeOpen', { opened: new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) })
+                ? t('register.timeOpen', { opened: formatSessionTime(session.openedAt) })
                 : session.closedAt
-                ? t('register.timeClosed', { opened: new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }), closed: new Date(session.closedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) })
-                : t('register.timeOpened', { opened: new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) })}
+                ? t('register.timeClosed', { opened: formatSessionTime(session.openedAt), closed: formatSessionTime(session.closedAt) })
+                : t('register.timeOpened', { opened: formatSessionTime(session.openedAt) })}
             </p>
           </div>
           {session?.status && (
@@ -448,7 +450,7 @@ function WelcomeState({ onAddBranch }: { onAddBranch: () => void }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const { t } = useTranslation('dashboard')
+  const { t, i18n } = useTranslation('dashboard')
   const { isRtl } = useLocale()
   const navigate = useNavigate()
   const { profile, tenant } = useAuth()
@@ -630,7 +632,7 @@ export default function DashboardPage() {
     ? t('register.noneYet')
     : t('register.currentCount', { current: openSessionCount, last: lastSessionCount })
   const sessionAmount = (amount: number) => registerSessionLoadError ? t('errors.unavailable') : <Rial amount={amount} />
-  const sessionCount = registerSessionLoadError ? t('errors.unavailable') : String(sessionTotals.invoices)
+  const sessionCount = registerSessionLoadError ? t('errors.unavailable') : formatDisplayInteger(sessionTotals.invoices, i18n.language)
 
   return (
     <div className="space-y-6">

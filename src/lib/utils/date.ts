@@ -1,4 +1,6 @@
-export const SAUDI_TIME_ZONE = 'Asia/Riyadh'
+import { SAUDI_DISPLAY_TIME_ZONE } from './localeFormat.ts'
+
+export const SAUDI_TIME_ZONE = SAUDI_DISPLAY_TIME_ZONE
 
 export type SaudiDatePreset = 'today' | 'yesterday' | 'last7' | 'this_month' | 'last_month' | 'this_year'
 
@@ -112,7 +114,7 @@ export function formatSaudiDate(
   locale: string,
   options: Intl.DateTimeFormatOptions = {},
 ): string {
-  return new Intl.DateTimeFormat(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-GB', {
+  return new Intl.DateTimeFormat(locale?.startsWith('ar') ? 'ar-SA' : 'en-GB', {
     timeZone: SAUDI_TIME_ZONE,
     day: '2-digit',
     month: 'short',
@@ -122,7 +124,7 @@ export function formatSaudiDate(
 }
 
 export function formatSaudiTime(value: Date | string, locale: string): string {
-  return new Intl.DateTimeFormat(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-GB', {
+  return new Intl.DateTimeFormat(locale?.startsWith('ar') ? 'ar-SA' : 'en-GB', {
     timeZone: SAUDI_TIME_ZONE,
     hour: '2-digit',
     minute: '2-digit',

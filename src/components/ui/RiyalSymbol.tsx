@@ -1,3 +1,7 @@
+import { useLocale } from '@/localization/useLocale'
+import { currentUiLocale } from '@/localization/i18n'
+import { formatDisplayCurrency } from '@/lib/utils/localeFormat'
+
 /**
  * Saudi Riyal Symbol — new official symbol announced Feb 20, 2025.
  * Font: SaudiRiyal.woff2 — maps U+00EA to the riyal glyph.
@@ -30,10 +34,8 @@ export function Rial({
   decimals?: number
   className?: string
 }) {
-  const formatted = amount.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })
+  const { locale } = useLocale()
+  const formatted = formatDisplayCurrency(amount, locale, decimals)
   return (
     <span className={`inline-flex items-baseline gap-0.5 tabular-nums ${className ?? ''}`}>
       <RiyalSymbol />
@@ -46,6 +48,6 @@ export function Rial({
  * For string-only contexts (chart tooltips, aria-labels, etc.)
  * where JSX cannot be used — returns "SAR 1,234.00".
  */
-export function sarStr(amount: number, decimals = 2): string {
-  return `SAR ${amount.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`
+export function sarStr(amount: number, decimals = 2, locale = currentUiLocale()): string {
+  return `SAR ${formatDisplayCurrency(amount, locale, decimals)}`
 }

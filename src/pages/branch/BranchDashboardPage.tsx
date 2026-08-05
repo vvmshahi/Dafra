@@ -6,7 +6,8 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { formatSaudiDate, formatSaudiTime, saudiDateStr } from '@/lib/utils/date'
+import { formatSaudiDate, formatSaudiDateTime, formatSaudiTime, saudiDateStr } from '@/lib/utils/date'
+import { formatDisplayDashboardDate, formatDisplayInteger } from '@/lib/utils/localeFormat'
 import { isLowStockProduct } from '@/lib/products/lowStock'
 import { useAuth } from '@/hooks/useAuth'
 import { useLocale } from '@/localization/useLocale'
@@ -242,7 +243,7 @@ function RegisterSessionPanel({ session, loading, error, duration, onManageRegis
             />
             <StatCard
               label={t('kpi.sessionInvoicesLabel', { prefix: labelPrefix })}
-              value={String(session.invoiceCount)}
+              value={formatDisplayInteger(session.invoiceCount, i18n.language)}
               sub={isOpen ? t('register.registerCurrent') : t('register.registerClosed')}
               icon={FileText}
               tone={BRANCH_KPI_TONES.sessionInvoices}
@@ -285,10 +286,10 @@ function RegisterSessionPanel({ session, loading, error, duration, onManageRegis
                     <h3 className="text-base font-black text-gray-950 [overflow-wrap:anywhere] sm:text-lg">{title}</h3>
                     <p className="mt-1 text-xs text-gray-500">{session.openedAt
                       ? session.status === 'open'
-                        ? t('register.timeOpen', { opened: new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) })
+                        ? t('register.timeOpen', { opened: formatSaudiDateTime(session.openedAt, i18n.language) })
                         : session.closedAt
-                        ? t('register.timeClosed', { opened: new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }), closed: new Date(session.closedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) })
-                        : t('register.timeOpened', { opened: new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) })
+                        ? t('register.timeClosed', { opened: formatSaudiDateTime(session.openedAt, i18n.language), closed: formatSaudiDateTime(session.closedAt, i18n.language) })
+                        : t('register.timeOpened', { opened: formatSaudiDateTime(session.openedAt, i18n.language) })
                       : t('register.noneYet')}</p>
                   </div>
                   <span className={`inline-flex min-h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-bold ${
@@ -314,14 +315,14 @@ function RegisterSessionPanel({ session, loading, error, duration, onManageRegis
               <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
                 {(session.status === 'open'
                   ? [
-                    { label: t('register.opened'), value: session.openedAt ? new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : t('register.earlier') },
+                    { label: t('register.opened'), value: session.openedAt ? formatSaudiDateTime(session.openedAt, i18n.language) : t('register.earlier') },
                     { label: t('register.openingCash'), value: <Rial amount={session.openingCash} /> },
                     { label: t('register.expectedCash'), value: <Rial amount={session.expectedCash} />, emphasis: true },
                     { label: t('kpi.creditNotesRefunds'), value: <Rial amount={session.creditNoteTotal} /> },
                     { label: t('kpi.expenses'), value: <Rial amount={session.expensesTotal} /> },
                   ]
                   : [
-                    { label: t('register.closed'), value: session.closedAt ? new Date(session.closedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : t('register.registerClosed') },
+                    { label: t('register.closed'), value: session.closedAt ? formatSaudiDateTime(session.closedAt, i18n.language) : t('register.registerClosed') },
                     { label: t('register.openingCash'), value: <Rial amount={session.openingCash} /> },
                     { label: t('register.actualCash'), value: <Rial amount={session.actualCash ?? 0} /> },
                     { label: t('register.difference'), value: <Rial amount={session.cashDifference ?? 0} />, emphasis: true },
@@ -347,7 +348,7 @@ function RegisterSessionPanel({ session, loading, error, duration, onManageRegis
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold text-amber-950">{t('register.longOpenRisk', { age: duration ?? t('register.earlier') })}</p>
                     <p className="mt-0.5 text-xs text-amber-800">
-                      {t('register.longOpenWarning', { time: session.openedAt ? new Date(session.openedAt).toLocaleString(i18n.language === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { timeZone: 'Asia/Riyadh', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : t('register.earlier') })}
+                      {t('register.longOpenWarning', { time: session.openedAt ? formatSaudiDateTime(session.openedAt, i18n.language) : t('register.earlier') })}
                     </p>
                   </div>
                   <button type="button" onClick={onManageRegister} className="min-h-10 shrink-0 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-amber-900 shadow-sm hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600">
@@ -693,7 +694,7 @@ export default function BranchDashboardPage() {
   const dashboardContextName = companyName && companyName !== dashboardTitle
     ? companyName
     : ''
-  const dashboardDate = new Date().toLocaleDateString(locale === 'ar-SA' ? 'ar-SA-u-nu-latn' : 'en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  const dashboardDate = formatDisplayDashboardDate(new Date(), locale)
 
   useEffect(() => {
     if (!bid) return
