@@ -792,7 +792,7 @@ export default function CreateCreditNoteModal({
     }
     const refundAllocations = [
       cashRefund > 0 ? { method: 'cash', amount: roundMoney(cashRefund) } : null,
-      cardRefund > 0 ? { method: 'card', amount: roundMoney(cardRefund) } : null,
+      cardRefund > 0 ? { method: 'bank_transfer', amount: roundMoney(cardRefund) } : null,
     ].filter(Boolean)
 
     setCreating(true)

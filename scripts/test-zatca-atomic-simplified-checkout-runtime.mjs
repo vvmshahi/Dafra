@@ -1253,7 +1253,7 @@ const creditPayload = {
   reason: 'Disposable partial return',
   return_stock: true,
   items: [{ original_invoice_item_id: originalItem.id, quantity: 1 }],
-  refund_allocations: [{ method: 'card', amount: Number(originalItem.total) / 2 }],
+  refund_allocations: [{ method: 'bank_transfer', amount: Number(originalItem.total) / 2 }],
 }
 const creditPrepared = await prepare(branchUserId, creditPayload, 'credit_note')
 assert.equal(Number(creditPrepared.snapshot.zatca_counter_number), 3)

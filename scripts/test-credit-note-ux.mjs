@@ -326,6 +326,7 @@ assert.match(
 )
 assert.match(creditModal, /stockReturnChoiceMissing[\s\S]*createDisabled/)
 assert.match(creditModal, /role="radio"/)
+assert.match(creditModal, /method: 'bank_transfer', amount: roundMoney\(cardRefund\)/)
 
 // Approved modal interaction contract.
 assert.match(

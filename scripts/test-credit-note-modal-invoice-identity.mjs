@@ -49,7 +49,7 @@ const currentCheckout = {
   idempotency_key: 'idem-inv-0835',
   reason: 'Customer refund',
   items: [{ original_invoice_item_id: 'inv-0835-line', quantity: 1 }],
-  refund_allocations: [{ method: 'card', amount: 25 }],
+  refund_allocations: [{ method: 'bank_transfer', amount: 25 }],
 }
 
 // Reopening the same original may replay its exact durable request.
