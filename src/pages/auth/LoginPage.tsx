@@ -11,7 +11,6 @@ import { CompactLanguageSelector } from '@/components/localization/CompactLangua
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 import { authErrorKey } from '@/localization/authErrors'
 import { isDesktopApp } from '@/lib/electron'
-import { approvedLoginReturnPath } from '@/lib/loginNavigation'
 
 const WA_LINK = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
@@ -36,7 +35,6 @@ export default function LoginPage() {
   const location   = useLocation()
   const { t } = useTranslation(['auth', 'common'])
   const from       = (location.state as { from?: string })?.from ?? '/'
-  const loginReturnPath = !isDesktopApp() ? approvedLoginReturnPath(location.state) : null
   const successKey = (location.state as { successKey?: string })?.successKey
   const successMsg = successKey ? t(successKey) : null
   const workspaceItems = ['pos', 'stock', 'team'] as const
@@ -96,9 +94,9 @@ export default function LoginPage() {
         </section>
 
         <section className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#F6F2E8] px-5 py-8 text-[#10291E] sm:px-8 lg:px-10">
-          {loginReturnPath && (
+          {!isDesktopApp() && (
             <Link
-              to={loginReturnPath}
+              to="/"
               replace
               className="absolute start-5 top-5 z-20 inline-flex items-center gap-2 rounded-full border border-[#D9CBAA] bg-white/70 px-3 py-2 text-sm font-black text-[#284334] shadow-[0_10px_26px_rgba(15,36,25,0.06)] transition hover:border-[#C8A96E] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D8B76A]/75 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F6F2E8] sm:start-8 sm:top-8"
             >
