@@ -1,0 +1,22 @@
+{
+  "name": "Kubri POS",
+  "short_name": "Kubri",
+  "start_url": "/",
+  "display": "browser",
+  "theme_color": "#071510",
+  "background_color": "#071510",
+  "icons": [
+    {
+      "src": "/brand/kubri-app-icon.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

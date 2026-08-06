@@ -60,6 +60,7 @@ import PricingPage         from '@/pages/landing/PricingPage'
 import FAQPage             from '@/pages/landing/FAQPage'
 import ReceiptPrintPage    from '@/pages/print/ReceiptPrintPage'
 import { decideProtectedRoute, decideSetupBranchRoute } from '@/lib/authRouteRecovery'
+import SeoHead from '@/seo/SeoHead'
 
 // ── Shared spinner ────────────────────────────────────────────────────────
 
@@ -301,6 +302,7 @@ export default function App() {
     <Toaster position="top-center" richColors dir={isRtl ? 'rtl' : 'ltr'} />
     <BrowserRouter>
       <ScrollToTop />
+      <SeoHead />
       <Routes>
         {/* ── Public ──────────────────────────────────────── */}
         <Route path="/login"           element={<DesktopAwareLogin />} />

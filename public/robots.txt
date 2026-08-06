@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /login
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /dashboard
+Disallow: /onboarding
+Disallow: /setup-branch
+Disallow: /super-admin
+Sitemap: https://www.kubri.shop/sitemap.xml
