@@ -47,6 +47,9 @@ try {
           business_name_ar: 'محمصة الاختبار',
           name: 'Fixture Branch',
           name_ar: 'فرع الاختبار',
+          phone: '+966500000001',
+          email: 'fixture@example.com',
+          website: 'https://example.com',
           address: 'King Fahd Road, Riyadh',
           vat_number: '300000000000003',
           receipt_footer: 'Thank you / شكراً',
@@ -68,6 +71,12 @@ try {
         assert.equal(serialized.thermal.width, width)
         assert.equal(restored.presentation.thermal.density, layout.storedId)
         assert.equal(restored.presentation.thermal.width, width)
+        assert.equal(restored.presentation.contact.phone, '+966500000001')
+        assert.equal(restored.presentation.contact.email, 'fixture@example.com')
+        assert.equal(restored.presentation.contact.website, 'https://example.com')
+        assert.equal(restored.presentation.contact.show_phone, true)
+        assert.equal(restored.presentation.contact.show_email, true)
+        assert.equal(restored.presentation.contact.show_website, true)
         const isCredit = fixtureCase.document === 'credit_note'
         const base = isCredit
           ? adapters.documentFromPreviewCreditNoteDraft(draft)
@@ -110,6 +119,9 @@ try {
         assert.match(markup, new RegExp(`thermal-receipt--${width}`))
         assert.match(markup, new RegExp(layout.landmark))
         assert.match(markup, /300000000000003/)
+        assert.match(markup, /\+966500000001/)
+        assert.match(markup, /fixture@example\.com/)
+        assert.match(markup, /https:\/\/example\.com/)
         assert.doesNotMatch(markup, /Bill From|صادرة من|>From</)
         assert.doesNotMatch(markup, /thermal-legal-info[\s\S]{0,120}thermal-section-label/)
         assert.match(markup, /SAMPLE-/)

@@ -221,7 +221,7 @@ export function ClassicReceipt({ receipt }: { receipt: ReceiptComposition }) {
 
 export function CompactRetailReceipt({ receipt }: { receipt: ReceiptComposition }) {
   return <>
-    <header className="thermal-header thermal-compact-masthead"><ReceiptLogo receipt={receipt} /><DisplayIdentity receipt={receipt} /><LegalSeller receipt={receipt} /></header>
+    <header className="thermal-header thermal-compact-masthead"><ReceiptLogo receipt={receipt} /><DisplayIdentity receipt={receipt} /><LegalSeller receipt={receipt} contact /></header>
     <ReceiptTitle receipt={receipt} />
     <ReceiptMetadata receipt={receipt} />
     <ReceiptBuyer receipt={receipt} />

@@ -1,5 +1,3 @@
-import { openPrintPopup } from '@/lib/print/browserPrint'
-
 let activeHiddenReceiptPrint: Promise<void> | null = null
 
 export const RECEIPT_FRAME_READY = 'dafra:receipt-frame-ready'
@@ -21,8 +19,61 @@ export function openReceiptPreview(invoiceId: string, autoPrint = true) {
 export async function printReceiptInHiddenFrame(invoiceId: string): Promise<void> {
   if (typeof window === 'undefined') throw new Error('Receipt printing is unavailable in this environment.')
   if (activeHiddenReceiptPrint) return activeHiddenReceiptPrint
-  activeHiddenReceiptPrint = Promise.resolve().then(() => {
-    openPrintPopup(receiptPreviewUrl(invoiceId, true))
+  activeHiddenReceiptPrint = new Promise<void>((resolve, reject) => {
+    const frame = document.createElement('iframe')
+    const frameUrl = receiptPreviewUrl(invoiceId, false, true)
+    let printFallbackId: number | null = null
+    let settled = false
+
+    frame.title = 'Receipt print frame'
+    frame.setAttribute('aria-hidden', 'true')
+    frame.tabIndex = -1
+    frame.src = frameUrl
+    frame.style.position = 'fixed'
+    frame.style.inset = '0 auto auto -10000px'
+    frame.style.width = '1px'
+    frame.style.height = '1px'
+    frame.style.border = '0'
+    frame.style.opacity = '0'
+    frame.style.pointerEvents = 'none'
+
+    const cleanup = () => {
+      if (printFallbackId !== null) window.clearTimeout(printFallbackId)
+      window.removeEventListener('message', handleMessage)
+      frame.remove()
+    }
+    const finish = () => {
+      if (settled) return
+      settled = true
+      window.setTimeout(() => {
+        cleanup()
+        resolve()
+      }, 750)
+    }
+    const fail = (error: string) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(new Error(error))
+    }
+    const handleMessage = (event: MessageEvent<{ type?: string; invoiceId?: string; error?: string }>) => {
+      if (event.origin !== window.location.origin || event.source !== frame.contentWindow || event.data?.invoiceId !== invoiceId) return
+      if (event.data.type === RECEIPT_FRAME_FAILED) {
+        fail(event.data.error || 'PRINT_DOCUMENT_NOT_READY')
+        return
+      }
+      if (event.data.type !== RECEIPT_FRAME_READY || settled) return
+      try {
+        frame.contentWindow?.addEventListener('afterprint', finish, { once: true })
+        frame.contentWindow?.print()
+        printFallbackId = window.setTimeout(finish, 15_000)
+      } catch {
+        fail('PRINT_FAILED')
+      }
+    }
+
+    window.addEventListener('message', handleMessage)
+    document.body.appendChild(frame)
   })
   try { await activeHiddenReceiptPrint } finally { activeHiddenReceiptPrint = null }
 }

@@ -21,7 +21,7 @@ import A4PreviewFit, { type A4PreviewZoom } from '@/components/print/A4PreviewFi
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
-import { openPrintPopup, printCurrentDocument, waitForPrintableAssets, PRINT_POPUP_BLOCKED } from '@/lib/print/browserPrint'
+import { printCurrentDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
 import { getInvoiceZatcaOutputState, submitInvoiceToZatca, type ZatcaOutputState } from '@/lib/zatca/submission'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 import AtomicCreditNoteReceiptView from './AtomicCreditNoteReceiptView'
@@ -421,16 +421,15 @@ export default function InvoiceDetailPage() {
     setA4Printing(true)
     try {
       if (!isElectron()) {
-        openPrintPopup(`/invoices/${encodeURIComponent(invoice.id)}?print=1`)
+        await waitForPrintableAssets(document.getElementById('invoice-printable-a4') ?? document.body)
+        await printCurrentDocument()
         return
       }
       const result = await printA4Invoice()
       if (!result.success) throw new Error(result.message ?? 'A4 print failed')
     } catch (error) {
       console.error('A4 invoice print failed:', error)
-      toast.error(error instanceof Error && error.message === PRINT_POPUP_BLOCKED
-        ? t('printing:popupBlocked')
-        : t('printing:a4Failed'))
+      toast.error(t('printing:a4Failed'))
     } finally {
       setA4Printing(false)
     }
@@ -459,9 +458,7 @@ export default function InvoiceDetailPage() {
       }
     } catch (error) {
       console.error('Thermal receipt print failed:', error)
-      toast.error(error instanceof Error && error.message === PRINT_POPUP_BLOCKED
-        ? t('printing:popupBlocked')
-        : t('printing:receiptFailed'))
+      toast.error(t('printing:receiptFailed'))
     } finally {
       setThermalPrinting(false)
     }
