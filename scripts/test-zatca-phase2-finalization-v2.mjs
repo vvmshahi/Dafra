@@ -235,7 +235,8 @@ await test('15 DB write failure requires reconciliation', () => {
   const lease = new NetworkLease(); lease.claim(0, 10); lease.requestStarted = true; assert.equal(lease.claim(11).status, 'reconciliation_required'); assert.match(edge, /p_ambiguous: requestStarted/)
 })
 await test('16 payment remains complete on finalization failure', () => {
-  assert.ok(pos.indexOf("rpc('pos_checkout'") < pos.indexOf('catch (finalizationFailure)')); assert.match(pos, /saleCompletedAttention/)
+  const checkoutRpc = pos.indexOf("'pos_checkout'")
+  assert.ok(checkoutRpc > 0 && checkoutRpc < pos.indexOf('catch (finalizationFailure)')); assert.match(pos, /saleCompletedAttention/)
 })
 await test('17 POS retry does not repeat checkout', () => {
   const body = pos.slice(pos.indexOf('async function retryReceiptFinalization'), pos.indexOf('const canCharge')); assert.doesNotMatch(body, /pos_checkout/); assert.match(body, /finalizeInvoiceForZatca/)
@@ -255,7 +256,7 @@ await test('18 disabled flag blocks unsafe output', () => {
   assert.match(source['01_artifact_lifecycle.sql'], /immutable_finalization_enabled boolean NOT NULL DEFAULT false/); assert.match(submission, /immutableFinalizationEnabled/)
 })
 await test('19 mismatch fails before checkout', () => {
-  const decision = pos.indexOf('await resolvePosCheckoutDocument('); const checkout = pos.indexOf("rpc('pos_checkout'"); assert.ok(decision > 0 && decision < checkout); assert.match(pos, /documentDecision\?\.status === 'blocked'/); assert.match(edge, /FINALIZATION_VERSION_MISMATCH/)
+  const decision = pos.indexOf('await resolvePosCheckoutDocument('); const checkout = pos.indexOf("'pos_checkout'"); assert.ok(decision > 0 && decision < checkout); assert.match(pos, /documentDecision\?\.status === 'blocked'/); assert.match(edge, /FINALIZATION_VERSION_MISMATCH/)
 })
 await test('20 historical rows are not auto-finalized', () => {
   assert.doesNotMatch(source['01_artifact_lifecycle.sql'], /UPDATE\s+public\.invoices/i); assert.match(source['01_artifact_lifecycle.sql'], /legacy\/unclassified/)
@@ -537,7 +538,7 @@ await test('thermal and A4 printing require the finalized rendered QR', () => {
   assert.equal(canOpenStoredInvoicePrint(true, null, 'missing', null), false)
   assert.equal(canOpenStoredInvoicePrint(true, 'FINAL-QR', 'failed', null), false)
   assert.equal(canOpenStoredInvoicePrint(false, 'FINAL-QR', 'ready', 'data:image/png;base64,qr'), false)
-  assert.match(invoiceDetail, /async function handlePrintA4\(\)[\s\S]*?window\.print\(\)/)
+  assert.match(invoiceDetail, /async function handlePrintA4\(\)[\s\S]*?waitForPrintableAssets\([\s\S]*?printCurrentDocument\(\)/)
   assert.match(invoiceDetail, /async function handlePrintThermal\(\)[\s\S]*?printReceiptInHiddenFrame\(invoice\.id\)/)
   assert.match(invoiceDetail, /disabled=\{thermalPrinting \|\| !printReady\}/)
   assert.match(invoiceDetail, /disabled=\{a4Printing \|\| !printReady\}/)
