@@ -12,7 +12,7 @@ import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { Badge } from '@/components/ui/Badge'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { useLocale } from '@/localization/useLocale'
-import { isRecord, normalizeRegisterSession, pick } from '@/lib/registerSessions'
+import { isRecord, normalizeRegisterSession, numberOrZero, pick } from '@/lib/registerSessions'
 import {
   documentDate,
   documentDateTime,
@@ -78,10 +78,6 @@ function fmt(n: number) {
 
 function today() {
   return saudiDateStr()
-}
-
-function invoiceAccountingSign(invoice: { zatca_invoice_type?: string | null }): number {
-  return invoice.zatca_invoice_type === 'credit_note' ? -1 : 1
 }
 
 function localizedName(name: string, nameAr: string, isArabic: boolean) {
@@ -249,13 +245,13 @@ export default function DayClosingPage() {
     if (!branchId || !tenantId) { setLoading(false); return }
     setLoading(true)
 
-    const [branchRes, invRes, closingsRes, registerRes] = await Promise.all([
+    const [branchRes, dashboardRes, closingsRes, registerRes] = await Promise.all([
       db().from('branches').select('name, name_ar, invoice_language').eq('id', branchId).single(),
-      db().from('invoices')
-        .select('id, total_amount, tax_amount, zatca_invoice_type')
-        .eq('branch_id', branchId)
-        .eq('invoice_date', todayStr)
-        .neq('status', 'cancelled'),
+      db().rpc('get_dashboard_summary', {
+        p_branch_id: branchId,
+        p_start_date: todayStr,
+        p_end_date: todayStr,
+      }),
       db().from('day_closings')
         .select('*')
         .eq('branch_id', branchId)
@@ -305,29 +301,14 @@ export default function DayClosingPage() {
     setTodayClosing(todayClose)
     setPrevClosings(allClosings.filter(c => c.closing_date !== todayStr).slice(0, 10))
 
-    // Today's invoices
-    const invoices: any[] = invRes.data ?? []
-    const invoiceIds = invoices.map(i => i.id)
-    const signByInvoiceId = new Map(
-      invoices.map(invoice => [invoice.id, invoiceAccountingSign(invoice)]),
-    )
-    const totalSales   = invoices.reduce((s, i) => s + invoiceAccountingSign(i) * Number(i.total_amount ?? 0), 0)
-    const totalVat     = invoices.reduce((s, i) => s + invoiceAccountingSign(i) * Number(i.tax_amount ?? 0), 0)
-    const invoiceCount = invoices.length
-
-    // Payments for today's invoices
-    let cashSales = 0, cardSales = 0
-    if (invoiceIds.length > 0) {
-      const { data: payments } = await db()
-        .from('payments')
-        .select('invoice_id, method, amount')
-        .in('invoice_id', invoiceIds)
-      for (const p of payments ?? []) {
-        const signedAmount = (signByInvoiceId.get(p.invoice_id) ?? 1) * Number(p.amount ?? 0)
-        if (p.method === 'cash') cashSales += signedAmount
-        else if (p.method === 'card') cardSales += signedAmount
-      }
-    }
+    // The shared dashboard RPC applies the same refund-payout netting as the
+    // register session. This date-close view keeps its existing daily scope.
+    const dashboard = isRecord(dashboardRes.data) ? dashboardRes.data : {}
+    const totalSales = numberOrZero(pick(dashboard, 'totalSales', 'total_sales'))
+    const totalVat = numberOrZero(pick(dashboard, 'totalVat', 'vat_collected'))
+    const invoiceCount = Math.trunc(numberOrZero(pick(dashboard, 'totalCount', 'total_invoices')))
+    const cashSales = numberOrZero(pick(dashboard, 'totalCash', 'cash_total'))
+    const cardSales = numberOrZero(pick(dashboard, 'totalCard', 'card_total'))
 
     // Today's expenses
     const { data: expData } = await db()

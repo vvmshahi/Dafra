@@ -30,6 +30,10 @@ export interface RegisterSessionSummary {
   cardTotal: number
   otherTotal: number
   bankTransferTotal: number
+  grossCashSales: number
+  cashRefundTotal: number
+  grossCardSales: number
+  noncashRefundTotal: number
   vatTotal: number
   expensesTotal: number
   cashExpenses: number
@@ -126,6 +130,10 @@ export function normalizeRegisterSession(value: unknown): RegisterSessionSummary
     cardTotal: numberOrZero(pick(value, 'cardTotal', 'card_total')),
     otherTotal: numberOrZero(pick(value, 'otherTotal', 'other_total')),
     bankTransferTotal: numberOrZero(pick(value, 'bankTransferTotal', 'bank_transfer_total')),
+    grossCashSales: numberOrZero(pick(value, 'grossCashSales', 'gross_cash_sales')),
+    cashRefundTotal: numberOrZero(pick(value, 'cashRefundTotal', 'cash_refund_total')),
+    grossCardSales: numberOrZero(pick(value, 'grossCardSales', 'gross_card_sales')),
+    noncashRefundTotal: numberOrZero(pick(value, 'noncashRefundTotal', 'noncash_refund_total')),
     vatTotal: numberOrZero(pick(value, 'vatTotal', 'vat_total')),
     expensesTotal: numberOrZero(pick(value, 'expensesTotal', 'expenses_total')),
     cashExpenses: numberOrZero(pick(value, 'cashExpenses', 'cash_expenses')),

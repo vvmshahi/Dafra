@@ -701,6 +701,7 @@ export default function BranchDashboardPage() {
     const channel = supabase
       .channel('branch-dashboard-' + bid)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices',  filter: `branch_id=eq.${bid}` }, () => loadStats())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_refunds', filter: `branch_id=eq.${bid}` }, () => loadStats())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses',  filter: `branch_id=eq.${bid}` }, () => loadStats())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pos_sessions',  filter: `branch_id=eq.${bid}` }, () => loadStats())
       .subscribe()

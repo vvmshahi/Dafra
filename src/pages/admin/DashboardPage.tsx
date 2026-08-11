@@ -589,6 +589,10 @@ export default function DashboardPage() {
         filter: `tenant_id=eq.${tid}`,
       }, () => loadStats())
       .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'payment_refunds',
+        filter: `tenant_id=eq.${tid}`,
+      }, () => loadStats())
+      .on('postgres_changes', {
         event: '*', schema: 'public', table: 'expenses',
         filter: `tenant_id=eq.${tid}`,
       }, () => loadStats())

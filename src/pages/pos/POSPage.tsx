@@ -47,6 +47,7 @@ import A4Document from '@/components/print/A4Document'
 import type { Branch, BranchPosMode, PaymentMethod, VatTreatment } from '@/types/database'
 import { usePosSession } from '@/hooks/usePosSession'
 import type { ClosedSessionSummary, PosSession } from '@/hooks/usePosSession'
+import { normalizeRegisterSession } from '@/lib/registerSessions'
 import { useSubscription } from '@/hooks/useSubscription'
 import { getPrinterSettings, getPrinters, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printAtomicReceiptSnapshot } from '@/lib/atomicReceiptPrint'
@@ -514,10 +515,6 @@ function isSplitPaymentRows(payments: ReceiptPayment[]): boolean {
 
 function paymentRowsTotal(payments: ReceiptPayment[]): number {
   return round2(payments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0))
-}
-
-function invoiceAccountingSign(invoice: { zatca_invoice_type?: string | null }): number {
-  return invoice.zatca_invoice_type === 'credit_note' ? -1 : 1
 }
 
 function productSearchRank(product: PosProduct, query: string): number {
@@ -1504,6 +1501,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
   const [cardSales,     setCardSales]     = useState(0)
   const [creditRefunds, setCreditRefunds] = useState(0)
   const [cashExpenses,  setCashExpenses]  = useState(0)
+  const [loadFailed,    setLoadFailed]    = useState(false)
 
   const openedAt = formatSessionDateTimeLocalized(session.opened_at, locale)
   const durationMs = Date.now() - new Date(session.opened_at).getTime()
@@ -1515,41 +1513,36 @@ function CloseSessionModal({ session, onClose, onCancel }: {
   const openingCash = Number(session.opening_cash)
 
   useEffect(() => {
-    const db = () => supabase as unknown as { from: (t: string) => any }
+    let active = true
     async function fetchData() {
-      const [{ data: invData }, { data: expData }] = await Promise.all([
-        db().from('invoices').select('id, zatca_invoice_type, total_amount').eq('session_id', session.id).neq('status', 'cancelled'),
-        db().from('expenses').select('total_paid, payment_method').eq('session_id', session.id),
-      ])
-      const ids = (invData ?? []).map((i: any) => i.id)
-      const signByInvoiceId = new Map(
-        (invData ?? []).map((invoice: any) => [invoice.id, invoiceAccountingSign(invoice)]),
-      )
-      let pmts: any[] = []
-      if (ids.length > 0) {
-        const { data } = await db().from('payments').select('invoice_id, method, amount').in('invoice_id', ids)
-        pmts = data ?? []
+      setLoadingData(true)
+      setLoadFailed(false)
+      try {
+        const { data, error } = await (supabase as any).rpc('get_register_session_summary', {
+          p_session_id: session.id,
+        })
+        if (error) throw error
+        const summary = normalizeRegisterSession(data?.session)
+        if (!summary?.sessionId) {
+          throw new Error('Register session summary was unavailable')
+        }
+        if (!active) return
+        setInvoiceCount(summary.invoiceCount)
+        setTotalSessionSales(summary.totalSales)
+        setCashSales(summary.grossCashSales)
+        setCashRefunds(summary.cashRefundTotal)
+        setCardSales(summary.cardTotal)
+        setCreditRefunds(summary.creditNoteTotal)
+        setCashExpenses(summary.cashExpenses)
+      } catch (error) {
+        console.error('[CloseSessionModal] register session summary failed', error)
+        if (active) setLoadFailed(true)
+      } finally {
+        if (active) setLoadingData(false)
       }
-      const invoices = invData ?? []
-      setInvoiceCount(invoices.length)
-      setTotalSessionSales(invoices
-        .reduce((s: number, invoice: any) => s + invoiceAccountingSign(invoice) * Number(invoice.total_amount ?? 0), 0))
-      setCashSales(pmts
-        .filter((p: any) => p.method === 'cash' && (signByInvoiceId.get(p.invoice_id) ?? 1) > 0)
-        .reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0))
-      setCashRefunds(pmts
-        .filter((p: any) => p.method === 'cash' && (signByInvoiceId.get(p.invoice_id) ?? 1) < 0)
-        .reduce((s: number, p: any) => s + Math.abs(Number(p.amount ?? 0)), 0))
-      setCardSales(pmts
-        .filter((p: any) => p.method === 'card')
-        .reduce((s: number, p: any) => s + (signByInvoiceId.get(p.invoice_id) ?? 1) * Number(p.amount ?? 0), 0))
-      setCreditRefunds(pmts
-        .filter((p: any) => (signByInvoiceId.get(p.invoice_id) ?? 1) < 0)
-        .reduce((s: number, p: any) => s + Math.abs(Number(p.amount ?? 0)), 0))
-      setCashExpenses((expData ?? []).filter((e: any) => e.payment_method === 'cash').reduce((s: number, e: any) => s + Number(e.total_paid ?? 0), 0))
-      setLoadingData(false)
     }
     fetchData()
+    return () => { active = false }
   }, [session.id])
 
   // Mirrors close_register_session: opening cash + signed cash payments - cash expenses.
@@ -1566,6 +1559,7 @@ function CloseSessionModal({ session, onClose, onCancel }: {
     : { label: t('register:cashShortBy', { amount: `SAR ${fmt(Math.abs(difference))}` }), className: 'bg-red-100 text-red-700' }
   const canClose = cashActual !== ''
     && !loadingData
+    && !loadFailed
     && !saving
 
   async function handleClose() {

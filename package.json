@@ -8,7 +8,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "test": "npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx",
+    "test": "npm run test:register-session-netting && npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -70,6 +70,7 @@
     "test:credit-note-duplicate-inv0834-diagnostic": "node scripts/test-credit-note-duplicate-inv0834-diagnostic.mjs",
     "test:repair-zatca-document-kind-inv0830-0834": "node scripts/test-repair-zatca-document-kind-inv0830-0834.mjs",
     "test:pos-session-access": "node scripts/test-pos-session-access.mjs",
+    "test:register-session-netting": "node scripts/test-register-session-refund-netting.mjs",
     "test:product-catalogue": "node --experimental-strip-types scripts/test-product-catalogue.mjs",
     "test:product-archive": "node --experimental-strip-types scripts/test-product-archive.mjs",
     "test:manage-categories": "node scripts/test-manage-categories.mjs",
