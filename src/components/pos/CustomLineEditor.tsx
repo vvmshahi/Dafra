@@ -31,7 +31,8 @@ function quantityStep() {
 export function CustomLineEditor({ line, branchVatMode, onClose, onSave }: Props) {
   const { t } = useTranslation(['pos', 'common'])
   const [description, setDescription] = useState(line?.description ?? '')
-  const [descriptionAr, setDescriptionAr] = useState(line?.descriptionAr ?? '')
+  const [optionalDescription, setOptionalDescription] = useState(line?.descriptionAr ?? '')
+  const [showSecondaryDescription, setShowSecondaryDescription] = useState(Boolean(line?.descriptionAr))
   const [quantity, setQuantity] = useState(line ? String(line.quantity) : '1')
   const [unitPrice, setUnitPrice] = useState(line ? line.unitPrice.toFixed(2) : '')
   const [vatTreatment, setVatTreatment] = useState<CustomLineVatTreatment>(line?.vatTreatment ?? 'inherit')
@@ -52,7 +53,8 @@ export function CustomLineEditor({ line, branchVatMode, onClose, onSave }: Props
     const input = {
       cartLineId: line?.cartLineId,
       description,
-      descriptionAr,
+      // The existing secondary snapshot is intentionally language-neutral in the UI.
+      descriptionAr: optionalDescription,
       quantity: Number(quantity),
       unitPrice: Number(unitPrice),
       vatTreatment,
@@ -108,6 +110,7 @@ export function CustomLineEditor({ line, branchVatMode, onClose, onSave }: Props
               autoFocus
               value={description}
               maxLength={255}
+              dir="auto"
               onChange={event => { setDescription(event.target.value); setError(null) }}
               className="input"
               aria-invalid={error === 'description'}
@@ -115,17 +118,38 @@ export function CustomLineEditor({ line, branchVatMode, onClose, onSave }: Props
             {error === 'description' && <p className="mt-1.5 text-xs text-red-600">{t('pos:customLine.errors.description')}</p>}
           </div>
 
-          <div>
-            <label className="label" htmlFor="custom-line-description-ar">{t('pos:customLine.descriptionAr')}</label>
-            <input
-              id="custom-line-description-ar"
-              value={descriptionAr}
-              maxLength={255}
-              dir="rtl"
-              onChange={event => setDescriptionAr(event.target.value)}
-              className="input"
-            />
-          </div>
+          {showSecondaryDescription ? (
+            <div>
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <label className="label mb-0" htmlFor="custom-line-optional-description">{t('pos:customLine.descriptionOptional')}</label>
+                <button
+                  type="button"
+                  onClick={() => { setOptionalDescription(''); setShowSecondaryDescription(false) }}
+                  className="text-xs font-semibold text-gray-500 hover:text-gray-800"
+                >
+                  {t('pos:customLine.removeDescription')}
+                </button>
+              </div>
+              <input
+                id="custom-line-optional-description"
+                value={optionalDescription}
+                maxLength={255}
+                dir="auto"
+                onChange={event => setOptionalDescription(event.target.value)}
+                className="input"
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowSecondaryDescription(true)}
+              aria-controls="custom-line-optional-description"
+              aria-expanded={false}
+              className="-mt-1 inline-flex items-center text-xs font-semibold text-primary-700 hover:text-primary-900"
+            >
+              + {t('pos:customLine.addAnotherDescription')}
+            </button>
+          )}
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)]">
             <div>

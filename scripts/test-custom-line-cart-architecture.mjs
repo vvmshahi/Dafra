@@ -77,9 +77,15 @@ try {
   }
 
   assert.equal(cart.createCustomCartLine(customInput({ description: '   ' })), null)
-  const withoutArabicDescription = cart.createCustomCartLine(customInput({ descriptionAr: undefined }))
-  assert.ok(withoutArabicDescription)
-  assert.equal(withoutArabicDescription.descriptionAr, null)
+  const withoutSecondaryDescription = cart.createCustomCartLine(customInput({ descriptionAr: undefined }))
+  assert.ok(withoutSecondaryDescription)
+  assert.equal(withoutSecondaryDescription.descriptionAr, null)
+  for (const description of ['Pepsi', 'بيبسي', 'Special wedding styling', 'تنسيق خاص للزفاف']) {
+    assert.ok(cart.createCustomCartLine(customInput({ description })), `primary description accepts ${description}`)
+  }
+  for (const descriptionAr of ['Pepsi', 'بيبسي', 'Special wedding styling', 'تنسيق خاص للزفاف', '商品説明']) {
+    assert.ok(cart.createCustomCartLine(customInput({ descriptionAr })), `optional description accepts ${descriptionAr}`)
+  }
   for (const quantity of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 1.0001]) {
     assert.equal(cart.createCustomCartLine(customInput({ quantity })), null)
   }
@@ -131,6 +137,8 @@ try {
     vat_treatment: 'inherit',
     unit: 'PCE',
   })
+  const withOptionalDescription = cart.createCustomCartLine(customInput({ descriptionAr: 'تنسيق خاص للزفاف' }))
+  assert.equal(cart.serializePosCartLinesForCheckout([withOptionalDescription])[0].name_ar, 'تنسيق خاص للزفاف')
   assert.equal('cartLineId' in checkoutItems[2], false)
   assert.equal('subtotal' in checkoutItems[2], false)
   assert.equal('taxAmount' in checkoutItems[2], false)
@@ -174,6 +182,13 @@ try {
   assert.match(pos, /data-pos-custom-line-action="quick"/)
   assert.match(editor, /CUSTOM_LINE_UNIT_PRESETS/)
   assert.match(editor, /data-custom-line-preview/)
+  assert.match(editor, /showSecondaryDescription/)
+  assert.match(editor, /addAnotherDescription/)
+  assert.match(editor, /descriptionOptional/)
+  assert.match(editor, /removeDescription/)
+  assert.match(editor, /setOptionalDescription\(''\); setShowSecondaryDescription\(false\)/)
+  assert.match(editor, /Boolean\(line\?\.descriptionAr\)/)
+  assert.doesNotMatch(editor, /t\('pos:customLine\.descriptionAr'\)/)
   assert.match(pos, /adjustQty\(item\.cartLineId, -1\)/)
   assert.match(editor, /validateCustomCartLineInput/)
   assert.match(pos, /function saveCustomCartLine[\s\S]*cartLineId === line\.cartLineId/)
@@ -229,7 +244,10 @@ try {
   for (const locale of [en, ar]) {
     assert.equal(typeof locale.customLine.action, 'string')
     assert.equal(typeof locale.customLine.description, 'string')
-    assert.equal(typeof locale.customLine.descriptionAr, 'string')
+    assert.equal(typeof locale.customLine.addAnotherDescription, 'string')
+    assert.equal(typeof locale.customLine.descriptionOptional, 'string')
+    assert.equal(typeof locale.customLine.removeDescription, 'string')
+    assert.equal('descriptionAr' in locale.customLine, false)
     assert.equal(typeof locale.customLine.quantity, 'string')
     assert.equal(typeof locale.customLine.units.BOX, 'string')
     assert.equal(typeof locale.customLine.units.OTHER, 'string')
