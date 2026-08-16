@@ -77,7 +77,12 @@ AS $function$
 DECLARE
   v_source text := NULLIF(current_setting('app.checkout_line_source', true), '');
 BEGIN
-  IF v_source IN ('catalogue', 'custom') THEN
+  -- A helper may set an explicit source for a mixed cart. The transaction
+  -- marker is only a compatibility default for legacy delegates; it must not
+  -- overwrite that explicit provenance (including after another checkout in
+  -- the same transaction).
+  IF v_source IN ('catalogue', 'custom')
+     AND (NEW.line_source IS NULL OR NEW.line_source = 'legacy') THEN
     NEW.line_source := v_source;
   ELSIF NEW.line_source IS NULL THEN
     NEW.line_source := 'legacy';
@@ -89,7 +94,7 @@ BEGIN
         USING ERRCODE = '23514';
     END IF;
     NEW.stock_tracked_at_sale := false;
-    NEW.service_item_at_sale := true;
+    NEW.service_item_at_sale := false;
   END IF;
 
   RETURN NEW;
@@ -108,6 +113,44 @@ CREATE TRIGGER trg_apply_checkout_invoice_item_provenance_v1
 BEFORE INSERT ON public.invoice_items
 FOR EACH ROW
 EXECUTE FUNCTION public.apply_checkout_invoice_item_provenance_v1();
+
+-- 160001 already installed a second BEFORE INSERT provenance trigger. PostgreSQL
+-- runs same-event triggers alphabetically, so leaving its original Custom-line
+-- defaults in place would overwrite the authoritative false/false snapshots
+-- above. Preserve its legacy-line behavior while making the two triggers agree.
+CREATE OR REPLACE FUNCTION public.apply_invoice_item_line_source_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_source text := NULLIF(current_setting('app.checkout_line_source', true), '');
+BEGIN
+  IF v_source IN ('catalogue', 'custom')
+     AND (NEW.line_source IS NULL OR NEW.line_source = 'legacy') THEN
+    NEW.line_source := v_source;
+  ELSIF NEW.line_source IS NULL THEN
+    NEW.line_source := 'legacy';
+  END IF;
+
+  IF NEW.line_source = 'custom' THEN
+    IF NEW.product_id IS NOT NULL OR NEW.product_unit_id IS NOT NULL THEN
+      RAISE EXCEPTION 'CUSTOM_LINE_PRODUCT_IDENTITY_FORBIDDEN'
+        USING ERRCODE = '23514';
+    END IF;
+    NEW.stock_tracked_at_sale := false;
+    NEW.service_item_at_sale := false;
+  END IF;
+
+  RETURN NEW;
+END
+$function$;
+
+ALTER FUNCTION public.apply_invoice_item_line_source_v1() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.apply_invoice_item_line_source_v1()
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.apply_invoice_item_line_source_v1()
+  TO service_role;
 
 -- Build the mixed-cart helper from the current, contract-checked package
 -- checkout function. The replacement keeps every catalogue calculation,
@@ -403,7 +446,7 @@ $item_fields$;
         'base_unit_price', v_custom_unit_price,
         'package_unit_price', v_custom_unit_price,
         'stock_tracked_at_sale', false,
-        'service_item_at_sale', true,
+        'service_item_at_sale', false,
         'quantity', v_qty,
         'unit_price', v_custom_unit_price,
         'line_amount', round(v_line_amount, 2),
@@ -638,6 +681,107 @@ GRANT EXECUTE ON FUNCTION public.pos_checkout_capability_base_v1(jsonb)
 
 COMMENT ON FUNCTION public.pos_checkout_capability_base_v1(jsonb) IS
   'Phase 6 source-aware commercial checkout dispatcher. Legacy product_id payloads remain catalogue; explicit Custom Lines use server-authoritative validation and the existing invoice/output pipeline.';
+
+-- The open-register public dispatcher reaches the pre-package legacy writer
+-- for ordinary catalogue products. That writer locks and validates each
+-- product, but predates provenance columns and therefore omitted them from
+-- its invoice-item INSERT. Extend only that reviewed writer so its locked
+-- product state becomes an immutable issued-sale snapshot.
+DO $phase6_stamp_legacy_catalogue_provenance$
+DECLARE
+  v_definition text;
+  v_patched text;
+  v_line_anchor text := $anchor$      'track_stock', COALESCE(v_product.track_stock, FALSE)
+    ));$anchor$;
+  v_line_replacement text := $replacement$      'track_stock', COALESCE(v_product.track_stock, FALSE),
+      'is_service', COALESCE(v_product.is_service, FALSE)
+    ));$replacement$;
+  v_columns_anchor text := $anchor$      tax_amount,
+      total,
+      sort_order
+    ) VALUES ($anchor$;
+  v_columns_replacement text := $replacement$      tax_amount,
+      total,
+      sort_order,
+      line_source,
+      stock_tracked_at_sale,
+      service_item_at_sale
+    ) VALUES ($replacement$;
+  v_values_anchor text := $anchor$      (v_line ->> 'tax_amount')::numeric,
+      (v_line ->> 'total')::numeric,
+      (v_line ->> 'sort_order')::int
+    );$anchor$;
+  v_values_replacement text := $replacement$      (v_line ->> 'tax_amount')::numeric,
+      (v_line ->> 'total')::numeric,
+      (v_line ->> 'sort_order')::int,
+      'catalogue',
+      (
+        public.branch_effective_stock_enabled(v_branch.tenant_id, v_branch.id)
+        AND COALESCE((v_line ->> 'track_stock')::boolean, false)
+        AND COALESCE((v_line ->> 'is_service')::boolean, false) IS FALSE
+      ),
+      COALESCE((v_line ->> 'is_service')::boolean, false)
+    );$replacement$;
+BEGIN
+  v_definition := pg_get_functiondef(
+    'public.pos_checkout_legacy_base_v1(jsonb)'::regprocedure
+  );
+  v_patched := replace(v_definition, v_line_anchor, v_line_replacement);
+  IF v_patched IS NOT DISTINCT FROM v_definition THEN
+    RAISE EXCEPTION 'PHASE6_LEGACY_CATALOGUE_PROVENANCE_LINE_TARGET_MISSING';
+  END IF;
+  v_definition := v_patched;
+
+  v_patched := replace(v_definition, v_columns_anchor, v_columns_replacement);
+  IF v_patched IS NOT DISTINCT FROM v_definition THEN
+    RAISE EXCEPTION 'PHASE6_LEGACY_CATALOGUE_PROVENANCE_COLUMNS_TARGET_MISSING';
+  END IF;
+  v_definition := v_patched;
+
+  v_patched := replace(v_definition, v_values_anchor, v_values_replacement);
+  IF v_patched IS NOT DISTINCT FROM v_definition THEN
+    RAISE EXCEPTION 'PHASE6_LEGACY_CATALOGUE_PROVENANCE_VALUES_TARGET_MISSING';
+  END IF;
+  IF position('FUNCTION public.pos_checkout_legacy_base_v1(' IN v_patched) = 0
+     OR position('stock_tracked_at_sale' IN v_patched) = 0
+     OR position('service_item_at_sale' IN v_patched) = 0
+  THEN
+    RAISE EXCEPTION 'PHASE6_LEGACY_CATALOGUE_PROVENANCE_PATCH_UNREVIEWED';
+  END IF;
+  EXECUTE v_patched;
+END
+$phase6_stamp_legacy_catalogue_provenance$;
+
+-- Keep the August 13 public authorization and open-register guard intact,
+-- but route its successful commercial commit into the existing Phase 6
+-- capability dispatcher. Without this rebinding, public POS bypasses both
+-- the source-aware Custom writer and the catalogue provenance contract.
+DO $phase6_rebind_public_checkout_dispatcher$
+DECLARE
+  v_definition text;
+  v_patched text;
+  v_old text := '  RETURN public.pos_checkout_before_open_register_v1(p_payload);';
+  v_new text := '  RETURN public.pos_checkout_capability_base_v1(p_payload);';
+BEGIN
+  v_definition := pg_get_functiondef('public.pos_checkout(jsonb)'::regprocedure);
+  IF position('FUNCTION public.pos_checkout(' IN v_definition) = 0
+     OR position('resolve_pos_checkout_document_internal_v1' IN v_definition) = 0
+     OR position('auth.uid()' IN v_definition) = 0
+     OR position('FOR SHARE' IN v_definition) = 0
+     OR position('CLOSED_SESSION' IN v_definition) = 0
+  THEN
+    RAISE EXCEPTION 'PHASE6_PUBLIC_CHECKOUT_GUARD_UNREVIEWED';
+  END IF;
+  v_patched := replace(v_definition, v_old, v_new);
+  IF v_patched IS NOT DISTINCT FROM v_definition
+     OR position(v_old IN v_patched) <> 0
+     OR position(v_new IN v_patched) = 0
+  THEN
+    RAISE EXCEPTION 'PHASE6_PUBLIC_CHECKOUT_DISPATCH_TARGET_MISSING';
+  END IF;
+  EXECUTE v_patched;
+END
+$phase6_rebind_public_checkout_dispatcher$;
 
 NOTIFY pgrst, 'reload schema';
 
