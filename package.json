@@ -73,6 +73,7 @@
     "test:register-session-netting": "node scripts/test-register-session-refund-netting.mjs",
     "test:product-catalogue": "node --experimental-strip-types scripts/test-product-catalogue.mjs",
     "test:catalogue-bulk-export": "node --experimental-strip-types scripts/test-catalogue-bulk-export.mjs",
+    "test:catalogue-bulk-import": "node --experimental-strip-types scripts/test-catalogue-bulk-import.mjs",
     "test:product-archive": "node --experimental-strip-types scripts/test-product-archive.mjs",
     "test:manage-categories": "node scripts/test-manage-categories.mjs",
     "test:stock-page-ui": "node scripts/test-stock-page-ui.mjs",

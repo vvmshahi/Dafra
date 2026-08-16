@@ -14,6 +14,7 @@ import {
   type CatalogueExportScope,
   type CatalogueExportStatus,
 } from '@/lib/products/catalogueExport'
+import CatalogueImportPanel from './CatalogueImportPanel'
 
 type CategoryRow = {
   id: string
@@ -81,6 +82,7 @@ export default function CatalogueExportDialog({
   const [payload, setPayload] = useState<CatalogueExportPayload | null>(null)
   const [stage, setStage] = useState<'idle' | 'preparing' | 'ready' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [mode, setMode] = useState<'import' | 'export'>('import')
   const close = useCallback(() => { if (stage !== 'preparing') onClose() }, [onClose, stage])
   const dialogRef = useDialogFocus(open, close)
 
@@ -95,6 +97,7 @@ export default function CatalogueExportDialog({
     setPayload(null)
     setStage('idle')
     setError(null)
+    setMode('import')
     void supabase
       .from('categories')
       .select('id,name,is_active')
@@ -211,14 +214,18 @@ export default function CatalogueExportDialog({
           <div className="flex min-w-0 items-start gap-3">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-[#e5efe6] text-[#173f2a] shadow-[inset_0_0_0_1px_rgba(23,63,42,0.06)]" aria-hidden="true"><Download size={18} /></span>
             <div>
-              <h2 id="catalogue-export-title" className="text-base font-extrabold tracking-tight text-[#173f2a]">{t('export.title')}</h2>
-              <p className="mt-0.5 text-xs leading-5 text-slate-600">{t('export.subtitle')}</p>
+              <h2 id="catalogue-export-title" className="text-base font-extrabold tracking-tight text-[#173f2a]">Import / Export catalogue</h2>
+              <p className="mt-0.5 text-xs leading-5 text-slate-600">Bring in a prepared catalogue or download the current branch data.</p>
             </div>
           </div>
           <button type="button" onClick={close} disabled={stage === 'preparing'} aria-label={t('export.close')} className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50"><X size={18} /></button>
         </header>
 
         <div className="space-y-5 px-5 py-5 sm:px-6">
+          <div className="grid grid-cols-2 rounded-xl bg-[#eaf1e9] p-1" role="tablist" aria-label="Catalogue data operation">
+            {(['import', 'export'] as const).map(value => <button key={value} type="button" role="tab" aria-selected={mode === value} onClick={() => setMode(value)} className={`rounded-lg px-3 py-2 text-xs font-extrabold transition ${mode === value ? 'bg-white text-[#173f2a] shadow-sm' : 'text-[#53715d]'}`}>{value === 'import' ? 'Import' : 'Export'}</button>)}
+          </div>
+          {mode === 'import' ? <CatalogueImportPanel branchId={branchId} disabled={!canExport} /> : <>
           <section aria-labelledby="catalogue-export-scope">
             <p id="catalogue-export-scope" className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#53715d]">{t('export.what')}</p>
             <div className="mt-2 grid gap-2 sm:grid-cols-3">
@@ -270,11 +277,12 @@ export default function CatalogueExportDialog({
             </dl>
           </section>}
           {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-800">{error}</p>}
+          </>}
         </div>
 
         <footer className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-[#e7eee6] bg-[#fffefa]/95 px-5 py-4 backdrop-blur sm:flex-row sm:justify-end sm:px-6">
           <Button variant="secondary" onClick={close} disabled={stage === 'preparing'}>{t('export.cancel')}</Button>
-          {stage === 'ready' && payload ? <Button onClick={download}><Download size={15} />{t('export.download')}</Button> : <Button onClick={() => void prepare()} loading={stage === 'preparing'} disabled={!canExport}><PackageOpen size={15} />{stage === 'preparing' ? t('export.preparing') : t('export.prepare')}</Button>}
+          {mode === 'export' && (stage === 'ready' && payload ? <Button onClick={download}><Download size={15} />{t('export.download')}</Button> : <Button onClick={() => void prepare()} loading={stage === 'preparing'} disabled={!canExport}><PackageOpen size={15} />{stage === 'preparing' ? t('export.preparing') : t('export.prepare')}</Button>)}
         </footer>
       </div>
     </div>

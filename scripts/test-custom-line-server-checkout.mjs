@@ -142,12 +142,15 @@ const permittedPaths = new Set([
   'src/components/pos/CustomLineEditor.tsx',
   'src/lib/pos/cartLines.ts',
   'src/lib/products/catalogueExport.ts',
+  'src/lib/products/catalogueImport.ts',
   'src/localization/locales/ar-SA/pos.json',
   'src/localization/locales/ar-SA/reports.json',
   'src/localization/locales/en/pos.json',
   'src/localization/locales/en/reports.json',
   'src/pages/pos/POSPage.tsx',
   'src/pages/products/CatalogueExportDialog.tsx',
+  'src/pages/products/CatalogueImportPanel.tsx',
+  'src/pages/products/ProductsPage.tsx',
   'src/pages/invoices/InvoiceDetailPage.tsx',
   'src/pages/print/ReceiptPrintPage.tsx',
   'src/lib/invoices/issuedDocumentReadiness.ts',
@@ -158,6 +161,7 @@ const permittedPaths = new Set([
   'scripts/test-invoice-detail-ui.mjs',
   'scripts/test-zatca-phase2-finalization-v2.mjs',
   'scripts/test-catalogue-bulk-export.mjs',
+  'scripts/test-catalogue-bulk-import.mjs',
   'scripts/test-custom-line-server-checkout.mjs',
   'src/pages/reports/SalesReport.tsx',
   'src/pages/reports/pdf/reportExportData.ts',
@@ -170,6 +174,7 @@ const permittedPaths = new Set([
   'supabase/migrations/20260816000200_branch_billing_profile_foundation.sql',
   'supabase/migrations/20260816000400_source_aware_reporting_credit_restock.sql',
   'supabase/migrations/20260817000100_custom_line_display_units.sql',
+  'supabase/migrations/20260817000200_secure_catalogue_bulk_import_v1.sql',
 ])
 check(changedPaths.every(path => permittedPaths.has(path)), 'Phase 6 diff must stay within its approved scope')
 check(!changedPaths.includes('supabase/functions/zatca-submit/index.ts'), 'zatca-submit must remain untouched')

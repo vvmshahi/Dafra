@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Plus, LayoutGrid, List, Search, Tag, Pencil, Archive, Package, X, FolderPlus, Printer,
-  Barcode, AlertTriangle, RefreshCw, Building2, Download,
+  Barcode, AlertTriangle, RefreshCw, Building2, ArrowLeftRight,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -1061,8 +1061,8 @@ export default function ProductsPage() {
             )}
             {canExportCatalogue && (
               <Button variant="secondary" size="sm" onClick={() => setExportOpen(true)}>
-                <Download size={14} aria-hidden="true" />
-                {t('export.action')}
+                <ArrowLeftRight size={14} aria-hidden="true" />
+                Import / Export
               </Button>
             )}
           </>
