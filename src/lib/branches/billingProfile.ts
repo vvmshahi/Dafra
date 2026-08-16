@@ -19,6 +19,52 @@ export interface BranchBillingProfileUpdate {
   customLinesEnabled?: boolean
 }
 
+export interface BranchBillingProfileDefaults {
+  productsEnabled: boolean
+  servicesEnabled: boolean
+  customLinesEnabled: boolean
+  stockEnabled: boolean
+  posMode: BranchPosMode
+}
+
+/**
+ * UI recommendations mirror the Phase 1 database defaults. The RPCs remain
+ * authoritative for persisted and legacy-compatible effective configuration.
+ */
+export const BRANCH_BILLING_PROFILE_DEFAULTS: Record<BranchBusinessProfile, BranchBillingProfileDefaults> = {
+  retail_trading: {
+    productsEnabled: true,
+    servicesEnabled: false,
+    customLinesEnabled: false,
+    stockEnabled: true,
+    posMode: 'quick',
+  },
+  food_beverage: {
+    productsEnabled: true,
+    servicesEnabled: false,
+    customLinesEnabled: false,
+    stockEnabled: true,
+    posMode: 'touch',
+  },
+  services: {
+    productsEnabled: false,
+    servicesEnabled: true,
+    customLinesEnabled: false,
+    stockEnabled: false,
+    posMode: 'touch',
+  },
+}
+
+export const BRANCH_BILLING_PROFILE_OPTIONS: readonly BranchBusinessProfile[] = [
+  'retail_trading',
+  'food_beverage',
+  'services',
+]
+
+export function branchBillingProfileDefaults(profile: BranchBusinessProfile): BranchBillingProfileDefaults {
+  return BRANCH_BILLING_PROFILE_DEFAULTS[profile]
+}
+
 const isBusinessProfile = (value: unknown): value is BranchBusinessProfile => (
   value === 'retail_trading' || value === 'food_beverage' || value === 'services'
 )

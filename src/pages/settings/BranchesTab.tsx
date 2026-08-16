@@ -4,7 +4,7 @@ import {
   Globe, Phone, Mail, MapPin, FileText,
   ReceiptText, ShieldCheck, ChevronDown, ChevronRight, AlertTriangle,
   Star, KeyRound, LogIn,
-  CreditCard, Warehouse,
+  CreditCard, Warehouse, SlidersHorizontal,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import type { Branch, BranchLoginUsername, BranchPosMode, TenantBranchUsage } from '@/types'
+import type { Branch, BranchBusinessProfile, BranchLoginUsername, BranchPosMode, TenantBranchUsage } from '@/types'
 import { supportConfig } from '@/config/support'
 import {
   isInternalBranchAuthEmail,
@@ -22,6 +22,12 @@ import {
 } from '@/lib/utils/branchUsername'
 import { branchIdFromRpcResult } from '@/lib/utils/branchCreation'
 import { resolveBusinessType } from '@/lib/utils/businessType'
+import {
+  BRANCH_BILLING_PROFILE_OPTIONS,
+  branchBillingProfileDefaults,
+  updateBranchBillingProfileConfig,
+} from '@/lib/branches/billingProfile'
+import { useBranchBillingConfig } from '@/hooks/useBranchBillingConfig'
 import { useTranslation, type TFunction } from 'react-i18next'
 import { useLocale } from '@/localization/useLocale'
 import { useNavigate } from 'react-router-dom'
@@ -57,6 +63,10 @@ type BranchForm = {
   show_pos_scroll_buttons: boolean
   pos_mode: BranchPosMode
   stock_enabled: boolean | null
+  business_profile: BranchBusinessProfile | null
+  products_enabled: boolean
+  services_enabled: boolean
+  custom_lines_enabled: boolean
   // zatca
   zatca_phase: 1 | 2
   is_active: boolean
@@ -72,7 +82,11 @@ type BranchWithLogin = Branch & {
 }
 
 type StockModuleSetting = 'enabled' | 'disabled'
-type BranchModalTab = 'general' | 'access' | 'pos' | 'modules' | 'invoices'
+type BranchModalTab = 'general' | 'access' | 'billing' | 'pos' | 'modules' | 'invoices'
+type BranchBillingFormValues = Pick<
+  BranchForm,
+  'business_profile' | 'products_enabled' | 'services_enabled' | 'custom_lines_enabled'
+>
 
 const POS_MODE_OPTIONS: Array<{
   value: BranchPosMode
@@ -98,6 +112,10 @@ const EMPTY_FORM: BranchForm = {
   show_pos_scroll_buttons: false,
   pos_mode: 'touch',
   stock_enabled: null,
+  business_profile: null,
+  products_enabled: false,
+  services_enabled: false,
+  custom_lines_enabled: false,
   zatca_phase: 1,
   is_active: true,
   is_main_branch: false,
@@ -141,12 +159,28 @@ function branchPosMode(value: string | null | undefined): BranchPosMode {
   return value === 'quick' ? 'quick' : 'touch'
 }
 
+function billingFormValues(form: BranchForm): BranchBillingFormValues {
+  return {
+    business_profile: form.business_profile,
+    products_enabled: form.products_enabled,
+    services_enabled: form.services_enabled,
+    custom_lines_enabled: form.custom_lines_enabled,
+  }
+}
+
+function sameBillingFormValues(a: BranchBillingFormValues, b: BranchBillingFormValues) {
+  return a.business_profile === b.business_profile
+    && a.products_enabled === b.products_enabled
+    && a.services_enabled === b.services_enabled
+    && a.custom_lines_enabled === b.custom_lines_enabled
+}
+
 function stockModuleValue(setting: StockModuleSetting): boolean {
   return setting === 'enabled'
 }
 
-function stockModuleHintKey(setting: boolean | null, tenantBusinessType: string | null | undefined) {
-  if (resolveBusinessType(tenantBusinessType) === 'service') return 'stock.hidden'
+function stockModuleHintKey(setting: boolean | null, isLegacyServiceBranch: boolean) {
+  if (isLegacyServiceBranch) return 'stock.hidden'
   if (setting === true) return 'stock.visible'
   if (setting === false) return 'stock.hidden'
   return 'stock.visible'
@@ -254,11 +288,12 @@ function branchModuleSettingsErrorDebug(error: unknown) {
 /* ── Centered branch editor modal ───────────────────────────── */
 
 function BranchModal({
-  branch, tenantId, tenantBusinessType, canEditModuleSettings, isPhase2, onClose, onSaved, onRefresh, onResetPassword,
+  branch, tenantId, tenantBusinessType, canEditBillingConfig, canEditModuleSettings, isPhase2, onClose, onSaved, onRefresh, onResetPassword,
 }: {
   branch: BranchWithLogin | null
   tenantId: string
   tenantBusinessType?: string | null
+  canEditBillingConfig: boolean
   canEditModuleSettings: boolean
   isPhase2: boolean
   onClose: () => void
@@ -269,6 +304,11 @@ function BranchModal({
   const { t } = useTranslation(['settings', 'branches', 'common'])
   const { isRtl } = useLocale()
   const isNew = branch === null
+  const {
+    config: effectiveBillingConfig,
+    loading: billingConfigLoading,
+    error: billingConfigError,
+  } = useBranchBillingConfig(branch?.id)
   const [form, setForm] = useState<BranchForm>(
     branch
       ? {
@@ -298,6 +338,12 @@ function BranchModal({
           stock_enabled:    resolveBusinessType(tenantBusinessType) === 'service'
             ? false
             : branch.stock_enabled ?? true,
+          business_profile: branch.business_profile,
+          products_enabled: branch.products_enabled
+            ?? (branch.business_profile ? branchBillingProfileDefaults(branch.business_profile).productsEnabled : true),
+          services_enabled: branch.services_enabled
+            ?? (branch.business_profile ? branchBillingProfileDefaults(branch.business_profile).servicesEnabled : false),
+          custom_lines_enabled: branch.custom_lines_enabled ?? false,
           zatca_phase:      branch.zatca_phase ?? 1,
           is_active:        branch.is_active,
           is_main_branch:   branch.is_main_branch,
@@ -307,7 +353,7 @@ function BranchModal({
         }
       : {
           ...EMPTY_FORM,
-          stock_enabled: resolveBusinessType(tenantBusinessType) === 'service' ? false : true,
+          stock_enabled: null,
         },
   )
 
@@ -320,6 +366,7 @@ function BranchModal({
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const openerRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null)
   const initialFormRef = useRef('')
+  const initialBillingFormRef = useRef<BranchBillingFormValues>(billingFormValues(form))
   const pendingCloseActionRef = useRef<(() => void) | null>(null)
   const discardOpenRef = useRef(false)
   const dirtyRef = useRef(false)
@@ -327,9 +374,32 @@ function BranchModal({
   savingRef.current = saving
   discardOpenRef.current = discardOpen
   if (!initialFormRef.current) initialFormRef.current = JSON.stringify(form)
-  const serviceTenant = resolveBusinessType(tenantBusinessType) === 'service'
+  const isLegacyProfile = form.business_profile === null
+  const isLegacyServiceBranch = isLegacyProfile && resolveBusinessType(tenantBusinessType) === 'service'
+  const servicesMustRemainEnabled = form.business_profile === 'services' && !form.products_enabled
   const isDirty = JSON.stringify(form) !== initialFormRef.current
   dirtyRef.current = isDirty
+
+  // The database owns legacy/profile precedence. Once its effective response
+  // arrives, use it as the editor's baseline instead of reimplementing that
+  // policy from tenant business_type in this component.
+  useEffect(() => {
+    if (!effectiveBillingConfig || effectiveBillingConfig.branchId !== branch?.id) return
+    setForm(previous => {
+      const next = {
+        ...previous,
+        business_profile: effectiveBillingConfig.businessProfile,
+        products_enabled: effectiveBillingConfig.productsEnabled,
+        services_enabled: effectiveBillingConfig.servicesEnabled,
+        custom_lines_enabled: effectiveBillingConfig.customLinesEnabled,
+        stock_enabled: effectiveBillingConfig.stockEnabled,
+        pos_mode: effectiveBillingConfig.posMode,
+      }
+      initialBillingFormRef.current = billingFormValues(next)
+      initialFormRef.current = JSON.stringify(next)
+      return next
+    })
+  }, [branch?.id, effectiveBillingConfig])
 
   // ── Validation ──────────────────────────────────────────────
   const VAT_RE    = /^3\d{13}3$/
@@ -362,6 +432,9 @@ function BranchModal({
     street:          !form.street.trim() ? t('branches:validation.required') : null,
     city:            !form.city.trim() ? t('branches:validation.required') : null,
     district:        !form.district.trim() ? t('branches:validation.required') : null,
+    ...(isNew && canEditBillingConfig ? {
+      business_profile: !form.business_profile ? t('branches:validation.businessProfileRequired') : null,
+    } : {}),
     ...(isNew ? {
       login_username:         localizedUsernameValidation,
       login_password:         !form.login_password ? t('branches:validation.passwordRequired')
@@ -376,6 +449,7 @@ function BranchModal({
     .some(key => Boolean(errs[key]))
   const accessError = isNew && ['login_username', 'login_password', 'login_confirm_password']
     .some(key => Boolean(errs[key]))
+  const billingError = isNew && Boolean(errs.business_profile)
   const identity = useSection(true)
   const address = useSection(true)
   const contact = useSection(true)
@@ -385,6 +459,7 @@ function BranchModal({
   const tabs: Array<{ id: BranchModalTab; icon: React.ElementType }> = [
     { id: 'general', icon: Building2 },
     { id: 'access', icon: KeyRound },
+    ...(canEditBillingConfig ? [{ id: 'billing' as const, icon: SlidersHorizontal }] : []),
     { id: 'pos', icon: CreditCard },
     ...(canEditModuleSettings ? [{ id: 'modules' as const, icon: Warehouse }] : []),
     { id: 'invoices', icon: ReceiptText },
@@ -392,6 +467,26 @@ function BranchModal({
 
   const set = (k: keyof BranchForm) => (v: string | boolean | number | null) =>
     setForm(prev => ({ ...prev, [k]: v }))
+
+  const selectBusinessProfile = (profile: BranchBusinessProfile) => {
+    touch('business_profile')
+    setForm(previous => {
+      const defaults = branchBillingProfileDefaults(profile)
+      const applyRecommendations = isNew || previous.business_profile === null
+      return {
+        ...previous,
+        business_profile: profile,
+        products_enabled: applyRecommendations ? defaults.productsEnabled : previous.products_enabled,
+        services_enabled: applyRecommendations ? defaults.servicesEnabled : previous.services_enabled,
+        custom_lines_enabled: applyRecommendations ? defaults.customLinesEnabled : previous.custom_lines_enabled,
+        // Existing branches retain their operational POS and stock choices
+        // when classified. New branches start from the selected profile's
+        // recommendations and can still adjust either field afterwards.
+        pos_mode: isNew ? defaults.posMode : previous.pos_mode,
+        stock_enabled: isNew ? defaults.stockEnabled : previous.stock_enabled,
+      }
+    })
+  }
 
   const requestClose = (afterClose?: () => void) => {
     if (saving) return
@@ -482,17 +577,20 @@ function BranchModal({
     if (isNew && activeTab !== tabs[tabs.length - 1].id) {
       const currentTabInvalid =
         (activeTab === 'general' && generalError) ||
-        (activeTab === 'access' && accessError)
+        (activeTab === 'access' && accessError) ||
+        (activeTab === 'billing' && billingError)
       if (currentTabInvalid) {
         setShowAllErrors(true)
         const firstInvalidField = activeTab === 'access'
           ? ['login_username', 'login_password', 'login_confirm_password'].find(key => errs[key])
-          : Object.keys(errs).find(key => !key.startsWith('login_') && errs[key])
+          : activeTab === 'billing'
+            ? 'business_profile'
+            : Object.keys(errs).find(key => !key.startsWith('login_') && errs[key])
         if (firstInvalidField) {
           setTouched(prev => new Set([...prev, firstInvalidField]))
           window.requestAnimationFrame(() => {
             dialogRef.current
-              ?.querySelector<HTMLElement>(`[data-branch-field="${firstInvalidField}"] input, [data-branch-field="${firstInvalidField}"] select`)
+              ?.querySelector<HTMLElement>(`[data-branch-field="${firstInvalidField}"] input, [data-branch-field="${firstInvalidField}"] select, [data-branch-field="${firstInvalidField}"] button`)
               ?.focus()
           })
         }
@@ -506,11 +604,15 @@ function BranchModal({
       setShowAllErrors(true)
       setTouched(new Set(Object.keys(errs)))
       const firstInvalidField = Object.keys(errs).find(key => errs[key])
-      const invalidTab: BranchModalTab = firstInvalidField?.startsWith('login_') ? 'access' : 'general'
+      const invalidTab: BranchModalTab = firstInvalidField?.startsWith('login_')
+        ? 'access'
+        : firstInvalidField === 'business_profile'
+          ? 'billing'
+          : 'general'
       selectTab(invalidTab)
       window.requestAnimationFrame(() => {
         dialogRef.current
-          ?.querySelector<HTMLElement>(`[data-branch-field="${firstInvalidField}"] input, [data-branch-field="${firstInvalidField}"] select`)
+          ?.querySelector<HTMLElement>(`[data-branch-field="${firstInvalidField}"] input, [data-branch-field="${firstInvalidField}"] select, [data-branch-field="${firstInvalidField}"] button`)
           ?.focus()
       })
       return
@@ -549,12 +651,22 @@ function BranchModal({
       // untyped reference for write calls while keeping reads typed.
       const q = supabase as unknown as { from: (t: string) => any }
       if (isNew) {
+        // The Phase 1 create contract accepts these optional values without
+        // changing compatibility for other callers that still omit them.
+        const createBranchPayload = {
+          ...branchPayload,
+          business_profile: form.business_profile,
+          products_enabled: form.products_enabled,
+          services_enabled: form.services_enabled,
+          custom_lines_enabled: form.custom_lines_enabled,
+          pos_mode: form.pos_mode,
+        }
         const { data, error } = await (supabase as any).rpc('create_branch_for_tenant', {
-          p_payload: branchPayload,
+          p_payload: createBranchPayload,
         })
         if (error) throw error
         const branchId = branchIdFromRpcResult(data)
-        if (form.allow_split_payments || form.show_pos_scroll_buttons || form.pos_mode !== 'touch') {
+        if (form.allow_split_payments || form.show_pos_scroll_buttons) {
           await savePosSettings(branchId)
         }
         if (canEditModuleSettings && form.stock_enabled !== null) await saveModuleSettings(branchId)
@@ -581,6 +693,14 @@ function BranchModal({
       } else {
         const { data, error } = await q.from('branches').update(branchPayload).eq('id', branch!.id).select('id').single()
         if (error || data?.id !== branch!.id) throw error ?? new Error('Branch update response was not confirmed')
+        if (canEditBillingConfig && !sameBillingFormValues(billingFormValues(form), initialBillingFormRef.current)) {
+          await updateBranchBillingProfileConfig(branch!.id, {
+            businessProfile: form.business_profile,
+            productsEnabled: form.products_enabled,
+            servicesEnabled: form.services_enabled,
+            customLinesEnabled: form.custom_lines_enabled,
+          })
+        }
         if (
           form.allow_split_payments !== (branch!.allow_split_payments ?? false) ||
           form.show_pos_scroll_buttons !== (branch!.show_pos_scroll_buttons ?? false) ||
@@ -689,7 +809,9 @@ function BranchModal({
             className="flex h-12 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {tabs.map((tab, index) => {
               const selected = activeTab === tab.id
-              const invalid = (tab.id === 'general' && showAllErrors && generalError) || (tab.id === 'access' && showAllErrors && accessError)
+              const invalid = (tab.id === 'general' && showAllErrors && generalError)
+                || (tab.id === 'access' && showAllErrors && accessError)
+                || (tab.id === 'billing' && showAllErrors && billingError)
               const Icon = tab.icon
               return (
                 <button
@@ -868,6 +990,136 @@ function BranchModal({
           </section>
           )}
 
+          {/* ── BILLING PROFILE ───────────────────────── */}
+          {activeTab === 'billing' && canEditBillingConfig && (
+          <section id="branch-panel-billing" role="tabpanel" aria-labelledby="branch-tab-billing" className="space-y-3">
+            <div className={sectionClass(true)}>
+              <SectionHeader icon={SlidersHorizontal} title={t('branches:billing.title')} open={true} toggle={() => {}}
+                color="text-violet-600" bg="bg-violet-50" />
+              <div className="space-y-5 px-5 py-4">
+                <div data-branch-field="business_profile">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">{t('branches:billing.businessProfile')}</p>
+                      <p className="mt-0.5 text-[11px] leading-5 text-gray-400">{t('branches:billing.businessProfileHelp')}</p>
+                    </div>
+                    {!isNew && !form.business_profile && (
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">
+                        {t('branches:billing.notConfigured')}
+                      </span>
+                    )}
+                  </div>
+                  {billingConfigLoading && !isNew && (
+                    <p className="mt-2 text-[11px] text-gray-400">{t('branches:billing.loadingConfig')}</p>
+                  )}
+                  {billingConfigError && !isNew && (
+                    <p className="mt-2 text-[11px] text-amber-700">{t('branches:billing.configUnavailable')}</p>
+                  )}
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    {BRANCH_BILLING_PROFILE_OPTIONS.map(profile => {
+                      const selected = form.business_profile === profile
+                      return (
+                        <button
+                          key={profile}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => selectBusinessProfile(profile)}
+                          className={`rounded-xl border px-3 py-3 text-start transition-[border-color,background-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                            selected
+                              ? 'border-primary-400 bg-primary-50/60 text-primary-900 ring-1 ring-primary-200'
+                              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-[#faf8f2]'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2 text-sm font-semibold">
+                            <span className={`h-3.5 w-3.5 rounded-full border ${selected ? 'border-primary-500 bg-primary-500 ring-2 ring-white' : 'border-gray-300 bg-white'}`} aria-hidden="true" />
+                            {t(`branches:billing.profiles.${profile}.label`)}
+                          </span>
+                          <span className="mt-1 block text-[11px] leading-4 text-gray-400">
+                            {t(`branches:billing.profiles.${profile}.description`)}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {fieldErr('business_profile') && <p className="mt-2 text-xs font-medium text-red-600">{fieldErr('business_profile')}</p>}
+                  {!isNew && form.business_profile && (
+                    <p className="mt-3 rounded-lg bg-[#faf8f2] px-3 py-2 text-[11px] leading-5 text-gray-500">
+                      {effectiveBillingConfig?.legacyProfile
+                        ? t('branches:billing.classifyingHelp')
+                        : t('branches:billing.profileChangeKeepsChoices')}
+                    </p>
+                  )}
+                </div>
+
+                <div className="border-t border-[#e8e1d1] pt-5">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">
+                      {form.business_profile === 'services'
+                        ? t('branches:billing.whatWillSell')
+                        : t('branches:billing.capabilities')}
+                    </p>
+                    <p className="mt-0.5 text-[11px] leading-5 text-gray-400">{t('branches:billing.capabilitiesHelp')}</p>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <label className={`flex cursor-pointer items-start gap-3 rounded-xl border border-[#e8e1d1] bg-white p-3 ${
+                      form.business_profile === 'services' && !form.services_enabled ? 'cursor-not-allowed opacity-60' : ''
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={form.products_enabled}
+                        disabled={form.business_profile === 'services' && !form.services_enabled}
+                        onChange={event => set('products_enabled')(event.target.checked)}
+                        className="mt-0.5 rounded border-gray-300 text-primary-500 focus:ring-primary-500"
+                      />
+                      <span>
+                        <span className="block text-sm font-medium text-gray-800">{t('branches:billing.products')}</span>
+                        <span className="mt-0.5 block text-[11px] leading-4 text-gray-400">{t('branches:billing.productsHelp')}</span>
+                      </span>
+                    </label>
+                    <label className={`flex items-start gap-3 rounded-xl border border-[#e8e1d1] bg-white p-3 ${
+                      servicesMustRemainEnabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={form.services_enabled}
+                        disabled={servicesMustRemainEnabled}
+                        onChange={event => set('services_enabled')(event.target.checked)}
+                        className="mt-0.5 rounded border-gray-300 text-primary-500 focus:ring-primary-500"
+                      />
+                      <span>
+                        <span className="block text-sm font-medium text-gray-800">{t('branches:billing.services')}</span>
+                        <span className="mt-0.5 block text-[11px] leading-4 text-gray-400">{t('branches:billing.servicesHelp')}</span>
+                      </span>
+                    </label>
+                  </div>
+                  {servicesMustRemainEnabled && (
+                    <p className="mt-2 text-[11px] text-gray-500">{t('branches:billing.servicesRequiredHelp')}</p>
+                  )}
+                </div>
+
+                <div className="border-t border-[#e8e1d1] pt-5">
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#e8e1d1] bg-white p-3">
+                    <input
+                      type="checkbox"
+                      checked={form.custom_lines_enabled}
+                      onChange={event => set('custom_lines_enabled')(event.target.checked)}
+                      className="mt-0.5 rounded border-gray-300 text-primary-500 focus:ring-primary-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-gray-800">{t('branches:billing.customLines')}</span>
+                      <span className="mt-0.5 block text-[11px] leading-4 text-gray-400">{t('branches:billing.customLinesHelp')}</span>
+                    </span>
+                  </label>
+                </div>
+
+                <p className="rounded-lg bg-[#faf8f2] px-3 py-2 text-[11px] leading-5 text-gray-500">
+                  {t('branches:billing.dataSafetyHelp')}
+                </p>
+              </div>
+            </div>
+          </section>
+          )}
+
           {/* ── POS CHECKOUT ─────────────────────────── */}
           {activeTab === 'pos' && (
           <section id="branch-panel-pos" role="tabpanel" aria-labelledby="branch-tab-pos">
@@ -956,7 +1208,7 @@ function BranchModal({
                       { key: 'enabled' }, { key: 'disabled' },
                     ] as { key: StockModuleSetting }[]).map(option => {
                       const selected = stockModuleSetting(form.stock_enabled) === option.key
-                      const disabled = serviceTenant && option.key === 'enabled'
+                      const disabled = isLegacyServiceBranch && option.key === 'enabled'
                       return (
                         <button
                           key={option.key}
@@ -980,7 +1232,7 @@ function BranchModal({
 
                   <div className="rounded-xl border border-[#e8e1d1] bg-[#faf8f2] px-3 py-2.5">
                     <p className="text-[11px] font-medium text-gray-600">
-                      {t(`branches:${stockModuleHintKey(form.stock_enabled, tenantBusinessType)}`)}
+                      {t(`branches:${stockModuleHintKey(form.stock_enabled, isLegacyServiceBranch)}`)}
                     </p>
                     <p className="mt-0.5 text-[11px] text-gray-400">
                       {t('branches:stock.scopeHelp')}
@@ -1461,6 +1713,7 @@ export default function BranchesTab() {
   }, [sub.isPhase2, sub.status, profile?.tenant_id])
 
   const tenantId = profile?.tenant_id ?? ''
+  const canEditBillingConfig = ['owner', 'admin'].includes(String(profile?.role ?? ''))
   const canEditModuleSettings = ['owner', 'admin', 'super_admin'].includes(String(profile?.role ?? ''))
   const fallbackActiveBranches = branches.filter(branch => branch.is_active !== false).length
   const activeBranchCount = branchUsage?.active_branch_count ?? fallbackActiveBranches
@@ -1564,6 +1817,7 @@ export default function BranchesTab() {
           branch={drawerBranch === 'new' ? null : drawerBranch}
           tenantId={tenantId}
           tenantBusinessType={tenant?.business_type}
+          canEditBillingConfig={canEditBillingConfig}
           canEditModuleSettings={canEditModuleSettings}
           isPhase2={sub.isPhase2}
           onClose={() => setDrawer(null)}

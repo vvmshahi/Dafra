@@ -8,7 +8,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "test": "npm run test:register-session-netting && npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx",
+    "test": "npm run test:register-session-netting && npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx && npm run test:branch-billing-profile-ux",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -91,6 +91,7 @@
     "test:branch-tabbed-modal": "node scripts/test-branch-tabbed-modal.mjs",
     "test:branch-modal-visual-stability": "node scripts/test-branch-modal-visual-stability.mjs",
     "test:branch-billing-profile-foundation": "node scripts/test-branch-billing-profile-foundation.mjs",
+    "test:branch-billing-profile-ux": "node scripts/test-branch-billing-profile-ux.mjs",
     "test:product-editor-modal-ui": "node scripts/test-product-editor-modal-ui.mjs",
     "test:product-editor-compact-ui": "node scripts/test-product-editor-compact-ui.mjs",
     "test:product-editor-v1-ui": "node scripts/test-product-editor-v1-ui.mjs",
