@@ -55,7 +55,7 @@ import { normalizeRegisterSession } from '@/lib/registerSessions'
 import { useSubscription } from '@/hooks/useSubscription'
 import { getPrinterSettings, getPrinters, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printAtomicReceiptSnapshot } from '@/lib/atomicReceiptPrint'
-import { openReceiptPreview, printReceiptInHiddenFrame } from '@/lib/receiptPrint'
+import { openBrowserReceiptPrint, openReceiptPreview, printReceiptInHiddenFrame } from '@/lib/receiptPrint'
 import { isAndroidBrowser, openPrintPopup, printCurrentDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
 import { supportConfig } from '@/config/support'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
@@ -855,6 +855,18 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
 
     setPrintingReceipt(true)
     try {
+      // Browser printing owns device selection. Open the visible route before
+      // any async work so the user gesture is preserved for popup-safe print.
+      if (!isElectron()) {
+        try {
+          openBrowserReceiptPrint(receipt.invoiceId)
+        } catch (error) {
+          console.warn('[ReceiptView] browser receipt print could not be opened', error)
+          toast.error(t('printing:popupBlocked'))
+        }
+        return
+      }
+
       if (receipt.atomicSnapshot || receipt.isDemo || receipt.sandboxDemo) {
         const printed = await printRenderedReceiptSnapshot()
         if (printed) {
@@ -862,10 +874,6 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
           return
         }
         throw new Error('Rendered receipt snapshot could not be printed')
-      }
-      if (!isElectron()) {
-        await printReceiptInHiddenFrame(receipt.invoiceId)
-        return
       }
 
       const settings = await getPrinterSettings()

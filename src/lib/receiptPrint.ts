@@ -18,6 +18,17 @@ export function openReceiptPreview(invoiceId: string, autoPrint = true) {
   return !!opened
 }
 
+/**
+ * Opens the visible receipt document used by browser printing.  This must run
+ * directly from the click handler so browsers retain the user gesture needed
+ * to allow the popup.  The route itself waits for receipt assets and layout
+ * readiness before it asks the browser to print.
+ */
+export function openBrowserReceiptPrint(invoiceId: string): void {
+  if (typeof window === 'undefined') throw new Error('Receipt printing is unavailable in this environment.')
+  openPrintPopup(receiptPreviewUrl(invoiceId, true))
+}
+
 export async function printReceiptInHiddenFrame(invoiceId: string): Promise<void> {
   if (typeof window === 'undefined') throw new Error('Receipt printing is unavailable in this environment.')
   if (activeHiddenReceiptPrint) return activeHiddenReceiptPrint
@@ -25,7 +36,7 @@ export async function printReceiptInHiddenFrame(invoiceId: string): Promise<void
   // Its normal receipt route stays visibly rendered until its own ready check
   // completes, then invokes the system print UI.
   if (isAndroidBrowser()) {
-    openPrintPopup(receiptPreviewUrl(invoiceId, true))
+    openBrowserReceiptPrint(invoiceId)
     return
   }
   activeHiddenReceiptPrint = new Promise<void>((resolve, reject) => {
