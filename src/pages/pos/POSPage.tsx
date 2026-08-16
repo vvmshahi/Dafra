@@ -1065,6 +1065,7 @@ function ProductCard({ product, cartQty, onAdd }: {
         )}
       </div>
       <p className="text-xs font-semibold text-gray-800 leading-snug line-clamp-2" dir="auto">{localizedName(product.name, product.nameAr, isRtl)}</p>
+      {product.isService && <span className="mt-1 inline-flex rounded-full bg-sky-50 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700">Service</span>}
       <p className="text-sm font-bold text-primary-600 mt-1" dir="ltr"><Rial amount={product.price} /></p>
       {product.catName && (
         <span className="inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full mt-1"
@@ -1174,6 +1175,7 @@ function QuickBillingPanel({
                 <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2">
                   <span dir="auto">{localizedName(product.name, product.nameAr, isRtl)}</span>
                 </p>
+                {product.isService && <span className="mt-1 inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700">Service</span>}
                 {cartSummary && (
                   <span className="mt-1 inline-flex rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold text-primary-700">
                     {cartSummary}
@@ -1204,11 +1206,13 @@ function QuickBillingPanel({
 
               {stockVisible && <div>
                 <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                  product.trackStock
+                  product.isService
+                    ? 'bg-sky-50 text-sky-700'
+                    : product.trackStock
                     ? 'bg-amber-50 text-amber-700'
                     : 'bg-gray-100 text-gray-500'
                 }`}>
-                  {product.trackStock ? t('stockCount', { count: formatStockQuantity(product.stockQuantity) }) : t('notTracked')}
+                  {product.isService ? 'Service' : product.trackStock ? t('stockCount', { count: formatStockQuantity(product.stockQuantity) }) : t('notTracked')}
                 </span>
               </div>}
 

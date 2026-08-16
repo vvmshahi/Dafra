@@ -82,6 +82,7 @@ interface ProductDraft {
   skuManuallyEdited: boolean
   notes: string
   trackStock: boolean
+  isService: boolean
 }
 
 function readProductDraft(key: string): ProductDraft | null {
@@ -143,6 +144,7 @@ export default function ProductDrawer({
   const [suggestedSku, setSuggestedSku] = useState<string | null>(null)
   const [skuSuggesting, setSkuSuggesting] = useState(false)
   const [notes,        setNotes]        = useState('')
+  const [isService,    setIsService]    = useState(false)
   const [trackStock,   setTrackStock]   = useState(false)
   const [adjustmentQuantity, setAdjustmentQuantity] = useState('')
   const [adjustmentOperation, setAdjustmentOperation] = useState<StockAdjustmentOperation>('add')
@@ -164,14 +166,14 @@ export default function ProductDrawer({
     stockEnabled: branch?.stock_enabled,
   })
   const hasStockContext = tenant !== null && branch !== null
-  const stockControlsAllowed = hasStockContext && businessType === 'trading' && stockModuleVisible && product?.is_service !== true
+  const stockControlsAllowed = hasStockContext && businessType === 'trading' && stockModuleVisible && !isService
   const currentStockQuantity = Number(product?.stock_quantity ?? 0)
   const productWasTracked = Boolean(product?.track_stock)
   const stockUnavailableMessage = !hasStockContext
     ? ''
     : businessType === 'service'
     ? 'Stock tracking is hidden for service businesses.'
-    : product?.is_service
+    : isService
       ? 'Service products cannot track stock.'
       : branch?.stock_enabled === false
         ? 'Stock tracking is disabled for this branch.'
@@ -190,6 +192,7 @@ export default function ProductDrawer({
         sortOrder: String(product.sort_order ?? 0),
         sku: product.sku ?? '',
         notes: product.notes ?? '',
+        isService: Boolean(product.is_service),
       })
     : JSON.stringify({
         name: '',
@@ -203,6 +206,7 @@ export default function ProductDrawer({
         sortOrder: '0',
         sku: '',
         notes: '',
+        isService: false,
       })
 
   const current = JSON.stringify({
@@ -217,6 +221,7 @@ export default function ProductDrawer({
     sortOrder,
     sku,
     notes,
+    isService,
   })
 
   const stockBaseline = product
@@ -310,7 +315,9 @@ export default function ProductDrawer({
       setSuggestedSku(null)
       setSkuSuggesting(false)
       setNotes(draft?.notes ?? product.notes ?? '')
-      setTrackStock(draft?.trackStock ?? Boolean(product.track_stock))
+      const nextIsService = draft?.isService ?? Boolean(product.is_service)
+      setIsService(nextIsService)
+      setTrackStock(nextIsService ? false : (draft?.trackStock ?? Boolean(product.track_stock)))
     } else {
       setName(draft?.name ?? '')
       setNameAr(draft?.nameAr ?? '')
@@ -326,7 +333,9 @@ export default function ProductDrawer({
       setSuggestedSku(null)
       setSkuSuggesting(false)
       setNotes(draft?.notes ?? '')
-      setTrackStock(draft?.trackStock ?? stockControlsAllowed)
+      const nextIsService = draft?.isService ?? false
+      setIsService(nextIsService)
+      setTrackStock(nextIsService ? false : (draft?.trackStock ?? stockControlsAllowed))
     }
     setImageFile(null)
     setAdjustmentQuantity('')
@@ -454,13 +463,20 @@ export default function ProductDrawer({
     }
     const draft: ProductDraft = {
       name, nameAr, categoryId, description, price, vatTreatment,
-      isAvailable, sortOrder, sku, skuManuallyEdited, notes, trackStock,
+      isAvailable, sortOrder, sku, skuManuallyEdited, notes, trackStock, isService,
     }
     try { sessionStorage.setItem(draftKey, JSON.stringify(draft)) } catch {}
   }, [
     open, createdProductId, draftKey, name, nameAr, categoryId, description, price, vatTreatment,
-    isAvailable, sortOrder, sku, skuManuallyEdited, notes, trackStock,
+    isAvailable, sortOrder, sku, skuManuallyEdited, notes, trackStock, isService,
   ])
+
+  useEffect(() => {
+    if (!isService) return
+    setTrackStock(false)
+    setAdjustmentQuantity('')
+    setShowAdjustment(false)
+  }, [isService])
 
   const clearDraft = () => {
     if (!draftKey) return
@@ -674,6 +690,7 @@ export default function ProductDrawer({
         sort_order:    Number(sortOrder)   || 0,
         sku:           sku.trim()          || null,
         notes:         notes.trim()        || null,
+        is_service:    isService,
       }
 
       let savedProductId = product?.id ?? createdProductId
@@ -976,6 +993,25 @@ export default function ProductDrawer({
                   <div>
                     <label className="label" htmlFor="product-name-ar">{t('products:fields.nameAr')}</label>
                     <input id="product-name-ar" className="input text-right" dir="rtl" value={nameAr} onChange={event => setNameAr(event.target.value)} placeholder="اسم المنتج" />
+                  </div>
+                  <div>
+                    <label className="label">Item type</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => setIsService(false)} className={`rounded-xl border px-3 py-2.5 text-left ${!isService ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-600'}`}>
+                        <p className="text-sm font-semibold">Product</p>
+                        <p className="mt-0.5 text-[10px] text-gray-400">Catalogue item; stock tracking remains optional.</p>
+                      </button>
+                      <button type="button" onClick={() => {
+                        if (productWasTracked) {
+                          setError('Disable stock tracking and confirm the existing stock change before converting this product to a service.')
+                          return
+                        }
+                        setIsService(true)
+                      }} className={`rounded-xl border px-3 py-2.5 text-left ${isService ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-600'}`}>
+                        <p className="text-sm font-semibold">Service</p>
+                        <p className="mt-0.5 text-[10px] text-gray-400">Saved non-stock catalogue item. Inventory tracking is always off.</p>
+                      </button>
+                    </div>
                   </div>
                   <div className="sm:max-w-xs">
                     <label className="label" htmlFor="product-category">{t('products:fields.category')}</label>

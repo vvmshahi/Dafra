@@ -267,6 +267,7 @@ function ProductCard({
               {dn(product.categories.name, product.categories.name_ar)}
             </span>
           )}
+          {product.is_service && <span className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">Service</span>}
           <VatBadge treatment={product.vat_treatment} view="grid" />
         </div>
         <p className="text-base font-bold text-primary-700 mt-auto pt-2">
