@@ -10,6 +10,7 @@ const productsPage = read('src/pages/products/ProductsPage.tsx')
 const productDrawer = read('src/pages/products/ProductDrawer.tsx')
 const productUnits = read('src/pages/products/ProductUnitsSection.tsx')
 const pos = read('src/pages/pos/POSPage.tsx')
+const cartLines = read('src/lib/pos/cartLines.ts')
 const creditNote = read('src/pages/invoices/CreateCreditNoteModal.tsx')
 const branchDashboard = read('src/pages/branch/BranchDashboardPage.tsx')
 const branchDetail = read('src/pages/admin/BranchDetailPage.tsx')
@@ -114,14 +115,14 @@ assert.match(schema, /'is_service'/)
 assert.match(schema, /Service products cannot track stock/)
 
 // Services use the same categories, units, and normal product-backed Catalogue
-// cart model. Custom Lines are a separate, non-checkoutable client variant.
+// cart model. Custom Lines have a distinct server-authoritative payload.
 assert.match(productsPage, /categories=\{categories\}/)
 assert.match(pos, /type CatalogueCartLine/)
 assert.match(pos, /const line: CatalogueCartLine/)
 assert.match(pos, /source: 'catalogue'/)
-assert.match(pos, /product_id: item\.productId/)
-assert.match(pos, /product_unit_id: item\.productUnitId/)
-assert.match(pos, /cart\.filter\(isCatalogueCartLine\)\.map/)
+assert.match(pos, /items: serializePosCartLinesForCheckout\(cart\)/)
+assert.match(cartLines, /product_id: line\.productId/)
+assert.match(cartLines, /product_unit_id: line\.productUnitId/)
 assert.match(pos, /resolvePosCheckoutDocument\(branch\.id, customerId\)/)
 
 // POS filters active operational items only for explicit profiles. Legacy

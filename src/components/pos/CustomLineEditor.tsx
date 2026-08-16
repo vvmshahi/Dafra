@@ -94,7 +94,7 @@ export function CustomLineEditor({ line, onClose, onSave }: Props) {
               id="custom-line-description"
               autoFocus
               value={description}
-              maxLength={300}
+              maxLength={255}
               onChange={event => { setDescription(event.target.value); setError(null) }}
               className="input"
               aria-invalid={error === 'description'}
@@ -107,7 +107,7 @@ export function CustomLineEditor({ line, onClose, onSave }: Props) {
             <input
               id="custom-line-description-ar"
               value={descriptionAr}
-              maxLength={300}
+              maxLength={255}
               dir="rtl"
               onChange={event => setDescriptionAr(event.target.value)}
               className="input"

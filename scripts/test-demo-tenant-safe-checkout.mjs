@@ -64,11 +64,11 @@ assert.match(sandboxBlock[0], /submitInvoiceForBranch/)
 assert.match(sandboxBlock[0], /sandbox_validated/)
 
 // Existing cart/customer/barcode and all payment choices remain in the flow.
-assert.match(pos, /type PosPaymentChoice = 'cash' \| 'card' \| 'split'/)
+assert.match(pos, /type PosPaymentChoice = 'cash' \| 'card' \| 'split' \| 'credit'/)
 assert.match(pos, /useBarcodeScanner/)
 assert.match(pos, /customer_id: customerId/)
-assert.match(pos, /items: cart\.filter\(isCatalogueCartLine\)\.map/)
-assert.match(pos, /hasCustomCartLines\(cart\)/)
+assert.match(pos, /items: serializePosCartLinesForCheckout\(cart\)/)
+assert.doesNotMatch(pos, /hasCustomCartLines\(cart\)/)
 assert.match(pos, /session_id: session\?\.id/)
 
 // Persistent bilingual labelling covers success, print, detail, and history.

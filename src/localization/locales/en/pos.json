@@ -67,10 +67,9 @@
     },
     "add": "Add custom line",
     "saveChanges": "Save custom line",
-    "previewOnly": "Preview only. Checkout is unavailable in this build.",
-    "checkoutUnavailable": "Custom billing checkout is not enabled in this build.",
+    "previewOnly": "Checkout totals are calculated securely when you charge.",
     "errors": {
-      "description": "Enter a description up to 300 characters.",
+      "description": "Enter a description up to 255 characters.",
       "quantity": "Enter a positive quantity with up to three decimal places.",
       "unitPrice": "Enter a positive price with up to two decimal places."
     }

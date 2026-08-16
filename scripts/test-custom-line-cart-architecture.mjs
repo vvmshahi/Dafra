@@ -88,6 +88,8 @@ try {
   for (const vatTreatment of ['inherit', 'exclusive', 'inclusive']) {
     assert.ok(cart.createCustomCartLine(customInput({ vatTreatment })))
   }
+  assert.equal(cart.createCustomCartLine(customInput({ description: 'x'.repeat(256) })), null)
+  assert.equal(cart.createCustomCartLine(customInput({ descriptionAr: 'ع'.repeat(256) })), null)
 
   const first = cart.createCustomCartLine(customInput())
   const second = cart.createCustomCartLine(customInput())
@@ -103,6 +105,30 @@ try {
   assert.deepEqual(distinctCart.filter(line => line.cartLineId !== first.cartLineId), [second])
   assert.equal(cart.hasCustomCartLines([catalogueLine, first]), true)
   assert.equal(cart.hasCustomCartLines([catalogueLine]), false)
+
+  // The server mapper keeps legacy and package catalogue payloads byte-for-byte
+  // compatible, while deliberately omitting client cart identity and previews
+  // from a Custom Line financial request.
+  const legacyCatalogueLine = { ...catalogueLine, productUnitId: null, productUnitVersion: null, quantity: 2 }
+  const checkoutItems = cart.serializePosCartLinesForCheckout([legacyCatalogueLine, catalogueLine, first])
+  assert.deepEqual(checkoutItems[0], { product_id: 'product-1', quantity: 2 })
+  assert.deepEqual(checkoutItems[1], {
+    product_id: 'product-1',
+    product_unit_id: 'unit-1',
+    package_quantity: 1,
+    expected_product_unit_version: 2,
+  })
+  assert.deepEqual(checkoutItems[2], {
+    source: 'custom',
+    name: 'Manual consultation',
+    name_ar: null,
+    quantity: 1.25,
+    unit_price: 100,
+    vat_treatment: 'inherit',
+  })
+  assert.equal('cartLineId' in checkoutItems[2], false)
+  assert.equal('subtotal' in checkoutItems[2], false)
+  assert.equal('taxAmount' in checkoutItems[2], false)
 
   const exclusivePreview = cart.getCustomLineDisplayPreview(
     cart.createCustomCartLine(customInput({ quantity: 2, unitPrice: 100, vatTreatment: 'exclusive' })),
@@ -135,9 +161,10 @@ try {
   assert.equal(scannerCart[0].quantity, 2)
   assert.equal(scannerCart[0].productUnitId, 'unit-1')
 
-  // Both insertion points are intentionally behind a development-only gate.
-  assert.match(pos, /import\.meta\.env\.DEV\s*&&\s*import\.meta\.env\.VITE_INTERNAL_CUSTOM_LINE_CART === 'true'/)
-  assert.match(pos, /CUSTOM_LINE_CART_INTERNAL_ENABLED\s*&&\s*branchBillingConfig\?\.customLinesEnabled === true/)
+  // Both insertion points now follow the effective branch capability only;
+  // business profile and browser-only development flags never authorize it.
+  assert.match(pos, /const customLineActionEnabled = branchBillingConfig\?\.customLinesEnabled === true/)
+  assert.doesNotMatch(pos, /CUSTOM_LINE_CART_INTERNAL_ENABLED|VITE_INTERNAL_CUSTOM_LINE_CART/)
   assert.match(pos, /data-pos-custom-line-action="touch"/)
   assert.match(pos, /data-pos-custom-line-action="quick"/)
   assert.match(editor, /CUSTOM_LINE_UNIT_CODE/)
@@ -145,19 +172,16 @@ try {
   assert.match(pos, /function saveCustomCartLine[\s\S]*cartLineId === line\.cartLineId/)
   assert.match(pos, /function removeCartLine[\s\S]*filter\(item => item\.cartLineId !== cartLineId\)/)
 
-  // The hard block is before both the classifier and checkout RPC. The mapper
-  // stays product-backed and does not add a client discriminator to its payload.
+  // Phase 6 removes the old client-only hard block only after introducing the
+  // narrow server contract. The classifier remains before either checkout RPC.
   const charge = pos.slice(pos.indexOf('async function charge()'))
-  const hardBlock = charge.indexOf('hasCustomCartLines(cart)')
   const classifier = charge.indexOf('resolvePosCheckoutDocument(branch.id, customerId)')
   const rpc = charge.indexOf("'pos_checkout'")
-  assert.ok(hardBlock >= 0 && hardBlock < classifier && hardBlock < rpc)
-  assert.match(charge, /toast\.error\(t\('pos:customLine\.checkoutUnavailable'\)\)/)
-  assert.match(charge, /items: cart\.filter\(isCatalogueCartLine\)\.map\(item => item\.productUnitId/)
+  assert.doesNotMatch(charge, /hasCustomCartLines\(cart\)|customLine\.checkoutUnavailable/)
+  assert.ok(classifier >= 0 && classifier < rpc)
+  assert.match(charge, /items: serializePosCartLinesForCheckout\(cart\)/)
   const mapper = charge.slice(charge.indexOf('let payload:'), classifier)
-  assert.match(mapper, /product_id: item\.productId/)
-  assert.match(mapper, /product_unit_id: item\.productUnitId/)
-  assert.doesNotMatch(mapper, /source:\s*'catalogue'|source:\s*'custom'/)
+  assert.match(mapper, /serializePosCartLinesForCheckout\(cart\)/)
   assert.match(pos, /resolvePosCheckoutDocument\(branch\.id, customerId\)/)
 
   const changedPaths = [
@@ -171,6 +195,7 @@ try {
   const permittedLineageRepairPaths = new Set([
     'supabase/migrations/20260816000100_branch_billing_profile_foundation.sql',
     'supabase/migrations/20260816000200_branch_billing_profile_foundation.sql',
+    'supabase/migrations/20260816000300_authoritative_custom_line_checkout.sql',
   ])
   assert.equal(
     changedPaths.some(path => path.startsWith('supabase/migrations/') && !permittedLineageRepairPaths.has(path)),
@@ -196,7 +221,8 @@ try {
     assert.equal(typeof locale.customLine.vat.inherit, 'string')
     assert.equal(typeof locale.customLine.vat.exclusive, 'string')
     assert.equal(typeof locale.customLine.vat.inclusive, 'string')
-    assert.equal(typeof locale.customLine.checkoutUnavailable, 'string')
+    assert.equal(typeof locale.customLine.previewOnly, 'string')
+    assert.doesNotMatch(locale.customLine.previewOnly, /unavailable|غير متاح/)
   }
 
   console.log('Custom line cart architecture tests passed.')

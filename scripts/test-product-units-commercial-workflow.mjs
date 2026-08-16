@@ -7,6 +7,7 @@ const read = path => readFileSync(join(root, path), 'utf8')
 
 const migration = read('supabase/migrations/20260725000700_product_units_commercial_workflow.sql')
 const pos = read('src/pages/pos/POSPage.tsx')
+const cartLines = read('src/lib/pos/cartLines.ts')
 const unifiedScanner = read('src/lib/pos/unifiedScanner.ts')
 const credit = read('src/pages/invoices/CreateCreditNoteModal.tsx')
 const invoiceDetail = read('src/pages/invoices/InvoiceDetailPage.tsx')
@@ -180,12 +181,13 @@ test('cart identity keeps Piece and Carton separate while merging the same comme
 })
 
 test('checkout payload contains identifiers, version and intent but not commercial authority', () => {
-  assert.match(pos, /product_unit_id: item\.productUnitId/)
-  assert.match(pos, /package_quantity: item\.quantity/)
-  assert.match(pos, /expected_product_unit_version: item\.productUnitVersion/)
-  const payloadBlock = pos.slice(
-    pos.indexOf('items: cart.map(item => item.productUnitId'),
-    pos.indexOf('const demoSandbox'),
+  assert.match(pos, /items: serializePosCartLinesForCheckout\(cart\)/)
+  assert.match(cartLines, /product_unit_id: line\.productUnitId/)
+  assert.match(cartLines, /package_quantity: line\.quantity/)
+  assert.match(cartLines, /expected_product_unit_version: line\.productUnitVersion/)
+  const payloadBlock = cartLines.slice(
+    cartLines.indexOf('export function serializePosCartLinesForCheckout'),
+    cartLines.indexOf('export function createCustomCartLineId'),
   )
   assert.doesNotMatch(payloadBlock, /conversion_to_base|base_quantity|package_unit_price|stock_enabled|tenant_id/)
 })

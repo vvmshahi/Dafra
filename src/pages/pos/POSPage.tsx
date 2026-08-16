@@ -90,9 +90,9 @@ import {
   CUSTOM_LINE_QUANTITY_SCALE,
   createCustomCartLine,
   getCustomLineDisplayPreview,
-  hasCustomCartLines,
   isCatalogueCartLine,
   isCustomLineVatTreatment,
+  serializePosCartLinesForCheckout,
   type CatalogueCartLine,
   type CustomCartLine,
   type PosCartLine,
@@ -1965,11 +1965,6 @@ function SplitPaymentModal({
 const WA_LINK    = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
 
-// Phase 5 intentionally keeps custom-line entry internal. A branch capability
-// alone cannot enable it until Phase 6 has a server-authoritative checkout path.
-const CUSTOM_LINE_CART_INTERNAL_ENABLED = import.meta.env.DEV
-  && import.meta.env.VITE_INTERNAL_CUSTOM_LINE_CART === 'true'
-
 export default function POSPage() {
   const { t } = useTranslation(['pos', 'payments', 'register', 'validation', 'common'])
   const { isRtl } = useLocale()
@@ -2053,8 +2048,7 @@ export default function POSPage() {
   })
   const savedBranchPosMode = branchPosMode(branch?.pos_mode)
   const activePosMode: PosMode = businessType === 'trading' ? savedBranchPosMode : 'touch'
-  const customLineActionEnabled = CUSTOM_LINE_CART_INTERNAL_ENABLED
-    && branchBillingConfig?.customLinesEnabled === true
+  const customLineActionEnabled = branchBillingConfig?.customLinesEnabled === true
   const resolvedInvoiceSettings = useMemo(
     () => resolveInvoicePresentationSettings({ savedSettings: branch?.presentation_settings, branch: branch ?? {} }),
     [branch],
@@ -2853,10 +2847,6 @@ export default function POSPage() {
   async function charge() {
     const tid = profile?.tenant_id
     if (!tid || !branch || cart.length === 0 || submitting || checkoutInFlightRef.current) return
-    if (hasCustomCartLines(cart)) {
-      toast.error(t('pos:customLine.checkoutUnavailable'))
-      return
-    }
     if (isAccountSuspended) {
       toast.error(t('pos:accountSuspendedFull'))
       return
@@ -2926,17 +2916,7 @@ export default function POSPage() {
         ...(splitPayments ? { payments: splitPayments } : {}),
         note: note || null,
         idempotency_key: idempotencyKey,
-        items: cart.filter(isCatalogueCartLine).map(item => item.productUnitId
-          ? {
-              product_id: item.productId,
-              product_unit_id: item.productUnitId,
-              package_quantity: item.quantity,
-              expected_product_unit_version: item.productUnitVersion,
-            }
-          : {
-              product_id: item.productId,
-              quantity: item.quantity,
-            }),
+        items: serializePosCartLinesForCheckout(cart),
       }
 
       const documentDecision = await resolvePosCheckoutDocument(branch.id, customerId)
