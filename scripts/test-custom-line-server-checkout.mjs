@@ -7,6 +7,7 @@ const SCOPE_TIP = 'd08838b5b652a1ffd0dc01f394cfb0a44daef046'
 const MIGRATION_PATH = 'supabase/migrations/20260816000300_authoritative_custom_line_checkout.sql'
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const migration = read(MIGRATION_PATH)
+const displayUnitMigration = read('supabase/migrations/20260817000100_custom_line_display_units.sql')
 const pos = read('src/pages/pos/POSPage.tsx')
 const cart = read('src/lib/pos/cartLines.ts')
 const creditNote = read('src/pages/invoices/CreateCreditNoteModal.tsx')
@@ -37,6 +38,7 @@ const migrationVersions = migrationFiles
 check(new Set(migrationVersions).size === migrationVersions.length, 'migration versions must be unique')
 check(migrationFiles.includes('20260816000200_branch_billing_profile_foundation.sql'), 'Phase 5.5 migration must remain present')
 check(migrationFiles.includes('20260816000300_authoritative_custom_line_checkout.sql'), 'Phase 6 migration must be present')
+check(migrationFiles.includes('20260817000100_custom_line_display_units.sql'), 'Custom Line display unit migration must be present')
 check(!migrationFiles.includes('20260816000100_branch_billing_profile_foundation.sql'), 'historical occupied version must not be reused')
 check('20260816000300' > '20260816000200', 'Phase 6 must be forward-only after Phase 5.5')
 matches(migration, /^BEGIN;/m, 'migration must be transactional')
@@ -66,6 +68,10 @@ matches(migration, /\('inherit', 'exclusive', 'inclusive'\)/, 'only safe V1 VAT 
 matches(migration, /v_rate := 0\.15::numeric;/, 'Custom Line VAT rate must be server-owned')
 matches(migration, /v_vat_treatment := v_vat_mode;/, 'inherit must resolve from authoritative branch VAT mode')
 matches(migration, /'unit', 'PCE'/, 'Custom Lines must receive PCE server-side')
+matches(displayUnitMigration, /INVALID_CUSTOM_LINE_UNIT/, 'display unit must be server-validated')
+matches(displayUnitMigration, /length\(v_custom_unit\) > 40/, 'display unit must observe bounded snapshot length')
+matches(displayUnitMigration, /CUSTOM_LINE_DISPLAY_UNIT_CONTRACT_UNREVIEWED/, 'display unit patch must fail closed on unknown function shape')
+matches(displayUnitMigration, /'unit', v_custom_unit/, 'display unit must be persisted in the Custom Line invoice snapshot')
 
 // Authorization, provenance, and stock safety.
 matches(migration, /CUSTOM_LINES_DISABLED_FOR_BRANCH/, 'branch capability must be enforced server-side')
@@ -150,6 +156,7 @@ const permittedPaths = new Set([
   'supabase/migrations/20260816000100_services_and_custom_billing_lines.sql',
   'supabase/migrations/20260816000200_branch_billing_profile_foundation.sql',
   'supabase/migrations/20260816000400_source_aware_reporting_credit_restock.sql',
+  'supabase/migrations/20260817000100_custom_line_display_units.sql',
 ])
 check(changedPaths.every(path => permittedPaths.has(path)), 'Phase 6 diff must stay within its approved scope')
 check(!changedPaths.includes('supabase/functions/zatca-submit/index.ts'), 'zatca-submit must remain untouched')

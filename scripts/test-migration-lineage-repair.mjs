@@ -23,6 +23,7 @@ const billingMigrations = [
   '20260816000200_branch_billing_profile_foundation.sql',
   '20260816000300_authoritative_custom_line_checkout.sql',
   '20260816000400_source_aware_reporting_credit_restock.sql',
+  '20260817000100_custom_line_display_units.sql',
 ]
 
 assert.ok(

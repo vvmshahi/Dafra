@@ -5,6 +5,9 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import {
   CUSTOM_LINE_QUANTITY_SCALE,
   CUSTOM_LINE_UNIT_CODE,
+  CUSTOM_LINE_UNIT_PRESETS,
+  getCustomLineDisplayPreview,
+  isCustomLineUnitPreset,
   createCustomCartLine,
   validateCustomCartLineInput,
   type CustomCartLine,
@@ -14,6 +17,7 @@ import {
 
 interface Props {
   line: CustomCartLine | null
+  branchVatMode: 'exclusive' | 'inclusive'
   onClose: () => void
   onSave: (line: CustomCartLine) => void
 }
@@ -24,13 +28,15 @@ function quantityStep() {
   return Number((10 ** -CUSTOM_LINE_QUANTITY_SCALE).toFixed(CUSTOM_LINE_QUANTITY_SCALE))
 }
 
-export function CustomLineEditor({ line, onClose, onSave }: Props) {
+export function CustomLineEditor({ line, branchVatMode, onClose, onSave }: Props) {
   const { t } = useTranslation(['pos', 'common'])
   const [description, setDescription] = useState(line?.description ?? '')
   const [descriptionAr, setDescriptionAr] = useState(line?.descriptionAr ?? '')
   const [quantity, setQuantity] = useState(line ? String(line.quantity) : '1')
   const [unitPrice, setUnitPrice] = useState(line ? line.unitPrice.toFixed(2) : '')
   const [vatTreatment, setVatTreatment] = useState<CustomLineVatTreatment>(line?.vatTreatment ?? 'inherit')
+  const [unitCode, setUnitCode] = useState(line?.unitCode ?? CUSTOM_LINE_UNIT_CODE)
+  const [otherUnit, setOtherUnit] = useState(line?.unitCode && !isCustomLineUnitPreset(line.unitCode) ? line.unitCode : '')
   const [error, setError] = useState<CustomCartLineValidationIssue | null>(null)
 
   useEffect(() => {
@@ -50,6 +56,7 @@ export function CustomLineEditor({ line, onClose, onSave }: Props) {
       quantity: Number(quantity),
       unitPrice: Number(unitPrice),
       vatTreatment,
+      unitCode: unitCode === 'OTHER' ? otherUnit : unitCode,
     }
     const validationIssue = validateCustomCartLineInput(input)
     if (validationIssue) {
@@ -60,6 +67,12 @@ export function CustomLineEditor({ line, onClose, onSave }: Props) {
     if (!next) return
     onSave(next)
   }
+
+  const previewLine = createCustomCartLine({
+    description: description || 'Preview', quantity: Number(quantity), unitPrice: Number(unitPrice), vatTreatment,
+    unitCode: unitCode === 'OTHER' ? otherUnit : unitCode,
+  })
+  const preview = previewLine ? getCustomLineDisplayPreview(previewLine, branchVatMode) : null
 
   return (
     <div
@@ -114,7 +127,7 @@ export function CustomLineEditor({ line, onClose, onSave }: Props) {
             />
           </div>
 
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_76px] gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)]">
             <div>
               <label className="label" htmlFor="custom-line-quantity">{t('pos:customLine.quantity')}</label>
               <input
@@ -132,6 +145,14 @@ export function CustomLineEditor({ line, onClose, onSave }: Props) {
               {error === 'quantity' && <p className="mt-1.5 text-xs text-red-600">{t('pos:customLine.errors.quantity')}</p>}
             </div>
             <div>
+              <label className="label" htmlFor="custom-line-unit">{t('pos:customLine.unit')}</label>
+              <select id="custom-line-unit" value={unitCode} onChange={event => { setUnitCode(event.target.value); setError(null) }} className="input" aria-invalid={error === 'unit'}>
+                {CUSTOM_LINE_UNIT_PRESETS.map(unit => <option key={unit} value={unit}>{t(`pos:customLine.units.${unit}`)}</option>)}
+                <option value="OTHER">{t('pos:customLine.units.OTHER')}</option>
+              </select>
+              {error === 'unit' && <p className="mt-1.5 text-xs text-red-600">{t('pos:customLine.errors.unit')}</p>}
+            </div>
+            <div>
               <label className="label" htmlFor="custom-line-unit-price">{t('pos:customLine.unitPrice')}</label>
               <MoneyInput
                 id="custom-line-unit-price"
@@ -143,13 +164,12 @@ export function CustomLineEditor({ line, onClose, onSave }: Props) {
               />
               {error === 'unitPrice' && <p className="mt-1.5 text-xs text-red-600">{t('pos:customLine.errors.unitPrice')}</p>}
             </div>
-            <div>
-              <span className="label">{t('pos:customLine.unit')}</span>
-              <div className="input flex h-10 items-center justify-center bg-gray-50 text-sm font-semibold text-gray-500" dir="ltr">
-                {CUSTOM_LINE_UNIT_CODE}
-              </div>
-            </div>
           </div>
+
+          {unitCode === 'OTHER' && <div>
+            <label className="label" htmlFor="custom-line-other-unit">{t('pos:customLine.customUnit')}</label>
+            <input id="custom-line-other-unit" value={otherUnit} maxLength={40} onChange={event => { setOtherUnit(event.target.value); setError(null) }} className="input" aria-invalid={error === 'unit'} />
+          </div>}
 
           <fieldset>
             <legend className="label">{t('pos:customLine.vatTreatment')}</legend>
@@ -171,6 +191,16 @@ export function CustomLineEditor({ line, onClose, onSave }: Props) {
               ))}
             </div>
           </fieldset>
+
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3" data-custom-line-preview>
+            <div className="flex items-center justify-between"><p className="text-xs font-bold text-emerald-900">{t('pos:customLine.preview')}</p><p className="text-[10px] text-emerald-700">{t('pos:customLine.finalTotals')}</p></div>
+            {preview ? <div className="mt-2 space-y-1 text-xs text-emerald-900" dir="ltr">
+              <p className="font-semibold">{quantity} × SAR {Number(unitPrice || 0).toFixed(2)}</p>
+              <div className="flex justify-between"><span>{t('pos:subtotal')}</span><span>SAR {preview.subtotal.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>{t('pos:vat')}</span><span>SAR {preview.taxAmount.toFixed(2)}</span></div>
+              <div className="flex justify-between border-t border-emerald-200 pt-1 font-bold"><span>{t('pos:total')}</span><span>SAR {preview.total.toFixed(2)}</span></div>
+            </div> : <p className="mt-2 text-xs text-emerald-700">—</p>}
+          </div>
         </div>
 
         <div className="flex gap-2 border-t border-gray-100 bg-gray-50 px-5 py-4">

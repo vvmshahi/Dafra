@@ -91,6 +91,7 @@ import {
   createCustomCartLine,
   getCustomLineDisplayPreview,
   isCatalogueCartLine,
+  isCustomLineUnitPreset,
   isCustomLineVatTreatment,
   serializePosCartLinesForCheckout,
   type CatalogueCartLine,
@@ -3688,6 +3689,7 @@ export default function POSPage() {
       {customLineEditor && (
         <CustomLineEditor
           line={customLineEditor === 'new' ? null : customLineEditor}
+          branchVatMode={vatMode}
           onClose={() => setCustomLineEditor(null)}
           onSave={saveCustomCartLine}
         />
@@ -3952,17 +3954,6 @@ export default function POSPage() {
                   </button>
                 ))}
               </div>
-              {customLineActionEnabled && (
-                <button
-                  type="button"
-                  data-pos-custom-line-action="touch"
-                  onClick={() => setCustomLineEditor('new')}
-                  className="inline-flex h-8 flex-shrink-0 items-center gap-1.5 rounded-xl border border-dashed border-primary-300 bg-primary-50 px-3 text-xs font-bold text-primary-800 hover:border-primary-500 hover:bg-primary-100"
-                >
-                  <Plus size={13} />
-                  {t('pos:customLine.action')}
-                </button>
-              )}
               {showPosScrollButtons && (
                 <button
                   type="button"
@@ -3978,7 +3969,7 @@ export default function POSPage() {
           )}
         </div>
 
-        {/* Product grid */}
+        {/* Product results. Touch keeps Custom Lines deliberately outside the category-only strip. */}
         <div ref={productScrollRef} className="flex-1 overflow-y-auto p-4">
           {activePosMode === 'quick' ? (
             <QuickBillingPanel
@@ -3993,6 +3984,19 @@ export default function POSPage() {
           ) : (
             <div className={showPosScrollButtons ? 'flex items-start gap-3 min-h-full' : 'min-h-full'}>
               <div className="flex-1 min-w-0">
+                {customLineActionEnabled && (
+                  <div className="mb-3 flex justify-end">
+                    <button
+                      type="button"
+                      data-pos-custom-line-action="touch-results"
+                      onClick={() => setCustomLineEditor('new')}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-primary-300 bg-primary-50 px-3 py-2 text-xs font-bold text-primary-800 shadow-sm transition-colors hover:border-primary-500 hover:bg-primary-100"
+                    >
+                      <Plus size={13} />
+                      {t('pos:customLine.action')}
+                    </button>
+                  </div>
+                )}
                 {filtered.length === 0 ? (
                   products.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full min-h-[320px] gap-5 text-center px-6">
@@ -4232,13 +4236,16 @@ export default function POSPage() {
                         <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-bold text-sky-800">{t('pos:customLine.label')}</span>
                       </div>
                       <p className="text-[10px] font-medium text-gray-500" dir="ltr">
-                        {item.unitCode} · {t(`pos:customLine.vat.${item.vatTreatment}`)}
+                        {isCustomLineUnitPreset(item.unitCode) ? t(`pos:customLine.units.${item.unitCode}`) : item.unitCode} · {t(`pos:customLine.vat.${item.vatTreatment}`)}
                       </p>
                       <p className="text-[10px] text-gray-400 tabular-nums" dir="ltr">
                         {fmt(item.unitPrice)} × {formatPackageQuantity(item.quantity, CUSTOM_LINE_QUANTITY_SCALE)} = <span className="font-semibold text-gray-700"><Rial amount={preview.total} /></span>
                       </p>
                     </div>
                     <div className="flex flex-shrink-0 items-center gap-1" dir="ltr">
+                      <button type="button" onClick={() => adjustQty(item.cartLineId, -1)} aria-label={t('pos:decreaseQuantity', { name: displayName })} className="flex h-6 w-6 items-center justify-center rounded-lg border border-sky-200 bg-white text-sky-700 hover:bg-sky-50">−</button>
+                      <span className="min-w-6 text-center text-[10px] font-bold text-sky-800">{formatPackageQuantity(item.quantity, CUSTOM_LINE_QUANTITY_SCALE)}</span>
+                      <button type="button" onClick={() => adjustQty(item.cartLineId, 1)} aria-label={t('pos:increaseQuantity', { name: displayName })} className="flex h-6 w-6 items-center justify-center rounded-lg border border-sky-200 bg-white text-sky-700 hover:bg-sky-50">+</button>
                       <button
                         type="button"
                         onClick={() => setCustomLineEditor(item)}

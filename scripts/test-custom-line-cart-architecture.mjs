@@ -40,6 +40,7 @@ const customInput = overrides => ({
   quantity: 1.25,
   unitPrice: 100,
   vatTreatment: 'inherit',
+  unitCode: 'PCE',
   ...overrides,
 })
 
@@ -68,6 +69,9 @@ try {
   assert.ok(custom)
   assert.equal(cart.isCustomCartLine(custom), true)
   assert.equal(custom.unitCode, 'PCE')
+  assert.ok(cart.createCustomCartLine(customInput({ unitCode: 'BOX' })))
+  assert.equal(cart.createCustomCartLine(customInput({ unitCode: 'Wedding table' }))?.unitCode, 'Wedding table')
+  for (const unitCode of ['', ' '.repeat(2), 'x'.repeat(41), 'Box\n']) assert.equal(cart.createCustomCartLine(customInput({ unitCode })), null)
   for (const forbiddenField of ['productId', 'productUnitId', 'trackStock', 'stockQuantity', 'sku', 'barcode']) {
     assert.equal(forbiddenField in custom, false, `custom line must not contain ${forbiddenField}`)
   }
@@ -125,6 +129,7 @@ try {
     quantity: 1.25,
     unit_price: 100,
     vat_treatment: 'inherit',
+    unit: 'PCE',
   })
   assert.equal('cartLineId' in checkoutItems[2], false)
   assert.equal('subtotal' in checkoutItems[2], false)
@@ -165,9 +170,11 @@ try {
   // business profile and browser-only development flags never authorize it.
   assert.match(pos, /const customLineActionEnabled = branchBillingConfig\?\.customLinesEnabled === true/)
   assert.doesNotMatch(pos, /CUSTOM_LINE_CART_INTERNAL_ENABLED|VITE_INTERNAL_CUSTOM_LINE_CART/)
-  assert.match(pos, /data-pos-custom-line-action="touch"/)
+  assert.match(pos, /data-pos-custom-line-action="touch-results"/)
   assert.match(pos, /data-pos-custom-line-action="quick"/)
-  assert.match(editor, /CUSTOM_LINE_UNIT_CODE/)
+  assert.match(editor, /CUSTOM_LINE_UNIT_PRESETS/)
+  assert.match(editor, /data-custom-line-preview/)
+  assert.match(pos, /adjustQty\(item\.cartLineId, -1\)/)
   assert.match(editor, /validateCustomCartLineInput/)
   assert.match(pos, /function saveCustomCartLine[\s\S]*cartLineId === line\.cartLineId/)
   assert.match(pos, /function removeCartLine[\s\S]*filter\(item => item\.cartLineId !== cartLineId\)/)
@@ -200,6 +207,7 @@ try {
     'supabase/migrations/20260816000200_branch_billing_profile_foundation.sql',
     'supabase/migrations/20260816000300_authoritative_custom_line_checkout.sql',
     'supabase/migrations/20260816000400_source_aware_reporting_credit_restock.sql',
+    'supabase/migrations/20260817000100_custom_line_display_units.sql',
     'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
     'supabase/migrations/20260804000600_trading_sandbox_v2.sql',
     'supabase/migrations/20260805000200_persist_zatca_capability_selection.sql',
@@ -223,6 +231,9 @@ try {
     assert.equal(typeof locale.customLine.description, 'string')
     assert.equal(typeof locale.customLine.descriptionAr, 'string')
     assert.equal(typeof locale.customLine.quantity, 'string')
+    assert.equal(typeof locale.customLine.units.BOX, 'string')
+    assert.equal(typeof locale.customLine.units.OTHER, 'string')
+    assert.equal(typeof locale.customLine.preview, 'string')
     assert.equal(typeof locale.customLine.unitPrice, 'string')
     assert.equal(typeof locale.customLine.vatTreatment, 'string')
     assert.equal(typeof locale.customLine.vat.inherit, 'string')

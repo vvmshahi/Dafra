@@ -1,6 +1,10 @@
 import type { VatTreatment } from '@/types/database'
 
 export const CUSTOM_LINE_UNIT_CODE = 'PCE' as const
+export const CUSTOM_LINE_UNIT_MAX_LENGTH = 40
+export const CUSTOM_LINE_UNIT_PRESETS = [
+  'PCE', 'UNT', 'BOX', 'BTL', 'PAC', 'KGM', 'LTR', 'MTR', 'HUR',
+] as const
 export const CUSTOM_LINE_QUANTITY_SCALE = 3
 export const CUSTOM_LINE_VAT_TREATMENTS = ['inherit', 'exclusive', 'inclusive'] as const
 
@@ -47,7 +51,8 @@ export interface CustomCartLine {
   quantity: number
   unitPrice: number
   vatTreatment: CustomLineVatTreatment
-  unitCode: typeof CUSTOM_LINE_UNIT_CODE
+  /** Canonical preset code or the bounded Other label; never product identity. */
+  unitCode: string
 }
 
 export type PosCartLine = CatalogueCartLine | CustomCartLine
@@ -59,12 +64,14 @@ export interface CustomCartLineInput {
   quantity: number
   unitPrice: number
   vatTreatment: CustomLineVatTreatment
+  unitCode?: string
 }
 
 export type CustomCartLineValidationIssue =
   | 'description'
   | 'quantity'
   | 'unitPrice'
+  | 'unit'
   | 'vatTreatment'
 
 export interface CustomLineDisplayPreview {
@@ -128,6 +135,7 @@ export function serializePosCartLinesForCheckout(lines: PosCartLine[]): PosCheck
         quantity: line.quantity,
         unit_price: line.unitPrice,
         vat_treatment: line.vatTreatment,
+        unit: line.unitCode,
       }
     }
 
@@ -157,6 +165,16 @@ export function isCustomLineVatTreatment(value: unknown): value is CustomLineVat
     && (CUSTOM_LINE_VAT_TREATMENTS as readonly string[]).includes(value)
 }
 
+export function isCustomLineUnitPreset(value: string): boolean {
+  return (CUSTOM_LINE_UNIT_PRESETS as readonly string[]).includes(value)
+}
+
+export function normalizeCustomLineUnit(value: unknown): string {
+  const unit = typeof value === 'string' ? value.trim() : ''
+  const upper = unit.toUpperCase()
+  return isCustomLineUnitPreset(upper) ? upper : unit
+}
+
 function hasPrecision(value: number, digits: number): boolean {
   return Number.isFinite(value) && Number(value.toFixed(digits)) === value
 }
@@ -168,6 +186,10 @@ export function validateCustomCartLineInput(input: CustomCartLineInput): CustomC
   if (!hasPrecision(input.quantity, CUSTOM_LINE_QUANTITY_SCALE) || input.quantity <= 0) return 'quantity'
   if (!hasPrecision(input.unitPrice, 2) || input.unitPrice <= 0) return 'unitPrice'
   if (!isCustomLineVatTreatment(input.vatTreatment)) return 'vatTreatment'
+  const rawUnit = input.unitCode ?? CUSTOM_LINE_UNIT_CODE
+  if (typeof rawUnit !== 'string' || /[\u0000-\u001F\u007F]/.test(rawUnit)) return 'unit'
+  const unit = normalizeCustomLineUnit(rawUnit)
+  if (!unit || unit.length > CUSTOM_LINE_UNIT_MAX_LENGTH) return 'unit'
   return null
 }
 
@@ -181,7 +203,7 @@ export function createCustomCartLine(input: CustomCartLineInput): CustomCartLine
     quantity: input.quantity,
     unitPrice: input.unitPrice,
     vatTreatment: input.vatTreatment,
-    unitCode: CUSTOM_LINE_UNIT_CODE,
+    unitCode: normalizeCustomLineUnit(input.unitCode ?? CUSTOM_LINE_UNIT_CODE),
   }
 }
 

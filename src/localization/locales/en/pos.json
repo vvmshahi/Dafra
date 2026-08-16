@@ -59,6 +59,10 @@
     "quantity": "Quantity",
     "unitPrice": "Unit price",
     "unit": "Unit",
+    "customUnit": "Custom unit",
+    "units": { "PCE": "Piece / PCE", "UNT": "Unit", "BOX": "Box", "BTL": "Bottle", "PAC": "Pack", "KGM": "Kg", "LTR": "Liter", "MTR": "Meter", "HUR": "Hour", "OTHER": "Other" },
+    "preview": "Preview",
+    "finalTotals": "Final totals are confirmed at checkout.",
     "vatTreatment": "VAT treatment",
     "vat": {
       "inherit": "Use branch default",
@@ -71,7 +75,8 @@
     "errors": {
       "description": "Enter a description up to 255 characters.",
       "quantity": "Enter a positive quantity with up to three decimal places.",
-      "unitPrice": "Enter a positive price with up to two decimal places."
+      "unitPrice": "Enter a positive price with up to two decimal places.",
+      "unit": "Enter a unit up to 40 characters."
     }
   },
   "noProductsAvailable": "No products are available. Add products from the Products page.",

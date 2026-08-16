@@ -211,6 +211,7 @@ const permittedPaths = new Set([
   'supabase/migrations/20260805000200_persist_zatca_capability_selection.sql',
   'supabase/migrations/20260816000100_services_and_custom_billing_lines.sql',
   'supabase/migrations/20260816000200_branch_billing_profile_foundation.sql',
+  'supabase/migrations/20260817000100_custom_line_display_units.sql',
   'src/localization/locales/ar-SA/reports.json',
   'src/localization/locales/en/reports.json',
   'src/pages/reports/SalesReport.tsx',
