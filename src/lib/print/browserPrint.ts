@@ -24,6 +24,7 @@ export function openPrintPopup(path: string): Window {
 export async function waitForPrintableAssets(
   root: Document | HTMLElement = document,
   timeoutMs = 7000,
+  options: { allowConnectedOffscreenRoot?: boolean } = {},
 ): Promise<void> {
   const documentRoot = typeof Document !== 'undefined' && root instanceof Document
     ? root
@@ -48,6 +49,16 @@ export async function waitForPrintableAssets(
       if ((rect?.width ?? 0) > 0 && (rect?.height ?? 0) > 0) {
         resolve(true)
         return
+      }
+      // Same-page print roots may be deliberately offscreen or print-only.
+      // They remain valid when connected and populated; requiring viewport
+      // geometry here falsely rejects an already-rendered invoice/receipt.
+      if (options.allowConnectedOffscreenRoot && element?.isConnected) {
+        const computed = window.getComputedStyle(element)
+        if (computed.display !== 'none' && element.childElementCount > 0) {
+          resolve(true)
+          return
+        }
       }
       requestAnimationFrame(() => requestAnimationFrame(() => resolve(false)))
     }
@@ -112,7 +123,7 @@ export async function printCurrentPageDocument(rootId: string, mode: 'invoice' |
   document.head.appendChild(style)
   try {
     await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-    await waitForPrintableAssets(root)
+    await waitForPrintableAssets(root, 7000, { allowConnectedOffscreenRoot: true })
     await printCurrentDocument()
   } finally {
     style.remove()

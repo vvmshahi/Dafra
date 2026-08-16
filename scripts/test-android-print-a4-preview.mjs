@@ -40,6 +40,8 @@ assert.match(detail, /printCurrentPageDocument\('kubri-print-root', 'invoice'\)/
 assert.match(detail, /printCurrentPageDocument\('kubri-print-root', 'receipt'\)/)
 assert.match(browserPrint, /function printCurrentPageDocument/)
 assert.match(browserPrint, /window\.print\(\)/)
+assert.match(browserPrint, /allowConnectedOffscreenRoot/)
+assert.match(browserPrint, /computed\.display !== 'none'/)
 assert.match(pos, /if \(isAndroidBrowser\(\)\) \{[\s\S]*?openPrintPopup\(`\/invoices\/\$\{encodeURIComponent\(receipt\.invoiceId\)\}\?print=1`\)/)
 assert.match(receiptPage, /waitForPrintableAssets/)
 assert.match(receiptPage, /printCurrentDocument\(\)/)
