@@ -220,14 +220,6 @@ export default function ReceiptPrintPage() {
   const documentReadiness = resolveIssuedDocumentReadiness({ modelReady: Boolean(invoice && branch && tenant), nonFiscalDemo, outputCanPrint: sandboxDocument ? sandboxValidated : outputStateMatchesInvoice && outputState?.canPrint === true, qrPayload: selectedQrPayload, qrStatus, qrDataUrl })
   const printReady = documentReadiness.printable
 
-  useEffect(() => {
-    if (!invoice?.id) return
-    const timeout = window.setTimeout(() => {
-      setQrStatus(current => current === 'loading' ? 'failed' : current)
-    }, QR_DISPLAY_TIMEOUT_MS)
-    return () => window.clearTimeout(timeout)
-  }, [invoice?.id, invoice?.zatca_status])
-
   useReceiptPrintStyle(receiptProfile, electronPrint)
 
   useEffect(() => {

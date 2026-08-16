@@ -152,6 +152,7 @@ const permittedPaths = new Set([
   'scripts/test-android-print-a4-preview.mjs',
   'scripts/test-final-web-printing-refinements.mjs',
   'scripts/test-invoice-detail-ui.mjs',
+  'scripts/test-zatca-phase2-finalization-v2.mjs',
   'scripts/test-custom-line-server-checkout.mjs',
   'src/pages/reports/SalesReport.tsx',
   'src/pages/reports/pdf/reportExportData.ts',

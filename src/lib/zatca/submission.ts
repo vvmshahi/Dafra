@@ -138,6 +138,13 @@ export interface ZatcaOutputState {
   error: string | null
 }
 
+export class ZatcaOutputStateAuthenticationError extends Error {
+  constructor() {
+    super('An authenticated session is required to read finalized invoice output.')
+    this.name = 'ZatcaOutputStateAuthenticationError'
+  }
+}
+
 export async function resolvePosCheckoutDocument(
   branchId: string,
   customerId: string | null,
@@ -342,14 +349,21 @@ export async function getInvoiceZatcaOutputState(params: {
   invoiceId: string
   branchId: string
 }): Promise<ZatcaOutputState> {
-  const { data, error } = await supabase.functions.invoke('zatca-submit', {
-    body: {
-      invoiceId: params.invoiceId,
-      branchId: params.branchId,
-      action: 'status',
-      clientVersion: ZATCA_OUTPUT_STATE_READ_VERSION,
-    },
+  const invokeStatus = async (accessToken: string) => supabase.functions.invoke('zatca-submit', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: { invoiceId: params.invoiceId, branchId: params.branchId, action: 'status', clientVersion: ZATCA_OUTPUT_STATE_READ_VERSION },
   })
+  const { data: initialSession } = await supabase.auth.getSession()
+  let accessToken = initialSession.session?.access_token
+  if (!accessToken) throw new ZatcaOutputStateAuthenticationError()
+  let { data, error } = await invokeStatus(accessToken)
+  const status = (error as { context?: { status?: number } } | null)?.context?.status
+  if (status === 401) {
+    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession()
+    accessToken = refreshed.session?.access_token
+    if (refreshError || !accessToken) throw new ZatcaOutputStateAuthenticationError()
+    ;({ data, error } = await invokeStatus(accessToken))
+  }
   if (error) throw new Error(error.message)
   const invoiceId = String(data?.invoiceId ?? '')
   if (invoiceId !== params.invoiceId) {
