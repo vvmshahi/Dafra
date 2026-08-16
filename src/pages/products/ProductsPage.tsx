@@ -1350,6 +1350,7 @@ export default function ProductsPage() {
           canExport={canExportCatalogue}
           initialSearch={search}
           initialCategoryId={activeCat === 'all' ? '' : activeCat}
+          onImportComplete={load}
           onClose={() => setExportOpen(false)}
         />
       )}
