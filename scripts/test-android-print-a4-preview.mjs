@@ -36,7 +36,7 @@ assert.doesNotMatch(receiptHandler.slice(webPrintRoute, electronSnapshotRoute), 
 assert.match(pos, /const newSaleButton = \(\s*<button type="button" onClick=\{onNewSale\}/)
 assert.match(atomicPrint, /waitForPrintableAssets/)
 assert.match(atomicPrint, /printCurrentDocument\(\)/)
-assert.match(detail, /if \(isAndroidBrowser\(\)\) \{[\s\S]*?openPrintPopup\(`\/invoices\/\$\{encodeURIComponent\(invoice\.id\)\}\?print=1`\)/)
+assert.match(detail, /if \(!isElectron\(\)\) \{\s*openPrintPopup\(`\/invoices\/\$\{encodeURIComponent\(invoice\.id\)\}\?print=1`\)/)
 assert.match(pos, /if \(isAndroidBrowser\(\)\) \{[\s\S]*?openPrintPopup\(`\/invoices\/\$\{encodeURIComponent\(receipt\.invoiceId\)\}\?print=1`\)/)
 assert.match(receiptPage, /waitForPrintableAssets/)
 assert.match(receiptPage, /printCurrentDocument\(\)/)

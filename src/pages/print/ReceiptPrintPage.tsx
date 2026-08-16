@@ -11,14 +11,9 @@ import { DEFAULT_PRINTER_SETTINGS, type PrinterSettings } from '@/lib/electron'
 import { INVOICE_SAFE_SELECT } from '@/lib/invoices/invoiceReadContract'
 import { getSandboxValidationStatus, type SandboxValidationResponse } from '@/lib/zatca/api'
 import { selectStoredInvoiceQr } from '@/lib/zatca/qrSelector'
-import {
-  canOpenStoredInvoicePrint,
-  QR_DISPLAY_TIMEOUT_MS,
-  renderStoredQrDataUrl,
-  selectStoredOutputStateQr,
-  type QrDisplayStatus,
-} from '@/lib/zatca/qrDisplay.mjs'
-import { getInvoiceZatcaOutputState, isPermanentDemoSandboxBranch, type ZatcaOutputState } from '@/lib/zatca/submission'
+import { selectStoredOutputStateQr, type QrDisplayStatus } from '@/lib/zatca/qrDisplay.mjs'
+import { isPermanentDemoSandboxBranch, type ZatcaOutputState } from '@/lib/zatca/submission'
+import { readIssuedDocumentOutputState, renderIssuedDocumentQr, resolveIssuedDocumentReadiness } from '@/lib/invoices/issuedDocumentReadiness'
 import { RECEIPT_FRAME_FAILED, RECEIPT_FRAME_READY } from '@/lib/receiptPrint'
 import { printCurrentDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
 import { toSaudiTime } from '@/lib/utils/date'
@@ -206,6 +201,7 @@ export default function ReceiptPrintPage() {
   const [error, setError] = useState<string | null>(null)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [qrStatus, setQrStatus] = useState<QrDisplayStatus>('loading')
+  const [qrRetryVersion, setQrRetryVersion] = useState(0)
   const [sandboxValidation, setSandboxValidation] = useState<SandboxValidationResponse | null>(null)
   const [outputState, setOutputState] = useState<ZatcaOutputState | null>(null)
   const [originalDocumentLanguage, setOriginalDocumentLanguage] = useState<string | null>(null)
@@ -221,14 +217,8 @@ export default function ReceiptPrintPage() {
       sandboxQrCode: sandboxValidation?.qrCode,
     })
     : selectStoredOutputStateQr(outputStateMatchesInvoice ? outputState : null)
-  const printReady = nonFiscalDemo || canOpenStoredInvoicePrint(
-    sandboxDocument
-      ? sandboxValidated
-      : outputStateMatchesInvoice && outputState?.canPrint === true,
-    selectedQrPayload,
-    qrStatus,
-    qrDataUrl,
-  )
+  const documentReadiness = resolveIssuedDocumentReadiness({ modelReady: Boolean(invoice && branch && tenant), nonFiscalDemo, outputCanPrint: sandboxDocument ? sandboxValidated : outputStateMatchesInvoice && outputState?.canPrint === true, qrPayload: selectedQrPayload, qrStatus, qrDataUrl })
+  const printReady = documentReadiness.printable
 
   useEffect(() => {
     if (!invoice?.id) return
@@ -266,7 +256,7 @@ export default function ReceiptPrintPage() {
     let cancelled = false
     setOutputState(null)
     setQrStatus('loading')
-    getInvoiceZatcaOutputState({ invoiceId: invoice.id, branchId: invoice.branch_id })
+    readIssuedDocumentOutputState({ invoiceId: invoice.id, branchId: invoice.branch_id, refresh: qrRetryVersion > 0 })
       .then(state => { if (!cancelled) setOutputState(state) })
       .catch(() => {
         if (!cancelled) {
@@ -275,7 +265,7 @@ export default function ReceiptPrintPage() {
         }
       })
     return () => { cancelled = true }
-  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status, nonFiscalDemo])
+  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status, nonFiscalDemo, qrRetryVersion])
 
   useEffect(() => {
     if (!invoiceId) return
@@ -360,7 +350,8 @@ export default function ReceiptPrintPage() {
       if (environment === 'sandbox' && sandboxValidation?.invoiceId !== invoice!.id) return
 
       setQrStatus('loading')
-      const result = await renderStoredQrDataUrl(
+      const result = await renderIssuedDocumentQr(
+        invoice!.id,
         selectedQrPayload,
         payload => QRCode.toDataURL(payload, {
           errorCorrectionLevel: 'M',
@@ -376,7 +367,7 @@ export default function ReceiptPrintPage() {
 
     generateQR()
     return () => { cancelled = true }
-  }, [invoice, branch, tenant, sandboxValidation?.invoiceId, selectedQrPayload, outputStateMatchesInvoice])
+  }, [invoice, branch, tenant, sandboxValidation?.invoiceId, selectedQrPayload, outputStateMatchesInvoice, qrRetryVersion])
 
   useEffect(() => {
     if (!autoPrint || embeddedPrint || electronPrint || printedRef.current || loading || error || !invoice || !branch || !printReady) return
@@ -606,9 +597,12 @@ export default function ReceiptPrintPage() {
       </div>
 
       {!nonFiscalDemo && qrStatus !== 'loading' && qrStatus !== 'ready' && (
-        <div className="no-print mx-auto mt-4 flex max-w-3xl items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+        <div className="no-print mx-auto mt-4 flex max-w-3xl items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+          <div className="flex items-center gap-2">
           <AlertCircle size={16} className="shrink-0" />
           {t('printing:qrUnavailable')}
+          </div>
+          <button type="button" onClick={() => setQrRetryVersion(value => value + 1)} className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-bold text-amber-900 shadow-sm">{t('common:retry')}</button>
         </div>
       )}
 

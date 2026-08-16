@@ -7,22 +7,17 @@ import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { selectStoredInvoiceQr } from '@/lib/zatca/qrSelector'
-import {
-  canOpenStoredInvoicePrint,
-  QR_DISPLAY_TIMEOUT_MS,
-  renderStoredQrDataUrl,
-  selectStoredOutputStateQr,
-  type QrDisplayStatus,
-} from '@/lib/zatca/qrDisplay.mjs'
+import { selectStoredOutputStateQr, type QrDisplayStatus } from '@/lib/zatca/qrDisplay.mjs'
 import { saudiDateStr } from '@/lib/utils/date'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import A4Document from '@/components/print/A4Document'
 import A4PreviewFit, { type A4PreviewZoom } from '@/components/print/A4PreviewFit'
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
-import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
-import { isAndroidBrowser, openPrintPopup, printCurrentDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
-import { getInvoiceZatcaOutputState, submitInvoiceToZatca, type ZatcaOutputState } from '@/lib/zatca/submission'
+import { openBrowserReceiptPrint } from '@/lib/receiptPrint'
+import { openPrintPopup, printCurrentDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
+import { submitInvoiceToZatca, type ZatcaOutputState } from '@/lib/zatca/submission'
+import { readIssuedDocumentOutputState, renderIssuedDocumentQr, resolveIssuedDocumentReadiness } from '@/lib/invoices/issuedDocumentReadiness'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 import AtomicCreditNoteReceiptView from './AtomicCreditNoteReceiptView'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
@@ -183,6 +178,7 @@ export default function InvoiceDetailPage() {
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [qrDataUrl,    setQrDataUrl]    = useState<string | null>(null)
   const [qrStatus,     setQrStatus]     = useState<QrDisplayStatus>('loading')
+  const [qrRetryVersion, setQrRetryVersion] = useState(0)
   const [resubmitting, setResubmitting] = useState(false)
   const [thermalPrinting, setThermalPrinting] = useState(false)
   const [a4Printing, setA4Printing] = useState(false)
@@ -212,22 +208,12 @@ export default function InvoiceDetailPage() {
     && (sandboxDocument
       ? sandboxValidated
       : outputStateMatchesInvoice && outputState?.canPrint === true)
-  const printReady = nonFiscalDemo || canOpenStoredInvoicePrint(
-    sandboxDocument
-      ? sandboxValidated
-      : outputStateMatchesInvoice && outputState?.canPrint === true,
-    selectedQrPayload,
-    qrStatus,
-    qrDataUrl,
-  )
-
-  useEffect(() => {
-    if (!invoice?.id) return
-    const timeout = window.setTimeout(() => {
-      setQrStatus(current => current === 'loading' ? 'failed' : current)
-    }, QR_DISPLAY_TIMEOUT_MS)
-    return () => window.clearTimeout(timeout)
-  }, [invoice?.id, invoice?.zatca_status])
+  const documentReadiness = resolveIssuedDocumentReadiness({
+    modelReady: Boolean(invoice && branch && tenant), nonFiscalDemo,
+    outputCanPrint: sandboxDocument ? sandboxValidated : outputStateMatchesInvoice && outputState?.canPrint === true,
+    qrPayload: selectedQrPayload, qrStatus, qrDataUrl,
+  })
+  const printReady = documentReadiness.printable
 
   // Load data
   useEffect(() => {
@@ -359,7 +345,7 @@ export default function InvoiceDetailPage() {
     let cancelled = false
     setOutputState(null)
     setQrStatus('loading')
-    getInvoiceZatcaOutputState({ invoiceId: invoice.id, branchId: invoice.branch_id })
+    readIssuedDocumentOutputState({ invoiceId: invoice.id, branchId: invoice.branch_id, refresh: qrRetryVersion > 0 })
       .then(state => { if (!cancelled) setOutputState(state) })
       .catch(() => {
         if (!cancelled) {
@@ -368,7 +354,7 @@ export default function InvoiceDetailPage() {
         }
       })
     return () => { cancelled = true }
-  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status])
+  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status, qrRetryVersion])
 
   // Generate QR code after data loads
   useEffect(() => {
@@ -381,7 +367,8 @@ export default function InvoiceDetailPage() {
       if (sandboxDocument && sandboxValidation?.invoiceId !== invoice!.id) return
 
       setQrStatus('loading')
-      const result = await renderStoredQrDataUrl(
+      const result = await renderIssuedDocumentQr(
+        invoice!.id,
         selectedQrPayload,
         payload => QRCode.toDataURL(payload, {
           errorCorrectionLevel: 'M',
@@ -397,7 +384,7 @@ export default function InvoiceDetailPage() {
 
     generateQR()
     return () => { cancelled = true }
-  }, [invoice, branch, tenant, sandboxValidation?.invoiceId, selectedQrPayload, outputStateMatchesInvoice])
+  }, [invoice, branch, tenant, sandboxValidation?.invoiceId, selectedQrPayload, outputStateMatchesInvoice, qrRetryVersion])
 
   // Auto-print when ?print=1 is in the URL
   useEffect(() => {
@@ -421,12 +408,7 @@ export default function InvoiceDetailPage() {
     setA4Printing(true)
     try {
       if (!isElectron()) {
-        if (isAndroidBrowser()) {
-          openPrintPopup(`/invoices/${encodeURIComponent(invoice.id)}?print=1`)
-          return
-        }
-        await waitForPrintableAssets(document.getElementById('invoice-printable-a4') ?? document.body)
-        await printCurrentDocument()
+        openPrintPopup(`/invoices/${encodeURIComponent(invoice.id)}?print=1`)
         return
       }
       const result = await printA4Invoice()
@@ -449,7 +431,7 @@ export default function InvoiceDetailPage() {
     setThermalPrinting(true)
     try {
       if (!isElectron()) {
-        await printReceiptInHiddenFrame(invoice.id)
+        openBrowserReceiptPrint(invoice.id)
         return
       }
 
@@ -775,6 +757,13 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
   return (
     <div className="mx-auto min-w-0 max-w-6xl space-y-3 overflow-x-clip pb-6">
       <A4Document model={documentViewModel} options={{ preview: autoPrint, pdfMode: true, id: 'invoice-printable-a4', qrImageUrl: qrDataUrl, nonFiscalDemo }} />
+
+      {!nonFiscalDemo && documentReadiness.phase === 'qr_failed' && (
+        <div className="no-print flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+          <span>{t('printing:qrUnavailable')}</span>
+          <button type="button" onClick={() => setQrRetryVersion(value => value + 1)} className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-bold text-amber-900 shadow-sm">{t('common:retry')}</button>
+        </div>
+      )}
 
       <header className="no-print overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" aria-labelledby="invoice-detail-title">
         <div className="h-1 bg-gold-500" aria-hidden="true" />
