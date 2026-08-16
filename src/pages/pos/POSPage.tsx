@@ -55,8 +55,8 @@ import { normalizeRegisterSession } from '@/lib/registerSessions'
 import { useSubscription } from '@/hooks/useSubscription'
 import { getPrinterSettings, getPrinters, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printAtomicReceiptSnapshot } from '@/lib/atomicReceiptPrint'
-import { openBrowserReceiptPrint, openReceiptPreview, printReceiptInHiddenFrame } from '@/lib/receiptPrint'
-import { isAndroidBrowser, openPrintPopup, printCurrentDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
+import { openReceiptPreview, printReceiptInHiddenFrame } from '@/lib/receiptPrint'
+import { isAndroidBrowser, openPrintPopup, printCurrentDocument, printCurrentPageDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
 import { supportConfig } from '@/config/support'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
@@ -859,7 +859,7 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
       // any async work so the user gesture is preserved for popup-safe print.
       if (!isElectron()) {
         try {
-          openBrowserReceiptPrint(receipt.invoiceId)
+          await printCurrentPageDocument('pos-receipt-print-root', 'receipt')
         } catch (error) {
           console.warn('[ReceiptView] browser receipt print could not be opened', error)
           toast.error(t('printing:popupBlocked'))
@@ -910,7 +910,7 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
     <>
       <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'pos-pdf-printable', qrImageUrl: qrDataUrl, nonFiscalDemo: receipt.isDemo }} />
       {/* Hidden thermal receipt — rendered for print only */}
-      <ThermalReceipt model={documentViewModel} options={{ qrImageUrl: qrDataUrl, nonFiscalDemo: receipt.isDemo }} />
+      <div id="pos-receipt-print-root" className="fixed left-[-10000px] top-0" aria-hidden="true"><ThermalReceipt model={documentViewModel} options={{ id: 'invoice-printable-thermal', qrImageUrl: qrDataUrl, nonFiscalDemo: receipt.isDemo }} /></div>
 
       {/* Success overlay */}
       <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-[#0F2419]/90 p-4 sm:p-6">

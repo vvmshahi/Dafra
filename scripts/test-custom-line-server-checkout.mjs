@@ -149,6 +149,7 @@ const permittedPaths = new Set([
   'src/pages/invoices/InvoiceDetailPage.tsx',
   'src/pages/print/ReceiptPrintPage.tsx',
   'src/lib/invoices/issuedDocumentReadiness.ts',
+  'src/lib/print/browserPrint.ts',
   'scripts/test-android-print-a4-preview.mjs',
   'scripts/test-final-web-printing-refinements.mjs',
   'scripts/test-invoice-detail-ui.mjs',

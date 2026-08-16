@@ -14,8 +14,7 @@ import A4Document from '@/components/print/A4Document'
 import A4PreviewFit, { type A4PreviewZoom } from '@/components/print/A4PreviewFit'
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
-import { openBrowserReceiptPrint } from '@/lib/receiptPrint'
-import { openPrintPopup, printCurrentDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
+import { printCurrentDocument, printCurrentPageDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
 import { submitInvoiceToZatca, type ZatcaOutputState } from '@/lib/zatca/submission'
 import { readIssuedDocumentOutputState, renderIssuedDocumentQr, resolveIssuedDocumentReadiness } from '@/lib/invoices/issuedDocumentReadiness'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
@@ -408,7 +407,7 @@ export default function InvoiceDetailPage() {
     setA4Printing(true)
     try {
       if (!isElectron()) {
-        openPrintPopup(`/invoices/${encodeURIComponent(invoice.id)}?print=1`)
+        await printCurrentPageDocument('kubri-print-root', 'invoice')
         return
       }
       const result = await printA4Invoice()
@@ -431,7 +430,7 @@ export default function InvoiceDetailPage() {
     setThermalPrinting(true)
     try {
       if (!isElectron()) {
-        openBrowserReceiptPrint(invoice.id)
+        await printCurrentPageDocument('kubri-print-root', 'receipt')
         return
       }
 
@@ -756,7 +755,10 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
   return (
     <div className="mx-auto min-w-0 max-w-6xl space-y-3 overflow-x-clip pb-6">
-      <A4Document model={documentViewModel} options={{ preview: autoPrint, pdfMode: true, id: 'invoice-printable-a4', qrImageUrl: qrDataUrl, nonFiscalDemo }} />
+      <div id="kubri-print-root" className="fixed left-[-10000px] top-0 w-[210mm]" aria-hidden="true">
+        <A4Document model={documentViewModel} options={{ preview: autoPrint, pdfMode: true, id: 'invoice-printable-a4', qrImageUrl: qrDataUrl, nonFiscalDemo }} />
+        <ThermalReceipt model={documentViewModel} options={{ id: 'invoice-printable-thermal', qrImageUrl: qrDataUrl, nonFiscalDemo }} />
+      </div>
 
       {!nonFiscalDemo && documentReadiness.phase === 'qr_failed' && (
         <div className="no-print flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">

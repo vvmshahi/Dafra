@@ -93,3 +93,29 @@ export function printCurrentDocument(): Promise<void> {
     }
   })
 }
+
+export async function printCurrentPageDocument(rootId: string, mode: 'invoice' | 'receipt'): Promise<void> {
+  const root = document.getElementById(rootId)
+  if (!root) throw new Error('PRINT_DOCUMENT_NOT_READY')
+  const style = document.createElement('style')
+  style.id = 'kubri-current-page-print-style'
+  style.textContent = `@media print {
+    body * { visibility: hidden !important; }
+    #${rootId}, #${rootId} * { visibility: visible !important; }
+    #${rootId} { display: block !important; position: absolute !important; inset: 0 auto auto 0 !important; width: 100% !important; }
+    body[data-kubri-print-mode="invoice"] #invoice-printable-thermal { display: none !important; }
+    body[data-kubri-print-mode="receipt"] #invoice-printable-a4 { display: none !important; }
+    body[data-kubri-print-mode="invoice"] #invoice-printable-a4 { display: block !important; position: static !important; left: auto !important; visibility: visible !important; }
+    body[data-kubri-print-mode="receipt"] #invoice-printable-thermal { display: block !important; position: static !important; visibility: visible !important; }
+  }`
+  document.body.dataset.kubriPrintMode = mode
+  document.head.appendChild(style)
+  try {
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    await waitForPrintableAssets(root)
+    await printCurrentDocument()
+  } finally {
+    style.remove()
+    delete document.body.dataset.kubriPrintMode
+  }
+}
