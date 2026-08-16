@@ -21,6 +21,7 @@ import {
   type StockAdjustmentOperation,
 } from '@/lib/products/productEditorUi'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import type { CatalogueItemCreationCapabilities } from '@/lib/products/cataloguePresentation'
 
 // ── VAT options ───────────────────────────────────────────────────────────────
 
@@ -48,6 +49,7 @@ interface Props {
   /** Explicit branch context for Owner/Admin catalogue management. */
   branchId?: string | null
   branchContext?: Pick<Branch, 'id' | 'stock_enabled' | 'vat_mode'> | null
+  itemTypeCapabilities?: CatalogueItemCreationCapabilities
   initialTab?: ProductDrawerInitialTab
   initialStockAction?: ProductDrawerInitialStockAction
   onClose: () => void
@@ -85,6 +87,7 @@ interface ProductDraft {
   skuManuallyEdited: boolean
   notes: string
   trackStock: boolean
+  isService: boolean
 }
 
 function readProductDraft(key: string): ProductDraft | null {
@@ -104,6 +107,7 @@ export default function ProductDrawer({
   categories,
   branchId,
   branchContext,
+  itemTypeCapabilities,
   initialTab = 'general',
   initialStockAction = null,
   onClose,
@@ -148,6 +152,7 @@ export default function ProductDrawer({
   const [suggestedSku, setSuggestedSku] = useState<string | null>(null)
   const [skuSuggesting, setSkuSuggesting] = useState(false)
   const [notes,        setNotes]        = useState('')
+  const [isService,    setIsService]    = useState(false)
   const [trackStock,   setTrackStock]   = useState(false)
   const [adjustmentQuantity, setAdjustmentQuantity] = useState('')
   const [adjustmentOperation, setAdjustmentOperation] = useState<StockAdjustmentOperation>('add')
@@ -164,20 +169,26 @@ export default function ProductDrawer({
   const [baseUnitDisplayName, setBaseUnitDisplayName] = useState('')
 
   const activeBranch = branchContext ?? authBranch
+  const productsEnabled = itemTypeCapabilities?.productsEnabled ?? true
+  const servicesEnabled = itemTypeCapabilities?.servicesEnabled ?? false
+  const showItemType = itemTypeCapabilities?.showItemType ?? false
+  const defaultIsService = !product && servicesEnabled && !productsEnabled
+  const canSelectProductType = productsEnabled || Boolean(product && !isService)
+  const canSelectServiceType = servicesEnabled || Boolean(product && isService)
   const businessType = resolveBusinessType(tenant?.business_type)
   const stockModuleVisible = isStockModuleVisible({
     businessType: tenant?.business_type,
     stockEnabled: activeBranch?.stock_enabled,
   })
   const hasStockContext = tenant !== null && activeBranch !== null
-  const stockControlsAllowed = hasStockContext && businessType === 'trading' && stockModuleVisible && product?.is_service !== true
+  const stockControlsAllowed = hasStockContext && businessType === 'trading' && stockModuleVisible && !isService
   const currentStockQuantity = Number(product?.stock_quantity ?? 0)
   const productWasTracked = Boolean(product?.track_stock)
   const stockUnavailableMessage = !hasStockContext
     ? ''
     : businessType === 'service'
     ? 'Stock tracking is hidden for service businesses.'
-    : product?.is_service
+    : isService
       ? 'Service products cannot track stock.'
       : activeBranch?.stock_enabled === false
         ? 'Stock tracking is disabled for this branch.'
@@ -196,6 +207,7 @@ export default function ProductDrawer({
         sortOrder: String(product.sort_order ?? 0),
         sku: product.sku ?? '',
         notes: product.notes ?? '',
+        isService: Boolean(product.is_service),
       })
     : JSON.stringify({
         name: '',
@@ -209,6 +221,7 @@ export default function ProductDrawer({
         sortOrder: '0',
         sku: '',
         notes: '',
+        isService: false,
       })
 
   const current = JSON.stringify({
@@ -223,6 +236,7 @@ export default function ProductDrawer({
     sortOrder,
     sku,
     notes,
+    isService,
   })
 
   const stockBaseline = product
@@ -254,6 +268,7 @@ export default function ProductDrawer({
       || imagePreview !== baselineValue.imagePreview || imageFile !== null
       || isAvailable !== baselineValue.isAvailable || sortOrder !== baselineValue.sortOrder
       || sku !== baselineValue.sku || notes !== baselineValue.notes
+      || isService !== baselineValue.isService
     ) result.add('general')
     if (price !== baselineValue.price || vatTreatment !== baselineValue.vatTreatment) result.add('pricing')
     if (stockControlsAllowed && stockCurrent !== (savedStockBaseline ?? stockBaseline)) result.add('inventory')
@@ -262,7 +277,7 @@ export default function ProductDrawer({
   }, [
     savedBaseline, baseline, name, nameAr, categoryId, description, imagePreview, imageFile,
     isAvailable, price, vatTreatment, stockControlsAllowed, stockCurrent, savedStockBaseline,
-    stockBaseline, packageEditorDirty, sortOrder, sku, notes,
+    stockBaseline, packageEditorDirty, sortOrder, sku, notes, isService,
   ])
 
   const resolvedTenantId = profile?.tenant_id ?? tenant?.id ?? ''
@@ -316,7 +331,9 @@ export default function ProductDrawer({
       setSuggestedSku(null)
       setSkuSuggesting(false)
       setNotes(draft?.notes ?? product.notes ?? '')
-      setTrackStock(draft?.trackStock ?? Boolean(product.track_stock))
+      const nextIsService = draft?.isService ?? Boolean(product.is_service)
+      setIsService(nextIsService)
+      setTrackStock(nextIsService ? false : (draft?.trackStock ?? Boolean(product.track_stock)))
     } else {
       setName(draft?.name ?? '')
       setNameAr(draft?.nameAr ?? '')
@@ -332,7 +349,9 @@ export default function ProductDrawer({
       setSuggestedSku(null)
       setSkuSuggesting(false)
       setNotes(draft?.notes ?? '')
-      setTrackStock(draft?.trackStock ?? stockControlsAllowed)
+      const nextIsService = draft?.isService ?? defaultIsService
+      setIsService(nextIsService)
+      setTrackStock(nextIsService ? false : (draft?.trackStock ?? stockControlsAllowed))
     }
     setImageFile(null)
     setAdjustmentQuantity('')
@@ -354,7 +373,7 @@ export default function ProductDrawer({
     setDiscardOpen(false)
     setPendingRoute(null)
     setError('')
-  }, [open, product, draftKey, stockControlsAllowed, initialTab, initialStockAction])
+  }, [open, product, draftKey, stockControlsAllowed, defaultIsService, initialTab, initialStockAction])
 
   useEffect(() => {
     if (!open || !product || initialTab !== 'inventory' || initialStockAction === null) return
@@ -460,17 +479,35 @@ export default function ProductDrawer({
     }
     const draft: ProductDraft = {
       name, nameAr, categoryId, description, price, vatTreatment,
-      isAvailable, sortOrder, sku, skuManuallyEdited, notes, trackStock,
+      isAvailable, sortOrder, sku, skuManuallyEdited, notes, trackStock, isService,
     }
     try { sessionStorage.setItem(draftKey, JSON.stringify(draft)) } catch {}
   }, [
     open, createdProductId, draftKey, name, nameAr, categoryId, description, price, vatTreatment,
-    isAvailable, sortOrder, sku, skuManuallyEdited, notes, trackStock,
+    isAvailable, sortOrder, sku, skuManuallyEdited, notes, trackStock, isService,
   ])
+
+  useEffect(() => {
+    if (!isService) return
+    setTrackStock(false)
+    setAdjustmentQuantity('')
+    setShowAdjustment(false)
+    if (activeTab === 'inventory') setActiveTab('general')
+  }, [activeTab, isService])
 
   const clearDraft = () => {
     if (!draftKey) return
     try { sessionStorage.removeItem(draftKey) } catch {}
+  }
+
+  const selectItemType = (nextIsService: boolean) => {
+    if (nextIsService && productWasTracked) {
+      setError(t('products:editor.serviceRequiresStockDisable'))
+      setActiveTab('inventory')
+      return
+    }
+    setError('')
+    setIsService(nextIsService)
   }
 
   useEffect(() => {
@@ -607,6 +644,14 @@ export default function ProductDrawer({
       setError(t('products:errors.branchRequired'))
       return
     }
+    if (!product && isService && !servicesEnabled) {
+      setError(t('products:errors.serviceCreationDisabled'))
+      return
+    }
+    if (!product && !isService && !productsEnabled) {
+      setError(t('products:errors.productCreationDisabled'))
+      return
+    }
     if (categoryId && !selectedCategory) {
       setError(t('products:errors.categoryInvalid'))
       return
@@ -680,6 +725,7 @@ export default function ProductDrawer({
         sort_order:    Number(sortOrder)   || 0,
         sku:           sku.trim()          || null,
         notes:         notes.trim()        || null,
+        is_service:    isService,
       }
 
       let savedProductId = product?.id ?? createdProductId
@@ -782,6 +828,7 @@ export default function ProductDrawer({
         sortOrder,
         sku: normalizedSku,
         notes,
+        isService,
       }))
       setSavedStockBaseline(JSON.stringify({
         trackStock,
@@ -859,16 +906,19 @@ export default function ProductDrawer({
   }
 
   const persistedProductId = product?.id ?? createdProductId
+  const visibleProductTabs = isService
+    ? PRODUCT_TABS.filter(tab => tab.id !== 'inventory')
+    : PRODUCT_TABS
   const selectTab = (tab: ProductTab) => {
     setActiveTab(tab)
     setVisitedTabs(currentTabs => new Set(currentTabs).add(tab))
   }
   const handleTabKeyDown = (event: React.KeyboardEvent, tab: ProductTab) => {
-    const index = PRODUCT_TABS.findIndex(item => item.id === tab)
+    const index = visibleProductTabs.findIndex(item => item.id === tab)
     const direction = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
     if (!direction) return
     event.preventDefault()
-    const next = PRODUCT_TABS[(index + direction + PRODUCT_TABS.length) % PRODUCT_TABS.length].id
+    const next = visibleProductTabs[(index + direction + visibleProductTabs.length) % visibleProductTabs.length].id
     selectTab(next)
     tabRefs.current[next]?.focus()
   }
@@ -921,7 +971,7 @@ export default function ProductDrawer({
 
           <div className="shrink-0 border-b border-[#e8e1d1] bg-white px-2 sm:px-5">
             <div role="tablist" aria-label={t('products:editor.tabsLabel')} className="flex overflow-x-auto scrollbar-none">
-              {PRODUCT_TABS.map(({ id, icon: Icon }) => {
+              {visibleProductTabs.map(({ id, icon: Icon }) => {
                 const selected = activeTab === id
                 const hasError = (id === 'general' && fieldErrors.name) || (id === 'pricing' && fieldErrors.price)
                 return (
@@ -983,6 +1033,43 @@ export default function ProductDrawer({
                     <label className="label" htmlFor="product-name-ar">{t('products:fields.nameAr')}</label>
                     <input id="product-name-ar" className="input text-right" dir="rtl" value={nameAr} onChange={event => setNameAr(event.target.value)} placeholder="اسم المنتج" />
                   </div>
+                  {showItemType && (
+                    <fieldset className="sm:col-span-2 rounded-xl border border-[#dbe5dc] bg-[#f8fbf7] p-3">
+                      <legend className="px-1 text-xs font-bold text-[#173f2a]">{t('products:itemType.label')}</legend>
+                      <div className={`grid gap-2 ${canSelectProductType && canSelectServiceType ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
+                        {canSelectProductType && (
+                          <button
+                            type="button"
+                            aria-pressed={!isService}
+                            onClick={() => selectItemType(false)}
+                            className={`rounded-lg border px-3 py-2.5 text-start transition-[border-color,background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 ${
+                              !isService
+                                ? 'border-primary-500 bg-primary-50 text-primary-900 shadow-[0_0_0_1px_rgba(34,120,77,0.08)]'
+                                : 'border-gray-200 bg-white text-gray-700 hover:border-primary-200'
+                            }`}
+                          >
+                            <span className="block text-sm font-bold">{t('products:itemType.product')}</span>
+                            <span className="mt-0.5 block text-[11px] leading-4 text-gray-500">{t('products:itemType.productHint')}</span>
+                          </button>
+                        )}
+                        {canSelectServiceType && (
+                          <button
+                            type="button"
+                            aria-pressed={isService}
+                            onClick={() => selectItemType(true)}
+                            className={`rounded-lg border px-3 py-2.5 text-start transition-[border-color,background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 ${
+                              isService
+                                ? 'border-sky-500 bg-sky-50 text-sky-950 shadow-[0_0_0_1px_rgba(14,165,233,0.1)]'
+                                : 'border-gray-200 bg-white text-gray-700 hover:border-sky-200'
+                            }`}
+                          >
+                            <span className="block text-sm font-bold">{t('products:itemType.service')}</span>
+                            <span className="mt-0.5 block text-[11px] leading-4 text-gray-500">{t('products:itemType.serviceHint')}</span>
+                          </button>
+                        )}
+                      </div>
+                    </fieldset>
+                  )}
                   <div className="sm:max-w-xs">
                     <label className="label" htmlFor="product-category">{t('products:fields.category')}</label>
                     <select id="product-category" className="input" value={categoryId} onChange={event => setCategoryId(event.target.value)}>
@@ -1172,7 +1259,7 @@ export default function ProductDrawer({
               ) : visitedTabs.has('units') ? (
                 <>
                   {productCreatedMessage && <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-800" role="status">{t('products:units.productCreated')}</div>}
-                  <ProductUnitsSection productId={persistedProductId} basePrice={price} productName={name.trim()} productNameAr={nameAr.trim() || null} sku={sku.trim() || null} serviceRestricted={businessType === 'service' || product?.is_service === true} stockEnabled={stockModuleVisible} onDirtyChange={setPackageEditorDirty} onBaseUnitName={setBaseUnitDisplayName} view="units" />
+                  <ProductUnitsSection productId={persistedProductId} basePrice={price} productName={name.trim()} productNameAr={nameAr.trim() || null} sku={sku.trim() || null} serviceRestricted={businessType === 'service' || isService} stockEnabled={stockModuleVisible} onDirtyChange={setPackageEditorDirty} onBaseUnitName={setBaseUnitDisplayName} view="units" />
                 </>
               ) : null}
             </section>
@@ -1181,7 +1268,7 @@ export default function ProductDrawer({
               {!persistedProductId ? (
                 <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center"><Barcode className="mx-auto text-gray-300" /><p className="mt-3 font-bold text-gray-800">{t('products:editor.saveFirst')}</p></div>
               ) : visitedTabs.has('barcodes') ? (
-                  <ProductUnitsSection productId={persistedProductId} basePrice={price} productName={name.trim()} productNameAr={nameAr.trim() || null} sku={sku.trim() || null} serviceRestricted={businessType === 'service' || product?.is_service === true} stockEnabled={stockModuleVisible} onDirtyChange={() => {}} onBaseUnitName={setBaseUnitDisplayName} view="barcodes" barcodeAutoFocus={activeTab === 'barcodes'} />
+                  <ProductUnitsSection productId={persistedProductId} basePrice={price} productName={name.trim()} productNameAr={nameAr.trim() || null} sku={sku.trim() || null} serviceRestricted={businessType === 'service' || isService} stockEnabled={stockModuleVisible} onDirtyChange={() => {}} onBaseUnitName={setBaseUnitDisplayName} view="barcodes" barcodeAutoFocus={activeTab === 'barcodes'} />
               ) : null}
             </section>
 

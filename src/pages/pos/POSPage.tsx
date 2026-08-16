@@ -41,6 +41,7 @@ import {
 } from '@/lib/zatca/qrDisplay.mjs'
 import { toast } from 'sonner'
 import { resolveBranchDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
+import { loadEffectiveBranchBillingConfig } from '@/lib/branches/billingProfile'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import A4Document from '@/components/print/A4Document'
@@ -1032,6 +1033,7 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
 function ProductCard({ product, cartQty, onAdd }: {
   product: PosProduct; cartQty: number; onAdd: () => void
 }) {
+  const { t } = useTranslation('pos')
   const { isRtl } = useLocale()
   const color = product.catColor ?? '#10b981'
   const imageUrl = product.imageUrl?.trim() || null
@@ -1065,6 +1067,11 @@ function ProductCard({ product, cartQty, onAdd }: {
         )}
       </div>
       <p className="text-xs font-semibold text-gray-800 leading-snug line-clamp-2" dir="auto">{localizedName(product.name, product.nameAr, isRtl)}</p>
+      {product.isService && (
+        <span className="mt-1 inline-flex rounded-full bg-sky-50 px-1.5 py-0.5 text-[9px] font-semibold text-sky-800 ring-1 ring-inset ring-sky-600/15">
+          {t('itemType.service')}
+        </span>
+      )}
       <p className="text-sm font-bold text-primary-600 mt-1" dir="ltr"><Rial amount={product.price} /></p>
       {product.catName && (
         <span className="inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full mt-1"
@@ -1174,6 +1181,11 @@ function QuickBillingPanel({
                 <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2">
                   <span dir="auto">{localizedName(product.name, product.nameAr, isRtl)}</span>
                 </p>
+                {product.isService && (
+                  <span className="mt-1 inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800 ring-1 ring-inset ring-sky-600/15">
+                    {t('itemType.service')}
+                  </span>
+                )}
                 {cartSummary && (
                   <span className="mt-1 inline-flex rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold text-primary-700">
                     {cartSummary}
@@ -1202,7 +1214,7 @@ function QuickBillingPanel({
                 )}
               </div>
 
-              {stockVisible && <div>
+              {stockVisible && !product.isService && <div>
                 <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                   product.trackStock
                     ? 'bg-amber-50 text-amber-700'
@@ -2182,6 +2194,7 @@ export default function POSPage() {
           { data: prodData },
           { data: custData },
           { data: unitData, error: unitError },
+          billingConfig,
         ] = await Promise.all([
           supabase.from('branches').select('*').eq('id', bid).single(),
           supabase
@@ -2200,6 +2213,7 @@ export default function POSPage() {
             .order('name', { ascending: true })
             .limit(200),
           (supabase as any).rpc('get_branch_selling_product_units', { p_branch_id: bid }),
+          loadEffectiveBranchBillingConfig(bid).catch(() => null),
         ])
         if (cancelled) return
 
@@ -2226,7 +2240,13 @@ export default function POSPage() {
           }
         }
 
-        const prods: PosProduct[] = (prodData ?? []).map((p: any) => ({
+        const operationalProducts = billingConfig && !billingConfig.legacyProfile
+          ? (prodData ?? []).filter((product: any) => (
+              product.is_service ? billingConfig.servicesEnabled : billingConfig.productsEnabled
+            ))
+          : (prodData ?? [])
+
+        const prods: PosProduct[] = operationalProducts.map((p: any) => ({
           id:            p.id,
           name:          p.name,
           nameAr:        p.name_ar,
@@ -2255,7 +2275,7 @@ export default function POSPage() {
         }
 
         const catMap = new Map<string, PosCategory>()
-        for (const p of prodData ?? []) {
+        for (const p of operationalProducts) {
           const c = (p as any).categories
           if (c?.id) catMap.set(c.id, { id: c.id, name: c.name, nameAr: c.name_ar ?? null, color: c.color, icon: c.icon })
         }

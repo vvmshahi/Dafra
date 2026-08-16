@@ -17,6 +17,13 @@
   "viewGrid": "Show products as a grid",
   "viewList": "Show products as a list",
   "add": "Add Product",
+  "itemType": {
+    "label": "Item type",
+    "product": "Product",
+    "productHint": "A physical or non-stock catalogue item.",
+    "service": "Service",
+    "serviceHint": "A saved reusable item. Stock tracking is always off."
+  },
   "edit": "Edit Product",
   "created": "Product created successfully.",
   "createdHint": "Add quantity, supplier, and purchase cost from Product Stock.",
@@ -67,7 +74,7 @@
   "viewMode": "Product view",
   "barcodeSearch": { "loading": "Looking up barcode…", "match": "Barcode match", "notFound": "No product found for this barcode", "unavailable": "This barcode belongs to a product that is not available in this catalogue", "conflict": "This barcode matches more than one product", "error": "Barcode lookup is temporarily unavailable", "tryAgain": "Clear the scan and try again.", "clear": "Clear barcode match" },
   "empty": { "category": "No products in this category", "categoryHint": "Choose another category or clear the filter." },
-  "errors": { "nameRequired": "Product name is required", "priceRequired": "A valid price is required", "priceNegative": "Price must be zero or higher", "branchRequired": "Branch context is required before saving products.", "categoryInvalid": "Select a valid category for this branch.", "categoryBusinessInvalid": "This category is not valid for this business.", "categoryBranchInvalid": "This category belongs to another branch.", "adjustmentZero": "Enter a non-zero stock adjustment.", "stockNegative": "This adjustment would make stock negative.", "idRequired": "Product id is required before saving changes.", "saveFailed": "The product could not be saved. Try again.", "loadFailed": "Products could not be loaded.", "loadFailedHint": "Check the connection and try again.", "barcodeNotAssigned": "Barcode not assigned", "barcodePrintLoadFailed": "Barcode printing details could not be loaded. Try again.", "deleteConfirm": "Archive this product? It will no longer appear in the active catalogue or POS." }
+  "errors": { "nameRequired": "Product name is required", "priceRequired": "A valid price is required", "priceNegative": "Price must be zero or higher", "branchRequired": "Branch context is required before saving products.", "productCreationDisabled": "Products cannot be added for this branch.", "serviceCreationDisabled": "Services cannot be added for this branch.", "categoryInvalid": "Select a valid category for this branch.", "categoryBusinessInvalid": "This category is not valid for this business.", "categoryBranchInvalid": "This category belongs to another branch.", "adjustmentZero": "Enter a non-zero stock adjustment.", "stockNegative": "This adjustment would make stock negative.", "idRequired": "Product id is required before saving changes.", "saveFailed": "The product could not be saved. Try again.", "loadFailed": "Products could not be loaded.", "loadFailedHint": "Check the connection and try again.", "barcodeNotAssigned": "Barcode not assigned", "barcodePrintLoadFailed": "Barcode printing details could not be loaded. Try again.", "deleteConfirm": "Archive this product? It will no longer appear in the active catalogue or POS." }
   ,"units": {
     "baseUnit": "Base unit",
     "baseEquation": "1 {{baseUnit}}",
@@ -180,6 +187,7 @@
     "stockHelp": "Sales reduce tracked stock automatically. Current stock remains read-only; adjustments are recorded separately.",
     "adjustmentIndependent": "This adjustment is applied through the existing audited stock workflow when you save the product. Unit and barcode actions remain separate.",
     "disableTrackingWarning": "Stock quantity and history will be preserved, but POS sales will stop checking stock for this product.",
+    "serviceRequiresStockDisable": "Disable stock tracking and save the product before changing it to a service.",
     "stockUnavailable": "Stock controls are not available for this product.",
     "saveFirst": "Save the product first to add cartons and barcodes.",
     "skuGenerating": "Generating SKU…",

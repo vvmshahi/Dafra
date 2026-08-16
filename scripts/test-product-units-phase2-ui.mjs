@@ -111,7 +111,7 @@ test('first-use conversion is visibly locked while other package fields remain e
 })
 
 test('service and stock-disabled states have distinct safe behavior', () => {
-  assert.match(drawer, /serviceRestricted=\{businessType === 'service' \|\| product\?\.is_service === true\}/)
+  assert.match(drawer, /serviceRestricted=\{businessType === 'service' \|\| isService\}/)
   assert.match(units, /if \(serviceRestricted\)/)
   assert.match(units, /t\('units\.serviceRestriction'\)/)
   assert.match(units, /!stockEnabled/)

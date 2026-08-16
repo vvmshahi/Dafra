@@ -26,9 +26,10 @@ const canonicalSchema = read('supabase/migrations/20260721000100_dafra_current_s
 const browserSources = sourceFiles('src').map(read).join('\n')
 
 for (const dashboard of [branchDashboard, adminBranchDetail]) {
-  assert.match(dashboard, /\.select\('id, name, stock_quantity, min_stock_alert'\)/)
+  assert.match(dashboard, /\.select\('id, name, stock_quantity, min_stock_alert, track_stock, is_service, is_active, is_available'\)/)
   assert.match(dashboard, /\.not\('min_stock_alert', 'is', null\)/)
-  assert.match(dashboard, /Number\(p\.stock_quantity\) <= Number\(p\.min_stock_alert\)/)
+  assert.match(dashboard, /\.eq\('is_service', false\)/)
+  assert.match(dashboard, /filter\(isLowStockProduct\)/)
   assert.doesNotMatch(dashboard, /min_stock_level/)
 }
 

@@ -47,6 +47,7 @@
   "noSkuBarcode": "لا يوجد SKU أو باركود",
   "stockCount": "المخزون: {{count}}",
   "notTracked": "غير متتبع",
+  "itemType": { "service": "خدمة" },
   "noProductsAvailable": "لا توجد منتجات متاحة. أضف المنتجات من صفحة المنتجات.",
   "noMatchingProducts": "لم يتم العثور على منتجات مطابقة.",
   "searchMinimum": "اكتب حرفين على الأقل، أو امسح SKU أو باركود مطابقاً.",

@@ -47,6 +47,7 @@
   "noSkuBarcode": "No SKU or barcode",
   "stockCount": "Stock: {{count}}",
   "notTracked": "Not tracked",
+  "itemType": { "service": "Service" },
   "noProductsAvailable": "No products are available. Add products from the Products page.",
   "noMatchingProducts": "No matching products found.",
   "searchMinimum": "Type at least 2 characters, or scan an exact SKU or barcode.",

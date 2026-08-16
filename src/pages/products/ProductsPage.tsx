@@ -33,7 +33,10 @@ import {
 } from '@/lib/products/catalogue'
 import { archiveProduct, type ProductArchiveClient } from '@/lib/products/archiveProduct'
 import { useBranchBillingConfig } from '@/hooks/useBranchBillingConfig'
-import { getCataloguePresentation } from '@/lib/products/cataloguePresentation'
+import {
+  getCatalogueItemCreationCapabilities,
+  getCataloguePresentation,
+} from '@/lib/products/cataloguePresentation'
 import { useSearchParams } from 'react-router-dom'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -185,6 +188,15 @@ function StockBadge({
   )
 }
 
+function ServiceBadge() {
+  const { t } = useTranslation('products')
+  return (
+    <span className="inline-flex rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold leading-4 text-sky-800 ring-1 ring-inset ring-sky-600/15">
+      {t('itemType.service')}
+    </span>
+  )
+}
+
 // ── Product card (grid view) ──────────────────────────────────────────────────
 
 function ProductCard({
@@ -275,14 +287,17 @@ function ProductCard({
               {dn(product.categories.name, product.categories.name_ar)}
             </span>
           )}
+          {product.is_service && <ServiceBadge />}
           <VatBadge treatment={product.vat_treatment} view="grid" />
         </div>
         <p className="text-base font-bold text-primary-700 mt-auto pt-2">
           <Rial amount={Number(product.price)} />
         </p>
-        <div className="mt-1">
-          <StockBadge product={product} branchStockEnabled={branchStockEnabled} />
-        </div>
+        {!product.is_service && (
+          <div className="mt-1">
+            <StockBadge product={product} branchStockEnabled={branchStockEnabled} />
+          </div>
+        )}
       </div>
     </div>
   )
@@ -324,13 +339,14 @@ function ProductListRow({
       {/* Name */}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-900 truncate" dir="auto">{dn(product.name, product.name_ar)}</p>
+        {product.is_service && <span className="mt-1 inline-flex"><ServiceBadge /></span>}
         {(product.sku || product.barcode) && (
           <p className="truncate text-[11px] text-gray-500" dir="ltr">
             {product.sku ? `SKU: ${product.sku}` : `Barcode: ${product.barcode}`}
           </p>
         )}
         <span className="mt-1 inline-flex lg:hidden">
-          <StockBadge product={product} branchStockEnabled={branchStockEnabled} />
+          {!product.is_service && <StockBadge product={product} branchStockEnabled={branchStockEnabled} />}
         </span>
       </div>
 
@@ -355,7 +371,7 @@ function ProductListRow({
 
       {/* Stock */}
       <div className="w-28 flex-shrink-0 hidden lg:block">
-        <StockBadge product={product} branchStockEnabled={branchStockEnabled} />
+        {!product.is_service && <StockBadge product={product} branchStockEnabled={branchStockEnabled} />}
       </div>
 
       {/* Price */}
@@ -410,7 +426,7 @@ function ProductListRow({
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function EmptyState({
-  filtered, onAdd, onClear, title, hint, addLabel,
+  filtered, onAdd, onClear, title, hint, addLabel, canAdd,
 }: {
   filtered: boolean
   onAdd: () => void
@@ -418,6 +434,7 @@ function EmptyState({
   title?: string
   hint?: string
   addLabel?: string
+  canAdd: boolean
 }) {
   const { t } = useTranslation(['products', 'common'])
   return (
@@ -433,7 +450,7 @@ function EmptyState({
           ? t('products:noResultsHint')
           : t('products:emptyHint'))}
       </p>
-      {!filtered && (
+      {!filtered && canAdd && (
         <Button className="mt-5" onClick={onAdd}>
           <Plus size={15} />
           {addLabel ?? t('products:add')}
@@ -638,6 +655,10 @@ export default function ProductsPage() {
     loading: billingConfigLoading,
   } = useBranchBillingConfig(catalogueBranchId)
   const presentation = getCataloguePresentation(effectiveBillingConfig)
+  const itemTypeCapabilities = getCatalogueItemCreationCapabilities(effectiveBillingConfig)
+  const canCreateCatalogueItem = !billingConfigLoading && (
+    itemTypeCapabilities.productsEnabled || itemTypeCapabilities.servicesEnabled
+  )
 
   const [products,   setProducts]   = useState<ProductRow[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -806,7 +827,11 @@ export default function ProductsPage() {
     } catch {}
   }, [uiStateKey, search, activeCat, drawerOpen, editing?.id, addCatOpen])
 
-  const openAdd  = () => { setEditing(null); setDrawerOpen(true) }
+  const openAdd  = () => {
+    if (!canCreateCatalogueItem) return
+    setEditing(null)
+    setDrawerOpen(true)
+  }
   const openEdit = (p: ProductRow) => { setEditing(p); setDrawerOpen(true) }
 
   const handleArchive = async () => {
@@ -1024,10 +1049,12 @@ export default function ProductsPage() {
               <Printer size={14} aria-hidden="true" />
               {t('printing:barcodeLabels.batch.open')}
             </Button>
-            <Button size="sm" onClick={openAdd}>
-              <Plus size={14} />
-              {t(presentation.addActionKey)}
-            </Button>
+            {canCreateCatalogueItem && (
+              <Button size="sm" onClick={openAdd}>
+                <Plus size={14} />
+                {t(presentation.addActionKey)}
+              </Button>
+            )}
           </>
         ) : undefined}
       />
@@ -1232,6 +1259,7 @@ export default function ProductsPage() {
           title={activeCat !== 'all' && !search.trim() ? t('empty.category') : undefined}
           hint={activeCat !== 'all' && !search.trim() ? t('empty.categoryHint') : undefined}
           addLabel={t(presentation.addActionKey)}
+          canAdd={canCreateCatalogueItem}
         />
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -1283,6 +1311,7 @@ export default function ProductsPage() {
         products={products}
         branchId={catalogueBranchId}
         branchContext={catalogueBranch}
+        itemTypeCapabilities={itemTypeCapabilities}
         onClose={() => setDrawerOpen(false)}
         onSaved={load}
       />
