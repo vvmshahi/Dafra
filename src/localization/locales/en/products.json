@@ -1,6 +1,19 @@
 {
   "title": "Products",
   "subtitle": "Manage products, pricing, categories, and POS availability",
+  "catalogue": "Catalogue",
+  "catalogueSubtitle": "Manage services and products available for this branch.",
+  "addItem": "Add item",
+  "branchSelector": {
+    "label": "Branch",
+    "select": "Select a branch",
+    "help": "Choose a branch to manage its available products and services.",
+    "selected": "Managing {{branch}}",
+    "loading": "Loading branches…",
+    "loadFailed": "Branches could not be loaded.",
+    "selectionRequiredTitle": "Select a branch",
+    "selectionRequiredHelp": "Choose a branch before managing its products and categories."
+  },
   "viewGrid": "Show products as a grid",
   "viewList": "Show products as a list",
   "add": "Add Product",

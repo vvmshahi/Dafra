@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/Switch'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { calculateVatPriceBreakdown, type BranchVatMode } from '@/lib/pricing/vat'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
-import type { Category, ProductSecurePayload, ProductSecureResult, ProductSecureUpdatePayload, ProductSkuSuggestionResult, VatTreatment } from '@/types'
+import type { Branch, Category, ProductSecurePayload, ProductSecureResult, ProductSecureUpdatePayload, ProductSkuSuggestionResult, VatTreatment } from '@/types'
 import type { ProductRow } from './ProductsPage'
 import { ProductUnitsSection } from './ProductUnitsSection'
 import { useTranslation } from 'react-i18next'
@@ -45,6 +45,9 @@ interface Props {
   product: ProductRow | null
   categories: Category[]
   products: ProductRow[]
+  /** Explicit branch context for Owner/Admin catalogue management. */
+  branchId?: string | null
+  branchContext?: Pick<Branch, 'id' | 'stock_enabled' | 'vat_mode'> | null
   initialTab?: ProductDrawerInitialTab
   initialStockAction?: ProductDrawerInitialStockAction
   onClose: () => void
@@ -99,12 +102,14 @@ export default function ProductDrawer({
   open,
   product,
   categories,
+  branchId,
+  branchContext,
   initialTab = 'general',
   initialStockAction = null,
   onClose,
   onSaved,
 }: Props) {
-  const { profile, tenant, branch } = useAuth()
+  const { profile, tenant, branch: authBranch } = useAuth()
   const { t } = useTranslation(['products', 'inventory', 'common'])
   const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -158,12 +163,13 @@ export default function ProductDrawer({
   const [productCreatedMessage, setProductCreatedMessage] = useState(false)
   const [baseUnitDisplayName, setBaseUnitDisplayName] = useState('')
 
+  const activeBranch = branchContext ?? authBranch
   const businessType = resolveBusinessType(tenant?.business_type)
   const stockModuleVisible = isStockModuleVisible({
     businessType: tenant?.business_type,
-    stockEnabled: branch?.stock_enabled,
+    stockEnabled: activeBranch?.stock_enabled,
   })
-  const hasStockContext = tenant !== null && branch !== null
+  const hasStockContext = tenant !== null && activeBranch !== null
   const stockControlsAllowed = hasStockContext && businessType === 'trading' && stockModuleVisible && product?.is_service !== true
   const currentStockQuantity = Number(product?.stock_quantity ?? 0)
   const productWasTracked = Boolean(product?.track_stock)
@@ -173,7 +179,7 @@ export default function ProductDrawer({
     ? 'Stock tracking is hidden for service businesses.'
     : product?.is_service
       ? 'Service products cannot track stock.'
-      : branch?.stock_enabled === false
+      : activeBranch?.stock_enabled === false
         ? 'Stock tracking is disabled for this branch.'
         : ''
 
@@ -260,17 +266,17 @@ export default function ProductDrawer({
   ])
 
   const resolvedTenantId = profile?.tenant_id ?? tenant?.id ?? ''
-  const resolvedBranchId = profile?.branch_id ?? branch?.id ?? ''
+  const resolvedBranchId = branchId ?? profile?.branch_id ?? activeBranch?.id ?? ''
   const draftKey = resolvedTenantId && resolvedBranchId
     ? `kubri:product-draft:${resolvedTenantId}:${resolvedBranchId}:${product ? `edit:${product.id}` : 'add'}`
     : ''
   const selectedCategory = categoryId
     ? categories.find(c => c.id === categoryId)
     : null
-  const formBranchIsActive = Boolean(branch?.id && (!product || product.branch_id === branch.id))
-  const branchVatMode: BranchVatMode | null = formBranchIsActive && branch?.vat_mode === 'inclusive'
+  const formBranchIsActive = Boolean(activeBranch?.id && (!product || product.branch_id === activeBranch.id))
+  const branchVatMode: BranchVatMode | null = formBranchIsActive && activeBranch?.vat_mode === 'inclusive'
     ? 'inclusive'
-    : formBranchIsActive && branch?.vat_mode === 'exclusive'
+    : formBranchIsActive && activeBranch?.vat_mode === 'exclusive'
       ? 'exclusive'
       : null
   const numericPrice = price !== '' && price !== '.' ? Number(price) : Number.NaN

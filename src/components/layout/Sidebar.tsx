@@ -17,6 +17,8 @@ import { toast } from 'sonner'
 import { useEffect, useRef, useState } from 'react'
 import { resolveBusinessDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
 import { loadBranchCustomerCreditSettings, isCustomerCreditPolicyStorageChange, CUSTOMER_CREDIT_POLICY_CHANGED_EVENT } from '@/lib/customers/receivables'
+import { useBranchBillingConfig } from '@/hooks/useBranchBillingConfig'
+import { getCataloguePresentation } from '@/lib/products/cataloguePresentation'
 
 interface NavItem {
   labelKey: string
@@ -27,6 +29,7 @@ interface NavItem {
 
 const ownerNav: NavItem[] = [
   { labelKey: 'dashboard', path: '/dashboard', icon: LayoutDashboard, section: 'daily' },
+  { labelKey: 'products', path: '/products', icon: Package, section: 'catalogue' },
   { labelKey: 'branches', path: '/branches', icon: Building2, section: 'administration' },
   { labelKey: 'employees', path: '/employees', icon: UserSquare2, section: 'administration' },
   { labelKey: 'customerCredit', path: '/reports/receivables', icon: CreditCard, section: 'business' },
@@ -116,6 +119,13 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const isSuperAdmin = profile?.role === 'super_admin'
   const isBranch     = profile?.role === 'branch'
+  const isOwnerAdmin = profile?.role === 'owner' || profile?.role === 'admin'
+  const ownerCatalogueBranchId = isOwnerAdmin
+    ? new URLSearchParams(location.search).get('branch')
+    : null
+  const catalogueBranchId = isBranch ? branch?.id ?? null : ownerCatalogueBranchId
+  const { config: catalogueBillingConfig } = useBranchBillingConfig(catalogueBranchId)
+  const cataloguePresentation = getCataloguePresentation(catalogueBillingConfig)
   const [branchCreditEnabled, setBranchCreditEnabled] = useState(false)
   const stockVisible = isStockModuleVisible({
     businessType: tenant?.business_type,
@@ -247,7 +257,12 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       >
         {navItems.map((item, index) => {
           const isActive = isNavActive(item)
-          const itemLabel = t(`navigation:${item.labelKey}`)
+          const destination = item.path === '/products' && isOwnerAdmin && ownerCatalogueBranchId
+            ? `${item.path}?branch=${encodeURIComponent(ownerCatalogueBranchId)}`
+            : item.path
+          const itemLabel = item.path === '/products'
+            ? t(`navigation:${cataloguePresentation.navigationLabelKey}`)
+            : t(`navigation:${item.labelKey}`)
           const showSection = item.section && item.section !== navItems[index - 1]?.section
           return (
             <div key={item.labelKey} className={showSection && index > 0 ? 'mt-3' : undefined}>
@@ -259,7 +274,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               {showSection && collapsed && index > 0 && <div className="mx-2 mb-2 border-t border-sidebar-border" />}
               <NavLink
                 ref={isActive ? activeRouteRef : undefined}
-                to={item.path}
+                to={destination}
                 title={collapsed ? itemLabel : undefined}
                 aria-current={isActive ? 'page' : undefined}
                 className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Plus, LayoutGrid, List, Search, Tag, Pencil, Archive, Package, X, FolderPlus, Printer,
-  Barcode, AlertTriangle, RefreshCw,
+  Barcode, AlertTriangle, RefreshCw, Building2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -11,7 +11,7 @@ import { PageHeader } from '@/components/ui/PageHeader'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
 import { displayName as dn } from '@/lib/utils/display'
-import type { Category, VatTreatment } from '@/types'
+import type { Branch, Category, VatTreatment } from '@/types'
 import ProductDrawer from './ProductDrawer'
 import CategoriesModal from './CategoriesModal'
 import { CategoryEmojiPicker } from '@/components/ui/CategoryEmojiPicker'
@@ -32,6 +32,9 @@ import {
   catalogueTextMatches,
 } from '@/lib/products/catalogue'
 import { archiveProduct, type ProductArchiveClient } from '@/lib/products/archiveProduct'
+import { useBranchBillingConfig } from '@/hooks/useBranchBillingConfig'
+import { getCataloguePresentation } from '@/lib/products/cataloguePresentation'
+import { useSearchParams } from 'react-router-dom'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -105,6 +108,11 @@ interface RawBarcode {
   is_primary: boolean
   is_active: boolean
 }
+
+type CatalogueBranchContext = Pick<
+  Branch,
+  'id' | 'name' | 'name_ar' | 'is_active' | 'stock_enabled' | 'vat_mode'
+>
 
 const normalizeIcon = (value: string) => value.trim()
 
@@ -402,13 +410,14 @@ function ProductListRow({
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function EmptyState({
-  filtered, onAdd, onClear, title, hint,
+  filtered, onAdd, onClear, title, hint, addLabel,
 }: {
   filtered: boolean
   onAdd: () => void
   onClear: () => void
   title?: string
   hint?: string
+  addLabel?: string
 }) {
   const { t } = useTranslation(['products', 'common'])
   return (
@@ -427,7 +436,7 @@ function EmptyState({
       {!filtered && (
         <Button className="mt-5" onClick={onAdd}>
           <Plus size={15} />
-          {t('products:add')}
+          {addLabel ?? t('products:add')}
         </Button>
       )}
       {filtered && (
@@ -440,22 +449,23 @@ function EmptyState({
 }
 
 function AddCategoryDialog({
-  open, categories, onClose, onCreated,
+  open, categories, tenantId, branchId, onClose, onCreated,
 }: {
   open: boolean
   categories: Category[]
+  tenantId: string | null
+  branchId: string | null
   onClose: () => void
   onCreated: () => void
 }) {
-  const { profile } = useAuth()
   const { t } = useTranslation(['products', 'common'])
   const [name, setName] = useState('')
   const [icon, setIcon] = useState('📦')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const skipNextDraftWrite = useRef(false)
-  const draftKey = profile?.tenant_id && profile?.branch_id
-    ? `kubri:category-draft:${profile.tenant_id}:${profile.branch_id}:add`
+  const draftKey = tenantId && branchId
+    ? `kubri:category-draft:${tenantId}:${branchId}:add`
     : ''
 
   useEffect(() => {
@@ -494,9 +504,7 @@ function AddCategoryDialog({
     e.preventDefault()
     const cleanName = name.trim()
     if (!cleanName) { setError(t('products:category.nameRequired')); return }
-    const tid = profile?.tenant_id
-    const bid = profile?.branch_id
-    if (!tid || !bid) { setError(t('products:errors.branchRequired')); return }
+    if (!tenantId || !branchId) { setError(t('products:errors.branchRequired')); return }
 
     const cleanIcon = normalizeIcon(icon)
     if (isIconTooLong(cleanIcon)) { setError(t('products:category.iconTooLong')); return }
@@ -514,8 +522,8 @@ function AddCategoryDialog({
 
     const q = supabase as unknown as { from: (t: string) => any }
     const { error: err } = await q.from('categories').insert({
-      tenant_id: tid,
-      branch_id: bid,
+      tenant_id: tenantId,
+      branch_id: branchId,
       name: cleanName,
       color: '#1c5c2e',
       icon: cleanIcon || null,
@@ -608,9 +616,28 @@ function AddCategoryDialog({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ProductsPage() {
-  const { profile, tenant, branch } = useAuth()
+  const { profile, tenant, branch: authBranch } = useAuth()
   const { t } = useTranslation(['products', 'printing'])
+  const [searchParams, setSearchParams] = useSearchParams()
   const uiStateRestored = useRef(false)
+  const isBranchUser = profile?.role === 'branch'
+  const isOwnerAdmin = profile?.role === 'owner' || profile?.role === 'admin'
+  const [ownerBranches, setOwnerBranches] = useState<CatalogueBranchContext[]>([])
+  const [ownerBranchesLoading, setOwnerBranchesLoading] = useState(false)
+  const [ownerBranchesFailed, setOwnerBranchesFailed] = useState(false)
+  const requestedOwnerBranchId = searchParams.get('branch')
+  const selectedOwnerBranch = isOwnerAdmin && requestedOwnerBranchId
+    ? ownerBranches.find(candidate => candidate.id === requestedOwnerBranchId) ?? null
+    : null
+  const catalogueBranch = isBranchUser ? authBranch : selectedOwnerBranch
+  const catalogueBranchId = isBranchUser
+    ? profile?.branch_id ?? authBranch?.id ?? null
+    : selectedOwnerBranch?.id ?? null
+  const {
+    config: effectiveBillingConfig,
+    loading: billingConfigLoading,
+  } = useBranchBillingConfig(catalogueBranchId)
+  const presentation = getCataloguePresentation(effectiveBillingConfig)
 
   const [products,   setProducts]   = useState<ProductRow[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -642,9 +669,55 @@ export default function ProductsPage() {
   const previousFiltersRef = useRef<{ search: string; activeCat: string } | null>(null)
   const printTriggerRef = useRef<HTMLButtonElement | null>(null)
   const archivePendingRef = useRef(false)
-  const uiStateKey = profile?.tenant_id && profile?.branch_id
-    ? `kubri:products-ui:${profile.tenant_id}:${profile.branch_id}`
+  const uiStateKey = profile?.tenant_id && catalogueBranchId
+    ? `kubri:products-ui:${profile.tenant_id}:${catalogueBranchId}`
     : ''
+
+  useEffect(() => {
+    if (!isOwnerAdmin || !profile?.tenant_id) {
+      setOwnerBranches([])
+      setOwnerBranchesLoading(false)
+      setOwnerBranchesFailed(false)
+      return
+    }
+    let active = true
+    setOwnerBranchesLoading(true)
+    setOwnerBranchesFailed(false)
+    void supabase
+      .from('branches')
+      .select('id, name, name_ar, is_active, stock_enabled, vat_mode')
+      .eq('tenant_id', profile.tenant_id)
+      .eq('is_active', true)
+      .order('is_main_branch', { ascending: false })
+      .order('name', { ascending: true })
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          setOwnerBranches([])
+          setOwnerBranchesFailed(true)
+        } else {
+          setOwnerBranches((data ?? []) as CatalogueBranchContext[])
+        }
+        setOwnerBranchesLoading(false)
+      })
+    return () => { active = false }
+  }, [isOwnerAdmin, profile?.tenant_id])
+
+  useEffect(() => {
+    uiStateRestored.current = false
+    setProducts([])
+    setCategories([])
+    setSearch('')
+    setActiveCat('all')
+    setDrawerOpen(false)
+    setEditing(null)
+    setCatsOpen(false)
+    setAddCatOpen(false)
+    setBatchPrintOpen(false)
+    setPrintSelection(null)
+    setArchiveTarget(null)
+    setBarcodeState(null)
+  }, [catalogueBranchId])
 
   useEffect(() => {
     mountedRef.current = true
@@ -656,7 +729,7 @@ export default function ProductsPage() {
 
   const load = useCallback(async () => {
     const tid = profile?.tenant_id
-    const bid = profile?.branch_id
+    const bid = catalogueBranchId
     if (!tid || !bid) { setLoading(false); return }
 
     setLoading(true)
@@ -716,7 +789,7 @@ export default function ProductsPage() {
       } catch {}
     }
     setLoading(false)
-  }, [profile?.tenant_id, profile?.branch_id, uiStateKey])
+  }, [catalogueBranchId, profile?.tenant_id, uiStateKey])
 
   useEffect(() => { load() }, [load])
 
@@ -756,11 +829,11 @@ export default function ProductsPage() {
 
   const branchStockEnabled = isStockModuleVisible({
     businessType: tenant?.business_type,
-    stockEnabled: branch?.stock_enabled,
+    stockEnabled: catalogueBranch?.stock_enabled,
   })
 
   const resolveBarcode = useCallback(async (rawValue: string) => {
-    const branchId = profile?.branch_id
+    const branchId = catalogueBranchId
     const code = normalizeBarcode(rawValue)
     if (!branchId || code.length < 3) return
     const now = performance.now()
@@ -814,7 +887,16 @@ export default function ProductsPage() {
       unitId: row?.product_unit_id ? String(row.product_unit_id) : undefined,
       barcodeId: row?.barcode_id ? String(row.barcode_id) : undefined,
     })
-  }, [activeCat, products, profile?.branch_id, search])
+  }, [activeCat, catalogueBranchId, products, search])
+
+  const selectOwnerBranch = (branchId: string) => {
+    setSearchParams(current => {
+      const next = new URLSearchParams(current)
+      if (branchId) next.set('branch', branchId)
+      else next.delete('branch')
+      return next
+    })
+  }
 
   useBarcodeScanner({
     enabled: true,
@@ -921,14 +1003,14 @@ export default function ProductsPage() {
 
       {/* ── Header ──────────────────────────────────────────────── */}
       <PageHeader
-        title={t('title')}
-        description={t('subtitle')}
-        meta={!loading ? (
+        title={t(presentation.titleKey)}
+        description={t(presentation.subtitleKey)}
+        meta={catalogueBranchId && !loading ? (
           <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs font-semibold text-primary-600">
             {products.length}
           </span>
         ) : undefined}
-        actions={(
+        actions={catalogueBranchId ? (
           <>
             <Button variant="secondary" size="sm" onClick={() => setCatsOpen(true)}>
               <Tag size={14} />
@@ -944,11 +1026,69 @@ export default function ProductsPage() {
             </Button>
             <Button size="sm" onClick={openAdd}>
               <Plus size={14} />
-              {t('add')}
+              {t(presentation.addActionKey)}
             </Button>
           </>
-        )}
+        ) : undefined}
       />
+
+      {isOwnerAdmin && (
+        <section
+          data-catalogue-branch-selector
+          className="rounded-2xl border border-[#dbe5dc] bg-[#f8fbf7] px-4 py-3 shadow-[0_1px_0_rgba(16,41,30,0.03)] sm:flex sm:items-center sm:justify-between sm:gap-5"
+          aria-label={t('branchSelector.label')}
+          aria-busy={billingConfigLoading || undefined}
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e5efe6] text-[#173f2a]" aria-hidden="true">
+              <Building2 size={17} />
+            </span>
+            <div className="min-w-0">
+              <label htmlFor="catalogue-branch" className="block text-sm font-bold text-[#173f2a]">
+                {t('branchSelector.label')}
+              </label>
+              <p className="mt-0.5 text-xs leading-5 text-gray-600">
+                {catalogueBranch
+                  ? t('branchSelector.selected', { branch: dn(catalogueBranch.name, catalogueBranch.name_ar) })
+                  : t('branchSelector.help')}
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 shrink-0 sm:mt-0 sm:w-72">
+            <select
+              id="catalogue-branch"
+              value={selectedOwnerBranch?.id ?? ''}
+              onChange={event => selectOwnerBranch(event.target.value)}
+              disabled={ownerBranchesLoading}
+              className="input w-full bg-white text-sm disabled:cursor-wait"
+              aria-describedby={ownerBranchesFailed ? 'catalogue-branch-error' : undefined}
+            >
+              <option value="">{ownerBranchesLoading ? t('branchSelector.loading') : t('branchSelector.select')}</option>
+              {ownerBranches.map(candidate => (
+                <option key={candidate.id} value={candidate.id}>
+                  {dn(candidate.name, candidate.name_ar)}
+                </option>
+              ))}
+            </select>
+            {ownerBranchesFailed && (
+              <p id="catalogue-branch-error" className="mt-1.5 text-xs font-medium text-red-700" role="alert">
+                {t('branchSelector.loadFailed')}
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {!catalogueBranchId ? (
+        <div data-catalogue-branch-required className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[#cdd9ce] bg-[#fbfdfb] px-6 py-20 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e5efe6] text-[#173f2a]" aria-hidden="true">
+            <Building2 size={22} />
+          </span>
+          <p className="mt-4 font-bold text-gray-900">{t('branchSelector.selectionRequiredTitle')}</p>
+          <p className="mt-1 max-w-sm text-sm leading-6 text-gray-500">{t('branchSelector.selectionRequiredHelp')}</p>
+        </div>
+      ) : (
+        <>
 
       {/* ── Category filter tabs ────────────────────────────────── */}
       {categories.length > 0 && (
@@ -1091,6 +1231,7 @@ export default function ProductsPage() {
           onClear={() => { setSearch(''); setActiveCat('all') }}
           title={activeCat !== 'all' && !search.trim() ? t('empty.category') : undefined}
           hint={activeCat !== 'all' && !search.trim() ? t('empty.categoryHint') : undefined}
+          addLabel={t(presentation.addActionKey)}
         />
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -1140,6 +1281,8 @@ export default function ProductsPage() {
         product={editing}
         categories={categories}
         products={products}
+        branchId={catalogueBranchId}
+        branchContext={catalogueBranch}
         onClose={() => setDrawerOpen(false)}
         onSaved={load}
       />
@@ -1153,20 +1296,22 @@ export default function ProductsPage() {
       <AddCategoryDialog
         open={addCatOpen}
         categories={categories}
+        tenantId={profile?.tenant_id ?? null}
+        branchId={catalogueBranchId}
         onClose={() => setAddCatOpen(false)}
         onCreated={load}
       />
-      {profile?.branch_id && <BarcodeBatchPrintDrawer
+      {catalogueBranchId && <BarcodeBatchPrintDrawer
         open={batchPrintOpen}
-        branchId={profile.branch_id}
-        businessName={tenant?.business_name_ar || tenant?.business_name || tenant?.name || branch?.name_ar || branch?.name || null}
+        branchId={catalogueBranchId}
+        businessName={tenant?.business_name_ar || tenant?.business_name || tenant?.name || catalogueBranch?.name_ar || catalogueBranch?.name || null}
         products={products}
         onClose={() => setBatchPrintOpen(false)}
       />}
-      {printSelection && profile?.branch_id && (
+      {printSelection && catalogueBranchId && (
         <BarcodeQuickPrintDialog
           open
-          branchId={profile.branch_id}
+          branchId={catalogueBranchId}
           barcodeId={printSelection.selected.barcodeId}
           barcode={printSelection.selected.barcode}
           barcodeType={printSelection.selected.barcodeType}
@@ -1177,7 +1322,7 @@ export default function ProductsPage() {
           unitName={printSelection.selected.unitName}
           price={printSelection.selected.price}
           sku={printSelection.product.sku}
-          businessName={tenant?.business_name_ar || tenant?.business_name || tenant?.name || branch?.name_ar || branch?.name || null}
+          businessName={tenant?.business_name_ar || tenant?.business_name || tenant?.name || catalogueBranch?.name_ar || catalogueBranch?.name || null}
           hasPrinted={printSelection.selected.hasPrinted}
           choices={printSelection.choices}
           onClose={closeBarcodePrint}
@@ -1194,6 +1339,8 @@ export default function ProductsPage() {
         onConfirm={() => void handleArchive()}
         onClose={() => { if (!archivePendingRef.current) setArchiveTarget(null) }}
       />
+        </>
+      )}
     </div>
   )
 }
