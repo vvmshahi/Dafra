@@ -58,6 +58,49 @@ function restockEligibility({
   return { restock: true, error: null }
 }
 
+const legacyStockAnchor = `  v_effective_return_stock :=
+    v_return_stock
+    AND COALESCE(v_tenant_business_type, 'trading') <> 'service'
+    AND public.branch_effective_stock_enabled(v_original.tenant_id, v_original.branch_id);`
+const capabilityStockAnchor = `  v_effective_return_stock :=
+    v_return_stock
+    AND public.branch_effective_stock_enabled(v_original.tenant_id, v_original.branch_id);`
+
+function recognizeLegacyCreditPredecessor(definition) {
+  const requiredMarkers = [
+    'FUNCTION public.create_partial_credit_note_legacy_base_v1(',
+    'SECURITY DEFINER',
+    "SET search_path TO 'public'",
+    "SET row_security TO 'off'",
+    'auth.uid()',
+    'idempotency',
+    'FOR UPDATE',
+  ]
+  if (!requiredMarkers.every(marker => definition.includes(marker))) return null
+
+  const hasLegacyAnchor = definition.includes(legacyStockAnchor)
+  const hasCapabilityAnchor = definition.includes(capabilityStockAnchor)
+  if (hasLegacyAnchor === hasCapabilityAnchor) return null
+  return hasLegacyAnchor ? 'tenant-business-type' : 'branch-capability'
+}
+
+function reviewedLegacyCreditDefinition(stockAnchor) {
+  return `CREATE OR REPLACE FUNCTION public.create_partial_credit_note_legacy_base_v1(
+  p_payload jsonb
+) RETURNS jsonb
+  LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path TO 'public'
+  SET row_security TO 'off'
+AS $$
+BEGIN
+  PERFORM auth.uid();
+  -- idempotency guard
+  PERFORM 1 FROM public.invoices FOR UPDATE;
+${stockAnchor}
+END;
+$$;`
+}
+
 const migrationFiles = readdirSync(new URL('../supabase/migrations/', import.meta.url))
 const migrationVersions = migrationFiles
   .map(name => name.match(/^(\d+)_/))
@@ -73,6 +116,12 @@ matches(migration, /PHASE7_SOURCE_AWARE_REQUIRED_CONTRACT_MISSING/, 'Phase 7 che
 
 // Credit/restock hardening: only immutable issued state determines eligibility.
 matches(migration, /create_partial_credit_note_legacy_phase7_base_v1/, 'legacy financial credit delegate is preserved privately')
+matches(migration, /v_legacy_stock_anchor/, 'Phase 7 recognizes the audited tenant-business-type predecessor')
+matches(migration, /v_capability_stock_anchor/, 'Phase 7 recognizes the audited branch-capability predecessor')
+matches(migration, /v_recognized_stock_anchor/, 'Phase 7 replaces only the recognized inherited restock decision')
+matches(migration, /OR position\('SECURITY DEFINER' IN v_definition\) = 0[\s\S]*?OR position\('FOR UPDATE' IN v_definition\) = 0/, 'legacy predecessor recognition retains the security and locking contract checks')
+matches(migration, /ELSIF position\(v_capability_stock_anchor IN v_definition\) > 0[\s\S]*?v_recognized_stock_anchor := v_capability_stock_anchor/, 'branch-capability predecessor is explicitly selected before cloning')
+matches(migration, /PHASE7_LEGACY_CREDIT_DEFINITION_UNREVIEWED/, 'unreviewed legacy credit definitions still fail closed')
 matches(migration, /create_partial_credit_note_with_product_units_phase7_base_v1/, 'package financial credit delegate is preserved privately')
 matches(migration, /create_partial_credit_note_phase7_base_v1/, 'Phase 7 keeps the prior package-or-legacy dispatch decision')
 matches(migration, /v_result := public\.create_partial_credit_note_phase7_base_v1\(p_payload\)/, 'public credit wrapper delegates existing fiscal validation before restock')
@@ -98,6 +147,10 @@ check(!restockEligibility({ returnStock: true, branchStockEnabled: true, source:
 check(!restockEligibility({ returnStock: true, branchStockEnabled: true, source: 'catalogue', productId: 'p', stockTrackedAtSale: true, serviceAtSale: false, productExists: false }).restock, 'missing stock target does not silently mutate another product')
 check(restockEligibility({ returnStock: true, branchStockEnabled: true, source: 'catalogue', productId: 'p', stockTrackedAtSale: true, serviceAtSale: false, productExists: false }).error === 'CREDIT_RESTOCK_TARGET_UNAVAILABLE', 'missing target rolls back the same credit transaction')
 check(!restockEligibility({ returnStock: true, branchStockEnabled: false, source: 'catalogue', productId: 'p', stockTrackedAtSale: true, serviceAtSale: false }).restock, 'existing branch stock-module rule still gates physical mutation')
+check(recognizeLegacyCreditPredecessor(reviewedLegacyCreditDefinition(legacyStockAnchor)) === 'tenant-business-type', 'historical tenant-business-type predecessor remains recognized')
+check(recognizeLegacyCreditPredecessor(reviewedLegacyCreditDefinition(capabilityStockAnchor)) === 'branch-capability', 'production capability predecessor remains recognized')
+check(recognizeLegacyCreditPredecessor(reviewedLegacyCreditDefinition(capabilityStockAnchor).replace('FOR UPDATE', '')) === null, 'predecessor missing row locking remains rejected')
+check(recognizeLegacyCreditPredecessor(`${reviewedLegacyCreditDefinition(legacyStockAnchor)}\n${capabilityStockAnchor}`) === null, 'ambiguous predecessor definitions remain rejected')
 matches(creditModal, /line\.item\.product_id && line\.item\.track_stock && !line\.item\.is_service/, 'credit modal retains null-product Custom Line no-stock affordance')
 
 // Report classification: financial totals remain invoice-level while item rows

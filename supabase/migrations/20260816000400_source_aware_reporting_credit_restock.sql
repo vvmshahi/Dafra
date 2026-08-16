@@ -35,18 +35,44 @@ DECLARE
   v_definition text;
   v_function_anchor text :=
     'FUNCTION public.create_partial_credit_note_legacy_base_v1(';
-  v_stock_anchor text := $anchor$  v_effective_return_stock :=
+  v_legacy_stock_anchor text := $anchor$  v_effective_return_stock :=
     v_return_stock
     AND COALESCE(v_tenant_business_type, 'trading') <> 'service'
     AND public.branch_effective_stock_enabled(v_original.tenant_id, v_original.branch_id);$anchor$;
+  v_capability_stock_anchor text := $anchor$  v_effective_return_stock :=
+    v_return_stock
+    AND public.branch_effective_stock_enabled(v_original.tenant_id, v_original.branch_id);$anchor$;
+  v_recognized_stock_anchor text;
 BEGIN
   IF to_regprocedure('public.create_partial_credit_note_legacy_phase7_base_v1(jsonb)') IS NULL THEN
     v_definition := pg_get_functiondef(
       'public.create_partial_credit_note_legacy_base_v1(jsonb)'::regprocedure
     );
+
+    -- Only two reviewed predecessors are accepted: the historical
+    -- tenant-business-type form and the capability form installed by
+    -- 20260813000100. Both retain the established security-definer credit
+    -- transaction; Phase 7 replaces only their inherited restock decision.
     IF position(v_function_anchor IN v_definition) = 0
-       OR position(v_stock_anchor IN v_definition) = 0
+       OR position('SECURITY DEFINER' IN v_definition) = 0
+       OR position('SET search_path TO ''public''' IN v_definition) = 0
+       OR position('SET row_security TO ''off''' IN v_definition) = 0
+       OR position('auth.uid()' IN v_definition) = 0
+       OR position('idempotency' IN v_definition) = 0
+       OR position('FOR UPDATE' IN v_definition) = 0
     THEN
+      RAISE EXCEPTION 'PHASE7_LEGACY_CREDIT_DEFINITION_UNREVIEWED';
+    END IF;
+
+    IF position(v_legacy_stock_anchor IN v_definition) > 0
+       AND position(v_capability_stock_anchor IN v_definition) = 0
+    THEN
+      v_recognized_stock_anchor := v_legacy_stock_anchor;
+    ELSIF position(v_capability_stock_anchor IN v_definition) > 0
+       AND position(v_legacy_stock_anchor IN v_definition) = 0
+    THEN
+      v_recognized_stock_anchor := v_capability_stock_anchor;
+    ELSE
       RAISE EXCEPTION 'PHASE7_LEGACY_CREDIT_DEFINITION_UNREVIEWED';
     END IF;
 
@@ -57,11 +83,11 @@ BEGIN
     );
     v_definition := replace(
       v_definition,
-      v_stock_anchor,
+      v_recognized_stock_anchor,
       '  v_effective_return_stock := false;'
     );
     IF position('create_partial_credit_note_legacy_phase7_base_v1' IN v_definition) = 0
-       OR position(v_stock_anchor IN v_definition) <> 0
+       OR position(v_recognized_stock_anchor IN v_definition) <> 0
     THEN
       RAISE EXCEPTION 'PHASE7_LEGACY_CREDIT_PATCH_TARGET_MISSING';
     END IF;
