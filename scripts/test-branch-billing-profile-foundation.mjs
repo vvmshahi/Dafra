@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const read = path => readFileSync(path, 'utf8')
-const migrationPath = 'supabase/migrations/20260816000100_branch_billing_profile_foundation.sql'
+const migrationPath = 'supabase/migrations/20260816000200_branch_billing_profile_foundation.sql'
 const migration = read(migrationPath)
 const databaseTypes = read('src/types/database.ts')
 const publicTypes = read('src/types/index.ts')

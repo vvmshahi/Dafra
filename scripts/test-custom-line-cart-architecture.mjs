@@ -168,8 +168,16 @@ try {
       .split('\n')
       .filter(Boolean),
   ]
+  const permittedLineageRepairPaths = new Set([
+    'supabase/migrations/20260816000100_branch_billing_profile_foundation.sql',
+    'supabase/migrations/20260816000200_branch_billing_profile_foundation.sql',
+  ])
+  assert.equal(
+    changedPaths.some(path => path.startsWith('supabase/migrations/') && !permittedLineageRepairPaths.has(path)),
+    false,
+    'only the audited billing-profile migration version repair may touch migrations',
+  )
   for (const protectedPath of [
-    'supabase/migrations/',
     'supabase/functions/',
     'src/pages/invoices/',
     'src/components/print/',

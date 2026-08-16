@@ -5,7 +5,7 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 const source = read('src/pages/settings/BranchesTab.tsx')
 const profileClient = read('src/lib/branches/billingProfile.ts')
 const configHook = read('src/hooks/useBranchBillingConfig.ts')
-const migration = read('supabase/migrations/20260816000100_branch_billing_profile_foundation.sql')
+const migration = read('supabase/migrations/20260816000200_branch_billing_profile_foundation.sql')
 const en = JSON.parse(read('src/localization/locales/en/branches.json'))
 const ar = JSON.parse(read('src/localization/locales/ar-SA/branches.json'))
 
