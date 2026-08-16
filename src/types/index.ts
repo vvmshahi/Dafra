@@ -2,6 +2,8 @@ export type {
   UserRole,
   BusinessType,
   BranchPosMode,
+  BranchBusinessProfile,
+  InvoiceLineSource,
   ZatcaEnvironment,
   InvoiceType,
   InvoiceStatus,

@@ -4,6 +4,8 @@
 export type UserRole = 'super_admin' | 'owner' | 'admin' | 'manager' | 'accountant' | 'cashier' | 'branch'
 export type BusinessType = 'trading' | 'service'
 export type BranchPosMode = 'touch' | 'quick'
+export type BranchBusinessProfile = 'retail_trading' | 'food_beverage' | 'services'
+export type InvoiceLineSource = 'legacy' | 'catalogue' | 'custom'
 export type ZatcaEnvironment = 'production' | 'sandbox'
 export type VatExpenseTreatment = 'no_vat' | 'included' | 'on_top'
 export type ExpenseVatClaimStatus = 'no_vat' | 'claimable' | 'not_claimable' | 'needs_review'
@@ -870,6 +872,10 @@ export interface Branch {
   show_pos_scroll_buttons: boolean
   pos_mode: BranchPosMode
   stock_enabled: boolean | null
+  business_profile: BranchBusinessProfile | null
+  products_enabled: boolean | null
+  services_enabled: boolean | null
+  custom_lines_enabled: boolean
   zatca_environment: ZatcaEnvironment
   created_at: string
   updated_at: string
@@ -1350,6 +1356,7 @@ export interface InvoiceItem {
   tax_amount: number
   total: number
   sort_order: number
+  line_source: InvoiceLineSource
   created_at: string
   product_unit_id?: string | null
   product_unit_version?: number | null
@@ -1542,6 +1549,10 @@ export interface BranchInsert {
   show_pos_scroll_buttons?: boolean
   pos_mode?: string | null
   stock_enabled?: boolean | null
+  business_profile?: BranchBusinessProfile | null
+  products_enabled?: boolean | null
+  services_enabled?: boolean | null
+  custom_lines_enabled?: boolean
 }
 
 export type BranchUpdate = Partial<BranchInsert>

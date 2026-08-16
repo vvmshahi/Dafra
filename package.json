@@ -90,6 +90,7 @@
     "test:owner-workspace-v1": "node scripts/test-owner-workspace-v1.mjs",
     "test:branch-tabbed-modal": "node scripts/test-branch-tabbed-modal.mjs",
     "test:branch-modal-visual-stability": "node scripts/test-branch-modal-visual-stability.mjs",
+    "test:branch-billing-profile-foundation": "node scripts/test-branch-billing-profile-foundation.mjs",
     "test:product-editor-modal-ui": "node scripts/test-product-editor-modal-ui.mjs",
     "test:product-editor-compact-ui": "node scripts/test-product-editor-compact-ui.mjs",
     "test:product-editor-v1-ui": "node scripts/test-product-editor-v1-ui.mjs",
