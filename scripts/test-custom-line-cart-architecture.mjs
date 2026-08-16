@@ -193,6 +193,8 @@ try {
       .filter(Boolean),
   ]
   const permittedLineageRepairPaths = new Set([
+    'supabase/migrations/20260813000100_normalize_product_capability_stock_and_pos.sql',
+    'supabase/migrations/20260813000200_enforce_pos_checkout_open_register.sql',
     'supabase/migrations/20260816000100_branch_billing_profile_foundation.sql',
     'supabase/migrations/20260816000100_services_and_custom_billing_lines.sql',
     'supabase/migrations/20260816000200_branch_billing_profile_foundation.sql',
