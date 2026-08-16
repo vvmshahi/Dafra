@@ -23,6 +23,7 @@ const creditReceipt = read('src/pages/invoices/AtomicCreditNoteReceiptView.tsx')
 const invoiceDetail = read('src/pages/invoices/InvoiceDetailPage.tsx')
 const invoiceList = read('src/pages/invoices/InvoicesPage.tsx')
 const atomicClient = read('src/lib/zatca/atomicCheckout.ts')
+const authenticatedEdge = read('src/lib/zatca/authenticatedEdge.ts')
 const creditPresentation = read('src/lib/zatca/creditNotePresentation.mjs')
 const atomicPrint = read('src/lib/atomicReceiptPrint.ts')
 const electronMain = read('electron/main.cjs')
@@ -542,6 +543,17 @@ await test('rapid POS clicks are synchronously coalesced before a second rendere
   await charge(async () => {})
   assert.equal(requestCount, 4, 'guard did not reset after failure')
   assert.equal(failureToasts.length, 1)
+})
+
+await test('protected atomic checkout uses the shared session-authenticated Edge invocation once per request', async () => {
+  assert.match(atomicClient, /const request = \{[\s\S]*?cartFingerprint: params\.cartFingerprint/)
+  assert.match(atomicClient, /invokeAuthenticatedZatca\(request\)/)
+  assert.doesNotMatch(atomicClient, /functions\.invoke\('zatca-submit'/)
+  assert.match(authenticatedEdge, /auth\.getSession\(\)/)
+  assert.match(authenticatedEdge, /headers: \{ Authorization: `Bearer \$\{token\}` \}/)
+  assert.match(authenticatedEdge, /if \(edgeStatus\(initialResult\.error\) !== 401\) return initialResult/)
+  assert.match(authenticatedEdge, /auth\.refreshSession\(\)/)
+  assert.match(authenticatedEdge, /return invoke\(refreshedAccessToken\)/)
 })
 
 await test('rollout fallback is write-free and committed replay wins even after flag rollback', () => {

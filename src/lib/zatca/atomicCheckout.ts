@@ -1,5 +1,5 @@
-import { supabase } from '@/lib/supabase'
 import { ZATCA_FINALIZATION_CLIENT_VERSION } from '@/lib/zatca/submission'
+import { invokeAuthenticatedZatca } from '@/lib/zatca/authenticatedEdge'
 import {
   CREDIT_NOTE_SCOPE_MIGRATION_KEY,
   atomicCheckoutStorageKey,
@@ -372,18 +372,17 @@ export async function checkoutSimplifiedAtomically(params: {
   documentType?: AtomicCheckoutDocumentType
 }): Promise<AtomicCheckoutResult | AtomicCheckoutLegacyRequired> {
   const documentType = params.documentType ?? 'invoice'
-  const { data, error } = await supabase.functions.invoke('zatca-submit', {
-    body: {
-      action: documentType === 'credit_note'
-        ? 'checkout_simplified_credit_note'
-        : 'checkout_simplified',
-      branchId: params.branchId,
-      checkout: params.checkout,
-      cartFingerprint: params.cartFingerprint,
-      clientVersion: ZATCA_FINALIZATION_CLIENT_VERSION,
-      source: documentType === 'credit_note' ? 'auto_credit_note' : 'auto_checkout',
-    },
-  })
+  const request = {
+    action: documentType === 'credit_note'
+      ? 'checkout_simplified_credit_note'
+      : 'checkout_simplified',
+    branchId: params.branchId,
+    checkout: params.checkout,
+    cartFingerprint: params.cartFingerprint,
+    clientVersion: ZATCA_FINALIZATION_CLIENT_VERSION,
+    source: documentType === 'credit_note' ? 'auto_credit_note' : 'auto_checkout',
+  }
+  const { data, error } = await invokeAuthenticatedZatca(request)
   if (error) throw new Error(error.message)
   if (data?.status === 'legacy_required'
       && (data?.reason === 'atomic_rollout_disabled'

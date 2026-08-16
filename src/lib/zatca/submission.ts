@@ -1,5 +1,9 @@
 import { supabase } from '@/lib/supabase'
 import { validateInvoiceInSandbox, type SandboxValidationResponse } from '@/lib/zatca/api'
+import {
+  invokeAuthenticatedZatca,
+  ZatcaEdgeAuthenticationError,
+} from '@/lib/zatca/authenticatedEdge'
 
 export const PERMANENT_DEMO_TENANT_ID = 'ebf1144b-55ed-472a-99c9-23b5ee915351'
 export const PERMANENT_DEMO_TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
@@ -138,12 +142,7 @@ export interface ZatcaOutputState {
   error: string | null
 }
 
-export class ZatcaOutputStateAuthenticationError extends Error {
-  constructor() {
-    super('An authenticated session is required to read finalized invoice output.')
-    this.name = 'ZatcaOutputStateAuthenticationError'
-  }
-}
+export { ZatcaEdgeAuthenticationError as ZatcaOutputStateAuthenticationError }
 
 export async function resolvePosCheckoutDocument(
   branchId: string,
@@ -349,21 +348,12 @@ export async function getInvoiceZatcaOutputState(params: {
   invoiceId: string
   branchId: string
 }): Promise<ZatcaOutputState> {
-  const invokeStatus = async (accessToken: string) => supabase.functions.invoke('zatca-submit', {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: { invoiceId: params.invoiceId, branchId: params.branchId, action: 'status', clientVersion: ZATCA_OUTPUT_STATE_READ_VERSION },
+  const { data, error } = await invokeAuthenticatedZatca({
+    invoiceId: params.invoiceId,
+    branchId: params.branchId,
+    action: 'status',
+    clientVersion: ZATCA_OUTPUT_STATE_READ_VERSION,
   })
-  const { data: initialSession } = await supabase.auth.getSession()
-  let accessToken = initialSession.session?.access_token
-  if (!accessToken) throw new ZatcaOutputStateAuthenticationError()
-  let { data, error } = await invokeStatus(accessToken)
-  const status = (error as { context?: { status?: number } } | null)?.context?.status
-  if (status === 401) {
-    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession()
-    accessToken = refreshed.session?.access_token
-    if (refreshError || !accessToken) throw new ZatcaOutputStateAuthenticationError()
-    ;({ data, error } = await invokeStatus(accessToken))
-  }
   if (error) throw new Error(error.message)
   const invoiceId = String(data?.invoiceId ?? '')
   if (invoiceId !== params.invoiceId) {

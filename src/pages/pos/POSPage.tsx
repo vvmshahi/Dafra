@@ -437,6 +437,9 @@ function safeCheckoutErrorKey(err: unknown): string {
   if (/SANDBOX_STANDARD_CLEARANCE_UNAVAILABLE/.test(message)) {
     return 'validation:sandboxStandardUnavailable'
   }
+  if (/session has expired|authenticated session is required/i.test(message)) {
+    return 'validation:sessionExpired'
+  }
   if (/not available/i.test(message)) {
     return 'validation:unavailableItem'
   }

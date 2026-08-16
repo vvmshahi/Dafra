@@ -182,6 +182,7 @@ function safeCreditNoteError(error: unknown, t: TFunction): string {
   if (/reported|cleared/i.test(message)) return t('validation:creditInvoiceStatus')
   if (/posted/i.test(message)) return t('validation:creditPostedOnly')
   if (/reason/i.test(message)) return t('validation:creditReasonRequired')
+  if (/session has expired|authenticated session is required/i.test(message)) return t('validation:sessionExpired')
   if (/forbidden|unauthorized|permission/i.test(message)) return t('validation:creditPermissionDenied')
   return t('validation:creditNoteFailed')
 }

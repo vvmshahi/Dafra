@@ -23,6 +23,7 @@
   "unavailableItem": "One or more items are no longer available.",
   "checkoutForbidden": "Checkout is not allowed for this branch.",
   "checkoutFailed": "Checkout failed. Review the cart and try again.",
+  "sessionExpired": "Your session has expired. Please sign in again before checkout.",
   "branchSimplifiedOnly": "This branch issues Simplified invoices only. Choose a retail or non-VAT-qualified customer.",
   "branchStandardOnly": "This branch issues Standard tax invoices only. Choose a VAT-registered Business customer.",
   "invoiceCapabilityNotConfigured": "Configure this branch’s ZATCA invoice capability before checkout.",
