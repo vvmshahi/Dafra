@@ -56,7 +56,7 @@ import { useSubscription } from '@/hooks/useSubscription'
 import { getPrinterSettings, getPrinters, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printAtomicReceiptSnapshot } from '@/lib/atomicReceiptPrint'
 import { openReceiptPreview, printReceiptInHiddenFrame } from '@/lib/receiptPrint'
-import { printCurrentDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
+import { isAndroidBrowser, openPrintPopup, printCurrentDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
 import { supportConfig } from '@/config/support'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
@@ -754,6 +754,15 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
       return
     }
     if (!isElectron()) {
+      if (isAndroidBrowser()) {
+        try {
+          openPrintPopup(`/invoices/${encodeURIComponent(receipt.invoiceId)}?print=1`)
+        } catch (error) {
+          console.warn('[ReceiptView] Android A4 print preview failed', error)
+          toast.error(t('printing:a4Failed'))
+        }
+        return
+      }
       const existing = document.getElementById('pos-pdf-print-style')
       existing?.remove()
       const style = document.createElement('style')

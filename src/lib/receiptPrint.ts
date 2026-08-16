@@ -1,3 +1,5 @@
+import { isAndroidBrowser, openPrintPopup } from '@/lib/print/browserPrint'
+
 let activeHiddenReceiptPrint: Promise<void> | null = null
 
 export const RECEIPT_FRAME_READY = 'dafra:receipt-frame-ready'
@@ -19,6 +21,13 @@ export function openReceiptPreview(invoiceId: string, autoPrint = true) {
 export async function printReceiptInHiddenFrame(invoiceId: string): Promise<void> {
   if (typeof window === 'undefined') throw new Error('Receipt printing is unavailable in this environment.')
   if (activeHiddenReceiptPrint) return activeHiddenReceiptPrint
+  // Chrome on Android can snapshot a transparent one-pixel iframe as blank.
+  // Its normal receipt route stays visibly rendered until its own ready check
+  // completes, then invokes the system print UI.
+  if (isAndroidBrowser()) {
+    openPrintPopup(receiptPreviewUrl(invoiceId, true))
+    return
+  }
   activeHiddenReceiptPrint = new Promise<void>((resolve, reject) => {
     const frame = document.createElement('iframe')
     const frameUrl = receiptPreviewUrl(invoiceId, false, true)

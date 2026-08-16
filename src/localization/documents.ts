@@ -29,7 +29,7 @@ export function documentDirection(language: DocumentLanguage): 'ltr' | 'rtl' {
 export function documentFontFamily(language: DocumentLanguage): string {
   return language === 'en'
     ? "'Inter', Arial, sans-serif"
-    : "'KubriArabic', 'Noto Naskh Arabic', Tahoma, Arial, sans-serif"
+    : "'Cairo', 'KubriArabic', 'Noto Naskh Arabic', Tahoma, Arial, sans-serif"
 }
 
 export function documentLabel(language: DocumentLanguage, key: DocumentTextKey): string {

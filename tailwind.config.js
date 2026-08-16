@@ -39,7 +39,7 @@ export default {
       },
       fontFamily: {
         sans:   ['Inter', 'system-ui', 'sans-serif'],
-        arabic: ['Cairo', 'system-ui', 'sans-serif'],
+        arabic: ['Cairo', 'KubriArabic', 'Noto Naskh Arabic', 'Tahoma', 'Arial', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
         '2xl': '12px',

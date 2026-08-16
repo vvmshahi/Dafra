@@ -2,6 +2,10 @@ export const PRINT_POPUP_BLOCKED = 'PRINT_POPUP_BLOCKED'
 
 const PREPARING_DOCUMENT = `<!doctype html><html><head><meta charset="utf-8"><title>Preparing document</title></head><body style="margin:0;padding:2rem;font:600 16px system-ui;color:#334155;background:#f8fafc">Preparing document…</body></html>`
 
+export function isAndroidBrowser(): boolean {
+  return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
+}
+
 export function openPrintPopup(path: string): Window {
   const popup = window.open('about:blank', '_blank', 'noopener,noreferrer')
   if (!popup) throw new Error(PRINT_POPUP_BLOCKED)

@@ -21,7 +21,7 @@ import A4PreviewFit, { type A4PreviewZoom } from '@/components/print/A4PreviewFi
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printReceiptInHiddenFrame } from '@/lib/receiptPrint'
-import { printCurrentDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
+import { isAndroidBrowser, openPrintPopup, printCurrentDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
 import { getInvoiceZatcaOutputState, submitInvoiceToZatca, type ZatcaOutputState } from '@/lib/zatca/submission'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 import AtomicCreditNoteReceiptView from './AtomicCreditNoteReceiptView'
@@ -421,6 +421,10 @@ export default function InvoiceDetailPage() {
     setA4Printing(true)
     try {
       if (!isElectron()) {
+        if (isAndroidBrowser()) {
+          openPrintPopup(`/invoices/${encodeURIComponent(invoice.id)}?print=1`)
+          return
+        }
         await waitForPrintableAssets(document.getElementById('invoice-printable-a4') ?? document.body)
         await printCurrentDocument()
         return
@@ -770,7 +774,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
 
   return (
     <div className="mx-auto min-w-0 max-w-6xl space-y-3 overflow-x-clip pb-6">
-      <A4Document model={documentViewModel} options={{ pdfMode: true, id: 'invoice-printable-a4', qrImageUrl: qrDataUrl, nonFiscalDemo }} />
+      <A4Document model={documentViewModel} options={{ preview: autoPrint, pdfMode: true, id: 'invoice-printable-a4', qrImageUrl: qrDataUrl, nonFiscalDemo }} />
 
       <header className="no-print overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" aria-labelledby="invoice-detail-title">
         <div className="h-1 bg-gold-500" aria-hidden="true" />
