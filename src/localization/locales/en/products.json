@@ -24,6 +24,23 @@
     "service": "Service",
     "serviceHint": "A saved reusable item. Stock tracking is always off."
   },
+  "export": {
+    "action": "Export",
+    "title": "Export catalogue",
+    "subtitle": "Choose the data and format you want to download.",
+    "close": "Close export",
+    "cancel": "Cancel",
+    "what": "What to export",
+    "scopes": { "items": "Products & Services", "categories": "Categories", "catalogue": "Products, Services & Categories" },
+    "filters": { "title": "Filters", "itemType": "Item type", "allItems": "All items", "products": "Products only", "services": "Services only", "status": "Status", "active": "Active only", "inactive": "Inactive only", "allStatus": "All statuses", "category": "Category", "allCategories": "All categories", "search": "Search name, SKU, or barcode" },
+    "format": { "title": "File format", "excel": "Excel (.xlsx)", "excelHint": "Formatted workbook with separate sheets.", "csv": "CSV (.csv)", "csvHint": "UTF-8 file for compatibility." },
+    "prepare": "Prepare export",
+    "preparing": "Preparing data…",
+    "ready": "Export ready",
+    "download": "Download export",
+    "summary": { "items": "Items", "products": "Products", "services": "Services", "categories": "Categories" },
+    "errors": { "permission": "You do not have permission to export this catalogue.", "empty": "No products or services are available to export.", "noCategories": "No categories are available to export.", "prepare": "Unable to prepare export. Check the connection and try again.", "limit": "This branch has more than {{count}} catalogue records. Refine the export filters and try again." }
+  },
   "edit": "Edit Product",
   "created": "Product created successfully.",
   "createdHint": "Add quantity, supplier, and purchase cost from Product Stock.",

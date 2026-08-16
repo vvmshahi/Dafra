@@ -8,7 +8,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "test": "npm run test:register-session-netting && npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx && npm run test:branch-billing-profile-ux && npm run test:profile-aware-catalogue-navigation && npm run test:saved-services-catalogue && npm run test:custom-line-cart-architecture && npm run test:custom-line-server-checkout && npm run test:source-aware-reporting-credit-hardening",
+    "test": "npm run test:register-session-netting && npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx && npm run test:branch-billing-profile-ux && npm run test:profile-aware-catalogue-navigation && npm run test:saved-services-catalogue && npm run test:catalogue-bulk-export && npm run test:custom-line-cart-architecture && npm run test:custom-line-server-checkout && npm run test:source-aware-reporting-credit-hardening",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -72,6 +72,7 @@
     "test:pos-session-access": "node scripts/test-pos-session-access.mjs",
     "test:register-session-netting": "node scripts/test-register-session-refund-netting.mjs",
     "test:product-catalogue": "node --experimental-strip-types scripts/test-product-catalogue.mjs",
+    "test:catalogue-bulk-export": "node --experimental-strip-types scripts/test-catalogue-bulk-export.mjs",
     "test:product-archive": "node --experimental-strip-types scripts/test-product-archive.mjs",
     "test:manage-categories": "node scripts/test-manage-categories.mjs",
     "test:stock-page-ui": "node scripts/test-stock-page-ui.mjs",

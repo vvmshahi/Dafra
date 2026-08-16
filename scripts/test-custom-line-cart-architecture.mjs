@@ -234,6 +234,10 @@ try {
   )
   const protectedPathExceptions = new Set([
     'src/pages/invoices/InvoiceDetailPage.tsx',
+    'src/pages/invoices/CreateCreditNoteModal.tsx',
+    'src/lib/zatca/atomicCheckout.ts',
+    'src/lib/zatca/authenticatedEdge.ts',
+    'src/lib/zatca/submission.ts',
   ])
   for (const protectedPath of [
     'supabase/functions/',

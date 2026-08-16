@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Plus, LayoutGrid, List, Search, Tag, Pencil, Archive, Package, X, FolderPlus, Printer,
-  Barcode, AlertTriangle, RefreshCw, Building2,
+  Barcode, AlertTriangle, RefreshCw, Building2, Download,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -38,6 +38,7 @@ import {
   getCataloguePresentation,
 } from '@/lib/products/cataloguePresentation'
 import { useSearchParams } from 'react-router-dom'
+import CatalogueExportDialog from './CatalogueExportDialog'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -659,6 +660,7 @@ export default function ProductsPage() {
   const canCreateCatalogueItem = !billingConfigLoading && (
     itemTypeCapabilities.productsEnabled || itemTypeCapabilities.servicesEnabled
   )
+  const canExportCatalogue = isOwnerAdmin || isBranchUser
 
   const [products,   setProducts]   = useState<ProductRow[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -671,6 +673,7 @@ export default function ProductsPage() {
   const [editing,    setEditing]    = useState<ProductRow | null>(null)
   const [catsOpen,   setCatsOpen]   = useState(false)
   const [addCatOpen, setAddCatOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [batchPrintOpen, setBatchPrintOpen] = useState(false)
   const [printLoadingId, setPrintLoadingId] = useState<string | null>(null)
   const [printSelection, setPrintSelection] = useState<PrintSelection | null>(null)
@@ -734,6 +737,7 @@ export default function ProductsPage() {
     setEditing(null)
     setCatsOpen(false)
     setAddCatOpen(false)
+    setExportOpen(false)
     setBatchPrintOpen(false)
     setPrintSelection(null)
     setArchiveTarget(null)
@@ -1055,6 +1059,12 @@ export default function ProductsPage() {
                 {t(presentation.addActionKey)}
               </Button>
             )}
+            {canExportCatalogue && (
+              <Button variant="secondary" size="sm" onClick={() => setExportOpen(true)}>
+                <Download size={14} aria-hidden="true" />
+                {t('export.action')}
+              </Button>
+            )}
           </>
         ) : undefined}
       />
@@ -1330,6 +1340,19 @@ export default function ProductsPage() {
         onClose={() => setAddCatOpen(false)}
         onCreated={load}
       />
+      {catalogueBranchId && profile?.tenant_id && catalogueBranch && (
+        <CatalogueExportDialog
+          open={exportOpen}
+          branchId={catalogueBranchId}
+          tenantId={profile.tenant_id}
+          branchName={dn(catalogueBranch.name, catalogueBranch.name_ar)}
+          branchStockEnabled={branchStockEnabled}
+          canExport={canExportCatalogue}
+          initialSearch={search}
+          initialCategoryId={activeCat === 'all' ? '' : activeCat}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
       {catalogueBranchId && <BarcodeBatchPrintDrawer
         open={batchPrintOpen}
         branchId={catalogueBranchId}

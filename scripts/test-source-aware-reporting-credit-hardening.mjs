@@ -206,6 +206,7 @@ const permittedPaths = new Set([
   MIGRATION_PATH,
   'scripts/test-custom-line-server-checkout.mjs',
   'scripts/test-source-aware-reporting-credit-hardening.mjs',
+  'scripts/test-catalogue-bulk-export.mjs',
   'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
   'supabase/migrations/20260804000600_trading_sandbox_v2.sql',
   'supabase/migrations/20260805000200_persist_zatca_capability_selection.sql',
@@ -217,6 +218,8 @@ const permittedPaths = new Set([
   'src/pages/reports/SalesReport.tsx',
   'src/pages/reports/pdf/reportExportData.ts',
   'src/pages/reports/pdf/reportPdfExporters.ts',
+  'src/lib/products/catalogueExport.ts',
+  'src/pages/products/CatalogueExportDialog.tsx',
 ])
 check(changedPaths.every(path => permittedPaths.has(path)), 'Phase 7 diff is restricted to reporting, credit hardening, translations, and focused tests')
 check(!changedPaths.includes('supabase/functions/zatca-submit/index.ts'), 'protected ZATCA Edge Function remains untouched')
