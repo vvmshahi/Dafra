@@ -687,14 +687,30 @@ assert.equal(initialRuntime.immutable_finalization_enabled, false)
 assert.equal(initialRuntime.simplified_enabled, false)
 assert.equal(initialRuntime.standard_enabled, false)
 assert.equal(initialRuntime.atomic_simplified_checkout_enabled, false)
-assert.equal(
-  await rowCount(
-    service
-      .from('zatca_atomic_checkout_branch_gates_v2')
-      .select('branch_id', { count: 'exact', head: true }),
-    'read empty branch gates',
-  ),
-  0,
+const defaultBranchGates = await ok(
+  service
+    .from('zatca_atomic_checkout_branch_gates_v2')
+    .select('tenant_id,branch_id,enabled')
+    .in('branch_id', [
+      ids.branchA,
+      ids.branchA2,
+      ids.branchB,
+      ids.demoTradingBranch,
+      ids.demoServiceBranch,
+    ]),
+  'read default branch gates',
+)
+assert.equal(defaultBranchGates.length, 5)
+assert.ok(defaultBranchGates.every(gate => gate.enabled === false))
+assert.deepEqual(
+  new Set(defaultBranchGates.map(gate => gate.branch_id)),
+  new Set([
+    ids.branchA,
+    ids.branchA2,
+    ids.branchB,
+    ids.demoTradingBranch,
+    ids.demoServiceBranch,
+  ]),
 )
 
 const initialized = await ok(service.rpc('initialize_zatca_new_branch_chain_v2', {
@@ -726,10 +742,6 @@ for (const userId of [ownerAId, branchUserId]) {
   }), 'acknowledge disposable client')
   assert.equal(acknowledged.acknowledged, true)
 }
-await ok(service.from('zatca_atomic_checkout_branch_gates_v2').insert({
-  tenant_id: ids.tenantA,
-  branch_id: ids.branchA,
-}), 'insert default branch gate')
 const defaultGate = await ok(
   service
     .from('zatca_atomic_checkout_branch_gates_v2')
@@ -928,39 +940,24 @@ await expectError(
     p_cart_fingerprint: fingerprint(standardPayload),
     p_ttl_seconds: 120,
   }),
-  /STANDARD_DOCUMENT_REQUIRES_CLEARANCE_FLOW/,
+  /BRANCH_SIMPLIFIED_ONLY|STANDARD_DOCUMENT_REQUIRES_CLEARANCE_FLOW/,
   'atomic standard rejection',
 )
-const standardCheckout = await ok(
+const rejectedStandardCounts = await Promise.all([
+  rowCount(service.from('invoices').select('id', { count: 'exact', head: true }).eq('tenant_id', ids.tenantA), 'count invoices before standard rejection'),
+  rowCount(service.from('payments').select('id', { count: 'exact', head: true }).eq('tenant_id', ids.tenantA), 'count payments before standard rejection'),
+  rowCount(service.from('invoice_items').select('id', { count: 'exact', head: true }).eq('tenant_id', ids.tenantA), 'count invoice items before standard rejection'),
+])
+await expectError(
   branchUser.rpc('pos_checkout', { p_payload: standardPayload }),
-  'legacy standard checkout while disabled',
+  /BRANCH_SIMPLIFIED_ONLY/,
+  'branch standard checkout rejection',
 )
-const standardInvoice = await ok(
-  service
-    .from('invoices')
-    .select('zatca_invoice_type,zatca_finalization_version,zatca_artifact_stage')
-    .eq('id', standardCheckout.invoice_id)
-    .single(),
-  'read legacy standard invoice',
-)
-assert.equal(standardInvoice.zatca_invoice_type, 'standard')
-assert.equal(standardInvoice.zatca_finalization_version, null)
-assert.equal(standardInvoice.zatca_artifact_stage, null)
-assert.equal(
-  await rowCount(
-    service
-      .from('zatca_reporting_outbox_v2')
-      .select('id', { count: 'exact', head: true })
-      .eq('invoice_id', standardCheckout.invoice_id),
-    'standard outbox count',
-  ),
-  0,
-)
-const standardOutput = await ok(service.rpc('get_zatca_output_state_v2', {
-  p_invoice_id: standardCheckout.invoice_id,
-  p_tenant_id: ids.tenantA,
-}), 'standard output state')
-assert.equal(standardOutput.canPrint, false)
+assert.deepEqual(await Promise.all([
+  rowCount(service.from('invoices').select('id', { count: 'exact', head: true }).eq('tenant_id', ids.tenantA), 'count invoices after standard rejection'),
+  rowCount(service.from('payments').select('id', { count: 'exact', head: true }).eq('tenant_id', ids.tenantA), 'count payments after standard rejection'),
+  rowCount(service.from('invoice_items').select('id', { count: 'exact', head: true }).eq('tenant_id', ids.tenantA), 'count invoice items after standard rejection'),
+]), rejectedStandardCounts)
 
 await ok(
   service

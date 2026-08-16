@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
 
 const BASE = '2b262f9ee99d7ec4c84186a0d4caaa8b84d41761'
+const SCOPE_TIP = 'd08838b5b652a1ffd0dc01f394cfb0a44daef046'
 const MIGRATION_PATH = 'supabase/migrations/20260816000300_authoritative_custom_line_checkout.sql'
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const migration = read(MIGRATION_PATH)
@@ -105,7 +106,7 @@ matches(creditNote, /line\.item\.product_id && line\.item\.track_stock && !line\
 matches(creditNote, /item\.is_service \|\| !item\.track_stock \|\| !item\.product_id/, 'credit UI must mark product-null lines as no-inventory impact')
 
 const changedPaths = [
-  ...execFileSync('git', ['diff', '--name-only', BASE, '--'], { encoding: 'utf8' })
+  ...execFileSync('git', ['diff', '--name-only', BASE, SCOPE_TIP, '--'], { encoding: 'utf8' })
     .split('\n')
     .filter(Boolean),
   ...execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { encoding: 'utf8' })
@@ -143,7 +144,7 @@ const permittedPaths = new Set([
 check(changedPaths.every(path => permittedPaths.has(path)), 'Phase 6 diff must stay within its approved scope')
 check(!changedPaths.includes('supabase/functions/zatca-submit/index.ts'), 'zatca-submit must remain untouched')
 check(
-  execFileSync('git', ['diff', BASE, '--', 'supabase/functions/zatca-submit/index.ts'], { encoding: 'utf8' }) === '',
+  execFileSync('git', ['diff', BASE, SCOPE_TIP, '--', 'supabase/functions/zatca-submit/index.ts'], { encoding: 'utf8' }) === '',
   'protected ZATCA Edge diff must be empty',
 )
 

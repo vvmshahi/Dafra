@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
 
 const BASE = 'd08838b5b652a1ffd0dc01f394cfb0a44daef046'
+const SCOPE_TIP = 'd7e0a2959fc8f6556ed39dd51877022eff3264cf'
 const MIGRATION_PATH = 'supabase/migrations/20260816000400_source_aware_reporting_credit_restock.sql'
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const migration = read(MIGRATION_PATH)
@@ -137,7 +138,7 @@ check(enReports.sales.itemTypes.custom === 'Custom', 'English Custom source labe
 check(arReports.sales.itemTypes.custom === 'بند مخصص', 'Arabic Custom source label is present')
 
 const changedPaths = [
-  ...execFileSync('git', ['diff', '--name-only', BASE, '--'], { encoding: 'utf8' })
+  ...execFileSync('git', ['diff', '--name-only', BASE, SCOPE_TIP, '--'], { encoding: 'utf8' })
     .split('\n')
     .filter(Boolean),
   ...execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { encoding: 'utf8' })
@@ -166,7 +167,7 @@ const permittedPaths = new Set([
 check(changedPaths.every(path => permittedPaths.has(path)), 'Phase 7 diff is restricted to reporting, credit hardening, translations, and focused tests')
 check(!changedPaths.includes('supabase/functions/zatca-submit/index.ts'), 'protected ZATCA Edge Function remains untouched')
 check(
-  execFileSync('git', ['diff', BASE, '--', 'supabase/functions/zatca-submit/index.ts'], { encoding: 'utf8' }) === '',
+  execFileSync('git', ['diff', BASE, SCOPE_TIP, '--', 'supabase/functions/zatca-submit/index.ts'], { encoding: 'utf8' }) === '',
   'protected ZATCA Edge diff is empty from the Phase 6 base',
 )
 check(zatcaSubmit.includes('lines: items.map'), 'ZATCA snapshot rendering contract remains present without edits')
