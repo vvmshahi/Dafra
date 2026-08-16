@@ -28,9 +28,9 @@ assert.match(migration, /business_profile IN \('retail_trading', 'food_beverage'
 assert.match(migration, /legacy\/unclassified/)
 assert.match(migration, /IF v_branch\.business_profile IS NULL THEN/)
 
-assert.match(migration, /ADD COLUMN custom_lines_enabled boolean NOT NULL DEFAULT false/)
-assert.match(migration, /ADD COLUMN products_enabled boolean/)
-assert.match(migration, /ADD COLUMN services_enabled boolean/)
+assert.match(migration, /ADD COLUMN IF NOT EXISTS custom_lines_enabled boolean NOT NULL DEFAULT false/)
+assert.match(migration, /ADD COLUMN IF NOT EXISTS products_enabled boolean/)
+assert.match(migration, /ADD COLUMN IF NOT EXISTS services_enabled boolean/)
 assert.match(migration, /REVOKE INSERT \(business_profile, products_enabled, services_enabled, custom_lines_enabled\),[\s\S]*UPDATE \(business_profile, products_enabled, services_enabled, custom_lines_enabled\)/)
 assert.match(migration, /v_actor\.role NOT IN \('owner', 'admin'\)/)
 assert.doesNotMatch(updateRpc, /v_actor\.role = 'branch'/)
@@ -45,7 +45,7 @@ assert.match(createBranchRpc, /INSERT INTO public\.branches \([\s\S]*business_pr
 
 assert.match(migration, /products_service_cannot_track_stock_check/)
 assert.match(migration, /CHECK \(NOT COALESCE\(is_service, false\) OR NOT COALESCE\(track_stock, false\)\) NOT VALID/)
-assert.match(migration, /ADD COLUMN line_source text NOT NULL DEFAULT 'legacy'/)
+assert.match(migration, /ADD COLUMN IF NOT EXISTS line_source text NOT NULL DEFAULT 'legacy'/)
 assert.match(migration, /line_source IN \('legacy', 'catalogue', 'custom'\)/)
 assert.match(migration, /REVOKE INSERT \(line_source\), UPDATE \(line_source\)/)
 

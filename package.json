@@ -90,6 +90,7 @@
     "test:owner-workspace-v1": "node scripts/test-owner-workspace-v1.mjs",
     "test:branch-tabbed-modal": "node scripts/test-branch-tabbed-modal.mjs",
     "test:branch-modal-visual-stability": "node scripts/test-branch-modal-visual-stability.mjs",
+    "test:migration-lineage-repair": "node scripts/test-migration-lineage-repair.mjs",
     "test:branch-billing-profile-foundation": "node scripts/test-branch-billing-profile-foundation.mjs",
     "test:branch-billing-profile-ux": "node scripts/test-branch-billing-profile-ux.mjs",
     "test:profile-aware-catalogue-navigation": "node --experimental-strip-types scripts/test-profile-aware-catalogue-navigation.mjs",

@@ -15,12 +15,18 @@ CREATE TABLE IF NOT EXISTS public.zatca_sandbox_v2_settings (
 
 INSERT INTO public.zatca_sandbox_v2_settings (
   tenant_id, branch_id, environment, sandbox_onboarding_version, functionality_map
-) VALUES (
+) SELECT
   'ebf1144b-55ed-472a-99c9-23b5ee915351'::UUID,
   '14271653-b404-44bf-9f39-7e9927569c02'::UUID,
   'integration_sandbox',
   2,
   '0100'
+WHERE EXISTS (
+  SELECT 1
+  FROM public.tenants t
+  JOIN public.branches b ON b.tenant_id = t.id
+  WHERE t.id = 'ebf1144b-55ed-472a-99c9-23b5ee915351'::UUID
+    AND b.id = '14271653-b404-44bf-9f39-7e9927569c02'::UUID
 )
 ON CONFLICT (tenant_id, branch_id) DO UPDATE SET
   environment = EXCLUDED.environment,

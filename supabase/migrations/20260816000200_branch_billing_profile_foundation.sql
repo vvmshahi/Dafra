@@ -28,17 +28,27 @@ $required_branch_billing_profile_contracts$;
 -- classification or behaviour-changing backfill is performed for live
 -- branches.
 ALTER TABLE public.branches
-  ADD COLUMN business_profile text,
-  ADD COLUMN products_enabled boolean,
-  ADD COLUMN services_enabled boolean,
-  ADD COLUMN custom_lines_enabled boolean NOT NULL DEFAULT false;
+  ADD COLUMN IF NOT EXISTS business_profile text,
+  ADD COLUMN IF NOT EXISTS products_enabled boolean,
+  ADD COLUMN IF NOT EXISTS services_enabled boolean,
+  ADD COLUMN IF NOT EXISTS custom_lines_enabled boolean NOT NULL DEFAULT false;
 
-ALTER TABLE public.branches
-  ADD CONSTRAINT branches_business_profile_check
-  CHECK (
-    business_profile IS NULL
-    OR business_profile IN ('retail_trading', 'food_beverage', 'services')
-  ) NOT VALID;
+DO $branches_business_profile_check$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.branches'::regclass
+      AND conname = 'branches_business_profile_check'
+  ) THEN
+    ALTER TABLE public.branches
+      ADD CONSTRAINT branches_business_profile_check
+      CHECK (
+        business_profile IS NULL
+        OR business_profile IN ('retail_trading', 'food_beverage', 'services')
+      ) NOT VALID;
+  END IF;
+END
+$branches_business_profile_check$;
 
 COMMENT ON COLUMN public.branches.business_profile IS
   'Branch-scoped operational profile. NULL preserves legacy tenant business-type behavior until explicitly configured.';
@@ -61,11 +71,21 @@ FROM anon, authenticated;
 -- The default makes all historical rows logically legacy without rewriting
 -- invoices. Future catalogue/custom checkout work will write explicit values.
 ALTER TABLE public.invoice_items
-  ADD COLUMN line_source text NOT NULL DEFAULT 'legacy';
+  ADD COLUMN IF NOT EXISTS line_source text NOT NULL DEFAULT 'legacy';
 
-ALTER TABLE public.invoice_items
-  ADD CONSTRAINT invoice_items_line_source_check
-  CHECK (line_source IN ('legacy', 'catalogue', 'custom')) NOT VALID;
+DO $invoice_items_line_source_check$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.invoice_items'::regclass
+      AND conname = 'invoice_items_line_source_check'
+  ) THEN
+    ALTER TABLE public.invoice_items
+      ADD CONSTRAINT invoice_items_line_source_check
+      CHECK (line_source IN ('legacy', 'catalogue', 'custom')) NOT VALID;
+  END IF;
+END
+$invoice_items_line_source_check$;
 
 COMMENT ON COLUMN public.invoice_items.line_source IS
   'Immutable invoice-line provenance. Existing rows retain the non-destructive legacy default; future checkout phases will write catalogue or custom.';

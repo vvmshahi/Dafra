@@ -8,6 +8,10 @@ ALTER TABLE public.zatca_production_credentials
   ADD COLUMN IF NOT EXISTS issued_functionality_map text;
 
 ALTER TABLE public.zatca_production_credentials
+  DROP CONSTRAINT IF EXISTS zatca_production_credentials_requested_functionality_map_check,
+  DROP CONSTRAINT IF EXISTS zatca_production_credentials_issued_functionality_map_check;
+
+ALTER TABLE public.zatca_production_credentials
   ADD CONSTRAINT zatca_production_credentials_requested_functionality_map_check
   CHECK (requested_functionality_map IS NULL OR requested_functionality_map IN ('0100', '1000', '1100'));
 ALTER TABLE public.zatca_production_credentials
@@ -127,15 +131,5 @@ $function$;
 ALTER FUNCTION public.reset_failed_zatca_onboarding(uuid, uuid, text) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.reset_failed_zatca_onboarding(uuid, uuid, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reset_failed_zatca_onboarding(uuid, uuid, text) TO service_role;
-
-COMMIT;
-  END IF;
-END
-$check$;
-
-COMMENT ON COLUMN public.zatca_production_credentials.requested_functionality_map IS
-  'Owner-selected TSXY functionality map submitted for this onboarding attempt.';
-COMMENT ON COLUMN public.zatca_production_credentials.issued_functionality_map IS
-  'Verified functionality map issued by ZATCA when returned by the upstream contract.';
 
 COMMIT;

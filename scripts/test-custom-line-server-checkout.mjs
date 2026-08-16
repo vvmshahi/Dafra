@@ -114,6 +114,8 @@ const changedPaths = [
 ]
 const permittedPaths = new Set([
   'package.json',
+  'scripts/test-migration-lineage-repair.mjs',
+  'scripts/test-branch-billing-profile-foundation.mjs',
   'scripts/test-source-aware-reporting-credit-hardening.mjs',
   'scripts/test-custom-line-cart-architecture.mjs',
   'scripts/test-custom-line-server-checkout.mjs',
@@ -131,6 +133,11 @@ const permittedPaths = new Set([
   'src/pages/reports/pdf/reportExportData.ts',
   'src/pages/reports/pdf/reportPdfExporters.ts',
   MIGRATION_PATH,
+  'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
+  'supabase/migrations/20260804000600_trading_sandbox_v2.sql',
+  'supabase/migrations/20260805000200_persist_zatca_capability_selection.sql',
+  'supabase/migrations/20260816000100_services_and_custom_billing_lines.sql',
+  'supabase/migrations/20260816000200_branch_billing_profile_foundation.sql',
   'supabase/migrations/20260816000400_source_aware_reporting_credit_restock.sql',
 ])
 check(changedPaths.every(path => permittedPaths.has(path)), 'Phase 6 diff must stay within its approved scope')

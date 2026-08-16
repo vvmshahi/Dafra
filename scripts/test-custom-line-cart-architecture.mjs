@@ -194,9 +194,13 @@ try {
   ]
   const permittedLineageRepairPaths = new Set([
     'supabase/migrations/20260816000100_branch_billing_profile_foundation.sql',
+    'supabase/migrations/20260816000100_services_and_custom_billing_lines.sql',
     'supabase/migrations/20260816000200_branch_billing_profile_foundation.sql',
     'supabase/migrations/20260816000300_authoritative_custom_line_checkout.sql',
     'supabase/migrations/20260816000400_source_aware_reporting_credit_restock.sql',
+    'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
+    'supabase/migrations/20260804000600_trading_sandbox_v2.sql',
+    'supabase/migrations/20260805000200_persist_zatca_capability_selection.sql',
   ])
   assert.equal(
     changedPaths.some(path => path.startsWith('supabase/migrations/') && !permittedLineageRepairPaths.has(path)),
