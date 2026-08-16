@@ -6,7 +6,7 @@ import {
   Receipt, X, ChevronDown, User, Check, Loader2,
   ShoppingBag, AlertCircle, Zap, Printer, PackageOpen, ArrowLeft, Lock,
   ChevronLeft, ChevronRight, ChevronUp, RotateCcw,
-  ScanLine, Landmark,
+  ScanLine, Landmark, Pencil,
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
@@ -41,7 +41,10 @@ import {
 } from '@/lib/zatca/qrDisplay.mjs'
 import { toast } from 'sonner'
 import { resolveBranchDisplayName } from '@/lib/utils/localizedDisplayName.mjs'
-import { loadEffectiveBranchBillingConfig } from '@/lib/branches/billingProfile'
+import {
+  loadEffectiveBranchBillingConfig,
+  type EffectiveBranchBillingConfig,
+} from '@/lib/branches/billingProfile'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
 import type { ThermalItem } from '@/components/print/ThermalReceipt'
 import A4Document from '@/components/print/A4Document'
@@ -82,6 +85,18 @@ import {
   type PosCustomerRecord,
 } from '@/lib/pos/customerSearch'
 import { PosCustomerQuickCreateModal } from './PosCustomerQuickCreateModal'
+import { CustomLineEditor } from '@/components/pos/CustomLineEditor'
+import {
+  CUSTOM_LINE_QUANTITY_SCALE,
+  createCustomCartLine,
+  getCustomLineDisplayPreview,
+  hasCustomCartLines,
+  isCatalogueCartLine,
+  isCustomLineVatTreatment,
+  type CatalogueCartLine,
+  type CustomCartLine,
+  type PosCartLine,
+} from '@/lib/pos/cartLines'
 import {
   clearPersistentReceivableOperation,
   CUSTOMER_CREDIT_POLICY_CHANGED_EVENT,
@@ -145,28 +160,6 @@ interface PosCategory {
   nameAr: string | null
   color: string | null
   icon: string | null
-}
-
-interface CartItem {
-  cartLineId: string
-  productId: string
-  productUnitId: string | null
-  productUnitVersion: number | null
-  pricingMethod: 'calculated' | 'custom' | 'legacy'
-  conversionToBase: number
-  quantityScale: number
-  unitName: string
-  unitNameAr: string | null
-  unitCode: string | null
-  baseUnitName: string
-  baseUnitNameAr: string | null
-  name: string
-  nameAr: string | null
-  price: number
-  vatTreatment: VatTreatment
-  unit: string
-  quantity: number
-  catColor: string | null
 }
 
 interface ReceiptData {
@@ -295,10 +288,16 @@ function resolveMode(
   return resolveEffectiveVatTreatment(treatment, branchMode)
 }
 
-function computeTotals(cart: CartItem[], vatMode: 'exclusive' | 'inclusive') {
+function computeTotals(cart: PosCartLine[], vatMode: 'exclusive' | 'inclusive') {
   let subtotal = 0
   let taxAmount = 0
   for (const item of cart) {
+    if (item.source === 'custom') {
+      const preview = getCustomLineDisplayPreview(item, vatMode)
+      subtotal += preview.subtotal
+      taxAmount += preview.taxAmount
+      continue
+    }
     const line = item.price * item.quantity
     const mode = resolveMode(item.vatTreatment, vatMode)
     if (mode === 'exclusive') {
@@ -1091,8 +1090,8 @@ function formatStockQuantity(value: number | null | undefined) {
   })
 }
 
-function singleUnitCartQuantity(cart: CartItem[], productId: string): number {
-  const lines = cart.filter(item => item.productId === productId)
+function singleUnitCartQuantity(cart: PosCartLine[], productId: string): number {
+  const lines = cart.filter(isCatalogueCartLine).filter(item => item.productId === productId)
   return lines.length === 1 ? lines[0].quantity : 0
 }
 
@@ -1102,17 +1101,30 @@ function QuickBillingPanel({
   cart,
   query,
   onAdd,
+  onAddCustomLine,
   stockVisible,
 }: {
   products: PosProduct[]
   totalProductCount: number
-  cart: CartItem[]
+  cart: PosCartLine[]
   query: string
   onAdd: (product: PosProduct) => void
+  onAddCustomLine?: () => void
   stockVisible: boolean
 }) {
   const { t } = useTranslation('pos')
   const { isRtl } = useLocale()
+  const customLineAction = onAddCustomLine ? (
+    <button
+      type="button"
+      data-pos-custom-line-action="quick"
+      onClick={onAddCustomLine}
+      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-primary-300 bg-primary-50 px-3 py-2 text-xs font-bold text-primary-800 transition-colors hover:border-primary-500 hover:bg-primary-100"
+    >
+      <Plus size={13} />
+      {t('customLine.action')}
+    </button>
+  ) : null
   const desktopGrid = stockVisible
     ? 'lg:grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_120px_110px_92px]'
     : 'lg:grid-cols-[minmax(220px,1.7fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_110px_92px]'
@@ -1137,13 +1149,19 @@ function QuickBillingPanel({
             </p>
           ) : null}
         </div>
+        {customLineAction}
       </div>
     )
   }
 
   return (
     <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-      {!query.trim() && <div className="border-b border-gray-100 px-4 py-3"><p className="text-sm font-bold text-gray-900">{t('browseProducts')}</p><p className="text-[11px] text-gray-500">{t('showingActiveProducts')}</p></div>}
+      {!query.trim() && (
+        <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
+          <div><p className="text-sm font-bold text-gray-900">{t('browseProducts')}</p><p className="text-[11px] text-gray-500">{t('showingActiveProducts')}</p></div>
+          {customLineAction}
+        </div>
+      )}
       <div className={`hidden lg:grid ${desktopGrid} gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[10px] font-bold uppercase text-gray-400`}>
         <span>{t('product')}</span>
         <span>{t('category')}</span>
@@ -1155,7 +1173,7 @@ function QuickBillingPanel({
       <div className="divide-y divide-gray-100">
         {products.map(product => {
           const codeParts = [product.sku, product.barcode].filter(Boolean)
-          const cartLines = cart.filter(item => item.productId === product.id)
+          const cartLines = cart.filter(isCatalogueCartLine).filter(item => item.productId === product.id)
           const cartSummary = cartLines.length === 1
             ? t('packages.inCartWithUnit', {
                 quantity: formatPackageQuantity(
@@ -1947,6 +1965,11 @@ function SplitPaymentModal({
 const WA_LINK    = supportConfig.whatsappLink
 const EMAIL_LINK = supportConfig.emailLink
 
+// Phase 5 intentionally keeps custom-line entry internal. A branch capability
+// alone cannot enable it until Phase 6 has a server-authoritative checkout path.
+const CUSTOM_LINE_CART_INTERNAL_ENABLED = import.meta.env.DEV
+  && import.meta.env.VITE_INTERNAL_CUSTOM_LINE_CART === 'true'
+
 export default function POSPage() {
   const { t } = useTranslation(['pos', 'payments', 'register', 'validation', 'common'])
   const { isRtl } = useLocale()
@@ -1956,7 +1979,7 @@ export default function POSPage() {
   const categoryScrollRef = useRef<HTMLDivElement>(null)
   const productScrollRef = useRef<HTMLDivElement>(null)
   const checkoutInFlightRef = useRef(false)
-  const cartRef = useRef<CartItem[]>([])
+  const cartRef = useRef<PosCartLine[]>([])
   const sub       = useSubscription()
 
   // Session management
@@ -1977,6 +2000,7 @@ export default function POSPage() {
   const [sessionSummary,   setSessionSummary]   = useState<ClosedSessionSummary | null>(null)
 
   const [branch,     setBranch]     = useState<Branch | null>(null)
+  const [branchBillingConfig, setBranchBillingConfig] = useState<EffectiveBranchBillingConfig | null>(null)
   const [products,   setProducts]   = useState<PosProduct[]>([])
   const [categories, setCategories] = useState<PosCategory[]>([])
   const [customers,  setCustomers]  = useState<PosCustomerRecord[]>([])
@@ -1984,7 +2008,7 @@ export default function POSPage() {
 
   const [search,       setSearch]       = useState('')
   const [activeCat,    setActiveCat]    = useState<string | null>(null)
-  const [cart,         setCart]         = useState<CartItem[]>([])
+  const [cart,         setCart]         = useState<PosCartLine[]>([])
   const [customerId,   setCustomerId]   = useState<string | null>(null)
   const [custSearch,   setCustSearch]   = useState('')
   const [custOpen,     setCustOpen]     = useState(false)
@@ -2006,6 +2030,7 @@ export default function POSPage() {
   const [submitting,   setSubmitting]   = useState(false)
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [unitChooserProduct, setUnitChooserProduct] = useState<PosProduct | null>(null)
+  const [customLineEditor, setCustomLineEditor] = useState<CustomCartLine | 'new' | null>(null)
   const [scannerEnabled, setScannerEnabled] = useState(true)
   const [scannerStatus, setScannerStatus] = useState<'idle' | 'looking' | 'accepted' | 'unknown' | 'conflict' | 'error'>('idle')
   const [scannerMessage, setScannerMessage] = useState('')
@@ -2028,6 +2053,8 @@ export default function POSPage() {
   })
   const savedBranchPosMode = branchPosMode(branch?.pos_mode)
   const activePosMode: PosMode = businessType === 'trading' ? savedBranchPosMode : 'touch'
+  const customLineActionEnabled = CUSTOM_LINE_CART_INTERNAL_ENABLED
+    && branchBillingConfig?.customLinesEnabled === true
   const resolvedInvoiceSettings = useMemo(
     () => resolveInvoicePresentationSettings({ savedSettings: branch?.presentation_settings, branch: branch ?? {} }),
     [branch],
@@ -2159,7 +2186,7 @@ export default function POSPage() {
   useBarcodeScanner({
     enabled: scannerEnabled,
     blocked: Boolean(
-      receipt || showOpenSession || showCloseSession || unitChooserProduct
+      receipt || showOpenSession || showCloseSession || unitChooserProduct || customLineEditor
       || custOpen || showQuickCustomer || splitOpen || showExpense || submitting
     ),
     onScan: resolveScannedBarcode,
@@ -2218,6 +2245,7 @@ export default function POSPage() {
         if (cancelled) return
 
         setBranch(branchData as Branch)
+        setBranchBillingConfig(billingConfig)
 
         const unitsByProduct = new Map<string, PosSellingUnit[]>()
         if (!unitError) {
@@ -2298,8 +2326,21 @@ export default function POSPage() {
         try {
           const saved = localStorage.getItem(cartKey(bid))
           if (saved) {
-            const rawItems = JSON.parse(saved) as Partial<CartItem>[]
+            const rawItems = JSON.parse(saved) as Array<Record<string, unknown>>
             const restored = rawItems.flatMap(raw => {
+              if (raw.source === 'custom') {
+                const restoredCustomLine = isCustomLineVatTreatment(raw.vatTreatment)
+                  ? createCustomCartLine({
+                      cartLineId: typeof raw.cartLineId === 'string' ? raw.cartLineId : undefined,
+                      description: typeof raw.description === 'string' ? raw.description : '',
+                      descriptionAr: typeof raw.descriptionAr === 'string' ? raw.descriptionAr : null,
+                      quantity: Number(raw.quantity),
+                      unitPrice: Number(raw.unitPrice),
+                      vatTreatment: raw.vatTreatment,
+                    })
+                  : null
+                return restoredCustomLine ? [restoredCustomLine] : []
+              }
               const product = prods.find(candidate => candidate.id === raw.productId)
               if (!product || !Number.isFinite(Number(raw.quantity)) || Number(raw.quantity) <= 0) return []
               const requestedUnit = raw.productUnitId
@@ -2308,6 +2349,7 @@ export default function POSPage() {
               if (raw.productUnitId && !requestedUnit) return []
               if (requestedUnit) {
                 return [{
+                  source: 'catalogue' as const,
                   cartLineId: `${product.id}:${requestedUnit.id}:${requestedUnit.version}:${requestedUnit.pricingMethod}:${requestedUnit.resolvedPrice.toFixed(2)}:${product.vatTreatment}`,
                   productId: product.id,
                   productUnitId: requestedUnit.id,
@@ -2330,6 +2372,7 @@ export default function POSPage() {
                 }]
               }
               return [{
+                source: 'catalogue' as const,
                 cartLineId: `${product.id}:legacy:0:legacy:${product.price.toFixed(2)}:${product.vatTreatment}`,
                 productId: product.id,
                 productUnitId: null,
@@ -2400,10 +2443,10 @@ export default function POSPage() {
   }, [cart, profile?.branch_id])
 
   useEffect(() => {
-    if (!session || submitting || receipt || showOpenSession || showCloseSession || unitChooserProduct || custOpen || showQuickCustomer || splitOpen || showExpense) return
+    if (!session || submitting || receipt || showOpenSession || showCloseSession || unitChooserProduct || customLineEditor || custOpen || showQuickCustomer || splitOpen || showExpense) return
     const frame = window.requestAnimationFrame(() => searchRef.current?.focus())
     return () => window.cancelAnimationFrame(frame)
-  }, [session, submitting, receipt, showOpenSession, showCloseSession, unitChooserProduct, custOpen, showQuickCustomer, splitOpen, showExpense])
+  }, [session, submitting, receipt, showOpenSession, showCloseSession, unitChooserProduct, customLineEditor, custOpen, showQuickCustomer, splitOpen, showExpense])
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────────
 
@@ -2692,7 +2735,8 @@ export default function POSPage() {
     const pricingMethod = selectedUnit?.pricingMethod ?? 'legacy'
     const price = selectedUnit?.resolvedPrice ?? product.price
     const cartLineId = `${product.id}:${unitId ?? 'legacy'}:${unitVersion ?? 0}:${pricingMethod}:${price.toFixed(2)}:${product.vatTreatment}`
-    const line: CartItem = {
+    const line: CatalogueCartLine = {
+      source: 'catalogue',
       cartLineId,
         productId:    product.id,
         productUnitId: unitId,
@@ -2713,16 +2757,28 @@ export default function POSPage() {
         quantity: 1,
         catColor:     product.catColor,
     }
+    const catalogueCart = cartRef.current.filter(isCatalogueCartLine)
     const mutation = applyScannerCartMutation({
-      cart: cartRef.current,
+      cart: catalogueCart,
       line,
       quantity,
       stockQuantity: product.stockQuantity,
       enforceStock: enforceScanStock && stockVisible && product.trackStock && !product.isService,
     })
     if (mutation.status !== 'out_of_stock') {
-      cartRef.current = mutation.cart
-      setCart(mutation.cart)
+      const existing = catalogueCart.some(item => item.cartLineId === cartLineId)
+      const insertedLine = mutation.cart[mutation.cart.length - 1]
+      const next: PosCartLine[] = existing
+        ? cartRef.current.map(item => (
+            isCatalogueCartLine(item) && item.cartLineId === cartLineId
+              ? mutation.cart.find(candidate => candidate.cartLineId === cartLineId) ?? item
+              : item
+          ))
+        : insertedLine
+          ? [...cartRef.current, insertedLine]
+          : cartRef.current
+      cartRef.current = next
+      setCart(next)
     }
     return mutation
   }
@@ -2742,6 +2798,22 @@ export default function POSPage() {
       .filter(item => item.quantity > 0)
     cartRef.current = next
     setCart(next)
+  }
+
+  function removeCartLine(cartLineId: string) {
+    const next = cartRef.current.filter(item => item.cartLineId !== cartLineId)
+    cartRef.current = next
+    setCart(next)
+  }
+
+  function saveCustomCartLine(line: CustomCartLine) {
+    const exists = cartRef.current.some(item => item.source === 'custom' && item.cartLineId === line.cartLineId)
+    const next = exists
+      ? cartRef.current.map(item => item.source === 'custom' && item.cartLineId === line.cartLineId ? line : item)
+      : [...cartRef.current, line]
+    cartRef.current = next
+    setCart(next)
+    setCustomLineEditor(null)
   }
 
   async function maybeAutoPrintReceiptAfterSale(invoiceId: string) {
@@ -2781,6 +2853,10 @@ export default function POSPage() {
   async function charge() {
     const tid = profile?.tenant_id
     if (!tid || !branch || cart.length === 0 || submitting || checkoutInFlightRef.current) return
+    if (hasCustomCartLines(cart)) {
+      toast.error(t('pos:customLine.checkoutUnavailable'))
+      return
+    }
     if (isAccountSuspended) {
       toast.error(t('pos:accountSuspendedFull'))
       return
@@ -2850,7 +2926,7 @@ export default function POSPage() {
         ...(splitPayments ? { payments: splitPayments } : {}),
         note: note || null,
         idempotency_key: idempotencyKey,
-        items: cart.map(item => item.productUnitId
+        items: cart.filter(isCatalogueCartLine).map(item => item.productUnitId
           ? {
               product_id: item.productId,
               product_unit_id: item.productUnitId,
@@ -3629,6 +3705,13 @@ export default function POSPage() {
           }}
         />
       )}
+      {customLineEditor && (
+        <CustomLineEditor
+          line={customLineEditor === 'new' ? null : customLineEditor}
+          onClose={() => setCustomLineEditor(null)}
+          onSave={saveCustomCartLine}
+        />
+      )}
       {showExpense && branch && (
         <QuickExpenseModal
           branchId={branch.id}
@@ -3889,6 +3972,17 @@ export default function POSPage() {
                   </button>
                 ))}
               </div>
+              {customLineActionEnabled && (
+                <button
+                  type="button"
+                  data-pos-custom-line-action="touch"
+                  onClick={() => setCustomLineEditor('new')}
+                  className="inline-flex h-8 flex-shrink-0 items-center gap-1.5 rounded-xl border border-dashed border-primary-300 bg-primary-50 px-3 text-xs font-bold text-primary-800 hover:border-primary-500 hover:bg-primary-100"
+                >
+                  <Plus size={13} />
+                  {t('pos:customLine.action')}
+                </button>
+              )}
               {showPosScrollButtons && (
                 <button
                   type="button"
@@ -3913,6 +4007,7 @@ export default function POSPage() {
               cart={cart}
               query={searchText}
               onAdd={addToCart}
+              onAddCustomLine={customLineActionEnabled ? () => setCustomLineEditor('new') : undefined}
               stockVisible={stockVisible}
             />
           ) : (
@@ -4143,6 +4238,47 @@ export default function POSPage() {
             </div>
           ) : (
             cart.map(item => {
+              if (item.source === 'custom') {
+                const preview = getCustomLineDisplayPreview(item, vatMode)
+                const displayName = localizedName(item.description, item.descriptionAr, isRtl)
+                return (
+                  <div key={item.cartLineId} className="flex items-center gap-2 rounded-xl border border-sky-100 bg-sky-50/60 px-3 py-2.5">
+                    <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700">
+                      <Receipt size={12} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <p className="truncate text-xs font-semibold text-gray-800" dir="auto">{displayName}</p>
+                        <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-bold text-sky-800">{t('pos:customLine.label')}</span>
+                      </div>
+                      <p className="text-[10px] font-medium text-gray-500" dir="ltr">
+                        {item.unitCode} · {t(`pos:customLine.vat.${item.vatTreatment}`)}
+                      </p>
+                      <p className="text-[10px] text-gray-400 tabular-nums" dir="ltr">
+                        {fmt(item.unitPrice)} × {formatPackageQuantity(item.quantity, CUSTOM_LINE_QUANTITY_SCALE)} = <span className="font-semibold text-gray-700"><Rial amount={preview.total} /></span>
+                      </p>
+                    </div>
+                    <div className="flex flex-shrink-0 items-center gap-1" dir="ltr">
+                      <button
+                        type="button"
+                        onClick={() => setCustomLineEditor(item)}
+                        aria-label={t('pos:customLine.edit')}
+                        className="flex h-6 w-6 items-center justify-center rounded-lg border border-sky-200 bg-white text-sky-700 hover:bg-sky-50"
+                      >
+                        <Pencil size={10} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeCartLine(item.cartLineId)}
+                        aria-label={t('pos:removeItem', { name: displayName })}
+                        className="flex h-6 w-6 items-center justify-center rounded-lg border border-red-100 bg-white text-red-400 hover:bg-red-50"
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    </div>
+                  </div>
+                )
+              }
               const line  = item.price * item.quantity
               const color = item.catColor ?? '#6b7280'
               return (

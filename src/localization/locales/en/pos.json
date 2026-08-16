@@ -48,6 +48,33 @@
   "stockCount": "Stock: {{count}}",
   "notTracked": "Not tracked",
   "itemType": { "service": "Service" },
+  "customLine": {
+    "action": "Custom line",
+    "label": "Custom",
+    "title": "Custom line",
+    "editTitle": "Edit custom line",
+    "edit": "Edit custom line",
+    "description": "Description",
+    "descriptionAr": "Arabic description",
+    "quantity": "Quantity",
+    "unitPrice": "Unit price",
+    "unit": "Unit",
+    "vatTreatment": "VAT treatment",
+    "vat": {
+      "inherit": "Use branch default",
+      "exclusive": "Price excludes VAT",
+      "inclusive": "Price includes VAT"
+    },
+    "add": "Add custom line",
+    "saveChanges": "Save custom line",
+    "previewOnly": "Preview only. Checkout is unavailable in this build.",
+    "checkoutUnavailable": "Custom billing checkout is not enabled in this build.",
+    "errors": {
+      "description": "Enter a description up to 300 characters.",
+      "quantity": "Enter a positive quantity with up to three decimal places.",
+      "unitPrice": "Enter a positive price with up to two decimal places."
+    }
+  },
   "noProductsAvailable": "No products are available. Add products from the Products page.",
   "noMatchingProducts": "No matching products found.",
   "searchMinimum": "Type at least 2 characters, or scan an exact SKU or barcode.",

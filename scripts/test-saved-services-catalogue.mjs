@@ -113,14 +113,16 @@ assert.match(phaseOneMigration, /NOT COALESCE\(is_service, false\) OR NOT COALES
 assert.match(schema, /'is_service'/)
 assert.match(schema, /Service products cannot track stock/)
 
-// Services use the same categories, units, and normal product_id cart model.
+// Services use the same categories, units, and normal product-backed Catalogue
+// cart model. Custom Lines are a separate, non-checkoutable client variant.
 assert.match(productsPage, /categories=\{categories\}/)
-assert.match(pos, /productId: string/)
-assert.match(pos, /productUnitId: string \| null/)
+assert.match(pos, /type CatalogueCartLine/)
+assert.match(pos, /const line: CatalogueCartLine/)
+assert.match(pos, /source: 'catalogue'/)
 assert.match(pos, /product_id: item\.productId/)
 assert.match(pos, /product_unit_id: item\.productUnitId/)
+assert.match(pos, /cart\.filter\(isCatalogueCartLine\)\.map/)
 assert.match(pos, /resolvePosCheckoutDocument\(branch\.id, customerId\)/)
-assert.doesNotMatch(pos, /customLine|serviceLine|lineType/)
 
 // POS filters active operational items only for explicit profiles. Legacy
 // branches keep their established catalogue while service and product rows share

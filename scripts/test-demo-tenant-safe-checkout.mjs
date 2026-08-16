@@ -67,7 +67,8 @@ assert.match(sandboxBlock[0], /sandbox_validated/)
 assert.match(pos, /type PosPaymentChoice = 'cash' \| 'card' \| 'split'/)
 assert.match(pos, /useBarcodeScanner/)
 assert.match(pos, /customer_id: customerId/)
-assert.match(pos, /items: cart\.map/)
+assert.match(pos, /items: cart\.filter\(isCatalogueCartLine\)\.map/)
+assert.match(pos, /hasCustomCartLines\(cart\)/)
 assert.match(pos, /session_id: session\?\.id/)
 
 // Persistent bilingual labelling covers success, print, detail, and history.

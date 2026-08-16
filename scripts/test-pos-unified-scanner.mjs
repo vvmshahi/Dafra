@@ -26,7 +26,9 @@ try {
   assert.match(pos, /function addQuantityToCart[\s\S]*?mutateCart\(product, quantity, unit, false\)/)
   assert.match(pos, /const addScannedUnit[\s\S]*?mutateCart\(product, 1, unit, true\)/)
   assert.match(pos, /resolvedBarcodeCacheRef/)
-  assert.match(pos, /setCart\(mutation\.cart\)/)
+  assert.match(pos, /const catalogueCart = cartRef\.current\.filter\(isCatalogueCartLine\)/)
+  assert.match(pos, /cart: catalogueCart/)
+  assert.match(pos, /setCart\(next\)/)
   assert.doesNotMatch(pos, /lastScannerRequestRef|now - previous\.at < 120/)
 
   assert.equal(en.searchProducts, 'Search product name, SKU, or barcode')
