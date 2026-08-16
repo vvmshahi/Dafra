@@ -28,11 +28,16 @@ interface PackageBreakdown {
   baseQuantity: number
   revenue: number
 }
+type ReportLineType = 'product' | 'service' | 'custom' | 'legacy'
 interface TopProduct   {
+  itemKey: string
   productId: string | null
   name: string
+  nameAr: string | null
+  lineType: ReportLineType
   quantity: number
   baseQuantity: number
+  vat: number
   revenue: number
   pct: number
   packageBreakdown: PackageBreakdown[]
@@ -87,6 +92,12 @@ function stringOrFallback(value: unknown, fallback: string) {
   return typeof value === 'string' && value.trim() ? value : fallback
 }
 
+function reportLineType(value: unknown): ReportLineType {
+  return value === 'product' || value === 'service' || value === 'custom' || value === 'legacy'
+    ? value
+    : 'legacy'
+}
+
 function arrayFromKeys<T>(record: Record<string, unknown>, ...keys: string[]) {
   for (const key of keys) {
     const value = record[key]
@@ -116,11 +127,15 @@ function normalizeSalesSummary(summary: SalesData): SalesData {
       name: stringOrFallback(row.name, 'Other'),
       value: numberOrZero(row.value),
     })),
-    topProducts: arrayFromKeys<Record<string, unknown>>(record, 'topProducts').map(row => ({
+    topProducts: arrayFromKeys<Record<string, unknown>>(record, 'topItems', 'topProducts').map(row => ({
+      itemKey: stringOrFallback(row.itemKey, stringOrFallback(row.productId, stringOrFallback(row.name, 'unknown-item'))),
       productId: typeof row.productId === 'string' ? row.productId : null,
       name: stringOrFallback(row.name, 'Unknown item'),
+      nameAr: typeof row.nameAr === 'string' && row.nameAr.trim() ? row.nameAr : null,
+      lineType: reportLineType(row.lineType),
       quantity: numberOrZero(row.quantity),
       baseQuantity: numberOrZero(row.baseQuantity ?? row.quantity),
+      vat: numberOrZero(row.vat),
       revenue: numberOrZero(row.revenue),
       pct: numberOrZero(row.pct),
       packageBreakdown: arrayFromKeys<Record<string, unknown>>(row, 'packageBreakdown').map(unit => ({
@@ -147,7 +162,7 @@ function normalizeSalesSummary(summary: SalesData): SalesData {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function SalesReport({ startDate, endDate, branchId }: ReportProps) {
-  const { t } = useTranslation('reports')
+  const { t, i18n } = useTranslation('reports')
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<SalesData | null>(null)
@@ -202,6 +217,8 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
       </div>
     )
   }
+
+  const isArabic = i18n.language.startsWith('ar')
 
   return (
     <div className="space-y-5">
@@ -290,25 +307,35 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
       {/* ── Tables row ─────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-        {/* Top products */}
+        {/* Top items */}
         <div className="card overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-            <SectionHeader title={t('sales.topProducts')} sub={t('sales.byRevenue')} />
+            <SectionHeader title={t('sales.topItems')} sub={t('sales.byRevenue')} />
           </div>
           {data.topProducts.length === 0 ? (
             <div className="py-10 text-center text-sm text-gray-400">{t('sales.noItems')}</div>
           ) : (
             <>
               <div className="flex gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-                <div className="flex-1">{t('common.product')}</div><div className="w-20 text-end">{t('sales.baseQuantitySold')}</div><div className="w-24 text-end">{t('common.revenue')}</div>
+                <div className="flex-1">{t('common.items')}</div><div className="w-20 text-end">{t('sales.baseQuantitySold')}</div><div className="w-24 text-end">{t('common.revenue')}</div>
                 <div className="w-10 text-right">%</div>
               </div>
               {data.topProducts.map((p, i) => (
-                <div key={p.productId ?? p.name} className="flex gap-2 px-4 py-2.5 border-t border-gray-50 hover:bg-gray-50/50">
+                <div key={p.itemKey} className="flex gap-2 px-4 py-2.5 border-t border-gray-50 hover:bg-gray-50/50">
                   <div className="flex-1 min-w-0 flex items-center gap-2">
                     <span className="text-[10px] font-bold text-gray-300 w-4">{i + 1}</span>
                     <div className="min-w-0">
-                      <p className="truncate text-sm text-gray-800">{p.name}</p>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <p className="truncate text-sm text-gray-800" dir="auto">{isArabic ? p.nameAr ?? p.name : p.name}</p>
+                        <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">
+                          {t(`sales.itemTypes.${p.lineType}`)}
+                        </span>
+                      </div>
+                      {p.lineType === 'custom' && (
+                        <p className="mt-0.5 text-[10px] text-gray-400">
+                          {t('sales.itemVat', { value: sarStr(p.vat) })}
+                        </p>
+                      )}
                       {p.packageBreakdown.length > 0 && (
                         <p className="mt-0.5 flex flex-wrap gap-x-1 text-[10px] text-gray-400" dir="auto">
                           {p.packageBreakdown.map((unit, unitIndex) => (

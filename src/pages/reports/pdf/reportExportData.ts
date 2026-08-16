@@ -40,9 +40,14 @@ export interface SalesMethodRow {
 }
 
 export interface SalesTopProductRow {
+  itemKey?: string
+  productId?: string | null
   name: string
+  nameAr?: string | null
+  lineType?: 'product' | 'service' | 'custom' | 'legacy'
   quantity: number
   baseQuantity?: number
+  vat?: number
   revenue: number
   pct: number
   packageBreakdown?: {
@@ -76,6 +81,7 @@ export interface SalesExportData {
   vatCollected: number
   dailySales: SalesDayRow[]
   byMethod: SalesMethodRow[]
+  topItems?: SalesTopProductRow[]
   topProducts: SalesTopProductRow[]
   catPerformance: SalesCategoryRow[]
 }
@@ -177,9 +183,16 @@ function salesMethodRow(row: SalesMethodRow): SalesMethodRow {
 
 function salesTopProductRow(row: SalesTopProductRow): SalesTopProductRow {
   return {
+    itemKey: typeof row.itemKey === 'string' ? row.itemKey : undefined,
+    productId: typeof row.productId === 'string' ? row.productId : null,
     name: stringOrFallback(row.name, 'Product'),
+    nameAr: typeof row.nameAr === 'string' && row.nameAr.trim() ? row.nameAr : null,
+    lineType: row.lineType === 'product' || row.lineType === 'service' || row.lineType === 'custom' || row.lineType === 'legacy'
+      ? row.lineType
+      : 'legacy',
     quantity: numberOrZero(row.quantity),
     baseQuantity: numberOrZero(row.baseQuantity ?? row.quantity),
+    vat: numberOrZero(row.vat),
     revenue: numberOrZero(row.revenue),
     pct: numberOrZero(row.pct),
     packageBreakdown: asArray<NonNullable<SalesTopProductRow['packageBreakdown']>[number]>(
@@ -272,7 +285,7 @@ export async function loadSalesExport(params: ReportExportParams): Promise<Sales
     vatCollected: numberOrZero(summary.vatCollected),
     dailySales: asArray<SalesDayRow>(summary.dailySales).map(salesDayRow),
     byMethod: asArray<SalesMethodRow>(summary.byMethod).map(salesMethodRow),
-    topProducts: asArray<SalesTopProductRow>(summary.topProducts).map(salesTopProductRow),
+    topProducts: asArray<SalesTopProductRow>(summary.topItems ?? summary.topProducts).map(salesTopProductRow),
     catPerformance: asArray<SalesCategoryRow>(summary.catPerformance).map(salesCategoryRow),
   }
 }

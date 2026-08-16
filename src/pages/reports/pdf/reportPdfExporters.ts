@@ -344,18 +344,18 @@ async function exportSalesPdf(context: ReportPdfContext, data: SalesExportData) 
   }
 
   if (data.topProducts.length > 0) {
-    nextY = addSectionTitle(doc, context, nextY, pt('sales.topProducts'), pt('sales.byRevenue'))
+    nextY = addSectionTitle(doc, context, nextY, pt('common.items'), pt('sales.byRevenue'))
     nextY = addAutoTable(doc, context, {
       startY: nextY,
-      head: [pt('common.product'), pt('sales.baseQuantitySold'), pt('common.revenue'), pt('common.share')],
+      head: [pt('common.items'), pt('sales.baseQuantitySold'), pt('common.revenue'), pt('common.share')],
       body: data.topProducts.map(row => [
         safePdfText(
           row.packageBreakdown?.length
-            ? `${row.name}\n${row.packageBreakdown
+            ? `${i18n.language.startsWith('ar') ? row.nameAr || row.name : row.name} (${i18n.t(`reports:sales.itemTypes.${row.lineType ?? 'legacy'}`)})\n${row.packageBreakdown
               .map(unit => `${formatNumberPdf(unit.packageQuantity, 6)} ${unit.sellingUnit} × SAR ${formatNumberPdf(unit.packageUnitPrice, 2)}`)
               .join(' · ')}`
-            : row.name,
-          pt('common.product'),
+            : `${i18n.language.startsWith('ar') ? row.nameAr || row.name : row.name} (${i18n.t(`reports:sales.itemTypes.${row.lineType ?? 'legacy'}`)})`,
+          pt('common.items'),
         ),
         formatNumberPdf(row.quantity, 3),
         amountCell(row.revenue),

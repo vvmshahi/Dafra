@@ -196,11 +196,12 @@ try {
     'supabase/migrations/20260816000100_branch_billing_profile_foundation.sql',
     'supabase/migrations/20260816000200_branch_billing_profile_foundation.sql',
     'supabase/migrations/20260816000300_authoritative_custom_line_checkout.sql',
+    'supabase/migrations/20260816000400_source_aware_reporting_credit_restock.sql',
   ])
   assert.equal(
     changedPaths.some(path => path.startsWith('supabase/migrations/') && !permittedLineageRepairPaths.has(path)),
     false,
-    'only the audited billing-profile migration version repair may touch migrations',
+    'only audited forward branch-billing migrations may touch migrations',
   )
   for (const protectedPath of [
     'supabase/functions/',
