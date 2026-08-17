@@ -56,7 +56,8 @@ import { useSubscription } from '@/hooks/useSubscription'
 import { getPrinterSettings, getPrinters, isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printAtomicReceiptSnapshot } from '@/lib/atomicReceiptPrint'
 import { openReceiptPreview, printReceiptInHiddenFrame } from '@/lib/receiptPrint'
-import { isAndroidBrowser, openPrintPopup, printCurrentDocument, printCurrentPageDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
+import { printCurrentPageDocument } from '@/lib/print/browserPrint'
+import { executeAndroidPrint } from '@/lib/print/androidPrintExecution'
 import { supportConfig } from '@/config/support'
 import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
@@ -732,7 +733,10 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
   async function printRenderedReceiptSnapshot(): Promise<boolean> {
     const result = await printAtomicReceiptSnapshot({
       invoiceId: receipt.invoiceId,
-      receiptElementId: 'thermal-receipt',
+      documentNumber: receipt.invoiceNumber,
+      itemCount: receipt.items.length,
+      documentType: receipt.isStandardInvoice ? 'invoice' : 'simplified_invoice',
+      receiptElementId: 'invoice-printable-thermal',
       source: 'atomic_checkout_snapshot',
     })
     if (result.success) {
@@ -757,49 +761,23 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
       return
     }
     if (!isElectron()) {
-      if (isAndroidBrowser()) {
-        try {
-          openPrintPopup(`/invoices/${encodeURIComponent(receipt.invoiceId)}?print=1`)
-        } catch (error) {
-          console.warn('[ReceiptView] Android A4 print preview failed', error)
-          toast.error(t('printing:a4Failed'))
-        }
+      const root = document.getElementById('pos-pdf-printable')
+      if (!root) {
+        toast.error(t('pos:printer.a4Failed'))
         return
       }
-      const existing = document.getElementById('pos-pdf-print-style')
-      existing?.remove()
-      const style = document.createElement('style')
-      style.id = 'pos-pdf-print-style'
-      style.textContent = `
-        @media print {
-          @page { size: A4; margin: 0; }
-          html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          body { visibility: hidden !important; }
-          #pos-pdf-printable {
-            display: block !important;
-            visibility: visible !important;
-            position: fixed !important;
-            top: 0 !important; left: 0 !important;
-            width: 210mm !important;
-            min-width: 210mm !important;
-            background: white !important;
-            z-index: 999999 !important;
-            padding: 10mm !important;
-            box-sizing: border-box !important;
-          }
-          #pos-pdf-printable * { visibility: visible !important; }
-        }
-      `
-      document.head.appendChild(style)
-      try {
-        await waitForPrintableAssets(document.getElementById('pos-pdf-printable') ?? document.body)
-        await printCurrentDocument()
-      } catch (error) {
-        console.warn('[ReceiptView] A4 print failed', error)
-        toast.error(t('pos:printer.a4Failed'))
-      } finally {
-        style.remove()
-      }
+      const result = await executeAndroidPrint({
+        documentType: documentViewModel.identity.kind === 'credit_note' ? 'credit_note' : documentViewModel.identity.invoiceType === 'standard' ? 'invoice' : 'simplified_invoice',
+        printFormat: 'a4_invoice',
+        source: 'checkout_first_print',
+        documentId: receipt.invoiceId,
+        documentNumber: receipt.invoiceNumber,
+        root,
+        itemCount: receipt.items.length,
+        templateId: documentViewModel.template.resolvedId,
+        renderer: validate => printCurrentPageDocument('pos-pdf-printable', 'invoice', validate).then(() => 'sent_to_printer' as const),
+      })
+      if (!result.success) toast.error(result.failure?.merchantMessage ?? t('pos:printer.a4Failed'))
       return
     }
 
@@ -861,11 +839,24 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
       // Browser printing owns device selection. Open the visible route before
       // any async work so the user gesture is preserved for popup-safe print.
       if (!isElectron()) {
-        try {
-          await printCurrentPageDocument('pos-receipt-print-root', 'receipt')
-        } catch (error) {
-          console.warn('[ReceiptView] browser receipt print could not be opened', error)
-          toast.error(t('printing:popupBlocked'))
+        const root = document.getElementById('pos-receipt-print-root')
+        if (!root) throw new Error('PRINT_DOCUMENT_NOT_READY')
+        const result = await executeAndroidPrint({
+          documentType: documentViewModel.identity.kind === 'credit_note' ? 'credit_note' : documentViewModel.identity.invoiceType === 'standard' ? 'invoice' : 'simplified_invoice',
+          printFormat: 'thermal_receipt',
+          source: 'checkout_first_print',
+          documentId: receipt.invoiceId,
+          documentNumber: receipt.invoiceNumber,
+          root,
+          itemCount: receipt.items.length,
+          templateId: documentViewModel.template.resolvedId,
+          renderer: validate => printCurrentPageDocument('pos-receipt-print-root', 'receipt', validate).then(() => 'sent_to_printer' as const),
+        })
+        if (!result.success) {
+          setPrintErrorKey('printer.receiptFailed')
+          toast.error(result.failure?.merchantMessage ?? t('pos:printer.receiptFailed'))
+        } else {
+          toast.success(t('pos:printer.receiptSent'), { duration: 1800 })
         }
         return
       }

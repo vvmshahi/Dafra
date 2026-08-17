@@ -105,12 +105,27 @@ export function printCurrentDocument(): Promise<void> {
   })
 }
 
-export async function printCurrentPageDocument(rootId: string, mode: 'invoice' | 'receipt'): Promise<void> {
+export async function printCurrentPageDocument(
+  rootId: string,
+  mode: 'invoice' | 'receipt',
+  validateRenderedOutput?: () => void,
+): Promise<void> {
   const root = document.getElementById(rootId)
   if (!root) throw new Error('PRINT_DOCUMENT_NOT_READY')
   const style = document.createElement('style')
   style.id = 'kubri-current-page-print-style'
-  style.textContent = `@media print {
+  style.textContent = `
+    /* Keep an offscreen print root measurable before the print dialog takes
+       its snapshot. This is intentionally screen CSS: Android Chrome does
+       not apply @media print until after window.print() has begun. */
+    #${rootId} { display: block !important; visibility: visible !important; }
+    body[data-kubri-print-mode="invoice"] #${rootId} .thermal-receipt { display: none !important; }
+    body[data-kubri-print-mode="receipt"] #${rootId} .a4-document-frame { display: none !important; }
+    body[data-kubri-print-mode="invoice"] #${rootId} .a4-document-frame {
+      display: block !important; position: static !important; left: auto !important; visibility: visible !important;
+    }
+    body[data-kubri-print-mode="receipt"] #${rootId} .thermal-receipt { display: block !important; visibility: visible !important; }
+    @media print {
     body * { visibility: hidden !important; }
     #${rootId}, #${rootId} * { visibility: visible !important; }
     #${rootId} { display: block !important; position: absolute !important; inset: 0 auto auto 0 !important; width: 100% !important; }
@@ -118,12 +133,13 @@ export async function printCurrentPageDocument(rootId: string, mode: 'invoice' |
     body[data-kubri-print-mode="receipt"] #invoice-printable-a4 { display: none !important; }
     body[data-kubri-print-mode="invoice"] #invoice-printable-a4 { display: block !important; position: static !important; left: auto !important; visibility: visible !important; }
     body[data-kubri-print-mode="receipt"] #invoice-printable-thermal { display: block !important; position: static !important; visibility: visible !important; }
-  }`
+    }`
   document.body.dataset.kubriPrintMode = mode
   document.head.appendChild(style)
   try {
     await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     await waitForPrintableAssets(root, 7000, { allowConnectedOffscreenRoot: true })
+    validateRenderedOutput?.()
     await printCurrentDocument()
   } finally {
     style.remove()

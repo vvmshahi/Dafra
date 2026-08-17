@@ -15,7 +15,9 @@ import {
 import { Button } from '@/components/ui/Button'
 import { Switch as Toggle } from '@/components/ui/Switch'
 import ThermalReceipt from '@/components/print/ThermalReceipt'
+import A4Document from '@/components/print/A4Document'
 import { documentFromPreviewDraft } from '@/lib/invoices/documentViewAdapters'
+import { executeAndroidPrint } from '@/lib/print/androidPrintExecution'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import type { InvoicePresentationDraft } from '@/lib/invoices/documentViewAdapters'
@@ -167,10 +169,27 @@ export default function PrinterTab() {
     setTesting(true)
     setStatus(null)
     try {
-      const result = activeView === 'thermal' ? await testPrint(form) : await testPrintA4(form)
-      setStatus(result.success
+      const root = document.getElementById(activeView === 'thermal' ? 'printer-settings-preview' : 'printer-settings-a4-preview')
+      if (!root) throw new Error('PRINT_DOCUMENT_NOT_READY')
+      const execution = await executeAndroidPrint({
+        documentType: 'payment_receipt',
+        printFormat: activeView === 'thermal' ? 'thermal_receipt' : 'a4_invoice',
+        source: 'printer_test',
+        documentId: `printer-test-${activeView}`,
+        documentNumber: thermalPreview.identity.number,
+        root,
+        itemCount: thermalPreview.items.length,
+        templateId: thermalPreview.template.resolvedId,
+        renderer: async validate => {
+          validate()
+          const result = activeView === 'thermal' ? await testPrint(form) : await testPrintA4(form)
+          if (!result.success) throw new Error(result.errorType ?? 'PRINT_NATIVE_ERROR')
+          return 'printer_acknowledged'
+        },
+      })
+      setStatus(execution.success
         ? { type: 'success', text: activeView === 'thermal' ? t('printing:testReceiptSent') : t('printing:testA4Sent') }
-        : (console.error('Test print failed:', result), { type: 'error', text: t('printing:testPrintFailed') }))
+        : (console.error('Test print failed:', execution.failure), { type: 'error', text: execution.failure?.merchantMessage ?? t('printing:testPrintFailed') }))
     } catch (error) {
       console.error('Test print failed', error)
       setStatus({ type: 'error', text: t('printing:testPrintFailed') })
@@ -195,6 +214,9 @@ export default function PrinterTab() {
 
   return (
     <div className="space-y-4">
+      <div id="printer-settings-a4-preview" className="fixed left-[-10000px] top-0 w-[210mm]" aria-hidden="true">
+        <A4Document model={thermalPreview} options={{ id: 'printer-settings-a4-document', pdfMode: true }} />
+      </div>
       <section className="grid gap-3 sm:grid-cols-3">
         <div className="card flex items-center justify-between gap-3 p-4"><div><p className="text-[11px] text-gray-400">{t('printing:thermalReceipt')}</p><p className="mt-1 truncate text-sm font-semibold text-gray-900">{form.receiptPrinterName || t('printing:noPrinterSelected')}</p></div><StatusPill {...thermalStatus} /></div>
         <div className="card flex items-center justify-between gap-3 p-4"><div><p className="text-[11px] text-gray-400">{t('printing:a4Invoice')}</p><p className="mt-1 truncate text-sm font-semibold text-gray-900">{form.a4PrinterName || t('printing:systemDefault')}</p></div><StatusPill {...a4Status} /></div>

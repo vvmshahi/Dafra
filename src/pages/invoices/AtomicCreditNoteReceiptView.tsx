@@ -107,6 +107,9 @@ export default function AtomicCreditNoteReceiptView({
       }
       const printResult = await printAtomicReceiptSnapshot({
         invoiceId: result.creditNoteId,
+        documentNumber: receipt.invoice_number,
+        itemCount: receipt.items.length,
+        documentType: 'credit_note',
         receiptElementId: CREDIT_NOTE_RECEIPT_ID,
         source: 'atomic_credit_note_snapshot',
       })

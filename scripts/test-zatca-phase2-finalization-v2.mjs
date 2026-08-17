@@ -543,11 +543,11 @@ await test('thermal and A4 printing require the finalized rendered QR', () => {
   assert.equal(canOpenStoredInvoicePrint(true, null, 'missing', null), false)
   assert.equal(canOpenStoredInvoicePrint(true, 'FINAL-QR', 'failed', null), false)
   assert.equal(canOpenStoredInvoicePrint(false, 'FINAL-QR', 'ready', 'data:image/png;base64,qr'), false)
-  assert.match(invoiceDetail, /async function handlePrintA4\(\)[\s\S]*?printCurrentPageDocument\('kubri-print-root', 'invoice'\)/)
-  assert.match(invoiceDetail, /async function handlePrintThermal\(\)[\s\S]*?printCurrentPageDocument\('kubri-print-root', 'receipt'\)/)
+  assert.match(invoiceDetail, /async function handlePrintA4\(\)[\s\S]*?executeAndroidPrint\([\s\S]*?printCurrentPageDocument\('kubri-print-root', 'invoice', validate\)/)
+  assert.match(invoiceDetail, /async function handlePrintThermal\(\)[\s\S]*?executeAndroidPrint\([\s\S]*?printCurrentPageDocument\('kubri-print-root', 'receipt', validate\)/)
   assert.match(invoiceDetail, /disabled=\{thermalPrinting \|\| !printReady\}/)
   assert.match(invoiceDetail, /disabled=\{a4Printing \|\| !printReady\}/)
-  assert.match(receiptPrint, /function handlePrint\(\)[\s\S]*?window\.print\(\)/)
+  assert.match(receiptPrint, /async function handlePrint\(\)[\s\S]*?executeAndroidPrint\([\s\S]*?printCurrentDocument\(\)/)
   const invoiceAutoPrint = invoiceDetail.slice(
     invoiceDetail.indexOf('// Auto-print when ?print=1'),
     invoiceDetail.indexOf('// ── Actions'),

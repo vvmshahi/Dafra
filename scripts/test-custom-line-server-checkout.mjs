@@ -176,8 +176,15 @@ const permittedPaths = new Set([
   'scripts/test-issued-document-presentation-integrity.mjs',
   'scripts/test-phase4e-thermal-receipts.mjs',
   'scripts/test-phase4f-a4-templates.mjs',
+  'scripts/test-zatca-phase2-finalization-v2.mjs',
   'src/lib/zatca/authenticatedEdge.ts',
   'src/lib/print/browserPrint.ts',
+  // Android print reliability is presentation/dispatch hardening only. It is
+  // deliberately limited to existing issued-document render paths.
+  'src/lib/print/androidPrintExecution.ts',
+  'src/lib/atomicReceiptPrint.ts',
+  'src/pages/invoices/AtomicCreditNoteReceiptView.tsx',
+  'src/pages/settings/PrinterTab.tsx',
   'scripts/test-android-print-a4-preview.mjs',
   'scripts/test-final-web-printing-refinements.mjs',
   'scripts/test-invoice-detail-ui.mjs',

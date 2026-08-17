@@ -16,6 +16,7 @@ import { isPermanentDemoSandboxBranch, type ZatcaOutputState } from '@/lib/zatca
 import { readIssuedDocumentOutputState, renderIssuedDocumentQr, resolveIssuedDocumentReadiness } from '@/lib/invoices/issuedDocumentReadiness'
 import { RECEIPT_FRAME_FAILED, RECEIPT_FRAME_READY } from '@/lib/receiptPrint'
 import { printCurrentDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
+import { executeAndroidPrint } from '@/lib/print/androidPrintExecution'
 import { toSaudiTime } from '@/lib/utils/date'
 import type { Branch, Invoice, InvoiceItem, Payment } from '@/types/database'
 import { documentDate, resolveCreditNoteDocumentLanguage, resolveInvoiceDocumentLanguage } from '@/localization/documents'
@@ -370,11 +371,29 @@ export default function ReceiptPrintPage() {
     if (!autoPrint || embeddedPrint || electronPrint || printedRef.current || loading || error || !invoice || !branch || !printReady) return
     printedRef.current = true
     const timer = window.setTimeout(() => {
-      void waitForPrintableAssets(document.getElementById('receipt-print-page') ?? document.body)
-        .then(() => printCurrentDocument())
+      const root = document.getElementById('receipt-print-page')
+      if (!root || !documentViewModel) return
+      void executeAndroidPrint({
+        documentType: documentViewModel.identity.kind === 'credit_note' ? 'credit_note' : documentViewModel.identity.invoiceType === 'standard' ? 'invoice' : 'simplified_invoice',
+        printFormat: 'thermal_receipt',
+        source: documentViewModel.identity.kind === 'credit_note' ? 'credit_note_reprint' : 'invoice_reprint',
+        documentId: invoice.id,
+        documentNumber: invoice.invoice_number,
+        root,
+        itemCount: items.length,
+        templateId: documentViewModel.template.resolvedId,
+        renderer: async validate => {
+          await waitForPrintableAssets(root)
+          validate()
+          await printCurrentDocument()
+          return 'sent_to_printer'
+        },
+      }).then(result => {
+        if (!result.success) toast.error(result.failure?.merchantMessage ?? t('printing:receiptFailed'))
+      })
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [autoPrint, embeddedPrint, electronPrint, loading, error, invoice, branch, printReady])
+  }, [autoPrint, embeddedPrint, electronPrint, loading, error, invoice, branch, printReady, documentViewModel, items.length, t])
 
   useEffect(() => {
     if (!embeddedPrint || loading || !invoiceId) return
@@ -509,12 +528,33 @@ export default function ReceiptPrintPage() {
     })
   }, [electronPrint, error, invoiceId, printJobId])
 
-  function handlePrint() {
-    if (!printReady) {
+  async function handlePrint() {
+    if (!printReady || !invoice || !documentViewModel) {
       toast.error(t('printing:qrUnavailable'))
       return
     }
-    window.print()
+    const root = document.getElementById('receipt-print-page')
+    if (!root) {
+      toast.error(t('printing:receiptFailed'))
+      return
+    }
+    const result = await executeAndroidPrint({
+      documentType: documentViewModel.identity.kind === 'credit_note' ? 'credit_note' : documentViewModel.identity.invoiceType === 'standard' ? 'invoice' : 'simplified_invoice',
+      printFormat: 'thermal_receipt',
+      source: documentViewModel.identity.kind === 'credit_note' ? 'credit_note_reprint' : 'invoice_reprint',
+      documentId: invoice.id,
+      documentNumber: invoice.invoice_number,
+      root,
+      itemCount: items.length,
+      templateId: documentViewModel.template.resolvedId,
+      renderer: async validate => {
+        await waitForPrintableAssets(root)
+        validate()
+        await printCurrentDocument()
+        return 'sent_to_printer'
+      },
+    })
+    if (!result.success) toast.error(result.failure?.merchantMessage ?? t('printing:receiptFailed'))
   }
 
   if (loading) {
@@ -568,7 +608,7 @@ export default function ReceiptPrintPage() {
             </Link>
             <button
               type="button"
-              onClick={handlePrint}
+              onClick={() => void handlePrint()}
               disabled={!printReady}
               className="inline-flex items-center gap-1.5 rounded-xl bg-[#0F2419] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-60"
             >

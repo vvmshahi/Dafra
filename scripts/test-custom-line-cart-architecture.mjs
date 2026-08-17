@@ -246,6 +246,9 @@ try {
     // aligned with the branch dashboard on this release/preview branch.
     'src/pages/invoices/InvoicesPage.tsx',
     'src/pages/invoices/InvoiceDetailPage.tsx',
+    // Android print reliability only validates immutable rendered output before
+    // dispatch; it does not alter credit-note creation or financial authority.
+    'src/pages/invoices/AtomicCreditNoteReceiptView.tsx',
     'src/pages/invoices/CreateCreditNoteModal.tsx',
     // This release adds immutable buyer snapshot consumption only; it does not
     // alter the visual template contract.

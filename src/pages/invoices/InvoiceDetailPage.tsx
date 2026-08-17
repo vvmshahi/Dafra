@@ -15,6 +15,7 @@ import A4PreviewFit, { type A4PreviewZoom } from '@/components/print/A4PreviewFi
 import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMethod, ZatcaStatus } from '@/types/database'
 import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printCurrentDocument, printCurrentPageDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
+import { executeAndroidPrint } from '@/lib/print/androidPrintExecution'
 import { submitInvoiceToZatca, type ZatcaOutputState } from '@/lib/zatca/submission'
 import { readIssuedDocumentOutputState, renderIssuedDocumentQr, resolveIssuedDocumentReadiness } from '@/lib/invoices/issuedDocumentReadiness'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
@@ -424,7 +425,20 @@ export default function InvoiceDetailPage() {
     setA4Printing(true)
     try {
       if (!isElectron()) {
-        await printCurrentPageDocument('kubri-print-root', 'invoice')
+        const root = document.getElementById('kubri-print-root')
+        if (!root) throw new Error('PRINT_DOCUMENT_NOT_READY')
+        const result = await executeAndroidPrint({
+          documentType: documentViewModel.identity.kind === 'credit_note' ? 'credit_note' : documentViewModel.identity.invoiceType === 'standard' ? 'invoice' : 'simplified_invoice',
+          printFormat: 'a4_invoice',
+          source: documentViewModel.identity.kind === 'credit_note' ? 'credit_note_reprint' : 'invoice_reprint',
+          documentId: invoice.id,
+          documentNumber: invoice.invoice_number,
+          root,
+          itemCount: items.length,
+          templateId: documentViewModel.template.resolvedId,
+          renderer: validate => printCurrentPageDocument('kubri-print-root', 'invoice', validate).then(() => 'sent_to_printer' as const),
+        })
+        if (!result.success) throw new Error(result.failure?.code ?? 'PRINT_DISPATCH_FAILED')
         return
       }
       const result = await printA4Invoice()
@@ -447,7 +461,20 @@ export default function InvoiceDetailPage() {
     setThermalPrinting(true)
     try {
       if (!isElectron()) {
-        await printCurrentPageDocument('kubri-print-root', 'receipt')
+        const root = document.getElementById('kubri-print-root')
+        if (!root) throw new Error('PRINT_DOCUMENT_NOT_READY')
+        const result = await executeAndroidPrint({
+          documentType: documentViewModel.identity.kind === 'credit_note' ? 'credit_note' : documentViewModel.identity.invoiceType === 'standard' ? 'invoice' : 'simplified_invoice',
+          printFormat: 'thermal_receipt',
+          source: documentViewModel.identity.kind === 'credit_note' ? 'credit_note_reprint' : 'invoice_reprint',
+          documentId: invoice.id,
+          documentNumber: invoice.invoice_number,
+          root,
+          itemCount: items.length,
+          templateId: documentViewModel.template.resolvedId,
+          renderer: validate => printCurrentPageDocument('kubri-print-root', 'receipt', validate).then(() => 'sent_to_printer' as const),
+        })
+        if (!result.success) throw new Error(result.failure?.code ?? 'PRINT_DISPATCH_FAILED')
         return
       }
 

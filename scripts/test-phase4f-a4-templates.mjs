@@ -18,7 +18,7 @@ assert.match(css, /@page \{ size: A4/); assert.match(css, /a4-document-frame,.a4
 assert.match(adapters, /documentFromStoredInvoiceV3/); assert.match(adapters, /documentFromStoredInvoiceV2/); assert.match(adapters, /documentFromStoredInvoiceV1/); assert.match(adapters, /documentFromLegacyInvoice/)
 assert.match(fixture, /قهوة إثيوبية/); assert.match(fixture, /sample-credit-qr-marker/)
 assert.match(invoiceDetail, /selectStoredOutputStateQr/); assert.match(invoiceDetail, /renderIssuedDocumentQr/)
-assert.match(invoiceDetail, /async function handlePrintA4\(\)[\s\S]*?printCurrentPageDocument\('kubri-print-root', 'invoice'\)/)
+assert.match(invoiceDetail, /async function handlePrintA4\(\)[\s\S]*?executeAndroidPrint\([\s\S]*?printCurrentPageDocument\('kubri-print-root', 'invoice', validate\)/)
 assert.doesNotMatch(invoiceDetail, /async function handlePrintA4\(\)[\s\S]*?openPrintPopup\(/)
 assert.match(invoiceDetail, /disabled=\{a4Printing \|\| !printReady\}/); assert.match(invoiceDetail, /qrUnavailable/)
 const invoiceAutoPrint = invoiceDetail.slice(invoiceDetail.indexOf('// Auto-print when ?print=1'), invoiceDetail.indexOf('// ── Actions'))
