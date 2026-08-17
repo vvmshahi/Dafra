@@ -179,12 +179,12 @@ export default function SuppliersPage() {
           <>
             <Link
               to="/reports/suppliers"
-              className="btn-secondary min-h-9 rounded-lg px-3 py-1.5 text-xs"
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[#cfd9d1] bg-[#fffdf7] px-3 py-1.5 text-xs font-semibold text-[#31543f] shadow-sm transition-colors hover:border-[#9fb6a4] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#173f2a]"
             >
               <BarChart3 size={14} />
               {t('supplierIntelligence:reports.openReports')}
             </Link>
-            <Button size="sm" onClick={openAdd}>
+            <Button size="sm" className="bg-[#173f2a] text-[#fff8e7] shadow-[0_4px_12px_rgba(15,36,25,0.18)] hover:bg-[#22563b] focus-visible:ring-[#173f2a]" onClick={openAdd}>
               <Plus size={14} />
               {t('add')}
             </Button>
@@ -194,20 +194,20 @@ export default function SuppliersPage() {
 
       {/* ── Summary cards ───────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-xl px-4 py-3 bg-white border border-[#173f2a]/70 shadow-card">
-          <p className="text-xs font-medium text-gray-400">{t('totalSuppliers')}</p>
-          <p className="text-xl font-bold text-gray-900 mt-0.5">{suppliers.length}</p>
-          <p className="text-[10px] text-gray-400 mt-0.5">{t('activeVendors')}</p>
+        <div className="rounded-xl border border-slate-200 bg-[#f7f8f8] px-4 py-3 shadow-[0_2px_10px_rgba(29,45,38,0.06)]">
+          <p className="text-xs font-medium text-slate-500">{t('totalSuppliers')}</p>
+          <p className="mt-0.5 text-xl font-bold text-slate-800">{suppliers.length}</p>
+          <p className="mt-0.5 text-[10px] text-slate-500">{t('activeVendors')}</p>
         </div>
-        <div className="rounded-xl px-4 py-3 bg-white border border-[#173f2a]/70 shadow-card">
-          <p className="text-xs font-medium text-gray-400">{t('totalPurchased')}</p>
-          <p className="text-xl font-bold text-emerald-600 mt-0.5"><Rial amount={totalPurchased} /></p>
-          <p className="text-[10px] text-gray-400 mt-0.5">{rangeLabel || t('selectedRange')}</p>
+        <div className="rounded-xl border border-[#31543f] bg-[#173f2a] px-4 py-3 shadow-[0_4px_12px_rgba(15,36,25,0.14)]">
+          <p className="text-xs font-medium text-[#fff8e7]/75">{t('totalPurchased')}</p>
+          <p className="mt-0.5 text-xl font-bold text-[#fff8e7]"><Rial amount={totalPurchased} /></p>
+          <p className="mt-0.5 text-[10px] text-[#fff8e7]/65">{rangeLabel || t('selectedRange')}</p>
         </div>
-        <div className="rounded-xl px-4 py-3 bg-white border border-[#173f2a]/70 shadow-card">
-          <p className="text-xs font-medium text-gray-400">{t('creditTermsCount')}</p>
-          <p className="text-xl font-bold text-amber-600 mt-0.5">{creditCount}</p>
-          <p className="text-[10px] text-gray-400 mt-0.5">{t('creditTermsSummary')}</p>
+        <div className="rounded-xl border border-[#b8d5d0] bg-[#edf6f4] px-4 py-3 shadow-[0_2px_10px_rgba(29,45,38,0.06)]">
+          <p className="text-xs font-medium text-[#426965]">{t('creditTermsCount')}</p>
+          <p className="mt-0.5 text-xl font-bold text-[#285e61]">{creditCount}</p>
+          <p className="mt-0.5 text-[10px] text-[#426965]">{t('creditTermsSummary')}</p>
         </div>
       </div>
 
@@ -250,7 +250,7 @@ export default function SuppliersPage() {
           title={t(search ? 'noneFound' : 'noneYet')}
           description={t(search ? 'trySearch' : 'emptyHint')}
           action={!search ? (
-            <Button onClick={openAdd}>
+            <Button className="bg-[#173f2a] text-[#fff8e7] shadow-[0_4px_12px_rgba(15,36,25,0.18)] hover:bg-[#22563b] focus-visible:ring-[#173f2a]" onClick={openAdd}>
               <Plus size={15} />
               {t('add')}
             </Button>

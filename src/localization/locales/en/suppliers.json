@@ -24,13 +24,13 @@
   "purchaseCount_other": "{{count}} purchases",
   "lastPurchase": "Last: {{date}}",
   "deleteConfirm": "Delete supplier \"{{name}}\"?",
-  "sections": { "business": "Business Information", "identity": "Supplier identity", "registration": "Registration details", "contact": "Contact details", "addressPayment": "Address and payment terms" },
-  "fields": { "nameEn": "Supplier name in English", "nameAr": "Supplier name in Arabic", "vatNumber": "VAT Number", "crNumber": "Commercial Registration Number", "contactPerson": "Contact Person", "phone": "Phone", "email": "Email", "city": "City", "paymentTerms": "Payment Terms", "address": "Address", "notes": "Notes" },
+  "sections": { "business": "Business Information", "identity": "1. Supplier identity", "registration": "2. Registration details", "contact": "3. Contact details", "addressPayment": "4. Address and payment terms", "optional": "5. Optional details" },
+  "fields": { "name": "Supplier Name", "nameEn": "Supplier name in English", "nameAr": "Supplier name in Arabic", "vatNumber": "VAT Number", "crNumber": "Commercial Registration Number", "contactPerson": "Contact Person", "phone": "Phone", "email": "Email", "city": "City", "paymentTerms": "Payment Terms", "address": "Address", "notes": "Notes" },
   "helpers": { "nameEn": "Used in English documents and search.", "nameAr": "Used in Arabic documents and search. Optional.", "vat": "Saudi VAT number, if registered. Optional.", "cr": "Commercial registration number, if available. Optional.", "address": "Used on purchase and supplier records where applicable.", "paymentTerms": "Default payment expectation for this supplier." },
   "placeholders": { "name": "e.g. Al-Watania Chicken", "nameAr": "Supplier name in Arabic", "cr": "e.g. 1010123456", "contact": "e.g. Ahmed Al-Qahtani", "city": "e.g. Riyadh", "address": "Full address…", "notes": "Optional notes…" },
   "preview": { "eyebrow": "Supplier preview", "unnamed": "Supplier name", "notProvided": "Not provided" },
   "terms": { "cash": "Cash", "credit30": "Credit 30 Days", "credit60": "Credit 60 Days", "net30": "Net 30", "net60": "Net 60", "unknown": "Other" },
-  "actions": { "saveChanges": "Save Changes", "archive": "Archive supplier", "archiving": "Archiving supplier…" },
+  "actions": { "saveChanges": "Save Changes", "archive": "Archive supplier", "archiving": "Archiving supplier…", "addEmail": "Add email", "hideEmail": "Hide email", "addAddress": "Add address", "hideAddress": "Hide address", "addNotes": "Add notes", "hideNotes": "Hide notes" },
   "success": { "added": "Supplier added successfully.", "updated": "Supplier updated successfully.", "archived": "Supplier archived successfully." },
   "errors": { "nameRequired": "Supplier name is required", "saveFailed": "The supplier could not be saved. Try again.", "deleteFailed": "The supplier could not be deleted. Try again.", "archiveFailed": "Could not archive the supplier. Please try again.", "duplicate": { "name": "A supplier with these details already exists.", "vatNumber": "A supplier with this VAT number already exists.", "crNumber": "A supplier with this CR number already exists.", "phone": "A supplier with this phone number already exists.", "email": "A supplier with this email already exists." } }
 }

@@ -735,34 +735,34 @@ export default function PurchaseBillModal({
                   )}
                 </Section>
               </div>
-              <aside className="h-fit rounded-2xl border border-[#d7e2d8] bg-[#f5f8f3] p-4">
-                <b className="text-xs uppercase tracking-wide text-[#31543f]">
+              <aside className="h-fit rounded-2xl border border-[#31543f] bg-[#173f2a] p-4 text-[#fff8e7] shadow-[0_12px_28px_rgba(15,36,25,0.18)]">
+                <b className="text-[10px] uppercase tracking-[0.16em] text-[#fff8e7]/70">
                   {t("purchases:modal.financialPreview")}
                 </b>
                 <dl className="mt-4 space-y-3 text-sm">
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-3 text-[#fff8e7]/75">
                     <dt>{t("purchases:fields.subtotal")}</dt>
-                    <dd>
+                    <dd className="font-medium tabular-nums text-[#fff8e7]">
                       <Rial amount={totals.subtotal} />
                     </dd>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-3 text-[#fff8e7]/75">
                     <dt>{t("purchases:fields.vat")}</dt>
-                    <dd className="text-teal-700">
+                    <dd className="font-medium tabular-nums text-[#d7ebe0]">
                       <Rial amount={totals.vat} />
                     </dd>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-3 text-[#fff8e7]/75">
                     <dt>{t("purchases:fields.method")}</dt>
-                    <dd>
+                    <dd className="text-end font-medium text-[#fff8e7]">
                       {payment
                         ? t(`purchases:paymentMethod.${payment}`)
                         : t("purchases:chooser.notSelected")}
                     </dd>
                   </div>
-                  <div className="flex justify-between border-t pt-3 font-bold">
+                  <div className="flex justify-between gap-3 border-t border-white/15 pt-3 text-base font-bold text-[#fff8e7]">
                     <dt>{t("purchases:modal.totalBill")}</dt>
-                    <dd>
+                    <dd className="tabular-nums">
                       <Rial amount={totals.total} />
                     </dd>
                   </div>

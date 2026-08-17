@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Building2, CheckCircle2, X } from 'lucide-react'
+import { Building2, CheckCircle2, Plus, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
@@ -42,6 +42,9 @@ export default function SupplierModal({ open, supplier, onClose, onSaved }: Prop
   const [address, setAddress] = useState('')
   const [paymentTerms, setPaymentTerms] = useState('cash')
   const [notes, setNotes] = useState('')
+  const [emailOpen, setEmailOpen] = useState(false)
+  const [addressOpen, setAddressOpen] = useState(false)
+  const [notesOpen, setNotesOpen] = useState(false)
 
   const resetForm = useCallback(() => {
     setSaving(false)
@@ -58,6 +61,9 @@ export default function SupplierModal({ open, supplier, onClose, onSaved }: Prop
     setAddress('')
     setPaymentTerms('cash')
     setNotes('')
+    setEmailOpen(false)
+    setAddressOpen(false)
+    setNotesOpen(false)
   }, [])
 
   useEffect(() => {
@@ -74,6 +80,9 @@ export default function SupplierModal({ open, supplier, onClose, onSaved }: Prop
     setAddress(supplier?.address ?? '')
     setPaymentTerms(supplier?.payment_terms ?? 'cash')
     setNotes(supplier?.notes ?? '')
+    setEmailOpen(Boolean(supplier?.email))
+    setAddressOpen(Boolean(supplier?.address))
+    setNotesOpen(Boolean(supplier?.notes))
     setError('')
     setErrorField(null)
     window.setTimeout(() => nameRef.current?.focus(), 0)
@@ -237,10 +246,9 @@ export default function SupplierModal({ open, supplier, onClose, onSaved }: Prop
               <div className="min-w-0 space-y-4">
                 <section aria-labelledby="supplier-identity-heading">
                   <SectionHeading id="supplier-identity-heading">{t('suppliers:sections.identity')}</SectionHeading>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <Field id="supplier-name-en" label={t('suppliers:fields.nameEn')} required
-                      helper={t('suppliers:helpers.nameEn')} error={errorField === 'name' ? error : undefined}>
-                      <input ref={nameRef} id="supplier-name-en" className="input" value={name}
+                  <div className="mt-3">
+                    <Field id="supplier-name" label={t('suppliers:fields.name')} required error={errorField === 'name' ? error : undefined}>
+                      <input ref={nameRef} id="supplier-name" className="input" value={name}
                         onChange={event => {
                           setName(event.target.value)
                           if (errorField === 'name') {
@@ -249,12 +257,7 @@ export default function SupplierModal({ open, supplier, onClose, onSaved }: Prop
                           }
                         }}
                         placeholder={t('suppliers:placeholders.name')} aria-invalid={errorField === 'name'}
-                        aria-describedby={errorField === 'name' ? 'supplier-name-en-error' : 'supplier-name-en-help'} dir="auto" />
-                    </Field>
-                    <Field id="supplier-name-ar" label={t('suppliers:fields.nameAr')} helper={t('suppliers:helpers.nameAr')}>
-                      <input id="supplier-name-ar" className="input" value={nameAr}
-                        onChange={event => setNameAr(event.target.value)}
-                        placeholder={t('suppliers:placeholders.nameAr')} dir="rtl" />
+                        aria-describedby={errorField === 'name' ? 'supplier-name-error' : undefined} dir="auto" />
                     </Field>
                   </div>
                 </section>
@@ -280,31 +283,74 @@ export default function SupplierModal({ open, supplier, onClose, onSaved }: Prop
                 <section aria-labelledby="supplier-contact-heading">
                   <SectionHeading id="supplier-contact-heading">{t('suppliers:sections.contact')}</SectionHeading>
                   <div className="mt-3 space-y-3">
-                    <Field id="supplier-contact" label={t('suppliers:fields.contactPerson')}>
-                      <input id="supplier-contact" className="input" value={contactPerson}
-                        onChange={event => setContactPerson(event.target.value)}
-                        placeholder={t('suppliers:placeholders.contact')} dir="auto" />
-                    </Field>
                     <div className="grid gap-3 sm:grid-cols-2">
+                      <Field id="supplier-contact" label={t('suppliers:fields.contactPerson')}>
+                        <input id="supplier-contact" className="input" value={contactPerson}
+                          onChange={event => setContactPerson(event.target.value)}
+                          placeholder={t('suppliers:placeholders.contact')} dir="auto" />
+                      </Field>
                       <Field id="supplier-phone" label={t('suppliers:fields.phone')}>
                         <input ref={phoneRef} id="supplier-phone" className="input" type="tel" inputMode="tel"
                           value={phone} onChange={event => setPhone(event.target.value)}
                           placeholder="05XXXXXXXX" aria-invalid={errorField === 'phone'} dir="ltr" />
                       </Field>
-                      <Field id="supplier-email" label={t('suppliers:fields.email')}>
+                    </div>
+                    {emailOpen ? (
+                      <div>
+                        <Field id="supplier-email" label={t('suppliers:fields.email')}>
                         <input ref={emailRef} id="supplier-email" className="input" type="email" inputMode="email"
                           value={email} onChange={event => setEmail(event.target.value)}
                           placeholder="supplier@example.com" aria-invalid={errorField === 'email'} dir="ltr" />
-                      </Field>
-                    </div>
+                        </Field>
+                        {!email && <OptionalToggle onClick={() => setEmailOpen(false)}>{t('suppliers:actions.hideEmail')}</OptionalToggle>}
+                      </div>
+                    ) : <OptionalToggle onClick={() => setEmailOpen(true)}>{t('suppliers:actions.addEmail')}</OptionalToggle>}
                   </div>
                 </section>
 
-                <section aria-label={t('suppliers:fields.notes')}>
-                  <label className="label" htmlFor="supplier-notes">{t('suppliers:fields.notes')}</label>
-                  <textarea id="supplier-notes" className="input resize-none" rows={2} value={notes}
-                    onChange={event => setNotes(event.target.value)}
-                    placeholder={t('suppliers:placeholders.notes')} dir="auto" />
+                <section aria-labelledby="supplier-address-heading">
+                  <SectionHeading id="supplier-address-heading">{t('suppliers:sections.addressPayment')}</SectionHeading>
+                  <div className="mt-3 space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field id="supplier-city" label={t('suppliers:fields.city')}>
+                        <input id="supplier-city" className="input" value={city}
+                          onChange={event => setCity(event.target.value)}
+                          placeholder={t('suppliers:placeholders.city')} dir="auto" />
+                      </Field>
+                      <Field id="supplier-payment-terms" label={t('suppliers:fields.paymentTerms')} helper={t('suppliers:helpers.paymentTerms')}>
+                        <select id="supplier-payment-terms" className="input" value={paymentTerms}
+                          onChange={event => setPaymentTerms(event.target.value)}>
+                          <option value="cash">{t('suppliers:terms.cash')}</option>
+                          <option value="credit_30">{t('suppliers:terms.credit30')}</option>
+                          <option value="credit_60">{t('suppliers:terms.credit60')}</option>
+                        </select>
+                      </Field>
+                    </div>
+                    {addressOpen ? (
+                      <div>
+                        <Field id="supplier-address" label={t('suppliers:fields.address')} helper={t('suppliers:helpers.address')}>
+                          <textarea id="supplier-address" className="input resize-none" rows={2} value={address}
+                            onChange={event => setAddress(event.target.value)}
+                            placeholder={t('suppliers:placeholders.address')} dir="auto" />
+                        </Field>
+                        {!address && <OptionalToggle onClick={() => setAddressOpen(false)}>{t('suppliers:actions.hideAddress')}</OptionalToggle>}
+                      </div>
+                    ) : <OptionalToggle onClick={() => setAddressOpen(true)}>{t('suppliers:actions.addAddress')}</OptionalToggle>}
+                  </div>
+                </section>
+
+                <section aria-labelledby="supplier-optional-heading">
+                  <SectionHeading id="supplier-optional-heading">{t('suppliers:sections.optional')}</SectionHeading>
+                  <div className="mt-3">
+                    {notesOpen ? (
+                      <div>
+                        <textarea id="supplier-notes" className="input resize-none" rows={2} value={notes}
+                          onChange={event => setNotes(event.target.value)}
+                          placeholder={t('suppliers:placeholders.notes')} dir="auto" />
+                        {!notes && <OptionalToggle onClick={() => setNotesOpen(false)}>{t('suppliers:actions.hideNotes')}</OptionalToggle>}
+                      </div>
+                    ) : <OptionalToggle onClick={() => setNotesOpen(true)}>{t('suppliers:actions.addNotes')}</OptionalToggle>}
+                  </div>
                 </section>
               </div>
 
@@ -314,7 +360,6 @@ export default function SupplierModal({ open, supplier, onClose, onSaved }: Prop
                   <h3 id="supplier-preview-heading" className="mt-2 break-words text-lg font-bold leading-6" dir="auto">
                     {name.trim() || t('suppliers:preview.unnamed')}
                   </h3>
-                  {nameAr.trim() && <p className="mt-1 break-words text-sm text-primary-100" dir="rtl">{nameAr.trim()}</p>}
                   <dl className="mt-4 divide-y divide-white/10 text-xs">
                     <PreviewRow label={t('suppliers:fields.vatNumber')} value={vatNumber || t('suppliers:preview.notProvided')} ltr />
                     {crNumber && <PreviewRow label={t('suppliers:fields.crNumber')} value={crNumber} ltr />}
@@ -322,30 +367,6 @@ export default function SupplierModal({ open, supplier, onClose, onSaved }: Prop
                     <PreviewRow label={t('suppliers:fields.phone')} value={phone || t('suppliers:preview.notProvided')} ltr />
                     <PreviewRow label={t('suppliers:fields.paymentTerms')} value={t(`suppliers:terms.${paymentTerms === 'cash' ? 'cash' : paymentTerms === 'credit_30' ? 'credit30' : 'credit60'}`)} />
                   </dl>
-                </section>
-
-                <section aria-labelledby="supplier-address-heading">
-                  <SectionHeading id="supplier-address-heading">{t('suppliers:sections.addressPayment')}</SectionHeading>
-                  <div className="mt-3 space-y-3">
-                    <Field id="supplier-city" label={t('suppliers:fields.city')}>
-                      <input id="supplier-city" className="input" value={city}
-                        onChange={event => setCity(event.target.value)}
-                        placeholder={t('suppliers:placeholders.city')} dir="auto" />
-                    </Field>
-                    <Field id="supplier-address" label={t('suppliers:fields.address')} helper={t('suppliers:helpers.address')}>
-                      <textarea id="supplier-address" className="input resize-none" rows={2} value={address}
-                        onChange={event => setAddress(event.target.value)}
-                        placeholder={t('suppliers:placeholders.address')} dir="auto" />
-                    </Field>
-                    <Field id="supplier-payment-terms" label={t('suppliers:fields.paymentTerms')} helper={t('suppliers:helpers.paymentTerms')}>
-                      <select id="supplier-payment-terms" className="input" value={paymentTerms}
-                        onChange={event => setPaymentTerms(event.target.value)}>
-                        <option value="cash">{t('suppliers:terms.cash')}</option>
-                        <option value="credit_30">{t('suppliers:terms.credit30')}</option>
-                        <option value="credit_60">{t('suppliers:terms.credit60')}</option>
-                      </select>
-                    </Field>
-                  </div>
                 </section>
 
                 <p className="flex items-start gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-xs leading-5 text-gray-600">
@@ -378,6 +399,15 @@ export default function SupplierModal({ open, supplier, onClose, onSaved }: Prop
 
 function SectionHeading({ id, children }: { id: string; children: React.ReactNode }) {
   return <h3 id={id} className="text-xs font-bold uppercase tracking-wide text-gray-600">{children}</h3>
+}
+
+function OptionalToggle({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[#31543f] hover:text-[#173f2a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#173f2a] focus-visible:ring-offset-2">
+      <Plus size={13} aria-hidden="true" />
+      {children}
+    </button>
+  )
 }
 
 function Field({

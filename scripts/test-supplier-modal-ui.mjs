@@ -25,7 +25,7 @@ assert.equal((page.match(/<SupplierModal/g) ?? []).length, 1)
 assert.equal((detail.match(/<SupplierModal/g) ?? []).length, 1)
 
 // Structured, responsive sections and live preview.
-for (const section of ['identity', 'registration', 'contact', 'addressPayment']) {
+for (const section of ['identity', 'registration', 'contact', 'addressPayment', 'optional']) {
   assert.match(modal, new RegExp(`suppliers:sections\\.${section}`))
 }
 assert.match(modal, /lg:grid-cols-\[minmax\(0,1\.55fr\)_minmax\(280px,1fr\)\]/)
@@ -34,14 +34,21 @@ assert.match(modal, /supplier-preview-heading/)
 assert.match(modal, /name\.trim\(\) \|\| t\('suppliers:preview\.unnamed'\)/)
 assert.match(modal, /vatNumber \|\| t\('suppliers:preview\.notProvided'\)/)
 
-// Only the existing English name contract is required.
+// One language-neutral primary name field preserves the existing name contract.
 assert.match(modal, /if \(!name\.trim\(\)\)/)
 assert.match(modal, /disabled=\{saving \|\| !name\.trim\(\)\}/)
 assert.match(modal, /nameRef\.current\?\.focus\(\)/)
 assert.doesNotMatch(modal, /if \(!nameAr|if \(!vatNumber|if \(!crNumber|if \(!phone/)
+assert.match(modal, /label=\{t\('suppliers:fields\.name'\)\}/)
+assert.doesNotMatch(modal, /fields\.nameEn|fields\.nameAr/)
 assert.match(modal, /maxLength=\{15\}/)
 assert.match(modal, /type="tel" inputMode="tel"/)
-assert.match(modal, /type="email" inputMode="email"/)
+assert.match(modal, /emailOpen/)
+assert.match(modal, /addressOpen/)
+assert.match(modal, /notesOpen/)
+for (const action of ['addEmail', 'addAddress', 'addNotes']) {
+  assert.match(modal, new RegExp(`suppliers:actions\\.${action}`))
+}
 
 // Exact payment terms and supplier payload remain unchanged.
 for (const value of ['cash', 'credit_30', 'credit_60']) {
@@ -78,7 +85,10 @@ assert.match(modal, /role="alert" aria-live="assertive"/)
 assert.match(modal, /active:scale-\[0\.97\]/)
 
 // KPI calculations and purchase integration remain connected.
-assert.equal((page.match(/border-\[#173f2a\]\/70/g) ?? []).length, 3)
+assert.equal((page.match(/grid grid-cols-1 gap-3 sm:grid-cols-3/g) ?? []).length, 1)
+assert.match(page, /bg-\[#173f2a\]/)
+assert.match(page, /bg-\[#edf6f4\]/)
+assert.match(page, /Open Supplier Reports|supplierIntelligence:reports\.openReports/)
 assert.match(page, /const totalPurchased = suppliers\.reduce/)
 assert.match(page, /const creditCount\s+= suppliers\.filter/)
 assert.match(page, /onSaved=\{load\}/)
@@ -86,11 +96,15 @@ assert.match(purchase, /\.from\('suppliers'\)/)
 assert.match(purchase, /\.eq\('is_active', true\)/)
 
 for (const locale of [en, ar]) {
-  for (const section of ['identity', 'registration', 'contact', 'addressPayment']) {
+  for (const section of ['identity', 'registration', 'contact', 'addressPayment', 'optional']) {
     assert.equal(typeof locale.sections[section], 'string')
   }
   assert.equal(typeof locale.modal.subtitle, 'string')
   assert.equal(typeof locale.preview.eyebrow, 'string')
+  assert.equal(typeof locale.fields.name, 'string')
+  for (const action of ['addEmail', 'addAddress', 'addNotes']) {
+    assert.equal(typeof locale.actions[action], 'string')
+  }
   assert.equal(typeof locale.success.added, 'string')
   assert.equal(typeof locale.success.updated, 'string')
   for (const duplicate of ['name', 'vatNumber', 'crNumber', 'phone', 'email']) {

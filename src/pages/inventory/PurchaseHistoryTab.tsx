@@ -599,7 +599,7 @@ export default function PurchaseHistoryTab() {
           <p className="text-gray-400 text-sm mt-1 max-w-xs">
             {t('purchases:noneRangeHint')}
           </p>
-          <Button className="mt-5" onClick={openAdd}>
+          <Button className="mt-5 bg-[#173f2a] text-[#fff8e7] shadow-[0_4px_12px_rgba(15,36,25,0.18)] hover:bg-[#22563b] focus-visible:ring-[#173f2a]" onClick={openAdd}>
             <Plus size={15} />
             {t('purchases:new')}
           </Button>
