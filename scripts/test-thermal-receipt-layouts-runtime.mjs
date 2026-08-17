@@ -23,7 +23,7 @@ try {
     { storedId: 'classic', publicId: 'classic', landmark: 'thermal-classic-line' },
     { storedId: 'compact', publicId: 'compact-retail', landmark: 'thermal-compact-line' },
     { storedId: 'standard', publicId: 'structured-detail', landmark: 'thermal-structured-line__figures' },
-    { storedId: 'detailed', publicId: 'branded-modern', landmark: 'thermal-branded-line' },
+    { storedId: 'detailed', publicId: 'branded-modern', landmark: 'thermal-branded-card' },
   ]
   const fixtureCases = [
     { id: 'en-short-cash-qr', language: 'en', sale: 'short', payment: 'cash', qr: 'eligible', document: 'simplified' },
@@ -290,12 +290,58 @@ try {
           }
         }
         if (layout.storedId === 'detailed') {
-          if (fixtureCase.language === 'both') assert.match(markup, /thermal-branded-line__names--bilingual/)
-          assert.equal((markup.match(/thermal-branded-line__vat/g) ?? []).length, items.length)
-          assert.equal((markup.match(/thermal-branded-line__discount/g) ?? []).length, items.filter(item => item.discount > 0.005).length)
+          if (fixtureCase.language === 'both') assert.match(markup, /thermal-branded-card__names--combined/)
+          assert.equal((markup.match(/thermal-branded-card__vat/g) ?? []).length, items.length)
+          assert.equal((markup.match(/thermal-branded-card__discount/g) ?? []).length, items.filter(item => item.discount > 0.005).length)
           assert.match(markup, fixtureCase.payment === 'split' ? /thermal-branded-payments--split/ : /thermal-branded-payments--single/)
           assert.match(markup, /thermal-branded-totals/)
           assert.match(markup, /Thank you/)
+
+          if (fixtureCase.id === 'both-many-card-qr') {
+            const brandedMarkupFor = (description, descriptionAr, itemOverrides = {}, documentOverrides = {}) => renderToStaticMarkup(createElement(ThermalReceipt, {
+              model: {
+                ...model,
+                ...documentOverrides,
+                items: [{ ...items[0], description, descriptionAr, quantity: 1, unitName: 'piece', unitNameAr: 'قطعة', unitPrice: 2, lineTotal: 2, taxableAmount: 1.74, vatRate: 15, vatAmount: .26, discount: 0, ...itemOverrides }],
+              },
+              options: { preview: true },
+            }))
+            const englishOnly = brandedMarkupFor('Pepsi', null)
+            assert.match(englishOnly, /Pepsi/)
+            assert.doesNotMatch(englishOnly, /بيبسي/)
+            const arabicOnly = brandedMarkupFor('', 'بيبسي')
+            assert.match(arabicOnly, /بيبسي/)
+            assert.doesNotMatch(arabicOnly, /Pepsi/)
+            const bilingual = brandedMarkupFor('Pepsi', 'بيبسي', {}, { identity: { ...model.identity, number: 'INV-2458' } })
+            assert.match(bilingual, /thermal-branded-masthead[\s\S]*thermal-legal-info[\s\S]*thermal-branded-document/)
+            assert.match(bilingual, /thermal-branded-card__number"[^>]*>01/)
+            assert.match(bilingual, /thermal-branded-card__names--combined/)
+            assert.doesNotMatch(bilingual, /thermal-branded-line__names--bilingual/)
+            assert.match(bilingual, /thermal-branded-card__name-segment--en" dir="ltr">Pepsi/)
+            assert.match(bilingual, /thermal-branded-card__name-separator"> \/ <\/span><bdi class="thermal-branded-card__name-segment thermal-branded-card__name-segment--ar" dir="rtl">بيبسي/)
+            const duplicate = brandedMarkupFor('Pepsi', 'pepsi')
+            assert.equal((duplicate.match(/Pepsi|pepsi/g) ?? []).length, 1)
+            const longBilingual = brandedMarkupFor('Very Long Product Name For A Premium Narrow Thermal Receipt', 'اسم منتج عربي طويل جداً لإيصال حراري فاخر ضيق')
+            assert.match(longBilingual, /Very Long Product Name For A Premium Narrow Thermal Receipt[\s\S]*اسم منتج عربي طويل جداً لإيصال حراري فاخر ضيق/)
+            assert.equal((bilingual.match(/thermal-branded-meta__row/g) ?? []).length, 3)
+            assert.match(bilingual, /thermal-branded-document-number" dir="ltr">INV-2458/)
+            assert.match(bilingual, /thermal-branded-card__formula[\s\S]*Quantity[\s\S]*Unit Price/)
+            assert.match(bilingual, /thermal-branded-card__amount[\s\S]*Amount/)
+            assert.match(bilingual, /VAT Amount 15%[\s\S]*مبلغ الضريبة 15%[\s\S]*0\.26/)
+            assert.doesNotMatch(bilingual, /VAT included|VAT excluded|VAT added/)
+            assert.match(bilingual, /thermal-branded-total-label"><bdi dir="ltr">Total Including VAT<\/bdi><bdi dir="rtl">الإجمالي شامل الضريبة/)
+            const logoPresent = brandedMarkupFor('Pepsi', 'بيبسي', {}, { presentation: { ...model.presentation, logo: { ...model.presentation.logo, visible: true, previewUrl: 'data:image/png;base64,TE9HTw==' } } })
+            assert.match(logoPresent, /thermal-branded-masthead[\s\S]*class="thermal-logo"[\s\S]*thermal-legal-info/)
+            const logoAbsent = brandedMarkupFor('Pepsi', 'بيبسي', {}, { presentation: { ...model.presentation, logo: { ...model.presentation.logo, visible: false, previewUrl: null, assetPath: null } } })
+            assert.doesNotMatch(logoAbsent, /class="thermal-logo"/)
+            const credit = brandedMarkupFor('Pepsi', 'بيبسي', {}, { identity: { ...model.identity, kind: 'credit_note', invoiceType: 'credit_note', number: 'CN-2458' } })
+            assert.match(credit, /thermal-branded-document-number" dir="ltr">CN-2458/)
+            assert.match(credit, /thermal-branded-card__name-segment--en" dir="ltr">Pepsi[\s\S]*thermal-branded-card__name-segment--ar" dir="rtl">بيبسي/)
+            assert.match(credit, /thermal-row thermal-row-strong[\s\S]*thermal-value/)
+            assert.match(markup, /thermal-branded-close[\s\S]*thermal-qr/)
+            if (width === '80mm') assert.match(bilingual, /thermal-branded-document[\s\S]*thermal-branded-card[\s\S]*thermal-branded-summary/)
+            else assert.match(bilingual, /thermal-receipt--58mm[\s\S]*thermal-branded-document[\s\S]*thermal-branded-card[\s\S]*thermal-branded-total-label/)
+          }
         }
 
         const walkInMarkup = renderToStaticMarkup(createElement(ThermalReceipt, {
