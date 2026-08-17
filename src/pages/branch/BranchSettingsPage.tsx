@@ -3,13 +3,9 @@ import {
   ArrowLeft,
   Building2,
   CheckCircle2,
-  ChevronLeft,
   CreditCard,
   ExternalLink,
-  FileText,
-  Landmark,
   Loader2,
-  Printer,
   RefreshCw,
   Save,
   Settings2,
@@ -32,7 +28,7 @@ import {
 } from "@/lib/customers/receivables";
 import { Button } from "@/components/ui/Button";
 
-type SectionId = "general" | "pos" | "credit" | "printing" | "zatca";
+type SectionId = "general" | "pos" | "credit" | "zatca";
 type BranchOption = {
   id: string;
   name: string;
@@ -59,12 +55,70 @@ const sections: Array<{ id: SectionId; icon: React.ElementType }> = [
   { id: "general", icon: Building2 },
   { id: "pos", icon: Settings2 },
   { id: "credit", icon: CreditCard },
-  { id: "printing", icon: Printer },
   { id: "zatca", icon: ShieldCheck },
 ];
 
 const branchSelect =
   "id,name,name_ar,is_active,branch_code,phone,email,website,building_number,street,district,city,country,postal_code,allow_split_payments,show_pos_scroll_buttons,pos_mode";
+
+const branchSettingsV3Copy = {
+  en: {
+    subtitle: "Manage this branch's identity and operational controls.",
+    identityStatus: "Identity & status",
+    status: "Status",
+    posHelp: "Configure checkout layout and payment controls for this branch.",
+    touchPos: "Touch POS",
+    touchPosHelp: "Visual product tiles for counter selling.",
+    quickBilling: "Quick Billing",
+    quickBillingHelp: "Fast search and barcode-based checkout.",
+    splitPaymentHelp: "Allow one sale to use multiple payment methods.",
+    navigationArrowsHelp: "Show larger browsing controls in Touch POS.",
+    currentPosConfiguration: "Current POS configuration",
+    layout: "Layout",
+    creditStatus: "Credit status",
+    eligibleCustomerType: "Eligible customer type",
+    businessB2b: "Business / B2B",
+    accountCreation: "Account creation",
+    automaticWhenRequired: "Automatic when required",
+    contactOwner: "Contact the account owner for onboarding or connection changes.",
+    zatcaHelp: "ZATCA setup for this branch is managed by the account owner.",
+    zatcaStatus: "ZATCA status",
+    branchAvailability: "Branch availability",
+    configurationOwner: "Configuration owner",
+    ownerAccount: "Owner account",
+    connectionManagement: "Connection management",
+    ownerManaged: "Owner-managed",
+    availabilityNote: "This page shows branch availability, not live ZATCA submission status.",
+  },
+  ar: {
+    subtitle: "إدارة هوية الفرع وضوابطه التشغيلية.",
+    identityStatus: "الهوية والحالة",
+    status: "الحالة",
+    posHelp: "اضبط تخطيط نقطة البيع وضوابط الدفع لهذا الفرع.",
+    touchPos: "نقطة البيع اللمسية",
+    touchPosHelp: "بطاقات منتجات مرئية للبيع عند نقطة الكاشير.",
+    quickBilling: "الفوترة السريعة",
+    quickBillingHelp: "بحث سريع وفوترة بالباركود.",
+    splitPaymentHelp: "السماح بعملية بيع واحدة باستخدام عدة طرق دفع.",
+    navigationArrowsHelp: "إظهار أدوات تصفح أكبر في نقطة البيع اللمسية.",
+    currentPosConfiguration: "إعدادات نقطة البيع الحالية",
+    layout: "التخطيط",
+    creditStatus: "حالة الائتمان",
+    eligibleCustomerType: "نوع العميل المؤهل",
+    businessB2b: "الأعمال / B2B",
+    accountCreation: "إنشاء الحساب",
+    automaticWhenRequired: "تلقائي عند الحاجة",
+    contactOwner: "تواصل مع مالك الحساب لتحديثات التهيئة أو الاتصال.",
+    zatcaHelp: "يدير مالك الحساب إعداد ZATCA لهذا الفرع.",
+    zatcaStatus: "حالة ZATCA",
+    branchAvailability: "توفر الفرع",
+    configurationOwner: "مالك الإعداد",
+    ownerAccount: "حساب المالك",
+    connectionManagement: "إدارة الاتصال",
+    ownerManaged: "يديرها المالك",
+    availabilityNote: "تعرض هذه الصفحة توفر الفرع، وليست حالة إرسال ZATCA المباشرة.",
+  },
+} as const;
 
 function StatusChip({
   enabled,
@@ -130,7 +184,6 @@ function BranchSettingsHeader({
     backToDashboard: string;
     branchCode: string;
     branchName: string;
-    eyebrow: string;
     inactive: string;
     loadingBranch: string;
     subtitle: string;
@@ -138,73 +191,78 @@ function BranchSettingsHeader({
   };
 }) {
   return (
-    <header className="border-b border-slate-200 pb-5">
+    <header className="border-b border-slate-200 pb-4">
       <Link
         to={backPath}
-        className="mb-5 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-primary-700 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+        className="mb-3 inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-sm font-semibold text-primary-700 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
       >
         <ArrowLeft size={15} />
         {labels.backToDashboard}
       </Link>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-xs font-semibold text-primary-700">
-            <Building2 size={14} /> {labels.eyebrow}
-          </div>
-          <h1 className="mt-1 truncate text-2xl font-black tracking-tight text-slate-950">
-            {labels.title}
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">{labels.subtitle}</p>
-          {branch ? (
-            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs text-slate-500">
-              <span>
-                <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                  {labels.branchName}
-                </span>
-                <span className="font-semibold text-slate-800">{branch.name}</span>
+      <h1 className="text-2xl font-black tracking-tight text-slate-950">
+        {labels.title}
+      </h1>
+      <p className="mt-1 text-sm text-slate-500">{labels.subtitle}</p>
+      {branch ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2.5 rounded-xl border border-slate-200 bg-[#fffdf7] px-3 py-2 text-xs text-slate-500">
+          <span className="font-semibold text-slate-900">{branch.name}</span>
+          <StatusChip
+            enabled={branch.isActive}
+            enabledLabel={labels.active}
+            disabledLabel={labels.inactive}
+          />
+          {branch.branchCode && (
+            <span className="border-s border-slate-200 ps-2.5 font-mono font-semibold text-slate-700" dir="ltr">
+              <span className="me-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                {labels.branchCode}
               </span>
-              {branch.branchCode && (
-                <>
-                  <span className="h-7 w-px bg-slate-200" aria-hidden="true" />
-                  <span>
-                    <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                      {labels.branchCode}
-                    </span>
-                    <span className="font-mono font-semibold text-slate-800">
-                      {branch.branchCode}
-                    </span>
-                  </span>
-                </>
-              )}
-              <StatusChip
-                enabled={branch.isActive}
-                enabledLabel={labels.active}
-                disabledLabel={labels.inactive}
-              />
-            </div>
-          ) : loading ? (
-            <div
-              className="mt-4 flex w-full max-w-md items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3"
-              role="status"
-              aria-live="polite"
-            >
-              <Loader2 className="shrink-0 animate-spin text-primary-600" size={16} />
-              <span className="h-3 w-32 animate-pulse rounded bg-slate-200" aria-hidden="true" />
-              <span className="h-3 w-20 animate-pulse rounded bg-slate-100" aria-hidden="true" />
-              <span className="sr-only">{labels.loadingBranch}</span>
-            </div>
-          ) : null}
+              {branch.branchCode}
+            </span>
+          )}
         </div>
-      </div>
+      ) : loading ? (
+        <div
+          className="mt-3 flex w-full max-w-md items-center gap-3 rounded-xl border border-slate-200 bg-[#fffdf7] px-3 py-2.5"
+          role="status"
+          aria-live="polite"
+        >
+          <Loader2 className="shrink-0 animate-spin text-primary-600" size={16} />
+          <span className="h-3 w-32 animate-pulse rounded bg-slate-200" aria-hidden="true" />
+          <span className="h-3 w-20 animate-pulse rounded bg-slate-100" aria-hidden="true" />
+          <span className="sr-only">{labels.loadingBranch}</span>
+        </div>
+      ) : null}
     </header>
   );
 }
 
 function displayBranchCode(branchCode: string | null): string | null {
   const value = branchCode?.trim();
-  if (!value) return null;
-  const normalized = value.toUpperCase();
-  return normalized.startsWith("BR-") ? normalized : `BR-${normalized}`;
+  return value || null;
+}
+
+function SummaryPanel({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <aside className="rounded-2xl bg-[#173f2a] p-5 text-[#fff8e7] shadow-sm">
+      <h3 className="text-sm font-bold">{title}</h3>
+      <div className="mt-4 space-y-3">{children}</div>
+    </aside>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-3 last:border-0 last:pb-0">
+      <span className="text-xs font-medium text-emerald-100/75">{label}</span>
+      <span className="text-end text-sm font-semibold text-white">{value}</span>
+    </div>
+  );
 }
 
 function ToggleRow({
@@ -222,7 +280,7 @@ function ToggleRow({
 }) {
   return (
     <label
-      className={`flex min-h-14 items-center justify-between gap-4 rounded-xl border px-3.5 py-3 transition-colors ${disabled ? "border-slate-100 bg-slate-50/80 opacity-70" : "border-slate-200 bg-white hover:border-primary-200"}`}
+      className={`flex min-h-16 items-center justify-between gap-4 rounded-xl border px-4 py-3.5 transition-colors ${disabled ? "border-slate-100 bg-slate-50/80 opacity-70" : "border-slate-200 bg-[#fffdf7] hover:border-[#173f2a]/40"}`}
     >
       <span className="min-w-0">
         <span className="block text-sm font-semibold text-slate-900">
@@ -234,17 +292,23 @@ function ToggleRow({
       </span>
       <input
         type="checkbox"
-        className="h-4 w-4 shrink-0 accent-primary-700"
+        className="peer sr-only"
         checked={checked}
         disabled={disabled}
+        role="switch"
+        aria-checked={checked}
         onChange={(event) => onChange(event.target.checked)}
+      />
+      <span
+        className="relative h-6 w-11 shrink-0 rounded-full bg-slate-200 transition-colors after:absolute after:start-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:bg-[#173f2a] peer-checked:after:translate-x-5 peer-focus-visible:ring-2 peer-focus-visible:ring-primary-500 peer-disabled:cursor-not-allowed"
+        aria-hidden="true"
       />
     </label>
   );
 }
 
 export default function BranchSettingsPage() {
-  const { t } = useTranslation("branches");
+  const { t, i18n } = useTranslation("branches");
   const { profile, branch: authBranch, loading: authLoading } = useAuth();
   const { branchId: routeBranchId } = useParams<{ branchId: string }>();
   const navigate = useNavigate();
@@ -462,15 +526,21 @@ export default function BranchSettingsPage() {
 
   const backPath = isOwner ? "/dashboard" : "/branch";
   const branchDataLoading = authLoading || loading || branchDirectoryLoading;
+  const v3 = i18n.language.startsWith("ar")
+    ? branchSettingsV3Copy.ar
+    : branchSettingsV3Copy.en;
+  const posModeDetails = {
+    touch: { label: v3.touchPos, help: v3.touchPosHelp },
+    quick: { label: v3.quickBilling, help: v3.quickBillingHelp },
+  };
   const headerLabels = {
     active: t("workspace.active"),
     backToDashboard: t("workspace.backToDashboard"),
     branchCode: t("workspace.branchCode"),
     branchName: t("workspace.branchName"),
-    eyebrow: t("workspace.eyebrow"),
     inactive: t("workspace.inactive"),
     loadingBranch: t("workspace.loadingBranch"),
-    subtitle: t("workspace.subtitle"),
+    subtitle: v3.subtitle,
     title: t("workspace.title"),
   };
 
@@ -512,9 +582,6 @@ export default function BranchSettingsPage() {
       </div>
     );
 
-  const printingPath = isOwner
-    ? `/settings/branches/${selectedBranchId}/printing?tab=receipts`
-    : "/invoice-settings?tab=receipts";
   const address = [
     [selectedBranch.building_number, selectedBranch.street]
       .filter(Boolean)
@@ -583,7 +650,7 @@ export default function BranchSettingsPage() {
       )}
 
       <nav
-        className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50/80 p-2 shadow-sm"
+        className="flex gap-1.5 overflow-x-auto rounded-2xl border border-[#173f2a] bg-[#173f2a] p-1.5 shadow-sm"
         role="tablist"
         aria-label={t("workspace.title")}
       >
@@ -600,11 +667,11 @@ export default function BranchSettingsPage() {
               aria-controls={`branch-settings-panel-${item.id}`}
               tabIndex={selected ? 0 : -1}
               onClick={() => selectSection(item.id)}
-              className={`flex min-h-10 shrink-0 items-center gap-2 rounded-xl px-3.5 text-xs font-bold outline-none transition-[background-color,color,box-shadow,transform] active:scale-[.98] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500 ${selected ? "bg-[#173f2a] text-[#fff8e7] shadow-sm" : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"}`}
+              className={`flex min-h-10 shrink-0 items-center gap-2 rounded-xl px-3.5 text-xs font-bold outline-none transition-[background-color,color,box-shadow,transform] active:scale-[.98] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#fff8e7] ${selected ? "bg-[#2b6546] text-white shadow-sm ring-1 ring-[#d7b56d]/70" : "text-emerald-50/70 hover:bg-white/10 hover:text-white"}`}
             >
               <Icon
                 size={15}
-                className={selected ? "text-emerald-200" : "text-slate-400"}
+                className={selected ? "text-[#f1d58f]" : "text-emerald-100/55"}
               />
               <span>{t(`workspace.sections.${item.id}`)}</span>
             </button>
@@ -616,46 +683,25 @@ export default function BranchSettingsPage() {
         id={`branch-settings-panel-${activeSection}`}
         role="tabpanel"
         aria-labelledby={`branch-settings-tab-${activeSection}`}
-        className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7"
+        className="min-w-0"
       >
         {activeSection === "general" && (
           <section
             aria-labelledby="branch-general-heading"
-            className="max-w-5xl"
+            className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(260px,1fr)]"
           >
-            <div className="flex items-start justify-between gap-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-700">
-                  {t("workspace.sections.general")}
-                </p>
-                <h2
-                  id="branch-general-heading"
-                  className="mt-1 text-xl font-bold text-slate-950"
-                >
+                <h2 id="branch-general-heading" className="text-lg font-bold text-slate-950">
                   {t("workspace.generalTitle")}
                 </h2>
-                <p className="mt-1 text-sm leading-6 text-slate-500">
-                  {t("workspace.generalHelp")}
-                </p>
+                <p className="mt-1 text-sm leading-6 text-slate-500">{t("workspace.generalHelp")}</p>
               </div>
-              <Building2
-                className="hidden text-primary-200 sm:block"
-                size={30}
-              />
-            </div>
-            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50/40 p-4 sm:p-5">
-              <dl className="grid gap-x-8 md:grid-cols-2">
+              <dl className="mt-5 grid gap-x-7 sm:grid-cols-2">
                 <InfoRow
                   label={t("workspace.branchName")}
                   value={selectedBranch.name}
                 />
-                {branchIdentifier && (
-                  <InfoRow
-                    label={t("workspace.branchCode")}
-                    value={branchIdentifier}
-                    dir="ltr"
-                  />
-                )}
                 <InfoRow
                   label={t("workspace.phone")}
                   value={selectedBranch.phone ?? ""}
@@ -673,44 +719,45 @@ export default function BranchSettingsPage() {
                 </div>
               </dl>
             </div>
-            <p className="mt-4 text-xs leading-5 text-slate-500">
-              {t("workspace.generalReadOnly")}
-            </p>
+            <SummaryPanel title={v3.identityStatus}>
+              <SummaryRow
+                label={v3.status}
+                value={selectedBranch.is_active ? t("workspace.active") : t("workspace.inactive")}
+              />
+              {branchIdentifier && (
+                <SummaryRow
+                  label={t("workspace.branchCode")}
+                  value={<span className="font-mono" dir="ltr">{branchIdentifier}</span>}
+                />
+              )}
+              <p className="pt-1 text-xs leading-5 text-emerald-50/70">
+                {t("workspace.generalReadOnly")}
+              </p>
+            </SummaryPanel>
           </section>
         )}
 
         {activeSection === "pos" && (
-          <section aria-labelledby="branch-pos-heading" className="max-w-3xl">
-            <div className="flex items-start justify-between gap-4">
+          <section aria-labelledby="branch-pos-heading" className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(260px,1fr)]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-700">
-                  {t("workspace.sections.pos")}
-                </p>
-                <h2
-                  id="branch-pos-heading"
-                  className="mt-1 text-lg font-bold text-slate-950"
-                >
+                <h2 id="branch-pos-heading" className="text-lg font-bold text-slate-950">
                   {t("workspace.posTitle")}
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-slate-500">
-                  {t("workspace.posHelp")}
+                  {v3.posHelp}
                 </p>
               </div>
-              <Landmark
-                className="hidden text-primary-200 sm:block"
-                size={30}
-              />
-            </div>
-            <div className="mt-6 space-y-3">
+              <div className="mt-5 space-y-4">
               <fieldset>
                 <legend className="text-xs font-bold text-slate-700">
                   {t("workspace.posMode")}
                 </legend>
-                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <div className="mt-2.5 grid gap-3 sm:grid-cols-2">
                   {(["touch", "quick"] as const).map((mode) => (
                     <label
                       key={mode}
-                      className={`cursor-pointer rounded-2xl border p-4 transition-colors ${posDraft.mode === mode ? "border-[#173f2a] bg-[#173f2a] text-[#fff8e7] shadow-sm" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                      className={`cursor-pointer rounded-xl border p-4 transition-[background-color,border-color,color,box-shadow] ${posDraft.mode === mode ? "border-[#173f2a] bg-[#173f2a] text-[#fff8e7] shadow-sm" : "border-slate-200 bg-[#fffdf7] text-slate-900 hover:border-[#173f2a]/40"}`}
                     >
                       <input
                         type="radio"
@@ -722,11 +769,11 @@ export default function BranchSettingsPage() {
                           setSaved(null);
                         }}
                       />
-                      <span className={`block text-sm font-semibold ${posDraft.mode === mode ? "text-[#fff8e7]" : "text-slate-900"}`}>
-                        {t(`workspace.posModes.${mode}.label`)}
+                      <span className={`block text-sm font-semibold ${posDraft.mode === mode ? "text-white" : "text-slate-900"}`}>
+                        {posModeDetails[mode].label}
                       </span>
-                      <span className={`mt-1 block text-xs leading-5 ${posDraft.mode === mode ? "text-emerald-100" : "text-slate-500"}`}>
-                        {t(`workspace.posModes.${mode}.help`)}
+                      <span className={`mt-1 block text-xs leading-5 ${posDraft.mode === mode ? "text-emerald-50/80" : "text-slate-500"}`}>
+                        {posModeDetails[mode].help}
                       </span>
                     </label>
                   ))}
@@ -734,7 +781,7 @@ export default function BranchSettingsPage() {
               </fieldset>
               <ToggleRow
                 label={t("workspace.splitPayment")}
-                help={t("workspace.splitPaymentHelp")}
+                help={v3.splitPaymentHelp}
                 checked={posDraft.allowSplit}
                 onChange={(value) => {
                   setPosDraft((current) => ({ ...current, allowSplit: value }));
@@ -743,15 +790,15 @@ export default function BranchSettingsPage() {
               />
               <ToggleRow
                 label={t("workspace.categoryArrows")}
-                help={t("workspace.categoryArrowsHelp")}
+                help={v3.navigationArrowsHelp}
                 checked={posDraft.showArrows}
                 onChange={(value) => {
                   setPosDraft((current) => ({ ...current, showArrows: value }));
                   setSaved(null);
                 }}
               />
-            </div>
-            <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+              </div>
+              <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
               <Button
                 className="bg-[#173f2a] hover:bg-[#102f20]"
                 onClick={() => void savePos()}
@@ -774,37 +821,31 @@ export default function BranchSettingsPage() {
               </Button>
               {posDirty && <span className="text-xs text-slate-500" role="status">{t("workspace.unsaved")}</span>}
               {saved === "pos" && <span className="text-xs text-emerald-700" role="status">{t("workspace.saved")}</span>}
+              </div>
             </div>
+            <SummaryPanel title={v3.currentPosConfiguration}>
+              <SummaryRow label={v3.layout} value={posModeDetails[posSaved.mode].label} />
+              <SummaryRow label={t("workspace.splitPayment")} value={posSaved.allowSplit ? t("workspace.enabled") : t("workspace.disabled")} />
+              <SummaryRow label={t("workspace.categoryArrows")} value={posSaved.showArrows ? t("workspace.enabled") : t("workspace.disabled")} />
+            </SummaryPanel>
           </section>
         )}
 
         {activeSection === "credit" && (
           <section
             aria-labelledby="branch-credit-heading"
-            className="max-w-5xl"
+            className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(260px,1fr)]"
           >
-            <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-700">
-                  {t("workspace.sections.credit")}
-                </p>
-                <h2
-                  id="branch-credit-heading"
-                  className="mt-1 text-lg font-bold text-slate-950"
-                >
+                <h2 id="branch-credit-heading" className="text-lg font-bold text-slate-950">
                   {t("workspace.creditTitle")}
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-slate-500">
                   {t("workspace.creditHelp")}
                 </p>
               </div>
-              <StatusChip
-                enabled={creditSettings.branchCreditEnabled}
-                enabledLabel={t("workspace.enabled")}
-                disabledLabel={t("workspace.disabled")}
-              />
-            </div>
-            <div className="mt-5">
+              <div className="mt-5">
               <ToggleRow
                 label={t("workspace.creditToggle")}
                 help={t("workspace.creditToggleHelp")}
@@ -814,9 +855,10 @@ export default function BranchSettingsPage() {
                   setSaved(null);
                 }}
               />
-            </div>
-            <div className="mt-5 flex flex-wrap gap-2">
+              </div>
+              <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
               <Button
+                className="bg-[#173f2a] hover:bg-[#102f20]"
                 onClick={() => void saveCredit()}
                 disabled={savingCredit || !creditDirty}
               >
@@ -834,111 +876,53 @@ export default function BranchSettingsPage() {
                 <CreditCard size={14} />
                 {t("workspace.openCredit")}
               </Link>
-            </div>
-          </section>
-        )}
-
-        {activeSection === "printing" && (
-          <section
-            aria-labelledby="branch-printing-heading"
-            className="max-w-5xl"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-700">
-                  {t("workspace.sections.printing")}
-                </p>
-                <h2
-                  id="branch-printing-heading"
-                  className="mt-1 text-lg font-bold text-slate-950"
-                >
-                  {t("workspace.printingTitle")}
-                </h2>
-                <p className="mt-1 text-sm leading-6 text-slate-500">
-                  {t("workspace.printingHelp")}
-                </p>
+              {creditDirty && <span className="self-center text-xs text-slate-500" role="status">{t("workspace.unsaved")}</span>}
+              {saved === "credit" && <span className="self-center text-xs text-emerald-700" role="status">{t("workspace.saved")}</span>}
               </div>
-              <Printer className="hidden text-primary-200 sm:block" size={30} />
             </div>
-            <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              {[
-                "receipts",
-                "invoices",
-                "barcodeLabels",
-                "paymentReceipts",
-                "statements",
-              ].map((key) => (
-                <div
-                  key={key}
-                  className="flex min-h-20 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 px-3.5 py-3 text-sm font-semibold text-slate-800"
-                >
-                  <FileText size={15} className="text-primary-600" />
-                  {t(`workspace.printingItems.${key}`)}
-                </div>
-              ))}
-            </div>
-            <Link
-              to={printingPath}
-              className="mt-6 inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary-700 px-4 text-sm font-bold text-white shadow-sm hover:bg-primary-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-            >
-              <Printer size={15} />
-              {t("workspace.openPrinting")}
-              <ExternalLink size={13} />
-            </Link>
+            <SummaryPanel title={v3.creditStatus}>
+              <SummaryRow label={v3.status} value={creditSettings.branchCreditEnabled ? t("workspace.enabled") : t("workspace.disabled")} />
+              <SummaryRow label={v3.eligibleCustomerType} value={v3.businessB2b} />
+              <SummaryRow label={v3.accountCreation} value={v3.automaticWhenRequired} />
+            </SummaryPanel>
           </section>
         )}
 
         {activeSection === "zatca" && (
-          <section aria-labelledby="branch-zatca-heading" className="max-w-3xl">
-            <div className="flex items-start justify-between gap-4">
+          <section aria-labelledby="branch-zatca-heading" className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(260px,1fr)]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-700">
-                  {t("workspace.sections.zatca")}
-                </p>
-                <h2
-                  id="branch-zatca-heading"
-                  className="mt-1 text-lg font-bold text-slate-950"
-                >
+                <h2 id="branch-zatca-heading" className="text-lg font-bold text-slate-950">
                   {t("workspace.zatcaTitle")}
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  {t("workspace.zatcaHelp")}
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  {v3.zatcaHelp}
                 </p>
-                <p className="mt-1 text-sm leading-6 text-slate-500">Contact the account owner if you need onboarding updates or connection changes.</p>
+                <p className="mt-1 text-sm leading-6 text-slate-500">{v3.contactOwner}</p>
               </div>
-              <ShieldCheck
-                className="hidden text-primary-200 sm:block"
-                size={30}
-              />
+              {isOwner && (
+                <Link
+                  to="/zatca"
+                  className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-xl border border-primary-200 px-4 text-sm font-bold text-primary-800 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                >
+                  <ShieldCheck size={15} />
+                  {t("workspace.manageZatca")}
+                  <ExternalLink size={13} />
+                </Link>
+              )}
             </div>
-            <div className="mt-6 flex items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-3">
-              <span className="text-sm font-semibold text-slate-800">
-                {t("workspace.branchStatus")}
-              </span>
-              <StatusChip
-                enabled={selectedBranch.is_active}
-                enabledLabel={t("workspace.active")}
-                disabledLabel={t("workspace.inactive")}
+            <SummaryPanel title={v3.zatcaStatus}>
+              <SummaryRow
+                label={v3.branchAvailability}
+                value={selectedBranch.is_active ? t("workspace.active") : t("workspace.inactive")}
               />
-            </div>
-            <p className="mt-2 text-xs leading-5 text-slate-500">This reflects the branch’s available status, not a live ZATCA connection state.</p>
-            {isOwner && (
-              <Link
-                to="/zatca"
-                className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-xl border border-primary-200 px-4 text-sm font-bold text-primary-800 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-              >
-                <ShieldCheck size={15} />
-                {t("workspace.manageZatca")}
-                <ExternalLink size={13} />
-              </Link>
-            )}
+              <SummaryRow label={v3.configurationOwner} value={v3.ownerAccount} />
+              <SummaryRow label={v3.connectionManagement} value={v3.ownerManaged} />
+              <p className="pt-1 text-xs leading-5 text-emerald-50/70">{v3.availabilityNote}</p>
+            </SummaryPanel>
           </section>
         )}
       </main>
-      <div className="flex items-center gap-1 text-xs text-slate-400">
-        <ChevronLeft size={13} className="rtl:rotate-180" />
-        <span>{t("workspace.authorityNote")}</span>
-      </div>
     </div>
   );
 }
