@@ -201,6 +201,7 @@
   .a4-statement-brand .a4-display-heading { max-width: none; font-size: 18pt; line-height: 1.08; }
   .a4-statement-brand .a4-display-subheading { margin-top: 1mm; }
   .a4-statement-document { display: grid; grid-template-columns: minmax(0,1fr) 31mm; gap: 5mm; align-items: start; min-width: 0; }
+  .a4-statement-document--without-qr { grid-template-columns: minmax(0,1fr); }
   .a4-statement-document-copy { min-width: 0; padding-top: 1mm; }
   .a4-statement-document .a4-document-title { text-align: start; }
   .a4-statement-document .a4-document-title__main { font-size: 18pt; line-height: 1.08; }

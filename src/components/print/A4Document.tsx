@@ -220,7 +220,7 @@ function ModernStatementV1({ model, options = {} }: A4DocumentProps) {
   return <Shell template="modern_split" model={model} options={options}>
     <header className={`a4-statement-head${brandIdentity ? '' : ' a4-statement-head--identityless'}`}>
       {brandIdentity && <section className="a4-statement-brand"><SellerBrand model={model} visible={branding} /></section>}
-      <section className="a4-statement-document"><div className="a4-statement-document-copy"><DocumentTitle model={model} /><section className="a4-statement-meta-card"><DateMeta model={model} /></section></div><section className="a4-statement-qr-card"><QrVerification model={model} options={options} /></section></section>
+      <section className={`a4-statement-document${options.nonFiscalDemo ? ' a4-statement-document--without-qr' : ''}`}><div className="a4-statement-document-copy"><DocumentTitle model={model} /><section className="a4-statement-meta-card"><DateMeta model={model} /></section></div>{!options.nonFiscalDemo && <section className="a4-statement-qr-card"><QrVerification model={model} options={options} /></section>}</section>
     </header>
     <div className={partyLayout('a4-statement-parties', model)}><div className="a4-statement-party-card"><Seller model={model} /></div>{hasNamedBuyer(model) && <div className="a4-statement-party-card"><Buyer model={model} /></div>}</div>
     <Adjustment model={model} />
