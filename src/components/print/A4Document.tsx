@@ -143,6 +143,34 @@ function ModernStatementItemTable({ model }: { model: DocumentViewModel }) {
   </table>
 }
 
+function LedgerItemName({ item }: { item: DocumentViewModel['items'][number] }) {
+  const english = item.description.trim()
+  const arabic = item.descriptionAr?.trim() ?? ''
+  const identical = normalizedIdentity(english) !== '' && normalizedIdentity(english) === normalizedIdentity(arabic)
+  if (english && arabic && !identical) return <span className="a4-ledger-item-name a4-ledger-item-name--bilingual"><bdi dir="ltr">{english}</bdi><span className="a4-ledger-item-name__separator" aria-hidden="true"> / </span><bdi dir="rtl">{arabic}</bdi></span>
+  const value = english || arabic
+  return <bdi className="a4-ledger-item-name" dir={arabic && !english ? 'rtl' : 'ltr'}>{value}</bdi>
+}
+
+function ledgerColumnLabel(model: DocumentViewModel, key: 'description' | 'quantity' | 'unitPrice' | 'taxable' | 'vat' | 'total') {
+  const labels = {
+    description: { en: 'Description', ar: 'الوصف' }, quantity: { en: 'Qty', ar: 'الكمية' }, unitPrice: { en: 'Unit Price', ar: 'سعر الوحدة' },
+    taxable: { en: 'Taxable', ar: 'الخاضع' }, vat: { en: 'VAT', ar: 'الضريبة' }, total: { en: 'Total', ar: 'الإجمالي' },
+  } as const
+  const label = labels[key]
+  return model.identity.language === 'ar' ? `${label.ar} / ${label.en}` : `${label.en} / ${label.ar}`
+}
+
+function LedgerItemTable({ model }: { model: DocumentViewModel }) {
+  const credit = model.identity.kind === 'credit_note'
+  const hasDiscount = model.items.some(item => item.discount > 0.005)
+  return <table className={`a4-items a4-ledger-items${hasDiscount ? ' a4-ledger-items--with-discount' : ''}`}>
+    <colgroup><col className="a4-ledger-items__index" /><col className="a4-ledger-items__description" /><col className="a4-ledger-items__quantity" /><col className="a4-ledger-items__price" />{hasDiscount && <col className="a4-ledger-items__discount" />}<col className="a4-ledger-items__taxable" /><col className="a4-ledger-items__vat" /><col className="a4-ledger-items__total" /></colgroup>
+    <thead><tr><th>#</th><th>{ledgerColumnLabel(model, 'description')}</th><th>{ledgerColumnLabel(model, 'quantity')}</th><th>{ledgerColumnLabel(model, 'unitPrice')}</th>{hasDiscount && <th>{documentLabel(model.identity.language, 'discount')}</th>}<th>{ledgerColumnLabel(model, 'taxable')}</th><th>{ledgerColumnLabel(model, 'vat')}</th><th>{ledgerColumnLabel(model, 'total')}</th></tr></thead>
+    <tbody>{model.items.map((item, index) => <tr key={`${item.description}-${index}`}><td>{index + 1}</td><td><LedgerItemName item={item} /></td><td><bdi dir="ltr">{formatDocumentQuantity(credit && item.creditedQuantity != null ? item.creditedQuantity : item.quantity, model)}</bdi>{names(model, item.unitName, item.unitNameAr).map((value, unitIndex) => <span className="a4-ledger-item-unit" key={`${value}-${unitIndex}`} dir="auto">{value}</span>)}</td><td><Money value={item.unitPrice} model={model} /></td>{hasDiscount && <td>{item.discount > 0.005 ? <Money value={item.discount} model={model} /> : '—'}</td>}<td><Money value={item.taxableAmount} model={model} /></td><td><span><bdi dir="ltr">{formatDocumentQuantity(item.vatRate, model)}%</bdi> · <Money value={item.vatAmount} model={model} /></span></td><td><Money value={item.lineTotal} model={model} /></td></tr>)}</tbody>
+  </table>
+}
+
 function Totals({ model }: { model: DocumentViewModel }) { return <section className="a4-totals">{buildVisibleTotals(model).map(row => <div className={row.emphasized ? 'a4-totals__grand' : undefined} key={row.key}><span>{row.label}</span><Money value={row.value} model={model} /></div>)}</section> }
 
 function Payment({ model }: { model: DocumentViewModel }) {
@@ -240,7 +268,18 @@ function ModernStatementV1({ model, options = {} }: A4DocumentProps) {
 }
 function MinimalProfessionalV1({ model, options = {} }: A4DocumentProps) { const branding = showsStandardBranding(model, options); return <Shell template="minimal_professional" model={model} options={options}><header className="a4-minimal-head"><SellerBrand model={model} visible={branding} /><DocumentTitle model={model} options={options} /></header><div className={partyLayout('a4-minimal-parties', model)}><Seller model={model} /><Buyer model={model} /><DateMeta model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-closing-group"><div className="a4-minimal-total"><Totals model={model} /></div><div className="a4-minimal-foot"><Payment model={model} /><QrVerification model={model} options={options} /></div></div><Footer model={model} /></Shell> }
 function ExecutiveFrameV1({ model, options = {} }: A4DocumentProps) { const branding = showsStandardBranding(model, options); return <Shell template="executive_green" model={model} options={options}><header className="a4-executive-band"><section><SellerBrand model={model} visible={branding} /></section><section className="a4-executive-document"><DocumentTitle model={model} options={options} /><QrVerification model={model} options={options} /></section></header><section className="a4-executive-meta"><DateMeta model={model} /></section><div className={partyLayout('a4-executive-parties', model)}><Seller model={model} /><Buyer model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-executive-lower a4-closing-group"><Payment model={model} /><Totals model={model} /></div><Footer model={model} /></Shell> }
-function AccountingLedgerV1({ model, options = {} }: A4DocumentProps) { const branding = showsStandardBranding(model, options); return <Shell template="clean_ledger" model={model} options={options}><header className="a4-ledger-head"><SellerBrand model={model} visible={branding} /><DocumentTitle model={model} options={options} /><DateMeta model={model} /></header><div className={partyLayout('a4-ledger-parties', model)}><Seller model={model} /><Buyer model={model} /></div><Adjustment model={model} /><ItemTable model={model} /><div className="a4-closing-group"><div className="a4-ledger-summary"><Payment model={model} /><Totals model={model} /></div><div className="a4-ledger-verification"><QrVerification model={model} options={options} /><section className="a4-ledger-note"><Footer model={model} /></section></div></div></Shell> }
+function AccountingLedgerV1({ model, options = {} }: A4DocumentProps) {
+  const branding = showsStandardBranding(model, options)
+  const brandIdentity = branding && (Boolean(model.presentation.logo.visible && (model.presentation.logo.previewUrl ?? model.presentation.logo.assetPath)) || [model.seller.displayHeading, model.seller.displaySubheading].some(value => normalizedIdentity(value) !== '' && !isLegalSellerIdentity(model.seller, value)))
+  return <Shell template="clean_ledger" model={model} options={options}>
+    <header className={`a4-ledger-head${brandIdentity ? '' : ' a4-ledger-head--brandless'}`}>{brandIdentity && <section className="a4-ledger-brand"><SellerBrand model={model} visible={branding} /></section>}<section className="a4-ledger-document"><DocumentTitle model={model} /></section><section className="a4-ledger-meta"><DateMeta model={model} /></section></header>
+    <div className={partyLayout('a4-ledger-parties', model)}><Seller model={model} /><Buyer model={model} /></div>
+    <Adjustment model={model} />
+    <LedgerItemTable model={model} />
+    <div className="a4-ledger-closeout a4-closing-group"><section className="a4-ledger-payment"><Payment model={model} />{!options.nonFiscalDemo && <QrVerification model={model} options={options} />}</section><section className="a4-ledger-totals"><Totals model={model} /></section></div>
+    <Footer model={model} />
+  </Shell>
+}
 function ContemporaryModularV1({ model, options = {} }: A4DocumentProps) { const branding = showsStandardBranding(model, options); return <Shell template="contemporary_border" model={model} options={options}><header className="a4-modular-head"><SellerBrand model={model} visible={branding} /><section className="a4-modular-document"><DocumentTitle model={model} options={options} /><DateMeta model={model} /></section></header><div className={partyLayout('a4-modular-cards', model)}><Seller model={model} /><Buyer model={model} /></div><Adjustment model={model} /><section className="a4-modular-table"><ItemTable model={model} /></section><div className="a4-modular-bottom a4-closing-group"><section className="a4-modular-payment"><Payment model={model} /></section><section className="a4-modular-total"><Totals model={model} /></section><section className="a4-modular-verification"><QrVerification model={model} options={options} /></section></div><Footer model={model} /></Shell> }
 
 const RENDERERS: Record<A4TemplateRendererId, (props: A4DocumentProps) => ReactNode> = {

@@ -281,25 +281,54 @@
   .a4-document--branding-hidden .a4-executive-document { border-inline-start: 0; }
 
   /* 5 — Accounting Ledger */
-  .a4-document--clean_ledger { --invoice-page-padding-inline: 11mm; font-variant-numeric: tabular-nums; }
-  .a4-ledger-head { display: grid; grid-template-columns: minmax(0,1fr) 58mm 68mm; gap: 0; border: 2px solid var(--invoice-primary); }
-  .a4-ledger-head > * { padding: 4mm; }
-  .a4-ledger-head > * + * { border-inline-start: 1px solid var(--invoice-primary); }
-  .a4-ledger-head .a4-document-title { text-align: start; }
-  .a4-ledger-head .a4-document-title__main { font-size: 16pt; }
-  .a4-ledger-head .a4-meta { margin: 0; }
-  .a4-ledger-parties { display: grid; grid-template-columns: 1fr 1fr; margin-block: 0 4mm; border: 1px solid var(--invoice-primary); border-top: 0; }
-  .a4-ledger-parties > * { padding: 3.5mm; border: 0; }
-  .a4-ledger-parties > * + * { border-inline-start: 1px solid var(--invoice-primary); }
+  .a4-document--clean_ledger { --invoice-page-padding-inline: 10mm; --invoice-page-padding-top: 8mm; font-variant-numeric: tabular-nums; }
+  .a4-ledger-head { display: grid; grid-template-columns: minmax(0,1fr) 54mm 62mm; gap: 0; border: 1.25px solid var(--invoice-heading); }
+  .a4-ledger-head > * { min-width: 0; padding: 3mm; }
+  .a4-ledger-head > * + * { border-inline-start: 1px solid var(--invoice-border); }
+  .a4-ledger-brand { border-top: 2px solid var(--invoice-primary); }
+  .a4-ledger-brand .a4-logo { max-width: 32mm; max-height: 12mm; margin-bottom: 1mm; }
+  .a4-ledger-brand .a4-display-heading { font-size: 15pt; line-height: 1.05; }
+  .a4-ledger-brand .a4-display-subheading { margin-top: .5mm; font-size: 7.8pt; }
+  .a4-ledger-document .a4-document-title { text-align: start; }
+  .a4-ledger-document .a4-document-title__main { font-size: 15pt; line-height: 1.06; }
+  .a4-ledger-document .a4-document-title__sub { margin-top: .6mm; font-size: 7.8pt; }
+  .a4-ledger-meta .a4-meta { margin: 0; gap: .45mm; }
+  .a4-ledger-meta .a4-meta div { gap: 2.5mm; padding-bottom: .55mm; }
+  .a4-ledger-meta .a4-meta dd { white-space: nowrap; }
+  .a4-ledger-head--brandless { grid-template-columns: minmax(0,1fr) 62mm; justify-content: end; }
+  .a4-ledger-parties { display: grid; grid-template-columns: 1fr 1fr; margin-block: 0 3mm; border: 1px solid var(--invoice-border); border-top: 0; }
+  .a4-ledger-parties > * { padding: 2.5mm 3mm; border: 0; line-height: 1.26; }
+  .a4-ledger-parties > * + * { border-inline-start: 1px solid var(--invoice-border); }
   .a4-ledger-parties.a4-parties--seller-only { grid-template-columns: 1fr; }
-  .a4-document--clean_ledger .a4-items { border: 1px solid var(--invoice-primary); font-size: 7.5pt; }
-  .a4-document--clean_ledger .a4-items th,.a4-document--clean_ledger .a4-items td { border-inline: 1px solid var(--invoice-border); padding-block: 1.7mm; }
-  .a4-document--clean_ledger .a4-items thead { color: var(--invoice-table-head-fg); background: var(--invoice-table-head); }
-  .a4-ledger-summary { display: grid; grid-template-columns: minmax(0,1fr) 72mm; gap: 0; border: 1px solid var(--invoice-primary); border-top: 0; }
-  .a4-ledger-summary > * { padding: 4mm; }.a4-ledger-summary > * + * { border-inline-start: 1px solid var(--invoice-primary); }
-  .a4-ledger-verification { display: grid; grid-template-columns: 31mm minmax(0,1fr); gap: 7mm; align-items: end; margin-top: 5mm; padding: 4mm; border: 1px solid var(--invoice-primary); }
-  .a4-ledger-note .a4-footer { margin: 0; padding: 0; border: 0; align-items: start; }
-  .a4-document--branding-hidden .a4-ledger-head { grid-template-columns: minmax(0,1fr) 68mm; }
+  .a4-ledger-parties .a4-legal-seller__name { font-size: 9.6pt; line-height: 1.14; }
+  .a4-ledger-parties .a4-section-title { margin-bottom: .65mm; }
+  .a4-ledger-parties .a4-buyer { padding: 0; border: 0; background: transparent; }
+  .a4-ledger-items { table-layout: fixed; border: 1px solid var(--invoice-heading); font-size: 6.9pt; }
+  .a4-ledger-items thead { color: var(--invoice-on-primary); background: var(--invoice-primary); }
+  .a4-ledger-items th { padding: 1.35mm .95mm; border: 0; border-inline-end: 1px solid color-mix(in srgb,var(--invoice-on-primary) 35%,transparent); color: inherit; font-size: 5.75pt; font-weight: 850; line-height: 1.15; text-align: end; text-transform: uppercase; white-space: normal; overflow-wrap: anywhere; }
+  .a4-ledger-items th:nth-child(2) { text-align: start; }
+  .a4-ledger-items td { padding: 1.45mm .95mm; border-inline-end: 1px solid var(--invoice-border); border-bottom: 1px solid var(--invoice-border); text-align: end; vertical-align: middle; white-space: nowrap; }
+  .a4-ledger-items th:last-child,.a4-ledger-items td:last-child { border-inline-end: 0; }
+  .a4-ledger-items td:nth-child(2) { color: var(--invoice-heading); font-weight: 700; text-align: start; vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
+  .a4-ledger-items tbody tr:last-child td { border-bottom: 0; }
+  .a4-ledger-item-name { display: inline; unicode-bidi: isolate; }
+  .a4-ledger-item-name--bilingual { line-height: 1.32; }
+  .a4-ledger-item-name__separator { color: var(--invoice-muted); font-weight: 500; }
+  .a4-ledger-item-unit { display: block; margin-top: .2mm; color: var(--invoice-muted); font-size: 6pt; overflow: hidden; text-overflow: ellipsis; }
+  .a4-ledger-items__index { width: 4%; }.a4-ledger-items__description { width: 35%; }.a4-ledger-items__quantity { width: 10%; }.a4-ledger-items__price { width: 11%; }.a4-ledger-items__taxable { width: 12%; }.a4-ledger-items__vat { width: 14%; }.a4-ledger-items__total { width: 14%; }
+  .a4-ledger-items--with-discount .a4-ledger-items__description { width: 26%; }.a4-ledger-items--with-discount .a4-ledger-items__quantity { width: 9%; }.a4-ledger-items--with-discount .a4-ledger-items__price { width: 10%; }.a4-ledger-items--with-discount .a4-ledger-items__discount { width: 10%; }.a4-ledger-items--with-discount .a4-ledger-items__taxable { width: 11%; }.a4-ledger-items--with-discount .a4-ledger-items__vat { width: 13%; }.a4-ledger-items--with-discount .a4-ledger-items__total { width: 13%; }
+  .a4-ledger-closeout { display: grid; grid-template-columns: minmax(0,1fr) 72mm; gap: 5mm; align-items: start; margin-top: 4mm; padding-top: 3mm; border-top: 1.25px solid var(--invoice-heading); }
+  .a4-ledger-payment { display: grid; grid-template-columns: minmax(0,1fr) 27mm; gap: 4mm; align-items: start; min-width: 0; }
+  .a4-ledger-payment .a4-payment { padding-top: .3mm; font-size: 7.8pt; }
+  .a4-ledger-payment .a4-payment > div:not(.a4-section-title) { gap: .9mm 3mm; margin-bottom: .55mm; }
+  .a4-ledger-payment .a4-section-title { margin-bottom: .65mm; }
+  .a4-ledger-payment .a4-qr { font-size: 6pt; line-height: 1.16; }
+  .a4-ledger-payment .a4-qr img,.a4-ledger-payment .a4-qr-placeholder { width: 22mm; height: 22mm; }
+  .a4-ledger-totals .a4-totals { overflow: hidden; border: 1px solid var(--invoice-heading); padding: 0; background: var(--invoice-total-surface); font-size: 7.8pt; }
+  .a4-ledger-totals .a4-totals > div { margin: 0; padding: 1.05mm 3mm; }
+  .a4-ledger-totals .a4-totals__grand { margin: 0 !important; padding: 2.35mm 3mm; border-top: 1.5px solid var(--invoice-heading); font-size: 12.5pt; line-height: 1.15; }
+  .a4-ledger-closeout + .a4-footer:empty { display: none; }
+  .a4-document--branding-hidden .a4-ledger-head { grid-template-columns: minmax(0,1fr) 62mm; }
 
   /* 6 — Contemporary Modular */
   .a4-document--contemporary_border { --invoice-page-padding-top: 9mm; }

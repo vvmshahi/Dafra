@@ -220,6 +220,9 @@ const permittedPaths = new Set([
   // Authorized Modern Statement A4 presentation coverage only; it reads the
   // canonical issued-document model and cannot change financial authority.
   'scripts/test-modern-statement-a4.mjs',
+  // Authorized Accounting Ledger A4 presentation coverage only; it reads the
+  // canonical issued-document model and cannot change financial authority.
+  'scripts/test-accounting-ledger-a4.mjs',
   'scripts/test-zatca-phase2-finalization-v2.mjs',
   // Authorized Classic thermal presentation refinement only.
   'scripts/test-thermal-receipt-layouts-runtime.mjs',

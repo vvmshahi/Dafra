@@ -8,7 +8,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "test": "npm run test:register-session-netting && npm run test:final-web-printing-refinements && npm run test:modern-statement-a4 && npm run test:thermal-receipt-layouts && npm run test:thermal-preview-parity && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx && npm run test:branch-billing-profile-ux && npm run test:profile-aware-catalogue-navigation && npm run test:saved-services-catalogue && npm run test:catalogue-bulk-export && npm run test:catalogue-bulk-import && npm run test:custom-line-cart-architecture && npm run test:custom-line-server-checkout && npm run test:p0-saved-checkout-recovery && npm run test:source-aware-reporting-credit-hardening",
+    "test": "npm run test:register-session-netting && npm run test:final-web-printing-refinements && npm run test:modern-statement-a4 && npm run test:accounting-ledger-a4 && npm run test:thermal-receipt-layouts && npm run test:thermal-preview-parity && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx && npm run test:branch-billing-profile-ux && npm run test:profile-aware-catalogue-navigation && npm run test:saved-services-catalogue && npm run test:catalogue-bulk-export && npm run test:catalogue-bulk-import && npm run test:custom-line-cart-architecture && npm run test:custom-line-server-checkout && npm run test:p0-saved-checkout-recovery && npm run test:source-aware-reporting-credit-hardening",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -43,6 +43,7 @@
     "test:a4-v1-foundation": "node scripts/test-a4-v1-foundation.mjs",
     "test:classic-business-a4": "node scripts/test-classic-business-a4.mjs",
     "test:modern-statement-a4": "node scripts/test-modern-statement-a4.mjs",
+    "test:accounting-ledger-a4": "node scripts/test-accounting-ledger-a4.mjs",
     "audit:phase4f-a4-templates": "node scripts/audit-phase4f-a4-templates.mjs",
     "test:phase4g-invoice-release-readiness": "node scripts/test-phase4g-invoice-release-readiness.mjs",
     "test:issued-document-presentation-integrity": "node scripts/test-issued-document-presentation-integrity.mjs",
