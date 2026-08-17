@@ -136,10 +136,45 @@ try {
         if (fixtureCase.qr === 'demo') assert.doesNotMatch(markup, /DEMO — NOT A TAX INVOICE/)
         if (isCredit) assert.match(markup, /SAMPLE-CN-0042/)
         if (layout.storedId === 'classic') {
-          if (fixtureCase.language === 'both') assert.match(markup, /thermal-classic-line__names--bilingual/)
+          if (fixtureCase.language === 'both') assert.match(markup, /thermal-classic-line__names--combined/)
           assert.equal((markup.match(/thermal-classic-line__vat/g) ?? []).length, items.length)
           assert.equal((markup.match(/thermal-classic-line__discount/g) ?? []).length, items.filter(item => item.discount > 0.005).length)
           assert.match(markup, fixtureCase.payment === 'split' ? /thermal-classic-payments--split/ : /thermal-classic-payments--single/)
+          if (!isCredit) assert.match(markup, /thermal-classic-total-label/)
+
+          if (width === '80mm' && fixtureCase.id === 'both-many-card-qr') {
+            const classicMarkupFor = (description, descriptionAr, itemOverrides = {}, documentOverrides = {}) => renderToStaticMarkup(createElement(ThermalReceipt, {
+              model: {
+                ...model,
+                ...documentOverrides,
+                items: [{ ...items[0], description, descriptionAr, quantity: 1, unitName: 'piece', unitNameAr: 'قطعة', unitPrice: 2, lineTotal: 2, taxableAmount: 1.74, vatRate: 15, vatAmount: .26, discount: 0, ...itemOverrides }],
+              },
+              options: { preview: true },
+            }))
+            const englishOnly = classicMarkupFor('Pepsi', null)
+            assert.match(englishOnly, /Pepsi/)
+            assert.doesNotMatch(englishOnly, /بيبسي/)
+            const arabicOnly = classicMarkupFor('', 'ماء')
+            assert.match(arabicOnly, /ماء/)
+            assert.doesNotMatch(arabicOnly, /Pepsi|بيبسي/)
+            const bilingual = classicMarkupFor('Pepsi', 'بيبسي')
+            assert.match(bilingual, /Pepsi[\s\S]*بيبسي/)
+            assert.match(bilingual, /thermal-classic-line__names--combined/)
+            assert.doesNotMatch(bilingual, /thermal-classic-line__names--bilingual/)
+            const duplicate = classicMarkupFor('Pepsi', 'pepsi')
+            assert.equal((duplicate.match(/Pepsi|pepsi/g) ?? []).length, 1)
+            const longBilingual = classicMarkupFor('Very Long English Product Name For A Narrow Thermal Receipt', 'اسم منتج عربي طويل جداً لإيصال حراري ضيق')
+            assert.match(longBilingual, /Very Long English Product Name For A Narrow Thermal Receipt[\s\S]*اسم منتج عربي طويل جداً لإيصال حراري ضيق/)
+            assert.match(bilingual, /VAT Amount 15%[\s\S]*مبلغ الضريبة 15%[\s\S]*0\.26/)
+            assert.doesNotMatch(bilingual, /VAT included|VAT excluded|VAT added/)
+            const noRate = classicMarkupFor('Pepsi', 'بيبسي', { vatRate: 0, vatAmount: .26 })
+            assert.match(noRate, /VAT Amount \/ مبلغ الضريبة/)
+            assert.doesNotMatch(noRate, /VAT Amount 0%/)
+            const credit = classicMarkupFor('Pepsi', 'بيبسي', {}, { identity: { ...model.identity, kind: 'credit_note', invoiceType: 'credit_note' } })
+            assert.match(credit, /Pepsi[\s\S]*بيبسي/)
+            assert.match(credit, /VAT Amount 15%[\s\S]*مبلغ الضريبة 15%/)
+            assert.match(bilingual, /thermal-row thermal-row-strong[\s\S]*thermal-classic-total-label[\s\S]*thermal-value/)
+          }
         }
         if (layout.storedId === 'compact') {
           if (fixtureCase.language === 'both') assert.match(markup, /thermal-compact-line__names--bilingual/)

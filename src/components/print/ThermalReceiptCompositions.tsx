@@ -231,23 +231,20 @@ function ClassicItems({ receipt }: { receipt: ReceiptComposition }) {
   const is58 = model.presentation.thermal.width === '58mm'
   return <section className={`thermal-items thermal-classic-lines ${is58 ? 'thermal-items--stacked' : 'thermal-items--wide'}`}>{model.items.map((item, index) => <article className="thermal-item thermal-classic-line" key={`${item.description}-${index}`}>
     <ClassicItemName item={item} model={model} />
-    <div className="thermal-item-values"><span><QuantityWithUnit quantity={item.quantity} item={item} model={model} /> <span aria-hidden="true">×</span> <Money value={item.unitPrice} model={model} /></span><span><Money value={item.lineTotal} model={model} /></span></div>
+    <div className="thermal-item-values thermal-classic-line__values"><span><QuantityWithUnit quantity={item.quantity} item={item} model={model} /> <span aria-hidden="true">×</span> <Money value={item.unitPrice} model={model} /></span><strong className="thermal-classic-line__amount"><Money value={item.lineTotal} model={model} /></strong></div>
     <ClassicItemFiscalDetail receipt={receipt} item={item} />
   </article>)}</section>
 }
 
 function ClassicItemName({ item, model }: { item: DocumentViewModel['items'][number]; model: DocumentViewModel }) {
-  const bilingualPair = model.identity.language === 'both'
-    && !!item.description.trim()
-    && !!item.descriptionAr?.trim()
-    && !sameIdentity(item.description, item.descriptionAr)
-  if (bilingualPair) {
-    return <div className="thermal-item-name thermal-classic-line__names thermal-classic-line__names--bilingual">
-      <span dir="ltr">{item.description}</span><span dir="rtl">{item.descriptionAr}</span>
-    </div>
-  }
-  return <div className={`thermal-item-name thermal-classic-line__names ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>
-    {names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}
+  const primary = item.description.trim()
+  const secondary = item.descriptionAr?.trim() ?? ''
+  const combined = !!primary && !!secondary && !sameIdentity(primary, secondary)
+  const renderedName = primary || secondary
+  return <div className={`thermal-item-name thermal-classic-line__names thermal-classic-line__names--combined ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`} dir="auto">
+    {combined
+      ? <><bdi dir="auto">{primary}</bdi><span className="thermal-classic-line__name-separator"> / </span><bdi dir="auto">{secondary}</bdi></>
+      : <bdi dir="auto">{renderedName}</bdi>}
   </div>
 }
 
@@ -256,10 +253,19 @@ function ClassicItemFiscalDetail({ receipt, item }: { receipt: ReceiptCompositio
   const hasVat = Math.abs(item.vatAmount) > 0.005 || Math.abs(item.vatRate) > 0.005
   if (!hasVat && item.discount <= 0.005 && !(isCredit && item.creditedQuantity != null)) return null
   return <div className="thermal-item-detail thermal-classic-line__detail">
-    {hasVat && <span className="thermal-classic-line__vat">{documentLabel(model.identity.language, 'vatAmount')} ({formatDocumentQuantity(item.vatRate, model)}%): <Money value={item.vatAmount} model={model} /></span>}
+    {hasVat && <span className="thermal-classic-line__vat"><ClassicVatLabel item={item} model={model} />: <Money value={item.vatAmount} model={model} /></span>}
     {item.discount > 0.005 && <span className="thermal-classic-line__discount">{documentLabel(model.identity.language, 'discount')}: <bdi dir="ltr">−</bdi><Money value={item.discount} model={model} /></span>}
     {isCredit && item.creditedQuantity != null && <span>{documentLabel(model.identity.language, 'quantity')}: <QuantityWithUnit quantity={item.creditedQuantity} item={item} model={model} /></span>}
   </div>
+}
+
+function ClassicVatLabel({ item, model }: { item: DocumentViewModel['items'][number]; model: DocumentViewModel }) {
+  const hasRate = Math.abs(item.vatRate) > 0.005
+  if (!hasRate) return <>{documentLabel(model.identity.language, 'vatAmount')}</>
+  const rate = `${formatDocumentQuantity(item.vatRate, model)}%`
+  if (model.identity.language === 'ar') return <bdi dir="rtl">{documentLabel('ar', 'vatAmount')} {rate}</bdi>
+  if (model.identity.language === 'en') return <bdi dir="ltr">{documentLabel('en', 'vatAmount')} {rate}</bdi>
+  return <><bdi dir="ltr">{documentLabel('en', 'vatAmount')} {rate}</bdi><span aria-hidden="true"> / </span><bdi dir="rtl">{documentLabel('ar', 'vatAmount')} {rate}</bdi></>
 }
 
 function StructuredItems({ receipt }: { receipt: ReceiptComposition }) {
@@ -363,9 +369,14 @@ function Totals({ receipt }: { receipt: ReceiptComposition }) {
 }
 
 function ClassicTotals({ receipt }: { receipt: ReceiptComposition }) {
-  return <section className="thermal-totals thermal-classic-totals">{receipt.visibleTotals.map(row => <Row key={row.key} label={row.label} strong={row.emphasized}>
+  return <section className="thermal-totals thermal-classic-totals">{receipt.visibleTotals.map(row => <Row key={row.key} label={row.key === 'total' && !receipt.isCredit ? <ClassicGrandTotalLabel receipt={receipt} /> : row.label} strong={row.emphasized}>
     {row.key === 'discount' ? <><bdi dir="ltr">−</bdi><Money value={row.value} model={receipt.model} /></> : <Money value={row.value} model={receipt.model} />}
   </Row>)}</section>
+}
+
+function ClassicGrandTotalLabel({ receipt }: { receipt: ReceiptComposition }) {
+  const lines = documentLabelLines(receipt.model.identity.language, 'totalIncludingVat')
+  return <span className="thermal-classic-total-label">{lines.map((line, index) => <span key={`${line}-${index}`} dir="auto">{line}</span>)}</span>
 }
 
 function CompactTotals({ receipt }: { receipt: ReceiptComposition }) {
