@@ -1,4 +1,4 @@
-import type { Branch, Invoice, InvoiceIdentitySnapshot, InvoiceItem, InvoicePresentationSettings, Payment } from '@/types/database'
+import type { Branch, Invoice, InvoiceBuyerIdentitySnapshotV1, InvoiceIdentitySnapshot, InvoiceItem, InvoicePresentationSettings, Payment } from '@/types/database'
 import type { AtomicReceiptPayload } from '@/lib/zatca/atomicCheckout'
 import { buildPresentationDocument, documentLanguage, type DocumentViewModel } from './documentViewModel'
 import { DOCUMENT_PREVIEW_FIXTURE } from './documentPreviewFixture'
@@ -105,6 +105,7 @@ export function documentFromAtomicReceipt(receipt: AtomicReceiptPayload): Docume
       fidelity: 'exact_snapshot',
     },
     buyer: {
+      snapshotState: receipt.customer == null ? 'walk_in' : 'captured',
       name: atomicText(customer.business_name) ?? atomicText(customer.name),
       nameAr: atomicText(customer.business_name_ar) ?? atomicText(customer.name_ar),
       vatNumber: atomicText(customer.vat_number),
@@ -112,6 +113,7 @@ export function documentFromAtomicReceipt(receipt: AtomicReceiptPayload): Docume
       addressAr: atomicText(customer.address_ar),
       identifierType: atomicText(customer.cr_number) ? 'CR' : null,
       identifierValue: atomicText(customer.cr_number),
+      phone: atomicText(customer.phone),
       type: atomicText(customer.customer_type),
       isWalkIn: receipt.customer == null,
     },
@@ -163,22 +165,24 @@ export function documentFromPosReceipt(input: PosReceiptDocumentInput): Document
   const resolved = resolveRuntimeInvoicePresentation({ branch, savedSettings: input.presentationSettings })
   const payments = input.payments.map(payment => ({ method: payment.method, amount: payment.amount, cashTendered: payment.method === 'cash' ? payment.amountReceived ?? input.cashReceived ?? null : null, change: payment.method === 'cash' ? payment.changeAmount ?? input.change ?? null : null, reference: null }))
   const buyerAddress = resolved.invoiceLanguage === 'ar' ? input.customerAddressAr ?? input.customerAddress ?? null : input.customerAddress ?? input.customerAddressAr ?? null
-  return buildPresentationDocument({ settings: resolved.presentation, language: resolved.invoiceLanguage, printMode: resolved.printMode, registeredName: input.businessNameEn, registeredNameAr: input.businessNameAr, vatNumber: input.vatNumber, registrationType: null, registrationNumber: null, registeredAddress: input.branchAddress, branchName: input.branchName, branchNameAr: input.branchNameAr, logoPreviewUrl: resolved.logoUrl }, { source: 'legacy', identity: { kind: 'invoice', invoiceType: input.isStandardInvoice ? 'standard' : 'simplified', number: input.invoiceNumber, uuid: null, issueTimestamp: input.createdAt, supplyDate: null, language: resolved.invoiceLanguage, direction: resolved.invoiceLanguage === 'ar' ? 'rtl' : 'ltr', snapshotVersion: null, legacy: true, fidelity: 'best_effort' }, buyer: { name: input.customerName, nameAr: input.customerNameAr, vatNumber: input.buyerVatNumber, address: buyerAddress, addressAr: input.customerAddressAr ?? null, identifierType: input.buyerIdentifierType ?? null, identifierValue: input.buyerIdentifierValue ?? null, type: input.isStandardInvoice ? 'business' : 'individual', isWalkIn: input.hasSelectedCustomer === false }, items: input.items.map(item => ({ description: item.name, descriptionAr: item.nameAr ?? null, quantity: item.qty, unitName: item.unitName ?? null, unitNameAr: item.unitNameAr ?? null, unitCode: item.unitCode ?? null, baseQuantity: item.baseQuantity ?? null, baseUnitName: item.baseUnitName ?? null, baseUnitNameAr: item.baseUnitNameAr ?? null, unitPrice: item.unitPrice, discount: 0, taxableAmount: item.subtotal ?? item.lineTotal, vatRate: rate(item.taxRate), vatAmount: item.taxAmount ?? 0, vatCategory: item.taxCategory ?? null, lineTotal: item.lineTotal, creditedQuantity: null })), totals: { currency: 'SAR', subtotal: input.subtotal, discount: input.discountAmount ?? 0, taxableAmount: input.subtotal, vat: input.taxAmount, total: input.total, paid: payments.reduce((sum, payment) => sum + payment.amount, 0), refunded: 0, balance: input.total - payments.reduce((sum, payment) => sum + payment.amount, 0) }, payments, customerCredit: input.customerCredit ?? null, compliance: { qr: { source: input.zatcaQrCode ? 'stored_reference' : 'unavailable', reference: input.zatcaQrCode ?? null }, xmlState: 'unavailable', originalDocument: { id: null, number: null }, creditReason: null } })
+  return buildPresentationDocument({ settings: resolved.presentation, language: resolved.invoiceLanguage, printMode: resolved.printMode, registeredName: input.businessNameEn, registeredNameAr: input.businessNameAr, vatNumber: input.vatNumber, registrationType: null, registrationNumber: null, registeredAddress: input.branchAddress, branchName: input.branchName, branchNameAr: input.branchNameAr, logoPreviewUrl: resolved.logoUrl }, { source: 'legacy', identity: { kind: 'invoice', invoiceType: input.isStandardInvoice ? 'standard' : 'simplified', number: input.invoiceNumber, uuid: null, issueTimestamp: input.createdAt, supplyDate: null, language: resolved.invoiceLanguage, direction: resolved.invoiceLanguage === 'ar' ? 'rtl' : 'ltr', snapshotVersion: null, legacy: true, fidelity: 'best_effort' }, buyer: { snapshotState: input.hasSelectedCustomer === false ? 'walk_in' : 'captured', name: input.customerName, nameAr: input.customerNameAr, vatNumber: input.buyerVatNumber, address: buyerAddress, addressAr: input.customerAddressAr ?? null, identifierType: input.buyerIdentifierType ?? null, identifierValue: input.buyerIdentifierValue ?? null, phone: null, type: input.isStandardInvoice ? 'business' : 'individual', isWalkIn: input.hasSelectedCustomer === false }, items: input.items.map(item => ({ description: item.name, descriptionAr: item.nameAr ?? null, quantity: item.qty, unitName: item.unitName ?? null, unitNameAr: item.unitNameAr ?? null, unitCode: item.unitCode ?? null, baseQuantity: item.baseQuantity ?? null, baseUnitName: item.baseUnitName ?? null, baseUnitNameAr: item.baseUnitNameAr ?? null, unitPrice: item.unitPrice, discount: 0, taxableAmount: item.subtotal ?? item.lineTotal, vatRate: rate(item.taxRate), vatAmount: item.taxAmount ?? 0, vatCategory: item.taxCategory ?? null, lineTotal: item.lineTotal, creditedQuantity: null })), totals: { currency: 'SAR', subtotal: input.subtotal, discount: input.discountAmount ?? 0, taxableAmount: input.subtotal, vat: input.taxAmount, total: input.total, paid: payments.reduce((sum, payment) => sum + payment.amount, 0), refunded: 0, balance: input.total - payments.reduce((sum, payment) => sum + payment.amount, 0) }, payments, customerCredit: input.customerCredit ?? null, compliance: { qr: { source: input.zatcaQrCode ? 'stored_reference' : 'unavailable', reference: input.zatcaQrCode ?? null }, xmlState: 'unavailable', originalDocument: { id: null, number: null }, creditReason: null } })
 }
 
 const address = (value: { buildingNumber?: string | null; street?: string | null; district?: string | null; city?: string | null; country?: string | null; postalCode?: string | null }) => [value.buildingNumber, value.street, value.district, value.city, value.country, value.postalCode].filter(Boolean).join(', ') || null
 const n = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0
 const rate = (value: unknown) => { const numeric = n(value); return Math.abs(numeric) <= 1 ? numeric * 100 : numeric }
 
-function base(input: StoredDocumentInput, source: DocumentViewModel['source'], snapshotVersion: 1 | 2 | null, legacy: boolean): Omit<DocumentViewModel, 'seller' | 'presentation' | 'template' | 'format'> {
-  const { invoice, items, payments, customer } = input
+function base(input: StoredDocumentInput, source: DocumentViewModel['source'], snapshotVersion: 1 | 2 | 3 | null, legacy: boolean): Omit<DocumentViewModel, 'seller' | 'presentation' | 'template' | 'format'> {
+  const { invoice, items, payments } = input
   const paid = payments.reduce((sum, payment) => sum + n(payment.amount), 0)
   const isCredit = invoice.zatca_invoice_type === 'credit_note'
   const isDebit = invoice.zatca_invoice_type === 'debit_note'
   return {
     source,
     identity: { kind: isCredit ? 'credit_note' : isDebit ? 'debit_note' : 'invoice', invoiceType: input.authoritativeDocumentKind ?? invoice.zatca_invoice_type, number: invoice.invoice_number, uuid: invoice.zatca_uuid || null, issueTimestamp: invoice.created_at, supplyDate: invoice.supply_date, language: documentLanguage(invoice.document_language), direction: 'ltr', snapshotVersion, legacy, fidelity: legacy ? 'best_effort' : 'exact_snapshot' },
-    buyer: { name: customer?.name ?? null, nameAr: customer?.nameAr ?? null, vatNumber: customer?.vatNumber ?? null, address: customer?.address ?? null, addressAr: customer?.addressAr ?? null, identifierType: customer?.identifierType ?? null, identifierValue: customer?.identifierValue ?? null, type: customer?.type ?? null, isWalkIn: !invoice.customer_id },
+    // Never project a current customer record into a stored fiscal document.
+    // V3 replaces this compatibility shell with its immutable buyer snapshot.
+    buyer: { snapshotState: invoice.customer_id ? 'legacy_unavailable' : 'walk_in', name: null, nameAr: null, vatNumber: null, address: null, addressAr: null, identifierType: null, identifierValue: null, phone: null, type: null, isWalkIn: !invoice.customer_id },
     items: items.map(item => ({ description: item.name, descriptionAr: item.name_ar, quantity: n(item.quantity), unitName: item.selling_unit_name ?? null, unitNameAr: item.selling_unit_name_ar ?? null, unitCode: item.selling_unit_code ?? null, baseQuantity: item.base_quantity == null ? null : n(item.base_quantity), baseUnitName: item.base_unit_name ?? null, baseUnitNameAr: item.base_unit_name_ar ?? null, unitPrice: n(item.unit_price), discount: n(item.discount_amount), taxableAmount: n(item.subtotal), vatRate: rate(item.tax_rate), vatAmount: n(item.tax_amount), vatCategory: item.tax_category, lineTotal: n(item.total), creditedQuantity: isCredit ? n(item.quantity) : null })),
     totals: { currency: 'SAR', subtotal: n(invoice.subtotal), discount: n(invoice.discount_amount), taxableAmount: n(invoice.taxable_amount), vat: n(invoice.tax_amount), total: n(invoice.total_amount), paid: isCredit ? 0 : paid, refunded: isCredit ? paid : 0, balance: isCredit ? null : n(invoice.total_amount) - paid },
     payments: payments.map(payment => ({ method: isCredit && payment.method === 'card' ? 'bank_transfer' : payment.method, amount: n(payment.amount), cashTendered: payment.method === 'cash' && payment.amount_received != null ? n(payment.amount_received) : null, change: payment.method === 'cash' && payment.change_amount != null ? n(payment.change_amount) : null, reference: payment.reference })),
@@ -188,13 +192,25 @@ function base(input: StoredDocumentInput, source: DocumentViewModel['source'], s
 }
 
 function fromSnapshot(input: StoredDocumentInput, snapshot: InvoiceIdentitySnapshot): DocumentViewModel {
-  const b = base(input, snapshot.version === 2 ? 'snapshot_v2' : 'snapshot_v1', snapshot.version, false)
+  const source = snapshot.version === 3 ? 'snapshot_v3' : snapshot.version === 2 ? 'snapshot_v2' : 'snapshot_v1'
+  const baseModel = base(input, source, snapshot.version, false)
+  const b = snapshot.version === 3
+    ? {
+        ...baseModel,
+        identity: {
+          ...baseModel.identity,
+          // The issued snapshot, never a visual template, controls fiscal type.
+          invoiceType: snapshot.document.fiscalDocumentKind,
+        },
+        buyer: buyerFromSnapshot(snapshot.buyer),
+      }
+    : baseModel
   const compliance = snapshot.compliance
   // Historical snapshots retain their captured compliance address when no
   // presentation override was saved; never substitute the current branch
   // address into an old document.
   const snapshotBranch = { ...input.branch, address: null }
-  if (snapshot.version === 2) {
+  if (snapshot.version === 3 || snapshot.version === 2) {
     const resolved = resolveRuntimeInvoicePresentation({ branch: snapshotBranch, savedSettings: snapshot.presentationSettings })
     return buildPresentationDocument({ settings: resolved.presentation, language: snapshot.document.language, printMode: snapshot.document.printMode, registeredName: compliance.registeredSellerName, registeredNameAr: compliance.registeredSellerNameAr, vatNumber: compliance.vatNumber, registrationType: compliance.registrationScheme, registrationNumber: compliance.registrationIdentifier, registeredAddress: address(compliance.address), branchName: null, branchNameAr: null, logoPreviewUrl: resolved.logoUrl }, b)
   }
@@ -212,6 +228,30 @@ function fromSnapshot(input: StoredDocumentInput, snapshot: InvoiceIdentitySnaps
   return buildPresentationDocument({ settings: resolved.presentation, language: snapshot.document.language, printMode: snapshot.document.printMode, registeredName: compliance.registeredSellerName, registeredNameAr: compliance.registeredSellerNameAr, vatNumber: compliance.vatNumber, registrationType: compliance.registrationScheme, registrationNumber: compliance.registrationIdentifier, registeredAddress: address(compliance.address), branchName: p.branchDisplayName, branchNameAr: p.branchDisplayNameAr, logoPreviewUrl: resolved.logoUrl }, b)
 }
 
+function buyerFromSnapshot(snapshot: InvoiceBuyerIdentitySnapshotV1): DocumentViewModel['buyer'] {
+  if (snapshot.state === 'walk_in') {
+    return { snapshotState: 'walk_in', name: null, nameAr: null, vatNumber: null, address: null, addressAr: null, identifierType: null, identifierValue: null, phone: null, type: null, isWalkIn: true }
+  }
+  if (snapshot.state !== 'captured') {
+    return { snapshotState: 'legacy_unavailable', name: null, nameAr: null, vatNumber: null, address: null, addressAr: null, identifierType: null, identifierValue: null, phone: null, type: null, isWalkIn: false }
+  }
+  const value = snapshot.address ?? {}
+  return {
+    snapshotState: 'captured',
+    name: snapshot.name ?? null,
+    nameAr: snapshot.nameAr ?? null,
+    vatNumber: snapshot.vatNumber ?? null,
+    address: address(value),
+    addressAr: value.streetAr ?? address(value),
+    identifierType: snapshot.identifierType ?? null,
+    identifierValue: snapshot.identifierValue ?? null,
+    phone: snapshot.phone ?? null,
+    type: snapshot.customerType ?? null,
+    isWalkIn: false,
+  }
+}
+
+export function documentFromStoredInvoiceV3(input: StoredDocumentInput): DocumentViewModel { if (input.invoice.identity_snapshot?.version !== 3) throw new Error('Expected snapshot v3'); return fromSnapshot(input, input.invoice.identity_snapshot) }
 export function documentFromStoredInvoiceV2(input: StoredDocumentInput): DocumentViewModel { if (input.invoice.identity_snapshot?.version !== 2) throw new Error('Expected snapshot v2'); return fromSnapshot(input, input.invoice.identity_snapshot) }
 export function documentFromStoredInvoiceV1(input: StoredDocumentInput): DocumentViewModel { if (input.invoice.identity_snapshot?.version !== 1) throw new Error('Expected snapshot v1'); return fromSnapshot(input, input.invoice.identity_snapshot) }
 export function documentFromLegacyInvoice(input: StoredDocumentInput): DocumentViewModel {
@@ -222,7 +262,7 @@ export function documentFromLegacyInvoice(input: StoredDocumentInput): DocumentV
   const registeredAddress = address({ buildingNumber: branch.building_number, street: branch.street, district: branch.district, city: branch.city, country: branch.country, postalCode: branch.postal_code }) || tenant?.address || null
   return buildPresentationDocument({ settings: resolved.presentation, language: documentLanguage(input.invoice.document_language ?? resolved.invoiceLanguage), printMode: resolved.printMode, registeredName, registeredNameAr, vatNumber: branch.vat_number || tenant?.vat_number || '', registrationType: 'CR', registrationNumber: branch.cr_number || tenant?.cr_number || null, registeredAddress, branchName: branch.name, branchNameAr: branch.name_ar, logoPreviewUrl: resolved.logoUrl }, base(input, 'legacy', null, true))
 }
-export function documentFromStoredInvoice(input: StoredDocumentInput): DocumentViewModel { return input.invoice.identity_snapshot?.version === 2 ? documentFromStoredInvoiceV2(input) : input.invoice.identity_snapshot?.version === 1 ? documentFromStoredInvoiceV1(input) : documentFromLegacyInvoice(input) }
+export function documentFromStoredInvoice(input: StoredDocumentInput): DocumentViewModel { return input.invoice.identity_snapshot?.version === 3 ? documentFromStoredInvoiceV3(input) : input.invoice.identity_snapshot?.version === 2 ? documentFromStoredInvoiceV2(input) : input.invoice.identity_snapshot?.version === 1 ? documentFromStoredInvoiceV1(input) : documentFromLegacyInvoice(input) }
 export function documentFromFullCreditNote(input: StoredDocumentInput): DocumentViewModel { return documentFromStoredInvoice(input) }
 export function documentFromPartialCreditNote(input: StoredDocumentInput): DocumentViewModel { return documentFromStoredInvoice(input) }
 
@@ -238,7 +278,7 @@ function previewDocument(draft: InvoicePresentationDraft, logoPreviewUrl: string
   const isCredit = kind === 'credit_note'
   return buildPresentationDocument({ settings: draft.presentation, language: draft.invoiceLanguage, printMode: draft.printMode, registeredName: seller.registeredName, registeredNameAr: seller.registeredNameAr, vatNumber: seller.vatNumber, registrationType: seller.registrationType, registrationNumber: seller.registrationNumber, registeredAddress: draft.presentation.contact.address_override || seller.address, branchName: seller.branchName, branchNameAr: seller.branchNameAr, logoPreviewUrl }, {
     source: 'preview', identity: { kind, invoiceType: isCredit ? 'credit_note' : 'simplified', number: isCredit ? creditNote.number : invoice.number, uuid: null, issueTimestamp: isCredit ? creditNote.issueTimestamp : invoice.issueTimestamp, supplyDate: null, language: draft.invoiceLanguage, direction: draft.invoiceLanguage === 'ar' ? 'rtl' : 'ltr', snapshotVersion: null, legacy: false, fidelity: 'sample' },
-    buyer: { name: buyer.name, nameAr: buyer.nameAr, vatNumber: null, address: null, addressAr: null, identifierType: null, identifierValue: null, type: 'individual' },
+    buyer: { snapshotState: 'sample', name: buyer.name, nameAr: buyer.nameAr, vatNumber: null, address: null, addressAr: null, identifierType: null, identifierValue: null, phone: null, type: 'individual', isWalkIn: false },
     items: items.map(item => ({ ...item, unitName: null, unitNameAr: null, unitCode: null, baseQuantity: null, baseUnitName: null, baseUnitNameAr: null, creditedQuantity: isCredit ? item.quantity : null })),
     totals: { currency: 'SAR', subtotal: invoice.subtotal, discount: invoice.discount, taxableAmount: invoice.taxableAmount, vat: invoice.vat, total: invoice.total, paid: isCredit ? 0 : invoice.total, refunded: isCredit ? invoice.total : 0, balance: isCredit ? null : 0 },
     payments: payments.map(payment => ({ ...payment })),

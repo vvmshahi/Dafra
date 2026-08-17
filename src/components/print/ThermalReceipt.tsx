@@ -204,6 +204,7 @@ function legacyModel(props: LegacyThermalReceiptProps): DocumentViewModel {
       fidelity: 'best_effort',
     },
     buyer: {
+      snapshotState: props.customerName ? 'captured' : 'walk_in',
       name: props.customerName ?? null,
       nameAr: props.customerNameAr ?? null,
       vatNumber: props.buyerVatNumber ?? null,
@@ -211,7 +212,9 @@ function legacyModel(props: LegacyThermalReceiptProps): DocumentViewModel {
       addressAr: null,
       identifierType: null,
       identifierValue: null,
+      phone: null,
       type: props.isStandardInvoice ? 'business' : 'individual',
+      isWalkIn: !props.customerName,
     },
     items: itemRows,
     totals: {

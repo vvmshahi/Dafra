@@ -31,6 +31,7 @@
   "method": "Method",
   "back": "Back to Invoices",
   "notFound": "Invoice not found",
+  "documentIdentityUnavailable": "This Tax Invoice cannot be rendered because its immutable buyer identity is unavailable or incomplete.",
   "cancelled": "This invoice has been cancelled and is void.",
   "notes": "Notes",
   "customerDetails": "Customer details",

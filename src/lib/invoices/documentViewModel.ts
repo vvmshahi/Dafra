@@ -7,7 +7,7 @@ export type DocumentKind = 'invoice' | 'credit_note' | 'debit_note'
 export type DocumentFidelity = 'exact_snapshot' | 'best_effort' | 'sample'
 
 export interface DocumentViewModel {
-  readonly source: 'snapshot_v2' | 'snapshot_v1' | 'atomic_receipt' | 'legacy' | 'preview'
+  readonly source: 'snapshot_v3' | 'snapshot_v2' | 'snapshot_v1' | 'atomic_receipt' | 'legacy' | 'preview'
   readonly identity: Readonly<{
     kind: DocumentKind
     invoiceType: string
@@ -17,7 +17,7 @@ export interface DocumentViewModel {
     supplyDate?: string | null
     language: DocumentLanguage
     direction: 'ltr' | 'rtl'
-    snapshotVersion: 1 | 2 | null
+    snapshotVersion: 1 | 2 | 3 | null
     legacy: boolean
     fidelity: DocumentFidelity
   }>
@@ -44,7 +44,20 @@ export interface DocumentViewModel {
     printMode: 'thermal' | 'pdf' | 'both'
     afterSaleAction: 'receipt' | 'a4' | 'both'
   }>
-  readonly buyer: Readonly<{ name: string | null; nameAr: string | null; vatNumber: string | null; address: string | null; addressAr: string | null; identifierType: string | null; identifierValue: string | null; type: string | null; isWalkIn?: boolean }>
+  readonly buyer: Readonly<{
+    /** Whether these customer-facing values came from the issued document, a walk-in choice, or a non-authoritative compatibility path. */
+    snapshotState: 'captured' | 'walk_in' | 'legacy_unavailable' | 'sample'
+    name: string | null
+    nameAr: string | null
+    vatNumber: string | null
+    address: string | null
+    addressAr: string | null
+    identifierType: string | null
+    identifierValue: string | null
+    phone: string | null
+    type: string | null
+    isWalkIn: boolean
+  }>
   readonly items: readonly Readonly<{
     description: string
     descriptionAr: string | null

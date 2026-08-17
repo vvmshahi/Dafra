@@ -20,6 +20,7 @@ import { toSaudiTime } from '@/lib/utils/date'
 import type { Branch, Invoice, InvoiceItem, Payment } from '@/types/database'
 import { documentDate, resolveCreditNoteDocumentLanguage, resolveInvoiceDocumentLanguage } from '@/localization/documents'
 import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
+import { canRenderFiscalDocument } from '@/lib/invoices/documentPresentationReadiness'
 import type { CustomerCreditPaymentSummary } from '@/lib/invoices/customerCreditPayment'
 import { loadCustomerCreditPaymentSummary } from '@/lib/invoices/customerCreditReadModel'
 
@@ -217,7 +218,20 @@ export default function ReceiptPrintPage() {
       sandboxQrCode: sandboxValidation?.qrCode,
     })
     : selectStoredOutputStateQr(outputStateMatchesInvoice ? outputState : null)
-  const documentReadiness = resolveIssuedDocumentReadiness({ modelReady: Boolean(invoice && branch && tenant), nonFiscalDemo, outputCanPrint: sandboxDocument ? sandboxValidated : outputStateMatchesInvoice && outputState?.canPrint === true, qrPayload: selectedQrPayload, qrStatus, qrDataUrl })
+  const documentViewModel = useMemo(() => {
+    if (!invoice || !branch || !tenant) return null
+    return documentFromStoredInvoice({
+      invoice,
+      branch,
+      tenant,
+      items,
+      payments,
+      customerCredit,
+      authoritativeDocumentKind: outputStateMatchesInvoice ? outputState?.documentKind : null,
+    })
+  }, [invoice, branch, tenant, items, payments, customerCredit, outputStateMatchesInvoice, outputState?.documentKind])
+  const fiscalDocumentRenderable = documentViewModel ? canRenderFiscalDocument(documentViewModel) : false
+  const documentReadiness = resolveIssuedDocumentReadiness({ modelReady: Boolean(invoice && branch && tenant && fiscalDocumentRenderable), nonFiscalDemo, outputCanPrint: sandboxDocument ? sandboxValidated : outputStateMatchesInvoice && outputState?.canPrint === true, qrPayload: selectedQrPayload, qrStatus, qrDataUrl })
   const printReady = documentReadiness.printable
 
   useReceiptPrintStyle(receiptProfile, electronPrint)
@@ -283,18 +297,9 @@ export default function ReceiptPrintPage() {
           supabase.from('branches').select('*').eq('id', inv.branch_id).single(),
           supabase.from('tenants').select('name, name_ar, vat_number, cr_number, address').eq('id', inv.tenant_id).single(),
         ]
-        if (inv.customer_id) {
-          fetches.push(
-            supabase.from('customers')
-              .select('name, name_ar, vat_number, cr_number, address, address_ar, customer_type, company_name, business_name, business_name_ar, phone')
-              .eq('id', inv.customer_id)
-              .single(),
-          )
-        }
-
-        const customerFetch = inv.customer_id
-          ? fetches[2]
-          : Promise.resolve({ data: null })
+        // Receipt rendering must not rehydrate buyer identity from the mutable
+        // customer master. The document adapter consumes identity_snapshot.
+        const customerFetch = Promise.resolve({ data: null })
         const [branchResult, tenantResult, customerResult, originalResult, customerCreditSummary] = await Promise.all([
           fetches[0],
           fetches[1],
@@ -485,20 +490,6 @@ export default function ReceiptPrintPage() {
     }
   }, [invoice, branch, tenant, items, payments, customer, originalDocumentLanguage])
 
-  const documentViewModel = useMemo(() => {
-    if (!invoice || !branch || !tenant) return null
-    return documentFromStoredInvoice({
-      invoice,
-      branch,
-      tenant,
-      items,
-      payments,
-      customer: customer ? { name: customerDisplayName(customer) ?? customer.name, nameAr: customer.name_ar, vatNumber: customer.vat_number, address: customer.address, addressAr: customer.address_ar, identifierType: customer.cr_number ? 'CR' : null, identifierValue: customer.cr_number, type: customer.customer_type } : null,
-      customerCredit,
-      authoritativeDocumentKind: outputStateMatchesInvoice ? outputState?.documentKind : null,
-    })
-  }, [invoice, branch, tenant, items, payments, customer, customerCredit, outputStateMatchesInvoice, outputState?.documentKind])
-
   useEffect(() => {
     if (!electronPrint || electronReadyRef.current || loading || error || !invoice || !branch || !tenant || !receipt || !printReady) return
     electronReadyRef.current = true
@@ -534,7 +525,7 @@ export default function ReceiptPrintPage() {
     )
   }
 
-  if (error || !invoice || !branch || !tenant || !receipt || !documentViewModel) {
+  if (error || !invoice || !branch || !tenant || !receipt || !documentViewModel || !fiscalDocumentRenderable) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
         <div className="max-w-sm rounded-2xl border border-gray-100 bg-white p-6 text-center shadow-sm">

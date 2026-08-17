@@ -1333,7 +1333,40 @@ export interface InvoiceIdentitySnapshotV2 {
   document: { language: 'en' | 'ar' | 'both'; printMode: 'thermal' | 'pdf' | 'both' }
 }
 
-export type InvoiceIdentitySnapshot = InvoiceIdentitySnapshotV1 | InvoiceIdentitySnapshotV2
+export interface InvoiceBuyerIdentitySnapshotV1 {
+  state: 'captured' | 'walk_in' | 'legacy_unavailable'
+  customerType?: string | null
+  name?: string | null
+  nameAr?: string | null
+  vatNumber?: string | null
+  identifierType?: string | null
+  identifierValue?: string | null
+  phone?: string | null
+  address?: {
+    buildingNumber?: string | null
+    street?: string | null
+    streetAr?: string | null
+    district?: string | null
+    city?: string | null
+    postalCode?: string | null
+    country?: string | null
+  }
+}
+
+export interface InvoiceIdentitySnapshotV3 {
+  version: 3
+  legacy: false
+  compliance: InvoiceIdentitySnapshotV1['compliance']
+  buyer: InvoiceBuyerIdentitySnapshotV1
+  presentationSettings: InvoicePresentationSettings
+  document: {
+    language: 'en' | 'ar' | 'both'
+    printMode: 'thermal' | 'pdf' | 'both'
+    fiscalDocumentKind: 'simplified' | 'standard'
+  }
+}
+
+export type InvoiceIdentitySnapshot = InvoiceIdentitySnapshotV1 | InvoiceIdentitySnapshotV2 | InvoiceIdentitySnapshotV3
 
 export interface InvoiceItem {
   id: string

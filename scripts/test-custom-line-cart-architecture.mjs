@@ -227,6 +227,7 @@ try {
     'supabase/migrations/20260817000300_purchase_product_receiving_v1.sql',
     'supabase/migrations/20260817000400_customer_identity_validation_v1.sql',
     'supabase/migrations/20260817000500_expenses_authority_v1.sql',
+    'supabase/migrations/20260817000600_capture_immutable_invoice_buyer_snapshot_v1.sql',
     'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
     'supabase/migrations/20260804000600_trading_sandbox_v2.sql',
     'supabase/migrations/20260805000200_persist_zatca_capability_selection.sql',
@@ -242,6 +243,10 @@ try {
     'src/pages/invoices/InvoicesPage.tsx',
     'src/pages/invoices/InvoiceDetailPage.tsx',
     'src/pages/invoices/CreateCreditNoteModal.tsx',
+    // This release adds immutable buyer snapshot consumption only; it does not
+    // alter the visual template contract.
+    'src/components/print/A4Document.tsx',
+    'src/components/print/ThermalReceipt.tsx',
     'src/lib/zatca/atomicCheckout.ts',
     'src/lib/zatca/authenticatedEdge.ts',
     'src/lib/zatca/submission.ts',

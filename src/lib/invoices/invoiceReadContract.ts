@@ -42,6 +42,9 @@ export const INVOICE_SAFE_COLUMNS = [
   'original_invoice_id',
   'credit_reason',
   'document_language',
+  // Immutable seller/buyer/document identity only; raw ZATCA artifacts stay
+  // server-only and are read through the output-state API.
+  'identity_snapshot',
 ] as const satisfies readonly (keyof Invoice)[]
 
 export type InvoiceSafeColumn = typeof INVOICE_SAFE_COLUMNS[number]

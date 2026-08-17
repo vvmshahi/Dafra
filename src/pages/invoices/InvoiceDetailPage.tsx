@@ -23,6 +23,7 @@ import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import { getSandboxValidationStatus, type SandboxValidationResponse } from '@/lib/zatca/api'
 import { updateCachedInvoiceRows, upsertInvoiceListRow } from '@/lib/invoices/invoiceListCache'
 import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
+import { canRenderFiscalDocument } from '@/lib/invoices/documentPresentationReadiness'
 import type { CustomerCreditPaymentSummary } from '@/lib/invoices/customerCreditPayment'
 import { loadCustomerCreditPaymentSummary } from '@/lib/invoices/customerCreditReadModel'
 import { useAuth } from '@/hooks/useAuth'
@@ -207,8 +208,21 @@ export default function InvoiceDetailPage() {
     && (sandboxDocument
       ? sandboxValidated
       : outputStateMatchesInvoice && outputState?.canPrint === true)
+  const documentViewModel = useMemo(() => {
+    if (!invoice || !branch) return null
+    return documentFromStoredInvoice({
+      invoice,
+      branch,
+      tenant,
+      items,
+      payments,
+      customerCredit,
+      authoritativeDocumentKind: outputStateMatchesInvoice ? outputState?.documentKind : null,
+    })
+  }, [invoice, branch, tenant, items, payments, customerCredit, outputStateMatchesInvoice, outputState?.documentKind])
+  const fiscalDocumentRenderable = documentViewModel ? canRenderFiscalDocument(documentViewModel) : false
   const documentReadiness = resolveIssuedDocumentReadiness({
-    modelReady: Boolean(invoice && branch && tenant), nonFiscalDemo,
+    modelReady: Boolean(invoice && branch && tenant && fiscalDocumentRenderable), nonFiscalDemo,
     outputCanPrint: sandboxDocument ? sandboxValidated : outputStateMatchesInvoice && outputState?.canPrint === true,
     qrPayload: selectedQrPayload, qrStatus, qrDataUrl,
   })
@@ -237,7 +251,10 @@ export default function InvoiceDetailPage() {
           supabase.from('branches').select('*').eq('id', inv.branch_id).single(),
           supabase.from('tenants').select('name, name_ar, vat_number, cr_number, address').eq('id', inv.tenant_id).single(),
         ]
-        if (inv.customer_id) {
+        // Customer master data may still support non-fiscal actions on an
+        // invoice detail screen. Credit-note document reprints never read it:
+        // their buyer block is exclusively the original issue-time snapshot.
+        if (inv.customer_id && inv.zatca_invoice_type !== 'credit_note') {
           fetches.push(
             supabase.from('customers')
               .select('name, name_ar, vat_number, cr_number, address, address_ar, customer_type, company_name, business_name, business_name_ar, phone')
@@ -605,13 +622,6 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     })()
   }
 
-  // Keep this hook unconditional so loading/error transitions preserve React's hook order.
-  // The print target is rendered only after the required stored-invoice data exists.
-  const documentViewModel = useMemo(() => {
-    if (!invoice || !branch) return null
-    return documentFromStoredInvoice({ invoice, branch, tenant, items, payments, customer: customer ? { name: customer.name, nameAr: customer.name_ar, vatNumber: customer.vat_number, address: customer.address, addressAr: customer.address_ar, identifierType: customer.cr_number ? 'CR' : null, identifierValue: customer.cr_number, type: customer.customer_type } : null, customerCredit, authoritativeDocumentKind: outputStateMatchesInvoice ? outputState?.documentKind : null })
-  }, [invoice, branch, tenant, items, payments, customer, customerCredit, outputStateMatchesInvoice, outputState?.documentKind])
-
   useEffect(() => {
     if (!documentViewModel) return
     setPreviewMode(resolveDefaultInvoicePreviewMode(
@@ -652,6 +662,22 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
             {t('invoices:back')}
           </button>
         </div>
+      </div>
+    )
+  }
+
+  if (!fiscalDocumentRenderable) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3 text-gray-500">
+        <AlertCircle size={32} />
+        <p className="max-w-md text-center text-sm">{t('invoices:documentIdentityUnavailable')}</p>
+        <button
+          type="button"
+          onClick={() => navigate('/invoices')}
+          className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+        >
+          {t('invoices:back')}
+        </button>
       </div>
     )
   }
