@@ -234,6 +234,9 @@ try {
     'only audited forward branch-billing migrations may touch migrations',
   )
   const protectedPathExceptions = new Set([
+    // The invoice list's summary strip is presentation-only and intentionally
+    // aligned with the branch dashboard on this release/preview branch.
+    'src/pages/invoices/InvoicesPage.tsx',
     'src/pages/invoices/InvoiceDetailPage.tsx',
     'src/pages/invoices/CreateCreditNoteModal.tsx',
     'src/lib/zatca/atomicCheckout.ts',

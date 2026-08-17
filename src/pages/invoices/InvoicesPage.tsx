@@ -129,11 +129,12 @@ function CreditContext({ row, t }: { row: InvoiceRow; t: TFunction }) {
   )
 }
 
-const INVOICE_KPI_TONES = [
-  'bg-gradient-to-br from-[#334155] to-[#1e293b]',
-  'bg-gradient-to-br from-[#1B6B3A] to-[#0F2419]',
-  'bg-gradient-to-br from-[#285e61] to-[#1f3f43]',
-] as const
+const INVOICE_KPI_TONES = {
+  netRevenue: 'bg-gradient-to-br from-[#1B6B3A] to-[#0F2419]',
+  creditNotes: 'bg-gradient-to-br from-[#566575] to-[#34414D]',
+  netVat: 'bg-gradient-to-br from-[#b88722] to-[#7c4d0a]',
+  documents: 'bg-gradient-to-br from-[#4B5563] to-[#374151]',
+} as const
 
 function creditNoteDisabledReason(row: InvoiceRow, role: string | null | undefined, t: TFunction): string | null {
   if (row.documentType === 'credit_note') return t('invoices:creditNotesCannotBeCredited')
@@ -576,6 +577,8 @@ export default function InvoicesPage() {
     count:   filtered.length,
     revenue: filtered.reduce((s, r) => s + (r.documentType === 'credit_note' ? -r.totalAmount : r.totalAmount), 0),
     vat:     filtered.reduce((s, r) => s + (r.documentType === 'credit_note' ? -r.taxAmount : r.taxAmount), 0),
+    creditNotes: filtered.reduce((s, r) => s + (r.documentType === 'credit_note' ? r.totalAmount : 0), 0),
+    creditNoteCount: filtered.filter(r => r.documentType === 'credit_note').length,
   }
   const periodLabel = sessionShortcut
     ? t(`invoices:${sessionShortcut === 'current' ? 'currentSession' : 'previousSession'}`)
@@ -794,31 +797,32 @@ export default function InvoicesPage() {
         )}
       />
 
-      <section className="grid grid-cols-1 gap-2.5 md:grid-cols-3" aria-label={t('invoices:documentSummary')}>
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label={t('invoices:documentSummary')}>
         {[
-          { label: t('invoices:totalDocuments'), value: String(summary.count), icon: FileText, tone: INVOICE_KPI_TONES[0] },
-          { label: t('invoices:netRevenue'), value: <Rial amount={summary.revenue} />, icon: TrendingUp, tone: INVOICE_KPI_TONES[1] },
-          { label: t('invoices:netVat'), value: <Rial amount={summary.vat} />, icon: Receipt, tone: INVOICE_KPI_TONES[2] },
+          { label: t('invoices:netRevenue'), value: <Rial amount={summary.revenue} />, sub: periodLabel, icon: TrendingUp, tone: INVOICE_KPI_TONES.netRevenue },
+          { label: t('invoices:creditNotes'), value: <Rial amount={summary.creditNotes} />, sub: t('invoices:creditNotesCount', { count: summary.creditNoteCount }), icon: Receipt, tone: INVOICE_KPI_TONES.creditNotes },
+          { label: t('invoices:netVat'), value: <Rial amount={summary.vat} />, sub: periodLabel, icon: Receipt, tone: INVOICE_KPI_TONES.netVat },
+          { label: t('invoices:documents'), value: String(summary.count), sub: periodLabel, icon: FileText, tone: INVOICE_KPI_TONES.documents },
         ].map(metric => (
           <article
             key={metric.label}
-            className={`relative min-h-[92px] overflow-hidden rounded-xl border border-white/10 px-3.5 py-3 shadow-sm ${metric.tone}`}
+            className={`relative min-h-[124px] overflow-hidden rounded-2xl border border-white/10 p-4 shadow-card-md ring-1 ring-black/10 sm:min-h-[132px] sm:p-5 [@media(max-height:740px)]:min-h-[116px] [@media(max-height:740px)]:p-4 ${metric.tone}`}
           >
-            <div className="flex items-start justify-between gap-2.5">
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-white/65 [overflow-wrap:anywhere] rtl:normal-case rtl:tracking-normal">
+            <div className="flex h-full items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-bold uppercase leading-4 tracking-wide text-white/65 [overflow-wrap:anywhere] rtl:normal-case rtl:tracking-normal">
                   {metric.label}
                 </p>
-                <p dir="ltr" className="mt-1 text-lg font-black tracking-tight text-white tabular-nums [&>span>span:first-child]:text-[0.72em]">
+                <p dir="ltr" className="mt-2 text-xl font-black tracking-tight text-white tabular-nums sm:text-2xl [&>span>span:first-child]:text-[0.72em] [&>span>span:first-child]:opacity-80">
                   {metric.value}
                 </p>
-                <p className="mt-0.5 text-[10px] font-medium text-white/55 [overflow-wrap:anywhere]">{periodLabel}</p>
+                <p className="mt-2 text-[11px] font-medium leading-4 text-white/60 [overflow-wrap:anywhere]">{metric.sub}</p>
               </div>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/10">
-                <metric.icon size={15} className="text-white/85" aria-hidden="true" />
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/10">
+                <metric.icon size={17} className="text-white/90" aria-hidden="true" />
               </div>
             </div>
-            <div className="absolute inset-x-0 bottom-0 h-0.5 bg-gold-400/65" />
+            <div className="absolute inset-x-0 bottom-0 h-px bg-white/25" />
           </article>
         ))}
       </section>

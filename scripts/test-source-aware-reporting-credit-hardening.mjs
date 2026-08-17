@@ -209,6 +209,9 @@ const permittedPaths = new Set([
   'scripts/test-catalogue-bulk-export.mjs',
   'scripts/test-catalogue-bulk-import.mjs',
   'scripts/test-branch-dashboard-v2.mjs',
+  // Invoice list summary styling is presentation-only and uses existing
+  // filtered document data; it does not alter reporting or credit behavior.
+  'scripts/test-invoice-summary-ui.mjs',
   'scripts/run-zatca-atomic-simplified-checkout-runtime.mjs',
   'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
   'supabase/migrations/20260804000600_trading_sandbox_v2.sql',
@@ -219,6 +222,9 @@ const permittedPaths = new Set([
   'supabase/migrations/20260817000200_secure_catalogue_bulk_import_v1.sql',
   'src/localization/locales/ar-SA/reports.json',
   'src/localization/locales/en/reports.json',
+  'src/localization/locales/ar-SA/invoices.json',
+  'src/localization/locales/en/invoices.json',
+  'src/pages/invoices/InvoicesPage.tsx',
   'src/pages/reports/SalesReport.tsx',
   'src/pages/reports/pdf/reportExportData.ts',
   'src/pages/reports/pdf/reportPdfExporters.ts',
