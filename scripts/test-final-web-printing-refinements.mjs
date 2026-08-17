@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { isLowStockProduct } from '../src/lib/products/lowStock.ts'
 import { formatSaudiDate, formatSaudiTime } from '../src/lib/utils/date.ts'
-import { A4_TEMPLATE_IDS, A4_TEMPLATE_REGISTRY } from '../src/lib/invoices/a4TemplateRegistry.ts'
+import { A4_NEW_SELECTION_TEMPLATE_IDS, A4_TEMPLATE_IDS, A4_TEMPLATE_REGISTRY } from '../src/lib/invoices/a4TemplateRegistry.ts'
 import { A4_ACCENT_PRESETS, contrastRatio, hasSafeTextContrast, resolveA4ColorTokens, safeForeground } from '../src/lib/invoices/a4ColorTokens.ts'
 import { createPreviewQrDataUrl } from '../src/lib/invoices/previewQr.ts'
 
@@ -135,9 +135,9 @@ for (const marker of ['accent_color', 'header_asset_path', 'header_asset_enabled
   assert.match(invoiceSettings, new RegExp(marker))
   assert.match(brandingMigration, new RegExp(marker))
 }
-assert.match(a4, /--a4-accent/)
-assert.match(a4, /--a4-heading/)
-assert.match(a4, /--a4-body/)
+assert.match(a4, /--invoice-primary/)
+assert.match(a4, /--invoice-heading/)
+assert.match(a4, /--invoice-text/)
 assert.match(a4, /a4-header-artwork/)
 assert.match(a4, /a4-footer-artwork/)
 assert.match(invoiceSettings, /A4PreviewFit zoom=\{previewZoom\} bounded/)
@@ -163,6 +163,7 @@ assert.match(brandingMigration, /to_regprocedure\('public\.validate_invoice_pres
 // landmark sets, thumbnails, and intended QR regions. Unknown IDs fall back to
 // Classic in the resolver instead of silently taking the Minimal renderer.
 assert.equal(A4_TEMPLATE_IDS.length, 6)
+assert.deepEqual(A4_NEW_SELECTION_TEMPLATE_IDS, ['classic', 'modern_split', 'clean_ledger', 'contemporary_border'])
 assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].renderer)).size, 6)
 assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].thumbnailClass)).size, 6)
 assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].qrRegion)).size, 6)
@@ -176,7 +177,7 @@ for (const id of A4_TEMPLATE_IDS.slice(3)) assert.notEqual(A4_TEMPLATE_REGISTRY[
 assert.match(css, /\.printing-workspace-shell\s*\{\s*height:\s*100%;\s*min-height:\s*0/)
 assert.doesNotMatch(css, /printing-workspace-shell\s*\{[^}]*calc\(100dvh\s*-\s*7\.5rem\)/)
 assert.match(css, /@media print[^}]*@page[\s\S]*html,body\s*\{[^}]*background:\s*#fff\s*!important/)
-assert.match(css, /\.a4-sample,\.a4-page-number\s*\{\s*display:\s*none\s*!important/)
+assert.doesNotMatch(a4, /sampleLabel|pageNumbers|a4-sample|a4-page-number/)
 assert.match(read('src/components/layout/AppLayout.tsx'), /ownsInnerScroll/)
 assert.match(read('src/components/layout/AppLayout.tsx'), /overflow-hidden/)
 assert.match(workspace, /<main className="min-h-0 flex-1 overflow-hidden"/)
@@ -278,7 +279,8 @@ for (const source of [presentation, read('src/types/database.ts'), read('src/lib
 assert.match(invoiceSettings, /showStandardBranding/)
 assert.match(invoiceSettings, /header_asset_enabled \|\| current\.presentation\.a4\.header_asset_path[\s\S]*show_standard_branding[\s\S]*: false/)
 assert.match(a4, /showsStandardBranding/)
-assert.match(a4, /showBranding &&[\s\S]*a4-legal-seller/)
+assert.match(a4, /function SellerBrand[\s\S]*isLegalSellerIdentity/)
+assert.doesNotMatch(a4, /a4-seller--brand[\s\S]*a4-legal-seller/)
 assert.match(a4, /a4-document--branding-hidden/)
 assert.match(css, /a4-document--branding-hidden/)
 assert.match(read('src/localization/locales/en/printing.json'), /Show Kubri invoice branding below custom header/)
@@ -299,8 +301,11 @@ assert.match(a4PreviewFit, /onPageCountChange/)
 assert.match(invoiceSettings, /onPageCountChange=\{setA4PageCount\}/)
 assert.match(css, /\.a4-closing-group\s*\{\s*break-inside:\s*avoid;\s*page-break-inside:\s*avoid;/)
 assert.match(css, /\.a4-header-artwork,.a4-footer-artwork[^}]*break-inside:\s*avoid/)
-assert.match(css, /@media print[\s\S]*\.a4-document\s*\{[\s\S]*width:\s*210mm[\s\S]*padding:\s*10mm 14mm !important;/)
-assert.doesNotMatch(css.match(/@media print[\s\S]*?\/\* Snapshot-driven thermal document/)?.[0] ?? '', /transform:\s*scale|zoom:|overflow:\s*hidden|max-height:/)
+const a4PrintCss = css.match(/@media print[\s\S]*?\/\* Snapshot-driven thermal document/)?.[0] ?? ''
+assert.match(a4PrintCss, /\.a4-document\s*\{\s*box-shadow:\s*none !important;/)
+assert.doesNotMatch(a4PrintCss, /\.a4-document\s*\{[^}]*?(?:width|min-height|padding|margin):/)
+assert.doesNotMatch(a4PrintCss, /a4-document--(?:modern_split|minimal_professional|executive_green|clean_ledger|contemporary_border)/)
+assert.doesNotMatch(a4PrintCss, /transform:\s*scale|zoom:|overflow:\s*hidden|max-height:/)
 
 // Every saved presentation field is serialized, normalized, admitted by the
 // migration, and carried into the shared document model used by detail, PDF,

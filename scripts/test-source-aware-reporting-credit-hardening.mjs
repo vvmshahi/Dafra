@@ -213,6 +213,9 @@ const permittedPaths = new Set([
   'scripts/test-final-web-printing-refinements.mjs',
   'scripts/test-phase4e-thermal-receipts.mjs',
   'scripts/test-phase4f-a4-templates.mjs',
+  // Authorized A4 V1 foundation regression coverage. It validates rendering
+  // parity only and cannot change checkout, reporting, credit, DB, or Edge code.
+  'scripts/test-a4-v1-foundation.mjs',
   'scripts/test-zatca-phase2-finalization-v2.mjs',
   // Authorized Classic thermal presentation refinement only.
   'scripts/test-thermal-receipt-layouts-runtime.mjs',
@@ -220,7 +223,11 @@ const permittedPaths = new Set([
   // renderer only; it carries no reporting or credit semantics.
   'scripts/test-thermal-preview-parity.mjs',
   'src/components/print/ThermalReceiptCompositions.tsx',
+  // A4 V1 foundation retains all historical renderers while constraining only
+  // new merchant selection and shared issued-document presentation.
+  'src/components/print/A4Document.tsx',
   'src/index.css',
+  'src/lib/invoices/a4TemplateRegistry.ts',
   'src/pages/branch/InvoiceSettingsPage.tsx',
   'src/lib/print/androidPrintExecution.ts',
   'src/lib/print/browserPrint.ts',

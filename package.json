@@ -40,6 +40,7 @@
     "test:sales-report-local-fix": "node scripts/test-sales-report-local-fix.mjs",
     "audit:phase4e-thermal-receipts": "node scripts/audit-phase4e-thermal-receipts.mjs",
     "test:phase4f-a4-templates": "node scripts/test-phase4f-a4-templates.mjs",
+    "test:a4-v1-foundation": "node scripts/test-a4-v1-foundation.mjs",
     "audit:phase4f-a4-templates": "node scripts/audit-phase4f-a4-templates.mjs",
     "test:phase4g-invoice-release-readiness": "node scripts/test-phase4g-invoice-release-readiness.mjs",
     "test:issued-document-presentation-integrity": "node scripts/test-issued-document-presentation-integrity.mjs",

@@ -963,7 +963,7 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
         {previewMode === 'a4' ? (
           <div id="invoice-preview-panel-a4" role="tabpanel" aria-labelledby="invoice-preview-tab-a4" tabIndex={0} className="min-w-0 outline-none">
             <A4PreviewFit bounded zoom={a4PreviewZoom}>
-              <A4Document model={documentViewModel} options={{ preview: true, id: 'invoice-preview-a4', qrImageUrl: qrDataUrl, pageNumbers: true, nonFiscalDemo }} />
+              <A4Document model={documentViewModel} options={{ preview: true, id: 'invoice-preview-a4', qrImageUrl: qrDataUrl, nonFiscalDemo }} />
             </A4PreviewFit>
           </div>
         ) : (

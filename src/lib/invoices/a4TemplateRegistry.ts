@@ -47,3 +47,14 @@ export function resolveA4Template(model: DocumentViewModel): A4TemplateResolutio
 
 export const A4_TEMPLATE_REGISTRY = registry
 export const A4_TEMPLATE_IDS = Object.freeze(Object.keys(registry) as A4TemplateId[])
+
+/**
+ * Merchant-facing V1 choices. The complete registry above remains the
+ * historical rendering contract: issued documents may still resolve every ID.
+ */
+export const A4_NEW_SELECTION_TEMPLATE_IDS = Object.freeze([
+  'classic',
+  'modern_split',
+  'clean_ledger',
+  'contemporary_border',
+] as const satisfies readonly A4TemplateId[])

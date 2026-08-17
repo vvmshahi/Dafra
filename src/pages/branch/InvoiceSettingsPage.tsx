@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { AlertCircle, Check, FileText, LayoutTemplate, Loader2, Minus, Palette, Plus, ReceiptText, RotateCcw, Settings2, Trash2, Upload, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
@@ -7,7 +7,7 @@ import { documentFromPreviewDraft, type InvoicePresentationDraft } from '@/lib/i
 import type { DocumentViewModel } from '@/lib/invoices/documentViewModel'
 import { invoiceArtworkObjectPath, resolveInvoicePresentationSettings, serializeInvoicePresentationSettingsForSave, type UpdateBranchInvoiceSettingsPayload } from '@/lib/invoices/presentationSettings'
 import { resolveInvoiceLogoUrl } from '@/lib/invoices/runtimePresentation'
-import { A4_TEMPLATE_IDS, A4_TEMPLATE_REGISTRY } from '@/lib/invoices/a4TemplateRegistry'
+import { A4_NEW_SELECTION_TEMPLATE_IDS, A4_TEMPLATE_REGISTRY } from '@/lib/invoices/a4TemplateRegistry'
 import { A4_ACCENT_PRESETS, A4_LAYOUT_COLOR_DEFAULTS, hasSafeTextContrast } from '@/lib/invoices/a4ColorTokens'
 import { createPreviewQrDataUrl, type PreviewQrState } from '@/lib/invoices/previewQr'
 import { cropLetterheadRegion, defaultLetterheadCrops, formatArtworkBytes, LETTERHEAD_ACCEPT, LETTERHEAD_MAX_SOURCE_BYTES, LetterheadValidationError, loadLetterheadSource, type LetterheadCrop, type LetterheadSource } from '@/lib/invoices/letterheadArtwork'
@@ -100,10 +100,11 @@ function Choice<T extends string>({ label, value, options, onChange, help }: { l
   return <fieldset><legend className="text-xs font-semibold text-gray-800">{label}</legend>{help && <p className="mt-1 text-[11px] leading-4 text-gray-500">{help}</p>}<div className={`mt-2 grid gap-2 ${options.length > 3 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>{options.map(option => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} onClick={() => onChange(option.value)} className={`min-h-12 rounded-xl border px-3 py-2 text-start outline-none transition-[border-color,background-color,transform] duration-150 active:scale-[.98] focus-visible:ring-2 focus-visible:ring-primary-500 ${value === option.value ? 'border-primary-600 bg-primary-50 text-primary-900' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'}`}><span className="block text-xs font-semibold">{option.label}</span>{option.description && <span className="mt-0.5 block text-[10px] leading-4 text-gray-500">{option.description}</span>}</button>)}</div></fieldset>
 }
 
-function ThemeChoice({ label, value, options, onChange }: {
+function ThemeChoice({ label, value, options, colours, onChange }: {
   label: string
   value: A4TemplateId
   options: Array<{ value: A4TemplateId; label: string; description: string }>
+  colours: { primary: string; heading: string; text: string }
   onChange: (value: A4TemplateId) => void
 }) {
   return <fieldset><legend className="text-xs font-semibold text-gray-800">{label}</legend><div className="mt-2 grid gap-2 md:grid-cols-2 2xl:grid-cols-3">{options.map(option => {
@@ -116,7 +117,7 @@ function ThemeChoice({ label, value, options, onChange }: {
       onClick={() => onChange(option.value)}
       className={`group relative rounded-xl border p-2 text-start outline-none transition-[border-color,background-color,box-shadow,transform] duration-150 ease-out active:scale-[.98] focus-visible:ring-2 focus-visible:ring-primary-500 ${selected ? 'border-primary-700 bg-primary-50 shadow-sm' : 'border-gray-200 bg-white hover:border-primary-300'}`}
     >
-      <span className={`theme-thumb theme-thumb--${A4_TEMPLATE_REGISTRY[option.value].thumbnailClass}`} aria-hidden="true"><i className="thumb-brand" /><i className="thumb-title" /><i className="thumb-from" /><i className="thumb-to" /><i className="thumb-meta" /><i className="thumb-table" /><i className="thumb-qr" /><i className="thumb-total" /></span>
+      <span className={`theme-thumb theme-thumb--${A4_TEMPLATE_REGISTRY[option.value].thumbnailClass}`} style={{ '--theme-thumb-primary': colours.primary, '--theme-thumb-heading': colours.heading, '--theme-thumb-text': colours.text } as CSSProperties} aria-hidden="true"><i className="thumb-brand" /><i className="thumb-title" /><i className="thumb-from" /><i className="thumb-to" /><i className="thumb-meta" /><i className="thumb-table" /><i className="thumb-qr" /><i className="thumb-total" /></span>
       <span className="mt-1.5 flex items-center justify-between gap-2"><span className="text-[11px] font-bold text-gray-900">{option.label}</span>{selected && <span className="grid h-4 w-4 place-items-center rounded-full bg-primary-700 text-white"><Check size={10} /></span>}</span>
       <span className="mt-0.5 block text-[9px] leading-3 text-gray-500">{option.description}</span>
     </button>
@@ -193,7 +194,7 @@ function A4LayoutComparison({ model, options, qrImageUrl, label }: {
           <figcaption className="mb-1 truncate text-[9px] font-bold text-gray-700">{option.label}</figcaption>
           <div className="mx-auto overflow-hidden border border-gray-200 bg-white" style={{ width: 794 * scale, height: 1123 * scale }}>
             <div style={{ width: 794, height: 1123, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
-              <A4Document model={comparisonModel} options={{ preview: true, qrImageUrl, sampleLabel: 'PREVIEW' }} />
+              <A4Document model={comparisonModel} options={{ preview: true, qrImageUrl }} />
             </div>
           </div>
         </figure>
@@ -523,7 +524,7 @@ export default function InvoiceSettingsPage({
     clean_ledger: { label: 'ledger', help: 'ledgerHelp' },
     contemporary_border: { label: 'contemporary', help: 'contemporaryHelp' },
   }
-  const themeOptions = A4_TEMPLATE_IDS.map(value => ({ value, label: t(`printing:invoiceSettings.a4.${themeKeys[value].label}`), description: t(`printing:invoiceSettings.a4.${themeKeys[value].help}`) }))
+  const themeOptions = A4_NEW_SELECTION_TEMPLATE_IDS.map(value => ({ value, label: t(`printing:invoiceSettings.a4.${themeKeys[value].label}`), description: t(`printing:invoiceSettings.a4.${themeKeys[value].help}`) }))
   const validationErrors = validate(draft)
 
   return <div className={`invoice-editor-shell flex min-h-0 flex-col ${embedded ? '' : 'min-h-[720px]'}`}>
@@ -544,7 +545,7 @@ export default function InvoiceSettingsPage({
         {activeTab === 'thermal' && <div className="space-y-5"><div><h2 className="text-base font-bold text-gray-950">{t('printing:invoiceSettings.tabs.thermal')}</h2><p className="mt-1 text-xs leading-5 text-gray-500">{t('printing:invoiceSettings.thermal.help')}</p></div><ReceiptThemeChoice value={p.thermal.density} onChange={value => { updateSection('thermal', 'density', value); setPreviewMode('thermal') }} t={t} /><Choice label={t('printing:invoiceSettings.thermal.paperWidth')} value={p.thermal.width} onChange={value => updateSection('thermal', 'width', value)} options={[{ value: '58mm', label: '58 mm' }, { value: '80mm', label: '80 mm' }]} /><Choice label={t('printing:invoiceSettings.thermal.qrSize')} value={p.thermal.qr_size} onChange={value => updateSection('thermal', 'qr_size', value)} options={[{ value: 'small', label: t('printing:invoiceSettings.values.small') }, { value: 'standard', label: t('printing:invoiceSettings.values.medium') }, { value: 'large', label: t('printing:invoiceSettings.values.large') }]} /><ToggleRow label={t('printing:invoiceSettings.thermal.wrapNames')} checked={p.thermal.wrap_item_names} onChange={value => updateSection('thermal', 'wrap_item_names', value)} /><ToggleRow label={t('printing:invoiceSettings.thermal.showChange')} checked={p.thermal.show_cash_change} onChange={value => updateSection('thermal', 'show_cash_change', value)} /></div>}
         {activeTab === 'a4' && <div className="space-y-6">
           <div><h2 className="text-base font-bold text-gray-950">{t('printing:invoiceSettings.tabs.a4')}</h2><p className="mt-1 text-xs leading-5 text-gray-500">{t('printing:invoiceSettings.a4.help')}</p></div>
-          <ThemeChoice label={t('printing:invoiceSettings.a4.layout')} value={p.a4.template_id} onChange={value => { updateSection('a4', 'template_id', value); setPreviewMode('a4') }} options={themeOptions} />
+          <ThemeChoice label={t('printing:invoiceSettings.a4.layout')} value={p.a4.template_id} onChange={value => { updateSection('a4', 'template_id', value); setPreviewMode('a4') }} options={themeOptions} colours={{ primary: p.a4.accent_color, heading: p.a4.heading_color, text: p.a4.body_color }} />
           <A4LayoutComparison model={previewModel} options={themeOptions} qrImageUrl={previewQrUrl} label={t('printing:invoiceSettings.a4.compareLayouts')} />
           <section className="space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
             <ColourControl label={t('printing:invoiceSettings.a4.accent')} value={p.a4.accent_color} presets={A4_ACCENT_PRESETS} resetValue={A4_LAYOUT_COLOR_DEFAULTS[p.a4.template_id].accent} resetLabel={t('printing:invoiceSettings.a4.resetColour')} allowWhite onChange={value => updateSection('a4', 'accent_color', value)} onUnsafe={() => setSaveError(t('printing:invoiceSettings.a4.unsafeColour'))} />
@@ -588,7 +589,7 @@ export default function InvoiceSettingsPage({
       </DocumentStudioPreviewToolbar>}
       preview={previewMode === 'thermal'
         ? <div data-thermal-live-preview className="thermal-live-preview flex min-h-full w-max min-w-full items-start justify-center"><ThermalReceipt model={previewModel} options={{ preview: true, qrImageUrl: previewQrUrl, nonFiscalDemo: previewQrState === 'demo', qrUnavailable: previewQrState === 'unavailable' }} /></div>
-        : <A4PreviewFit zoom={previewZoom} bounded onPageCountChange={setA4PageCount}><A4Document model={previewModel} options={{ preview: true, qrImageUrl: previewQrUrl, sampleLabel: t('printing:preview'), pageNumbers: true, nonFiscalDemo: previewQrState === 'demo' }} /></A4PreviewFit>}
+        : <A4PreviewFit zoom={previewZoom} bounded onPageCountChange={setA4PageCount}><A4Document model={previewModel} options={{ preview: true, qrImageUrl: previewQrUrl, nonFiscalDemo: previewQrState === 'demo' }} /></A4PreviewFit>}
       actionFooter={<DocumentStudioActionFooter status={
         saveError
           ? <span className="inline-flex items-center gap-2 text-red-700" role="alert"><AlertCircle size={14} />{saveError}</span>
