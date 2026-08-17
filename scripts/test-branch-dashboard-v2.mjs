@@ -16,7 +16,7 @@ const en = JSON.parse(read('src/localization/locales/en/dashboard.json'))
 const ar = JSON.parse(read('src/localization/locales/ar-SA/dashboard.json'))
 
 assert.match(layout, /window\.matchMedia\('\(max-width: 1023px\)'\)\.matches\) return true/)
-assert.match(layout, /return false/)
+assert.match(layout, /return true/)
 assert.match(layout, /localStorage\.getItem\('meem-sidebar-collapsed'\)/)
 assert.match(layout, /localStorage\.setItem\('meem-sidebar-collapsed'/)
 for (const label of ['expandSidebar', 'collapseSidebar', 'profile']) {
@@ -43,13 +43,20 @@ assert.match(dashboard, /data-branch-v3-actions/)
 assert.match(dashboard, /data-branch-v3-register/)
 assert.match(dashboard, /data-branch-v3-ledger/)
 assert.match(dashboard, /bg-\[#fffefa\]/)
-assert.match(dashboard, /sm:col-span-2 border-gold-300 bg-gradient-to-br/)
+assert.match(dashboard, /sm:col-span-2 border-\[#c8b16b\] bg-gradient-to-br/)
 assert.match(dashboard, /bg-\[#173F2A\] px-4 py-3\.5/)
 assert.match(dashboard, /border border-\[#dbe7dc\] bg-white shadow-card/)
 assert.match(dashboard, /branch-register-session-heading/)
 assert.match(dashboard, /register\.manage/)
+assert.match(dashboard, /const averageSale = positiveInvoiceCount > 0 \? grossSales \/ positiveInvoiceCount : 0/)
+assert.match(dashboard, /const paymentTotal = \(session\?\.cashTotal \?\? 0\) \+ \(session\?\.cardTotal \?\? 0\)/)
+assert.match(dashboard, /const cashShare = paymentTotal > 0/)
+assert.match(dashboard, /const cardShare = paymentTotal > 0/)
+assert.match(dashboard, /formatDisplayPercent\(share, i18n\.language\)/)
+assert.match(dashboard, /kpi\.averageSale/)
+assert.doesNotMatch(dashboard.slice(dashboard.indexOf('const telemetry'), dashboard.indexOf('return (', dashboard.indexOf('const telemetry'))), /sessionInvoicesLabel/)
 
-const headerOrder = ['recent.invoice', 'recent.customer', 'recent.dateTime', 'recent.amount', 'recent.status']
+const headerOrder = ['recent.invoice', 'recent.customer', 'recent.date', 'recent.time', 'recent.amount', 'recent.status']
 let position = -1
 for (const key of headerOrder) {
   position = dashboard.indexOf(`t('${key}')`, position + 1)
@@ -59,11 +66,14 @@ assert.match(dashboard, /documentType === 'credit_note' \? -Math\.abs\(amount\) 
 assert.match(dashboard, /t\('status\.credit'\)/)
 assert.match(dashboard, /navigate\('\/invoices'\)/)
 assert.match(dashboard, /dir="auto"/)
-assert.match(dashboard, /min-w-\[760px\]/)
+assert.match(dashboard, /min-w-\[860px\]/)
+assert.match(dashboard, /bg-\[#EAF5EE\]/)
+assert.match(dashboard, /bg-\[#FBF4DF\]/)
 assert.doesNotMatch(dashboard, /businessType|business_type|profile badge/i)
 
 for (const dictionary of [en, ar]) {
   for (const key of ['establishment', 'products', 'purchases', 'suppliers', 'customers', 'reports', 'manageCatalogue', 'recordPurchases', 'manageSuppliers', 'manageCustomers', 'viewPerformance']) assert.ok(dictionary.branch[key])
+  for (const key of ['averageSale', 'averageSaleHint', 'ofPayments']) assert.ok(dictionary.kpi[key])
   assert.ok(dictionary.recent.dateTime)
 }
 
@@ -94,6 +104,14 @@ try {
     assert.match(markup, new RegExp(`>${label}<`), `${label} quick action must SSR-render`)
   }
   assert.match(markup, /Current Register Session/)
+  assert.match(markup, /Average Sale/)
+  assert.match(markup, /54% of payments/)
+
+  const zeroPaymentMarkup = renderToStaticMarkup(createElement(BranchOperationsSurface, {
+    session: { ...session, cashTotal: 0, cardTotal: 0 }, loading: false, error: '', duration: null,
+    onNavigate: () => {}, onManageRegister: () => {}, lowStock: [], lowStockLoading: false,
+  }))
+  assert.match(zeroPaymentMarkup, /0% of payments/)
 } finally {
   await server.close()
 }

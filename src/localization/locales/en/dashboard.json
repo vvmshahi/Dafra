@@ -31,7 +31,7 @@
     "sessionInvoices": "Session Invoices", "sessionCash": "Session Cash", "sessionCard": "Session Card",
     "cash": "Cash", "card": "Card", "cashAndSplit": "Cash and split cash", "cardAndSplit": "Card and split card",
     "netVat": "Net VAT", "sessionNetVat": "Session net VAT", "registerNetVat": "Register-session net VAT",
-    "expectedCash": "Expected Cash", "acrossSessions": "Across shown sessions", "vat": "VAT",
+    "expectedCash": "Expected Cash", "acrossSessions": "Across shown sessions", "vat": "VAT", "averageSale": "Average Sale", "averageSaleHint": "Gross sales per positive invoice", "ofPayments": "of payments",
     "expenses": "Expenses", "creditNotesRefunds": "Credit notes/refunds",
     "invoiceCount_one": "{{count}} invoice", "invoiceCount_other": "{{count}} invoices",
     "sessionInvoicesLabel": "{{prefix}} Invoices", "sessionCashLabel": "{{prefix}} Cash", "sessionCardLabel": "{{prefix}} Card",

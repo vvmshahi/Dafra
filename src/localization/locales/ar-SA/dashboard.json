@@ -31,7 +31,7 @@
     "sessionInvoices": "فواتير الجلسة", "sessionCash": "نقد الجلسة", "sessionCard": "بطاقات الجلسة",
     "cash": "نقداً", "card": "بطاقة", "cashAndSplit": "النقد والمدفوعات المقسّمة نقداً", "cardAndSplit": "البطاقات والمدفوعات المقسّمة بالبطاقة",
     "netVat": "صافي ضريبة القيمة المضافة", "sessionNetVat": "صافي ضريبة الجلسة", "registerNetVat": "صافي ضريبة جلسات الصندوق",
-    "expectedCash": "النقد المتوقع", "acrossSessions": "عبر الجلسات المعروضة", "vat": "ضريبة القيمة المضافة",
+    "expectedCash": "النقد المتوقع", "acrossSessions": "عبر الجلسات المعروضة", "vat": "ضريبة القيمة المضافة", "averageSale": "متوسط البيع", "averageSaleHint": "إجمالي المبيعات لكل فاتورة موجبة", "ofPayments": "من المدفوعات",
     "expenses": "المصروفات", "creditNotesRefunds": "الإشعارات الدائنة والاستردادات",
     "invoiceCount_one": "{{count}} فاتورة", "invoiceCount_other": "{{count}} فاتورة",
     "sessionInvoicesLabel": "فواتير {{prefix}}", "sessionCashLabel": "نقد {{prefix}}", "sessionCardLabel": "بطاقات {{prefix}}",

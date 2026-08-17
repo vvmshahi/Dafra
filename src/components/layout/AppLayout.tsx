@@ -105,14 +105,14 @@ function SubscriptionBanner() {
 }
 
 function getInitialCollapsed(): boolean {
-  // Constrained/tablet layouts always begin with the compact rail so the
-  // dashboard canvas remains usable. Desktop retains the local preference.
+  // Compact is the application baseline; tablet follows it too. An explicit
+  // local user choice still takes precedence after the first interaction.
   if (window.matchMedia('(max-width: 1023px)').matches) return true
   try {
     const saved = localStorage.getItem('meem-sidebar-collapsed')
     if (saved !== null) return saved === 'true'
   } catch {}
-  return false
+  return true
 }
 
 export default function AppLayout() {
