@@ -227,7 +227,7 @@ export default function CatalogueExportDialog({
           <div className="grid grid-cols-2 rounded-xl bg-[#eaf1e9] p-1" role="tablist" aria-label="Catalogue data operation">
             {(['import', 'export'] as const).map(value => <button key={value} type="button" role="tab" aria-selected={mode === value} onClick={() => setMode(value)} className={`rounded-lg px-3 py-2 text-xs font-extrabold transition ${mode === value ? 'bg-white text-[#173f2a] shadow-sm' : 'text-[#53715d]'}`}>{value === 'import' ? 'Import' : 'Export'}</button>)}
           </div>
-          {mode === 'import' ? <CatalogueImportPanel key={branchId} branchId={branchId} branchName={branchName} disabled={!canExport} onImportComplete={onImportComplete} /> : <>
+          {mode === 'import' ? <CatalogueImportPanel key={branchId} branchId={branchId} branchName={branchName} tenantId={tenantId} disabled={!canExport} onImportComplete={onImportComplete} /> : <>
           <section aria-labelledby="catalogue-export-scope">
             <p id="catalogue-export-scope" className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#53715d]">{t('export.what')}</p>
             <div className="mt-2 grid gap-2 sm:grid-cols-3">

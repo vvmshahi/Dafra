@@ -14,7 +14,7 @@ function ImportBranchContext({ branchName }: { branchName: string }) {
   return <aside className="rounded-2xl border border-[#cfe1d1] bg-[#f2f9f2] px-3.5 py-3" aria-live="polite"><p className="text-[11px] font-extrabold uppercase tracking-[.12em] text-[#53715d]">Importing into</p><p className="mt-0.5 text-sm font-extrabold text-[#173f2a]">{branchName}</p><p className="mt-1 text-xs leading-5 text-slate-600">SKUs are unique across your business. Active barcodes are unique in this branch.</p></aside>
 }
 
-export default function CatalogueImportPanel({ branchId, branchName, disabled, onImportComplete }: { branchId: string; branchName: string; disabled: boolean; onImportComplete?: () => Promise<void> | void }) {
+export default function CatalogueImportPanel({ branchId, branchName, tenantId, disabled, onImportComplete }: { branchId: string; branchName: string; tenantId: string; disabled: boolean; onImportComplete?: () => Promise<void> | void }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [sheets, setSheets] = useState<Array<{ name: string; rows: string[][] }>>([])
   const [sheetIndex, setSheetIndex] = useState(0)
@@ -33,7 +33,7 @@ export default function CatalogueImportPanel({ branchId, branchName, disabled, o
     const duplicateSkus = [...new Set(entries.filter(entry => /^SKU already exists$/i.test(entry.reason ?? '')).map(entry => normaliseSku(payloadBySourceRow.get(entry.source_row)?.sku)).filter(Boolean))]
     const productBySku = new Map<string, AccessibleProduct>()
     if (duplicateSkus.length) {
-      const { data, error } = await supabase.from('products').select('sku,branch_id,branches(name,name_ar)').in('sku', duplicateSkus)
+      const { data, error } = await supabase.from('products').select('sku,branch_id,branches(name,name_ar)').eq('tenant_id', tenantId).in('sku', duplicateSkus)
       if (!error) for (const product of (data ?? []) as unknown as AccessibleProduct[]) productBySku.set(normaliseSku(product.sku), product)
     }
     return entries.map(entry => {
