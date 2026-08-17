@@ -144,14 +144,14 @@
 
   /* 1 — Classic Business */
   .a4-document--classic { border-top: 1.6mm solid var(--invoice-primary); font-variant-numeric: tabular-nums; }
-  .a4-classic-head { display: grid; grid-template-columns: minmax(0,1fr) 66mm; gap: 12mm; align-items: start; padding: 2mm 0 7mm; border-bottom: 1px solid var(--invoice-border); }
-  .a4-classic-brand { min-width: 0; padding-top: 1mm; }
-  .a4-classic-brand .a4-logo { max-width: 42mm; margin-bottom: 3mm; }
-  .a4-classic-brand .a4-display-heading { font-size: 21pt; letter-spacing: -.03em; }
-  .a4-classic-identity { min-width: 0; padding-inline-start: 7mm; border-inline-start: 1px solid var(--invoice-border); }
-  .a4-classic-identity .a4-document-title { text-align: start; }
+  .a4-classic-head { display: grid; grid-template-columns: minmax(0,1fr) 68mm; gap: 10mm; align-items: start; padding: 1.5mm 0 5.5mm; border-bottom: 1px solid var(--invoice-border); }
+  .a4-classic-brand { min-width: 0; padding-top: .5mm; }
+  .a4-classic-brand .a4-logo { max-width: 40mm; margin-bottom: 2.25mm; }
+  .a4-classic-brand .a4-display-heading { font-size: 19pt; line-height: 1.08; letter-spacing: -.025em; }
+  .a4-classic-identity { min-width: 0; padding-inline-start: 5mm; border-inline-start: 1px solid var(--invoice-border); }
+  .a4-classic-identity .a4-document-title { text-align: end; }
   .a4-classic-identity .a4-document-title__main { font-size: 17pt; letter-spacing: -.018em; }
-  .a4-classic-identity .a4-meta { margin-top: 4mm; }
+  .a4-classic-identity .a4-meta { margin-top: 2.75mm; }
   .a4-classic-head--brandless,.a4-document--branding-hidden .a4-classic-head { grid-template-columns: 66mm; justify-content: end; }
   .a4-classic-head--brandless .a4-classic-brand,.a4-document--branding-hidden .a4-classic-brand { display: none; }
   .a4-classic-head--brandless .a4-classic-identity,.a4-document--branding-hidden .a4-classic-identity { padding-inline-start: 0; border-inline-start: 0; }
@@ -161,29 +161,36 @@
   .a4-classic-parties > .a4-buyer { padding: 0 0 0 8mm; border: 0; border-inline-start: 1px solid var(--invoice-border); }
   .a4-classic-parties.a4-parties--seller-only { grid-template-columns: minmax(0,1fr); }
   .a4-classic-parties.a4-parties--seller-only > .a4-seller { padding-inline-end: 0; }
+  .a4-classic-parties .a4-seller { line-height: 1.32; }
+  .a4-classic-parties .a4-legal-seller { padding-block: .35mm .6mm; }
+  .a4-classic-parties .a4-legal-seller__name { font-size: 9.1pt; line-height: 1.2; }
+  .a4-classic-parties .a4-section-title { margin-bottom: 1mm; }
   .a4-classic-items { table-layout: fixed; margin-top: 1mm; font-size: 7.15pt; }
   .a4-classic-items thead { color: var(--invoice-on-primary); background: var(--invoice-primary); }
-  .a4-classic-items th { padding: 2.5mm 1.2mm; border: 0; color: inherit; font-size: 6.35pt; font-weight: 850; line-height: 1.22; text-transform: uppercase; }
-  .a4-classic-items td { padding: 2.55mm 1.2mm; border-bottom: 1px solid var(--invoice-border); vertical-align: top; }
+  .a4-classic-items th { padding: 2.15mm 1.15mm; border: 0; color: inherit; font-size: 6.35pt; font-weight: 850; line-height: 1.22; text-transform: uppercase; }
+  .a4-classic-items td { padding: 2.15mm 1.15mm; border-bottom: 1px solid var(--invoice-border); vertical-align: top; }
   .a4-classic-items tbody tr:last-child td { border-bottom-color: var(--invoice-primary); }
   .a4-classic-items th:not(:nth-child(2)),.a4-classic-items td:not(:nth-child(2)):not(:nth-child(4)) { white-space: nowrap; }
   .a4-classic-items th:nth-child(2),.a4-classic-items td:nth-child(2) { text-align: start; }
   .a4-classic-items td:nth-child(2) { min-width: 0; color: var(--invoice-heading); font-weight: 700; overflow-wrap: anywhere; }
   .a4-classic-items td:nth-child(4) { color: var(--invoice-muted); overflow-wrap: anywhere; }
+  .a4-classic-items td:not(:nth-child(2)):not(:nth-child(4)) { vertical-align: middle; }
   .a4-classic-item-name { display: inline; unicode-bidi: isolate; }
-  .a4-classic-item-name--bilingual { line-height: 1.48; }
+  .a4-classic-item-name--bilingual { line-height: 1.38; }
   .a4-classic-item-name__separator { color: var(--invoice-muted); font-weight: 500; }
-  .a4-classic-items__index { width: 4%; }.a4-classic-items__description { width: 34%; }.a4-classic-items__quantity { width: 6%; }.a4-classic-items__unit { width: 7%; }.a4-classic-items__price { width: 10%; }.a4-classic-items__taxable { width: 11%; }.a4-classic-items__rate { width: 6%; }.a4-classic-items__vat { width: 10%; }.a4-classic-items__total { width: 12%; }
-  .a4-classic-items--with-discount .a4-classic-items__description { width: 25%; }.a4-classic-items--with-discount .a4-classic-items__price { width: 9%; }.a4-classic-items--with-discount .a4-classic-items__discount { width: 9%; }.a4-classic-items--with-discount .a4-classic-items__taxable { width: 10%; }.a4-classic-items--with-discount .a4-classic-items__total { width: 14%; }
-  .a4-classic-closeout { margin-top: 8mm; }
-  .a4-classic-summary { display: grid; grid-template-columns: 28mm minmax(0,1fr) minmax(63mm,.72fr); gap: 9mm; align-items: start; }
-  .a4-classic-summary .a4-qr { padding-top: 1mm; }
+  .a4-classic-items__index { width: 3%; }.a4-classic-items__description { width: 36%; }.a4-classic-items__quantity { width: 6%; }.a4-classic-items__unit { width: 6%; }.a4-classic-items__price { width: 10%; }.a4-classic-items__taxable { width: 11%; }.a4-classic-items__rate { width: 6%; }.a4-classic-items__vat { width: 10%; }.a4-classic-items__total { width: 12%; }
+  .a4-classic-items--with-discount .a4-classic-items__description { width: 27%; }.a4-classic-items--with-discount .a4-classic-items__price { width: 9%; }.a4-classic-items--with-discount .a4-classic-items__discount { width: 9%; }.a4-classic-items--with-discount .a4-classic-items__taxable { width: 10%; }.a4-classic-items--with-discount .a4-classic-items__total { width: 14%; }
+  .a4-classic-closeout { margin-top: 6mm; }
+  .a4-classic-summary { display: grid; grid-template-columns: 27mm minmax(0,.9fr) minmax(66mm,.85fr); gap: 5mm; align-items: start; }
+  .a4-classic-summary .a4-qr { padding-top: .5mm; }
   .a4-classic-summary .a4-qr img,.a4-classic-summary .a4-qr-placeholder { width: 25mm; height: 25mm; }
-  .a4-classic-summary .a4-payment { padding-top: 2mm; }
-  .a4-classic-summary .a4-totals { border-inline: 0; border-top: 1px solid var(--invoice-border); border-bottom: 2px solid var(--invoice-primary); padding: 3mm 0; background: var(--invoice-total-surface); }
-  .a4-classic-summary .a4-totals > div { padding-inline: 3.5mm; }
-  .a4-classic-summary .a4-totals__grand { margin-inline: 0 !important; padding: 3mm 3.5mm 0 !important; border-top-color: var(--invoice-heading); font-size: 14pt; }
-  .a4-classic-closeout .a4-footer { margin-top: 6mm; }
+  .a4-classic-summary .a4-payment { padding-top: .75mm; }
+  .a4-classic-summary .a4-payment > div:not(.a4-section-title) { gap: 1.25mm 3.5mm; margin-bottom: .7mm; }
+  .a4-classic-summary .a4-payment .a4-section-title { margin-bottom: .85mm; }
+  .a4-classic-summary .a4-totals { border-inline: 0; border-top: 1px solid var(--invoice-border); border-bottom: 2px solid var(--invoice-primary); padding: 2.25mm 0; background: var(--invoice-total-surface); }
+  .a4-classic-summary .a4-totals > div { margin-bottom: .85mm; padding-inline: 3mm; }
+  .a4-classic-summary .a4-totals__grand { margin-inline: 0 !important; padding: 2.2mm 3mm 0 !important; border-top-color: var(--invoice-heading); font-size: 14pt; line-height: 1.1; }
+  .a4-classic-closeout .a4-footer { margin-top: 4.5mm; }
 
   /* 2 — Modern Statement */
   .a4-statement-head { display: grid; grid-template-columns: minmax(0,1.12fr) minmax(72mm,.88fr); margin-inline: -14mm; }

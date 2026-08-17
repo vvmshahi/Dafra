@@ -16,6 +16,19 @@ const css = read('src/index.css')
 for (const marker of ['ClassicItemName', 'ClassicItemTable', 'a4-classic-items', 'a4-classic-closeout', 'a4-classic-item-name--bilingual']) assert.match(source, new RegExp(marker))
 for (const marker of ['a4-classic-items thead', 'background: var\\(--invoice-primary\\)', 'a4-classic-items--with-discount', 'a4-classic-closeout', 'a4-classic-parties.a4-parties--seller-only']) assert.match(css, new RegExp(marker))
 assert.doesNotMatch(css.match(/\/\* 2 — Modern Statement \*\/[\s\S]*?\/\* 3 — Minimal Editorial \*\//)?.[0] ?? '', /a4-classic/)
+for (const marker of [
+  /a4-classic-head[^}]*68mm[^}]*padding: 1\.5mm 0 5\.5mm/,
+  /a4-classic-brand \.a4-display-heading[^}]*font-size: 19pt/,
+  /a4-classic-parties \.a4-legal-seller__name[^}]*font-size: 9\.1pt/,
+  /a4-classic-items__description \{ width: 36%/,
+  /a4-classic-items--with-discount \.a4-classic-items__description \{ width: 27%/,
+  /a4-classic-items td:not\(:nth-child\(2\)\):not\(:nth-child\(4\)\) \{ vertical-align: middle/,
+  /a4-classic-summary \{[^}]*27mm[^}]*gap: 5mm/,
+  /a4-classic-summary \.a4-payment > div:not\(\.a4-section-title\) \{[^}]*margin-bottom: \.7mm/,
+  /a4-classic-summary \.a4-totals \{[^}]*padding: 2\.25mm 0/,
+  /a4-classic-summary \.a4-totals__grand \{[^}]*font-size: 14pt[^}]*line-height: 1\.1/,
+  /a4-classic-closeout \{ margin-top: 6mm; \}/,
+]) assert.match(css, marker)
 
 const server = await createServer({ appType: 'custom', logLevel: 'error', server: { middlewareMode: true } })
 try {
@@ -85,13 +98,15 @@ try {
   assert.match(englishOnly, /English product/); assert.doesNotMatch(englishOnly, /منتج عربي/)
   const arabicOnly = render({ ...base, identity: { ...base.identity, language: 'ar', direction: 'rtl' }, items: [{ ...item, description: '', descriptionAr: 'منتج عربي' }] }, { preview: true })
   assert.match(arabicOnly, /منتج عربي/); assert.doesNotMatch(arabicOnly, />English product</)
+  const canonicalCombined = render({ ...base, identity: { ...base.identity, language: 'en', direction: 'ltr' }, items: [item] }, { preview: true })
+  assert.match(canonicalCombined, /a4-classic-item-name--bilingual[\s\S]*English product[\s\S]*\/ [\s\S]*منتج عربي/, 'issued bilingual names remain one combined title regardless of document-language setting')
   const duplicate = render({ ...base, items: [{ ...item, description: 'Pepsi', descriptionAr: 'pepsi' }] }, { preview: true })
   assert.equal(count(duplicate, 'Pepsi') + count(duplicate, 'pepsi'), 1, 'identical issued names render once')
   const noDiscount = render({ ...base, items: [{ ...item, discount: 0 }] }, { preview: true })
   assert.doesNotMatch(noDiscount, /a4-classic-items--with-discount/)
   const long = render({ ...base, items: Array.from({ length: 60 }, (_, index) => ({ ...item, description: `Long bilingual commercial description ${index + 1} with a detailed legal product name`, descriptionAr: `وصف منتج عربي طويل ومفصل ${index + 1}` })) }, { preview: true })
   assert.equal(count(long, 'Long bilingual commercial description'), 60)
-  assert.match(css, /table-header-group/); assert.match(css, /\.a4-items tr \{ break-inside: avoid/); assert.match(css, /\.a4-classic-closeout \{ margin-top: 8mm; \}/)
+  assert.match(css, /table-header-group/); assert.match(css, /\.a4-items tr \{ break-inside: avoid/); assert.match(css, /\.a4-classic-closeout \{ margin-top: 6mm; \}/)
 
   assert.match(preview, /cash[\s\S]*card/i)
   assert.match(preview, /Received[\s\S]*40\.00/)
