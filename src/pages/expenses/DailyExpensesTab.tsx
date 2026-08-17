@@ -62,12 +62,12 @@ function SumCard({ label, value, sub, accent }: {
   return (
     <div className={`flex-1 min-w-0 rounded-xl px-4 py-3 border ${
       accent
-        ? 'bg-primary-500 border-primary-800 text-white'
-        : 'bg-white border-primary-800/70 shadow-card'
+        ? 'bg-[#173f2a] border-[#173f2a] text-[#fff8e7] shadow-lg'
+        : 'bg-[#fffdf7] border-gray-200 shadow-sm'
     }`}>
-      <p className={`text-xs font-medium ${accent ? 'text-white/70' : 'text-gray-400'}`}>{label}</p>
-      <p className={`text-lg font-bold mt-0.5 ${accent ? 'text-white' : 'text-gray-900'}`}>{value}</p>
-      {sub && <p className={`text-[10px] mt-0.5 ${accent ? 'text-white/60' : 'text-gray-400'}`}>{sub}</p>}
+      <p className={`text-xs font-medium ${accent ? 'text-[#fff8e7]/70' : 'text-gray-500'}`}>{label}</p>
+      <p className={`text-lg font-bold mt-0.5 ${accent ? 'text-[#fff8e7]' : 'text-gray-900'}`}>{value}</p>
+      {sub && <p className={`text-[10px] mt-0.5 ${accent ? 'text-[#fff8e7]/60' : 'text-gray-400'}`}>{sub}</p>}
     </div>
   )
 }

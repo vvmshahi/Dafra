@@ -52,6 +52,7 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
   const { profile } = useAuth()
   const { t } = useTranslation(['expenses', 'common'])
   const fileRef     = useRef<HTMLInputElement>(null)
+  const operationIdRef = useRef<string | null>(null)
 
   const [saving,       setSaving]       = useState(false)
   const [error,        setError]        = useState('')
@@ -133,6 +134,7 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
       setImagePreview(null)
       setSupplierSource('none')
       setShowSupplierDetails(false)
+      operationIdRef.current = crypto.randomUUID()
     }
     setImageFile(null)
     setError('')
@@ -282,7 +284,28 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
         const { error: err } = await q.from('expenses').update(payload).eq('id', expense.id)
         if (err) { console.error('Expense update failed', err); setError(t('expenses:errors.saveFailed')); return }
       } else {
-        const { error: err } = await q.from('expenses').insert(payload)
+        const createPayload = {
+          branch_id: bid,
+          expense_date: date,
+          description: description.trim(),
+          amount: amountNum,
+          vat_treatment: vatChoice,
+          vat_amount_mode: vatChoice === 'claimable' ? priceTreatment : null,
+          payment_method: payMethod,
+          category_id: categoryId || null,
+          supplier_id: supplierId || null,
+          vendor_name: vendorName.trim() || null,
+          tax_invoice_number: taxInvoiceNumber.trim() || null,
+          supplier_vat_number: supplierVatNumber.trim() || null,
+          supplier_cr_number: supplierCrNumber.trim() || null,
+          supplier_contact: supplierContact.trim() || null,
+          invoice_time: invoiceTime || null,
+          receipt_url: receiptUrl,
+          notes: notes.trim() || null,
+          operation_id: operationIdRef.current ?? crypto.randomUUID(),
+        }
+        operationIdRef.current = createPayload.operation_id
+        const { error: err } = await (supabase as any).rpc('create_expense_v1', { p_payload: createPayload })
         if (err) { console.error('Expense creation failed', err); setError(t('expenses:errors.saveFailed')); return }
       }
 
@@ -297,6 +320,26 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
   }
 
   if (!open) return null
+
+  if (!expense && !vatChoice) {
+    return (
+      <ExpenseModalShell open={open} kind="daily" editing={false} saving={saving} canSubmit={false} onClose={onClose} onSubmit={event => event.preventDefault()}>
+        <section className="mx-auto max-w-2xl py-4" aria-labelledby="expense-vat-choice-heading">
+          <h3 id="expense-vat-choice-heading" className="text-lg font-bold text-gray-900">{t('expenses:fields.vatTreatment')}</h3>
+          <p className="mt-1 text-sm text-gray-500">{t('expenses:ui.chooseVatTreatment')}</p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            {SIMPLE_EXPENSE_VAT_OPTIONS.map(option => (
+              <button key={option.value} type="button" onClick={() => setVatChoice(option.value)}
+                className="rounded-2xl border border-gray-200 bg-white p-5 text-start shadow-sm transition hover:border-[#173f2a] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#173f2a]">
+                <p className="text-sm font-bold text-[#173f2a]">{t(`expenses:vat.${option.value}`)}</p>
+                <p className="mt-2 text-sm leading-6 text-gray-600">{t(`expenses:vatHelp.${option.value}`)}</p>
+              </button>
+            ))}
+          </div>
+        </section>
+      </ExpenseModalShell>
+    )
+  }
 
   return (
     <ExpenseModalShell open={open} kind="daily" editing={Boolean(expense)} saving={saving}
@@ -326,6 +369,9 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
                 </div>
               </div>
 
+              <button type="button" onClick={() => setVatChoice('')} className="text-xs font-semibold text-[#173f2a] hover:text-[#22563b]">
+                {t('expenses:actions.changeVatTreatment')}
+              </button>
               <div>
                 <label className="label">{t('expenses:fields.expenseName')} <span className="text-red-500">*</span></label>
                 <input className="input" value={description} onChange={e => setDescription(e.target.value)}

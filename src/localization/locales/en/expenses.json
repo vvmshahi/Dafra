@@ -25,6 +25,10 @@
   "incompleteVat": "Incomplete VAT details",
   "reviewAmount": "Review {{amount}}",
   "monthlyFixedCost": "Monthly Recurring Cost",
+  "actualExpenses": "Actual Expenses",
+  "recurringEstimatedCosts": "Recurring Cost Estimate",
+  "projectedCosts": "Projected Costs",
+  "projectedCostsHint": "Actual expenses plus recurring estimate",
   "annualEstimate": "Annual Estimate",
   "totalEntries": "Total Entries",
   "activeCount_one": "{{count}} active expense",
@@ -93,6 +97,7 @@
     "non_taxable": "Non-taxable"
   },
   "payment": {
+    "notSelected": "Not selected",
     "cash": "Cash",
     "card": "Card",
     "bank_transfer": "Bank Transfer",
@@ -152,6 +157,7 @@
     "to": "To"
   },
   "actions": {
+    "changeVatTreatment": "Change VAT treatment",
     "save": "Save Expense",
     "update": "Update Expense",
     "saveChanges": "Save Changes",
@@ -176,6 +182,7 @@
     "supplierContact": "Contact person, phone, or email (optional)"
   },
   "ui": {
+    "chooseVatTreatment": "Choose the VAT treatment for this expense.",
     "drawerHint": "Use this for VAT invoices and business expenses.",
     "supplierSource": "Supplier / vendor source",
     "savedSupplier": "Saved supplier",

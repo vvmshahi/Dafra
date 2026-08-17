@@ -206,19 +206,19 @@ export default function FixedExpensesTab({ addRequest = 0 }: { addRequest?: numb
       <div className="flex items-start gap-4 flex-wrap">
         {/* Summary cards */}
         <div className="flex gap-3 flex-1 flex-wrap min-w-0">
-          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-primary-500 border border-primary-800 text-white shadow-card">
-            <p className="text-xs font-medium text-white/70">{t('monthlyFixedCost')}</p>
+          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-[#173f2a] border border-[#173f2a] text-[#fff8e7] shadow-lg">
+            <p className="text-xs font-medium text-[#fff8e7]/70">{t('monthlyFixedCost')}</p>
             <p className="text-lg font-bold mt-0.5"><Rial amount={monthlyTotal} /></p>
-            <p className="text-[10px] text-white/60 mt-0.5">
+            <p className="text-[10px] text-[#fff8e7]/60 mt-0.5">
               {t('activeCount', { count: activeItems.length })}
             </p>
           </div>
-          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-primary-800/70 shadow-card">
+          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-[#fffdf7] border border-gray-200 shadow-sm">
             <p className="text-xs font-medium text-gray-400">{t('annualEstimate')}</p>
             <p className="text-lg font-bold text-gray-900 mt-0.5"><Rial amount={yearlyTotal} /></p>
             <p className="text-[10px] text-gray-400 mt-0.5">{t('annualHint')}</p>
           </div>
-          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-primary-800/70 shadow-card">
+          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-slate-50 border border-slate-200 shadow-sm">
             <p className="text-xs font-medium text-gray-400">{t('totalEntries')}</p>
             <p className="text-lg font-bold text-gray-900 mt-0.5">{items.length}</p>
             <p className="text-[10px] text-gray-400 mt-0.5">

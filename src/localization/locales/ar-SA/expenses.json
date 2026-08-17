@@ -22,6 +22,10 @@
   "incompleteVat": "تفاصيل الضريبة غير مكتملة",
   "reviewAmount": "مراجعة {{amount}}",
   "monthlyFixedCost": "التكلفة الشهرية الثابتة",
+  "actualExpenses": "المصروفات الفعلية",
+  "recurringEstimatedCosts": "تقدير التكلفة المتكررة",
+  "projectedCosts": "التكاليف التقديرية",
+  "projectedCostsHint": "المصروفات الفعلية مضافاً إليها تقدير التكلفة المتكررة",
   "annualEstimate": "التقدير السنوي",
   "totalEntries": "إجمالي السجلات",
   "activeCount_one": "مصروف نشط واحد",
@@ -93,6 +97,7 @@
     "non_taxable": "غير خاضع للضريبة"
   },
   "payment": {
+    "notSelected": "غير محددة",
     "cash": "نقداً",
     "card": "بطاقة",
     "bank_transfer": "تحويل بنكي",
@@ -152,6 +157,7 @@
     "to": "إلى"
   },
   "actions": {
+    "changeVatTreatment": "تغيير معاملة الضريبة",
     "save": "حفظ المصروف",
     "update": "تحديث المصروف",
     "saveChanges": "حفظ التغييرات",
@@ -176,6 +182,7 @@
     "supplierContact": "اسم جهة الاتصال أو الهاتف أو البريد (اختياري)"
   },
   "ui": {
+    "chooseVatTreatment": "اختر معاملة الضريبة لهذا المصروف.",
     "drawerHint": "استخدم هذا لفواتير الضريبة ومصروفات المنشأة.",
     "supplierSource": "مصدر المورد",
     "savedSupplier": "مورد محفوظ",

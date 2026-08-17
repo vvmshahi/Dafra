@@ -42,7 +42,7 @@ const PAY_LABEL: Record<string, string> = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ExpenseReport({ startDate, endDate, branchId }: ReportProps) {
-  const { t } = useTranslation('reports')
+  const { t } = useTranslation(['reports', 'expenses'])
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data,    setData]    = useState<ExpData | null>(null)
@@ -57,7 +57,7 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
       setError(null)
       try {
         const summary = await loadReportSummary<ExpData>(
-          'get_expense_report_summary',
+          'get_expense_report_summary_v1',
           reportParams(startDate, endDate, branchId),
           EMPTY_EXPENSE_DATA,
         )
@@ -98,9 +98,9 @@ export default function ExpenseReport({ startDate, endDate, branchId }: ReportPr
 
       {/* ── Summary cards ──────────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
-        <StatCard label={t('metrics.totalExpenses')} value={<Rial amount={data?.grandTotal ?? 0} />} primary />
-        <StatCard label={t('metrics.variableExpenses')} value={<Rial amount={data?.totalVariable ?? 0} />} accent="red" sub={t('expenses.daily')} />
-        <StatCard label={t('metrics.fixedExpenses')} value={<Rial amount={data?.totalFixed ?? 0} />} accent="amber" sub={t('expenses.recurring')} />
+        <StatCard label={t('expenses:projectedCosts')} value={<Rial amount={data?.grandTotal ?? 0} />} primary sub={t('expenses:projectedCostsHint')} />
+        <StatCard label={t('expenses:actualExpenses')} value={<Rial amount={data?.totalVariable ?? 0} />} accent="red" sub={t('expenses.daily')} />
+        <StatCard label={t('expenses:recurringEstimatedCosts')} value={<Rial amount={data?.totalFixed ?? 0} />} accent="amber" sub={t('expenses.recurring')} />
       </div>
 
       {/* ── Category bar chart ──────────────────────────────── */}

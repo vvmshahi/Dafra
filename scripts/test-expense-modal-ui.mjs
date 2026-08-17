@@ -27,8 +27,8 @@ test('daily and fixed workflows use one centered accessible modal shell', () => 
   assert.doesNotMatch(`${daily}${fixed}`, /role="tab"/)
 })
 
-test('daily create/update table, scope and payload keys remain intact', () => {
-  assert.match(daily, /\.from\('expenses'\)\.insert\(payload\)/)
+test('daily create uses the authoritative RPC while edit compatibility remains intact', () => {
+  assert.match(daily, /\.rpc\('create_expense_v1'/)
   assert.match(daily, /\.from\('expenses'\)\.update\(payload\)\.eq\('id', expense\.id\)/)
   for (const key of [
     'tenant_id', 'branch_id', 'added_by', 'category_id', 'expense_date', 'description',
@@ -37,6 +37,7 @@ test('daily create/update table, scope and payload keys remain intact', () => {
     'supplier_vat_number', 'supplier_id', 'supplier_cr_number', 'supplier_contact',
     'invoice_time', 'receipt_url', 'notes',
   ]) assert.match(daily, new RegExp(`${key}:`))
+  assert.match(daily, /operation_id: operationIdRef\.current/)
 })
 
 test('actual expense requires explicit VAT, price treatment and payment choices', () => {
@@ -55,6 +56,8 @@ test('actual expense requires explicit VAT, price treatment and payment choices'
   assert.match(daily, /priceTreatmentRequired/)
   assert.match(daily, /expense-price-treatment/)
   assert.match(daily, /paymentMethodRequired/)
+  assert.match(daily, /chooseVatTreatment/)
+  assert.match(daily, /changeVatTreatment/)
   assert.match(daily, /type="radio" name="expense-vat"/)
   assert.match(daily, /type="radio" name="expense-payment"/)
 })
@@ -104,7 +107,8 @@ test('page calculations, filters and header actions are authoritative', () => {
   assert.match(dailyTab, /filterPay/)
   assert.match(fixedTab, /monthlyTotal  = activeItems\.reduce/)
   assert.match(fixedTab, /yearlyTotal   = monthlyTotal \* 12/)
-  assert.match(`${dailyTab}${fixedTab}`, /border-primary-800/)
+  assert.match(`${dailyTab}${fixedTab}`, /bg-\[#173f2a\]/)
+  assert.match(`${dailyTab}${fixedTab}`, /border-gray-200/)
   assert.match(page, /actions=/)
   assert.match(page, /bg-\[#173f2a\]/)
 })
@@ -121,6 +125,8 @@ test('English and Arabic modal, preview, empty, success and error copy is comple
     assert.ok(locale.success.dailyAdded)
     assert.ok(locale.success.fixedAdded)
     assert.ok(locale.errors.deleteFailed)
+    assert.ok(locale.payment.notSelected)
+    assert.ok(locale.ui.chooseVatTreatment)
   }
 })
 
