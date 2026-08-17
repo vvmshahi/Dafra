@@ -1,6 +1,5 @@
 import { execFileSync } from 'node:child_process'
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -15,7 +14,7 @@ if (providedWorkdir) {
   process.exit(0)
 }
 
-const workdir = mkdtempSync(join(tmpdir(), 'dafra-atomic-disposable.'))
+const workdir = mkdtempSync('/tmp/dafra-atomic-disposable.')
 const projectId = basename(workdir).replace(/[^a-zA-Z0-9_]/g, '_')
 const configPath = join(workdir, 'supabase/config.toml')
 try {

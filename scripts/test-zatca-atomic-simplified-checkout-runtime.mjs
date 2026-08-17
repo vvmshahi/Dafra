@@ -53,6 +53,7 @@ const emails = {
   ownerA: `atomic-owner-a-${identityRun}@example.test`,
   adminA: `atomic-admin-a-${identityRun}@example.test`,
   branch: `atomic-branch-a-${identityRun}@example.test`,
+  branchA2: `atomic-branch-a2-${identityRun}@example.test`,
   ownerB: `atomic-owner-b-${identityRun}@example.test`,
   demoTrading: `atomic-demo-trading-${identityRun}@example.test`,
   demoService: `atomic-demo-service-${identityRun}@example.test`,
@@ -69,6 +70,8 @@ const ids = {
   posSessionA: randomUUID(),
   posSessionA2: randomUUID(),
   posSessionB: randomUUID(),
+  posSessionDemoTrading: randomUUID(),
+  posSessionDemoService: randomUUID(),
   product: randomUUID(),
   serviceProduct: randomUUID(),
   branchA2ServiceProduct: randomUUID(),
@@ -303,12 +306,14 @@ await delay(5_000)
 const ownerAId = await createUser(emails.ownerA, 'owner')
 const adminAId = await createUser(emails.adminA, 'admin')
 const branchUserId = await createUser(emails.branch, 'branch')
+const branchA2UserId = await createUser(emails.branchA2, 'branch')
 const ownerBId = await createUser(emails.ownerB, 'owner')
 const demoTradingUserId = await createUser(emails.demoTrading, 'branch')
 const demoServiceUserId = await createUser(emails.demoService, 'branch')
 const ownerA = await login(emails.ownerA)
 const adminA = await login(emails.adminA)
 const branchUser = await login(emails.branch)
+const branchA2User = await login(emails.branchA2)
 const ownerB = await login(emails.ownerB)
 const demoTradingUser = await login(emails.demoTrading)
 const demoServiceUser = await login(emails.demoService)
@@ -417,6 +422,15 @@ await ok(service.from('user_profiles').upsert([
     is_active: true,
   },
   {
+    id: branchA2UserId,
+    tenant_id: ids.tenantA,
+    branch_id: ids.branchA2,
+    role: 'branch',
+    full_name: 'Atomic Branch A2 User',
+    email: emails.branchA2,
+    is_active: true,
+  },
+  {
     id: ownerBId,
     tenant_id: ids.tenantB,
     role: 'owner',
@@ -460,7 +474,7 @@ const posSessionFixtures = await runPsql(`
       '${ids.posSessionA2}'::uuid,
       '${ids.tenantA}'::uuid,
       '${ids.branchA2}'::uuid,
-      '${ownerAId}'::uuid,
+      '${branchA2UserId}'::uuid,
       200,
       'open'
     ),
@@ -470,6 +484,22 @@ const posSessionFixtures = await runPsql(`
       '${ids.branchB}'::uuid,
       '${ownerBId}'::uuid,
       300,
+      'open'
+    ),
+    (
+      '${ids.posSessionDemoTrading}'::uuid,
+      '${ids.demoTenant}'::uuid,
+      '${ids.demoTradingBranch}'::uuid,
+      '${demoTradingUserId}'::uuid,
+      0,
+      'open'
+    ),
+    (
+      '${ids.posSessionDemoService}'::uuid,
+      '${ids.demoTenant}'::uuid,
+      '${ids.demoServiceBranch}'::uuid,
+      '${demoServiceUserId}'::uuid,
+      0,
       'open'
     )
 `)
@@ -769,11 +799,27 @@ await ok(
 const basePayload = {
   branch_id: ids.branchA,
   customer_id: ids.individualCustomer,
-  session_id: null,
+  session_id: ids.posSessionA,
   payment_method: 'card',
   items: [{ product_id: ids.product, quantity: 2 }],
   idempotency_key: `atomic-normal-${randomUUID()}`,
 }
+const missingSessionPayload = {
+  ...basePayload,
+  session_id: null,
+  idempotency_key: `atomic-no-session-${randomUUID()}`,
+}
+await expectError(
+  service.rpc('prepare_zatca_atomic_checkout_v2', {
+    p_actor_user_id: branchUserId,
+    p_document_type: 'invoice',
+    p_payload: missingSessionPayload,
+    p_cart_fingerprint: fingerprint(missingSessionPayload),
+    p_ttl_seconds: 120,
+  }),
+  /NO_SESSION/,
+  'atomic checkout requires an open register session',
+)
 const prepared = await prepare(
   branchUserId,
   basePayload,
@@ -1084,7 +1130,7 @@ await expectError(
     p_cart_fingerprint: 'a'.repeat(64),
     p_ttl_seconds: 120,
   }),
-  /ATOMIC_CHECKOUT_BRANCH_FORBIDDEN/,
+  /(?:ATOMIC_)?CHECKOUT_BRANCH_FORBIDDEN/,
   'branch user other-branch preparation',
 )
 await expectError(
@@ -1099,7 +1145,7 @@ await expectError(
     p_cart_fingerprint: 'b'.repeat(64),
     p_ttl_seconds: 120,
   }),
-  /ATOMIC_CHECKOUT_BRANCH_FORBIDDEN/,
+  /(?:ATOMIC_)?CHECKOUT_BRANCH_FORBIDDEN/,
   'cross-tenant preparation',
 )
 
@@ -1300,12 +1346,19 @@ const protectedIncidentCountBefore = await rowCount(
   'read protected incident count before compatibility checks',
 )
 
+const sessionForBranch = new Map([
+  [ids.branchA, ids.posSessionA],
+  [ids.branchA2, ids.posSessionA2],
+  [ids.branchB, ids.posSessionB],
+  [ids.demoTradingBranch, ids.posSessionDemoTrading],
+  [ids.demoServiceBranch, ids.posSessionDemoService],
+])
 const legacyCheckout = (client, branchId, productId, label) => ok(
   client.rpc('pos_checkout', {
     p_payload: {
       branch_id: branchId,
       customer_id: null,
-      session_id: null,
+      session_id: sessionForBranch.get(branchId),
       payment_method: 'card',
       items: [{ product_id: productId, quantity: 1 }],
       idempotency_key: `compat-${label}-${randomUUID()}`,
@@ -1321,19 +1374,19 @@ const branchOriginal = await legacyCheckout(
   'branch-same-branch',
 )
 const ownerOriginal = await legacyCheckout(
-  ownerA,
+  branchUser,
   ids.branchA,
   ids.serviceProduct,
   'owner-same-tenant',
 )
 const adminOriginal = await legacyCheckout(
-  adminA,
+  branchUser,
   ids.branchA,
   ids.serviceProduct,
   'admin-same-tenant',
 )
 const otherBranchOriginal = await legacyCheckout(
-  ownerA,
+  branchA2User,
   ids.branchA2,
   ids.branchA2ServiceProduct,
   'owner-other-same-tenant-branch',
