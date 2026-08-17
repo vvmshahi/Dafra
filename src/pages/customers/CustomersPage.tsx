@@ -147,13 +147,13 @@ function FilterTab({
       onClick={onClick}
       className={`flex items-center gap-1.5 text-xs font-medium px-3.5 py-1.5 rounded-xl border transition-all duration-150 ${
         active
-          ? 'bg-primary-500 border-primary-500 text-white shadow-sm'
-          : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+          ? 'border-[#173f2a] bg-[#173f2a] text-[#fff8e7] shadow-sm'
+          : 'border-transparent bg-transparent text-gray-600 hover:bg-white hover:border-gray-200'
       }`}
     >
       {label}
       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
-        active ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'
+        active ? 'bg-white/15 text-[#fff8e7]' : 'bg-gray-100 text-gray-500'
       }`}>
         {count}
       </span>
@@ -172,7 +172,7 @@ function EmptyState({ filtered, onAdd }: { filtered: boolean; onAdd: () => void 
       title={t(filtered ? 'noMatches' : 'noCustomers')}
       description={t(filtered ? 'filterHint' : 'emptyHint')}
       action={!filtered ? (
-        <Button onClick={onAdd}>
+        <Button className="bg-[#173f2a] text-[#fff8e7] shadow-[0_4px_12px_rgba(15,36,25,0.18)] hover:bg-[#22563b] focus-visible:ring-[#173f2a]" onClick={onAdd}>
           <Plus size={15} />
           {t('add')}
         </Button>
@@ -302,22 +302,21 @@ export default function CustomersPage() {
             {customers.length}
           </span>
         ) : undefined}
-        actions={undefined}
+        actions={<Button size="sm" className="bg-[#173f2a] text-[#fff8e7] shadow-[0_4px_12px_rgba(15,36,25,0.18)] hover:bg-[#22563b] focus-visible:ring-[#173f2a]" onClick={openAdd}><Plus size={14} />{t('add')}</Button>}
       />
 
       {/* ── Filter tabs ─────────────────────────────────────── */}
-      <div className="card flex flex-wrap items-center gap-2 p-2.5">
-        <div className="relative min-w-[220px] flex-1 basis-[280px]">
+      <div className="card flex flex-wrap items-center gap-3 p-2.5">
+        <div className="relative min-w-[220px] flex-[1.6] basis-[360px]">
           <Search size={15} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input type="text" placeholder={t('search')} aria-label={t('search')} value={search} onChange={e => setSearch(e.target.value)} className="input h-9 w-full py-1.5 ps-9 pe-9 text-sm" />
           {search && <button type="button" onClick={() => setSearch('')} aria-label={t('common:clearSearch')} className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={13} /></button>}
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1 rounded-xl border border-[#d7e2d8] bg-[#f7faf7] p-1">
           <FilterTab label={t('all')} count={counts.all} active={filterType === 'all'} onClick={() => setFilterType('all')} />
           <FilterTab label={t('individual')} count={counts.individual} active={filterType === 'individual'} onClick={() => setFilterType('individual')} />
           <FilterTab label={t('business')} count={counts.business} active={filterType === 'business'} onClick={() => setFilterType('business')} />
         </div>
-        <Button size="sm" className="ms-auto" onClick={openAdd}><Plus size={14} />{t('add')}</Button>
       </div>
 
       {/* ── Content ─────────────────────────────────────────── */}
@@ -353,19 +352,6 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* ── Summary bar (when there are customers) ──────────── */}
-      {!loading && customers.length > 0 && (
-        <div className="flex items-center gap-6 px-4 py-3 bg-white rounded-2xl border border-gray-100 shadow-card text-sm">
-          <div className="flex items-center gap-2 text-gray-500">
-            <User size={14} className="text-primary-400" />
-            <span>{t('individualCount', { count: counts.individual })}</span>
-          </div>
-          <div className="flex items-center gap-2 text-gray-500">
-            <Building2 size={14} className="text-teal-600" />
-            <span>{t('businessCount', { count: counts.business })}</span>
-          </div>
-        </div>
-      )}
 
       <CustomerModal
         open={drawerOpen}

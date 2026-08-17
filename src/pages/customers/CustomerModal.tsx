@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Building2, Check, CircleAlert, CircleCheck, User, Users, X } from 'lucide-react'
+import { Building2, Check, CircleAlert, CircleCheck, Plus, User, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
@@ -43,7 +43,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
   const [errorField, setErrorField] = useState<ErrorField | null>(null)
   const [phoneError, setPhoneError] = useState('')
   const [vatError, setVatError] = useState('')
-  const [custType, setCustType] = useState<CustomerType>('individual')
+  const [custType, setCustType] = useState<CustomerType | null>(null)
   const [name, setName] = useState('')
   const [nameAr, setNameAr] = useState('')
   const [businessName, setBusinessName] = useState('')
@@ -55,6 +55,10 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
   const [city, setCity] = useState('')
   const [address, setAddress] = useState('')
   const [notes, setNotes] = useState('')
+  const [emailOpen, setEmailOpen] = useState(false)
+  const [addressOpen, setAddressOpen] = useState(false)
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [crOpen, setCrOpen] = useState(false)
 
   const isBusiness = custType === 'business'
   const vatTrimmed = vatNumber.trim()
@@ -68,7 +72,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
     setErrorField(null)
     setPhoneError('')
     setVatError('')
-    setCustType('individual')
+    setCustType(null)
     setName('')
     setNameAr('')
     setBusinessName('')
@@ -80,12 +84,16 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
     setCity('')
     setAddress('')
     setNotes('')
+    setEmailOpen(false)
+    setAddressOpen(false)
+    setNotesOpen(false)
+    setCrOpen(false)
   }, [])
 
   useEffect(() => {
     if (!open) return
     previousFocusRef.current = document.activeElement as HTMLElement | null
-    setCustType((customer?.customer_type as CustomerType) ?? 'individual')
+    setCustType((customer?.customer_type as CustomerType) ?? null)
     setName(customer?.name ?? '')
     setNameAr(customer?.name_ar ?? '')
     setBusinessName(customer?.business_name ?? customer?.company_name ?? '')
@@ -97,12 +105,16 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
     setCity(customer?.city ?? '')
     setAddress(customer?.address ?? '')
     setNotes(customer?.notes ?? '')
+    setEmailOpen(Boolean(customer?.email))
+    setAddressOpen(Boolean(customer?.address))
+    setNotesOpen(Boolean(customer?.notes))
+    setCrOpen(Boolean(customer?.cr_number))
     setError('')
     setErrorField(null)
     setPhoneError('')
     setVatError('')
     window.setTimeout(() => {
-      const type = (customer?.customer_type as CustomerType) ?? 'individual'
+      const type = (customer?.customer_type as CustomerType) ?? null
       if (type === 'business') businessNameRef.current?.focus()
       else nameRef.current?.focus()
     }, 0)
@@ -145,6 +157,21 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
     setErrorField(null)
     setPhoneError('')
     setVatError('')
+    setName('')
+    setNameAr('')
+    setBusinessName('')
+    setBusinessNameAr('')
+    setPhone('')
+    setEmail('')
+    setVatNumber('')
+    setCrNumber('')
+    setCity('')
+    setAddress('')
+    setNotes('')
+    setEmailOpen(false)
+    setAddressOpen(false)
+    setNotesOpen(false)
+    setCrOpen(false)
     window.setTimeout(() => {
       if (nextType === 'business') businessNameRef.current?.focus()
       else nameRef.current?.focus()
@@ -198,6 +225,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (saving) return
+    if (!custType) return
 
     if (isBusiness && !businessName.trim()) {
       setErrorField('businessName')
@@ -280,7 +308,6 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
   const previewName = isBusiness
     ? businessName.trim() || t('customers:preview.businessPlaceholder')
     : name.trim() || t('customers:preview.individualPlaceholder')
-  const previewNameAr = isBusiness ? businessNameAr.trim() : nameAr.trim()
   const readinessKey = !businessName.trim()
     ? 'missingBusinessName'
     : !vatTrimmed
@@ -316,12 +343,12 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                   <h2 id="customer-modal-title" className="truncate text-base font-bold text-gray-900">
                     {t(customer ? 'customers:edit' : 'customers:add')}
                   </h2>
-                  <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold text-primary-700">
-                    {t(isBusiness ? 'customers:businessB2b' : 'customers:individual')}
-                  </span>
+                  {custType && <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold text-primary-700">
+                    {t(isBusiness ? 'customers:business' : 'customers:individual')}
+                  </span>}
                 </div>
                 <p id="customer-modal-description" className="mt-0.5 text-xs text-gray-500">
-                  {t(customer ? 'customers:updateHint' : 'customers:modal.subtitle')}
+                  {t(customer ? 'customers:updateHint' : custType ? 'customers:modal.subtitle' : 'customers:modal.chooseType')}
                 </p>
               </div>
             </div>
@@ -332,12 +359,29 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+            {!customer && !custType ? (
+              <fieldset>
+                <legend className="label">{t('customers:sections.type')}</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {([
+                    { value: 'individual', icon: User, label: t('customers:individual'), description: t('customers:personalCustomer') },
+                    { value: 'business', icon: Building2, label: t('customers:business'), description: t('customers:companyCustomer') },
+                  ] as const).map(option => {
+                    const Icon = option.icon
+                    return <button key={option.value} type="button" onClick={() => selectType(option.value)} className="flex min-h-32 items-center gap-3 rounded-xl border border-[#d7e2d8] bg-white p-4 text-start transition-colors hover:border-[#6e9a75] hover:bg-[#fbfdfb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#173f2a]">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e5efe6] text-[#173f2a]"><Icon size={18} aria-hidden="true" /></span>
+                      <span><span className="block text-sm font-bold text-gray-900">{option.label}</span><span className="mt-1 block text-xs text-gray-500">{option.description}</span></span>
+                    </button>
+                  })}
+                </div>
+              </fieldset>
+            ) : <>
             <fieldset>
               <legend className="label">{t('customers:sections.type')}</legend>
               <div className="grid gap-2 sm:grid-cols-2">
                 {([
                   { value: 'individual', icon: User, label: t('customers:individual'), description: t('customers:personalCustomer') },
-                  { value: 'business', icon: Building2, label: t('customers:businessB2b'), description: t('customers:companyCustomer') },
+                  { value: 'business', icon: Building2, label: t('customers:business'), description: t('customers:companyCustomer') },
                 ] as const).map(option => {
                   const selected = custType === option.value
                   const Icon = option.icon
@@ -368,7 +412,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                   <SectionHeading id="customer-identity-heading">
                     {t(isBusiness ? 'customers:sections.businessIdentity' : 'customers:sections.personalIdentity')}
                   </SectionHeading>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="mt-3">
                     {isBusiness ? (
                       <>
                         <Field id="customer-business-name" label={t('customers:fields.businessName')} required
@@ -383,12 +427,6 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                             }}
                             placeholder={t('customers:placeholders.businessName')}
                             aria-invalid={errorField === 'businessName'} dir="auto" />
-                        </Field>
-                        <Field id="customer-business-name-ar" label={t('customers:fields.businessNameAr')}
-                          helper={t('customers:helpers.optional')}>
-                          <input id="customer-business-name-ar" className="input" dir="rtl"
-                            value={businessNameAr} onChange={event => setBusinessNameAr(event.target.value)}
-                            placeholder={t('customers:placeholders.businessNameAr')} />
                         </Field>
                       </>
                     ) : (
@@ -406,11 +444,6 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                             placeholder={t('customers:placeholders.name')}
                             aria-invalid={errorField === 'name'} dir="auto" />
                         </Field>
-                        <Field id="customer-name-ar" label={t('customers:fields.nameAr')} helper={t('customers:helpers.optional')}>
-                          <input id="customer-name-ar" className="input" dir="rtl" value={nameAr}
-                            onChange={event => setNameAr(event.target.value)}
-                            placeholder={t('customers:placeholders.nameAr')} />
-                        </Field>
                       </>
                     )}
                   </div>
@@ -419,7 +452,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                 {isBusiness && (
                   <section aria-labelledby="customer-registration-heading">
                     <SectionHeading id="customer-registration-heading">{t('customers:sections.registration')}</SectionHeading>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div className="mt-3 space-y-3">
                       <Field id="customer-vat" label={t('customers:fields.vatNumber')}
                         helper={vatError || t('customers:vatHint')} error={vatError || undefined}>
                         <input ref={vatRef} id="customer-vat"
@@ -431,12 +464,12 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                           onBlur={handleVatBlur} placeholder="3XXXXXXXXXXXXX3" maxLength={15}
                           inputMode="numeric" aria-invalid={Boolean(vatError) || errorField === 'vatNumber'} dir="ltr" />
                       </Field>
-                      <Field id="customer-cr" label={t('customers:fields.crNumber')} helper={t('customers:helpers.cr')}>
+                      {crOpen ? <div><Field id="customer-cr" label={t('customers:fields.crNumber')} helper={t('customers:helpers.cr')}>
                         <input ref={crRef} id="customer-cr" className="input" value={crNumber}
                           onChange={event => setCrNumber(event.target.value)}
                           placeholder="1234567890" inputMode="numeric"
                           aria-invalid={errorField === 'crNumber'} dir="ltr" />
-                      </Field>
+                      </Field>{!crNumber && <OptionalToggle onClick={() => setCrOpen(false)}>{t('customers:actions.hideCr')}</OptionalToggle>}</div> : <OptionalToggle onClick={() => setCrOpen(true)}>{t('customers:actions.addCr')}</OptionalToggle>}
                     </div>
                   </section>
                 )}
@@ -457,7 +490,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
 
                 <section aria-labelledby="customer-contact-heading">
                   <SectionHeading id="customer-contact-heading">{t('customers:sections.contact')}</SectionHeading>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="mt-3 space-y-3">
                     <Field id="customer-phone" label={t('customers:fields.mobile')}
                       helper={phoneError || t('customers:placeholders.phoneHint')} error={phoneError || undefined}>
                       <input ref={phoneRef} id="customer-phone" className={`input ${phoneError ? 'border-red-300' : ''}`}
@@ -469,37 +502,38 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                         onBlur={handlePhoneBlur} placeholder="0512345678" maxLength={10}
                         aria-invalid={Boolean(phoneError) || errorField === 'phone'} dir="ltr" />
                     </Field>
-                    <Field id="customer-email" label={t('customers:fields.email')} helper={t('customers:helpers.optional')}>
+                    {emailOpen ? <div><Field id="customer-email" label={t('customers:fields.email')} helper={t('customers:helpers.optional')}>
                       <input ref={emailRef} id="customer-email" className="input" type="email" inputMode="email"
                         value={email} onChange={event => setEmail(event.target.value)}
                         placeholder={t('customers:placeholders.email')}
                         aria-invalid={errorField === 'email'} dir="ltr" />
-                    </Field>
+                    </Field>{!email && <OptionalToggle onClick={() => setEmailOpen(false)}>{t('customers:actions.hideEmail')}</OptionalToggle>}</div> : <OptionalToggle onClick={() => setEmailOpen(true)}>{t('customers:actions.addEmail')}</OptionalToggle>}
                   </div>
                 </section>
 
                 <section aria-labelledby="customer-address-heading">
                   <SectionHeading id="customer-address-heading">{t('customers:sections.address')}</SectionHeading>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
+                  <div className="mt-3 space-y-3">
                     <Field id="customer-city" label={t('customers:fields.city')}>
                       <input id="customer-city" className="input" value={city}
                         onChange={event => setCity(event.target.value)}
                         placeholder={t('customers:placeholders.city')} dir="auto" />
                     </Field>
-                    <Field id="customer-address" label={t('customers:fields.address')}
+                    {addressOpen ? <div><Field id="customer-address" label={t('customers:fields.address')}
                       helper={isBusiness ? t('customers:helpers.businessAddress') : t('customers:helpers.optional')}>
                       <textarea id="customer-address" className="input resize-none" rows={2} value={address}
                         onChange={event => setAddress(event.target.value)}
                         placeholder={t('customers:placeholders.address')} dir="auto" />
-                    </Field>
+                    </Field>{!address && <OptionalToggle onClick={() => setAddressOpen(false)}>{t('customers:actions.hideAddress')}</OptionalToggle>}</div> : <OptionalToggle onClick={() => setAddressOpen(true)}>{t('customers:actions.addAddress')}</OptionalToggle>}
                   </div>
                 </section>
 
-                <section aria-label={t('customers:fields.notes')}>
-                  <label className="label" htmlFor="customer-notes">{t('customers:fields.notes')}</label>
-                  <textarea id="customer-notes" className="input resize-none" rows={2} value={notes}
+                <section aria-labelledby="customer-optional-heading">
+                  <SectionHeading id="customer-optional-heading">{t('customers:sections.optional')}</SectionHeading>
+                  <div className="mt-3">{notesOpen ? <div><textarea id="customer-notes" className="input resize-none" rows={2} value={notes}
                     onChange={event => setNotes(event.target.value)}
                     placeholder={t('customers:placeholders.notes')} dir="auto" />
+                    {!notes && <OptionalToggle onClick={() => setNotesOpen(false)}>{t('customers:actions.hideNotes')}</OptionalToggle>}</div> : <OptionalToggle onClick={() => setNotesOpen(true)}>{t('customers:actions.addNotes')}</OptionalToggle>}</div>
                 </section>
               </div>
 
@@ -508,15 +542,14 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                   aria-labelledby="customer-preview-heading">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary-100">{t('customers:preview.eyebrow')}</p>
                   <h3 id="customer-preview-heading" className="mt-2 break-words text-lg font-bold leading-6" dir="auto">{previewName}</h3>
-                  {previewNameAr && <p className="mt-1 break-words text-sm text-primary-100" dir="rtl">{previewNameAr}</p>}
                   <dl className="mt-4 divide-y divide-white/10 text-xs">
-                    <PreviewRow label={t('customers:fields.type')} value={t(isBusiness ? 'customers:businessB2b' : 'customers:individual')} />
+                    <PreviewRow label={t('customers:fields.type')} value={t(isBusiness ? 'customers:business' : 'customers:individual')} />
                     {isBusiness && <PreviewRow label={t('customers:fields.vatNumber')} value={vatNumber || t('customers:preview.notProvided')} ltr />}
                     {isBusiness && crNumber && <PreviewRow label={t('customers:fields.crNumber')} value={crNumber} ltr />}
                     {isBusiness && <PreviewRow label={t('customers:fields.contactPerson')} value={name || t('customers:preview.notProvided')} />}
                     <PreviewRow label={t('customers:fields.mobile')} value={phone || t('customers:preview.notProvided')} ltr />
-                    {!isBusiness && <PreviewRow label={t('customers:fields.email')} value={email || t('customers:preview.notProvided')} ltr />}
-                    {!isBusiness && <PreviewRow label={t('customers:fields.city')} value={city || t('customers:preview.notProvided')} />}
+                    <PreviewRow label={t('customers:fields.email')} value={email || t('customers:preview.notProvided')} ltr />
+                    <PreviewRow label={t('customers:fields.city')} value={city || t('customers:preview.notProvided')} />
                   </dl>
                   {isBusiness && (
                     <div role="status" aria-live="polite" className={`mt-4 flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs leading-5 ${
@@ -532,6 +565,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
               </aside>
             </div>
 
+            </>}
             {error && !['name', 'businessName'].includes(errorField ?? '') && (
               <div role="alert" aria-live="assertive" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
@@ -542,10 +576,10 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
           <footer className="flex flex-shrink-0 flex-col-reverse gap-2 border-t border-gray-200 bg-white px-4 py-3 sm:flex-row sm:justify-end sm:px-6">
             <Button type="button" variant="secondary" className="w-full active:scale-[0.97] sm:w-auto"
               onClick={requestClose} disabled={saving}>{t('common:cancel')}</Button>
-            <Button type="submit" className="w-full bg-[#173f2a] hover:bg-[#22563b] active:scale-[0.97] sm:w-auto"
+            {(!customer && !custType) ? null : <Button type="submit" className="w-full bg-[#173f2a] text-[#fff8e7] shadow-[0_4px_12px_rgba(15,36,25,0.18)] hover:bg-[#22563b] active:scale-[0.97] focus-visible:ring-[#173f2a] sm:w-auto"
               loading={saving} disabled={saving || !formCanSubmit}>
               {saving ? t('common:saving') : t(customer ? 'common:saveChanges' : 'customers:add')}
-            </Button>
+            </Button>}
           </footer>
         </form>
       </div>
@@ -555,6 +589,10 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
 
 function SectionHeading({ id, children }: { id: string; children: React.ReactNode }) {
   return <h3 id={id} className="text-xs font-bold uppercase tracking-wide text-gray-600">{children}</h3>
+}
+
+function OptionalToggle({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return <button type="button" onClick={onClick} className="inline-flex items-center gap-1 text-xs font-semibold text-[#31543f] hover:text-[#173f2a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#173f2a] focus-visible:ring-offset-2"><Plus size={13} aria-hidden="true" />{children}</button>
 }
 
 function Field({
