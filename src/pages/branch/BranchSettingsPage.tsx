@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   Building2,
@@ -110,6 +110,103 @@ function InfoRow({
   );
 }
 
+type BranchHeaderMetadata = {
+  name: string;
+  branchCode: string | null;
+  isActive: boolean;
+};
+
+function BranchSettingsHeader({
+  backPath,
+  branch,
+  loading,
+  labels,
+}: {
+  backPath: string;
+  branch: BranchHeaderMetadata | null;
+  loading: boolean;
+  labels: {
+    active: string;
+    backToDashboard: string;
+    branchCode: string;
+    branchName: string;
+    eyebrow: string;
+    inactive: string;
+    loadingBranch: string;
+    subtitle: string;
+    title: string;
+  };
+}) {
+  return (
+    <header className="border-b border-slate-200 pb-5">
+      <Link
+        to={backPath}
+        className="mb-5 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-primary-700 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+      >
+        <ArrowLeft size={15} />
+        {labels.backToDashboard}
+      </Link>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs font-semibold text-primary-700">
+            <Building2 size={14} /> {labels.eyebrow}
+          </div>
+          <h1 className="mt-1 truncate text-2xl font-black tracking-tight text-slate-950">
+            {labels.title}
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">{labels.subtitle}</p>
+          {branch ? (
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs text-slate-500">
+              <span>
+                <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  {labels.branchName}
+                </span>
+                <span className="font-semibold text-slate-800">{branch.name}</span>
+              </span>
+              {branch.branchCode && (
+                <>
+                  <span className="h-7 w-px bg-slate-200" aria-hidden="true" />
+                  <span>
+                    <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      {labels.branchCode}
+                    </span>
+                    <span className="font-mono font-semibold text-slate-800">
+                      {branch.branchCode}
+                    </span>
+                  </span>
+                </>
+              )}
+              <StatusChip
+                enabled={branch.isActive}
+                enabledLabel={labels.active}
+                disabledLabel={labels.inactive}
+              />
+            </div>
+          ) : loading ? (
+            <div
+              className="mt-4 flex w-full max-w-md items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3"
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2 className="shrink-0 animate-spin text-primary-600" size={16} />
+              <span className="h-3 w-32 animate-pulse rounded bg-slate-200" aria-hidden="true" />
+              <span className="h-3 w-20 animate-pulse rounded bg-slate-100" aria-hidden="true" />
+              <span className="sr-only">{labels.loadingBranch}</span>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function displayBranchCode(branchCode: string | null): string | null {
+  const value = branchCode?.trim();
+  if (!value) return null;
+  const normalized = value.toUpperCase();
+  return normalized.startsWith("BR-") ? normalized : `BR-${normalized}`;
+}
+
 function ToggleRow({
   label,
   help,
@@ -148,7 +245,7 @@ function ToggleRow({
 
 export default function BranchSettingsPage() {
   const { t } = useTranslation("branches");
-  const { profile, branch: authBranch } = useAuth();
+  const { profile, branch: authBranch, loading: authLoading } = useAuth();
   const { branchId: routeBranchId } = useParams<{ branchId: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -164,6 +261,7 @@ export default function BranchSettingsPage() {
     : (authBranch?.id ?? profile?.branch_id ?? "");
 
   const [branches, setBranches] = useState<BranchOption[]>([]);
+  const [branchDirectoryLoading, setBranchDirectoryLoading] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<BranchRecord | null>(
     null,
   );
@@ -195,8 +293,13 @@ export default function BranchSettingsPage() {
   }, [searchParams, setSearchParams]);
 
   useEffect(() => {
-    if (!isOwner || !profile?.tenant_id) return;
+    if (!isOwner || !profile?.tenant_id) {
+      setBranches([]);
+      setBranchDirectoryLoading(false);
+      return;
+    }
     let cancelled = false;
+    setBranchDirectoryLoading(true);
     void (async () => {
       const { data, error: loadError } = await (supabase as any)
         .from("branches")
@@ -215,7 +318,9 @@ export default function BranchSettingsPage() {
         navigate(`/settings/branches/${list[0].id}?section=${activeSection}`, {
           replace: true,
         });
-    })();
+    })().finally(() => {
+      if (!cancelled) setBranchDirectoryLoading(false);
+    });
     return () => {
       cancelled = true;
     };
@@ -223,12 +328,16 @@ export default function BranchSettingsPage() {
 
   useEffect(() => {
     if (!selectedBranchId) {
-      setLoading(false);
+      setSelectedBranch(null);
+      setCreditSettings(null);
+      if (!authLoading) setLoading(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setSelectedBranch(null);
+    setCreditSettings(null);
     void Promise.all([
       (supabase as any)
         .from("branches")
@@ -264,7 +373,7 @@ export default function BranchSettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedBranchId, t]);
+  }, [authLoading, selectedBranchId, t]);
 
   useEffect(() => {
     const dirty =
@@ -279,10 +388,6 @@ export default function BranchSettingsPage() {
     return () => window.removeEventListener("beforeunload", beforeUnload);
   }, [creditEnabled, creditSettings?.branchCreditEnabled, posDraft, posSaved]);
 
-  const selectedOption = useMemo(
-    () => branches.find((item) => item.id === selectedBranchId) ?? authBranch,
-    [authBranch, branches, selectedBranchId],
-  );
   const posDirty = JSON.stringify(posDraft) !== JSON.stringify(posSaved);
   const creditDirty = creditSettings
     ? creditEnabled !== creditSettings.branchCreditEnabled
@@ -355,93 +460,87 @@ export default function BranchSettingsPage() {
     }
   }
 
-  const printingPath = isOwner
-    ? `/settings/branches/${selectedBranchId}/printing?tab=receipts`
-    : "/invoice-settings?tab=receipts";
-  const branchName =
-    selectedOption?.name ??
-    selectedBranch?.name ??
-    creditSettings?.branchName ??
-    "";
-  const address = [
-    [selectedBranch?.building_number, selectedBranch?.street]
-      .filter(Boolean)
-      .join(" "),
-    selectedBranch?.district,
-    [selectedBranch?.city, selectedBranch?.postal_code]
-      .filter(Boolean)
-      .join(" "),
-    selectedBranch?.country,
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const rawBranchIdentifier =
-    selectedBranch.branch_code?.trim() || selectedBranch.id.slice(0, 8);
-  const branchIdentifier = rawBranchIdentifier.toUpperCase().startsWith("BR-")
-    ? rawBranchIdentifier.toUpperCase()
-    : `BR-${rawBranchIdentifier.toUpperCase()}`;
+  const backPath = isOwner ? "/dashboard" : "/branch";
+  const branchDataLoading = authLoading || loading || branchDirectoryLoading;
+  const headerLabels = {
+    active: t("workspace.active"),
+    backToDashboard: t("workspace.backToDashboard"),
+    branchCode: t("workspace.branchCode"),
+    branchName: t("workspace.branchName"),
+    eyebrow: t("workspace.eyebrow"),
+    inactive: t("workspace.inactive"),
+    loadingBranch: t("workspace.loadingBranch"),
+    subtitle: t("workspace.subtitle"),
+    title: t("workspace.title"),
+  };
 
-  if (loading)
+  if (branchDataLoading)
     return (
-      <div className="flex min-h-64 items-center justify-center rounded-2xl border border-slate-100 bg-white">
-        <Loader2 className="animate-spin text-primary-600" size={22} />
+      <div className="mx-auto max-w-7xl space-y-5">
+        <BranchSettingsHeader
+          backPath={backPath}
+          branch={null}
+          loading={branchDataLoading}
+          labels={headerLabels}
+        />
+        <div
+          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="space-y-4" aria-hidden="true">
+            <div className="h-4 w-32 animate-pulse rounded bg-slate-200" />
+            <div className="h-7 w-56 animate-pulse rounded bg-slate-100" />
+            <div className="h-20 max-w-3xl animate-pulse rounded-2xl bg-slate-50" />
+          </div>
+          <span className="sr-only">{t("workspace.loadingBranch")}</span>
+        </div>
       </div>
     );
   if (!selectedBranchId || !selectedBranch || !creditSettings)
     return (
-      <div className="rounded-2xl border border-slate-100 bg-white p-6 text-sm text-slate-600">
-        {error ?? t("workspace.noBranch")}
+      <div className="mx-auto max-w-7xl space-y-5">
+        <BranchSettingsHeader
+          backPath={backPath}
+          branch={null}
+          loading={false}
+          labels={headerLabels}
+        />
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
+          {error ?? t("workspace.noBranch")}
+        </div>
       </div>
     );
 
+  const printingPath = isOwner
+    ? `/settings/branches/${selectedBranchId}/printing?tab=receipts`
+    : "/invoice-settings?tab=receipts";
+  const address = [
+    [selectedBranch.building_number, selectedBranch.street]
+      .filter(Boolean)
+      .join(" "),
+    selectedBranch.district,
+    [selectedBranch.city, selectedBranch.postal_code]
+      .filter(Boolean)
+      .join(" "),
+    selectedBranch.country,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const branchIdentifier = displayBranchCode(selectedBranch.branch_code);
+
   return (
     <div className="mx-auto max-w-7xl space-y-5">
-      <header className="border-b border-slate-200 pb-5">
-        <Link
-          to={isOwner ? "/dashboard" : "/branch"}
-          className="mb-5 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-primary-700 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-        >
-          <ArrowLeft size={15} />
-          {t("workspace.backToDashboard")}
-        </Link>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-xs font-semibold text-primary-700">
-              <Building2 size={14} /> {t("workspace.eyebrow")}
-            </div>
-            <h1 className="mt-1 truncate text-2xl font-black tracking-tight text-slate-950">
-              {t("workspace.title")}
-            </h1>
-            <p className="mt-1 text-sm text-slate-500">
-              {t("workspace.subtitle")}
-            </p>
-            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs text-slate-500">
-              <span>
-                <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                  {t("workspace.branchName")}
-                </span>
-                <span className="font-semibold text-slate-800">
-                  {branchName}
-                </span>
-              </span>
-              <span className="h-7 w-px bg-slate-200" aria-hidden="true" />
-              <span>
-                <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                  {t("workspace.branchCode")}
-                </span>
-                <span className="font-mono font-semibold text-slate-800">
-                  {branchIdentifier}
-                </span>
-              </span>
-              <StatusChip
-                enabled={selectedBranch.is_active}
-                enabledLabel={t("workspace.active")}
-                disabledLabel={t("workspace.inactive")}
-              />
-            </div>
-          </div>
-        </div>
-      </header>
+      <BranchSettingsHeader
+        backPath={backPath}
+        branch={{
+          name: selectedBranch.name,
+          branchCode: branchIdentifier,
+          isActive: selectedBranch.is_active,
+        }}
+        loading={false}
+        labels={headerLabels}
+      />
 
       {isOwner && branches.length > 0 && (
         <label className="flex max-w-xl flex-wrap items-center gap-3 text-sm font-semibold text-slate-800">
@@ -550,11 +649,13 @@ export default function BranchSettingsPage() {
                   label={t("workspace.branchName")}
                   value={selectedBranch.name}
                 />
-                <InfoRow
-                  label={t("workspace.branchCode")}
-                  value={branchIdentifier}
-                  dir="ltr"
-                />
+                {branchIdentifier && (
+                  <InfoRow
+                    label={t("workspace.branchCode")}
+                    value={branchIdentifier}
+                    dir="ltr"
+                  />
+                )}
                 <InfoRow
                   label={t("workspace.phone")}
                   value={selectedBranch.phone ?? ""}
