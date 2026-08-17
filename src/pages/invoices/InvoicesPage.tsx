@@ -806,19 +806,19 @@ export default function InvoicesPage() {
         ].map(metric => (
           <article
             key={metric.label}
-            className={`relative min-h-[124px] overflow-hidden rounded-2xl border border-white/10 p-4 shadow-card-md ring-1 ring-black/10 sm:min-h-[132px] sm:p-5 [@media(max-height:740px)]:min-h-[116px] [@media(max-height:740px)]:p-4 ${metric.tone}`}
+            className={`relative min-h-[104px] overflow-hidden rounded-2xl border border-white/10 p-3.5 shadow-card-md ring-1 ring-black/10 sm:min-h-[112px] sm:p-4 [@media(max-height:740px)]:min-h-[100px] [@media(max-height:740px)]:p-3 ${metric.tone}`}
           >
             <div className="flex h-full items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-bold uppercase leading-4 tracking-wide text-white/65 [overflow-wrap:anywhere] rtl:normal-case rtl:tracking-normal">
                   {metric.label}
                 </p>
-                <p dir="ltr" className="mt-2 text-xl font-black tracking-tight text-white tabular-nums sm:text-2xl [&>span>span:first-child]:text-[0.72em] [&>span>span:first-child]:opacity-80">
+                <p dir="ltr" className="mt-1.5 text-xl font-black tracking-tight text-white tabular-nums sm:text-2xl [&>span>span:first-child]:text-[0.72em] [&>span>span:first-child]:opacity-80">
                   {metric.value}
                 </p>
-                <p className="mt-2 text-[11px] font-medium leading-4 text-white/60 [overflow-wrap:anywhere]">{metric.sub}</p>
+                <p className="mt-1 text-[11px] font-medium leading-4 text-white/60 [overflow-wrap:anywhere]">{metric.sub}</p>
               </div>
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/10">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/10">
                 <metric.icon size={17} className="text-white/90" aria-hidden="true" />
               </div>
             </div>
@@ -1058,7 +1058,7 @@ export default function InvoicesPage() {
                       <th
                         key={label}
                         scope="col"
-                        className={`sticky top-0 z-10 border-b border-gray-200 bg-slate-50 px-2.5 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-500 rtl:normal-case rtl:tracking-normal ${alignment}`}
+                        className={`sticky top-0 z-10 border-b border-[#0B1C13] bg-[#173F2A] px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-[#FFF8E7] rtl:normal-case rtl:tracking-normal ${alignment}`}
                       >
                         {label}
                       </th>
