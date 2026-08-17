@@ -225,6 +225,9 @@ const permittedPaths = new Set([
   // outside this exception.
   'supabase/migrations/20260817000700_restore_pos_checkout_after_buyer_snapshot_hardening.sql',
   'scripts/test-p0-checkout-buyer-snapshot-hotfix.mjs',
+  // P0 stale-checkout recovery exercises only client retry persistence; it
+  // does not alter the server-owned checkout, stock, or payment authority.
+  'scripts/test-p0-saved-checkout-recovery.mjs',
   'scripts/test-purchase-modal-ui.mjs',
   'scripts/test-expense-modal-ui.mjs',
   'scripts/test-expense-authority-v1.mjs',

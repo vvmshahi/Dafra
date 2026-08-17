@@ -114,6 +114,12 @@ export interface PendingAtomicCheckout {
   cartFingerprint: string
   documentType: AtomicCheckoutDocumentType
   checkout: Record<string, unknown>
+  /**
+   * Client-only ownership metadata. It is deliberately outside the checkout
+   * payload: the server remains the authority for the idempotency contract.
+   */
+  actorId?: string | null
+  registerSessionId?: string | null
   scopeId?: string
   branchId?: string
 }
@@ -361,6 +367,27 @@ export function clearPendingAtomicCheckout(
       || pending.idempotencyKey !== idempotencyKey
       || pending.cartFingerprint !== cartFingerprint) return
   localStorage.removeItem(
+    atomicCheckoutStorageKey(branchId, documentType, scopeId),
+  )
+}
+
+/**
+ * Removes one known local retry record after the merchant has explicitly
+ * chosen to start a new sale. This never touches the cart or any server-side
+ * idempotency record, and must not be used for normal successful completion.
+ */
+export function discardPendingAtomicCheckout(
+  branchId: string,
+  idempotencyKey: string,
+  cartFingerprint: string,
+  documentType: AtomicCheckoutDocumentType = 'invoice',
+  scopeId?: string,
+): boolean {
+  const pending = readPendingAtomicCheckout(branchId, documentType, scopeId)
+  if (!pending
+      || pending.idempotencyKey !== idempotencyKey
+      || pending.cartFingerprint !== cartFingerprint) return false
+  return removeExactPendingKey(
     atomicCheckoutStorageKey(branchId, documentType, scopeId),
   )
 }

@@ -111,6 +111,13 @@
   "discount": "Discount",
   "checkout": "Checkout",
   "cancelSale": "Cancel sale",
+  "checkoutRecovery": {
+    "title": "Saved checkout belongs to a previous cart.",
+    "body": "Start a fresh checkout for the cart currently on screen. Your cart, customer, and payment details will be kept.",
+    "startFresh": "Start fresh checkout",
+    "ready": "Ready to check out this cart with a new checkout attempt.",
+    "resetFailed": "The saved checkout could not be cleared on this device. Try again or reload the page."
+  },
   "vatInclusive": "VAT 15% (incl.)",
   "vatExclusive": "VAT 15% (excl.)",
   "charge": "Charge",

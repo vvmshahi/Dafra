@@ -8,7 +8,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "test": "npm run test:register-session-netting && npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:thermal-preview-parity && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx && npm run test:branch-billing-profile-ux && npm run test:profile-aware-catalogue-navigation && npm run test:saved-services-catalogue && npm run test:catalogue-bulk-export && npm run test:catalogue-bulk-import && npm run test:custom-line-cart-architecture && npm run test:custom-line-server-checkout && npm run test:source-aware-reporting-credit-hardening",
+    "test": "npm run test:register-session-netting && npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:thermal-preview-parity && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx && npm run test:branch-billing-profile-ux && npm run test:profile-aware-catalogue-navigation && npm run test:saved-services-catalogue && npm run test:catalogue-bulk-export && npm run test:catalogue-bulk-import && npm run test:custom-line-cart-architecture && npm run test:custom-line-server-checkout && npm run test:p0-saved-checkout-recovery && npm run test:source-aware-reporting-credit-hardening",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -46,6 +46,7 @@
     "test:phase4g-invoice-release-readiness": "node scripts/test-phase4g-invoice-release-readiness.mjs",
     "test:issued-document-presentation-integrity": "node scripts/test-issued-document-presentation-integrity.mjs",
     "test:p0-checkout-buyer-snapshot-hotfix": "node scripts/test-p0-checkout-buyer-snapshot-hotfix.mjs",
+    "test:p0-saved-checkout-recovery": "node scripts/test-p0-saved-checkout-recovery.mjs",
     "audit:phase4g-invoice-release-readiness": "node scripts/audit-phase4g-invoice-release-readiness.mjs",
     "audit:phase5b-release-scope": "node scripts/audit-phase5b-release-scope.mjs",
     "test:zatca-finalization-v2": "node scripts/test-zatca-phase2-finalization-v2.mjs",

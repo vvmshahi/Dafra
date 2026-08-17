@@ -79,7 +79,7 @@ test('frontend retains one idempotency key across atomic and legacy checkout', (
   const key = pos.indexOf('const idempotencyKey =', charge)
   const persist = pos.indexOf('persistPendingAtomicCheckout(', key)
   const atomic = pos.indexOf('await checkoutSimplifiedAtomically({', persist)
-  const legacy = pos.indexOf("rpc('pos_checkout'", atomic)
+  const legacy = pos.indexOf("payMethod === 'credit' ? 'post_customer_credit_checkout_v1' : 'pos_checkout'", atomic)
 
   assert.ok(charge > 0 && key > charge)
   assert.ok(persist > key && atomic > persist)
@@ -87,6 +87,10 @@ test('frontend retains one idempotency key across atomic and legacy checkout', (
   assert.match(
     pos.slice(key, atomic),
     /idempotency_key: idempotencyKey/,
+  )
+  assert.match(
+    pos.slice(atomic, legacy),
+    /\(supabase as any\)\.rpc\(/,
   )
 })
 
@@ -103,7 +107,7 @@ test('ambiguous transport errors remain failures and are not silently downgraded
 })
 
 test('local checkout remains database-owned and ZATCA work is downstream', () => {
-  const legacy = pos.indexOf("rpc('pos_checkout'")
+  const legacy = pos.indexOf("payMethod === 'credit' ? 'post_customer_credit_checkout_v1' : 'pos_checkout'")
   const finalizationBlock = pos.indexOf(
     'try {',
     pos.indexOf('let finalizationError', legacy),

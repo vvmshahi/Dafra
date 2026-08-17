@@ -30,6 +30,7 @@ import {
   atomicCheckoutFingerprint,
   checkoutSimplifiedAtomically,
   clearPendingAtomicCheckout,
+  discardPendingAtomicCheckout,
   persistPendingAtomicCheckout,
   readPendingAtomicCheckout,
   type AtomicCheckoutResult,
@@ -448,6 +449,12 @@ function safeCheckoutErrorKey(err: unknown): string {
     return 'validation:checkoutForbidden'
   }
   return 'validation:checkoutFailed'
+}
+
+function checkoutClientSource(): 'android' | 'web' {
+  return typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
+    ? 'android'
+    : 'web'
 }
 
 function registerSessionErrorKey(err: unknown): string {
@@ -1972,6 +1979,57 @@ function SplitPaymentModal({
   )
 }
 
+function SavedCheckoutRecoveryDialog({
+  onStartFresh,
+  onCancel,
+}: {
+  onStartFresh: () => void
+  onCancel: () => void
+}) {
+  const { t } = useTranslation(['pos', 'common'])
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" role="presentation">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="saved-checkout-recovery-title"
+        className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl"
+      >
+        <div className="flex items-start gap-3 px-5 pt-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+            <AlertCircle size={20} />
+          </div>
+          <div>
+            <h2 id="saved-checkout-recovery-title" className="text-base font-bold text-gray-900">
+              {t('pos:checkoutRecovery.title')}
+            </h2>
+            <p className="mt-1 text-sm leading-5 text-gray-600">
+              {t('pos:checkoutRecovery.body')}
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 px-5 pb-5 pt-5">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            {t('common:cancel')}
+          </button>
+          <button
+            type="button"
+            onClick={onStartFresh}
+            className="flex-1 rounded-xl bg-[#0F2419] py-2.5 text-sm font-semibold text-white hover:bg-[#183725]"
+          >
+            {t('pos:checkoutRecovery.startFresh')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── POSPage ───────────────────────────────────────────────────────────────────
 
 const WA_LINK    = supportConfig.whatsappLink
@@ -2035,6 +2093,17 @@ export default function POSPage() {
   const [creditEligibilityLoading, setCreditEligibilityLoading] = useState(false)
   const [creditPolicyRevision, setCreditPolicyRevision] = useState(0)
   const [submitting,   setSubmitting]   = useState(false)
+  const [staleCheckoutRecovery, setStaleCheckoutRecovery] = useState<{
+    branchId: string
+    idempotencyKey: string
+    savedFingerprint: string
+    currentFingerprint: string
+    source: 'android' | 'web'
+    actorId: string | null
+    sessionId: string | null
+    savedActorId: string | null
+    savedSessionId: string | null
+  } | null>(null)
   const [receipt,      setReceipt]      = useState<ReceiptData | null>(null)
   const [unitChooserProduct, setUnitChooserProduct] = useState<PosProduct | null>(null)
   const [customLineEditor, setCustomLineEditor] = useState<CustomCartLine | 'new' | null>(null)
@@ -2449,10 +2518,10 @@ export default function POSPage() {
   }, [cart, profile?.branch_id])
 
   useEffect(() => {
-    if (!session || submitting || receipt || showOpenSession || showCloseSession || unitChooserProduct || customLineEditor || custOpen || showQuickCustomer || splitOpen || showExpense) return
+    if (!session || submitting || receipt || staleCheckoutRecovery || showOpenSession || showCloseSession || unitChooserProduct || customLineEditor || custOpen || showQuickCustomer || splitOpen || showExpense) return
     const frame = window.requestAnimationFrame(() => searchRef.current?.focus())
     return () => window.cancelAnimationFrame(frame)
-  }, [session, submitting, receipt, showOpenSession, showCloseSession, unitChooserProduct, customLineEditor, custOpen, showQuickCustomer, splitOpen, showExpense])
+  }, [session, submitting, receipt, staleCheckoutRecovery, showOpenSession, showCloseSession, unitChooserProduct, customLineEditor, custOpen, showQuickCustomer, splitOpen, showExpense])
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────────
 
@@ -2950,22 +3019,51 @@ export default function POSPage() {
         && payMethod !== 'credit'
         && documentDecision?.documentType === 'simplified'
         && documentDecision.checkoutPath === 'atomic'
+      const currentPayloadFingerprint = persistedInvoiceCheckout
+        ? await atomicCheckoutFingerprint(payload)
+        : null
+      const savedPayloadFingerprint = persistedInvoiceCheckout
+        ? await atomicCheckoutFingerprint(persistedInvoiceCheckout.checkout)
+        : null
+      if (persistedInvoiceCheckout
+          && (!atomicRequested
+            || persistedInvoiceCheckout.cartFingerprint !== currentPayloadFingerprint
+            || persistedInvoiceCheckout.cartFingerprint !== savedPayloadFingerprint)) {
+        const recovery = {
+          branchId: branch.id,
+          idempotencyKey: persistedInvoiceCheckout.idempotencyKey,
+          savedFingerprint: persistedInvoiceCheckout.cartFingerprint,
+          currentFingerprint: currentPayloadFingerprint ?? '',
+          source: checkoutClientSource(),
+          actorId: user?.id ?? null,
+          sessionId: session?.id ?? null,
+          savedActorId: persistedInvoiceCheckout.actorId ?? null,
+          savedSessionId: persistedInvoiceCheckout.registerSessionId ?? null,
+        }
+        console.warn('[POSPage] stale saved atomic checkout', {
+          ...recovery,
+          savedCheckoutState: 'pending_local',
+          recoveryAction: 'presented',
+        })
+        setStaleCheckoutRecovery(recovery)
+        return
+      }
       let productionCheckoutMode: ZatcaCheckoutMode = 'legacy'
       let atomicCheckoutResult: AtomicCheckoutResult | null = null
       let atomicFingerprint: string | null = null
       let checkout: PosCheckoutResult | null = null
       if (atomicRequested) {
+        atomicFingerprint = currentPayloadFingerprint ?? await atomicCheckoutFingerprint(payload)
+        // A matching pending request is the only case where the exact saved
+        // payload may be replayed. A divergent live cart is never replaced.
         if (persistedInvoiceCheckout) payload = persistedInvoiceCheckout.checkout
-        atomicFingerprint = await atomicCheckoutFingerprint(payload)
-        if (persistedInvoiceCheckout
-            && persistedInvoiceCheckout.cartFingerprint !== atomicFingerprint) {
-          throw new Error('Persisted checkout fingerprint does not match its request payload')
-        }
         persistPendingAtomicCheckout(branch.id, {
           idempotencyKey,
           cartFingerprint: atomicFingerprint,
           documentType: 'invoice',
           checkout: payload,
+          actorId: user?.id ?? null,
+          registerSessionId: session?.id ?? null,
         })
         const atomicAttempt = await checkoutSimplifiedAtomically({
           branchId: branch.id,
@@ -3685,6 +3783,42 @@ export default function POSPage() {
           onOpenPrinterSettings={() => navigate(DEVICE_PRINTER_PATH)}
           onRetryFinalization={retryReceiptFinalization}
           afterSaleAction={resolvedInvoiceSettings.afterSaleAction}
+        />
+      )}
+      {staleCheckoutRecovery && (
+        <SavedCheckoutRecoveryDialog
+          onCancel={() => {
+            console.info('[POSPage] stale saved atomic checkout', {
+              ...staleCheckoutRecovery,
+              savedCheckoutState: 'pending_local',
+              recoveryAction: 'cancelled',
+            })
+            setStaleCheckoutRecovery(null)
+          }}
+          onStartFresh={() => {
+            const discarded = discardPendingAtomicCheckout(
+              staleCheckoutRecovery.branchId,
+              staleCheckoutRecovery.idempotencyKey,
+              staleCheckoutRecovery.savedFingerprint,
+            )
+            if (!discarded) {
+              console.warn('[POSPage] stale saved atomic checkout', {
+                ...staleCheckoutRecovery,
+                savedCheckoutState: 'pending_local',
+                recoveryAction: 'discard_failed',
+              })
+              toast.error(t('pos:checkoutRecovery.resetFailed'))
+              return
+            }
+            checkoutKeyRef.current = createCheckoutIdempotencyKey()
+            console.info('[POSPage] stale saved atomic checkout', {
+              ...staleCheckoutRecovery,
+              savedCheckoutState: 'discarded_local',
+              recoveryAction: 'start_fresh',
+            })
+            setStaleCheckoutRecovery(null)
+            toast.info(t('pos:checkoutRecovery.ready'))
+          }}
         />
       )}
       {unitChooserProduct && (

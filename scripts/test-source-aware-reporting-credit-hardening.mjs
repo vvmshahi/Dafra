@@ -260,6 +260,9 @@ const permittedPaths = new Set([
   // credit, stock, checkout-authority, or Edge implementation is allowlisted.
   'supabase/migrations/20260817000700_restore_pos_checkout_after_buyer_snapshot_hardening.sql',
   'scripts/test-p0-checkout-buyer-snapshot-hotfix.mjs',
+  // P0 stale-checkout recovery is a client retry-state test only; financial
+  // reporting, credit authority, and Edge paths remain protected.
+  'scripts/test-p0-saved-checkout-recovery.mjs',
   'scripts/test-purchase-modal-ui.mjs',
   'scripts/test-expense-modal-ui.mjs',
   'scripts/test-expense-authority-v1.mjs',
