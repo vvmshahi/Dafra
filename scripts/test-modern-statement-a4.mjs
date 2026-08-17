@@ -13,12 +13,14 @@ const read = path => readFileSync(resolve(root, path), 'utf8')
 const source = read('src/components/print/A4Document.tsx')
 const css = read('src/index.css')
 
-for (const marker of ['ModernStatementItemName', 'ModernStatementItemTable', 'a4-statement-brand', 'a4-statement-meta-card', 'a4-statement-party-card', 'a4-statement-totals']) assert.match(source, new RegExp(marker))
+for (const marker of ['ModernStatementItemName', 'ModernStatementItemTable', 'modernStatementColumnLabel', 'a4-statement-brand', 'a4-statement-meta-card', 'a4-statement-party-card--seller', 'a4-statement-totals']) assert.match(source, new RegExp(marker))
 for (const marker of ['a4-statement-head--identityless', 'a4-statement-document--without-qr', 'a4-statement-qr-card', 'a4-statement-items--with-discount', 'a4-statement-closeout', 'a4-statement-closeout \\+ .a4-footer:empty']) assert.match(css, new RegExp(marker))
 assert.doesNotMatch(css.match(/\/\* 1 — Classic Business \*\/[\s\S]*?\/\* 2 — Modern Statement \*\//)?.[0] ?? '', /a4-statement/)
 assert.match(css, /\.a4-statement-totals \.a4-totals__grand \{ margin: 0 !important;/)
 assert.match(css, /\.a4-statement-items th \{[^}]*white-space: normal/)
 assert.match(css, /\.a4-statement-payment-card \{ align-self: start/)
+assert.match(css, /\.a4-statement-party-card--seller \{ padding-bottom: 1\.75mm/)
+assert.match(css, /\.a4-statement-payment-card \{[^}]*border-inline-start: 1\.5px solid var\(--invoice-border\)[^}]*background: transparent/)
 
 const server = await createServer({ appType: 'custom', logLevel: 'error', server: { middlewareMode: true } })
 try {
@@ -73,6 +75,7 @@ try {
   const bilingual = render({ ...base, items: [item] }, { preview: true })
   assert.match(bilingual, /a4-statement-item-name--bilingual[\s\S]*English product[\s\S]*\/ [\s\S]*منتج عربي/)
   assert.match(bilingual, /a4-statement-items--with-discount/)
+  for (const label of ['Description / الوصف', 'Qty / الكمية', 'Unit Price / سعر الوحدة', 'Taxable / الخاضع', 'VAT / الضريبة', 'Total / الإجمالي']) assert.match(bilingual, new RegExp(label))
   assert.match(bilingual, /15%/); assert.match(bilingual, /5\.10/); assert.match(bilingual, /34\.00/)
   const englishOnly = render({ ...base, identity: { ...base.identity, language: 'en', direction: 'ltr' }, items: [{ ...item, descriptionAr: null }] }, { preview: true })
   assert.match(englishOnly, />English product</); assert.doesNotMatch(englishOnly, /منتج عربي/)

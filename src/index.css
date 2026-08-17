@@ -215,6 +215,7 @@
   .a4-statement-qr-card .a4-qr img,.a4-statement-qr-card .a4-qr-placeholder { width: 22mm; height: 22mm; }
   .a4-statement-parties { display: grid; grid-template-columns: minmax(0,1.16fr) minmax(0,.84fr); gap: 4mm; margin-block: 4mm; }
   .a4-statement-party-card { min-width: 0; padding: 2.75mm 3mm; border: 1px solid var(--invoice-border); border-radius: 1.5mm; background: var(--invoice-surface); }
+  .a4-statement-party-card--seller { padding-bottom: 1.75mm; }
   .a4-statement-party-card .a4-buyer { padding: 0; border: 0; background: transparent; }
   .a4-statement-party-card .a4-seller { line-height: 1.26; }
   .a4-statement-party-card .a4-section-title { margin-bottom: .65mm; }
@@ -235,7 +236,7 @@
   .a4-statement-items__index { width: 4%; }.a4-statement-items__description { width: 35%; }.a4-statement-items__quantity { width: 10%; }.a4-statement-items__price { width: 11%; }.a4-statement-items__taxable { width: 12%; }.a4-statement-items__vat { width: 14%; }.a4-statement-items__total { width: 14%; }
   .a4-statement-items--with-discount .a4-statement-items__description { width: 26%; }.a4-statement-items--with-discount .a4-statement-items__quantity { width: 9%; }.a4-statement-items--with-discount .a4-statement-items__price { width: 10%; }.a4-statement-items--with-discount .a4-statement-items__discount { width: 10%; }.a4-statement-items--with-discount .a4-statement-items__taxable { width: 11%; }.a4-statement-items--with-discount .a4-statement-items__vat { width: 13%; }.a4-statement-items--with-discount .a4-statement-items__total { width: 13%; }
   .a4-statement-closeout { display: grid; grid-template-columns: minmax(0,1fr) 76mm; gap: 5mm; align-items: start; margin-top: 4.5mm; }
-  .a4-statement-payment-card { align-self: start; min-width: 0; padding: 2.75mm 3mm; border: 1px solid var(--invoice-border); border-radius: 1.5mm; background: var(--invoice-surface); }
+  .a4-statement-payment-card { align-self: start; min-width: 0; padding: 2.75mm 3mm; border: 0; border-inline-start: 1.5px solid var(--invoice-border); border-radius: .75mm; background: transparent; }
   .a4-statement-payment-card .a4-payment { padding: 0; }
   .a4-statement-payment-card .a4-payment > div:not(.a4-section-title) { gap: .9mm 3mm; margin-bottom: .55mm; }
   .a4-statement-payment-card .a4-section-title { margin-bottom: .65mm; }

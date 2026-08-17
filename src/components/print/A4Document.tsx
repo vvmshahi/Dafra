@@ -124,12 +124,21 @@ function ModernStatementItemName({ item }: { item: DocumentViewModel['items'][nu
   return <bdi className="a4-statement-item-name" dir={arabic && !english ? 'rtl' : 'ltr'}>{value}</bdi>
 }
 
+function modernStatementColumnLabel(model: DocumentViewModel, key: 'description' | 'quantity' | 'unitPrice' | 'taxable' | 'vat' | 'total') {
+  const labels = {
+    description: { en: 'Description', ar: 'الوصف' }, quantity: { en: 'Qty', ar: 'الكمية' }, unitPrice: { en: 'Unit Price', ar: 'سعر الوحدة' },
+    taxable: { en: 'Taxable', ar: 'الخاضع' }, vat: { en: 'VAT', ar: 'الضريبة' }, total: { en: 'Total', ar: 'الإجمالي' },
+  } as const
+  const label = labels[key]
+  return model.identity.language === 'ar' ? `${label.ar} / ${label.en}` : `${label.en} / ${label.ar}`
+}
+
 function ModernStatementItemTable({ model }: { model: DocumentViewModel }) {
   const credit = model.identity.kind === 'credit_note'
   const hasDiscount = model.items.some(item => item.discount > 0.005)
   return <table className={`a4-items a4-statement-items${hasDiscount ? ' a4-statement-items--with-discount' : ''}`}>
     <colgroup><col className="a4-statement-items__index" /><col className="a4-statement-items__description" /><col className="a4-statement-items__quantity" /><col className="a4-statement-items__price" />{hasDiscount && <col className="a4-statement-items__discount" />}<col className="a4-statement-items__taxable" /><col className="a4-statement-items__vat" /><col className="a4-statement-items__total" /></colgroup>
-    <thead><tr><th>#</th><th>{documentLabel(model.identity.language, 'description')}</th><th>{documentLabel(model.identity.language, 'quantity')}</th><th>{documentLabel(model.identity.language, 'unitPrice')}</th>{hasDiscount && <th>{documentLabel(model.identity.language, 'discount')}</th>}<th>{documentLabel(model.identity.language, 'taxableAmount')}</th><th>{documentLabel(model.identity.language, 'vatAmount')}</th><th>{documentLabel(model.identity.language, 'totalIncludingVat')}</th></tr></thead>
+    <thead><tr><th>#</th><th>{modernStatementColumnLabel(model, 'description')}</th><th>{modernStatementColumnLabel(model, 'quantity')}</th><th>{modernStatementColumnLabel(model, 'unitPrice')}</th>{hasDiscount && <th>{documentLabel(model.identity.language, 'discount')}</th>}<th>{modernStatementColumnLabel(model, 'taxable')}</th><th>{modernStatementColumnLabel(model, 'vat')}</th><th>{modernStatementColumnLabel(model, 'total')}</th></tr></thead>
     <tbody>{model.items.map((item, index) => <tr key={`${item.description}-${index}`}><td>{index + 1}</td><td><ModernStatementItemName item={item} /></td><td><bdi dir="ltr">{formatDocumentQuantity(credit && item.creditedQuantity != null ? item.creditedQuantity : item.quantity, model)}</bdi>{names(model, item.unitName, item.unitNameAr).map((value, unitIndex) => <span className="a4-statement-item-unit" key={`${value}-${unitIndex}`} dir="auto">{value}</span>)}</td><td><Money value={item.unitPrice} model={model} /></td>{hasDiscount && <td>{item.discount > 0.005 ? <Money value={item.discount} model={model} /> : '—'}</td>}<td><Money value={item.taxableAmount} model={model} /></td><td><span><bdi dir="ltr">{formatDocumentQuantity(item.vatRate, model)}%</bdi> · <Money value={item.vatAmount} model={model} /></span></td><td><Money value={item.lineTotal} model={model} /></td></tr>)}</tbody>
   </table>
 }
@@ -222,7 +231,7 @@ function ModernStatementV1({ model, options = {} }: A4DocumentProps) {
       {brandIdentity && <section className="a4-statement-brand"><SellerBrand model={model} visible={branding} /></section>}
       <section className={`a4-statement-document${options.nonFiscalDemo ? ' a4-statement-document--without-qr' : ''}`}><div className="a4-statement-document-copy"><DocumentTitle model={model} /><section className="a4-statement-meta-card"><DateMeta model={model} /></section></div>{!options.nonFiscalDemo && <section className="a4-statement-qr-card"><QrVerification model={model} options={options} /></section>}</section>
     </header>
-    <div className={partyLayout('a4-statement-parties', model)}><div className="a4-statement-party-card"><Seller model={model} /></div>{hasNamedBuyer(model) && <div className="a4-statement-party-card"><Buyer model={model} /></div>}</div>
+    <div className={partyLayout('a4-statement-parties', model)}><div className="a4-statement-party-card a4-statement-party-card--seller"><Seller model={model} /></div>{hasNamedBuyer(model) && <div className="a4-statement-party-card a4-statement-party-card--buyer"><Buyer model={model} /></div>}</div>
     <Adjustment model={model} />
     <ModernStatementItemTable model={model} />
     <div className="a4-statement-closeout a4-closing-group"><section className="a4-statement-payment-card"><Payment model={model} /></section><section className="a4-statement-totals"><Totals model={model} /></section></div>
