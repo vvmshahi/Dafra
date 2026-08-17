@@ -46,6 +46,19 @@ function sameIdentity(left: string | null, right: string | null) {
   return !!left && !!right && left.trim().toLocaleLowerCase() === right.trim().toLocaleLowerCase()
 }
 
+function classicMerchantNames(model: DocumentViewModel) {
+  const { seller } = model
+  const candidates = [
+    seller.displayHeading,
+    ...(seller.branch.visible ? names(model, seller.branch.name, seller.branch.nameAr) : []),
+    seller.displaySubheading,
+  ]
+  return candidates.filter((candidate, index, all) => !!candidate
+    && !sameIdentity(candidate, seller.registeredName)
+    && !sameIdentity(candidate, seller.registeredNameAr)
+    && !all.slice(0, index).some(previous => sameIdentity(candidate, previous)))
+}
+
 function ReceiptLogo({ receipt }: { receipt: ReceiptComposition }) {
   const { model, logoUrl, logoMm } = receipt
   return model.presentation.logo.visible && logoUrl
@@ -64,7 +77,7 @@ function DisplayIdentity({ receipt, branch = true }: { receipt: ReceiptCompositi
   </>
 }
 
-function LegalSeller({ receipt, contact = false }: { receipt: ReceiptComposition; contact?: boolean }) {
+function LegalSeller({ receipt, contact = false, website = true }: { receipt: ReceiptComposition; contact?: boolean; website?: boolean }) {
   const { model } = receipt
   const { seller, presentation, identity } = model
   const presentationAddress = presentation.contact.address
@@ -75,9 +88,21 @@ function LegalSeller({ receipt, contact = false }: { receipt: ReceiptComposition
     {seller.registrationNumber && <div>{seller.registrationType === 'CR' ? documentLabel(identity.language, 'crNumber') : seller.registrationType ?? documentLabel(identity.language, 'identifier')}: <bdi dir="ltr">{seller.registrationNumber}</bdi></div>}
     {presentation.contact.addressVisible && presentationAddress && presentationAddress !== seller.registeredAddress && <div className="thermal-address thermal-address--presentation" dir="auto">{presentationAddress}</div>}
     {contact && presentation.contact.phoneVisible && presentation.contact.phone && <div>{documentLabel(identity.language, 'phone')}: <bdi dir="ltr">{presentation.contact.phone}</bdi></div>}
-    {contact && presentation.contact.websiteVisible && presentation.contact.website && <div><bdi dir="ltr">{presentation.contact.website}</bdi></div>}
+    {contact && website && presentation.contact.websiteVisible && presentation.contact.website && <div><bdi dir="ltr">{presentation.contact.website}</bdi></div>}
     {contact && presentation.contact.emailVisible && presentation.contact.email && <div><bdi dir="ltr">{presentation.contact.email}</bdi></div>}
   </section>
+}
+
+/** Traditional merchant masthead: branch/trading identity can lead, while the
+ * authoritative legal seller remains visible exactly once underneath. */
+function ClassicSellerHeader({ receipt }: { receipt: ReceiptComposition }) {
+  const { model } = receipt
+  const merchantNames = classicMerchantNames(model)
+  return <header className="thermal-header thermal-classic-header">
+    <ReceiptLogo receipt={receipt} />
+    {merchantNames.map((name, index) => <div key={`${name}-${index}`} className={index === 0 ? 'thermal-heading' : 'thermal-classic-trading-name'} dir="auto">{name}</div>)}
+    <LegalSeller receipt={receipt} contact website={false} />
+  </header>
 }
 
 function ReceiptTitle({ receipt }: { receipt: ReceiptComposition }) {
@@ -133,10 +158,36 @@ function ClassicItems({ receipt }: { receipt: ReceiptComposition }) {
   const { model } = receipt
   const is58 = model.presentation.thermal.width === '58mm'
   return <section className={`thermal-items thermal-classic-lines ${is58 ? 'thermal-items--stacked' : 'thermal-items--wide'}`}>{model.items.map((item, index) => <article className="thermal-item thermal-classic-line" key={`${item.description}-${index}`}>
-    <div className={`thermal-item-name ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>{names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}</div>
+    <ClassicItemName item={item} model={model} />
     <div className="thermal-item-values"><span><QuantityWithUnit quantity={item.quantity} item={item} model={model} /> <span aria-hidden="true">×</span> <Money value={item.unitPrice} model={model} /></span><span><Money value={item.lineTotal} model={model} /></span></div>
-    <ItemFiscalDetail receipt={receipt} item={item} />
+    <ClassicItemFiscalDetail receipt={receipt} item={item} />
   </article>)}</section>
+}
+
+function ClassicItemName({ item, model }: { item: DocumentViewModel['items'][number]; model: DocumentViewModel }) {
+  const bilingualPair = model.identity.language === 'both'
+    && !!item.description.trim()
+    && !!item.descriptionAr?.trim()
+    && !sameIdentity(item.description, item.descriptionAr)
+  if (bilingualPair) {
+    return <div className="thermal-item-name thermal-classic-line__names thermal-classic-line__names--bilingual">
+      <span dir="ltr">{item.description}</span><span dir="rtl">{item.descriptionAr}</span>
+    </div>
+  }
+  return <div className={`thermal-item-name thermal-classic-line__names ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>
+    {names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}
+  </div>
+}
+
+function ClassicItemFiscalDetail({ receipt, item }: { receipt: ReceiptComposition; item: DocumentViewModel['items'][number] }) {
+  const { model, isCredit } = receipt
+  const hasVat = Math.abs(item.vatAmount) > 0.005 || Math.abs(item.vatRate) > 0.005
+  if (!hasVat && item.discount <= 0.005 && !(isCredit && item.creditedQuantity != null)) return null
+  return <div className="thermal-item-detail thermal-classic-line__detail">
+    {hasVat && <span className="thermal-classic-line__vat">{documentLabel(model.identity.language, 'vatAmount')} ({formatDocumentQuantity(item.vatRate, model)}%): <Money value={item.vatAmount} model={model} /></span>}
+    {item.discount > 0.005 && <span className="thermal-classic-line__discount">{documentLabel(model.identity.language, 'discount')}: <bdi dir="ltr">−</bdi><Money value={item.discount} model={model} /></span>}
+    {isCredit && item.creditedQuantity != null && <span>{documentLabel(model.identity.language, 'quantity')}: <QuantityWithUnit quantity={item.creditedQuantity} item={item} model={model} /></span>}
+  </div>
 }
 
 function StructuredItems({ receipt }: { receipt: ReceiptComposition }) {
@@ -165,6 +216,12 @@ function Totals({ receipt }: { receipt: ReceiptComposition }) {
   return <section className="thermal-totals">{receipt.visibleTotals.map(row => <Row key={row.key} label={row.label} strong={row.emphasized}><Money value={row.value} model={receipt.model} /></Row>)}</section>
 }
 
+function ClassicTotals({ receipt }: { receipt: ReceiptComposition }) {
+  return <section className="thermal-totals thermal-classic-totals">{receipt.visibleTotals.map(row => <Row key={row.key} label={row.label} strong={row.emphasized}>
+    {row.key === 'discount' ? <><bdi dir="ltr">−</bdi><Money value={row.value} model={receipt.model} /></> : <Money value={row.value} model={receipt.model} />}
+  </Row>)}</section>
+}
+
 function Payments({ receipt }: { receipt: ReceiptComposition }) {
   const { model, paymentKind, isCredit } = receipt
   const { payments, totals, presentation, identity } = model
@@ -187,6 +244,21 @@ function Payments({ receipt }: { receipt: ReceiptComposition }) {
   </section>
 }
 
+function ClassicPayments({ receipt }: { receipt: ReceiptComposition }) {
+  const { model, isCredit } = receipt
+  const { customerCredit, identity, payments, presentation, totals } = model
+  if (customerCredit?.isCustomerCredit) return <Payments receipt={receipt} />
+  const positivePayments = payments.filter(payment => payment.amount > 0.005)
+  const paymentKind = positivePayments.length > 1 ? 'split' : positivePayments[0]?.method ?? 'other'
+  const singleCash = positivePayments.length === 1 && positivePayments[0]?.method === 'cash' ? positivePayments[0] : null
+  return <section className={`thermal-payments thermal-classic-payments thermal-classic-payments--${positivePayments.length > 1 ? 'split' : 'single'}`}>
+    <div className="thermal-payment-kind">{documentLabel(identity.language, isCredit ? 'refundMethod' : 'paymentMethod')}: <strong>{documentPaymentLabel(identity.language, paymentKind)}</strong></div>
+    {positivePayments.length > 1 && positivePayments.map((payment, index) => <Row key={`${payment.method}-${index}`} label={documentPaymentLabel(identity.language, payment.method)}><Money value={payment.amount} model={model} /></Row>)}
+    {presentation.thermal.showCashChange && singleCash?.cashTendered != null && Math.abs(singleCash.cashTendered - totals.total) > 0.005 && <Row label={documentLabel(identity.language, 'received')}><Money value={singleCash.cashTendered} model={model} /></Row>}
+    {presentation.thermal.showCashChange && singleCash && (singleCash.change ?? 0) > 0.005 && <Row label={documentLabel(identity.language, 'change')}><Money value={singleCash.change ?? 0} model={model} /></Row>}
+  </section>
+}
+
 function Verification({ receipt }: { receipt: ReceiptComposition }) {
   if (receipt.options.nonFiscalDemo || receipt.options.qrUnavailable) return null
   return <div className="thermal-qr" style={{ width: `${receipt.qrMm}mm`, textAlign: 'center' }}>
@@ -200,21 +272,20 @@ function FooterCopy({ receipt }: { receipt: ReceiptComposition }) {
   return <div className={`thermal-footer-copy ${receipt.model.presentation.footer.bold ? 'font-bold' : ''}`} style={{ fontSize: 'calc(var(--thermal-small) + 1px)', textAlign: 'center' }}>{receipt.optionalFooter.map((line, index) => <div key={`${line}-${index}`} dir="auto">{line}</div>)}</div>
 }
 
-/** The pre-78c6f31 receipt composition, retained for temporary comparison. */
+/** Traditional, printer-first Kubri receipt with the shared issued-document model. */
 export function ClassicReceipt({ receipt }: { receipt: ReceiptComposition }) {
+  const hasBuyer = !receipt.model.buyer.isWalkIn && (receipt.mandatoryBuyer || !!receipt.model.buyer.name)
   return <>
-    <ReceiptLogo receipt={receipt} />
-    <header className="thermal-header thermal-classic-header"><DisplayIdentity receipt={receipt} /><LegalSeller receipt={receipt} contact /></header>
+    <ClassicSellerHeader receipt={receipt} />
     <Rule />
     <ReceiptTitle receipt={receipt} />
     <ReceiptMetadata receipt={receipt} />
-    <ReceiptBuyer receipt={receipt} />
+    {hasBuyer && <><Rule /><ReceiptBuyer receipt={receipt} detailed={receipt.isStandard} /></>}
     <Rule />
     <ClassicItems receipt={receipt} />
     <Rule />
-    <Totals receipt={receipt} />
-    <Rule />
-    <Payments receipt={receipt} />
+    <ClassicTotals receipt={receipt} />
+    <ClassicPayments receipt={receipt} />
     <footer className="thermal-footer thermal-classic-footer"><Verification receipt={receipt} /><FooterCopy receipt={receipt} /></footer>
   </>
 }

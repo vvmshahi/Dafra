@@ -121,7 +121,8 @@ try {
         assert.match(markup, /300000000000003/)
         assert.match(markup, /\+966500000001/)
         assert.match(markup, /fixture@example\.com/)
-        assert.match(markup, /https:\/\/example\.com/)
+        if (layout.storedId === 'classic') assert.doesNotMatch(markup, /https:\/\/example\.com/)
+        else assert.match(markup, /https:\/\/example\.com/)
         assert.doesNotMatch(markup, /Bill From|صادرة من|>From</)
         assert.doesNotMatch(markup, /thermal-legal-info[\s\S]{0,120}thermal-section-label/)
         assert.match(markup, /SAMPLE-/)
@@ -134,6 +135,12 @@ try {
         if (fixtureCase.qr !== 'eligible') assert.doesNotMatch(markup, /class="thermal-qr"/)
         if (fixtureCase.qr === 'demo') assert.doesNotMatch(markup, /DEMO — NOT A TAX INVOICE/)
         if (isCredit) assert.match(markup, /SAMPLE-CN-0042/)
+        if (layout.storedId === 'classic') {
+          if (fixtureCase.language === 'both') assert.match(markup, /thermal-classic-line__names--bilingual/)
+          assert.equal((markup.match(/thermal-classic-line__vat/g) ?? []).length, items.length)
+          assert.equal((markup.match(/thermal-classic-line__discount/g) ?? []).length, items.filter(item => item.discount > 0.005).length)
+          assert.match(markup, fixtureCase.payment === 'split' ? /thermal-classic-payments--split/ : /thermal-classic-payments--single/)
+        }
 
         const walkInMarkup = renderToStaticMarkup(createElement(ThermalReceipt, {
           model: {

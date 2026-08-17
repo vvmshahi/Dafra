@@ -214,6 +214,10 @@ const permittedPaths = new Set([
   'scripts/test-phase4e-thermal-receipts.mjs',
   'scripts/test-phase4f-a4-templates.mjs',
   'scripts/test-zatca-phase2-finalization-v2.mjs',
+  // Authorized Classic thermal presentation refinement only.
+  'scripts/test-thermal-receipt-layouts-runtime.mjs',
+  'src/components/print/ThermalReceiptCompositions.tsx',
+  'src/index.css',
   'src/lib/print/androidPrintExecution.ts',
   'src/lib/print/browserPrint.ts',
   'src/lib/atomicReceiptPrint.ts',

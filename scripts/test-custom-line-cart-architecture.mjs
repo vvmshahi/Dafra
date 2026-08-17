@@ -254,6 +254,9 @@ try {
     // alter the visual template contract.
     'src/components/print/A4Document.tsx',
     'src/components/print/ThermalReceipt.tsx',
+    // Authorized Classic thermal presentation refinement. It consumes the
+    // existing immutable document view model and cannot alter financial data.
+    'src/components/print/ThermalReceiptCompositions.tsx',
     'src/lib/zatca/atomicCheckout.ts',
     'src/lib/zatca/authenticatedEdge.ts',
     'src/lib/zatca/submission.ts',

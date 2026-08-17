@@ -364,11 +364,25 @@ assert.match(thermalCompositions, /detailed:\s*BrandedModernReceipt/)
 assert.match(thermalCompositions, /item\.vatAmount/)
 const classicComposition = thermalCompositions.slice(thermalCompositions.indexOf('export function ClassicReceipt'), thermalCompositions.indexOf('export function CompactRetailReceipt'))
 let classicMarker = -1
-for (const marker of ['<ReceiptLogo', 'thermal-classic-header', '<Rule />', '<ReceiptTitle', '<ReceiptMetadata', '<ReceiptBuyer', '<ClassicItems', '<Totals', '<Payments', 'thermal-classic-footer']) {
+for (const marker of ['<ClassicSellerHeader', '<Rule />', '<ReceiptTitle', '<ReceiptMetadata', '<ReceiptBuyer', '<ClassicItems', '<ClassicTotals', '<ClassicPayments', 'thermal-classic-footer']) {
   const nextMarker = classicComposition.indexOf(marker)
-  assert.ok(nextMarker > classicMarker, `Classic must preserve the original receipt order at ${marker}`)
+  assert.ok(nextMarker > classicMarker, `Classic must preserve its thermal receipt order at ${marker}`)
   classicMarker = nextMarker
 }
+const classicHeader = thermalCompositions.slice(thermalCompositions.indexOf('function classicMerchantNames'), thermalCompositions.indexOf('function ReceiptTitle'))
+assert.match(classicHeader, /seller\.displayHeading/)
+assert.match(classicHeader, /seller\.branch\.visible/)
+assert.match(classicHeader, /seller\.displaySubheading/)
+assert.match(classicHeader, /!sameIdentity\(candidate, seller\.registeredName\)/)
+assert.match(classicHeader, /!all\.slice\(0, index\)\.some/)
+assert.match(classicHeader, /<LegalSeller receipt=\{receipt\} contact website=\{false\} \/>/)
+assert.match(thermalCompositions, /thermal-classic-line__names--bilingual/)
+assert.match(thermalCompositions, /item\.discount > 0\.005/)
+assert.match(thermalCompositions, /positivePayments = payments\.filter\(payment => payment\.amount > 0\.005\)/)
+assert.match(thermalCompositions, /const hasBuyer = !receipt\.model\.buyer\.isWalkIn/)
+assert.match(css, /thermal-theme--classic \.thermal-classic-line__names--bilingual/)
+assert.match(css, /thermal-theme--classic \.thermal-classic-totals \.thermal-row-strong/)
+assert.match(css, /thermal-theme--classic \.thermal-classic-payments/)
 assert.match(thermalSettings, /THERMAL_DENSITIES:[^=]+=\s*\['classic', 'compact', 'standard', 'detailed'\]/)
 assert.match(thermalTypes, /ThermalDensity = 'classic' \| 'compact' \| 'standard' \| 'detailed'/)
 assert.match(thermalAdapters, /thermalDensity === 'classic'/)

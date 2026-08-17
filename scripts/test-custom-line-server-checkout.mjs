@@ -168,6 +168,8 @@ const permittedPaths = new Set([
   // capture and present issue-time identity; checkout and ZATCA remain scoped.
   'src/components/print/A4Document.tsx',
   'src/components/print/ThermalReceipt.tsx',
+  'src/components/print/ThermalReceiptCompositions.tsx',
+  'src/index.css',
   'src/lib/invoices/documentPresentationReadiness.ts',
   'src/lib/invoices/documentViewAdapters.ts',
   'src/lib/invoices/documentViewModel.ts',
@@ -187,6 +189,7 @@ const permittedPaths = new Set([
   'src/pages/settings/PrinterTab.tsx',
   'scripts/test-android-print-a4-preview.mjs',
   'scripts/test-final-web-printing-refinements.mjs',
+  'scripts/test-thermal-receipt-layouts-runtime.mjs',
   'scripts/test-invoice-detail-ui.mjs',
   'scripts/test-invoice-summary-ui.mjs',
   'scripts/test-zatca-phase2-finalization-v2.mjs',
