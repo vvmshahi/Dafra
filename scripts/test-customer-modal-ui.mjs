@@ -6,6 +6,7 @@ const modal = readFileSync(new URL('../src/pages/customers/CustomerModal.tsx', i
 const page = readFileSync(new URL('../src/pages/customers/CustomersPage.tsx', import.meta.url), 'utf8')
 const detail = readFileSync(new URL('../src/pages/customers/CustomerDetailPage.tsx', import.meta.url), 'utf8')
 const pos = readFileSync(new URL('../src/pages/pos/POSPage.tsx', import.meta.url), 'utf8')
+const migration = readFileSync(new URL('../supabase/migrations/20260817000400_customer_identity_validation_v1.sql', import.meta.url), 'utf8')
 const en = JSON.parse(readFileSync(new URL('../src/localization/locales/en/customers.json', import.meta.url), 'utf8'))
 const ar = JSON.parse(readFileSync(new URL('../src/localization/locales/ar-SA/customers.json', import.meta.url), 'utf8'))
 
@@ -46,7 +47,7 @@ test('individual and business sections are conditional and use the existing fiel
   assert.match(modal, /customer-city/)
   assert.match(modal, /addressOpen/)
   assert.match(modal, /notesOpen/)
-  assert.match(modal, /crOpen/)
+  assert.match(modal, /customer-cr/)
 })
 
 test('validation preserves the existing phone, VAT and CR policy', () => {
@@ -54,7 +55,11 @@ test('validation preserves the existing phone, VAT and CR policy', () => {
   assert.match(modal, /VAT_RE = \/\^3\\d\{13\}3\$\//)
   assert.match(modal, /type="email"/)
   assert.match(modal, /inputMode="numeric"/)
-  assert.doesNotMatch(modal, /CR_RE|crInvalid/)
+  assert.match(modal, /CR_RE/)
+  assert.match(modal, /crInvalid/)
+  assert.match(modal, /isIndividualValid/)
+  assert.match(modal, /isBusinessValid/)
+  assert.match(modal, /formCanSubmit = isIndividualValid \|\| isBusinessValid/)
   assert.match(modal, /businessNameRef\.current\?\.focus\(\)/)
   assert.match(modal, /nameRef\.current\?\.focus\(\)/)
 })
@@ -73,6 +78,15 @@ test('payload retains names, scope, shared fields, and safely nulls hidden busin
   for (const field of ['phone', 'email', 'city', 'address', 'notes']) {
     assert.match(modal, new RegExp(`${field}: ${field}\\.trim\\(\\) \\|\\| null`))
   }
+})
+
+test('database trigger enforces the same customer completeness boundary', () => {
+  assert.match(migration, /validate_customer_identity_v1/)
+  assert.match(migration, /CUSTOMER_CORE_FIELDS_REQUIRED/)
+  assert.match(migration, /BUSINESS_CUSTOMER_CORE_FIELDS_REQUIRED/)
+  assert.match(migration, /\^3\[0-9\]\{13\}3\$/)
+  assert.match(migration, /\^\[A-Za-z0-9\]\+\$/)
+  assert.match(migration, /trg_customer_identity_validation_v1/)
 })
 
 test('create/update handling blocks duplicates, preserves failures, and closes only on success', () => {

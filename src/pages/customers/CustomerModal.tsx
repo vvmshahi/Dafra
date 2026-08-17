@@ -10,13 +10,15 @@ import type { CustomerWithStats } from './CustomersPage'
 
 const SAUDI_MOBILE_RE = /^05[0-9]{8}$/
 const VAT_RE = /^3\d{13}3$/
+const CR_RE = /^[a-zA-Z0-9]+$/
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 type ErrorField = 'name' | 'businessName' | 'phone' | 'email' | 'vatNumber' | 'crNumber'
 
 function isValidPhone(value: string) {
   const clean = value.replace(/\s/g, '')
-  return !clean || SAUDI_MOBILE_RE.test(clean)
+  return SAUDI_MOBILE_RE.test(clean)
 }
 
 interface Props {
@@ -43,6 +45,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
   const [errorField, setErrorField] = useState<ErrorField | null>(null)
   const [phoneError, setPhoneError] = useState('')
   const [vatError, setVatError] = useState('')
+  const [crError, setCrError] = useState('')
   const [custType, setCustType] = useState<CustomerType | null>(null)
   const [name, setName] = useState('')
   const [nameAr, setNameAr] = useState('')
@@ -58,13 +61,19 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
   const [emailOpen, setEmailOpen] = useState(false)
   const [addressOpen, setAddressOpen] = useState(false)
   const [notesOpen, setNotesOpen] = useState(false)
-  const [crOpen, setCrOpen] = useState(false)
 
   const isBusiness = custType === 'business'
   const vatTrimmed = vatNumber.trim()
   const vatIsValid = VAT_RE.test(vatTrimmed)
+  const crTrimmed = crNumber.trim()
+  const crIsValid = CR_RE.test(crTrimmed)
+  const cityIsValid = Boolean(city.trim())
+  const phoneIsValid = isValidPhone(phone)
+  const emailIsValid = !email.trim() || EMAIL_RE.test(email.trim())
   const requiredName = isBusiness ? businessName.trim() : name.trim()
-  const formCanSubmit = Boolean(requiredName)
+  const isIndividualValid = Boolean(custType === 'individual' && requiredName && phoneIsValid && cityIsValid && emailIsValid)
+  const isBusinessValid = Boolean(custType === 'business' && requiredName && vatIsValid && crIsValid && name.trim() && phoneIsValid && cityIsValid && emailIsValid)
+  const formCanSubmit = isIndividualValid || isBusinessValid
 
   const resetForm = useCallback(() => {
     setSaving(false)
@@ -72,6 +81,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
     setErrorField(null)
     setPhoneError('')
     setVatError('')
+    setCrError('')
     setCustType(null)
     setName('')
     setNameAr('')
@@ -87,7 +97,6 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
     setEmailOpen(false)
     setAddressOpen(false)
     setNotesOpen(false)
-    setCrOpen(false)
   }, [])
 
   useEffect(() => {
@@ -108,11 +117,11 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
     setEmailOpen(Boolean(customer?.email))
     setAddressOpen(Boolean(customer?.address))
     setNotesOpen(Boolean(customer?.notes))
-    setCrOpen(Boolean(customer?.cr_number))
     setError('')
     setErrorField(null)
     setPhoneError('')
     setVatError('')
+    setCrError('')
     window.setTimeout(() => {
       const type = (customer?.customer_type as CustomerType) ?? null
       if (type === 'business') businessNameRef.current?.focus()
@@ -157,6 +166,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
     setErrorField(null)
     setPhoneError('')
     setVatError('')
+    setCrError('')
     setName('')
     setNameAr('')
     setBusinessName('')
@@ -171,7 +181,6 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
     setEmailOpen(false)
     setAddressOpen(false)
     setNotesOpen(false)
-    setCrOpen(false)
     window.setTimeout(() => {
       if (nextType === 'business') businessNameRef.current?.focus()
       else nameRef.current?.focus()
@@ -179,13 +188,14 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
   }
 
   const handlePhoneBlur = () => {
-    setPhoneError(isValidPhone(phone) ? '' : t('customers:errors.phoneInvalid'))
+    setPhoneError(phoneIsValid ? '' : t('customers:errors.phoneRequired'))
   }
 
   const handleVatBlur = () => {
-    if (vatTrimmed && !VAT_RE.test(vatTrimmed)) setVatError(t('customers:errors.vatInvalid'))
-    else setVatError('')
+    setVatError(!vatTrimmed ? t('customers:errors.vatRequired') : vatIsValid ? '' : t('customers:errors.vatInvalid'))
   }
+
+  const handleCrBlur = () => setCrError(!crTrimmed ? t('customers:errors.crRequired') : crIsValid ? '' : t('customers:errors.crInvalid'))
 
   const focusErrorField = (field: ErrorField) => {
     const refs = {
@@ -239,16 +249,22 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
       nameRef.current?.focus()
       return
     }
-    if (isBusiness && vatTrimmed && !VAT_RE.test(vatTrimmed)) {
-      setVatError(t('customers:errors.vatInvalid'))
+    if (isBusiness && !vatIsValid) {
+      setVatError(!vatTrimmed ? t('customers:errors.vatRequired') : t('customers:errors.vatInvalid'))
       vatRef.current?.focus()
       return
     }
-    if (!isValidPhone(phone)) {
-      setPhoneError(t('customers:errors.phoneInvalid'))
+    if (isBusiness && !crIsValid) {
+      setCrError(!crTrimmed ? t('customers:errors.crRequired') : t('customers:errors.crInvalid'))
+      crRef.current?.focus()
+      return
+    }
+    if (!phoneIsValid) {
+      setPhoneError(t('customers:errors.phoneRequired'))
       phoneRef.current?.focus()
       return
     }
+    if (!cityIsValid || !emailIsValid) return
 
     setSaving(true)
     setError('')
@@ -453,7 +469,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                   <section aria-labelledby="customer-registration-heading">
                     <SectionHeading id="customer-registration-heading">{t('customers:sections.registration')}</SectionHeading>
                     <div className="mt-3 space-y-3">
-                      <Field id="customer-vat" label={t('customers:fields.vatNumber')}
+                      <Field id="customer-vat" label={t('customers:fields.vatNumber')} required
                         helper={vatError || t('customers:vatHint')} error={vatError || undefined}>
                         <input ref={vatRef} id="customer-vat"
                           className={`input ${vatError ? 'border-red-300' : ''}`}
@@ -464,12 +480,12 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                           onBlur={handleVatBlur} placeholder="3XXXXXXXXXXXXX3" maxLength={15}
                           inputMode="numeric" aria-invalid={Boolean(vatError) || errorField === 'vatNumber'} dir="ltr" />
                       </Field>
-                      {crOpen ? <div><Field id="customer-cr" label={t('customers:fields.crNumber')} helper={t('customers:helpers.cr')}>
+                      <div><Field id="customer-cr" label={t('customers:fields.crNumber')} required helper={crError || t('customers:helpers.cr')} error={crError || undefined}>
                         <input ref={crRef} id="customer-cr" className="input" value={crNumber}
-                          onChange={event => setCrNumber(event.target.value)}
+                          onChange={event => { setCrNumber(event.target.value); setCrError('') }} onBlur={handleCrBlur}
                           placeholder="1234567890" inputMode="numeric"
                           aria-invalid={errorField === 'crNumber'} dir="ltr" />
-                      </Field>{!crNumber && <OptionalToggle onClick={() => setCrOpen(false)}>{t('customers:actions.hideCr')}</OptionalToggle>}</div> : <OptionalToggle onClick={() => setCrOpen(true)}>{t('customers:actions.addCr')}</OptionalToggle>}
+                      </Field></div>
                     </div>
                   </section>
                 )}
@@ -478,7 +494,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                   <section aria-labelledby="customer-contact-person-heading">
                     <SectionHeading id="customer-contact-person-heading">{t('customers:sections.contactPerson')}</SectionHeading>
                     <div className="mt-3">
-                      <Field id="customer-contact-name" label={t('customers:fields.contactPerson')}
+                      <Field id="customer-contact-name" label={t('customers:fields.contactPerson')} required
                         helper={t('customers:helpers.contactPerson')}>
                         <input ref={nameRef} id="customer-contact-name" className="input" value={name}
                           onChange={event => setName(event.target.value)}
@@ -491,7 +507,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                 <section aria-labelledby="customer-contact-heading">
                   <SectionHeading id="customer-contact-heading">{t('customers:sections.contact')}</SectionHeading>
                   <div className="mt-3 space-y-3">
-                    <Field id="customer-phone" label={t('customers:fields.mobile')}
+                    <Field id="customer-phone" label={t('customers:fields.mobile')} required
                       helper={phoneError || t('customers:placeholders.phoneHint')} error={phoneError || undefined}>
                       <input ref={phoneRef} id="customer-phone" className={`input ${phoneError ? 'border-red-300' : ''}`}
                         type="tel" inputMode="tel" value={phone}
@@ -502,7 +518,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                         onBlur={handlePhoneBlur} placeholder="0512345678" maxLength={10}
                         aria-invalid={Boolean(phoneError) || errorField === 'phone'} dir="ltr" />
                     </Field>
-                    {emailOpen ? <div><Field id="customer-email" label={t('customers:fields.email')} helper={t('customers:helpers.optional')}>
+                    {emailOpen ? <div><Field id="customer-email" label={t('customers:fields.email')} helper={emailIsValid ? t('customers:helpers.optional') : t('customers:errors.emailInvalid')} error={emailIsValid ? undefined : t('customers:errors.emailInvalid')}>
                       <input ref={emailRef} id="customer-email" className="input" type="email" inputMode="email"
                         value={email} onChange={event => setEmail(event.target.value)}
                         placeholder={t('customers:placeholders.email')}
@@ -514,7 +530,7 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                 <section aria-labelledby="customer-address-heading">
                   <SectionHeading id="customer-address-heading">{t('customers:sections.address')}</SectionHeading>
                   <div className="mt-3 space-y-3">
-                    <Field id="customer-city" label={t('customers:fields.city')}>
+                    <Field id="customer-city" label={t('customers:fields.city')} required>
                       <input id="customer-city" className="input" value={city}
                         onChange={event => setCity(event.target.value)}
                         placeholder={t('customers:placeholders.city')} dir="auto" />

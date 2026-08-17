@@ -221,6 +221,7 @@ const permittedPaths = new Set([
   'supabase/migrations/20260817000100_custom_line_display_units.sql',
   'supabase/migrations/20260817000200_secure_catalogue_bulk_import_v1.sql',
   'supabase/migrations/20260817000300_purchase_product_receiving_v1.sql',
+  'supabase/migrations/20260817000400_customer_identity_validation_v1.sql',
   'scripts/test-purchase-modal-ui.mjs',
   'src/localization/locales/ar-SA/reports.json',
   'src/localization/locales/en/reports.json',

@@ -109,26 +109,29 @@ function CustomerRow({
           onClick={onView}
           title={t('actions.viewDetails')}
           aria-label={t('actions.viewDetails')}
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-primary-50 hover:text-primary-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+          className="group relative w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-primary-50 hover:text-primary-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
         >
           <Eye size={14} />
+          <span role="tooltip" className="pointer-events-none absolute end-0 top-full z-20 mt-1 hidden whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] font-medium text-white group-hover:block group-focus-visible:block">{t('actions.viewDetails')}</span>
         </button>
         <button
           onClick={onEdit}
           title={t('actions.edit')}
           aria-label={t('actions.edit')}
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+          className="group relative w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
         >
           <Pencil size={14} />
+          <span role="tooltip" className="pointer-events-none absolute end-0 top-full z-20 mt-1 hidden whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] font-medium text-white group-hover:block group-focus-visible:block">{t('actions.edit')}</span>
         </button>
         <button
           onClick={onArchive}
           title={t('actions.archive')}
           aria-label={archiving ? t('actions.archiving') : t('actions.archive')}
           disabled={archiving}
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-wait disabled:opacity-50"
+          className="group relative w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-wait disabled:opacity-50"
         >
           {archiving ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
+          <span role="tooltip" className="pointer-events-none absolute end-0 top-full z-20 mt-1 hidden whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] font-medium text-white group-hover:block group-focus-visible:block">{t('actions.archive')}</span>
         </button>
       </div></td>
     </tr>
@@ -307,15 +310,15 @@ export default function CustomersPage() {
 
       {/* ── Filter tabs ─────────────────────────────────────── */}
       <div className="card flex flex-wrap items-center gap-3 p-2.5">
-        <div className="relative min-w-[220px] flex-[1.6] basis-[360px]">
-          <Search size={15} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" placeholder={t('search')} aria-label={t('search')} value={search} onChange={e => setSearch(e.target.value)} className="input h-9 w-full py-1.5 ps-9 pe-9 text-sm" />
-          {search && <button type="button" onClick={() => setSearch('')} aria-label={t('common:clearSearch')} className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={13} /></button>}
-        </div>
         <div className="flex flex-wrap items-center gap-1 rounded-xl border border-[#d7e2d8] bg-[#f7faf7] p-1">
           <FilterTab label={t('all')} count={counts.all} active={filterType === 'all'} onClick={() => setFilterType('all')} />
           <FilterTab label={t('individual')} count={counts.individual} active={filterType === 'individual'} onClick={() => setFilterType('individual')} />
           <FilterTab label={t('business')} count={counts.business} active={filterType === 'business'} onClick={() => setFilterType('business')} />
+        </div>
+        <div className="relative min-w-[220px] flex-[1.6] basis-[360px]">
+          <Search size={15} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="text" placeholder={t('search')} aria-label={t('search')} value={search} onChange={e => setSearch(e.target.value)} className="input h-9 w-full py-1.5 ps-9 pe-9 text-sm" />
+          {search && <button type="button" onClick={() => setSearch('')} aria-label={t('common:clearSearch')} className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={13} /></button>}
         </div>
       </div>
 
