@@ -153,6 +153,11 @@ const permittedPaths = new Set([
   'src/pages/products/CatalogueExportDialog.tsx',
   'src/pages/products/CatalogueImportPanel.tsx',
   'src/pages/products/ProductsPage.tsx',
+  'src/pages/purchases/PurchasesPage.tsx',
+  'src/pages/inventory/PurchaseHistoryTab.tsx',
+  'src/pages/inventory/PurchaseBillModal.tsx',
+  'src/localization/locales/en/purchases.json',
+  'src/localization/locales/ar-SA/purchases.json',
   // Authorized invoice-list summary presentation refinement; does not affect
   // custom-line checkout, document persistence, or print behavior.
   'src/pages/invoices/InvoicesPage.tsx',
@@ -183,6 +188,9 @@ const permittedPaths = new Set([
   'supabase/migrations/20260816000400_source_aware_reporting_credit_restock.sql',
   'supabase/migrations/20260817000100_custom_line_display_units.sql',
   'supabase/migrations/20260817000200_secure_catalogue_bulk_import_v1.sql',
+  'supabase/migrations/20260817000300_purchase_product_receiving_v1.sql',
+  'scripts/test-purchase-modal-ui.mjs',
+  'scripts/test-custom-line-cart-architecture.mjs',
 ])
 check(changedPaths.every(path => permittedPaths.has(path)), 'Phase 6 diff must stay within its approved scope')
 check(!changedPaths.includes('supabase/functions/zatca-submit/index.ts'), 'zatca-submit must remain untouched')

@@ -220,10 +220,14 @@ const permittedPaths = new Set([
   'supabase/migrations/20260816000200_branch_billing_profile_foundation.sql',
   'supabase/migrations/20260817000100_custom_line_display_units.sql',
   'supabase/migrations/20260817000200_secure_catalogue_bulk_import_v1.sql',
+  'supabase/migrations/20260817000300_purchase_product_receiving_v1.sql',
+  'scripts/test-purchase-modal-ui.mjs',
   'src/localization/locales/ar-SA/reports.json',
   'src/localization/locales/en/reports.json',
   'src/localization/locales/ar-SA/invoices.json',
   'src/localization/locales/en/invoices.json',
+  'src/localization/locales/ar-SA/purchases.json',
+  'src/localization/locales/en/purchases.json',
   'src/pages/invoices/InvoicesPage.tsx',
   'src/pages/reports/SalesReport.tsx',
   'src/pages/reports/pdf/reportExportData.ts',
@@ -233,6 +237,9 @@ const permittedPaths = new Set([
   'src/pages/products/CatalogueExportDialog.tsx',
   'src/pages/products/CatalogueImportPanel.tsx',
   'src/pages/products/ProductsPage.tsx',
+  'src/pages/purchases/PurchasesPage.tsx',
+  'src/pages/inventory/PurchaseHistoryTab.tsx',
+  'src/pages/inventory/PurchaseBillModal.tsx',
 ])
 check(changedPaths.every(path => permittedPaths.has(path)), 'Phase 7 diff is restricted to reporting, credit hardening, translations, and focused tests')
 check(!changedPaths.includes('supabase/functions/zatca-submit/index.ts'), 'protected ZATCA Edge Function remains untouched')

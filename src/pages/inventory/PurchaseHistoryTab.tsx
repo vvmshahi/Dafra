@@ -461,6 +461,12 @@ export default function PurchaseHistoryTab() {
     setDrawerOpen(true)
   }
 
+  useEffect(() => {
+    const handleOpen = () => openAdd()
+    window.addEventListener('kubri:open-purchase', handleOpen)
+    return () => window.removeEventListener('kubri:open-purchase', handleOpen)
+  })
+
   const closeDrawer = () => {
     setDrawerOpen(false)
     setEditingPurchase(null)
@@ -536,6 +542,7 @@ export default function PurchaseHistoryTab() {
   const countedPurchases = purchases.filter(isCountedPurchase)
   const totalSpent     = countedPurchases.reduce((s, p) => s + p.total_amount, 0)
   const totalVat       = countedPurchases.reduce((s, p) => s + p.vat_amount,   0)
+  const suppliersUsed  = new Set(countedPurchases.map(p => p.supplier_id).filter(Boolean)).size
 
   return (
     <div className="space-y-4">
@@ -543,28 +550,24 @@ export default function PurchaseHistoryTab() {
       {/* ── Header row ──────────────────────────────────────── */}
       <div className="flex items-start gap-4 flex-wrap">
         <div className="flex gap-3 flex-1 flex-wrap min-w-0">
-          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-[#173f2a]/70 shadow-card">
-            <p className="text-xs font-medium text-gray-500">{t('purchases:totalPurchased')}</p>
-            <p className="text-lg font-bold text-primary-700 mt-0.5"><Rial amount={totalSpent} /></p>
+          <div className="flex-1 min-w-36 rounded-xl border border-[#173f2a] bg-[#173f2a] px-4 py-3 shadow-[0_2px_8px_rgba(15,36,25,0.12)]">
+            <p className="text-xs font-medium text-[#fff8e7]/75">{t('purchases:totalPurchased')}</p>
+            <p className="mt-0.5 text-lg font-bold text-[#fff8e7]"><Rial amount={totalSpent} /></p>
             <p className="text-[10px] text-gray-500 mt-0.5">{t('purchases:purchaseCount', { count: purchases.length })}</p>
           </div>
-          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-[#173f2a]/70 shadow-card">
-            <p className="text-xs font-medium text-gray-400">{t('purchases:vatPaid')}</p>
-            <p className="text-lg font-bold text-amber-600 mt-0.5"><Rial amount={totalVat} /></p>
+          <div className="flex-1 min-w-36 rounded-xl border border-[#b9d1ce] bg-[#edf6f4] px-4 py-3 shadow-sm">
+            <p className="text-xs font-medium text-[#426965]">{t('purchases:vatPaid')}</p>
+            <p className="mt-0.5 text-lg font-bold text-[#285e61]"><Rial amount={totalVat} /></p>
             <p className="text-[10px] text-gray-400 mt-0.5">{t('purchases:allPurchases')}</p>
           </div>
-          <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-white border border-[#173f2a]/70 shadow-card">
-            <p className="text-xs font-medium text-gray-400">{t('purchases:suppliersUsed')}</p>
-            <p className="text-lg font-bold text-gray-900 mt-0.5">
-              {new Set(purchases.map(p => p.supplier_id).filter(Boolean)).size}
+          <div className="flex-1 min-w-36 rounded-xl border border-[#d7dee4] bg-[#f4f6f7] px-4 py-3 shadow-sm">
+            <p className="text-xs font-medium text-slate-500">{t('purchases:suppliersUsed')}</p>
+            <p className="mt-0.5 text-lg font-bold text-slate-800">
+              {suppliersUsed}
             </p>
             <p className="text-[10px] text-gray-400 mt-0.5">{t('purchases:uniqueVendors')}</p>
           </div>
         </div>
-        <Button size="sm" onClick={openAdd} className="flex-shrink-0 self-start">
-          <Plus size={14} />
-          {t('purchases:new')}
-        </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
