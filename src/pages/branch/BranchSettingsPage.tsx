@@ -36,7 +36,6 @@ type BranchOption = {
   is_active: boolean;
 };
 type BranchRecord = BranchOption & {
-  branch_code: string | null;
   phone: string | null;
   email: string | null;
   website: string | null;
@@ -59,7 +58,7 @@ const sections: Array<{ id: SectionId; icon: React.ElementType }> = [
 ];
 
 const branchSelect =
-  "id,name,name_ar,is_active,branch_code,phone,email,website,building_number,street,district,city,country,postal_code,allow_split_payments,show_pos_scroll_buttons,pos_mode";
+  "id,name,name_ar,is_active,phone,email,website,building_number,street,district,city,country,postal_code,allow_split_payments,show_pos_scroll_buttons,pos_mode";
 
 const branchSettingsV3Copy = {
   en: {
@@ -166,7 +165,6 @@ function InfoRow({
 
 type BranchHeaderMetadata = {
   name: string;
-  branchCode: string | null;
   isActive: boolean;
 };
 
@@ -182,7 +180,6 @@ function BranchSettingsHeader({
   labels: {
     active: string;
     backToDashboard: string;
-    branchCode: string;
     branchName: string;
     inactive: string;
     loadingBranch: string;
@@ -211,14 +208,6 @@ function BranchSettingsHeader({
             enabledLabel={labels.active}
             disabledLabel={labels.inactive}
           />
-          {branch.branchCode && (
-            <span className="border-s border-slate-200 ps-2.5 font-mono font-semibold text-slate-700" dir="ltr">
-              <span className="me-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                {labels.branchCode}
-              </span>
-              {branch.branchCode}
-            </span>
-          )}
         </div>
       ) : loading ? (
         <div
@@ -234,11 +223,6 @@ function BranchSettingsHeader({
       ) : null}
     </header>
   );
-}
-
-function displayBranchCode(branchCode: string | null): string | null {
-  const value = branchCode?.trim();
-  return value || null;
 }
 
 function SummaryPanel({
@@ -536,7 +520,6 @@ export default function BranchSettingsPage() {
   const headerLabels = {
     active: t("workspace.active"),
     backToDashboard: t("workspace.backToDashboard"),
-    branchCode: t("workspace.branchCode"),
     branchName: t("workspace.branchName"),
     inactive: t("workspace.inactive"),
     loadingBranch: t("workspace.loadingBranch"),
@@ -594,15 +577,12 @@ export default function BranchSettingsPage() {
   ]
     .filter(Boolean)
     .join("\n");
-  const branchIdentifier = displayBranchCode(selectedBranch.branch_code);
-
   return (
     <div className="mx-auto max-w-7xl space-y-5">
       <BranchSettingsHeader
         backPath={backPath}
         branch={{
           name: selectedBranch.name,
-          branchCode: branchIdentifier,
           isActive: selectedBranch.is_active,
         }}
         loading={false}
@@ -724,12 +704,6 @@ export default function BranchSettingsPage() {
                 label={v3.status}
                 value={selectedBranch.is_active ? t("workspace.active") : t("workspace.inactive")}
               />
-              {branchIdentifier && (
-                <SummaryRow
-                  label={t("workspace.branchCode")}
-                  value={<span className="font-mono" dir="ltr">{branchIdentifier}</span>}
-                />
-              )}
               <p className="pt-1 text-xs leading-5 text-emerald-50/70">
                 {t("workspace.generalReadOnly")}
               </p>
