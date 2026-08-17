@@ -32,6 +32,7 @@
   "unitPrice": "سعر الوحدة",
   "amountBeforeVat": "المبلغ قبل الضريبة",
   "vatAmount": "مبلغ الضريبة",
+  "vatRate": "نسبة الضريبة",
   "taxableAmount": "المبلغ الخاضع للضريبة",
   "discount": "الخصم",
   "totalIncludingVat": "الإجمالي شامل الضريبة",

@@ -32,6 +32,7 @@
   "unitPrice": "Unit Price",
   "amountBeforeVat": "Amount Before VAT",
   "vatAmount": "VAT Amount",
+  "vatRate": "VAT %",
   "taxableAmount": "Taxable Amount",
   "discount": "Discount",
   "totalIncludingVat": "Total Including VAT",
