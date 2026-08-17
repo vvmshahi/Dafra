@@ -262,7 +262,9 @@ try {
             assert.match(arabicOnly, /بيبسي/)
             assert.doesNotMatch(arabicOnly, /Pepsi/)
             const bilingual = structuredMarkupFor('Pepsi', 'بيبسي', {}, { identity: { ...model.identity, number: 'INV-2458' } })
-            assert.match(bilingual, /thermal-structured-ledger/)
+            assert.match(bilingual, /thermal-structured-masthead thermal-structured-masthead--split[\s\S]*thermal-structured-identity[\s\S]*thermal-legal-info/)
+            assert.doesNotMatch(bilingual, /thermal-structured-ledger/)
+            assert.match(bilingual, /thermal-structured-items-heading[\s\S]*thermal-structured-line/)
             assert.match(bilingual, /thermal-structured-line__names--combined/)
             assert.doesNotMatch(bilingual, /thermal-structured-line__names--bilingual/)
             assert.match(bilingual, /thermal-structured-line__name-segment--en" dir="ltr">Pepsi/)
@@ -279,7 +281,7 @@ try {
             assert.match(credit, /thermal-structured-document-number" dir="ltr">CN-2458/)
             assert.match(credit, /thermal-row thermal-row-strong[\s\S]*thermal-value/)
             if (width === '80mm') assert.match(bilingual, /thermal-structured-accounting[\s\S]*thermal-structured-close/)
-            else assert.match(bilingual, /thermal-receipt--58mm[\s\S]*thermal-structured-ledger[\s\S]*thermal-structured-total-label/)
+            else assert.match(bilingual, /thermal-receipt--58mm[\s\S]*thermal-structured-items-heading[\s\S]*thermal-structured-total-label/)
           }
         }
         if (layout.storedId === 'detailed') {

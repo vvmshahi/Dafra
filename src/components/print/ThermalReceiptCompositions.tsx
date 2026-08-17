@@ -196,9 +196,12 @@ function structuredMerchantNames(model: DocumentViewModel) {
 /** Fiscal-document masthead: a trading identity may lead, but legal seller data stays explicit. */
 function StructuredSellerHeader({ receipt }: { receipt: ReceiptComposition }) {
   const merchantNames = structuredMerchantNames(receipt.model)
-  return <header className="thermal-header thermal-structured-masthead">
-    <ReceiptLogo receipt={receipt} />
-    {merchantNames.map((name, index) => <div key={`${name}-${index}`} className={index === 0 ? 'thermal-structured-brand' : 'thermal-structured-trading-name'} dir="auto">{name}</div>)}
+  const hasIdentity = merchantNames.length > 0 || (receipt.model.presentation.logo.visible && Boolean(receipt.logoUrl))
+  return <header className={`thermal-header thermal-structured-masthead${hasIdentity ? ' thermal-structured-masthead--split' : ''}`}>
+    {hasIdentity && <section className="thermal-structured-identity">
+      <ReceiptLogo receipt={receipt} />
+      {merchantNames.map((name, index) => <div key={`${name}-${index}`} className={index === 0 ? 'thermal-structured-brand' : 'thermal-structured-trading-name'} dir="auto">{name}</div>)}
+    </section>}
     <LegalSeller receipt={receipt} contact website={false} />
   </header>
 }
@@ -604,7 +607,8 @@ export function StructuredDetailReceipt({ receipt }: { receipt: ReceiptCompositi
     <StructuredSellerHeader receipt={receipt} />
     <div className="thermal-structured-document"><ReceiptTitle receipt={receipt} /><StructuredReceiptMetadata receipt={receipt} /></div>
     {hasBuyer && <ReceiptBuyer receipt={receipt} detailed={receipt.isStandard} />}
-    <section className="thermal-structured-ledger"><section className="thermal-structured-items-heading"><span>{documentLabel(receipt.model.identity.language, 'description')}</span><span>{documentLabel(receipt.model.identity.language, 'amount')}</span></section><StructuredItems receipt={receipt} /></section>
+    <section className="thermal-structured-items-heading"><span>{documentLabel(receipt.model.identity.language, 'description')}</span><span>{documentLabel(receipt.model.identity.language, 'amount')}</span></section>
+    <StructuredItems receipt={receipt} />
     <section className="thermal-structured-accounting"><StructuredTotals receipt={receipt} /><StructuredPayments receipt={receipt} /></section>
     <footer className="thermal-footer thermal-structured-close"><Verification receipt={receipt} /><FooterCopy receipt={receipt} /></footer>
   </>
