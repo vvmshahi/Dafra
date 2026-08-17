@@ -48,7 +48,7 @@
   "branch": {
     "operations": "Branch operations", "dashboard": "Branch dashboard", "myBranch": "My Branch", "loading": "Loading branch...", "establishment": "Establishment",
     "newSale": "New Sale", "quickActions": "Quick Actions", "workflow": "Daily branch workflow",
-    "openPos": "Open POS", "recordCosts": "Record costs", "reviewReceipts": "Review receipts",
+    "openPos": "Open POS", "recordCosts": "Record costs", "reviewReceipts": "Review invoices", "manageCatalogue": "Manage catalogue", "recordPurchases": "Record purchases", "manageSuppliers": "Manage suppliers", "manageCustomers": "Manage customers", "viewPerformance": "View performance",
     "registerSnapshot": "Register session snapshot", "products": "Products", "purchases": "Purchases", "suppliers": "Suppliers", "customers": "Customers", "reports": "Reports",
     "lowStock_one": "{{count}} product low on stock", "lowStock_other": "{{count}} products low on stock"
   },

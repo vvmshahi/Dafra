@@ -105,13 +105,14 @@ function SubscriptionBanner() {
 }
 
 function getInitialCollapsed(): boolean {
+  // Constrained/tablet layouts always begin with the compact rail so the
+  // dashboard canvas remains usable. Desktop retains the local preference.
+  if (window.matchMedia('(max-width: 1023px)').matches) return true
   try {
     const saved = localStorage.getItem('meem-sidebar-collapsed')
     if (saved !== null) return saved === 'true'
   } catch {}
-  // The branch workspace starts with a compact rail on every viewport. Users
-  // may expand it, and that choice remains local to this browser.
-  return true
+  return false
 }
 
 export default function AppLayout() {

@@ -48,7 +48,7 @@
   "branch": {
     "operations": "عمليات الفرع", "dashboard": "لوحة تحكم الفرع", "myBranch": "فرعي", "loading": "جارٍ تحميل الفرع...", "establishment": "المنشأة",
     "newSale": "بيع جديد", "quickActions": "إجراءات سريعة", "workflow": "سير عمل الفرع اليومي",
-    "openPos": "فتح نقطة البيع", "recordCosts": "تسجيل التكاليف", "reviewReceipts": "مراجعة الإيصالات",
+    "openPos": "فتح نقطة البيع", "recordCosts": "تسجيل التكاليف", "reviewReceipts": "مراجعة الفواتير", "manageCatalogue": "إدارة الكتالوج", "recordPurchases": "تسجيل المشتريات", "manageSuppliers": "إدارة الموردين", "manageCustomers": "إدارة العملاء", "viewPerformance": "عرض الأداء",
     "registerSnapshot": "ملخص جلسة الصندوق", "products": "المنتجات", "purchases": "المشتريات", "suppliers": "الموردون", "customers": "العملاء", "reports": "التقارير",
     "lowStock_one": "منتج واحد منخفض المخزون", "lowStock_other": "{{count}} منتجات منخفضة المخزون"
   },
