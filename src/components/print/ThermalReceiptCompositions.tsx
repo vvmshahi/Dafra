@@ -120,6 +120,29 @@ function ReceiptMetadata({ receipt }: { receipt: ReceiptComposition }) {
   </section>
 }
 
+function compactMerchantNames(model: DocumentViewModel) {
+  const { seller } = model
+  const candidates = [
+    seller.displayHeading,
+    ...(seller.branch.visible ? names(model, seller.branch.name, seller.branch.nameAr) : []),
+    seller.displaySubheading,
+  ]
+  return candidates.filter((candidate, index, all) => !!candidate
+    && !sameIdentity(candidate, seller.registeredName)
+    && !sameIdentity(candidate, seller.registeredNameAr)
+    && !all.slice(0, index).some(previous => sameIdentity(candidate, previous)))
+}
+
+/** Retail tape masthead: show a trading/branch identity once, then the legal seller contract. */
+function CompactSellerHeader({ receipt }: { receipt: ReceiptComposition }) {
+  const merchantNames = compactMerchantNames(receipt.model)
+  return <header className="thermal-header thermal-compact-masthead">
+    <ReceiptLogo receipt={receipt} />
+    {merchantNames.map((name, index) => <div key={`${name}-${index}`} className={index === 0 ? 'thermal-compact-brand' : 'thermal-compact-trading-name'} dir="auto">{name}</div>)}
+    <LegalSeller receipt={receipt} contact website={false} />
+  </header>
+}
+
 function ReceiptBuyer({ receipt, detailed = false }: { receipt: ReceiptComposition; detailed?: boolean }) {
   const { model, mandatoryBuyer } = receipt
   const { buyer, identity } = model
@@ -147,11 +170,37 @@ function ItemFiscalDetail({ receipt, item }: { receipt: ReceiptComposition; item
 function CompactItems({ receipt }: { receipt: ReceiptComposition }) {
   const { model } = receipt
   return <section className="thermal-items thermal-compact-lines">{model.items.map((item, index) => <article className="thermal-item thermal-compact-line" key={`${item.description}-${index}`}>
-    <div className={`thermal-item-name ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>{names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}</div>
+    <CompactItemName item={item} model={model} />
     <div className="thermal-compact-line__amount"><Money value={item.lineTotal} model={model} /></div>
     <div className="thermal-compact-line__formula"><QuantityWithUnit quantity={item.quantity} item={item} model={model} /> <span aria-hidden="true">×</span> <Money value={item.unitPrice} model={model} /></div>
-    <ItemFiscalDetail receipt={receipt} item={item} />
+    <CompactItemFiscalDetail receipt={receipt} item={item} />
   </article>)}</section>
+}
+
+function CompactItemName({ item, model }: { item: DocumentViewModel['items'][number]; model: DocumentViewModel }) {
+  const bilingualPair = model.identity.language === 'both'
+    && !!item.description.trim()
+    && !!item.descriptionAr?.trim()
+    && !sameIdentity(item.description, item.descriptionAr)
+  if (bilingualPair) {
+    return <div className="thermal-item-name thermal-compact-line__names thermal-compact-line__names--bilingual">
+      <span dir="ltr">{item.description}</span><span dir="rtl">{item.descriptionAr}</span>
+    </div>
+  }
+  return <div className={`thermal-item-name thermal-compact-line__names ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>
+    {names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}
+  </div>
+}
+
+function CompactItemFiscalDetail({ receipt, item }: { receipt: ReceiptComposition; item: DocumentViewModel['items'][number] }) {
+  const { model, isCredit } = receipt
+  const hasVat = Math.abs(item.vatAmount) > 0.005 || Math.abs(item.vatRate) > 0.005
+  if (!hasVat && item.discount <= 0.005 && !(isCredit && item.creditedQuantity != null)) return null
+  return <div className="thermal-item-detail thermal-compact-line__detail">
+    {hasVat && <span className="thermal-compact-line__vat">{documentLabel(model.identity.language, 'vatAmount')} ({formatDocumentQuantity(item.vatRate, model)}%): <Money value={item.vatAmount} model={model} /></span>}
+    {item.discount > 0.005 && <span className="thermal-compact-line__discount">{documentLabel(model.identity.language, 'discount')}: <bdi dir="ltr">−</bdi><Money value={item.discount} model={model} /></span>}
+    {isCredit && item.creditedQuantity != null && <span>{documentLabel(model.identity.language, 'quantity')}: <QuantityWithUnit quantity={item.creditedQuantity} item={item} model={model} /></span>}
+  </div>
 }
 
 function ClassicItems({ receipt }: { receipt: ReceiptComposition }) {
@@ -222,6 +271,12 @@ function ClassicTotals({ receipt }: { receipt: ReceiptComposition }) {
   </Row>)}</section>
 }
 
+function CompactTotals({ receipt }: { receipt: ReceiptComposition }) {
+  return <section className="thermal-totals thermal-compact-totals">{receipt.visibleTotals.map(row => <Row key={row.key} label={row.label} strong={row.emphasized}>
+    {row.key === 'discount' ? <><bdi dir="ltr">−</bdi><Money value={row.value} model={receipt.model} /></> : <Money value={row.value} model={receipt.model} />}
+  </Row>)}</section>
+}
+
 function Payments({ receipt }: { receipt: ReceiptComposition }) {
   const { model, paymentKind, isCredit } = receipt
   const { payments, totals, presentation, identity } = model
@@ -252,6 +307,21 @@ function ClassicPayments({ receipt }: { receipt: ReceiptComposition }) {
   const paymentKind = positivePayments.length > 1 ? 'split' : positivePayments[0]?.method ?? 'other'
   const singleCash = positivePayments.length === 1 && positivePayments[0]?.method === 'cash' ? positivePayments[0] : null
   return <section className={`thermal-payments thermal-classic-payments thermal-classic-payments--${positivePayments.length > 1 ? 'split' : 'single'}`}>
+    <div className="thermal-payment-kind">{documentLabel(identity.language, isCredit ? 'refundMethod' : 'paymentMethod')}: <strong>{documentPaymentLabel(identity.language, paymentKind)}</strong></div>
+    {positivePayments.length > 1 && positivePayments.map((payment, index) => <Row key={`${payment.method}-${index}`} label={documentPaymentLabel(identity.language, payment.method)}><Money value={payment.amount} model={model} /></Row>)}
+    {presentation.thermal.showCashChange && singleCash?.cashTendered != null && Math.abs(singleCash.cashTendered - totals.total) > 0.005 && <Row label={documentLabel(identity.language, 'received')}><Money value={singleCash.cashTendered} model={model} /></Row>}
+    {presentation.thermal.showCashChange && singleCash && (singleCash.change ?? 0) > 0.005 && <Row label={documentLabel(identity.language, 'change')}><Money value={singleCash.change ?? 0} model={model} /></Row>}
+  </section>
+}
+
+function CompactPayments({ receipt }: { receipt: ReceiptComposition }) {
+  const { model, isCredit } = receipt
+  const { customerCredit, identity, payments, presentation, totals } = model
+  if (customerCredit?.isCustomerCredit) return <Payments receipt={receipt} />
+  const positivePayments = payments.filter(payment => payment.amount > 0.005)
+  const paymentKind = positivePayments.length > 1 ? 'split' : positivePayments[0]?.method ?? 'other'
+  const singleCash = positivePayments.length === 1 && positivePayments[0]?.method === 'cash' ? positivePayments[0] : null
+  return <section className={`thermal-payments thermal-compact-payments thermal-compact-payments--${positivePayments.length > 1 ? 'split' : 'single'}`}>
     <div className="thermal-payment-kind">{documentLabel(identity.language, isCredit ? 'refundMethod' : 'paymentMethod')}: <strong>{documentPaymentLabel(identity.language, paymentKind)}</strong></div>
     {positivePayments.length > 1 && positivePayments.map((payment, index) => <Row key={`${payment.method}-${index}`} label={documentPaymentLabel(identity.language, payment.method)}><Money value={payment.amount} model={model} /></Row>)}
     {presentation.thermal.showCashChange && singleCash?.cashTendered != null && Math.abs(singleCash.cashTendered - totals.total) > 0.005 && <Row label={documentLabel(identity.language, 'received')}><Money value={singleCash.cashTendered} model={model} /></Row>}
@@ -291,13 +361,16 @@ export function ClassicReceipt({ receipt }: { receipt: ReceiptComposition }) {
 }
 
 export function CompactRetailReceipt({ receipt }: { receipt: ReceiptComposition }) {
+  const hasBuyer = !receipt.model.buyer.isWalkIn && (receipt.mandatoryBuyer || !!receipt.model.buyer.name)
   return <>
-    <header className="thermal-header thermal-compact-masthead"><ReceiptLogo receipt={receipt} /><DisplayIdentity receipt={receipt} /><LegalSeller receipt={receipt} contact /></header>
+    <CompactSellerHeader receipt={receipt} />
     <ReceiptTitle receipt={receipt} />
     <ReceiptMetadata receipt={receipt} />
-    <ReceiptBuyer receipt={receipt} />
-    <Rule /><CompactItems receipt={receipt} /><Rule /><Totals receipt={receipt} />
-    <Payments receipt={receipt} />
+    {hasBuyer && <ReceiptBuyer receipt={receipt} detailed={receipt.isStandard} />}
+    <Rule /><CompactItems receipt={receipt} />
+    <CompactTotals receipt={receipt} />
+    <CompactPayments receipt={receipt} />
+    <Rule />
     <footer className="thermal-footer thermal-compact-close"><Verification receipt={receipt} /><FooterCopy receipt={receipt} /></footer>
   </>
 }

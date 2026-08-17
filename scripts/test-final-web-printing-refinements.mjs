@@ -383,6 +383,24 @@ assert.match(thermalCompositions, /const hasBuyer = !receipt\.model\.buyer\.isWa
 assert.match(css, /thermal-theme--classic \.thermal-classic-line__names--bilingual/)
 assert.match(css, /thermal-theme--classic \.thermal-classic-totals \.thermal-row-strong/)
 assert.match(css, /thermal-theme--classic \.thermal-classic-payments/)
+const compactComposition = thermalCompositions.slice(thermalCompositions.indexOf('export function CompactRetailReceipt'), thermalCompositions.indexOf('export function StructuredDetailReceipt'))
+let compactMarker = -1
+for (const marker of ['<CompactSellerHeader', '<ReceiptTitle', '<ReceiptMetadata', '<ReceiptBuyer', '<Rule />', '<CompactItems', '<CompactTotals', '<CompactPayments', 'thermal-compact-close']) {
+  const nextMarker = compactComposition.indexOf(marker)
+  assert.ok(nextMarker > compactMarker, `Compact must preserve its dense retail order at ${marker}`)
+  compactMarker = nextMarker
+}
+const compactHeader = thermalCompositions.slice(thermalCompositions.indexOf('function compactMerchantNames'), thermalCompositions.indexOf('function ReceiptBuyer'))
+assert.match(compactHeader, /seller\.displayHeading/)
+assert.match(compactHeader, /seller\.branch\.visible/)
+assert.match(compactHeader, /!sameIdentity\(candidate, seller\.registeredName\)/)
+assert.match(compactHeader, /<LegalSeller receipt=\{receipt\} contact website=\{false\} \/>/)
+assert.match(thermalCompositions, /thermal-compact-line__names--bilingual/)
+assert.match(thermalCompositions, /thermal-compact-line__discount/)
+assert.match(thermalCompositions, /thermal-compact-payments--\$\{positivePayments\.length > 1 \? 'split' : 'single'\}/)
+assert.match(css, /thermal-theme--compact-retail \.thermal-compact-line__names--bilingual/)
+assert.match(css, /thermal-theme--compact-retail \.thermal-compact-totals \.thermal-row-strong/)
+assert.match(css, /thermal-receipt--58mm\.thermal-theme--compact-retail \.thermal-compact-line__names--bilingual/)
 assert.match(thermalSettings, /THERMAL_DENSITIES:[^=]+=\s*\['classic', 'compact', 'standard', 'detailed'\]/)
 assert.match(thermalTypes, /ThermalDensity = 'classic' \| 'compact' \| 'standard' \| 'detailed'/)
 assert.match(thermalAdapters, /thermalDensity === 'classic'/)

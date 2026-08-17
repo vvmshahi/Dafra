@@ -121,7 +121,7 @@ try {
         assert.match(markup, /300000000000003/)
         assert.match(markup, /\+966500000001/)
         assert.match(markup, /fixture@example\.com/)
-        if (layout.storedId === 'classic') assert.doesNotMatch(markup, /https:\/\/example\.com/)
+        if (layout.storedId === 'classic' || layout.storedId === 'compact') assert.doesNotMatch(markup, /https:\/\/example\.com/)
         else assert.match(markup, /https:\/\/example\.com/)
         assert.doesNotMatch(markup, /Bill From|صادرة من|>From</)
         assert.doesNotMatch(markup, /thermal-legal-info[\s\S]{0,120}thermal-section-label/)
@@ -140,6 +140,12 @@ try {
           assert.equal((markup.match(/thermal-classic-line__vat/g) ?? []).length, items.length)
           assert.equal((markup.match(/thermal-classic-line__discount/g) ?? []).length, items.filter(item => item.discount > 0.005).length)
           assert.match(markup, fixtureCase.payment === 'split' ? /thermal-classic-payments--split/ : /thermal-classic-payments--single/)
+        }
+        if (layout.storedId === 'compact') {
+          if (fixtureCase.language === 'both') assert.match(markup, /thermal-compact-line__names--bilingual/)
+          assert.equal((markup.match(/thermal-compact-line__vat/g) ?? []).length, items.length)
+          assert.equal((markup.match(/thermal-compact-line__discount/g) ?? []).length, items.filter(item => item.discount > 0.005).length)
+          assert.match(markup, fixtureCase.payment === 'split' ? /thermal-compact-payments--split/ : /thermal-compact-payments--single/)
         }
 
         const walkInMarkup = renderToStaticMarkup(createElement(ThermalReceipt, {
@@ -182,6 +188,10 @@ try {
               name: 'Selected Business',
               nameAr: 'منشأة محددة',
               vatNumber: '399999999999993',
+              address: 'Building 99, Northern Ring Road, Al Murooj District, Riyadh 12281, Saudi Arabia',
+              addressAr: 'مبنى ٩٩، طريق الدائري الشمالي، حي المروج، الرياض ١٢٢٨١، المملكة العربية السعودية',
+              identifierType: 'CR',
+              identifierValue: '1010999999',
               type: 'business',
               isWalkIn: false,
             },
@@ -190,6 +200,28 @@ try {
         }))
         assert.match(businessMarkup, /thermal-buyer/)
         assert.match(businessMarkup, /399999999999993/)
+        if (layout.storedId === 'compact') {
+          if (fixtureCase.language !== 'ar') assert.match(businessMarkup, /Building 99, Northern Ring Road, Al Murooj District, Riyadh 12281, Saudi Arabia/)
+          if (fixtureCase.language !== 'en') assert.match(businessMarkup, /مبنى ٩٩، طريق الدائري الشمالي، حي المروج، الرياض ١٢٢٨١، المملكة العربية السعودية/)
+          assert.match(businessMarkup, /1010999999/)
+          if (width === '58mm') assert.doesNotMatch(businessMarkup, /thermal-buyer[^>]*style="[^"]*display:\s*none/)
+
+          const deduplicatedMerchantMarkup = renderToStaticMarkup(createElement(ThermalReceipt, {
+            model: {
+              ...model,
+              seller: {
+                ...model.seller,
+                registeredName: 'One Seller Name',
+                registeredNameAr: null,
+                displayHeading: 'One Seller Name',
+                displaySubheading: 'One Seller Name',
+                branch: { name: 'One Seller Name', nameAr: null, visible: true },
+              },
+            },
+            options: { preview: true },
+          }))
+          assert.equal((deduplicatedMerchantMarkup.match(/One Seller Name/g) ?? []).length, 1)
+        }
         rendered.push({ layout: layout.publicId, width, caseId: fixtureCase.id, markup })
       }
     }
