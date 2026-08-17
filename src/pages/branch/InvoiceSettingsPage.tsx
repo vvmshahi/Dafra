@@ -587,7 +587,7 @@ export default function InvoiceSettingsPage({
         </>}
       </DocumentStudioPreviewToolbar>}
       preview={previewMode === 'thermal'
-        ? <div className="mx-auto flex min-h-full max-w-full items-start justify-center"><ThermalReceipt model={previewModel} options={{ preview: true, qrImageUrl: previewQrUrl, sampleLabel: t('printing:preview'), nonFiscalDemo: previewQrState === 'demo', qrUnavailable: previewQrState === 'unavailable' }} /></div>
+        ? <div data-thermal-live-preview className="thermal-live-preview flex min-h-full w-max min-w-full items-start justify-center"><ThermalReceipt model={previewModel} options={{ preview: true, qrImageUrl: previewQrUrl, nonFiscalDemo: previewQrState === 'demo', qrUnavailable: previewQrState === 'unavailable' }} /></div>
         : <A4PreviewFit zoom={previewZoom} bounded onPageCountChange={setA4PageCount}><A4Document model={previewModel} options={{ preview: true, qrImageUrl: previewQrUrl, sampleLabel: t('printing:preview'), pageNumbers: true, nonFiscalDemo: previewQrState === 'demo' }} /></A4PreviewFit>}
       actionFooter={<DocumentStudioActionFooter status={
         saveError

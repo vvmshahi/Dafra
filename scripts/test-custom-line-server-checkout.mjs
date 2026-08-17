@@ -190,6 +190,9 @@ const permittedPaths = new Set([
   'scripts/test-android-print-a4-preview.mjs',
   'scripts/test-final-web-printing-refinements.mjs',
   'scripts/test-thermal-receipt-layouts-runtime.mjs',
+  // Authorized thermal live-preview parity: the branch settings sidebar uses
+  // the canonical issued-document renderer and carries no checkout authority.
+  'scripts/test-thermal-preview-parity.mjs',
   'scripts/test-invoice-detail-ui.mjs',
   'scripts/test-invoice-summary-ui.mjs',
   'scripts/test-zatca-phase2-finalization-v2.mjs',
@@ -201,6 +204,7 @@ const permittedPaths = new Set([
   'src/pages/reports/SalesReport.tsx',
   'src/pages/reports/pdf/reportExportData.ts',
   'src/pages/reports/pdf/reportPdfExporters.ts',
+  'src/pages/branch/InvoiceSettingsPage.tsx',
   MIGRATION_PATH,
   'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
   'supabase/migrations/20260804000600_trading_sandbox_v2.sql',

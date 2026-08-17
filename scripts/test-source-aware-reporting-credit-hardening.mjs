@@ -216,8 +216,12 @@ const permittedPaths = new Set([
   'scripts/test-zatca-phase2-finalization-v2.mjs',
   // Authorized Classic thermal presentation refinement only.
   'scripts/test-thermal-receipt-layouts-runtime.mjs',
+  // Authorized thermal live-preview parity uses the canonical document
+  // renderer only; it carries no reporting or credit semantics.
+  'scripts/test-thermal-preview-parity.mjs',
   'src/components/print/ThermalReceiptCompositions.tsx',
   'src/index.css',
+  'src/pages/branch/InvoiceSettingsPage.tsx',
   'src/lib/print/androidPrintExecution.ts',
   'src/lib/print/browserPrint.ts',
   'src/lib/atomicReceiptPrint.ts',

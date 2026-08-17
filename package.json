@@ -8,7 +8,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "test": "npm run test:register-session-netting && npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx && npm run test:branch-billing-profile-ux && npm run test:profile-aware-catalogue-navigation && npm run test:saved-services-catalogue && npm run test:catalogue-bulk-export && npm run test:catalogue-bulk-import && npm run test:custom-line-cart-architecture && npm run test:custom-line-server-checkout && npm run test:source-aware-reporting-credit-hardening",
+    "test": "npm run test:register-session-netting && npm run test:final-web-printing-refinements && npm run test:thermal-receipt-layouts && npm run test:thermal-preview-parity && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx && npm run test:branch-billing-profile-ux && npm run test:profile-aware-catalogue-navigation && npm run test:saved-services-catalogue && npm run test:catalogue-bulk-export && npm run test:catalogue-bulk-import && npm run test:custom-line-cart-architecture && npm run test:custom-line-server-checkout && npm run test:source-aware-reporting-credit-hardening",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -36,6 +36,7 @@
     "audit:phase4d-document-view-model": "node scripts/audit-phase4d-document-view-model.mjs",
     "test:phase4e-thermal-receipts": "node scripts/test-phase4e-thermal-receipts.mjs",
     "test:thermal-receipt-layouts": "node scripts/test-thermal-receipt-layouts-runtime.mjs",
+    "test:thermal-preview-parity": "node scripts/test-thermal-preview-parity.mjs",
     "test:sales-report-local-fix": "node scripts/test-sales-report-local-fix.mjs",
     "audit:phase4e-thermal-receipts": "node scripts/audit-phase4e-thermal-receipts.mjs",
     "test:phase4f-a4-templates": "node scripts/test-phase4f-a4-templates.mjs",
