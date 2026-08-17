@@ -39,7 +39,7 @@ test('daily create/update table, scope and payload keys remain intact', () => {
   ]) assert.match(daily, new RegExp(`${key}:`))
 })
 
-test('daily validation, VAT formulas and payment values are unchanged', () => {
+test('actual expense requires explicit VAT, price treatment and payment choices', () => {
   assert.match(daily, /description\.trim\(\)/)
   assert.match(daily, /amountNum <= 0/)
   assert.match(daily, /if \(!date\)/)
@@ -49,8 +49,12 @@ test('daily validation, VAT formulas and payment values are unchanged', () => {
   assert.match(vat, /expenseBeforeVat \+ vatAmount - totalPaid/)
   for (const value of ['cash', 'card', 'bank_transfer']) {
     assert.match(daily, new RegExp(`value: '${value}'`))
-    assert.match(fixed, new RegExp(`value: '${value}'`))
   }
+  assert.match(daily, /useState<SimpleExpenseVatChoice \| ''>\(''\)/)
+  assert.match(daily, /useState<ExpensePaymentMethod \| ''>\(''\)/)
+  assert.match(daily, /priceTreatmentRequired/)
+  assert.match(daily, /expense-price-treatment/)
+  assert.match(daily, /paymentMethodRequired/)
   assert.match(daily, /type="radio" name="expense-vat"/)
   assert.match(daily, /type="radio" name="expense-payment"/)
 })
@@ -60,7 +64,7 @@ test('supplier source safely separates saved, manual and no-supplier values', ()
   assert.match(daily, /source === 'none'/)
   assert.match(daily, /source === 'manual'/)
   assert.match(daily, /selectSupplier\(suppliers\[0\]\.id\)/)
-  assert.match(daily, /supplier_id: vatChoice === 'claimable' \? supplierId \|\| null : null/)
+  assert.match(daily, /supplier_id: supplierId \|\| null/)
 })
 
 test('real receipt storage support is retained for daily expenses only', () => {
@@ -70,7 +74,7 @@ test('real receipt storage support is retained for daily expenses only', () => {
   assert.doesNotMatch(fixed, /receipt|attachment|storage/)
 })
 
-test('fixed contract remains a monthly template without invented recurrence or VAT fields', () => {
+test('recurring contract remains a monthly template without payment or VAT posting', () => {
   assert.match(fixed, /\.from\('fixed_expenses'\)\.insert\(payload\)/)
   assert.match(fixed, /\.from\('fixed_expenses'\)\.update\(payload\)\.eq\('id', item\.id\)/)
   for (const key of ['tenant_id', 'branch_id', 'name', 'category_id', 'monthly_amount', 'payment_method', 'is_active']) {
@@ -78,7 +82,8 @@ test('fixed contract remains a monthly template without invented recurrence or V
   }
   assert.doesNotMatch(fixed, /start_date|end_date|next_due_date|frequency:|vat_amount|supplier_id/)
   assert.match(types, /interface FixedExpense[\s\S]*monthly_amount: number[\s\S]*is_active: boolean/)
-  assert.match(en.fixed.templateOnly, /does not automatically create daily expense records/)
+  assert.match(en.fixed.templateOnly, /Record the actual payment as an Expense/)
+  assert.doesNotMatch(fixed, /fixed-payment/)
 })
 
 test('previews, pending guards, failures, success refresh and deletion safety are present', () => {
@@ -92,7 +97,7 @@ test('previews, pending guards, failures, success refresh and deletion safety ar
   assert.match(fixedTab, /if \(result\.error[\s\S]*return[\s\S]*setItems/)
 })
 
-test('page calculations and filters remain unchanged while KPI borders are green', () => {
+test('page calculations, filters and header actions are authoritative', () => {
   assert.match(dailyTab, /filtered\.reduce\(\(s, e\) => s \+ e\.total_paid/)
   assert.match(dailyTab, /preset === 'custom'/)
   assert.match(dailyTab, /filterCat/)
@@ -100,6 +105,8 @@ test('page calculations and filters remain unchanged while KPI borders are green
   assert.match(fixedTab, /monthlyTotal  = activeItems\.reduce/)
   assert.match(fixedTab, /yearlyTotal   = monthlyTotal \* 12/)
   assert.match(`${dailyTab}${fixedTab}`, /border-primary-800/)
+  assert.match(page, /actions=/)
+  assert.match(page, /bg-\[#173f2a\]/)
 })
 
 test('English and Arabic modal, preview, empty, success and error copy is complete', () => {
@@ -121,10 +128,10 @@ test('expense tabs use leaf-string keys in English and Arabic', () => {
   assert.match(page, /t\('tabs\.daily'\)/)
   assert.match(page, /t\('tabs\.fixed'\)/)
   assert.doesNotMatch(page, /t\('daily'\)|t\('fixed'\)/)
-  assert.equal(en.tabs.daily, 'Daily Expenses')
-  assert.equal(en.tabs.fixed, 'Fixed Expenses')
-  assert.equal(ar.tabs.daily, 'المصروفات اليومية')
-  assert.equal(ar.tabs.fixed, 'المصروفات الثابتة')
+  assert.equal(en.tabs.daily, 'Expenses')
+  assert.equal(en.tabs.fixed, 'Recurring Expenses')
+  assert.equal(ar.tabs.daily, 'المصروفات')
+  assert.equal(ar.tabs.fixed, 'المصروفات المتكررة')
   assert.equal(typeof en.fixed, 'object')
   assert.equal(en.fixed.monthly, 'Monthly')
   assert.equal(ar.fixed.monthly, 'شهرياً')

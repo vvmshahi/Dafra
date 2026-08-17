@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Plus, Pencil, Trash2, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -23,10 +23,6 @@ export interface FixedExpenseRow extends FixedExpense {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const PAY_BADGE: Record<string, 'success' | 'info' | 'neutral'> = {
-  cash: 'success', card: 'info', bank_transfer: 'neutral', other: 'neutral',
-}
-
 // ── Fixed expense row ─────────────────────────────────────────────────────────
 
 function FixedRow({
@@ -42,7 +38,6 @@ function FixedRow({
   const catColor = item.expense_categories?.color ?? '#6b7280'
   const catIcon  = item.expense_categories?.icon  ?? '💰'
   const catName  = item.expense_categories?.name
-  const pay      = item.payment_method as string
 
   return (
     <div className={`flex items-center gap-3 px-4 py-3.5 border-b border-gray-100 last:border-0 transition-colors ${
@@ -75,11 +70,6 @@ function FixedRow({
         ) : (
           <span className="text-xs text-gray-300">—</span>
         )}
-      </div>
-
-      {/* Payment method */}
-      <div className="w-20 flex-shrink-0 hidden sm:block">
-        <Badge variant={PAY_BADGE[pay] as any}>{t(`payment.${pay}`, { defaultValue: t('payment.unknown') })}</Badge>
       </div>
 
       {/* Monthly amount */}
@@ -119,7 +109,7 @@ function FixedRow({
 
 // ── Main tab ──────────────────────────────────────────────────────────────────
 
-export default function FixedExpensesTab() {
+export default function FixedExpensesTab({ addRequest = 0 }: { addRequest?: number }) {
   const { profile } = useAuth()
   const { t } = useTranslation('expenses')
 
@@ -132,6 +122,7 @@ export default function FixedExpensesTab() {
   const [deleting, setDeleting] = useState(false)
   const [togglingIds, setTogglingIds] = useState<Set<string>>(() => new Set())
   const [toggleTarget, setToggleTarget] = useState<{ id: string; value: boolean } | null>(null)
+  const lastAddRequest = useRef(addRequest)
 
   const load = useCallback(async () => {
     const tid = profile?.tenant_id
@@ -162,6 +153,11 @@ export default function FixedExpensesTab() {
 
   const openAdd  = () => { setEditing(null); setModalOpen(true) }
   const openEdit = (item: FixedExpenseRow) => { setEditing(item); setModalOpen(true) }
+
+  useEffect(() => {
+    if (addRequest > lastAddRequest.current) openAdd()
+    lastAddRequest.current = addRequest
+  }, [addRequest])
 
   const handleDelete = async () => {
     if (!deleteTarget || deleting) return
@@ -230,10 +226,6 @@ export default function FixedExpensesTab() {
             </p>
           </div>
         </div>
-        <Button size="sm" onClick={openAdd} className="flex-shrink-0 self-start">
-          <Plus size={14} />
-          {t('addFixed')}
-        </Button>
       </div>
 
       {/* ── Content ─────────────────────────────────────────── */}
@@ -262,7 +254,6 @@ export default function FixedExpensesTab() {
             <div className="w-9 flex-shrink-0" />
             <div className="flex-1">{t('fields.name')}</div>
             <div className="w-28 flex-shrink-0 hidden md:block">{t('fields.category')}</div>
-            <div className="w-20 flex-shrink-0 hidden sm:block">{t('fields.paymentMethod')}</div>
             <div className="w-32 flex-shrink-0 text-end">{t('fields.monthlyAmount')}</div>
             <div className="w-14 flex-shrink-0 text-center">{t('status.active')}</div>
             <div className="w-16 flex-shrink-0" />
@@ -287,7 +278,6 @@ export default function FixedExpensesTab() {
                 {t('activeCount', { count: activeItems.length })}
               </div>
               <div className="w-28 hidden md:block" />
-              <div className="w-20 hidden sm:block" />
               <div className="w-32 text-right">
                 <p className="text-sm font-bold text-primary-600 tabular-nums">
                   <Rial amount={monthlyTotal} />

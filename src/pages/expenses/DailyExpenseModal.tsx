@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ImagePlus, CreditCard, Banknote, Building, AlertTriangle, Check, CheckCircle2 } from 'lucide-react'
+import { ImagePlus, CreditCard, Banknote, Building, AlertTriangle, Check, CheckCircle2, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
@@ -60,6 +60,7 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
   const [confirmRemoveReceipt, setConfirmRemoveReceipt] = useState(false)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [supplierSource, setSupplierSource] = useState<'none' | 'saved' | 'manual'>('none')
+  const [showSupplierDetails, setShowSupplierDetails] = useState(false)
 
   // Form state
   const [date,        setDate]        = useState('')
@@ -67,7 +68,8 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
   const [vendorName,  setVendorName]  = useState('')
   const [categoryId,  setCategoryId]  = useState('')
   const [amount,      setAmount]      = useState('')
-  const [vatChoice,   setVatChoice]   = useState<SimpleExpenseVatChoice>('not_claimable')
+  const [vatChoice,   setVatChoice]   = useState<SimpleExpenseVatChoice | ''>('')
+  const [priceTreatment, setPriceTreatment] = useState<'included' | 'exclusive' | ''>('')
   const [taxInvoiceNumber, setTaxInvoiceNumber] = useState('')
   const [supplierVatNumber, setSupplierVatNumber] = useState('')
   const [supplierId, setSupplierId] = useState('')
@@ -77,7 +79,7 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
   const [taxableAmount, setTaxableAmount] = useState('')
   const [vatAmountInput, setVatAmountInput] = useState('')
   const [vatAmountsManual, setVatAmountsManual] = useState(false)
-  const [payMethod,   setPayMethod]   = useState<ExpensePaymentMethod>('cash')
+  const [payMethod,   setPayMethod]   = useState<ExpensePaymentMethod | ''>('')
   const [notes,       setNotes]       = useState('')
 
   // Reset form
@@ -93,6 +95,7 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
         expense.vat_treatment,
         expense.vat_amount,
       ))
+      setPriceTreatment(expense.vat_treatment === 'on_top' ? 'exclusive' : 'included')
       setTaxInvoiceNumber(expense.tax_invoice_number ?? '')
       setSupplierVatNumber(expense.supplier_vat_number ?? '')
       setSupplierId(expense.supplier_id ?? '')
@@ -102,10 +105,11 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
       setTaxableAmount(String(expense.expense_before_vat ?? expense.amount))
       setVatAmountInput(String(expense.vat_amount ?? 0))
       setVatAmountsManual(true)
-      setPayMethod((expense.payment_method as ExpensePaymentMethod) ?? 'cash')
+      setPayMethod((expense.payment_method as ExpensePaymentMethod) ?? '')
       setNotes(expense.notes ?? '')
       setImagePreview(expense.receipt_url)
       setSupplierSource(expense.supplier_id ? 'saved' : expense.vendor_name ? 'manual' : 'none')
+      setShowSupplierDetails(Boolean(expense.supplier_id || expense.vendor_name))
     } else {
       const today = new Date().toISOString().split('T')[0]
       setDate(today)
@@ -113,7 +117,8 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
       setVendorName('')
       setCategoryId('')
       setAmount('')
-      setVatChoice('not_claimable')
+      setVatChoice('')
+      setPriceTreatment('')
       setTaxInvoiceNumber('')
       setSupplierVatNumber('')
       setSupplierId('')
@@ -123,10 +128,11 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
       setTaxableAmount('')
       setVatAmountInput('')
       setVatAmountsManual(false)
-      setPayMethod('cash')
+      setPayMethod('')
       setNotes('')
       setImagePreview(null)
       setSupplierSource('none')
+      setShowSupplierDetails(false)
     }
     setImageFile(null)
     setError('')
@@ -153,18 +159,23 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
 
   // Live VAT preview
   const amountNum = parseFloat(amount) || 0
-  const defaultVat = calculateExpenseVat(amountNum, vatChoice)
+  const defaultVat = calculateExpenseVat(amountNum, vatChoice || 'not_claimable')
   const taxableAmountNum = parseFloat(taxableAmount) || 0
   const vatAmountNum = parseFloat(vatAmountInput) || 0
-  const vatCheck = expenseVatConsistency(amountNum, taxableAmountNum, vatAmountNum)
+  const totalPaidNum = vatChoice === 'claimable' && priceTreatment === 'exclusive'
+    ? Number((amountNum + vatAmountNum).toFixed(2))
+    : amountNum
+  const vatCheck = expenseVatConsistency(totalPaidNum, taxableAmountNum, vatAmountNum)
   const supplierVatValid = !supplierVatNumber || isValidSaudiVatNumber(supplierVatNumber)
 
   useEffect(() => {
-    if (vatChoice !== 'claimable' || vatAmountsManual) return
-    const calculated = calculateExpenseVat(parseFloat(amount) || 0, 'claimable')
-    setTaxableAmount(calculated.expenseBeforeVat ? calculated.expenseBeforeVat.toFixed(2) : '')
-    setVatAmountInput(calculated.vatAmount ? calculated.vatAmount.toFixed(2) : '')
-  }, [amount, vatChoice, vatAmountsManual])
+    if (vatChoice !== 'claimable' || !priceTreatment || vatAmountsManual) return
+    const entered = parseFloat(amount) || 0
+    const taxable = priceTreatment === 'included' ? entered / 1.15 : entered
+    const vatAmount = taxable * 0.15
+    setTaxableAmount(taxable ? taxable.toFixed(2) : '')
+    setVatAmountInput(vatAmount ? vatAmount.toFixed(2) : '')
+  }, [amount, vatChoice, priceTreatment, vatAmountsManual])
 
   const selectSupplier = (id: string) => {
     setSupplierSource('saved')
@@ -194,10 +205,10 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
     if (!description.trim()) { setError(t('expenses:errors.descriptionRequired')); return }
     if (!amount || amountNum <= 0) { setError(t('expenses:errors.amountPositive')); return }
     if (!date) { setError(t('expenses:errors.dateRequired')); return }
+    if (!vatChoice) { setError(t('expenses:errors.vatTreatmentRequired')); return }
+    if (!payMethod) { setError(t('expenses:errors.paymentMethodRequired')); return }
     if (vatChoice === 'claimable') {
-      if (!vendorName.trim()) { setError(t('expenses:errors.supplierRequired')); return }
-      if (!categoryId) { setError(t('expenses:errors.categoryRequired')); return }
-      if (!taxInvoiceNumber.trim()) { setError(t('expenses:errors.invoiceRequired')); return }
+      if (!priceTreatment) { setError(t('expenses:errors.priceTreatmentRequired')); return }
       if (taxableAmountNum < 0 || vatAmountNum <= 0) { setError(t('expenses:errors.vatAmountsInvalid')); return }
       if (vatAmountNum > amountNum) { setError(t('expenses:errors.vatExceeds')); return }
       if (!vatCheck.consistent) { setError(t('expenses:errors.vatMismatch')); return }
@@ -228,14 +239,15 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
         receiptUrl = null
       }
 
+      const totalPaid = Number(totalPaidNum.toFixed(2))
       const calculatedVat = vatChoice === 'claimable'
         ? {
             amount: Number(taxableAmountNum.toFixed(2)),
             expenseBeforeVat: Number(taxableAmountNum.toFixed(2)),
-            vatTreatment: 'included',
+            vatTreatment: priceTreatment === 'exclusive' ? 'on_top' : 'included',
             vatClaimStatus: 'claimable',
             vatAmount: Number(vatAmountNum.toFixed(2)),
-            totalPaid: Number(amountNum.toFixed(2)),
+            totalPaid,
           }
         : defaultVat
 
@@ -255,11 +267,11 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
         total_paid:     calculatedVat.totalPaid,
         payment_method: payMethod,
         tax_invoice_number: vatChoice === 'claimable' ? taxInvoiceNumber.trim() || null : null,
-        supplier_vat_number: vatChoice === 'claimable' ? supplierVatNumber.trim() || null : null,
-        supplier_id: vatChoice === 'claimable' ? supplierId || null : null,
-        supplier_cr_number: vatChoice === 'claimable' ? supplierCrNumber.trim() || null : null,
-        supplier_contact: vatChoice === 'claimable' ? supplierContact.trim() || null : null,
-        invoice_time: vatChoice === 'claimable' ? invoiceTime || null : null,
+        supplier_vat_number: supplierVatNumber.trim() || null,
+        supplier_id: supplierId || null,
+        supplier_cr_number: supplierCrNumber.trim() || null,
+        supplier_contact: supplierContact.trim() || null,
+        invoice_time: invoiceTime || null,
         receipt_url:    receiptUrl,
         notes:          notes.trim() || null,
       }
@@ -288,7 +300,7 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
 
   return (
     <ExpenseModalShell open={open} kind="daily" editing={Boolean(expense)} saving={saving}
-      canSubmit={Boolean(date && description.trim() && amountNum > 0)} onClose={onClose} onSubmit={handleSubmit}>
+      canSubmit={Boolean(date && description.trim() && amountNum > 0 && vatChoice && payMethod && (vatChoice !== 'claimable' || priceTreatment))} onClose={onClose} onSubmit={handleSubmit}>
       <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,1fr)]">
         <div className="min-w-0 space-y-5">
 
@@ -315,11 +327,16 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
               </div>
 
               <div>
-                <label className="label">{t('expenses:fields.description')} <span className="text-red-500">*</span></label>
+                <label className="label">{t('expenses:fields.expenseName')} <span className="text-red-500">*</span></label>
                 <input className="input" value={description} onChange={e => setDescription(e.target.value)}
                   placeholder={t('expenses:placeholders.description')} dir="auto" />
               </div>
 
+              {!showSupplierDetails ? (
+                <button type="button" onClick={() => setShowSupplierDetails(true)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#173f2a] hover:text-[#22563b]">
+                  <Plus size={14} /> {t('expenses:actions.linkSupplier')}
+                </button>
+              ) : <>
               <div>
                 <label className="label">{t('expenses:ui.supplierSource')}</label>
                 <select className="input" value={supplierSource}
@@ -354,6 +371,7 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
                   placeholder={t('expenses:placeholders.vendor')} dir="auto" />
               </div>
               )}
+              </>}
             </div>
 
             {/* ── Amount & VAT ─────────────────────────────── */}
@@ -376,19 +394,19 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
               </div>
 
               <div>
-                <label className="label">{t('expenses:fields.vat')}</label>
+                <label className="label">{t('expenses:fields.vatTreatment')} <span className="text-red-500">*</span></label>
                 <div className="grid grid-cols-2 gap-2">
                   {SIMPLE_EXPENSE_VAT_OPTIONS.map(opt => (
                     <label
                       key={opt.value}
                       className={`cursor-pointer text-start px-3 py-2.5 rounded-xl border focus-within:ring-2 focus-within:ring-primary-500 active:scale-[0.99] ${
                         vatChoice === opt.value
-                          ? 'border-primary-500 bg-primary-50 text-primary-700'
+                          ? 'border-[#173f2a] bg-primary-50 text-primary-800'
                           : 'border-gray-200 hover:border-gray-300 text-gray-600'
                       }`}
                     >
                       <input className="sr-only" type="radio" name="expense-vat" value={opt.value}
-                        checked={vatChoice === opt.value} onChange={() => setVatChoice(opt.value)} />
+                        checked={vatChoice === opt.value} onChange={() => { setVatChoice(opt.value); setPriceTreatment(''); setVatAmountsManual(false); setError('') }} />
                       <p className="flex items-center gap-2 text-xs font-semibold">
                         {vatChoice === opt.value && <Check size={13} aria-hidden="true" />}
                         {t(`expenses:vat.${opt.value}`)}
@@ -401,6 +419,21 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
 
               {vatChoice === 'claimable' && (
                 <div className="space-y-3 rounded-xl border border-primary-100 bg-primary-50/30 p-3">
+                  <div>
+                    <label className="label">{t('expenses:fields.priceTreatment')} <span className="text-red-500">*</span></label>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {(['included', 'exclusive'] as const).map(value => (
+                        <label key={value} className={`cursor-pointer rounded-xl border px-3 py-2.5 text-xs font-semibold focus-within:ring-2 focus-within:ring-primary-500 ${
+                          priceTreatment === value ? 'border-[#173f2a] bg-white text-[#173f2a]' : 'border-gray-200 bg-white text-gray-600'
+                        }`}>
+                          <input className="sr-only" type="radio" name="expense-price-treatment" value={value}
+                            checked={priceTreatment === value} onChange={() => { setPriceTreatment(value); setVatAmountsManual(false); setError('') }} />
+                          {t(`expenses:vat.${value}`)}
+                        </label>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-[11px] text-gray-500">{t('expenses:ui.priceTreatmentHint')}</p>
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="label">{t('expenses:fields.taxInvoice')} <span className="text-red-500">*</span></label>
@@ -503,8 +536,8 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
                     </div>
                   )}
                   <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1.5">
-                    <span>{t('expenses:fields.amount')}</span>
-                    <span className="tabular-nums text-primary-600"><Rial amount={amountNum} /></span>
+                    <span>{t('expenses:preview.totalPaid')}</span>
+                    <span className="tabular-nums text-primary-600"><Rial amount={totalPaidNum} /></span>
                   </div>
                 </div>
               )}
@@ -512,19 +545,19 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
 
             {/* ── Payment method ────────────────────────────── */}
             <div className="space-y-3">
-              <SectionLabel>{t('expenses:fields.paymentMethod')}</SectionLabel>
+              <SectionLabel>{t('expenses:fields.paymentMethod')} <span className="text-red-500">*</span></SectionLabel>
               <div className="flex gap-2">
                 {PAY_OPTIONS.map(({ value, icon: Icon }) => (
                   <label
                     key={value}
                     className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-medium focus-within:ring-2 focus-within:ring-primary-500 active:scale-[0.97] ${
                       payMethod === value
-                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        ? 'border-[#173f2a] bg-primary-50 text-primary-800'
                         : 'border-gray-200 text-gray-500 hover:border-gray-300'
                     }`}
                   >
                     <input className="sr-only" type="radio" name="expense-payment" value={value}
-                      checked={payMethod === value} onChange={() => setPayMethod(value)} />
+                      checked={payMethod === value} onChange={() => { setPayMethod(value); setError('') }} />
                     {payMethod === value ? <Check size={15} aria-hidden="true" /> : <Icon size={15} aria-hidden="true" />}
                     {t(`expenses:payment.${value}`)}
                   </label>
@@ -535,7 +568,7 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
             {/* ── Receipt upload ────────────────────────────── */}
             <div className="space-y-3">
               <SectionLabel>{t('expenses:sections.receipt')}</SectionLabel>
-              <p className="text-xs text-gray-400">{t('expenses:ui.receiptHint')}</p>
+              <p className="text-xs text-gray-400">{vatChoice === 'claimable' ? t('expenses:ui.taxInvoiceHint') : t('expenses:ui.receiptHint')}</p>
               <input
                 ref={fileRef}
                 type="file"
@@ -568,7 +601,7 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
                 <button type="button" onClick={() => fileRef.current?.click()}
                   className="w-full h-24 flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-gray-200 rounded-xl hover:border-primary-400 hover:bg-primary-50/20 transition-colors group/up">
                   <ImagePlus size={20} className="text-gray-300 group-hover/up:text-primary-400" />
-                  <p className="text-xs text-gray-400 group-hover/up:text-primary-500">{t('expenses:ui.attachReceipt')}</p>
+                  <p className="text-xs text-gray-400 group-hover/up:text-primary-500">{vatChoice === 'claimable' ? t('expenses:ui.attachTaxInvoice') : t('expenses:ui.attachReceipt')}</p>
                 </button>
               )}
               {vatChoice === 'claimable' && !imagePreview && !imageFile && (
@@ -597,16 +630,16 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
             )}
         </div>
         <aside className="min-w-0 lg:sticky lg:top-0 lg:self-start">
-          <section aria-live="polite" className="rounded-xl border border-primary-200 bg-primary-50 p-4 text-primary-950">
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-primary-700">{t('expenses:preview.financial')}</p>
+          <section aria-live="polite" className="rounded-xl border border-white/10 bg-[#173f2a] p-4 text-[#fff8e7] shadow-lg">
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#fff8e7]/65">{t('expenses:preview.financial')}</p>
             <div className="mt-4 space-y-2 text-sm">
-              <PreviewLine label={t('expenses:preview.beforeVat')} value={vatChoice === 'claimable' ? taxableAmountNum : defaultVat.expenseBeforeVat} />
-              <PreviewLine label={t('expenses:preview.inputVat')} value={vatChoice === 'claimable' ? vatAmountNum : 0} />
-              <div className="border-t border-primary-200 pt-3">
-                <p className="text-xs text-primary-700">{t('expenses:preview.totalPaid')}</p>
-                <p className="mt-1 text-2xl font-bold tabular-nums"><Rial amount={amountNum} /></p>
+              <PreviewLine label={vatChoice === 'claimable' ? t('expenses:preview.beforeVat') : t('expenses:preview.expenseAmount')} value={vatChoice === 'claimable' ? taxableAmountNum : defaultVat.expenseBeforeVat} />
+              <PreviewLine label={t('expenses:preview.inputVat')} value={vatChoice === 'claimable' ? vatAmountNum : 0} note={vatChoice === 'not_claimable' ? t('expenses:vat.notClaimableShort') : undefined} />
+              <div className="border-t border-white/15 pt-3">
+                <p className="text-xs text-[#fff8e7]/65">{t('expenses:preview.totalPaid')}</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums"><Rial amount={totalPaidNum} /></p>
               </div>
-              <p className="border-t border-primary-200 pt-3 text-xs">{t(`expenses:payment.${payMethod}`)}</p>
+              <p className="border-t border-white/15 pt-3 text-xs text-[#fff8e7]/80">{payMethod ? t(`expenses:payment.${payMethod}`) : t('expenses:payment.notSelected')}</p>
               {vendorName && <p className="break-words text-xs" dir="auto">{vendorName}</p>}
             </div>
           </section>
@@ -626,6 +659,6 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
   )
 }
 
-function PreviewLine({ label, value }: { label: string; value: number }) {
-  return <div className="flex items-center justify-between gap-3"><span className="text-primary-700">{label}</span><span className="font-semibold tabular-nums"><Rial amount={value} /></span></div>
+function PreviewLine({ label, value, note }: { label: string; value: number; note?: string }) {
+  return <div className="flex items-center justify-between gap-3"><span className="text-[#fff8e7]/75">{label}</span><span className="font-semibold tabular-nums">{note ?? <Rial amount={value} />}</span></div>
 }

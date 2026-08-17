@@ -1,21 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { Banknote, Building, Check, CreditCard } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Switch } from '@/components/ui/Switch'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import type { ExpenseCategory, ExpensePaymentMethod } from '@/types'
+import type { ExpenseCategory } from '@/types'
 import type { FixedExpenseRow } from './FixedExpensesTab'
 import { useTranslation } from 'react-i18next'
 import ExpenseModalShell from './ExpenseModalShell'
-
-const PAY_OPTIONS: { value: ExpensePaymentMethod; icon: React.ElementType }[] = [
-  { value: 'cash', icon: Banknote },
-  { value: 'card', icon: CreditCard },
-  { value: 'bank_transfer', icon: Building },
-]
 
 interface Props {
   open: boolean
@@ -35,7 +28,6 @@ export default function FixedExpenseModal({ open, item, categories, onClose, onS
   const [name, setName] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [amount, setAmount] = useState('')
-  const [payMethod, setPayMethod] = useState<ExpensePaymentMethod>('cash')
   const [isActive, setIsActive] = useState(true)
 
   useEffect(() => {
@@ -43,7 +35,6 @@ export default function FixedExpenseModal({ open, item, categories, onClose, onS
     setName(item?.name ?? '')
     setCategoryId(item?.category_id ?? '')
     setAmount(item ? String(item.monthly_amount) : '')
-    setPayMethod((item?.payment_method as ExpensePaymentMethod) ?? 'cash')
     setIsActive(item?.is_active ?? true)
     setError('')
     setSaving(false)
@@ -72,7 +63,9 @@ export default function FixedExpenseModal({ open, item, categories, onClose, onS
         name: name.trim(),
         category_id: categoryId || null,
         monthly_amount: amountNum,
-        payment_method: payMethod,
+        // Legacy schema requires a non-null value. "other" is a neutral
+        // compatibility marker; a template never represents an actual payment.
+        payment_method: 'other',
         is_active: isActive,
       }
       const query = supabase as unknown as { from: (table: string) => any }
@@ -128,22 +121,6 @@ export default function FixedExpenseModal({ open, item, categories, onClose, onS
             </div>
           </section>
 
-          <fieldset>
-            <legend className="text-xs font-bold uppercase tracking-wide text-gray-600">{t('expenses:fields.paymentMethod')}</legend>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {PAY_OPTIONS.map(({ value, icon: Icon }) => (
-                <label key={value} className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-medium focus-within:ring-2 focus-within:ring-primary-500 active:scale-[0.97] ${
-                  payMethod === value ? 'border-primary-600 bg-primary-50 text-primary-800' : 'border-gray-200 bg-white text-gray-500'
-                }`}>
-                  <input className="sr-only" type="radio" name="fixed-payment" value={value}
-                    checked={payMethod === value} onChange={() => setPayMethod(value)} />
-                  {payMethod === value ? <Check size={15} aria-hidden="true" /> : <Icon size={15} aria-hidden="true" />}
-                  <span>{t(`expenses:payment.${value}`)}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-
           <section aria-labelledby="fixed-status-heading">
             <SectionTitle id="fixed-status-heading">{t('expenses:fields.status')}</SectionTitle>
             <div className="mt-3 flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3">
@@ -159,19 +136,19 @@ export default function FixedExpenseModal({ open, item, categories, onClose, onS
         </div>
 
         <aside className="min-w-0 lg:sticky lg:top-0 lg:self-start">
-          <section aria-live="polite" className="rounded-xl border border-primary-200 bg-primary-50 p-4 text-primary-950">
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-primary-700">{t('expenses:preview.recurring')}</p>
+          <section aria-live="polite" className="rounded-xl border border-white/10 bg-[#173f2a] p-4 text-[#fff8e7] shadow-lg">
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#fff8e7]/65">{t('expenses:preview.recurring')}</p>
             <p className="mt-3 break-words text-lg font-bold" dir="auto">{name || t('expenses:preview.fixedPlaceholder')}</p>
-            <div className="mt-5 border-t border-primary-200 pt-4">
-              <p className="text-xs text-primary-700">{t('expenses:preview.perOccurrence')}</p>
+            <div className="mt-5 border-t border-white/15 pt-4">
+              <p className="text-xs text-[#fff8e7]/65">{t('expenses:preview.monthlyAmount')}</p>
               <p className="mt-1 text-2xl font-bold tabular-nums"><Rial amount={amountNum} /></p>
             </div>
-            <dl className="mt-4 divide-y divide-primary-200 text-xs">
+            <dl className="mt-4 divide-y divide-white/15 text-xs">
               <PreviewRow label={t('expenses:preview.frequency')} value={t('expenses:fixed.monthly')} />
-              <PreviewRow label={t('expenses:fields.paymentMethod')} value={t(`expenses:payment.${payMethod}`)} />
+              <PreviewRow label={t('expenses:preview.annualEstimate')} value={new Intl.NumberFormat('en-SA', { style: 'currency', currency: 'SAR' }).format(amountNum * 12)} />
               <PreviewRow label={t('expenses:fields.status')} value={t(isActive ? 'expenses:status.active' : 'expenses:status.inactive')} />
             </dl>
-            <p className="mt-4 rounded-lg bg-white/70 px-3 py-2 text-xs leading-5 text-primary-800">{t('expenses:fixed.templateOnly')}</p>
+            <p className="mt-4 rounded-lg bg-white/10 px-3 py-2 text-xs leading-5 text-[#fff8e7]/85">{t('expenses:fixed.templateOnly')}</p>
           </section>
         </aside>
       </div>
@@ -184,5 +161,5 @@ function SectionTitle({ id, children }: { id: string; children: React.ReactNode 
 }
 
 function PreviewRow({ label, value }: { label: string; value: string }) {
-  return <div className="flex items-center justify-between gap-3 py-2"><dt className="text-primary-700">{label}</dt><dd className="font-semibold text-end">{value}</dd></div>
+  return <div className="flex items-center justify-between gap-3 py-2"><dt className="text-[#fff8e7]/70">{label}</dt><dd className="font-semibold text-end">{value}</dd></div>
 }

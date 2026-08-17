@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Plus, Search, Pencil, Trash2, X, Receipt, Filter, Paperclip, FileWarning } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { saudiNow } from '@/lib/utils/date'
@@ -239,7 +239,7 @@ function EmptyState({ filtered, onAdd }: { filtered: boolean; onAdd: () => void 
 
 // ── Main tab ──────────────────────────────────────────────────────────────────
 
-export default function DailyExpensesTab() {
+export default function DailyExpensesTab({ addRequest = 0 }: { addRequest?: number }) {
   const { profile } = useAuth()
   const { t } = useTranslation('expenses')
 
@@ -258,6 +258,7 @@ export default function DailyExpensesTab() {
   const [search,      setSearch]      = useState('')
   const [deleteTarget, setDeleteTarget] = useState<ExpenseRow | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const lastAddRequest = useRef(addRequest)
 
   const setPresetDates = (p: Preset) => {
     setPreset(p)
@@ -308,6 +309,11 @@ export default function DailyExpensesTab() {
   const openAdd  = () => { setEditing(null); setModalOpen(true) }
   const openEdit = (e: ExpenseRow) => { setEditing(e); setModalOpen(true) }
 
+  useEffect(() => {
+    if (addRequest > lastAddRequest.current) openAdd()
+    lastAddRequest.current = addRequest
+  }, [addRequest])
+
   const handleDelete = async () => {
     if (!deleteTarget || deleting) return
     const id = deleteTarget.id
@@ -355,15 +361,10 @@ export default function DailyExpensesTab() {
       <div className="flex items-start gap-4 flex-wrap">
         {/* Summary cards */}
         <div className="flex gap-3 flex-1 flex-wrap min-w-0">
-          <SumCard label={t('fields.total')} value={<Rial amount={totalPaid} />} sub={String(filtered.length)} accent />
+          <SumCard label={t('fields.total')} value={<Rial amount={totalPaid} />} sub={t('countExpenses', { count: filtered.length })} accent />
           <SumCard label={t('payment.cash')} value={<Rial amount={cashTotal} />} />
           <SumCard label={t('payment.card')} value={<Rial amount={cardTotal} />} />
-          {vatTotal > 0 && <SumCard label={t('vat.claimable')} value={<Rial amount={vatTotal} />} />}
         </div>
-        <Button size="sm" onClick={openAdd} className="flex-shrink-0 self-start">
-          <Plus size={14} />
-          {t('add')}
-        </Button>
       </div>
 
       {/* ── Date preset tabs + custom ──────────────────────── */}
@@ -449,8 +450,7 @@ export default function DailyExpensesTab() {
           onChange={e => setFilterPay(e.target.value)}
           className="input py-2 text-sm w-36 appearance-none flex-shrink-0"
         >
-          <option value="">—</option>
-          <option value="">—</option>
+          <option value="">{t('filters.allPaymentMethods')}</option>
           <option value="cash">{t('payment.cash')}</option>
           <option value="card">{t('payment.card')}</option>
           <option value="bank_transfer">{t('payment.bank_transfer')}</option>
@@ -470,7 +470,7 @@ export default function DailyExpensesTab() {
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
             <div className="w-9 flex-shrink-0" />
-            <div className="flex-1">{t('fields.description')}</div>
+            <div className="flex-1">{t('fields.name')}</div>
             <div className="w-24 flex-shrink-0 hidden sm:block">{t('fields.date')}</div>
             <div className="w-28 flex-shrink-0 hidden md:block">{t('fields.category')}</div>
             <div className="w-24 flex-shrink-0 hidden lg:block">{t('fields.vat')}</div>
