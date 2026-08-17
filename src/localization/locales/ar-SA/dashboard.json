@@ -1,6 +1,6 @@
 {
   "status": {
-    "posted": "مرحّلة", "draft": "مسودة", "paid": "مدفوعة", "pending": "قيد الانتظار",
+    "posted": "مُبلّغ عنها", "draft": "مسودة", "paid": "مدفوعة", "pending": "قيد الانتظار",
     "open": "مفتوح", "closed": "مغلق", "longOpen": "مفتوح منذ مدة", "active": "نشط", "inactive": "غير نشط",
     "main": "رئيسي", "credit": "دائن"
   },

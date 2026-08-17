@@ -142,7 +142,7 @@ function StatCard({ label, value, sub, icon: Icon, tone, loading }: {
   icon: React.ElementType; tone: string; loading?: boolean
 }) {
   return (
-    <article className={`relative min-h-[124px] overflow-hidden rounded-2xl border border-[#173f2a] p-4 shadow-card-md sm:min-h-[132px] sm:p-5 [@media(max-height:740px)]:min-h-[116px] [@media(max-height:740px)]:p-4 ${tone}`}>
+    <article className={`relative min-h-[124px] overflow-hidden rounded-2xl border border-white/10 p-4 shadow-card-md ring-1 ring-black/10 sm:min-h-[132px] sm:p-5 [@media(max-height:740px)]:min-h-[116px] [@media(max-height:740px)]:p-4 ${tone}`}>
       <div className="flex h-full items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-bold uppercase leading-4 tracking-wide text-white/65 [overflow-wrap:anywhere] rtl:normal-case rtl:tracking-normal">
@@ -165,7 +165,7 @@ function StatCard({ label, value, sub, icon: Icon, tone, loading }: {
           <Icon size={17} className="text-white/90" aria-hidden="true" />
         </div>
       </div>
-      <div className="absolute inset-x-0 bottom-0 h-1 bg-gold-400/70" />
+      <div className="absolute inset-x-0 bottom-0 h-px bg-white/25" />
     </article>
   )
 }
@@ -460,43 +460,37 @@ export function BranchOperationsSurface({
     : t('register.none')
   const registerStatus = session?.status === 'open' ? t('status.open') : session?.sessionId ? t('status.closed') : t('register.noneYet')
   const registerTone = session?.status === 'open' ? 'bg-emerald-500' : 'bg-gray-400'
-  const compactMetrics = [
-    { label: t('kpi.creditNotes'), value: <Rial amount={session?.creditNoteTotal ?? 0} /> },
-    { label: t('kpi.sessionCash'), value: <Rial amount={session?.cashTotal ?? 0} /> },
-    { label: t('kpi.sessionCard'), value: <Rial amount={session?.cardTotal ?? 0} /> },
-    { label: t('kpi.netVat'), value: <Rial amount={session?.vatTotal ?? 0} /> },
-  ]
-  const operationalMetrics = [
-    { label: t('kpi.sessionInvoices'), value: formatDisplayInteger(session?.invoiceCount ?? 0, i18n.language) },
-    { label: session?.status === 'closed' && session.actualCash !== null ? t('register.difference') : t('register.expectedCash'), value: <Rial amount={finalCash} /> },
+  const sessionPrefix = session?.status === 'open' ? t('register.session') : t('register.lastShort')
+  const telemetry = [
+    { label: t('kpi.grossSales'), value: <Rial amount={grossSales} />, sub: t('kpi.invoiceCount', { count: session?.invoiceCount ?? 0 }), icon: TrendingUp, tone: BRANCH_KPI_TONES.grossSales },
+    { label: t('kpi.creditNotes'), value: <Rial amount={session?.creditNoteTotal ?? 0} />, sub: t('kpi.refundDocuments'), icon: Receipt, tone: BRANCH_KPI_TONES.creditNotes },
+    { label: t('kpi.netSales'), value: <Rial amount={session?.totalSales ?? 0} />, sub: t('kpi.grossLessCredits'), icon: TrendingUp, tone: BRANCH_KPI_TONES.netSales },
+    { label: t('kpi.sessionInvoicesLabel', { prefix: sessionPrefix }), value: formatDisplayInteger(session?.invoiceCount ?? 0, i18n.language), sub: session?.status === 'open' ? t('register.registerCurrent') : t('register.registerClosed'), icon: FileText, tone: BRANCH_KPI_TONES.sessionInvoices },
+    { label: t('kpi.sessionCashLabel', { prefix: sessionPrefix }), value: <Rial amount={session?.cashTotal ?? 0} />, sub: t('kpi.cashAndSplit'), icon: Banknote, tone: BRANCH_KPI_TONES.sessionCash },
+    { label: t('kpi.sessionCardLabel', { prefix: sessionPrefix }), value: <Rial amount={session?.cardTotal ?? 0} />, sub: t('kpi.cardAndSplit'), icon: CreditCard, tone: BRANCH_KPI_TONES.sessionCard },
+    { label: t('kpi.netVat'), value: <Rial amount={session?.vatTotal ?? 0} />, sub: t('kpi.sessionNetVat'), icon: BadgePercent, tone: BRANCH_KPI_TONES.netVat },
+    { label: session?.status === 'closed' && session.actualCash !== null ? t('register.difference') : t('register.expectedCash'), value: <Rial amount={finalCash} />, sub: t('register.actualVsExpected'), icon: Receipt, tone: BRANCH_KPI_TONES.expectedCash },
   ]
 
   return (
     <section className="space-y-4" aria-label={t('branch.operations')}>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <StatCard label={t('kpi.grossSales')} value={<Rial amount={grossSales} />} sub={t('kpi.invoiceCount', { count: session?.invoiceCount ?? 0 })} icon={TrendingUp} tone={BRANCH_KPI_TONES.grossSales} loading={loading} />
-        <StatCard label={t('kpi.netSales')} value={<Rial amount={session?.totalSales ?? 0} />} sub={t('kpi.grossLessCredits')} icon={TrendingUp} tone={BRANCH_KPI_TONES.netSales} loading={loading} />
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {compactMetrics.map(metric => <div key={metric.label} className="min-w-0 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-card"><p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 rtl:normal-case rtl:tracking-normal">{metric.label}</p><p dir="ltr" className="mt-1 text-sm font-black tabular-nums text-gray-900">{metric.value}</p></div>)}
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {operationalMetrics.map(metric => <div key={metric.label} className="min-w-0 rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-3"><p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 rtl:normal-case rtl:tracking-normal">{metric.label}</p><p dir="ltr" className="mt-1 text-sm font-black tabular-nums text-gray-800">{metric.value}</p></div>)}
+      <div data-branch-v3-telemetry className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {telemetry.map(metric => <StatCard key={metric.label} {...metric} loading={loading} />)}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
-        <section className="min-w-0 rounded-2xl border border-gray-100 bg-white p-4 shadow-card sm:p-5" aria-labelledby="branch-quick-actions-heading">
-          <div className="mb-4 flex items-start justify-between gap-3"><div><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary-600 rtl:normal-case rtl:tracking-normal">{t('branch.workflow')}</p><h2 id="branch-quick-actions-heading" className="mt-1 text-lg font-black text-gray-950">{t('branch.quickActions')}</h2></div></div>
+        <section data-branch-v3-actions className="relative min-w-0 overflow-hidden rounded-2xl border border-[#173f2a] bg-[#0F2419] p-4 shadow-card-md sm:p-5" aria-labelledby="branch-quick-actions-heading">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gold-400" />
+          <div className="relative mb-4 flex items-start justify-between gap-3"><div><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-gold-300 rtl:normal-case rtl:tracking-normal">{t('branch.workflow')}</p><h2 id="branch-quick-actions-heading" className="mt-1 text-lg font-black text-white">{t('branch.quickActions')}</h2></div><span className="hidden rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white/60 sm:inline">{t('branch.operations')}</span></div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {actions.map(action => <button key={action.path} type="button" onClick={() => onNavigate(action.path)} className={`group min-h-[88px] rounded-xl p-3 text-start transition-[background-color,color,transform,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 focus-visible:ring-offset-2 active:scale-[0.98] ${action.primary ? 'sm:col-span-2 bg-[#0F2419] text-white shadow-card-md hover:bg-[#173F2F]' : 'border border-gray-100 bg-gray-50/70 text-gray-800 hover:border-primary-100 hover:bg-primary-50/60'}`}><div className={`flex h-8 w-8 items-center justify-center rounded-lg ${action.primary ? 'bg-gold-400/20 text-gold-200' : 'bg-white text-primary-600 ring-1 ring-gray-100'}`}><action.icon size={15} aria-hidden="true" /></div><p className="mt-3 text-sm font-black">{action.label}</p></button>)}
+            {actions.map(action => <button key={action.path} type="button" onClick={() => onNavigate(action.path)} className={`group min-h-[92px] rounded-xl border p-3 text-start transition-[background-color,border-color,color,transform,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F2419] active:scale-[0.98] ${action.primary ? 'sm:col-span-2 border-gold-300/50 bg-gradient-to-br from-gold-400 to-[#C59835] text-[#0F2419] shadow-[0_12px_24px_rgba(0,0,0,0.2)] hover:from-gold-300 hover:to-gold-400' : 'border-white/10 bg-white/[0.055] text-white hover:border-gold-300/30 hover:bg-white/10'}`}><div className={`flex h-8 w-8 items-center justify-center rounded-lg ${action.primary ? 'bg-[#0F2419]/15 text-[#0F2419]' : 'bg-white/10 text-gold-200 ring-1 ring-white/10'}`}><action.icon size={15} aria-hidden="true" /></div><p className="mt-3 text-sm font-black">{action.label}</p><p className={`mt-0.5 text-[10px] font-semibold ${action.primary ? 'text-[#0F2419]/70' : 'text-white/50'}`}>{action.path.replace('/', '') || 'pos'}</p></button>)}
           </div>
-          {!lowStockLoading && lowStock.length > 0 && <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5"><AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-500" aria-hidden="true" /><p className="min-w-0 text-xs font-semibold text-amber-800">{t('branch.lowStock', { count: lowStock.length })}</p></div>}
+          {!lowStockLoading && lowStock.length > 0 && <div className="relative mt-3 flex items-start gap-2 rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2.5"><AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-300" aria-hidden="true" /><p className="min-w-0 text-xs font-semibold text-amber-100">{t('branch.lowStock', { count: lowStock.length })}</p></div>}
         </section>
 
-        <aside className="min-w-0 rounded-2xl border border-gray-100 bg-white p-4 shadow-card" aria-labelledby="branch-register-session-heading">
-          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-400 rtl:normal-case rtl:tracking-normal">{t('branch.registerSnapshot')}</p><h2 id="branch-register-session-heading" className="mt-1 text-sm font-black text-gray-950">{registerTitle}</h2></div><span className="inline-flex items-center gap-1.5 rounded-full bg-gray-50 px-2 py-1 text-[10px] font-bold text-gray-600"><span className={`h-1.5 w-1.5 rounded-full ${registerTone}`} />{registerStatus}</span></div>
-          {error ? <p role="alert" className="mt-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-800">{error}</p> : loading ? <div className="mt-4 h-24 animate-pulse rounded-xl bg-gray-100" /> : <><dl className="mt-4 space-y-2.5 text-xs"><div className="flex justify-between gap-3"><dt className="text-gray-500">{t('register.openingCash')}</dt><dd dir="ltr" className="font-bold text-gray-900"><Rial amount={session?.openingCash ?? 0} /></dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">{t('register.expectedCash')}</dt><dd dir="ltr" className="font-bold text-gray-900"><Rial amount={session?.expectedCash ?? 0} /></dd></div>{duration && <div className="flex justify-between gap-3"><dt className="text-gray-500">{t('status.open')}</dt><dd className="font-bold text-gray-900">{duration}</dd></div>}</dl><button type="button" onClick={onManageRegister} className="mt-4 inline-flex min-h-9 w-full items-center justify-center rounded-xl border border-primary-100 bg-primary-50 px-3 text-xs font-bold text-primary-700 hover:bg-primary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">{t('register.manage')}</button></>}
+        <aside data-branch-v3-register className="min-w-0 overflow-hidden rounded-2xl border border-[#203c2c] bg-[#173F2A] p-4 shadow-card-md" aria-labelledby="branch-register-session-heading">
+          <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3"><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-gold-200/80 rtl:normal-case rtl:tracking-normal">{t('branch.registerSnapshot')}</p><h2 id="branch-register-session-heading" className="mt-1 text-sm font-black text-white">{registerTitle}</h2></div><span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/10 px-2 py-1 text-[10px] font-bold text-white/80"><span className={`h-1.5 w-1.5 rounded-full ${registerTone}`} />{registerStatus}</span></div>
+          {error ? <p role="alert" className="mt-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-800">{error}</p> : loading ? <div className="mt-4 h-32 animate-pulse rounded-xl bg-white/10" /> : <><div className="mt-3 grid grid-cols-2 gap-2"><div className="rounded-xl border border-white/10 bg-white/[0.06] p-2.5"><p className="text-[10px] font-bold text-white/50">{t('register.openingCash')}</p><p dir="ltr" className="mt-1 text-xs font-black text-white"><Rial amount={session?.openingCash ?? 0} /></p></div><div className="rounded-xl border border-white/10 bg-white/[0.06] p-2.5"><p className="text-[10px] font-bold text-white/50">{session?.status === 'closed' ? t('register.actualCash') : t('register.expectedCash')}</p><p dir="ltr" className="mt-1 text-xs font-black text-white"><Rial amount={session?.status === 'closed' ? session?.actualCash ?? 0 : session?.expectedCash ?? 0} /></p></div><div className="rounded-xl border border-white/10 bg-white/[0.06] p-2.5"><p className="text-[10px] font-bold text-white/50">{t('register.difference')}</p><p dir="ltr" className="mt-1 text-xs font-black text-gold-200"><Rial amount={session?.cashDifference ?? 0} /></p></div><div className="rounded-xl border border-white/10 bg-white/[0.06] p-2.5"><p className="text-[10px] font-bold text-white/50">{t('kpi.creditNotes')}</p><p dir="ltr" className="mt-1 text-xs font-black text-white"><Rial amount={session?.creditNoteTotal ?? 0} /></p></div><div className="col-span-2 rounded-xl border border-white/10 bg-black/10 px-2.5 py-2"><p className="text-[10px] font-bold text-white/50">{t('kpi.expenses')} · {duration ?? t('register.earlier')}</p><p dir="ltr" className="mt-1 text-xs font-black text-white"><Rial amount={session?.expensesTotal ?? 0} /></p></div></div><button type="button" onClick={onManageRegister} className="mt-3 inline-flex min-h-9 w-full items-center justify-center rounded-xl border border-gold-300/30 bg-gold-400/15 px-3 text-xs font-bold text-gold-100 hover:bg-gold-400/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300">{t('register.manage')}</button></>}
         </aside>
       </div>
     </section>
@@ -864,13 +858,13 @@ export default function BranchDashboardPage() {
         />
 
         {/* Recent invoices */}
-        <section className="min-w-0 rounded-2xl border border-gray-100 bg-white shadow-card" aria-labelledby="recent-invoices-heading">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-4 sm:px-6">
-            <h2 id="recent-invoices-heading" className="text-sm font-semibold text-gray-900">{t('recent.title')}</h2>
+        <section data-branch-v3-ledger className="min-w-0 overflow-hidden rounded-2xl border border-[#dce8df] bg-white shadow-card-md" aria-labelledby="recent-invoices-heading">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#dce8df] bg-[#F5F8F4] px-4 py-4 sm:px-6">
+            <div><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-primary-600 rtl:normal-case rtl:tracking-normal">{t('branch.operations')}</p><h2 id="recent-invoices-heading" className="mt-1 text-sm font-black text-gray-950">{t('recent.title')}</h2></div>
             <button
               type="button"
               onClick={() => navigate('/invoices')}
-              className="flex min-h-9 items-center gap-1 rounded-lg px-2 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-50 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              className="flex min-h-9 items-center gap-1 rounded-xl border border-primary-100 bg-white px-3 text-xs font-bold text-primary-700 shadow-sm transition-colors hover:border-primary-200 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
             >
               {t('recent.viewAll')} <DirectionalIcon icon={ArrowRight} size={12} />
             </button>
@@ -915,12 +909,12 @@ export default function BranchDashboardPage() {
             <div className="overflow-x-auto" role="region" aria-label={t('recent.title')} tabIndex={0}>
               <table className="w-full min-w-[760px]">
                 <thead>
-                  <tr className="border-b border-gray-50">
+                  <tr className="border-b border-[#173f2a] bg-[#173F2A]">
                     {[t('recent.invoice'), t('recent.customer'), t('recent.dateTime'), t('recent.amount'), t('recent.status')].map((h, i) => (
                       <th
                         key={h}
                         scope="col"
-                        className={`px-6 py-3 text-[11px] font-semibold uppercase tracking-wide text-gray-400 rtl:normal-case rtl:tracking-normal ${
+                        className={`px-6 py-3.5 text-[10px] font-bold uppercase tracking-[0.12em] text-white/75 rtl:normal-case rtl:tracking-normal ${
                           i === 3 ? 'text-end' : 'text-start'
                         }`}
                       >
@@ -929,7 +923,7 @@ export default function BranchDashboardPage() {
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50">
+                <tbody className="divide-y divide-[#edf2ed]">
                   {recentInvs.map(inv => {
                     const cfg = statusConfig[inv.status as keyof typeof statusConfig] ?? statusConfig.draft
                     const invoiceNumber = inv.invoiceNumber ?? inv.invoice_number ?? ''
@@ -942,9 +936,9 @@ export default function BranchDashboardPage() {
                       <tr
                         key={inv.id}
                         onClick={() => navigate(`/invoices/${inv.id}`)}
-                        className="cursor-pointer transition-colors hover:bg-gray-50/60"
+                        className="cursor-pointer transition-colors hover:bg-[#F4F8F3]"
                       >
-                        <td dir="ltr" className="px-6 py-3.5">
+                        <td dir="ltr" className="px-6 py-4">
                           <button
                             type="button"
                             onClick={event => {
@@ -952,7 +946,7 @@ export default function BranchDashboardPage() {
                               navigate(`/invoices/${inv.id}`)
                             }}
                             aria-label={t('recent.openInvoice', { number: invoiceNumber })}
-                            className="inline-flex min-h-9 items-center rounded-lg px-1 text-xs font-mono font-semibold text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                            className="inline-flex min-h-9 items-center rounded-lg px-1 text-xs font-mono font-black text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                           >
                             {invoiceNumber}
                             {documentType === 'credit_note' && (
@@ -962,16 +956,16 @@ export default function BranchDashboardPage() {
                             )}
                           </button>
                         </td>
-                        <td dir="auto" className="px-6 py-3.5 text-sm text-gray-700 [overflow-wrap:anywhere]">
+                        <td dir="auto" className="px-6 py-4 text-sm font-medium text-gray-700 [overflow-wrap:anywhere]">
                           {customerName}
                         </td>
-                        <td className="whitespace-nowrap px-6 py-3.5 text-xs text-gray-500">
+                        <td className="whitespace-nowrap px-6 py-4 text-xs font-medium text-gray-500">
                           {invoiceTimestamp ? formatSaudiDateTime(invoiceTimestamp, i18n.language) : <span dir="ltr">{invoiceDate}</span>}
                         </td>
-                        <td dir="ltr" className={`px-6 py-3.5 text-end text-sm font-semibold tabular-nums ${documentType === 'credit_note' ? 'text-rose-700' : 'text-gray-900'}`}>
+                        <td dir="ltr" className={`px-6 py-4 text-end text-sm font-black tabular-nums ${documentType === 'credit_note' ? 'text-rose-700' : 'text-gray-950'}`}>
                           <Rial amount={documentType === 'credit_note' ? -Math.abs(amount) : amount} />
                         </td>
-                        <td className="px-6 py-3.5">
+                        <td className="px-6 py-4">
                           <Badge variant={cfg.variant} dot>{t(cfg.labelKey)}</Badge>
                         </td>
                       </tr>

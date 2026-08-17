@@ -1,6 +1,6 @@
 {
   "status": {
-    "posted": "Posted", "draft": "Draft", "paid": "Paid", "pending": "Pending",
+    "posted": "Reported", "draft": "Draft", "paid": "Paid", "pending": "Pending",
     "open": "Open", "closed": "Closed", "longOpen": "Long open", "active": "Active", "inactive": "Inactive",
     "main": "MAIN", "credit": "CREDIT"
   },

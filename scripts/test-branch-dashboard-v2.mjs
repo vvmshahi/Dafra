@@ -37,7 +37,11 @@ for (const path of ['/pos', '/invoices', '/products', '/purchases', '/suppliers'
   assert.match(dashboard, new RegExp(`path: '${path.replaceAll('/', '\\/')}'`))
   assert.match(app, new RegExp(`path="${path.replaceAll('/', '\\/')}"`))
 }
-assert.match(dashboard, /sm:col-span-2 bg-\[#0F2419\]/)
+assert.match(dashboard, /data-branch-v3-telemetry/)
+assert.match(dashboard, /data-branch-v3-actions/)
+assert.match(dashboard, /data-branch-v3-register/)
+assert.match(dashboard, /data-branch-v3-ledger/)
+assert.match(dashboard, /sm:col-span-2 border-gold-300\/50/)
 assert.match(dashboard, /branch-register-session-heading/)
 assert.match(dashboard, /register\.manage/)
 
