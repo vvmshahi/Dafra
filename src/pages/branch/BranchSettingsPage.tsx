@@ -19,6 +19,7 @@ import {
 } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/useAuth";
+import { useBranchBillingConfig } from "@/hooks/useBranchBillingConfig";
 import { supabase } from "@/lib/supabase";
 import {
   loadBranchCustomerCreditSettings,
@@ -39,10 +40,16 @@ type BranchRecord = BranchOption & {
   phone: string | null;
   email: string | null;
   website: string | null;
+  address: string | null;
+  address_ar: string | null;
   building_number: string | null;
+  additional_number: string | null;
   street: string | null;
+  street_ar: string | null;
   district: string | null;
+  district_ar: string | null;
   city: string | null;
+  city_ar: string | null;
   country: string | null;
   postal_code: string | null;
   allow_split_payments: boolean | null;
@@ -58,7 +65,7 @@ const sections: Array<{ id: SectionId; icon: React.ElementType }> = [
 ];
 
 const branchSelect =
-  "id,name,name_ar,is_active,phone,email,website,building_number,street,district,city,country,postal_code,allow_split_payments,show_pos_scroll_buttons,pos_mode";
+  "id,name,name_ar,is_active,phone,email,website,address,address_ar,building_number,additional_number,street,street_ar,district,district_ar,city,city_ar,country,postal_code,allow_split_payments,show_pos_scroll_buttons,pos_mode";
 
 const branchSettingsV3Copy = {
   en: {
@@ -88,6 +95,24 @@ const branchSettingsV3Copy = {
     connectionManagement: "Connection management",
     ownerManaged: "Owner-managed",
     availabilityNote: "This page shows branch availability, not live ZATCA submission status.",
+    branchSnapshot: "Branch snapshot",
+    operationalSettingsNote: "Operational settings are managed in the sections above.",
+    branchProfile: "Branch profile",
+    posLayout: "POS layout",
+    customerCredit: "Customer credit",
+    products: "Products",
+    services: "Services",
+    stockTracking: "Stock tracking",
+    customLines: "Custom lines",
+    buildingStreet: "Building / Street",
+    additionalNumber: "Additional number",
+    district: "District",
+    city: "City",
+    postalCode: "Postal Code",
+    country: "Country",
+    retailTrading: "Retail & Trading",
+    foodBeverage: "Food & Beverage",
+    servicesProfile: "Services",
   },
   ar: {
     subtitle: "إدارة هوية الفرع وضوابطه التشغيلية.",
@@ -116,6 +141,24 @@ const branchSettingsV3Copy = {
     connectionManagement: "إدارة الاتصال",
     ownerManaged: "يديرها المالك",
     availabilityNote: "تعرض هذه الصفحة توفر الفرع، وليست حالة إرسال ZATCA المباشرة.",
+    branchSnapshot: "ملخص الفرع",
+    operationalSettingsNote: "تتم إدارة الإعدادات التشغيلية في الأقسام أعلاه.",
+    branchProfile: "ملف الفرع",
+    posLayout: "تخطيط نقطة البيع",
+    customerCredit: "ائتمان العملاء",
+    products: "المنتجات",
+    services: "الخدمات",
+    stockTracking: "تتبع المخزون",
+    customLines: "بنود مخصصة",
+    buildingStreet: "المبنى / الشارع",
+    additionalNumber: "الرقم الإضافي",
+    district: "الحي",
+    city: "المدينة",
+    postalCode: "الرمز البريدي",
+    country: "الدولة",
+    retailTrading: "التجزئة والتجارة",
+    foodBeverage: "الأغذية والمشروبات",
+    servicesProfile: "الخدمات",
   },
 } as const;
 
@@ -233,7 +276,7 @@ function SummaryPanel({
   children: React.ReactNode;
 }) {
   return (
-    <aside className="rounded-2xl bg-[#173f2a] p-5 text-[#fff8e7] shadow-sm">
+    <aside className="self-start rounded-2xl bg-[#173f2a] p-5 text-[#fff8e7] shadow-sm">
       <h3 className="text-sm font-bold">{title}</h3>
       <div className="mt-4 space-y-3">{children}</div>
     </aside>
@@ -307,6 +350,7 @@ export default function BranchSettingsPage() {
   const selectedBranchId = isOwner
     ? (routeBranchId ?? "")
     : (authBranch?.id ?? profile?.branch_id ?? "");
+  const { config: billingConfig } = useBranchBillingConfig(selectedBranchId || null);
 
   const [branches, setBranches] = useState<BranchOption[]>([]);
   const [branchDirectoryLoading, setBranchDirectoryLoading] = useState(false);
@@ -517,6 +561,13 @@ export default function BranchSettingsPage() {
     touch: { label: v3.touchPos, help: v3.touchPosHelp },
     quick: { label: v3.quickBilling, help: v3.quickBillingHelp },
   };
+  const businessProfileLabel = billingConfig?.businessProfile
+    ? {
+        retail_trading: v3.retailTrading,
+        food_beverage: v3.foodBeverage,
+        services: v3.servicesProfile,
+      }[billingConfig.businessProfile]
+    : null;
   const headerLabels = {
     active: t("workspace.active"),
     backToDashboard: t("workspace.backToDashboard"),
@@ -565,18 +616,23 @@ export default function BranchSettingsPage() {
       </div>
     );
 
-  const address = [
-    [selectedBranch.building_number, selectedBranch.street]
-      .filter(Boolean)
-      .join(" "),
-    selectedBranch.district,
-    [selectedBranch.city, selectedBranch.postal_code]
-      .filter(Boolean)
-      .join(" "),
-    selectedBranch.country,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const isArabic = i18n.language.startsWith("ar");
+  const addressFields = [
+    {
+      label: v3.buildingStreet,
+      value: [selectedBranch.building_number, isArabic ? selectedBranch.street_ar ?? selectedBranch.street : selectedBranch.street]
+        .filter((value): value is string => Boolean(value))
+        .join(" · "),
+    },
+    { label: v3.additionalNumber, value: selectedBranch.additional_number ?? "" },
+    { label: v3.district, value: isArabic ? selectedBranch.district_ar ?? selectedBranch.district ?? "" : selectedBranch.district ?? "" },
+    { label: v3.city, value: isArabic ? selectedBranch.city_ar ?? selectedBranch.city ?? "" : selectedBranch.city ?? "" },
+    { label: v3.postalCode, value: selectedBranch.postal_code ?? "" },
+    { label: v3.country, value: selectedBranch.country ?? "" },
+  ].filter((field) => field.value);
+  const rawAddress = isArabic
+    ? selectedBranch.address_ar ?? selectedBranch.address
+    : selectedBranch.address;
   return (
     <div className="mx-auto max-w-7xl space-y-5">
       <BranchSettingsHeader
@@ -694,19 +750,45 @@ export default function BranchSettingsPage() {
                     dir="ltr"
                   />
                 )}
-                <div className="md:col-span-2">
-                  <InfoRow label={t("workspace.address")} value={address} />
-                </div>
               </dl>
+              {(addressFields.length > 0 || rawAddress) && (
+                <section className="mt-4 border-t border-slate-100 pt-4" aria-labelledby="branch-address-heading">
+                  <h3 id="branch-address-heading" className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                    {t("workspace.address")}
+                  </h3>
+                  {addressFields.length > 0 ? (
+                    <dl className="mt-3 grid gap-2.5 sm:grid-cols-2">
+                      {addressFields.map((field) => (
+                        <div key={field.label} className="rounded-xl border border-slate-100 bg-[#fffdf7] px-3 py-2.5">
+                          <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{field.label}</dt>
+                          <dd className="mt-0.5 break-words text-sm font-semibold text-slate-800" dir="auto">{field.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : (
+                    <p className="mt-3 whitespace-pre-line break-words rounded-xl border border-slate-100 bg-[#fffdf7] px-3 py-2.5 text-sm font-semibold text-slate-800" dir="auto">
+                      {rawAddress}
+                    </p>
+                  )}
+                </section>
+              )}
+              <p className="mt-4 text-xs leading-5 text-slate-500">{t("workspace.generalReadOnly")}</p>
             </div>
-            <SummaryPanel title={v3.identityStatus}>
+            <SummaryPanel title={v3.branchSnapshot}>
               <SummaryRow
                 label={v3.status}
                 value={selectedBranch.is_active ? t("workspace.active") : t("workspace.inactive")}
               />
-              <p className="pt-1 text-xs leading-5 text-emerald-50/70">
-                {t("workspace.generalReadOnly")}
-              </p>
+              {businessProfileLabel && <SummaryRow label={v3.branchProfile} value={businessProfileLabel} />}
+              <SummaryRow label={v3.posLayout} value={posModeDetails[posSaved.mode].label} />
+              <SummaryRow label={v3.customerCredit} value={creditSettings.branchCreditEnabled ? t("workspace.enabled") : t("workspace.disabled")} />
+              {billingConfig && (
+                <>
+                  <SummaryRow label={v3.products} value={billingConfig.productsEnabled ? t("workspace.enabled") : t("workspace.disabled")} />
+                  <SummaryRow label={v3.services} value={billingConfig.servicesEnabled ? t("workspace.enabled") : t("workspace.disabled")} />
+                </>
+              )}
+              <p className="pt-1 text-xs leading-5 text-emerald-50/70">{v3.operationalSettingsNote}</p>
             </SummaryPanel>
           </section>
         )}
@@ -801,6 +883,14 @@ export default function BranchSettingsPage() {
               <SummaryRow label={v3.layout} value={posModeDetails[posSaved.mode].label} />
               <SummaryRow label={t("workspace.splitPayment")} value={posSaved.allowSplit ? t("workspace.enabled") : t("workspace.disabled")} />
               <SummaryRow label={t("workspace.categoryArrows")} value={posSaved.showArrows ? t("workspace.enabled") : t("workspace.disabled")} />
+              {billingConfig && (
+                <>
+                  <SummaryRow label={v3.products} value={billingConfig.productsEnabled ? t("workspace.enabled") : t("workspace.disabled")} />
+                  <SummaryRow label={v3.services} value={billingConfig.servicesEnabled ? t("workspace.enabled") : t("workspace.disabled")} />
+                  <SummaryRow label={v3.customLines} value={billingConfig.customLinesEnabled ? t("workspace.enabled") : t("workspace.disabled")} />
+                  <SummaryRow label={v3.stockTracking} value={billingConfig.stockEnabled ? t("workspace.enabled") : t("workspace.disabled")} />
+                </>
+              )}
             </SummaryPanel>
           </section>
         )}
