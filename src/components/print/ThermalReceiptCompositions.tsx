@@ -241,9 +241,9 @@ function ClassicItemName({ item, model }: { item: DocumentViewModel['items'][num
   const secondary = item.descriptionAr?.trim() ?? ''
   const combined = !!primary && !!secondary && !sameIdentity(primary, secondary)
   const renderedName = primary || secondary
-  return <div className={`thermal-item-name thermal-classic-line__names thermal-classic-line__names--combined ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`} dir="auto">
+  return <div className={`thermal-item-name thermal-classic-line__names thermal-classic-line__names--combined ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>
     {combined
-      ? <><bdi dir="auto">{primary}</bdi><span className="thermal-classic-line__name-separator"> / </span><bdi dir="auto">{secondary}</bdi></>
+      ? <><bdi className="thermal-classic-line__name-segment thermal-classic-line__name-segment--en" dir="ltr">{primary}</bdi><span className="thermal-classic-line__name-separator"> / </span><bdi className="thermal-classic-line__name-segment thermal-classic-line__name-segment--ar" dir="rtl">{secondary}</bdi></>
       : <bdi dir="auto">{renderedName}</bdi>}
   </div>
 }
@@ -376,7 +376,10 @@ function ClassicTotals({ receipt }: { receipt: ReceiptComposition }) {
 
 function ClassicGrandTotalLabel({ receipt }: { receipt: ReceiptComposition }) {
   const lines = documentLabelLines(receipt.model.identity.language, 'totalIncludingVat')
-  return <span className="thermal-classic-total-label">{lines.map((line, index) => <span key={`${line}-${index}`} dir="auto">{line}</span>)}</span>
+  return <span className="thermal-classic-total-label">{lines.map((line, index) => {
+    const arabic = receipt.model.identity.language === 'ar' || (receipt.model.identity.language === 'both' && index > 0)
+    return <bdi key={`${line}-${index}`} dir={arabic ? 'rtl' : 'ltr'}>{line}</bdi>
+  })}</span>
 }
 
 function CompactTotals({ receipt }: { receipt: ReceiptComposition }) {

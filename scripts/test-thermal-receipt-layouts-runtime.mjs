@@ -142,7 +142,7 @@ try {
           assert.match(markup, fixtureCase.payment === 'split' ? /thermal-classic-payments--split/ : /thermal-classic-payments--single/)
           if (!isCredit) assert.match(markup, /thermal-classic-total-label/)
 
-          if (width === '80mm' && fixtureCase.id === 'both-many-card-qr') {
+          if (fixtureCase.id === 'both-many-card-qr') {
             const classicMarkupFor = (description, descriptionAr, itemOverrides = {}, documentOverrides = {}) => renderToStaticMarkup(createElement(ThermalReceipt, {
               model: {
                 ...model,
@@ -161,6 +161,8 @@ try {
             assert.match(bilingual, /Pepsi[\s\S]*بيبسي/)
             assert.match(bilingual, /thermal-classic-line__names--combined/)
             assert.doesNotMatch(bilingual, /thermal-classic-line__names--bilingual/)
+            assert.match(bilingual, /thermal-classic-line__name-segment--en" dir="ltr">Pepsi/)
+            assert.match(bilingual, /thermal-classic-line__name-separator"> \/ <\/span><bdi class="thermal-classic-line__name-segment thermal-classic-line__name-segment--ar" dir="rtl">بيبسي/)
             const duplicate = classicMarkupFor('Pepsi', 'pepsi')
             assert.equal((duplicate.match(/Pepsi|pepsi/g) ?? []).length, 1)
             const longBilingual = classicMarkupFor('Very Long English Product Name For A Narrow Thermal Receipt', 'اسم منتج عربي طويل جداً لإيصال حراري ضيق')
@@ -172,8 +174,15 @@ try {
             assert.doesNotMatch(noRate, /VAT Amount 0%/)
             const credit = classicMarkupFor('Pepsi', 'بيبسي', {}, { identity: { ...model.identity, kind: 'credit_note', invoiceType: 'credit_note' } })
             assert.match(credit, /Pepsi[\s\S]*بيبسي/)
+            assert.match(credit, /thermal-classic-line__name-segment--en" dir="ltr">Pepsi[\s\S]*thermal-classic-line__name-segment--ar" dir="rtl">بيبسي/)
             assert.match(credit, /VAT Amount 15%[\s\S]*مبلغ الضريبة 15%/)
             assert.match(bilingual, /thermal-row thermal-row-strong[\s\S]*thermal-classic-total-label[\s\S]*thermal-value/)
+            assert.match(credit, /thermal-row thermal-row-strong[\s\S]*thermal-value/)
+            if (width === '80mm') {
+              assert.match(bilingual, /thermal-classic-total-label"><bdi dir="ltr">Total Including VAT<\/bdi><bdi dir="rtl">الإجمالي شامل الضريبة<\/bdi><\/span><\/span><span class="thermal-value">/)
+            } else {
+              assert.match(bilingual, /thermal-receipt--58mm[\s\S]*thermal-classic-total-label[\s\S]*thermal-value/)
+            }
           }
         }
         if (layout.storedId === 'compact') {
