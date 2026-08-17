@@ -203,6 +203,29 @@ function StructuredSellerHeader({ receipt }: { receipt: ReceiptComposition }) {
   </header>
 }
 
+function StructuredReceiptMetadata({ receipt }: { receipt: ReceiptComposition }) {
+  const { model, isCredit, isDebit, isAdjustment, date, time } = receipt
+  return <section className="thermal-meta thermal-structured-meta">
+    <StructuredMetadataRow model={model} label={isCredit ? 'creditNoteNumber' : isDebit ? 'debitNoteNumber' : 'invoiceNumber'} value={model.identity.number} documentNumber />
+    <StructuredMetadataRow model={model} label="date" value={date} />
+    <StructuredMetadataRow model={model} label="time" value={time} />
+    {isAdjustment && model.compliance.originalDocument.number && <div><span>{documentLabel(model.identity.language, 'originalInvoice')}</span><bdi dir="ltr">{model.compliance.originalDocument.number}</bdi></div>}
+    {isAdjustment && model.compliance.creditReason && <div className="thermal-meta-reason"><span>{documentLabel(model.identity.language, 'reason')}</span><span dir="auto">{model.compliance.creditReason}</span></div>}
+  </section>
+}
+
+function StructuredMetadataRow({ model, label, value, documentNumber = false }: { model: DocumentViewModel; label: Parameters<typeof documentLabel>[1]; value: string; documentNumber?: boolean }) {
+  return <div className="thermal-structured-meta__row">
+    <StructuredMetadataLabel model={model} label={label} />
+    <bdi className={`thermal-structured-meta__value${documentNumber ? ' thermal-structured-document-number' : ''}`} dir="ltr">{value}</bdi>
+  </div>
+}
+
+function StructuredMetadataLabel({ model, label }: { model: DocumentViewModel; label: Parameters<typeof documentLabel>[1] }) {
+  if (model.identity.language === 'both') return <span className="thermal-structured-meta__label"><bdi dir="ltr">{documentLabel('en', label)}</bdi><span className="thermal-structured-meta__separator" aria-hidden="true"> / </span><bdi dir="rtl">{documentLabel('ar', label)}</bdi></span>
+  return <span className="thermal-structured-meta__label"><bdi dir={model.identity.language === 'ar' ? 'rtl' : 'ltr'}>{documentLabel(model.identity.language, label)}</bdi></span>
+}
+
 function ItemFiscalDetail({ receipt, item }: { receipt: ReceiptComposition; item: DocumentViewModel['items'][number] }) {
   const { model, isStandard, isAdjustment, isCredit } = receipt
   if (!isStandard && !isAdjustment && item.discount <= 0) return null
@@ -301,15 +324,17 @@ function StructuredItems({ receipt }: { receipt: ReceiptComposition }) {
 }
 
 function StructuredItemName({ item, index, model }: { item: DocumentViewModel['items'][number]; index: number; model: DocumentViewModel }) {
-  const bilingualPair = model.identity.language === 'both'
-    && !!item.description.trim()
-    && !!item.descriptionAr?.trim()
-    && !sameIdentity(item.description, item.descriptionAr)
+  const primary = item.description.trim()
+  const secondary = item.descriptionAr?.trim() ?? ''
+  const combined = !!primary && !!secondary && !sameIdentity(primary, secondary)
+  const renderedName = primary || secondary
   return <div className={`thermal-item-name ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>
     <span className="thermal-item-index" aria-hidden="true">{index + 1}</span>
-    {bilingualPair
-      ? <div className="thermal-structured-line__names thermal-structured-line__names--bilingual"><span dir="ltr">{item.description}</span><span dir="rtl">{item.descriptionAr}</span></div>
-      : <div className="thermal-structured-line__names">{names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}</div>}
+    <div className="thermal-structured-line__names thermal-structured-line__names--combined">
+      {combined
+        ? <><bdi className="thermal-structured-line__name-segment thermal-structured-line__name-segment--en" dir="ltr">{primary}</bdi><span className="thermal-structured-line__name-separator"> / </span><bdi className="thermal-structured-line__name-segment thermal-structured-line__name-segment--ar" dir="rtl">{secondary}</bdi></>
+        : <bdi dir="auto">{renderedName}</bdi>}
+    </div>
   </div>
 }
 
@@ -417,9 +442,17 @@ function CompactGrandTotalLabel({ receipt }: { receipt: ReceiptComposition }) {
 }
 
 function StructuredTotals({ receipt }: { receipt: ReceiptComposition }) {
-  return <section className="thermal-totals thermal-structured-totals">{receipt.visibleTotals.map(row => <Row key={row.key} label={row.label} strong={row.emphasized}>
+  return <section className="thermal-totals thermal-structured-totals">{receipt.visibleTotals.map(row => <Row key={row.key} label={row.key === 'total' && !receipt.isCredit ? <StructuredGrandTotalLabel receipt={receipt} /> : row.label} strong={row.emphasized}>
     {row.key === 'discount' ? <><bdi dir="ltr">−</bdi><Money value={row.value} model={receipt.model} /></> : <Money value={row.value} model={receipt.model} />}
   </Row>)}</section>
+}
+
+function StructuredGrandTotalLabel({ receipt }: { receipt: ReceiptComposition }) {
+  const lines = documentLabelLines(receipt.model.identity.language, 'totalIncludingVat')
+  return <span className="thermal-structured-total-label">{lines.map((line, index) => {
+    const arabic = receipt.model.identity.language === 'ar' || (receipt.model.identity.language === 'both' && index > 0)
+    return <bdi key={`${line}-${index}`} dir={arabic ? 'rtl' : 'ltr'}>{line}</bdi>
+  })}</span>
 }
 
 function BrandedTotals({ receipt }: { receipt: ReceiptComposition }) {
@@ -569,10 +602,9 @@ export function StructuredDetailReceipt({ receipt }: { receipt: ReceiptCompositi
   const hasBuyer = !receipt.model.buyer.isWalkIn && (receipt.mandatoryBuyer || !!receipt.model.buyer.name)
   return <>
     <StructuredSellerHeader receipt={receipt} />
-    <div className="thermal-structured-document"><ReceiptTitle receipt={receipt} /><ReceiptMetadata receipt={receipt} /></div>
+    <div className="thermal-structured-document"><ReceiptTitle receipt={receipt} /><StructuredReceiptMetadata receipt={receipt} /></div>
     {hasBuyer && <ReceiptBuyer receipt={receipt} detailed={receipt.isStandard} />}
-    <section className="thermal-structured-items-heading"><span>{documentLabel(receipt.model.identity.language, 'description')}</span><span>{documentLabel(receipt.model.identity.language, 'amount')}</span></section>
-    <StructuredItems receipt={receipt} />
+    <section className="thermal-structured-ledger"><section className="thermal-structured-items-heading"><span>{documentLabel(receipt.model.identity.language, 'description')}</span><span>{documentLabel(receipt.model.identity.language, 'amount')}</span></section><StructuredItems receipt={receipt} /></section>
     <section className="thermal-structured-accounting"><StructuredTotals receipt={receipt} /><StructuredPayments receipt={receipt} /></section>
     <footer className="thermal-footer thermal-structured-close"><Verification receipt={receipt} /><FooterCopy receipt={receipt} /></footer>
   </>
