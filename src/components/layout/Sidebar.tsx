@@ -290,7 +290,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       <div data-sidebar-footer className={`pb-2 pt-2 border-t border-sidebar-border space-y-0.5 ${collapsed ? 'px-2' : 'px-2.5'}`}>
         {/* User identity */}
         {collapsed ? (
-          <div className="flex justify-center py-1">
+          <div className="flex justify-center py-1" title={`${displayName} · ${roleLabel}`}>
             <div className="w-8 h-8 rounded-xl bg-primary-500 flex items-center justify-center">
               <span className="text-white text-xs font-bold">
                 {displayName.charAt(0).toUpperCase()}

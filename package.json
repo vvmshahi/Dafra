@@ -109,6 +109,7 @@
     "test:barcode-workflow": "node scripts/test-barcode-workflow.mjs",
     "test:barcode-printing-ux": "node scripts/test-barcode-printing-ux.mjs",
     "test:dashboard-product-schema-compat": "node scripts/test-dashboard-product-schema-compat.mjs",
+    "test:branch-dashboard-v2": "node scripts/test-branch-dashboard-v2.mjs",
     "test:demo-tenant-safe-checkout": "node scripts/test-demo-tenant-safe-checkout.mjs",
     "test:final-web-printing-refinements": "node --experimental-strip-types scripts/test-final-web-printing-refinements.mjs",
     "test:a4-artwork-rls": "node scripts/test-a4-artwork-rls-runtime.mjs",

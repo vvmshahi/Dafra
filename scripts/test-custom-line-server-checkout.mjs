@@ -160,6 +160,7 @@ const permittedPaths = new Set([
   'scripts/test-final-web-printing-refinements.mjs',
   'scripts/test-invoice-detail-ui.mjs',
   'scripts/test-zatca-phase2-finalization-v2.mjs',
+  'scripts/test-branch-dashboard-v2.mjs',
   'scripts/test-catalogue-bulk-export.mjs',
   'scripts/test-catalogue-bulk-import.mjs',
   'scripts/run-zatca-atomic-simplified-checkout-runtime.mjs',

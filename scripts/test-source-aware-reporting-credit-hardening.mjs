@@ -208,6 +208,7 @@ const permittedPaths = new Set([
   'scripts/test-source-aware-reporting-credit-hardening.mjs',
   'scripts/test-catalogue-bulk-export.mjs',
   'scripts/test-catalogue-bulk-import.mjs',
+  'scripts/test-branch-dashboard-v2.mjs',
   'scripts/run-zatca-atomic-simplified-checkout-runtime.mjs',
   'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
   'supabase/migrations/20260804000600_trading_sandbox_v2.sql',

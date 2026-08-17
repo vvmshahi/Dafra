@@ -46,16 +46,16 @@
     "addBranch": "إضافة فرع", "branchHelp": "لكل فرع فواتيره ونقطة بيعه وبيانات اعتماد هيئة الزكاة والضريبة والجمارك الخاصة به."
   },
   "branch": {
-    "operations": "عمليات الفرع", "dashboard": "لوحة تحكم الفرع", "myBranch": "فرعي", "loading": "جارٍ تحميل الفرع...",
+    "operations": "عمليات الفرع", "dashboard": "لوحة تحكم الفرع", "myBranch": "فرعي", "loading": "جارٍ تحميل الفرع...", "establishment": "المنشأة",
     "newSale": "بيع جديد", "quickActions": "إجراءات سريعة", "workflow": "سير عمل الفرع اليومي",
     "openPos": "فتح نقطة البيع", "recordCosts": "تسجيل التكاليف", "reviewReceipts": "مراجعة الإيصالات",
-    "registerSnapshot": "ملخص جلسة الصندوق",
+    "registerSnapshot": "ملخص جلسة الصندوق", "products": "المنتجات", "purchases": "المشتريات", "suppliers": "الموردون", "customers": "العملاء", "reports": "التقارير",
     "lowStock_one": "منتج واحد منخفض المخزون", "lowStock_other": "{{count}} منتجات منخفضة المخزون"
   },
   "recent": {
     "title": "أحدث الفواتير", "viewAll": "عرض الكل", "none": "لا توجد فواتير حتى الآن",
     "startSale": "ابدأ أول عملية بيع من نقطة البيع", "invoice": "الفاتورة", "customer": "العميل",
-    "amount": "المبلغ", "status": "الحالة", "date": "التاريخ", "time": "الوقت", "walkIn": "عميل نقدي",
+    "amount": "المبلغ", "status": "الحالة", "date": "التاريخ", "time": "الوقت", "dateTime": "التاريخ والوقت", "walkIn": "عميل نقدي",
     "openInvoice": "فتح الفاتورة {{number}}"
   },
   "errors": {

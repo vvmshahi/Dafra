@@ -109,7 +109,9 @@ function getInitialCollapsed(): boolean {
     const saved = localStorage.getItem('meem-sidebar-collapsed')
     if (saved !== null) return saved === 'true'
   } catch {}
-  return window.matchMedia('(max-width: 767px)').matches
+  // The branch workspace starts with a compact rail on every viewport. Users
+  // may expand it, and that choice remains local to this browser.
+  return true
 }
 
 export default function AppLayout() {
