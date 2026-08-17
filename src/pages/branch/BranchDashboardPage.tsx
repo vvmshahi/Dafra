@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   TrendingUp, FileText, Receipt, CreditCard, AlertTriangle,
   ArrowRight, CheckCircle2, Clock, AlertCircle, Loader2,
-  Package, Banknote, BadgePercent,
+  Package, Banknote, BadgePercent, Truck, Users,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
@@ -428,7 +428,7 @@ function QuickActionsPanel({ onNavigate, lowStock, lowStockLoading }: {
   )
 }
 
-function BranchOperationsSurface({
+export function BranchOperationsSurface({
   session, loading, error, duration, onNavigate, onManageRegister, lowStock, lowStockLoading,
 }: {
   session: RegisterSessionSummary | null
