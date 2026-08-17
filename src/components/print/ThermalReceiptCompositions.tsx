@@ -120,6 +120,17 @@ function ReceiptMetadata({ receipt }: { receipt: ReceiptComposition }) {
   </section>
 }
 
+function CompactReceiptMetadata({ receipt }: { receipt: ReceiptComposition }) {
+  const { model, isCredit, isDebit, isAdjustment, date, time } = receipt
+  return <section className="thermal-meta thermal-compact-meta">
+    <div><span>{documentLabel(model.identity.language, isCredit ? 'creditNoteNumber' : isDebit ? 'debitNoteNumber' : 'invoiceNumber')}</span><bdi className="thermal-compact-document-number" dir="ltr">{model.identity.number}</bdi></div>
+    <div><span>{documentLabel(model.identity.language, 'date')}</span><bdi dir="ltr">{date}</bdi></div>
+    <div><span>{documentLabel(model.identity.language, 'time')}</span><bdi dir="ltr">{time}</bdi></div>
+    {isAdjustment && model.compliance.originalDocument.number && <div><span>{documentLabel(model.identity.language, 'originalInvoice')}</span><bdi dir="ltr">{model.compliance.originalDocument.number}</bdi></div>}
+    {isAdjustment && model.compliance.creditReason && <div className="thermal-meta-reason"><span>{documentLabel(model.identity.language, 'reason')}</span><span dir="auto">{model.compliance.creditReason}</span></div>}
+  </section>
+}
+
 function compactMerchantNames(model: DocumentViewModel) {
   const { seller } = model
   const candidates = [
@@ -201,17 +212,14 @@ function CompactItems({ receipt }: { receipt: ReceiptComposition }) {
 }
 
 function CompactItemName({ item, model }: { item: DocumentViewModel['items'][number]; model: DocumentViewModel }) {
-  const bilingualPair = model.identity.language === 'both'
-    && !!item.description.trim()
-    && !!item.descriptionAr?.trim()
-    && !sameIdentity(item.description, item.descriptionAr)
-  if (bilingualPair) {
-    return <div className="thermal-item-name thermal-compact-line__names thermal-compact-line__names--bilingual">
-      <span dir="ltr">{item.description}</span><span dir="rtl">{item.descriptionAr}</span>
-    </div>
-  }
-  return <div className={`thermal-item-name thermal-compact-line__names ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>
-    {names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}
+  const primary = item.description.trim()
+  const secondary = item.descriptionAr?.trim() ?? ''
+  const combined = !!primary && !!secondary && !sameIdentity(primary, secondary)
+  const renderedName = primary || secondary
+  return <div className={`thermal-item-name thermal-compact-line__names thermal-compact-line__names--combined ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>
+    {combined
+      ? <><bdi className="thermal-compact-line__name-segment thermal-compact-line__name-segment--en" dir="ltr">{primary}</bdi><span className="thermal-compact-line__name-separator"> / </span><bdi className="thermal-compact-line__name-segment thermal-compact-line__name-segment--ar" dir="rtl">{secondary}</bdi></>
+      : <bdi dir="auto">{renderedName}</bdi>}
   </div>
 }
 
@@ -383,9 +391,17 @@ function ClassicGrandTotalLabel({ receipt }: { receipt: ReceiptComposition }) {
 }
 
 function CompactTotals({ receipt }: { receipt: ReceiptComposition }) {
-  return <section className="thermal-totals thermal-compact-totals">{receipt.visibleTotals.map(row => <Row key={row.key} label={row.label} strong={row.emphasized}>
+  return <section className="thermal-totals thermal-compact-totals">{receipt.visibleTotals.map(row => <Row key={row.key} label={row.key === 'total' && !receipt.isCredit ? <CompactGrandTotalLabel receipt={receipt} /> : row.label} strong={row.emphasized}>
     {row.key === 'discount' ? <><bdi dir="ltr">−</bdi><Money value={row.value} model={receipt.model} /></> : <Money value={row.value} model={receipt.model} />}
   </Row>)}</section>
+}
+
+function CompactGrandTotalLabel({ receipt }: { receipt: ReceiptComposition }) {
+  const lines = documentLabelLines(receipt.model.identity.language, 'totalIncludingVat')
+  return <span className="thermal-compact-total-label">{lines.map((line, index) => {
+    const arabic = receipt.model.identity.language === 'ar' || (receipt.model.identity.language === 'both' && index > 0)
+    return <bdi key={`${line}-${index}`} dir={arabic ? 'rtl' : 'ltr'}>{line}</bdi>
+  })}</span>
 }
 
 function StructuredTotals({ receipt }: { receipt: ReceiptComposition }) {
@@ -527,7 +543,7 @@ export function CompactRetailReceipt({ receipt }: { receipt: ReceiptComposition 
   return <>
     <CompactSellerHeader receipt={receipt} />
     <ReceiptTitle receipt={receipt} />
-    <ReceiptMetadata receipt={receipt} />
+    <CompactReceiptMetadata receipt={receipt} />
     {hasBuyer && <ReceiptBuyer receipt={receipt} detailed={receipt.isStandard} />}
     <Rule /><CompactItems receipt={receipt} />
     <CompactTotals receipt={receipt} />

@@ -186,10 +186,52 @@ try {
           }
         }
         if (layout.storedId === 'compact') {
-          if (fixtureCase.language === 'both') assert.match(markup, /thermal-compact-line__names--bilingual/)
+          if (fixtureCase.language === 'both') assert.match(markup, /thermal-compact-line__names--combined/)
           assert.equal((markup.match(/thermal-compact-line__vat/g) ?? []).length, items.length)
           assert.equal((markup.match(/thermal-compact-line__discount/g) ?? []).length, items.filter(item => item.discount > 0.005).length)
           assert.match(markup, fixtureCase.payment === 'split' ? /thermal-compact-payments--split/ : /thermal-compact-payments--single/)
+          if (!isCredit) assert.match(markup, /thermal-compact-total-label/)
+
+          if (fixtureCase.id === 'both-many-card-qr') {
+            const compactMarkupFor = (description, descriptionAr, itemOverrides = {}, documentOverrides = {}) => renderToStaticMarkup(createElement(ThermalReceipt, {
+              model: {
+                ...model,
+                ...documentOverrides,
+                items: [{ ...items[0], description, descriptionAr, quantity: 1, unitName: 'piece', unitNameAr: 'قطعة', unitPrice: 2, lineTotal: 2, taxableAmount: 1.74, vatRate: 15, vatAmount: .26, discount: 0, ...itemOverrides }],
+              },
+              options: { preview: true },
+            }))
+            const englishOnly = compactMarkupFor('Pepsi', null)
+            assert.match(englishOnly, /Pepsi/)
+            assert.doesNotMatch(englishOnly, /بيبسي/)
+            const arabicOnly = compactMarkupFor('', 'بيبسي')
+            assert.match(arabicOnly, /بيبسي/)
+            assert.doesNotMatch(arabicOnly, /Pepsi/)
+            const bilingual = compactMarkupFor('Pepsi', 'بيبسي', {}, { identity: { ...model.identity, number: 'INV-2458' } })
+            assert.match(bilingual, /Pepsi[\s\S]*بيبسي/)
+            assert.match(bilingual, /thermal-compact-line__names--combined/)
+            assert.doesNotMatch(bilingual, /thermal-compact-line__names--bilingual/)
+            assert.match(bilingual, /thermal-compact-line__name-segment--en" dir="ltr">Pepsi/)
+            assert.match(bilingual, /thermal-compact-line__name-separator"> \/ <\/span><bdi class="thermal-compact-line__name-segment thermal-compact-line__name-segment--ar" dir="rtl">بيبسي/)
+            const duplicate = compactMarkupFor('Pepsi', 'pepsi')
+            assert.equal((duplicate.match(/Pepsi|pepsi/g) ?? []).length, 1)
+            const longBilingual = compactMarkupFor('Very Long Product Name For A Narrow Thermal Receipt', 'اسم منتج عربي طويل جداً لإيصال حراري ضيق')
+            assert.match(longBilingual, /Very Long Product Name For A Narrow Thermal Receipt[\s\S]*اسم منتج عربي طويل جداً لإيصال حراري ضيق/)
+            assert.match(bilingual, /thermal-compact-document-number" dir="ltr">INV-2458/)
+            assert.match(bilingual, /VAT Amount \/ مبلغ الضريبة \(15%\):[\s\S]*0\.26/)
+            assert.doesNotMatch(bilingual, /VAT included|VAT excluded|VAT added/)
+            const noRate = compactMarkupFor('Pepsi', 'بيبسي', { vatRate: 0, vatAmount: .26 })
+            assert.match(noRate, /VAT Amount \/ مبلغ الضريبة \(0%\):/)
+            const credit = compactMarkupFor('Pepsi', 'بيبسي', {}, { identity: { ...model.identity, kind: 'credit_note', invoiceType: 'credit_note', number: 'CN-2458' } })
+            assert.match(credit, /thermal-compact-line__name-segment--en" dir="ltr">Pepsi[\s\S]*thermal-compact-line__name-segment--ar" dir="rtl">بيبسي/)
+            assert.match(credit, /thermal-compact-document-number" dir="ltr">CN-2458/)
+            assert.match(credit, /thermal-row thermal-row-strong[\s\S]*thermal-value/)
+            if (width === '80mm') {
+              assert.match(bilingual, /thermal-compact-total-label"><bdi dir="ltr">Total Including VAT<\/bdi><bdi dir="rtl">الإجمالي شامل الضريبة<\/bdi><\/span><\/span><span class="thermal-value">/)
+            } else {
+              assert.match(bilingual, /thermal-receipt--58mm[\s\S]*thermal-compact-meta[\s\S]*thermal-compact-document-number[\s\S]*thermal-compact-total-label[\s\S]*thermal-value/)
+            }
+          }
         }
         if (layout.storedId === 'standard') {
           if (fixtureCase.language === 'both') assert.match(markup, /thermal-structured-line__names--bilingual/)

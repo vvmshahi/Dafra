@@ -397,7 +397,7 @@ assert.match(css, /thermal-theme--classic \.thermal-classic-totals \.thermal-row
 assert.match(css, /thermal-theme--classic \.thermal-classic-payments/)
 const compactComposition = thermalCompositions.slice(thermalCompositions.indexOf('export function CompactRetailReceipt'), thermalCompositions.indexOf('export function StructuredDetailReceipt'))
 let compactMarker = -1
-for (const marker of ['<CompactSellerHeader', '<ReceiptTitle', '<ReceiptMetadata', '<ReceiptBuyer', '<Rule />', '<CompactItems', '<CompactTotals', '<CompactPayments', 'thermal-compact-close']) {
+for (const marker of ['<CompactSellerHeader', '<ReceiptTitle', '<CompactReceiptMetadata', '<ReceiptBuyer', '<Rule />', '<CompactItems', '<CompactTotals', '<CompactPayments', 'thermal-compact-close']) {
   const nextMarker = compactComposition.indexOf(marker)
   assert.ok(nextMarker > compactMarker, `Compact must preserve its dense retail order at ${marker}`)
   compactMarker = nextMarker
@@ -407,12 +407,20 @@ assert.match(compactHeader, /seller\.displayHeading/)
 assert.match(compactHeader, /seller\.branch\.visible/)
 assert.match(compactHeader, /!sameIdentity\(candidate, seller\.registeredName\)/)
 assert.match(compactHeader, /<LegalSeller receipt=\{receipt\} contact website=\{false\} \/>/)
-assert.match(thermalCompositions, /thermal-compact-line__names--bilingual/)
+assert.match(thermalCompositions, /thermal-compact-line__names--combined/)
+assert.match(thermalCompositions, /thermal-compact-line__name-segment--en" dir="ltr"/)
+assert.match(thermalCompositions, /thermal-compact-line__name-segment--ar" dir="rtl"/)
+assert.match(thermalCompositions, /function CompactGrandTotalLabel/)
+assert.match(thermalCompositions, /function CompactReceiptMetadata/)
 assert.match(thermalCompositions, /thermal-compact-line__discount/)
 assert.match(thermalCompositions, /thermal-compact-payments--\$\{positivePayments\.length > 1 \? 'split' : 'single'\}/)
-assert.match(css, /thermal-theme--compact-retail \.thermal-compact-line__names--bilingual/)
-assert.match(css, /thermal-theme--compact-retail \.thermal-compact-totals \.thermal-row-strong/)
-assert.match(css, /thermal-receipt--58mm\.thermal-theme--compact-retail \.thermal-compact-line__names--bilingual/)
+assert.match(css, /thermal-theme--compact-retail \.thermal-compact-line__names--combined\{display:block/)
+assert.match(css, /thermal-theme--compact-retail \.thermal-compact-line__name-segment\{font-weight:inherit;unicode-bidi:isolate/)
+assert.match(css, /thermal-theme--compact-retail \.thermal-compact-line__names\{grid-column:1\/-1/)
+assert.match(css, /thermal-theme--compact-retail \.thermal-compact-document-number\{white-space:nowrap/)
+assert.match(css, /thermal-theme--compact-retail \.thermal-compact-totals \.thermal-row-strong\{display:grid/)
+assert.match(css, /thermal-theme--compact-retail \.thermal-compact-total-label\{display:grid;justify-items:start/)
+assert.match(css, /thermal-receipt--58mm\.thermal-theme--compact-retail \.thermal-compact-meta>div\{grid-column:1\/-1/)
 const structuredComposition = thermalCompositions.slice(thermalCompositions.indexOf('export function StructuredDetailReceipt'), thermalCompositions.indexOf('export function BrandedModernReceipt'))
 let structuredMarker = -1
 for (const marker of ['<StructuredSellerHeader', 'thermal-structured-document', '<ReceiptBuyer', 'thermal-structured-items-heading', '<StructuredItems', '<StructuredTotals', '<StructuredPayments', 'thermal-structured-close']) {
