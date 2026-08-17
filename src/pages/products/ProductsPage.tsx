@@ -137,7 +137,7 @@ function CategoryTab({
       className={`max-w-52 flex-shrink-0 truncate rounded-lg border px-3 py-1.5 text-xs font-semibold transition-[background-color,border-color,color,box-shadow] duration-150 ${
         active
           ? 'border-[#173f2a] bg-[#173f2a] text-[#fff8dc] shadow-sm ring-1 ring-gold-400/60'
-          : 'border-[#31543f] bg-[#244b36] text-[#eef7ed] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] hover:border-[#4d785b] hover:bg-[#2d5b42] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 focus-visible:ring-offset-2'
+          : 'border-[#a7b9a8] bg-[#c7d3c7] text-[#284534] shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] hover:border-[#7f9984] hover:bg-[#b7cbb9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#31543f] focus-visible:ring-offset-2'
       }`}
     >
       {label}
@@ -1041,12 +1041,12 @@ export default function ProductsPage() {
         ) : undefined}
         actions={catalogueBranchId ? (
           <div data-catalogue-command-bar className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-            <div data-catalogue-management-actions className="flex flex-wrap items-center gap-1 rounded-xl border border-[#dbe5dc] bg-[#f8fbf7] p-1">
-              <Button variant="secondary" size="sm" onClick={() => setCatsOpen(true)} className="border-transparent bg-transparent shadow-none hover:border-[#dbe5dc] hover:bg-white">
+            <div data-catalogue-management-actions className="flex flex-wrap items-center gap-1 rounded-xl border border-[#dedbd0] bg-[#f1f0ea] p-1">
+              <Button variant="secondary" size="sm" onClick={() => setCatsOpen(true)} className="border-transparent bg-transparent text-[#284534] shadow-none hover:border-transparent hover:bg-[#fffefa]">
                 <Tag size={14} aria-hidden="true" />
                 {t('category.manage')}
               </Button>
-              <Button variant="secondary" size="sm" onClick={() => setBatchPrintOpen(true)} className="border-transparent bg-transparent shadow-none text-gray-600 hover:border-[#dbe5dc] hover:bg-white">
+              <Button variant="secondary" size="sm" onClick={() => setBatchPrintOpen(true)} className="border-transparent bg-transparent text-[#526052] shadow-none hover:border-transparent hover:bg-[#fffefa]">
                 <Printer size={14} aria-hidden="true" />
                 {t('printing:barcodeLabels.batch.open')}
               </Button>
