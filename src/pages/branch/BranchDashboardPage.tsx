@@ -37,14 +37,14 @@ const statusConfig = {
 
 const BRANCH_KPI_TONES = {
   grossSales: 'bg-gradient-to-br from-[#1B6B3A] to-[#0F2419]',
-  creditNotes: 'bg-gradient-to-br from-[#64748b] to-[#334155]',
-  netSales: 'bg-gradient-to-br from-[#0e6f53] to-[#0F4A28]',
+  creditNotes: 'bg-gradient-to-br from-[#566575] to-[#34414D]',
+  netSales: 'bg-gradient-to-br from-[#1B6B3A] to-[#0F2419]',
   averageSale: 'bg-gradient-to-br from-[#b88722] to-[#7c4d0a]',
   sessionInvoices: 'bg-gradient-to-br from-[#1e40af] to-[#1d3a8a]',
-  sessionCash: 'bg-gradient-to-br from-[#059669] to-[#047857]',
-  sessionCard: 'bg-gradient-to-br from-[#19635A] to-[#123F39]',
-  netVat: 'bg-gradient-to-br from-[#b45309] to-[#92400e]',
-  expectedCash: 'bg-gradient-to-br from-[#4a5568] to-[#1f2937]',
+  sessionCash: 'bg-gradient-to-br from-[#176D62] to-[#104840]',
+  sessionCard: 'bg-gradient-to-br from-[#176D62] to-[#104840]',
+  netVat: 'bg-gradient-to-br from-[#b88722] to-[#7c4d0a]',
+  expectedCash: 'bg-gradient-to-br from-[#566575] to-[#34414D]',
 } as const
 
 const headerStatusStyles = {
@@ -476,8 +476,8 @@ export function BranchOperationsSurface({
     { label: t('kpi.averageSale'), value: <Rial amount={averageSale} />, sub: t('kpi.averageSaleHint'), icon: TrendingUp, tone: BRANCH_KPI_TONES.averageSale },
     { label: t('kpi.sessionCashLabel', { prefix: sessionPrefix }), value: <Rial amount={session?.cashTotal ?? 0} />, sub: t('kpi.cashAndSplit'), icon: Banknote, tone: BRANCH_KPI_TONES.sessionCash, visual: paymentVisual(cashShare, 'bg-emerald-200') },
     { label: t('kpi.sessionCardLabel', { prefix: sessionPrefix }), value: <Rial amount={session?.cardTotal ?? 0} />, sub: t('kpi.cardAndSplit'), icon: CreditCard, tone: BRANCH_KPI_TONES.sessionCard, visual: paymentVisual(cardShare, 'bg-emerald-200') },
-    { label: t('kpi.netVat'), value: <Rial amount={session?.vatTotal ?? 0} />, sub: t('kpi.sessionNetVat'), icon: BadgePercent, tone: BRANCH_KPI_TONES.netVat },
     { label: session?.status === 'closed' && session.actualCash !== null ? t('register.difference') : t('register.expectedCash'), value: <Rial amount={finalCash} />, sub: t('register.actualVsExpected'), icon: Receipt, tone: BRANCH_KPI_TONES.expectedCash },
+    { label: t('kpi.netVat'), value: <Rial amount={session?.vatTotal ?? 0} />, sub: t('kpi.sessionNetVat'), icon: BadgePercent, tone: BRANCH_KPI_TONES.netVat },
   ]
 
   return (
@@ -486,7 +486,7 @@ export function BranchOperationsSurface({
         {telemetry.map(metric => <StatCard key={metric.label} {...metric} loading={loading} />)}
       </div>
 
-      <div data-branch-v4-middle className="grid gap-4 xl:grid-cols-[minmax(0,65fr)_minmax(20rem,35fr)]">
+      <div data-branch-v4-middle className="grid gap-4 xl:grid-cols-[minmax(0,68fr)_minmax(20rem,32fr)]">
         <section data-branch-v3-actions className="relative min-w-0 overflow-hidden rounded-2xl border border-[#dbe7dc] bg-[#fffefa] p-4 shadow-card sm:p-5" aria-labelledby="branch-quick-actions-heading">
           <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#1B6B3A] via-gold-400 to-transparent" />
           <div className="relative mb-4 flex items-start justify-between gap-3"><div><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary-700 rtl:normal-case rtl:tracking-normal">{t('branch.workflow')}</p><h2 id="branch-quick-actions-heading" className="mt-1 text-lg font-black text-gray-950">{t('branch.quickActions')}</h2></div><span className="hidden rounded-full border border-primary-100 bg-primary-50 px-2.5 py-1 text-[10px] font-bold text-primary-700 sm:inline">{t('branch.operations')}</span></div>

@@ -46,7 +46,7 @@ assert.match(dashboard, /data-branch-v3-actions/)
 assert.match(dashboard, /data-branch-v3-register/)
 assert.match(dashboard, /data-branch-v3-ledger/)
 assert.match(dashboard, /data-branch-v4-middle/)
-assert.match(dashboard, /xl:grid-cols-\[minmax\(0,65fr\)_minmax\(20rem,35fr\)\]/)
+assert.match(dashboard, /xl:grid-cols-\[minmax\(0,68fr\)_minmax\(20rem,32fr\)\]/)
 assert.match(dashboard, /bg-\[#fffefa\]/)
 assert.match(dashboard, /grid gap-2 sm:grid-cols-2 lg:grid-cols-4/)
 assert.doesNotMatch(dashboard, /sm:col-span-2 border-\[#c8b16b\]/)
@@ -64,7 +64,17 @@ assert.match(dashboard, /formatDisplayPercent\(share, i18n\.language\)/)
 assert.match(dashboard, /h-1 min-w-12 flex-1 overflow-hidden rounded-full bg-white\/14/)
 assert.equal((dashboard.match(/visual: paymentVisual\(/g) ?? []).length, 2, 'only Cash and Card may render payment-share microvisuals')
 assert.match(dashboard, /kpi\.averageSale/)
-assert.doesNotMatch(dashboard.slice(dashboard.indexOf('const telemetry'), dashboard.indexOf('return (', dashboard.indexOf('const telemetry'))), /sessionInvoicesLabel/)
+const telemetrySource = dashboard.slice(dashboard.indexOf('const telemetry'), dashboard.indexOf('return (', dashboard.indexOf('const telemetry')))
+assert.doesNotMatch(telemetrySource, /sessionInvoicesLabel/)
+for (const [earlier, later] of [
+  ["t('kpi.grossSales')", "t('kpi.netSales')"],
+  ["t('kpi.netSales')", "t('kpi.creditNotes')"],
+  ["t('kpi.creditNotes')", "t('kpi.averageSale')"],
+  ["t('kpi.averageSale')", "t('kpi.sessionCashLabel'"],
+  ["t('kpi.sessionCashLabel'", "t('kpi.sessionCardLabel'"],
+  ["t('kpi.sessionCardLabel'", "t('register.difference')"],
+  ["t('register.difference')", "t('kpi.netVat')"],
+]) assert.ok(telemetrySource.indexOf(earlier) < telemetrySource.indexOf(later), `${earlier} must precede ${later} in the KPI grid`)
 
 const headerOrder = ['recent.invoice', 'recent.customer', 'recent.date', 'recent.time', 'recent.amount', 'recent.status']
 let position = -1
@@ -80,7 +90,14 @@ assert.match(dashboard, /min-w-\[860px\]/)
 assert.match(dashboard, /border-gold-400\/50 bg-\[#173F2A\]/)
 assert.match(dashboard, /bg-\[#FFFDF7\]/)
 assert.match(dashboard, /<colgroup>/)
-assert.match(dashboard, /sessionCard: 'bg-gradient-to-br from-\[#19635A\] to-\[#123F39\]'/)
+assert.match(dashboard, /grossSales: 'bg-gradient-to-br from-\[#1B6B3A\] to-\[#0F2419\]'/)
+assert.match(dashboard, /netSales: 'bg-gradient-to-br from-\[#1B6B3A\] to-\[#0F2419\]'/)
+assert.match(dashboard, /sessionCash: 'bg-gradient-to-br from-\[#176D62\] to-\[#104840\]'/)
+assert.match(dashboard, /sessionCard: 'bg-gradient-to-br from-\[#176D62\] to-\[#104840\]'/)
+assert.match(dashboard, /creditNotes: 'bg-gradient-to-br from-\[#566575\] to-\[#34414D\]'/)
+assert.match(dashboard, /expectedCash: 'bg-gradient-to-br from-\[#566575\] to-\[#34414D\]'/)
+assert.match(dashboard, /averageSale: 'bg-gradient-to-br from-\[#b88722\] to-\[#7c4d0a\]'/)
+assert.match(dashboard, /netVat: 'bg-gradient-to-br from-\[#b88722\] to-\[#7c4d0a\]'/)
 assert.doesNotMatch(dashboard, /businessType|business_type|profile badge/i)
 
 for (const dictionary of [en, ar]) {
