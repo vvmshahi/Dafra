@@ -162,6 +162,7 @@ const permittedPaths = new Set([
   'scripts/test-zatca-phase2-finalization-v2.mjs',
   'scripts/test-catalogue-bulk-export.mjs',
   'scripts/test-catalogue-bulk-import.mjs',
+  'scripts/run-zatca-atomic-simplified-checkout-runtime.mjs',
   'scripts/test-custom-line-server-checkout.mjs',
   'src/pages/reports/SalesReport.tsx',
   'src/pages/reports/pdf/reportExportData.ts',
