@@ -14,8 +14,11 @@ const source = read('src/components/print/A4Document.tsx')
 const css = read('src/index.css')
 
 for (const marker of ['ModernStatementItemName', 'ModernStatementItemTable', 'a4-statement-brand', 'a4-statement-meta-card', 'a4-statement-party-card', 'a4-statement-totals']) assert.match(source, new RegExp(marker))
-  for (const marker of ['a4-statement-head--identityless', 'a4-statement-document--without-qr', 'a4-statement-qr-card', 'a4-statement-items--with-discount', 'a4-statement-closeout', 'a4-statement-closeout \\+ .a4-footer:empty']) assert.match(css, new RegExp(marker))
+for (const marker of ['a4-statement-head--identityless', 'a4-statement-document--without-qr', 'a4-statement-qr-card', 'a4-statement-items--with-discount', 'a4-statement-closeout', 'a4-statement-closeout \\+ .a4-footer:empty']) assert.match(css, new RegExp(marker))
 assert.doesNotMatch(css.match(/\/\* 1 — Classic Business \*\/[\s\S]*?\/\* 2 — Modern Statement \*\//)?.[0] ?? '', /a4-statement/)
+assert.match(css, /\.a4-statement-totals \.a4-totals__grand \{ margin: 0 !important;/)
+assert.match(css, /\.a4-statement-items th \{[^}]*white-space: normal/)
+assert.match(css, /\.a4-statement-payment-card \{ align-self: start/)
 
 const server = await createServer({ appType: 'custom', logLevel: 'error', server: { middlewareMode: true } })
 try {
@@ -51,6 +54,7 @@ try {
   for (const value of ['a4-statement-brand', 'a4-statement-meta-card', 'a4-statement-qr-card', 'a4-statement-party-card', 'a4-statement-items', 'a4-statement-payment-card', 'a4-statement-totals', 'Trading House', 'Legal Seller Co', '300000000000003', '1010999999', '+966500000001', 'seller@example.com', 'https://seller.example']) assert.match(preview, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   assert.match(preview, /a4-totals__grand/)
   assert.match(preview, /class="a4-qr"/)
+  assert.ok(preview.indexOf('a4-totals__grand') < preview.indexOf('Paid / المدفوع'), 'Paid renders after the total band without structural overlap')
   for (const token of ['--invoice-primary:#0f766e', '--invoice-heading:#134e4a', '--invoice-text:#1f2937']) assert.match(preview, new RegExp(token))
 
   const sameIdentity = render({ ...base, presentation: { ...base.presentation, logo: { ...base.presentation.logo, visible: false, previewUrl: null, assetPath: null } }, seller: { ...base.seller, registeredName: 'Trading House', registeredNameAr: null, displayHeading: ' trading house ', displaySubheading: 'TRADING HOUSE' } }, { preview: true })
@@ -86,6 +90,8 @@ try {
   assert.match(noQr, /a4-statement-document--without-qr/); assert.doesNotMatch(noQr, /a4-statement-qr-card|class="a4-qr"/)
   const long = render({ ...base, items: Array.from({ length: 60 }, (_, index) => ({ ...item, description: `Long bilingual commercial description ${index + 1}`, descriptionAr: `وصف منتج عربي طويل ${index + 1}` })) }, { preview: true })
   assert.equal(count(long, 'Long bilingual commercial description'), 60)
+  const twentyItems = render({ ...base, items: Array.from({ length: 20 }, (_, index) => ({ ...item, description: `Twenty item ${index + 1}` })) }, { preview: true })
+  assert.equal(count(twentyItems, 'Twenty item'), 20)
   assert.match(css, /table-header-group/); assert.match(css, /\.a4-items tr \{ break-inside: avoid/); assert.match(css, /\.a4-closing-group \{ break-inside: avoid/)
 
   const credit = adapters.documentFromPreviewCreditNoteDraft(draft, 'data:image/png;base64,RklYVFVSRQ==')
