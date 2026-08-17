@@ -300,13 +300,62 @@ function StructuredItemFiscalDetail({ receipt, item }: { receipt: ReceiptComposi
   </div>
 }
 
+function brandedMerchantNames(model: DocumentViewModel) {
+  const { seller } = model
+  const candidates = [
+    seller.displayHeading,
+    ...(seller.branch.visible ? names(model, seller.branch.name, seller.branch.nameAr) : []),
+    seller.displaySubheading,
+  ]
+  return candidates.filter((candidate, index, all) => !!candidate
+    && !sameIdentity(candidate, seller.registeredName)
+    && !sameIdentity(candidate, seller.registeredNameAr)
+    && !all.slice(0, index).some(previous => sameIdentity(candidate, previous)))
+}
+
+/** Merchant-forward masthead with an explicit, deduplicated legal seller contract. */
+function BrandedSellerHeader({ receipt }: { receipt: ReceiptComposition }) {
+  const merchantNames = brandedMerchantNames(receipt.model)
+  return <header className="thermal-header thermal-branded-masthead">
+    <ReceiptLogo receipt={receipt} />
+    {merchantNames.map((name, index) => <div key={`${name}-${index}`} className={index === 0 ? 'thermal-branded-brand' : 'thermal-branded-trading-name'} dir="auto">{name}</div>)}
+    <LegalSeller receipt={receipt} contact website={false} />
+  </header>
+}
+
 function BrandedItems({ receipt }: { receipt: ReceiptComposition }) {
   const { model } = receipt
-  return <section className="thermal-items thermal-branded-cards">{model.items.map((item, index) => <article className="thermal-item thermal-branded-card" key={`${item.description}-${index}`}>
-    <div className="thermal-branded-card__head"><span className="thermal-branded-card__number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span><div className={`thermal-item-name ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>{names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}</div></div>
-    <div className="thermal-branded-card__math"><span><QuantityWithUnit quantity={item.quantity} item={item} model={model} /> × <Money value={item.unitPrice} model={model} /></span><strong><Money value={item.lineTotal} model={model} /></strong></div>
-    <ItemFiscalDetail receipt={receipt} item={item} />
+  return <section className="thermal-items thermal-branded-lines">{model.items.map((item, index) => <article className="thermal-item thermal-branded-line" key={`${item.description}-${index}`}>
+    <BrandedItemName item={item} model={model} />
+    <div className="thermal-branded-line__math"><span><QuantityWithUnit quantity={item.quantity} item={item} model={model} /> <span aria-hidden="true">×</span> <Money value={item.unitPrice} model={model} /></span><strong><Money value={item.lineTotal} model={model} /></strong></div>
+    <BrandedItemFiscalDetail receipt={receipt} item={item} />
   </article>)}</section>
+}
+
+function BrandedItemName({ item, model }: { item: DocumentViewModel['items'][number]; model: DocumentViewModel }) {
+  const bilingualPair = model.identity.language === 'both'
+    && !!item.description.trim()
+    && !!item.descriptionAr?.trim()
+    && !sameIdentity(item.description, item.descriptionAr)
+  if (bilingualPair) {
+    return <div className="thermal-item-name thermal-branded-line__names thermal-branded-line__names--bilingual">
+      <span dir="ltr">{item.description}</span><span dir="rtl">{item.descriptionAr}</span>
+    </div>
+  }
+  return <div className={`thermal-item-name thermal-branded-line__names ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>
+    {names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}
+  </div>
+}
+
+function BrandedItemFiscalDetail({ receipt, item }: { receipt: ReceiptComposition; item: DocumentViewModel['items'][number] }) {
+  const { model, isCredit } = receipt
+  const hasVat = Math.abs(item.vatAmount) > 0.005 || Math.abs(item.vatRate) > 0.005
+  if (!hasVat && item.discount <= 0.005 && !(isCredit && item.creditedQuantity != null)) return null
+  return <div className="thermal-item-detail thermal-branded-line__detail">
+    {hasVat && <span className="thermal-branded-line__vat">{documentLabel(model.identity.language, 'vatAmount')} ({formatDocumentQuantity(item.vatRate, model)}%): <Money value={item.vatAmount} model={model} /></span>}
+    {item.discount > 0.005 && <span className="thermal-branded-line__discount">{documentLabel(model.identity.language, 'discount')}: <bdi dir="ltr">−</bdi><Money value={item.discount} model={model} /></span>}
+    {isCredit && item.creditedQuantity != null && <span>{documentLabel(model.identity.language, 'quantity')}: <QuantityWithUnit quantity={item.creditedQuantity} item={item} model={model} /></span>}
+  </div>
 }
 
 function Totals({ receipt }: { receipt: ReceiptComposition }) {
@@ -327,6 +376,12 @@ function CompactTotals({ receipt }: { receipt: ReceiptComposition }) {
 
 function StructuredTotals({ receipt }: { receipt: ReceiptComposition }) {
   return <section className="thermal-totals thermal-structured-totals">{receipt.visibleTotals.map(row => <Row key={row.key} label={row.label} strong={row.emphasized}>
+    {row.key === 'discount' ? <><bdi dir="ltr">−</bdi><Money value={row.value} model={receipt.model} /></> : <Money value={row.value} model={receipt.model} />}
+  </Row>)}</section>
+}
+
+function BrandedTotals({ receipt }: { receipt: ReceiptComposition }) {
+  return <section className="thermal-totals thermal-branded-totals">{receipt.visibleTotals.map(row => <Row key={row.key} label={row.label} strong={row.emphasized}>
     {row.key === 'discount' ? <><bdi dir="ltr">−</bdi><Money value={row.value} model={receipt.model} /></> : <Money value={row.value} model={receipt.model} />}
   </Row>)}</section>
 }
@@ -398,6 +453,21 @@ function StructuredPayments({ receipt }: { receipt: ReceiptComposition }) {
   </section>
 }
 
+function BrandedPayments({ receipt }: { receipt: ReceiptComposition }) {
+  const { model, isCredit } = receipt
+  const { customerCredit, identity, payments, presentation, totals } = model
+  if (customerCredit?.isCustomerCredit) return <Payments receipt={receipt} />
+  const positivePayments = payments.filter(payment => payment.amount > 0.005)
+  const paymentKind = positivePayments.length > 1 ? 'split' : positivePayments[0]?.method ?? 'other'
+  const singleCash = positivePayments.length === 1 && positivePayments[0]?.method === 'cash' ? positivePayments[0] : null
+  return <section className={`thermal-payments thermal-branded-payments thermal-branded-payments--${positivePayments.length > 1 ? 'split' : 'single'}`}>
+    <div className="thermal-payment-kind">{documentLabel(identity.language, isCredit ? 'refundMethod' : 'paymentMethod')}: <strong>{documentPaymentLabel(identity.language, paymentKind)}</strong></div>
+    {positivePayments.length > 1 && positivePayments.map((payment, index) => <Row key={`${payment.method}-${index}`} label={documentPaymentLabel(identity.language, payment.method)}><Money value={payment.amount} model={model} /></Row>)}
+    {presentation.thermal.showCashChange && singleCash?.cashTendered != null && Math.abs(singleCash.cashTendered - totals.total) > 0.005 && <Row label={documentLabel(identity.language, 'received')}><Money value={singleCash.cashTendered} model={model} /></Row>}
+    {presentation.thermal.showCashChange && singleCash && (singleCash.change ?? 0) > 0.005 && <Row label={documentLabel(identity.language, 'change')}><Money value={singleCash.change ?? 0} model={model} /></Row>}
+  </section>
+}
+
 function Verification({ receipt }: { receipt: ReceiptComposition }) {
   if (receipt.options.nonFiscalDemo || receipt.options.qrUnavailable) return null
   return <div className="thermal-qr" style={{ width: `${receipt.qrMm}mm`, textAlign: 'center' }}>
@@ -409,6 +479,15 @@ function Verification({ receipt }: { receipt: ReceiptComposition }) {
 function FooterCopy({ receipt }: { receipt: ReceiptComposition }) {
   if (receipt.optionalFooter.length === 0) return null
   return <div className={`thermal-footer-copy ${receipt.model.presentation.footer.bold ? 'font-bold' : ''}`} style={{ fontSize: 'calc(var(--thermal-small) + 1px)', textAlign: 'center' }}>{receipt.optionalFooter.map((line, index) => <div key={`${line}-${index}`} dir="auto">{line}</div>)}</div>
+}
+
+function BrandedFooter({ receipt }: { receipt: ReceiptComposition }) {
+  const { website, websiteVisible } = receipt.model.presentation.contact
+  if (!websiteVisible && receipt.optionalFooter.length === 0) return null
+  return <div className="thermal-branded-footer-copy">
+    {websiteVisible && website && <div><bdi dir="ltr">{website}</bdi></div>}
+    <FooterCopy receipt={receipt} />
+  </div>
 }
 
 /** Traditional, printer-first Kubri receipt with the shared issued-document model. */
@@ -458,15 +537,15 @@ export function StructuredDetailReceipt({ receipt }: { receipt: ReceiptCompositi
 }
 
 export function BrandedModernReceipt({ receipt }: { receipt: ReceiptComposition }) {
+  const hasBuyer = !receipt.model.buyer.isWalkIn && (receipt.mandatoryBuyer || !!receipt.model.buyer.name)
   return <>
-    <header className="thermal-header thermal-branded-masthead"><ReceiptLogo receipt={receipt} /><div className="thermal-branded-identity"><DisplayIdentity receipt={receipt} /><LegalSeller receipt={receipt} contact /></div></header>
+    <BrandedSellerHeader receipt={receipt} />
     <section className="thermal-branded-document"><ReceiptTitle receipt={receipt} /><ReceiptMetadata receipt={receipt} /></section>
-    <ReceiptBuyer receipt={receipt} detailed />
+    {hasBuyer && <ReceiptBuyer receipt={receipt} detailed={receipt.isStandard} />}
     <BrandedItems receipt={receipt} />
-    <section className="thermal-branded-summary"><div className="thermal-branded-summary__label">{documentLabel(receipt.model.identity.language, 'totalIncludingVat')}</div><Totals receipt={receipt} /></section>
-    <Payments receipt={receipt} />
-    <section className="thermal-branded-verification"><Verification receipt={receipt} /></section>
-    <footer className="thermal-footer thermal-branded-close"><FooterCopy receipt={receipt} /></footer>
+    <section className="thermal-branded-summary"><BrandedTotals receipt={receipt} /></section>
+    <BrandedPayments receipt={receipt} />
+    <footer className="thermal-footer thermal-branded-close"><Verification receipt={receipt} /><BrandedFooter receipt={receipt} /></footer>
   </>
 }
 

@@ -23,7 +23,7 @@ try {
     { storedId: 'classic', publicId: 'classic', landmark: 'thermal-classic-line' },
     { storedId: 'compact', publicId: 'compact-retail', landmark: 'thermal-compact-line' },
     { storedId: 'standard', publicId: 'structured-detail', landmark: 'thermal-structured-line__figures' },
-    { storedId: 'detailed', publicId: 'branded-modern', landmark: 'thermal-branded-card__head' },
+    { storedId: 'detailed', publicId: 'branded-modern', landmark: 'thermal-branded-line' },
   ]
   const fixtureCases = [
     { id: 'en-short-cash-qr', language: 'en', sale: 'short', payment: 'cash', qr: 'eligible', document: 'simplified' },
@@ -154,6 +154,14 @@ try {
           assert.match(markup, fixtureCase.payment === 'split' ? /thermal-structured-payments--split/ : /thermal-structured-payments--single/)
           assert.match(markup, /thermal-structured-totals/)
         }
+        if (layout.storedId === 'detailed') {
+          if (fixtureCase.language === 'both') assert.match(markup, /thermal-branded-line__names--bilingual/)
+          assert.equal((markup.match(/thermal-branded-line__vat/g) ?? []).length, items.length)
+          assert.equal((markup.match(/thermal-branded-line__discount/g) ?? []).length, items.filter(item => item.discount > 0.005).length)
+          assert.match(markup, fixtureCase.payment === 'split' ? /thermal-branded-payments--split/ : /thermal-branded-payments--single/)
+          assert.match(markup, /thermal-branded-totals/)
+          assert.match(markup, /Thank you/)
+        }
 
         const walkInMarkup = renderToStaticMarkup(createElement(ThermalReceipt, {
           model: {
@@ -280,6 +288,75 @@ try {
               options: { preview: true, qrImageUrl: 'data:image/png;base64,RklYVFVSRQ==' },
             }))
             for (const value of ['Long Saudi Legal Supplier Company Name for Structured Thermal Compliance Testing', 'شركة المورد القانوني السعودية طويلة الاسم لاختبار الامتثال الحراري المنظم', 'Long Buyer Company Name for Immutable Structured Invoice Validation', 'شركة المشتري طويلة الاسم للتحقق من الفاتورة المنظمة غير القابلة للتغيير', '399999999999993', '1010999999']) assert.match(stressMarkup, new RegExp(value))
+          }
+        }
+        if (layout.storedId === 'detailed') {
+          if (fixtureCase.language !== 'ar') assert.match(businessMarkup, /Building 99, Northern Ring Road, Al Murooj District, Riyadh 12281, Saudi Arabia/)
+          if (fixtureCase.language !== 'en') assert.match(businessMarkup, /مبنى ٩٩، طريق الدائري الشمالي، حي المروج، الرياض ١٢٢٨١، المملكة العربية السعودية/)
+          assert.match(businessMarkup, /1010999999/)
+          if (width === '58mm') assert.doesNotMatch(businessMarkup, /thermal-buyer[^>]*style="[^"]*display:\s*none/)
+
+          const deduplicatedMerchantMarkup = renderToStaticMarkup(createElement(ThermalReceipt, {
+            model: {
+              ...model,
+              seller: {
+                ...model.seller,
+                registeredName: 'One Seller Name',
+                registeredNameAr: null,
+                displayHeading: 'One Seller Name',
+                displaySubheading: 'One Seller Name',
+                branch: { name: 'One Seller Name', nameAr: null, visible: true },
+              },
+            },
+            options: { preview: true },
+          }))
+          assert.equal((deduplicatedMerchantMarkup.match(/One Seller Name/g) ?? []).length, 1)
+
+          const logoMarkup = renderToStaticMarkup(createElement(ThermalReceipt, {
+            model: { ...model, presentation: { ...model.presentation, logo: { ...model.presentation.logo, visible: true, previewUrl: 'data:image/png;base64,RklYVFVSRQ==' } } },
+            options: { preview: true },
+          }))
+          assert.match(logoMarkup, /class="thermal-logo"/)
+          const noLogoMarkup = renderToStaticMarkup(createElement(ThermalReceipt, {
+            model: { ...model, presentation: { ...model.presentation, logo: { ...model.presentation.logo, visible: false, previewUrl: null, assetPath: null } } },
+            options: { preview: true },
+          }))
+          assert.doesNotMatch(noLogoMarkup, /class="thermal-logo"/)
+          const contactHiddenMarkup = renderToStaticMarkup(createElement(ThermalReceipt, {
+            model: { ...model, presentation: { ...model.presentation, contact: { ...model.presentation.contact, phoneVisible: false, emailVisible: false, websiteVisible: false } } },
+            options: { preview: true },
+          }))
+          assert.doesNotMatch(contactHiddenMarkup, /fixture@example\.com|\+966500000001|https:\/\/example\.com/)
+
+          if (width === '58mm' && fixtureCase.language === 'both') {
+            const stressMarkup = renderToStaticMarkup(createElement(ThermalReceipt, {
+              model: {
+                ...model,
+                identity: { ...model.identity, invoiceType: 'standard' },
+                seller: {
+                  ...model.seller,
+                  registeredName: 'Long Saudi Legal Supplier Company Name for Branded Thermal Compliance Testing',
+                  registeredNameAr: 'شركة المورد القانوني السعودية طويلة الاسم لاختبار الامتثال الحراري المميز',
+                  displayHeading: 'Long Trading Name for Premium Receipts',
+                  displaySubheading: null,
+                  branch: { name: 'Long Trading Name for Premium Receipts', nameAr: null, visible: true },
+                },
+                buyer: {
+                  ...model.buyer,
+                  name: 'Long Buyer Company Name for Immutable Branded Invoice Validation',
+                  nameAr: 'شركة المشتري طويلة الاسم للتحقق من الفاتورة المميزة غير القابلة للتغيير',
+                  vatNumber: '399999999999993',
+                  address: 'Building 99, Northern Ring Road, Al Murooj District, Riyadh 12281, Saudi Arabia',
+                  addressAr: 'مبنى ٩٩، طريق الدائري الشمالي، حي المروج، الرياض ١٢٢٨١، المملكة العربية السعودية',
+                  identifierType: 'CR',
+                  identifierValue: '1010999999',
+                  type: 'business',
+                  isWalkIn: false,
+                },
+              },
+              options: { preview: true, qrImageUrl: 'data:image/png;base64,RklYVFVSRQ==' },
+            }))
+            for (const value of ['Long Saudi Legal Supplier Company Name for Branded Thermal Compliance Testing', 'شركة المورد القانوني السعودية طويلة الاسم لاختبار الامتثال الحراري المميز', 'Long Buyer Company Name for Immutable Branded Invoice Validation', 'شركة المشتري طويلة الاسم للتحقق من الفاتورة المميزة غير القابلة للتغيير', '399999999999993', '1010999999']) assert.match(stressMarkup, new RegExp(value))
           }
         }
         rendered.push({ layout: layout.publicId, width, caseId: fixtureCase.id, markup })
