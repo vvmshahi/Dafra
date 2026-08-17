@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Pencil, Trash2, Check, GripVertical, Loader2, RotateCcw } from 'lucide-react'
+import { X, Pencil, Trash2, Check, GripVertical, Loader2, RotateCcw, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -30,6 +30,7 @@ interface Props {
   products: ProductRow[]
   onClose: () => void
   onChanged: () => void
+  onAddCategory: () => void
 }
 
 interface FormState {
@@ -48,7 +49,7 @@ const blank = (): FormState => ({
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function CategoriesModal({ open, categories, products, onClose, onChanged }: Props) {
+export default function CategoriesModal({ open, categories, products, onClose, onChanged, onAddCategory }: Props) {
   const { t } = useTranslation(['products', 'common'])
   const [form,      setForm]      = useState<FormState>(blank())
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -290,7 +291,7 @@ export default function CategoriesModal({ open, categories, products, onClose, o
         >
 
           {/* ── Header ──────────────────────────────────────── */}
-          <div className="flex items-start justify-between gap-4 px-4 py-4 border-b border-gray-100 flex-shrink-0 sm:px-6">
+          <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-4 py-4 sm:px-6">
             <div className="min-w-0">
               <h2 id="manage-categories-title" className="text-lg font-bold text-gray-900">{t('products:category.manage')}</h2>
               <div className="mt-1 flex min-h-5 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
@@ -307,15 +308,27 @@ export default function CategoriesModal({ open, categories, products, onClose, o
                 {t('products:categoryManagement.orderHint')}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={closeModal}
-              disabled={saving || Boolean(reorderingId) || Boolean(deletingId)}
-              aria-label={t('common:close')}
-              className="w-9 h-9 flex flex-shrink-0 items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:opacity-40 transition-colors"
-            >
-              <X size={18} aria-hidden="true" />
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={onAddCategory}
+                disabled={saving || Boolean(reorderingId) || Boolean(deletingId)}
+                className="border border-[#a9c6ad] bg-[#fffefa] text-[#173f2a] shadow-sm hover:border-[#6e9a75] hover:bg-[#f1f7f2] focus-visible:ring-[#173f2a]"
+              >
+                <Plus size={14} aria-hidden="true" />
+                {t('products:category.add')}
+              </Button>
+              <button
+                type="button"
+                onClick={closeModal}
+                disabled={saving || Boolean(reorderingId) || Boolean(deletingId)}
+                aria-label={t('common:close')}
+                className="w-9 h-9 flex flex-shrink-0 items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:opacity-40 transition-colors"
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </div>
           </div>
 
           {/* ── Body ────────────────────────────────────────── */}

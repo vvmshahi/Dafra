@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
-  Plus, LayoutGrid, List, Search, Tag, Pencil, Archive, Package, X, FolderPlus, Printer,
+  Plus, LayoutGrid, List, Search, Tag, Pencil, Archive, Package, X, Printer,
   Barcode, AlertTriangle, RefreshCw, Building2, ArrowLeftRight,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -137,7 +137,7 @@ function CategoryTab({
       className={`max-w-52 flex-shrink-0 truncate rounded-lg border px-3 py-1.5 text-xs font-semibold transition-[background-color,border-color,color,box-shadow] duration-150 ${
         active
           ? 'border-[#173f2a] bg-[#173f2a] text-[#fff8dc] shadow-sm ring-1 ring-gold-400/60'
-          : 'border-[#d2e1d4] bg-[#f4f8f4] text-[#31543f] hover:border-[#9bbca1] hover:bg-[#eaf3eb]'
+          : 'border-[#31543f] bg-[#244b36] text-[#eef7ed] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] hover:border-[#4d785b] hover:bg-[#2d5b42] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 focus-visible:ring-offset-2'
       }`}
     >
       {label}
@@ -1046,10 +1046,6 @@ export default function ProductsPage() {
                 <Tag size={14} aria-hidden="true" />
                 {t('category.manage')}
               </Button>
-              <Button variant="secondary" size="sm" onClick={() => setAddCatOpen(true)} className="border-transparent bg-transparent shadow-none hover:border-[#dbe5dc] hover:bg-white">
-                <FolderPlus size={14} aria-hidden="true" />
-                {t('category.add')}
-              </Button>
               <Button variant="secondary" size="sm" onClick={() => setBatchPrintOpen(true)} className="border-transparent bg-transparent shadow-none text-gray-600 hover:border-[#dbe5dc] hover:bg-white">
                 <Printer size={14} aria-hidden="true" />
                 {t('printing:barcodeLabels.batch.open')}
@@ -1335,6 +1331,10 @@ export default function ProductsPage() {
         products={products}
         onClose={() => setCatsOpen(false)}
         onChanged={load}
+        onAddCategory={() => {
+          setCatsOpen(false)
+          setAddCatOpen(true)
+        }}
       />
       <AddCategoryDialog
         open={addCatOpen}
