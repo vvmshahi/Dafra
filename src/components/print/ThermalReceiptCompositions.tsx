@@ -157,6 +157,29 @@ function ReceiptBuyer({ receipt, detailed = false }: { receipt: ReceiptCompositi
   </section>
 }
 
+function structuredMerchantNames(model: DocumentViewModel) {
+  const { seller } = model
+  const candidates = [
+    seller.displayHeading,
+    ...(seller.branch.visible ? names(model, seller.branch.name, seller.branch.nameAr) : []),
+    seller.displaySubheading,
+  ]
+  return candidates.filter((candidate, index, all) => !!candidate
+    && !sameIdentity(candidate, seller.registeredName)
+    && !sameIdentity(candidate, seller.registeredNameAr)
+    && !all.slice(0, index).some(previous => sameIdentity(candidate, previous)))
+}
+
+/** Fiscal-document masthead: a trading identity may lead, but legal seller data stays explicit. */
+function StructuredSellerHeader({ receipt }: { receipt: ReceiptComposition }) {
+  const merchantNames = structuredMerchantNames(receipt.model)
+  return <header className="thermal-header thermal-structured-masthead">
+    <ReceiptLogo receipt={receipt} />
+    {merchantNames.map((name, index) => <div key={`${name}-${index}`} className={index === 0 ? 'thermal-structured-brand' : 'thermal-structured-trading-name'} dir="auto">{name}</div>)}
+    <LegalSeller receipt={receipt} contact website={false} />
+  </header>
+}
+
 function ItemFiscalDetail({ receipt, item }: { receipt: ReceiptComposition; item: DocumentViewModel['items'][number] }) {
   const { model, isStandard, isAdjustment, isCredit } = receipt
   if (!isStandard && !isAdjustment && item.discount <= 0) return null
@@ -242,14 +265,39 @@ function ClassicItemFiscalDetail({ receipt, item }: { receipt: ReceiptCompositio
 function StructuredItems({ receipt }: { receipt: ReceiptComposition }) {
   const { model } = receipt
   return <section className="thermal-items thermal-structured-lines">{model.items.map((item, index) => <article className="thermal-item thermal-structured-line" key={`${item.description}-${index}`}>
-    <div className={`thermal-item-name ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}><span className="thermal-item-index" aria-hidden="true">{index + 1}</span><div className="thermal-structured-line__names">{names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}</div></div>
+    <StructuredItemName item={item} index={index} model={model} />
     <div className="thermal-structured-line__figures">
-      <span><small>{documentLabel(model.identity.language, 'quantity')}</small><strong><QuantityWithUnit quantity={item.quantity} item={item} model={model} /></strong></span>
-      <span><small>{documentLabel(model.identity.language, 'unitPrice')}</small><Money value={item.unitPrice} model={model} /></span>
-      <span><small>{documentLabel(model.identity.language, 'amount')}</small><Money value={item.lineTotal} model={model} /></span>
+      <span className="thermal-structured-line__formula"><small>{documentLabel(model.identity.language, 'quantity')} × {documentLabel(model.identity.language, 'unitPrice')}</small><strong><QuantityWithUnit quantity={item.quantity} item={item} model={model} /> <span aria-hidden="true">×</span> <Money value={item.unitPrice} model={model} /></strong></span>
+      <span className="thermal-structured-line__amount"><small>{documentLabel(model.identity.language, 'amount')}</small><strong><Money value={item.lineTotal} model={model} /></strong></span>
     </div>
-    <ItemFiscalDetail receipt={receipt} item={item} />
+    <StructuredItemFiscalDetail receipt={receipt} item={item} />
   </article>)}</section>
+}
+
+function StructuredItemName({ item, index, model }: { item: DocumentViewModel['items'][number]; index: number; model: DocumentViewModel }) {
+  const bilingualPair = model.identity.language === 'both'
+    && !!item.description.trim()
+    && !!item.descriptionAr?.trim()
+    && !sameIdentity(item.description, item.descriptionAr)
+  return <div className={`thermal-item-name ${model.presentation.thermal.wrapItemNames ? '' : 'thermal-item-name--truncate'}`}>
+    <span className="thermal-item-index" aria-hidden="true">{index + 1}</span>
+    {bilingualPair
+      ? <div className="thermal-structured-line__names thermal-structured-line__names--bilingual"><span dir="ltr">{item.description}</span><span dir="rtl">{item.descriptionAr}</span></div>
+      : <div className="thermal-structured-line__names">{names(model, item.description, item.descriptionAr).map((name, itemIndex) => <div key={`${name}-${itemIndex}`} dir="auto">{name}</div>)}</div>}
+  </div>
+}
+
+function StructuredItemFiscalDetail({ receipt, item }: { receipt: ReceiptComposition; item: DocumentViewModel['items'][number] }) {
+  const { model, isCredit } = receipt
+  const hasVat = Math.abs(item.vatAmount) > 0.005 || Math.abs(item.vatRate) > 0.005
+  const hasTaxable = Math.abs(item.taxableAmount) > 0.005 && Math.abs(item.taxableAmount - item.lineTotal) > 0.005
+  if (!hasTaxable && !hasVat && item.discount <= 0.005 && !(isCredit && item.creditedQuantity != null)) return null
+  return <div className="thermal-item-detail thermal-structured-line__detail">
+    {hasTaxable && <span>{documentLabel(model.identity.language, 'taxableAmount')}: <Money value={item.taxableAmount} model={model} /></span>}
+    {hasVat && <span className="thermal-structured-line__vat">{documentLabel(model.identity.language, 'vatAmount')} ({formatDocumentQuantity(item.vatRate, model)}%): <Money value={item.vatAmount} model={model} /></span>}
+    {item.discount > 0.005 && <span className="thermal-structured-line__discount">{documentLabel(model.identity.language, 'discount')}: <bdi dir="ltr">−</bdi><Money value={item.discount} model={model} /></span>}
+    {isCredit && item.creditedQuantity != null && <span>{documentLabel(model.identity.language, 'quantity')}: <QuantityWithUnit quantity={item.creditedQuantity} item={item} model={model} /></span>}
+  </div>
 }
 
 function BrandedItems({ receipt }: { receipt: ReceiptComposition }) {
@@ -273,6 +321,12 @@ function ClassicTotals({ receipt }: { receipt: ReceiptComposition }) {
 
 function CompactTotals({ receipt }: { receipt: ReceiptComposition }) {
   return <section className="thermal-totals thermal-compact-totals">{receipt.visibleTotals.map(row => <Row key={row.key} label={row.label} strong={row.emphasized}>
+    {row.key === 'discount' ? <><bdi dir="ltr">−</bdi><Money value={row.value} model={receipt.model} /></> : <Money value={row.value} model={receipt.model} />}
+  </Row>)}</section>
+}
+
+function StructuredTotals({ receipt }: { receipt: ReceiptComposition }) {
+  return <section className="thermal-totals thermal-structured-totals">{receipt.visibleTotals.map(row => <Row key={row.key} label={row.label} strong={row.emphasized}>
     {row.key === 'discount' ? <><bdi dir="ltr">−</bdi><Money value={row.value} model={receipt.model} /></> : <Money value={row.value} model={receipt.model} />}
   </Row>)}</section>
 }
@@ -329,6 +383,21 @@ function CompactPayments({ receipt }: { receipt: ReceiptComposition }) {
   </section>
 }
 
+function StructuredPayments({ receipt }: { receipt: ReceiptComposition }) {
+  const { model, isCredit } = receipt
+  const { customerCredit, identity, payments, presentation, totals } = model
+  if (customerCredit?.isCustomerCredit) return <Payments receipt={receipt} />
+  const positivePayments = payments.filter(payment => payment.amount > 0.005)
+  const paymentKind = positivePayments.length > 1 ? 'split' : positivePayments[0]?.method ?? 'other'
+  const singleCash = positivePayments.length === 1 && positivePayments[0]?.method === 'cash' ? positivePayments[0] : null
+  return <section className={`thermal-payments thermal-structured-payments thermal-structured-payments--${positivePayments.length > 1 ? 'split' : 'single'}`}>
+    <div className="thermal-payment-kind">{documentLabel(identity.language, isCredit ? 'refundMethod' : 'paymentMethod')}: <strong>{documentPaymentLabel(identity.language, paymentKind)}</strong></div>
+    {positivePayments.length > 1 && positivePayments.map((payment, index) => <Row key={`${payment.method}-${index}`} label={documentPaymentLabel(identity.language, payment.method)}><Money value={payment.amount} model={model} /></Row>)}
+    {presentation.thermal.showCashChange && singleCash?.cashTendered != null && Math.abs(singleCash.cashTendered - totals.total) > 0.005 && <Row label={documentLabel(identity.language, 'received')}><Money value={singleCash.cashTendered} model={model} /></Row>}
+    {presentation.thermal.showCashChange && singleCash && (singleCash.change ?? 0) > 0.005 && <Row label={documentLabel(identity.language, 'change')}><Money value={singleCash.change ?? 0} model={model} /></Row>}
+  </section>
+}
+
 function Verification({ receipt }: { receipt: ReceiptComposition }) {
   if (receipt.options.nonFiscalDemo || receipt.options.qrUnavailable) return null
   return <div className="thermal-qr" style={{ width: `${receipt.qrMm}mm`, textAlign: 'center' }}>
@@ -376,14 +445,15 @@ export function CompactRetailReceipt({ receipt }: { receipt: ReceiptComposition 
 }
 
 export function StructuredDetailReceipt({ receipt }: { receipt: ReceiptComposition }) {
+  const hasBuyer = !receipt.model.buyer.isWalkIn && (receipt.mandatoryBuyer || !!receipt.model.buyer.name)
   return <>
-    <header className="thermal-header thermal-structured-masthead"><div className="thermal-structured-brand"><ReceiptLogo receipt={receipt} /><DisplayIdentity receipt={receipt} /></div><LegalSeller receipt={receipt} contact /></header>
+    <StructuredSellerHeader receipt={receipt} />
     <div className="thermal-structured-document"><ReceiptTitle receipt={receipt} /><ReceiptMetadata receipt={receipt} /></div>
-    <ReceiptBuyer receipt={receipt} detailed />
+    {hasBuyer && <ReceiptBuyer receipt={receipt} detailed={receipt.isStandard} />}
     <section className="thermal-structured-items-heading"><span>{documentLabel(receipt.model.identity.language, 'description')}</span><span>{documentLabel(receipt.model.identity.language, 'amount')}</span></section>
     <StructuredItems receipt={receipt} />
-    <section className="thermal-structured-accounting"><Totals receipt={receipt} /><Payments receipt={receipt} /></section>
-    <footer className="thermal-footer thermal-structured-close"><FooterCopy receipt={receipt} /><Verification receipt={receipt} /></footer>
+    <section className="thermal-structured-accounting"><StructuredTotals receipt={receipt} /><StructuredPayments receipt={receipt} /></section>
+    <footer className="thermal-footer thermal-structured-close"><Verification receipt={receipt} /><FooterCopy receipt={receipt} /></footer>
   </>
 }
 

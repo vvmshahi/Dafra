@@ -401,6 +401,25 @@ assert.match(thermalCompositions, /thermal-compact-payments--\$\{positivePayment
 assert.match(css, /thermal-theme--compact-retail \.thermal-compact-line__names--bilingual/)
 assert.match(css, /thermal-theme--compact-retail \.thermal-compact-totals \.thermal-row-strong/)
 assert.match(css, /thermal-receipt--58mm\.thermal-theme--compact-retail \.thermal-compact-line__names--bilingual/)
+const structuredComposition = thermalCompositions.slice(thermalCompositions.indexOf('export function StructuredDetailReceipt'), thermalCompositions.indexOf('export function BrandedModernReceipt'))
+let structuredMarker = -1
+for (const marker of ['<StructuredSellerHeader', 'thermal-structured-document', '<ReceiptBuyer', 'thermal-structured-items-heading', '<StructuredItems', '<StructuredTotals', '<StructuredPayments', 'thermal-structured-close']) {
+  const nextMarker = structuredComposition.indexOf(marker)
+  assert.ok(nextMarker > structuredMarker, `Structured must preserve its fiscal document order at ${marker}`)
+  structuredMarker = nextMarker
+}
+const structuredHeader = thermalCompositions.slice(thermalCompositions.indexOf('function structuredMerchantNames'), thermalCompositions.indexOf('function ItemFiscalDetail'))
+assert.match(structuredHeader, /seller\.displayHeading/)
+assert.match(structuredHeader, /seller\.branch\.visible/)
+assert.match(structuredHeader, /!sameIdentity\(candidate, seller\.registeredName\)/)
+assert.match(structuredHeader, /<LegalSeller receipt=\{receipt\} contact website=\{false\} \/>/)
+assert.match(thermalCompositions, /thermal-structured-line__names--bilingual/)
+assert.match(thermalCompositions, /item\.taxableAmount/)
+assert.match(thermalCompositions, /thermal-structured-line__vat/)
+assert.match(thermalCompositions, /thermal-structured-payments--\$\{positivePayments\.length > 1 \? 'split' : 'single'\}/)
+assert.match(css, /thermal-theme--structured-detail \.thermal-structured-line__names--bilingual/)
+assert.match(css, /thermal-theme--structured-detail \.thermal-structured-totals \.thermal-row-strong/)
+assert.match(css, /thermal-receipt--58mm\.thermal-theme--structured-detail \.thermal-structured-line__names--bilingual/)
 assert.match(thermalSettings, /THERMAL_DENSITIES:[^=]+=\s*\['classic', 'compact', 'standard', 'detailed'\]/)
 assert.match(thermalTypes, /ThermalDensity = 'classic' \| 'compact' \| 'standard' \| 'detailed'/)
 assert.match(thermalAdapters, /thermalDensity === 'classic'/)
