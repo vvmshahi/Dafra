@@ -223,6 +223,11 @@ const permittedPaths = new Set([
   'supabase/migrations/20260817000300_purchase_product_receiving_v1.sql',
   'supabase/migrations/20260817000400_customer_identity_validation_v1.sql',
   'supabase/migrations/20260817000500_expenses_authority_v1.sql',
+  // P0 checkout restoration: only the invoice identity capture trigger is
+  // redefined against the linked production branches schema. No reporting,
+  // credit, stock, checkout-authority, or Edge implementation is allowlisted.
+  'supabase/migrations/20260817000700_restore_pos_checkout_after_buyer_snapshot_hardening.sql',
+  'scripts/test-p0-checkout-buyer-snapshot-hotfix.mjs',
   'scripts/test-purchase-modal-ui.mjs',
   'scripts/test-expense-modal-ui.mjs',
   'scripts/test-expense-authority-v1.mjs',

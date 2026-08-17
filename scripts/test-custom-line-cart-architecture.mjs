@@ -228,6 +228,10 @@ try {
     'supabase/migrations/20260817000400_customer_identity_validation_v1.sql',
     'supabase/migrations/20260817000500_expenses_authority_v1.sql',
     'supabase/migrations/20260817000600_capture_immutable_invoice_buyer_snapshot_v1.sql',
+    // P0 repair of the invoice insert trigger only. It restores the buyer
+    // snapshot capture contract against the linked production schema and does
+    // not alter checkout, stock, or financial authority.
+    'supabase/migrations/20260817000700_restore_pos_checkout_after_buyer_snapshot_hardening.sql',
     'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
     'supabase/migrations/20260804000600_trading_sandbox_v2.sql',
     'supabase/migrations/20260805000200_persist_zatca_capability_selection.sql',

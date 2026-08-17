@@ -204,6 +204,11 @@ const permittedPaths = new Set([
   'supabase/migrations/20260817000400_customer_identity_validation_v1.sql',
   'supabase/migrations/20260817000500_expenses_authority_v1.sql',
   'supabase/migrations/20260817000600_capture_immutable_invoice_buyer_snapshot_v1.sql',
+  // P0 trigger-only restoration of immutable V3 identity capture against the
+  // deployed branches schema; checkout authority and commercial logic remain
+  // outside this exception.
+  'supabase/migrations/20260817000700_restore_pos_checkout_after_buyer_snapshot_hardening.sql',
+  'scripts/test-p0-checkout-buyer-snapshot-hotfix.mjs',
   'scripts/test-purchase-modal-ui.mjs',
   'scripts/test-expense-modal-ui.mjs',
   'scripts/test-expense-authority-v1.mjs',

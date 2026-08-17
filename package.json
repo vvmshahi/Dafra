@@ -42,6 +42,7 @@
     "audit:phase4f-a4-templates": "node scripts/audit-phase4f-a4-templates.mjs",
     "test:phase4g-invoice-release-readiness": "node scripts/test-phase4g-invoice-release-readiness.mjs",
     "test:issued-document-presentation-integrity": "node scripts/test-issued-document-presentation-integrity.mjs",
+    "test:p0-checkout-buyer-snapshot-hotfix": "node scripts/test-p0-checkout-buyer-snapshot-hotfix.mjs",
     "audit:phase4g-invoice-release-readiness": "node scripts/audit-phase4g-invoice-release-readiness.mjs",
     "audit:phase5b-release-scope": "node scripts/audit-phase5b-release-scope.mjs",
     "test:zatca-finalization-v2": "node scripts/test-zatca-phase2-finalization-v2.mjs",
