@@ -134,10 +134,10 @@ function CategoryTab({
       onClick={onClick}
       type="button"
       aria-pressed={active}
-      className={`max-w-52 flex-shrink-0 truncate rounded-lg border bg-[#173f2a] px-3.5 py-2 text-xs font-semibold text-[#fff8dc] transition-[background-color,border-color,color,box-shadow,opacity] duration-150 ${
+      className={`max-w-52 flex-shrink-0 truncate rounded-lg border px-3 py-1.5 text-xs font-semibold transition-[background-color,border-color,color,box-shadow] duration-150 ${
         active
-          ? 'border-gold-400 text-white shadow-md ring-1 ring-gold-400/70'
-          : 'border-[#2d5b42] opacity-80 hover:border-[#d5b15a] hover:opacity-100'
+          ? 'border-[#173f2a] bg-[#173f2a] text-[#fff8dc] shadow-sm ring-1 ring-gold-400/60'
+          : 'border-[#d2e1d4] bg-[#f4f8f4] text-[#31543f] hover:border-[#9bbca1] hover:bg-[#eaf3eb]'
       }`}
     >
       {label}
@@ -322,7 +322,7 @@ function ProductListRow({
   const icon  = product.categories?.icon  ?? ''
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0">
+    <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-2.5 transition-colors hover:bg-gray-50 last:border-0">
       {/* Thumbnail */}
       <div
         className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-lg overflow-hidden"
@@ -1040,32 +1040,36 @@ export default function ProductsPage() {
           </span>
         ) : undefined}
         actions={catalogueBranchId ? (
-          <>
-            <Button variant="secondary" size="sm" onClick={() => setCatsOpen(true)}>
-              <Tag size={14} />
-              {t('category.manage')}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => setAddCatOpen(true)}>
-              <FolderPlus size={14} />
-              {t('category.add')}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => setBatchPrintOpen(true)}>
-              <Printer size={14} aria-hidden="true" />
-              {t('printing:barcodeLabels.batch.open')}
-            </Button>
-            {canCreateCatalogueItem && (
-              <Button size="sm" onClick={openAdd}>
-                <Plus size={14} />
-                {t(presentation.addActionKey)}
+          <div data-catalogue-command-bar className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+            <div data-catalogue-management-actions className="flex flex-wrap items-center gap-1 rounded-xl border border-[#dbe5dc] bg-[#f8fbf7] p-1">
+              <Button variant="secondary" size="sm" onClick={() => setCatsOpen(true)} className="border-transparent bg-transparent shadow-none hover:border-[#dbe5dc] hover:bg-white">
+                <Tag size={14} aria-hidden="true" />
+                {t('category.manage')}
               </Button>
-            )}
-            {canExportCatalogue && (
-              <Button variant="secondary" size="sm" onClick={() => setExportOpen(true)}>
-                <ArrowLeftRight size={14} aria-hidden="true" />
-                Import / Export
+              <Button variant="secondary" size="sm" onClick={() => setAddCatOpen(true)} className="border-transparent bg-transparent shadow-none hover:border-[#dbe5dc] hover:bg-white">
+                <FolderPlus size={14} aria-hidden="true" />
+                {t('category.add')}
               </Button>
-            )}
-          </>
+              <Button variant="secondary" size="sm" onClick={() => setBatchPrintOpen(true)} className="border-transparent bg-transparent shadow-none text-gray-600 hover:border-[#dbe5dc] hover:bg-white">
+                <Printer size={14} aria-hidden="true" />
+                {t('printing:barcodeLabels.batch.open')}
+              </Button>
+            </div>
+            <div data-catalogue-priority-actions className="flex items-center gap-2 sm:ms-auto">
+              {canExportCatalogue && (
+                <Button variant="secondary" size="sm" onClick={() => setExportOpen(true)} className="border-[#a9c6ad] bg-[#fffefa] text-[#173f2a] shadow-sm hover:border-[#6e9a75] hover:bg-[#f1f7f2] focus-visible:ring-[#173f2a]">
+                  <ArrowLeftRight size={14} aria-hidden="true" />
+                  Import / Export
+                </Button>
+              )}
+              {canCreateCatalogueItem && (
+                <Button size="sm" onClick={openAdd} className="border border-[#0B1C13] !bg-[#173F2A] text-[#FFF8E7] shadow-[0_3px_8px_rgba(15,36,25,0.18)] hover:!bg-[#0F2419] focus-visible:ring-[#173F2A]">
+                  <Plus size={14} aria-hidden="true" />
+                  {t(presentation.addActionKey)}
+                </Button>
+              )}
+            </div>
+          </div>
         ) : undefined}
       />
 
@@ -1151,8 +1155,8 @@ export default function ProductsPage() {
       )}
 
       {/* ── Search + view toggle ────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3 sm:flex-nowrap">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+        <div className="relative flex-1 max-w-md">
           <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
             type="text"
@@ -1181,14 +1185,14 @@ export default function ProductsPage() {
         </div>
 
         {/* View toggle */}
-        <div className="flex items-center bg-white border border-gray-200 rounded-xl p-0.5 flex-shrink-0" role="group" aria-label={t('viewMode')}>
+        <div className="flex items-center rounded-xl border border-[#dbe5dc] bg-[#f8fbf7] p-0.5 shadow-[0_1px_0_rgba(16,41,30,0.03)] flex-shrink-0" role="group" aria-label={t('viewMode')}>
           <button
             type="button"
             onClick={() => setViewMode('list')}
             aria-label={t('viewList')}
             aria-pressed={viewMode === 'list'}
-            className={`p-2 rounded-[10px] transition-colors ${
-              viewMode === 'list' ? 'bg-primary-500 text-white' : 'text-gray-400 hover:text-gray-600'
+            className={`rounded-[10px] p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#173f2a] ${
+              viewMode === 'list' ? 'bg-[#173f2a] text-white shadow-sm' : 'text-gray-400 hover:bg-white hover:text-[#173f2a]'
             }`}
           >
             <List size={15} />
@@ -1198,8 +1202,8 @@ export default function ProductsPage() {
             onClick={() => setViewMode('grid')}
             aria-label={t('viewGrid')}
             aria-pressed={viewMode === 'grid'}
-            className={`p-2 rounded-[10px] transition-colors ${
-              viewMode === 'grid' ? 'bg-primary-500 text-white' : 'text-gray-400 hover:text-gray-600'
+            className={`rounded-[10px] p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#173f2a] ${
+              viewMode === 'grid' ? 'bg-[#173f2a] text-white shadow-sm' : 'text-gray-400 hover:bg-white hover:text-[#173f2a]'
             }`}
           >
             <LayoutGrid size={15} />
@@ -1289,7 +1293,7 @@ export default function ProductsPage() {
       ) : (
         <div className="card overflow-hidden">
           {/* List header */}
-          <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
+          <div className="flex items-center gap-3 border-b border-[#dbe5dc] bg-[#f8fbf7] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#526b59]">
             <div className="w-10 flex-shrink-0" />
             <div className="flex-1">{t('columns.product')}</div>
             <div className="w-28 flex-shrink-0 hidden sm:block">{t('columns.category')}</div>
