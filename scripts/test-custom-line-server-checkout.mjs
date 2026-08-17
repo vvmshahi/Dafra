@@ -190,8 +190,20 @@ const permittedPaths = new Set([
   'supabase/migrations/20260817000200_secure_catalogue_bulk_import_v1.sql',
   'supabase/migrations/20260817000300_purchase_product_receiving_v1.sql',
   'supabase/migrations/20260817000400_customer_identity_validation_v1.sql',
+  'supabase/migrations/20260817000500_expenses_authority_v1.sql',
   'scripts/test-purchase-modal-ui.mjs',
+  'scripts/test-expense-modal-ui.mjs',
+  'scripts/test-expense-authority-v1.mjs',
   'scripts/test-custom-line-cart-architecture.mjs',
+  'package.json',
+  'src/localization/locales/ar-SA/expenses.json',
+  'src/localization/locales/en/expenses.json',
+  'src/pages/expenses/DailyExpenseModal.tsx',
+  'src/pages/expenses/DailyExpensesTab.tsx',
+  'src/pages/expenses/ExpensesPage.tsx',
+  'src/pages/expenses/FixedExpenseModal.tsx',
+  'src/pages/expenses/FixedExpensesTab.tsx',
+  'src/pages/reports/ExpenseReport.tsx',
 ])
 check(changedPaths.every(path => permittedPaths.has(path)), 'Phase 6 diff must stay within its approved scope')
 check(!changedPaths.includes('supabase/functions/zatca-submit/index.ts'), 'zatca-submit must remain untouched')

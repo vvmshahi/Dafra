@@ -81,6 +81,7 @@
     "test:supplier-modal-ui": "node scripts/test-supplier-modal-ui.mjs",
     "test:customer-modal-ui": "node scripts/test-customer-modal-ui.mjs",
     "test:expense-modal-ui": "node scripts/test-expense-modal-ui.mjs",
+    "test:expense-authority-v1": "node scripts/test-expense-authority-v1.mjs",
     "test:printing-documents-workspace": "node scripts/test-printing-documents-workspace.mjs",
     "test:p1-ui-remediation": "node scripts/test-p1-ui-remediation.mjs",
     "test:p2-batch1-ui": "node scripts/test-p2-batch1-ui.mjs",

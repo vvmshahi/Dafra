@@ -226,6 +226,7 @@ try {
     'supabase/migrations/20260817000200_secure_catalogue_bulk_import_v1.sql',
     'supabase/migrations/20260817000300_purchase_product_receiving_v1.sql',
     'supabase/migrations/20260817000400_customer_identity_validation_v1.sql',
+    'supabase/migrations/20260817000500_expenses_authority_v1.sql',
     'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
     'supabase/migrations/20260804000600_trading_sandbox_v2.sql',
     'supabase/migrations/20260805000200_persist_zatca_capability_selection.sql',
