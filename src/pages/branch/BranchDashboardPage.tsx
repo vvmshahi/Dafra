@@ -468,7 +468,7 @@ export function BranchOperationsSurface({
   const paymentTotal = (session?.cashTotal ?? 0) + (session?.cardTotal ?? 0)
   const cashShare = paymentTotal > 0 ? ((session?.cashTotal ?? 0) / paymentTotal) * 100 : 0
   const cardShare = paymentTotal > 0 ? ((session?.cardTotal ?? 0) / paymentTotal) * 100 : 0
-  const paymentVisual = (share: number, tone: string) => <div className="mt-3 flex items-center gap-2.5"><span className="h-1.5 min-w-12 flex-1 overflow-hidden rounded-full bg-white/15"><span className={`block h-full rounded-full ${tone}`} style={{ width: `${Math.max(0, Math.min(100, share))}%` }} /></span><span dir="ltr" className="text-[10px] font-bold text-white/75">{formatDisplayPercent(share, i18n.language)} {t('kpi.ofPayments')}</span></div>
+  const paymentVisual = (share: number, tone: string) => <div className="mt-2.5 flex items-center gap-2"><span className="h-1 min-w-12 flex-1 overflow-hidden rounded-full bg-white/14"><span className={`block h-full rounded-full ${tone}`} style={{ width: `${Math.max(0, Math.min(100, share))}%` }} /></span><span dir="ltr" className="text-[10px] font-bold text-white/75">{formatDisplayPercent(share, i18n.language)} {t('kpi.ofPayments')}</span></div>
   const telemetry = [
     { label: t('kpi.grossSales'), value: <Rial amount={grossSales} />, sub: t('kpi.invoiceCount', { count: session?.invoiceCount ?? 0 }), icon: TrendingUp, tone: BRANCH_KPI_TONES.grossSales },
     { label: t('kpi.netSales'), value: <Rial amount={session?.totalSales ?? 0} />, sub: t('kpi.grossLessCredits'), icon: TrendingUp, tone: BRANCH_KPI_TONES.netSales },
@@ -813,19 +813,11 @@ export default function BranchDashboardPage() {
 
           <div
             data-branch-header-action-stack
-            className="relative z-10 flex w-full min-w-0 flex-col items-stretch gap-2 md:w-auto md:min-w-[10.5rem] md:shrink-0 md:items-end"
+            className="relative z-10 flex w-full min-w-0 items-center md:w-auto md:shrink-0 md:justify-end"
           >
-            <button
-              type="button"
-              onClick={() => navigate('/pos')}
-              className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-gold-500 px-4 py-2.5 text-sm font-black text-[#0F2419] shadow-card transition-[background-color,transform,box-shadow] duration-150 ease-out hover:bg-gold-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-200 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F2419] active:scale-[0.97] md:w-auto"
-            >
-              <Receipt size={16} aria-hidden="true" />
-              {t('branch.newSale')}
-            </button>
             <div
               data-branch-zatca-status
-              className={`inline-flex min-h-7 max-w-full items-center gap-1.5 self-start rounded-full border px-3 py-1 text-[11px] font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] md:self-end ${zatcaHeaderStyle.pill}`}
+              className={`inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] ${zatcaHeaderStyle.pill}`}
               role="status"
             >
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${zatcaHeaderStyle.dot}`} aria-hidden="true" />
