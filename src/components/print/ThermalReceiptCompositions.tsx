@@ -123,12 +123,24 @@ function ReceiptMetadata({ receipt }: { receipt: ReceiptComposition }) {
 function CompactReceiptMetadata({ receipt }: { receipt: ReceiptComposition }) {
   const { model, isCredit, isDebit, isAdjustment, date, time } = receipt
   return <section className="thermal-meta thermal-compact-meta">
-    <div><span>{documentLabel(model.identity.language, isCredit ? 'creditNoteNumber' : isDebit ? 'debitNoteNumber' : 'invoiceNumber')}</span><bdi className="thermal-compact-document-number" dir="ltr">{model.identity.number}</bdi></div>
-    <div><span>{documentLabel(model.identity.language, 'date')}</span><bdi dir="ltr">{date}</bdi></div>
-    <div><span>{documentLabel(model.identity.language, 'time')}</span><bdi dir="ltr">{time}</bdi></div>
+    <CompactMetadataRow model={model} label={isCredit ? 'creditNoteNumber' : isDebit ? 'debitNoteNumber' : 'invoiceNumber'} value={model.identity.number} documentNumber />
+    <CompactMetadataRow model={model} label="date" value={date} />
+    <CompactMetadataRow model={model} label="time" value={time} />
     {isAdjustment && model.compliance.originalDocument.number && <div><span>{documentLabel(model.identity.language, 'originalInvoice')}</span><bdi dir="ltr">{model.compliance.originalDocument.number}</bdi></div>}
     {isAdjustment && model.compliance.creditReason && <div className="thermal-meta-reason"><span>{documentLabel(model.identity.language, 'reason')}</span><span dir="auto">{model.compliance.creditReason}</span></div>}
   </section>
+}
+
+function CompactMetadataRow({ model, label, value, documentNumber = false }: { model: DocumentViewModel; label: Parameters<typeof documentLabel>[1]; value: string; documentNumber?: boolean }) {
+  return <div className="thermal-compact-meta__row">
+    <CompactMetadataLabel model={model} label={label} />
+    <bdi className={`thermal-compact-meta__value${documentNumber ? ' thermal-compact-document-number' : ''}`} dir="ltr">{value}</bdi>
+  </div>
+}
+
+function CompactMetadataLabel({ model, label }: { model: DocumentViewModel; label: Parameters<typeof documentLabel>[1] }) {
+  if (model.identity.language === 'both') return <span className="thermal-compact-meta__label"><bdi dir="ltr">{documentLabel('en', label)}</bdi><span className="thermal-compact-meta__separator" aria-hidden="true"> / </span><bdi dir="rtl">{documentLabel('ar', label)}</bdi></span>
+  return <span className="thermal-compact-meta__label"><bdi dir={model.identity.language === 'ar' ? 'rtl' : 'ltr'}>{documentLabel(model.identity.language, label)}</bdi></span>
 }
 
 function compactMerchantNames(model: DocumentViewModel) {

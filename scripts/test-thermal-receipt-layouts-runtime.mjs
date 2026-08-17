@@ -218,6 +218,10 @@ try {
             const longBilingual = compactMarkupFor('Very Long Product Name For A Narrow Thermal Receipt', 'اسم منتج عربي طويل جداً لإيصال حراري ضيق')
             assert.match(longBilingual, /Very Long Product Name For A Narrow Thermal Receipt[\s\S]*اسم منتج عربي طويل جداً لإيصال حراري ضيق/)
             assert.match(bilingual, /thermal-compact-document-number" dir="ltr">INV-2458/)
+            assert.equal((bilingual.match(/thermal-compact-meta__row/g) ?? []).length, 3)
+            assert.match(bilingual, /thermal-compact-meta__label"><bdi dir="ltr">Invoice Number<\/bdi><span class="thermal-compact-meta__separator" aria-hidden="true"> \/ <\/span><bdi dir="rtl">رقم الفاتورة<\/bdi><\/span><bdi class="thermal-compact-meta__value thermal-compact-document-number" dir="ltr">INV-2458/)
+            assert.match(bilingual, /thermal-compact-meta__label"><bdi dir="ltr">Date<\/bdi><span class="thermal-compact-meta__separator" aria-hidden="true"> \/ <\/span><bdi dir="rtl">التاريخ<\/bdi><\/span><bdi class="thermal-compact-meta__value" dir="ltr">01\/15\/2026/)
+            assert.match(bilingual, /thermal-compact-meta__label"><bdi dir="ltr">Time<\/bdi><span class="thermal-compact-meta__separator" aria-hidden="true"> \/ <\/span><bdi dir="rtl">الوقت<\/bdi><\/span><bdi class="thermal-compact-meta__value" dir="ltr">13:30/)
             assert.match(bilingual, /VAT Amount \/ مبلغ الضريبة \(15%\):[\s\S]*0\.26/)
             assert.doesNotMatch(bilingual, /VAT included|VAT excluded|VAT added/)
             const noRate = compactMarkupFor('Pepsi', 'بيبسي', { vatRate: 0, vatAmount: .26 })
@@ -225,11 +229,12 @@ try {
             const credit = compactMarkupFor('Pepsi', 'بيبسي', {}, { identity: { ...model.identity, kind: 'credit_note', invoiceType: 'credit_note', number: 'CN-2458' } })
             assert.match(credit, /thermal-compact-line__name-segment--en" dir="ltr">Pepsi[\s\S]*thermal-compact-line__name-segment--ar" dir="rtl">بيبسي/)
             assert.match(credit, /thermal-compact-document-number" dir="ltr">CN-2458/)
+            assert.equal((credit.match(/thermal-compact-meta__row/g) ?? []).length, 3)
             assert.match(credit, /thermal-row thermal-row-strong[\s\S]*thermal-value/)
             if (width === '80mm') {
               assert.match(bilingual, /thermal-compact-total-label"><bdi dir="ltr">Total Including VAT<\/bdi><bdi dir="rtl">الإجمالي شامل الضريبة<\/bdi><\/span><\/span><span class="thermal-value">/)
             } else {
-              assert.match(bilingual, /thermal-receipt--58mm[\s\S]*thermal-compact-meta[\s\S]*thermal-compact-document-number[\s\S]*thermal-compact-total-label[\s\S]*thermal-value/)
+              assert.match(bilingual, /thermal-receipt--58mm[\s\S]*thermal-compact-meta__row[\s\S]*thermal-compact-document-number[\s\S]*thermal-compact-total-label[\s\S]*thermal-value/)
             }
           }
         }
