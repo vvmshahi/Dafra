@@ -180,6 +180,7 @@ const permittedPaths = new Set([
   'scripts/test-phase4f-a4-templates.mjs',
   'scripts/test-a4-v1-foundation.mjs',
   'scripts/test-classic-business-a4.mjs',
+  'scripts/test-modern-statement-a4.mjs',
   'scripts/test-zatca-phase2-finalization-v2.mjs',
   'src/lib/zatca/authenticatedEdge.ts',
   'src/lib/print/browserPrint.ts',

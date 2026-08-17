@@ -217,6 +217,9 @@ const permittedPaths = new Set([
   // parity only and cannot change checkout, reporting, credit, DB, or Edge code.
   'scripts/test-a4-v1-foundation.mjs',
   'scripts/test-classic-business-a4.mjs',
+  // Authorized Modern Statement A4 presentation coverage only; it reads the
+  // canonical issued-document model and cannot change financial authority.
+  'scripts/test-modern-statement-a4.mjs',
   'scripts/test-zatca-phase2-finalization-v2.mjs',
   // Authorized Classic thermal presentation refinement only.
   'scripts/test-thermal-receipt-layouts-runtime.mjs',

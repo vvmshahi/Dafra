@@ -31,7 +31,7 @@ const printCss = css.match(/@media print[\s\S]*?\/\* Snapshot-driven thermal doc
 assert.doesNotMatch(printCss, /a4-document--(?:modern_split|minimal_professional|executive_green|clean_ledger|contemporary_border)/)
 assert.doesNotMatch(printCss, /\.a4-document\s*\{[^}]*?(?:width|min-height|padding|margin):/)
 for (const token of ['--invoice-primary', '--invoice-heading', '--invoice-text', '--invoice-on-primary', '--invoice-border', '--invoice-surface', '--invoice-table-head', '--invoice-total-surface']) assert.match(a4Source, new RegExp(token))
-for (const marker of ['a4-document--modern_split .a4-items thead', 'a4-document--minimal_professional .a4-items thead', 'a4-document--clean_ledger .a4-items thead', 'a4-modular-verification']) assert.match(css, new RegExp(marker))
+for (const marker of ['a4-statement-items thead', 'a4-document--minimal_professional .a4-items thead', 'a4-document--clean_ledger .a4-items thead', 'a4-modular-verification']) assert.match(css, new RegExp(marker))
 assert.match(css, /a4-modular-verification[^}]*var\(--invoice-document-background\)/)
 
 const server = await createServer({ appType: 'custom', logLevel: 'error', server: { middlewareMode: true } })
