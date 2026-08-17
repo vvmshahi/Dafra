@@ -131,9 +131,9 @@ function CreditContext({ row, t }: { row: InvoiceRow; t: TFunction }) {
 
 const INVOICE_KPI_TONES = {
   netRevenue: 'bg-gradient-to-br from-[#1B6B3A] to-[#0F2419]',
-  creditNotes: 'bg-gradient-to-br from-[#566575] to-[#34414D]',
-  netVat: 'bg-gradient-to-br from-[#b88722] to-[#7c4d0a]',
-  documents: 'bg-gradient-to-br from-[#4B5563] to-[#374151]',
+  creditNotes: 'bg-gradient-to-br from-[#334155] to-[#1e293b]',
+  netVat: 'bg-gradient-to-br from-[#285e61] to-[#1f3f43]',
+  documents: 'bg-gradient-to-br from-[#334155] to-[#1e293b]',
 } as const
 
 function creditNoteDisabledReason(row: InvoiceRow, role: string | null | undefined, t: TFunction): string | null {
@@ -806,7 +806,7 @@ export default function InvoicesPage() {
         ].map(metric => (
           <article
             key={metric.label}
-            className={`relative min-h-[104px] overflow-hidden rounded-2xl border border-white/10 p-3.5 shadow-card-md ring-1 ring-black/10 sm:min-h-[112px] sm:p-4 [@media(max-height:740px)]:min-h-[100px] [@media(max-height:740px)]:p-3 ${metric.tone}`}
+            className={`relative min-h-[96px] overflow-hidden rounded-2xl border border-white/10 p-3 shadow-card-md ring-1 ring-black/10 sm:min-h-[104px] sm:p-3.5 [@media(max-height:740px)]:min-h-[94px] ${metric.tone}`}
           >
             <div className="flex h-full items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
@@ -818,7 +818,7 @@ export default function InvoicesPage() {
                 </p>
                 <p className="mt-1 text-[11px] font-medium leading-4 text-white/60 [overflow-wrap:anywhere]">{metric.sub}</p>
               </div>
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/10">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/10">
                 <metric.icon size={17} className="text-white/90" aria-hidden="true" />
               </div>
             </div>
