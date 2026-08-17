@@ -20,11 +20,11 @@ const arBranches = JSON.parse(read('src/localization/locales/ar-SA/branches.json
 
 assert.match(branchSettings, /role="tablist"/)
 assert.match(branchSettings, /useSearchParams/)
-for (const section of ['general', 'pos', 'credit', 'printing', 'zatca']) assert.match(branchSettings, new RegExp(`'${section}'`))
+for (const section of ['general', 'pos', 'credit', 'printing', 'zatca']) assert.match(branchSettings, new RegExp(`["']${section}["']`))
 assert.match(branchSettings, /update_branch_pos_settings/)
 assert.match(branchSettings, /allow_split_payments/)
 assert.match(branchSettings, /show_pos_scroll_buttons/)
-assert.match(branchSettings, /SectionId = 'general'.*'credit'/s)
+assert.match(branchSettings, /SectionId = ["']general["'].*["']credit["']/s)
 assert.match(branchSettings, /Open Printing & Documents|workspace\.openPrinting/)
 assert.match(branchSettings, /managed from the Owner account|workspace\.zatcaHelp/)
 assert.match(branchSettings, /Back to Dashboard|workspace\.backToDashboard/)
