@@ -32,7 +32,7 @@ function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
   icon: React.ElementType; gradient: string; loading?: boolean
 }) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl border border-white/10 px-3.5 py-3 shadow-card-md xl:h-[120px] ${gradient}`}>
+    <div className={`relative overflow-hidden rounded-2xl border border-white/10 px-3.5 py-2.5 shadow-card-md ${gradient}`}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-wide text-white/65">{label}</p>
@@ -660,7 +660,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Register Session KPIs ────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label={t('kpi.grossSales')} value={sessionAmount(sessionTotals.grossSales)}
           sub={sessionSub}
           icon={TrendingUp} gradient="bg-gradient-to-br from-[#1B6B3A] to-[#0F2419]" loading={statsLoading} />
