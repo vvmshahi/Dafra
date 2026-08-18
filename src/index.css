@@ -297,11 +297,11 @@
   .a4-ledger-meta .a4-meta dd { white-space: nowrap; }
   .a4-ledger-head--brandless { grid-template-columns: minmax(0,1fr) 62mm; justify-content: end; }
   .a4-ledger-parties { display: grid; grid-template-columns: 1fr 1fr; margin-block: 0 3mm; border: 1px solid var(--invoice-border); border-top: 0; }
-  .a4-ledger-parties > * { padding: 2.5mm 3mm; border: 0; line-height: 1.26; }
+  .a4-ledger-parties > * { padding: 2.3mm 3mm; border: 0; line-height: 1.22; }
   .a4-ledger-parties > * + * { border-inline-start: 1px solid var(--invoice-border); }
   .a4-ledger-parties.a4-parties--seller-only { grid-template-columns: 1fr; }
   .a4-ledger-parties .a4-legal-seller__name { font-size: 9.6pt; line-height: 1.14; }
-  .a4-ledger-parties .a4-section-title { margin-bottom: .65mm; }
+  .a4-ledger-parties .a4-section-title { margin-bottom: .5mm; }
   .a4-ledger-parties .a4-buyer { padding: 0; border: 0; background: transparent; }
   .a4-ledger-items { table-layout: fixed; border: 1px solid var(--invoice-heading); font-size: 6.9pt; }
   .a4-ledger-items thead { color: var(--invoice-on-primary); background: var(--invoice-primary); }
@@ -317,16 +317,18 @@
   .a4-ledger-item-unit { display: block; margin-top: .2mm; color: var(--invoice-muted); font-size: 6pt; overflow: hidden; text-overflow: ellipsis; }
   .a4-ledger-items__index { width: 4%; }.a4-ledger-items__description { width: 35%; }.a4-ledger-items__quantity { width: 10%; }.a4-ledger-items__price { width: 11%; }.a4-ledger-items__taxable { width: 12%; }.a4-ledger-items__vat { width: 14%; }.a4-ledger-items__total { width: 14%; }
   .a4-ledger-items--with-discount .a4-ledger-items__description { width: 26%; }.a4-ledger-items--with-discount .a4-ledger-items__quantity { width: 9%; }.a4-ledger-items--with-discount .a4-ledger-items__price { width: 10%; }.a4-ledger-items--with-discount .a4-ledger-items__discount { width: 10%; }.a4-ledger-items--with-discount .a4-ledger-items__taxable { width: 11%; }.a4-ledger-items--with-discount .a4-ledger-items__vat { width: 13%; }.a4-ledger-items--with-discount .a4-ledger-items__total { width: 13%; }
-  .a4-ledger-closeout { display: grid; grid-template-columns: minmax(0,1fr) 72mm; gap: 5mm; align-items: start; margin-top: 4mm; padding-top: 3mm; border-top: 1.25px solid var(--invoice-heading); }
-  .a4-ledger-payment { display: grid; grid-template-columns: minmax(0,1fr) 27mm; gap: 4mm; align-items: start; min-width: 0; }
+  .a4-ledger-closeout { display: grid; grid-template-columns: minmax(0,.78fr) minmax(0,1.05fr); gap: 5mm; align-items: start; margin-top: 4mm; padding-top: 3mm; border-top: 1.25px solid var(--invoice-heading); }
+  .a4-ledger-payment { min-width: 0; align-self: start; }
   .a4-ledger-payment .a4-payment { padding-top: .3mm; font-size: 7.8pt; }
   .a4-ledger-payment .a4-payment > div:not(.a4-section-title) { gap: .9mm 3mm; margin-bottom: .55mm; }
   .a4-ledger-payment .a4-section-title { margin-bottom: .65mm; }
-  .a4-ledger-payment .a4-qr { font-size: 6pt; line-height: 1.16; }
+  .a4-ledger-payment .a4-qr { width: 27mm; margin-top: 2.25mm; font-size: 6pt; line-height: 1.16; text-align: start; }
   .a4-ledger-payment .a4-qr img,.a4-ledger-payment .a4-qr-placeholder { width: 22mm; height: 22mm; }
   .a4-ledger-totals .a4-totals { overflow: hidden; border: 1px solid var(--invoice-heading); padding: 0; background: var(--invoice-total-surface); font-size: 7.8pt; }
   .a4-ledger-totals .a4-totals > div { margin: 0; padding: 1.05mm 3mm; }
   .a4-ledger-totals .a4-totals__grand { margin: 0 !important; padding: 2.35mm 3mm; border-top: 1.5px solid var(--invoice-heading); font-size: 12.5pt; line-height: 1.15; }
+  .a4-ledger-totals .a4-totals__grand > span { max-width: 55%; font-size: 7.6pt; line-height: 1.16; }
+  .a4-ledger-totals .a4-totals__grand .a4-money { margin-inline-start: auto; }
   .a4-ledger-closeout + .a4-footer:empty { display: none; }
   .a4-document--branding-hidden .a4-ledger-head { grid-template-columns: minmax(0,1fr) 62mm; }
 

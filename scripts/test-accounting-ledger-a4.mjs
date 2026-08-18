@@ -17,6 +17,10 @@ for (const marker of ['LedgerItemName', 'LedgerItemTable', 'ledgerColumnLabel', 
 for (const marker of ['a4-ledger-items', 'a4-ledger-closeout', 'a4-ledger-payment', 'a4-ledger-head--brandless', 'a4-ledger-items--with-discount']) assert.match(css, new RegExp(marker))
 assert.doesNotMatch(css.match(/\/\* 4 — Executive Frame \*\/[\s\S]*?\/\* 5 — Accounting Ledger \*\//)?.[0] ?? '', /a4-ledger/)
 assert.doesNotMatch(css.match(/\/\* 5 — Accounting Ledger \*\/[\s\S]*?\/\* 6 — Contemporary Modular \*\//)?.[0] ?? '', /a4-statement|a4-classic/)
+assert.match(css, /\.a4-ledger-closeout \{[^}]*\.78fr[^}]*1\.05fr[^}]*align-items: start/)
+assert.doesNotMatch(css, /\.a4-ledger-payment \{[^}]*grid-template-columns/)
+assert.match(css, /\.a4-ledger-payment \.a4-qr \{[^}]*margin-top: 2\.25mm[^}]*text-align: start/)
+assert.match(css, /\.a4-ledger-totals \.a4-totals__grand > span \{ max-width: 55%/)
 
 const server = await createServer({ appType: 'custom', logLevel: 'error', server: { middlewareMode: true } })
 try {
@@ -50,6 +54,9 @@ try {
   for (const label of ['Description / الوصف', 'Qty / الكمية', 'Unit Price / سعر الوحدة', 'Taxable / الخاضع', 'VAT / الضريبة', 'Total / الإجمالي']) assert.match(preview, new RegExp(label))
   for (const token of ['--invoice-primary:#0f766e', '--invoice-heading:#134e4a', '--invoice-text:#1f2937']) assert.match(preview, new RegExp(token))
   assert.match(preview, /class="a4-qr"/)
+  assert.ok(preview.indexOf('class="a4-payment"') < preview.indexOf('class="a4-qr"'), 'QR follows payment inside the Ledger verification column')
+  assert.ok(preview.indexOf('class="a4-qr"') < preview.indexOf('class="a4-ledger-totals"'), 'payment/verification column precedes totals')
+  assert.match(preview, /a4-totals__grand[\s\S]*Total Including VAT \/ الإجمالي شامل الضريبة/)
 
   const noLogo = render({ ...base, presentation: { ...base.presentation, logo: { ...base.presentation.logo, visible: false, previewUrl: null, assetPath: null } }, seller: { ...base.seller, displayHeading: null, displaySubheading: null } }, { preview: true })
   assert.match(noLogo, /a4-ledger-head--brandless/); assert.doesNotMatch(noLogo, /class="a4-logo/)
