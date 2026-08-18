@@ -273,7 +273,7 @@ export default function ReportsPage() {
           {tab === 'pl'        && <ProfitLossReport  {...reportProps} />}
           {tab === 'vat'       && <VatReport         {...reportProps} />}
           {tab === 'expenses'  && <ExpenseReport     {...reportProps} />}
-          {tab === 'purchases' && <PurchaseReport    {...reportProps} />}
+          {tab === 'purchases' && <PurchaseReport {...reportProps} selectedBranchStockEnabled={branchId ? selectedBranch?.stock_enabled : undefined} />}
         </section>
       )}
     </div>

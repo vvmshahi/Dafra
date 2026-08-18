@@ -39,7 +39,7 @@ const EMPTY_PURCHASE_DATA: PurchData = {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function PurchaseReport({ startDate, endDate, branchId }: ReportProps) {
+export default function PurchaseReport({ startDate, endDate, branchId, selectedBranchStockEnabled }: ReportProps & { selectedBranchStockEnabled?: boolean | null }) {
   const { t } = useTranslation('reports')
   const { profile, tenant } = useAuth()
   const [loading, setLoading] = useState(true)
@@ -102,6 +102,7 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
   const trendTitle = isService ? 'Monthly Materials / Purchase Trend' : 'Monthly Purchase Trend'
   const topItemsTitle = isService ? 'Top Purchased Materials / Items' : 'Top Purchased Items'
   const topItemsSub = isService ? 'materials and business purchases' : 'by total cost'
+  const hideTopItems = branchId !== null && selectedBranchStockEnabled === false
 
   if (noData) {
     return (
@@ -115,9 +116,9 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
     <div className="space-y-5">
 
       {/* ── Summary cards ──────────────────────────────────── */}
-      <div className="flex flex-wrap gap-3">
+      <div className="grid gap-2 sm:grid-cols-3">
         <StatCard label={purchasesLabel} value={<Rial amount={data!.totalPurchased} />} primary />
-        <StatCard label={t('metrics.inputVat')} value={<Rial amount={data!.totalVat} />} accent="amber" sub={t('purchases.counted')} />
+        <StatCard label={t('metrics.inputVat')} value={<Rial amount={data!.totalVat} />} accent="primary" sub={t('purchases.counted')} />
         <StatCard label={t('metrics.suppliersUsed')} value={String(data!.supplierCount)} sub={t('purchases.unique')} />
       </div>
 
@@ -132,14 +133,14 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
               <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} width={60}
                 tickFormatter={v => `${(Number(v)/1000).toFixed(0)}k`} />
               <Tooltip content={<ChartTooltip />} />
-              <Bar dataKey="Purchases" fill="#f59e0b" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="Purchases" fill="#1B6B3A" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         )}
       </div>
 
       {/* ── Tables row ─────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className={`grid grid-cols-1 gap-4 ${hideTopItems ? '' : 'lg:grid-cols-2'}`}>
 
         {/* By supplier */}
         <div className="card overflow-hidden">
@@ -153,6 +154,7 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
               <div className="flex gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
                 <div className="flex-1">{t('common.supplier')}</div><div className="w-14 text-end hidden sm:block">{t('common.orders')}</div><div className="w-24 text-end">{t('common.total')}</div>
               </div>
+              <div className={data!.bySupplier.length > 10 ? 'lg:max-h-[31rem] lg:overflow-y-auto' : ''} tabIndex={data!.bySupplier.length > 10 ? 0 : undefined}>
               {data!.bySupplier.map((s, i) => (
                 <div key={i} className="flex gap-2 px-4 py-3 border-t border-gray-50 hover:bg-gray-50/50 items-center">
                   <div className="flex-1 min-w-0">
@@ -164,16 +166,17 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
                   <div className="w-14 text-right text-sm text-gray-600 tabular-nums hidden sm:block">
                     {s.count}
                   </div>
-                  <div className="w-24 text-right text-sm font-bold text-amber-600 tabular-nums">
+                  <div className="w-24 text-right text-sm font-bold text-[#1B6B3A] tabular-nums">
                     <Rial amount={s.total} />
                   </div>
                 </div>
               ))}
+              </div>
               <div className="flex gap-2 px-4 py-3 bg-gray-50 border-t border-gray-100">
                 <div className="flex-1 text-xs font-semibold text-gray-500">
                   {data!.bySupplier.length} suppliers
                 </div>
-                <div className="w-24 text-right text-sm font-bold text-amber-600 tabular-nums">
+                <div className="w-24 text-right text-sm font-bold text-[#1B6B3A] tabular-nums">
                   <Rial amount={data!.totalPurchased} />
                 </div>
               </div>
@@ -182,12 +185,12 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
         </div>
 
         {/* Top purchased items */}
-        <div className="card overflow-hidden">
+        {!hideTopItems && <div className="card overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
             <SectionHeader title={topItemsTitle} sub={topItemsSub} />
           </div>
           {!data!.topItems.length ? (
-            <div className="py-10 text-center text-sm text-gray-400">{t('purchases.noItems')}</div>
+            <div className="bg-[#f8fbf7] px-4 py-8 text-center"><p className="text-sm font-semibold text-[#0F2419]">No purchased items in this period</p>{branchId && selectedBranchStockEnabled === true && <p className="mt-1 text-xs text-slate-500">Item-level purchases will appear here when products are received.</p>}</div>
           ) : (
             <>
               <div className="flex gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
@@ -208,7 +211,7 @@ export default function PurchaseReport({ startDate, endDate, branchId }: ReportP
               ))}
             </>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   )
