@@ -33,6 +33,9 @@ assert.doesNotMatch(printCss, /\.a4-document\s*\{[^}]*?(?:width|min-height|paddi
 for (const token of ['--invoice-primary', '--invoice-heading', '--invoice-text', '--invoice-on-primary', '--invoice-border', '--invoice-surface', '--invoice-table-head', '--invoice-total-surface']) assert.match(a4Source, new RegExp(token))
 for (const marker of ['a4-statement-items thead', 'a4-document--minimal_professional .a4-items thead', 'a4-ledger-items thead', 'a4-contemporary-qr']) assert.match(css, new RegExp(marker))
 assert.match(css, /a4-contemporary-qr[^}]*background: #fff/)
+const executiveCss = css.match(/\/\* 7 — Executive Professional \*\/[\s\S]*?(?=\n  \/\* 2 — Modern Statement \*\/)/)?.[0] ?? ''
+for (const marker of ['a4-execpro-brand', 'align-self: center', 'a4-execpro-parties .a4-legal-seller', 'th:nth-child(2)', 'th:last-child', 'a4-execpro-closeout', 'a4-execpro-qr', 'padding: .65mm', 'a4-execpro-payment', 'a4-totals__grand', 'a4-document--executive_professional .a4-footer']) assert.ok(executiveCss.includes(marker), `missing Executive Professional refinement marker: ${marker}`)
+assert.doesNotMatch(executiveCss, /a4-document--(?:classic|modern_split|minimal_professional|executive_green|clean_ledger|contemporary_border)/, 'Executive Professional refinements cannot target frozen templates')
 
 const server = await createServer({ appType: 'custom', logLevel: 'error', server: { middlewareMode: true } })
 try {
@@ -82,6 +85,33 @@ try {
   for (const id of activeIds) assert.match(render(setTemplate(base, id), { preview: true }), new RegExp(`data-template-resolved="${id}@1"`))
   for (const id of ['minimal_professional', 'executive_green']) assert.match(render(setTemplate(base, id), { preview: true }), new RegExp(`data-template-resolved="${id}@1"`))
 
+  const executive = setTemplate(base, 'executive_professional')
+  const executivePreview = render(executive, { preview: true, qrImageUrl: 'data:image/png;base64,RklYVFVSRQ==' })
+  const executivePrint = render(executive, { qrImageUrl: 'data:image/png;base64,RklYVFVSRQ==' })
+  assert.equal(documentSurface(executivePreview), documentSurface(executivePrint), 'Executive Professional preview and print share one render surface')
+  for (const marker of ['a4-execpro-head', 'a4-execpro-brand', 'a4-execpro-parties', 'a4-contemporary-items', 'a4-execpro-closeout', 'a4-execpro-qr', 'a4-execpro-payment', 'a4-execpro-totals']) assert.match(executivePreview, new RegExp(marker))
+  assert.match(executivePreview, /class="a4-logo/, 'configured Executive Professional logo renders once in the brand composition')
+
+  const executiveWithoutLogo = setTemplate({
+    ...base,
+    seller: { ...base.seller, displayHeading: 'Trading Name' },
+    presentation: { ...base.presentation, logo: { ...base.presentation.logo, visible: false, assetPath: null, previewUrl: null } },
+  }, 'executive_professional')
+  const executiveWithoutLogoMarkup = render(executiveWithoutLogo, { preview: true })
+  assert.match(executiveWithoutLogoMarkup, /class="a4-execpro-brand"/, 'brand composition remains when only the merchant name is configured')
+  assert.doesNotMatch(executiveWithoutLogoMarkup, /class="a4-logo/, 'no logo element or reserved logo content renders when the logo is absent')
+
+  const executiveFooter = setTemplate({
+    ...base,
+    presentation: { ...base.presentation, footer: { ...base.presentation.footer, thankYouVisible: false, footerVisible: true, footer: 'Executive contact footer', refundVisible: false } },
+  }, 'executive_professional')
+  assert.match(render(executiveFooter, { preview: true }), /Executive contact footer/, 'configured Executive Professional footer renders from existing settings')
+  const executiveWithoutFooter = setTemplate({
+    ...base,
+    presentation: { ...base.presentation, footer: { ...base.presentation.footer, thankYouVisible: false, footerVisible: false, footer: null, refundVisible: false } },
+  }, 'executive_professional')
+  assert.doesNotMatch(render(executiveWithoutFooter, { preview: true }), /a4-footer-copy/, 'no empty footer copy renders without configured footer content')
+
   const branded = setTemplate({
     ...base,
     seller: { ...base.seller, registeredName: 'Legal Seller Co', registeredNameAr: null, displayHeading: 'Trading Name', displaySubheading: 'Trading Name' },
@@ -124,12 +154,27 @@ try {
   assert.match(css, /table-header-group/)
   assert.match(css, /\.a4-closing-group\s*\{\s*break-inside:\s*avoid/)
 
+  const executiveLong = setTemplate({ ...base, items: Array.from({ length: 100 }, (_, index) => ({ ...base.items[index % base.items.length], description: `Executive long item ${index + 1}`, descriptionAr: `بند تنفيذي طويل ${index + 1}` })) }, 'executive_professional')
+  const executiveLongMarkup = render(executiveLong, { preview: true })
+  assert.equal((executiveLongMarkup.match(/Executive long item/g) ?? []).length, 100, 'Executive Professional retains all long-invoice items')
+  assert.match(executiveLongMarkup, /a4-execpro-closeout/, 'Executive Professional closeout remains in normal flow after long content')
+
   for (const id of ids) {
     const credit = adapters.documentFromPreviewCreditNoteDraft(draft, 'data:image/png;base64,RklYVFVSRQ==')
     const markup = render(setTemplate(credit, id), { preview: true })
     assert.match(markup, /SAMPLE-CN-0042/)
     assert.match(markup, new RegExp(`data-template-resolved="${id}@1"`))
   }
+
+  const executiveCredit = adapters.documentFromPreviewCreditNoteDraft(draft, 'data:image/png;base64,RklYVFVSRQ==')
+  const executiveCreditMarkup = render(setTemplate(executiveCredit, 'executive_professional'), { preview: true, qrImageUrl: 'data:image/png;base64,RklYVFVSRQ==' })
+  assert.match(executiveCreditMarkup, /SAMPLE-CN-0042/)
+  assert.match(executiveCreditMarkup, /a4-execpro-closeout/)
+  const executiveRecolored = setTemplate({ ...base, template: { ...base.template, accentColor: '#7c3aed', headingColor: '#4c1d95', bodyColor: '#312e81', autoForeground: true } }, 'executive_professional')
+  const executiveRecoloredMarkup = render(executiveRecolored, { preview: true })
+  assert.match(executiveRecoloredMarkup, /--invoice-primary:#7c3aed/)
+  assert.match(executiveRecoloredMarkup, /--invoice-heading:#4c1d95/)
+  assert.match(executiveRecoloredMarkup, /--invoice-text:#312e81/)
 } finally {
   await server.close()
 }

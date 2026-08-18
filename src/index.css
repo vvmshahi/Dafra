@@ -201,10 +201,49 @@
 
   /* 7 — Executive Professional */
   .a4-document--executive_professional { --invoice-page-padding-top: 0; --invoice-page-padding-inline: 10mm; font-variant-numeric: tabular-nums; }
-  .a4-execpro-head { display:grid; grid-template-columns:minmax(0,1fr) 82mm; gap:8mm; margin-inline:-10mm; padding:6mm 10mm 5mm; color:var(--invoice-on-primary); background:var(--invoice-primary); }
-  .a4-execpro-head--brandless { grid-template-columns:1fr; }.a4-execpro-brand{display:grid;align-content:center;min-width:0}.a4-execpro-brand .a4-logo{max-width:34mm;max-height:14mm;margin-bottom:1.2mm;padding:1mm;background:#fff}.a4-execpro-brand .a4-display-heading{max-width:none;color:inherit;font-size:18pt;line-height:1.06}.a4-execpro-brand .a4-display-subheading{margin-top:.7mm;color:inherit;font-size:8pt;opacity:.84}.a4-execpro-document .a4-document-title{text-align:start}.a4-execpro-document .a4-document-title__main,.a4-execpro-document .a4-document-title__sub,.a4-execpro-document .a4-meta dt,.a4-execpro-document .a4-meta dd{color:inherit}.a4-execpro-document .a4-document-title__main{font-size:16pt}.a4-execpro-document .a4-meta{margin-top:1.6mm;gap:.35mm;font-size:7.2pt}.a4-execpro-document .a4-meta div{gap:2mm;padding-bottom:.4mm;border-bottom-color:color-mix(in srgb,var(--invoice-on-primary) 28%,transparent)}
-  .a4-execpro-parties{display:grid;grid-template-columns:1fr 1fr;gap:5mm;margin-block:5mm 4mm}.a4-execpro-parties.a4-parties--seller-only{grid-template-columns:1fr}.a4-execpro-parties>section{min-width:0;padding:2.4mm 3mm;border:1px solid var(--invoice-border);border-top:2px solid var(--invoice-primary);background:var(--invoice-surface)}.a4-execpro-parties .a4-buyer{padding:0;border:0;background:transparent}.a4-execpro-parties .a4-section-title{margin-bottom:.65mm}.a4-execpro-parties .a4-seller{line-height:1.26}.a4-execpro-parties .a4-legal-seller__name{font-size:9.5pt}
-  .a4-document--executive_professional .a4-contemporary-items{font-size:7.1pt}.a4-document--executive_professional .a4-contemporary-items th{padding:1.55mm 1.05mm}.a4-execpro-closeout{display:grid;grid-template-columns:29mm minmax(0,1fr) 74mm;gap:4mm;align-items:start;margin-top:5mm;padding-top:3mm;border-top:1.5px solid var(--invoice-primary)}.a4-execpro-qr{display:grid;justify-items:center;padding:1mm;border:1px solid var(--invoice-border);background:#fff}.a4-execpro-qr .a4-qr{font-size:5.8pt}.a4-execpro-qr .a4-qr img,.a4-execpro-qr .a4-qr-placeholder{width:23mm;height:23mm}.a4-execpro-payment{padding:1.6mm 2.5mm;border-inline-start:2px solid var(--invoice-primary);background:var(--invoice-surface)}.a4-execpro-payment .a4-payment>div:not(.a4-section-title){gap:1mm 3mm;margin-bottom:.6mm}.a4-execpro-payment .a4-section-title{margin-bottom:.65mm}.a4-execpro-totals .a4-totals{overflow:hidden;border:1px solid var(--invoice-border);padding:0;background:var(--invoice-total-surface)}.a4-execpro-totals .a4-totals>div{margin:0;padding:1.1mm 2.75mm}.a4-execpro-totals .a4-totals__grand{align-items:center;margin:0!important;padding:2.35mm 2.75mm;color:var(--invoice-on-primary);background:var(--invoice-primary);border:0;font-size:13.5pt}.a4-execpro-totals .a4-totals__grand>span{max-width:60%;font-size:7.7pt;line-height:1.18}.a4-execpro-totals .a4-money{margin-inline-start:auto}.a4-execpro-closeout+.a4-footer:empty{display:none}
+  .a4-execpro-head { display: grid; grid-template-columns: minmax(0,1fr) 82mm; gap: 8mm; align-items: center; margin-inline: -10mm; padding: 5.5mm 10mm; color: var(--invoice-on-primary); background: var(--invoice-primary); }
+  .a4-execpro-head--brandless { grid-template-columns: 1fr; }
+  .a4-execpro-brand { display: grid; align-self: center; align-content: center; min-width: 0; padding-block: .35mm .85mm; }
+  .a4-execpro-brand .a4-seller--brand { display: grid; align-content: center; }
+  .a4-execpro-brand .a4-logo { width: fit-content; max-width: 34mm; max-height: 14mm; margin-bottom: 1mm; padding: .75mm; background: #fff; }
+  .a4-execpro-brand .a4-display-heading { max-width: none; color: inherit; font-size: 17pt; line-height: 1.06; }
+  .a4-execpro-brand .a4-display-subheading { margin-top: .6mm; color: inherit; font-size: 8pt; opacity: .84; }
+  .a4-execpro-document .a4-document-title { text-align: start; }
+  .a4-execpro-document .a4-document-title__main,.a4-execpro-document .a4-document-title__sub,.a4-execpro-document .a4-meta dt,.a4-execpro-document .a4-meta dd { color: inherit; }
+  .a4-execpro-document .a4-document-title__main { font-size: 16pt; }
+  .a4-execpro-document .a4-meta { margin-top: 1.6mm; gap: .35mm; font-size: 7.2pt; }
+  .a4-execpro-document .a4-meta div { gap: 2mm; padding-bottom: .4mm; border-bottom-color: color-mix(in srgb,var(--invoice-on-primary) 28%,transparent); }
+  .a4-execpro-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin-block: 5mm 4mm; }
+  .a4-execpro-parties.a4-parties--seller-only { grid-template-columns: 1fr; }
+  .a4-execpro-parties > section { min-width: 0; padding: 2.15mm 3mm 2.4mm; border: 1px solid var(--invoice-border); border-top: 2.5px solid var(--invoice-primary); background: var(--invoice-surface); }
+  .a4-execpro-parties .a4-buyer { padding: 0; border: 0; background: transparent; }
+  .a4-execpro-parties .a4-section-title { margin-bottom: .45mm; font-weight: 850; letter-spacing: .025em; }
+  .a4-execpro-parties .a4-seller { line-height: 1.26; }
+  .a4-execpro-parties .a4-legal-seller { padding-bottom: .35mm; border-bottom: 1px solid color-mix(in srgb,var(--invoice-border) 80%,transparent); }
+  .a4-execpro-parties .a4-legal-seller__name { font-size: 9.5pt; }
+  .a4-execpro-parties .a4-seller > div:not(.a4-legal-seller) { margin-top: .3mm; }
+  .a4-document--executive_professional .a4-contemporary-items { font-size: 7.1pt; }
+  .a4-document--executive_professional .a4-contemporary-items th { padding: 1.55mm 1.05mm; }
+  .a4-document--executive_professional .a4-contemporary-items th:nth-child(2),.a4-document--executive_professional .a4-contemporary-items th:last-child { font-weight: 900; }
+  .a4-document--executive_professional .a4-contemporary-items td:nth-child(2) { font-weight: 750; }
+  .a4-document--executive_professional .a4-contemporary-items td:last-child { color: var(--invoice-heading); font-weight: 800; }
+  .a4-document--executive_professional .a4-contemporary-items td { border-bottom-color: color-mix(in srgb,var(--invoice-border) 88%,transparent); }
+  .a4-execpro-closeout { display: grid; grid-template-columns: 29mm minmax(0,1fr) 74mm; gap: 4mm; align-items: start; margin-top: 5mm; padding-top: 3mm; border-top: 1.5px solid var(--invoice-primary); }
+  .a4-execpro-qr { display: grid; justify-items: center; padding: .65mm; border: 1px solid var(--invoice-border); background: #fff; }
+  .a4-execpro-qr .a4-qr { display: grid; justify-items: center; gap: .15mm; font-size: 5.8pt; line-height: 1.15; }
+  .a4-execpro-qr .a4-qr img,.a4-execpro-qr .a4-qr-placeholder { width: 23mm; height: 23mm; }
+  .a4-execpro-payment { padding: 1.45mm 2.5mm; border-inline-start: 2px solid var(--invoice-primary); background: var(--invoice-surface); }
+  .a4-execpro-payment .a4-payment > div:not(.a4-section-title) { gap: 1mm 3mm; margin-bottom: .6mm; }
+  .a4-execpro-payment .a4-section-title { margin-bottom: .55mm; font-weight: 850; letter-spacing: .025em; }
+  .a4-execpro-totals .a4-totals { overflow: hidden; border: 1px solid var(--invoice-border); padding: 0; background: var(--invoice-total-surface); }
+  .a4-execpro-totals .a4-totals > div { margin: 0; padding: 1.1mm 2.75mm; }
+  .a4-execpro-totals .a4-totals__grand { align-items: center; margin: 0 !important; padding: 2.7mm 2.75mm; color: var(--invoice-on-primary); background: var(--invoice-primary); border: 0; font-size: 13.5pt; }
+  .a4-execpro-totals .a4-totals__grand > span { max-width: 60%; font-size: 7.7pt; font-weight: 850; line-height: 1.18; }
+  .a4-execpro-totals .a4-money { margin-inline-start: auto; }
+  .a4-document--executive_professional .a4-footer { margin-top: 4mm; padding-top: 2mm; border-top-color: color-mix(in srgb,var(--invoice-primary) 62%,var(--invoice-border)); }
+  .a4-document--executive_professional .a4-footer-divider { display: none; }
+  .a4-document--executive_professional .a4-footer-copy { font-size: 7.7pt; }
+  .a4-execpro-closeout + .a4-footer:empty { display: none; }
 
   /* 2 — Modern Statement */
   .a4-document--modern_split { --invoice-page-padding-top: 7mm; font-variant-numeric: tabular-nums; }

@@ -232,6 +232,9 @@ try {
     // snapshot capture contract against the linked production schema and does
     // not alter checkout, stock, or financial authority.
     'supabase/migrations/20260817000700_restore_pos_checkout_after_buyer_snapshot_hardening.sql',
+    // Reviewed settings-validator compatibility for the selectable Executive
+    // Professional A4 presentation. It keeps the validator's closed allowlist.
+    'supabase/migrations/20260818000100_allow_executive_professional_a4_settings.sql',
     'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
     'supabase/migrations/20260804000600_trading_sandbox_v2.sql',
     'supabase/migrations/20260805000200_persist_zatca_capability_selection.sql',
