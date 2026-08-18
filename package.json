@@ -101,6 +101,7 @@
     "test:p2-batch4-runtime": "node scripts/test-p2-batch4-runtime.mjs",
     "test:pos-unified-scanner": "node scripts/test-pos-unified-scanner.mjs",
     "test:pos-visual-refinement": "node scripts/test-pos-visual-refinement.mjs",
+    "test:pos-windows-responsive-layout": "node scripts/test-pos-windows-responsive-layout.mjs",
     "test:pos-customer-search-create": "node scripts/test-pos-customer-search-create.mjs",
     "test:owner-workspace-v1": "node scripts/test-owner-workspace-v1.mjs",
     "test:branch-tabbed-modal": "node scripts/test-branch-tabbed-modal.mjs",

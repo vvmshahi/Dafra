@@ -3765,7 +3765,7 @@ export default function POSPage() {
       : !(payMethod === 'cash' && cashReceived !== '' && cashAmt < totals.total - 0.001))
 
   return (
-    <div data-pos-terminal className="flex h-[100dvh] flex-col overflow-hidden bg-[#f7f8f5] lg:flex-row" dir="ltr">
+    <div data-pos-terminal className="flex h-[100dvh] flex-col overflow-hidden bg-[#f7f8f5] min-[960px]:flex-row" dir="ltr">
 
       {/* Modals */}
       {receipt && (
@@ -4054,7 +4054,7 @@ export default function POSPage() {
                   <DirectionalIcon icon={ChevronLeft} size={20} />
                 </button>
               )}
-              <div ref={categoryScrollRef} className="flex flex-1 items-center gap-1.5 overflow-x-auto">
+              <div ref={categoryScrollRef} className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
                 <button
                   onClick={() => setActiveCat(null)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${
@@ -4192,7 +4192,7 @@ export default function POSPage() {
       </div>
 
       {/* ── Right: cart panel ───────────────────────────────── */}
-      <div data-pos-order-panel className="flex h-[44dvh] w-full flex-shrink-0 flex-col border-t border-gray-200 bg-white shadow-[0_-8px_24px_rgba(15,36,25,0.08)] lg:h-auto lg:w-[360px] lg:border-s lg:border-t-0 lg:border-gray-100 lg:shadow-xl" dir={isRtl ? 'rtl' : 'ltr'}>
+      <div data-pos-order-panel className="flex h-[44dvh] w-full flex-shrink-0 flex-col border-t border-gray-200 bg-white shadow-[0_-8px_24px_rgba(15,36,25,0.08)] min-[960px]:h-auto min-[960px]:w-[360px] min-[960px]:border-s min-[960px]:border-t-0 min-[960px]:border-gray-100 min-[960px]:shadow-xl" dir={isRtl ? 'rtl' : 'ltr'}>
 
         {/* Cart header */}
         <div className="px-4 py-3.5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
