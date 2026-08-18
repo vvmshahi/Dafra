@@ -143,28 +143,28 @@ function StatCard({ label, value, sub, icon: Icon, tone, loading, visual }: {
   icon: React.ElementType; tone: string; loading?: boolean; visual?: React.ReactNode
 }) {
   return (
-    <article className={`relative min-h-[124px] overflow-hidden rounded-2xl border border-white/10 p-4 shadow-card-md ring-1 ring-black/10 sm:min-h-[132px] sm:p-5 [@media(max-height:740px)]:min-h-[116px] [@media(max-height:740px)]:p-4 ${tone}`}>
+    <article className={`relative overflow-hidden rounded-2xl border border-white/10 px-3.5 py-2.5 shadow-card-md ring-1 ring-black/10 sm:px-4 sm:py-3 ${tone}`}>
       <div className="flex h-full items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-bold uppercase leading-4 tracking-wide text-white/65 [overflow-wrap:anywhere] rtl:normal-case rtl:tracking-normal">
             {label}
           </p>
           {loading
-            ? <div className="mt-2 h-7 w-24 rounded bg-white/20 animate-pulse" />
+            ? <div className="mt-1 h-6 w-24 rounded bg-white/20 animate-pulse" />
             : (
               <p
                 dir="ltr"
-                className="mt-2 text-xl font-black tracking-tight text-white tabular-nums sm:text-2xl [&>span>span:first-child]:text-[0.72em] [&>span>span:first-child]:opacity-80"
+                className="mt-1 text-lg font-black tracking-tight text-white tabular-nums sm:text-xl [&>span>span:first-child]:text-[0.72em] [&>span>span:first-child]:opacity-80"
               >
                 {value}
               </p>
             )
           }
-          <p className="mt-2 text-[11px] font-medium leading-4 text-white/60 [overflow-wrap:anywhere]">{sub}</p>
+          <p className="mt-0.5 text-[11px] font-medium leading-4 text-white/60 [overflow-wrap:anywhere]">{sub}</p>
           {visual}
         </div>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/10">
-          <Icon size={17} className="text-white/90" aria-hidden="true" />
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/10">
+          <Icon size={15} className="text-white/90" aria-hidden="true" />
         </div>
       </div>
       <div className="absolute inset-x-0 bottom-0 h-px bg-white/25" />
@@ -468,7 +468,7 @@ export function BranchOperationsSurface({
   const paymentTotal = (session?.cashTotal ?? 0) + (session?.cardTotal ?? 0)
   const cashShare = paymentTotal > 0 ? ((session?.cashTotal ?? 0) / paymentTotal) * 100 : 0
   const cardShare = paymentTotal > 0 ? ((session?.cardTotal ?? 0) / paymentTotal) * 100 : 0
-  const paymentVisual = (share: number, tone: string) => <div className="mt-2.5 flex items-center gap-2"><span className="h-1 min-w-12 flex-1 overflow-hidden rounded-full bg-white/14"><span className={`block h-full rounded-full ${tone}`} style={{ width: `${Math.max(0, Math.min(100, share))}%` }} /></span><span dir="ltr" className="text-[10px] font-bold text-white/75">{formatDisplayPercent(share, i18n.language)} {t('kpi.ofPayments')}</span></div>
+  const paymentVisual = (share: number, tone: string) => <div className="mt-1 flex items-center gap-1.5"><span className="h-0.5 min-w-10 flex-1 overflow-hidden rounded-full bg-white/14"><span className={`block h-full rounded-full ${tone}`} style={{ width: `${Math.max(0, Math.min(100, share))}%` }} /></span><span dir="ltr" className="text-[10px] font-bold text-white/75">{formatDisplayPercent(share, i18n.language)} {t('kpi.ofPayments')}</span></div>
   const telemetry = [
     { label: t('kpi.grossSales'), value: <Rial amount={grossSales} />, sub: t('kpi.invoiceCount', { count: session?.invoiceCount ?? 0 }), icon: TrendingUp, tone: BRANCH_KPI_TONES.grossSales },
     { label: t('kpi.netSales'), value: <Rial amount={session?.totalSales ?? 0} />, sub: t('kpi.grossLessCredits'), icon: TrendingUp, tone: BRANCH_KPI_TONES.netSales },
@@ -482,7 +482,7 @@ export function BranchOperationsSurface({
 
   return (
     <section className="space-y-4" aria-label={t('branch.operations')}>
-      <div data-branch-v3-telemetry className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div data-branch-v3-telemetry className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
         {telemetry.map(metric => <StatCard key={metric.label} {...metric} loading={loading} />)}
       </div>
 
