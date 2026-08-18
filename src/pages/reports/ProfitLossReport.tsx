@@ -182,7 +182,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
       </div>
 
       {/* ── Charts row ─────────────────────────────────────── */}
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-stretch">
 
         {/* Monthly bar chart */}
         <div className="lg:col-span-2 card p-4 space-y-3">
@@ -197,23 +197,23 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
                 <Tooltip content={<ChartTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
                 <Bar dataKey="Revenue"  fill="#1B6B3A" radius={[3,3,0,0]} />
-                <Bar dataKey="Expenses" fill="#64748b" radius={[3,3,0,0]} />
+                <Bar dataKey="Expenses" fill="#b45355" radius={[3,3,0,0]} />
               </BarChart>
             </ResponsiveContainer>
           )}
         </div>
 
         {/* Expense breakdown donut */}
-        <div className="card p-4 space-y-3">
+        <div className="card flex h-full flex-col p-4">
           <SectionHeader title={t('profit.expenseBreakdown')} />
           {data!.expenseByCat.length === 0 ? (
-            <div className="flex min-h-44 flex-col items-center justify-center rounded-xl border border-[#1B6B3A]/10 bg-[#f8fbf7] px-4 text-center">
+            <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-[#1B6B3A]/10 bg-[#f8fbf7] px-4 text-center">
               <Info size={16} className="mb-2 text-[#1B6B3A]" aria-hidden="true" />
               <p className="text-sm font-semibold text-[#0F2419]">{t('profit.noExpenses')}</p>
               <p className="mt-1 text-xs text-slate-500">{t('profit.noExpensesHint')}</p>
             </div>
           ) : (
-            <>
+            <div className="mt-3 space-y-3">
               <ResponsiveContainer width="100%" height={170}>
                 <PieChart>
                   <Pie data={data!.expenseByCat} cx="50%" cy="50%"
@@ -235,7 +235,7 @@ export default function ProfitLossReport({ startDate, endDate, branchId }: Repor
                   </div>
                 ))}
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>
