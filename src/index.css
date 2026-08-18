@@ -336,7 +336,7 @@
   .a4-document--contemporary_border { --invoice-page-padding-top: 0; --invoice-page-padding-inline: 10mm; font-variant-numeric: tabular-nums; }
   .a4-contemporary-head { display: grid; grid-template-columns: minmax(0,1fr) minmax(90mm,1.04fr); gap: 8mm; align-items: start; margin-inline: -10mm; padding: 6mm 10mm 5mm; color: var(--invoice-on-primary); background: var(--invoice-primary); }
   .a4-contemporary-head--brandless { grid-template-columns: minmax(0,1fr); }
-  .a4-contemporary-brand { display: grid; align-self: center; min-width: 0; }
+  .a4-contemporary-brand { display: grid; align-self: center; min-width: 0; padding-bottom: .8mm; }
   .a4-contemporary-brand .a4-logo { max-width: 34mm; max-height: 14mm; margin-bottom: 1.2mm; padding: 1mm; background: #fff; }
   .a4-contemporary-brand .a4-display-heading { max-width: none; color: inherit; font-size: 16.5pt; line-height: 1.08; }
   .a4-contemporary-brand .a4-display-subheading { margin-top: .8mm; color: inherit; font-size: 8pt; opacity: .84; }
@@ -350,8 +350,8 @@
   .a4-contemporary-document .a4-meta div { gap: 2.5mm; padding-bottom: .55mm; border-bottom-color: color-mix(in srgb,var(--invoice-on-primary) 28%,transparent); }
   .a4-contemporary-document .a4-meta dt,.a4-contemporary-document .a4-meta dd { color: inherit; }
   .a4-contemporary-document .a4-meta dd { white-space: nowrap; }
-  .a4-contemporary-qr { align-self: start; padding: 1.25mm; border: 1px solid color-mix(in srgb,var(--invoice-on-primary) 42%,transparent); background: #fff; }
-  .a4-contemporary-qr .a4-qr { color: var(--invoice-heading); font-size: 5.8pt; line-height: 1.15; }
+  .a4-contemporary-qr { display: grid; place-items: center; align-self: start; padding: .7mm; border: 1px solid color-mix(in srgb,var(--invoice-on-primary) 42%,transparent); background: #fff; }
+  .a4-contemporary-qr .a4-qr { display: grid; justify-items: center; gap: .25mm; color: var(--invoice-heading); font-size: 5.8pt; line-height: 1.15; }
   .a4-contemporary-qr .a4-qr img,.a4-contemporary-qr .a4-qr-placeholder { width: 21mm; height: 21mm; }
   .a4-contemporary-parties { display: grid; grid-template-columns: 1.1fr .9fr; gap: 7mm; margin-block: 4.6mm 3.7mm; padding-bottom: 2.8mm; border-bottom: 1px solid var(--invoice-border); }
   .a4-contemporary-parties.a4-parties--seller-only { grid-template-columns: 1fr; }
