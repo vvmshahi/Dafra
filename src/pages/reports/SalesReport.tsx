@@ -6,7 +6,7 @@ import {
 import { useAuth } from '@/hooks/useAuth'
 import {
   type ReportProps, fmt,
-  StatCard, SkeletonCard, SkeletonTable, SkeletonChart,
+  SkeletonCard, SkeletonTable, SkeletonChart,
   EmptyChart, ReportErrorState, SectionHeader, ChartTooltip, CHART_COLORS,
 } from './reportUtils'
 import { Rial, sarStr } from '@/components/ui/RiyalSymbol'
@@ -65,8 +65,14 @@ const METHOD_LABELS: Record<string, string> = {
   cash: 'Cash', card: 'Card', bank_transfer: 'Bank Transfer', other: 'Other',
 }
 const METHOD_COLORS: Record<string, string> = {
-  cash: '#10b981', card: '#6366f1', bank_transfer: '#f59e0b', other: '#9ca3af',
+  cash: '#1B6B3A', card: '#4f46e5', bank_transfer: '#a16207', other: '#64748b',
 }
+
+function SalesKpi({ label, value, sub, primary = false, quiet = false }: { label: string; value: React.ReactNode; sub?: string; primary?: boolean; quiet?: boolean }) {
+  return <div className={`min-h-[5rem] rounded-xl border px-3 py-2.5 ${primary ? 'border-[#0F2419] bg-[#0F2419] text-[#FFF9E8]' : 'border-[#1B6B3A]/20 bg-[#fffdf7] text-slate-900'}`}><p className={`text-[10px] font-bold uppercase tracking-wide ${primary ? 'text-[#F3D98B]' : 'text-slate-500'}`}>{label}</p><p className={`${primary ? 'text-[#FFF9E8]' : quiet ? 'text-slate-400' : 'text-[#0F2419]'} mt-1 text-base font-black tabular-nums`}>{value}</p>{sub && <p className={`mt-0.5 text-[10px] ${primary ? 'text-white/60' : 'text-slate-400'}`}>{sub}</p>}</div>
+}
+
+function displayPercent(value: number) { return Math.abs(value) < 0.5 ? '0%' : `${Math.round(value)}%` }
 
 const EMPTY_SALES_DATA: SalesData = {
   grossSales: 0,
@@ -224,13 +230,13 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
     <div className="space-y-5">
 
       {/* ── Summary cards ──────────────────────────────────── */}
-      <div className="flex gap-3 flex-wrap">
-        <StatCard label={t('metrics.grossSales')} value={<Rial amount={data.grossSales} />} primary />
-        <StatCard label={t('metrics.creditNotes')} value={<Rial amount={data.creditNotes} />} accent="amber" />
-        <StatCard label={t('metrics.netSales')} value={<Rial amount={data.totalRevenue} />} accent="emerald" />
-        <StatCard label={t('metrics.netVat')} value={<Rial amount={data.vatCollected} />} accent="amber" sub={t('sales.vatSub', { sales: sarStr(data.vatOnSales), credited: sarStr(data.vatCredited) })} />
-        <StatCard label={t('metrics.documents')} value={String(data.invoiceCount)} sub={t('sales.nonCancelled')} />
-        <StatCard label={t('metrics.averageOrder')} value={<Rial amount={data.avgOrderValue} />} accent="emerald" />
+      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <SalesKpi label={t('metrics.grossSales')} value={<Rial amount={data.grossSales} />} primary />
+        <SalesKpi label={t('metrics.creditNotes')} value={<Rial amount={data.creditNotes} />} quiet={data.creditNotes === 0} />
+        <SalesKpi label={t('metrics.netSales')} value={<Rial amount={data.totalRevenue} />} />
+        <SalesKpi label={t('metrics.netVat')} value={<Rial amount={data.vatCollected} />} sub={t('sales.vatSub', { sales: sarStr(data.vatOnSales), credited: sarStr(data.vatCredited) })} quiet={data.vatCollected === 0} />
+        <SalesKpi label={t('metrics.documents')} value={String(data.invoiceCount)} sub={t('sales.nonCancelled')} />
+        <SalesKpi label={t('metrics.averageOrder')} value={<Rial amount={data.avgOrderValue} />} quiet={data.avgOrderValue === 0} />
       </div>
 
       {/* ── Charts row ─────────────────────────────────────── */}
@@ -244,18 +250,18 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
               <AreaChart data={data.dailySales} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#10b981" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}   />
+                    <stop offset="5%"  stopColor="#1B6B3A" stopOpacity={0.16} />
+                    <stop offset="95%" stopColor="#1B6B3A" stopOpacity={0}   />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
                 <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }}
                   tickFormatter={d => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
                   interval="preserveStartEnd" />
                 <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} width={60}
                   tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
                 <Tooltip content={<ChartTooltip />} />
-                <Area type="monotone" dataKey="revenue" name={t('common.revenue')} stroke="#10b981"
+                <Area type="monotone" dataKey="revenue" name={t('common.revenue')} stroke="#1B6B3A"
                   strokeWidth={2} fill="url(#salesGrad)" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
@@ -294,7 +300,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
                       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
                       <span className="flex-1 text-gray-600">{m.name}</span>
                       <span className="font-semibold text-gray-800 tabular-nums"><Rial amount={m.value} /></span>
-                      <span className="text-gray-400 w-8 text-right">{pct.toFixed(0)}%</span>
+                      <span className="text-gray-400 w-8 text-right">{displayPercent(pct)}</span>
                     </div>
                   )
                 })}
@@ -305,7 +311,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
       </div>
 
       {/* ── Tables row ─────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
 
         {/* Top items */}
         <div className="card overflow-hidden">
@@ -327,7 +333,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
                     <div className="min-w-0">
                       <div className="flex min-w-0 items-center gap-1.5">
                         <p className="truncate text-sm text-gray-800" dir="auto">{isArabic ? p.nameAr ?? p.name : p.name}</p>
-                        <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">
+                        <span className="shrink-0 rounded-full border border-[#1B6B3A]/15 bg-[#eff6ef] px-1.5 py-0.5 text-[9px] font-semibold text-[#1B6B3A]">
                           {t(`sales.itemTypes.${p.lineType}`)}
                         </span>
                       </div>
@@ -336,9 +342,9 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
                           {t('sales.itemVat', { value: sarStr(p.vat) })}
                         </p>
                       )}
-                      {p.packageBreakdown.length > 0 && (
+                      {p.packageBreakdown.some(unit => unit.packageQuantity > 0) && (
                         <p className="mt-0.5 flex flex-wrap gap-x-1 text-[10px] text-gray-400" dir="auto">
-                          {p.packageBreakdown.map((unit, unitIndex) => (
+                          {p.packageBreakdown.filter(unit => unit.packageQuantity > 0).map((unit, unitIndex) => (
                             <span key={`${unit.productUnitId ?? unit.unitCode}-${unit.productUnitVersion ?? 'legacy'}-${unit.packageUnitPrice}-${unitIndex}`}>
                               {fmtQty(unit.packageQuantity, 6)} {unit.sellingUnit}
                               {' × '}
