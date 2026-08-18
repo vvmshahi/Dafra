@@ -32,21 +32,21 @@ function StatCard({ label, value, sub, icon: Icon, gradient, loading }: {
   icon: React.ElementType; gradient: string; loading?: boolean
 }) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl border border-white/10 p-5 shadow-card-md ${gradient}`}>
+    <div className={`relative overflow-hidden rounded-2xl border border-white/10 px-4 py-3.5 shadow-card-md ${gradient}`}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-wide text-white/65">{label}</p>
           {loading
-            ? <div className="mt-1.5 h-7 w-24 bg-white/20 rounded animate-pulse" />
-            : <p dir="ltr" className="mt-2 text-2xl font-black text-white tracking-tight tabular-nums">{value}</p>
+            ? <div className="mt-1 h-6 w-24 rounded bg-white/20 animate-pulse" />
+            : <p dir="ltr" className="mt-1 text-xl font-black tracking-tight text-white tabular-nums">{value}</p>
           }
-          <p className="mt-1 text-[11px] font-medium text-white/60">{sub}</p>
+          <p className="mt-0.5 text-[11px] font-medium text-white/60">{sub}</p>
         </div>
-        <div className="w-10 h-10 rounded-xl bg-white/15 ring-1 ring-white/15 flex items-center justify-center flex-shrink-0 ml-3">
-          <Icon size={17} className="text-white" />
+        <div className="ml-3 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 ring-1 ring-white/15">
+          <Icon size={15} className="text-white" />
         </div>
       </div>
-      <div className="absolute inset-x-0 bottom-0 h-1 bg-gold-400/70" />
+      <div className="absolute inset-x-0 bottom-0 h-0.5 bg-gold-400/70" />
     </div>
   )
 }
