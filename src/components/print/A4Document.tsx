@@ -323,15 +323,17 @@ function ContemporaryModularDecoration() {
 }
 function ContemporaryModularV1({ model, options = {} }: A4DocumentProps) {
   const branding = showsStandardBranding(model, options)
-  const brandIdentity = branding && (Boolean(model.presentation.logo.visible && (model.presentation.logo.previewUrl ?? model.presentation.logo.assetPath)) || [model.seller.displayHeading, model.seller.displaySubheading].some(value => normalizedIdentity(value) !== '' && !isLegalSellerIdentity(model.seller, value)))
+  const namedBuyer = hasNamedBuyer(model)
+  const hasFooter = [model.presentation.footer.thankYouVisible ? model.presentation.footer.thankYou : null, model.presentation.footer.footerVisible ? model.presentation.footer.footer : null, model.presentation.footer.refundVisible ? model.presentation.footer.refund : null].some(Boolean)
+  const documentClass = model.identity.kind === 'credit_note' ? 'CREDIT NOTE' : model.identity.kind === 'debit_note' ? 'DEBIT NOTE' : 'INVOICE'
   return <Shell template="contemporary_border" model={model} options={options}>
     <ContemporaryModularDecoration />
-    <header className={`a4-contemporary-head${brandIdentity ? '' : ' a4-contemporary-head--brandless'}`}>{brandIdentity && <section className="a4-contemporary-brand"><SellerBrand model={model} visible={branding} /></section>}<section className="a4-contemporary-document"><div className="a4-contemporary-document-copy"><DocumentTitle model={model} /><DateMeta model={model} /></div></section></header>
-    <div className={partyLayout('a4-contemporary-parties', model)}><section className="a4-contemporary-party"><Seller model={model} /></section>{hasNamedBuyer(model) && <section className="a4-contemporary-party"><Buyer model={model} /></section>}</div>
+    <header className="a4-contemporary-head"><section className="a4-contemporary-document"><div className="a4-contemporary-document-copy"><div className="a4-contemporary-document-class" aria-hidden="true">{documentClass}</div><DateMeta model={model} /><DocumentTitle model={model} /></div></section><section className="a4-contemporary-recipient">{namedBuyer ? <Buyer model={model} /> : <Seller model={model} />}</section></header>
+    {namedBuyer && <section className="a4-contemporary-seller"><SellerBrand model={model} visible={branding} /><Seller model={model} /></section>}
     <Adjustment model={model} />
     <ContemporaryItemTable model={model} />
     <div className="a4-contemporary-closeout a4-closing-group">{!options.nonFiscalDemo && <section className="a4-contemporary-qr"><QrVerification model={model} options={options} /></section>}<section className="a4-contemporary-payment"><Payment model={model} /></section><section className="a4-contemporary-totals"><Totals model={model} /></section></div>
-    <Footer model={model} />
+    {hasFooter && <section className="a4-contemporary-lower"><Footer model={model} /></section>}
   </Shell>
 }
 function ExecutiveProfessionalV1({ model, options = {} }: A4DocumentProps) {
