@@ -1283,6 +1283,7 @@ export type A4TemplateId =
   | 'executive_green'
   | 'clean_ledger'
   | 'contemporary_border'
+  | 'executive_professional'
 export type A4HeaderStyle = 'standard' | 'compact' | 'branded'
 export type A4HeaderFit = 'contain' | 'cover'
 export type A4ArtworkScope = 'selected' | 'all'

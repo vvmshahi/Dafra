@@ -330,6 +330,18 @@ function ContemporaryModularV1({ model, options = {} }: A4DocumentProps) {
     <Footer model={model} />
   </Shell>
 }
+function ExecutiveProfessionalV1({ model, options = {} }: A4DocumentProps) {
+  const branding = showsStandardBranding(model, options)
+  const brandIdentity = branding && (Boolean(model.presentation.logo.visible && (model.presentation.logo.previewUrl ?? model.presentation.logo.assetPath)) || [model.seller.displayHeading, model.seller.displaySubheading].some(value => normalizedIdentity(value) !== '' && !isLegalSellerIdentity(model.seller, value)))
+  return <Shell template="executive_professional" model={model} options={options}>
+    <header className={`a4-execpro-head${brandIdentity ? '' : ' a4-execpro-head--brandless'}`}><section className="a4-execpro-brand">{brandIdentity && <SellerBrand model={model} visible={branding} />}</section><section className={`a4-execpro-document${options.nonFiscalDemo ? ' a4-execpro-document--without-qr' : ''}`}><div><DocumentTitle model={model} /><DateMeta model={model} /></div></section></header>
+    <div className={partyLayout('a4-execpro-parties', model)}><section><Seller model={model} /></section>{hasNamedBuyer(model) && <section><Buyer model={model} /></section>}</div>
+    <Adjustment model={model} />
+    <ContemporaryItemTable model={model} />
+    <div className="a4-execpro-closeout a4-closing-group">{!options.nonFiscalDemo && <section className="a4-execpro-qr"><QrVerification model={model} options={options} /></section>}<section className="a4-execpro-payment"><Payment model={model} /></section><section className="a4-execpro-totals"><Totals model={model} /></section></div>
+    <Footer model={model} />
+  </Shell>
+}
 
 const RENDERERS: Record<A4TemplateRendererId, (props: A4DocumentProps) => ReactNode> = {
   classic_v1: ClassicV1,
@@ -338,6 +350,7 @@ const RENDERERS: Record<A4TemplateRendererId, (props: A4DocumentProps) => ReactN
   executive_frame_v1: ExecutiveFrameV1,
   accounting_ledger_v1: AccountingLedgerV1,
   contemporary_modular_v1: ContemporaryModularV1,
+  executive_professional_v1: ExecutiveProfessionalV1,
 }
 
 export default function A4Document({ model, options = {} }: A4DocumentProps) {

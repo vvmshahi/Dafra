@@ -25,6 +25,7 @@ export const A4_LAYOUT_COLOR_DEFAULTS: Record<A4TemplateId, {
   executive_green: { accent: '#14532d', heading: '#0f2419', body: '#26322b' },
   clean_ledger: { accent: '#1f2937', heading: '#111827', body: '#1f2937' },
   contemporary_border: { accent: '#0e7490', heading: '#164e63', body: '#1f2937' },
+  executive_professional: { accent: '#172554', heading: '#172554', body: '#1f2937' },
 }
 
 export const A4_ACCENT_PRESETS = [

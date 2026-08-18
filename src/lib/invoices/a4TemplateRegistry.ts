@@ -8,12 +8,13 @@ export type A4TemplateRendererId =
   | 'executive_frame_v1'
   | 'accounting_ledger_v1'
   | 'contemporary_modular_v1'
+  | 'executive_professional_v1'
 
 export interface A4TemplateDescriptor {
   readonly renderer: A4TemplateRendererId
   readonly version: 1
   readonly thumbnailClass: string
-  readonly qrRegion: 'lower-left' | 'top-right' | 'footer-centre' | 'framed-top-right' | 'ledger-lower-left' | 'upper-identity-region'
+  readonly qrRegion: 'lower-left' | 'top-right' | 'footer-centre' | 'framed-top-right' | 'ledger-lower-left' | 'upper-identity-region' | 'executive-closeout'
   readonly landmarks: readonly string[]
 }
 
@@ -35,6 +36,7 @@ const registry: Record<A4TemplateId, A4TemplateDescriptor> = {
   executive_green: { renderer: 'executive_frame_v1', version: 1, thumbnailClass: 'executive_green', qrRegion: 'framed-top-right', landmarks: ['page-frame', 'executive-modules', 'metadata-band', 'contact-strip'] },
   clean_ledger: { renderer: 'accounting_ledger_v1', version: 1, thumbnailClass: 'clean_ledger', qrRegion: 'ledger-lower-left', landmarks: ['ledger-header', 'ledger-party-cells', 'dense-table', 'ledger-verification'] },
   contemporary_border: { renderer: 'contemporary_modular_v1', version: 1, thumbnailClass: 'contemporary_border', qrRegion: 'upper-identity-region', landmarks: ['primary-brand-band', 'split-parties', 'premium-item-table', 'totals-closeout'] },
+  executive_professional: { renderer: 'executive_professional_v1', version: 1, thumbnailClass: 'executive_professional', qrRegion: 'executive-closeout', landmarks: ['executive-band', 'paired-panels', 'professional-table', 'verification-closeout'] },
 }
 
 export function resolveA4Template(model: DocumentViewModel): A4TemplateResolution {
@@ -57,4 +59,5 @@ export const A4_NEW_SELECTION_TEMPLATE_IDS = Object.freeze([
   'modern_split',
   'clean_ledger',
   'contemporary_border',
+  'executive_professional',
 ] as const satisfies readonly A4TemplateId[])

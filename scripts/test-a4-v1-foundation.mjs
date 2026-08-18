@@ -10,12 +10,12 @@ process.env.VITE_SUPABASE_ANON_KEY ??= 'anonymous-test-key'
 
 const root = resolve(import.meta.dirname, '..')
 const read = path => readFileSync(resolve(root, path), 'utf8')
-const ids = ['classic', 'modern_split', 'minimal_professional', 'executive_green', 'clean_ledger', 'contemporary_border']
-const activeIds = ['classic', 'modern_split', 'clean_ledger', 'contemporary_border']
+const ids = ['classic', 'modern_split', 'minimal_professional', 'executive_green', 'clean_ledger', 'contemporary_border', 'executive_professional']
+const activeIds = ['classic', 'modern_split', 'clean_ledger', 'contemporary_border', 'executive_professional']
 const partyClasses = {
   classic: 'a4-classic-parties', modern_split: 'a4-statement-parties',
   minimal_professional: 'a4-minimal-parties', executive_green: 'a4-executive-parties',
-  clean_ledger: 'a4-ledger-parties', contemporary_border: 'a4-contemporary-parties',
+  clean_ledger: 'a4-ledger-parties', contemporary_border: 'a4-contemporary-parties', executive_professional: 'a4-execpro-parties',
 }
 
 const invoiceSettings = read('src/pages/branch/InvoiceSettingsPage.tsx')

@@ -303,6 +303,7 @@ export const A4_TEMPLATE_REGISTRY = {
   executive_green: { versions: [1], fallback: 'classic' },
   clean_ledger: { versions: [1], fallback: 'classic' },
   contemporary_border: { versions: [1], fallback: 'classic' },
+  executive_professional: { versions: [1], fallback: 'classic' },
 } as const satisfies Record<A4TemplateId, { versions: readonly number[]; fallback: A4TemplateId }>
 
 export interface HistoricalTemplateResolution {

@@ -523,8 +523,11 @@ export default function InvoiceSettingsPage({
     executive_green: { label: 'executive', help: 'executiveHelp' },
     clean_ledger: { label: 'ledger', help: 'ledgerHelp' },
     contemporary_border: { label: 'contemporary', help: 'contemporaryHelp' },
+    executive_professional: { label: 'executiveProfessional', help: 'executiveProfessionalHelp' },
   }
-  const themeOptions = A4_NEW_SELECTION_TEMPLATE_IDS.map(value => ({ value, label: t(`printing:invoiceSettings.a4.${themeKeys[value].label}`), description: t(`printing:invoiceSettings.a4.${themeKeys[value].help}`) }))
+  const themeOptions = A4_NEW_SELECTION_TEMPLATE_IDS.map(value => value === 'executive_professional'
+    ? { value, label: 'Executive Professional', description: 'High-contrast executive header, paired panels, professional table, and verification closeout' }
+    : { value, label: t(`printing:invoiceSettings.a4.${themeKeys[value].label}`), description: t(`printing:invoiceSettings.a4.${themeKeys[value].help}`) })
   const validationErrors = validate(draft)
 
   return <div className={`invoice-editor-shell flex min-h-0 flex-col ${embedded ? '' : 'min-h-[720px]'}`}>

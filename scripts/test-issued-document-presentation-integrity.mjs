@@ -56,7 +56,7 @@ assert.match(thermal, /if \(buyer\.isWalkIn\) return null/)
 // All layouts render the normalized model, including all four thermal and all
 // six A4 variants. Financial fields remain model/persisted-value driven.
 for (const density of ['classic', 'compact', 'standard', 'detailed']) assert.match(thermal, new RegExp(`${density}:`))
-for (const template of ['classic', 'modern_split', 'minimal_professional', 'executive_green', 'clean_ledger', 'contemporary_border']) assert.match(registry, new RegExp(`${template}:`))
+for (const template of ['classic', 'modern_split', 'minimal_professional', 'executive_green', 'clean_ledger', 'contemporary_border', 'executive_professional']) assert.match(registry, new RegExp(`${template}:`))
 for (const field of ['item.quantity', 'item.unitPrice', 'item.discount', 'item.taxableAmount', 'item.vatRate', 'item.vatAmount', 'item.lineTotal']) assert.ok(a4.includes(field), `A4 must use persisted ${field}`)
 assert.match(totals, /totals\.subtotal/)
 assert.match(totals, /if \(totals\.discount > 0\.005\)/)
