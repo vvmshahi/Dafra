@@ -103,12 +103,22 @@ function ClassicItemName({ item }: { item: DocumentViewModel['items'][number] })
   return <bdi className="a4-classic-item-name" dir={arabic && !english ? 'rtl' : 'ltr'}>{value}</bdi>
 }
 
+function classicColumnLabel(key: 'description' | 'quantity' | 'unit' | 'unitPrice' | 'discount' | 'taxable' | 'rate' | 'vat' | 'total') {
+  const labels = {
+    description: { en: 'Description', ar: 'الوصف' }, quantity: { en: 'Qty', ar: 'الكمية' }, unit: { en: 'Unit', ar: 'الوحدة' },
+    unitPrice: { en: 'Unit Price', ar: 'سعر الوحدة' }, discount: { en: 'Discount', ar: 'الخصم' }, taxable: { en: 'Taxable', ar: 'الخاضع' },
+    rate: { en: 'Rate', ar: 'النسبة' }, vat: { en: 'VAT Amt', ar: 'مبلغ الضريبة' }, total: { en: 'Total', ar: 'الإجمالي' },
+  } as const
+  const label = labels[key]
+  return `${label.en} / ${label.ar}`
+}
+
 function ClassicItemTable({ model }: { model: DocumentViewModel }) {
   const credit = model.identity.kind === 'credit_note'
   const hasDiscount = model.items.some(item => item.discount > 0.005)
   return <table className={`a4-items a4-classic-items${hasDiscount ? ' a4-classic-items--with-discount' : ''}`}>
     <colgroup><col className="a4-classic-items__index" /><col className="a4-classic-items__description" /><col className="a4-classic-items__quantity" /><col className="a4-classic-items__unit" /><col className="a4-classic-items__price" />{hasDiscount && <col className="a4-classic-items__discount" />}<col className="a4-classic-items__taxable" /><col className="a4-classic-items__rate" /><col className="a4-classic-items__vat" /><col className="a4-classic-items__total" /></colgroup>
-    <thead><tr><th>#</th><th>{documentLabel(model.identity.language, 'description')}</th><th>{documentLabel(model.identity.language, 'quantity')}</th><th>{documentLabel(model.identity.language, 'unit')}</th><th>{documentLabel(model.identity.language, 'unitPrice')}</th>{hasDiscount && <th>{documentLabel(model.identity.language, 'discount')}</th>}<th>{documentLabel(model.identity.language, 'taxableAmount')}</th><th>{documentLabel(model.identity.language, 'vatRate')}</th><th>{documentLabel(model.identity.language, 'vatAmount')}</th><th>{documentLabel(model.identity.language, 'totalIncludingVat')}</th></tr></thead>
+    <thead><tr><th>#</th><th>{classicColumnLabel('description')}</th><th>{classicColumnLabel('quantity')}</th><th>{classicColumnLabel('unit')}</th><th>{classicColumnLabel('unitPrice')}</th>{hasDiscount && <th>{classicColumnLabel('discount')}</th>}<th>{classicColumnLabel('taxable')}</th><th>{classicColumnLabel('rate')}</th><th>{classicColumnLabel('vat')}</th><th>{classicColumnLabel('total')}</th></tr></thead>
     <tbody>{model.items.map((item, index) => <tr key={`${item.description}-${index}`}><td>{index + 1}</td><td><ClassicItemName item={item} /></td><td><bdi dir="ltr">{formatDocumentQuantity(credit && item.creditedQuantity != null ? item.creditedQuantity : item.quantity, model)}</bdi></td><td>{names(model, item.unitName, item.unitNameAr).map((value, unitIndex) => <span key={`${value}-${unitIndex}`} dir="auto">{value}</span>)}</td><td><Money value={item.unitPrice} model={model} /></td>{hasDiscount && <td>{item.discount > 0.005 ? <Money value={item.discount} model={model} /> : '—'}</td>}<td><Money value={item.taxableAmount} model={model} /></td><td><bdi dir="ltr">{formatDocumentQuantity(item.vatRate, model)}%</bdi></td><td><Money value={item.vatAmount} model={model} /></td><td><Money value={item.lineTotal} model={model} /></td></tr>)}</tbody>
   </table>
 }

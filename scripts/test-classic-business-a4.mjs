@@ -13,7 +13,7 @@ const read = path => readFileSync(resolve(root, path), 'utf8')
 const source = read('src/components/print/A4Document.tsx')
 const css = read('src/index.css')
 
-for (const marker of ['ClassicItemName', 'ClassicItemTable', 'a4-classic-items', 'a4-classic-closeout', 'a4-classic-item-name--bilingual']) assert.match(source, new RegExp(marker))
+for (const marker of ['ClassicItemName', 'ClassicItemTable', 'classicColumnLabel', 'a4-classic-items', 'a4-classic-closeout', 'a4-classic-item-name--bilingual']) assert.match(source, new RegExp(marker))
 for (const marker of ['a4-classic-items thead', 'background: var\\(--invoice-primary\\)', 'a4-classic-items--with-discount', 'a4-classic-closeout', 'a4-classic-parties.a4-parties--seller-only']) assert.match(css, new RegExp(marker))
 assert.doesNotMatch(css.match(/\/\* 2 — Modern Statement \*\/[\s\S]*?\/\* 3 — Minimal Editorial \*\//)?.[0] ?? '', /a4-classic/)
 for (const marker of [
@@ -22,14 +22,18 @@ for (const marker of [
   /a4-classic-identity[^}]*border-top: 3mm solid var\(--invoice-primary\)[^}]*background: var\(--invoice-surface\)/,
   /a4-classic-brand \.a4-display-heading[^}]*font-size: 18pt/,
   /a4-classic-parties \.a4-legal-seller__name[^}]*font-size: 9\.5pt/,
-  /a4-classic-items__description \{ width: 36%/,
-  /a4-classic-items--with-discount \.a4-classic-items__description \{ width: 27%/,
+  /a4-classic-head[^}]*padding: 0 0 4\.5mm/,
+  /a4-classic-brand[^}]*padding: 2\.5mm 0 2\.2mm 3\.2mm/,
+  /a4-classic-parties > \* \{ padding: 2\.2mm 3mm/,
+  /a4-classic-parties \.a4-seller \{ line-height: 1\.24/,
+  /a4-classic-items__description \{ width: 38%/,
+  /a4-classic-items--with-discount \.a4-classic-items__description \{ width: 31%/,
   /a4-classic-items \{[^}]*border: 1px solid var\(--invoice-border\)/,
   /a4-classic-items th \{[^}]*border-inline-end: 1px solid color-mix/,
   /a4-classic-items tbody tr:nth-child\(even\) \{ background: var\(--invoice-surface\)/,
   /a4-classic-items td:not\(:nth-child\(2\)\):not\(:nth-child\(4\)\) \{ vertical-align: middle/,
-  /a4-classic-closeout \{[^}]*margin-top: 4\.5mm[^}]*border-top: 1\.5px solid var\(--invoice-heading\)/,
-  /a4-classic-summary \{[^}]*30mm[^}]*72mm[^}]*gap: 4mm/,
+  /a4-classic-closeout \{[^}]*padding-top: 2\.5mm[^}]*border-top: 1px solid var\(--invoice-border\)/,
+  /a4-classic-summary \{[^}]*30mm[^}]*72mm[^}]*gap: 3mm/,
   /a4-classic-summary > \.a4-qr \{[^}]*justify-items: center[^}]*background: #fff/,
   /a4-classic-summary \.a4-payment \{[^}]*border-inline-start: 2px solid var\(--invoice-primary\)/,
   /a4-classic-summary \.a4-totals \{[^}]*padding: 0[^}]*background: var\(--invoice-total-surface\)/,
@@ -69,6 +73,7 @@ try {
   assert.equal(surface(preview), surface(printed), 'Classic preview and print use the same document surface')
   assert.match(preview, /data-template-resolved="classic@1"/)
   assert.match(preview, /a4-classic-items/)
+  for (const label of ['Description / الوصف', 'Qty / الكمية', 'Unit Price / سعر الوحدة', 'Taxable / الخاضع', 'VAT Amt / مبلغ الضريبة', 'Total / الإجمالي']) assert.match(preview, new RegExp(label))
   assert.match(preview, /--invoice-primary:#7c3aed/)
   assert.match(preview, /--invoice-heading:#4c1d95/)
   assert.match(preview, /--invoice-text:#312e81/)
