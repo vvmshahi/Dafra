@@ -143,7 +143,7 @@ function StatCard({ label, value, sub, icon: Icon, tone, loading, visual }: {
   icon: React.ElementType; tone: string; loading?: boolean; visual?: React.ReactNode
 }) {
   return (
-    <article className={`relative overflow-hidden rounded-2xl border border-white/10 px-3.5 py-2.5 shadow-card-md ring-1 ring-black/10 sm:px-4 sm:py-3 ${tone}`}>
+    <article className={`relative overflow-hidden rounded-2xl border border-white/10 px-3.5 py-2.5 shadow-card-md ring-1 ring-black/10 sm:h-[92px] sm:px-4 sm:py-1 ${tone}`}>
       <div className="flex h-full items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-bold uppercase leading-4 tracking-wide text-white/65 [overflow-wrap:anywhere] rtl:normal-case rtl:tracking-normal">
@@ -468,7 +468,7 @@ export function BranchOperationsSurface({
   const paymentTotal = (session?.cashTotal ?? 0) + (session?.cardTotal ?? 0)
   const cashShare = paymentTotal > 0 ? ((session?.cashTotal ?? 0) / paymentTotal) * 100 : 0
   const cardShare = paymentTotal > 0 ? ((session?.cardTotal ?? 0) / paymentTotal) * 100 : 0
-  const paymentVisual = (share: number, tone: string) => <div className="mt-1 flex items-center gap-1.5"><span className="h-0.5 min-w-10 flex-1 overflow-hidden rounded-full bg-white/14"><span className={`block h-full rounded-full ${tone}`} style={{ width: `${Math.max(0, Math.min(100, share))}%` }} /></span><span dir="ltr" className="text-[10px] font-bold text-white/75">{formatDisplayPercent(share, i18n.language)} {t('kpi.ofPayments')}</span></div>
+  const paymentVisual = (share: number, tone: string) => <div className="mt-px flex items-center gap-1"><span className="h-px min-w-10 flex-1 overflow-hidden rounded-full bg-white/14"><span className={`block h-full rounded-full ${tone}`} style={{ width: `${Math.max(0, Math.min(100, share))}%` }} /></span><span dir="ltr" className="text-[10px] font-bold leading-3 text-white/75">{formatDisplayPercent(share, i18n.language)} {t('kpi.ofPayments')}</span></div>
   const telemetry = [
     { label: t('kpi.grossSales'), value: <Rial amount={grossSales} />, sub: t('kpi.invoiceCount', { count: session?.invoiceCount ?? 0 }), icon: TrendingUp, tone: BRANCH_KPI_TONES.grossSales },
     { label: t('kpi.netSales'), value: <Rial amount={session?.totalSales ?? 0} />, sub: t('kpi.grossLessCredits'), icon: TrendingUp, tone: BRANCH_KPI_TONES.netSales },
