@@ -1933,16 +1933,18 @@ function SplitPaymentModal({
             </div>
           </label>
 
-          <div className={`rounded-xl border px-3 py-2.5 text-xs ${
-            isBalanced && !hasNegative ? 'border-[#d7e5dc] bg-[#f4f8f5] text-[#315542]' : 'border-amber-200 bg-amber-50 text-amber-800'
-          }`}>
+          <div className="rounded-xl border border-primary-700 bg-primary-700 px-3 py-2.5 text-xs text-white shadow-sm">
             <div className="flex items-center justify-between">
-              <span>{t('payments:totalPaid')}</span>
-              <span className="font-bold text-[#0F2419] tabular-nums" dir="ltr"><Rial amount={paidTotal} /></span>
+              <span className="text-white/75">{t('payments:cash')}</span>
+              <span className="font-semibold tabular-nums" dir="ltr"><Rial amount={cashAmount} /></span>
             </div>
-            <div className="mt-1 flex items-center justify-between border-t border-current/10 pt-1">
-              <span>{balance >= 0 ? t('payments:remaining') : t('payments:overBy')}</span>
-              <span className="font-bold text-[#0F2419] tabular-nums" dir="ltr"><Rial amount={Math.abs(balance)} /></span>
+            <div className="mt-1 flex items-center justify-between">
+              <span className="text-white/75">{t('payments:card')}</span>
+              <span className="font-semibold tabular-nums" dir="ltr"><Rial amount={cardAmount} /></span>
+            </div>
+            <div className="mt-2 flex items-center justify-between border-t border-white/20 pt-2">
+              <span className="font-semibold">{t('payments:totalPaid')}</span>
+              <span className="text-sm font-bold tabular-nums" dir="ltr"><Rial amount={paidTotal} /></span>
             </div>
           </div>
 
@@ -1966,7 +1968,7 @@ function SplitPaymentModal({
             type="button"
             onClick={onComplete}
             disabled={!canComplete}
-            className="flex-1 rounded-xl bg-[#0F2419] py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#173F2F] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+            className="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-600 active:bg-primary-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
           >
             {submitting ? t('payments:processing') : t('payments:completeSale')}
           </button>
@@ -4467,7 +4469,7 @@ export default function POSPage() {
               <button key={m} onClick={() => { setPayMethod(m); setSplitOpen(false) }}
                 className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition-[background-color,border-color,color,box-shadow] ${
                   payMethod === m
-                  ? 'border-[#0F2419] bg-[#0F2419] text-white shadow-sm'
+                  ? 'border-primary-500 bg-primary-500 text-white shadow-sm hover:bg-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30'
                     : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
                 }`}>
                 {m === 'cash' ? <Banknote size={13} /> : <CreditCard size={13} />}
@@ -4480,7 +4482,7 @@ export default function POSPage() {
                 onClick={openSplitPayment}
                   className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition-[background-color,border-color,color,box-shadow] ${
                   payMethod === 'split'
-                    ? 'border-[#0F2419] bg-[#0F2419] text-white shadow-sm'
+                    ? 'border-primary-500 bg-primary-500 text-white shadow-sm hover:bg-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30'
                     : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
                 }`}
               >
@@ -4606,16 +4608,13 @@ export default function POSPage() {
             onClick={payMethod === 'split' ? () => setSplitOpen(true) : charge}
             disabled={!canCharge}
             data-pos-charge
-            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#0F2419] py-3.5 text-sm font-bold text-white transition-[background-color,transform] hover:bg-[#173F2F] active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 disabled:scale-100"
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary-500 py-3.5 text-sm font-bold text-white transition-[background-color,transform] hover:bg-primary-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 disabled:scale-100"
           >
             {submitting
               ? <><Loader2 size={16} className="animate-spin" /> {t('payments:processing')}</>
               : isAccountSuspended
                 ? <><AlertCircle size={16} /> {t('pos:billingDisabled')}</>
-              : <>
-                  {payMethod === 'cash' ? <Banknote size={16} /> : payMethod === 'credit' ? <Landmark size={16} /> : <CreditCard size={16} />}
-                  {t('pos:charge')} — <span dir="ltr"><Rial amount={totals.total} /></span>
-                </>
+                : <>{t('pos:charge')} — <span dir="ltr"><Rial amount={totals.total} /></span></>
             }
           </button>
         </div>
