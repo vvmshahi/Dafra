@@ -17,17 +17,23 @@ for (const marker of ['ClassicItemName', 'ClassicItemTable', 'a4-classic-items',
 for (const marker of ['a4-classic-items thead', 'background: var\\(--invoice-primary\\)', 'a4-classic-items--with-discount', 'a4-classic-closeout', 'a4-classic-parties.a4-parties--seller-only']) assert.match(css, new RegExp(marker))
 assert.doesNotMatch(css.match(/\/\* 2 — Modern Statement \*\/[\s\S]*?\/\* 3 — Minimal Editorial \*\//)?.[0] ?? '', /a4-classic/)
 for (const marker of [
-  /a4-classic-head[^}]*68mm[^}]*padding: 1\.5mm 0 5\.5mm/,
-  /a4-classic-brand \.a4-display-heading[^}]*font-size: 19pt/,
-  /a4-classic-parties \.a4-legal-seller__name[^}]*font-size: 9\.1pt/,
+  /a4-classic-head[^}]*74mm[^}]*align-items: stretch[^}]*border-bottom: 2px solid var\(--invoice-primary\)/,
+  /a4-classic-brand[^}]*border-inline-start: 3mm solid var\(--invoice-primary\)/,
+  /a4-classic-identity[^}]*border-top: 3mm solid var\(--invoice-primary\)[^}]*background: var\(--invoice-surface\)/,
+  /a4-classic-brand \.a4-display-heading[^}]*font-size: 18pt/,
+  /a4-classic-parties \.a4-legal-seller__name[^}]*font-size: 9\.5pt/,
   /a4-classic-items__description \{ width: 36%/,
   /a4-classic-items--with-discount \.a4-classic-items__description \{ width: 27%/,
+  /a4-classic-items \{[^}]*border: 1px solid var\(--invoice-border\)/,
+  /a4-classic-items th \{[^}]*border-inline-end: 1px solid color-mix/,
+  /a4-classic-items tbody tr:nth-child\(even\) \{ background: var\(--invoice-surface\)/,
   /a4-classic-items td:not\(:nth-child\(2\)\):not\(:nth-child\(4\)\) \{ vertical-align: middle/,
-  /a4-classic-summary \{[^}]*27mm[^}]*gap: 5mm/,
-  /a4-classic-summary \.a4-payment > div:not\(\.a4-section-title\) \{[^}]*margin-bottom: \.7mm/,
-  /a4-classic-summary \.a4-totals \{[^}]*padding: 2\.25mm 0/,
-  /a4-classic-summary \.a4-totals__grand \{[^}]*font-size: 14pt[^}]*line-height: 1\.1/,
-  /a4-classic-closeout \{ margin-top: 6mm; \}/,
+  /a4-classic-closeout \{[^}]*margin-top: 4\.5mm[^}]*border-top: 1\.5px solid var\(--invoice-heading\)/,
+  /a4-classic-summary \{[^}]*30mm[^}]*72mm[^}]*gap: 4mm/,
+  /a4-classic-summary > \.a4-qr \{[^}]*justify-items: center[^}]*background: #fff/,
+  /a4-classic-summary \.a4-payment \{[^}]*border-inline-start: 2px solid var\(--invoice-primary\)/,
+  /a4-classic-summary \.a4-totals \{[^}]*padding: 0[^}]*background: var\(--invoice-total-surface\)/,
+  /a4-classic-summary \.a4-totals__grand \{[^}]*background: var\(--invoice-primary\)[^}]*font-size: 13\.5pt/,
 ]) assert.match(css, marker)
 
 const server = await createServer({ appType: 'custom', logLevel: 'error', server: { middlewareMode: true } })
@@ -106,7 +112,7 @@ try {
   assert.doesNotMatch(noDiscount, /a4-classic-items--with-discount/)
   const long = render({ ...base, items: Array.from({ length: 60 }, (_, index) => ({ ...item, description: `Long bilingual commercial description ${index + 1} with a detailed legal product name`, descriptionAr: `وصف منتج عربي طويل ومفصل ${index + 1}` })) }, { preview: true })
   assert.equal(count(long, 'Long bilingual commercial description'), 60)
-  assert.match(css, /table-header-group/); assert.match(css, /\.a4-items tr \{ break-inside: avoid/); assert.match(css, /\.a4-classic-closeout \{ margin-top: 6mm; \}/)
+  assert.match(css, /table-header-group/); assert.match(css, /\.a4-items tr \{ break-inside: avoid/); assert.match(css, /\.a4-classic-closeout \{ margin-top: 4\.5mm/)
 
   assert.match(preview, /cash[\s\S]*card/i)
   assert.match(preview, /Received[\s\S]*40\.00/)
