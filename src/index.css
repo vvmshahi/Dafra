@@ -336,9 +336,9 @@
   .a4-document--contemporary_border { --invoice-page-padding-top: 0; --invoice-page-padding-inline: 10mm; font-variant-numeric: tabular-nums; }
   .a4-contemporary-head { display: grid; grid-template-columns: minmax(0,1fr) minmax(90mm,1.04fr); gap: 8mm; align-items: start; margin-inline: -10mm; padding: 6mm 10mm 5mm; color: var(--invoice-on-primary); background: var(--invoice-primary); }
   .a4-contemporary-head--brandless { grid-template-columns: minmax(0,1fr); }
-  .a4-contemporary-brand { min-width: 0; padding-top: .5mm; }
-  .a4-contemporary-brand .a4-logo { max-width: 34mm; max-height: 14mm; margin-bottom: 1.5mm; padding: 1mm; background: #fff; }
-  .a4-contemporary-brand .a4-display-heading { max-width: none; color: inherit; font-size: 18pt; line-height: 1.06; }
+  .a4-contemporary-brand { display: grid; align-self: center; min-width: 0; }
+  .a4-contemporary-brand .a4-logo { max-width: 34mm; max-height: 14mm; margin-bottom: 1.2mm; padding: 1mm; background: #fff; }
+  .a4-contemporary-brand .a4-display-heading { max-width: none; color: inherit; font-size: 16.5pt; line-height: 1.08; }
   .a4-contemporary-brand .a4-display-subheading { margin-top: .8mm; color: inherit; font-size: 8pt; opacity: .84; }
   .a4-contemporary-document { display: grid; grid-template-columns: minmax(0,1fr) 27mm; gap: 4mm; min-width: 0; }
   .a4-contemporary-document--without-qr { grid-template-columns: minmax(0,1fr); }
@@ -353,16 +353,16 @@
   .a4-contemporary-qr { align-self: start; padding: 1.25mm; border: 1px solid color-mix(in srgb,var(--invoice-on-primary) 42%,transparent); background: #fff; }
   .a4-contemporary-qr .a4-qr { color: var(--invoice-heading); font-size: 5.8pt; line-height: 1.15; }
   .a4-contemporary-qr .a4-qr img,.a4-contemporary-qr .a4-qr-placeholder { width: 21mm; height: 21mm; }
-  .a4-contemporary-parties { display: grid; grid-template-columns: 1.1fr .9fr; gap: 7mm; margin-block: 5mm 4mm; padding-bottom: 3mm; border-bottom: 1px solid var(--invoice-border); }
+  .a4-contemporary-parties { display: grid; grid-template-columns: 1.1fr .9fr; gap: 7mm; margin-block: 4.6mm 3.7mm; padding-bottom: 2.8mm; border-bottom: 1px solid var(--invoice-border); }
   .a4-contemporary-parties.a4-parties--seller-only { grid-template-columns: 1fr; }
-  .a4-contemporary-party { min-width: 0; padding-inline-start: 3mm; border-inline-start: 2px solid var(--invoice-primary); }
+  .a4-contemporary-party { min-width: 0; padding-inline-start: 2.7mm; border-inline-start: 2px solid var(--invoice-primary); }
   .a4-contemporary-party .a4-seller { line-height: 1.3; }
   .a4-contemporary-party .a4-buyer { padding: 0; border: 0; background: transparent; }
-  .a4-contemporary-party .a4-section-title { margin-bottom: .75mm; }
+  .a4-contemporary-party .a4-section-title { margin-bottom: .7mm; }
   .a4-contemporary-party .a4-legal-seller__name { font-size: 9.8pt; line-height: 1.15; }
   .a4-contemporary-items { table-layout: fixed; font-size: 7.1pt; }
   .a4-contemporary-items thead { color: var(--invoice-on-primary); background: var(--invoice-primary); }
-  .a4-contemporary-items th { padding: 1.65mm 1.05mm; border: 0; color: inherit; font-size: 5.9pt; font-weight: 850; line-height: 1.16; text-align: end; text-transform: uppercase; white-space: normal; overflow-wrap: anywhere; }
+  .a4-contemporary-items th { padding: 1.55mm 1.05mm; border: 0; color: inherit; font-size: 5.9pt; font-weight: 850; line-height: 1.16; text-align: end; text-transform: uppercase; white-space: normal; overflow-wrap: anywhere; }
   .a4-contemporary-items th:nth-child(2) { text-align: start; }
   .a4-contemporary-items td { padding: 1.75mm 1.05mm; border-bottom: 1px solid var(--invoice-border); text-align: end; vertical-align: middle; white-space: nowrap; }
   .a4-contemporary-items td:nth-child(2) { color: var(--invoice-heading); font-weight: 700; text-align: start; vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
@@ -374,14 +374,14 @@
   .a4-contemporary-item-unit { display: block; margin-top: .2mm; color: var(--invoice-muted); font-size: 6.15pt; overflow: hidden; text-overflow: ellipsis; }
   .a4-contemporary-items__index { width: 4%; }.a4-contemporary-items__description { width: 35%; }.a4-contemporary-items__quantity { width: 10%; }.a4-contemporary-items__price { width: 11%; }.a4-contemporary-items__taxable { width: 12%; }.a4-contemporary-items__vat { width: 14%; }.a4-contemporary-items__total { width: 14%; }
   .a4-contemporary-items--with-discount .a4-contemporary-items__description { width: 26%; }.a4-contemporary-items--with-discount .a4-contemporary-items__quantity { width: 9%; }.a4-contemporary-items--with-discount .a4-contemporary-items__price { width: 10%; }.a4-contemporary-items--with-discount .a4-contemporary-items__discount { width: 10%; }.a4-contemporary-items--with-discount .a4-contemporary-items__taxable { width: 11%; }.a4-contemporary-items--with-discount .a4-contemporary-items__vat { width: 13%; }.a4-contemporary-items--with-discount .a4-contemporary-items__total { width: 13%; }
-  .a4-contemporary-closeout { display: grid; grid-template-columns: minmax(0,1fr) 76mm; gap: 7mm; align-items: start; margin-top: 5mm; }
-  .a4-contemporary-payment { align-self: start; padding: 2.5mm 3mm; border-inline-start: 2px solid var(--invoice-primary); background: var(--invoice-surface); }
+  .a4-contemporary-closeout { display: grid; grid-template-columns: minmax(0,72mm) 76mm; gap: 4mm; align-items: start; justify-content: space-between; margin-top: 5mm; }
+  .a4-contemporary-payment { width: fit-content; min-width: 46mm; max-width: 100%; align-self: start; padding: 1.15mm 3mm 1.8mm; border-inline-start: 2px solid var(--invoice-primary); background: var(--invoice-surface); }
   .a4-contemporary-payment .a4-payment > div:not(.a4-section-title) { gap: 1mm 3.5mm; margin-bottom: .6mm; }
   .a4-contemporary-payment .a4-section-title { margin-bottom: .7mm; }
   .a4-contemporary-totals .a4-totals { overflow: hidden; border: 1px solid var(--invoice-border); padding: 0; background: var(--invoice-total-surface); }
   .a4-contemporary-totals .a4-totals > div { margin: 0; padding: 1.15mm 3mm; }
-  .a4-contemporary-totals .a4-totals__grand { margin: 0 !important; padding: 2.5mm 3mm; border: 0; color: var(--invoice-on-primary); background: var(--invoice-primary); font-size: 13.5pt; line-height: 1.15; }
-  .a4-contemporary-totals .a4-totals__grand > span { max-width: 58%; font-size: 7.8pt; line-height: 1.16; }
+  .a4-contemporary-totals .a4-totals__grand { align-items: center; margin: 0 !important; padding: 2.5mm 3mm; border: 0; color: var(--invoice-on-primary); background: var(--invoice-primary); font-size: 13.5pt; line-height: 1.15; }
+  .a4-contemporary-totals .a4-totals__grand > span { max-width: 61%; font-size: 7.8pt; line-height: 1.22; }
   .a4-contemporary-totals .a4-totals__grand .a4-money { margin-inline-start: auto; }
   .a4-contemporary-closeout + .a4-footer:empty { display: none; }
 

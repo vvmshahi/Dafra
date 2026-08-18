@@ -16,6 +16,15 @@ for (const marker of ['ContemporaryItemName', 'ContemporaryItemTable', 'contempo
 for (const marker of ['a4-contemporary-head--brandless', 'a4-contemporary-document--without-qr', 'a4-contemporary-parties', 'a4-contemporary-items--with-discount', 'a4-contemporary-closeout', 'a4-contemporary-qr']) assert.match(css, new RegExp(marker))
 assert.doesNotMatch(css.match(/\/\* 5 — Accounting Ledger \*\/[\s\S]*?\/\* 6 — Contemporary Modular \*\//)?.[0] ?? '', /a4-contemporary/)
 assert.doesNotMatch(source, /Due Date|Payment Terms|Supply Code|Signature/)
+assert.match(css, /\.a4-contemporary-brand \{ display: grid; align-self: center/)
+assert.match(css, /\.a4-contemporary-brand \.a4-display-heading \{[^}]*font-size: 16\.5pt/)
+assert.match(css, /\.a4-contemporary-parties \{[^}]*margin-block: 4\.6mm 3\.7mm; padding-bottom: 2\.8mm/)
+assert.match(css, /\.a4-contemporary-party \{[^}]*padding-inline-start: 2\.7mm/)
+assert.match(css, /\.a4-contemporary-items th \{ padding: 1\.55mm 1\.05mm/)
+assert.match(css, /\.a4-contemporary-closeout \{[^}]*grid-template-columns: minmax\(0,72mm\) 76mm; gap: 4mm; align-items: start; justify-content: space-between/)
+assert.match(css, /\.a4-contemporary-payment \{ width: fit-content; min-width: 46mm; max-width: 100%; align-self: start/)
+assert.match(css, /\.a4-contemporary-totals \.a4-totals__grand \{ align-items: center/)
+assert.match(css, /\.a4-contemporary-totals \.a4-totals__grand > span \{ max-width: 61%; font-size: 7\.8pt; line-height: 1\.22/)
 
 const server = await createServer({ appType: 'custom', logLevel: 'error', server: { middlewareMode: true } })
 try {
@@ -74,6 +83,9 @@ try {
   assert.match(arabicOnly, /عربي فقط/)
   const onePayment = render({ ...base, payments: [base.payments[0]] }, { preview: true })
   assert.match(onePayment, /Cash/); assert.doesNotMatch(onePayment, /Card \/ POS/)
+  assert.match(preview, /Cash \/ نقدي[\s\S]*Received \/ المبلغ المستلم[\s\S]*Change \/ الباقي[\s\S]*Card \/ POS/, 'split tenders and cash expansion preserve authoritative payment content')
+  const shortInvoice = render({ ...base, items: [item] }, { preview: true })
+  assert.match(shortInvoice, /a4-contemporary-closeout a4-closing-group/, 'short invoices keep the closeout in normal flow')
   const noFooter = render({ ...base, presentation: { ...base.presentation, footer: { ...base.presentation.footer, footerVisible: false, footer: null } } }, { preview: true })
   assert.doesNotMatch(noFooter, /Thank you for your business/)
   for (const length of [20, 60, 100]) {
