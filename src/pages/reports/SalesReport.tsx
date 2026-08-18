@@ -317,72 +317,74 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
       </div>
 
       {/* ── Tables row ─────────────────────────────────────── */}
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-stretch">
 
         {/* Top items */}
-        <div className="card overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+        <div className="card flex flex-col overflow-hidden lg:h-[29rem]">
+          <div className="shrink-0 border-b border-gray-100 bg-gray-50 px-4 py-3">
             <SectionHeader title={t('sales.topItems')} sub={t('sales.byRevenue')} />
           </div>
           {data.topProducts.length === 0 ? (
-            <div className="py-10 text-center text-sm text-gray-400">{t('sales.noItems')}</div>
+            <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-gray-400">{t('sales.noItems')}</div>
           ) : (
             <>
-              <div className="flex gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
+              <div className="shrink-0 flex gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
                 <div className="flex-1">{t('common.items')}</div><div className="w-20 text-end">{t('sales.baseQuantitySold')}</div><div className="w-24 text-end">{t('common.revenue')}</div>
                 <div className="w-10 text-right">%</div>
               </div>
-              {data.topProducts.map((p, i) => (
-                <div key={p.itemKey} className="flex gap-2 px-4 py-2.5 border-t border-gray-50 hover:bg-gray-50/50">
-                  <div className="flex-1 min-w-0 flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-gray-300 w-4">{i + 1}</span>
-                    <div className="min-w-0">
-                      <div className="flex min-w-0 items-center gap-1.5">
-                        <p className="truncate text-sm text-gray-800" dir="auto">{isArabic ? p.nameAr ?? p.name : p.name}</p>
-                        <span className="shrink-0 rounded-full border border-[#1B6B3A]/15 bg-[#eff6ef] px-1.5 py-0.5 text-[9px] font-semibold text-[#1B6B3A]">
-                          {t(`sales.itemTypes.${p.lineType}`)}
-                        </span>
+              <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto" tabIndex={0} aria-label={t('sales.topItems')}>
+                {data.topProducts.map((p, i) => (
+                  <div key={p.itemKey} className="flex gap-2 border-t border-gray-50 px-4 py-2.5 hover:bg-gray-50/50">
+                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-gray-300 w-4">{i + 1}</span>
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <p className="truncate text-sm text-gray-800" dir="auto">{isArabic ? p.nameAr ?? p.name : p.name}</p>
+                          <span className="shrink-0 rounded-full border border-[#1B6B3A]/15 bg-[#eff6ef] px-1.5 py-0.5 text-[9px] font-semibold text-[#1B6B3A]">
+                            {t(`sales.itemTypes.${p.lineType}`)}
+                          </span>
+                        </div>
+                        {p.lineType === 'custom' && (
+                          <p className="mt-0.5 text-[10px] text-gray-400">
+                            {t('sales.itemVat', { value: sarStr(p.vat) })}
+                          </p>
+                        )}
+                        {p.packageBreakdown.some(unit => unit.packageQuantity > 0) && (
+                          <p className="mt-0.5 flex flex-wrap gap-x-1 text-[10px] text-gray-400" dir="auto">
+                            {p.packageBreakdown.filter(unit => unit.packageQuantity > 0).map((unit, unitIndex) => (
+                              <span key={`${unit.productUnitId ?? unit.unitCode}-${unit.productUnitVersion ?? 'legacy'}-${unit.packageUnitPrice}-${unitIndex}`}>
+                                {fmtQty(unit.packageQuantity, 6)} {unit.sellingUnit}
+                                {' × '}
+                                <span dir="ltr"><Rial amount={unit.packageUnitPrice} /></span>
+                              </span>
+                            ))}
+                          </p>
+                        )}
                       </div>
-                      {p.lineType === 'custom' && (
-                        <p className="mt-0.5 text-[10px] text-gray-400">
-                          {t('sales.itemVat', { value: sarStr(p.vat) })}
-                        </p>
-                      )}
-                      {p.packageBreakdown.some(unit => unit.packageQuantity > 0) && (
-                        <p className="mt-0.5 flex flex-wrap gap-x-1 text-[10px] text-gray-400" dir="auto">
-                          {p.packageBreakdown.filter(unit => unit.packageQuantity > 0).map((unit, unitIndex) => (
-                            <span key={`${unit.productUnitId ?? unit.unitCode}-${unit.productUnitVersion ?? 'legacy'}-${unit.packageUnitPrice}-${unitIndex}`}>
-                              {fmtQty(unit.packageQuantity, 6)} {unit.sellingUnit}
-                              {' × '}
-                              <span dir="ltr"><Rial amount={unit.packageUnitPrice} /></span>
-                            </span>
-                          ))}
-                        </p>
-                      )}
+                    </div>
+                    <div className="w-20 text-right text-sm text-gray-600 tabular-nums">
+                      {fmtQty(p.quantity)}
+                    </div>
+                    <div className="w-24 text-right text-sm font-semibold text-gray-900 tabular-nums">
+                      <Rial amount={p.revenue} />
+                    </div>
+                    <div className="w-10 text-right text-xs text-emerald-600 font-medium tabular-nums">
+                      {p.pct.toFixed(1)}%
                     </div>
                   </div>
-                  <div className="w-20 text-right text-sm text-gray-600 tabular-nums">
-                    {fmtQty(p.quantity)}
-                  </div>
-                  <div className="w-24 text-right text-sm font-semibold text-gray-900 tabular-nums">
-                    <Rial amount={p.revenue} />
-                  </div>
-                  <div className="w-10 text-right text-xs text-emerald-600 font-medium tabular-nums">
-                    {p.pct.toFixed(1)}%
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </>
           )}
         </div>
 
         {/* Category performance */}
-        <div className="card overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+        <div className="card flex flex-col overflow-hidden lg:h-[29rem]">
+          <div className="shrink-0 border-b border-gray-100 bg-gray-50 px-4 py-3">
             <SectionHeader title={t('sales.categoryPerformance')} />
           </div>
           {data.catPerformance.length === 0 ? (
-            <div className="py-10 text-center text-sm text-gray-400">{t('sales.noCategories')}</div>
+            <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-gray-400">{t('sales.noCategories')}</div>
           ) : (
             <>
               <div className="flex gap-2 px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
@@ -408,7 +410,7 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
                 </div>
               ))}
               {topCategory && (
-                <div className="grid grid-cols-3 divide-x divide-[#1B6B3A]/10 border-t border-[#1B6B3A]/15 bg-[#f8fbf7] px-2 py-2.5">
+                <div className="mt-auto grid grid-cols-3 divide-x divide-[#1B6B3A]/10 border-t border-[#1B6B3A]/15 bg-[#f8fbf7] px-2 py-2.5">
                   <div className="min-w-0 px-2">
                     <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{t('sales.topCategory')}</p>
                     <p className="mt-0.5 truncate text-xs font-semibold text-[#0F2419]" dir="auto" title={topCategory.name}>{topCategory.name}</p>
