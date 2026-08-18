@@ -225,6 +225,12 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
   }
 
   const isArabic = i18n.language.startsWith('ar')
+  // This is deliberately derived only from the category rows already rendered
+  // below; it does not introduce a separate financial total or report query.
+  const topCategory = data.catPerformance.reduce<CatPerf | null>(
+    (top, category) => !top || category.revenue > top.revenue ? category : top,
+    null,
+  )
 
   return (
     <div className="space-y-5">
@@ -401,6 +407,22 @@ export default function SalesReport({ startDate, endDate, branchId }: ReportProp
                   </div>
                 </div>
               ))}
+              {topCategory && (
+                <div className="grid grid-cols-3 divide-x divide-[#1B6B3A]/10 border-t border-[#1B6B3A]/15 bg-[#f8fbf7] px-2 py-2.5">
+                  <div className="min-w-0 px-2">
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{t('sales.topCategory')}</p>
+                    <p className="mt-0.5 truncate text-xs font-semibold text-[#0F2419]" dir="auto" title={topCategory.name}>{topCategory.name}</p>
+                  </div>
+                  <div className="min-w-0 px-2">
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{t('sales.categories')}</p>
+                    <p className="mt-0.5 text-xs font-semibold tabular-nums text-[#0F2419]">{data.catPerformance.length}</p>
+                  </div>
+                  <div className="min-w-0 px-2">
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{t('sales.topShare')}</p>
+                    <p className="mt-0.5 text-xs font-semibold tabular-nums text-[#0F2419]">{topCategory.pct.toFixed(1)}%</p>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
