@@ -54,7 +54,7 @@ export function ReportTabs({ active, onSelect }: { active: TabId; onSelect: (tab
 
   return (
     <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0" role="region" aria-label={t('tabs.label')} tabIndex={0}>
-      <div className="flex items-center bg-white border border-gray-100 rounded-2xl p-1 w-max shadow-card" role="tablist" aria-label={t('tabs.label')}>
+      <div className="flex items-center rounded-xl border border-slate-200 bg-[#fffdf7] p-1 w-max shadow-sm" role="tablist" aria-label={t('tabs.label')}>
         {REPORT_TABS.map(tabItem => {
           const Icon = tabItem.icon
           return (
@@ -71,8 +71,8 @@ export function ReportTabs({ active, onSelect }: { active: TabId; onSelect: (tab
               onKeyDown={event => handleKeyDown(event, tabItem.id)}
               className={`flex min-h-10 items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl transition-[background-color,color,box-shadow] duration-150 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 ${
                 active === tabItem.id
-                  ? 'bg-primary-500 text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'bg-[#0F2419] text-white shadow-sm'
+                  : 'border border-transparent text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-950'
               }`}
             >
               <Icon size={13} aria-hidden="true" />
@@ -186,7 +186,7 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-[1180px] space-y-3">
 
       {/* ── Page header ─────────────────────────────────────── */}
       <PageHeader
@@ -195,14 +195,14 @@ export default function ReportsPage() {
           <>
           <Link
             to="/reports/suppliers"
-            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-amber-200 bg-white px-4 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+            className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-[#fffdf7] px-3 py-2 text-xs font-semibold text-[#0F2419] transition-colors hover:border-[#B5943E]/60 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6B3A]"
           >
             <Truck size={14} />
             {t('tabs.suppliers')}
           </Link>
           <Link
             to="/reports/receivables"
-            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-[#fffdf7] px-3 py-2 text-xs font-semibold text-[#0F2419] transition-colors hover:border-[#B5943E]/60 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6B3A]"
           >
             <WalletCards size={14} />
             {t('tabs.receivables')}
@@ -213,10 +213,10 @@ export default function ReportsPage() {
               disabled={exportDisabled}
               onClick={handleExport}
               title={t('export.download')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+              className={`flex min-h-9 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
                 exportDisabled
                   ? 'border-gray-200 text-gray-400 cursor-not-allowed opacity-60'
-                  : 'border-primary-200 bg-white text-primary-700 hover:bg-primary-50'
+                  : 'border-[#0F2419] bg-[#0F2419] text-white hover:bg-[#173f2a]'
               }`}
             >
               {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
@@ -231,7 +231,7 @@ export default function ReportsPage() {
       <ReportTabs active={tab} onSelect={setTab} />
 
       {/* ── Date range + branch filter ───────────────────────── */}
-      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="flex flex-col items-stretch gap-2 rounded-xl border border-slate-200 bg-[#fffdf7] p-2 sm:flex-row sm:flex-wrap sm:items-center">
         <CompactDateRangeFilter
           preset={preset}
           startDate={startDate}
@@ -255,17 +255,15 @@ export default function ReportsPage() {
             ))}
           </select>
         )}
-      </div>
-
-      {/* ── Date range label ─────────────────────────────────── */}
-      {startDate && endDate && (
-        <p className="text-xs text-gray-400">
-          {t('filters.showing', { range: formatDateRangeLabel(startDate, endDate, i18n.resolvedLanguage) })}
+        {startDate && endDate && (
+          <p className="px-1 text-xs text-slate-500 sm:ms-auto sm:px-2">
+            {formatDateRangeLabel(startDate, endDate, i18n.resolvedLanguage)}
           {branchId && branches.length > 1 && (
             <> · <span className="font-medium text-gray-600">{branchLabel}</span></>
           )}
         </p>
-      )}
+        )}
+      </div>
 
       {/* ── Active report ────────────────────────────────────── */}
       {startDate && endDate && (

@@ -2,29 +2,38 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Clock3, Loader2, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Rial } from '@/components/ui/RiyalSymbol'
-import {
-  type RegisterSessionSummary,
-  logRegisterSessionRpcError,
-  normalizeRegisterSessionList,
-  registerSessionRpcErrorMessage,
-  registerSessionLabel,
-  registerSessionTimeRange,
-} from '@/lib/registerSessions'
+import { type RegisterSessionSummary, logRegisterSessionRpcError, normalizeRegisterSessionList, registerSessionRpcErrorMessage, registerSessionLabel, registerSessionTimeRange } from '@/lib/registerSessions'
 import { useTranslation } from 'react-i18next'
 
-interface ReportProps {
-  branchId: string | null
-  startDate: string
-  endDate: string
+interface ReportProps { branchId: string | null; startDate: string; endDate: string }
+
+function SessionAmount({ label, amount, emphasis = false, quiet = false }: { label: string; amount: number; emphasis?: boolean; quiet?: boolean }) {
+  return <div className={emphasis ? 'rounded-lg bg-[#eff6ef] px-2.5 py-2' : ''}><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p><p className={`${emphasis ? 'mt-1 text-base text-[#0F2419]' : 'mt-0.5 text-sm text-slate-900'} font-black tabular-nums ${quiet && amount === 0 ? 'text-slate-400' : ''}`}><Rial amount={amount} /></p></div>
 }
 
-function SessionAmount({ label, amount }: { label: string; amount: number }) {
-  return (
-    <div>
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
-      <p className="mt-1 text-sm font-bold text-gray-900 tabular-nums"><Rial amount={amount} /></p>
+function MetricZone({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section className="rounded-xl border border-slate-200 bg-[#fffdf9] p-3"><p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#1B6B3A]">{title}</p><div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2.5">{children}</div></section>
+}
+
+function SessionCard({ session }: { session: RegisterSessionSummary }) {
+  const { t } = useTranslation('reports')
+  const diff = session.cashDifference ?? 0
+  const grossSales = session.totalSales + session.creditNoteTotal
+  const isOpen = session.status === 'open'
+  const current = isOpen || session.isCurrentSession
+  return <article className={`relative overflow-hidden rounded-xl border bg-white shadow-sm ${current ? 'border-[#B5943E]/55' : 'border-slate-200'}`}>
+    {current && <span className="absolute inset-x-0 top-0 h-1 bg-[#0F2419]" aria-hidden="true" />}
+    <div className={`flex flex-wrap items-start justify-between gap-3 ${current ? 'px-4 pb-3 pt-5' : 'p-4 pb-3'}`}>
+      <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-black text-slate-950">{registerSessionLabel(session)}</h3><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${isOpen ? 'bg-[#e8f3e9] text-[#1B6B3A]' : 'bg-slate-100 text-slate-600'}`}>{isOpen ? t('status.open') : t('status.closed')}</span>{session.isLongOpen && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">{t('sessions.longOpen')}</span>}</div><p className="mt-1 truncate text-xs font-medium text-slate-600">{session.branchName}</p><p className="mt-0.5 text-[11px] text-slate-400">{registerSessionTimeRange(session)}</p></div>
+      {isOpen && <p className="rounded-lg border border-[#B5943E]/35 bg-[#fffdf5] px-2.5 py-1.5 text-[11px] font-semibold text-[#0F2419]">{t('sessions.stillOpen')}</p>}
     </div>
-  )
+    <div className="grid gap-2 border-t border-slate-100 px-4 py-3 md:grid-cols-3">
+      <MetricZone title={t('sessions.salesZone')}><SessionAmount label={t('sessions.grossSales')} amount={grossSales} quiet /><SessionAmount label={t('sessions.creditNotes')} amount={session.creditNoteTotal} quiet /><SessionAmount label={t('sessions.netSales')} amount={session.totalSales} emphasis /><div><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{t('metrics.invoices')}</p><p className="mt-0.5 text-sm font-black tabular-nums text-slate-900">{session.invoiceCount}</p></div></MetricZone>
+      <MetricZone title={t('sessions.tendersZone')}><SessionAmount label={t('sessions.cash')} amount={session.cashTotal} quiet /><SessionAmount label={t('sessions.card')} amount={session.cardTotal} quiet /><SessionAmount label={t('sessions.bankTransfer')} amount={session.bankTransferTotal} quiet /><SessionAmount label={t('sessions.other')} amount={session.otherTotal} quiet /></MetricZone>
+      <MetricZone title={t('sessions.taxCashZone')}><SessionAmount label={t('sessions.netVat')} amount={session.vatTotal} quiet /><SessionAmount label={t('sessions.expenses')} amount={session.expensesTotal} quiet /><SessionAmount label={t('sessions.expectedCash')} amount={session.expectedCash} emphasis /></MetricZone>
+    </div>
+    {!isOpen && <footer className="flex flex-wrap items-center gap-x-6 gap-y-1.5 border-t border-slate-200 bg-slate-50 px-4 py-2.5 text-xs"><span className="text-slate-500">{t('sessions.actualCash')} <strong className="ms-1 font-black tabular-nums text-slate-900"><Rial amount={session.actualCash ?? 0} /></strong></span><span className={Math.abs(diff) < 0.01 ? 'text-slate-500' : diff > 0 ? 'text-[#1B6B3A]' : 'text-red-700'}>{t('sessions.difference')} <strong className="ms-1 font-black tabular-nums"><Rial amount={diff} /></strong></span></footer>}
+  </article>
 }
 
 export default function RegisterSessionsReport({ branchId, startDate, endDate }: ReportProps) {
@@ -32,137 +41,16 @@ export default function RegisterSessionsReport({ branchId, startDate, endDate }:
   const [sessions, setSessions] = useState<RegisterSessionSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-
   const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const params = {
-        ...(branchId ? { p_branch_id: branchId } : {}),
-        p_limit: 80,
-        p_start_date: startDate,
-        p_end_date: endDate,
-      }
-      const { data, error: rpcError } = await (supabase as any).rpc('get_register_sessions_filtered', {
-        ...params,
-      })
-      if (rpcError) throw rpcError
-      setSessions(normalizeRegisterSessionList(data))
-    } catch (err) {
-      logRegisterSessionRpcError('get_register_sessions_filtered', {
-        ...(branchId ? { p_branch_id: branchId } : {}),
-        p_limit: 80,
-        p_start_date: startDate,
-        p_end_date: endDate,
-      }, err)
-      setSessions([])
-      setError(registerSessionRpcErrorMessage(err))
-    } finally {
-      setLoading(false)
-    }
+    setLoading(true); setError('')
+    const params = { ...(branchId ? { p_branch_id: branchId } : {}), p_limit: 80, p_start_date: startDate, p_end_date: endDate }
+    try { const { data, error: rpcError } = await (supabase as any).rpc('get_register_sessions_filtered', { ...params }); if (rpcError) throw rpcError; setSessions(normalizeRegisterSessionList(data)) }
+    catch (err) { logRegisterSessionRpcError('get_register_sessions_filtered', params, err); setSessions([]); setError(registerSessionRpcErrorMessage(err)) }
+    finally { setLoading(false) }
   }, [branchId, startDate, endDate])
-
   useEffect(() => { load() }, [load])
-
-  if (loading) {
-    return (
-      <div className="card p-10 flex items-center justify-center">
-        <Loader2 size={24} className="animate-spin text-gray-300" />
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5 flex items-start gap-3">
-        <AlertCircle size={18} className="text-amber-600 mt-0.5 flex-shrink-0" />
-        <div className="flex-1">
-          <p className="text-sm font-semibold text-amber-900">{t('sessions.loadFailed')}</p>
-          <p className="mt-1 text-xs text-amber-800">{error}</p>
-        </div>
-        <button onClick={load} className="text-xs font-semibold text-amber-900 hover:text-amber-700">
-          Retry
-        </button>
-      </div>
-    )
-  }
-
-  if (sessions.length === 0) {
-    return (
-      <div className="card p-10 text-center">
-        <Clock3 size={28} className="mx-auto mb-3 text-gray-300" />
-        <p className="text-sm font-semibold text-gray-700">{t('sessions.empty')}</p><p className="mt-1 text-xs text-gray-400">{t('sessions.emptyHint')}</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-bold text-gray-900">{t('sessions.title')}</h2><p className="text-xs text-gray-400 mt-0.5">{t('sessions.subtitle')}</p>
-        </div>
-        <button
-          onClick={load}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
-        >
-          <RefreshCw size={13} />
-          Refresh
-        </button>
-      </div>
-
-      {sessions.map(session => {
-        const diff = session.cashDifference ?? 0
-        const grossSales = session.totalSales + session.creditNoteTotal
-        return (
-          <div key={session.sessionId ?? session.branchId}
-            className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-gray-900">{registerSessionLabel(session)}</h3>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                    session.isLongOpen
-                      ? 'bg-amber-100 text-amber-700'
-                      : session.status === 'open'
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}>
-                    {session.isLongOpen ? 'Long open' : session.status === 'open' ? 'Open' : 'Closed'}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-gray-500">{session.branchName}</p>
-                <p className="mt-1 text-xs text-gray-400">{registerSessionTimeRange(session)}</p>
-              </div>
-              {session.isLongOpen && (
-                <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-                  Close this register before starting a new shift.
-                </p>
-              )}
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-9">
-              <SessionAmount label={t('sessions.grossSales')} amount={grossSales} /><SessionAmount label={t('sessions.creditNotes')} amount={session.creditNoteTotal} /><SessionAmount label={t('sessions.netSales')} amount={session.totalSales} />
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t('metrics.invoices')}</p>
-                <p className="mt-1 text-sm font-bold text-gray-900 tabular-nums">{session.invoiceCount}</p>
-              </div>
-              <SessionAmount label={t('sessions.cash')} amount={session.cashTotal} /><SessionAmount label={t('sessions.card')} amount={session.cardTotal} /><SessionAmount label={t('sessions.netVat')} amount={session.vatTotal} /><SessionAmount label={t('sessions.expenses')} amount={session.expensesTotal} /><SessionAmount label={t('sessions.expectedCash')} amount={session.expectedCash} />
-            </div>
-
-            {session.status === 'closed' && (
-              <div className="mt-4 flex flex-wrap gap-3 rounded-xl bg-gray-50 px-3 py-3 text-xs">
-                <span className="font-medium text-gray-600">
-                  Actual cash: <span className="font-bold text-gray-900"><Rial amount={session.actualCash ?? 0} /></span>
-                </span>
-                <span className={`font-medium ${Math.abs(diff) < 0.01 ? 'text-gray-600' : diff > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                  Difference: <span className="font-bold"><Rial amount={diff} /></span>
-                </span>
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
+  if (loading) return <div className="flex items-center justify-center rounded-xl border border-slate-200 bg-[#fffdf7] p-10"><Loader2 size={24} className="animate-spin text-slate-300" /></div>
+  if (error) return <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-5"><AlertCircle size={18} className="mt-0.5 shrink-0 text-amber-600" /><div className="flex-1"><p className="text-sm font-semibold text-amber-900">{t('sessions.loadFailed')}</p><p className="mt-1 text-xs text-amber-800">{error}</p></div><button onClick={load} className="text-xs font-semibold text-amber-900 hover:text-amber-700">{t('sessions.retry')}</button></div>
+  if (sessions.length === 0) return <div className="rounded-xl border border-slate-200 bg-[#fffdf7] p-10 text-center"><Clock3 size={28} className="mx-auto mb-3 text-slate-300" /><p className="text-sm font-semibold text-slate-700">{t('sessions.empty')}</p><p className="mt-1 text-xs text-slate-400">{t('sessions.emptyHint')}</p></div>
+  return <div className="space-y-3"><div className="flex items-center justify-between gap-3 px-1"><div><h2 className="text-sm font-black text-slate-950">{t('sessions.title')}</h2><p className="mt-0.5 text-xs text-slate-500">{t('sessions.subtitle')}</p></div><button onClick={load} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-[#fffdf7] px-3 text-xs font-semibold text-slate-700 hover:border-[#B5943E]/60 hover:bg-white"><RefreshCw size={13} />{t('sessions.refresh')}</button></div><div className="space-y-3">{sessions.map(session => <SessionCard key={session.sessionId ?? session.branchId} session={session} />)}</div></div>
 }

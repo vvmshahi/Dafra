@@ -96,7 +96,7 @@ export function CompactDateRangeFilter({
   const { t } = useTranslation('reports')
   return (
     <>
-      <div className="flex items-center gap-1 p-1 bg-white border border-gray-100 rounded-xl shadow-card flex-wrap">
+      <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
         {presets.map(p => (
           <button
             key={p.id}
@@ -104,8 +104,8 @@ export function CompactDateRangeFilter({
             onClick={() => onPreset(p.id)}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
               preset === p.id
-                ? 'bg-gray-900 text-white'
-                : 'text-gray-500 hover:bg-gray-50'
+                ? 'bg-[#0F2419] text-white shadow-sm'
+                : 'text-slate-600 hover:bg-[#f7f4eb] hover:text-slate-950'
             }`}
           >
             {t(`filters.${p.id === 'this_week' ? 'thisWeek' : p.id === 'this_month' ? 'thisMonth' : p.id === 'last_month' ? 'lastMonth' : p.id === 'custom' ? 'custom' : p.id}`)}
