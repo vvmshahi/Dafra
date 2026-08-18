@@ -202,7 +202,7 @@ export default function ReportsPage() {
     try {
       const csvModule = await import('./csv/reportCsvExporters')
       await csvModule.exportReportCsv({ reportKind: tab, startDate, endDate, branchId })
-      toast.success('CSV report downloaded.')
+      toast.success(t('export.csvSuccess'))
     } catch (error) {
       console.error('Report CSV export failed', error)
       toast.error(t('export.failed'))
@@ -244,11 +244,11 @@ export default function ReportsPage() {
               className={`flex min-h-9 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${exportDisabled ? 'border-gray-200 text-gray-400 cursor-not-allowed opacity-60' : 'border-[#0F2419] bg-[#0F2419] text-white hover:bg-[#173f2a]'}`}
             >
               {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-              Export report <ChevronDown size={13} aria-hidden="true" />
+              {t('export.report')} <ChevronDown size={13} aria-hidden="true" />
             </button>
-            {exportMenuOpen && !exportDisabled && <div role="menu" aria-label="Export report" className="absolute end-0 z-20 mt-1 min-w-40 overflow-hidden rounded-lg border border-slate-200 bg-white p-1 shadow-card-md">
+            {exportMenuOpen && !exportDisabled && <div role="menu" aria-label={t('export.report')} className="absolute end-0 z-20 mt-1 min-w-40 overflow-hidden rounded-lg border border-slate-200 bg-white p-1 shadow-card-md">
               {exportSupported && <button type="button" role="menuitem" onClick={() => { setExportMenuOpen(false); void handleExport() }} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-start text-xs font-semibold text-slate-700 hover:bg-[#f3f8f3] hover:text-[#0F2419]"><Download size={14} />{t('export.pdf')}</button>}
-              <button type="button" role="menuitem" onClick={() => void handleCsvExport()} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-start text-xs font-semibold text-slate-700 hover:bg-[#f3f8f3] hover:text-[#0F2419]"><FileSpreadsheet size={14} />Export CSV</button>
+              <button type="button" role="menuitem" onClick={() => void handleCsvExport()} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-start text-xs font-semibold text-slate-700 hover:bg-[#f3f8f3] hover:text-[#0F2419]"><FileSpreadsheet size={14} />{t('export.csv')}</button>
             </div>}
           </div>
           </>

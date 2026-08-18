@@ -1,6 +1,7 @@
 {
   "eyebrow": "ائتمان العملاء",
   "title": "حساب العميل",
+  "subtitle": "أرصدة العملاء ودفعاتهم ومبيعات الائتمان.",
   "consolidated": "كل الفروع",
   "branchScope": "هذا الفرع",
   "actions": {
@@ -201,6 +202,8 @@
     "previous": "السابق",
     "next": "التالي",
     "branchComparison": "مقارنة الفروع",
+    "activityPeriod": "فترة النشاط",
+    "balanceAsOfToday": "الأرصدة حتى اليوم",
     "debits": "مدين",
     "credits": "دائن",
     "noBranchActivity": "لا توجد حركة ذمم في هذه الفترة.",
