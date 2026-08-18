@@ -245,6 +245,9 @@ const permittedPaths = new Set([
   // P0 stale-checkout recovery exercises only client retry persistence; it
   // does not alter the server-owned checkout, stock, or payment authority.
   'scripts/test-p0-saved-checkout-recovery.mjs',
+  // POS terminal presentation regression: static UI coverage only; scanner,
+  // checkout, stock, payment, and server authority remain protected here.
+  'scripts/test-pos-visual-refinement.mjs',
   'scripts/test-purchase-modal-ui.mjs',
   'scripts/test-expense-modal-ui.mjs',
   'scripts/test-expense-authority-v1.mjs',

@@ -6,7 +6,7 @@ import {
   Receipt, X, ChevronDown, User, Check, Loader2,
   ShoppingBag, AlertCircle, Zap, Printer, PackageOpen, ArrowLeft, Lock,
   ChevronLeft, ChevronRight, ChevronUp, RotateCcw,
-  ScanLine, Landmark, Pencil,
+  ScanLine, Landmark, Pencil, MoreHorizontal,
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
@@ -1063,13 +1063,14 @@ function ProductCard({ product, cartQty, onAdd }: {
 
   return (
     <button onClick={onAdd}
-      className="bg-white border border-gray-100 rounded-2xl p-3 text-start hover:border-primary-300 hover:shadow-md transition-all relative">
+      data-pos-product-card
+      className="relative flex h-[228px] w-full flex-col rounded-2xl border border-gray-100 bg-white p-2.5 text-start transition-[border-color,box-shadow,transform] duration-150 hover:border-primary-300 hover:shadow-md active:scale-[0.98] sm:h-[242px]">
       {cartQty > 0 && (
         <span className="absolute top-2 end-2 w-5 h-5 bg-primary-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center z-10" dir="ltr">
           {cartQty}
         </span>
       )}
-      <div className="w-full aspect-square rounded-xl mb-2.5 flex items-center justify-center overflow-hidden"
+      <div data-pos-product-image-well className="mb-2.5 flex h-24 w-full flex-none items-center justify-center overflow-hidden rounded-xl sm:h-28"
         style={{ backgroundColor: `${color}18` }}>
         {imageUrl && !imageFailed ? (
           <img
@@ -1081,22 +1082,24 @@ function ProductCard({ product, cartQty, onAdd }: {
             onError={() => setImageFailed(true)}
           />
         ) : (
-          <ShoppingBag size={22} style={{ color }} />
+          <span data-pos-product-image-fallback className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: `${color}14` }}>
+            <ShoppingBag size={19} style={{ color }} />
+          </span>
         )}
       </div>
-      <p className="text-xs font-semibold text-gray-800 leading-snug line-clamp-2" dir="auto">{localizedName(product.name, product.nameAr, isRtl)}</p>
-      {product.isService && (
-        <span className="mt-1 inline-flex rounded-full bg-sky-50 px-1.5 py-0.5 text-[9px] font-semibold text-sky-800 ring-1 ring-inset ring-sky-600/15">
-          {t('itemType.service')}
-        </span>
-      )}
-      <p className="text-sm font-bold text-primary-600 mt-1" dir="ltr"><Rial amount={product.price} /></p>
-      {product.catName && (
-        <span className="inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full mt-1"
-          style={{ backgroundColor: `${color}20`, color }}>
-          <span dir="auto">{localizedName(product.catName, product.catNameAr, isRtl)}</span>
-        </span>
-      )}
+      <p data-pos-product-title className="h-9 text-xs font-semibold leading-[1.15rem] text-gray-800 line-clamp-2" dir="auto">{localizedName(product.name, product.nameAr, isRtl)}</p>
+      <div data-pos-product-metadata className="mt-1 flex h-5 items-center overflow-hidden">
+        {product.isService ? (
+          <span className="inline-flex rounded-full bg-sky-50 px-1.5 py-0.5 text-[9px] font-semibold text-sky-800 ring-1 ring-inset ring-sky-600/15">
+            {t('itemType.service')}
+          </span>
+        ) : product.catName ? (
+          <span className="truncate rounded-full px-1.5 py-0.5 text-[9px] font-semibold" style={{ backgroundColor: `${color}16`, color }}>
+            <span dir="auto">{localizedName(product.catName, product.catNameAr, isRtl)}</span>
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-auto pt-1 text-sm font-bold text-primary-700" dir="ltr"><Rial amount={product.price} /></p>
     </button>
   )
 }
@@ -2111,6 +2114,7 @@ export default function POSPage() {
   const [scannerStatus, setScannerStatus] = useState<'idle' | 'looking' | 'accepted' | 'unknown' | 'conflict' | 'error'>('idle')
   const [scannerMessage, setScannerMessage] = useState('')
   const [showExpense,  setShowExpense]  = useState(false)
+  const [showMore, setShowMore] = useState(false)
   const [printerStatus, setPrinterStatus] = useState<'connected' | 'unconfigured' | 'error'>('unconfigured')
   const [scrollState,  setScrollState]  = useState({
     categoryAtStart: true,
@@ -3772,7 +3776,7 @@ export default function POSPage() {
       : !(payMethod === 'cash' && cashReceived !== '' && cashAmt < totals.total - 0.001))
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden" dir="ltr">
+    <div data-pos-terminal className="flex h-[100dvh] flex-col overflow-hidden bg-[#f7f8f5] lg:flex-row" dir="ltr">
 
       {/* Modals */}
       {receipt && (
@@ -3898,10 +3902,10 @@ export default function POSPage() {
       {custOpen && <div className="fixed inset-0 z-10" onClick={() => setCustOpen(false)} />}
 
       {/* ── Left: product panel ─────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0" dir={isRtl ? 'rtl' : 'ltr'}>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col" dir={isRtl ? 'rtl' : 'ltr'}>
 
         {/* Header */}
-        <div className="bg-[#0F2419] text-white px-3 sm:px-5 py-3 flex items-center gap-3 flex-shrink-0 shadow-lg">
+        <div data-pos-command-bar className="flex flex-shrink-0 items-center gap-2 bg-[#0F2419] px-3 py-2.5 text-white shadow-lg sm:px-5">
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => navigate('/branch')}
@@ -3922,7 +3926,7 @@ export default function POSPage() {
             </button>
           </div>
 
-          <div className="min-w-0 flex-1 text-center px-1">
+          <div className="min-w-0 flex-1 px-1 text-center">
             <h1 className="truncate text-sm font-semibold text-white" title={resolveBranchDisplayName(branch, isRtl, t('pos:activeBranch'))} dir="auto">
               {resolveBranchDisplayName(branch, isRtl, t('pos:activeBranch'))}
             </h1>
@@ -3934,7 +3938,8 @@ export default function POSPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex flex-shrink-0 items-center gap-1.5">
+            <AuthenticatedLanguageSwitch inverse className="h-9 px-2 sm:px-2.5" />
             <button
               type="button"
               onClick={() => setScannerEnabled(value => !value)}
@@ -3953,57 +3958,45 @@ export default function POSPage() {
                     : scannerStatus === 'looking' ? 'bg-amber-300' : 'bg-white/40'
               }`} />
             </button>
-            <AuthenticatedLanguageSwitch inverse className="h-9" />
-            {isElectron() && (
+            <div className="relative">
               <button
                 type="button"
-                onClick={() => navigate(DEVICE_PRINTER_PATH)}
-                title={printerStatus === 'connected'
-                  ? t('pos:printer.connected')
-                  : printerStatus === 'error'
-                    ? t('pos:printer.unavailable')
-                    : t('pos:printer.unconfigured')}
-                aria-label={printerStatus === 'connected'
-                  ? t('pos:printer.connected')
-                  : printerStatus === 'error'
-                    ? t('pos:printer.unavailable')
-                    : t('pos:printer.unconfigured')}
-                className={`relative w-9 h-9 rounded-lg border transition-colors active:scale-[0.97] flex items-center justify-center ${
-                  printerStatus === 'connected'
-                    ? 'bg-emerald-500/20 border-emerald-400/30 text-emerald-300 hover:bg-emerald-500/30'
-                    : printerStatus === 'error'
-                      ? 'bg-red-500/20 border-red-400/30 text-red-300 hover:bg-red-500/30'
-                      : 'bg-white/10 border-white/15 text-white/60 hover:bg-white/15 hover:text-white'
-                }`}
+                onClick={() => setShowMore(value => !value)}
+                aria-label={t('pos:more')}
+                aria-expanded={showMore}
+                aria-haspopup="menu"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-white/75 transition-colors hover:bg-white/15 hover:text-white active:scale-[0.97]"
               >
-                <Printer size={14} />
-                <span className={`absolute end-1 top-1 h-1.5 w-1.5 rounded-full ${
-                  printerStatus === 'connected' ? 'bg-emerald-400' : printerStatus === 'error' ? 'bg-red-400' : 'bg-white/35'
-                }`} />
+                <MoreHorizontal size={17} />
               </button>
-            )}
-            <button
-              onClick={() => setShowExpense(true)}
-              aria-label={t('pos:addExpense')}
-              className="h-9 text-xs bg-amber-500/20 border border-amber-400/25 text-amber-200 px-2.5 sm:px-3 rounded-lg hover:bg-amber-500/30 transition-colors active:scale-[0.97] flex items-center gap-1.5"
-            >
-              <Zap size={12} />
-              <span className="hidden sm:inline">{t('pos:expense')}</span>
-            </button>
+              {showMore && (
+                <div data-pos-more-menu role="menu" className="absolute end-0 top-full z-40 mt-2 w-48 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 text-gray-800 shadow-xl">
+                  <button type="button" role="menuitem" onClick={() => { setShowExpense(true); setShowMore(false) }} className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-start text-xs font-semibold transition-colors hover:bg-amber-50 hover:text-amber-900">
+                    <Zap size={14} className="text-amber-600" /> {t('pos:expense')}
+                  </button>
+                  {isElectron() && (
+                    <button type="button" role="menuitem" onClick={() => { navigate(DEVICE_PRINTER_PATH); setShowMore(false) }} className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-start text-xs font-semibold transition-colors hover:bg-gray-50">
+                      <Printer size={14} className={printerStatus === 'error' ? 'text-red-500' : 'text-gray-500'} />
+                      {printerStatus === 'connected' ? t('pos:printer.connected') : printerStatus === 'error' ? t('pos:printer.unavailable') : t('pos:printer.unconfigured')}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Session info bar */}
-        <div className="bg-emerald-50 border-b border-emerald-100 px-5 py-1.5 flex items-center gap-2 flex-shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
-          <span className="text-xs text-emerald-700">
-            {t('register:sessionOpenSince', { time: toSaudiTime(session.opened_at) })}
+        <div data-pos-status-strip className="flex flex-shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-emerald-100 bg-emerald-50 px-4 py-1.5 text-[11px] font-medium text-emerald-800 sm:px-5">
+          <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-500" />
+          <span>{t('register:open')} · {toSaudiTime(session.opened_at)}</span>
             {Number(session.opening_cash) > 0 && (
-              <> · {t('register:openingAmount', { amount: '' })}<span dir="ltr"><Rial amount={Number(session.opening_cash)} /></span></>
+              <><span className="text-emerald-300">·</span><span>{t('register:openingCash')} <span dir="ltr"><Rial amount={Number(session.opening_cash)} /></span></span></>
             )}
-          </span>
-          <span className="ms-auto hidden text-[10px] font-medium text-emerald-700 sm:inline">
-            {t(scannerEnabled ? 'pos:scanner.ready' : 'pos:scanner.unavailable')}
+          <span className="hidden text-emerald-300 sm:inline">·</span>
+          <span data-pos-barcode-status className="ms-auto inline-flex items-center gap-1 text-[10px] font-semibold">
+            <span className={`h-1.5 w-1.5 rounded-full ${scannerEnabled ? 'bg-emerald-500' : 'border border-emerald-500 bg-transparent'}`} />
+            {t(scannerEnabled ? 'pos:scanner.inputOn' : 'pos:scanner.inputOff')}
           </span>
         </div>
 
@@ -4023,11 +4016,10 @@ export default function POSPage() {
                   aria-label={t('pos:searchProducts')}
                   aria-describedby="pos-scanner-status"
                   autoComplete="off"
-                  className="input ps-8 pe-14 py-2 text-sm"
+                  className="input ps-8 pe-8 py-2.5 text-sm shadow-sm"
                 />
-                <ScanLine size={14} aria-hidden="true" className="absolute end-3 top-1/2 -translate-y-1/2 text-sky-500" />
-                {search && <button type="button" onClick={() => setSearch('')} aria-label={t('pos:clearProductSearch')} className="absolute end-8 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={13} /></button>}
-                <span id="pos-scanner-status" className="sr-only" aria-live="polite" aria-atomic="true">{scannerMessage || t(scannerEnabled ? 'pos:scanner.ready' : 'pos:scanner.unavailable')}</span>
+                {search && <button type="button" onClick={() => setSearch('')} aria-label={t('pos:clearProductSearch')} className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={13} /></button>}
+                <span id="pos-scanner-status" className="sr-only" aria-live="polite" aria-atomic="true">{scannerMessage || t(scannerEnabled ? 'pos:scanner.inputOn' : 'pos:scanner.inputOff')}</span>
               </div>
               <div className="flex w-full min-w-0 items-center gap-1.5 overflow-x-auto sm:flex-1">
                 <button type="button" onClick={() => setActiveCat(null)} className={`whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-medium ${!activeCat ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600'}`}>{t('pos:allProducts')}</button>
@@ -4050,20 +4042,19 @@ export default function POSPage() {
                   aria-label={t('pos:searchProducts')}
                   aria-describedby="pos-scanner-status"
                   autoComplete="off"
-                  className="input ps-8 pe-14 py-2 text-sm"
+                  className="input ps-8 pe-8 py-2.5 text-sm shadow-sm"
                 />
-                <ScanLine size={14} aria-hidden="true" className="absolute end-3 top-1/2 -translate-y-1/2 text-sky-500" />
                 {search && (
                   <button
                     type="button"
                     onClick={() => setSearch('')}
                     aria-label={t('pos:clearProductSearch')}
-                    className="absolute end-8 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                   >
                     <X size={13} />
                   </button>
                 )}
-                <span id="pos-scanner-status" className="sr-only" aria-live="polite" aria-atomic="true">{scannerMessage || t(scannerEnabled ? 'pos:scanner.ready' : 'pos:scanner.unavailable')}</span>
+                <span id="pos-scanner-status" className="sr-only" aria-live="polite" aria-atomic="true">{scannerMessage || t(scannerEnabled ? 'pos:scanner.inputOn' : 'pos:scanner.inputOff')}</span>
               </div>
               {showPosScrollButtons && (
                 <button
@@ -4071,7 +4062,7 @@ export default function POSPage() {
                   onClick={() => scrollCategories(-1)}
                   disabled={scrollState.categoryAtStart}
                   title={t('pos:scrollCategoriesPrevious')}
-                  className="h-11 w-11 rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm flex items-center justify-center hover:bg-gray-50 disabled:opacity-35 disabled:cursor-not-allowed flex-shrink-0"
+                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-35"
                 >
                   <DirectionalIcon icon={ChevronLeft} size={20} />
                 </button>
@@ -4105,7 +4096,7 @@ export default function POSPage() {
                   onClick={() => scrollCategories(1)}
                   disabled={scrollState.categoryAtEnd}
                   title={t('pos:scrollCategoriesNext')}
-                  className="h-11 w-11 rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm flex items-center justify-center hover:bg-gray-50 disabled:opacity-35 disabled:cursor-not-allowed flex-shrink-0"
+                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-35"
                 >
                   <DirectionalIcon icon={ChevronRight} size={20} />
                 </button>
@@ -4174,7 +4165,7 @@ export default function POSPage() {
                     </div>
                   )
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+                  <div data-pos-product-grid className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                     {filtered.map(p => (
                       <ProductCard
                         key={p.id}
@@ -4214,7 +4205,7 @@ export default function POSPage() {
       </div>
 
       {/* ── Right: cart panel ───────────────────────────────── */}
-      <div className="w-[340px] bg-white border-s border-gray-100 flex flex-col flex-shrink-0 shadow-xl" dir={isRtl ? 'rtl' : 'ltr'}>
+      <div data-pos-order-panel className="flex h-[44dvh] w-full flex-shrink-0 flex-col border-t border-gray-200 bg-white shadow-[0_-8px_24px_rgba(15,36,25,0.08)] lg:h-auto lg:w-[360px] lg:border-s lg:border-t-0 lg:border-gray-100 lg:shadow-xl" dir={isRtl ? 'rtl' : 'ltr'}>
 
         {/* Cart header */}
         <div className="px-4 py-3.5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
@@ -4360,10 +4351,12 @@ export default function POSPage() {
         {/* Cart items */}
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
           {cart.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-300 py-10">
-              <ShoppingBag size={32} className="mb-3" />
-              <p className="text-xs">{t('pos:emptyCart')}</p>
-              <p className="text-[10px] mt-1 text-gray-200">{t('pos:pressToSearch')}</p>
+            <div data-pos-empty-cart className="flex h-full items-center gap-3 px-2 py-5 text-gray-400">
+              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gray-50 text-gray-300"><ShoppingBag size={17} /></span>
+              <div>
+                <p className="text-xs font-semibold text-gray-600">{t('pos:emptyCartTitle')}</p>
+                <p className="mt-0.5 text-[10px] text-gray-400">{t('pos:emptyCartHint')}</p>
+              </div>
             </div>
           ) : (
             cart.map(item => {
@@ -4387,25 +4380,25 @@ export default function POSPage() {
                         {fmt(item.unitPrice)} × {formatPackageQuantity(item.quantity, CUSTOM_LINE_QUANTITY_SCALE)} = <span className="font-semibold text-gray-700"><Rial amount={preview.total} /></span>
                       </p>
                     </div>
-                    <div className="flex flex-shrink-0 items-center gap-1" dir="ltr">
-                      <button type="button" onClick={() => adjustQty(item.cartLineId, -1)} aria-label={t('pos:decreaseQuantity', { name: displayName })} className="flex h-6 w-6 items-center justify-center rounded-lg border border-sky-200 bg-white text-sky-700 hover:bg-sky-50">−</button>
-                      <span className="min-w-6 text-center text-[10px] font-bold text-sky-800">{formatPackageQuantity(item.quantity, CUSTOM_LINE_QUANTITY_SCALE)}</span>
-                      <button type="button" onClick={() => adjustQty(item.cartLineId, 1)} aria-label={t('pos:increaseQuantity', { name: displayName })} className="flex h-6 w-6 items-center justify-center rounded-lg border border-sky-200 bg-white text-sky-700 hover:bg-sky-50">+</button>
+                    <div className="grid w-[92px] flex-shrink-0 grid-cols-2 gap-1" dir="ltr">
+                      <button type="button" onClick={() => adjustQty(item.cartLineId, -1)} aria-label={t('pos:decreaseQuantity', { name: displayName })} className="flex h-10 w-10 items-center justify-center rounded-xl border border-sky-200 bg-white text-sky-700 hover:bg-sky-50">−</button>
+                      <button type="button" onClick={() => adjustQty(item.cartLineId, 1)} aria-label={t('pos:increaseQuantity', { name: displayName })} className="flex h-10 w-10 items-center justify-center rounded-xl border border-sky-200 bg-white text-sky-700 hover:bg-sky-50">+</button>
+                      <span className="flex h-10 items-center justify-center text-center text-[10px] font-bold text-sky-800">{formatPackageQuantity(item.quantity, CUSTOM_LINE_QUANTITY_SCALE)}</span>
                       <button
                         type="button"
                         onClick={() => setCustomLineEditor(item)}
                         aria-label={t('pos:customLine.edit')}
-                        className="flex h-6 w-6 items-center justify-center rounded-lg border border-sky-200 bg-white text-sky-700 hover:bg-sky-50"
+                        className="flex h-10 w-10 items-center justify-center rounded-xl border border-sky-200 bg-white text-sky-700 hover:bg-sky-50"
                       >
-                        <Pencil size={10} />
+                        <Pencil size={13} />
                       </button>
                       <button
                         type="button"
                         onClick={() => removeCartLine(item.cartLineId)}
                         aria-label={t('pos:removeItem', { name: displayName })}
-                        className="flex h-6 w-6 items-center justify-center rounded-lg border border-red-100 bg-white text-red-400 hover:bg-red-50"
+                        className="col-span-2 flex h-10 items-center justify-center rounded-xl border border-red-100 bg-white text-red-400 hover:bg-red-50"
                       >
-                        <Trash2 size={10} />
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   </div>
@@ -4436,22 +4429,22 @@ export default function POSPage() {
                       {fmt(item.price)} × {formatPackageQuantity(item.quantity, item.quantityScale)} = <span className="text-gray-700 font-semibold"><Rial amount={line} /></span>
                     </p>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0" dir="ltr">
+                  <div className="flex items-center gap-1.5 flex-shrink-0" dir="ltr">
                     <button onClick={() => adjustQty(item.cartLineId, -1)}
                       aria-label={item.quantity <= 1
                         ? t('pos:removeItem', { name: localizedName(item.name, item.nameAr, isRtl) })
                         : t('pos:decreaseQuantity', { name: localizedName(item.name, item.nameAr, isRtl) })}
-                      className="w-6 h-6 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-red-50 hover:border-red-200 transition-colors">
+                      className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white transition-colors hover:border-red-200 hover:bg-red-50">
                       {item.quantity <= 1
-                        ? <Trash2 size={10} className="text-red-400" />
-                        : <Minus size={10} className="text-gray-500" />
+                        ? <Trash2 size={13} className="text-red-400" />
+                        : <Minus size={13} className="text-gray-500" />
                       }
                     </button>
-                    <span className="min-w-5 text-center text-xs font-bold tabular-nums text-gray-900">{formatPackageQuantity(item.quantity, item.quantityScale)}</span>
+                    <span className="min-w-6 text-center text-xs font-bold tabular-nums text-gray-900">{formatPackageQuantity(item.quantity, item.quantityScale)}</span>
                     <button onClick={() => adjustQty(item.cartLineId, 1)}
                       aria-label={t('pos:increaseQuantity', { name: localizedName(item.name, item.nameAr, isRtl) })}
-                      className="w-6 h-6 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-primary-50 hover:border-primary-200 transition-colors">
-                      <Plus size={10} className="text-gray-500" />
+                      className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white transition-colors hover:border-primary-200 hover:bg-primary-50">
+                      <Plus size={13} className="text-gray-500" />
                     </button>
                   </div>
                 </div>
@@ -4484,10 +4477,10 @@ export default function POSPage() {
 
         {/* Payment method */}
         <div className="px-4 pb-2 flex-shrink-0 space-y-2">
-          <div className={`grid gap-2 ${splitPaymentsEnabled ? 'grid-cols-3' : 'grid-cols-2'}`}>
+          <div data-pos-payment-controls className={`grid gap-2 ${splitPaymentsEnabled ? 'grid-cols-3' : 'grid-cols-2'}`}>
             {(['cash', 'card'] as const).map(m => (
               <button key={m} onClick={() => { setPayMethod(m); setSplitOpen(false) }}
-                className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition-[background-color,border-color,color,box-shadow] ${
                   payMethod === m
                     ? m === 'cash'
                       ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
@@ -4502,7 +4495,7 @@ export default function POSPage() {
               <button
                 type="button"
                 onClick={openSplitPayment}
-                className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                  className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition-[background-color,border-color,color,box-shadow] ${
                   payMethod === 'split'
                     ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
                     : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
@@ -4625,14 +4618,12 @@ export default function POSPage() {
         )}
 
         {/* Charge button */}
-        <div className="px-4 pb-5 flex-shrink-0">
+        <div className="px-4 pb-4 pt-1 flex-shrink-0">
           <button
             onClick={payMethod === 'split' ? () => setSplitOpen(true) : charge}
             disabled={!canCharge}
-            className="w-full py-3.5 rounded-2xl font-bold text-sm text-white transition-all flex items-center justify-center gap-2
-              bg-gradient-to-r from-[#1a3a28] to-primary-600
-              hover:opacity-90 active:scale-[0.98]
-              disabled:from-gray-200 disabled:to-gray-300 disabled:text-gray-400 disabled:cursor-not-allowed disabled:scale-100"
+            data-pos-charge
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#0F2419] py-3.5 text-sm font-bold text-white transition-[background-color,transform] hover:bg-[#173F2F] active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 disabled:scale-100"
           >
             {submitting
               ? <><Loader2 size={16} className="animate-spin" /> {t('payments:processing')}</>

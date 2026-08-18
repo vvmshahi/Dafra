@@ -288,6 +288,9 @@ const permittedPaths = new Set([
   // P0 stale-checkout recovery is a client retry-state test only; financial
   // reporting, credit authority, and Edge paths remain protected.
   'scripts/test-p0-saved-checkout-recovery.mjs',
+  // POS terminal presentation regression is static UI coverage only. It does
+  // not permit checkout, reporting, credit, stock, database, or Edge changes.
+  'scripts/test-pos-visual-refinement.mjs',
   'scripts/test-purchase-modal-ui.mjs',
   'scripts/test-expense-modal-ui.mjs',
   'scripts/test-expense-authority-v1.mjs',
