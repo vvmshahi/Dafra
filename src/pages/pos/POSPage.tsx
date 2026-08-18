@@ -1867,7 +1867,6 @@ function SplitPaymentModal({
   onCashChange,
   onCardChange,
   onUseCash,
-  onUseCard,
   onClose,
   onComplete,
 }: {
@@ -1878,7 +1877,6 @@ function SplitPaymentModal({
   onCashChange: (value: string) => void
   onCardChange: (value: string) => void
   onUseCash: () => void
-  onUseCard: () => void
   onClose: () => void
   onComplete: () => void
 }) {
@@ -1893,11 +1891,12 @@ function SplitPaymentModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+      <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-[#dce5de] bg-[#fffefb] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[#e4e9e5] px-5 py-3.5">
           <div>
             <h3 className="text-sm font-bold text-gray-900">{t('payments:splitPayment')}</h3>
-            <p className="text-xs text-gray-400 mt-0.5">{t('payments:amountDue')} <span dir="ltr"><Rial amount={total} /></span></p>
+            <p className="mt-1 text-[11px] font-medium text-gray-500">{t('payments:amountDue')}</p>
+            <p className="mt-0.5 text-lg font-bold tracking-tight text-[#0F2419] tabular-nums" dir="ltr"><Rial amount={total} /></p>
           </div>
           <button
             type="button"
@@ -1908,50 +1907,45 @@ function SplitPaymentModal({
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-3">
-          <label className="block space-y-1.5">
+        <div className="space-y-3 px-5 py-3.5">
+          <label className="block space-y-1">
             <span className="text-xs font-semibold text-gray-700">{t('payments:cashAmount')}</span>
             <div className="relative">
               <span className="absolute start-3 top-1/2 -translate-y-1/2 text-xs text-gray-400" dir="ltr">SAR</span>
               <MoneyInput
                 value={cashValue}
                 onValueChange={onCashChange}
-                className="input ps-10 tabular-nums"
+                className="input h-11 border-gray-200 bg-white ps-10 tabular-nums focus:border-[#1B6B3A] focus:ring-[#1B6B3A]/20"
                 autoFocus
               />
             </div>
           </label>
 
-          <label className="block space-y-1.5">
+          <label className="block space-y-1">
             <span className="text-xs font-semibold text-gray-700">{t('payments:cardAmount')}</span>
             <div className="relative">
               <span className="absolute start-3 top-1/2 -translate-y-1/2 text-xs text-gray-400" dir="ltr">SAR</span>
               <MoneyInput
                 value={cardValue}
                 onValueChange={onCardChange}
-                className="input ps-10 tabular-nums"
+                className="input h-11 border-gray-200 bg-white ps-10 tabular-nums focus:border-[#1B6B3A] focus:ring-[#1B6B3A]/20"
               />
             </div>
           </label>
 
-          <div className={`rounded-xl px-3 py-2 text-xs ${
-            isBalanced && !hasNegative ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+          <div className={`rounded-xl border px-3 py-2.5 text-xs ${
+            isBalanced && !hasNegative ? 'border-[#d7e5dc] bg-[#f4f8f5] text-[#315542]' : 'border-amber-200 bg-amber-50 text-amber-800'
           }`}>
-            <div className="flex justify-between">
+            <div className="flex items-center justify-between">
               <span>{t('payments:totalPaid')}</span>
-              <span className="font-semibold tabular-nums" dir="ltr"><Rial amount={paidTotal} /></span>
+              <span className="font-bold text-[#0F2419] tabular-nums" dir="ltr"><Rial amount={paidTotal} /></span>
             </div>
-            <div className="flex justify-between mt-1">
+            <div className="mt-1 flex items-center justify-between border-t border-current/10 pt-1">
               <span>{balance >= 0 ? t('payments:remaining') : t('payments:overBy')}</span>
-              <span className="font-semibold tabular-nums" dir="ltr"><Rial amount={Math.abs(balance)} /></span>
+              <span className="font-bold text-[#0F2419] tabular-nums" dir="ltr"><Rial amount={Math.abs(balance)} /></span>
             </div>
           </div>
 
-          {cashAmount <= 0 && cardAmount > 0 && (
-            <button type="button" onClick={onUseCard} className="w-full text-xs font-semibold text-indigo-700 bg-indigo-50 rounded-xl py-2">
-              {t('payments:useCard')}
-            </button>
-          )}
           {cardAmount <= 0 && cashAmount > 0 && (
             <button type="button" onClick={onUseCash} className="w-full text-xs font-semibold text-emerald-700 bg-emerald-50 rounded-xl py-2">
               {t('payments:useCash')}
@@ -1959,7 +1953,7 @@ function SplitPaymentModal({
           )}
         </div>
 
-        <div className="flex gap-2 border-t border-gray-100 px-5 py-4 bg-gray-50">
+        <div className="flex gap-2 border-t border-[#e4e9e5] bg-[#f8faf8] px-5 py-3.5">
           <button
             type="button"
             onClick={onClose}
@@ -1972,7 +1966,7 @@ function SplitPaymentModal({
             type="button"
             onClick={onComplete}
             disabled={!canComplete}
-            className="flex-1 rounded-xl bg-gradient-to-r from-[#1a3a28] to-primary-600 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:from-gray-200 disabled:to-gray-300 disabled:text-gray-400 disabled:cursor-not-allowed"
+            className="flex-1 rounded-xl bg-[#0F2419] py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#173F2F] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
           >
             {submitting ? t('payments:processing') : t('payments:completeSale')}
           </button>
@@ -2783,13 +2777,6 @@ export default function POSPage() {
       console.warn('[POSPage] register open failed', err)
       toast.error(t(`register:${registerSessionErrorKey(err)}`))
     }
-  }
-
-  function useNormalCardPayment() {
-    setPayMethod('card')
-    setSplitOpen(false)
-    setSplitCash('')
-    setSplitCard('')
   }
 
   function useNormalCashPayment() {
@@ -3861,7 +3848,6 @@ export default function POSPage() {
           onCashChange={updateSplitCash}
           onCardChange={updateSplitCard}
           onUseCash={useNormalCashPayment}
-          onUseCard={useNormalCardPayment}
           onClose={() => setSplitOpen(false)}
           onComplete={charge}
         />
@@ -3947,15 +3933,14 @@ export default function POSPage() {
               title={t(scannerEnabled ? 'pos:scanner.disable' : 'pos:scanner.enable')}
               className={`relative flex h-9 w-9 items-center justify-center rounded-lg border transition-colors ${
                 scannerEnabled
-                  ? 'border-sky-400/30 bg-sky-500/20 text-sky-200'
-                  : 'border-white/15 bg-white/10 text-white/50'
+                  ? 'border-emerald-300/60 bg-[#1B6B3A] text-white shadow-sm shadow-black/20'
+                  : 'border-white/15 bg-white/5 text-white/45 hover:bg-white/10 hover:text-white/70'
               }`}
             >
               <ScanLine size={15} />
               <span className={`absolute end-1 top-1 h-1.5 w-1.5 rounded-full ${
-                scannerStatus === 'accepted' ? 'bg-emerald-400'
-                  : scannerStatus === 'unknown' || scannerStatus === 'error' ? 'bg-red-400'
-                    : scannerStatus === 'looking' ? 'bg-amber-300' : 'bg-white/40'
+                scannerEnabled ? 'bg-emerald-200 ring-1 ring-[#0F2419]'
+                  : 'bg-white/30'
               }`} />
             </button>
             <div className="relative">
@@ -4001,7 +3986,7 @@ export default function POSPage() {
         </div>
 
         {/* Search + category tabs */}
-        <div className="px-4 py-2.5 border-b border-gray-100 bg-white flex flex-col gap-2.5 flex-shrink-0 sm:flex-row sm:items-center">
+        <div className="flex flex-shrink-0 flex-col gap-2 border-b border-gray-100 bg-white px-4 py-2.5 sm:flex-row sm:items-center">
           {activePosMode === 'quick' ? (
             <div className="contents">
               <div className="relative min-w-0 flex-1 sm:min-w-[280px] sm:max-w-xl">
@@ -4062,12 +4047,12 @@ export default function POSPage() {
                   onClick={() => scrollCategories(-1)}
                   disabled={scrollState.categoryAtStart}
                   title={t('pos:scrollCategoriesPrevious')}
-                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-35"
+                  className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-gray-600 transition-colors hover:border-[#b9d0c0] hover:bg-white disabled:cursor-not-allowed disabled:border-gray-100 disabled:bg-gray-50 disabled:text-gray-300 disabled:opacity-100"
                 >
                   <DirectionalIcon icon={ChevronLeft} size={20} />
                 </button>
               )}
-              <div ref={categoryScrollRef} className="flex items-center gap-1.5 overflow-x-auto flex-1">
+              <div ref={categoryScrollRef} className="flex flex-1 items-center gap-1.5 overflow-x-auto">
                 <button
                   onClick={() => setActiveCat(null)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${
@@ -4096,7 +4081,7 @@ export default function POSPage() {
                   onClick={() => scrollCategories(1)}
                   disabled={scrollState.categoryAtEnd}
                   title={t('pos:scrollCategoriesNext')}
-                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-35"
+                  className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-gray-600 transition-colors hover:border-[#b9d0c0] hover:bg-white disabled:cursor-not-allowed disabled:border-gray-100 disabled:bg-gray-50 disabled:text-gray-300 disabled:opacity-100"
                 >
                   <DirectionalIcon icon={ChevronRight} size={20} />
                 </button>
@@ -4482,9 +4467,7 @@ export default function POSPage() {
               <button key={m} onClick={() => { setPayMethod(m); setSplitOpen(false) }}
                 className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition-[background-color,border-color,color,box-shadow] ${
                   payMethod === m
-                    ? m === 'cash'
-                      ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
-                      : 'bg-indigo-500 text-white border-indigo-500 shadow-sm'
+                  ? 'border-[#0F2419] bg-[#0F2419] text-white shadow-sm'
                     : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
                 }`}>
                 {m === 'cash' ? <Banknote size={13} /> : <CreditCard size={13} />}
@@ -4497,7 +4480,7 @@ export default function POSPage() {
                 onClick={openSplitPayment}
                   className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition-[background-color,border-color,color,box-shadow] ${
                   payMethod === 'split'
-                    ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                    ? 'border-[#0F2419] bg-[#0F2419] text-white shadow-sm'
                     : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
                 }`}
               >
