@@ -7,6 +7,43 @@ const DEFAULT_A4_ACCENT = '#0f766e'
 const DEFAULT_A4_HEADING = '#10251a'
 const DEFAULT_A4_BODY = '#1f2937'
 
+/**
+ * V1 letterhead geometry is intentionally document-flow only: header artwork
+ * appears at document start and footer artwork at document end. Keep these
+ * limits aligned with the settings UI and database validator so a saved
+ * configuration never changes when it is read back for preview or print.
+ */
+export const A4_ARTWORK_BOUNDS = {
+  headerHeight: { min: 8, max: 45 },
+  footerHeight: { min: 4, max: 18 },
+  headerSpacing: { min: 0, max: 8 },
+  footerSpacing: { min: 0, max: 8 },
+  maxReservedHeight: 74,
+} as const
+
+type A4ArtworkGeometry = Pick<InvoicePresentationSettings['a4'],
+  'header_asset_height' | 'footer_asset_height' | 'header_asset_spacing' | 'footer_asset_spacing'>
+
+export function isA4ArtworkGeometryWithinBounds(value: A4ArtworkGeometry): boolean {
+  const { headerHeight, footerHeight, headerSpacing, footerSpacing, maxReservedHeight } = A4_ARTWORK_BOUNDS
+  const dimensions = [
+    value.header_asset_height,
+    value.footer_asset_height,
+    value.header_asset_spacing,
+    value.footer_asset_spacing,
+  ]
+  if (!dimensions.every(Number.isInteger)) return false
+  return value.header_asset_height >= headerHeight.min
+    && value.header_asset_height <= headerHeight.max
+    && value.footer_asset_height >= footerHeight.min
+    && value.footer_asset_height <= footerHeight.max
+    && value.header_asset_spacing >= headerSpacing.min
+    && value.header_asset_spacing <= headerSpacing.max
+    && value.footer_asset_spacing >= footerSpacing.min
+    && value.footer_asset_spacing <= footerSpacing.max
+    && value.header_asset_height + value.footer_asset_height + value.header_asset_spacing + value.footer_asset_spacing <= maxReservedHeight
+}
+
 type SavedA4Settings = {
   theme: A4TemplateId
   accent_color: string
@@ -442,16 +479,16 @@ export function normalizeInvoiceSettings(rawSettings: unknown, branch: InvoiceSe
         header_asset_enabled: bool(a4.header_asset_enabled, false),
         show_standard_branding: bool(a4.show_standard_branding, !bool(a4.header_asset_enabled, false)),
         header_asset_fit: oneOf(a4.header_asset_fit, ['contain', 'cover'] as const, 'contain'),
-        header_asset_height: typeof a4.header_asset_height === 'number' ? Math.min(56, Math.max(18, a4.header_asset_height)) : 28,
-        header_asset_spacing: typeof a4.header_asset_spacing === 'number' ? Math.min(16, Math.max(0, a4.header_asset_spacing)) : 6,
+        header_asset_height: typeof a4.header_asset_height === 'number' ? Math.min(A4_ARTWORK_BOUNDS.headerHeight.max, Math.max(A4_ARTWORK_BOUNDS.headerHeight.min, a4.header_asset_height)) : 28,
+        header_asset_spacing: typeof a4.header_asset_spacing === 'number' ? Math.min(A4_ARTWORK_BOUNDS.headerSpacing.max, Math.max(A4_ARTWORK_BOUNDS.headerSpacing.min, a4.header_asset_spacing)) : 6,
         header_crop_top: percent(a4.header_crop_top, 0),
         header_crop_height: percent(a4.header_crop_height, 18, 1),
         footer_asset_path: text(a4.footer_asset_path),
         footer_asset_version: positiveInt(a4.footer_asset_version, 1),
         footer_asset_enabled: bool(a4.footer_asset_enabled, false),
         footer_asset_fit: oneOf(a4.footer_asset_fit, ['contain', 'cover'] as const, 'contain'),
-        footer_asset_height: typeof a4.footer_asset_height === 'number' ? Math.min(32, Math.max(6, a4.footer_asset_height)) : 10,
-        footer_asset_spacing: typeof a4.footer_asset_spacing === 'number' ? Math.min(16, Math.max(0, a4.footer_asset_spacing)) : 4,
+        footer_asset_height: typeof a4.footer_asset_height === 'number' ? Math.min(A4_ARTWORK_BOUNDS.footerHeight.max, Math.max(A4_ARTWORK_BOUNDS.footerHeight.min, a4.footer_asset_height)) : 10,
+        footer_asset_spacing: typeof a4.footer_asset_spacing === 'number' ? Math.min(A4_ARTWORK_BOUNDS.footerSpacing.max, Math.max(A4_ARTWORK_BOUNDS.footerSpacing.min, a4.footer_asset_spacing)) : 4,
         footer_crop_top: percent(a4.footer_crop_top, 92),
         footer_crop_height: percent(a4.footer_crop_height, 8, 1),
         artwork_scope: oneOf(a4.artwork_scope, ['selected', 'all'] as const, 'all'),

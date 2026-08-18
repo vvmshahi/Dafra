@@ -15,7 +15,7 @@ const activeIds = ['classic', 'modern_split', 'clean_ledger', 'contemporary_bord
 const partyClasses = {
   classic: 'a4-classic-parties', modern_split: 'a4-statement-parties',
   minimal_professional: 'a4-minimal-parties', executive_green: 'a4-executive-parties',
-  clean_ledger: 'a4-ledger-parties', contemporary_border: 'a4-contemporary-parties', executive_professional: 'a4-execpro-parties', creative_studio: 'a4-creative-parties',
+  clean_ledger: 'a4-ledger-parties', executive_professional: 'a4-execpro-parties', creative_studio: 'a4-creative-parties',
 }
 
 const invoiceSettings = read('src/pages/branch/InvoiceSettingsPage.tsx')
@@ -63,6 +63,44 @@ try {
     phone: '+966500000001', email: 'seller@example.com', show_email: true,
   })
   const draft = { presentation: normalized.presentation, invoiceLanguage: normalized.invoiceLanguage, printMode: normalized.printMode, afterSaleAction: normalized.afterSaleAction }
+  assert.deepEqual(settings.A4_ARTWORK_BOUNDS, {
+    headerHeight: { min: 8, max: 45 }, footerHeight: { min: 4, max: 18 },
+    headerSpacing: { min: 0, max: 8 }, footerSpacing: { min: 0, max: 8 }, maxReservedHeight: 74,
+  })
+  const artworkRoundTripDraft = {
+    ...draft,
+    presentation: {
+      ...draft.presentation,
+      a4: { ...draft.presentation.a4, header_asset_height: 45, header_asset_spacing: 8, footer_asset_height: 18, footer_asset_spacing: 3 },
+    },
+  }
+  const roundTripArtwork = next => settings.normalizeInvoiceSettings({
+    presentation_settings: settings.serializeInvoicePresentationSettingsForSave({
+      ...draft,
+      presentation: { ...draft.presentation, a4: { ...draft.presentation.a4, ...next } },
+    }, 'Legal Seller Co'),
+  }, {})
+  const reloadedArtwork = roundTripArtwork(artworkRoundTripDraft.presentation.a4)
+  assert.equal(reloadedArtwork.presentation.a4.header_asset_height, 45)
+  assert.equal(reloadedArtwork.presentation.a4.footer_asset_height, 18)
+  assert.equal(reloadedArtwork.presentation.a4.header_asset_spacing, 8)
+  assert.equal(reloadedArtwork.presentation.a4.footer_asset_spacing, 3)
+  assert.equal(settings.isA4ArtworkGeometryWithinBounds(reloadedArtwork.presentation.a4), true)
+  for (const height of [8, 26, 45]) assert.equal(roundTripArtwork({ header_asset_height: height }).presentation.a4.header_asset_height, height)
+  for (const height of [4, 11, 18]) assert.equal(roundTripArtwork({ footer_asset_height: height }).presentation.a4.footer_asset_height, height)
+  for (const configuration of [
+    { header_asset_enabled: true, footer_asset_enabled: false },
+    { header_asset_enabled: false, footer_asset_enabled: true },
+    { header_asset_enabled: true, footer_asset_enabled: true },
+  ]) {
+    const reloaded = roundTripArtwork(configuration).presentation.a4
+    assert.equal(reloaded.header_asset_enabled, configuration.header_asset_enabled)
+    assert.equal(reloaded.footer_asset_enabled, configuration.footer_asset_enabled)
+  }
+  assert.equal(settings.isA4ArtworkGeometryWithinBounds({ ...reloadedArtwork.presentation.a4, header_asset_height: 46 }), false)
+  assert.equal(settings.isA4ArtworkGeometryWithinBounds({ ...reloadedArtwork.presentation.a4, footer_asset_height: 19 }), false)
+  assert.equal(settings.isA4ArtworkGeometryWithinBounds({ ...reloadedArtwork.presentation.a4, header_asset_spacing: 9 }), false)
+  assert.equal(settings.isA4ArtworkGeometryWithinBounds({ ...reloadedArtwork.presentation.a4, footer_asset_spacing: 8 }), false)
   const base = adapters.documentFromPreviewDraft(draft, 'data:image/png;base64,RklYVFVSRQ==')
   const setTemplate = (model, id) => ({ ...model, template: { ...model.template, requestedId: id, resolvedId: id, requestedVersion: 1, resolvedVersion: 1, fallback: false, fallbackReason: null } })
   const render = (model, options = {}) => renderToStaticMarkup(createElement(A4Document, { model, options }))
@@ -140,8 +178,20 @@ try {
   for (const id of ids) {
     const markup = render(setTemplate(walkIn, id), { preview: true })
     assert.doesNotMatch(markup, /class="a4-buyer"/)
-    assert.match(markup, new RegExp(`class="${partyClasses[id]} a4-parties--seller-only"`))
+    if (id === 'contemporary_border') {
+      assert.match(markup, /a4-contemporary-head/)
+      assert.match(markup, /a4-contemporary-recipient/)
+      assert.match(markup, /a4-legal-seller/)
+    } else {
+      assert.match(markup, new RegExp(`class="${partyClasses[id]} a4-parties--seller-only"`))
+    }
   }
+
+  const contemporaryB2bMarkup = render(setTemplate(b2b, 'contemporary_border'), { preview: true })
+  assert.match(contemporaryB2bMarkup, /a4-contemporary-recipient/)
+  assert.match(contemporaryB2bMarkup, /Buyer Legal LLC/)
+  assert.match(contemporaryB2bMarkup, /310000000000003/)
+  assert.match(contemporaryB2bMarkup, /4030000000/)
 
   const recolored = setTemplate({ ...base, template: { ...base.template, accentColor: '#7c3aed', headingColor: '#4c1d95', bodyColor: '#312e81' } }, 'clean_ledger')
   const recoloredMarkup = render(recolored, { preview: true })

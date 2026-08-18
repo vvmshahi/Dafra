@@ -179,6 +179,9 @@ const permittedPaths = new Set([
   'scripts/test-phase4e-thermal-receipts.mjs',
   'scripts/test-phase4f-a4-templates.mjs',
   'scripts/test-a4-v1-foundation.mjs',
+  // Current Invoice Settings UI guard checks only translated navigation,
+  // artwork controls, and save/reset presentation behavior.
+  'scripts/audit-phase4c-invoice-settings-ui.mjs',
   'scripts/test-classic-business-a4.mjs',
   'scripts/test-modern-statement-a4.mjs',
   'scripts/test-accounting-ledger-a4.mjs',
@@ -235,6 +238,9 @@ const permittedPaths = new Set([
   // One pending presentation-validator allowlist migration; arbitrary IDs
   // remain rejected and no checkout/database financial contract is changed.
   'supabase/migrations/20260818000200_allow_creative_studio_a4_settings.sql',
+  // One pending V1 letterhead-geometry migration. It narrows presentation
+  // bounds only and does not alter checkout, fiscal, or financial authority.
+  'supabase/migrations/20260818000300_align_a4_letterhead_artwork_bounds_v1.sql',
   'scripts/test-p0-checkout-buyer-snapshot-hotfix.mjs',
   // P0 stale-checkout recovery exercises only client retry persistence; it
   // does not alter the server-owned checkout, stock, or payment authority.

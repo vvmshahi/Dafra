@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const page = read('src/pages/branch/InvoiceSettingsPage.tsx')
+const workspace = read('src/pages/branch/PrintingDocumentsPage.tsx')
+const studioShell = read('src/components/printing/DocumentStudioShell.tsx')
 const en = JSON.parse(read('src/localization/locales/en/settings.json'))
 const ar = JSON.parse(read('src/localization/locales/ar-SA/settings.json'))
 const settings = value => value.invoiceSettings
@@ -16,10 +18,18 @@ for (const field of ['display_heading', 'display_subheading', 'custom_display_na
 assert.doesNotMatch(page, /QR alignment|qr_alignment.*Choice|Choice.*qr_alignment/)
 assert.match(page, /resetChanges/); assert.match(page, /beforeunload/); assert.match(page, /routeGuard/)
 assert.doesNotMatch(page, /immutableLogoObjectPath/); assert.match(page, /upsert: true/); assert.match(page, /branch\.id\}\/logo/)
-for (const tab of ['General', 'Header & Branding', 'Contact & Footer', 'Thermal Receipt', 'A4 Themes']) assert.match(page, new RegExp(tab))
-assert.match(page, /mobilePane/); assert.match(page, /role="tab"/); assert.match(page, /role="tabpanel"/)
+assert.match(page, /DocumentStudioSectionNav/)
+assert.match(page, /allowedSections/)
+assert.match(page, /workspace === 'receipts'/)
+for (const workspaceId of ['receipts', 'invoices', 'barcode-labels']) assert.match(workspace, new RegExp(`['\"]${workspaceId}['\"]`))
+assert.match(studioShell, /data-studio-section/)
+assert.match(studioShell, /aria-current=\{selected \? 'page'/)
+assert.match(studioShell, /role="dialog"/)
+assert.match(studioShell, /aria-modal="true"/)
 for (const locale of [settings(en), settings(ar)]) {
   for (const key of ['sections', 'fields', 'options', 'templates', 'printModes', 'preview', 'readOnlyMessage', 'resetTitle', 'leaveWarning', 'newDocumentsOnly']) assert.ok(locale[key], `missing translation ${key}`)
+  assert.ok(locale.documentLanguage, 'missing general settings navigation label')
+  for (const key of ['branding', 'contact', 'thermal', 'a4']) assert.ok(locale.sections?.[key], `missing settings navigation label ${key}`)
 }
 assert.match(page, /resolveInvoicePresentationSettings/)
 assert.match(page, /documentFromPreviewDraft/)

@@ -203,6 +203,10 @@ const permittedPaths = new Set([
   'scripts/test-migration-lineage-repair.mjs',
   'scripts/test-branch-billing-profile-foundation.mjs',
   'scripts/test-custom-line-cart-architecture.mjs',
+  // Narrow scope-guard reconciliation for the reviewed A4 settings contract.
+  // Neither guard changes checkout, reporting, or credit authority.
+  'scripts/test-custom-line-server-checkout.mjs',
+  'scripts/audit-phase4c-invoice-settings-ui.mjs',
   MIGRATION_PATH,
   'scripts/test-custom-line-server-checkout.mjs',
   'scripts/test-source-aware-reporting-credit-hardening.mjs',
@@ -277,6 +281,9 @@ const permittedPaths = new Set([
   // Pending Creative Studio closed-list compatibility only; it does not
   // expand arbitrary settings or alter reporting/credit authority.
   'supabase/migrations/20260818000200_allow_creative_studio_a4_settings.sql',
+  // Pending V1 letterhead geometry validation only; this narrows existing
+  // presentation settings and does not alter reporting or credit behavior.
+  'supabase/migrations/20260818000300_align_a4_letterhead_artwork_bounds_v1.sql',
   'scripts/test-p0-checkout-buyer-snapshot-hotfix.mjs',
   // P0 stale-checkout recovery is a client retry-state test only; financial
   // reporting, credit authority, and Edge paths remain protected.

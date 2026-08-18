@@ -238,6 +238,9 @@ try {
     // Reviewed Creative Studio presentation compatibility. It adds one value
     // to the existing closed validator allowlists and no other database scope.
     'supabase/migrations/20260818000200_allow_creative_studio_a4_settings.sql',
+    // Reviewed V1 letterhead geometry compatibility. It narrows the existing
+    // presentation validator only; no financial or checkout authority changes.
+    'supabase/migrations/20260818000300_align_a4_letterhead_artwork_bounds_v1.sql',
     'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
     'supabase/migrations/20260804000600_trading_sandbox_v2.sql',
     'supabase/migrations/20260805000200_persist_zatca_capability_selection.sql',
