@@ -210,6 +210,11 @@ const permittedPaths = new Set([
   'src/pages/reports/pdf/reportExportData.ts',
   'src/pages/reports/pdf/reportPdfExporters.ts',
   'src/pages/branch/InvoiceSettingsPage.tsx',
+  // Creative Studio is presentation-only: the registry, color defaults, and
+  // historical resolver do not participate in checkout or financial authority.
+  'src/lib/invoices/a4ColorTokens.ts',
+  'src/lib/invoices/a4TemplateRegistry.ts',
+  'src/lib/invoices/presentationSettings.ts',
   MIGRATION_PATH,
   'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
   'supabase/migrations/20260804000600_trading_sandbox_v2.sql',
@@ -227,6 +232,9 @@ const permittedPaths = new Set([
   // deployed branches schema; checkout authority and commercial logic remain
   // outside this exception.
   'supabase/migrations/20260817000700_restore_pos_checkout_after_buyer_snapshot_hardening.sql',
+  // One pending presentation-validator allowlist migration; arbitrary IDs
+  // remain rejected and no checkout/database financial contract is changed.
+  'supabase/migrations/20260818000200_allow_creative_studio_a4_settings.sql',
   'scripts/test-p0-checkout-buyer-snapshot-hotfix.mjs',
   // P0 stale-checkout recovery exercises only client retry persistence; it
   // does not alter the server-owned checkout, stock, or payment authority.

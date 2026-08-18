@@ -116,10 +116,10 @@ const letterhead = read('src/lib/invoices/letterheadArtwork.ts')
 const colourTokens = read('src/lib/invoices/a4ColorTokens.ts')
 const presentation = read('src/lib/invoices/presentationSettings.ts')
 const previewQr = read('src/lib/invoices/previewQr.ts')
-for (const theme of ['classic', 'modern_split', 'minimal_professional', 'executive_green', 'clean_ledger', 'contemporary_border', 'executive_professional']) {
+for (const theme of ['classic', 'modern_split', 'minimal_professional', 'executive_green', 'clean_ledger', 'contemporary_border', 'executive_professional', 'creative_studio']) {
   assert.match(registry, new RegExp(`${theme}:`))
 }
-for (const className of ['classic', 'modern_split', 'minimal_professional', 'executive_green', 'clean_ledger', 'contemporary_border', 'executive_professional']) {
+for (const className of ['classic', 'modern_split', 'minimal_professional', 'executive_green', 'clean_ledger', 'contemporary_border', 'executive_professional', 'creative_studio']) {
   assert.match(css, new RegExp(`a4-document--${className}`))
 }
 assert.match(a4, /options\.nonFiscalDemo/)
@@ -162,12 +162,12 @@ assert.match(brandingMigration, /to_regprocedure\('public\.validate_invoice_pres
 // Corrective A4 registry: six valid IDs round-trip to six unique renderers,
 // landmark sets, thumbnails, and intended QR regions. Unknown IDs fall back to
 // Classic in the resolver instead of silently taking the Minimal renderer.
-assert.equal(A4_TEMPLATE_IDS.length, 7)
-assert.deepEqual(A4_NEW_SELECTION_TEMPLATE_IDS, ['classic', 'modern_split', 'clean_ledger', 'contemporary_border', 'executive_professional'])
-assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].renderer)).size, 7)
-assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].thumbnailClass)).size, 7)
-assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].qrRegion)).size, 7)
-assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].landmarks.join('|'))).size, 7)
+assert.equal(A4_TEMPLATE_IDS.length, 8)
+assert.deepEqual(A4_NEW_SELECTION_TEMPLATE_IDS, ['classic', 'modern_split', 'clean_ledger', 'contemporary_border', 'executive_professional', 'creative_studio'])
+assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].renderer)).size, 8)
+assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].thumbnailClass)).size, 8)
+assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].qrRegion)).size, 8)
+assert.equal(new Set(A4_TEMPLATE_IDS.map(id => A4_TEMPLATE_REGISTRY[id].landmarks.join('|'))).size, 8)
 assert.match(registry, /registry\[candidate\] \?\s*candidate\s*:\s*'classic'/)
 assert.doesNotMatch(registry, /fallback:\s*'minimal_professional'/)
 for (const id of A4_TEMPLATE_IDS.slice(3)) assert.notEqual(A4_TEMPLATE_REGISTRY[id].renderer, A4_TEMPLATE_REGISTRY.minimal_professional.renderer)

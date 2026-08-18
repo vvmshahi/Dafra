@@ -1284,6 +1284,7 @@ export type A4TemplateId =
   | 'clean_ledger'
   | 'contemporary_border'
   | 'executive_professional'
+  | 'creative_studio'
 export type A4HeaderStyle = 'standard' | 'compact' | 'branded'
 export type A4HeaderFit = 'contain' | 'cover'
 export type A4ArtworkScope = 'selected' | 'all'

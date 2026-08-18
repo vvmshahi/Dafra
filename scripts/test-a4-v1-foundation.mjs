@@ -10,12 +10,12 @@ process.env.VITE_SUPABASE_ANON_KEY ??= 'anonymous-test-key'
 
 const root = resolve(import.meta.dirname, '..')
 const read = path => readFileSync(resolve(root, path), 'utf8')
-const ids = ['classic', 'modern_split', 'minimal_professional', 'executive_green', 'clean_ledger', 'contemporary_border', 'executive_professional']
-const activeIds = ['classic', 'modern_split', 'clean_ledger', 'contemporary_border', 'executive_professional']
+const ids = ['classic', 'modern_split', 'minimal_professional', 'executive_green', 'clean_ledger', 'contemporary_border', 'executive_professional', 'creative_studio']
+const activeIds = ['classic', 'modern_split', 'clean_ledger', 'contemporary_border', 'executive_professional', 'creative_studio']
 const partyClasses = {
   classic: 'a4-classic-parties', modern_split: 'a4-statement-parties',
   minimal_professional: 'a4-minimal-parties', executive_green: 'a4-executive-parties',
-  clean_ledger: 'a4-ledger-parties', contemporary_border: 'a4-contemporary-parties', executive_professional: 'a4-execpro-parties',
+  clean_ledger: 'a4-ledger-parties', contemporary_border: 'a4-contemporary-parties', executive_professional: 'a4-execpro-parties', creative_studio: 'a4-creative-parties',
 }
 
 const invoiceSettings = read('src/pages/branch/InvoiceSettingsPage.tsx')
@@ -36,6 +36,9 @@ assert.match(css, /a4-contemporary-qr[^}]*background: #fff/)
 const executiveCss = css.match(/\/\* 7 — Executive Professional \*\/[\s\S]*?(?=\n  \/\* 2 — Modern Statement \*\/)/)?.[0] ?? ''
 for (const marker of ['a4-execpro-brand', 'align-self: center', 'a4-execpro-parties .a4-legal-seller', 'th:nth-child(2)', 'th:last-child', 'a4-execpro-closeout', 'a4-execpro-qr', 'padding: .65mm', 'a4-execpro-payment', 'a4-totals__grand', 'a4-document--executive_professional .a4-footer']) assert.ok(executiveCss.includes(marker), `missing Executive Professional refinement marker: ${marker}`)
 assert.doesNotMatch(executiveCss, /a4-document--(?:classic|modern_split|minimal_professional|executive_green|clean_ledger|contemporary_border)/, 'Executive Professional refinements cannot target frozen templates')
+const creativeCss = css.match(/\/\* 8 — Creative Studio[\s\S]*?(?=\n  \/\* 2 — Modern Statement \*\/)/)?.[0] ?? ''
+for (const marker of ['a4-creative-decoration', 'position: absolute', 'pointer-events: none', 'overflow: hidden', 'a4-creative-head', 'a4-creative-qr', 'a4-creative-parties', 'a4-creative-closeout', 'a4-creative-totals', 'a4-document--creative_studio .a4-footer']) assert.ok(creativeCss.includes(marker), `missing Creative Studio marker: ${marker}`)
+assert.doesNotMatch(creativeCss, /amount in words|signature|quotation|payment terms/i, 'Creative Studio cannot fabricate unsupported reference content')
 
 const server = await createServer({ appType: 'custom', logLevel: 'error', server: { middlewareMode: true } })
 try {
@@ -175,6 +178,38 @@ try {
   assert.match(executiveRecoloredMarkup, /--invoice-primary:#7c3aed/)
   assert.match(executiveRecoloredMarkup, /--invoice-heading:#4c1d95/)
   assert.match(executiveRecoloredMarkup, /--invoice-text:#312e81/)
+
+  const creative = setTemplate(base, 'creative_studio')
+  const creativePreview = render(creative, { preview: true, qrImageUrl: 'data:image/png;base64,RklYVFVSRQ==' })
+  const creativePrint = render(creative, { qrImageUrl: 'data:image/png;base64,RklYVFVSRQ==' })
+  assert.equal(documentSurface(creativePreview), documentSurface(creativePrint), 'Creative Studio preview and print share one renderer surface')
+  for (const marker of ['a4-creative-decoration', 'a4-creative-head', 'a4-creative-brand', 'a4-creative-qr', 'a4-creative-parties', 'a4-creative-closeout', 'a4-creative-payment', 'a4-creative-totals']) assert.match(creativePreview, new RegExp(marker))
+  assert.match(creativePreview, /class="a4-logo/, 'Creative Studio renders a configured logo')
+
+  const creativeWithoutLogo = setTemplate({
+    ...base,
+    seller: { ...base.seller, displayHeading: 'Creative Trading Name' },
+    presentation: { ...base.presentation, logo: { ...base.presentation.logo, visible: false, assetPath: null, previewUrl: null } },
+  }, 'creative_studio')
+  const creativeWithoutLogoMarkup = render(creativeWithoutLogo, { preview: true })
+  assert.match(creativeWithoutLogoMarkup, /a4-creative-brand/)
+  assert.doesNotMatch(creativeWithoutLogoMarkup, /class="a4-logo/, 'Creative Studio has no empty logo placeholder')
+
+  const creativeB2b = setTemplate({ ...base, buyer: { ...base.buyer, snapshotState: 'captured', name: 'Creative Buyer LLC', nameAr: 'شركة المشتري الإبداعية', vatNumber: '310000000000003', address: 'Jeddah, Saudi Arabia', identifierType: 'CR', identifierValue: '4030000000', isWalkIn: false } }, 'creative_studio')
+  const creativeB2bMarkup = render(creativeB2b, { preview: true })
+  assert.match(creativeB2bMarkup, /Creative Buyer LLC/)
+  assert.match(creativeB2bMarkup, /310000000000003/)
+  const creativeLong = setTemplate({ ...base, items: Array.from({ length: 100 }, (_, index) => ({ ...base.items[index % base.items.length], description: `Creative item ${index + 1}`, descriptionAr: `بند إبداعي ${index + 1}` })) }, 'creative_studio')
+  const creativeLongMarkup = render(creativeLong, { preview: true })
+  assert.equal((creativeLongMarkup.match(/Creative item/g) ?? []).length, 100, 'Creative Studio retains 100 authoritative rows')
+  assert.match(creativeLongMarkup, /a4-creative-closeout/)
+  const creativeCredit = adapters.documentFromPreviewCreditNoteDraft(draft, 'data:image/png;base64,RklYVFVSRQ==')
+  assert.match(render(setTemplate(creativeCredit, 'creative_studio'), { preview: true, qrImageUrl: 'data:image/png;base64,RklYVFVSRQ==' }), /SAMPLE-CN-0042/)
+  const creativeRecolored = setTemplate({ ...base, template: { ...base.template, accentColor: '#f59e0b', headingColor: '#78350f', bodyColor: '#1f2937', autoForeground: true } }, 'creative_studio')
+  const creativeRecoloredMarkup = render(creativeRecolored, { preview: true })
+  assert.match(creativeRecoloredMarkup, /--invoice-primary:#f59e0b/)
+  assert.match(creativeRecoloredMarkup, /--invoice-heading:#78350f/)
+  assert.match(creativeRecoloredMarkup, /--invoice-text:#1f2937/)
 } finally {
   await server.close()
 }

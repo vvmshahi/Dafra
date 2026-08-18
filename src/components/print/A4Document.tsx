@@ -342,6 +342,25 @@ function ExecutiveProfessionalV1({ model, options = {} }: A4DocumentProps) {
     <Footer model={model} />
   </Shell>
 }
+function CreativeStudioDecoration() {
+  return <div className="a4-creative-decoration" aria-hidden="true"><i className="a4-creative-decoration__orb" /><i className="a4-creative-decoration__arc" /><i className="a4-creative-decoration__block" /><i className="a4-creative-decoration__footer" /></div>
+}
+function CreativeStudioV1({ model, options = {} }: A4DocumentProps) {
+  const branding = showsStandardBranding(model, options)
+  const brandIdentity = branding && (Boolean(model.presentation.logo.visible && (model.presentation.logo.previewUrl ?? model.presentation.logo.assetPath)) || [model.seller.displayHeading, model.seller.displaySubheading].some(value => normalizedIdentity(value) !== '' && !isLegalSellerIdentity(model.seller, value)))
+  return <Shell template="creative_studio" model={model} options={options}>
+    <CreativeStudioDecoration />
+    <header className={`a4-creative-head${brandIdentity ? '' : ' a4-creative-head--brandless'}`}>
+      {brandIdentity && <section className="a4-creative-brand"><SellerBrand model={model} visible={branding} /></section>}
+      <section className={`a4-creative-document${options.nonFiscalDemo ? ' a4-creative-document--without-qr' : ''}`}><div className="a4-creative-document-copy"><DocumentTitle model={model} /><DateMeta model={model} /></div>{!options.nonFiscalDemo && <section className="a4-creative-qr"><QrVerification model={model} options={options} /></section>}</section>
+    </header>
+    <div className={partyLayout('a4-creative-parties', model)}><section className="a4-creative-party"><Seller model={model} /></section>{hasNamedBuyer(model) && <section className="a4-creative-party"><Buyer model={model} /></section>}</div>
+    <Adjustment model={model} />
+    <ContemporaryItemTable model={model} />
+    <div className="a4-creative-closeout a4-closing-group"><section className="a4-creative-payment"><Payment model={model} /></section><section className="a4-creative-totals"><Totals model={model} /></section></div>
+    <Footer model={model} />
+  </Shell>
+}
 
 const RENDERERS: Record<A4TemplateRendererId, (props: A4DocumentProps) => ReactNode> = {
   classic_v1: ClassicV1,
@@ -351,6 +370,7 @@ const RENDERERS: Record<A4TemplateRendererId, (props: A4DocumentProps) => ReactN
   accounting_ledger_v1: AccountingLedgerV1,
   contemporary_modular_v1: ContemporaryModularV1,
   executive_professional_v1: ExecutiveProfessionalV1,
+  creative_studio_v1: CreativeStudioV1,
 }
 
 export default function A4Document({ model, options = {} }: A4DocumentProps) {

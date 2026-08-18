@@ -235,6 +235,9 @@ try {
     // Reviewed settings-validator compatibility for the selectable Executive
     // Professional A4 presentation. It keeps the validator's closed allowlist.
     'supabase/migrations/20260818000100_allow_executive_professional_a4_settings.sql',
+    // Reviewed Creative Studio presentation compatibility. It adds one value
+    // to the existing closed validator allowlists and no other database scope.
+    'supabase/migrations/20260818000200_allow_creative_studio_a4_settings.sql',
     'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
     'supabase/migrations/20260804000600_trading_sandbox_v2.sql',
     'supabase/migrations/20260805000200_persist_zatca_capability_selection.sql',

@@ -238,6 +238,12 @@ const permittedPaths = new Set([
   'src/components/print/A4Document.tsx',
   'src/index.css',
   'src/lib/invoices/a4TemplateRegistry.ts',
+  // Creative Studio presentation registration consumes only issued-document
+  // view data and existing color controls; reporting and credit semantics stay protected.
+  'src/lib/invoices/a4ColorTokens.ts',
+  'src/lib/invoices/presentationSettings.ts',
+  'src/types/database.ts',
+  'scripts/test-issued-document-presentation-integrity.mjs',
   'src/pages/branch/InvoiceSettingsPage.tsx',
   'src/lib/print/androidPrintExecution.ts',
   'src/lib/print/browserPrint.ts',
@@ -268,6 +274,9 @@ const permittedPaths = new Set([
   // redefined against the linked production branches schema. No reporting,
   // credit, stock, checkout-authority, or Edge implementation is allowlisted.
   'supabase/migrations/20260817000700_restore_pos_checkout_after_buyer_snapshot_hardening.sql',
+  // Pending Creative Studio closed-list compatibility only; it does not
+  // expand arbitrary settings or alter reporting/credit authority.
+  'supabase/migrations/20260818000200_allow_creative_studio_a4_settings.sql',
   'scripts/test-p0-checkout-buyer-snapshot-hotfix.mjs',
   // P0 stale-checkout recovery is a client retry-state test only; financial
   // reporting, credit authority, and Edge paths remain protected.
