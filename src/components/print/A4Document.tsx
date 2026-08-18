@@ -332,7 +332,7 @@ function ContemporaryModularV1({ model, options = {} }: A4DocumentProps) {
     <Adjustment model={model} />
     <ContemporaryItemTable model={model} />
     <div className="a4-contemporary-closeout a4-closing-group">{!options.nonFiscalDemo && <section className="a4-contemporary-qr"><QrVerification model={model} options={options} /></section>}<section className="a4-contemporary-payment"><Payment model={model} /></section><section className="a4-contemporary-totals"><Totals model={model} /></section></div>
-    <section className={`a4-contemporary-lower${hasFooter ? ' a4-contemporary-lower--with-content' : ''}`}><div className="a4-contemporary-footer-reference">{documentLabel(model.identity.language, model.identity.kind === 'credit_note' ? 'creditNoteNumber' : model.identity.kind === 'debit_note' ? 'debitNoteNumber' : 'invoiceNumber')}: <bdi dir="ltr">{model.identity.number}</bdi></div>{hasFooter && <Footer model={model} />}</section>
+    {hasFooter && <section className="a4-contemporary-lower"><Footer model={model} /></section>}
   </Shell>
 }
 function ExecutiveProfessionalV1({ model, options = {} }: A4DocumentProps) {

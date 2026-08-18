@@ -66,6 +66,8 @@ try {
   for (const label of ['Description / الوصف', 'Qty / الكمية', 'Unit Price / سعر الوحدة', 'Taxable / الخاضع', 'VAT / الضريبة', 'Total / الإجمالي']) assert.match(preview, new RegExp(label))
   for (const token of ['--invoice-primary:#0f766e', '--invoice-heading:#134e4a', '--invoice-text:#1f2937', '--invoice-on-primary:']) assert.match(preview, new RegExp(token))
   assert.match(preview, /class="a4-qr"/)
+  assert.equal(count(preview, base.identity.number), 1, 'the authoritative document number appears only in upper metadata')
+  assert.ok(preview.indexOf('class="a4-meta"') < preview.indexOf(base.identity.number), 'the document number remains in upper metadata')
   assert.ok(preview.indexOf('class="a4-contemporary-qr"') > preview.indexOf('class="a4-contemporary-items"'), 'QR is embedded in the financial closeout band')
   assert.ok(preview.indexOf('class="a4-contemporary-qr"') < preview.indexOf('class="a4-contemporary-payment"'), 'QR precedes payment and totals in the financial band')
   assert.ok(preview.indexOf('class="a4-contemporary-payment"') < preview.indexOf('class="a4-contemporary-totals"'), 'payment precedes totals in closeout')
@@ -96,7 +98,7 @@ try {
   const shortInvoice = render({ ...base, items: [item] }, { preview: true })
   assert.match(shortInvoice, /a4-contemporary-closeout a4-closing-group/, 'short invoices keep the closeout in normal flow')
   const noFooter = render({ ...base, presentation: { ...base.presentation, footer: { ...base.presentation.footer, footerVisible: false, footer: null } } }, { preview: true })
-  assert.doesNotMatch(noFooter, /Thank you for your business/)
+  assert.doesNotMatch(noFooter, /Thank you for your business|a4-contemporary-lower/)
   for (const length of [20, 60, 100]) {
     const long = render({ ...base, items: Array.from({ length }, (_, index) => ({ ...item, description: `Contemporary invoice item ${index + 1} with a long commercial description`, descriptionAr: `بند معاصر طويل ${index + 1}` })) }, { preview: true })
     assert.equal(count(long, 'Contemporary invoice item'), length)
