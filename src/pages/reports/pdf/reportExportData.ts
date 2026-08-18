@@ -122,6 +122,23 @@ export interface ProfitEstimateExportData {
   monthlyRows: ProfitMonthRow[]
 }
 
+export interface ExpenseExportData {
+  totalVariable: number
+  totalFixed: number
+  grandTotal: number
+  monthlyFixed: number
+  log: { date: string; description: string; category: string; amount: number; method: string }[]
+}
+
+export interface PurchaseExportData {
+  totalPurchased: number
+  totalVat: number
+  supplierCount: number
+  bySupplier: { name: string; total: number; count: number; lastDate: string | null }[]
+  topItems: { name: string; quantity: number; total: number }[]
+  monthlyBars: { month: string; Purchases: number }[]
+}
+
 const EMPTY_VAT_DATA: VatSupportExportData = {
   grossSales: 0,
   creditNotes: 0,
@@ -161,6 +178,9 @@ const EMPTY_SALES_DATA: SalesExportData = {
   topProducts: [],
   catPerformance: [],
 }
+
+const EMPTY_EXPENSE_EXPORT_DATA: ExpenseExportData = { totalVariable: 0, totalFixed: 0, grandTotal: 0, monthlyFixed: 0, log: [] }
+const EMPTY_PURCHASE_EXPORT_DATA: PurchaseExportData = { totalPurchased: 0, totalVat: 0, supplierCount: 0, bySupplier: [], topItems: [], monthlyBars: [] }
 
 function stringOrFallback(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback
@@ -328,6 +348,24 @@ export async function loadProfitEstimateExport(params: ReportExportParams): Prom
     netProfit: numberOrZero(summary.netProfit),
     margin: numberOrZero(summary.margin),
     monthlyRows: asArray<ProfitMonthRow>(summary.monthlyRows).map(profitMonthRow),
+  }
+}
+
+export async function loadExpenseExport(params: ReportExportParams): Promise<ExpenseExportData> {
+  const summary = await loadReportSummary<ExpenseExportData>('get_expense_report_summary_v1', reportParams(params.startDate, params.endDate, params.branchId), EMPTY_EXPENSE_EXPORT_DATA)
+  return {
+    totalVariable: numberOrZero(summary.totalVariable), totalFixed: numberOrZero(summary.totalFixed), grandTotal: numberOrZero(summary.grandTotal), monthlyFixed: numberOrZero(summary.monthlyFixed),
+    log: asArray<ExpenseExportData['log'][number]>(summary.log).map(row => ({ date: safeText(row.date), description: safeText(row.description), category: safeText(row.category), amount: numberOrZero(row.amount), method: safeText(row.method) })),
+  }
+}
+
+export async function loadPurchaseExport(params: ReportExportParams): Promise<PurchaseExportData> {
+  const summary = await loadReportSummary<PurchaseExportData>('get_purchase_report_summary', reportParams(params.startDate, params.endDate, params.branchId), EMPTY_PURCHASE_EXPORT_DATA)
+  return {
+    totalPurchased: numberOrZero(summary.totalPurchased), totalVat: numberOrZero(summary.totalVat), supplierCount: intOrZero(summary.supplierCount),
+    bySupplier: asArray<PurchaseExportData['bySupplier'][number]>(summary.bySupplier).map(row => ({ name: safeText(row.name), total: numberOrZero(row.total), count: intOrZero(row.count), lastDate: row.lastDate ?? null })),
+    topItems: asArray<PurchaseExportData['topItems'][number]>(summary.topItems).map(row => ({ name: safeText(row.name), quantity: numberOrZero(row.quantity), total: numberOrZero(row.total) })),
+    monthlyBars: asArray<PurchaseExportData['monthlyBars'][number]>(summary.monthlyBars).map(row => ({ month: safeText(row.month), Purchases: numberOrZero(row.Purchases) })),
   }
 }
 

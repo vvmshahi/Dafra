@@ -97,13 +97,9 @@ function contentWidth(doc: jsPDF): number {
   return pageWidth(doc) - PDF_THEME.layout.marginLeft - PDF_THEME.layout.marginRight
 }
 
-function toneColors(tone: NonNullable<PdfKpi['tone']> = 'green'): { bg: Rgb; accent: Rgb; badge: Rgb } {
-  if (tone === 'gold') return { bg: [150, 100, 24], accent: PDF_THEME.colors.gold, badge: [172, 119, 31] }
-  if (tone === 'amber') return { bg: [157, 83, 25], accent: [226, 147, 55], badge: [183, 98, 30] }
-  if (tone === 'teal') return { bg: [18, 111, 101], accent: [68, 190, 172], badge: [25, 135, 122] }
-  if (tone === 'blue') return { bg: PDF_THEME.colors.indigo, accent: [99, 153, 230], badge: [51, 95, 168] }
-  if (tone === 'slate') return { bg: [50, 64, 78], accent: [132, 148, 166], badge: [68, 82, 98] }
-  return { bg: PDF_THEME.colors.green2, accent: [76, 175, 116], badge: [35, 111, 73] }
+function toneColors(tone: NonNullable<PdfKpi['tone']> = 'green'): { accent: Rgb; value: Rgb } {
+  if (tone === 'green') return { accent: PDF_THEME.colors.green2, value: PDF_THEME.colors.green2 }
+  return { accent: PDF_THEME.colors.border, value: PDF_THEME.colors.text }
 }
 
 function currentPageNumber(doc: jsPDF): number {
@@ -265,10 +261,10 @@ function drawReportHeaderBar(doc: jsPDF, context: ReportPdfContext) {
   const left = PDF_THEME.layout.marginLeft
   const right = width - PDF_THEME.layout.marginRight
 
-  setFillColor(doc, PDF_THEME.colors.green)
+  setFillColor(doc, PDF_THEME.colors.white)
   doc.rect(0, 0, width, 30, 'F')
-  setFillColor(doc, PDF_THEME.colors.gold)
-  doc.rect(0, 30, width, 0.9, 'F')
+  setFillColor(doc, PDF_THEME.colors.green)
+  doc.rect(0, 29.1, width, 0.9, 'F')
 
   if (context.brandWordmarkDataUrl) {
     try {
@@ -277,32 +273,32 @@ function drawReportHeaderBar(doc: jsPDF, context: ReportPdfContext) {
       if (import.meta.env.DEV) console.warn('Kubri PDF wordmark embed failed. Falling back to text.', error)
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(12)
-      setTextColor(doc, PDF_THEME.colors.gold)
+      setTextColor(doc, PDF_THEME.colors.green)
       doc.text('Kubri', left, 13.9)
     }
   } else {
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(12)
-    setTextColor(doc, PDF_THEME.colors.gold)
+    setTextColor(doc, PDF_THEME.colors.green)
     doc.text('Kubri', left, 13.9)
   }
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(16)
-  setTextColor(doc, PDF_THEME.colors.white)
+  setTextColor(doc, PDF_THEME.colors.text)
   drawSmartText(doc, context.reportTitle, left, 24.1, { maxWidth: 105 }, 'bold')
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.2)
-  setTextColor(doc, PDF_THEME.colors.whiteMuted)
+  setTextColor(doc, PDF_THEME.colors.muted)
   rightText(doc, i18n.t('reports:pdf.layout.dateRange'), right, 10.5)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8.3)
-  setTextColor(doc, PDF_THEME.colors.white)
+  setTextColor(doc, PDF_THEME.colors.text)
   rightText(doc, context.dateRangeLabel, right, 15.4)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.2)
-  setTextColor(doc, PDF_THEME.colors.whiteMuted)
+  setTextColor(doc, PDF_THEME.colors.muted)
   rightText(doc, `${i18n.t('reports:pdf.layout.generated')} ${context.generatedAtLabel}`, right, 21.2)
 }
 
@@ -486,7 +482,7 @@ export function addKpiGrid(doc: jsPDF, context: ReportPdfContext, y: number, kpi
   const columns = 3
   const gap = 3.2
   const boxWidth = (contentWidth(doc) - gap * (columns - 1)) / columns
-  const boxHeight = 24
+  const boxHeight = 19
   let nextY = y
 
   kpis.forEach((kpi, index) => {
@@ -496,36 +492,28 @@ export function addKpiGrid(doc: jsPDF, context: ReportPdfContext, y: number, kpi
     const x = PDF_THEME.layout.marginLeft + column * (boxWidth + gap)
     const tone = kpi.tone ?? (index % 3 === 0 ? 'green' : index % 3 === 1 ? 'slate' : 'gold')
     const colors = toneColors(tone)
-    const icon = kpi.icon ?? kpiIcon(kpi.label)
-    const badgeSize = 8.4
-
-    setFillColor(doc, colors.bg)
+    setFillColor(doc, PDF_THEME.colors.white)
     doc.roundedRect(x, nextY, boxWidth, boxHeight, 2, 2, 'F')
+    setDrawColor(doc, PDF_THEME.colors.border)
+    doc.roundedRect(x, nextY, boxWidth, boxHeight, 2, 2, 'S')
     setFillColor(doc, colors.accent)
-    doc.rect(x, nextY, 1.5, boxHeight, 'F')
-    setFillColor(doc, colors.badge)
-    doc.roundedRect(x + boxWidth - badgeSize - 3, nextY + 3, badgeSize, badgeSize, 1.5, 1.5, 'F')
-
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(icon.length > 3 ? 4.6 : 5.8)
-    setTextColor(doc, PDF_THEME.colors.white)
-    drawSmartText(doc, icon, x + boxWidth - badgeSize / 2 - 3, nextY + 8.4, { align: 'center', maxWidth: badgeSize - 1 }, 'bold')
+    doc.rect(x, nextY + 2.5, 1.1, boxHeight - 5, 'F')
 
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(6.4)
-    setTextColor(doc, PDF_THEME.colors.cardMuted)
-    drawSmartText(doc, kpi.label.toUpperCase(), x + 4.8, nextY + 5.7, { maxWidth: boxWidth - badgeSize - 12 }, 'normal', '-')
+    setTextColor(doc, PDF_THEME.colors.muted)
+    drawSmartText(doc, kpi.label.toUpperCase(), x + 4.2, nextY + 5.2, { maxWidth: boxWidth - 8 }, 'normal', '-')
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(10.2)
-    setTextColor(doc, PDF_THEME.colors.white)
-    drawSmartText(doc, kpi.value, x + 4.8, nextY + 14.1, { maxWidth: boxWidth - 9 }, 'bold', '-')
+    setTextColor(doc, colors.value)
+    drawSmartText(doc, kpi.value, x + 4.2, nextY + 12.1, { maxWidth: boxWidth - 8 }, 'bold', '-')
 
     if (kpi.sub) {
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(6.4)
-      setTextColor(doc, PDF_THEME.colors.cardMuted)
-      drawSmartText(doc, kpi.sub, x + 4.8, nextY + 20, { maxWidth: boxWidth - 9 })
+      setTextColor(doc, PDF_THEME.colors.muted)
+      drawSmartText(doc, kpi.sub, x + 4.2, nextY + 16.1, { maxWidth: boxWidth - 8 })
     }
 
     if (column === columns - 1 || index === kpis.length - 1) nextY += boxHeight + 5
