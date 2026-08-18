@@ -15,7 +15,7 @@ const activeIds = ['classic', 'modern_split', 'clean_ledger', 'contemporary_bord
 const partyClasses = {
   classic: 'a4-classic-parties', modern_split: 'a4-statement-parties',
   minimal_professional: 'a4-minimal-parties', executive_green: 'a4-executive-parties',
-  clean_ledger: 'a4-ledger-parties', contemporary_border: 'a4-modular-cards',
+  clean_ledger: 'a4-ledger-parties', contemporary_border: 'a4-contemporary-parties',
 }
 
 const invoiceSettings = read('src/pages/branch/InvoiceSettingsPage.tsx')
@@ -31,8 +31,8 @@ const printCss = css.match(/@media print[\s\S]*?\/\* Snapshot-driven thermal doc
 assert.doesNotMatch(printCss, /a4-document--(?:modern_split|minimal_professional|executive_green|clean_ledger|contemporary_border)/)
 assert.doesNotMatch(printCss, /\.a4-document\s*\{[^}]*?(?:width|min-height|padding|margin):/)
 for (const token of ['--invoice-primary', '--invoice-heading', '--invoice-text', '--invoice-on-primary', '--invoice-border', '--invoice-surface', '--invoice-table-head', '--invoice-total-surface']) assert.match(a4Source, new RegExp(token))
-for (const marker of ['a4-statement-items thead', 'a4-document--minimal_professional .a4-items thead', 'a4-ledger-items thead', 'a4-modular-verification']) assert.match(css, new RegExp(marker))
-assert.match(css, /a4-modular-verification[^}]*var\(--invoice-document-background\)/)
+for (const marker of ['a4-statement-items thead', 'a4-document--minimal_professional .a4-items thead', 'a4-ledger-items thead', 'a4-contemporary-qr']) assert.match(css, new RegExp(marker))
+assert.match(css, /a4-contemporary-qr[^}]*background: #fff/)
 
 const server = await createServer({ appType: 'custom', logLevel: 'error', server: { middlewareMode: true } })
 try {

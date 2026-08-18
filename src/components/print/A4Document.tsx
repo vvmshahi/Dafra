@@ -171,6 +171,34 @@ function LedgerItemTable({ model }: { model: DocumentViewModel }) {
   </table>
 }
 
+function ContemporaryItemName({ item }: { item: DocumentViewModel['items'][number] }) {
+  const english = item.description.trim()
+  const arabic = item.descriptionAr?.trim() ?? ''
+  const identical = normalizedIdentity(english) !== '' && normalizedIdentity(english) === normalizedIdentity(arabic)
+  if (english && arabic && !identical) return <span className="a4-contemporary-item-name a4-contemporary-item-name--bilingual"><bdi dir="ltr">{english}</bdi><span className="a4-contemporary-item-name__separator" aria-hidden="true"> / </span><bdi dir="rtl">{arabic}</bdi></span>
+  const value = english || arabic
+  return <bdi className="a4-contemporary-item-name" dir={arabic && !english ? 'rtl' : 'ltr'}>{value}</bdi>
+}
+
+function contemporaryColumnLabel(key: 'description' | 'quantity' | 'unitPrice' | 'discount' | 'taxable' | 'vat' | 'total') {
+  const labels = {
+    description: { en: 'Description', ar: 'الوصف' }, quantity: { en: 'Qty', ar: 'الكمية' }, unitPrice: { en: 'Unit Price', ar: 'سعر الوحدة' },
+    discount: { en: 'Discount', ar: 'الخصم' }, taxable: { en: 'Taxable', ar: 'الخاضع' }, vat: { en: 'VAT', ar: 'الضريبة' }, total: { en: 'Total', ar: 'الإجمالي' },
+  } as const
+  const label = labels[key]
+  return `${label.en} / ${label.ar}`
+}
+
+function ContemporaryItemTable({ model }: { model: DocumentViewModel }) {
+  const credit = model.identity.kind === 'credit_note'
+  const hasDiscount = model.items.some(item => item.discount > 0.005)
+  return <table className={`a4-items a4-contemporary-items${hasDiscount ? ' a4-contemporary-items--with-discount' : ''}`}>
+    <colgroup><col className="a4-contemporary-items__index" /><col className="a4-contemporary-items__description" /><col className="a4-contemporary-items__quantity" /><col className="a4-contemporary-items__price" />{hasDiscount && <col className="a4-contemporary-items__discount" />}<col className="a4-contemporary-items__taxable" /><col className="a4-contemporary-items__vat" /><col className="a4-contemporary-items__total" /></colgroup>
+    <thead><tr><th>#</th><th>{contemporaryColumnLabel('description')}</th><th>{contemporaryColumnLabel('quantity')}</th><th>{contemporaryColumnLabel('unitPrice')}</th>{hasDiscount && <th>{contemporaryColumnLabel('discount')}</th>}<th>{contemporaryColumnLabel('taxable')}</th><th>{contemporaryColumnLabel('vat')}</th><th>{contemporaryColumnLabel('total')}</th></tr></thead>
+    <tbody>{model.items.map((item, index) => <tr key={`${item.description}-${index}`}><td>{index + 1}</td><td><ContemporaryItemName item={item} /></td><td><bdi dir="ltr">{formatDocumentQuantity(credit && item.creditedQuantity != null ? item.creditedQuantity : item.quantity, model)}</bdi>{names(model, item.unitName, item.unitNameAr).map((value, unitIndex) => <span className="a4-contemporary-item-unit" key={`${value}-${unitIndex}`} dir="auto">{value}</span>)}</td><td><Money value={item.unitPrice} model={model} /></td>{hasDiscount && <td>{item.discount > 0.005 ? <Money value={item.discount} model={model} /> : '—'}</td>}<td><Money value={item.taxableAmount} model={model} /></td><td><span><bdi dir="ltr">{formatDocumentQuantity(item.vatRate, model)}%</bdi> · <Money value={item.vatAmount} model={model} /></span></td><td><Money value={item.lineTotal} model={model} /></td></tr>)}</tbody>
+  </table>
+}
+
 function Totals({ model }: { model: DocumentViewModel }) { return <section className="a4-totals">{buildVisibleTotals(model).map(row => <div className={row.emphasized ? 'a4-totals__grand' : undefined} key={row.key}><span>{row.label}</span><Money value={row.value} model={model} /></div>)}</section> }
 
 function Payment({ model }: { model: DocumentViewModel }) {
@@ -280,7 +308,18 @@ function AccountingLedgerV1({ model, options = {} }: A4DocumentProps) {
     <Footer model={model} />
   </Shell>
 }
-function ContemporaryModularV1({ model, options = {} }: A4DocumentProps) { const branding = showsStandardBranding(model, options); return <Shell template="contemporary_border" model={model} options={options}><header className="a4-modular-head"><SellerBrand model={model} visible={branding} /><section className="a4-modular-document"><DocumentTitle model={model} options={options} /><DateMeta model={model} /></section></header><div className={partyLayout('a4-modular-cards', model)}><Seller model={model} /><Buyer model={model} /></div><Adjustment model={model} /><section className="a4-modular-table"><ItemTable model={model} /></section><div className="a4-modular-bottom a4-closing-group"><section className="a4-modular-payment"><Payment model={model} /></section><section className="a4-modular-total"><Totals model={model} /></section><section className="a4-modular-verification"><QrVerification model={model} options={options} /></section></div><Footer model={model} /></Shell> }
+function ContemporaryModularV1({ model, options = {} }: A4DocumentProps) {
+  const branding = showsStandardBranding(model, options)
+  const brandIdentity = branding && (Boolean(model.presentation.logo.visible && (model.presentation.logo.previewUrl ?? model.presentation.logo.assetPath)) || [model.seller.displayHeading, model.seller.displaySubheading].some(value => normalizedIdentity(value) !== '' && !isLegalSellerIdentity(model.seller, value)))
+  return <Shell template="contemporary_border" model={model} options={options}>
+    <header className={`a4-contemporary-head${brandIdentity ? '' : ' a4-contemporary-head--brandless'}`}>{brandIdentity && <section className="a4-contemporary-brand"><SellerBrand model={model} visible={branding} /></section>}<section className={`a4-contemporary-document${options.nonFiscalDemo ? ' a4-contemporary-document--without-qr' : ''}`}><div className="a4-contemporary-document-copy"><DocumentTitle model={model} /><DateMeta model={model} /></div>{!options.nonFiscalDemo && <section className="a4-contemporary-qr"><QrVerification model={model} options={options} /></section>}</section></header>
+    <div className={partyLayout('a4-contemporary-parties', model)}><section className="a4-contemporary-party"><Seller model={model} /></section>{hasNamedBuyer(model) && <section className="a4-contemporary-party"><Buyer model={model} /></section>}</div>
+    <Adjustment model={model} />
+    <ContemporaryItemTable model={model} />
+    <div className="a4-contemporary-closeout a4-closing-group"><section className="a4-contemporary-payment"><Payment model={model} /></section><section className="a4-contemporary-totals"><Totals model={model} /></section></div>
+    <Footer model={model} />
+  </Shell>
+}
 
 const RENDERERS: Record<A4TemplateRendererId, (props: A4DocumentProps) => ReactNode> = {
   classic_v1: ClassicV1,

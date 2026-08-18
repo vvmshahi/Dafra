@@ -124,7 +124,7 @@ for (const className of ['classic', 'modern_split', 'minimal_professional', 'exe
 }
 assert.match(a4, /options\.nonFiscalDemo/)
 assert.doesNotMatch(a4, /SharedA4Layout/)
-for (const layout of ['a4-classic-head', 'a4-statement-head', 'a4-minimal-head', 'a4-executive-band', 'a4-ledger-head', 'a4-modular-head']) assert.match(a4, new RegExp(layout))
+for (const layout of ['a4-classic-head', 'a4-statement-head', 'a4-minimal-head', 'a4-executive-band', 'a4-ledger-head', 'a4-contemporary-head']) assert.match(a4, new RegExp(layout))
 assert.match(a4, /page-break-inside|Footer/)
 assert.match(css, /a4-statement-document/)
 assert.match(migration, /validate_invoice_presentation_settings/)

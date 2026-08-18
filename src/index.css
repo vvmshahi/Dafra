@@ -85,7 +85,7 @@
   .theme-thumb--minimal_professional{border-inline:0;border-radius:0}.theme-thumb--minimal_professional .thumb-brand{width:22%;height:3px;background:color-mix(in srgb,var(--theme-thumb-text) 55%,#fff)}.theme-thumb--minimal_professional .thumb-title{width:22%;height:3px;background:var(--theme-thumb-heading)}.theme-thumb--minimal_professional .thumb-from,.theme-thumb--minimal_professional .thumb-to{top:15px;background:transparent;border-top:1px solid color-mix(in srgb,var(--theme-thumb-text) 30%,#fff)}.theme-thumb--minimal_professional .thumb-meta{top:25px;height:1px}.theme-thumb--minimal_professional .thumb-table{top:30px;bottom:12px;background:repeating-linear-gradient(to bottom,color-mix(in srgb,var(--theme-thumb-text) 18%,#fff) 0 1px,#fff 1px 4px)}.theme-thumb--minimal_professional .thumb-qr{left:calc(50% - 4px)}.theme-thumb--minimal_professional .thumb-total{background:color-mix(in srgb,var(--theme-thumb-text) 64%,#fff)}
   .theme-thumb--executive_green{border:2px solid var(--theme-thumb-primary)}.theme-thumb--executive_green .thumb-brand{inset:3px 43% auto 3px;height:12px;width:auto;border-radius:0}.theme-thumb--executive_green .thumb-title{inset:4px 18px auto 61%;height:8px;background:color-mix(in srgb,var(--theme-thumb-heading) 48%,#fff)}.theme-thumb--executive_green .thumb-qr{inset:3px 4px auto auto}.theme-thumb--executive_green .thumb-meta{top:18px;left:4px;right:4px}.theme-thumb--executive_green .thumb-from,.theme-thumb--executive_green .thumb-to{top:26px;height:9px;border:1px solid color-mix(in srgb,var(--theme-thumb-primary) 22%,#fff)}.theme-thumb--executive_green .thumb-table{top:38px;bottom:8px}.theme-thumb--executive_green .thumb-total{bottom:1px;border:1px solid var(--theme-thumb-primary);background:color-mix(in srgb,var(--theme-thumb-primary) 8%,#fff)}
   .theme-thumb--clean_ledger{border-radius:0}.theme-thumb--clean_ledger .thumb-brand{display:block;inset:4px auto auto 4px;width:22%;height:7px}.theme-thumb--clean_ledger .thumb-title{inset:4px auto auto 29%;width:20%;height:7px}.theme-thumb--clean_ledger .thumb-meta{inset:4px 4px auto 52%;height:7px;border-block:1px solid var(--theme-thumb-primary)}.theme-thumb--clean_ledger .thumb-from,.theme-thumb--clean_ledger .thumb-to{top:14px;height:8px;border:1px solid color-mix(in srgb,var(--theme-thumb-primary) 38%,#fff)}.theme-thumb--clean_ledger .thumb-table{top:25px;bottom:10px;border:1px solid color-mix(in srgb,var(--theme-thumb-primary) 45%,#fff);background:repeating-linear-gradient(to bottom,color-mix(in srgb,var(--theme-thumb-text) 22%,#fff) 0 1px,#fff 1px 4px)}.theme-thumb--clean_ledger .thumb-total{width:38%;border:1px solid var(--theme-thumb-primary);background:#fff}
-  .theme-thumb--contemporary_border{border:1px solid var(--theme-thumb-primary)}.theme-thumb--contemporary_border .thumb-brand{inset:5px auto auto 5px;width:42%;height:8px}.theme-thumb--contemporary_border .thumb-title{inset:0 5px auto auto;width:29%;height:15px;background:var(--theme-thumb-primary)}.theme-thumb--contemporary_border .thumb-from,.theme-thumb--contemporary_border .thumb-to{top:19px;height:9px;border:1px solid color-mix(in srgb,var(--theme-thumb-primary) 20%,#fff);background:color-mix(in srgb,var(--theme-thumb-primary) 5%,#fff)}.theme-thumb--contemporary_border .thumb-from{left:5px;width:42%}.theme-thumb--contemporary_border .thumb-to{right:5px;width:42%}.theme-thumb--contemporary_border .thumb-meta{display:none}.theme-thumb--contemporary_border .thumb-table{top:32px;bottom:11px;border:1px solid color-mix(in srgb,var(--theme-thumb-primary) 20%,#fff)}.theme-thumb--contemporary_border .thumb-qr{inset:auto 5px 1px auto;border-radius:0}.theme-thumb--contemporary_border .thumb-total{right:19px;bottom:1px;width:27%;height:9px}
+  .theme-thumb--contemporary_border{border:1px solid var(--theme-thumb-primary)}.theme-thumb--contemporary_border .thumb-brand{inset:0 0 auto 0;width:auto;height:15px;border-radius:0;background:var(--theme-thumb-primary)}.theme-thumb--contemporary_border .thumb-title{inset:4px 19px auto 55%;height:5px;width:auto;background:#fff}.theme-thumb--contemporary_border .thumb-qr{inset:3px 4px auto auto;width:9px;height:9px;border-color:#fff;background:#fff}.theme-thumb--contemporary_border .thumb-from,.theme-thumb--contemporary_border .thumb-to{top:20px;height:8px;border:0;border-top:1px solid color-mix(in srgb,var(--theme-thumb-primary) 45%,#fff);background:transparent}.theme-thumb--contemporary_border .thumb-from{left:5px;width:45%}.theme-thumb--contemporary_border .thumb-to{right:5px;width:42%}.theme-thumb--contemporary_border .thumb-meta{display:block;inset:16px 5px auto;height:2px}.theme-thumb--contemporary_border .thumb-table{top:31px;bottom:10px;border:0;border-top:1px solid color-mix(in srgb,var(--theme-thumb-primary) 35%,#fff);background:repeating-linear-gradient(to bottom,color-mix(in srgb,var(--theme-thumb-text) 20%,#fff) 0 1px,#fff 1px 4px)}.theme-thumb--contemporary_border .thumb-total{right:5px;bottom:1px;width:31%;height:8px;background:var(--theme-thumb-primary)}
   .receipt-theme-thumb{display:grid;height:68px;gap:2px;border:1px solid #b8b8b8;border-radius:6px;background:#fff;padding:5px;color:#222}.receipt-theme-thumb span{display:block;min-width:0}.receipt-theme-thumb__brand{height:7px;background:#222}.receipt-theme-thumb__meta{height:9px;background:repeating-linear-gradient(to bottom,#bdbdbd 0 1px,transparent 1px 3px)}.receipt-theme-thumb__items{min-height:19px;background:repeating-linear-gradient(to bottom,#d2d2d2 0 1px,transparent 1px 5px)}.receipt-theme-thumb__total{height:9px;border-block:2px solid #222}.receipt-theme-thumb__qr{width:12px;height:12px;border:1px solid #777;justify-self:center}.receipt-theme-thumb--classic{grid-template-columns:1fr 14px;grid-template-areas:"brand brand" "meta meta" "items items" "total qr"}.receipt-theme-thumb--classic .receipt-theme-thumb__brand{grid-area:brand;height:7px}.receipt-theme-thumb--classic .receipt-theme-thumb__meta{grid-area:meta}.receipt-theme-thumb--classic .receipt-theme-thumb__items{grid-area:items}.receipt-theme-thumb--classic .receipt-theme-thumb__total{grid-area:total;border-block:1px solid #555}.receipt-theme-thumb--classic .receipt-theme-thumb__qr{grid-area:qr}.receipt-theme-thumb--compact{grid-template-columns:1fr 13px;grid-template-areas:"brand brand" "meta meta" "items items" "total qr";gap:2px;padding:4px}.receipt-theme-thumb--compact .receipt-theme-thumb__brand{grid-area:brand;height:4px}.receipt-theme-thumb--compact .receipt-theme-thumb__meta{grid-area:meta;height:7px}.receipt-theme-thumb--compact .receipt-theme-thumb__items{grid-area:items}.receipt-theme-thumb--compact .receipt-theme-thumb__total{grid-area:total}.receipt-theme-thumb--compact .receipt-theme-thumb__qr{grid-area:qr}.receipt-theme-thumb--standard{grid-template-columns:1fr 15px;grid-template-areas:"brand brand" "meta meta" "items items" "total qr"}.receipt-theme-thumb--standard .receipt-theme-thumb__brand{grid-area:brand}.receipt-theme-thumb--standard .receipt-theme-thumb__meta{grid-area:meta;border:1px solid #777}.receipt-theme-thumb--standard .receipt-theme-thumb__items{grid-area:items}.receipt-theme-thumb--standard .receipt-theme-thumb__total{grid-area:total;border:1px solid #555}.receipt-theme-thumb--standard .receipt-theme-thumb__qr{grid-area:qr}.receipt-theme-thumb--detailed{grid-template-columns:15px 1fr;grid-template-areas:"brand brand" "meta meta" "items items" "qr total";border:2px solid #333}.receipt-theme-thumb--detailed .receipt-theme-thumb__brand{grid-area:brand;height:10px;border:1px double #222;background:#fff}.receipt-theme-thumb--detailed .receipt-theme-thumb__meta{grid-area:meta;border-inline-start:3px solid #444}.receipt-theme-thumb--detailed .receipt-theme-thumb__items{grid-area:items;border:1px solid #999}.receipt-theme-thumb--detailed .receipt-theme-thumb__total{grid-area:total;border:2px solid #222}.receipt-theme-thumb--detailed .receipt-theme-thumb__qr{grid-area:qr}
 
   /* Shared A4 primitives; each family below owns a different page composition. */
@@ -333,22 +333,57 @@
   .a4-document--branding-hidden .a4-ledger-head { grid-template-columns: minmax(0,1fr) 62mm; }
 
   /* 6 — Contemporary Modular */
-  .a4-document--contemporary_border { --invoice-page-padding-top: 9mm; }
-  .a4-modular-head { display: grid; grid-template-columns: minmax(0,1fr) 68mm; gap: 7mm; align-items: start; }
-  .a4-modular-head .a4-display-heading { max-width: 110mm; font-size: 23pt; }
-  .a4-modular-document { margin-top: -9mm; padding: 7mm 6mm 5mm; border-top: 7mm solid var(--invoice-primary); background: var(--invoice-surface); }
-  .a4-modular-document .a4-document-title { text-align: start; }
-  .a4-modular-cards { display: grid; grid-template-columns: 1.15fr .85fr; gap: 5mm; margin-block: 8mm 5mm; }
-  .a4-modular-cards > * { min-height: 33mm; background: var(--invoice-surface); }
-  .a4-modular-cards.a4-parties--seller-only { grid-template-columns: 1fr; }
-  .a4-modular-table { padding: 2.5mm; border: 1px solid var(--invoice-border); }
-  .a4-modular-bottom { display: grid; grid-template-columns: minmax(0,1fr) 66mm 37mm; gap: 5mm; align-items: stretch; margin-top: 6mm; }
-  .a4-modular-bottom > section { padding: 4mm; border: 1px solid var(--invoice-border); background: var(--invoice-surface); }
-  .a4-modular-total { padding: 0 !important; }
-  .a4-modular-total .a4-totals { height: 100%; border: 0; }
-  .a4-modular-verification { display: grid; place-items: center; background: var(--invoice-document-background) !important; }
-  .a4-modular-verification .a4-qr img,.a4-modular-verification .a4-qr-placeholder { width: 26mm; height: 26mm; }
-  .a4-document--branding-hidden .a4-modular-head { grid-template-columns: 1fr; }
+  .a4-document--contemporary_border { --invoice-page-padding-top: 0; --invoice-page-padding-inline: 10mm; font-variant-numeric: tabular-nums; }
+  .a4-contemporary-head { display: grid; grid-template-columns: minmax(0,1fr) minmax(90mm,1.04fr); gap: 8mm; align-items: start; margin-inline: -10mm; padding: 6mm 10mm 5mm; color: var(--invoice-on-primary); background: var(--invoice-primary); }
+  .a4-contemporary-head--brandless { grid-template-columns: minmax(0,1fr); }
+  .a4-contemporary-brand { min-width: 0; padding-top: .5mm; }
+  .a4-contemporary-brand .a4-logo { max-width: 34mm; max-height: 14mm; margin-bottom: 1.5mm; padding: 1mm; background: #fff; }
+  .a4-contemporary-brand .a4-display-heading { max-width: none; color: inherit; font-size: 18pt; line-height: 1.06; }
+  .a4-contemporary-brand .a4-display-subheading { margin-top: .8mm; color: inherit; font-size: 8pt; opacity: .84; }
+  .a4-contemporary-document { display: grid; grid-template-columns: minmax(0,1fr) 27mm; gap: 4mm; min-width: 0; }
+  .a4-contemporary-document--without-qr { grid-template-columns: minmax(0,1fr); }
+  .a4-contemporary-document-copy { min-width: 0; }
+  .a4-contemporary-document .a4-document-title { text-align: start; }
+  .a4-contemporary-document .a4-document-title__main { color: inherit; font-size: 16pt; line-height: 1.06; }
+  .a4-contemporary-document .a4-document-title__sub { color: inherit; font-size: 8pt; opacity: .86; }
+  .a4-contemporary-document .a4-meta { margin-top: 2mm; gap: .45mm; font-size: 7.5pt; }
+  .a4-contemporary-document .a4-meta div { gap: 2.5mm; padding-bottom: .55mm; border-bottom-color: color-mix(in srgb,var(--invoice-on-primary) 28%,transparent); }
+  .a4-contemporary-document .a4-meta dt,.a4-contemporary-document .a4-meta dd { color: inherit; }
+  .a4-contemporary-document .a4-meta dd { white-space: nowrap; }
+  .a4-contemporary-qr { align-self: start; padding: 1.25mm; border: 1px solid color-mix(in srgb,var(--invoice-on-primary) 42%,transparent); background: #fff; }
+  .a4-contemporary-qr .a4-qr { color: var(--invoice-heading); font-size: 5.8pt; line-height: 1.15; }
+  .a4-contemporary-qr .a4-qr img,.a4-contemporary-qr .a4-qr-placeholder { width: 21mm; height: 21mm; }
+  .a4-contemporary-parties { display: grid; grid-template-columns: 1.1fr .9fr; gap: 7mm; margin-block: 5mm 4mm; padding-bottom: 3mm; border-bottom: 1px solid var(--invoice-border); }
+  .a4-contemporary-parties.a4-parties--seller-only { grid-template-columns: 1fr; }
+  .a4-contemporary-party { min-width: 0; padding-inline-start: 3mm; border-inline-start: 2px solid var(--invoice-primary); }
+  .a4-contemporary-party .a4-seller { line-height: 1.3; }
+  .a4-contemporary-party .a4-buyer { padding: 0; border: 0; background: transparent; }
+  .a4-contemporary-party .a4-section-title { margin-bottom: .75mm; }
+  .a4-contemporary-party .a4-legal-seller__name { font-size: 9.8pt; line-height: 1.15; }
+  .a4-contemporary-items { table-layout: fixed; font-size: 7.1pt; }
+  .a4-contemporary-items thead { color: var(--invoice-on-primary); background: var(--invoice-primary); }
+  .a4-contemporary-items th { padding: 1.65mm 1.05mm; border: 0; color: inherit; font-size: 5.9pt; font-weight: 850; line-height: 1.16; text-align: end; text-transform: uppercase; white-space: normal; overflow-wrap: anywhere; }
+  .a4-contemporary-items th:nth-child(2) { text-align: start; }
+  .a4-contemporary-items td { padding: 1.75mm 1.05mm; border-bottom: 1px solid var(--invoice-border); text-align: end; vertical-align: middle; white-space: nowrap; }
+  .a4-contemporary-items td:nth-child(2) { color: var(--invoice-heading); font-weight: 700; text-align: start; vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
+  .a4-contemporary-items tbody tr:nth-child(even) { background: var(--invoice-surface); }
+  .a4-contemporary-items tbody tr:last-child td { border-bottom-color: var(--invoice-primary); }
+  .a4-contemporary-item-name { display: inline; unicode-bidi: isolate; }
+  .a4-contemporary-item-name--bilingual { line-height: 1.34; }
+  .a4-contemporary-item-name__separator { color: var(--invoice-muted); font-weight: 500; }
+  .a4-contemporary-item-unit { display: block; margin-top: .2mm; color: var(--invoice-muted); font-size: 6.15pt; overflow: hidden; text-overflow: ellipsis; }
+  .a4-contemporary-items__index { width: 4%; }.a4-contemporary-items__description { width: 35%; }.a4-contemporary-items__quantity { width: 10%; }.a4-contemporary-items__price { width: 11%; }.a4-contemporary-items__taxable { width: 12%; }.a4-contemporary-items__vat { width: 14%; }.a4-contemporary-items__total { width: 14%; }
+  .a4-contemporary-items--with-discount .a4-contemporary-items__description { width: 26%; }.a4-contemporary-items--with-discount .a4-contemporary-items__quantity { width: 9%; }.a4-contemporary-items--with-discount .a4-contemporary-items__price { width: 10%; }.a4-contemporary-items--with-discount .a4-contemporary-items__discount { width: 10%; }.a4-contemporary-items--with-discount .a4-contemporary-items__taxable { width: 11%; }.a4-contemporary-items--with-discount .a4-contemporary-items__vat { width: 13%; }.a4-contemporary-items--with-discount .a4-contemporary-items__total { width: 13%; }
+  .a4-contemporary-closeout { display: grid; grid-template-columns: minmax(0,1fr) 76mm; gap: 7mm; align-items: start; margin-top: 5mm; }
+  .a4-contemporary-payment { align-self: start; padding: 2.5mm 3mm; border-inline-start: 2px solid var(--invoice-primary); background: var(--invoice-surface); }
+  .a4-contemporary-payment .a4-payment > div:not(.a4-section-title) { gap: 1mm 3.5mm; margin-bottom: .6mm; }
+  .a4-contemporary-payment .a4-section-title { margin-bottom: .7mm; }
+  .a4-contemporary-totals .a4-totals { overflow: hidden; border: 1px solid var(--invoice-border); padding: 0; background: var(--invoice-total-surface); }
+  .a4-contemporary-totals .a4-totals > div { margin: 0; padding: 1.15mm 3mm; }
+  .a4-contemporary-totals .a4-totals__grand { margin: 0 !important; padding: 2.5mm 3mm; border: 0; color: var(--invoice-on-primary); background: var(--invoice-primary); font-size: 13.5pt; line-height: 1.15; }
+  .a4-contemporary-totals .a4-totals__grand > span { max-width: 58%; font-size: 7.8pt; line-height: 1.16; }
+  .a4-contemporary-totals .a4-totals__grand .a4-money { margin-inline-start: auto; }
+  .a4-contemporary-closeout + .a4-footer:empty { display: none; }
 
   .a4-header--compact .a4-display-heading { font-size: 16pt; }
   .a4-header--compact .a4-seller { font-size: 7.8pt; }
