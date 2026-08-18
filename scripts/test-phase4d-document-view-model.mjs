@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
-const model = read('src/lib/invoices/documentViewModel.ts')
+const model = read('packages/kubri-document-renderer/src/documentViewModel.ts')
 const adapters = read('src/lib/invoices/documentViewAdapters.ts')
 const fixture = read('src/lib/invoices/documentPreviewFixture.ts')
 const thermal = read('src/lib/invoices/documentThermalProps.ts')

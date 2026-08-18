@@ -11,6 +11,7 @@
     "test": "npm run test:register-session-netting && npm run test:final-web-printing-refinements && npm run test:modern-statement-a4 && npm run test:accounting-ledger-a4 && npm run test:contemporary-modular-a4 && npm run test:thermal-receipt-layouts && npm run test:thermal-preview-parity && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx && npm run test:branch-billing-profile-ux && npm run test:profile-aware-catalogue-navigation && npm run test:saved-services-catalogue && npm run test:catalogue-bulk-export && npm run test:catalogue-bulk-import && npm run test:custom-line-cart-architecture && npm run test:custom-line-server-checkout && npm run test:p0-saved-checkout-recovery && npm run test:source-aware-reporting-credit-hardening",
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:document-runtime": "vite build --config packages/kubri-document-renderer/vite.mobile-runtime.config.ts",
     "preview": "vite preview",
     "desktop:dev": "concurrently -k -n vite,electron -c green,blue \"vite --host 127.0.0.1 --port 5175 --strictPort\" \"wait-on http://127.0.0.1:5175 && node electron/run.cjs\"",
     "desktop:preview": "npm run build && node electron/run.cjs --preview",

@@ -2,11 +2,11 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
-const renderer = read('src/components/print/ThermalReceipt.tsx')
-const compositions = read('src/components/print/ThermalReceiptCompositions.tsx')
+const renderer = read('packages/kubri-document-renderer/src/components/print/ThermalReceipt.tsx')
+const compositions = read('packages/kubri-document-renderer/src/components/print/ThermalReceiptCompositions.tsx')
 const thermalSource = renderer + compositions
 const css = read('src/index.css')
-const model = read('src/lib/invoices/documentViewModel.ts')
+const model = read('packages/kubri-document-renderer/src/documentViewModel.ts')
 const adapters = read('src/lib/invoices/documentViewAdapters.ts')
 const fixture = read('src/lib/invoices/documentPreviewFixture.ts')
 const receiptPrint = read('src/pages/print/ReceiptPrintPage.tsx')

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
-const registry = read('src/lib/invoices/a4TemplateRegistry.ts')
-const renderer = read('src/components/print/A4Document.tsx')
+const registry = read('packages/kubri-document-renderer/src/a4TemplateRegistry.ts')
+const renderer = read('packages/kubri-document-renderer/src/components/print/A4Document.tsx')
 const css = read('src/index.css')
 const adapters = read('src/lib/invoices/documentViewAdapters.ts')
 const fixture = read('src/lib/invoices/documentPreviewFixture.ts')

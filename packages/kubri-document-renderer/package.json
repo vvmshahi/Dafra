@@ -1,0 +1,10 @@
+{
+  "name": "@kubri/document-renderer",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Canonical issued-document renderer for Kubri Web, Electron, and mobile WebView.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./static": "./src/staticHtml.tsx"
+  }
+}
