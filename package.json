@@ -80,6 +80,7 @@
     "test:repair-zatca-document-kind-inv0830-0834": "node scripts/test-repair-zatca-document-kind-inv0830-0834.mjs",
     "test:pos-session-access": "node scripts/test-pos-session-access.mjs",
     "test:register-session-netting": "node scripts/test-register-session-refund-netting.mjs",
+    "test:register-session-density-ui": "node scripts/test-register-session-density-ui.mjs",
     "test:product-catalogue": "node --experimental-strip-types scripts/test-product-catalogue.mjs",
     "test:catalogue-bulk-export": "node --experimental-strip-types scripts/test-catalogue-bulk-export.mjs",
     "test:catalogue-bulk-import": "node --experimental-strip-types scripts/test-catalogue-bulk-import.mjs",
