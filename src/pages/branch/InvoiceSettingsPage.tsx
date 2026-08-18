@@ -254,7 +254,7 @@ export default function InvoiceSettingsPage({
   const [activeTab, setActiveTab] = useState<Tab>(
     requestedSection && allowedSections.includes(requestedSection)
       ? requestedSection
-      : workspace === 'receipts' ? 'thermal' : 'general',
+      : 'general',
   )
   const [previewMode, setPreviewMode] = useState<PreviewMode>(workspace === 'receipts' ? 'thermal' : 'a4')
   const [confirmRemoveLogo, setConfirmRemoveLogo] = useState(false)
@@ -283,7 +283,7 @@ export default function InvoiceSettingsPage({
       setActiveTab(requested)
       return
     }
-    const fallback: Tab = workspace === 'receipts' ? 'thermal' : 'general'
+    const fallback: Tab = 'general'
     setActiveTab(fallback)
     const next = new URLSearchParams(searchParams)
     next.set('section', fallback)
@@ -509,7 +509,7 @@ export default function InvoiceSettingsPage({
   }
   const sections = tabs.map(tab => ({ ...tab, icon: sectionIcons[tab.id] }))
   const selectSection = (id: string) => {
-    const nextSection = allowedSections.includes(id as Tab) ? id as Tab : workspace === 'receipts' ? 'thermal' : 'general'
+    const nextSection = allowedSections.includes(id as Tab) ? id as Tab : 'general'
     setActiveTab(nextSection)
     setPreviewMode(nextSection === 'thermal' ? 'thermal' : workspace === 'invoices' ? 'a4' : previewMode)
     const next = new URLSearchParams(searchParams)

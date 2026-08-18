@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Receipt, Package, Warehouse, Users,
   CreditCard, BarChart2, Truck, Settings, Settings2, Building2,
   LogOut, ChevronRight, ChevronLeft, FileText, UserSquare2,
-  Store, ShieldCheck, Printer, Loader2,
+  Store, ShieldCheck, Printer, Loader2, Handshake, WalletCards,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { isElectron } from '@/lib/electron'
@@ -45,10 +45,10 @@ const branchNav: NavItem[] = [
   { labelKey: 'products', path: '/products', icon: Package, section: 'catalogue' },
   { labelKey: 'stock', path: '/inventory', icon: Warehouse, section: 'catalogue' },
   { labelKey: 'purchases', path: '/purchases', icon: Truck, section: 'catalogue' },
-  { labelKey: 'suppliers', path: '/suppliers', icon: Truck, section: 'catalogue' },
+  { labelKey: 'suppliers', path: '/suppliers', icon: Handshake, section: 'catalogue' },
   { labelKey: 'customers', path: '/customers', icon: Users, section: 'business' },
   { labelKey: 'customerCredit', path: '/reports/receivables', icon: CreditCard, section: 'business' },
-  { labelKey: 'expenses', path: '/expenses', icon: CreditCard, section: 'business' },
+  { labelKey: 'expenses', path: '/expenses', icon: WalletCards, section: 'business' },
   { labelKey: 'branchSettings', path: '/branch-settings', icon: Settings, section: 'settings' },
   { labelKey: 'invoiceSettings', path: '/invoice-settings', icon: Settings2, section: 'settings' },
   { labelKey: 'reports', path: '/reports', icon: BarChart2, section: 'analysis' },
@@ -275,11 +275,12 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <NavLink
                 ref={isActive ? activeRouteRef : undefined}
                 to={destination}
-                title={collapsed ? itemLabel : undefined}
+                aria-label={itemLabel}
                 aria-current={isActive ? 'page' : undefined}
-                className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                className="group relative block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
               >
                 <NavItemRow item={item} label={itemLabel} isActive={isActive} collapsed={collapsed} />
+                {collapsed && <span role="tooltip" className="pointer-events-none absolute start-full top-1/2 z-30 ms-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-sidebar-border bg-[#10281c] px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-card transition-opacity group-hover:opacity-100 group-focus:opacity-100">{itemLabel}</span>}
               </NavLink>
             </div>
           )

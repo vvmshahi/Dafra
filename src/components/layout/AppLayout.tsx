@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { AlertTriangle, MessageCircle } from 'lucide-react'
 import Sidebar from './Sidebar'
@@ -120,8 +120,13 @@ export default function AppLayout() {
   const { t } = useTranslation('common')
   const [collapsed, setCollapsed] = useState(getInitialCollapsed)
   const location = useLocation()
+  const mainRef = useRef<HTMLElement>(null)
   const flushContent = location.pathname === '/branch'
   const ownsInnerScroll = location.pathname === '/invoice-settings'
+
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [location.pathname])
 
   function toggle() {
     setCollapsed(prev => {
@@ -148,6 +153,7 @@ export default function AppLayout() {
       <div className="flex-1 flex flex-col min-w-0" dir={isRtl ? 'rtl' : 'ltr'}>
         <SubscriptionBanner />
         <main
+          ref={mainRef}
           id="main-content"
           tabIndex={-1}
           className={`min-h-0 flex-1 outline-none ${ownsInnerScroll ? 'overflow-hidden' : 'overflow-y-auto'} ${flushContent ? 'p-0' : 'px-4 py-5 sm:p-6'}`}
