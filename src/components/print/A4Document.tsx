@@ -325,15 +325,14 @@ function ContemporaryModularV1({ model, options = {} }: A4DocumentProps) {
   const branding = showsStandardBranding(model, options)
   const namedBuyer = hasNamedBuyer(model)
   const hasFooter = [model.presentation.footer.thankYouVisible ? model.presentation.footer.thankYou : null, model.presentation.footer.footerVisible ? model.presentation.footer.footer : null, model.presentation.footer.refundVisible ? model.presentation.footer.refund : null].some(Boolean)
-  const documentClass = model.identity.kind === 'credit_note' ? 'CREDIT NOTE' : model.identity.kind === 'debit_note' ? 'DEBIT NOTE' : 'INVOICE'
   return <Shell template="contemporary_border" model={model} options={options}>
     <ContemporaryModularDecoration />
-    <header className="a4-contemporary-head"><section className="a4-contemporary-document"><div className="a4-contemporary-document-copy"><div className="a4-contemporary-document-class" aria-hidden="true">{documentClass}</div><DateMeta model={model} /><DocumentTitle model={model} /></div></section><section className="a4-contemporary-recipient">{namedBuyer ? <Buyer model={model} /> : <Seller model={model} />}</section></header>
+    <header className="a4-contemporary-head"><section className="a4-contemporary-document"><div className="a4-contemporary-document-copy"><DocumentTitle model={model} /><DateMeta model={model} /></div></section><section className="a4-contemporary-recipient">{namedBuyer ? <Buyer model={model} /> : <Seller model={model} />}</section></header>
     {namedBuyer && <section className="a4-contemporary-seller"><SellerBrand model={model} visible={branding} /><Seller model={model} /></section>}
     <Adjustment model={model} />
     <ContemporaryItemTable model={model} />
     <div className="a4-contemporary-closeout a4-closing-group">{!options.nonFiscalDemo && <section className="a4-contemporary-qr"><QrVerification model={model} options={options} /></section>}<section className="a4-contemporary-payment"><Payment model={model} /></section><section className="a4-contemporary-totals"><Totals model={model} /></section></div>
-    {hasFooter && <section className="a4-contemporary-lower"><Footer model={model} /></section>}
+    <section className={`a4-contemporary-lower${hasFooter ? ' a4-contemporary-lower--with-content' : ''}`}><div className="a4-contemporary-footer-reference">{documentLabel(model.identity.language, model.identity.kind === 'credit_note' ? 'creditNoteNumber' : model.identity.kind === 'debit_note' ? 'debitNoteNumber' : 'invoiceNumber')}: <bdi dir="ltr">{model.identity.number}</bdi></div>{hasFooter && <Footer model={model} />}</section>
   </Shell>
 }
 function ExecutiveProfessionalV1({ model, options = {} }: A4DocumentProps) {
