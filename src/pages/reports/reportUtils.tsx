@@ -185,8 +185,8 @@ export function StatCard({ label, value, sub, accent, primary }: StatCardProps) 
 
   if (primary) {
     return (
-      <div className="flex-1 min-w-36 rounded-xl px-4 py-3 bg-primary-500 text-white shadow-card">
-        <p className="text-xs font-medium text-white/70">{label}</p>
+      <div className="flex-1 min-w-36 rounded-xl border border-[#0F2419] bg-[#0F2419] px-4 py-3 text-[#FFF9E8] shadow-card">
+        <p className="text-xs font-medium text-[#F3D98B]">{label}</p>
         <p className="text-lg font-bold mt-0.5">{value}</p>
         {sub && <p className="text-[10px] text-white/60 mt-0.5">{sub}</p>}
       </div>
