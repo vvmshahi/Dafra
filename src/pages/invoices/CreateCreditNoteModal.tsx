@@ -3,13 +3,11 @@ import {
   AlertCircle,
   Check,
   ChevronDown,
-  ChevronUp,
   Loader2,
   Minus,
   PackageCheck,
   PackageX,
   Plus,
-  ReceiptText,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -36,7 +34,7 @@ import {
 import { resolveScopedAtomicCheckout } from '@/lib/zatca/atomicCheckoutScope.mjs'
 import { creditNotePresentationState } from '@/lib/zatca/creditNotePresentation.mjs'
 import { useAuth } from '@/hooks/useAuth'
-import { isStockModuleVisible, resolveBusinessType } from '@/lib/utils/businessType'
+import { isStockModuleVisible } from '@/lib/utils/businessType'
 import { useLocale } from '@/localization/useLocale'
 
 export interface CreditNoteSourceInvoice {
@@ -132,6 +130,8 @@ interface RefundableItem {
   stock_tracked_at_sale: boolean | null
   service_item_at_sale: boolean | null
 }
+
+type CreditScope = '' | 'full' | 'selected'
 
 interface ReturnLinePreview {
   item: RefundableItem
@@ -424,6 +424,10 @@ export default function CreateCreditNoteModal({
   const [refundableItems, setRefundableItems] = useState<RefundableItem[]>([])
   const [itemsLoading, setItemsLoading] = useState(false)
   const [returnQuantities, setReturnQuantities] = useState<Record<string, string>>({})
+  const [creditScope, setCreditScope] = useState<CreditScope>('')
+  const [activeStep, setActiveStep] = useState(1)
+  const [fullItemsExpanded, setFullItemsExpanded] = useState(false)
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -443,16 +447,21 @@ export default function CreateCreditNoteModal({
   const refundSectionRef = useRef<HTMLFieldSetElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
   const busyRef = useRef(false)
+  const dirtyRef = useRef(false)
   const onCloseRef = useRef(onClose)
   const titleId = useId()
   const descriptionId = useId()
   const errorId = useId()
-  const businessType = resolveBusinessType(tenant?.business_type)
-  const isServiceBusiness = businessType === 'service'
   const stockEnabled = isStockModuleVisible({
     businessType: tenant?.business_type,
     stockEnabled: branch?.stock_enabled,
   })
+  dirtyRef.current = creditScope !== ''
+    || selectedReason !== ''
+    || remarks !== ''
+    || stockReturnChoice !== null
+    || refundMode !== ''
+    || Object.values(returnQuantities).some(value => parseReturnQuantity(value) > 0)
 
   useEffect(() => {
     busyRef.current = creating || submitting
@@ -483,6 +492,10 @@ export default function CreateCreditNoteModal({
     setOriginalPayments([])
     setRefundableItems([])
     setReturnQuantities({})
+    setCreditScope('')
+    setActiveStep(1)
+    setFullItemsExpanded(false)
+    setDiscardConfirmOpen(false)
     setPaymentsLoading(true)
     setItemsLoading(true)
     setError(null)
@@ -618,7 +631,6 @@ export default function CreateCreditNoteModal({
     invoice?.invoice_number,
     invoice?.total_amount,
     invoice?.zatca_document_kind,
-    isServiceBusiness,
   ])
 
   useEffect(() => {
@@ -634,7 +646,8 @@ export default function CreateCreditNoteModal({
       if (event.key === 'Escape') {
         if (!busyRef.current) {
           event.preventDefault()
-          onCloseRef.current()
+          if (dirtyRef.current) setDiscardConfirmOpen(true)
+          else onCloseRef.current()
         }
         return
       }
@@ -668,9 +681,11 @@ export default function CreateCreditNoteModal({
   }, [open])
 
   const linePreviews = useMemo(() => refundableItems.map(item => {
-    const selectedQuantity = parseReturnQuantity(returnQuantities[item.original_invoice_item_id])
+    const selectedQuantity = creditScope === 'full'
+      ? Math.max(item.remaining_quantity, 0)
+      : parseReturnQuantity(returnQuantities[item.original_invoice_item_id])
     return previewForItem(item, selectedQuantity)
-  }), [refundableItems, returnQuantities])
+  }), [creditScope, refundableItems, returnQuantities])
 
   const selectedLines = linePreviews.filter(line => line.quantity > 0)
   const hasInvalidQuantity = selectedLines.some(line => invalidReturnQuantity(line.item, line.quantity))
@@ -686,13 +701,15 @@ export default function CreateCreditNoteModal({
     0,
   )
   const stockReturnQuantity = selectedLines
-    .filter(line => line.item.product_id && line.item.track_stock && !line.item.is_service)
+    .filter(line => line.item.product_id
+      && line.item.stock_tracked_at_sale === true
+      && line.item.service_item_at_sale !== true)
     .reduce((sum, line) => sum + (
       line.item.product_unit_id
         ? line.quantity * Number(line.item.conversion_to_base ?? 0)
         : line.quantity
     ), 0)
-  const hasEligibleStockLines = !isServiceBusiness && stockEnabled && stockReturnQuantity > 0
+  const hasEligibleStockLines = stockEnabled && stockReturnQuantity > 0
 
   useEffect(() => {
     if (!hasEligibleStockLines) setStockReturnChoice(null)
@@ -727,12 +744,7 @@ export default function CreateCreditNoteModal({
       return
     }
 
-    const lines = refundableItems
-      .map(item => ({
-        item,
-        quantity: parseReturnQuantity(returnQuantities[item.original_invoice_item_id]),
-      }))
-      .filter(line => line.quantity > 0)
+    const lines = selectedLines
 
     if (lines.length === 0) {
       setError(t('validation:returnQuantityRequired'))
@@ -1090,16 +1102,19 @@ export default function CreateCreditNoteModal({
       + (refundMode === 'cash' ? 0 : Number(refundCard || 0))
       - totals.total,
     ) <= 0.01
+  const scopeComplete = creditScope === 'full'
+    ? selectedLines.length > 0 && !hasInvalidQuantity
+    : creditScope === 'selected' && selectedLines.length > 0 && !hasInvalidQuantity
   const completionChecks = [
+    { key: 'scope', complete: scopeComplete, label: t('creditNotes:checkItems') },
     { key: 'reason', complete: Boolean(selectedReason), label: t('creditNotes:checkReason') },
-    { key: 'items', complete: selectedLines.length > 0 && !hasInvalidQuantity, label: t('creditNotes:checkItems') },
     { key: 'inventory', complete: !hasEligibleStockLines || stockReturnChoice !== null, label: t('creditNotes:checkInventory') },
     { key: 'refund', complete: refundAllocationValid, label: t('creditNotes:checkRefund') },
   ]
   const createDisabled = busy || itemsLoading || completionChecks.some(check => !check.complete)
   const selectedQuantity = selectedLines.reduce((sum, line) => sum + line.quantity, 0)
   const selectedNonStockCount = selectedLines.filter(line => (
-    line.item.is_service || !line.item.track_stock || !line.item.product_id
+    line.item.service_item_at_sale === true || line.item.stock_tracked_at_sale !== true || !line.item.product_id
   )).length
   const reasonLabel = (reason: (typeof QUICK_REASONS)[number]) => reason === 'Test sale'
     ? t('creditNotes:reasonTestSale')
@@ -1125,567 +1140,39 @@ export default function CreateCreditNoteModal({
     setError(null)
   }
 
+  const isDirty = creditScope !== ''
+    || selectedReason !== ''
+    || remarks !== ''
+    || stockReturnChoice !== null
+    || refundMode !== ''
+    || Object.values(returnQuantities).some(value => parseReturnQuantity(value) > 0)
+  const requestClose = () => {
+    if (busy) return
+    if (isDirty) setDiscardConfirmOpen(true)
+    else onClose()
+  }
+  const stepComplete = [scopeComplete, Boolean(selectedReason), !hasEligibleStockLines || stockReturnChoice !== null, refundAllocationValid]
+  const continueStep = () => {
+    const requiredIndex = activeStep - 1
+    if (!stepComplete[requiredIndex]) { setError(activeStep === 1 ? t('creditNotes:chooseScopePrompt') : activeStep === 2 ? t('validation:chooseCreditReason') : activeStep === 3 ? t('creditNotes:stockReturnChoiceRequired') : t('creditNotes:refundMethodRequired')); return }
+    setError(null); setActiveStep(activeStep === 2 && !hasEligibleStockLines ? 4 : activeStep + 1)
+  }
+  const stepBack = () => setActiveStep(activeStep === 4 && !hasEligibleStockLines ? 2 : Math.max(1, activeStep - 1))
   return (
-    <div
-      className="no-print fixed inset-0 z-50 flex items-end justify-center overflow-hidden bg-slate-950/55 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
-      data-cart-fingerprint={cartFingerprint || undefined}
-      onMouseDown={event => {
-        if (event.target === event.currentTarget && !busy) onClose()
-      }}
-    >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-        aria-busy={busy}
-        tabIndex={-1}
-        className="flex max-h-[100dvh] w-full min-w-0 flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[92vh] sm:max-w-6xl sm:rounded-2xl"
-      >
-        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-4 py-3.5 sm:px-6 sm:py-4">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 id={titleId} className="text-base font-black tracking-tight text-slate-950 sm:text-lg">
-                {t('creditNotes:create')}
-              </h2>
-              <span className="max-w-full rounded-md border border-[#B5943E]/55 bg-[#0F2419] px-2.5 py-1 text-[11px] font-black text-[#F3D98B] shadow-sm [overflow-wrap:anywhere]">
-                <bdi dir="ltr">{invoice.invoice_number}</bdi>
-              </span>
-            </div>
-            <p id={descriptionId} className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">
-              {t('creditNotes:dialogDescription')}
-            </p>
-          </div>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-[background-color,color,transform] duration-150 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6B3A] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
-            aria-label={t('common:close')}
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </header>
-
-        <section
-          aria-labelledby="credit-invoice-context"
-          data-testid="source-invoice-strip"
-          className="shrink-0 border-b border-[#B5943E]/40 bg-[#0F2419] px-4 py-2.5 text-[#FFF9E8] sm:px-6"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <h3 id="credit-invoice-context" className="text-[10px] font-bold uppercase tracking-wider text-[#F3D98B] rtl:normal-case rtl:tracking-normal">
-              {t('creditNotes:invoiceContext')}
-            </h3>
-            <span className="rounded-full border border-[#F3D98B]/30 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-[#FFF9E8]">
-              {t('creditNotes:refundableLines', { count: remainingLineCount })}
-            </span>
-          </div>
-          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-5">
-            {[
-              [t('creditNotes:invoiceNumber'), <bdi dir="ltr">{invoice.invoice_number}</bdi>],
-              [t('invoices:date'), <bdi dir="ltr">{invoiceDate(invoice.invoice_date, isRtl)}</bdi>],
-              [t('invoices:customer'), <span dir="auto">{invoice.customer_name || t('creditNotes:walkInCustomer')}</span>],
-              [t('creditNotes:originalTotal'), <bdi dir="ltr">SAR {money(invoice.total_amount)}</bdi>],
-              [t('creditNotes:remainingRefundableTotal'), <bdi dir="ltr">SAR {money(remainingRefundableTotal)}</bdi>],
-            ].map(([label, value]) => (
-              <div key={String(label)} className="min-w-0">
-                <dt className="text-[10px] font-medium text-white/60">{label}</dt>
-                <dd className="mt-0.5 truncate text-xs font-bold text-[#FFF9E8]">{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          <div className="grid min-w-0 lg:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.8fr)]">
-            <main className="min-w-0 space-y-5 px-4 py-4 sm:px-6 sm:py-5 lg:border-e lg:border-slate-200">
-              <section ref={reasonSectionRef} aria-labelledby="credit-reason-heading" className="space-y-2.5">
-                <div>
-                  <h3 id="credit-reason-heading" className="text-sm font-bold text-slate-900">{t('creditNotes:reason')}</h3>
-                  <p className="mt-0.5 text-[11px] text-slate-500">{t('creditNotes:reasonLegalHint')}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label={t('creditNotes:reason')}>
-                  {QUICK_REASONS.map(reason => {
-                    const selected = selectedReason === reason
-                    return (
-                      <button
-                        key={reason}
-                        type="button"
-                        role="radio"
-                        aria-checked={selected}
-                        disabled={busy}
-                        onClick={() => {
-                          setSelectedReason(reason)
-                          setError(null)
-                        }}
-                        className={`flex min-h-11 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-start text-xs font-semibold transition-[border-color,background-color,color,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6B3A] active:scale-[0.98] disabled:opacity-60 ${
-                          selected
-                            ? 'border-[#B5943E] bg-[#0F2419] text-[#FFF9E8] shadow-sm'
-                            : 'border-slate-200 bg-[#FFFEFA] text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-                        }`}
-                      >
-                        <span>{reasonLabel(reason)}</span>
-                        {selected && <Check size={14} aria-hidden="true" />}
-                      </button>
-                    )
-                  })}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setRemarksExpanded(value => !value)}
-                  aria-expanded={remarksExpanded}
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-1 text-xs font-semibold text-slate-600 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6B3A]"
-                >
-                  {remarksExpanded ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
-                  {t('creditNotes:addEmployeeRemarks')}
-                </button>
-                {remarksExpanded && (
-                  <label className="block space-y-1.5">
-                    <span className="text-[11px] font-semibold text-slate-600">{t('creditNotes:employeeRemarks')}</span>
-                    <textarea
-                      value={remarks}
-                      onChange={event => setRemarks(event.target.value)}
-                      rows={3}
-                      maxLength={430}
-                      disabled={busy}
-                      className="input resize-y text-sm"
-                      placeholder={t('creditNotes:additionalDetails')}
-                    />
-                    <span className="block text-[10px] text-slate-400">
-                      {t('creditNotes:remarksCombinedHint')}
-                    </span>
-                  </label>
-                )}
-              </section>
-
-              {hasEligibleStockLines && (
-                <fieldset ref={inventorySectionRef} className="space-y-2.5" aria-describedby="stock-return-help">
-                  <div>
-                    <legend className="text-sm font-bold text-slate-900">{t('creditNotes:inventoryTreatment')}</legend>
-                    <p id="stock-return-help" className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
-                      {t('creditNotes:stockReturnQuestionHint')}
-                    </p>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2" role="radiogroup">
-                    {([
-                      { value: true, icon: PackageCheck, title: t('creditNotes:stockReturnYes'), description: t('creditNotes:stockReturnYesDescription') },
-                      { value: false, icon: PackageX, title: t('creditNotes:stockReturnNo'), description: t('creditNotes:stockReturnNoDescription') },
-                    ] as const).map(option => {
-                      const selected = stockReturnChoice === option.value
-                      const Icon = option.icon
-                      return (
-                        <button
-                          key={String(option.value)}
-                          type="button"
-                          role="radio"
-                          aria-checked={selected}
-                          disabled={busy}
-                          onClick={() => {
-                            setStockReturnChoice(option.value)
-                            setError(null)
-                          }}
-                          className={`flex min-h-16 items-start gap-3 rounded-xl border px-3 py-2.5 text-start transition-[border-color,background-color,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6B3A] active:scale-[0.98] disabled:opacity-60 ${
-                            selected ? 'border-[#B5943E] bg-[#0F2419] text-[#FFF9E8] shadow-sm' : 'border-slate-200 bg-[#FFFEFA] text-slate-900 hover:bg-slate-50'
-                          }`}
-                        >
-                          <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${selected ? 'bg-[#F3D98B] text-[#0F2419]' : 'bg-slate-100 text-slate-500'}`}>
-                            {selected ? <Check size={15} aria-hidden="true" /> : <Icon size={15} aria-hidden="true" />}
-                          </span>
-                          <span>
-                            <span className={`block text-xs font-bold ${selected ? 'text-[#FFF9E8]' : 'text-slate-900'}`}>{option.title}</span>
-                            <span className={`mt-0.5 block text-[10px] leading-relaxed ${selected ? 'text-white/70' : 'text-slate-500'}`}>{option.description}</span>
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </fieldset>
-              )}
-
-              <section ref={itemsSectionRef} aria-labelledby="credit-items-heading" className="space-y-3">
-                <div className="flex items-end justify-between gap-3">
-                  <div>
-                    <h3 id="credit-items-heading" className="text-sm font-bold text-slate-900">{t('creditNotes:returnedItems')}</h3>
-                    <p className="mt-0.5 text-[11px] text-slate-500">{t('creditNotes:itemSelectionHint')}</p>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600" aria-live="polite">
-                    {t('creditNotes:selectedCount', { count: selectedLines.length })}
-                  </span>
-                </div>
-
-                {itemsLoading ? (
-                  <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-xs text-slate-500" role="status">
-                    <Loader2 size={15} className="animate-spin" aria-hidden="true" />
-                    {t('creditNotes:loadingItems')}
-                  </div>
-                ) : refundableItems.length === 0 || remainingLineCount === 0 ? (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-xs leading-relaxed text-slate-600" role="status">
-                    {t('creditNotes:noRemainingItems')}
-                  </div>
-                ) : (
-                  <div
-                    data-testid="returned-items-grid"
-                    className="grid grid-cols-1 items-start gap-2.5 xl:grid-cols-2"
-                  >
-                    {linePreviews.map(line => {
-                      const item = line.item
-                      const disabled = busy || item.remaining_quantity <= 0
-                      const lineIncluded = line.quantity > 0
-                      const sellingUnit = isRtl && item.selling_unit_name_ar?.trim()
-                        ? item.selling_unit_name_ar
-                        : (item.selling_unit_name ?? item.unit ?? '')
-                      const baseUnit = isRtl && item.base_unit_name_ar?.trim()
-                        ? item.base_unit_name_ar
-                        : (item.base_unit_name ?? '')
-                      const quantityInvalid = invalidReturnQuantity(item, line.quantity)
-                      const quantityErrorId = `credit-quantity-error-${item.original_invoice_item_id}`
-                      const noInventoryImpact = item.is_service || !item.track_stock || !item.product_id
-                      return (
-                        <article
-                          key={item.original_invoice_item_id}
-                          data-selected={lineIncluded}
-                          className={`relative w-full max-w-[34rem] min-w-0 overflow-hidden rounded-xl border p-3.5 transition-[border-color,background-color,box-shadow] duration-150 ${
-                            item.remaining_quantity <= 0
-                              ? 'border-slate-200 bg-slate-50 opacity-70'
-                              : lineIncluded
-                              ? 'border-[#0F2419] bg-[#F1F5F1] shadow-[0_1px_0_rgba(15,36,25,0.08)] before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-[#0F2419]'
-                              : 'border-slate-200 bg-[#FFFEFA]'
-                          }`}
-                        >
-                          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="min-w-0">
-                              <h4 className="break-words text-sm font-bold text-slate-900" dir="auto">
-                                {isRtl && item.name_ar?.trim() ? item.name_ar : item.name}
-                              </h4>
-                              <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500">
-                                <span>{t('creditNotes:originalQuantity', { quantity: qty(item.original_quantity, quantityDisplayScaleForItem(item)), unit: sellingUnit })}</span>
-                                <span>{t('creditNotes:previouslyCreditedWithUnit', { quantity: qty(item.credited_quantity, quantityDisplayScaleForItem(item)), unit: sellingUnit })}</span>
-                                <span className="font-bold text-slate-700">
-                                  {t('creditNotes:remainingReturnableWithUnit', { quantity: qty(item.remaining_quantity, quantityDisplayScaleForItem(item)), unit: sellingUnit })}
-                                </span>
-                              </div>
-                              {item.product_unit_id && item.conversion_to_base != null && baseUnit && (
-                                <p className="mt-1.5 text-[10px] text-slate-500">
-                                  {t('creditNotes:packages.selectedBaseEquivalent', {
-                                    quantity: qty(line.quantity * item.conversion_to_base, item.base_quantity_scale ?? 3),
-                                    unit: baseUnit,
-                                  })}
-                                </p>
-                              )}
-                              <p className={`mt-1.5 text-[10px] font-semibold ${noInventoryImpact ? 'text-slate-500' : 'text-[#1B6B3A]'}`}>
-                                {noInventoryImpact
-                                  ? t('creditNotes:noInventoryImpact')
-                                  : t('creditNotes:eligibleInventoryItem')}
-                              </p>
-                              {noInventoryImpact && (
-                                <p className="mt-0.5 text-[10px] text-slate-400">{t('creditNotes:noInventoryImpactHint')}</p>
-                              )}
-                            </div>
-                            <div className="shrink-0 sm:text-end">
-                              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 rtl:normal-case rtl:tracking-normal">
-                                {t('creditNotes:expectedCredit')}
-                              </p>
-                              <p className="mt-0.5 text-base font-black tabular-nums text-[#0F2419]" dir="ltr">
-                                SAR {money(line.total)}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="mt-3 flex min-w-0 flex-wrap items-end gap-2 border-t border-slate-200/80 pt-3">
-                            <div className="flex min-w-[190px] flex-1 items-stretch" dir="ltr">
-                              <button
-                                type="button"
-                                onClick={() => adjustQuantity(item, -1)}
-                                disabled={disabled || line.quantity <= 0}
-                                className="inline-flex min-h-11 w-11 items-center justify-center rounded-s-xl border border-e-0 border-slate-200 bg-slate-50 text-slate-700 transition-[background-color,transform] duration-150 hover:bg-slate-100 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6B3A] active:scale-[0.97] disabled:cursor-not-allowed disabled:text-slate-300"
-                                aria-label={t('creditNotes:decreaseQuantity', { name: item.name })}
-                              >
-                                <Minus size={15} aria-hidden="true" />
-                              </button>
-                              <label className="min-w-0 flex-1">
-                                <span className="sr-only">{t('creditNotes:returnQuantity')}</span>
-                                <input
-                                  type="number"
-                                  inputMode="decimal"
-                                  min="0"
-                                  max={item.remaining_quantity}
-                                  step={quantityStepForItem(item)}
-                                  data-line-id={item.original_invoice_item_id}
-                                  value={returnQuantities[item.original_invoice_item_id] ?? '0'}
-                                  onChange={event => {
-                                    const currentValue = returnQuantities[item.original_invoice_item_id] ?? '0'
-                                    const next = normalizeQuantityInput(event.target.value, item, currentValue)
-                                    setReturnQuantities(previous => ({
-                                      ...previous,
-                                      [item.original_invoice_item_id]: next,
-                                    }))
-                                    setError(null)
-                                  }}
-                                  disabled={disabled}
-                                  aria-invalid={quantityInvalid}
-                                  aria-describedby={`${quantityErrorId}-max${quantityInvalid ? ` ${quantityErrorId}` : ''}`}
-                                  className="h-11 w-full border border-slate-200 bg-white px-2 text-center text-sm font-bold tabular-nums text-slate-900 outline-none focus:z-10 focus:border-[#1B6B3A] focus:ring-1 focus:ring-[#1B6B3A] disabled:bg-slate-100 disabled:text-slate-400"
-                                />
-                              </label>
-                              <button
-                                type="button"
-                                onClick={() => adjustQuantity(item, 1)}
-                                disabled={disabled || line.quantity >= item.remaining_quantity}
-                                className="inline-flex min-h-11 w-11 items-center justify-center rounded-e-xl border border-s-0 border-slate-200 bg-slate-50 text-slate-700 transition-[background-color,transform] duration-150 hover:bg-slate-100 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6B3A] active:scale-[0.97] disabled:cursor-not-allowed disabled:text-slate-300"
-                                aria-label={t('creditNotes:increaseQuantity', { name: item.name })}
-                              >
-                                <Plus size={15} aria-hidden="true" />
-                              </button>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setReturnQuantities(previous => ({
-                                  ...previous,
-                                  [item.original_invoice_item_id]: fullReturnQuantity(item),
-                                }))
-                                setError(null)
-                              }}
-                              disabled={disabled || Math.abs(line.quantity - item.remaining_quantity) <= 1e-7}
-                              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[#0F2419] bg-[#0F2419] px-3 text-[11px] font-bold text-[#FFF9E8] transition-[background-color,border-color,transform] duration-150 hover:bg-[#1a3a28] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B5943E] focus-visible:ring-offset-2 active:scale-[0.97] disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:ring-0"
-                            >
-                              <Check size={13} aria-hidden="true" />
-                              {t('creditNotes:returnAll')}
-                            </button>
-                          </div>
-                          <span id={`${quantityErrorId}-max`} className="sr-only">
-                            {t('creditNotes:returnQuantityMaximum', {
-                              quantity: qty(item.remaining_quantity, quantityDisplayScaleForItem(item)),
-                            })}
-                          </span>
-                          {quantityInvalid && (
-                            <p id={quantityErrorId} className="mt-2 text-[11px] font-medium text-red-600" role="alert">
-                              {item.product_unit_id
-                                ? t('creditNotes:packages.invalidFraction')
-                                : t('creditNotes:invalidUnitFraction')}
-                            </p>
-                          )}
-                          {item.remaining_quantity <= 0 && (
-                            <p className="mt-2 text-[11px] font-medium text-slate-500">
-                              {t('creditNotes:fullyCreditedItem')}
-                            </p>
-                          )}
-                        </article>
-                      )
-                    })}
-                  </div>
-                )}
-              </section>
-
-            </main>
-
-            <aside className="min-w-0 bg-slate-50 px-4 py-4 sm:px-6 sm:py-5 lg:sticky lg:top-0 lg:self-start" aria-labelledby="credit-review-heading">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0F2419] text-white">
-                    <ReceiptText size={16} aria-hidden="true" />
-                  </span>
-                  <div>
-                    <h3 id="credit-review-heading" className="text-sm font-black text-slate-950">{t('creditNotes:reviewTitle')}</h3>
-                    <p className="text-[10px] text-slate-500">{t('creditNotes:sourceInvoice')} <bdi dir="ltr">{invoice.invoice_number}</bdi></p>
-                  </div>
-                </div>
-
-                {selectedLines.length === 0 ? (
-                  <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs leading-relaxed text-slate-500">
-                    {t('creditNotes:summaryEmpty')}
-                  </div>
-                ) : (
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-                    <div className="rounded-xl bg-slate-50 p-3">
-                      <p className="text-[10px] font-semibold text-slate-500">{t('creditNotes:selectedItems')}</p>
-                      <p className="mt-1 text-lg font-black tabular-nums text-slate-900">{selectedLines.length}</p>
-                    </div>
-                    <div className="rounded-xl bg-slate-50 p-3">
-                      <p className="text-[10px] font-semibold text-slate-500">{t('creditNotes:selectedQuantity')}</p>
-                      <p className="mt-1 text-lg font-black tabular-nums text-slate-900" dir="ltr">{qty(selectedQuantity)}</p>
-                    </div>
-                  </div>
-                )}
-
-                <dl className="mt-4 space-y-2 border-y border-slate-200 py-3 text-xs">
-                  {[
-                    [t('invoices:subtotal'), totals.subtotal],
-                    ...(totals.discount > 0 ? [[t('invoices:discount'), totals.discount]] : []),
-                    [t('invoices:vat'), totals.tax],
-                  ].map(([label, amount]) => (
-                    <div key={String(label)} className="flex items-center justify-between gap-4">
-                      <dt className="text-slate-500">{label}</dt>
-                      <dd className="font-bold tabular-nums text-slate-800" dir="ltr">SAR {money(Number(amount))}</dd>
-                    </div>
-                  ))}
-                  <div className="flex items-end justify-between gap-4 pt-1">
-                    <dt className="font-bold text-slate-900">{t('creditNotes:creditTotal')}</dt>
-                    <dd className="text-xl font-black tracking-tight text-[#0F2419]" dir="ltr">SAR {money(totals.total)}</dd>
-                  </div>
-                </dl>
-
-                <div className="mt-4 space-y-3">
-                  <div>
-                    <p className="text-[11px] font-bold text-slate-800">{t('creditNotes:stockImpact')}</p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-                      {hasEligibleStockLines && stockReturnChoice === true
-                        ? t('creditNotes:unitsReturned', { quantity: qty(stockReturnQuantity) })
-                        : hasEligibleStockLines && stockReturnChoice === null
-                        ? t('creditNotes:inventoryChoicePending')
-                        : t('creditNotes:noStockMovement')}
-                    </p>
-                    {selectedNonStockCount > 0 && (
-                      <p className="mt-1 text-[10px] text-slate-400">
-                        {t('creditNotes:nonStockSelectedCount', { count: selectedNonStockCount })}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="rounded-xl bg-slate-50 p-3">
-                    <p className="text-[11px] font-bold text-slate-800">{t('creditNotes:refundAllocationTitle')}</p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
-                      {t('creditNotes:refundAllocationDisclosure')}
-                    </p>
-                    <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
-                      {refundPlanText(originalPayments, paymentsLoading, t)}
-                    </p>
-                  </div>
-
-                  <fieldset ref={refundSectionRef} className="space-y-2">
-                    <legend className="text-[11px] font-bold text-slate-800">{t('refunds:method')}</legend>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {(['cash', 'card', 'split'] as const).map(method => (
-                        <button
-                          key={method}
-                          type="button"
-                          role="radio"
-                          aria-checked={refundMode === method}
-                          disabled={busy || totals.total <= 0}
-                          onClick={() => {
-                            setRefundMode(method)
-                            if (method === 'cash') { setRefundCash(totals.total.toFixed(2)); setRefundCard('') }
-                            if (method === 'card') { setRefundCash(''); setRefundCard(totals.total.toFixed(2)) }
-                            if (method === 'split') {
-                              const cashPart = roundMoney(totals.total / 2)
-                              setRefundCash(cashPart.toFixed(2))
-                              setRefundCard(roundMoney(totals.total - cashPart).toFixed(2))
-                            }
-                          }}
-                          className={`inline-flex min-h-9 items-center justify-center gap-1 rounded-lg border px-2 text-[10px] font-bold transition-[background-color,border-color,color,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B5943E] focus-visible:ring-offset-1 active:scale-[0.97] disabled:opacity-50 ${
-                            refundMode === method
-                              ? 'border-[#B5943E] bg-[#0F2419] text-[#FFF9E8]'
-                              : 'border-slate-200 bg-[#FFFEFA] text-slate-600 hover:bg-slate-50'
-                          }`}
-                        >
-                          {refundMode === method && <Check size={11} aria-hidden="true" />}
-                          {method === 'card'
-                            ? t('creditNotes:bankTransferRefund')
-                            : t(`refunds:${method}`)}
-                        </button>
-                      ))}
-                    </div>
-                    {refundMode === 'card' && (
-                      <p className="text-[10px] leading-relaxed text-slate-500">
-                        {t('creditNotes:bankTransferRefundHint')}
-                      </p>
-                    )}
-                    {refundMode === 'split' && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <label className="space-y-1">
-                          <span className="text-[10px] font-medium text-slate-500">{t('refunds:cashAmount')}</span>
-                          <MoneyInput value={refundCash} onValueChange={setRefundCash} className="input" placeholder="0.00" />
-                        </label>
-                        <label className="space-y-1">
-                          <span className="text-[10px] font-medium text-slate-500">{t('creditNotes:bankTransferAmount')}</span>
-                          <MoneyInput value={refundCard} onValueChange={setRefundCard} className="input" placeholder="0.00" />
-                        </label>
-                      </div>
-                    )}
-                  </fieldset>
-
-                  <div className="flex items-start gap-2 border-t border-slate-200 pt-3 text-[11px] leading-relaxed text-amber-800">
-                    <AlertCircle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-                    <p>{t('creditNotes:irreversible')}</p>
-                  </div>
-                </div>
-
-                <div className="mt-4 rounded-xl border border-slate-200 bg-[#FBFAF5] p-3" aria-live="polite">
-                  <p className="text-[11px] font-bold text-slate-800">{t('creditNotes:completionChecklist')}</p>
-                  <ul className="mt-2 grid gap-1.5">
-                    {completionChecks.map(check => (
-                      <li key={check.key} className="flex items-center gap-2 text-[11px]">
-                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${
-                          check.complete ? 'bg-[#1B6B3A] text-white' : 'border border-amber-500 bg-amber-50 text-amber-700'
-                        }`}>
-                          {check.complete ? <Check size={10} aria-hidden="true" /> : <span aria-hidden="true">•</span>}
-                        </span>
-                        <span className={check.complete ? 'text-slate-600' : 'font-semibold text-amber-800'}>
-                          {check.label}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {error && (
-                  <div id={errorId} className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs leading-relaxed text-red-700" role="alert" aria-live="assertive">
-                    {error}
-                  </div>
-                )}
-
-                <div className="mt-4 hidden gap-2 lg:grid">
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    disabled={busy}
-                    className="order-2 min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 transition-[background-color,transform] duration-150 hover:bg-slate-50 active:scale-[0.98] disabled:opacity-50 sm:order-1 lg:order-2"
-                  >
-                    {t('common:cancel')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCreate}
-                    disabled={createDisabled}
-                    aria-describedby={error ? errorId : undefined}
-                    title={
-                      selectedLines.length === 0
-                        ? t('creditNotes:enterQuantityFirst')
-                        : stockReturnChoiceMissing
-                        ? t('creditNotes:stockReturnChoiceRequired')
-                        : undefined
-                    }
-                    className="order-1 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-4 text-xs font-bold text-white shadow-sm transition-[background-color,transform] duration-150 hover:bg-[#1a3a28] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6B3A] focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:order-2 lg:order-1"
-                  >
-                    {busy && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
-                    {actionLabel}
-                  </button>
-                </div>
-              </div>
-            </aside>
-          </div>
-        </div>
-        <span className="sr-only" role="status" aria-live="polite">
-          {itemsLoading ? t('creditNotes:loadingItems') : busy ? actionLabel : ''}
-        </span>
-        <div className="grid shrink-0 grid-cols-[1fr_auto] items-center gap-3 border-t border-slate-200 bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] lg:hidden">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold text-slate-500">{t('creditNotes:creditTotal')}</p>
-            <p className="truncate text-base font-black tabular-nums text-[#0F2419]" dir="ltr">SAR {money(totals.total)}</p>
-          </div>
-          <button
-            type="button"
-            onClick={handleCreate}
-            disabled={createDisabled}
-            aria-describedby={error ? errorId : undefined}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-5 text-xs font-bold text-white transition-[background-color,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6B3A] focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
-            {actionLabel}
-          </button>
-        </div>
+    <div className="no-print fixed inset-0 z-50 flex items-end justify-center overflow-hidden bg-slate-950/55 p-0 backdrop-blur-[2px] sm:items-center sm:p-4" data-cart-fingerprint={cartFingerprint || undefined} onMouseDown={event => { if (event.target === event.currentTarget) requestClose() }}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} aria-busy={busy} tabIndex={-1} className="flex max-h-[100dvh] w-full min-w-0 flex-col overflow-hidden rounded-t-2xl bg-[#fffef9] shadow-2xl sm:max-h-[92vh] sm:max-w-4xl sm:rounded-2xl">
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-4 py-3.5 sm:px-6"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 id={titleId} className="text-base font-black tracking-tight text-slate-950 sm:text-lg">{t('creditNotes:create')}</h2><span className="rounded-md border border-[#B5943E]/55 bg-[#0F2419] px-2.5 py-1 text-[11px] font-black text-[#F3D98B]"><bdi dir="ltr">{invoice.invoice_number}</bdi></span></div><p id={descriptionId} className="mt-1 text-xs text-slate-500">{t('creditNotes:sequentialDescription')}</p></div><button ref={closeButtonRef} type="button" onClick={requestClose} disabled={busy} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-950 disabled:opacity-50" aria-label={t('common:close')}><X size={18} /></button></header>
+        <section data-testid="source-invoice-strip" className="shrink-0 border-b border-[#B5943E]/40 bg-[#0F2419] px-4 py-3 text-[#FFF9E8] sm:px-6"><p className="text-[10px] font-bold uppercase tracking-wider text-[#F3D98B]">{t('creditNotes:invoiceContext')}</p><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3"><div><dt className="text-[10px] text-white/55">{t('creditNotes:invoiceNumber')}</dt><dd className="text-xs font-bold"><bdi>{invoice.invoice_number}</bdi></dd></div><div><dt className="text-[10px] text-white/55">{t('invoices:date')}</dt><dd className="text-xs font-bold"><bdi>{invoiceDate(invoice.invoice_date, isRtl)}</bdi></dd></div><div><dt className="text-[10px] text-white/55">{t('invoices:customer')}</dt><dd className="truncate text-xs font-bold" dir="auto">{invoice.customer_name || t('creditNotes:walkInCustomer')}</dd></div><div><dt className="text-[10px] text-white/55">{t('creditNotes:originalTotal')}</dt><dd className="text-xs font-bold" dir="ltr">SAR {money(invoice.total_amount)}</dd></div><div><dt className="text-[10px] text-white/55">{t('creditNotes:remainingRefundableTotal')}</dt><dd className="text-xs font-bold" dir="ltr">SAR {money(remainingRefundableTotal)}</dd></div><div><dt className="text-[10px] text-white/55">{t('creditNotes:originalPayment')}</dt><dd className="truncate text-xs font-bold">{refundPlanText(originalPayments, paymentsLoading, t)}</dd></div></dl></section>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><main className="mx-auto w-full max-w-3xl px-4 py-5 sm:px-6"><ol className="mb-6 grid grid-cols-5 gap-1">{[t('creditNotes:scopeStep'), t('creditNotes:reasonStep'), t('creditNotes:inventoryStep'), t('creditNotes:refundStep'), t('creditNotes:reviewStep')].map((label, index) => { const step = index + 1; const unavailable = step === 3 && !hasEligibleStockLines; const complete = stepComplete[index]; return <li key={label}><button type="button" disabled={busy || unavailable} onClick={() => setActiveStep(step)} className={activeStep === step ? 'flex w-full flex-col items-center gap-1 rounded-lg bg-[#eaf1ec] px-1 py-1.5 text-[#0F2419]' : complete ? 'flex w-full flex-col items-center gap-1 rounded-lg px-1 py-1.5 text-[#1B6B3A]' : 'flex w-full flex-col items-center gap-1 rounded-lg px-1 py-1.5 text-slate-400'}><span className={complete ? 'flex h-6 w-6 items-center justify-center rounded-full bg-[#1B6B3A] text-white' : activeStep === step ? 'flex h-6 w-6 items-center justify-center rounded-full bg-[#0F2419] text-[#F3D98B]' : 'flex h-6 w-6 items-center justify-center rounded-full bg-slate-100'}>{complete ? <Check size={12} /> : step}</span><span className="hidden text-[10px] font-semibold sm:block">{unavailable ? t('creditNotes:skipped') : label}</span></button></li> })}</ol>
+          {activeStep === 1 && <section ref={itemsSectionRef} className="space-y-5"><div><p className="text-[10px] font-black uppercase tracking-wider text-[#1B6B3A]">{t('creditNotes:scopeStep')}</p><h3 className="mt-1 text-xl font-black tracking-tight text-slate-950">{t('creditNotes:scopeTitle')}</h3><p className="mt-1 text-sm text-slate-500">{t('creditNotes:scopeHint')}</p></div><div className="grid gap-3 sm:grid-cols-2">{(['full', 'selected'] as const).map(scope => <button key={scope} type="button" role="radio" aria-checked={creditScope === scope} disabled={busy || itemsLoading} onClick={() => { setCreditScope(scope); setError(null) }} className={creditScope === scope ? 'min-h-28 rounded-2xl border border-[#B5943E] bg-[#0F2419] p-4 text-start text-[#FFF9E8]' : 'min-h-28 rounded-2xl border border-slate-200 bg-white p-4 text-start text-slate-900 hover:border-[#B5943E]/60'}><span className="block text-sm font-black">{scope === 'full' ? t('creditNotes:fullRemaining') : t('creditNotes:selectedItemsScope')}</span><span className={creditScope === scope ? 'mt-1 block text-xs text-white/70' : 'mt-1 block text-xs text-slate-500'}>{scope === 'full' ? t('creditNotes:fullRemainingHint') : t('creditNotes:selectedItemsHint')}</span></button>)}</div>
+          {itemsLoading ? <div className="rounded-xl border border-slate-200 p-5 text-sm text-slate-500"><Loader2 className="mr-2 inline animate-spin" size={15} />{t('creditNotes:loadingItems')}</div> : creditScope === 'full' ? <div className="rounded-2xl border border-[#B5943E]/40 bg-[#fffdf5] p-4"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-black text-[#0F2419]">{t('creditNotes:fullRemaining')}</p><p className="mt-1 text-xs text-slate-600">{t('creditNotes:refundableLines', { count: selectedLines.length })} · {qty(selectedQuantity)}</p></div><p className="text-lg font-black text-[#0F2419]" dir="ltr">SAR {money(totals.total)}</p></div><button type="button" onClick={() => setFullItemsExpanded(value => !value)} className="mt-3 min-h-10 text-xs font-bold text-[#1B6B3A] underline underline-offset-4">{fullItemsExpanded ? t('creditNotes:hideItems') : t('creditNotes:viewItems', { count: selectedLines.length })}</button>{fullItemsExpanded && <div className="mt-2 divide-y divide-[#B5943E]/20 border-t border-[#B5943E]/20">{selectedLines.map(line => <div key={line.item.original_invoice_item_id} className="flex justify-between gap-3 py-2 text-xs"><span>{line.item.name} · {qty(line.quantity)} {line.item.unit}</span><bdi>SAR {money(line.total)}</bdi></div>)}</div>}</div> : creditScope === 'selected' ? <div className="space-y-2">{refundableItems.filter(item => item.remaining_quantity > 0).map(item => { const line = linePreviews.find(value => value.item.original_invoice_item_id === item.original_invoice_item_id)!; const stockEligible = item.product_id && item.stock_tracked_at_sale === true && item.service_item_at_sale !== true; return <article key={item.original_invoice_item_id} className="rounded-xl border border-slate-200 bg-white p-3 sm:p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h4 className="truncate text-sm font-bold text-slate-900" dir="auto">{isRtl && item.name_ar ? item.name_ar : item.name}</h4><p className="mt-1 text-[11px] text-slate-500">{t('creditNotes:originalQuantity', { quantity: qty(item.original_quantity), unit: item.unit ?? '' })} · {t('creditNotes:previouslyCreditedWithUnit', { quantity: qty(item.credited_quantity), unit: item.unit ?? '' })}</p><p className="text-[11px] font-semibold text-[#1B6B3A]">{t('creditNotes:remainingReturnableWithUnit', { quantity: qty(item.remaining_quantity), unit: item.unit ?? '' })}{stockEligible ? ' · ' + t('creditNotes:stockItem') : ''}</p></div><div className="shrink-0 text-end"><p className="text-[10px] text-slate-400">{t('creditNotes:expectedCredit')}</p><p className="font-black text-[#0F2419]" dir="ltr">SAR {money(line.total)}</p></div></div><div className="mt-3 flex items-center gap-2"><div className="flex flex-1" dir="ltr"><button type="button" onClick={() => adjustQuantity(item, -1)} disabled={busy || line.quantity <= 0} className="flex h-11 w-11 items-center justify-center rounded-s-xl border border-e-0 border-slate-200 bg-slate-50 disabled:opacity-40"><Minus size={15} /></button><input type="number" inputMode="decimal" min="0" max={item.remaining_quantity} step={quantityStepForItem(item)} data-line-id={item.original_invoice_item_id} value={returnQuantities[item.original_invoice_item_id] ?? '0'} onChange={event => { const current = returnQuantities[item.original_invoice_item_id] ?? '0'; setReturnQuantities(previous => ({ ...previous, [item.original_invoice_item_id]: normalizeQuantityInput(event.target.value, item, current) })); setError(null) }} disabled={busy} className="h-11 min-w-0 flex-1 border border-slate-200 px-2 text-center text-sm font-bold outline-none focus:border-[#1B6B3A]" /><button type="button" onClick={() => adjustQuantity(item, 1)} disabled={busy || line.quantity >= item.remaining_quantity} className="flex h-11 w-11 items-center justify-center rounded-e-xl border border-s-0 border-slate-200 bg-slate-50 disabled:opacity-40"><Plus size={15} /></button></div><button type="button" onClick={() => setReturnQuantities(previous => ({ ...previous, [item.original_invoice_item_id]: fullReturnQuantity(item) }))} className="h-11 rounded-xl border border-[#0F2419] px-3 text-[11px] font-bold text-[#0F2419]">{t('creditNotes:returnAll')}</button></div></article> })}</div> : <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">{t('creditNotes:chooseScopePrompt')}</div>}</section>}
+          {activeStep === 2 && <section ref={reasonSectionRef} className="space-y-5"><div><p className="text-[10px] font-black uppercase tracking-wider text-[#1B6B3A]">{t('creditNotes:reasonStep')}</p><h3 className="mt-1 text-xl font-black text-slate-950">{t('creditNotes:reasonStepTitle')}</h3></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup">{QUICK_REASONS.map(reason => <button key={reason} type="button" role="radio" aria-checked={selectedReason === reason} onClick={() => { setSelectedReason(reason); setError(null) }} disabled={busy} className={selectedReason === reason ? 'min-h-12 rounded-xl border border-[#B5943E] bg-[#0F2419] px-3 text-xs font-bold text-[#FFF9E8]' : 'min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700'}>{reasonLabel(reason)}</button>)}</div><button type="button" onClick={() => setRemarksExpanded(value => !value)} className="inline-flex min-h-10 items-center gap-1 text-xs font-bold text-[#1B6B3A]"><ChevronDown className={remarksExpanded ? 'rotate-180' : ''} size={15} />{t('creditNotes:addEmployeeRemarks')}</button>{remarksExpanded && <label className="block space-y-1.5"><span className="text-xs font-bold text-slate-700">{t('creditNotes:additionalRemarks')}</span><textarea value={remarks} onChange={event => setRemarks(event.target.value)} maxLength={430} rows={4} disabled={busy} className="input resize-y" placeholder={t('creditNotes:additionalDetails')} /><span className="text-[10px] text-slate-500">{t('creditNotes:remarksFiscalHint')}</span></label>}</section>}
+          {activeStep === 3 && hasEligibleStockLines && <section ref={inventorySectionRef} className="space-y-5"><div><p className="text-[10px] font-black uppercase tracking-wider text-[#1B6B3A]">{t('creditNotes:inventoryStep')}</p><h3 className="mt-1 text-xl font-black text-slate-950">{t('creditNotes:inventoryTreatment')}</h3><p className="mt-1 text-sm text-slate-500">{t('creditNotes:stockReturnQuestionHint')}</p></div><div className="grid gap-3 sm:grid-cols-2" role="radiogroup">{([{ value: true, icon: PackageCheck, title: t('creditNotes:stockReturnYes'), description: t('creditNotes:stockReturnYesDescription') }, { value: false, icon: PackageX, title: t('creditNotes:stockReturnNo'), description: t('creditNotes:stockReturnNoDescription') }] as const).map(option => { const Icon = option.icon; return <button key={String(option.value)} type="button" role="radio" aria-checked={stockReturnChoice === option.value} onClick={() => { setStockReturnChoice(option.value); setError(null) }} disabled={busy} className={stockReturnChoice === option.value ? 'min-h-28 rounded-2xl border border-[#B5943E] bg-[#0F2419] p-4 text-start text-[#FFF9E8]' : 'min-h-28 rounded-2xl border border-slate-200 bg-white p-4 text-start text-slate-900'}><Icon size={19} /><span className="mt-3 block text-sm font-black">{option.title}</span><span className={stockReturnChoice === option.value ? 'mt-1 block text-xs text-white/70' : 'mt-1 block text-xs text-slate-500'}>{option.description}</span></button> })}</div></section>}
+          {activeStep === 4 && <section ref={refundSectionRef} className="space-y-5"><div><p className="text-[10px] font-black uppercase tracking-wider text-[#1B6B3A]">{t('creditNotes:refundStep')}</p><h3 className="mt-1 text-xl font-black text-slate-950">{t('creditNotes:refundStepTitle')}</h3></div><div className="rounded-2xl border border-[#B5943E]/35 bg-[#fffdf5] p-4"><p className="text-xs font-black text-[#0F2419]">{t('creditNotes:originalPayment')}</p><p className="mt-1 text-xs text-slate-600">{refundPlanText(originalPayments, paymentsLoading, t)}</p></div><fieldset className="space-y-3"><legend className="text-sm font-bold text-slate-900">{t('creditNotes:chooseRefundAllocation')}</legend><div className="grid grid-cols-3 gap-2">{(['cash', 'card', 'split'] as const).map(method => <button key={method} type="button" role="radio" aria-checked={refundMode === method} onClick={() => { setRefundMode(method); if (method === 'cash') { setRefundCash(totals.total.toFixed(2)); setRefundCard('') } else if (method === 'card') { setRefundCash(''); setRefundCard(totals.total.toFixed(2)) } else { const cashPart = roundMoney(totals.total / 2); setRefundCash(cashPart.toFixed(2)); setRefundCard(roundMoney(totals.total - cashPart).toFixed(2)) } }} disabled={busy || totals.total <= 0} className={refundMode === method ? 'min-h-11 rounded-xl border border-[#B5943E] bg-[#0F2419] px-2 text-xs font-bold text-[#FFF9E8]' : 'min-h-11 rounded-xl border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700'}>{method === 'card' ? t('creditNotes:bankTransferRefund') : t('refunds:' + method)}</button>)}</div>{refundMode === 'split' && <div className="grid grid-cols-2 gap-3"><label className="space-y-1"><span className="text-[11px] text-slate-500">{t('refunds:cashAmount')}</span><MoneyInput value={refundCash} onValueChange={setRefundCash} className="input" placeholder="0.00" /></label><label className="space-y-1"><span className="text-[11px] text-slate-500">{t('creditNotes:bankTransferAmount')}</span><MoneyInput value={refundCard} onValueChange={setRefundCard} className="input" placeholder="0.00" /></label></div>}</fieldset><p className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900"><AlertCircle className="shrink-0" size={15} />{t('creditNotes:refundAllocationDisclosure')}</p></section>}
+          {activeStep === 5 && <section className="space-y-4"><div><p className="text-[10px] font-black uppercase tracking-wider text-[#1B6B3A]">{t('creditNotes:reviewStep')}</p><h3 className="mt-1 text-xl font-black text-slate-950">{t('creditNotes:reviewCreateTitle')}</h3></div><div className="rounded-2xl border border-[#0F2419] bg-[#0F2419] p-5 text-[#FFF9E8]"><div className="grid gap-5 sm:grid-cols-2"><div><p className="text-[10px] font-bold uppercase tracking-wider text-[#F3D98B]">{t('creditNotes:financialSummary')}</p><dl className="mt-3 space-y-2 text-xs text-white/75"><div className="flex justify-between"><dt>{t('invoices:subtotal')}</dt><dd>SAR {money(totals.subtotal)}</dd></div><div className="flex justify-between"><dt>{t('invoices:vat')}</dt><dd>SAR {money(totals.tax)}</dd></div></dl><div className="mt-4 border-t border-white/15 pt-3"><p className="text-[10px] text-[#F3D98B]">{t('creditNotes:creditTotal')}</p><p className="text-3xl font-black" dir="ltr">SAR {money(totals.total)}</p></div></div><div className="space-y-3 text-xs"><p><span className="block text-[10px] font-bold uppercase text-[#F3D98B]">{t('creditNotes:sourceInvoice')}</span>{invoice.invoice_number} · {invoiceDate(invoice.invoice_date, isRtl)}</p><p><span className="block text-[10px] font-bold uppercase text-[#F3D98B]">{t('creditNotes:creditScope')}</span>{creditScope === 'full' ? t('creditNotes:fullRemaining') : t('creditNotes:selectedItems', { count: selectedLines.length })}</p><p><span className="block text-[10px] font-bold uppercase text-[#F3D98B]">{t('creditNotes:inventoryTreatment')}</span>{hasEligibleStockLines && stockReturnChoice ? t('creditNotes:stockReturnYes') : t('creditNotes:noStockMovement')}</p><p><span className="block text-[10px] font-bold uppercase text-[#F3D98B]">{t('creditNotes:refundAllocationTitle')}</span>{refundMode === 'split' ? t('refunds:split') : refundMode === 'card' ? t('creditNotes:bankTransferRefund') : t('refunds:cash')}</p><p><span className="block text-[10px] font-bold uppercase text-[#F3D98B]">{t('creditNotes:reason')}</span>{selectedReason}</p>{remarks.trim() && <p><span className="block text-[10px] font-bold uppercase text-[#F3D98B]">{t('creditNotes:additionalRemarks')}</span>{remarks.trim()}</p>}</div></div></div><p className="flex gap-2 text-xs leading-relaxed text-amber-800"><AlertCircle className="shrink-0" size={15} />{t('creditNotes:irreversible')}</p></section>}
+          {error && <div id={errorId} className="mt-5 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700" role="alert">{error}</div>}</main></div>
+        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-6"><button type="button" onClick={activeStep === 1 ? requestClose : stepBack} disabled={busy} className="min-h-11 rounded-xl px-3 text-xs font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-50">{activeStep === 1 ? t('common:cancel') : t('common:back')}</button>{activeStep < 5 ? <button type="button" onClick={continueStep} disabled={busy || itemsLoading} className="min-h-11 rounded-xl bg-[#0F2419] px-5 text-xs font-bold text-white hover:bg-[#1a3a28] disabled:opacity-50">{t('common:continue')}</button> : <button type="button" onClick={handleCreate} disabled={createDisabled} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#0F2419] px-5 text-xs font-bold text-white disabled:opacity-50">{busy && <Loader2 className="animate-spin" size={14} />}{actionLabel}</button>}</footer>
+        {discardConfirmOpen && <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/40 p-4"><div role="alertdialog" aria-modal="true" className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl"><h3 className="text-base font-black text-slate-950">{t('creditNotes:discardTitle')}</h3><p className="mt-2 text-sm text-slate-600">{t('creditNotes:discardBody')}</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setDiscardConfirmOpen(false)} className="min-h-10 rounded-xl px-3 text-xs font-bold text-slate-700">{t('creditNotes:keepEditing')}</button><button type="button" onClick={onClose} className="min-h-10 rounded-xl bg-red-600 px-3 text-xs font-bold text-white">{t('creditNotes:discardChanges')}</button></div></div></div>}
       </div>
     </div>
   )

@@ -317,14 +317,13 @@ assert.doesNotMatch(
 assert.match(creditModal, /useState<boolean \| null>\(null\)/)
 assert.match(
   creditModal,
-  /line\.item\.product_id && line\.item\.track_stock && !line\.item\.is_service/,
+  /line\.item\.stock_tracked_at_sale === true/,
 )
 assert.match(creditModal, /hasEligibleStockLines && stockReturnChoice === null/)
 assert.match(
   creditModal,
   /return_stock: hasEligibleStockLines \? stockReturnChoice === true : false/,
 )
-assert.match(creditModal, /stockReturnChoiceMissing[\s\S]*createDisabled/)
 assert.match(creditModal, /role="radio"/)
 assert.match(creditModal, /method: 'bank_transfer', amount: roundMoney\(cardRefund\)/)
 
@@ -349,21 +348,13 @@ assert.match(creditModal, /const scale = item\.package_quantity_scale \?\? 0/)
 assert.match(creditModal, /function quantityDisplayScaleForItem\(item: RefundableItem\): number/)
 assert.match(creditModal, /if \(isWholeUnitItem\(item\) && !Number\.isInteger\(parsed\)\) return currentValue/)
 assert.match(creditModal, /Math\.min\(\s*item\.remaining_quantity/)
-assert.match(creditModal, /data-testid="returned-items-grid"/)
-assert.match(creditModal, /className="grid grid-cols-1 items-start gap-2\.5 xl:grid-cols-2"/)
-assert.match(creditModal, /w-full max-w-\[34rem\]/)
-assert.doesNotMatch(creditModal, /xl:grid-cols-3|lg:grid-cols-3/)
 assert.match(creditModal, /data-testid="source-invoice-strip"[\s\S]*bg-\[#0F2419\]/)
-assert.match(creditModal, /\? 'border-\[#B5943E\] bg-\[#0F2419\] text-\[#FFF9E8\] shadow-sm'/)
-assert.match(creditModal, /selected \? 'border-\[#B5943E\] bg-\[#0F2419\] text-\[#FFF9E8\] shadow-sm'/)
-assert.match(creditModal, /refundMode === method[\s\S]*border-\[#B5943E\] bg-\[#0F2419\] text-\[#FFF9E8\]/)
-assert.match(creditModal, /data-selected=\{lineIncluded\}/)
-assert.match(creditModal, /max-w-\[34rem\][\s\S]*lineIncluded[\s\S]*before:bg-\[#0F2419\]/)
-assert.match(creditModal, /disabled=\{disabled \|\| line\.quantity <= 0\}/)
-assert.match(creditModal, /disabled=\{disabled \|\| line\.quantity >= item\.remaining_quantity\}/)
+assert.match(creditModal, /creditScope === 'full'/)
+assert.match(creditModal, /Math\.max\(item\.remaining_quantity, 0\)/)
+assert.match(creditModal, /stock_tracked_at_sale === true && item\.service_item_at_sale !== true/)
+assert.match(creditModal, /discardConfirmOpen/)
+assert.match(creditModal, /dirtyRef\.current/)
 assert.match(creditModal, /fullReturnQuantity\(item\)/)
-assert.match(creditModal, /disabled=\{disabled \|\| Math\.abs\(line\.quantity - item\.remaining_quantity\) <= 1e-7\}/)
-assert.match(creditModal, /creditNotes:returnQuantityMaximum/)
 
 // Regression fixture: generic numeric scale 3 must not make a Piece fractional.
 const dishwasherGelPiece = {
@@ -427,10 +418,7 @@ assert.doesNotMatch(creditModal, /invoice\.id\}<\/bdi>|invoice\.id\}<\/dd>/)
 assert.match(creditModal, /completionChecks\.some\(check => !check\.complete\)/)
 assert.match(creditModal, /selectedReason/)
 assert.match(creditModal, /refundAllocationValid/)
-assert.match(creditModal, /stockReturnChoiceMissing/)
 assert.match(creditModal, /hasInvalidQuantity/)
-assert.match(creditModal, /env\(safe-area-inset-bottom\)/)
-assert.match(creditModal, /lg:hidden/)
 assert.match(creditModal, /scrollIntoView\(\{ behavior: 'smooth'/)
 assert.match(creditModal, /return_stock: hasEligibleStockLines \? stockReturnChoice === true : false/)
 assert.match(creditModal, /invoice\.zatca_document_kind === 'simplified'/)

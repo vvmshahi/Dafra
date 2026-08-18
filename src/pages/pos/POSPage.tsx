@@ -4207,7 +4207,7 @@ export default function POSPage() {
           </div>
           {cart.length > 0 && (
             <button onClick={() => { cartRef.current = []; setCart([]) }}
-              className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 transition-colors">
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 text-xs font-semibold text-red-600 transition-colors hover:border-red-300 hover:bg-red-100 hover:text-red-700">
               <X size={11} /> {t('pos:clearCart')}
             </button>
           )}
@@ -4614,7 +4614,7 @@ export default function POSPage() {
               ? <><Loader2 size={16} className="animate-spin" /> {t('payments:processing')}</>
               : isAccountSuspended
                 ? <><AlertCircle size={16} /> {t('pos:billingDisabled')}</>
-                : <>{t('pos:charge')} — <span dir="ltr"><Rial amount={totals.total} /></span></>
+                : <><span>{t('pos:charge')}</span><span dir="ltr"><Rial amount={totals.total} /></span></>
             }
           </button>
         </div>

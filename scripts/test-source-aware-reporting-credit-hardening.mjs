@@ -151,7 +151,7 @@ check(recognizeLegacyCreditPredecessor(reviewedLegacyCreditDefinition(legacyStoc
 check(recognizeLegacyCreditPredecessor(reviewedLegacyCreditDefinition(capabilityStockAnchor)) === 'branch-capability', 'production capability predecessor remains recognized')
 check(recognizeLegacyCreditPredecessor(reviewedLegacyCreditDefinition(capabilityStockAnchor).replace('FOR UPDATE', '')) === null, 'predecessor missing row locking remains rejected')
 check(recognizeLegacyCreditPredecessor(`${reviewedLegacyCreditDefinition(legacyStockAnchor)}\n${capabilityStockAnchor}`) === null, 'ambiguous predecessor definitions remain rejected')
-matches(creditModal, /line\.item\.product_id && line\.item\.track_stock && !line\.item\.is_service/, 'credit modal retains null-product Custom Line no-stock affordance')
+matches(creditModal, /line\.item\.product_id\s*&& line\.item\.stock_tracked_at_sale === true\s*&& line\.item\.service_item_at_sale !== true/, 'credit modal uses immutable sale-time provenance and keeps Custom Lines out of stock handling')
 
 // Report classification: financial totals remain invoice-level while item rows
 // make source explicit and never construct a product from a Custom description.
