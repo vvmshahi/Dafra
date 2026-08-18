@@ -4207,7 +4207,7 @@ export default function POSPage() {
           </div>
           {cart.length > 0 && (
             <button onClick={() => { cartRef.current = []; setCart([]) }}
-              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 text-xs font-semibold text-red-600 transition-colors hover:border-red-300 hover:bg-red-100 hover:text-red-700">
+              className="inline-flex min-h-7 items-center gap-1 rounded-full bg-red-600 px-2.5 text-[11px] font-bold text-white shadow-sm transition-colors hover:bg-red-700">
               <X size={11} /> {t('pos:clearCart')}
             </button>
           )}

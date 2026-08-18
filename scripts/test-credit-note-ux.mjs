@@ -354,6 +354,9 @@ assert.match(creditModal, /Math\.max\(item\.remaining_quantity, 0\)/)
 assert.match(creditModal, /stock_tracked_at_sale === true && item\.service_item_at_sale !== true/)
 assert.match(creditModal, /discardConfirmOpen/)
 assert.match(creditModal, /dirtyRef\.current/)
+assert.match(creditModal, /singleScreenDescription/)
+assert.match(creditModal, /lg:grid-cols-\[minmax\(0,1fr\)_19rem\]/)
+assert.doesNotMatch(creditModal, /continueStep|stepBack|activeStep/)
 assert.match(creditModal, /fullReturnQuantity\(item\)/)
 
 // Regression fixture: generic numeric scale 3 must not make a Piece fractional.

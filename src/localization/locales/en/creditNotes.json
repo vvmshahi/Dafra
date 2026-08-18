@@ -129,6 +129,7 @@
   "linkedCount": "Linked credit notes",
   "viewCreditNotes": "View credit notes",
   "sequentialDescription": "Choose the credit scope, record the refund allocation, then review the issued document.",
+  "singleScreenDescription": "Choose the credit details, then review the live summary before creating the document.",
   "steps": "Credit note steps",
   "scopeStep": "Scope",
   "reasonStep": "Reason",
