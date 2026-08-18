@@ -318,15 +318,19 @@ function AccountingLedgerV1({ model, options = {} }: A4DocumentProps) {
     <Footer model={model} />
   </Shell>
 }
+function ContemporaryModularDecoration() {
+  return <div className="a4-contemporary-decoration" aria-hidden="true"><i className="a4-contemporary-decoration__top" /><i className="a4-contemporary-decoration__top-accent" /><i className="a4-contemporary-decoration__bottom" /><i className="a4-contemporary-decoration__bottom-accent" /></div>
+}
 function ContemporaryModularV1({ model, options = {} }: A4DocumentProps) {
   const branding = showsStandardBranding(model, options)
   const brandIdentity = branding && (Boolean(model.presentation.logo.visible && (model.presentation.logo.previewUrl ?? model.presentation.logo.assetPath)) || [model.seller.displayHeading, model.seller.displaySubheading].some(value => normalizedIdentity(value) !== '' && !isLegalSellerIdentity(model.seller, value)))
   return <Shell template="contemporary_border" model={model} options={options}>
-    <header className={`a4-contemporary-head${brandIdentity ? '' : ' a4-contemporary-head--brandless'}`}>{brandIdentity && <section className="a4-contemporary-brand"><SellerBrand model={model} visible={branding} /></section>}<section className={`a4-contemporary-document${options.nonFiscalDemo ? ' a4-contemporary-document--without-qr' : ''}`}><div className="a4-contemporary-document-copy"><DocumentTitle model={model} /><DateMeta model={model} /></div>{!options.nonFiscalDemo && <section className="a4-contemporary-qr"><QrVerification model={model} options={options} /></section>}</section></header>
+    <ContemporaryModularDecoration />
+    <header className={`a4-contemporary-head${brandIdentity ? '' : ' a4-contemporary-head--brandless'}`}>{brandIdentity && <section className="a4-contemporary-brand"><SellerBrand model={model} visible={branding} /></section>}<section className="a4-contemporary-document"><div className="a4-contemporary-document-copy"><DocumentTitle model={model} /><DateMeta model={model} /></div></section></header>
     <div className={partyLayout('a4-contemporary-parties', model)}><section className="a4-contemporary-party"><Seller model={model} /></section>{hasNamedBuyer(model) && <section className="a4-contemporary-party"><Buyer model={model} /></section>}</div>
     <Adjustment model={model} />
     <ContemporaryItemTable model={model} />
-    <div className="a4-contemporary-closeout a4-closing-group"><section className="a4-contemporary-payment"><Payment model={model} /></section><section className="a4-contemporary-totals"><Totals model={model} /></section></div>
+    <div className="a4-contemporary-closeout a4-closing-group">{!options.nonFiscalDemo && <section className="a4-contemporary-qr"><QrVerification model={model} options={options} /></section>}<section className="a4-contemporary-payment"><Payment model={model} /></section><section className="a4-contemporary-totals"><Totals model={model} /></section></div>
     <Footer model={model} />
   </Shell>
 }

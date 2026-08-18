@@ -15,7 +15,7 @@ export interface A4TemplateDescriptor {
   readonly renderer: A4TemplateRendererId
   readonly version: 1
   readonly thumbnailClass: string
-  readonly qrRegion: 'lower-left' | 'top-right' | 'footer-centre' | 'framed-top-right' | 'ledger-lower-left' | 'upper-identity-region' | 'executive-closeout' | 'creative-top-right'
+  readonly qrRegion: 'lower-left' | 'top-right' | 'footer-centre' | 'framed-top-right' | 'ledger-lower-left' | 'upper-identity-region' | 'financial-band' | 'executive-closeout' | 'creative-top-right'
   readonly landmarks: readonly string[]
 }
 
@@ -36,7 +36,7 @@ const registry: Record<A4TemplateId, A4TemplateDescriptor> = {
   minimal_professional: { renderer: 'minimal_professional_v1', version: 1, thumbnailClass: 'minimal_professional', qrRegion: 'footer-centre', landmarks: ['editorial-head', 'typographic-parties', 'oversized-total', 'verification-footer'] },
   executive_green: { renderer: 'executive_frame_v1', version: 1, thumbnailClass: 'executive_green', qrRegion: 'framed-top-right', landmarks: ['page-frame', 'executive-modules', 'metadata-band', 'contact-strip'] },
   clean_ledger: { renderer: 'accounting_ledger_v1', version: 1, thumbnailClass: 'clean_ledger', qrRegion: 'ledger-lower-left', landmarks: ['ledger-header', 'ledger-party-cells', 'dense-table', 'ledger-verification'] },
-  contemporary_border: { renderer: 'contemporary_modular_v1', version: 1, thumbnailClass: 'contemporary_border', qrRegion: 'upper-identity-region', landmarks: ['primary-brand-band', 'split-parties', 'premium-item-table', 'totals-closeout'] },
+  contemporary_border: { renderer: 'contemporary_modular_v1', version: 1, thumbnailClass: 'contemporary_border', qrRegion: 'financial-band', landmarks: ['diagonal-geometry', 'recipient-legal-block', 'open-item-table', 'financial-closeout'] },
   executive_professional: { renderer: 'executive_professional_v1', version: 1, thumbnailClass: 'executive_professional', qrRegion: 'executive-closeout', landmarks: ['executive-band', 'paired-panels', 'professional-table', 'verification-closeout'] },
   creative_studio: { renderer: 'creative_studio_v1', version: 1, thumbnailClass: 'creative_studio', qrRegion: 'creative-top-right', landmarks: ['creative-decoration-layer', 'creative-identity', 'branded-table', 'creative-total'] },
 }
