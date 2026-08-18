@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ImagePlus, CreditCard, Banknote, Building, AlertTriangle, Check, CheckCircle2, Plus } from 'lucide-react'
+import { ImagePlus, CreditCard, Banknote, Building, AlertTriangle, Check, CheckCircle2, Plus, ReceiptText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
@@ -28,11 +28,12 @@ const PAY_OPTIONS: { value: ExpensePaymentMethod; icon: React.ElementType }[] = 
 
 // ── Section label ─────────────────────────────────────────────────────────────
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({ number, children }: { number: string; children: React.ReactNode }) {
   return (
-    <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest pt-1">
-      {children}
-    </p>
+    <div className="flex items-center gap-2.5">
+      <span className="rounded-md border border-[#B5943E]/55 bg-[#fffdf5] px-1.5 py-0.5 text-[10px] font-black tracking-wide text-[#0F2419]" aria-hidden="true">{number}</span>
+      <p className="text-[11px] font-black uppercase tracking-widest text-[#1B6B3A]">{children}</p>
+    </div>
   )
 }
 
@@ -323,18 +324,22 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
 
   if (!expense && !vatChoice) {
     return (
-      <ExpenseModalShell open={open} kind="daily" editing={false} saving={saving} canSubmit={false} onClose={onClose} onSubmit={event => event.preventDefault()}>
-        <section className="mx-auto max-w-2xl py-4" aria-labelledby="expense-vat-choice-heading">
-          <h3 id="expense-vat-choice-heading" className="text-lg font-bold text-gray-900">{t('expenses:fields.vatTreatment')}</h3>
-          <p className="mt-1 text-sm text-gray-500">{t('expenses:ui.chooseVatTreatment')}</p>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {SIMPLE_EXPENSE_VAT_OPTIONS.map(option => (
-              <button key={option.value} type="button" onClick={() => setVatChoice(option.value)}
-                className="rounded-2xl border border-gray-200 bg-white p-5 text-start shadow-sm transition hover:border-[#173f2a] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#173f2a]">
-                <p className="text-sm font-bold text-[#173f2a]">{t(`expenses:vat.${option.value}`)}</p>
-                <p className="mt-2 text-sm leading-6 text-gray-600">{t(`expenses:vatHelp.${option.value}`)}</p>
+      <ExpenseModalShell open={open} kind="daily" editing={false} saving={saving} canSubmit={false} compact showSubmit={false} onClose={onClose} onSubmit={event => event.preventDefault()}>
+        <section className="mx-auto max-w-[560px] py-1" aria-labelledby="expense-vat-choice-heading">
+          <div className="flex items-center gap-2.5">
+            <span className="rounded-md border border-[#B5943E]/55 bg-[#fffdf5] px-1.5 py-0.5 text-[10px] font-black tracking-wide text-[#0F2419]" aria-hidden="true">01</span>
+            <div><h3 id="expense-vat-choice-heading" className="text-sm font-black text-slate-950">{t('expenses:fields.vatTreatment')}</h3><p className="mt-0.5 text-xs text-gray-500">{t('expenses:ui.chooseVatTreatment')}</p></div>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {SIMPLE_EXPENSE_VAT_OPTIONS.map(option => {
+              const Icon = option.value === 'claimable' ? CheckCircle2 : ReceiptText
+              return <button key={option.value} type="button" onClick={() => setVatChoice(option.value)}
+                className="group rounded-xl border border-gray-200 bg-white p-4 text-start shadow-sm transition hover:border-[#B5943E] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6B3A]">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#eff6ef] text-[#1B6B3A] group-hover:bg-[#0F2419] group-hover:text-[#F3D98B]"><Icon size={17} aria-hidden="true" /></span>
+                <p className="mt-3 text-sm font-black text-[#0F2419]">{t(`expenses:vat.${option.value}`)}</p>
+                <p className="mt-1 text-xs leading-5 text-gray-600">{t(`expenses:vatHelp.${option.value}`)}</p>
               </button>
-            ))}
+            })}
           </div>
         </section>
       </ExpenseModalShell>
@@ -343,13 +348,14 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
 
   return (
     <ExpenseModalShell open={open} kind="daily" editing={Boolean(expense)} saving={saving}
+      subtitle={vatChoice === 'claimable' ? t('expenses:vatHelp.claimable') : t('expenses:vatHelp.not_claimable')}
       canSubmit={Boolean(date && description.trim() && amountNum > 0 && vatChoice && payMethod && (vatChoice !== 'claimable' || priceTreatment))} onClose={onClose} onSubmit={handleSubmit}>
       <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,1fr)]">
         <div className="min-w-0 space-y-5">
 
             {/* ── Basic details ────────────────────────────── */}
-            <div className="space-y-4">
-              <SectionLabel>{t('expenses:sections.details')}</SectionLabel>
+            <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <SectionLabel number="01">{t('expenses:sections.details')}</SectionLabel>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -418,11 +424,11 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
               </div>
               )}
               </>}
-            </div>
+            </section>
 
             {/* ── Amount & VAT ─────────────────────────────── */}
-            <div className="space-y-4">
-              <SectionLabel>{t('expenses:sections.amountVat')}</SectionLabel>
+            <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <SectionLabel number="02">{t('expenses:sections.amountVat')}</SectionLabel>
 
               <div>
                 <label className="label">{t('expenses:fields.amountSar')} <span className="text-red-500">*</span></label>
@@ -587,11 +593,11 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
                   </div>
                 </div>
               )}
-            </div>
+            </section>
 
             {/* ── Payment method ────────────────────────────── */}
-            <div className="space-y-3">
-              <SectionLabel>{t('expenses:fields.paymentMethod')} <span className="text-red-500">*</span></SectionLabel>
+            <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <SectionLabel number="03">{t('expenses:fields.paymentMethod')} <span className="text-red-500">*</span></SectionLabel>
               <div className="flex gap-2">
                 {PAY_OPTIONS.map(({ value, icon: Icon }) => (
                   <label
@@ -609,11 +615,11 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
                   </label>
                 ))}
               </div>
-            </div>
+            </section>
 
             {/* ── Receipt upload ────────────────────────────── */}
-            <div className="space-y-3">
-              <SectionLabel>{t('expenses:sections.receipt')}</SectionLabel>
+            <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <SectionLabel number="04">{t('expenses:sections.receipt')}</SectionLabel>
               <p className="text-xs text-gray-400">{vatChoice === 'claimable' ? t('expenses:ui.taxInvoiceHint') : t('expenses:ui.receiptHint')}</p>
               <input
                 ref={fileRef}
@@ -660,14 +666,14 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
                   <CheckCircle2 size={14} /> {t('expenses:ui.supportAttached')}
                 </div>
               )}
-            </div>
+            </section>
 
             {/* ── Notes ─────────────────────────────────────── */}
-            <div>
+            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <label className="label">{t('expenses:fields.notes')}</label>
               <textarea className="input resize-none" rows={2} value={notes}
                 onChange={e => setNotes(e.target.value)} placeholder={t('expenses:placeholders.notes')} dir="auto" />
-            </div>
+            </section>
 
             {error && (
               <div role="alert" aria-live="assertive" className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600">

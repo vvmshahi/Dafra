@@ -11,13 +11,16 @@ interface Props {
   editing: boolean
   saving: boolean
   canSubmit: boolean
+  compact?: boolean
+  showSubmit?: boolean
+  subtitle?: string
   onClose: () => void
   onSubmit: (event: React.FormEvent) => void
   children: React.ReactNode
 }
 
 export default function ExpenseModalShell({
-  open, kind, editing, saving, canSubmit, onClose, onSubmit, children,
+  open, kind, editing, saving, canSubmit, compact = false, showSubmit = true, subtitle, onClose, onSubmit, children,
 }: Props) {
   const { t } = useTranslation(['expenses', 'common'])
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -62,35 +65,35 @@ export default function ExpenseModalShell({
       onMouseDown={event => event.target === event.currentTarget && !saving && onClose()}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={`${kind}-expense-modal-title`}
         aria-describedby={`${kind}-expense-modal-description`}
-        className="flex max-h-[calc(100dvh-1rem)] w-full max-w-[920px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[#fffdf7] shadow-2xl md:max-h-[min(92vh,860px)]">
+        className={`flex max-h-[calc(100dvh-1rem)] w-full flex-col overflow-hidden rounded-2xl border border-white/20 bg-[#fffdf7] shadow-2xl md:max-h-[min(92vh,860px)] ${compact ? 'max-w-[640px]' : 'max-w-[920px]'}`}>
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
-          <header className="flex flex-shrink-0 items-center justify-between gap-3 border-b border-primary-100 bg-white px-4 py-3 sm:px-6 sm:py-4">
+          <header className="flex flex-shrink-0 items-center justify-between gap-3 border-b border-[#B5943E]/35 bg-[#0F2419] px-4 py-3 sm:px-6 sm:py-4">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
+              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-[#F3D98B]/35 bg-[#173f2a] text-[#F3D98B]">
                 <Icon size={18} aria-hidden="true" />
               </span>
               <div>
-                <h2 id={`${kind}-expense-modal-title`} className="text-base font-bold text-gray-900">
+                <h2 id={`${kind}-expense-modal-title`} className="text-base font-black text-[#FFF9E8]">
                   {t(editing ? (fixed ? 'expenses:editFixed' : 'expenses:editDaily') : (fixed ? 'expenses:addFixed' : 'expenses:addDaily'))}
                 </h2>
-                <p id={`${kind}-expense-modal-description`} className="mt-0.5 text-xs text-gray-500">
-                  {t(fixed ? 'expenses:modal.fixedSubtitle' : 'expenses:modal.dailySubtitle')}
+                <p id={`${kind}-expense-modal-description`} className="mt-0.5 text-xs text-white/65">
+                  {subtitle ?? t(fixed ? 'expenses:modal.fixedSubtitle' : 'expenses:modal.dailySubtitle')}
                 </p>
               </div>
             </div>
             <button type="button" onClick={onClose} disabled={saving} aria-label={t('common:close')}
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 active:scale-[0.97] disabled:opacity-50">
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-white/65 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3D98B] active:scale-[0.97] disabled:opacity-50">
               <X size={18} aria-hidden="true" />
             </button>
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">{children}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto bg-[#fffdf7] px-4 py-4 sm:px-6">{children}</div>
           <footer className="flex flex-shrink-0 flex-col-reverse gap-2 border-t border-gray-200 bg-white px-4 py-3 sm:flex-row sm:justify-end sm:px-6">
             <Button type="button" variant="secondary" onClick={onClose} disabled={saving}
               className="w-full active:scale-[0.97] sm:w-auto">{t('common:cancel')}</Button>
-            <Button type="submit" loading={saving} disabled={saving || !canSubmit}
-              className="w-full bg-[#173f2a] hover:bg-[#22563b] active:scale-[0.97] sm:w-auto">
+            {showSubmit && <Button type="submit" loading={saving} disabled={saving || !canSubmit}
+              className="w-full bg-[#0F2419] hover:bg-[#173f2a] active:scale-[0.97] sm:w-auto">
               {t(editing ? 'expenses:actions.saveChanges' : (fixed ? 'expenses:addFixed' : 'expenses:addDaily'))}
-            </Button>
+            </Button>}
           </footer>
         </form>
       </div>
