@@ -19,6 +19,8 @@ import { useTranslation } from 'react-i18next'
 import ExpenseModalShell from './ExpenseModalShell'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { saudiDateStr } from '@/lib/utils/date'
+import { isCreatedExpenseResult } from '@/lib/expenses/createExpenseResult'
 
 // ── Payment method options ────────────────────────────────────────────────────
 
@@ -113,7 +115,8 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
       setSupplierSource(expense.supplier_id ? 'saved' : expense.vendor_name ? 'manual' : 'none')
       setShowSupplierDetails(Boolean(expense.supplier_id || expense.vendor_name))
     } else {
-      const today = new Date().toISOString().split('T')[0]
+      // Expenses and all current-day readers use Saudi calendar dates.
+      const today = saudiDateStr()
       setDate(today)
       setDescription('')
       setVendorName('')
@@ -309,8 +312,12 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
           operation_id: operationIdRef.current ?? crypto.randomUUID(),
         }
         operationIdRef.current = createPayload.operation_id
-        const { error: err } = await (supabase as any).rpc('create_expense_v1', { p_payload: createPayload })
-        if (err) { console.error('Expense creation failed', err); setError(t('expenses:errors.saveFailed')); return }
+        const { data, error: err } = await (supabase as any).rpc('create_expense_v1', { p_payload: createPayload })
+        if (err || !isCreatedExpenseResult(data)) {
+          console.error('Expense creation failed', err ?? data)
+          setError(t('expenses:errors.saveFailed'))
+          return
+        }
       }
 
       toast.success(t(expense ? 'expenses:success.updated' : 'expenses:success.dailyAdded'))
