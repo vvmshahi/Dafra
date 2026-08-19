@@ -58,7 +58,6 @@ type Preset = 'today' | 'week' | 'month' | 'custom'
 function SumCard({ label, value, sub, accent }: {
   label: string; value: React.ReactNode; sub?: string; accent?: boolean
 }) {
-  const { t, i18n } = useTranslation('expenses')
   return (
     <div className={`flex-1 min-w-0 rounded-xl px-4 py-3 border ${
       accent
@@ -79,6 +78,7 @@ function ExpenseRow({ expense, onEdit, onDelete }: {
   onEdit: () => void
   onDelete: () => void
 }) {
+  const { t, i18n } = useTranslation('expenses')
   const catColor  = expense.expense_categories?.color ?? '#6b7280'
   const catIcon   = expense.expense_categories?.icon  ?? '💰'
   const catName   = expense.expense_categories?.name

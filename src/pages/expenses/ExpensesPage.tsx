@@ -33,19 +33,19 @@ export default function ExpensesPage() {
         {([
           { key: 'daily',  label: t('tabs.daily') },
           { key: 'fixed',  label: t('tabs.fixed') },
-        ] as { key: Tab; label: string }[]).map(t => (
+        ] as { key: Tab; label: string }[]).map(tabOption => (
           <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
+            key={tabOption.key}
+            onClick={() => setTab(tabOption.key)}
             role="tab"
-            aria-selected={tab === t.key}
+            aria-selected={tab === tabOption.key}
             className={`px-5 py-2 text-sm font-semibold rounded-xl transition-all duration-150 ${
-              tab === t.key
+              tab === tabOption.key
                 ? 'bg-[#173f2a] text-white shadow-sm'
                 : 'bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
             }`}
           >
-            {t.label}
+            {tabOption.label}
           </button>
         ))}
       </div>
