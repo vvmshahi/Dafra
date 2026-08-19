@@ -26,7 +26,7 @@ assert.match(thermalSource, /presentation\.thermal\.wrapItemNames/); assert.matc
 assert.match(thermalSource, /creditedQuantity/); assert.match(thermalSource, /creditReason/); assert.match(thermalSource, /formatDocumentMoney/); assert.doesNotMatch(thermalSource, /\*\s*0\.15|taxAmount\s*\+/)
 for (const component of ['ClassicReceipt', 'CompactRetailReceipt', 'StructuredDetailReceipt', 'BrandedModernReceipt']) assert.match(compositions, new RegExp(`export function ${component}`))
 assert.match(compositions, /classic:\s*ClassicReceipt/); assert.match(compositions, /compact:\s*CompactRetailReceipt/); assert.match(compositions, /standard:\s*StructuredDetailReceipt/); assert.match(compositions, /detailed:\s*BrandedModernReceipt/)
-for (const structure of ['thermal-classic-line', 'thermal-compact-line', 'thermal-structured-line__figures', 'thermal-branded-card__head', 'thermal-structured-accounting', 'thermal-branded-verification']) assert.match(compositions, new RegExp(structure))
+for (const structure of ['thermal-classic-line', 'thermal-compact-line', 'thermal-structured-line__figures', 'thermal-branded-card__head', 'thermal-structured-accounting', 'thermal-branded-close']) assert.match(compositions, new RegExp(structure))
 assert.doesNotMatch(css, /thermal-theme--compact-retail \.thermal-legal-info\{display:none\}/)
 assert.match(compositions, /item\.vatAmount/); assert.match(compositions, /payments\.map/)
 assert.match(css, /thermal-receipt--58mm/); assert.match(css, /thermal-items--stacked/); assert.match(css, /thermal-cut/)
