@@ -291,7 +291,10 @@ export default function DailyExpenseModal({ open, expense, categories, onClose, 
           description: description.trim(),
           amount: amountNum,
           vat_treatment: vatChoice,
-          vat_amount_mode: vatChoice === 'claimable' ? priceTreatment : null,
+          // The UI label is "included"; the authoritative RPC enum is "inclusive".
+          vat_amount_mode: vatChoice === 'claimable'
+            ? (priceTreatment === 'included' ? 'inclusive' : 'exclusive')
+            : null,
           payment_method: payMethod,
           category_id: categoryId || null,
           supplier_id: supplierId || null,
