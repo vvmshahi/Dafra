@@ -18,6 +18,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import ComplianceReadinessCard from '@/components/compliance/ComplianceReadinessCard'
+import SandboxBranchOnboardingPanel from '@/components/zatca/SandboxBranchOnboardingPanel'
 import { ENABLE_OFFICIAL_SELLER_IDENTITY } from '@/lib/releaseFlags'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/Badge'
@@ -1634,6 +1635,9 @@ export default function ZatcaTab() {
   }, [])
 
   const isPermanentDemoOwner = isPermanentDemo && ['owner', 'super_admin'].includes(profile?.role ?? '')
+  const sandboxOnboardingBranches = isPermanentDemoOwner
+    ? data.filter(branch => branch.zatca_environment === 'sandbox' && branch.is_active)
+    : []
   const canShowTradingSandboxDebug = isPermanentDemoOwner
     && data.some(branch => branch.id === TRADING_BRANCH_ID)
     && SHOW_TRADING_SANDBOX_DEBUG
@@ -1711,11 +1715,13 @@ export default function ZatcaTab() {
         </div>
       </div>
 
+      {sandboxOnboardingBranches.map(branch => <SandboxBranchOnboardingPanel key={`sandbox-onboarding-${branch.id}`} branch={branch} />)}
+
       {tradingSandboxV2Panel}
 
       {reconnectPanel}
 
-      {isPermanentDemoOwner && (
+      {false && isPermanentDemoOwner && (
         <section className="overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-card">
           <div className="flex items-start gap-3 border-b border-sky-100 bg-sky-50/70 px-5 py-4">
             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
@@ -1748,7 +1754,7 @@ export default function ZatcaTab() {
         </section>
       )}
 
-      {isPermanentDemo && profile?.role === 'owner' && data.some(branch => branch.id === SERVICE_BRANCH_ID) && (
+      {false && isPermanentDemo && profile?.role === 'owner' && data.some(branch => branch.id === SERVICE_BRANCH_ID) && (
         <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
           <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">

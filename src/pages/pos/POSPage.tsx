@@ -3220,23 +3220,22 @@ export default function POSPage() {
             options: {
               source: 'auto_checkout',
               retryDelayMs: 1500,
-              contractMode: 'legacy',
-              documentKind: 'simplified',
             },
           })
-          if (preOutputSubmission.mode !== 'sandbox_validation') {
+          if (preOutputSubmission.mode === 'sandbox_submission') {
+            const sandboxResult = preOutputSubmission.result
+            finalizationStatus = sandboxResult.finalizationStatus
+            artifactStage = sandboxResult.artifactStage
+            documentKind = sandboxResult.documentKind ?? documentKind
+            finalQrCode = selectStoredOutputStateQr(sandboxResult)
+            canPrintCustomerCopy = Boolean(finalQrCode)
+            if (!canPrintCustomerCopy) {
+              finalizationError = sandboxResult.retryable
+                ? 'Sandbox ZATCA submission is pending and can be retried.'
+                : 'Sandbox ZATCA submission did not produce a printable artifact.'
+            }
+          } else {
             throw new Error('SANDBOX_SUBMISSION_ROUTE_UNAVAILABLE')
-          }
-          const sandboxResult = preOutputSubmission.result
-          const validated = sandboxResult.status === 'sandbox_validated'
-            || sandboxResult.status === 'sandbox_validated_with_warnings'
-          finalizationStatus = sandboxResult.status ?? 'sandbox_validation_failed'
-          artifactStage = validated ? 'sandbox_compliance_validated' : 'sandbox_compliance_pending'
-          documentKind = 'simplified'
-          finalQrCode = sandboxResult.qrCode ?? null
-          canPrintCustomerCopy = validated && Boolean(finalQrCode)
-          if (!canPrintCustomerCopy) {
-            finalizationError = sandboxResult.message ?? 'Sandbox compliance validation did not produce a printable QR.'
           }
         } else if (productionCheckoutMode === 'legacy') {
           preOutputSubmission = await submitInvoiceForBranch({

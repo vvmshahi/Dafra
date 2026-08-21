@@ -115,6 +115,32 @@ async function edgePostSafe<T>(fnName: string, body: Record<string, unknown>): P
   return payload as T
 }
 
+async function sandboxEdgePost<T>(body: Record<string, unknown>): Promise<T> {
+  const jwt = await currentAccessToken()
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 35_000)
+  try {
+    const res = await fetch(EDGE('zatca-onboard-sandbox-demo'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${jwt}`,
+        'apikey': EDGE_API_KEY,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+    const payload = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(safeBrowserMessage(payload?.error, `Sandbox onboarding returned ${res.status}`))
+    return payload as T
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('Sandbox onboarding timed out. Refresh status before retrying.')
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
 export function isZatcaOtpRejection(error: unknown): boolean {
   const payload = (error as { payload?: any } | null)?.payload
   if (/otp/i.test(String(payload?.error ?? ''))) return true
@@ -353,6 +379,23 @@ export interface SandboxDemoConnectionStatus {
   active: boolean
 }
 
+/** Authoritative server-side routing state. Never infer this from tenant or
+ * historical branch UUIDs in the browser. */
+export type ZatcaConnectionState = 'not_started' | 'onboarding' | 'connected' | 'blocked' | 'failed'
+
+export interface ZatcaConnectionResolution {
+  branch_id: string
+  environment: 'sandbox' | 'production'
+  connection_state: ZatcaConnectionState
+  onboarding_stage: string
+  credential_status: string
+  readiness_reason: string
+}
+
+export async function getZatcaConnectionState(branchId: string): Promise<ZatcaConnectionResolution> {
+  return edgePostSafe<ZatcaConnectionResolution>('resolve-zatca-connection', { branchId })
+}
+
 export interface SandboxOnboardingStatus {
   ok: boolean
   branchId: string
@@ -376,6 +419,52 @@ export interface SandboxOnboardingStatus {
   activatedAt?: string | null
   updatedAt?: string | null
   lastSafeResponse?: Record<string, unknown> | null
+}
+
+export type SandboxBranchOnboardingAction =
+  | 'get_status'
+  | 'generate_csr'
+  | 'request_compliance_csid'
+  | 'submit_compliance_documents'
+  | 'request_sandbox_production_csid'
+  | 'activate'
+  | 'retry_failed_step'
+
+export interface SandboxBranchOnboardingResponse {
+  ok: boolean
+  branchId: string
+  environment: 'sandbox'
+  status: 'not_started' | 'csr_ready' | 'compliance_csid_ready' | 'compliance_checks_pending' | 'compliance_passed' | 'sandbox_production_csid_ready' | 'active' | 'failed' | 'expired' | 'revoked'
+  functionalityMap?: ZatcaFunctionalityMap | null
+  completedSteps?: string[]
+  complianceCredentialExists?: boolean
+  sandboxProductionCredentialExists?: boolean
+  complianceSampleResults?: Array<{ type: string; status: 'accepted' | 'blocked' | 'ambiguous_failed'; httpStatus?: number }>
+  failedStep?: string | null
+  lastError?: string | null
+  operationInProgress?: string | null
+  operationStartedAt?: string | null
+  reconciliationStatus?: string | null
+}
+
+export async function getSandboxBranchOnboardingStatus(branchId: string, tenantId: string): Promise<SandboxBranchOnboardingResponse> {
+  return sandboxEdgePost<SandboxBranchOnboardingResponse>({ action: 'get_status', tenantId, branchId })
+}
+
+export async function runSandboxBranchOnboarding(params: {
+  branchId: string
+  tenantId: string
+  action: Exclude<SandboxBranchOnboardingAction, 'get_status'>
+  otp?: string
+  functionalityMap?: ZatcaFunctionalityMap
+}): Promise<SandboxBranchOnboardingResponse> {
+  return sandboxEdgePost<SandboxBranchOnboardingResponse>({
+    action: params.action,
+    tenantId: params.tenantId,
+    branchId: params.branchId,
+    ...(params.otp ? { otp: params.otp } : {}),
+    ...(params.functionalityMap ? { functionalityMap: params.functionalityMap } : {}),
+  })
 }
 
 export async function getSandboxDemoOnboardingStatus(): Promise<SandboxOnboardingStatus> {

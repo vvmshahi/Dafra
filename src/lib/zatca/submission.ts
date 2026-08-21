@@ -1,21 +1,16 @@
 import { supabase } from '@/lib/supabase'
-import { validateInvoiceInSandbox, type SandboxValidationResponse } from '@/lib/zatca/api'
+import { getZatcaConnectionState } from '@/lib/zatca/api'
 import {
   invokeAuthenticatedZatca,
   ZatcaEdgeAuthenticationError,
 } from '@/lib/zatca/authenticatedEdge'
 
-export const PERMANENT_DEMO_TENANT_ID = 'ebf1144b-55ed-472a-99c9-23b5ee915351'
-export const PERMANENT_DEMO_TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
-export const PERMANENT_DEMO_SERVICE_BRANCH_ID = 'c30094d7-40ca-4d2e-833a-07aa18c4fa46'
-export const PERMANENT_DEMO_SANDBOX_BRANCH_IDS = [
-  PERMANENT_DEMO_TRADING_BRANCH_ID,
-  PERMANENT_DEMO_SERVICE_BRANCH_ID,
-] as const
+export type EffectiveZatcaRoute = 'production' | 'sandbox_branch_specific' | 'blocked'
 
-export function isPermanentDemoSandboxBranch(tenantId: string | null | undefined, branchId: string | null | undefined): boolean {
-  return tenantId === PERMANENT_DEMO_TENANT_ID &&
-    PERMANENT_DEMO_SANDBOX_BRANCH_IDS.includes(branchId as typeof PERMANENT_DEMO_SANDBOX_BRANCH_IDS[number])
+export function isPermanentDemoSandboxBranch(_tenantId: string | null | undefined, _branchId: string | null | undefined): boolean {
+  // Historical UI compatibility only. Authoritative routing below resolves the
+  // branch environment and active backend credential; it never uses a UUID list.
+  return false
 }
 
 export type ZatcaSubmitSource = 'auto_checkout' | 'auto_credit_note' | 'manual_retry' | 'bulk_retry'
@@ -84,6 +79,7 @@ export interface ZatcaFinalizationCapabilities {
   checkoutMode: ZatcaCheckoutMode
   simplifiedCheckoutMode: ZatcaCheckoutMode
   standardCheckoutMode: ZatcaCheckoutMode
+  effectiveRoute: EffectiveZatcaRoute
 }
 
 export interface ZatcaSubmitResult {
@@ -268,6 +264,12 @@ export async function getZatcaFinalizationCapabilities(branchId: string): Promis
     checkoutMode: data?.checkoutMode === 'v2' ? 'v2' : 'legacy',
     simplifiedCheckoutMode: data?.simplifiedCheckoutMode === 'v2' ? 'v2' : 'legacy',
     standardCheckoutMode: data?.standardCheckoutMode === 'v2' ? 'v2' : 'legacy',
+    // v148 did not expose an effective-route field. Keep its established
+    // Production capability behavior intact; branch-specific routing occurs
+    // in submitInvoiceForBranch through resolve-zatca-connection.
+    effectiveRoute: data?.effectiveRoute === 'production' || data?.effectiveRoute === 'sandbox_branch_specific' || data?.effectiveRoute === 'blocked'
+      ? data.effectiveRoute
+      : 'production',
   }
 }
 
@@ -276,6 +278,9 @@ export async function requireZatcaFinalizationCapability(
   documentKind: ZatcaDocumentKind,
 ): Promise<ZatcaFinalizationCapabilities & { checkoutMode: ZatcaCheckoutMode }> {
   const capability = await getZatcaFinalizationCapabilities(branchId)
+  if (capability.effectiveRoute === 'blocked') {
+    throw new Error('ZATCA route is blocked for this branch. No payment was recorded.')
+  }
   const serverCheckoutMode = documentKind === 'standard'
     ? capability.standardCheckoutMode
     : capability.simplifiedCheckoutMode
@@ -305,7 +310,7 @@ export async function requireZatcaFinalizationCapability(
 }
 
 export type RoutedZatcaResult =
-  | { mode: 'sandbox_validation'; result: SandboxValidationResponse }
+  | { mode: 'sandbox_submission'; result: ZatcaSubmitResult }
   | { mode: 'production_submission'; result: ZatcaSubmitResult }
 
 /**
@@ -348,6 +353,27 @@ export async function getInvoiceZatcaOutputState(params: {
   invoiceId: string
   branchId: string
 }): Promise<ZatcaOutputState> {
+  const connection = await getZatcaConnectionState(params.branchId)
+  if (connection.environment === 'sandbox') {
+    const { data, error } = await supabase.functions.invoke('zatca-submit-sandbox-demo', {
+      body: { action: 'status', invoiceId: params.invoiceId },
+    })
+    if (error) throw new Error(error.message)
+    const invoiceStatus = String(data?.invoiceStatus ?? 'pending')
+    const canPrint = data?.canPrint === true
+    return {
+      invoiceId: String(data?.invoiceId ?? ''), contractMode: 'legacy', legacyCompatible: false,
+      schemaVersion: null, edgeFunctionVersion: 'sandbox-demo', minimumClientVersion: ZATCA_FINALIZATION_CLIENT_VERSION,
+      compatible: true, immutableFinalizationEnabled: true, invoiceStatus,
+      finalizationStatus: String(data?.finalizationStatus ?? 'sandbox_pending'),
+      artifactStage: String(data?.artifactStage ?? 'sandbox_pending'),
+      documentKind: data?.documentKind === 'standard' ? 'standard' : 'simplified',
+      reportingDisplayState: String(data?.reportingDisplayState ?? 'reporting_pending'),
+      canPrint, canShare: data?.canShare === true, retryAvailable: data?.retryAvailable === true,
+      reconciliationRequired: data?.reconciliationRequired === true,
+      qrCode: canPrint && typeof data?.qrCode === 'string' ? data.qrCode : null, error: null,
+    }
+  }
   const { data, error } = await invokeAuthenticatedZatca({
     invoiceId: params.invoiceId,
     branchId: params.branchId,
@@ -437,8 +463,29 @@ export async function submitInvoiceForBranch(params: {
   branchId: string
   options: ZatcaSubmitOptions & { retryDelayMs?: number }
 }): Promise<RoutedZatcaResult> {
-  if (await getZatcaDemoCheckoutMode(params.branchId) === 'sandbox_compliance') {
-    return { mode: 'sandbox_validation', result: await validateInvoiceInSandbox(params.invoiceId) }
+  const connection = await getZatcaConnectionState(params.branchId)
+  if (connection.environment === 'sandbox') {
+    const { data, error } = await supabase.functions.invoke('zatca-submit-sandbox-demo', {
+      body: { invoiceId: params.invoiceId, source: params.options.source ?? 'manual_retry' },
+    })
+    if (error) throw new Error(error.message)
+    const invoiceStatus = String(data?.invoiceStatus ?? 'pending')
+    const canPrint = data?.canPrint === true
+    return {
+      mode: 'sandbox_submission',
+      result: {
+        ok: invoiceStatus === 'reported' || invoiceStatus === 'cleared', invoiceStatus,
+        retryable: invoiceStatus === 'pending' || invoiceStatus === 'error', contractMode: 'legacy', legacyCompatible: false,
+        finalizationStatus: String(data?.finalizationStatus ?? `sandbox_${invoiceStatus}`),
+        artifactStage: invoiceStatus === 'reported' || invoiceStatus === 'cleared' ? 'sandbox_final' : 'sandbox_pending',
+        documentKind: data?.documentKind === 'standard' ? 'standard' : 'simplified',
+        canPrint, canShare: data?.canShare === true,
+        qrCode: canPrint && typeof data?.qrCode === 'string' ? data.qrCode : null,
+      },
+    }
+  }
+  if (connection.connection_state !== 'connected') {
+    throw new Error(`ZATCA route is ${connection.connection_state} for this branch. No payment was recorded.`)
   }
   return {
     mode: 'production_submission',
