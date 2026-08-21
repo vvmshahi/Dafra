@@ -8,7 +8,9 @@
     "connected": "ZATCA Connected", "phase2Unavailable": "Phase 2 status unavailable",
     "phase1": "Phase 1", "phase1Qr": "Phase 1 — QR invoices",
     "productionConnected": "Production connected", "productionPending": "Production setup pending",
-    "productionFailed": "Production setup needs attention", "productionUnavailable": "Production status unavailable"
+    "productionFailed": "Production setup needs attention", "productionUnavailable": "Production status unavailable",
+    "sandboxConnected": "ZATCA Sandbox Connected", "sandboxPending": "Sandbox setup pending",
+    "sandboxOnboarding": "Sandbox onboarding", "sandboxFailed": "Sandbox onboarding failed"
   },
   "register": {
     "none": "No Register Session", "noneYet": "No register session yet", "openPrompt": "Open a register to start tracking sales for this shift.",

@@ -16,8 +16,7 @@ import { Badge } from '@/components/ui/Badge'
 import { DirectionalIcon } from '@/components/localization/DirectionalIcon'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { productionStatusLabel } from '@/lib/zatca/status'
-import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
-import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
+import { getZatcaConnectionState, type ProductionOnboardingResponse, type ZatcaConnectionResolution } from '@/lib/zatca/api'
 import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
 import {
   type RegisterSessionSummary,
@@ -617,6 +616,7 @@ export default function BranchDashboardPage() {
   const [hasActiveCert, setHasActiveCert] = useState(false)
   const [productionStatus, setProductionStatus] = useState<ProductionOnboardingResponse | null>(null)
   const [productionStatusReadable, setProductionStatusReadable] = useState(true)
+  const [zatcaConnection, setZatcaConnection] = useState<ZatcaConnectionResolution | null>(null)
   const [registerSession, setRegisterSession] = useState<RegisterSessionSummary | null>(null)
   const [registerSessionError, setRegisterSessionError] = useState('')
   const [statsError, setStatsError] = useState('')
@@ -631,12 +631,15 @@ export default function BranchDashboardPage() {
     const today = saudiDateStr()
     const summaryParams = { p_branch_id: bid, p_start_date: today, p_end_date: today }
     try {
-      const [branchRes, registerRes] = await Promise.all([
+      const [branchRes, registerRes, connectionRes] = await Promise.all([
         db().from('branches').select('zatca_phase').eq('id', bid).maybeSingle(),
         (supabase as any).rpc('get_register_session_summary', {
           p_branch_id: bid,
         }),
+        getZatcaConnectionState(bid).catch(() => null),
       ])
+
+      setZatcaConnection(connectionRes)
 
       if (registerRes.error) {
         logRegisterSessionRpcError('get_register_session_summary', { p_branch_id: bid }, registerRes.error)
@@ -734,14 +737,20 @@ export default function BranchDashboardPage() {
     return () => window.clearInterval(interval)
   }, [registerSession?.sessionId, registerSession?.status, registerSession?.openedAt])
 
-  const demoSandbox = isPermanentDemoSandboxBranch(tid, bid)
+  const demoSandbox = tenant?.is_demo === true
   const productionKey = productionStatus?.onboardingStatus === 'production_connected'
     ? 'zatca.productionConnected'
     : productionStatus?.onboardingStatus === 'compliance_failed' || productionStatus?.onboardingStatus === 'failed'
     ? 'zatca.productionFailed'
     : productionStatus ? 'zatca.productionPending' : 'zatca.productionUnavailable'
   const zatcaStatus = demoSandbox
-    ? { label: t('zatca.connected'), tone: 'success' as const }
+    ? zatcaConnection?.connection_state === 'connected'
+      ? { label: t('zatca.sandboxConnected'), tone: 'success' as const }
+      : zatcaConnection?.connection_state === 'failed'
+        ? { label: t('zatca.sandboxFailed'), tone: 'danger' as const }
+        : zatcaConnection?.connection_state === 'onboarding'
+          ? { label: t('zatca.sandboxOnboarding'), tone: 'warning' as const }
+          : { label: t('zatca.sandboxPending'), tone: 'neutral' as const }
     : zatcaPhase === 2 && !productionStatusReadable
     ? { label: t('zatca.phase2Unavailable'), tone: 'danger' as const }
     : { ...productionStatusLabel(productionStatus, hasActiveCert), label: t(productionKey) }

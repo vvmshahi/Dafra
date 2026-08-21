@@ -13,8 +13,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useTranslation } from 'react-i18next'
 import { formatDisplayInteger } from '@/lib/utils/localeFormat'
 import { productionStatusLabel } from '@/lib/zatca/status'
-import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
-import type { ProductionOnboardingResponse } from '@/lib/zatca/api'
+import { getZatcaConnectionState, type ProductionOnboardingResponse, type ZatcaConnectionResolution } from '@/lib/zatca/api'
 import { asArray, loadReportSummary } from '@/pages/reports/reportingRpc'
 import {
   type RegisterSessionSummary,
@@ -75,6 +74,7 @@ interface BranchStat {
   registerSessionAvailable?: boolean
   productionStatus?: ProductionOnboardingResponse | null
   productionStatusReadable?: boolean
+  zatcaConnection?: ZatcaConnectionResolution | null
 }
 
 interface DashboardDailySale {
@@ -257,7 +257,7 @@ function registerSessionErrorKey(error: unknown): string {
   return 'errors.registerLoad'
 }
 
-function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onView: () => void; demoSandbox: boolean }) {
+function BranchCard({ branch, onView, demoTenant }: { branch: BranchStat; onView: () => void; demoTenant: boolean }) {
   const { t, i18n } = useTranslation('dashboard')
   const branchLabel = resolveBranchDisplayName(
     branch,
@@ -274,14 +274,23 @@ function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onVie
   const cashFinalValue = session?.status === 'closed' && session.actualCash !== null
     ? session.cashDifference ?? 0
     : session?.expectedCash ?? 0
+  const demoSandbox = demoTenant
   const zatcaUnavailable = !demoSandbox && branch.zatca_phase === 2 && branch.productionStatusReadable === false
   const productionKey = branch.productionStatus?.onboardingStatus === 'production_connected'
     ? 'zatca.productionConnected'
     : branch.productionStatus?.onboardingStatus === 'compliance_failed' || branch.productionStatus?.onboardingStatus === 'failed'
     ? 'zatca.productionFailed'
     : branch.productionStatus ? 'zatca.productionPending' : 'zatca.productionUnavailable'
-  const zatcaLabel = demoSandbox ? t('zatca.connected') : zatcaUnavailable ? t('zatca.phase2Unavailable') : branch.zatca_phase === 2 ? t(productionKey) : t('zatca.phase1')
-  const zatcaTone = demoSandbox ? 'text-emerald-600' : zatcaUnavailable ? 'text-gray-400' : branch.zatca_phase === 2 && zatca.tone === 'success'
+  const sandboxKey = branch.zatcaConnection?.connection_state === 'connected'
+    ? 'zatca.sandboxConnected'
+    : branch.zatcaConnection?.connection_state === 'failed'
+      ? 'zatca.sandboxFailed'
+      : branch.zatcaConnection?.connection_state === 'onboarding'
+        ? 'zatca.sandboxOnboarding'
+        : 'zatca.sandboxPending'
+  const sandboxConnected = branch.zatcaConnection?.connection_state === 'connected'
+  const zatcaLabel = demoSandbox ? t(sandboxKey) : zatcaUnavailable ? t('zatca.phase2Unavailable') : branch.zatca_phase === 2 ? t(productionKey) : t('zatca.phase1')
+  const zatcaTone = demoSandbox ? (sandboxConnected ? 'text-emerald-600' : branch.zatcaConnection?.connection_state === 'failed' ? 'text-red-600' : branch.zatcaConnection?.connection_state === 'onboarding' ? 'text-amber-600' : 'text-gray-500') : zatcaUnavailable ? 'text-gray-400' : branch.zatca_phase === 2 && zatca.tone === 'success'
     ? 'text-emerald-600'
     : branch.zatca_phase === 2
     ? 'text-amber-600'
@@ -312,7 +321,7 @@ function BranchCard({ branch, onView, demoSandbox }: { branch: BranchStat; onVie
               <span className={`h-1.5 w-1.5 rounded-full ${branch.is_active ? 'bg-primary-500' : 'bg-gray-400'}`} />
               {branch.is_active ? t('status.active') : t('status.inactive')}
             </span>
-            <span className={`inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 font-semibold ${demoSandbox || (branch.zatca_phase === 2 && !zatcaUnavailable && zatca.tone === 'success') ? 'bg-emerald-50/95 text-emerald-800' : branch.zatca_phase === 2 && !zatcaUnavailable ? 'bg-amber-50/95 text-amber-800' : 'bg-gray-100/95 text-gray-600'}`}>
+            <span className={`inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 font-semibold ${demoSandbox && sandboxConnected || (!demoSandbox && branch.zatca_phase === 2 && !zatcaUnavailable && zatca.tone === 'success') ? 'bg-emerald-50/95 text-emerald-800' : demoSandbox && branch.zatcaConnection?.connection_state === 'failed' ? 'bg-red-50/95 text-red-800' : demoSandbox && branch.zatcaConnection?.connection_state === 'onboarding' || (!demoSandbox && branch.zatca_phase === 2 && !zatcaUnavailable) ? 'bg-amber-50/95 text-amber-800' : 'bg-gray-100/95 text-gray-600'}`}>
               <ShieldCheck size={10} />
               {zatcaLabel}
             </span>
@@ -557,7 +566,11 @@ export default function DashboardPage() {
               ? Boolean(branch.productionStatusReadable)
               : true,
           }))
-      setBranchStats(stats)
+      const resolvedStats = await Promise.all(stats.map(async branch => ({
+        ...branch,
+        zatcaConnection: await getZatcaConnectionState(branch.id).catch(() => null),
+      })))
+      setBranchStats(resolvedStats)
     } catch (error) {
       logDashboardRpcError('dashboard_register_session_load', { p_branch_id: null }, error)
       setDashboardLoadError('errors.dashboardLoad')
@@ -737,7 +750,7 @@ export default function DashboardPage() {
               <BranchCard
                 key={b.id}
                 branch={b}
-                demoSandbox={isPermanentDemoSandboxBranch(tid, b.id)}
+                demoTenant={tenant?.is_demo === true}
                 onView={() => navigate(`/dashboard/branches/${b.id}`)}
               />
             ))}

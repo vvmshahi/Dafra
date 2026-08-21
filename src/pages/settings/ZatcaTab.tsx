@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/Badge'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import {
   getProductionOnboardingStatus,
+  getZatcaConnectionState,
   getSandboxDemoConnectionStatus,
   getSandboxDemoOnboardingStatus,
   runSandboxDemoOnboarding,
@@ -38,6 +39,7 @@ import {
   type ProductionOnboardingResponse,
   type ProductionOnboardingTraceEntry,
   type ProductionOnboardingStatus,
+  type ZatcaConnectionResolution,
   type ZatcaFunctionalityMap,
   type SandboxDemoConnectionStatus,
   type SandboxOnboardingStatus,
@@ -1448,6 +1450,52 @@ function BranchRow({
   )
 }
 
+function ProductionBranchOnboardingCard({
+  branch,
+  onStatusChange,
+}: {
+  branch: BranchWithCert
+  onStatusChange: (branchId: string, status: ProductionOnboardingResponse) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [connection, setConnection] = useState<ZatcaConnectionResolution | null>(null)
+
+  const refreshConnection = useCallback(async () => {
+    try {
+      setConnection(await getZatcaConnectionState(branch.id))
+    } catch {
+      setConnection(null)
+    }
+  }, [branch.id])
+
+  useEffect(() => { void refreshConnection() }, [refreshConnection])
+
+  const label = connection?.connection_state === 'connected'
+    ? 'ZATCA Production Connected'
+    : connection?.connection_state === 'failed'
+      ? 'Production onboarding failed'
+      : connection?.connection_state === 'onboarding'
+        ? 'Production onboarding'
+        : 'Production setup pending'
+  const tone = connection?.connection_state === 'connected'
+    ? 'bg-emerald-100 text-emerald-700'
+    : connection?.connection_state === 'failed'
+      ? 'bg-red-100 text-red-700'
+      : connection?.connection_state === 'onboarding'
+        ? 'bg-amber-100 text-amber-800'
+        : 'bg-gray-100 text-gray-700'
+
+  return <section data-zatca-branch-card={branch.id} className="overflow-hidden rounded-2xl border border-primary-950/10 bg-white shadow-card">
+    <button type="button" onClick={() => setExpanded(value => !value)} aria-expanded={expanded} className="flex w-full items-center gap-3 border-s-4 border-gold-500 px-4 py-4 text-start transition-colors hover:bg-primary-50/50">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 ring-1 ring-primary-100"><Building2 size={16} /></div>
+      <div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-gray-950" dir="auto">{branch.name}</p><p className="mt-1 text-[11px] text-gray-500">FATOORA Production</p></div>
+      <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${tone}`}>{label}</span>
+      <ChevronDown size={15} className={`text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+    </button>
+    {expanded && <div className="border-t border-gray-100 p-5"><ProductionOnboardingPanel branch={branch} initialStatus={branch.productionStatus} onStatusChange={status => { onStatusChange(branch.id, status); void refreshConnection() }} /></div>}
+  </section>
+}
+
 function ZatcaBranchModal({
   branch, onClose, onProductionStatusUpdate, returnFocusRef,
 }: {
@@ -1562,7 +1610,7 @@ function ZatcaBranchModal({
 
 export default function ZatcaTab() {
   const { t } = useTranslation('zatca')
-  const { profile } = useAuth()
+  const { profile, tenant } = useAuth()
   const [data, setData]         = useState<BranchWithCert[]>([])
   const [loading, setLoading]   = useState(true)
   const [sandboxStatuses, setSandboxStatuses] = useState<Record<string, SandboxDemoConnectionStatus | null>>({})
@@ -1573,7 +1621,7 @@ export default function ZatcaTab() {
   const [showServiceSandboxStart, setShowServiceSandboxStart] = useState(false)
 
   const load = useCallback(async () => {
-    if (!profile?.tenant_id) return
+    if (!profile?.tenant_id || !tenant) return
     setLoading(true)
     const tid = profile.tenant_id
     const branchesRes = await (supabase as any).from('branches').select('*').eq('tenant_id', tid)
@@ -1581,11 +1629,9 @@ export default function ZatcaTab() {
       .order('created_at', { ascending: true })
     const branches = (branchesRes.data as Branch[]) ?? []
     const productionStatuses = new Map<string, ProductionOnboardingResponse | null>()
-    if (profile.role === 'owner') {
+    if (profile.role === 'owner' && tenant.is_demo !== true) {
       await Promise.all(branches
-        .filter(branch => (branch.zatca_phase ?? 1) === 2 && !(
-          tid === DEMO_TENANT_ID && [TRADING_BRANCH_ID, SERVICE_BRANCH_ID].includes(branch.id)
-        ))
+        .filter(branch => (branch.zatca_phase ?? 1) === 2)
         .map(async branch => {
           const cached = readCachedProductionStatus(branch.id)
           if (cached) productionStatuses.set(branch.id, cached)
@@ -1601,48 +1647,17 @@ export default function ZatcaTab() {
       productionStatus: productionStatuses.has(b.id) ? productionStatuses.get(b.id) ?? null : undefined,
     })))
     setLoading(false)
-  }, [profile?.tenant_id, profile?.role])
+  }, [profile?.tenant_id, profile?.role, tenant])
 
   useEffect(() => { load() }, [load])
 
-  const isPermanentDemo = profile?.tenant_id === DEMO_TENANT_ID
-
-  useEffect(() => {
-    if (profile?.tenant_id !== DEMO_TENANT_ID || !['owner', 'super_admin'].includes(profile?.role ?? '')) return
-    let mounted = true
-    Promise.all([
-      ...[TRADING_BRANCH_ID, SERVICE_BRANCH_ID].map(async branchId => {
-        try {
-          return [branchId, await getSandboxDemoConnectionStatus(branchId)] as const
-        } catch {
-          return [branchId, null] as const
-        }
-      }),
-      getSandboxDemoOnboardingStatus().then(status => ['onboarding', status] as const).catch(() => ['onboarding', null] as const),
-    ]).then(entries => {
-      if (!mounted) return
-      const onboarding = entries.find(entry => entry[0] === 'onboarding')?.[1]
-      if (onboarding && typeof onboarding === 'object' && 'status' in onboarding) {
-        setTradingSandboxOnboardingStatus(onboarding as SandboxOnboardingStatus)
-      }
-      setSandboxStatuses(Object.fromEntries(entries.filter(entry => entry[0] !== 'onboarding')))
-    })
-    return () => { mounted = false }
-  }, [profile?.tenant_id, profile?.role])
-
-  const updateTradingSandboxConnection = useCallback((status: SandboxDemoConnectionStatus) => {
-    setSandboxStatuses(prev => ({ ...prev, [TRADING_BRANCH_ID]: status }))
-  }, [])
+  const isPermanentDemo = tenant?.is_demo === true
 
   const isPermanentDemoOwner = isPermanentDemo && ['owner', 'super_admin'].includes(profile?.role ?? '')
-  const sandboxOnboardingBranches = isPermanentDemoOwner
-    ? data.filter(branch => branch.zatca_environment === 'sandbox' && branch.is_active)
-    : []
-  const canShowTradingSandboxDebug = isPermanentDemoOwner
-    && data.some(branch => branch.id === TRADING_BRANCH_ID)
-    && SHOW_TRADING_SANDBOX_DEBUG
+  const sandboxOnboardingBranches: BranchWithCert[] = []
+  const canShowTradingSandboxDebug = false
 
-  const tradingSandboxV2Panel = canShowTradingSandboxDebug ? <TradingSandboxV2Connector /> : null
+  const tradingSandboxV2Panel = null
 
   /*
    * These temporary controls are visible only in development/Preview for the
@@ -1650,14 +1665,7 @@ export default function ZatcaTab() {
    * the same authorization and scope checks; this client condition is only a
    * visibility gate and is false in ordinary production builds.
    */
-  const reconnectPanel = canShowTradingSandboxDebug ? (
-    <TradingSandboxReconnectDebug
-      status={tradingSandboxOnboardingStatus}
-      connectionActive={sandboxStatuses[TRADING_BRANCH_ID]?.active === true}
-      onStatusChange={setTradingSandboxOnboardingStatus}
-      onConnectionChange={updateTradingSandboxConnection}
-    />
-  ) : null
+  const reconnectPanel = null
 
   const handleProductionStatusUpdate = useCallback((branchId: string, status: ProductionOnboardingResponse) => {
     writeCachedProductionStatus(branchId, status)
@@ -1684,9 +1692,7 @@ export default function ZatcaTab() {
   ).length
   const tradingSandboxStatus = sandboxStatuses[TRADING_BRANCH_ID]
   const serviceSandboxStatus = sandboxStatuses[SERVICE_BRANCH_ID]
-  const regularBranches = isPermanentDemo
-    ? data.filter(branch => ![TRADING_BRANCH_ID, SERVICE_BRANCH_ID].includes(branch.id))
-    : data
+  const activeBranches = data.filter(branch => branch.is_active)
 
   return (
     <div className="space-y-5">
@@ -1699,27 +1705,23 @@ export default function ZatcaTab() {
           <h3 className="text-base font-black text-gray-950">{t('connections')}</h3>
           <p className="text-xs text-gray-500 mt-1">{t('subtitle')}</p>
           <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
-            <span className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-gray-600">{t('summary.counts', { count: data.length, phase2: phase2Count, active: activeCount })}</span>
-            <span className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-emerald-700">{t('status.connected')}: {activeCount}</span>
-            <span className="rounded-lg bg-gold-50 px-2.5 py-1.5 text-gold-800">{t('status.ready')}: {Math.max(phase2Count - activeCount, 0)}</span>
+            {isPermanentDemo ? <span className="rounded-lg bg-sky-50 px-2.5 py-1.5 text-sky-800">Developer Portal Integration Sandbox · {activeBranches.length} active branches</span> : <>
+              <span className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-gray-600">{t('summary.counts', { count: data.length, phase2: phase2Count, active: activeCount })}</span>
+              <span className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-emerald-700">{t('status.connected')}: {activeCount}</span>
+              <span className="rounded-lg bg-gold-50 px-2.5 py-1.5 text-gold-800">{t('status.ready')}: {Math.max(phase2Count - activeCount, 0)}</span>
+            </>}
           </div>
         </div>
-        <button
+        {!isPermanentDemo && <button
           onClick={() => setShowGuide(true)}
           className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700"
           title={t('guide.button')}
         >
           <Info size={13} />
           {t('guide.short')}
-        </button>
+        </button>}
         </div>
       </div>
-
-      {sandboxOnboardingBranches.map(branch => <SandboxBranchOnboardingPanel key={`sandbox-onboarding-${branch.id}`} branch={branch} />)}
-
-      {tradingSandboxV2Panel}
-
-      {reconnectPanel}
 
       {false && isPermanentDemoOwner && (
         <section className="overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-card">
@@ -1805,10 +1807,7 @@ export default function ZatcaTab() {
         </section>
       )}
 
-      {/* Official seller readiness */}
-      {ENABLE_OFFICIAL_SELLER_IDENTITY && data.map(branch => <ComplianceReadinessCard key={`identity-${branch.id}`} branchId={branch.id} manage={profile?.role === 'owner'} />)}
-
-      {/* Branch list */}
+      {/* One authoritative ZATCA card per active branch. */}
       {loading ? (
         <div className="space-y-2">
           {[1, 2].map(i => <div key={i} className="card h-14 animate-pulse bg-gray-50" />)}
@@ -1821,23 +1820,12 @@ export default function ZatcaTab() {
         </div>
       ) : (
         <div className="space-y-3">
-          {regularBranches.map(bc => (
-            <BranchRow
-              key={bc.id}
-              bc={bc}
-              onOpen={openBranchModal}
-            />
+          {activeBranches.map(branch => (
+            isPermanentDemo
+              ? <SandboxBranchOnboardingPanel key={branch.id} branch={branch} />
+              : <ProductionBranchOnboardingCard key={branch.id} branch={branch} onStatusChange={handleProductionStatusUpdate} />
           ))}
         </div>
-      )}
-
-      {selectedBranch && (
-        <ZatcaBranchModal
-          branch={selectedBranch}
-          onClose={closeBranchModal}
-          onProductionStatusUpdate={handleProductionStatusUpdate}
-          returnFocusRef={modalTriggerRef}
-        />
       )}
 
       {data.some(b => !b.vat_number && (b.zatca_phase ?? 1) === 2) && (

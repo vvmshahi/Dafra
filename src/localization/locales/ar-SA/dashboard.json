@@ -8,7 +8,9 @@
     "connected": "متصل بهيئة الزكاة والضريبة والجمارك", "phase2Unavailable": "حالة المرحلة الثانية غير متاحة",
     "phase1": "المرحلة الأولى", "phase1Qr": "المرحلة الأولى — فواتير برمز QR",
     "productionConnected": "متصل ببيئة الإنتاج", "productionPending": "إعداد بيئة الإنتاج قيد الانتظار",
-    "productionFailed": "إعداد بيئة الإنتاج يحتاج إلى مراجعة", "productionUnavailable": "حالة بيئة الإنتاج غير متاحة"
+    "productionFailed": "إعداد بيئة الإنتاج يحتاج إلى مراجعة", "productionUnavailable": "حالة بيئة الإنتاج غير متاحة",
+    "sandboxConnected": "بيئة الاختبار متصلة بهيئة الزكاة والضريبة والجمارك", "sandboxPending": "إعداد بيئة الاختبار قيد الانتظار",
+    "sandboxOnboarding": "إعداد بيئة الاختبار", "sandboxFailed": "تعذر إعداد بيئة الاختبار"
   },
   "register": {
     "none": "لا توجد جلسة صندوق", "noneYet": "لا توجد جلسة صندوق حتى الآن", "openPrompt": "افتح الصندوق لبدء تتبع مبيعات هذه الوردية.",
