@@ -165,6 +165,7 @@
     "finalizingInvoice": "Finalizing invoice…",
     "finalizingTaxInvoice": "Finalizing tax invoice with ZATCA…",
     "saleCompletedAttention": "Sale completed — invoice finalization requires attention",
+    "statusRefreshUnavailable": "Invoice submitted — final status could not be refreshed",
     "retryFinalization": "Retry finalization",
     "reporting_pending": "Reporting pending",
     "sandbox_validation_pending": "Sandbox pending",

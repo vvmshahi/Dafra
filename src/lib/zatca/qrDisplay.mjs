@@ -11,7 +11,8 @@ function hasFinalStoredOutput(outputState) {
       || outputState.invoiceStatus === 'cleared'
     const sandboxFinal = outputState.artifactStage === 'sandbox_final'
       && (outputState.finalizationStatus === 'sandbox_reported'
-        || outputState.finalizationStatus === 'sandbox_cleared')
+        || outputState.finalizationStatus === 'sandbox_cleared'
+        || outputState.finalizationStatus === 'sandbox_accepted')
     const finalMarker = outputState.artifactStage === 'legacy_final'
       || outputState.finalizationStatus === 'legacy_reported'
       || outputState.finalizationStatus === 'legacy_cleared'

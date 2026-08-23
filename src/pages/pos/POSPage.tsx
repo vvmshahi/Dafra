@@ -214,6 +214,7 @@ interface ReceiptData {
   artifactStage: string
   documentKind: 'simplified' | 'standard' | null
   finalizationError: string | null
+  retryFinalizationAllowed: boolean
   sandboxGenerated: boolean
   reportingDisplayState: string
   atomicSnapshot: boolean
@@ -1010,10 +1011,10 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
             {!receipt.canPrint && (
               <div className="rounded-lg bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">
                 <p>{receipt.finalizationError
-                  ? t('pos:zatca.saleCompletedAttention')
+                  ? receipt.retryFinalizationAllowed ? t('pos:zatca.saleCompletedAttention') : t('pos:zatca.statusRefreshUnavailable')
                   : receipt.isStandardInvoice ? t('pos:zatca.finalizingTaxInvoice') : t('pos:zatca.finalizingInvoice')}</p>
                 {receipt.finalizationError && <p className="mt-1 font-normal text-amber-700">{receipt.finalizationError}</p>}
-                <div className="mt-2 flex justify-center gap-2">
+                {receipt.retryFinalizationAllowed && <div className="mt-2 flex justify-center gap-2">
                   <button
                     type="button"
                     disabled={retryingFinalization}
@@ -1025,7 +1026,7 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
                   >
                     {retryingFinalization ? t('common:loading') : t('pos:zatca.retryFinalization')}
                   </button>
-                </div>
+                </div>}
               </div>
             )}
             {receipt.canPrint && qrStatus !== 'loading' && !printReady && (
@@ -3208,6 +3209,7 @@ export default function POSPage() {
       let artifactStage = 'none'
       let documentKind: 'simplified' | 'standard' | null = isB2BInvoice ? 'standard' : 'simplified'
       let finalizationError: string | null = null
+      let retryFinalizationAllowed = true
 
       try {
         if (atomicCheckoutResult) {
@@ -3247,6 +3249,7 @@ export default function POSPage() {
             finalQrCode = selectStoredOutputStateQr(sandboxOutput)
             canPrintCustomerCopy = Boolean(finalQrCode)
             if (!canPrintCustomerCopy) {
+              retryFinalizationAllowed = sandboxOutput.retryAvailable === true
               finalizationError = sandboxOutput.error ?? (sandboxResult.retryable
                 ? 'Sandbox ZATCA submission is pending and can be retried.'
                 : 'Sandbox ZATCA submission did not produce a printable artifact.')
@@ -3321,9 +3324,17 @@ export default function POSPage() {
           }
         }
       } catch (finalizationFailure) {
-        finalizationError = finalizationFailure instanceof Error
-          ? finalizationFailure.message
-          : 'Invoice finalization requires attention.'
+        if (sandboxDemo && preOutputSubmission?.mode === 'sandbox_submission' && preOutputSubmission.result.ok) {
+          finalizationStatus = preOutputSubmission.result.finalizationStatus
+          artifactStage = preOutputSubmission.result.artifactStage
+          documentKind = preOutputSubmission.result.documentKind ?? documentKind
+          finalizationError = 'Invoice submitted — final status could not be refreshed.'
+          retryFinalizationAllowed = false
+        } else {
+          finalizationError = finalizationFailure instanceof Error
+            ? finalizationFailure.message
+            : 'Invoice finalization requires attention.'
+        }
         canPrintCustomerCopy = false
         finalQrCode = null
       }
@@ -3422,6 +3433,7 @@ export default function POSPage() {
         artifactStage,
         documentKind,
         finalizationError,
+        retryFinalizationAllowed,
         sandboxGenerated: sandboxDemo,
         reportingDisplayState: atomicCheckoutResult?.reportingDisplayState
           ?? (nonFiscalDemo ? 'demo_non_fiscal' : sandboxDemo ? finalizationStatus : isB2BInvoice ? 'clearance_pending' : 'reporting_pending'),

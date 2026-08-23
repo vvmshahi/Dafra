@@ -17,20 +17,28 @@ const reported = {
   finalizationStatus: 'sandbox_reported', artifactStage: 'sandbox_final',
   canPrint: true, qrCode: 'persisted-reported-qr',
 }
+const sandboxAccepted = {
+  contractMode: 'legacy', legacyCompatible: false, invoiceStatus: 'cleared',
+  finalizationStatus: 'sandbox_accepted', artifactStage: 'sandbox_final',
+  canPrint: true, qrCode: 'persisted-accepted-qr',
+}
 
 assert.equal(selectStoredOutputStateQr(cleared), 'persisted-cleared-qr')
 assert.equal(selectStoredOutputStateQr(reported), 'persisted-reported-qr')
+assert.equal(selectStoredOutputStateQr(sandboxAccepted), 'persisted-accepted-qr')
 assert.equal(selectStoredOutputStateQr({ ...cleared, canPrint: false }), null)
 assert.equal(selectStoredOutputStateQr({ ...cleared, invoiceStatus: 'failed', qrCode: 'rejected-qr' }), null)
 
-assert.match(submission, /from\('invoices'\)/)
-assert.match(submission, /zatca_status,zatca_clearance_status,zatca_clearance_response/)
-assert.match(submission, /const accepted = invoiceStatus === 'cleared' \|\| invoiceStatus === 'reported'/)
-assert.match(submission, /artifactStage: 'sandbox_final'/)
-assert.match(submission, /retryAvailable: false/)
+const sandboxReader = submission.match(/if \(connection\.environment === 'sandbox'\) \{[\s\S]*?return upstreamStatus\n  \}/)?.[0] ?? ''
+assert.ok(sandboxReader)
+assert.match(sandboxReader, /zatca-submit-sandbox-demo/)
+assert.doesNotMatch(sandboxReader, /from\('invoices'\)/)
+assert.match(sandboxReader, /artifactStage: String\(data\?\.artifactStage/)
 assert.match(pos, /getInvoiceZatcaOutputState\(/)
 assert.match(pos, /selectStoredOutputStateQr\(sandboxOutput\)/)
 assert.match(pos, /\{!receipt\.canPrint\s*&&/)
+assert.match(pos, /retryFinalizationAllowed/)
+assert.match(pos, /statusRefreshUnavailable/)
 assert.match(browserPrint, /window\.print\(\)/)
 
-console.log('Sandbox cleared/reported success-modal state tests passed (8 assertions)')
+console.log('Sandbox cleared/reported success-modal state tests passed (12 assertions)')

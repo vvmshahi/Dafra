@@ -367,45 +367,10 @@ export async function getInvoiceZatcaOutputState(params: {
       qrCode: data?.canPrint === true && typeof data?.qrCode === 'string' ? data.qrCode : null, error: null,
     }
 
-    // Sandbox v34 persists the accepted legacy artifact on the invoice row.
-    // The status endpoint can still return a pre-finalization-shaped response
-    // for that row, so reconcile the refreshed persisted state before the POS
-    // decides whether the success modal may print or offer retry.
-    const persisted = await supabase
-      .from('invoices')
-      .select('id,zatca_status,zatca_clearance_status,zatca_clearance_response,zatca_reporting_response,zatca_qr_code,zatca_xml,zatca_simplified_qr,zatca_cleared_qr,zatca_simplified_xml,zatca_cleared_xml,zatca_document_kind')
-      .eq('id', params.invoiceId)
-      .maybeSingle()
-    if (persisted.error || !persisted.data) return upstreamStatus
-
-    const row = persisted.data as any
-    const clearanceStatus = String(row.zatca_clearance_status ?? row.zatca_clearance_response?.clearanceStatus ?? '').toUpperCase()
-    const reportingStatus = String(row.zatca_reporting_response?.reportingStatus ?? '').toUpperCase()
-    const invoiceStatus = clearanceStatus === 'CLEARED' || String(row.zatca_status ?? '').toLowerCase() === 'cleared'
-      ? 'cleared'
-      : reportingStatus === 'REPORTED' || String(row.zatca_status ?? '').toLowerCase() === 'reported'
-        ? 'reported'
-        : upstreamStatus.invoiceStatus
-    const qrCode = [row.zatca_cleared_qr, row.zatca_simplified_qr, row.zatca_qr_code].find(value => typeof value === 'string' && value.trim()) ?? null
-    const xml = [row.zatca_cleared_xml, row.zatca_simplified_xml, row.zatca_xml].find(value => typeof value === 'string' && value.trim()) ?? null
-    const accepted = invoiceStatus === 'cleared' || invoiceStatus === 'reported'
-    if (!accepted || !qrCode || !xml) return upstreamStatus
-
-    return {
-      ...upstreamStatus,
-      invoiceId: params.invoiceId,
-      invoiceStatus,
-      finalizationStatus: invoiceStatus === 'cleared' ? 'sandbox_cleared' : 'sandbox_reported',
-      artifactStage: 'sandbox_final',
-      documentKind: invoiceStatus === 'cleared' ? 'standard' : (row.zatca_document_kind === 'standard' ? 'standard' : 'simplified'),
-      reportingDisplayState: invoiceStatus === 'cleared' ? 'cleared' : 'reported',
-      canPrint: true,
-      canShare: true,
-      retryAvailable: false,
-      reconciliationRequired: false,
-      qrCode,
-      error: null,
-    }
+    // Sandbox v34 status is the authorized canonical read path. Do not add a
+    // browser-side invoices SELECT here: the table is intentionally not
+    // directly readable by authenticated clients.
+    return upstreamStatus
   }
   const { data, error } = await invokeAuthenticatedZatca({
     invoiceId: params.invoiceId,

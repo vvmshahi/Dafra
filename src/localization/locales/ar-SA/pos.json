@@ -165,6 +165,7 @@
     "finalizingInvoice": "جارٍ اعتماد الفاتورة…",
     "finalizingTaxInvoice": "جارٍ اعتماد الفاتورة الضريبية مع ZATCA…",
     "saleCompletedAttention": "اكتمل البيع — اعتماد الفاتورة يحتاج إلى متابعة",
+    "statusRefreshUnavailable": "تم إرسال الفاتورة — تعذّر تحديث الحالة النهائية",
     "retryFinalization": "إعادة محاولة الاعتماد",
     "reporting_pending": "الإبلاغ قيد الانتظار",
     "sandbox_validation_pending": "بيئة تجريبية قيد الانتظار",
