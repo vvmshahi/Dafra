@@ -9,11 +9,15 @@ function hasFinalStoredOutput(outputState) {
   if (outputState.contractMode === 'legacy') {
     const accepted = outputState.invoiceStatus === 'reported'
       || outputState.invoiceStatus === 'cleared'
+    const sandboxFinal = outputState.artifactStage === 'sandbox_final'
+      && (outputState.finalizationStatus === 'sandbox_reported'
+        || outputState.finalizationStatus === 'sandbox_cleared')
     const finalMarker = outputState.artifactStage === 'legacy_final'
       || outputState.finalizationStatus === 'legacy_reported'
       || outputState.finalizationStatus === 'legacy_cleared'
       || outputState.finalizationStatus === 'legacy_final'
-    return outputState.legacyCompatible === true && accepted && finalMarker
+    return (outputState.legacyCompatible === true && accepted && finalMarker)
+      || (sandboxFinal && accepted)
   }
 
   if (outputState.contractMode !== 'v2') return false
